@@ -1,5 +1,9 @@
 /// Cryptographic primitives for Styx.
 library;
 
-/// Returns the package name.
-String packageName() => 'crypto_core';
+export 'src/hasher.dart';
+export 'src/identity_manager.dart';
+export 'src/key_converter.dart';
+export 'src/key_pair.dart';
+export 'src/signer.dart';
+export 'src/verifier.dart';

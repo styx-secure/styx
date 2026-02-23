@@ -6,7 +6,13 @@ resolution: workspace
 environment:
   sdk: ^3.6.0
 
+dependencies:
+  crypto: ^3.0.7
+  cryptography: ^2.9.0
+  meta: any
+
 dev_dependencies:
   dart_code_linter: any
+  glados: any
   test: any
   very_good_analysis: any
