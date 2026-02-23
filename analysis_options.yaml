@@ -1,0 +1,21 @@
+include: package:very_good_analysis/analysis_options.yaml
+
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+  plugins:
+    - dart_code_linter
+
+dart_code_linter:
+  rules:
+    - prefer-match-file-name:
+        exclude:
+          - test/**
+    - avoid-unnecessary-type-assertions
+    - avoid-unnecessary-type-casts
+    - avoid-unrelated-type-assertions
+    - prefer-commenting-analyzer-ignores
+    - prefer-correct-test-file-name
+    - prefer-first
+    - prefer-last

@@ -1,0 +1,12 @@
+name: storage
+description: Encrypted database engine for Styx.
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.6.0
+
+dev_dependencies:
+  dart_code_linter: any
+  test: any
+  very_good_analysis: any

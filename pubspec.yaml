@@ -1,0 +1,52 @@
+name: styx_workspace
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+workspace:
+  - packages/crypto_core
+  - packages/storage
+  - packages/ledger_engine
+  - packages/transport
+  - packages/push_bridge_client
+  - packages/styx
+  - test_integration
+
+dev_dependencies:
+  melos: ^7.0.0
+  very_good_analysis: ^10.0.0
+  dart_code_linter: ^3.2.0
+
+melos:
+  name: styx
+  packages:
+    - packages/*
+    - test_integration
+
+  scripts:
+    analyze:
+      exec: dart analyze --fatal-infos .
+      description: Run static analysis on all packages.
+
+    format:check:
+      exec: dart format --output none --set-exit-if-changed .
+      description: Check formatting on all packages.
+
+    test:all:
+      exec: dart test
+      description: Run tests in all packages.
+      packageFilters:
+        dirExists: test
+
+    coverage:check:
+      run: bash tool/check_coverage.sh 90
+      description: Check test coverage meets threshold.
+
+    ci:
+      steps:
+        - analyze
+        - format:check
+        - test:all
+        - coverage:check
+      description: Run the full CI pipeline locally.
