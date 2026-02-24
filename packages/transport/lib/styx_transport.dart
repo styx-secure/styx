@@ -2,4 +2,4 @@
 library;
 
 /// Returns the package name.
-String packageName() => 'transport';
+String packageName() => 'styx_transport';

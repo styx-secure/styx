@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:crypto_core/crypto_core.dart';
 import 'package:cryptography/cryptography.dart';
+import 'package:styx_crypto_core/styx_crypto_core.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -10,13 +10,13 @@ void main() {
     // 1. Generate identity
     final manager = IdentityManager();
     final kp = await manager.generate();
-    expect(kp.privateKeyBytes.length, 32);
-    expect(kp.publicKeyBytes.length, 32);
+    expect(kp.privateKey.bytes.length, 32);
+    expect(kp.publicKey.bytes.length, 32);
 
     // 2. Sign a payload
     final signer = Signer();
     final payload = Uint8List.fromList(utf8.encode('hello styx'));
-    final sig = await signer.sign(payload, kp);
+    final sig = await signer.sign(payload, kp.privateKey);
     expect(sig.length, 64);
 
     // 3. Verify signature
@@ -24,7 +24,7 @@ void main() {
     final valid = await verifier.verify(
       payload: payload,
       signatureBytes: sig,
-      publicKeyBytes: kp.publicKeyBytes,
+      publicKey: kp.publicKey,
     );
     expect(valid, isTrue);
 
@@ -40,41 +40,43 @@ void main() {
 
     // 6. Convert to X25519
     final converter = KeyConverter();
-    final xKp = converter.convertToX25519(kp);
-    expect(xKp.privateKeyBytes.length, 32);
-    expect(xKp.publicKeyBytes.length, 32);
+    final xPub = converter.ed25519PublicToX25519(kp.publicKey);
+    final xPriv = converter.ed25519PrivateToX25519(kp.privateKey);
+    expect(xPub.length, 32);
+    expect(xPriv.length, 32);
 
     // 7. Verify DH works with converted keys
     final kp2 = await manager.generate();
-    final xKp2 = converter.convertToX25519(kp2);
+    final xPub2 = converter.ed25519PublicToX25519(kp2.publicKey);
+    final xPriv2 = converter.ed25519PrivateToX25519(kp2.privateKey);
     final x25519 = X25519();
 
     final shared1 = await x25519.sharedSecretKey(
       keyPair: SimpleKeyPairData(
-        xKp.privateKeyBytes,
+        xPriv,
         publicKey: SimplePublicKey(
-          xKp.publicKeyBytes,
+          xPub,
           type: KeyPairType.x25519,
         ),
         type: KeyPairType.x25519,
       ),
       remotePublicKey: SimplePublicKey(
-        xKp2.publicKeyBytes,
+        xPub2,
         type: KeyPairType.x25519,
       ),
     );
 
     final shared2 = await x25519.sharedSecretKey(
       keyPair: SimpleKeyPairData(
-        xKp2.privateKeyBytes,
+        xPriv2,
         publicKey: SimplePublicKey(
-          xKp2.publicKeyBytes,
+          xPub2,
           type: KeyPairType.x25519,
         ),
         type: KeyPairType.x25519,
       ),
       remotePublicKey: SimplePublicKey(
-        xKp.publicKeyBytes,
+        xPub,
         type: KeyPairType.x25519,
       ),
     );

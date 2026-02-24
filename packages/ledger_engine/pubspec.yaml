@@ -1,4 +1,4 @@
-name: ledger_engine
+name: styx_ledger_engine
 description: Hash chain, vector clocks, merge for Styx.
 publish_to: none
 resolution: workspace

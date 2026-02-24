@@ -1,4 +1,4 @@
-name: test_integration
+name: styx_test_integration
 description: Cross-package integration tests.
 publish_to: none
 resolution: workspace

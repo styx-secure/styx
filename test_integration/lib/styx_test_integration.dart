@@ -2,4 +2,4 @@
 library;
 
 /// Returns the package name.
-String packageName() => 'test_integration';
+String packageName() => 'styx_test_integration';

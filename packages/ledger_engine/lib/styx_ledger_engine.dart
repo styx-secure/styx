@@ -2,4 +2,4 @@
 library;
 
 /// Returns the package name.
-String packageName() => 'ledger_engine';
+String packageName() => 'styx_ledger_engine';

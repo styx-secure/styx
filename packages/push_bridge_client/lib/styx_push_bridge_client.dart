@@ -2,4 +2,4 @@
 library;
 
 /// Returns the package name.
-String packageName() => 'push_bridge_client';
+String packageName() => 'styx_push_bridge_client';

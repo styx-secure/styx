@@ -1,38 +1,23 @@
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as crypto;
-import 'package:crypto_core/src/key_pair.dart';
+import 'package:styx_crypto_core/src/styx_private_key.dart';
+import 'package:styx_crypto_core/src/styx_public_key.dart';
 
 /// The prime field for Curve25519: p = 2^255 - 19.
 final BigInt _p = BigInt.two.pow(255) - BigInt.from(19);
 
-/// Converts Ed25519 key pairs to X25519 key pairs.
+/// Converts Ed25519 keys to X25519 keys.
 class KeyConverter {
-  /// Converts a full Ed25519 [KeyPair] to an X25519 [KeyPair].
-  ///
-  /// Private key: SHA-512(seed)[0:32] with X25519 clamping (RFC 7748).
-  /// Public key: Edwards-to-Montgomery conversion.
-  KeyPair convertToX25519(KeyPair ed25519KeyPair) {
-    final privateKey = _convertPrivateKey(ed25519KeyPair.privateKeyBytes);
-    final publicKey = convertPublicKey(ed25519KeyPair.publicKeyBytes);
-    return KeyPair(privateKeyBytes: privateKey, publicKeyBytes: publicKey);
-  }
-
   /// Converts an Ed25519 public key to an X25519 public key.
   ///
   /// Uses the Edwards-to-Montgomery map: `u = (1 + y) / (1 - y) mod p`.
-  Uint8List convertPublicKey(Uint8List ed25519PublicKeyBytes) {
-    if (ed25519PublicKeyBytes.length != 32) {
-      throw ArgumentError.value(
-        ed25519PublicKeyBytes.length,
-        'ed25519PublicKeyBytes',
-        'Must be exactly 32 bytes',
-      );
-    }
+  Uint8List ed25519PublicToX25519(StyxPublicKey publicKey) {
+    final keyBytes = publicKey.bytes;
 
     // Ed25519 public key encodes the y-coordinate in little-endian,
     // with the sign bit in the high bit of byte 31.
-    final yBytes = Uint8List.fromList(ed25519PublicKeyBytes);
+    final yBytes = Uint8List.fromList(keyBytes);
     // Clear the sign bit to get the y-coordinate.
     yBytes[31] &= 0x7F;
 
@@ -46,8 +31,11 @@ class KeyConverter {
     return _encodeLittleEndian(u);
   }
 
-  Uint8List _convertPrivateKey(Uint8List seed) {
-    final h = crypto.sha512.convert(seed).bytes;
+  /// Converts an Ed25519 private key (seed) to an X25519 private key.
+  ///
+  /// Applies SHA-512 to the seed and clamps per RFC 7748.
+  Uint8List ed25519PrivateToX25519(StyxPrivateKey privateKey) {
+    final h = crypto.sha512.convert(privateKey.bytes).bytes;
     final key = Uint8List.fromList(h.sublist(0, 32));
     // X25519 clamping (RFC 7748)
     key[0] &= 248;

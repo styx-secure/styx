@@ -1,8 +1,8 @@
-import 'package:storage/storage.dart';
+import 'package:styx_storage/styx_storage.dart';
 import 'package:test/test.dart';
 
 void main() {
   test('package name is correct', () {
-    expect(packageName(), 'storage');
+    expect(packageName(), 'styx_storage');
   });
 }

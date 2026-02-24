@@ -1,4 +1,4 @@
-name: storage
+name: styx_storage
 description: Encrypted database engine for Styx.
 publish_to: none
 resolution: workspace

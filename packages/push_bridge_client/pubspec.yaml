@@ -1,4 +1,4 @@
-name: push_bridge_client
+name: styx_push_bridge_client
 description: Flutter push notification client for Styx.
 publish_to: none
 resolution: workspace

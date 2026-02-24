@@ -1,26 +1,19 @@
 import 'dart:typed_data';
 
-import 'package:crypto_core/src/key_pair.dart';
-import 'package:cryptography/cryptography.dart' hide KeyPair;
+import 'package:cryptography/cryptography.dart';
+import 'package:styx_crypto_core/src/styx_private_key.dart';
 
 /// Signs payloads using Ed25519.
 class Signer {
   final _algorithm = Ed25519();
 
-  /// Signs [payload] with the given [keyPair]
+  /// Signs [payload] with the given [privateKey]
   /// and returns a 64-byte signature.
   Future<Uint8List> sign(
     Uint8List payload,
-    KeyPair keyPair,
+    StyxPrivateKey privateKey,
   ) async {
-    final simpleKeyPair = SimpleKeyPairData(
-      List<int>.from(keyPair.privateKeyBytes),
-      publicKey: SimplePublicKey(
-        List<int>.from(keyPair.publicKeyBytes),
-        type: KeyPairType.ed25519,
-      ),
-      type: KeyPairType.ed25519,
-    );
+    final simpleKeyPair = await _algorithm.newKeyPairFromSeed(privateKey.bytes);
     final signature = await _algorithm.sign(
       payload,
       keyPair: simpleKeyPair,

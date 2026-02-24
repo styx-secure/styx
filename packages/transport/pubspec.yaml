@@ -1,4 +1,4 @@
-name: transport
+name: styx_transport
 description: Transport layer for Styx.
 publish_to: none
 resolution: workspace

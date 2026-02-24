@@ -1,4 +1,4 @@
-name: crypto_core
+name: styx_crypto_core
 description: Cryptographic primitives for Styx.
 publish_to: none
 resolution: workspace

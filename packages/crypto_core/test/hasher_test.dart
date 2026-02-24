@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:crypto_core/crypto_core.dart';
 import 'package:glados/glados.dart';
+import 'package:styx_crypto_core/styx_crypto_core.dart';
 
 void main() {
   final hasher = Hasher();
@@ -101,6 +101,48 @@ void main() {
         payload: Uint8List.fromList([1, 2, 4]),
       );
       expect(h1a, isNot(equals(h1b)));
+    });
+
+    test('chainHash with previousHash=null (genesis) (T1.24)', () {
+      final payload = Uint8List.fromList(utf8.encode('genesis event'));
+      final genesis = hasher.chainHash(
+        previousHash: null,
+        payload: payload,
+      );
+      // Should equal hash(payload) directly.
+      expect(genesis, equals(hasher.hash(payload)));
+      expect(genesis.length, 32);
+    });
+
+    test('compositeHash with 3 segments (T1.25)', () {
+      final seg1 = Uint8List.fromList([1, 2, 3]);
+      final seg2 = Uint8List.fromList([4, 5, 6]);
+      final seg3 = Uint8List.fromList([7, 8, 9]);
+      final result = hasher.compositeHash([seg1, seg2, seg3]);
+      expect(result.length, 32);
+
+      // Should equal hash of concatenation.
+      final combined = Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+      expect(result, equals(hasher.hash(combined)));
+    });
+
+    test('compositeHash different order produces different hash (T1.26)', () {
+      final seg1 = Uint8List.fromList([1, 2, 3]);
+      final seg2 = Uint8List.fromList([4, 5, 6]);
+      final h1 = hasher.compositeHash([seg1, seg2]);
+      final h2 = hasher.compositeHash([seg2, seg1]);
+      expect(h1, isNot(equals(h2)));
+    });
+
+    test('compositeHash with empty segment (T1.27)', () {
+      final seg1 = Uint8List.fromList([1, 2, 3]);
+      final empty = Uint8List(0);
+      final seg2 = Uint8List.fromList([4, 5, 6]);
+      final withEmpty = hasher.compositeHash([seg1, empty, seg2]);
+      final without = hasher.compositeHash([seg1, seg2]);
+      // Empty segment in the middle should not change the result
+      // (concatenation is the same).
+      expect(withEmpty, equals(without));
     });
   });
 
