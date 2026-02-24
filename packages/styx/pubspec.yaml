@@ -6,6 +6,13 @@ resolution: workspace
 environment:
   sdk: ^3.6.0
 
+dependencies:
+  crypto: ^3.0.7
+  meta: ^1.16.0
+  styx_crypto_core: {path: ../crypto_core}
+  styx_ledger_engine: {path: ../ledger_engine}
+  styx_transport: {path: ../transport}
+
 dev_dependencies:
   dart_code_linter: any
   test: any
