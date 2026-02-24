@@ -6,6 +6,10 @@ resolution: workspace
 environment:
   sdk: ^3.6.0
 
+dependencies:
+  meta: ^1.16.0
+  styx_transport: {path: ../transport}
+
 dev_dependencies:
   dart_code_linter: any
   test: any

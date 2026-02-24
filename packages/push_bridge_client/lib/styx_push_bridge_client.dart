@@ -1,5 +1,8 @@
 /// Flutter push notification client for Styx.
 library;
 
-/// Returns the package name.
-String packageName() => 'styx_push_bridge_client';
+export 'src/dummy_detector.dart';
+export 'src/privacy_profile.dart';
+export 'src/push_bridge_client.dart';
+export 'src/push_handler.dart';
+export 'src/wake_up_orchestrator.dart';
