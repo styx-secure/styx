@@ -6,6 +6,15 @@ resolution: workspace
 environment:
   sdk: ^3.6.0
 
+dependencies:
+  drift: ^2.30.1
+  meta: any
+  styx_crypto_core:
+    path: ../crypto_core
+  styx_storage:
+    path: ../storage
+  uuid: ^4.5.1
+
 dev_dependencies:
   dart_code_linter: any
   test: any
