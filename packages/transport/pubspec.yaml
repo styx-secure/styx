@@ -8,6 +8,7 @@ environment:
 
 dependencies:
   cryptography: ^2.9.0
+  enough_mail: ^2.1.7
   meta: ^1.16.0
   styx_crypto_core:
     path: ../crypto_core
