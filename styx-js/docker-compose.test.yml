@@ -1,0 +1,10 @@
+services:
+  strfry:
+    image: ghcr.io/hoytech/strfry:latest
+    ports:
+      - "17777:7777"
+    volumes:
+      - ./strfry.conf:/app/strfry.conf:z
+    command: ["--config", "/app/strfry.conf", "relay"]
+    tmpfs:
+      - /app/strfry-db

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Styx WebRTC Manual Test</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0a0a0a; color: #e0e0e0; padding: 24px; }
+  h1 { font-size: 1.4rem; margin-bottom: 8px; color: #fff; }
+  .subtitle { color: #888; margin-bottom: 24px; font-size: 0.9rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-width: 900px; }
+  .card { background: #141414; border: 1px solid #2a2a2a; border-radius: 12px; padding: 20px; }
+  .card h2 { font-size: 1rem; margin-bottom: 12px; color: #aaa; }
+  .status { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; margin-bottom: 12px; }
+  .status.disconnected { background: #331111; color: #ff5555; }
+  .status.connecting { background: #332211; color: #ffaa33; }
+  .status.connected { background: #113311; color: #55ff55; }
+  .info { font-size: 0.8rem; color: #666; margin-bottom: 8px; }
+  .info span { color: #aaa; }
+  input { width: 100%; padding: 10px 14px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 0.9rem; margin-bottom: 8px; }
+  input:focus { outline: none; border-color: #555; }
+  button { padding: 10px 20px; border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+  button:disabled { opacity: 0.3; cursor: not-allowed; }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #3b82f6; }
+  .btn-danger { background: #dc2626; color: #fff; }
+  .btn-danger:hover:not(:disabled) { background: #ef4444; }
+  .messages { max-height: 300px; overflow-y: auto; margin-top: 12px; }
+  .msg { padding: 8px 12px; margin: 4px 0; border-radius: 8px; font-size: 0.85rem; }
+  .msg.sent { background: #1a2744; color: #93c5fd; text-align: right; }
+  .msg.received { background: #1a3320; color: #86efac; }
+  .msg.system { background: #1a1a2e; color: #a78bfa; font-style: italic; font-size: 0.8rem; }
+  .log { margin-top: 20px; max-width: 900px; }
+  .log h2 { font-size: 1rem; color: #aaa; margin-bottom: 8px; }
+  #eventLog { background: #0d0d0d; border: 1px solid #222; border-radius: 8px; padding: 12px; max-height: 200px; overflow-y: auto; font-family: 'Fira Code', 'Cascadia Code', monospace; font-size: 0.75rem; color: #666; }
+  .counter { display: inline-block; background: #1a1a2e; color: #818cf8; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem; margin-left: 8px; }
+</style>
+</head>
+<body>
+<h1>Styx WebRTC DataChannel Test</h1>
+<p class="subtitle">Open this page in two different browsers. They will auto-connect via the signaling server.</p>
+
+<div class="grid">
+  <div class="card">
+    <h2>Connection</h2>
+    <div class="status disconnected" id="status">DISCONNECTED</div>
+    <div class="info">Browser: <span id="browserName"></span></div>
+    <div class="info">Role: <span id="role">waiting...</span></div>
+    <div class="info">Signaling: <span id="signalingStatus">connecting...</span></div>
+    <div class="info">ICE candidates: <span id="iceCount">0</span></div>
+    <div class="info">Messages sent: <span class="counter" id="sentCount">0</span> received: <span class="counter" id="recvCount">0</span></div>
+    <br>
+    <button class="btn-danger" id="disconnectBtn" disabled onclick="disconnect()">Disconnect</button>
+  </div>
+
+  <div class="card">
+    <h2>Send Message</h2>
+    <input type="text" id="msgInput" placeholder="Type a message..." disabled>
+    <button class="btn-primary" id="sendBtn" disabled onclick="sendMessage()">Send</button>
+    <div class="messages" id="messages"></div>
+  </div>
+</div>
+
+<div class="log">
+  <h2>Event Log</h2>
+  <div id="eventLog"></div>
+</div>
+
+<script>
+// --- Detect browser ---
+const ua = navigator.userAgent;
+let browserName = 'Unknown';
+if (ua.includes('Edg/')) browserName = 'Edge';
+else if (ua.includes('Chrome/')) browserName = 'Chrome';
+else if (ua.includes('Firefox/')) browserName = 'Firefox';
+else if (ua.includes('Safari/')) browserName = 'Safari';
+document.getElementById('browserName').textContent = browserName + ' (' + navigator.platform + ')';
+
+// --- State ---
+let pc = null;
+let dataChannel = null;
+let ws = null;
+let role = null;
+let iceCount = 0;
+let sentCount = 0;
+let recvCount = 0;
+let myId = null;
+
+// --- UI helpers ---
+function setStatus(state) {
+  const el = document.getElementById('status');
+  el.textContent = state.toUpperCase();
+  el.className = 'status ' + state;
+}
+
+function log(msg) {
+  const el = document.getElementById('eventLog');
+  const time = new Date().toLocaleTimeString('it-IT', { hour12: false });
+  el.innerHTML += `<div>${time} ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function addMessage(text, type) {
+  const el = document.getElementById('messages');
+  el.innerHTML += `<div class="msg ${type}">${text}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateCounters() {
+  document.getElementById('sentCount').textContent = sentCount;
+  document.getElementById('recvCount').textContent = recvCount;
+  document.getElementById('iceCount').textContent = iceCount;
+}
+
+// --- Signaling via WebSocket ---
+function connectSignaling() {
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${protocol}//${location.host}`);
+
+  ws.onopen = () => {
+    document.getElementById('signalingStatus').textContent = 'connected, waiting for peer...';
+    log('Signaling connected — waiting for second peer');
+  };
+
+  ws.onmessage = async (event) => {
+    const signal = JSON.parse(event.data);
+
+    // Server assigns us an ID
+    if (signal.type === 'welcome') {
+      myId = signal.id;
+      log(`Assigned ID: ${myId}`);
+      // Tell server we're ready
+      ws.send(JSON.stringify({ type: 'ready' }));
+      document.getElementById('signalingStatus').textContent = 'ready, waiting for peer...';
+      return;
+    }
+
+    // Server tells us to create the offer (we are the offerer)
+    if (signal.type === 'start-offer') {
+      log('Server says: create offer');
+      if (pc) { pc.close(); pc = null; dataChannel = null; }
+      role = 'offerer';
+      document.getElementById('role').textContent = 'Offerer (initiator)';
+      document.getElementById('signalingStatus').textContent = 'connected';
+      startAsOfferer();
+      return;
+    }
+
+    log(`Received signal: ${signal.type}`);
+
+    if (signal.type === 'offer') {
+      if (pc) { pc.close(); pc = null; dataChannel = null; }
+      role = 'answerer';
+      document.getElementById('role').textContent = 'Answerer (responder)';
+      document.getElementById('signalingStatus').textContent = 'connected';
+      await handleOffer(signal);
+    } else if (signal.type === 'answer' && pc) {
+      await pc.setRemoteDescription(new RTCSessionDescription(signal));
+      drainPendingCandidates();
+    } else if (signal.type === 'candidate' && pc) {
+      if (signal.candidate) {
+        const candidate = new RTCIceCandidate(signal.candidate);
+        if (pc.remoteDescription) {
+          await pc.addIceCandidate(candidate);
+        } else {
+          pendingCandidates.push(candidate);
+        }
+        iceCount++;
+        updateCounters();
+      }
+    }
+  };
+
+  ws.onclose = () => {
+    document.getElementById('signalingStatus').textContent = 'disconnected';
+    log('Signaling disconnected');
+  };
+}
+
+function sendSignal(data) {
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify(data));
+    log(`Sent signal: ${data.type}`);
+  }
+}
+
+// --- WebRTC ---
+const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+let pendingCandidates = [];
+
+function createPC() {
+  pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      sendSignal({ type: 'candidate', candidate: event.candidate.toJSON() });
+      iceCount++;
+      updateCounters();
+    }
+  };
+
+  pc.onconnectionstatechange = () => {
+    log(`Connection state: ${pc.connectionState}`);
+    if (pc.connectionState === 'connected') {
+      // DataChannel onopen handles this
+    } else if (['disconnected', 'failed', 'closed'].includes(pc.connectionState)) {
+      setStatus('disconnected');
+      document.getElementById('sendBtn').disabled = true;
+      document.getElementById('msgInput').disabled = true;
+      document.getElementById('disconnectBtn').disabled = true;
+    }
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    log(`ICE state: ${pc.iceConnectionState}`);
+  };
+}
+
+function setupDataChannel(channel) {
+  dataChannel = channel;
+
+  channel.onopen = () => {
+    setStatus('connected');
+    log('DataChannel OPEN');
+    addMessage('DataChannel connected! You can now send messages.', 'system');
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('msgInput').disabled = false;
+    document.getElementById('disconnectBtn').disabled = false;
+    document.getElementById('msgInput').focus();
+  };
+
+  channel.onclose = () => {
+    setStatus('disconnected');
+    log('DataChannel CLOSED');
+    addMessage('DataChannel closed.', 'system');
+    document.getElementById('sendBtn').disabled = true;
+    document.getElementById('msgInput').disabled = true;
+  };
+
+  channel.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    recvCount++;
+    updateCounters();
+    addMessage(`${data.from}: ${data.text}`, 'received');
+    log(`Received message #${recvCount}: "${data.text}"`);
+  };
+
+  channel.onerror = (err) => {
+    log(`DataChannel error: ${err}`);
+  };
+}
+
+async function startAsOfferer() {
+  setStatus('connecting');
+  createPC();
+
+  const channel = pc.createDataChannel('styx', { ordered: true, protocol: 'styx-v1' });
+  setupDataChannel(channel);
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  sendSignal({ type: 'offer', sdp: offer.sdp });
+  log('Created and sent offer');
+}
+
+async function handleOffer(offer) {
+  setStatus('connecting');
+  createPC();
+
+  pc.ondatachannel = (event) => {
+    setupDataChannel(event.channel);
+  };
+
+  await pc.setRemoteDescription(new RTCSessionDescription(offer));
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  sendSignal({ type: 'answer', sdp: answer.sdp });
+  drainPendingCandidates();
+  log('Created and sent answer');
+}
+
+function drainPendingCandidates() {
+  for (const c of pendingCandidates) {
+    pc.addIceCandidate(c);
+  }
+  pendingCandidates = [];
+}
+
+// --- User actions ---
+function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const text = input.value.trim();
+  if (!text || !dataChannel || dataChannel.readyState !== 'open') return;
+
+  const msg = { from: browserName, text, ts: Date.now() };
+  dataChannel.send(JSON.stringify(msg));
+  sentCount++;
+  updateCounters();
+  addMessage(`You: ${text}`, 'sent');
+  log(`Sent message #${sentCount}: "${text}"`);
+  input.value = '';
+  input.focus();
+}
+
+function disconnect() {
+  if (dataChannel) dataChannel.close();
+  if (pc) pc.close();
+  setStatus('disconnected');
+  addMessage('You disconnected.', 'system');
+  log('Disconnected');
+  document.getElementById('sendBtn').disabled = true;
+  document.getElementById('msgInput').disabled = true;
+  document.getElementById('disconnectBtn').disabled = true;
+}
+
+// Enter key to send
+document.getElementById('msgInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') sendMessage();
+});
+
+// --- Start ---
+log(`Browser: ${browserName}`);
+log('Connecting to signaling server...');
+connectSignaling();
+</script>
+</body>
+</html>

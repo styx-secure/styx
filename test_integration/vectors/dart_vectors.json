@@ -1,0 +1,165 @@
+{
+  "identity": {
+    "privateKeyHex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+    "publicKeyHex": "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
+    "nodeId": "79b5562e"
+  },
+  "signing": {
+    "payload": "SGVsbG8sIFN0eXggaW50ZXJvcCE=",
+    "payloadUtf8": "Hello, Styx interop!",
+    "signatureHex": "0f876f61e53b86dca48c8b8af546a2e41dd9ec1fe09f3721c5bcd94aee1e1ae00230fb7eb4b7f6f71cfa1bbf17e563110fd6bf3baf3ccc921aec945e2b14a60e",
+    "signatureLength": 64,
+    "valid": true
+  },
+  "hashing": {
+    "input": "dGVzdCBkYXRhIGZvciBoYXNoaW5n",
+    "inputUtf8": "test data for hashing",
+    "sha256": "f7eb7961d8a233e6256d3a6257548bbb9293c3a08fb3574c88c7d6b429dbb9f5",
+    "chainHash": {
+      "previousHash": "baBjNSjeqgFE57BYMV8LdT7AuUUWOnK/lqDRgYD53g0=",
+      "previousHashHex": "6da0633528deaa0144e7b058315f0b753ec0b945163a72bf96a0d18180f9de0d",
+      "payload": "Y2hhaW4gcGF5bG9hZA==",
+      "result": "500e4f02e8f34223bd75d4035d4051620e5922ce5de7699e6b0ed88291ba7bdb"
+    },
+    "chainHashGenesis": {
+      "payload": "Y2hhaW4gcGF5bG9hZA==",
+      "result": "7c19cdf090d06ecc426c687cd4e25a88b171a83eed4383a96fbf940dbb0dd9d2"
+    },
+    "compositeHash": {
+      "segments": [
+        "c2VnbWVudC1vbmU=",
+        "c2VnbWVudC10d28=",
+        "c2VnbWVudC10aHJlZQ=="
+      ],
+      "segmentsUtf8": [
+        "segment-one",
+        "segment-two",
+        "segment-three"
+      ],
+      "result": "881a86d599cfdecb98bb2b509cb986b766935a545842a8c27b43af7b1b3d1a2c"
+    }
+  },
+  "hlc": {
+    "timestamp": "2026-01-15T10:30:00.000Z",
+    "counter": 42,
+    "nodeId": "a1b2c3d4",
+    "canonical": "2026-01-15T10:30:00.000Z-0042-a1b2c3d4",
+    "bytes": "MjAyNi0wMS0xNVQxMDozMDowMC4wMDBaLTAwNDItYTFiMmMzZDQ=",
+    "bytesHex": "323032362d30312d31355431303a33303a30302e3030305a2d303034322d6131623263336434"
+  },
+  "vectorClock": {
+    "a": 5,
+    "b": 3,
+    "total": 8,
+    "bytes": "AAAABQAAAAM=",
+    "bytesHex": "0000000500000003",
+    "json": {
+      "a": 5,
+      "b": 3
+    }
+  },
+  "vectorClockOps": {
+    "incrementA": {
+      "a": 6,
+      "b": 3
+    },
+    "incrementB": {
+      "a": 5,
+      "b": 4
+    },
+    "mergeWith": {
+      "a": 3,
+      "b": 7
+    },
+    "mergeResult": {
+      "a": 5,
+      "b": 7
+    }
+  },
+  "eventHash": {
+    "previousHash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+    "eventType": "transaction",
+    "payload": "eyJhbW91bnQiOiAxMDB9",
+    "payloadUtf8": "{\"amount\": 100}",
+    "hlcBytes": "MjAyNi0wMS0xNVQxMDozMDowMC4wMDBaLTAwNDItYTFiMmMzZDQ=",
+    "result": "229508b24baf2fd937498eb12999bdad602931b50880617561fa16dc378ab8ca"
+  },
+  "eventHashGenesis": {
+    "eventType": "transaction",
+    "payload": "eyJhbW91bnQiOiAxMDB9",
+    "hlcBytes": "MjAyNi0wMS0xNVQxMDozMDowMC4wMDBaLTAwNDItYTFiMmMzZDQ=",
+    "result": "89058985eb9f60be44a17dec6b074482599fe289874a1bbf885414d5b93622fc"
+  },
+  "shamir": {
+    "secret": "Kon/AGTIMks=",
+    "secretHex": "2a89ff0064c8324b",
+    "threshold": 2,
+    "totalShares": 3,
+    "shares": [
+      {
+        "index": 1,
+        "data": "MV92qNWyu80=",
+        "serialized": "styx-share-v1:1:MV92qNWyu80="
+      },
+      {
+        "index": 2,
+        "data": "HD72Sx08O1w=",
+        "serialized": "styx-share-v1:2:HD72Sx08O1w="
+      },
+      {
+        "index": 3,
+        "data": "B+h/46xGsto=",
+        "serialized": "styx-share-v1:3:B+h/46xGsto="
+      }
+    ],
+    "reconstructedFromShares_0_2": "2a89ff0064c8324b",
+    "reconstructionMatches": true
+  },
+  "qrPairing": {
+    "publicKeyHex": "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
+    "nonce": "AAoUHigyPEZQWmRueIKMlg==",
+    "relayHints": [
+      "wss://relay.example.com"
+    ],
+    "payload": "{\"pk\":\"79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664\",\"n\":\"AAoUHigyPEZQWmRueIKMlg==\",\"r\":[\"wss://relay.example.com\"]}",
+    "format": "json"
+  },
+  "spake2": {
+    "mnemonic": "abandon ability able about above absent",
+    "passwordHex": "6162616e646f6e206162696c6974792061626c652061626f75742061626f766520616273656e74",
+    "passwordFormat": "utf8(mnemonic.trim().toLowerCase())"
+  },
+  "mnemonicSeed": {
+    "mnemonic": "abandon ability able about above absent",
+    "seedHex": "bf2192b22d0b4d1ab682fc5b1e23904091c43b6e90026382c3cdcaa341b1f9572dd5bef66178a98c75ef4fcba557b00edf7beab317d99c56beb9366c6aace034",
+    "seedLength": 64,
+    "params": {
+      "hash": "HMAC-SHA512",
+      "iterations": 2048,
+      "dkLenBytes": 64,
+      "salt": "mnemonic"
+    }
+  },
+  "doubleCheck": {
+    "sessionKeyHex": "6841b27545a1131ee54c48f3cb102002d8ee49fc56eb19217b4a1af0a6d3358f",
+    "code": "579792",
+    "codeLength": 6
+  },
+  "_incompatibilities": {
+    "hlcCounter": "Dart=decimal padLeft(4,\"0\"), JS=hex padStart(4,\"0\")",
+    "qrFormat": "Dart=JSON, JS=binary base64",
+    "shamirSerialization": "Dart=styx-share-v1:index:base64, JS=base64(indexByte||data)",
+    "encryption": "Dart=ChaCha20-Poly1305 nonce=12, JS=XChaCha20-Poly1305 nonce=24",
+    "spake2Password": "Dart=utf8(mnemonic), JS=sha256(\"SPAKE2-P256-password\"||password)",
+    "spake2MessageFormat": "Dart=uncompressed(65 bytes), JS=compressed(33 bytes)",
+    "spake2Transcript": "Dart=SHA256(pA||pB||K), JS=SHA256(K||myPoint||peerPoint||password)",
+    "spake2Confirmation": "Dart=HMAC(confirmKey, roleByte||ourMsg||peerMsg), JS=HMAC(sessionKey, tagString)",
+    "mnemonicToSeed": "Dart=PBKDF2-SHA512 2048iter 64bytes salt=mnemonic, JS=PBKDF2-SHA256 100000iter 32bytes salt=styx-mnemonic-seed",
+    "hkdfInfo": "Dart=styx-transport-v1, JS=styx-send-a+orderedPubs"
+  },
+  "_meta": {
+    "generatedAt": "2026-03-21T11:00:09.686215Z",
+    "generator": "Dart (styx_crypto_core + styx_ledger_engine + styx)",
+    "dartSdkVersion": "3.10.8"
+  }
+}

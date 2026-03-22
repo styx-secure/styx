@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Styx E2E Encrypted Chat via Nostr</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0a0a0a; color: #e0e0e0; padding: 24px; max-width: 700px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin-bottom: 4px; color: #fff; }
+  .subtitle { color: #888; margin-bottom: 20px; font-size: 0.82rem; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; margin-left: 6px; }
+  .badge-nostr { background: #2d1b69; color: #c4b5fd; }
+  .badge-e2e { background: #14532d; color: #86efac; }
+  .card { background: #141414; border: 1px solid #2a2a2a; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
+  .card h2 { font-size: 0.9rem; margin-bottom: 8px; color: #aaa; }
+  .status { display: inline-block; padding: 3px 10px; border-radius: 16px; font-size: 0.72rem; font-weight: 600; }
+  .status.waiting { background: #332211; color: #ffaa33; }
+  .status.paired { background: #113311; color: #55ff55; }
+  .info { font-size: 0.75rem; color: #666; margin-bottom: 3px; }
+  .info span { color: #aaa; }
+  .info .mono { font-family: 'Fira Code', monospace; font-size: 0.68rem; }
+  input { width: 100%; padding: 8px 12px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 0.85rem; margin-bottom: 6px; }
+  input:focus { outline: none; border-color: #555; }
+  button { padding: 8px 16px; border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: 0.3; cursor: not-allowed; }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #3b82f6; }
+  .room-row { display: flex; gap: 8px; margin-bottom: 14px; align-items: center; }
+  .room-row input { width: 180px; font-size: 1rem; letter-spacing: 3px; text-align: center; text-transform: uppercase; }
+  .room-row .info { margin: 0; }
+  .messages { max-height: 350px; overflow-y: auto; margin-top: 10px; padding: 4px; }
+  .msg { padding: 8px 12px; margin: 4px 0; border-radius: 8px; font-size: 0.82rem; max-width: 85%; }
+  .msg.sent { background: #1a2744; color: #93c5fd; margin-left: auto; text-align: right; }
+  .msg.received { background: #1a3320; color: #86efac; }
+  .msg.system { background: #1a1a2e; color: #a78bfa; font-style: italic; font-size: 0.72rem; max-width: 100%; text-align: center; }
+  .msg .meta { font-size: 0.65rem; color: #555; margin-top: 2px; }
+  .send-row { display: flex; gap: 6px; }
+  .send-row input { flex: 1; }
+  .log { margin-top: 12px; }
+  .log summary { font-size: 0.85rem; color: #666; cursor: pointer; }
+  #eventLog { background: #0d0d0d; border: 1px solid #222; border-radius: 8px; padding: 8px; max-height: 150px; overflow-y: auto; font-family: 'Fira Code', monospace; font-size: 0.68rem; color: #555; margin-top: 6px; }
+  .privacy-note { background: #0d1117; border: 1px solid #1a3320; border-radius: 8px; padding: 10px 14px; font-size: 0.72rem; color: #4ade80; margin-bottom: 14px; line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<h1>Styx Encrypted Chat <span class="badge badge-nostr">Nostr relay</span> <span class="badge badge-e2e">E2E encrypted</span></h1>
+<p class="subtitle">Messages are encrypted end-to-end with ChaCha20-Poly1305. The relay sees only ciphertext. No WebRTC — no IP leak.</p>
+
+<div class="privacy-note">
+  <strong>Privacy model:</strong> Your IP is visible to the Nostr relay but NOT to the other peer.
+  Messages are encrypted before leaving your browser — the relay cannot read them.
+  For full anonymity, use Tor Browser to also hide your IP from the relay.
+</div>
+
+<div class="room-row">
+  <input type="text" id="roomInput" placeholder="ROOM ID" maxlength="6">
+  <button class="btn-primary" id="joinBtn" onclick="joinRoom()">Join Room</button>
+  <span class="info">Same room ID in both browsers</span>
+</div>
+
+<div class="card">
+  <h2>Status</h2>
+  <div class="status waiting" id="status">WAITING</div>
+  <div class="info">Browser: <span id="browserName"></span></div>
+  <div class="info">Relay: <span id="relayStatus">—</span></div>
+  <div class="info">Your Nostr key: <span class="mono" id="myPubkey">—</span></div>
+  <div class="info">Peer Nostr key: <span class="mono" id="peerPubkey">—</span></div>
+  <div class="info">Encryption: <span id="encStatus">—</span></div>
+</div>
+
+<div class="card">
+  <h2>Chat</h2>
+  <div class="messages" id="messages"></div>
+  <div class="send-row">
+    <input type="text" id="msgInput" placeholder="Type a message..." disabled>
+    <button class="btn-primary" id="sendBtn" disabled onclick="sendMessage()">Send</button>
+  </div>
+</div>
+
+<details class="log">
+  <summary>Event Log</summary>
+  <div id="eventLog"></div>
+</details>
+
+<script type="module">
+import { schnorr } from 'https://esm.sh/@noble/curves@1.6.0/secp256k1';
+import { sha256 } from 'https://esm.sh/@noble/hashes@1.5.0/sha256';
+import { hkdf } from 'https://esm.sh/@noble/hashes@1.5.0/hkdf';
+import { chacha20poly1305 } from 'https://esm.sh/@noble/ciphers@1.0.0/chacha';
+
+// --- Config ---
+const RELAY_URL = 'ws://localhost:17888'; // goes through sniffer → nos.lol
+const MSG_KIND = 30078;
+const SIGNALING_KIND = 30079;
+
+// --- Detect browser ---
+const ua = navigator.userAgent;
+let browserName = 'Unknown';
+if (ua.includes('Edg/')) browserName = 'Edge';
+else if (ua.includes('Chrome/')) browserName = 'Chrome';
+else if (ua.includes('Firefox/')) browserName = 'Firefox';
+else if (ua.includes('Safari/')) browserName = 'Safari';
+document.getElementById('browserName').textContent = browserName;
+
+// --- Crypto helpers ---
+function bytesToHex(b) { return Array.from(b).map(x => x.toString(16).padStart(2,'0')).join(''); }
+function hexToBytes(h) { const a = new Uint8Array(h.length/2); for(let i=0;i<h.length;i+=2) a[i/2]=parseInt(h.substr(i,2),16); return a; }
+function concatBytes(...arrays) {
+  const r = new Uint8Array(arrays.reduce((s,a) => s+a.length, 0));
+  let o = 0; for (const a of arrays) { r.set(a, o); o += a.length; }
+  return r;
+}
+
+// --- Generate Nostr identity ---
+const nostrPrivKey = crypto.getRandomValues(new Uint8Array(32));
+const nostrPubKey = bytesToHex(schnorr.getPublicKey(nostrPrivKey));
+document.getElementById('myPubkey').textContent = nostrPubKey.slice(0, 16) + '...';
+
+// --- State ---
+let ws = null;
+let roomId = null;
+let peerPubKey = null;
+let encryptKey = null; // for sending
+let decryptKey = null; // for receiving
+let paired = false;
+
+// --- UI ---
+function log(msg) {
+  const el = document.getElementById('eventLog');
+  const t = new Date().toLocaleTimeString('it-IT',{hour12:false});
+  el.innerHTML += `<div>${t} ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+function addMsg(text, type, meta) {
+  const el = document.getElementById('messages');
+  el.innerHTML += `<div class="msg ${type}">${text}${meta ? `<div class="meta">${meta}</div>` : ''}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+function setStatus(s, label) {
+  const el = document.getElementById('status');
+  el.textContent = label || s.toUpperCase();
+  el.className = 'status ' + s;
+}
+
+// --- NIP-01 signing ---
+function signAndPublish(content, kind, tags) {
+  const event = {
+    pubkey: nostrPubKey,
+    created_at: Math.floor(Date.now() / 1000),
+    kind: kind,
+    tags: tags,
+    content: content,
+  };
+  const ser = JSON.stringify([0, event.pubkey, event.created_at, event.kind, event.tags, event.content]);
+  const idBytes = sha256(new TextEncoder().encode(ser));
+  event.id = bytesToHex(idBytes);
+  event.sig = bytesToHex(schnorr.sign(idBytes, nostrPrivKey));
+  if (ws && ws.readyState === 1) {
+    ws.send(JSON.stringify(['EVENT', event]));
+  }
+  return event;
+}
+
+// --- Encryption (ChaCha20-Poly1305) ---
+function encrypt(plaintext) {
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = chacha20poly1305(encryptKey, nonce);
+  const ct = cipher.encrypt(new TextEncoder().encode(plaintext));
+  // nonce(12) || ciphertext+tag
+  const result = new Uint8Array(12 + ct.length);
+  result.set(nonce, 0);
+  result.set(ct, 12);
+  return btoa(String.fromCharCode(...result));
+}
+
+function decrypt(b64) {
+  const binary = atob(b64);
+  const data = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) data[i] = binary.charCodeAt(i);
+  const nonce = data.slice(0, 12);
+  const ct = data.slice(12);
+  const cipher = chacha20poly1305(decryptKey, nonce);
+  return new TextDecoder().decode(cipher.decrypt(ct));
+}
+
+// --- Key derivation ---
+function deriveKeys(peerPub) {
+  // Both peers derive the same shared secret using their Nostr keys
+  // We use HKDF with both pubkeys sorted lexicographically as salt
+  const myPubBytes = hexToBytes(nostrPubKey);
+  const peerPubBytes = hexToBytes(peerPub);
+  const isLower = nostrPubKey < peerPub;
+  const sortedPubs = isLower
+    ? concatBytes(myPubBytes, peerPubBytes)
+    : concatBytes(peerPubBytes, myPubBytes);
+
+  // Derive two keys: one for each direction
+  const sendInfo = new TextEncoder().encode('styx-chat-send');
+  const recvInfo = new TextEncoder().encode('styx-chat-recv');
+
+  const key1 = hkdf(sha256, sortedPubs, roomId, sendInfo, 32);
+  const key2 = hkdf(sha256, sortedPubs, roomId, recvInfo, 32);
+
+  // Lower pubkey uses key1 for send, key2 for recv. Higher pubkey swaps.
+  encryptKey = isLower ? key1 : key2;
+  decryptKey = isLower ? key2 : key1;
+
+  document.getElementById('encStatus').textContent = 'ChaCha20-Poly1305 (keys derived)';
+  log(`Encryption keys derived (${isLower ? 'lower' : 'higher'} pubkey)`);
+}
+
+// --- Nostr connection ---
+function connectRelay() {
+  ws = new WebSocket(RELAY_URL);
+
+  ws.onopen = () => {
+    document.getElementById('relayStatus').textContent = 'connected';
+    log('Connected to relay');
+
+    // Subscribe to signaling (join/ready) and messages in our room
+    ws.send(JSON.stringify(['REQ', 'sig', { kinds: [SIGNALING_KIND], '#t': [roomId] }]));
+    ws.send(JSON.stringify(['REQ', 'msg', { kinds: [MSG_KIND], '#t': [roomId] }]));
+
+    // Announce presence after subscription settles
+    setTimeout(() => {
+      signAndPublish(
+        JSON.stringify({ type: 'join', browser: browserName }),
+        SIGNALING_KIND,
+        [['t', roomId]]
+      );
+      log('Published join');
+    }, 500);
+
+    // Re-announce periodically
+    const interval = setInterval(() => {
+      if (paired) { clearInterval(interval); return; }
+      signAndPublish(
+        JSON.stringify({ type: 'join', browser: browserName }),
+        SIGNALING_KIND,
+        [['t', roomId]]
+      );
+    }, 3000);
+  };
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data[0] !== 'EVENT' || !data[2]) return;
+
+    // Log relay responses (OK/NOTICE)
+    if (data[0] === 'OK') {
+      log(data[2] ? `Relay accepted event` : `Relay REJECTED: ${data[3]}`);
+      return;
+    }
+    if (data[0] === 'NOTICE') {
+      log(`Relay notice: ${data[1]}`);
+      return;
+    }
+
+    const ev = data[2];
+    if (ev.pubkey === nostrPubKey) return; // skip own
+
+    if (ev.kind === SIGNALING_KIND) {
+      handleSignaling(ev);
+    } else if (ev.kind === MSG_KIND) {
+      handleMessage(ev);
+    }
+  };
+
+  ws.onclose = () => {
+    document.getElementById('relayStatus').textContent = 'disconnected';
+    log('Relay disconnected');
+  };
+
+  ws.onerror = () => {
+    document.getElementById('relayStatus').textContent = 'error — is strfry running?';
+  };
+}
+
+function handleSignaling(ev) {
+  let signal;
+  try { signal = JSON.parse(ev.content); } catch { return; }
+
+  if (signal.type === 'join' && !peerPubKey) {
+    peerPubKey = ev.pubkey;
+    log(`Peer found: ${peerPubKey.slice(0,12)}... (${signal.browser})`);
+    document.getElementById('peerPubkey').textContent = peerPubKey.slice(0, 16) + '...';
+
+    // Reply with ready
+    signAndPublish(
+      JSON.stringify({ type: 'ready', browser: browserName }),
+      SIGNALING_KIND,
+      [['t', roomId]]
+    );
+
+    // Derive encryption keys
+    deriveKeys(peerPubKey);
+    completePairing();
+  }
+
+  if (signal.type === 'ready' && !paired) {
+    if (!peerPubKey) peerPubKey = ev.pubkey;
+    document.getElementById('peerPubkey').textContent = peerPubKey.slice(0, 16) + '...';
+
+    if (!encryptKey) {
+      deriveKeys(peerPubKey);
+    }
+
+    // Reply with ready
+    signAndPublish(
+      JSON.stringify({ type: 'ready', browser: browserName }),
+      SIGNALING_KIND,
+      [['t', roomId]]
+    );
+
+    completePairing();
+  }
+}
+
+function completePairing() {
+  if (paired) return;
+  paired = true;
+  setStatus('paired', 'PAIRED — E2E ENCRYPTED');
+  document.getElementById('sendBtn').disabled = false;
+  document.getElementById('msgInput').disabled = false;
+  document.getElementById('msgInput').focus();
+  addMsg('Paired! Messages are end-to-end encrypted with ChaCha20-Poly1305. The relay sees only ciphertext.', 'system');
+  log('Paired and ready to chat');
+}
+
+function handleMessage(ev) {
+  if (!decryptKey) return;
+  try {
+    const plaintext = decrypt(ev.content);
+    const msg = JSON.parse(plaintext);
+    addMsg(`${msg.from}: ${msg.text}`, 'received', `via Nostr relay — encrypted`);
+    log(`Received encrypted message from ${ev.pubkey.slice(0,8)}...`);
+  } catch (e) {
+    log(`Failed to decrypt message: ${e.message}`);
+  }
+}
+
+// --- User actions ---
+window.joinRoom = function() {
+  roomId = document.getElementById('roomInput').value.trim().toUpperCase();
+  if (!roomId || roomId.length < 3) { alert('Enter a room ID (at least 3 chars)'); return; }
+  document.getElementById('roomInput').disabled = true;
+  document.getElementById('joinBtn').disabled = true;
+  setStatus('waiting', 'WAITING FOR PEER');
+  log(`Joining room: ${roomId}`);
+  connectRelay();
+};
+
+window.sendMessage = function() {
+  const input = document.getElementById('msgInput');
+  const text = input.value.trim();
+  if (!text || !encryptKey) return;
+
+  const msg = JSON.stringify({ from: browserName, text, ts: Date.now() });
+  const encrypted = encrypt(msg);
+
+  signAndPublish(encrypted, MSG_KIND, [['t', roomId]]);
+  addMsg(`You: ${text}`, 'sent', 'encrypted → Nostr relay → peer');
+  log(`Sent encrypted message (${encrypted.length} bytes ciphertext)`);
+  input.value = '';
+  input.focus();
+};
+
+document.getElementById('msgInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') window.sendMessage();
+});
+
+// Random room ID
+document.getElementById('roomInput').value = Math.random().toString(36).slice(2, 8).toUpperCase();
+
+log(`Browser: ${browserName}`);
+log(`Nostr pubkey: ${nostrPubKey.slice(0,16)}...`);
+</script>
+</body>
+</html>

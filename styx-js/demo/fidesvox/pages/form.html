@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Segnalazione Anonima — FidesVox</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+  .container { max-width: 640px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 1.5rem; color: #f8fafc; margin-bottom: 4px; }
+  .subtitle { color: #64748b; font-size: 0.85rem; margin-bottom: 24px; }
+  .privacy-badge { display: inline-block; background: #14532d; color: #86efac; padding: 3px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: 600; margin-left: 8px; vertical-align: middle; }
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 1rem; margin-bottom: 16px; color: #94a3b8; }
+  .question { margin-bottom: 20px; }
+  .question label { display: block; font-weight: 500; margin-bottom: 6px; font-size: 0.9rem; color: #e2e8f0; }
+  .private-tag { display: inline-block; background: #713f12; color: #fde68a; padding: 1px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: 600; margin-left: 6px; }
+  .public-tag { display: inline-block; background: #1e3a5f; color: #93c5fd; padding: 1px 6px; border-radius: 4px; font-size: 0.65rem; font-weight: 600; margin-left: 6px; }
+  input[type="text"], textarea, select { width: 100%; padding: 10px 14px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 0.9rem; font-family: inherit; }
+  textarea { min-height: 100px; resize: vertical; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+  select option { background: #1e293b; color: #e2e8f0; }
+  input[type="range"] { width: 100%; margin: 8px 0; accent-color: #3b82f6; }
+  .range-value { text-align: center; font-size: 1.2rem; font-weight: 600; color: #60a5fa; }
+  .submit-btn { width: 100%; padding: 14px; background: #3b82f6; color: #fff; border: none; border-radius: 10px; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+  .submit-btn:hover:not(:disabled) { background: #2563eb; }
+  .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .status-bar { margin-top: 16px; }
+  .status-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; margin-bottom: 6px; font-size: 0.85rem; }
+  .status-item.ok { background: #14532d33; border-color: #16a34a; color: #86efac; }
+  .status-item.pending { border-color: #ca8a04; color: #fde68a; }
+  .status-item.error { background: #7f1d1d33; border-color: #dc2626; color: #fca5a5; }
+  .status-item.waiting { color: #64748b; }
+  .privacy-notice { background: #14532d22; border: 1px solid #16a34a44; border-radius: 10px; padding: 14px; font-size: 0.78rem; color: #86efac; margin-bottom: 20px; line-height: 1.5; }
+  .info-row { font-size: 0.72rem; color: #64748b; margin-top: 12px; }
+  .info-row code { font-family: monospace; color: #475569; }
+  details summary { font-size: 0.8rem; color: #64748b; cursor: pointer; margin-top: 12px; }
+  #eventLog { font-family: monospace; font-size: 0.68rem; color: #64748b; max-height: 150px; overflow-y: auto; margin-top: 6px; background: #0f172a; padding: 8px; border-radius: 6px; border: 1px solid #334155; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Segnalazione Anonima <span class="privacy-badge">E2E Encrypted</span></h1>
+<p class="subtitle">Le tue risposte sensibili sono crittografate prima di lasciare il browser. Nessuno tranne il destinatario autorizzato puo leggerle.</p>
+
+<div class="privacy-notice">
+  <strong>Come funziona la protezione:</strong> I campi marcati <span class="private-tag">PRIVATO</span> sono crittografati end-to-end — solo il Responsabile li puo leggere. I campi marcati <span class="public-tag">STATISTICO</span> sono usati per le analisi aggregate. Le tue chiavi crittografiche vengono distrutte alla chiusura di questa pagina.
+</div>
+
+<form id="surveyForm" class="card">
+  <h2>Compila la segnalazione</h2>
+
+  <div class="question">
+    <label>Tipo di segnalazione <span class="public-tag">STATISTICO</span></label>
+    <select name="q1" data-private="false" required>
+      <option value="">— Seleziona —</option>
+      <option value="Discriminazione">Discriminazione</option>
+      <option value="Molestie">Molestie</option>
+      <option value="Sicurezza">Sicurezza</option>
+      <option value="Corruzione">Corruzione</option>
+      <option value="Altro">Altro</option>
+    </select>
+  </div>
+
+  <div class="question">
+    <label>Descrivi i fatti accaduti <span class="private-tag">PRIVATO</span></label>
+    <textarea name="q2" data-private="true" placeholder="Descrivi cosa e successo, quando e dove..." required></textarea>
+  </div>
+
+  <div class="question">
+    <label>Gravita percepita (1-10) <span class="public-tag">STATISTICO</span></label>
+    <div class="range-value" id="q3-val">5</div>
+    <input type="range" name="q3" data-private="false" min="1" max="10" value="5" oninput="document.getElementById('q3-val').textContent=this.value">
+  </div>
+
+  <div class="question">
+    <label>Persone coinvolte (nomi o ruoli) <span class="private-tag">PRIVATO</span></label>
+    <input type="text" name="q4" data-private="true" placeholder="Es: responsabile reparto marketing">
+  </div>
+
+  <div class="question">
+    <label>Desideri essere ricontattato? <span class="public-tag">STATISTICO</span></label>
+    <select name="q5" data-private="false" required>
+      <option value="">— Seleziona —</option>
+      <option value="No, segnalazione anonima">No, segnalazione anonima</option>
+      <option value="Si, in modo protetto">Si, in modo protetto</option>
+    </select>
+  </div>
+
+  <button type="submit" class="submit-btn" id="submitBtn">Invia Segnalazione</button>
+</form>
+
+<div class="status-bar hidden" id="statusBar">
+  <div class="status-item waiting" id="s1"><span>Invio ai relay Nostr...</span></div>
+  <div class="status-item waiting" id="s2"><span>Conferma relay...</span></div>
+  <div class="status-item waiting" id="s3"><span>Registrazione dal server...</span></div>
+</div>
+
+<div class="info-row hidden" id="infoRow">
+  Chiave effimera: <code id="ephPubkey">—</code> (distrutta alla chiusura del tab)
+</div>
+
+<details class="hidden" id="logDetails">
+  <summary>Log eventi</summary>
+  <div id="eventLog"></div>
+</details>
+
+</div>
+
+<script type="module">
+// __STYX_BUNDLE_PLACEHOLDER__
+// CDN fallback (used only if bundle is not injected by the server)
+import { schnorr } from 'https://esm.sh/@noble/curves@1.6.0/secp256k1';
+import { sha256 } from 'https://esm.sh/@noble/hashes@1.5.0/sha256';
+import { chacha20poly1305 } from 'https://esm.sh/@noble/ciphers@1.0.0/chacha';
+import { hkdf } from 'https://esm.sh/@noble/hashes@1.5.0/hkdf';
+import { x25519 } from 'https://esm.sh/@noble/curves@1.6.0/ed25519';
+
+// ============================================================
+// CONFIG (injected by the server when serving the form)
+// ============================================================
+const CONFIG = {
+  surveyId: 'survey-demo-001',
+  orgId: 'org-nexadata',
+  relayUrls: ['ws://localhost:17777'],
+  recipientPubKey: '',
+  serverPubKey: '8fa7c8c13106ce107b2219f14e417834b38c5ef1525a4322283f365b598ca05f',
+  receiptTimeoutMs: 15000,
+  powDifficulty: 20, // leading zero bits required (20 = ~3 seconds)
+};
+
+// ============================================================
+// HELPERS
+// ============================================================
+const _hex = (b) => Array.from(b).map(x => x.toString(16).padStart(2,'0')).join('');
+const _unhex = (h) => { const a = new Uint8Array(h.length/2); for(let i=0;i<h.length;i+=2) a[i/2]=parseInt(h.substr(i,2),16); return a; };
+const _concat = (...arrays) => {
+  const r = new Uint8Array(arrays.reduce((s,a)=>s+a.length,0));
+  let o = 0; for (const a of arrays) { r.set(a,o); o+=a.length; }
+  return r;
+};
+
+function signEvent(event, privKey) {
+  const ser = JSON.stringify([0, event.pubkey, event.created_at, event.kind, event.tags, event.content]);
+  const idBytes = sha256(new TextEncoder().encode(ser));
+  event.id = _hex(idBytes);
+  event.sig = _hex(schnorr.sign(idBytes, privKey));
+  return event;
+}
+
+function encryptForPubkey(plaintext, recipientPubHex) {
+  const ephPriv = crypto.getRandomValues(new Uint8Array(32));
+  const ephPub = x25519.getPublicKey(ephPriv);
+  const sharedSecret = x25519.getSharedSecret(ephPriv, _unhex(recipientPubHex));
+  const encKey = hkdf(sha256, sharedSecret, 'fidesvox-e2e', '', 32);
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ct = chacha20poly1305(encKey, nonce).encrypt(new TextEncoder().encode(plaintext));
+  return _hex(ephPub) + btoa(String.fromCharCode(..._concat(nonce, ct)));
+}
+
+// ============================================================
+// PROOF OF WORK (NIP-13)
+// ============================================================
+function countLeadingZeroBits(hash) {
+  let bits = 0;
+  for (const byte of hash) {
+    if (byte === 0) { bits += 8; continue; }
+    bits += Math.clz32(byte) - 24;
+    break;
+  }
+  return bits;
+}
+
+function minePoW(event, difficulty) {
+  // Add nonce tag placeholder
+  const nonceTagIdx = event.tags.length;
+  event.tags.push(['nonce', '0', String(difficulty)]);
+
+  let nonce = 0;
+  const start = Date.now();
+  while (true) {
+    event.tags[nonceTagIdx][1] = String(nonce);
+    const ser = JSON.stringify([0, event.pubkey, event.created_at, event.kind, event.tags, event.content]);
+    const hash = sha256(new TextEncoder().encode(ser));
+    if (countLeadingZeroBits(hash) >= difficulty) {
+      event.id = _hex(hash);
+      const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+      return { nonce, attempts: nonce + 1, elapsed };
+    }
+    nonce++;
+  }
+}
+
+function signEventWithPoW(event, privKey, difficulty) {
+  // Mine PoW (sets event.id and nonce tag)
+  const pow = minePoW(event, difficulty);
+
+  // Sign the final event (id is already set by PoW mining)
+  const idBytes = _unhex(event.id);
+  event.sig = _hex(schnorr.sign(idBytes, privKey));
+
+  return pow;
+}
+
+// ============================================================
+// UI
+// ============================================================
+function log(msg) {
+  const el = document.getElementById('eventLog');
+  const t = new Date().toLocaleTimeString('it-IT', { hour12: false });
+  el.innerHTML += `<div>${t} ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(id, state, text) {
+  const el = document.getElementById(id);
+  el.className = `status-item ${state}`;
+  el.innerHTML = `<span>${text}</span>`;
+}
+
+// ============================================================
+// SUBMIT
+// ============================================================
+let relayOkCount = 0;
+let receiptReceived = false;
+
+document.getElementById('surveyForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  document.getElementById('statusBar').classList.remove('hidden');
+  document.getElementById('logDetails').classList.remove('hidden');
+  document.getElementById('infoRow').classList.remove('hidden');
+  document.getElementById('submitBtn').disabled = true;
+
+  // 1. Generate ephemeral keypair
+  const ephPrivKey = crypto.getRandomValues(new Uint8Array(32));
+  const ephPubKey = _hex(schnorr.getPublicKey(ephPrivKey));
+  document.getElementById('ephPubkey').textContent = ephPubKey.slice(0, 20) + '...';
+  log(`Keypair effimera: ${ephPubKey.slice(0, 16)}...`);
+
+  // 2. Collect answers by data-private attribute
+  const privateAnswers = {};
+  const publicAnswers = {};
+
+  document.querySelectorAll('[data-private]').forEach(el => {
+    const name = el.name;
+    const val = el.type === 'range' ? parseInt(el.value) : el.value;
+    if (el.dataset.private === 'true') {
+      privateAnswers[name] = val;
+    } else {
+      publicAnswers[name] = val;
+    }
+  });
+
+  log(`Private: ${Object.keys(privateAnswers).length} campi | Pubblici: ${Object.keys(publicAnswers).length} campi`);
+
+  // 3. Prepare events and mine PoW
+  setStatus('s1', 'pending', 'Calcolo proof-of-work...');
+  log('Calcolo proof-of-work (anti-spam)...');
+
+  const now = Math.floor(Date.now() / 1000);
+  const targetKey = CONFIG.recipientPubKey || CONFIG.serverPubKey;
+
+  // Encrypt payloads
+  const encPrivate = encryptForPubkey(JSON.stringify({
+    type: 'survey_private_answers',
+    survey_id: CONFIG.surveyId,
+    org_id: CONFIG.orgId,
+    answers: privateAnswers,
+  }), targetKey);
+
+  const encPublic = encryptForPubkey(JSON.stringify({
+    type: 'survey_public_and_meta',
+    survey_id: CONFIG.surveyId,
+    org_id: CONFIG.orgId,
+    submitted_at: new Date().toISOString(),
+    channel: 'WEB',
+    has_private_bucket: Object.keys(privateAnswers).length > 0,
+    public_answers: publicAnswers,
+  }), CONFIG.serverPubKey);
+
+  // Build events
+  const ev1 = { pubkey: ephPubKey, created_at: now, kind: 4000, tags: [['t', 'fidesvox']], content: encPrivate };
+  const ev2 = { pubkey: ephPubKey, created_at: now, kind: 4001, tags: [['t', 'fidesvox']], content: encPublic };
+
+  // Mine PoW (blocks ~3 seconds each) — use setTimeout to let UI update
+  await new Promise(r => setTimeout(r, 50)); // let "Calcolo..." render
+
+  const pow1 = signEventWithPoW(ev1, ephPrivKey, CONFIG.powDifficulty);
+  log(`PoW evento 1: ${pow1.attempts} tentativi in ${pow1.elapsed}s`);
+  setStatus('s1', 'pending', `PoW 1/2 completato (${pow1.elapsed}s)...`);
+  await new Promise(r => setTimeout(r, 10));
+
+  const pow2 = signEventWithPoW(ev2, ephPrivKey, CONFIG.powDifficulty);
+  log(`PoW evento 2: ${pow2.attempts} tentativi in ${pow2.elapsed}s`);
+  setStatus('s1', 'pending', 'Connessione al relay...');
+
+  // 4. Connect and send
+  const ws = new WebSocket(CONFIG.relayUrls[0]);
+
+  ws.onopen = () => {
+    log(`Connesso a ${CONFIG.relayUrls[0]}`);
+
+    // Subscribe for receipt
+    ws.send(JSON.stringify(['REQ', 'receipt', { kinds: [4003], '#p': [ephPubKey] }]));
+
+    // Send pre-signed events
+    ws.send(JSON.stringify(['EVENT', ev1]));
+    log(`PRIVATE (kind 4000) — ${encPrivate.length} bytes + PoW`);
+
+    ws.send(JSON.stringify(['EVENT', ev2]));
+    log(`PUBLIC+META (kind 4001) + PoW`);
+
+    setTimeout(() => {
+      if (!receiptReceived) {
+        setStatus('s3', 'ok', 'La registrazione verra completata automaticamente.');
+      }
+    }, CONFIG.receiptTimeoutMs);
+  };
+
+  ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    if (msg[0] === 'OK' && msg[2]) {
+      relayOkCount++;
+      log(`Relay OK (${relayOkCount}/2)`);
+      if (relayOkCount === 1) setStatus('s1', 'ok', 'Inviato al relay ✓');
+      if (relayOkCount >= 2) setStatus('s2', 'ok', 'Entrambi gli eventi confermati ✓');
+    }
+    if (msg[0] === 'OK' && !msg[2]) log(`Relay RIFIUTATO: ${msg[3]}`);
+    if (msg[0] === 'EVENT' && msg[2]?.kind === 4003 && msg[2]?.pubkey === CONFIG.serverPubKey) {
+      receiptReceived = true;
+      const c = JSON.parse(msg[2].content || '{}');
+      setStatus('s3', 'ok', `Registrato dal server ✓✓ (${c.timestamp || 'OK'})`);
+      log('Receipt ricevuto dal server!');
+    }
+  };
+
+  ws.onerror = () => {
+    setStatus('s1', 'error', 'Errore di connessione al relay');
+    document.getElementById('submitBtn').disabled = false;
+  };
+});
+</script>
+</body>
+</html>

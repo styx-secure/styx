@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head><title>Styx WebRTC Test Peer</title></head>
+<body>
+<script type="module">
+// Inline WebRTC transport logic (no build step needed)
+// This is a minimal version of WebRTCTransport for testing
+
+const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+class TestPeer {
+  constructor() {
+    this.pc = null;
+    this.dataChannel = null;
+    this.state = 'disconnected';
+    this.received = [];
+    this.signalQueue = [];
+    this._resolveSignal = null;
+  }
+
+  async createOffer() {
+    this.pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    this._setupIce();
+
+    this.dataChannel = this.pc.createDataChannel('styx', {
+      ordered: true,
+      protocol: 'styx-v1',
+    });
+    this._setupDataChannel(this.dataChannel);
+
+    const offer = await this.pc.createOffer();
+    await this.pc.setLocalDescription(offer);
+    this.state = 'connecting';
+    return { type: 'offer', sdp: offer.sdp };
+  }
+
+  async handleOffer(offer) {
+    this.pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    this._setupIce();
+
+    this.pc.ondatachannel = (event) => {
+      this.dataChannel = event.channel;
+      this._setupDataChannel(this.dataChannel);
+    };
+
+    await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
+    const answer = await this.pc.createAnswer();
+    await this.pc.setLocalDescription(answer);
+    this.state = 'connecting';
+    return { type: 'answer', sdp: answer.sdp };
+  }
+
+  async handleAnswer(answer) {
+    await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
+  }
+
+  async addCandidate(candidate) {
+    if (candidate && this.pc) {
+      await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+    }
+  }
+
+  getCandidate() {
+    if (this.signalQueue.length > 0) {
+      return this.signalQueue.shift();
+    }
+    return new Promise((resolve) => {
+      this._resolveSignal = resolve;
+    });
+  }
+
+  send(data) {
+    if (this.dataChannel && this.dataChannel.readyState === 'open') {
+      this.dataChannel.send(JSON.stringify(data));
+      return true;
+    }
+    return false;
+  }
+
+  disconnect() {
+    if (this.dataChannel) this.dataChannel.close();
+    if (this.pc) this.pc.close();
+    this.state = 'disconnected';
+  }
+
+  _setupIce() {
+    this.pc.onicecandidate = (event) => {
+      const candidate = event.candidate ? event.candidate.toJSON() : null;
+      if (this._resolveSignal) {
+        this._resolveSignal(candidate);
+        this._resolveSignal = null;
+      } else {
+        this.signalQueue.push(candidate);
+      }
+    };
+
+    this.pc.onconnectionstatechange = () => {
+      if (this.pc.connectionState === 'connected') {
+        // DataChannel onopen will set state
+      } else if (['disconnected', 'failed', 'closed'].includes(this.pc.connectionState)) {
+        this.state = 'disconnected';
+      }
+    };
+  }
+
+  _setupDataChannel(channel) {
+    channel.onopen = () => { this.state = 'connected'; };
+    channel.onclose = () => { this.state = 'disconnected'; };
+    channel.onmessage = (event) => {
+      this.received.push(JSON.parse(event.data));
+    };
+  }
+}
+
+// Expose to Playwright
+window.__peer = new TestPeer();
+window.__ready = true;
+</script>
+</body>
+</html>

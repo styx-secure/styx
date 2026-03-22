@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Styx WebRTC via Nostr Relay</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0a0a0a; color: #e0e0e0; padding: 24px; max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; margin-bottom: 4px; color: #fff; }
+  .subtitle { color: #888; margin-bottom: 20px; font-size: 0.85rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .card { background: #141414; border: 1px solid #2a2a2a; border-radius: 12px; padding: 16px; }
+  .card h2 { font-size: 0.95rem; margin-bottom: 10px; color: #aaa; }
+  .status { display: inline-block; padding: 3px 10px; border-radius: 16px; font-size: 0.75rem; font-weight: 600; margin-bottom: 10px; }
+  .status.disconnected { background: #331111; color: #ff5555; }
+  .status.connecting { background: #332211; color: #ffaa33; }
+  .status.connected { background: #113311; color: #55ff55; }
+  .info { font-size: 0.78rem; color: #666; margin-bottom: 4px; }
+  .info span { color: #aaa; }
+  input { width: 100%; padding: 8px 12px; background: #1a1a1a; border: 1px solid #333; border-radius: 8px; color: #fff; font-size: 0.85rem; margin-bottom: 6px; }
+  input:focus { outline: none; border-color: #555; }
+  button { padding: 8px 16px; border: none; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: 0.3; cursor: not-allowed; }
+  .btn-primary { background: #2563eb; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #3b82f6; }
+  .btn-danger { background: #dc2626; color: #fff; margin-left: 8px; }
+  .messages { max-height: 250px; overflow-y: auto; margin-top: 10px; }
+  .msg { padding: 6px 10px; margin: 3px 0; border-radius: 6px; font-size: 0.8rem; }
+  .msg.sent { background: #1a2744; color: #93c5fd; text-align: right; }
+  .msg.received { background: #1a3320; color: #86efac; }
+  .msg.system { background: #1a1a2e; color: #a78bfa; font-style: italic; font-size: 0.75rem; }
+  .log { margin-top: 16px; }
+  .log h2 { font-size: 0.95rem; color: #aaa; margin-bottom: 6px; }
+  #eventLog { background: #0d0d0d; border: 1px solid #222; border-radius: 8px; padding: 10px; max-height: 180px; overflow-y: auto; font-family: 'Fira Code', monospace; font-size: 0.7rem; color: #666; }
+  .room-input { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; }
+  .room-input input { width: 200px; font-size: 1.1rem; letter-spacing: 4px; text-align: center; text-transform: uppercase; }
+  .room-input .info { margin: 0; }
+  .nostr-badge { display: inline-block; background: #2d1b69; color: #c4b5fd; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; margin-left: 8px; }
+</style>
+</head>
+<body>
+
+<h1>Styx WebRTC via Nostr <span class="nostr-badge">strfry relay</span></h1>
+<p class="subtitle">Signaling via Nostr relay (NIP-01 signed events). No server needed — browsers talk directly to strfry.</p>
+
+<div class="room-input">
+  <input type="text" id="roomInput" placeholder="ROOM ID" maxlength="6" value="">
+  <button class="btn-primary" id="joinBtn" onclick="joinRoom()">Join Room</button>
+  <span class="info">Enter the same room ID in both browsers</span>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Connection</h2>
+    <div class="status disconnected" id="status">DISCONNECTED</div>
+    <div class="info">Browser: <span id="browserName"></span></div>
+    <div class="info">Nostr relay: <span id="relayStatus">not connected</span></div>
+    <div class="info">Nostr pubkey: <span id="nostrPubkey" style="font-family:monospace;font-size:0.7rem">—</span></div>
+    <div class="info">Role: <span id="role">—</span></div>
+    <div class="info">ICE candidates: <span id="iceCount">0</span></div>
+    <br>
+    <button class="btn-danger" id="disconnectBtn" disabled onclick="doDisconnect()">Disconnect</button>
+  </div>
+  <div class="card">
+    <h2>Chat</h2>
+    <input type="text" id="msgInput" placeholder="Type a message..." disabled>
+    <button class="btn-primary" id="sendBtn" disabled onclick="sendMessage()">Send</button>
+    <div class="messages" id="messages"></div>
+  </div>
+</div>
+
+<div class="log">
+  <h2>Event Log</h2>
+  <div id="eventLog"></div>
+</div>
+
+<script type="module">
+import { schnorr } from 'https://esm.sh/@noble/curves@1.6.0/secp256k1';
+import { sha256 } from 'https://esm.sh/@noble/hashes@1.5.0/sha256';
+
+// --- Detect browser ---
+const ua = navigator.userAgent;
+let browserName = 'Unknown';
+if (ua.includes('Edg/')) browserName = 'Edge';
+else if (ua.includes('Chrome/')) browserName = 'Chrome';
+else if (ua.includes('Firefox/')) browserName = 'Firefox';
+else if (ua.includes('Safari/')) browserName = 'Safari';
+document.getElementById('browserName').textContent = browserName;
+
+// --- Config ---
+const RELAY_URL = 'ws://localhost:17777';
+const SIGNALING_KIND = 30079;
+const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
+
+// --- State ---
+let nostrPrivKey, nostrPubKey;
+let relayWs = null;
+let pc = null;
+let dataChannel = null;
+let roomId = null;
+let subscriptionId = null;
+let pendingCandidates = [];
+let iceCount = 0;
+let role = null;
+let peerPubKey = null;
+let peerReady = false;
+let weReady = false;
+
+// --- Generate Nostr keypair ---
+const privBytes = crypto.getRandomValues(new Uint8Array(32));
+nostrPrivKey = privBytes;
+nostrPubKey = bytesToHex(schnorr.getPublicKey(privBytes));
+document.getElementById('nostrPubkey').textContent = nostrPubKey.slice(0, 16) + '...';
+
+// --- Helpers ---
+function bytesToHex(b) { return Array.from(b).map(x => x.toString(16).padStart(2,'0')).join(''); }
+function hexToBytes(h) { const a = new Uint8Array(h.length/2); for(let i=0;i<h.length;i+=2) a[i/2]=parseInt(h.substr(i,2),16); return a; }
+
+function log(msg) {
+  const el = document.getElementById('eventLog');
+  const t = new Date().toLocaleTimeString('it-IT',{hour12:false});
+  el.innerHTML += `<div>${t} ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function addMsg(text, type) {
+  const el = document.getElementById('messages');
+  el.innerHTML += `<div class="msg ${type}">${text}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(s) {
+  const el = document.getElementById('status');
+  el.textContent = s.toUpperCase();
+  el.className = 'status ' + s;
+}
+
+// --- NIP-01 event signing ---
+function createNostrEvent(content, tags) {
+  const event = {
+    pubkey: nostrPubKey,
+    created_at: Math.floor(Date.now() / 1000),
+    kind: SIGNALING_KIND,
+    tags: tags,
+    content: content,
+  };
+  const serialized = JSON.stringify([0, event.pubkey, event.created_at, event.kind, event.tags, event.content]);
+  const encoder = new TextEncoder();
+  const idBytes = sha256(encoder.encode(serialized));
+  event.id = bytesToHex(idBytes);
+  const sigBytes = schnorr.sign(idBytes, nostrPrivKey);
+  event.sig = bytesToHex(sigBytes);
+  return event;
+}
+
+function publishEvent(content, extraTags = []) {
+  const tags = [['t', roomId], ...extraTags];
+  const event = createNostrEvent(content, tags);
+  if (relayWs && relayWs.readyState === 1) {
+    relayWs.send(JSON.stringify(['EVENT', event]));
+    log(`Published: ${JSON.parse(content).type}`);
+  }
+}
+
+// --- Nostr relay connection ---
+function connectRelay() {
+  relayWs = new WebSocket(RELAY_URL);
+
+  relayWs.onopen = () => {
+    document.getElementById('relayStatus').textContent = 'connected';
+    log('Connected to Nostr relay');
+
+    // Subscribe to signaling events in our room
+    subscriptionId = 'sig-' + Math.random().toString(36).slice(2, 8);
+    const filter = { kinds: [SIGNALING_KIND], '#t': [roomId] };
+    relayWs.send(JSON.stringify(['REQ', subscriptionId, filter]));
+    log(`Subscribed to room "${roomId}"`);
+
+    // Announce presence — repeat every 2s until peer is found
+    weReady = true;
+    const announceInterval = setInterval(() => {
+      if (peerReady) { clearInterval(announceInterval); return; }
+      publishEvent(JSON.stringify({ type: 'join', browser: browserName }));
+    }, 2000);
+    // Also announce immediately after a short delay for subscription to settle
+    setTimeout(() => {
+      publishEvent(JSON.stringify({ type: 'join', browser: browserName }));
+    }, 500);
+  };
+
+  relayWs.onmessage = async (event) => {
+    const data = JSON.parse(event.data);
+    if (data[0] !== 'EVENT' || !data[2]) return;
+
+    const nostrEvent = data[2];
+    // Skip our own events
+    if (nostrEvent.pubkey === nostrPubKey) return;
+
+    let signal;
+    try { signal = JSON.parse(nostrEvent.content); } catch { return; }
+
+    log(`Received: ${signal.type} from ${nostrEvent.pubkey.slice(0,8)}...`);
+
+    switch (signal.type) {
+      case 'join':
+        // Peer announced — remember them and reply with 'ready'
+        if (!peerPubKey) {
+          peerPubKey = nostrEvent.pubkey;
+          log(`Peer found: ${peerPubKey.slice(0,8)}... (${signal.browser})`);
+        }
+        peerReady = true;
+        // Tell peer we're here too
+        publishEvent(JSON.stringify({ type: 'ready', browser: browserName }));
+        break;
+
+      case 'ready':
+        // Peer confirmed they see us — now both sides know each other
+        if (!peerPubKey) peerPubKey = nostrEvent.pubkey;
+        peerReady = true;
+        log(`Peer ready: ${nostrEvent.pubkey.slice(0,8)}...`);
+
+        // Reply with ready so the other side also knows we're here
+        if (!role) {
+          publishEvent(JSON.stringify({ type: 'ready', browser: browserName }));
+        }
+
+        // The peer with the lexicographically lower pubkey creates the offer
+        if (!pc && !role && nostrPubKey < peerPubKey) {
+          role = 'offerer';
+          document.getElementById('role').textContent = 'Offerer (initiator)';
+          log('We have the lower pubkey — creating offer...');
+          await startAsOfferer();
+        } else if (!role) {
+          role = 'answerer-waiting';
+          document.getElementById('role').textContent = 'Answerer (waiting for offer...)';
+          log('We have the higher pubkey — waiting for offer...');
+        }
+        break;
+
+      case 'offer':
+        if (!pc || role === 'answerer-waiting') {
+          if (pc) { pc.close(); pc = null; }
+          role = 'answerer';
+          document.getElementById('role').textContent = 'Answerer (responder)';
+          await handleOffer(signal);
+        }
+        break;
+
+      case 'answer':
+        if (pc) {
+          await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp: signal.sdp }));
+          drainPending();
+          // Add candidates from the answer
+          if (signal.candidates) {
+            for (const c of signal.candidates) {
+              await pc.addIceCandidate(new RTCIceCandidate(c));
+              log(`Added remote candidate from answer`);
+            }
+          }
+        }
+        break;
+    }
+  };
+
+  relayWs.onclose = () => {
+    document.getElementById('relayStatus').textContent = 'disconnected';
+    log('Relay disconnected');
+  };
+
+  relayWs.onerror = () => {
+    document.getElementById('relayStatus').textContent = 'error';
+    log('Relay connection error — is strfry running on localhost:17777?');
+  };
+}
+
+// --- WebRTC ---
+let iceCandidates = [];
+let iceGatheringDone = null; // resolve function
+
+function waitForIceGathering() {
+  return new Promise(resolve => { iceGatheringDone = resolve; });
+}
+
+function createPC() {
+  pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  iceCandidates = [];
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      iceCandidates.push(e.candidate.toJSON());
+      iceCount++;
+      document.getElementById('iceCount').textContent = iceCount;
+    } else {
+      // null candidate = ICE gathering complete
+      log(`ICE gathering complete (${iceCandidates.length} candidates)`);
+      if (iceGatheringDone) iceGatheringDone();
+    }
+  };
+
+  pc.onconnectionstatechange = () => {
+    log(`Connection: ${pc.connectionState}`);
+    if (['disconnected','failed','closed'].includes(pc.connectionState)) {
+      setStatus('disconnected');
+      document.getElementById('sendBtn').disabled = true;
+      document.getElementById('msgInput').disabled = true;
+    }
+  };
+}
+
+function setupDC(channel) {
+  dataChannel = channel;
+  channel.onopen = () => {
+    setStatus('connected');
+    log('DataChannel OPEN');
+    addMsg('Connected via WebRTC! Signaling was via Nostr relay.', 'system');
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('msgInput').disabled = false;
+    document.getElementById('disconnectBtn').disabled = false;
+    document.getElementById('msgInput').focus();
+  };
+  channel.onclose = () => {
+    setStatus('disconnected');
+    addMsg('DataChannel closed.', 'system');
+  };
+  channel.onmessage = (e) => {
+    const d = JSON.parse(e.data);
+    addMsg(`${d.from}: ${d.text}`, 'received');
+  };
+}
+
+async function startAsOfferer() {
+  setStatus('connecting');
+  createPC();
+  const ch = pc.createDataChannel('styx', { ordered: true, protocol: 'styx-v1' });
+  setupDC(ch);
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  // Wait for all ICE candidates to be gathered
+  await waitForIceGathering();
+
+  // Send offer with all candidates embedded
+  publishEvent(JSON.stringify({
+    type: 'offer',
+    sdp: offer.sdp,
+    candidates: iceCandidates,
+  }));
+}
+
+async function handleOffer(signal) {
+  setStatus('connecting');
+  createPC();
+  pc.ondatachannel = (e) => setupDC(e.channel);
+
+  await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: signal.sdp }));
+
+  // Add candidates from the offer
+  if (signal.candidates) {
+    for (const c of signal.candidates) {
+      await pc.addIceCandidate(new RTCIceCandidate(c));
+      log(`Added remote candidate from offer`);
+    }
+  }
+
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+
+  // Wait for our ICE candidates
+  await waitForIceGathering();
+
+  publishEvent(JSON.stringify({
+    type: 'answer',
+    sdp: answer.sdp,
+    candidates: iceCandidates,
+  }));
+  drainPending();
+}
+
+function drainPending() {
+  for (const c of pendingCandidates) pc.addIceCandidate(c);
+  pendingCandidates = [];
+}
+
+// --- User actions ---
+window.joinRoom = function() {
+  const input = document.getElementById('roomInput');
+  roomId = input.value.trim().toUpperCase();
+  if (!roomId || roomId.length < 3) {
+    alert('Enter a room ID (at least 3 characters)');
+    return;
+  }
+  input.disabled = true;
+  document.getElementById('joinBtn').disabled = true;
+  log(`Joining room: ${roomId}`);
+  connectRelay();
+};
+
+window.sendMessage = function() {
+  const input = document.getElementById('msgInput');
+  const text = input.value.trim();
+  if (!text || !dataChannel || dataChannel.readyState !== 'open') return;
+  dataChannel.send(JSON.stringify({ from: browserName, text, ts: Date.now() }));
+  addMsg(`You: ${text}`, 'sent');
+  input.value = '';
+  input.focus();
+};
+
+window.doDisconnect = function() {
+  if (dataChannel) dataChannel.close();
+  if (pc) pc.close();
+  setStatus('disconnected');
+  addMsg('Disconnected.', 'system');
+  document.getElementById('sendBtn').disabled = true;
+  document.getElementById('msgInput').disabled = true;
+  document.getElementById('disconnectBtn').disabled = true;
+};
+
+document.getElementById('msgInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') window.sendMessage();
+});
+
+// Generate a random room ID suggestion
+document.getElementById('roomInput').value = Math.random().toString(36).slice(2, 8).toUpperCase();
+
+log(`Browser: ${browserName}`);
+log(`Nostr pubkey: ${nostrPubKey.slice(0,16)}...`);
+log('Enter a Room ID and click Join (use the same ID in both browsers)');
+</script>
+</body>
+</html>

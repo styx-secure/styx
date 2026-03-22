@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard RPG — FidesVox</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+
+  /* Header */
+  .header { background: #1e293b; border-bottom: 1px solid #334155; padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 1.15rem; color: #f8fafc; }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .header-right .email { font-size: 0.82rem; color: #94a3b8; }
+  .btn-logout { background: #334155; color: #e2e8f0; border: none; padding: 6px 14px; border-radius: 6px; font-size: 0.8rem; cursor: pointer; }
+  .btn-logout:hover { background: #475569; }
+
+  /* Main */
+  .main { max-width: 900px; margin: 0 auto; padding: 24px; }
+
+  /* Cards */
+  .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  .card h2 { font-size: 1rem; color: #f1f5f9; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.68rem; font-weight: 600; }
+  .badge-green { background: #14532d; color: #86efac; }
+  .badge-yellow { background: #713f12; color: #fde68a; }
+  .badge-blue { background: #1e3a5f; color: #93c5fd; }
+
+  /* Keypair */
+  .keypair-info { font-size: 0.85rem; color: #94a3b8; }
+  .keypair-info code { font-family: 'SF Mono', 'Fira Code', monospace; background: #0f172a; padding: 2px 6px; border-radius: 4px; color: #60a5fa; font-size: 0.8rem; }
+  .btn { background: #3b82f6; color: #fff; border: none; padding: 8px 18px; border-radius: 8px; font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: background 0.15s; }
+  .btn:hover { background: #2563eb; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-sm { padding: 4px 10px; font-size: 0.75rem; border-radius: 5px; }
+  .btn-outline { background: transparent; border: 1px solid #475569; color: #94a3b8; }
+  .btn-outline:hover { background: #334155; color: #e2e8f0; }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th { text-align: left; padding: 8px 10px; color: #64748b; font-weight: 500; border-bottom: 1px solid #334155; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { padding: 10px; border-bottom: 1px solid #1e293b; color: #cbd5e1; vertical-align: top; }
+  tr:hover td { background: #1e293b; }
+  .no-data { text-align: center; padding: 32px; color: #64748b; }
+
+  /* Form link */
+  .form-link-box { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
+  .form-link-box code { flex: 1; font-family: monospace; font-size: 0.8rem; color: #60a5fa; word-break: break-all; }
+  .form-link-box .btn { flex-shrink: 0; }
+
+  /* Private answers display */
+  .private-answers { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 8px 10px; margin-top: 6px; font-size: 0.78rem; color: #86efac; }
+  .private-answers .field-name { color: #64748b; }
+
+  /* Loading */
+  .loading { color: #64748b; font-size: 0.85rem; padding: 16px 0; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Dashboard RPG — FidesVox</h1>
+  <div class="header-right">
+    <span class="email" id="userEmail">...</span>
+    <form action="/api/logout" method="POST" style="display:inline">
+      <button type="submit" class="btn-logout">Logout</button>
+    </form>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- Keypair Section -->
+  <div class="card" id="keypairCard">
+    <h2>Keypair Nostr <span class="badge badge-yellow" id="keypairBadge">Caricamento...</span></h2>
+    <div id="keypairContent">
+      <p class="loading">Verifica keypair in corso...</p>
+    </div>
+  </div>
+
+  <!-- Form Link Section -->
+  <div class="card">
+    <h2>Link Segnalazione</h2>
+    <p style="font-size:0.82rem; color:#94a3b8; margin-bottom:12px;">
+      Condividi questo link per ricevere segnalazioni anonime:
+    </p>
+    <div class="form-link-box">
+      <code id="formLink">http://localhost:3456/form/survey-demo-001</code>
+      <button class="btn btn-sm" id="copyLinkBtn">Copia link</button>
+    </div>
+    <p style="font-size:0.72rem; color:#64748b; margin-top:8px;">
+      Recipient pubkey: <code id="recipientFingerprint" style="font-family:monospace; font-size:0.72rem; color:#475569;">—</code>
+    </p>
+  </div>
+
+  <!-- Reports Section -->
+  <div class="card">
+    <h2>Segnalazioni Ricevute <span class="badge badge-blue" id="reportCount">0</span></h2>
+    <div id="reportsContent">
+      <p class="loading">Caricamento segnalazioni...</p>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { schnorr } from 'https://esm.sh/@noble/curves@1.6.0/secp256k1';
+import { sha256 } from 'https://esm.sh/@noble/hashes@1.5.0/sha256';
+import { chacha20poly1305 } from 'https://esm.sh/@noble/ciphers@1.0.0/chacha';
+import { hkdf } from 'https://esm.sh/@noble/hashes@1.5.0/hkdf';
+import { x25519 } from 'https://esm.sh/@noble/curves@1.6.0/ed25519';
+
+// --- BIP-39 Wordlist ---
+let BIP39_WORDS = null;
+async function loadWordlist() {
+  if (BIP39_WORDS) return BIP39_WORDS;
+  const res = await fetch('https://raw.githubusercontent.com/bitcoin/bips/master/bip-0039/english.txt');
+  const text = await res.text();
+  BIP39_WORDS = text.trim().split('\n');
+  if (BIP39_WORDS.length !== 2048) throw new Error('Invalid BIP-39 wordlist');
+  return BIP39_WORDS;
+}
+
+function bytesToMnemonic(bytes, wordlist) {
+  // Each 11 bits → 1 word. 32 bytes (256 bits) → 23.3 words.
+  // We add a checksum byte (SHA-256 first byte) to get 264 bits → 24 words.
+  const hash = sha256(bytes);
+  const withChecksum = new Uint8Array(bytes.length + 1);
+  withChecksum.set(bytes);
+  withChecksum[bytes.length] = hash[0]; // 8-bit checksum
+
+  // Convert to 11-bit groups
+  const bits = [];
+  for (const b of withChecksum) {
+    for (let i = 7; i >= 0; i--) bits.push((b >> i) & 1);
+  }
+
+  const words = [];
+  for (let i = 0; i + 11 <= bits.length && words.length < 24; i += 11) {
+    let idx = 0;
+    for (let j = 0; j < 11; j++) idx = (idx << 1) | bits[i + j];
+    words.push(wordlist[idx]);
+  }
+  return words;
+}
+
+function mnemonicToBytes(words, wordlist) {
+  if (words.length !== 24) throw new Error('Servono esattamente 24 parole');
+
+  // Convert words to 11-bit indices
+  const bits = [];
+  for (const w of words) {
+    const idx = wordlist.indexOf(w.toLowerCase().trim());
+    if (idx === -1) throw new Error(`Parola non valida: "${w}"`);
+    for (let i = 10; i >= 0; i--) bits.push((idx >> i) & 1);
+  }
+
+  // First 256 bits = data, last 8 bits = checksum
+  const bytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    let b = 0;
+    for (let j = 0; j < 8; j++) b = (b << 1) | bits[i * 8 + j];
+    bytes[i] = b;
+  }
+
+  // Verify checksum
+  const hash = sha256(bytes);
+  let checksumByte = 0;
+  for (let j = 0; j < 8; j++) checksumByte = (checksumByte << 1) | bits[256 + j];
+  if (checksumByte !== hash[0]) throw new Error('Checksum non valido — verifica le parole');
+
+  return bytes;
+}
+
+// --- Helpers ---
+function bytesToHex(b) { return Array.from(b).map(x => x.toString(16).padStart(2,'0')).join(''); }
+function hexToBytes(h) { const a = new Uint8Array(h.length/2); for(let i=0;i<h.length;i+=2) a[i/2]=parseInt(h.substr(i,2),16); return a; }
+
+// --- IndexedDB helpers ---
+const IDB_NAME = 'fidesvox-keypair';
+const IDB_STORE = 'keys';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(IDB_STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGet(key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbSet(key, value) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// --- Crypto: encrypt/decrypt privkey with password ---
+async function deriveKey(password, salt) {
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function encryptPrivkey(privkeyHex, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveKey(password, salt);
+  const enc = new TextEncoder();
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(privkeyHex));
+  return { salt: bytesToHex(salt), iv: bytesToHex(iv), ct: bytesToHex(new Uint8Array(ct)) };
+}
+
+async function decryptPrivkey(encrypted, password) {
+  const salt = hexToBytes(encrypted.salt);
+  const iv = hexToBytes(encrypted.iv);
+  const ct = hexToBytes(encrypted.ct);
+  const key = await deriveKey(password, salt);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ct);
+  return new TextDecoder().decode(plain);
+}
+
+// --- Decrypt private report ---
+function decryptPrivateBlob(encryptedContent, privkeyHex) {
+  try {
+    const ephPubHex = encryptedContent.slice(0, 64);
+    const b64 = encryptedContent.slice(64);
+    const combined = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+
+    const ephPub = hexToBytes(ephPubHex);
+    const privkey = hexToBytes(privkeyHex);
+    const sharedSecret = x25519.getSharedSecret(privkey, ephPub);
+    const encKey = hkdf(sha256, sharedSecret, 'fidesvox-e2e', '', 32);
+
+    const nonce = combined.slice(0, 12);
+    const ciphertext = combined.slice(12);
+    const decipher = chacha20poly1305(encKey, nonce);
+    const plaintext = decipher.decrypt(ciphertext);
+
+    return JSON.parse(new TextDecoder().decode(plaintext));
+  } catch (err) {
+    throw new Error('Decryption failed: ' + err.message);
+  }
+}
+
+// --- Load user info ---
+let currentUser = null;
+
+async function loadUser() {
+  const res = await fetch('/api/me');
+  if (!res.ok) { window.location = '/login'; return; }
+  currentUser = await res.json();
+  document.getElementById('userEmail').textContent = currentUser.email;
+}
+
+// --- Keypair management ---
+async function initKeypair() {
+  const stored = await idbGet('encrypted_privkey');
+  const pubkey = await idbGet('pubkey');
+
+  // If IndexedDB is empty but server has the encrypted blob, sync it
+  if (!stored && currentUser?.encrypted_privkey_blob) {
+    const serverBlob = currentUser.encrypted_privkey_blob;
+    const serverPubkey = currentUser.nostr_pubkey;
+    if (serverBlob && serverPubkey) {
+      // Ask for password to verify the blob works
+      const pwd = prompt('Keypair trovata sul server. Inserisci la password per attivarla:');
+      if (pwd) {
+        try {
+          await decryptPrivkey(serverBlob, pwd); // test decryption
+          await idbSet('encrypted_privkey', serverBlob);
+          await idbSet('pubkey', serverPubkey);
+          await idbSet('backup_done', true);
+          location.reload();
+          return;
+        } catch {
+          alert('Password errata. Puoi riprovare ricaricando la pagina, oppure usa "Ripristina da Shamir".');
+        }
+      }
+    }
+  }
+
+  if (stored && pubkey) {
+    // Keypair exists
+    document.getElementById('keypairBadge').textContent = 'Keypair attiva';
+    document.getElementById('keypairBadge').className = 'badge badge-green';
+    document.getElementById('keypairContent').innerHTML = `
+      <p class="keypair-info">Pubkey: <code>${pubkey.slice(0, 16)}...${pubkey.slice(-8)}</code></p>
+      <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn btn-sm btn-outline" id="changePwdBtn">Cambia password</button>
+        <button class="btn btn-sm btn-outline" id="backupBtn">Backup Shamir</button>
+        <button class="btn btn-sm btn-outline" id="restoreBtn">Ripristina da Shamir</button>
+      </div>
+    `;
+    document.getElementById('recipientFingerprint').textContent = pubkey.slice(0, 16) + '...' + pubkey.slice(-8);
+
+    // Attach button handlers
+    document.getElementById('changePwdBtn')?.addEventListener('click', changePassword);
+    document.getElementById('backupBtn')?.addEventListener('click', createShamirBackup);
+    document.getElementById('restoreBtn')?.addEventListener('click', restoreFromShamir);
+
+    // Sync pubkey with server if needed
+    if (currentUser && currentUser.nostr_pubkey !== pubkey) {
+      await fetch('/api/keypair', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pubkey }),
+      });
+    }
+  } else {
+    // No keypair
+    document.getElementById('keypairBadge').textContent = 'Non configurata';
+    document.getElementById('keypairBadge').className = 'badge badge-yellow';
+    document.getElementById('keypairContent').innerHTML = `
+      <p class="keypair-info" style="margin-bottom:12px;">
+        Genera una keypair per poter ricevere e decrittografare le segnalazioni private.
+      </p>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:0.82rem;color:#94a3b8;">Schema di recupero Shamir:</label>
+        <select id="shamirScheme" style="margin-left:8px;padding:4px 8px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:0.82rem;">
+          <option value="1,1">Solo mnemonica (1 persona)</option>
+          <option value="2,3" selected>2 di 3 (standard)</option>
+          <option value="3,5">3 di 5 (alta sicurezza)</option>
+          <option value="2,5">2 di 5 (piu flessibile)</option>
+          <option value="3,7">3 di 7 (organizzazioni grandi)</option>
+        </select>
+      </div>
+      <button class="btn" id="genKeypairBtn">Genera Keypair</button>
+    `;
+    document.getElementById('genKeypairBtn').addEventListener('click', generateKeypair);
+  }
+}
+
+async function generateKeypair() {
+  const password = prompt('Scegli una password per proteggere la tua chiave privata.\nDovrai inserirla per decrittografare le segnalazioni.\n\n(minimo 6 caratteri)');
+  if (!password || password.length < 6) { alert('La password deve avere almeno 6 caratteri.'); return; }
+
+  const confirmPwd = prompt('Conferma la password:');
+  if (password !== confirmPwd) { alert('Le password non coincidono.'); return; }
+
+  const btn = document.getElementById('genKeypairBtn');
+  btn.disabled = true;
+  btn.textContent = 'Generazione...';
+
+  try {
+    // Load BIP-39 wordlist
+    const wordlist = await loadWordlist();
+
+    // Generate x25519 keypair (for E2E encryption, NOT for Nostr signing)
+    const privBytes = crypto.getRandomValues(new Uint8Array(32));
+    const privHex = bytesToHex(privBytes);
+    const pubBytes = x25519.getPublicKey(privBytes);
+    const pubHex = bytesToHex(pubBytes);
+
+    // Read Shamir scheme from selector
+    const schemeEl = document.getElementById('shamirScheme');
+    const [threshold, total] = (schemeEl?.value || '2,3').split(',').map(Number);
+
+    // Create backup BEFORE saving
+    let shareMnemonics;
+    if (threshold === 1 && total === 1) {
+      // No Shamir — just the raw key as mnemonic
+      shareMnemonics = [{
+        index: 1,
+        words: bytesToMnemonic(privBytes, wordlist),
+      }];
+    } else {
+      const shares = shamirSplit(privBytes, threshold, total);
+      shareMnemonics = shares.map(s => ({
+        index: s.index,
+        words: bytesToMnemonic(s.data, wordlist),
+      }));
+    }
+
+    // Show mandatory backup modal
+    const backupConfirmed = await showMandatoryBackup(shareMnemonics, pubHex, threshold, total);
+    if (!backupConfirmed) {
+      btn.disabled = false;
+      btn.textContent = 'Genera Keypair';
+      return;
+    }
+
+    // Encrypt privkey and save
+    const encrypted = await encryptPrivkey(privHex, password);
+    await idbSet('encrypted_privkey', encrypted);
+    await idbSet('pubkey', pubHex);
+    await idbSet('backup_done', true);
+    await idbSet('shamir_scheme', `${threshold},${total}`);
+
+    // Send pubkey + encrypted blob to server (for multi-device sync)
+    await fetch('/api/keypair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pubkey: pubHex, encryptedPrivkey: encrypted }),
+    });
+
+    // Refresh display
+    await initKeypair();
+  } catch (err) {
+    alert('Errore nella generazione: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = 'Genera Keypair';
+  }
+}
+
+function showMandatoryBackup(shareMnemonics, pubHex, threshold, total) {
+  threshold = threshold || 2;
+  total = total || shareMnemonics.length;
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;z-index:1000;overflow-y:auto;padding:20px;';
+
+    const shareCards = shareMnemonics.map(s => {
+      const wordGrid = s.words.map((w, i) =>
+        `<span style="display:inline-block;background:#0f172a;border:1px solid #334155;border-radius:4px;padding:2px 8px;margin:2px;font-size:0.78rem;">
+          <span style="color:#475569;font-size:0.65rem;">${i+1}.</span> ${w}
+        </span>`
+      ).join('');
+      return `
+        <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:12px;">
+          <h4 style="color:#fde68a;margin-bottom:8px;font-size:0.9rem;">Share ${s.index} di ${total}</h4>
+          <div style="line-height:2;">${wordGrid}</div>
+          <button class="btn btn-sm btn-outline" style="margin-top:8px;" onclick="
+            const words='${s.words.join(' ')}';
+            navigator.clipboard.writeText(words);
+            this.textContent='Copiato!';
+          ">Copia 24 parole</button>
+        </div>
+      `;
+    }).join('');
+
+    overlay.innerHTML = `
+      <div style="background:#0f172a;border:1px solid #334155;border-radius:16px;padding:28px;max-width:650px;width:100%;">
+        <h2 style="color:#f1f5f9;margin-bottom:4px;font-size:1.2rem;">Backup Obbligatorio</h2>
+        <p style="color:#94a3b8;font-size:0.82rem;margin-bottom:16px;">
+          ${total === 1
+            ? 'Salva queste <strong>24 parole</strong> in un luogo sicuro (carta in cassaforte, cassetta di sicurezza). Sono l\'unico modo per recuperare la chiave se perdi la password.'
+            : `Prima di attivare la keypair, devi salvare i ${total} share di recupero. Servono <strong>${threshold} share qualsiasi</strong> per recuperare la chiave.`}
+          <span style="color:#ef4444;">Senza questo backup, se perdi la password i dati privati saranno irrecuperabili.</span>
+        </p>
+        <p style="color:#64748b;font-size:0.75rem;margin-bottom:12px;">
+          Pubkey: <code style="color:#60a5fa;">${pubHex.slice(0,16)}...${pubHex.slice(-8)}</code>
+        </p>
+
+        ${shareCards}
+
+        <div style="background:#1a1a2e;border:1px solid #334155;border-radius:8px;padding:12px;margin:16px 0;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.82rem;color:#e2e8f0;">
+            <input type="checkbox" id="backupConfirmCheck" style="width:18px;height:18px;">
+            Ho salvato le 24 parole di almeno ${threshold} share in un luogo sicuro
+          </label>
+        </div>
+
+        <div style="display:flex;gap:8px;">
+          <button class="btn" id="confirmBackupBtn" disabled style="flex:1;">Conferma e attiva keypair</button>
+          <button class="btn btn-outline" id="cancelBackupBtn">Annulla</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const checkbox = overlay.querySelector('#backupConfirmCheck');
+    const confirmBtn = overlay.querySelector('#confirmBackupBtn');
+    const cancelBtn = overlay.querySelector('#cancelBackupBtn');
+
+    checkbox.addEventListener('change', () => {
+      confirmBtn.disabled = !checkbox.checked;
+    });
+
+    confirmBtn.addEventListener('click', () => {
+      overlay.remove();
+      resolve(true);
+    });
+
+    cancelBtn.addEventListener('click', () => {
+      overlay.remove();
+      resolve(false);
+    });
+  });
+}
+
+// --- Change password ---
+async function changePassword() {
+  const oldPwd = prompt('Inserisci la password ATTUALE:');
+  if (!oldPwd) return;
+
+  try {
+    const encrypted = await idbGet('encrypted_privkey');
+    if (!encrypted) { alert('Nessuna keypair trovata.'); return; }
+
+    // Decrypt with old password
+    const privkeyHex = await decryptPrivkey(encrypted, oldPwd);
+
+    const newPwd = prompt('Inserisci la NUOVA password:');
+    if (!newPwd) return;
+    const confirmPwd = prompt('Conferma la NUOVA password:');
+    if (newPwd !== confirmPwd) { alert('Le password non coincidono.'); return; }
+    if (newPwd.length < 6) { alert('La password deve avere almeno 6 caratteri.'); return; }
+
+    // Re-encrypt with new password
+    const newEncrypted = await encryptPrivkey(privkeyHex, newPwd);
+    await idbSet('encrypted_privkey', newEncrypted);
+
+    // Sync new blob to server
+    const pubkey = await idbGet('pubkey');
+    await fetch('/api/keypair', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pubkey, encryptedPrivkey: newEncrypted }),
+    });
+
+    alert('Password cambiata con successo! La chiave privata è la stessa, protetta dalla nuova password.');
+  } catch (err) {
+    alert('Password attuale errata: ' + err.message);
+  }
+}
+
+// --- Shamir Backup ---
+
+// GF(256) arithmetic (same as styx-js shamir.js)
+function gfMul(a, b) { let r=0,aa=a,bb=b; while(bb>0){if(bb&1)r^=aa;aa<<=1;if(aa&0x100)aa^=0x11b;bb>>=1;} return r; }
+function gfInv(a) { if(a===0)throw new Error('zero'); let r=a; for(let i=0;i<6;i++){r=gfMul(r,r);r=gfMul(r,a);} r=gfMul(r,r); return r; }
+function gfDiv(a, b) { return gfMul(a, gfInv(b)); }
+
+function shamirSplit(secret, threshold, total) {
+  const shares = [];
+  for (let s=0; s<total; s++) shares.push(new Uint8Array(secret.length));
+  for (let bi=0; bi<secret.length; bi++) {
+    const coeffs = new Uint8Array(threshold);
+    coeffs[0] = secret[bi];
+    const rnd = crypto.getRandomValues(new Uint8Array(threshold-1));
+    for (let i=1; i<threshold; i++) coeffs[i] = rnd[i-1];
+    for (let s=0; s<total; s++) {
+      const x = s+1;
+      let y = 0;
+      for (let k=threshold-1; k>=0; k--) y = (gfMul(y, x)) ^ coeffs[k];
+      shares[s][bi] = y;
+    }
+  }
+  return shares.map((data, i) => ({ index: i+1, data }));
+}
+
+function shamirReconstruct(shares) {
+  const len = shares[0].data.length;
+  const result = new Uint8Array(len);
+  const xs = shares.map(s => s.index);
+  for (let bi=0; bi<len; bi++) {
+    let r = 0;
+    for (let i=0; i<shares.length; i++) {
+      let basis = 1;
+      for (let j=0; j<shares.length; j++) {
+        if (i===j) continue;
+        basis = gfMul(basis, gfDiv(xs[j], xs[i]^xs[j]));
+      }
+      r ^= gfMul(shares[i].data[bi], basis);
+    }
+    result[bi] = r;
+  }
+  return result;
+}
+
+async function createShamirBackup() {
+  const password = prompt('Inserisci la password della keypair per creare il backup:');
+  if (!password) return;
+
+  try {
+    const encrypted = await idbGet('encrypted_privkey');
+    if (!encrypted) { alert('Nessuna keypair trovata.'); return; }
+
+    const privkeyHex = await decryptPrivkey(encrypted, password);
+    const privBytes = hexToBytes(privkeyHex);
+
+    const wordlist = await loadWordlist();
+
+    // Read saved scheme or default to 2-of-3
+    const savedScheme = await idbGet('shamir_scheme');
+    const [t, n] = savedScheme ? savedScheme.split(',').map(Number) : [2, 3];
+    const shares = shamirSplit(privBytes, t, n);
+
+    const shareMnemonics = shares.map(s => ({
+      index: s.index,
+      words: bytesToMnemonic(s.data, wordlist),
+    }));
+
+    await showMandatoryBackup(shareMnemonics, await idbGet('pubkey'), t, n);
+
+  } catch (err) {
+    alert('Errore: ' + err.message);
+  }
+}
+
+async function restoreFromShamir() {
+  try {
+    const wordlist = await loadWordlist();
+
+    // Create restore modal
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;z-index:1000;overflow-y:auto;padding:20px;';
+    overlay.innerHTML = `
+      <div style="background:#0f172a;border:1px solid #334155;border-radius:16px;padding:28px;max-width:550px;width:100%;">
+        <h2 style="color:#f1f5f9;margin-bottom:4px;font-size:1.1rem;">Ripristino da Shamir</h2>
+        <p style="color:#94a3b8;font-size:0.82rem;margin-bottom:8px;">
+          Inserisci le 24 parole degli share necessari per recuperare la chiave.
+        </p>
+        <div style="margin-bottom:16px;">
+          <label style="font-size:0.82rem;color:#94a3b8;">Tipo di backup:</label>
+          <select id="restoreCount" style="margin-left:8px;padding:4px 8px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#e2e8f0;font-size:0.82rem;">
+            <option value="1">Mnemonica diretta (24 parole)</option>
+            <option value="2">2 share Shamir</option>
+            <option value="3">3 share Shamir</option>
+          </select>
+          <button class="btn btn-sm btn-outline" style="margin-left:8px;" id="buildRestoreFields">Mostra campi</button>
+        </div>
+        <div id="restoreShareFields"></div>
+
+        <div style="display:flex;gap:8px;">
+          <button class="btn" id="doRestoreBtn" style="flex:1;">Ripristina chiave</button>
+          <button class="btn btn-outline" id="cancelRestoreBtn">Annulla</button>
+        </div>
+        <p id="restoreError" style="color:#ef4444;font-size:0.8rem;margin-top:8px;display:none;"></p>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    // Build share input fields dynamically
+    const fieldsDiv = overlay.querySelector('#restoreShareFields');
+    const buildBtn = overlay.querySelector('#buildRestoreFields');
+    const countSelect = overlay.querySelector('#restoreCount');
+
+    function buildFields() {
+      const count = parseInt(countSelect.value);
+      if (count === 1) {
+        fieldsDiv.innerHTML = `
+          <div style="margin-bottom:12px;">
+            <label style="color:#fde68a;font-size:0.85rem;display:block;margin-bottom:4px;">Le tue 24 parole</label>
+            <textarea class="share-words" rows="3" placeholder="abandon ability able about ..." style="width:100%;padding:8px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-family:monospace;font-size:0.78rem;resize:vertical;"></textarea>
+          </div>`;
+        return;
+      }
+      const labels = ['A', 'B', 'C', 'D', 'E'];
+      let html = '';
+      for (let i = 0; i < count; i++) {
+        html += `
+          <div style="margin-bottom:12px;">
+            <label style="color:#fde68a;font-size:0.85rem;display:block;margin-bottom:4px;">Share ${labels[i]} — numero + 24 parole</label>
+            <div style="display:flex;gap:6px;margin-bottom:4px;">
+              <input type="number" class="share-num" min="1" max="7" placeholder="#" style="width:50px;padding:6px;background:#1e293b;border:1px solid #334155;border-radius:6px;color:#e2e8f0;text-align:center;">
+            </div>
+            <textarea class="share-words" rows="2" placeholder="24 parole separate da spazio..." style="width:100%;padding:8px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#e2e8f0;font-family:monospace;font-size:0.78rem;resize:vertical;"></textarea>
+          </div>`;
+      }
+      fieldsDiv.innerHTML = html;
+    }
+
+    buildBtn.addEventListener('click', buildFields);
+    buildFields(); // build default (2)
+
+    overlay.querySelector('#cancelRestoreBtn').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('#doRestoreBtn').addEventListener('click', async () => {
+      const errEl = overlay.querySelector('#restoreError');
+      errEl.style.display = 'none';
+
+      try {
+        const restoreMode = parseInt(countSelect.value);
+        let recovered;
+
+        if (restoreMode === 1) {
+          // Direct mnemonic — no Shamir
+          const words = overlay.querySelector('.share-words').value.trim().split(/\s+/);
+          recovered = mnemonicToBytes(words, wordlist);
+        } else {
+          // Shamir shares
+          const nums = [...overlay.querySelectorAll('.share-num')].map(el => parseInt(el.value));
+          const wordArrays = [...overlay.querySelectorAll('.share-words')].map(el => el.value.trim().split(/\s+/));
+
+          const uniqueNums = new Set(nums.filter(n => !isNaN(n)));
+          if (uniqueNums.size !== nums.length) throw new Error('I numeri degli share devono essere tutti diversi');
+          if (nums.some(n => isNaN(n) || n < 1)) throw new Error('Inserisci il numero di ogni share');
+
+          const shares = nums.map((num, i) => ({
+            index: num,
+            data: mnemonicToBytes(wordArrays[i], wordlist),
+          }));
+          recovered = shamirReconstruct(shares);
+        }
+
+        const privkeyHex = bytesToHex(recovered);
+
+        // Verify valid key
+        const pubBytes = x25519.getPublicKey(recovered);
+        const pubHex = bytesToHex(pubBytes);
+
+        const newPwd = prompt(`Chiave recuperata!\nPubkey: ${pubHex.slice(0,16)}...${pubHex.slice(-8)}\n\nScegli una nuova password per proteggerla:`);
+        if (!newPwd || newPwd.length < 6) { alert('Password minimo 6 caratteri.'); return; }
+
+        const encrypted = await encryptPrivkey(privkeyHex, newPwd);
+        await idbSet('encrypted_privkey', encrypted);
+        await idbSet('pubkey', pubHex);
+        await idbSet('backup_done', true);
+
+        await fetch('/api/keypair', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pubkey: pubHex }),
+        });
+
+        overlay.remove();
+        alert(`Chiave ripristinata con successo!\nPubkey: ${pubHex.slice(0,16)}...`);
+        location.reload();
+
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.style.display = 'block';
+      }
+    });
+
+  } catch (err) {
+    alert('Errore: ' + err.message);
+  }
+}
+
+// --- Reports ---
+async function loadReports() {
+  const res = await fetch('/api/reports');
+  if (!res.ok) return;
+
+  const data = await res.json();
+  const container = document.getElementById('reportsContent');
+  const totalCount = data.survey_responses.length + data.private_reports.length;
+  document.getElementById('reportCount').textContent = totalCount;
+
+  if (totalCount === 0) {
+    container.innerHTML = '<div class="no-data">Nessuna segnalazione ricevuta. Condividi il link del form per iniziare.</div>';
+    return;
+  }
+
+  // Build combined table
+  let rows = '';
+
+  // Public responses
+  data.survey_responses.forEach((r, i) => {
+    let answers = {};
+    try { answers = JSON.parse(r.answers); } catch {}
+    const answerHtml = Object.entries(answers).map(([k, v]) =>
+      `<span class="field-name">${k}:</span> ${v}`
+    ).join('<br>');
+
+    rows += `<tr>
+      <td>${new Date(r.received_at).toLocaleString('it-IT')}</td>
+      <td>${r.survey_id}</td>
+      <td>${answerHtml || '—'}</td>
+      <td>—</td>
+    </tr>`;
+  });
+
+  // Private reports — match by time proximity with public responses
+  data.private_reports.forEach((r, i) => {
+    // Check if there's already a public row; if not, add a row for private only
+    rows += `<tr>
+      <td>${new Date(r.received_at).toLocaleString('it-IT')}</td>
+      <td>${r.survey_id}</td>
+      <td><span style="color:#64748b; font-size:0.78rem;">Vedi risposte pubbliche sopra</span></td>
+      <td>
+        <button class="btn btn-sm btn-outline decrypt-btn" data-idx="${i}">Decrittografa</button>
+        <div class="private-answers" id="priv-${i}" style="display:none;"></div>
+      </td>
+    </tr>`;
+  });
+
+  container.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Data/ora</th>
+            <th>Survey ID</th>
+            <th>Risposte pubbliche</th>
+            <th>Risposte private</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+
+  // Attach decrypt handlers
+  container.querySelectorAll('.decrypt-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = parseInt(btn.dataset.idx);
+      const report = data.private_reports[idx];
+      const resultDiv = document.getElementById(`priv-${idx}`);
+
+      const password = prompt('Inserisci la password della tua keypair:');
+      if (!password) return;
+
+      try {
+        const encrypted = await idbGet('encrypted_privkey');
+        if (!encrypted) { alert('Keypair non trovata. Genera prima una keypair.'); return; }
+
+        const privkeyHex = await decryptPrivkey(encrypted, password);
+        const decrypted = decryptPrivateBlob(report.encrypted_blob, privkeyHex);
+
+        const html = Object.entries(decrypted.answers || decrypted).map(([k, v]) =>
+          `<span class="field-name">${k}:</span> ${v}`
+        ).join('<br>');
+
+        resultDiv.innerHTML = html;
+        resultDiv.style.display = 'block';
+        btn.textContent = 'Decrittografato';
+        btn.disabled = true;
+      } catch (err) {
+        alert('Errore: ' + err.message);
+      }
+    });
+  });
+}
+
+// --- Copy link ---
+document.getElementById('copyLinkBtn').addEventListener('click', () => {
+  const link = document.getElementById('formLink').textContent;
+  navigator.clipboard.writeText(link).then(() => {
+    const btn = document.getElementById('copyLinkBtn');
+    btn.textContent = 'Copiato!';
+    setTimeout(() => btn.textContent = 'Copia link', 2000);
+  });
+});
+
+// --- Init ---
+await loadUser();
+await initKeypair();
+await loadReports();
+</script>
+</body>
+</html>
