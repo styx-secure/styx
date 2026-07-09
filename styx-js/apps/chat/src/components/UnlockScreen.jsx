@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ShieldCheck, Lock, Warning } from './Icons.jsx';
 import { getStyxChat } from '../lib/styx-adapter.js';
+import { peerNamespace } from '../lib/ns.js';
 
 export default function UnlockScreen({ onUnlock }) {
   const [firstRun, setFirstRun] = useState(null); // null = loading
@@ -12,7 +13,7 @@ export default function UnlockScreen({ onUnlock }) {
   useEffect(() => {
     let alive = true;
     getStyxChat()
-      .then((S) => S.hasIdentity())
+      .then((S) => S.hasIdentity({ ns: peerNamespace() }))
       .then((has) => { if (alive) setFirstRun(!has); })
       .catch(() => { if (alive) setFirstRun(true); });
     return () => { alive = false; };

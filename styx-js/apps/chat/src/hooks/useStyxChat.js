@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getStyxChat } from '../lib/styx-adapter.js';
+import { peerNamespace } from '../lib/ns.js';
 
 const PAGE = 20;
 
@@ -49,8 +50,9 @@ export function useStyxChat() {
   const unlock = useCallback(async ({ password, alias, firstRun }) => {
     const StyxChat = await getStyxChat();
     const chat = new StyxChat();
-    const identity = await chat.init({ password }); // throws on wrong password
-    if (firstRun && alias && alias.trim()) {
+    const ns = peerNamespace();
+    const identity = await chat.init({ password, alias: alias?.trim(), ns }); // throws on wrong password
+    if (firstRun && alias && alias.trim() && chat.me?.alias !== alias.trim()) {
       await chat.setAlias(alias.trim());
     }
     chatRef.current = chat;

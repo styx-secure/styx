@@ -25,6 +25,7 @@ export default function PairingModal({ api, onClose, onAdded }) {
 
 function QrTab({ api, onAdded }) {
   const [svg, setSvg] = useState('');
+  const [invite, setInvite] = useState('');
   const [paste, setPaste] = useState('');
   const [pending, setPending] = useState(null); // { contactPubkey }
   const [alias, setAlias] = useState('');
@@ -35,7 +36,11 @@ function QrTab({ api, onAdded }) {
   // Generate our own invite QR once on mount.
   useEffect(() => {
     let alive = true;
-    api.createQrInvite().then(({ qr }) => qrToSvg(qr)).then((s) => { if (alive) setSvg(s); });
+    api.createQrInvite().then(async ({ qr }) => {
+      if (!alive) return;
+      setInvite(qr);
+      setSvg(await qrToSvg(qr));
+    });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -89,6 +94,14 @@ function QrTab({ api, onAdded }) {
       <div className="section">
         <label className="label">Il tuo invito</label>
         <div className="qr-box" style={{ marginTop: 8 }} dangerouslySetInnerHTML={{ __html: svg }} />
+        <textarea
+          className="field mono"
+          data-testid="my-invite"
+          readOnly
+          style={{ height: 56, padding: 8, marginTop: 8, fontSize: 11 }}
+          value={invite}
+          onFocus={(e) => e.target.select()}
+        />
       </div>
       <div className="section">
         <label className="label">Invito ricevuto</label>

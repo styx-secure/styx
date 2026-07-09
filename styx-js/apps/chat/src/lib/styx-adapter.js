@@ -14,17 +14,16 @@ let _cached = null;
 export async function getStyxChat() {
   if (_cached) return _cached;
   try {
-    // Optional: the real library isn't a build-time dependency yet. The
-    // @vite-ignore + variable specifier keeps the bundler from trying to
-    // resolve it; at runtime it loads if present, else we fall back to the mock.
-    const spec = 'styx-js';
-    const mod = await import(/* @vite-ignore */ spec);
+    // `styx-js` is resolved via a Vite alias to the library source. If that
+    // ever fails to load, fall back to the in-memory mock so the UI still runs.
+    const mod = await import('styx-js');
     if (mod && mod.StyxChat) {
       _cached = mod.StyxChat;
       return _cached;
     }
     throw new Error('styx-js loaded but StyxChat export missing');
-  } catch {
+  } catch (e) {
+    console.warn('[styx-adapter] real lib unavailable, using mock:', e?.message);
     const { MockStyxChat } = await import('./styx-lib-mock.js');
     _cached = MockStyxChat;
     return _cached;
