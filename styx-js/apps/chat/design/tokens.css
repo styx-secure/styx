@@ -1,0 +1,104 @@
+/* tokens.css — design tokens for Styx Chat (§9 of the brief).
+ *
+ * Drop-in for `src/styles/tokens.css`. Import once in main.jsx:  import './styles/tokens.css'
+ *
+ * Theme is driven by [data-theme="light"|"dark"] on <html> (or a shell wrapper).
+ * Default follows prefers-color-scheme when no data-theme is set; the toggle sets
+ * data-theme explicitly and persists the choice in localStorage.
+ */
+
+:root {
+  /* ---- LIGHT (default) ---- */
+  --bg:#e9edf1;  --panel:#ffffff;  --panel-2:#f4f6f8;  --panel-3:#eceff2;
+  --border:#e0e5ea;  --border-2:#d3dae0;
+  --text:#0f1720;  --text-dim:#5b6774;  --text-faint:#93a0ab;
+  --accent:#0d9f6e;  --accent-2:#0b8a60;  --accent-ink:#ffffff;  --accent-soft:#e2f4ec;
+  --bubble-out:#d5f0e4;  --bubble-out-text:#0a3527;
+  --bubble-in:#ffffff;   --bubble-in-text:#101820;
+  --read:#2f7fed;  --danger:#e0403f;  --danger-soft:#fbe6e6;  --convo:#e4e9ed;
+
+  --shadow:0 1px 2px rgba(16,24,32,.06), 0 8px 24px rgba(16,24,32,.06);
+  --shadow-lg:0 24px 64px rgba(9,15,20,.18);
+
+  /* ---- radii ---- */
+  --r-btn:13px;  --r-card:22px;  --r-avatar:14px;  --r-pill:20px;  --r-bubble:16px;  --r-bubble-tip:5px;
+
+  /* ---- spacing scale ---- */
+  --sp-1:6px;  --sp-2:8px;  --sp-3:10px;  --sp-4:12px;  --sp-5:14px;
+  --pad-panel:16px;  --pad-panel-lg:20px;
+  --bp-mobile:820px;
+
+  /* ---- typography ---- */
+  --font-sans:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono:ui-monospace, SFMono-Regular, Menlo, monospace;
+  --fs-screen-title:26px;  --fs-modal-title:17px;  --fs-alias:15px;
+  --fs-body:14.5px;  --fs-meta:11px;  --fs-label:11px;
+  --lh-bubble:1.42;  --ls-title:-.02em;
+}
+
+[data-theme="dark"] {
+  --bg:#04070a;  --panel:#0d1317;  --panel-2:#141c22;  --panel-3:#0f171c;
+  --border:#1d272e;  --border-2:#26333c;
+  --text:#e8eef2;  --text-dim:#95a3ad;  --text-faint:#5f6c76;
+  --accent:#18b981;  --accent-2:#13a06f;  --accent-ink:#04130c;  --accent-soft:#0f2921;
+  --bubble-out:#123a2c;  --bubble-out-text:#d4f5e6;
+  --bubble-in:#161f26;   --bubble-in-text:#e8eef2;
+  --read:#5aa2ff;  --danger:#ff5d5d;  --danger-soft:#341617;  --convo:#070c10;
+
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  --shadow-lg:0 30px 80px rgba(0,0,0,.6);
+}
+
+/* Follow the OS when the user hasn't chosen a theme explicitly. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg:#04070a;  --panel:#0d1317;  --panel-2:#141c22;  --panel-3:#0f171c;
+    --border:#1d272e;  --border-2:#26333c;
+    --text:#e8eef2;  --text-dim:#95a3ad;  --text-faint:#5f6c76;
+    --accent:#18b981;  --accent-2:#13a06f;  --accent-ink:#04130c;  --accent-soft:#0f2921;
+    --bubble-out:#123a2c;  --bubble-out-text:#d4f5e6;
+    --bubble-in:#161f26;   --bubble-in-text:#e8eef2;
+    --read:#5aa2ff;  --danger:#ff5d5d;  --danger-soft:#341617;  --convo:#070c10;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    --shadow-lg:0 30px 80px rgba(0,0,0,.6);
+  }
+}
+
+/* ---- base resets ---- */
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-2); }
+input, textarea, button { font-family: inherit; }
+::selection { background: var(--accent-soft); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+
+/* scrollbars */
+.sx-scroll::-webkit-scrollbar { width: 9px; height: 9px; }
+.sx-scroll::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 9px; }
+.sx-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* ---- keyframes ---- */
+@keyframes sx-in    { from { opacity:0; transform: translateY(8px) scale(.985); } to { opacity:1; transform:none; } }
+@keyframes sx-pop   { from { opacity:0; transform: scale(.9); } to { opacity:1; transform:none; } }
+@keyframes sx-fade  { from { opacity:0; } to { opacity:1; } }
+@keyframes sx-sheet { from { opacity:0; transform: translateY(24px) scale(.98); } to { opacity:1; transform:none; } }
+@keyframes sx-blink { 0%,80%,100% { opacity:.25; transform: translateY(0); } 40% { opacity:1; transform: translateY(-3px); } }
+
+.sx-msg   { animation: sx-in .22s cubic-bezier(.22,1,.36,1) both; }
+.sx-badge { animation: sx-pop .2s both; }
+.sx-sheet { animation: sx-sheet .26s cubic-bezier(.22,1,.36,1) both; }
+.sx-overlay { animation: sx-fade .18s both; }
+.sx-dot { width:6px; height:6px; border-radius:50%; background: var(--text-dim); display:inline-block; animation: sx-blink 1.2s infinite; }
+
+/* Respect reduced-motion. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}

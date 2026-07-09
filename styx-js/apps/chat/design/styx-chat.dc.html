@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>
+  :root{
+    --bg:#e9edf1; --panel:#ffffff; --panel-2:#f4f6f8; --panel-3:#eceff2;
+    --border:#e0e5ea; --border-2:#d3dae0;
+    --text:#0f1720; --text-dim:#5b6774; --text-faint:#93a0ab;
+    --accent:#0d9f6e; --accent-2:#0b8a60; --accent-ink:#ffffff; --accent-soft:#e2f4ec;
+    --bubble-out:#d5f0e4; --bubble-out-text:#0a3527;
+    --bubble-in:#ffffff; --bubble-in-text:#101820;
+    --read:#2f7fed; --danger:#e0403f; --danger-soft:#fbe6e6;
+    --convo:#e4e9ed; --shadow:0 1px 2px rgba(16,24,32,.06),0 8px 24px rgba(16,24,32,.06);
+    --shadow-lg:0 24px 64px rgba(9,15,20,.18);
+  }
+  [data-theme="dark"]{
+    --bg:#04070a; --panel:#0d1317; --panel-2:#141c22; --panel-3:#0f171c;
+    --border:#1d272e; --border-2:#26333c;
+    --text:#e8eef2; --text-dim:#95a3ad; --text-faint:#5f6c76;
+    --accent:#18b981; --accent-2:#13a06f; --accent-ink:#04130c; --accent-soft:#0f2921;
+    --bubble-out:#123a2c; --bubble-out-text:#d4f5e6;
+    --bubble-in:#161f26; --bubble-in-text:#e8eef2;
+    --read:#5aa2ff; --danger:#ff5d5d; --danger-soft:#341617;
+    --convo:#070c10; --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+    --shadow-lg:0 30px 80px rgba(0,0,0,.6);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme]){
+      --bg:#04070a; --panel:#0d1317; --panel-2:#141c22; --panel-3:#0f171c;
+      --border:#1d272e; --border-2:#26333c; --text:#e8eef2; --text-dim:#95a3ad; --text-faint:#5f6c76;
+      --accent:#18b981; --accent-2:#13a06f; --accent-ink:#04130c; --accent-soft:#0f2921;
+      --bubble-out:#123a2c; --bubble-out-text:#d4f5e6; --bubble-in:#161f26; --bubble-in-text:#e8eef2;
+      --read:#5aa2ff; --danger:#ff5d5d; --convo:#070c10;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%}
+  body{background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{color:var(--accent-2)}
+  input,textarea,button{font-family:inherit}
+  ::selection{background:var(--accent-soft)}
+  textarea::-webkit-scrollbar,.sx-scroll::-webkit-scrollbar{width:9px;height:9px}
+  .sx-scroll::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:9px}
+  .sx-scroll::-webkit-scrollbar-track{background:transparent}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+  @keyframes sx-in{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
+  @keyframes sx-pop{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
+  @keyframes sx-fade{from{opacity:0}to{opacity:1}}
+  @keyframes sx-blink{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+  @keyframes sx-sheet{from{opacity:0;transform:translateY(24px) scale(.98)}to{opacity:1;transform:none}}
+  .sx-msg{animation:sx-in .22s cubic-bezier(.22,1,.36,1) both}
+  .sx-dot{width:6px;height:6px;border-radius:50%;background:var(--text-dim);display:inline-block;animation:sx-blink 1.2s infinite}
+</style>
+<script src="styx-lib.js"></script>
+</helmet>
+
+<div data-theme="{{ theme }}" style="height:100vh;height:100dvh;width:100%;display:flex;overflow:hidden;background:var(--bg)">
+
+  <!-- ===================== UNLOCK / ONBOARDING ===================== -->
+  <sc-if value="{{ showUnlock }}" hint-placeholder-val="{{ true }}">
+    <div style="flex:1;display:flex;align-items:stretch;justify-content:center;overflow:auto" class="sx-scroll">
+      <div style="width:100%;max-width:none;display:grid;grid-template-columns:1fr;align-items:center">
+        <div style="display:flex;justify-content:center;padding:32px 20px">
+          <div style="width:100%;max-width:400px;animation:sx-fade .4s both">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:28px">
+              <div style="width:44px;height:44px;border-radius:13px;background:var(--accent);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px var(--accent-soft)">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-ink)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+              </div>
+              <div>
+                <div style="font-size:20px;font-weight:700;letter-spacing:-.02em">Styx Chat</div>
+                <div style="font-size:12.5px;color:var(--text-dim)">Messaggistica sovrana, end-to-end</div>
+              </div>
+            </div>
+
+            <h1 style="font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0 0 8px">{{ unlockTitle }}</h1>
+            <p style="font-size:14.5px;line-height:1.55;color:var(--text-dim);margin:0 0 24px">{{ unlockSub }}</p>
+
+            <form onSubmit="{{ onUnlockSubmit }}" style="display:flex;flex-direction:column;gap:14px">
+              <sc-if value="{{ showAliasField }}" hint-placeholder-val="{{ true }}">
+                <label style="display:flex;flex-direction:column;gap:7px">
+                  <span style="font-size:12.5px;font-weight:600;color:var(--text-dim)">Alias pubblico</span>
+                  <input ref="{{ aliasRef }}" type="text" placeholder="Come vuoi farti chiamare" autoComplete="off"
+                    style="height:46px;padding:0 14px;border:1px solid var(--border-2);background:var(--panel);color:var(--text);border-radius:12px;font-size:15px;outline:none">
+                </label>
+              </sc-if>
+              <label style="display:flex;flex-direction:column;gap:7px">
+                <span style="font-size:12.5px;font-weight:600;color:var(--text-dim)">Password locale</span>
+                <input ref="{{ pwRef }}" type="password" placeholder="Cifra le tue chiavi su questo dispositivo" autoComplete="current-password"
+                  style="height:46px;padding:0 14px;border:1px solid var(--border-2);background:var(--panel);color:var(--text);border-radius:12px;font-size:15px;outline:none">
+              </label>
+
+              <sc-if value="{{ unlockError }}" hint-placeholder-val="">
+                <div role="alert" style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--danger);background:var(--danger-soft);padding:9px 12px;border-radius:10px">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>
+                  <span>{{ unlockError }}</span>
+                </div>
+              </sc-if>
+
+              <button type="submit" disabled="{{ unlocking }}" style="{{ unlockBtnStyle }}">
+                <span>{{ unlockCta }}</span>
+              </button>
+            </form>
+
+            <div style="margin-top:26px;padding-top:20px;border-top:1px solid var(--border);display:flex;gap:12px;align-items:flex-start">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+              <p style="font-size:12.5px;line-height:1.55;color:var(--text-faint);margin:0">Nessun server, nessun account. Le chiavi restano cifrate qui, e ogni messaggio usa <strong style="color:var(--text-dim);font-weight:600">forward secrecy</strong>: il passato resta illeggibile anche se una chiave viene compromessa.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- ===================== MAIN APP ===================== -->
+  <sc-if value="{{ showApp }}" hint-placeholder-val="">
+    <div style="flex:1;display:flex;min-width:0;position:relative">
+
+      <!-- LEFT: contact list -->
+      <sc-if value="{{ showList }}" hint-placeholder-val="{{ true }}">
+      <aside style="{{ listPanelStyle }}">
+        <header style="padding:14px 16px 12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:12px;flex-shrink:0">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div role="img" aria-label="Il tuo avatar" style="{{ meAvatarStyle }}"></div>
+            <div style="min-width:0;flex:1">
+              <div style="font-size:15px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ meAlias }}</div>
+              <div style="font-size:11.5px;color:var(--accent);font-weight:600;display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent)"></span>identità sbloccata</div>
+            </div>
+            <button onClick="{{ onToggleTheme }}" aria-label="Cambia tema" title="Cambia tema" style="width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--panel-2);color:var(--text-dim);display:flex;align-items:center;justify-content:center;cursor:pointer">
+              <sc-if value="{{ isDark }}" hint-placeholder-val=""><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/></svg></sc-if>
+              <sc-if value="{{ isLight }}" hint-placeholder-val="{{ true }}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4 7 7 0 1 0 20 14.5Z"/></svg></sc-if>
+            </button>
+            <button onClick="{{ onOpenSettings }}" aria-label="Impostazioni" title="Impostazioni" style="width:36px;height:36px;border-radius:10px;border:1px solid var(--border);background:var(--panel-2);color:var(--text-dim);display:flex;align-items:center;justify-content:center;cursor:pointer">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 7 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0-1.2-2.9H1a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 2.6 7a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H7a1.7 1.7 0 0 0 1-1.5V1a2 2 0 1 1 4 0v.1A1.7 1.7 0 0 0 17 2.6a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V7a1.7 1.7 0 0 0 1.5 1H23a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+            </button>
+          </div>
+          <div style="position:relative;display:flex;align-items:center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" stroke-width="2" stroke-linecap="round" style="position:absolute;left:12px;pointer-events:none"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <input value="{{ search }}" onInput="{{ onSearch }}" type="text" placeholder="Cerca contatti" aria-label="Cerca contatti"
+              style="width:100%;height:40px;padding:0 14px 0 36px;border:1px solid var(--border);background:var(--panel-2);color:var(--text);border-radius:11px;font-size:14px;outline:none">
+          </div>
+        </header>
+
+        <div class="sx-scroll" style="flex:1;overflow-y:auto;overflow-x:hidden">
+          <sc-if value="{{ hasContacts }}" hint-placeholder-val="{{ true }}">
+            <sc-for list="{{ contactsVM }}" as="c" hint-placeholder-count="4">
+              <button onClick="{{ c.onClick }}" style="{{ c.rowStyle }}">
+                <div style="position:relative;flex-shrink:0">
+                  <div role="img" style="{{ c.avatarStyle }}"></div>
+                  <span style="{{ c.dotStyle }}"></span>
+                </div>
+                <div style="min-width:0;flex:1;display:flex;flex-direction:column;gap:3px">
+                  <div style="display:flex;align-items:baseline;gap:8px">
+                    <span style="font-size:14.5px;font-weight:650;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;letter-spacing:-.01em">{{ c.alias }}</span>
+                    <span style="font-size:11px;color:{{ c.tsColor }};flex-shrink:0;font-weight:600">{{ c.timeLabel }}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-size:13px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">{{ c.preview }}</span>
+                    <sc-if value="{{ c.hasUnread }}" hint-placeholder-val="">
+                      <span style="min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--accent);color:var(--accent-ink);font-size:11.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;animation:sx-pop .2s both">{{ c.unread }}</span>
+                    </sc-if>
+                  </div>
+                </div>
+              </button>
+            </sc-for>
+            <div style="height:12px"></div>
+          </sc-if>
+          <sc-if value="{{ noContacts }}" hint-placeholder-val="">
+            <div style="padding:40px 26px;text-align:center;color:var(--text-faint)">
+              <div style="font-size:14px;line-height:1.5">{{ emptyContactsMsg }}</div>
+            </div>
+          </sc-if>
+        </div>
+
+        <div style="padding:12px 14px;border-top:1px solid var(--border);flex-shrink:0">
+          <button onClick="{{ onNewContact }}" style="width:100%;height:46px;border:none;border-radius:12px;background:var(--accent);color:var(--accent-ink);font-size:14.5px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;box-shadow:0 4px 14px var(--accent-soft)">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            Nuovo contatto
+          </button>
+        </div>
+      </aside>
+      </sc-if>
+
+      <!-- RIGHT: conversation -->
+      <sc-if value="{{ showConvo }}" hint-placeholder-val="{{ true }}">
+      <section style="{{ convoPanelStyle }}">
+        <sc-if value="{{ hasActive }}" hint-placeholder-val="">
+          <div style="display:flex;flex-direction:column;height:100%;min-height:0">
+            <!-- header -->
+            <header style="padding:11px 16px;border-bottom:1px solid var(--border);background:var(--panel);display:flex;align-items:center;gap:12px;flex-shrink:0;z-index:2">
+              <button onClick="{{ onBack }}" aria-label="Indietro" style="{{ backBtnStyle }}">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+              </button>
+              <div role="img" style="{{ activeAvatarStyle }}"></div>
+              <div style="min-width:0;flex:1">
+                <div style="font-size:15.5px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ activeAlias }}</div>
+                <div style="font-size:12px;font-weight:600;color:{{ presenceColor }};height:16px;display:flex;align-items:center;gap:5px">
+                  <sc-if value="{{ activeTyping }}" hint-placeholder-val=""><span style="display:inline-flex;gap:3px;align-items:flex-end"><span class="sx-dot" style="animation-delay:0s"></span><span class="sx-dot" style="animation-delay:.2s"></span><span class="sx-dot" style="animation-delay:.4s"></span></span><span>sta scrivendo…</span></sc-if>
+                  <sc-if value="{{ presencePlain }}" hint-placeholder-val="{{ true }}"><span>{{ presenceText }}</span></sc-if>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:7px;color:var(--text-faint);font-size:11.5px;font-weight:600">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+                <span style="color:var(--text-dim)" class="sx-hide-narrow">E2E</span>
+              </div>
+            </header>
+
+            <!-- messages -->
+            <div ref="{{ scrollRef }}" onScroll="{{ onMsgScroll }}" class="sx-scroll" style="flex:1;overflow-y:auto;overflow-x:hidden;padding:14px 6% 8px;background:var(--convo);display:flex;flex-direction:column;gap:2px">
+              <sc-if value="{{ loadingMore }}" hint-placeholder-val="">
+                <div style="text-align:center;padding:6px;color:var(--text-faint);font-size:12px">Carico messaggi precedenti…</div>
+              </sc-if>
+              <div style="display:flex;align-items:center;justify-content:center;gap:8px;margin:6px 0 14px;color:var(--text-faint)">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+                <span style="font-size:11.5px;font-weight:600">I messaggi sono cifrati end-to-end</span>
+              </div>
+              <sc-for list="{{ messagesVM }}" as="m" hint-placeholder-count="6">
+                <div>
+                  <sc-if value="{{ m.hasDaySep }}" hint-placeholder-val="">
+                    <div style="display:flex;justify-content:center;margin:12px 0 10px"><span style="font-size:11px;font-weight:700;color:var(--text-dim);background:var(--panel-3);padding:5px 12px;border-radius:20px">{{ m.daySep }}</span></div>
+                  </sc-if>
+                  <div class="sx-msg" style="{{ m.rowStyle }}">
+                    <div style="{{ m.bubbleStyle }}">
+                      <span style="white-space:pre-wrap;word-break:break-word">{{ m.text }}</span>
+                      <span style="{{ m.metaStyle }}">
+                        <span style="font-size:10.5px;opacity:.75">{{ m.timeLabel }}</span>
+                        <sc-if value="{{ m.sending }}" hint-placeholder-val=""><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.6"><circle cx="12" cy="12" r="8.5"/><path d="M12 8v4.2l2.6 1.6"/></svg></sc-if>
+                        <sc-if value="{{ m.sent }}" hint-placeholder-val=""><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.65"><path d="m5 12.5 4.2 4.2L19 7"/></svg></sc-if>
+                        <sc-if value="{{ m.delivered }}" hint-placeholder-val=""><svg width="18" height="17" viewBox="0 0 30 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.65"><path d="m2 12.5 4.2 4.2L16 7"/><path d="m11 16.5 1.2 1.2L22 8"/></svg></sc-if>
+                        <sc-if value="{{ m.read }}" hint-placeholder-val=""><svg width="18" height="17" viewBox="0 0 30 24" fill="none" stroke="var(--read)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 12.5 4.2 4.2L16 7"/><path d="m11 16.5 1.2 1.2L22 8"/></svg></sc-if>
+                        <sc-if value="{{ m.failed }}" hint-placeholder-val=""><button onClick="{{ m.onRetry }}" title="Riprova invio" style="display:inline-flex;align-items:center;gap:3px;border:none;background:none;color:var(--danger);cursor:pointer;font-size:10.5px;font-weight:700;padding:0"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5M12 16v.01"/></svg>riprova</button></sc-if>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+
+            <!-- composer -->
+            <div style="padding:12px 14px 14px;border-top:1px solid var(--border);background:var(--panel);flex-shrink:0">
+              <div style="display:flex;align-items:flex-end;gap:10px">
+                <div style="flex:1;display:flex;align-items:flex-end;background:var(--panel-2);border:1px solid var(--border);border-radius:16px;padding:6px 6px 6px 14px">
+                  <textarea ref="{{ composerRef }}" value="{{ draft }}" onInput="{{ onDraftInput }}" onKeyDown="{{ onComposerKey }}" rows="1" placeholder="Scrivi un messaggio…" aria-label="Scrivi un messaggio"
+                    style="flex:1;resize:none;border:none;background:none;color:var(--text);font-size:15px;line-height:1.4;max-height:140px;padding:8px 0;outline:none"></textarea>
+                </div>
+                <button onClick="{{ onSend }}" disabled="{{ sendDisabled }}" aria-label="Invia" style="{{ sendBtnStyle }}">
+                  <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- empty state (desktop, no active convo) -->
+        <sc-if value="{{ noActive }}" hint-placeholder-val="{{ true }}">
+          <div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px;background:var(--convo)">
+            <div style="width:76px;height:76px;border-radius:22px;background:var(--panel);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;margin-bottom:20px;box-shadow:var(--shadow)">
+              <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+            </div>
+            <div style="font-size:19px;font-weight:700;letter-spacing:-.01em;margin-bottom:8px">Seleziona una conversazione</div>
+            <p style="font-size:14px;color:var(--text-dim);max-width:340px;line-height:1.55;margin:0">Le tue chat sono protette da forward secrecy e non transitano da nessun server. Scegli un contatto per iniziare.</p>
+          </div>
+        </sc-if>
+      </section>
+      </sc-if>
+    </div>
+
+    <!-- ===================== NEW CONTACT MODAL ===================== -->
+    <sc-if value="{{ showNewModal }}" hint-placeholder-val="">
+      <div onClick="{{ closeModal }}" style="position:fixed;inset:0;background:rgba(6,12,16,.55);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:18px;z-index:50;animation:sx-fade .18s both">
+        <div onClick="{{ stop }}" role="dialog" aria-modal="true" aria-label="Nuovo contatto" style="width:100%;max-width:460px;max-height:92vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:22px;box-shadow:var(--shadow-lg);animation:sx-sheet .26s cubic-bezier(.22,1,.36,1) both" class="sx-scroll">
+          <div style="padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:17px;font-weight:700;letter-spacing:-.01em">Nuovo contatto</div>
+            <button onClick="{{ closeModal }}" aria-label="Chiudi" style="width:34px;height:34px;border-radius:9px;border:none;background:var(--panel-2);color:var(--text-dim);display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          </div>
+
+          <!-- tabs -->
+          <div style="padding:14px 20px 0;display:flex;gap:6px">
+            <button onClick="{{ pairTabQr }}" style="{{ tabQrStyle }}">Codice QR</button>
+            <button onClick="{{ pairTabRemote }}" style="{{ tabRemoteStyle }}">Pairing remoto</button>
+          </div>
+
+          <div style="padding:20px">
+            <!-- QR TAB -->
+            <sc-if value="{{ isQrTab }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;flex-direction:column;gap:18px">
+                <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px;background:var(--panel-2);border-radius:16px;border:1px solid var(--border)">
+                  <div style="font-size:12.5px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em">Il tuo invito</div>
+                  <div style="width:180px;height:180px;background:#fff;border-radius:14px;padding:10px;box-shadow:var(--shadow)"><div role="img" aria-label="Codice QR del tuo invito" style="{{ inviteQrStyle }}"></div></div>
+                  <div style="font-size:12px;color:var(--text-faint);text-align:center;max-width:260px">Mostra questo QR all'altra persona, oppure incolla qui sotto l'invito che ti ha condiviso.</div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:9px">
+                  <label style="font-size:12.5px;font-weight:600;color:var(--text-dim)">Invito ricevuto</label>
+                  <textarea value="{{ pairScanText }}" onInput="{{ onScanInput }}" rows="2" placeholder="Incolla qui l'invito (styx://…)" style="resize:none;border:1px solid var(--border-2);background:var(--panel-2);color:var(--text);border-radius:12px;padding:11px 13px;font-size:13.5px;outline:none;font-family:ui-monospace,SFMono-Regular,Menlo,monospace"></textarea>
+                  <button onClick="{{ onScanInvite }}" disabled="{{ scanDisabled }}" style="{{ scanBtnStyle }}">{{ scanBtnLabel }}</button>
+                </div>
+                <sc-if value="{{ pairReady }}" hint-placeholder-val="">
+                  <div style="display:flex;flex-direction:column;gap:10px;padding-top:4px;animation:sx-in .2s both">
+                    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--accent);font-weight:600"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Chiave verificata · assegna un alias</div>
+                    <input value="{{ pairAlias }}" onInput="{{ onPairAlias }}" placeholder="Alias del contatto" style="height:44px;padding:0 13px;border:1px solid var(--border-2);background:var(--panel-2);color:var(--text);border-radius:11px;font-size:14.5px;outline:none">
+                    <button onClick="{{ onConfirmPair }}" disabled="{{ confirmDisabled }}" style="{{ confirmBtnStyle }}">Aggiungi contatto</button>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-if>
+
+            <!-- REMOTE TAB -->
+            <sc-if value="{{ isRemoteTab }}" hint-placeholder-val="">
+              <div style="display:flex;flex-direction:column;gap:16px">
+                <sc-if value="{{ remoteChoose }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex;flex-direction:column;gap:11px">
+                    <button onClick="{{ onRemoteGenerate }}" style="text-align:left;padding:15px 16px;border:1px solid var(--border-2);background:var(--panel-2);border-radius:14px;cursor:pointer;display:flex;gap:13px;align-items:flex-start">
+                      <span style="width:38px;height:38px;border-radius:11px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+                      <span><span style="display:block;font-size:14.5px;font-weight:700;color:var(--text)">Genera 12 parole</span><span style="display:block;font-size:12.5px;color:var(--text-dim);margin-top:2px">Detta la frase all'altra persona</span></span>
+                    </button>
+                    <button onClick="{{ onRemoteJoinStart }}" style="text-align:left;padding:15px 16px;border:1px solid var(--border-2);background:var(--panel-2);border-radius:14px;cursor:pointer;display:flex;gap:13px;align-items:flex-start">
+                      <span style="width:38px;height:38px;border-radius:11px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2M8 12h8"/></svg></span>
+                      <span><span style="display:block;font-size:14.5px;font-weight:700;color:var(--text)">Inserisci 12 parole</span><span style="display:block;font-size:12.5px;color:var(--text-dim);margin-top:2px">Hai ricevuto la frase da qualcuno</span></span>
+                    </button>
+                  </div>
+                </sc-if>
+
+                <!-- generate mode: show mnemonic -->
+                <sc-if value="{{ remoteGen }}" hint-placeholder-val="">
+                  <div style="display:flex;flex-direction:column;gap:14px">
+                    <div style="font-size:13px;color:var(--text-dim);line-height:1.5">Detta queste 12 parole, in ordine, all'altra persona su un canale fidato (di persona o a voce).</div>
+                    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+                      <sc-for list="{{ mnemonicVM }}" as="w" hint-placeholder-count="12">
+                        <div style="display:flex;align-items:center;gap:7px;padding:9px 10px;background:var(--panel-2);border:1px solid var(--border);border-radius:10px"><span style="font-size:10.5px;color:var(--text-faint);font-weight:700;min-width:14px">{{ w.n }}</span><span style="font-size:13px;font-weight:600;color:var(--text)">{{ w.word }}</span></div>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-if>
+
+                <!-- join mode: enter words -->
+                <sc-if value="{{ remoteJoin }}" hint-placeholder-val="">
+                  <div style="display:flex;flex-direction:column;gap:10px">
+                    <label style="font-size:13px;color:var(--text-dim);line-height:1.5">Inserisci le 12 parole ricevute, separate da spazio.</label>
+                    <textarea value="{{ joinText }}" onInput="{{ onJoinInput }}" rows="3" placeholder="parola1 parola2 parola3 …" style="resize:none;border:1px solid var(--border-2);background:var(--panel-2);color:var(--text);border-radius:12px;padding:12px 13px;font-size:14px;line-height:1.6;outline:none"></textarea>
+                    <button onClick="{{ onJoinConfirm }}" disabled="{{ joinDisabled }}" style="{{ joinBtnStyle }}">{{ joinBtnLabel }}</button>
+                  </div>
+                </sc-if>
+
+                <!-- verification code (both sides) -->
+                <sc-if value="{{ showCode }}" hint-placeholder-val="">
+                  <div style="display:flex;flex-direction:column;gap:14px;animation:sx-in .2s both">
+                    <div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px;background:var(--accent-soft);border-radius:16px">
+                      <div style="font-size:12px;font-weight:700;color:var(--accent-2);text-transform:uppercase;letter-spacing:.06em">Codice di verifica</div>
+                      <div style="font-size:38px;font-weight:800;letter-spacing:.14em;color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,monospace">{{ verifyCode }}</div>
+                    </div>
+                    <div style="display:flex;gap:9px;align-items:flex-start;font-size:12.5px;color:var(--text-dim);line-height:1.5"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/></svg><span>Confermate <strong style="color:var(--text)">a voce</strong> che vedete lo stesso codice: se coincide, nessuno si è messo in mezzo (protezione MITM).</span></div>
+                    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13.5px;color:var(--text)"><input type="checkbox" checked="{{ codeMatched }}" onChange="{{ onToggleMatched }}" style="width:18px;height:18px;accent-color:var(--accent)">I codici coincidono su entrambi i dispositivi</label>
+                    <input value="{{ pairAlias }}" onInput="{{ onPairAlias }}" placeholder="Alias del contatto" style="height:44px;padding:0 13px;border:1px solid var(--border-2);background:var(--panel-2);color:var(--text);border-radius:11px;font-size:14.5px;outline:none">
+                    <button onClick="{{ onConfirmPair }}" disabled="{{ confirmRemoteDisabled }}" style="{{ confirmRemoteBtnStyle }}">Conferma e aggiungi</button>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ===================== SETTINGS PANEL ===================== -->
+    <sc-if value="{{ showSettings }}" hint-placeholder-val="">
+      <div onClick="{{ closeModal }}" style="position:fixed;inset:0;background:rgba(6,12,16,.55);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:18px;z-index:50;animation:sx-fade .18s both">
+        <div onClick="{{ stop }}" role="dialog" aria-modal="true" aria-label="Impostazioni" style="width:100%;max-width:480px;max-height:92vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:22px;box-shadow:var(--shadow-lg);animation:sx-sheet .26s cubic-bezier(.22,1,.36,1) both" class="sx-scroll">
+          <div style="padding:18px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
+            <div style="font-size:17px;font-weight:700;letter-spacing:-.01em">Impostazioni</div>
+            <button onClick="{{ closeModal }}" aria-label="Chiudi" style="width:34px;height:34px;border-radius:9px;border:none;background:var(--panel-2);color:var(--text-dim);display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+          </div>
+          <div style="padding:20px;display:flex;flex-direction:column;gap:22px">
+            <!-- profile -->
+            <div style="display:flex;align-items:center;gap:14px">
+              <div role="img" aria-label="Il tuo avatar" style="{{ meAvatarStyleLg }}"></div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:11px;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Il tuo alias</div>
+                <div style="display:flex;gap:8px">
+                  <input value="{{ setAliasVal }}" onInput="{{ onSetAliasInput }}" style="flex:1;height:42px;padding:0 12px;border:1px solid var(--border-2);background:var(--panel-2);color:var(--text);border-radius:11px;font-size:14.5px;font-weight:600;outline:none">
+                  <button onClick="{{ onSaveAlias }}" disabled="{{ saveAliasDisabled }}" style="{{ saveAliasBtnStyle }}">Salva</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- pubkey -->
+            <div>
+              <div style="font-size:11px;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">La tua chiave pubblica</div>
+              <button onClick="{{ onCopyKey }}" style="width:100%;display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--border-2);background:var(--panel-2);border-radius:12px;cursor:pointer;text-align:left">
+                <span style="flex:1;min-width:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;color:var(--text-dim);word-break:break-all">{{ mePubkey }}</span>
+                <span style="flex-shrink:0;color:var(--accent);display:flex;align-items:center;gap:5px;font-size:12.5px;font-weight:700"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>{{ copyLabel }}</span>
+              </button>
+            </div>
+
+            <!-- security -->
+            <div style="display:flex;gap:12px;padding:15px;background:var(--accent-soft);border-radius:14px">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M12 2 4 5v6c0 5 3.4 8.3 8 11 4.6-2.7 8-6 8-11V5l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>
+              <div><div style="font-size:13.5px;font-weight:700;color:var(--text);margin-bottom:3px">Sicurezza</div><div style="font-size:12.5px;color:var(--text-dim);line-height:1.5">Ogni messaggio usa <strong style="color:var(--accent-2)">forward secrecy</strong>: le chiavi ruotano di continuo, quindi compromettere una chiave non rivela le conversazioni passate.</div></div>
+            </div>
+
+            <!-- contacts management -->
+            <div>
+              <div style="font-size:11px;font-weight:700;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px">Gestione contatti</div>
+              <sc-if value="{{ hasContacts }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <sc-for list="{{ contactsVM }}" as="c" hint-placeholder-count="3">
+                    <div style="display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:11px;background:var(--panel-2)">
+                      <div role="img" style="{{ c.avatarStyleSm }}"></div>
+                      <div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.alias }}</div><div style="font-size:11px;color:var(--text-faint);font-family:ui-monospace,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.keyShort }}</div></div>
+                      <button onClick="{{ c.onRemove }}" aria-label="Rimuovi contatto" title="Rimuovi" style="width:34px;height:34px;border-radius:9px;border:1px solid var(--border);background:var(--panel);color:var(--danger);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></button>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <sc-if value="{{ noContacts }}" hint-placeholder-val=""><div style="font-size:13px;color:var(--text-faint);padding:6px 2px">Nessun contatto ancora.</div></sc-if>
+            </div>
+
+            <!-- session actions -->
+            <div style="display:flex;gap:10px;padding-top:4px;border-top:1px solid var(--border)">
+              <button onClick="{{ onLock }}" style="flex:1;height:44px;border:1px solid var(--border-2);background:var(--panel-2);color:var(--text);border-radius:12px;font-size:13.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:7px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Blocca</button>
+              <button onClick="{{ onReset }}" style="flex:1;height:44px;border:1px solid var(--danger);background:var(--danger-soft);color:var(--danger);border-radius:12px;font-size:13.5px;font-weight:700;cursor:pointer">Reimposta identità</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- toast -->
+    <sc-if value="{{ toast }}" hint-placeholder-val="">
+      <div style="position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:11px 20px;border-radius:12px;font-size:13.5px;font-weight:600;box-shadow:var(--shadow-lg);z-index:60;animation:sx-pop .22s both">{{ toast }}</div>
+    </sc-if>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    let savedTheme = null;
+    try { savedTheme = localStorage.getItem('styx-theme'); } catch (e) {}
+    this.state = {
+      phase: 'unlock',
+      firstRun: !(window.StyxChat && window.StyxChat.hasIdentity && window.StyxChat.hasIdentity()),
+      unlocking: false,
+      unlockError: '',
+      me: null,
+      contacts: [],
+      activeKey: null,
+      messages: {},
+      typing: {},
+      draft: '',
+      search: '',
+      theme: savedTheme || (prefersDark ? 'dark' : 'light'),
+      isMobile: window.innerWidth < 820,
+      mobileView: 'list',
+      modal: null,
+      toast: '',
+      // pairing
+      pair: this._freshPair(),
+      // settings
+      setAliasVal: '',
+      copyLabel: 'Copia',
+      // pagination
+      noMore: {},
+      loadingMore: false
+    };
+    this.aliasRef = React.createRef();
+    this.pwRef = React.createRef();
+    this.scrollRef = React.createRef();
+    this.composerRef = React.createRef();
+    this._pendingScroll = null;
+    this._scrollAnchor = null;
+    this._typingTimer = null;
+    this._toastTimer = null;
+  }
+
+  _freshPair() {
+    return { tab: 'qr', inviteQr: '', scanText: '', qrKey: null, rmode: 'choose',
+      mnemonic: '', code: '', rKey: null, joinText: '', matched: false, alias: '', busy: false };
+  }
+
+  componentDidMount() {
+    this._onResize = () => {
+      const m = window.innerWidth < 820;
+      if (m !== this.state.isMobile) this.setState({ isMobile: m });
+    };
+    window.addEventListener('resize', this._onResize);
+  }
+
+  componentWillUnmount() {
+    window.removeEventListener('resize', this._onResize);
+    this._teardown();
+    clearTimeout(this._typingTimer);
+    clearTimeout(this._toastTimer);
+  }
+
+  _teardown() {
+    if (this._unsub) this._unsub.forEach((u) => { try { u(); } catch (e) {} });
+    this._unsub = null;
+    if (this.chat && this.chat.destroy) this.chat.destroy();
+    this.chat = null;
+  }
+
+  componentDidUpdate() {
+    const el = this.scrollRef.current;
+    if (!el) return;
+    if (this._pendingScroll === 'bottom') {
+      el.scrollTop = el.scrollHeight;
+      this._pendingScroll = null;
+    } else if (this._pendingScroll === 'keep' && this._scrollAnchor) {
+      el.scrollTop = el.scrollHeight - this._scrollAnchor;
+      this._pendingScroll = null; this._scrollAnchor = null;
+    }
+  }
+
+  // ---------- unlock ----------
+  async onUnlockSubmit(e) {
+    e.preventDefault();
+    if (this.state.unlocking) return;
+    const password = this.pwRef.current ? this.pwRef.current.value : '';
+    const alias = this.aliasRef.current ? this.aliasRef.current.value : '';
+    if (!password) { this.setState({ unlockError: 'Inserisci una password.' }); return; }
+    if (this.state.firstRun && !alias.trim()) { this.setState({ unlockError: 'Scegli un alias.' }); return; }
+    this.setState({ unlocking: true, unlockError: '' });
+    try {
+      const chat = new window.StyxChat();
+      await chat.init({ password, alias });
+      this.chat = chat;
+      this._subscribe();
+      const contacts = await chat.listContacts();
+      this.setState({ phase: 'app', me: chat.me, contacts, unlocking: false });
+    } catch (err) {
+      this.setState({ unlocking: false, unlockError: (err && err.message) || 'Sblocco fallito.' });
+    }
+  }
+
+  _subscribe() {
+    const chat = this.chat;
+    this._unsub = [
+      chat.onContactsChanged(async () => {
+        const contacts = await chat.listContacts();
+        this.setState({ contacts });
+      }),
+      chat.onMessage((msg) => this._ingest(msg)),
+      chat.onMessageState((id, state) => this._applyState(id, state)),
+      chat.onTyping((pubkey, isTyping) => {
+        this.setState((s) => ({ typing: Object.assign({}, s.typing, { [pubkey]: isTyping }) }));
+      })
+    ];
+  }
+
+  _ingest(msg) {
+    const key = msg.contactPubkey;
+    this.setState((s) => {
+      const list = (s.messages[key] || []).slice();
+      if (list.some((m) => m.id === msg.id)) return null;
+      list.push(msg);
+      return { messages: Object.assign({}, s.messages, { [key]: list }) };
+    }, () => {
+      if (key === this.state.activeKey) {
+        const el = this.scrollRef.current;
+        const nearBottom = !el || (el.scrollHeight - el.scrollTop - el.clientHeight < 160);
+        if (nearBottom || msg.direction === 'out') { this._pendingScroll = 'bottom'; this.forceUpdate(); }
+        if (msg.direction === 'in') this.chat.markRead(key, msg.id);
+      }
+    });
+  }
+
+  _applyState(id, state) {
+    this.setState((s) => {
+      const next = {};
+      let changed = false;
+      for (const k in s.messages) {
+        const arr = s.messages[k];
+        if (arr.some((m) => m.id === id)) {
+          next[k] = arr.map((m) => m.id === id ? Object.assign({}, m, { state }) : m);
+          changed = true;
+        } else next[k] = arr;
+      }
+      return changed ? { messages: next } : null;
+    });
+  }
+
+  // ---------- conversation ----------
+  async openContact(key) {
+    this.setState({ activeKey: key, mobileView: 'convo', draft: '' });
+    if (this.composerRef.current) this.composerRef.current.style.height = 'auto';
+    try {
+      const msgs = await this.chat.listMessages(key, { limit: 30 });
+      this._pendingScroll = 'bottom';
+      this.setState((s) => ({ messages: Object.assign({}, s.messages, { [key]: msgs }) }));
+      const last = msgs[msgs.length - 1];
+      if (last) this.chat.markRead(key, last.id);
+    } catch (e) {}
+  }
+
+  onBack() { this.setState({ mobileView: 'list', activeKey: this.state.isMobile ? null : this.state.activeKey }); }
+
+  async onMsgScroll(e) {
+    const el = e.target;
+    if (el.scrollTop > 36 || this.state.loadingMore) return;
+    const key = this.state.activeKey;
+    if (!key || this.state.noMore[key]) return;
+    const list = this.state.messages[key] || [];
+    if (!list.length) return;
+    this.setState({ loadingMore: true });
+    try {
+      const older = await this.chat.listMessages(key, { before: list[0].ts, limit: 20 });
+      this._scrollAnchor = el.scrollHeight;
+      this._pendingScroll = 'keep';
+      this.setState((s) => {
+        const cur = s.messages[key] || [];
+        const ids = new Set(cur.map((m) => m.id));
+        const add = older.filter((m) => !ids.has(m.id));
+        return {
+          loadingMore: false,
+          noMore: Object.assign({}, s.noMore, { [key]: add.length === 0 }),
+          messages: Object.assign({}, s.messages, { [key]: add.concat(cur) })
+        };
+      });
+    } catch (e) { this.setState({ loadingMore: false }); }
+  }
+
+  onDraftInput(e) {
+    const val = e.target.value;
+    this.setState({ draft: val });
+    const ta = this.composerRef.current;
+    if (ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px'; }
+    const key = this.state.activeKey;
+    if (key) {
+      this.chat.setTyping(key, true);
+      clearTimeout(this._typingTimer);
+      this._typingTimer = setTimeout(() => this.chat.setTyping(key, false), 1500);
+    }
+  }
+
+  onComposerKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.send(); }
+  }
+
+  send() {
+    const key = this.state.activeKey;
+    const text = (this.state.draft || '').trim();
+    if (!key || !text) return;
+    this.chat.setTyping(key, false);
+    clearTimeout(this._typingTimer);
+    this.chat.sendText(key, text);
+    this.setState({ draft: '' });
+    const ta = this.composerRef.current;
+    if (ta) ta.style.height = 'auto';
+    this._pendingScroll = 'bottom';
+  }
+
+  retry(text) { const key = this.state.activeKey; if (key) this.chat.sendText(key, text); }
+
+  // ---------- pairing ----------
+  async onNewContact() {
+    const p = this._freshPair();
+    this.setState({ modal: 'new', pair: p });
+    try { const r = await this.chat.createQrInvite(); this._patchPair({ inviteQr: r.qr }); } catch (e) {}
+  }
+  _patchPair(patch) { this.setState((s) => ({ pair: Object.assign({}, s.pair, patch) })); }
+  setPairTab(tab) { this._patchPair({ tab, rmode: 'choose', code: '', rKey: null, qrKey: null, scanText: '', joinText: '', matched: false, alias: '' }); }
+
+  onScanInput(e) { this._patchPair({ scanText: e.target.value }); }
+  async onScanInvite() {
+    const payload = this.state.pair.scanText.trim();
+    if (!payload) return;
+    this._patchPair({ busy: true });
+    try { const r = await this.chat.acceptQrInvite(payload); this._patchPair({ qrKey: r.contactPubkey, busy: false }); }
+    catch (e) { this._patchPair({ busy: false }); this.toast('Invito non valido'); }
+  }
+
+  async onRemoteGenerate() {
+    try {
+      const r = await this.chat.startRemotePairing();
+      const code = ('000000' + (this._hash(r.mnemonic) % 1000000)).slice(-6);
+      this._patchPair({ rmode: 'generate', mnemonic: r.mnemonic, code, rKey: 'STX_' + this._hash(r.mnemonic).toString(16) });
+    } catch (e) {}
+  }
+  onRemoteJoinStart() { this._patchPair({ rmode: 'join' }); }
+  onJoinInput(e) { this._patchPair({ joinText: e.target.value }); }
+  async onJoinConfirm() {
+    const words = this.state.pair.joinText.trim().split(/\s+/);
+    if (words.length < 12) { this.toast('Servono 12 parole'); return; }
+    this._patchPair({ busy: true });
+    try {
+      const r = await this.chat.joinRemotePairing(words.join(' '));
+      this._patchPair({ code: r.doubleCheckCode, rKey: r.contactPubkey, busy: false });
+    } catch (e) { this._patchPair({ busy: false }); }
+  }
+  onToggleMatched(e) { this._patchPair({ matched: e.target.checked }); }
+  onPairAlias(e) { this._patchPair({ alias: e.target.value }); }
+
+  async onConfirmPair() {
+    const p = this.state.pair;
+    const contactPubkey = p.tab === 'qr' ? p.qrKey : p.rKey;
+    const alias = (p.alias || '').trim() || 'Contatto';
+    try {
+      const r = await this.chat.confirmPairing({ contactPubkey, alias });
+      this.setState({ modal: null, pair: this._freshPair() });
+      this.toast('Contatto aggiunto');
+      const key = (r && r.contactPubkey) || contactPubkey;
+      if (key) setTimeout(() => this.openContact(key), 60);
+    } catch (e) { this.toast('Aggiunta fallita'); }
+  }
+
+  // ---------- settings ----------
+  onOpenSettings() { this.setState({ modal: 'settings', setAliasVal: this.state.me ? this.state.me.alias : '', copyLabel: 'Copia' }); }
+  onSetAliasInput(e) { this.setState({ setAliasVal: e.target.value }); }
+  async onSaveAlias() {
+    const v = (this.state.setAliasVal || '').trim();
+    if (!v) return;
+    await this.chat.setAlias(v);
+    this.setState({ me: { pubkey: this.state.me.pubkey, alias: v } });
+    this.toast('Alias aggiornato');
+  }
+  onCopyKey() {
+    const k = this.state.me ? this.state.me.pubkey : '';
+    try {
+      if (navigator.clipboard) navigator.clipboard.writeText(k);
+    } catch (e) {}
+    this.setState({ copyLabel: 'Copiato ✓' });
+    setTimeout(() => this.setState({ copyLabel: 'Copia' }), 1600);
+  }
+  async removeContact(key) {
+    await this.chat.removeContact(key);
+    if (this.state.activeKey === key) this.setState({ activeKey: null, mobileView: 'list' });
+  }
+  onLock() { this._teardown(); this.setState({ phase: 'unlock', modal: null, activeKey: null, contacts: [], messages: {}, firstRun: false, unlockError: '' }); }
+  onReset() {
+    try { localStorage.removeItem('styx-identity'); } catch (e) {}
+    this._teardown();
+    this.setState({ phase: 'unlock', modal: null, activeKey: null, contacts: [], messages: {}, firstRun: true, unlockError: '' });
+  }
+
+  // ---------- helpers ----------
+  toast(msg) {
+    this.setState({ toast: msg });
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => this.setState({ toast: '' }), 2200);
+  }
+  toggleTheme() {
+    const t = this.state.theme === 'dark' ? 'light' : 'dark';
+    try { localStorage.setItem('styx-theme', t); } catch (e) {}
+    this.setState({ theme: t });
+  }
+  _hash(str) { let h = 0x811c9dc5; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); } return h >>> 0; }
+  _timeLabel(ts) { const d = new Date(ts); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+  _daySep(ts, prevTs) {
+    const d = new Date(ts); const day = d.toDateString();
+    if (prevTs && new Date(prevTs).toDateString() === day) return '';
+    const today = new Date().toDateString();
+    const yest = new Date(Date.now() - 86400000).toDateString();
+    if (day === today) return 'Oggi';
+    if (day === yest) return 'Ieri';
+    return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long' });
+  }
+  _relTime(ts) {
+    if (!ts) return '';
+    const diff = Date.now() - ts;
+    if (diff < 60000) return 'ora';
+    if (diff < 3600000) return Math.floor(diff / 60000) + 'm';
+    const d = new Date(ts);
+    if (diff < 86400000) return this._timeLabel(ts);
+    if (diff < 7 * 86400000) return d.toLocaleDateString('it-IT', { weekday: 'short' });
+    return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'numeric' });
+  }
+
+  renderVals() {
+    const s = this.state;
+    const U = window.StyxUtil || { identicon: () => '', qrSvg: () => '', shortKey: (x) => x };
+    const isDark = s.theme === 'dark';
+    // avatar/QR rendered as background-image divs (avoids <img> preload errors in offline bundle)
+    const avStyle = (uri, size, radius, extra) => Object.assign({
+      width: size + 'px', height: size + 'px', borderRadius: radius + 'px', flexShrink: 0,
+      backgroundImage: 'url("' + uri + '")', backgroundSize: 'cover', backgroundPosition: 'center',
+      backgroundColor: 'var(--panel-3)'
+    }, extra || {});
+
+    // ---- unlock ----
+    const showUnlock = s.phase === 'unlock';
+    const unlockBtnStyle = {
+      height: '48px', border: 'none', borderRadius: '13px', background: 'var(--accent)',
+      color: 'var(--accent-ink)', fontSize: '15px', fontWeight: 700, cursor: s.unlocking ? 'default' : 'pointer',
+      opacity: s.unlocking ? 0.65 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      marginTop: '4px', boxShadow: '0 6px 18px var(--accent-soft)', transition: 'opacity .15s'
+    };
+
+    // ---- contacts ----
+    const q = s.search.trim().toLowerCase();
+    const sorted = s.contacts.slice().sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+    const filtered = q ? sorted.filter((c) => (c.alias || '').toLowerCase().includes(q) || (c.lastPreview || '').toLowerCase().includes(q)) : sorted;
+    const contactsVM = filtered.map((c) => {
+      const active = c.pubkey === s.activeKey;
+      return {
+        pubkey: c.pubkey, alias: c.alias || U.shortKey(c.pubkey),
+        avatar: U.identicon(c.pubkey), keyShort: U.shortKey(c.pubkey),
+        avatarStyle: avStyle(U.identicon(c.pubkey), 48, 14),
+        avatarStyleSm: avStyle(U.identicon(c.pubkey), 36, 10),
+        preview: c.lastPreview || 'Nessun messaggio',
+        timeLabel: this._relTime(c.lastTs),
+        tsColor: c.unread ? 'var(--accent)' : 'var(--text-faint)',
+        unread: c.unread || 0, hasUnread: !!c.unread,
+        online: !!c.online,
+        dotStyle: {
+          position: 'absolute', right: '-2px', bottom: '-2px', width: '13px', height: '13px',
+          borderRadius: '50%', border: '2.5px solid var(--panel)',
+          background: c.online ? 'var(--accent)' : 'var(--text-faint)'
+        },
+        rowStyle: {
+          width: '100%', display: 'flex', gap: '12px', alignItems: 'center', textAlign: 'left',
+          padding: '10px 14px', border: 'none', borderLeft: active ? '3px solid var(--accent)' : '3px solid transparent',
+          background: active ? 'var(--panel-3)' : 'transparent', cursor: 'pointer'
+        },
+        onClick: () => this.openContact(c.pubkey),
+        onRemove: () => this.removeContact(c.pubkey)
+      };
+    });
+
+    // ---- active conversation ----
+    const active = s.contacts.find((c) => c.pubkey === s.activeKey);
+    const hasActive = !!active;
+    const msgsRaw = (s.messages[s.activeKey] || []).slice().sort((a, b) => a.ts - b.ts);
+    let prevTs = null;
+    const messagesVM = msgsRaw.map((m) => {
+      const mine = m.direction === 'out';
+      const sep = this._daySep(m.ts, prevTs); prevTs = m.ts;
+      const st = m.state;
+      return {
+        id: m.id, mine, text: m.text, timeLabel: this._timeLabel(m.ts),
+        daySep: sep, hasDaySep: !!sep,
+        sending: mine && st === 'sending', sent: mine && st === 'sent',
+        delivered: mine && st === 'delivered', read: mine && st === 'read',
+        failed: mine && st === 'failed',
+        rowStyle: { display: 'flex', justifyContent: mine ? 'flex-end' : 'flex-start', margin: '1px 0' },
+        bubbleStyle: {
+          maxWidth: '76%', padding: '8px 11px 7px', borderRadius: mine ? '16px 16px 5px 16px' : '16px 16px 16px 5px',
+          background: mine ? 'var(--bubble-out)' : 'var(--bubble-in)',
+          color: mine ? 'var(--bubble-out-text)' : 'var(--bubble-in-text)',
+          fontSize: '14.5px', lineHeight: 1.42, boxShadow: 'var(--shadow)',
+          border: mine ? 'none' : '1px solid var(--border)',
+          display: 'flex', flexDirection: 'column', gap: '2px'
+        },
+        metaStyle: { display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', marginTop: '1px', color: mine ? 'var(--bubble-out-text)' : 'var(--text-faint)' },
+        onRetry: () => this.retry(m.text)
+      };
+    });
+
+    const activeTyping = hasActive && !!s.typing[s.activeKey];
+    const presenceText = active ? (active.online ? 'online' : 'offline') : '';
+    const presenceColor = activeTyping ? 'var(--accent)' : (active && active.online ? 'var(--accent)' : 'var(--text-faint)');
+
+    // ---- responsive panels ----
+    const isMobile = s.isMobile;
+    const showList = !isMobile || s.mobileView === 'list';
+    const showConvo = !isMobile || s.mobileView === 'convo';
+    const listPanelStyle = {
+      width: isMobile ? '100%' : '360px', flexShrink: 0, height: '100%',
+      display: 'flex', flexDirection: 'column', background: 'var(--panel)',
+      borderRight: isMobile ? 'none' : '1px solid var(--border)'
+    };
+    const convoPanelStyle = { flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--convo)' };
+    const backBtnStyle = {
+      width: '38px', height: '38px', borderRadius: '10px', border: 'none', background: 'transparent',
+      color: 'var(--text-dim)', display: isMobile ? 'flex' : 'none', alignItems: 'center', justifyContent: 'center',
+      cursor: 'pointer', flexShrink: 0, marginLeft: '-6px'
+    };
+
+    // ---- composer ----
+    const sendDisabled = !(s.draft && s.draft.trim());
+    const sendBtnStyle = {
+      width: '46px', height: '46px', borderRadius: '15px', border: 'none', flexShrink: 0,
+      background: sendDisabled ? 'var(--panel-3)' : 'var(--accent)',
+      color: sendDisabled ? 'var(--text-faint)' : 'var(--accent-ink)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      cursor: sendDisabled ? 'default' : 'pointer', transition: 'background .15s',
+      boxShadow: sendDisabled ? 'none' : '0 4px 14px var(--accent-soft)'
+    };
+
+    // ---- pairing view models ----
+    const p = s.pair;
+    const tabBase = { flex: 1, height: '40px', border: 'none', borderRadius: '11px', fontSize: '13.5px', fontWeight: 700, cursor: 'pointer' };
+    const tabOn = Object.assign({}, tabBase, { background: 'var(--accent)', color: 'var(--accent-ink)' });
+    const tabOff = Object.assign({}, tabBase, { background: 'var(--panel-2)', color: 'var(--text-dim)' });
+    const isQrTab = p.tab === 'qr';
+    const scanDisabled = !p.scanText.trim() || p.busy || !!p.qrKey;
+    const primaryBtn = (disabled) => ({
+      height: '46px', border: 'none', borderRadius: '12px', fontSize: '14.5px', fontWeight: 700,
+      background: disabled ? 'var(--panel-3)' : 'var(--accent)', color: disabled ? 'var(--text-faint)' : 'var(--accent-ink)',
+      cursor: disabled ? 'default' : 'pointer'
+    });
+    const pairReady = isQrTab && !!p.qrKey;
+    const confirmDisabled = !p.qrKey;
+    const joinDisabled = p.joinText.trim().split(/\s+/).filter(Boolean).length < 12 || p.busy || !!p.code;
+    const showCode = p.tab === 'remote' && !!p.code;
+    const confirmRemoteDisabled = !p.matched || !p.rKey;
+    const mnemonicVM = (p.mnemonic ? p.mnemonic.split(/\s+/) : []).map((w, i) => ({ n: i + 1, word: w }));
+
+    return {
+      theme: s.theme, isDark, isLight: !isDark,
+      showUnlock, showApp: s.phase === 'app',
+      unlockTitle: s.firstRun ? 'Crea la tua identità' : 'Bentornato',
+      unlockSub: s.firstRun
+        ? 'Scegli un alias e una password. La password cifra le tue chiavi solo su questo dispositivo — non lascia mai il tuo browser.'
+        : 'Inserisci la password per decifrare le tue chiavi e sbloccare le conversazioni.',
+      unlockCta: s.unlocking ? 'Sblocco…' : (s.firstRun ? 'Crea identità' : 'Sblocca'),
+      showAliasField: s.firstRun, unlockError: s.unlockError, unlocking: s.unlocking,
+      unlockBtnStyle, onUnlockSubmit: (e) => this.onUnlockSubmit(e),
+      aliasRef: this.aliasRef, pwRef: this.pwRef,
+
+      onToggleTheme: () => this.toggleTheme(),
+      onOpenSettings: () => this.onOpenSettings(),
+
+      meAlias: s.me ? s.me.alias : '',
+      meAvatar: s.me ? U.identicon(s.me.pubkey) : '',
+      meAvatarStyle: avStyle(s.me ? U.identicon(s.me.pubkey) : '', 38, 11),
+      meAvatarStyleLg: avStyle(s.me ? U.identicon(s.me.pubkey) : '', 56, 16),
+      mePubkey: s.me ? s.me.pubkey : '',
+
+      search: s.search, onSearch: (e) => this.setState({ search: e.target.value }),
+      contactsVM, hasContacts: filtered.length > 0, noContacts: filtered.length === 0,
+      emptyContactsMsg: q ? 'Nessun contatto trovato.' : 'Ancora nessun contatto. Tocca "Nuovo contatto" per aggiungerne uno.',
+      onNewContact: () => this.onNewContact(),
+
+      isMobile, showList, showConvo, listPanelStyle, convoPanelStyle, backBtnStyle,
+      onBack: () => this.onBack(),
+
+      hasActive, noActive: !hasActive && !isMobile,
+      activeAlias: active ? (active.alias || U.shortKey(active.pubkey)) : '',
+      activeAvatar: active ? U.identicon(active.pubkey) : '',
+      activeAvatarStyle: avStyle(active ? U.identicon(active.pubkey) : '', 40, 12),
+      presenceText, presenceColor, activeTyping, presencePlain: !activeTyping,
+
+      messagesVM, scrollRef: this.scrollRef, onMsgScroll: (e) => this.onMsgScroll(e),
+      loadingMore: s.loadingMore,
+
+      draft: s.draft, composerRef: this.composerRef,
+      onDraftInput: (e) => this.onDraftInput(e), onComposerKey: (e) => this.onComposerKey(e),
+      onSend: () => this.send(), sendDisabled, sendBtnStyle,
+
+      // modal switches
+      showNewModal: s.modal === 'new', showSettings: s.modal === 'settings',
+      closeModal: () => this.setState({ modal: null }),
+      stop: (e) => e.stopPropagation(),
+
+      // pairing
+      pairTabQr: () => this.setPairTab('qr'), pairTabRemote: () => this.setPairTab('remote'),
+      tabQrStyle: isQrTab ? tabOn : tabOff, tabRemoteStyle: !isQrTab ? tabOn : tabOff,
+      isQrTab, isRemoteTab: p.tab === 'remote',
+      inviteQrSvg: p.inviteQr ? U.qrSvg(p.inviteQr) : U.qrSvg('styx'),
+      inviteQrStyle: { width: '100%', height: '100%', backgroundImage: 'url("' + (p.inviteQr ? U.qrSvg(p.inviteQr) : U.qrSvg('styx')) + '")', backgroundSize: 'contain', backgroundRepeat: 'no-repeat', backgroundPosition: 'center' },
+      pairScanText: p.scanText, onScanInput: (e) => this.onScanInput(e),
+      onScanInvite: () => this.onScanInvite(), scanDisabled,
+      scanBtnStyle: primaryBtn(scanDisabled),
+      scanBtnLabel: p.busy ? 'Verifico…' : (p.qrKey ? 'Invito accettato ✓' : 'Accetta invito'),
+      pairReady, pairAlias: p.alias, onPairAlias: (e) => this.onPairAlias(e),
+      onConfirmPair: () => this.onConfirmPair(),
+      confirmDisabled, confirmBtnStyle: primaryBtn(confirmDisabled),
+
+      remoteChoose: p.tab === 'remote' && p.rmode === 'choose',
+      remoteGen: p.tab === 'remote' && p.rmode === 'generate',
+      remoteJoin: p.tab === 'remote' && p.rmode === 'join' && !p.code,
+      onRemoteGenerate: () => this.onRemoteGenerate(),
+      onRemoteJoinStart: () => this.onRemoteJoinStart(),
+      mnemonicVM,
+      joinText: p.joinText, onJoinInput: (e) => this.onJoinInput(e),
+      onJoinConfirm: () => this.onJoinConfirm(), joinDisabled,
+      joinBtnStyle: primaryBtn(joinDisabled), joinBtnLabel: p.busy ? 'Verifico…' : 'Continua',
+      showCode, verifyCode: p.code, codeMatched: p.matched,
+      onToggleMatched: (e) => this.onToggleMatched(e),
+      confirmRemoteDisabled, confirmRemoteBtnStyle: primaryBtn(confirmRemoteDisabled),
+
+      // settings
+      setAliasVal: s.setAliasVal, onSetAliasInput: (e) => this.onSetAliasInput(e),
+      onSaveAlias: () => this.onSaveAlias(),
+      saveAliasDisabled: !(s.setAliasVal && s.setAliasVal.trim()),
+      saveAliasBtnStyle: primaryBtn(!(s.setAliasVal && s.setAliasVal.trim())),
+      onCopyKey: () => this.onCopyKey(), copyLabel: s.copyLabel,
+      onLock: () => this.onLock(), onReset: () => this.onReset(),
+
+      toast: s.toast
+    };
+  }
+}
+</script>
+</body>
+</html>
