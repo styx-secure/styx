@@ -70,6 +70,7 @@ export class StyxChat {
     this._assembled = false;
     this._store = deps.store || new MemoryMessageStore();
     this._groups = {}; // contactPubkey -> MLS groupId (persisted in app mode)
+    this._pendingApp = {}; // from -> [envelopes] not yet decryptable (arrived before Welcome)
     if (deps.identity && deps.engine && deps.roster && deps.transport) {
       this._identity = { ...deps.identity };
       this._engine = deps.engine;
@@ -327,27 +328,48 @@ export class StyxChat {
       if (!(await this._roster.get(from))) {
         await this._roster.add({ pubkey: from, alias: env.from?.alias || from });
       }
+      await this._drainPending(from); // messages that arrived before this Welcome
       return;
     }
     if (env.t === 'app') {
-      const session = this._engine.session(from);
-      if (!session) return;
-      const res = session.decrypt(base64ToBytes(env.ct));
-      await this._persistMls(); // the ratchet advanced on decrypt
-      if (res.kind !== 'application') return;
-      const text = utf8Decode(res.plaintext);
-      const msg = {
-        id: uuidv4(), contactPubkey: from, direction: 'in',
-        text, ts: Date.now(), state: 'delivered',
-      };
-      await this._store.append(msg);
-      await this._persistMessages();
-      await this._touch(from, text, msg.ts, true);
-      this._emitter.emit('message', msg);
+      const handled = await this._processApp(from, env);
+      if (!handled) (this._pendingApp[from] ||= []).push(env); // wait for the Welcome
       return;
     }
     if (env.t === 'typing') {
       this._emitter.emit('typing', from, !!env.on);
+    }
+  }
+
+  /** Decrypt + surface one app envelope. @returns {Promise<boolean>} handled (false = no session / not yet decryptable). */
+  async _processApp(from, env) {
+    const session = this._engine.session(from);
+    if (!session) return false;
+    let res;
+    try { res = session.decrypt(base64ToBytes(env.ct)); } catch { return false; }
+    await this._persistMls(); // ratchet advanced on decrypt
+    if (res.kind !== 'application') return true;
+    const text = utf8Decode(res.plaintext);
+    const msg = {
+      id: uuidv4(), contactPubkey: from, direction: 'in',
+      text, ts: Date.now(), state: 'delivered',
+    };
+    await this._store.append(msg);
+    await this._persistMessages();
+    await this._touch(from, text, msg.ts, true);
+    this._emitter.emit('message', msg);
+    return true;
+  }
+
+  /** Re-process queued app messages once a session exists (e.g. after the Welcome). */
+  async _drainPending(from) {
+    const queue = this._pendingApp[from];
+    if (!queue || !queue.length) return;
+    this._pendingApp[from] = [];
+    for (const env of queue) {
+      // eslint-disable-next-line no-await-in-loop
+      const handled = await this._processApp(from, env);
+      if (!handled) (this._pendingApp[from] ||= []).push(env);
     }
   }
 }

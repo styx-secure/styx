@@ -137,6 +137,42 @@ describe('StyxChat orchestrator (in-memory transport, real MLS)', () => {
     await expect(alice.sendText('ghost', 'hi')).rejects.toThrow('No MLS session');
   });
 
+  test('an app message that arrives before its Welcome is queued and delivered', async () => {
+    // Alice's transport captures what it sends to Bob; we then replay to Bob in
+    // reverse (app message first, Welcome second) — the relay-replay reorder case.
+    const captured = [];
+    const aliceEngine = await MlsEngine.create({ name: 'ax_pk' });
+    const bobEngine = await MlsEngine.create({ name: 'bx_pk' });
+    const aliceRoster = new ContactRoster({ backend: memBackend() }); await aliceRoster.load();
+    const bobRoster = new ContactRoster({ backend: memBackend() }); await bobRoster.load();
+    let bobHandler = null;
+
+    const alice = new StyxChat({
+      identity: { pubkey: 'ax_pk', alias: 'Alice' }, engine: aliceEngine, roster: aliceRoster,
+      transport: { async send(to, bytes) { captured.push({ from: 'ax_pk', bytes }); }, onMessage() { return () => {}; } },
+    });
+    const bob = new StyxChat({
+      identity: { pubkey: 'bx_pk', alias: 'Bob' }, engine: bobEngine, roster: bobRoster,
+      transport: { async send() {}, onMessage(cb) { bobHandler = cb; return () => { bobHandler = null; }; } },
+    });
+    await alice.start(); await bob.start();
+
+    const { qr } = await bob.createQrInvite();
+    await alice.acceptQrInvite(qr);            // captures the Welcome
+    await alice.confirmPairing({ contactPubkey: 'bx_pk', alias: 'Bob' });
+    await alice.sendText('bx_pk', 'fuori ordine'); // captures the app message
+
+    // Deliver to Bob in REVERSE: app message first, then Welcome.
+    const gotAtBob = new Promise((res) => bob.onMessage((m) => res(m)));
+    for (const { from, bytes } of [...captured].reverse()) bobHandler(from, bytes);
+
+    const msg = await Promise.race([
+      gotAtBob,
+      new Promise((_, rej) => setTimeout(() => rej(new Error('message dropped')), 3000)),
+    ]);
+    expect(msg.text).toBe('fuori ordine');
+  });
+
   test('typing signal propagates to the peer', async () => {
     const { alice, bob } = await pairedPeers();
     const typed = new Promise((res) => bob.onTyping((pubkey, on) => res({ pubkey, on })));
