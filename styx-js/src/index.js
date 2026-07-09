@@ -4,6 +4,15 @@
 // === Facade (primary API) ===
 export { SovereignLedger, LedgerConfig, StyxState, LogLevel } from './facade/sovereign-ledger.js';
 
+// === Chat (multi-contact messaging orchestrator + MLS) ===
+export { StyxChat, MemoryMessageStore } from './chat/styx-chat.js';
+export { ContactRoster } from './chat/contact-roster.js';
+export { MlsEngine } from './crypto/mls/mls-engine.js';
+export { MlsSession } from './crypto/mls/mls-session.js';
+export { EncryptedKeyStore } from './storage/encrypted-key-store.js';
+export { LocalStorageBackend } from './storage/local-storage-backend.js';
+export { BroadcastChannelTransport } from './transport/broadcast-channel-transport.js';
+
 // === Crypto ===
 export {
   StyxPublicKey, StyxPrivateKey, StyxKeyPair, IdentityManager,

@@ -14,6 +14,19 @@
 import {
   bytesToBase64, base64ToBytes, utf8Encode, utf8Decode, uuidv4, EventEmitter,
 } from '../utils.js';
+import { IdentityManager } from '../crypto/identity.js';
+import { MlsEngine } from '../crypto/mls/mls-engine.js';
+import { ContactRoster } from './contact-roster.js';
+import { EncryptedKeyStore } from '../storage/encrypted-key-store.js';
+import { LocalStorageBackend } from '../storage/local-storage-backend.js';
+import { BroadcastChannelTransport } from '../transport/broadcast-channel-transport.js';
+
+function defaultBackend(ns) {
+  if (typeof localStorage !== 'undefined') {
+    return new LocalStorageBackend(`styxchat:${ns ? `${ns}:` : ''}`);
+  }
+  throw new Error('StyxChat: no storage backend available — inject one via init({ backend })');
+}
 
 /** Minimal in-memory message log (swap for an IndexedDB-backed store later). */
 export class MemoryMessageStore {
@@ -40,25 +53,94 @@ export class StyxChat {
    * @param {{send:Function, onMessage:Function}} deps.transport
    * @param {object} [deps.store] message store (defaults to in-memory)
    */
-  constructor({ identity, engine, roster, transport, store }) {
-    this._identity = { ...identity };
-    this._engine = engine;
-    this._roster = roster;
-    this._transport = transport;
-    this._store = store || new MemoryMessageStore();
+  /**
+   * Two modes:
+   * - Dependency-injected (tests): pass { identity, engine, roster, transport, store }.
+   * - App: `new StyxChat()` then `await init({ password })` assembles real deps.
+   */
+  constructor(deps = {}) {
     this._emitter = new EventEmitter();
-    this._unsubs = [roster.onChanged((list) => this._emitter.emit('contacts', list))];
+    this._unsubs = [];
+    this._started = false;
+    this._assembled = false;
+    this._store = deps.store || new MemoryMessageStore();
+    if (deps.identity && deps.engine && deps.roster && deps.transport) {
+      this._identity = { ...deps.identity };
+      this._engine = deps.engine;
+      this._roster = deps.roster;
+      this._transport = deps.transport;
+      this._wireRoster();
+      this._assembled = true;
+    }
   }
 
-  /** Wire up the transport receive handler. Call once after construction. */
+  /**
+   * Whether an identity already exists in the given (or default) backend.
+   * @param {object} [opts] @param {object} [opts.backend]
+   * @returns {Promise<boolean>}
+   */
+  static async hasIdentity({ backend, ns } = {}) {
+    const be = backend || defaultBackend(ns);
+    return new EncryptedKeyStore({ backend: be }).hasIdentity();
+  }
+
+  /**
+   * Assemble real dependencies (first run creates an Ed25519 identity, else
+   * unlocks it) and start. On the app path pass only { password }; tests may
+   * override { backend, channelName, alias }.
+   * @returns {Promise<{pubkey:string, alias:string}>}
+   */
+  async init({ password, backend, channelName, alias, ns } = {}) {
+    if (!this._assembled) {
+      const be = backend || defaultBackend(ns);
+      const keyStore = new EncryptedKeyStore({ backend: be });
+      const im = new IdentityManager();
+      let identity;
+      if (await keyStore.hasIdentity()) {
+        const seed = await keyStore.unlock({ password }); // throws on wrong password
+        const kp = await im.importPrivateKey(seed);
+        identity = { pubkey: kp.publicKey.toHex(), alias: (await be.get('alias')) || 'Io' };
+      } else {
+        const kp = await im.generate();
+        await keyStore.initialize({ password, secret: kp.privateKey.bytes });
+        const a = alias || 'Io';
+        await be.set('alias', a);
+        identity = { pubkey: kp.publicKey.toHex(), alias: a };
+      }
+      this._identity = identity;
+      this._backend = be;
+      this._keyStore = keyStore;
+      this._engine = await MlsEngine.create({ name: identity.pubkey });
+      this._roster = new ContactRoster({ backend: be });
+      await this._roster.load();
+      this._transport = new BroadcastChannelTransport(
+        identity.pubkey,
+        channelName ? { channelName } : {},
+      );
+      this._wireRoster();
+      this._assembled = true;
+    }
+    await this.start();
+    return this.me;
+  }
+
+  /** Wire up the transport receive handler. Idempotent. */
   async start() {
+    if (this._started) return;
     this._offTransport = this._transport.onMessage((from, bytes) => this._onWire(from, bytes));
+    this._started = true;
+  }
+
+  /** @private */
+  _wireRoster() {
+    this._unsubs.push(this._roster.onChanged((list) => this._emitter.emit('contacts', list)));
   }
 
   get me() { return { pubkey: this._identity.pubkey, alias: this._identity.alias }; }
 
   async setAlias(alias) {
     this._identity.alias = String(alias);
+    if (this._backend) await this._backend.set('alias', this._identity.alias);
     return this.me;
   }
 
@@ -141,6 +223,8 @@ export class StyxChat {
     this._offTransport?.();
     this._unsubs.forEach((u) => u());
     this._unsubs = [];
+    this._transport?.close?.();
+    this._started = false;
   }
 
   // ---- internals ----
