@@ -1,7 +1,14 @@
 # Styx Chat — Design & Feasibility Spec
 
-**Data:** 2026-07-09 · **Stato:** approvato in linea, layer crypto rivisto post-ricerca ·
+**Data:** 2026-07-09 · **Stato:** MVP **funzionante e testato end-to-end** (crypto MLS reale) ·
 **Scope:** app di chat 1:1 multi-contatto, serverless, E2E, per iPhone/Android, su `styx-js`.
+
+> **Aggiornamento — MVP completo e testato.** L'app gira sulla libreria reale (OpenMLS-WASM):
+> due tab (identità Ed25519 distinte) si accoppiano via invito e si scambiano messaggi cifrati
+> MLS end-to-end, verificato da una spec Playwright a due pagine (`apps/chat/e2e/pairing.spec.js`).
+> Trasporto **interim**: `BroadcastChannelTransport` (serverless, stesso origin) — WebRTC P2P-first
+> + Nostr fallback restano lo swap di produzione dietro la stessa interfaccia. Suite JS: 458 test.
+> Persistenza dello stato MLS tra reload e packaging mobile (PWA/Capacitor) sono i prossimi passi.
 
 ## 1. Obiettivo e verdetto di fattibilità
 
