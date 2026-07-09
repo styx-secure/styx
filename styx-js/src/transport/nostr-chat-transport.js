@@ -13,7 +13,10 @@ import { sha256 } from '@noble/hashes/sha256';
 import { RelayPool } from './nostr-transport.js';
 import { bytesToHex, bytesToBase64, base64ToBytes, utf8Encode, uuidv4 } from '../utils.js';
 
-const KIND = 30078;
+// Kind 1059 (NIP-59 "gift wrap" range) is a REGULAR event: relays store every
+// one, so multiple messages and offline delivery survive. (Kind 30078 is
+// parameterized-replaceable — newer events would overwrite older ones.)
+const KIND = 1059;
 
 export class NostrChatTransport {
   /**

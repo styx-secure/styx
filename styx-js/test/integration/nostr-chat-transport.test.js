@@ -69,4 +69,31 @@ describe('NostrChatTransport (real strfry relay)', () => {
     ]);
     expect(text).toBe('messaggio in differita');
   }, 15000);
+
+  test('multiple messages sent while offline are all stored and delivered', async () => {
+    const alice = newPeer();
+    const bob = newPeer();
+    const at = transport(alice);
+    await at.connect();
+    for (const m of ['uno', 'due', 'tre']) {
+      await at.send(bob.pk, new TextEncoder().encode(m));
+      await new Promise((r) => setTimeout(r, 60));
+    }
+    await new Promise((r) => setTimeout(r, 400));
+
+    const bt = transport(bob);
+    const received = new Set();
+    const done = new Promise((resolve) => {
+      bt.onMessage((_from, bytes) => {
+        received.add(new TextDecoder().decode(bytes));
+        if (received.size === 3) resolve();
+      });
+    });
+    await bt.connect();
+    await Promise.race([
+      done,
+      new Promise((_, rej) => setTimeout(() => rej(new Error(`only got ${[...received]}`)), 8000)),
+    ]);
+    expect([...received].sort()).toEqual(['due', 'tre', 'uno']);
+  }, 15000);
 });

@@ -17,6 +17,12 @@ export default defineConfig({
     // Allow serving the library source and the vendored WASM (outside app root).
     fs: { allow: [styxJsRoot] },
   },
+  // Production preview served behind the Cloudflare tunnel (styxmessenger.lastreload.net).
+  preview: {
+    port: 8090,
+    host: '127.0.0.1',
+    allowedHosts: ['styxmessenger.lastreload.net', 'localhost', '127.0.0.1'],
+  },
   // The OpenMLS wasm is loaded via `new URL(..., import.meta.url)` in the glue.
   assetsInclude: ['**/*.wasm'],
   optimizeDeps: {
