@@ -96,4 +96,30 @@ describe('NostrChatTransport (real strfry relay)', () => {
     ]);
     expect([...received].sort()).toEqual(['due', 'tre', 'uno']);
   }, 15000);
+
+  test('reconnect resumes delivery and does not re-deliver replayed events', async () => {
+    const alice = newPeer();
+    const bob = newPeer();
+    const at = transport(alice);
+    const bt = transport(bob);
+    const got = [];
+    bt.onMessage((_from, bytes) => got.push(new TextDecoder().decode(bytes)));
+    await bt.connect();
+    await at.connect();
+    await new Promise((r) => setTimeout(r, 200));
+
+    await at.send(bob.pk, new TextEncoder().encode('m1'));
+    await new Promise((r) => setTimeout(r, 400));
+    expect(got).toEqual(['m1']);
+
+    // Simulate returning to the foreground: force reconnect (relay replays m1).
+    await bt.reconnect();
+    await new Promise((r) => setTimeout(r, 400));
+    expect(got).toEqual(['m1']); // replayed m1 is deduped, not delivered twice
+
+    // A new message after reconnect still arrives.
+    await at.send(bob.pk, new TextEncoder().encode('m2'));
+    await new Promise((r) => setTimeout(r, 500));
+    expect(got).toEqual(['m1', 'm2']);
+  }, 20000);
 });

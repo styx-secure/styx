@@ -32,6 +32,7 @@ export class NostrChatTransport {
     this._handler = null;
     this._poolHandler = null;
     this._subId = null;
+    this._seen = new Set(); // processed Nostr event ids (dedup on relay replay)
   }
 
   onMessage(cb) {
@@ -61,6 +62,11 @@ export class NostrChatTransport {
     this._pool.publish(event);
   }
 
+  /** Force reconnect + re-subscribe (call when returning to the foreground). */
+  async reconnect() {
+    await this._pool.reconnect();
+  }
+
   close() {
     if (this._poolHandler) this._pool.messages.off('message', this._poolHandler);
     this._pool.disconnectAll();
@@ -83,6 +89,11 @@ export class NostrChatTransport {
     if (!ev || !ev.content || ev.pubkey === this._pk) return;
     const addressedToUs = (ev.tags || []).some((t) => t[0] === 'p' && t[1] === this._pk);
     if (!addressedToUs) return;
+    if (ev.id) {
+      if (this._seen.has(ev.id)) return; // replayed on reconnect — already handled
+      this._seen.add(ev.id);
+      if (this._seen.size > 5000) this._seen = new Set([ev.id]); // bound memory
+    }
     try {
       this._handler?.(ev.pubkey, base64ToBytes(ev.content));
     } catch (e) {

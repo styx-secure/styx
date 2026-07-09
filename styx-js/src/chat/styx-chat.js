@@ -160,6 +160,18 @@ export class StyxChat {
     if (this._started) return;
     this._offTransport = this._transport.onMessage((from, bytes) => this._onWire(from, bytes));
     await this._transport.connect?.(); // relays: connect + subscribe; BroadcastChannel: no-op
+
+    // Mobile browsers suspend backgrounded tabs and kill the relay socket; force
+    // a reconnect + re-subscribe when the app returns to the foreground so
+    // messages that arrived meanwhile are delivered.
+    if (typeof document !== 'undefined' && this._transport.reconnect) {
+      this._onWake = () => {
+        if (document.visibilityState === 'visible') Promise.resolve(this._transport.reconnect()).catch(() => {});
+      };
+      document.addEventListener('visibilitychange', this._onWake);
+      window.addEventListener('online', this._onWake);
+      window.addEventListener('focus', this._onWake);
+    }
     this._started = true;
   }
 
@@ -260,6 +272,12 @@ export class StyxChat {
     this._offTransport?.();
     this._unsubs.forEach((u) => u());
     this._unsubs = [];
+    if (this._onWake && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this._onWake);
+      window.removeEventListener('online', this._onWake);
+      window.removeEventListener('focus', this._onWake);
+      this._onWake = null;
+    }
     this._transport?.close?.();
     this._started = false;
   }

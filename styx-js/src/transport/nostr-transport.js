@@ -20,6 +20,7 @@ export class RelayPool {
     this._autoReconnect = true;
     this._reconnectAttempts = new Map(); // url → attempt count
     this._maxReconnectAttempts = 10;
+    this._subscriptions = new Map(); // subId → filter (re-issued on (re)connect)
   }
 
   get relayUrls() { return [...this._relayUrls]; }
@@ -118,12 +119,28 @@ export class RelayPool {
    * @param {object} filter - Nostr subscription filter
    */
   subscribe(subscriptionId, filter) {
+    this._subscriptions.set(subscriptionId, filter); // remembered for re-issue on reconnect
     const msg = JSON.stringify(['REQ', subscriptionId, filter]);
     for (const [url, ws] of this._connections) {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(msg);
       }
     }
+  }
+
+  /**
+   * Force-refresh all relay connections and re-issue subscriptions. Call this
+   * when the app returns to the foreground (mobile suspend silently kills the
+   * WebSocket, leaving a half-dead connection that never delivers again).
+   */
+  async reconnect() {
+    for (const [, ws] of this._connections) {
+      try { ws.onclose = null; ws.close(); } catch { /* ignore */ }
+    }
+    this._connections.clear();
+    this._reconnectAttempts.clear();
+    this._autoReconnect = true;
+    return this.connectAll(); // onopen re-issues every stored subscription
   }
 
   healthCheck() {
@@ -169,6 +186,11 @@ export class RelayPool {
         ws.onopen = () => {
           clearTimeout(timeout);
           this._connections.set(url, ws);
+          // Re-issue every active subscription so a reconnected relay resumes
+          // delivering (and replays anything stored while we were away).
+          for (const [subId, filter] of this._subscriptions) {
+            try { ws.send(JSON.stringify(['REQ', subId, filter])); } catch { /* ignore */ }
+          }
           resolve();
         };
 
