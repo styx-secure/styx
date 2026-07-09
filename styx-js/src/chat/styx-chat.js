@@ -12,14 +12,15 @@
 //   { t:'typing',  on }                                   — ephemeral typing signal
 
 import {
-  bytesToBase64, base64ToBytes, utf8Encode, utf8Decode, uuidv4, EventEmitter,
+  bytesToHex, bytesToBase64, base64ToBytes, utf8Encode, utf8Decode, uuidv4, EventEmitter,
 } from '../utils.js';
-import { IdentityManager } from '../crypto/identity.js';
+import { schnorr } from '@noble/curves/secp256k1';
 import { MlsEngine } from '../crypto/mls/mls-engine.js';
 import { ContactRoster } from './contact-roster.js';
 import { EncryptedKeyStore } from '../storage/encrypted-key-store.js';
 import { LocalStorageBackend } from '../storage/local-storage-backend.js';
 import { BroadcastChannelTransport } from '../transport/broadcast-channel-transport.js';
+import { NostrChatTransport } from '../transport/nostr-chat-transport.js';
 
 function defaultBackend(ns) {
   if (typeof localStorage !== 'undefined') {
@@ -90,33 +91,34 @@ export class StyxChat {
    * override { backend, channelName, alias }.
    * @returns {Promise<{pubkey:string, alias:string}>}
    */
-  async init({ password, backend, channelName, alias, ns } = {}) {
+  async init({ password, backend, channelName, alias, ns, relays } = {}) {
     if (!this._assembled) {
       const be = backend || defaultBackend(ns);
       const keyStore = new EncryptedKeyStore({ backend: be });
-      const im = new IdentityManager();
-      let identity;
+      // The addressable identity is a secp256k1 (Nostr) key: pubkey doubles as
+      // the Nostr address and the MLS credential label.
+      let sk;
+      let aliasVal;
       if (await keyStore.hasIdentity()) {
-        const seed = await keyStore.unlock({ password }); // throws on wrong password
-        const kp = await im.importPrivateKey(seed);
-        identity = { pubkey: kp.publicKey.toHex(), alias: (await be.get('alias')) || 'Io' };
+        sk = await keyStore.unlock({ password }); // throws on wrong password
+        aliasVal = (await be.get('alias')) || 'Io';
       } else {
-        const kp = await im.generate();
-        await keyStore.initialize({ password, secret: kp.privateKey.bytes });
-        const a = alias || 'Io';
-        await be.set('alias', a);
-        identity = { pubkey: kp.publicKey.toHex(), alias: a };
+        sk = schnorr.utils.randomPrivateKey();
+        await keyStore.initialize({ password, secret: sk });
+        aliasVal = alias || 'Io';
+        await be.set('alias', aliasVal);
       }
-      this._identity = identity;
+      const pubkey = bytesToHex(schnorr.getPublicKey(sk));
+      this._identity = { pubkey, alias: aliasVal };
+      this._nostrSecret = sk;
       this._backend = be;
       this._keyStore = keyStore;
-      this._engine = await MlsEngine.create({ name: identity.pubkey });
+      this._engine = await MlsEngine.create({ name: pubkey });
       this._roster = new ContactRoster({ backend: be });
       await this._roster.load();
-      this._transport = new BroadcastChannelTransport(
-        identity.pubkey,
-        channelName ? { channelName } : {},
-      );
+      this._transport = relays && relays.length
+        ? new NostrChatTransport({ secretKey: sk, pubkey, relays })
+        : new BroadcastChannelTransport(pubkey, channelName ? { channelName } : {});
       this._wireRoster();
       this._assembled = true;
     }
@@ -124,10 +126,11 @@ export class StyxChat {
     return this.me;
   }
 
-  /** Wire up the transport receive handler. Idempotent. */
+  /** Wire up the transport receive handler and connect it. Idempotent. */
   async start() {
     if (this._started) return;
     this._offTransport = this._transport.onMessage((from, bytes) => this._onWire(from, bytes));
+    await this._transport.connect?.(); // relays: connect + subscribe; BroadcastChannel: no-op
     this._started = true;
   }
 

@@ -6,7 +6,8 @@ import { test, expect } from '@playwright/test';
 
 async function onboard(context, ns, alias) {
   const p = await context.newPage();
-  await p.goto(`/?ns=${ns}`, { waitUntil: 'networkidle' });
+  // local=1 → BroadcastChannel transport (self-contained, no relay needed).
+  await p.goto(`/?ns=${ns}&local=1`, { waitUntil: 'networkidle' });
   await p.getByPlaceholder('Alias pubblico').fill(alias);
   await p.getByPlaceholder('Password locale').fill('pw123');
   await p.getByRole('button', { name: /Crea identità/ }).click();
