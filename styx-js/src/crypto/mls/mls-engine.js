@@ -48,6 +48,48 @@ export class MlsEngine {
     return new MlsEngine(provider, identity);
   }
 
+  /**
+   * Restore an engine (identity + all group state) from persisted bytes so
+   * sessions survive a page reload.
+   * @param {object} options
+   * @param {string} options.name credential identity (the pubkey hex)
+   * @param {Uint8Array} options.stateBytes output of a prior serializeState()
+   * @param {Uint8Array} options.identityPubKey output of a prior identityPublicKey()
+   * @returns {Promise<MlsEngine>}
+   */
+  static async restore({ name, stateBytes, identityPubKey }) {
+    await MlsEngine.initWasm();
+    const provider = new Provider();
+    provider.restore_state(stateBytes);
+    const identity = Identity.load(provider, name, identityPubKey);
+    if (!identity) throw new Error('MlsEngine.restore: identity not found in state');
+    return new MlsEngine(provider, identity);
+  }
+
+  /** Serialize all MLS state (groups + keys) for persistence. @returns {Uint8Array} */
+  serializeState() {
+    return this._provider.serialize_state();
+  }
+
+  /** The MLS signature public key (needed to reload the identity). @returns {Uint8Array} */
+  identityPublicKey() {
+    return this._identity.public_key();
+  }
+
+  /**
+   * Reload a previously-established session's group from restored state.
+   * @param {string} contactId
+   * @param {string} groupId the group id used when the session was created
+   * @returns {MlsSession|null}
+   */
+  loadSession(contactId, groupId) {
+    const group = Group.load(this._provider, groupId);
+    if (!group) return null;
+    const session = new MlsSession(this, group);
+    this._sessions.set(contactId, session);
+    return session;
+  }
+
   /** @private */
   constructor(provider, identity) {
     this._provider = provider;
@@ -70,11 +112,13 @@ export class MlsEngine {
    * Start a 1:1 session by creating a group and adding the peer.
    * @param {string} contactId a stable local id for the contact
    * @param {Uint8Array} peerKeyPackageBytes the peer's published KeyPackage
-   * @returns {{ session: MlsSession, welcome: Uint8Array, ratchetTree: Uint8Array }}
-   *   `welcome` + `ratchetTree` must be delivered to the peer so it can join.
+   * @returns {{ session: MlsSession, welcome: Uint8Array, ratchetTree: Uint8Array, groupId: string }}
+   *   `welcome` + `ratchetTree` + `groupId` must be delivered to the peer so it
+   *   can join and later reload the session.
    */
   startSession(contactId, peerKeyPackageBytes) {
-    const group = Group.create_new(this._provider, this._identity, `styx:${uuidv4()}`);
+    const groupId = `styx:${uuidv4()}`;
+    const group = Group.create_new(this._provider, this._identity, groupId);
     const peerKp = KeyPackage.from_bytes(peerKeyPackageBytes);
     const add = group.propose_and_commit_add(this._provider, this._identity, peerKp);
     group.merge_pending_commit(this._provider);
@@ -82,7 +126,7 @@ export class MlsEngine {
     const ratchetTree = group.export_ratchet_tree().to_bytes();
     const session = new MlsSession(this, group);
     this._sessions.set(contactId, session);
-    return { session, welcome, ratchetTree };
+    return { session, welcome, ratchetTree, groupId };
   }
 
   /**

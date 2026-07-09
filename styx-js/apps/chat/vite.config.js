@@ -21,7 +21,9 @@ export default defineConfig({
   preview: {
     port: 8090,
     host: '127.0.0.1',
-    allowedHosts: ['styxmessenger.lastreload.net', 'localhost', '127.0.0.1'],
+    // The app is meant to be public; accept any Host (named tunnel, quick
+    // trycloudflare tunnel, etc.) instead of an allow-list.
+    allowedHosts: true,
   },
   // The OpenMLS wasm is loaded via `new URL(..., import.meta.url)` in the glue.
   assetsInclude: ['**/*.wasm'],

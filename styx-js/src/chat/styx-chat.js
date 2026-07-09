@@ -43,6 +43,10 @@ export class MemoryMessageStore {
     return arr.slice(Math.max(0, arr.length - limit));
   }
   async remove(pubkey) { this._byContact.delete(pubkey); }
+  /** Plain-object snapshot for persistence. */
+  snapshot() { return Object.fromEntries(this._byContact); }
+  /** Load a snapshot produced by snapshot(). */
+  hydrate(obj) { this._byContact = new Map(Object.entries(obj || {})); }
 }
 
 export class StyxChat {
@@ -65,6 +69,7 @@ export class StyxChat {
     this._started = false;
     this._assembled = false;
     this._store = deps.store || new MemoryMessageStore();
+    this._groups = {}; // contactPubkey -> MLS groupId (persisted in app mode)
     if (deps.identity && deps.engine && deps.roster && deps.transport) {
       this._identity = { ...deps.identity };
       this._engine = deps.engine;
@@ -113,9 +118,33 @@ export class StyxChat {
       this._nostrSecret = sk;
       this._backend = be;
       this._keyStore = keyStore;
-      this._engine = await MlsEngine.create({ name: pubkey });
+
+      // Restore MLS state (identity + groups) if present, else create fresh.
+      const savedState = await be.get('mls:state');
+      const savedIdPk = await be.get('mls:idpk');
+      if (savedState && savedIdPk) {
+        this._engine = await MlsEngine.restore({
+          name: pubkey,
+          stateBytes: base64ToBytes(savedState),
+          identityPubKey: base64ToBytes(savedIdPk),
+        });
+      } else {
+        this._engine = await MlsEngine.create({ name: pubkey });
+        await be.set('mls:idpk', bytesToBase64(this._engine.identityPublicKey()));
+      }
+
       this._roster = new ContactRoster({ backend: be });
       await this._roster.load();
+
+      // Restore message history.
+      this._store.hydrate(await be.get('msgs'));
+
+      // Reload previously-established sessions from the restored state.
+      this._groups = (await be.get('mls:groups')) || {};
+      for (const [contactPubkey, groupId] of Object.entries(this._groups)) {
+        this._engine.loadSession(contactPubkey, groupId);
+      }
+
       this._transport = relays && relays.length
         ? new NostrChatTransport({ secretKey: sk, pubkey, relays })
         : new BroadcastChannelTransport(pubkey, channelName ? { channelName } : {});
@@ -165,12 +194,15 @@ export class StyxChat {
 
   async acceptQrInvite(qr) {
     const inv = JSON.parse(utf8Decode(base64ToBytes(String(qr).replace('styx://invite/', ''))));
-    const { welcome, ratchetTree } = this._engine.startSession(inv.pubkey, base64ToBytes(inv.kp));
+    const { welcome, ratchetTree, groupId } = this._engine.startSession(inv.pubkey, base64ToBytes(inv.kp));
+    this._groups[inv.pubkey] = groupId;
+    await this._persistMls();
     await this._send(inv.pubkey, {
       t: 'welcome',
       from: { pubkey: this._identity.pubkey, alias: this._identity.alias },
       welcome: bytesToBase64(welcome),
       tree: bytesToBase64(ratchetTree),
+      groupId,
     });
     this._pendingAlias = { [inv.pubkey]: inv.alias };
     return { contactPubkey: inv.pubkey };
@@ -199,10 +231,12 @@ export class StyxChat {
       text: String(text), ts: Date.now(), state: 'sending',
     };
     await this._store.append(msg);
+    await this._persistMessages();
     this._emitter.emit('message', msg);
     await this._touch(pubkey, text, msg.ts, false);
 
     const ct = session.encrypt(utf8Encode(String(text)));
+    await this._persistMls(); // the ratchet advanced on encrypt
     try {
       await this._send(pubkey, { t: 'app', ct: bytesToBase64(ct) });
       this._setState(msg, 'sent');
@@ -244,12 +278,27 @@ export class StyxChat {
     try { await this._roster.touch(pubkey, { preview, ts, incrementUnread }); } catch { /* not yet a contact */ }
   }
 
+  /** Persist MLS state + group map so sessions survive a reload. No-op without a backend (DI/tests). */
+  async _persistMls() {
+    if (!this._backend || !this._engine?.serializeState) return;
+    await this._backend.set('mls:state', bytesToBase64(this._engine.serializeState()));
+    await this._backend.set('mls:groups', this._groups);
+  }
+
+  /** Persist message history. No-op without a backend (DI/tests). */
+  async _persistMessages() {
+    if (!this._backend || !this._store.snapshot) return;
+    await this._backend.set('msgs', this._store.snapshot());
+  }
+
   async _onWire(from, bytes) {
     let env;
     try { env = JSON.parse(utf8Decode(bytes)); } catch { return; }
 
     if (env.t === 'welcome') {
       this._engine.joinSession(from, base64ToBytes(env.welcome), base64ToBytes(env.tree));
+      if (env.groupId) this._groups[from] = env.groupId;
+      await this._persistMls();
       if (!(await this._roster.get(from))) {
         await this._roster.add({ pubkey: from, alias: env.from?.alias || from });
       }
@@ -259,6 +308,7 @@ export class StyxChat {
       const session = this._engine.session(from);
       if (!session) return;
       const res = session.decrypt(base64ToBytes(env.ct));
+      await this._persistMls(); // the ratchet advanced on decrypt
       if (res.kind !== 'application') return;
       const text = utf8Decode(res.plaintext);
       const msg = {
@@ -266,6 +316,7 @@ export class StyxChat {
         text, ts: Date.now(), state: 'delivered',
       };
       await this._store.append(msg);
+      await this._persistMessages();
       await this._touch(from, text, msg.ts, true);
       this._emitter.emit('message', msg);
       return;

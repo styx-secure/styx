@@ -14,6 +14,11 @@ echo "Cloning openmls @ $OPENMLS_COMMIT ..."
 git clone https://github.com/openmls/openmls.git "$WORK/openmls"
 git -C "$WORK/openmls" checkout "$OPENMLS_COMMIT"
 
+# Apply our patch: adds Provider.serialize_state/restore_state, Group.load,
+# Identity.public_key/load — needed to persist MLS state across page reloads.
+echo "Applying Styx patch (patch/lib.rs) ..."
+cp "$HERE/patch/lib.rs" "$WORK/openmls/openmls-wasm/src/lib.rs"
+
 echo "Building openmls-wasm in rust:latest container ..."
 docker run --rm -v "$WORK:/work" -w /work rust:latest bash -c '
   set -e

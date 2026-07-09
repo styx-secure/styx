@@ -81,4 +81,39 @@ describe('StyxChat assembly (real identity + MLS + BroadcastChannel)', () => {
     expect(msg.text).toBe('Ciao Bob, crypto vera 🔐');
     expect(msg.contactPubkey).toBe(alice.me.pubkey);
   });
+
+  test('a peer survives a reload and still receives on the restored MLS session', async () => {
+    const ch = 'reload';
+    const bobBackend = memBackend();
+    const alice = await realPeer({ backend: memBackend(), channelName: ch, alias: 'Alice' });
+    let bob = await realPeer({ backend: bobBackend, channelName: ch, alias: 'Bob' });
+    const bobPubkey = bob.me.pubkey;
+
+    const { qr } = await bob.createQrInvite();
+    const { contactPubkey } = await alice.acceptQrInvite(qr);
+    await alice.confirmPairing({ contactPubkey, alias: 'Bob' });
+    await flush();
+    await alice.sendText(bobPubkey, 'prima del reload');
+    await flush();
+
+    // Reload Bob: tear down and re-create from the SAME backend + password.
+    bob.destroy();
+    bob = new StyxChat();
+    await bob.init({ password: 'pw', backend: bobBackend, channelName: ch });
+    live.push(bob);
+
+    // Same identity, contact restored, session reloaded.
+    expect(bob.me.pubkey).toBe(bobPubkey);
+    expect((await bob.listContacts()).map((c) => c.pubkey)).toContain(alice.me.pubkey);
+    expect((await bob.listMessages(alice.me.pubkey)).map((m) => m.text)).toContain('prima del reload');
+
+    // A new message from Alice is decrypted by the RESTORED session.
+    const gotAfterReload = new Promise((res) => bob.onMessage((m) => res(m)));
+    await alice.sendText(bobPubkey, 'dopo il reload');
+    const msg = await Promise.race([
+      gotAfterReload,
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout after reload')), 6000)),
+    ]);
+    expect(msg.text).toBe('dopo il reload');
+  });
 });

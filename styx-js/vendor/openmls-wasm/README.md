@@ -17,6 +17,12 @@ produzione (XMTP). Fornisce forward secrecy e post-compromise security per il ca
 Rigenera con `./build.sh` (richiede Docker). L'artefatto è vendorizzato deliberatamente perché
 OpenMLS non pubblica un pacchetto npm.
 
+**Patch Styx:** oltre all'esempio ufficiale, applichiamo `patch/lib.rs` (via `build.sh`) che
+aggiunge i metodi di persistenza: `Provider.serialize_state()/restore_state()`,
+`Group.load(provider, groupId)`, `Identity.public_key()/load(...)`. Servono a salvare lo stato
+MLS (gruppi + chiavi) su IndexedDB/localStorage e ricaricare le sessioni dopo un refresh della
+pagina — senza, ricaricando si perderebbero le sessioni.
+
 ## API esposta (vedi `openmls_wasm.d.ts`)
 
 `Provider` (crypto+storage per-peer) · `Identity(provider, name)` + `key_package()` ·
@@ -27,9 +33,10 @@ OpenMLS non pubblica un pacchetto npm.
 Verificato con un round-trip 1:1 in Node: KeyPackage → gruppo 2-membri → Welcome → join →
 messaggi applicativi bidirezionali decifrati (vedi `roundtrip.mjs`).
 
-## Da estendere in Fase 2 (gap noto)
+## Persistenza (risolta)
 
-Il `Provider` tiene lo stato del gruppo **in memoria**. Per la persistenza tra reload/sessioni
-serve esporre serializzazione/deserializzazione dello storage del provider (o backarlo su
-IndexedDB via il trait `StorageProvider` di OpenMLS). È l'unica estensione Rust necessaria oltre
-a questo artefatto ufficiale.
+Lo stato del gruppo era **in memoria**; ora la patch espone serialize/restore dello storage del
+`Provider` + `Group.load`/`Identity.load`, e `StyxChat` li usa per persistere su localStorage e
+ricaricare le sessioni dopo un refresh. Verificato da `test/chat/styx-chat-assembly.test.js`
+(«a peer survives a reload…»). *Nota:* è persistenza whole-storage after-each-op; per volumi
+elevati si passerà a un `StorageProvider` backato direttamente su IndexedDB.

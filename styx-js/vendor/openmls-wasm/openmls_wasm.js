@@ -138,6 +138,23 @@ export class Group {
         return Group.__wrap(ret[0]);
     }
     /**
+     * Reload a group previously persisted in the provider's storage.
+     * Returns undefined if no group with that id exists.
+     * @param {Provider} provider
+     * @param {string} group_id
+     * @returns {Group | undefined}
+     */
+    static load(provider, group_id) {
+        _assertClass(provider, Provider);
+        const ptr0 = passStringToWasm0(group_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.group_load(provider.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] === 0 ? undefined : Group.__wrap(ret[0]);
+    }
+    /**
      * @param {Provider} provider
      */
     merge_pending_commit(provider) {
@@ -184,6 +201,12 @@ export class Group {
 if (Symbol.dispose) Group.prototype[Symbol.dispose] = Group.prototype.free;
 
 export class Identity {
+    static __wrap(ptr) {
+        const obj = Object.create(Identity.prototype);
+        obj.__wbg_ptr = ptr;
+        IdentityFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
         this.__wbg_ptr = 0;
@@ -204,6 +227,26 @@ export class Identity {
         return KeyPackage.__wrap(ret);
     }
     /**
+     * Reload an identity whose signature keypair was previously persisted in
+     * the provider storage (restored via `Provider.restore_state`).
+     * @param {Provider} provider
+     * @param {string} name
+     * @param {Uint8Array} public_key
+     * @returns {Identity | undefined}
+     */
+    static load(provider, name, public_key) {
+        _assertClass(provider, Provider);
+        const ptr0 = passStringToWasm0(name, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(public_key, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.identity_load(provider.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] === 0 ? undefined : Identity.__wrap(ret[0]);
+    }
+    /**
      * @param {Provider} provider
      * @param {string} name
      */
@@ -218,6 +261,17 @@ export class Identity {
         this.__wbg_ptr = ret[0];
         IdentityFinalization.register(this, this.__wbg_ptr, this);
         return this;
+    }
+    /**
+     * The MLS signature public key, to be persisted so the identity can be
+     * reloaded after a page refresh via `Identity.load`.
+     * @returns {Uint8Array}
+     */
+    public_key() {
+        const ret = wasm.identity_public_key(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
     }
 }
 if (Symbol.dispose) Identity.prototype[Symbol.dispose] = Identity.prototype.free;
@@ -296,6 +350,30 @@ export class Provider {
         this.__wbg_ptr = ret;
         ProviderFinalization.register(this, this.__wbg_ptr, this);
         return this;
+    }
+    /**
+     * Restore storage previously produced by `serialize_state`.
+     * @param {Uint8Array} bytes
+     */
+    restore_state(bytes) {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.provider_restore_state(this.__wbg_ptr, ptr0, len0);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * Serialize the whole storage (all MLS group/key state) to bytes so it can
+     * be persisted (e.g. in IndexedDB) and survive a page reload.
+     * Format: u64 count, then per entry: u64 key_len, u64 val_len, key, val.
+     * @returns {Uint8Array}
+     */
+    serialize_state() {
+        const ret = wasm.provider_serialize_state(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
     }
 }
 if (Symbol.dispose) Provider.prototype[Symbol.dispose] = Provider.prototype.free;

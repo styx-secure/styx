@@ -19,6 +19,11 @@ export class Group {
     export_key(provider: Provider, label: string, context: Uint8Array, key_length: number): Uint8Array;
     export_ratchet_tree(): RatchetTree;
     static join(provider: Provider, welcome: Uint8Array, ratchet_tree: RatchetTree): Group;
+    /**
+     * Reload a group previously persisted in the provider's storage.
+     * Returns undefined if no group with that id exists.
+     */
+    static load(provider: Provider, group_id: string): Group | undefined;
     merge_pending_commit(provider: Provider): void;
     process_message(provider: Provider, msg: Uint8Array): Uint8Array;
     propose_and_commit_add(provider: Provider, sender: Identity, new_member: KeyPackage): AddMessages;
@@ -28,7 +33,17 @@ export class Identity {
     free(): void;
     [Symbol.dispose](): void;
     key_package(provider: Provider): KeyPackage;
+    /**
+     * Reload an identity whose signature keypair was previously persisted in
+     * the provider storage (restored via `Provider.restore_state`).
+     */
+    static load(provider: Provider, name: string, public_key: Uint8Array): Identity | undefined;
     constructor(provider: Provider, name: string);
+    /**
+     * The MLS signature public key, to be persisted so the identity can be
+     * reloaded after a page refresh via `Identity.load`.
+     */
+    public_key(): Uint8Array;
 }
 
 export class KeyPackage {
@@ -55,6 +70,16 @@ export class Provider {
     free(): void;
     [Symbol.dispose](): void;
     constructor();
+    /**
+     * Restore storage previously produced by `serialize_state`.
+     */
+    restore_state(bytes: Uint8Array): void;
+    /**
+     * Serialize the whole storage (all MLS group/key state) to bytes so it can
+     * be persisted (e.g. in IndexedDB) and survive a page reload.
+     * Format: u64 count, then per entry: u64 key_len, u64 val_len, key, val.
+     */
+    serialize_state(): Uint8Array;
 }
 
 export class RatchetTree {
@@ -92,14 +117,19 @@ export interface InitOutput {
     readonly group_export_key: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
     readonly group_export_ratchet_tree: (a: number) => number;
     readonly group_join: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly group_load: (a: number, b: number, c: number) => [number, number, number];
     readonly group_merge_pending_commit: (a: number, b: number) => [number, number];
     readonly group_process_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly group_propose_and_commit_add: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly identity_key_package: (a: number, b: number) => number;
+    readonly identity_load: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly identity_new: (a: number, b: number, c: number) => [number, number, number];
+    readonly identity_public_key: (a: number) => [number, number];
     readonly keypackage_from_bytes: (a: number, b: number) => [number, number, number];
     readonly keypackage_to_bytes: (a: number) => [number, number];
     readonly provider_new: () => number;
+    readonly provider_restore_state: (a: number, b: number, c: number) => [number, number];
+    readonly provider_serialize_state: (a: number) => [number, number];
     readonly ratchettree_from_bytes: (a: number, b: number) => [number, number, number];
     readonly ratchettree_to_bytes: (a: number) => [number, number];
     readonly greet: () => void;
