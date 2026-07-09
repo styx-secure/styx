@@ -12,6 +12,7 @@ const PAGE = 20;
 export function useStyxChat() {
   const chatRef = useRef(null);
   const subsRef = useRef([]);
+  const typingTimers = useRef({});
 
   const [ready, setReady] = useState(false);
   const [me, setMe] = useState(null);
@@ -69,9 +70,18 @@ export function useStyxChat() {
       chat.onMessage((msg) => upsertMessage(msg)),
       chat.onMessageState((id, state) => patchMessageState(id, state)),
       chat.onContactsChanged((list) => { refreshContacts(list); }),
-      chat.onTyping((pubkey, isTyping) =>
-        setTypingByContact((prev) => ({ ...prev, [pubkey]: !!isTyping })),
-      ),
+      chat.onTyping((pubkey, isTyping) => {
+        // Auto-expire: if no "stopped typing" arrives (lost, or a stale relayed
+        // event), clear the indicator after a few seconds so it never sticks.
+        clearTimeout(typingTimers.current[pubkey]);
+        if (isTyping) {
+          typingTimers.current[pubkey] = setTimeout(
+            () => setTypingByContact((prev) => ({ ...prev, [pubkey]: false })),
+            6000,
+          );
+        }
+        setTypingByContact((prev) => ({ ...prev, [pubkey]: !!isTyping }));
+      }),
     ];
 
     setMe(chat.me || identity);

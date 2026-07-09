@@ -165,12 +165,16 @@ export class StyxChat {
     // a reconnect + re-subscribe when the app returns to the foreground so
     // messages that arrived meanwhile are delivered.
     if (typeof document !== 'undefined' && this._transport.reconnect) {
+      let lastWake = 0;
       this._onWake = () => {
-        if (document.visibilityState === 'visible') Promise.resolve(this._transport.reconnect()).catch(() => {});
+        if (document.visibilityState !== 'visible') return;
+        const now = Date.now();
+        if (now - lastWake < 3000) return; // debounce: avoid reconnect churn
+        lastWake = now;
+        Promise.resolve(this._transport.reconnect()).catch(() => {});
       };
       document.addEventListener('visibilitychange', this._onWake);
       window.addEventListener('online', this._onWake);
-      window.addEventListener('focus', this._onWake);
     }
     this._started = true;
   }
@@ -265,7 +269,8 @@ export class StyxChat {
   }
 
   async setTyping(pubkey, on) {
-    if (this._engine.session(pubkey)) await this._send(pubkey, { t: 'typing', on: !!on });
+    // Ephemeral: typing must not be stored/replayed by relays (would get stuck).
+    if (this._engine.session(pubkey)) await this._send(pubkey, { t: 'typing', on: !!on }, { ephemeral: true });
   }
 
   destroy() {
@@ -275,7 +280,6 @@ export class StyxChat {
     if (this._onWake && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this._onWake);
       window.removeEventListener('online', this._onWake);
-      window.removeEventListener('focus', this._onWake);
       this._onWake = null;
     }
     this._transport?.close?.();
@@ -283,8 +287,8 @@ export class StyxChat {
   }
 
   // ---- internals ----
-  async _send(toPubkey, obj) {
-    await this._transport.send(toPubkey, utf8Encode(JSON.stringify(obj)));
+  async _send(toPubkey, obj, opts) {
+    await this._transport.send(toPubkey, utf8Encode(JSON.stringify(obj)), opts);
   }
 
   _setState(msg, state) {

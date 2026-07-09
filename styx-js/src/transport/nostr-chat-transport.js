@@ -16,7 +16,8 @@ import { bytesToHex, bytesToBase64, base64ToBytes, utf8Encode, uuidv4 } from '..
 // Kind 1059 (NIP-59 "gift wrap" range) is a REGULAR event: relays store every
 // one, so multiple messages and offline delivery survive. (Kind 30078 is
 // parameterized-replaceable — newer events would overwrite older ones.)
-const KIND = 1059;
+const KIND = 1059; // regular/stored: pairing + messages survive offline
+const EPHEMERAL_KIND = 20000; // ephemeral (20000-29999): relays don't store — for typing/presence
 
 export class NostrChatTransport {
   /**
@@ -47,12 +48,19 @@ export class NostrChatTransport {
     this._poolHandler = ({ data }) => this._onRelay(data);
     this._pool.messages.on('message', this._poolHandler);
     this._subId = `sc-${this._pk.slice(0, 12)}`;
-    this._pool.subscribe(this._subId, { kinds: [KIND], '#p': [this._pk] });
+    this._pool.subscribe(this._subId, { kinds: [KIND, EPHEMERAL_KIND], '#p': [this._pk] });
   }
 
-  async send(toPubkey, bytes) {
+  /**
+   * @param {string} toPubkey
+   * @param {Uint8Array} bytes
+   * @param {object} [opts]
+   * @param {boolean} [opts.ephemeral] send on an ephemeral kind (not stored by
+   *   relays) — used for typing/presence so they aren't replayed on reconnect.
+   */
+  async send(toPubkey, bytes, { ephemeral = false } = {}) {
     const event = {
-      kind: KIND,
+      kind: ephemeral ? EPHEMERAL_KIND : KIND,
       pubkey: this._pk,
       created_at: Math.floor(Date.now() / 1000),
       tags: [['p', toPubkey], ['nonce', uuidv4()]],
@@ -89,6 +97,9 @@ export class NostrChatTransport {
     if (!ev || !ev.content || ev.pubkey === this._pk) return;
     const addressedToUs = (ev.tags || []).some((t) => t[0] === 'p' && t[1] === this._pk);
     if (!addressedToUs) return;
+    // Drop stale ephemeral events (typing/presence) replayed by relays that
+    // wrongly store the ephemeral kind — they are real-time only.
+    if (ev.kind === EPHEMERAL_KIND && Math.floor(Date.now() / 1000) - (ev.created_at || 0) > 20) return;
     if (ev.id) {
       if (this._seen.has(ev.id)) return; // replayed on reconnect — already handled
       this._seen.add(ev.id);

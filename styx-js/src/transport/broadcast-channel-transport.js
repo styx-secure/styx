@@ -36,9 +36,10 @@ export class BroadcastChannelTransport {
   /**
    * @param {string} toPubkey
    * @param {Uint8Array} bytes
+   * @param {object} [_opts] ignored (parity with NostrChatTransport)
    * @returns {Promise<void>}
    */
-  async send(toPubkey, bytes) {
+  async send(toPubkey, bytes, _opts) {
     this._bc.postMessage({ to: toPubkey, from: this._self, data: bytes });
   }
 
