@@ -30,6 +30,7 @@ function QrTab({ api, onAdded }) {
   const [pending, setPending] = useState(null); // { contactPubkey }
   const [alias, setAlias] = useState('');
   const [scanning, setScanning] = useState(false);
+  const [busy, setBusy] = useState(false);
   const videoRef = useRef(null);
   const stopRef = useRef(null);
 
@@ -46,8 +47,13 @@ function QrTab({ api, onAdded }) {
   }, []);
 
   const accept = async (payload) => {
-    const res = await api.acceptQrInvite(payload);
-    setPending(res);
+    setBusy(true);
+    try {
+      const res = await api.acceptQrInvite(payload);
+      setPending(res);
+    } finally {
+      setBusy(false);
+    }
   };
 
   // Start/stop the camera scanner when `scanning` toggles (after the <video> mounts).
@@ -75,8 +81,13 @@ function QrTab({ api, onAdded }) {
   const toggleScan = () => setScanning((s) => !s);
 
   const confirm = async () => {
-    await api.confirmPairing({ contactPubkey: pending.contactPubkey, alias });
-    onAdded(pending.contactPubkey);
+    setBusy(true);
+    try {
+      await api.confirmPairing({ contactPubkey: pending.contactPubkey, alias });
+      onAdded(pending.contactPubkey);
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (pending) {
@@ -84,7 +95,9 @@ function QrTab({ api, onAdded }) {
       <div className="section">
         <label className="label">Alias del contatto</label>
         <input className="field" style={{ marginTop: 8 }} value={alias} onChange={(e) => setAlias(e.target.value)} placeholder="Come chiamarlo" autoFocus />
-        <button className="btn btn-accent" style={{ width: '100%', marginTop: 12 }} onClick={confirm}>Aggiungi contatto</button>
+        <button className="btn btn-accent" style={{ width: '100%', marginTop: 12 }} disabled={busy} onClick={confirm}>
+          {busy ? <><span className="spinner sm" /> Aggiungo…</> : 'Aggiungi contatto'}
+        </button>
       </div>
     );
   }
@@ -110,7 +123,9 @@ function QrTab({ api, onAdded }) {
           : <textarea className="field mono" style={{ height: 70, padding: 10, marginTop: 8 }} placeholder="styx://…" value={paste} onChange={(e) => setPaste(e.target.value)} />}
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           <button className="btn btn-ghost" style={{ flex: 1 }} onClick={toggleScan}><QrFrame size={18} /> {scanning ? 'Ferma' : 'Scansiona'}</button>
-          <button className="btn btn-accent" style={{ flex: 1 }} disabled={!paste.trim()} onClick={() => accept(paste.trim())}>Accetta invito</button>
+          <button className="btn btn-accent" style={{ flex: 1 }} disabled={!paste.trim() || busy} onClick={() => accept(paste.trim())}>
+            {busy ? <><span className="spinner sm" /> Accetto…</> : 'Accetta invito'}
+          </button>
         </div>
       </div>
     </>
@@ -125,6 +140,7 @@ function RemoteTab({ api, onAdded }) {
   const [pubkey, setPubkey] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const [alias, setAlias] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const generate = async () => {
     const { mnemonic: m } = await api.startRemotePairing();
@@ -132,14 +148,24 @@ function RemoteTab({ api, onAdded }) {
     setMode('generate');
   };
   const join = async () => {
-    const { doubleCheckCode, contactPubkey } = await api.joinRemotePairing(input.trim());
-    setCode(doubleCheckCode);
-    setPubkey(contactPubkey);
-    setMode('join');
+    setBusy(true);
+    try {
+      const { doubleCheckCode, contactPubkey } = await api.joinRemotePairing(input.trim());
+      setCode(doubleCheckCode);
+      setPubkey(contactPubkey);
+      setMode('join');
+    } finally {
+      setBusy(false);
+    }
   };
   const confirm = async () => {
-    await api.confirmPairing({ contactPubkey: pubkey || undefined, alias });
-    onAdded(pubkey);
+    setBusy(true);
+    try {
+      await api.confirmPairing({ contactPubkey: pubkey || undefined, alias });
+      onAdded(pubkey);
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (mode === 'choose') {
@@ -162,7 +188,9 @@ function RemoteTab({ api, onAdded }) {
         I codici coincidono su entrambi i dispositivi
       </label>
       <input className="field" placeholder="Alias del contatto" value={alias} onChange={(e) => setAlias(e.target.value)} />
-      <button className="btn btn-accent" style={{ width: '100%', marginTop: 10 }} disabled={!confirmed} onClick={confirm}>Conferma e aggiungi</button>
+      <button className="btn btn-accent" style={{ width: '100%', marginTop: 10 }} disabled={!confirmed || busy} onClick={confirm}>
+        {busy ? <><span className="spinner sm" /> Aggiungo…</> : 'Conferma e aggiungi'}
+      </button>
     </>
   );
 
@@ -187,7 +215,9 @@ function RemoteTab({ api, onAdded }) {
         <>
           <label className="label">Inserisci le 12 parole ricevute</label>
           <textarea className="field mono" style={{ height: 80, padding: 10, marginTop: 8 }} value={input} onChange={(e) => setInput(e.target.value)} placeholder="parola1 parola2 …" />
-          <button className="btn btn-accent" style={{ width: '100%', marginTop: 10 }} disabled={input.trim().split(/\s+/).length < 12} onClick={join}>Continua</button>
+          <button className="btn btn-accent" style={{ width: '100%', marginTop: 10 }} disabled={input.trim().split(/\s+/).length < 12 || busy} onClick={join}>
+            {busy ? <><span className="spinner sm" /> Verifico…</> : 'Continua'}
+          </button>
         </>
       )}
       {code && AntiMitm}

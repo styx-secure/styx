@@ -1,5 +1,20 @@
 /* app.css — component styles for Styx Chat. Uses tokens from tokens.css. */
 
+/* ============ spinner / loading ============ */
+.spinner {
+  width: 18px; height: 18px; border: 2.5px solid currentColor;
+  border-top-color: transparent; border-radius: 50%;
+  display: inline-block; vertical-align: middle;
+  animation: sx-spin .7s linear infinite;
+}
+.spinner.sm { width: 14px; height: 14px; border-width: 2px; }
+@keyframes sx-spin { to { transform: rotate(360deg); } }
+.loading-screen {
+  min-height: 100%; display: grid; place-items: center; gap: 14px;
+  color: var(--text-dim); font-size: 13.5px;
+}
+.loading-screen .spinner { color: var(--accent); width: 26px; height: 26px; border-width: 3px; }
+
 /* ============ generic ============ */
 .btn {
   height: 46px; border: 0; border-radius: var(--r-btn); cursor: pointer;

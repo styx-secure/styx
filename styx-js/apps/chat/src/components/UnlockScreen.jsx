@@ -32,7 +32,14 @@ export default function UnlockScreen({ onUnlock }) {
     }
   };
 
-  if (firstRun === null) return <div className="unlock" />;
+  if (firstRun === null) {
+    return (
+      <div className="loading-screen">
+        <span className="spinner" />
+        <span>Carico Styx Chat…</span>
+      </div>
+    );
+  }
 
   return (
     <div className="unlock">
@@ -63,7 +70,9 @@ export default function UnlockScreen({ onUnlock }) {
           )}
 
           <button className="btn btn-accent" type="submit" disabled={busy || !password || (firstRun && !alias.trim())}>
-            {busy ? '…' : firstRun ? 'Crea identità' : 'Sblocca'}
+            {busy
+              ? <><span className="spinner sm" /> {firstRun ? 'Creazione…' : 'Sblocco…'}</>
+              : firstRun ? 'Crea identità' : 'Sblocca'}
           </button>
         </form>
 
