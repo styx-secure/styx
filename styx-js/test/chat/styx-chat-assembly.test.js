@@ -82,6 +82,35 @@ describe('StyxChat assembly (real identity + MLS + BroadcastChannel)', () => {
     expect(msg.contactPubkey).toBe(alice.me.pubkey);
   });
 
+  test('an invite still works if the inviter reloads before the peer joins', async () => {
+    const ch = 'invite-reload';
+    const aBackend = memBackend();
+    let a = await realPeer({ backend: aBackend, channelName: ch, alias: 'A' });
+    const aPubkey = a.me.pubkey;
+    const { qr } = await a.createQrInvite(); // KeyPackage generated — must be persisted
+
+    // A reloads BEFORE the peer accepts the invite.
+    a.destroy();
+    a = new StyxChat();
+    await a.init({ password: 'pw', backend: aBackend, channelName: ch });
+    live.push(a);
+
+    // B accepts A's invite → sends the Welcome to A, who must be able to join.
+    const b = await realPeer({ backend: memBackend(), channelName: ch, alias: 'B' });
+    await b.acceptQrInvite(qr);
+    await b.confirmPairing({ contactPubkey: aPubkey, alias: 'A' });
+    await flush();
+
+    expect((await a.listContacts()).map((c) => c.pubkey)).toContain(b.me.pubkey);
+    const gotAtA = new Promise((res) => a.onMessage((m) => res(m)));
+    await b.sendText(aPubkey, 'ciao dopo reload invito');
+    const msg = await Promise.race([
+      gotAtA,
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000)),
+    ]);
+    expect(msg.text).toBe('ciao dopo reload invito');
+  });
+
   test('a peer survives a reload and still receives on the restored MLS session', async () => {
     const ch = 'reload';
     const bobBackend = memBackend();

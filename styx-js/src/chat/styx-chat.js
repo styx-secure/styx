@@ -205,6 +205,9 @@ export class StyxChat {
       alias: this._identity.alias,
       kp: bytesToBase64(this._engine.keyPackageBytes()),
     };
+    // Generating a KeyPackage stores its private key in the MLS provider; persist
+    // it so the invite still works if we reload before the peer joins.
+    await this._persistMls();
     return { qr: 'styx://invite/' + bytesToBase64(utf8Encode(JSON.stringify(payload))) };
   }
 
