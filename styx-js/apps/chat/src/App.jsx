@@ -4,6 +4,7 @@ import UnlockScreen from './components/UnlockScreen.jsx';
 import ChatShell from './components/ChatShell.jsx';
 import PairingModal from './components/PairingModal.jsx';
 import SettingsPanel from './components/SettingsPanel.jsx';
+import InstallHint from './components/InstallHint.jsx';
 import { getStyxChat } from './lib/styx-adapter.js';
 
 const MOBILE_BP = 820;
@@ -119,6 +120,8 @@ export default function App() {
       )}
 
       {toast && <div className="toast sx-badge">{toast}</div>}
+
+      <InstallHint />
     </>
   );
 }

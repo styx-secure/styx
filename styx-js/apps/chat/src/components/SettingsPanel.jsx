@@ -1,15 +1,25 @@
 import { useState } from 'react';
 import { identicon, shortKey } from '../lib/identicon.js';
 import { Close, Copy, Trash, Lock } from './Icons.jsx';
+import { requestNotificationPermission } from '../lib/notify.js';
 
 export default function SettingsPanel({ me, contacts, onClose, onSetAlias, onRemoveContact, onLock, onReset, onToast }) {
   const [alias, setAlias] = useState(me?.alias || '');
+  const [notifPerm, setNotifPerm] = useState(
+    typeof Notification !== 'undefined' ? Notification.permission : 'denied',
+  );
 
   const copyKey = async () => {
     try {
       await navigator.clipboard.writeText(me.pubkey);
       onToast?.('Copiato ✓');
     } catch { /* ignore */ }
+  };
+
+  const enableNotifications = async () => {
+    const p = await requestNotificationPermission();
+    setNotifPerm(p);
+    onToast?.(p === 'granted' ? 'Notifiche attive ✓' : 'Notifiche non attive');
   };
 
   return (
@@ -44,6 +54,17 @@ export default function SettingsPanel({ me, contacts, onClose, onSetAlias, onRem
           <div className="security-card">
             <Lock size={18} />
             <span>Ogni messaggio usa forward secrecy: le chiavi ruotano di continuo, quindi compromettere una chiave non rivela le conversazioni passate.</span>
+          </div>
+        </div>
+
+        <div className="section">
+          <label className="label">Notifiche</label>
+          <div style={{ marginTop: 6 }}>
+            {notifPerm === 'granted' && <div style={{ fontSize: 13, color: 'var(--accent-2)' }}>Attive ✓</div>}
+            {notifPerm === 'denied' && <div style={{ fontSize: 13, color: 'var(--text-dim)' }}>Bloccate dal browser — riattivale dalle impostazioni del sito.</div>}
+            {notifPerm === 'default' && (
+              <button className="btn btn-accent" onClick={enableNotifications}>Attiva notifiche</button>
+            )}
           </div>
         </div>
 
