@@ -11,7 +11,7 @@
 import { schnorr } from '@noble/curves/secp256k1';
 import { sha256 } from '@noble/hashes/sha256';
 import { RelayPool } from './nostr-transport.js';
-import { bytesToHex, bytesToBase64, base64ToBytes, utf8Encode, uuidv4 } from '../utils.js';
+import { bytesToHex, hexToBytes, bytesToBase64, base64ToBytes, utf8Encode, uuidv4 } from '../utils.js';
 
 // Kind 1059 (NIP-59 "gift wrap" range) is a REGULAR event: relays store every
 // one, so multiple messages and offline delivery survive. (Kind 30078 is
@@ -34,7 +34,11 @@ export class NostrChatTransport {
     this._poolHandler = null;
     this._subId = null;
     this._seen = new Set(); // processed Nostr event ids (dedup on relay replay)
+    this._rejected = 0; // inbound events dropped by signature verification
   }
+
+  /** Number of inbound events dropped because they failed verification. */
+  get rejectedCount() { return this._rejected; }
 
   onMessage(cb) {
     this._handler = cb;
@@ -90,6 +94,29 @@ export class NostrChatTransport {
     event.sig = bytesToHex(schnorr.sign(id, this._sk));
   }
 
+  /**
+   * @private Recompute the NIP-01 id from the canonical serialization and verify
+   * the schnorr signature over it. Without this the relay could put any pubkey on
+   * any event, and `from` would be a relay-supplied hint rather than an identity.
+   * @param {object} ev raw Nostr event
+   * @returns {boolean} true iff the id binds the content AND the sig verifies
+   */
+  _verifyEvent(ev) {
+    if (typeof ev.id !== 'string' || typeof ev.sig !== 'string' || typeof ev.pubkey !== 'string') {
+      return false;
+    }
+    try {
+      const serialized = JSON.stringify([
+        0, ev.pubkey, ev.created_at, ev.kind, ev.tags || [], ev.content,
+      ]);
+      const id = sha256(utf8Encode(serialized));
+      if (bytesToHex(id) !== ev.id) return false;
+      return schnorr.verify(hexToBytes(ev.sig), id, hexToBytes(ev.pubkey));
+    } catch {
+      return false; // malformed hex / wrong lengths
+    }
+  }
+
   /** @private Handle a raw relay message: ['EVENT', subId, event]. */
   _onRelay(data) {
     if (!Array.isArray(data) || data[0] !== 'EVENT') return;
@@ -97,6 +124,10 @@ export class NostrChatTransport {
     if (!ev || !ev.content || ev.pubkey === this._pk) return;
     const addressedToUs = (ev.tags || []).some((t) => t[0] === 'p' && t[1] === this._pk);
     if (!addressedToUs) return;
+    // The relay is untrusted: prove the event really is from ev.pubkey and that its
+    // content is intact. Checked before the dedup set so a forgery bearing a genuine
+    // event's id cannot suppress the real one.
+    if (!this._verifyEvent(ev)) { this._rejected += 1; return; }
     // Drop stale ephemeral events (typing/presence) replayed by relays that
     // wrongly store the ephemeral kind — they are real-time only.
     if (ev.kind === EPHEMERAL_KIND && Math.floor(Date.now() / 1000) - (ev.created_at || 0) > 20) return;
