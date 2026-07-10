@@ -1,6 +1,7 @@
 // index.js — entrypoint. Wires the registry, HTTP API, relay listener and
 // dispatcher from environment config, then starts listening. Blind + stateless:
 // the only persisted thing is the subscription registry.
+import './src/websocket-polyfill.js';
 import { Registry } from './src/registry.js';
 import { verifyRegistration } from './src/signature.js';
 import { Dispatcher } from './src/dispatcher.js';
