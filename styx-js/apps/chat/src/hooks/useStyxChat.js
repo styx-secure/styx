@@ -9,6 +9,11 @@ import { getRelays } from '../lib/config.js';
 
 const PAGE = 20;
 
+// Delivery-state ordering. A receipt that arrives out of order (e.g. a delayed
+// 'delivered' after 'read') must never downgrade the tick.
+const STATE_RANK = { sending: 0, sent: 1, delivered: 2, read: 3, failed: 1 };
+const advances = (from, to) => (STATE_RANK[to] ?? -1) > (STATE_RANK[from] ?? -1);
+
 export function useStyxChat() {
   const chatRef = useRef(null);
   const subsRef = useRef([]);
@@ -37,7 +42,7 @@ export function useStyxChat() {
       const next = {};
       for (const [k, list] of Object.entries(prev)) {
         next[k] = list.map((m) => {
-          if (m.id === messageId) {
+          if (m.id === messageId && advances(m.state, state)) {
             touched = true;
             return { ...m, state };
           }

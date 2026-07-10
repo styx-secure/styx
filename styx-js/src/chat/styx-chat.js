@@ -71,6 +71,8 @@ export class StyxChat {
     this._store = deps.store || new MemoryMessageStore();
     this._groups = {}; // contactPubkey -> MLS groupId (persisted in app mode)
     this._pendingApp = {}; // from -> [envelopes] not yet decryptable (arrived before Welcome)
+    this._seenIncoming = new Set(); // inbound message ids already surfaced (dedup relay replay)
+    this._readSent = new Set(); // inbound message ids we've already sent a 'read' receipt for
     if (deps.identity && deps.engine && deps.roster && deps.transport) {
       this._identity = { ...deps.identity };
       this._engine = deps.engine;
@@ -255,7 +257,12 @@ export class StyxChat {
     this._emitter.emit('message', msg);
     await this._touch(pubkey, text, msg.ts, false);
 
-    const ct = session.encrypt(utf8Encode(String(text)));
+    // The MLS plaintext is a typed payload: the sender's id + send time travel
+    // (encrypted) so the recipient shows the real send time and can correlate
+    // delivery/read receipts back to this exact message.
+    const ct = session.encrypt(utf8Encode(JSON.stringify({
+      t: 'msg', id: msg.id, text: msg.text, ts: msg.ts,
+    })));
     await this._persistMls(); // the ratchet advanced on encrypt
     try {
       await this._send(pubkey, { t: 'app', ct: bytesToBase64(ct) });
@@ -270,6 +277,27 @@ export class StyxChat {
 
   async markRead(pubkey) {
     try { await this._roster.clearUnread(pubkey); } catch { /* unknown contact */ }
+    // Acknowledge reading: one 'read' receipt per inbound message not yet acked.
+    // Encrypted through MLS like any message — the relay only sees ciphertext.
+    let history = [];
+    try { history = await this._store.list(pubkey, { limit: 1000 }); } catch { history = []; }
+    for (const m of history) {
+      if (m.direction !== 'in' || this._readSent.has(m.id)) continue;
+      this._readSent.add(m.id);
+      // eslint-disable-next-line no-await-in-loop
+      await this._sendReceipt(pubkey, m.id, 'read');
+    }
+  }
+
+  /** Send an encrypted delivery/read receipt for message `ref`. Best-effort. @private */
+  async _sendReceipt(toPubkey, ref, kind) {
+    const session = this._engine.session(toPubkey);
+    if (!session) return;
+    try {
+      const ct = session.encrypt(utf8Encode(JSON.stringify({ t: 'receipt', ref, kind })));
+      await this._persistMls(); // the ratchet advanced on encrypt
+      await this._send(toPubkey, { t: 'app', ct: bytesToBase64(ct) });
+    } catch { /* transport/session hiccup — receipts are best-effort */ }
   }
 
   async setTyping(pubkey, on) {
@@ -349,15 +377,36 @@ export class StyxChat {
     try { res = session.decrypt(base64ToBytes(env.ct)); } catch { return false; }
     await this._persistMls(); // ratchet advanced on decrypt
     if (res.kind !== 'application') return true;
-    const text = utf8Decode(res.plaintext);
+
+    // Decode the typed payload; tolerate a bare-string legacy plaintext.
+    let payload;
+    try { payload = JSON.parse(utf8Decode(res.plaintext)); } catch { payload = null; }
+    if (!payload || typeof payload !== 'object') {
+      payload = { t: 'msg', id: uuidv4(), text: utf8Decode(res.plaintext), ts: Date.now() };
+    }
+
+    if (payload.t === 'receipt') {
+      // A delivery/read acknowledgement for one of our outgoing messages.
+      // Never acknowledge a receipt — that would loop.
+      if (payload.ref && (payload.kind === 'delivered' || payload.kind === 'read')) {
+        this._emitter.emit('state', payload.ref, payload.kind);
+      }
+      return true;
+    }
+
+    // A chat message. Use the sender's id + send time; dedup relay replay.
+    if (this._seenIncoming.has(payload.id)) return true;
+    this._seenIncoming.add(payload.id);
     const msg = {
-      id: uuidv4(), contactPubkey: from, direction: 'in',
-      text, ts: Date.now(), state: 'delivered',
+      id: payload.id, contactPubkey: from, direction: 'in',
+      text: String(payload.text ?? ''), ts: payload.ts || Date.now(), state: 'delivered',
     };
     await this._store.append(msg);
     await this._persistMessages();
-    await this._touch(from, text, msg.ts, true);
+    await this._touch(from, msg.text, msg.ts, true);
     this._emitter.emit('message', msg);
+    // Auto-acknowledge delivery (encrypted through MLS, opaque on the wire).
+    await this._sendReceipt(from, payload.id, 'delivered');
     return true;
   }
 

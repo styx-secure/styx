@@ -180,4 +180,66 @@ describe('StyxChat orchestrator (in-memory transport, real MLS)', () => {
     const t = await typed;
     expect(t).toEqual({ pubkey: 'a_pk', on: true });
   });
+
+  test("recipient shows the sender's id and send timestamp, not the receive time", async () => {
+    const { alice, bob } = await pairedPeers();
+    const gotAtBob = new Promise((res) => bob.onMessage((m) => res(m)));
+    const out = await alice.sendText('b_pk', 'orario esatto');
+    const inMsg = await gotAtBob;
+    expect(inMsg.id).toBe(out.id);
+    expect(inMsg.ts).toBe(out.ts);
+    expect(inMsg.text).toBe('orario esatto');
+  });
+
+  test('outgoing message advances to delivered when the peer auto-acks', async () => {
+    const { alice } = await pairedPeers();
+    const states = new Map();
+    alice.onMessageState((id, s) => states.set(id, s));
+    const out = await alice.sendText('b_pk', 'consegna');
+    await flush();
+    expect(states.get(out.id)).toBe('delivered');
+  });
+
+  test('markRead sends a read receipt that advances the sender to read', async () => {
+    const { alice, bob } = await pairedPeers();
+    const seen = [];
+    alice.onMessageState((id, s) => seen.push({ id, s }));
+    const out = await alice.sendText('b_pk', 'leggimi');
+    await flush();
+    await bob.markRead('a_pk');
+    await flush();
+    expect(seen.filter((x) => x.id === out.id).map((x) => x.s)).toEqual(['sent', 'delivered', 'read']);
+  });
+
+  test('receipts never create a message and never loop', async () => {
+    const { alice, bob } = await pairedPeers();
+    let aliceInbound = 0;
+    alice.onMessage((m) => { if (m.direction === 'in') aliceInbound++; });
+    await alice.sendText('b_pk', 'no loop');
+    await flush();
+    await bob.markRead('a_pk');
+    await flush();
+    // Bob stored exactly one inbound text; the receipts produced no phantom messages.
+    expect((await bob.listMessages('a_pk')).filter((m) => m.direction === 'in')).toHaveLength(1);
+    expect(aliceInbound).toBe(0); // a receipt must not surface as an inbound message
+  });
+
+  test('receipts travel encrypted — the wire never reveals a receipt', async () => {
+    const { alice, bob } = await pairedPeers();
+    const wire = [];
+    const orig = bob._transport.send.bind(bob._transport);
+    bob._transport.send = async (to, bytes, opts) => {
+      wire.push(new TextDecoder().decode(bytes));
+      return orig(to, bytes, opts);
+    };
+    await alice.sendText('b_pk', 'segreto');
+    await flush();
+    await bob.markRead('a_pk');
+    await flush();
+    expect(wire.length).toBeGreaterThan(0); // bob emitted delivered + read receipts
+    for (const frame of wire) {
+      expect(frame).not.toMatch(/receipt|delivered|read/); // opaque on the wire
+      expect(JSON.parse(frame).t).toBe('app'); // indistinguishable from a text message
+    }
+  });
 });

@@ -16,6 +16,7 @@
   --bubble-out:#d5f0e4;  --bubble-out-text:#0a3527;
   --bubble-in:#ffffff;   --bubble-in-text:#101820;
   --read:#2f7fed;  --danger:#e0403f;  --danger-soft:#fbe6e6;  --convo:#e4e9ed;
+  --tick:#5f7169;  /* grey ticks (sent/delivered) on the out bubble */
 
   --shadow:0 1px 2px rgba(16,24,32,.06), 0 8px 24px rgba(16,24,32,.06);
   --shadow-lg:0 24px 64px rgba(9,15,20,.18);
@@ -44,6 +45,7 @@
   --bubble-out:#123a2c;  --bubble-out-text:#d4f5e6;
   --bubble-in:#161f26;   --bubble-in-text:#e8eef2;
   --read:#5aa2ff;  --danger:#ff5d5d;  --danger-soft:#341617;  --convo:#070c10;
+    --tick:#8299a0;
 
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
   --shadow-lg:0 30px 80px rgba(0,0,0,.6);
@@ -59,6 +61,7 @@
     --bubble-out:#123a2c;  --bubble-out-text:#d4f5e6;
     --bubble-in:#161f26;   --bubble-in-text:#e8eef2;
     --read:#5aa2ff;  --danger:#ff5d5d;  --danger-soft:#341617;  --convo:#070c10;
+    --tick:#8299a0;
     --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
     --shadow-lg:0 30px 80px rgba(0,0,0,.6);
   }

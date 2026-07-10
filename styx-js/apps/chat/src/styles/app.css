@@ -127,8 +127,8 @@
   border: 1px solid var(--border); border-radius: var(--r-bubble) var(--r-bubble) var(--r-bubble) var(--r-bubble-tip); }
 .bubble .meta { display: flex; align-items: center; justify-content: flex-end; gap: 4px; margin-top: 2px; }
 .bubble .time { font-size: 10.5px; opacity: .75; }
-.bubble .ticks { display: inline-flex; align-items: center; }
-.bubble .ticks.read { color: var(--read); }
+.bubble .ticks { display: inline-flex; align-items: center; color: var(--tick); } /* sent/delivered: grey */
+.bubble .ticks.read { color: var(--accent); } /* read: green */
 .bubble .retry { background: none; border: 0; color: var(--danger); font-size: 11px; cursor: pointer; padding: 0; }
 
 /* ============ Composer ============ */
