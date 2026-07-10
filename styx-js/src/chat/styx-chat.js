@@ -18,6 +18,7 @@ import { schnorr } from '@noble/curves/secp256k1';
 import { MlsEngine } from '../crypto/mls/mls-engine.js';
 import { ContactRoster } from './contact-roster.js';
 import { EncryptedKeyStore } from '../storage/encrypted-key-store.js';
+import { registrationDigest } from '../push/registration-digest.js';
 import { LocalStorageBackend } from '../storage/local-storage-backend.js';
 import { BroadcastChannelTransport } from '../transport/broadcast-channel-transport.js';
 import { NostrChatTransport } from '../transport/nostr-chat-transport.js';
@@ -193,6 +194,20 @@ export class StyxChat {
     this._identity.alias = String(alias);
     if (this._backend) await this._backend.set('alias', this._identity.alias);
     return this.me;
+  }
+
+  /**
+   * Sign a push-bridge registration with the internal Nostr secret. Keeps the
+   * secret key encapsulated — callers get only a signature over the exact
+   * (action, our pubkey, endpoint) digest, never a general signing oracle.
+   * @param {'register'|'unregister'} action
+   * @param {string} endpoint the Web Push subscription endpoint
+   * @returns {Promise<string>} schnorr signature, hex
+   */
+  async signBridgeRegistration(action, endpoint) {
+    if (!this._nostrSecret) throw new Error('No identity to sign with');
+    const digest = registrationDigest(action, this._identity.pubkey, endpoint);
+    return bytesToHex(schnorr.sign(digest, this._nostrSecret));
   }
 
   async listContacts() { return this._roster.list(); }
