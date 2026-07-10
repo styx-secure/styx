@@ -1,0 +1,16 @@
+{
+  "name": "styx-push-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Stateless, blind Web Push bridge for Styx Chat — listens to Nostr relays and wakes registered devices.",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@noble/curves": "^1.6.0",
+    "@noble/hashes": "^1.5.0",
+    "web-push": "^3.6.7"
+  }
+}
