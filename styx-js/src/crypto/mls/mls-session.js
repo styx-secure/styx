@@ -36,4 +36,17 @@ export class MlsSession {
     }
     return { kind: 'handshake', plaintext: null };
   }
+
+  /**
+   * Derive a secret from the group's key schedule. Every member of the same group
+   * at the same epoch derives the same bytes, so this is how two peers can compare
+   * a value that only a genuine shared session could produce.
+   * @param {string} label domain separation
+   * @param {Uint8Array} context binds the derivation to a caller-chosen context
+   * @param {number} length output bytes
+   * @returns {Uint8Array}
+   */
+  exportSecret(label, context, length) {
+    return this._group.export_key(this._engine.provider, label, context, length);
+  }
 }

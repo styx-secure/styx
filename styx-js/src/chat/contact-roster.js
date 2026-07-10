@@ -15,6 +15,8 @@ const INDEX_KEY = 'styx:contacts';
  * @property {number} unread
  * @property {string|null} lastPreview
  * @property {number|null} lastTs
+ * @property {boolean} verified safety number compared out-of-band
+ * @property {number|null} verifiedAt when it was compared
  */
 
 /**
@@ -72,6 +74,8 @@ export class ContactRoster {
       unread: existing?.unread ?? 0,
       lastPreview: existing?.lastPreview ?? null,
       lastTs: existing?.lastTs ?? null,
+      verified: existing?.verified ?? false,
+      verifiedAt: existing?.verifiedAt ?? null,
     };
     this._contacts.set(pubkey, record);
     await this._persist();
@@ -149,6 +153,20 @@ export class ContactRoster {
   async clearUnread(pubkey) {
     const record = this._require(pubkey);
     record.unread = 0;
+    await this._persist();
+    return this._decorate(record);
+  }
+
+  /**
+   * Record whether this contact's safety number has been compared out-of-band.
+   * @param {string} pubkey
+   * @param {boolean} verified
+   * @returns {Promise<Contact>}
+   */
+  async setVerified(pubkey, verified) {
+    const record = this._require(pubkey);
+    record.verified = !!verified;
+    record.verifiedAt = record.verified ? Date.now() : null;
     await this._persist();
     return this._decorate(record);
   }
