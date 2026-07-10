@@ -365,6 +365,8 @@ export class StyxChat {
     try { env = JSON.parse(utf8Decode(bytes)); } catch { return; }
 
     if (env.t === 'welcome') {
+      // A welcome must never replace an established session (silent-MITM vector).
+      if (this._groups[from] || this._engine.session(from)) return;
       this._engine.joinSession(from, base64ToBytes(env.welcome), base64ToBytes(env.tree));
       if (env.groupId) this._groups[from] = env.groupId;
       await this._persistMls();

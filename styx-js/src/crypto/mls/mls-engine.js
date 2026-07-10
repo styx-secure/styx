@@ -131,12 +131,18 @@ export class MlsEngine {
 
   /**
    * Join a 1:1 session created by a peer, from its Welcome + ratchet tree.
+   * Refuses to replace an existing session: swapping out an established group is
+   * how a silent MITM takes over a live conversation. Re-pairing must be an
+   * explicit local action (drop the contact, then accept a new invite).
    * @param {string} contactId
    * @param {Uint8Array} welcomeBytes
    * @param {Uint8Array} ratchetTreeBytes
    * @returns {MlsSession}
    */
   joinSession(contactId, welcomeBytes, ratchetTreeBytes) {
+    if (this._sessions.has(contactId)) {
+      throw new Error(`MlsEngine: session already exists for ${contactId}`);
+    }
     const group = Group.join(
       this._provider,
       welcomeBytes,
