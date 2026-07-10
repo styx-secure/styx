@@ -7,14 +7,19 @@
 // (EncryptedKeyStore + IndexedDB + WebRTC/Nostr transport) is assembled on top.
 //
 // Wire protocol (opaque bytes over the transport, JSON envelope):
-//   { t:'welcome', from:{pubkey,alias}, welcome, tree }  — group join material
+//   { t:'welcome', from:{pubkey}, welcome, tree, groupId, hmac } — group join material.
+//       `hmac` is HMAC-SHA256 over the invite nonce (see createQrInvite): it proves
+//       the sender scanned our QR. Without it the welcome is dropped.
 //   { t:'app',     ct }                                   — encrypted app message
 //   { t:'typing',  on }                                   — ephemeral typing signal
 
 import {
   bytesToHex, bytesToBase64, base64ToBytes, utf8Encode, utf8Decode, uuidv4, EventEmitter,
+  concatBytes, constantTimeEqual, randomBytes,
 } from '../utils.js';
 import { schnorr } from '@noble/curves/secp256k1';
+import { hmac } from '@noble/hashes/hmac';
+import { sha256 } from '@noble/hashes/sha256';
 import { MlsEngine } from '../crypto/mls/mls-engine.js';
 import { ContactRoster } from './contact-roster.js';
 import { EncryptedKeyStore } from '../storage/encrypted-key-store.js';
@@ -22,6 +27,9 @@ import { registrationDigest } from '../push/registration-digest.js';
 import { LocalStorageBackend } from '../storage/local-storage-backend.js';
 import { BroadcastChannelTransport } from '../transport/broadcast-channel-transport.js';
 import { NostrChatTransport } from '../transport/nostr-chat-transport.js';
+
+/** Where the outstanding QR invite's nonce is kept, so it survives a reload. */
+const INVITE_NONCE_KEY = 'invite:nonce';
 
 function defaultBackend(ns) {
   if (typeof localStorage !== 'undefined') {
@@ -74,6 +82,7 @@ export class StyxChat {
     this._pendingApp = {}; // from -> [envelopes] not yet decryptable (arrived before Welcome)
     this._seenIncoming = new Set(); // inbound message ids already surfaced (dedup relay replay)
     this._readSent = new Set(); // inbound message ids we've already sent a 'read' receipt for
+    this._inviteNonce = null; // nonce of the outstanding QR invite, if any (single-use)
     if (deps.identity && deps.engine && deps.roster && deps.transport) {
       this._identity = { ...deps.identity };
       this._engine = deps.engine;
@@ -142,6 +151,10 @@ export class StyxChat {
 
       // Restore message history.
       this._store.hydrate(await be.get('msgs'));
+
+      // An invite shown before a reload must still be joinable: restore its nonce.
+      const savedNonce = await be.get(INVITE_NONCE_KEY);
+      if (savedNonce) this._inviteNonce = base64ToBytes(savedNonce);
 
       // Reload previously-established sessions from the restored state.
       this._groups = (await be.get('mls:groups')) || {};
@@ -218,14 +231,21 @@ export class StyxChat {
 
   // ---- pairing (QR) ----
   async createQrInvite() {
+    // The nonce exists only in this QR and in our memory. Whoever joins must MAC
+    // the welcome under it, proving they actually looked at this screen. The QR is
+    // therefore the trust anchor, and it is single-use.
+    const nonce = randomBytes(32);
+    this._inviteNonce = nonce;
     const payload = {
       pubkey: this._identity.pubkey,
       alias: this._identity.alias,
       kp: bytesToBase64(this._engine.keyPackageBytes()),
+      nonce: bytesToBase64(nonce),
     };
     // Generating a KeyPackage stores its private key in the MLS provider; persist
-    // it so the invite still works if we reload before the peer joins.
+    // it, and the nonce, so the invite still works if we reload before the peer joins.
     await this._persistMls();
+    await this._backend?.set(INVITE_NONCE_KEY, bytesToBase64(nonce));
     return { qr: 'styx://invite/' + bytesToBase64(utf8Encode(JSON.stringify(payload))) };
   }
 
@@ -234,12 +254,14 @@ export class StyxChat {
     const { welcome, ratchetTree, groupId } = this._engine.startSession(inv.pubkey, base64ToBytes(inv.kp));
     this._groups[inv.pubkey] = groupId;
     await this._persistMls();
+    const nonce = inv.nonce ? base64ToBytes(inv.nonce) : new Uint8Array(0);
     await this._send(inv.pubkey, {
       t: 'welcome',
       from: { pubkey: this._identity.pubkey, alias: this._identity.alias },
       welcome: bytesToBase64(welcome),
       tree: bytesToBase64(ratchetTree),
       groupId,
+      hmac: bytesToBase64(this._welcomeMac(nonce, welcome, ratchetTree, groupId)),
     });
     this._pendingAlias = { [inv.pubkey]: inv.alias };
     return { contactPubkey: inv.pubkey };
@@ -338,6 +360,14 @@ export class StyxChat {
     await this._transport.send(toPubkey, utf8Encode(JSON.stringify(obj)), opts);
   }
 
+  /**
+   * @private The pairing proof: HMAC-SHA256(qr nonce, welcome ‖ tree ‖ groupId).
+   * Covering the group material means a spliced welcome fails the check.
+   */
+  _welcomeMac(nonce, welcomeBytes, treeBytes, groupId) {
+    return hmac(sha256, nonce, concatBytes(welcomeBytes, treeBytes, utf8Encode(String(groupId))));
+  }
+
   _setState(msg, state) {
     msg.state = state;
     this._emitter.emit('state', msg.id, state);
@@ -367,7 +397,16 @@ export class StyxChat {
     if (env.t === 'welcome') {
       // A welcome must never replace an established session (silent-MITM vector).
       if (this._groups[from] || this._engine.session(from)) return;
-      this._engine.joinSession(from, base64ToBytes(env.welcome), base64ToBytes(env.tree));
+      // It must also prove the sender saw our QR: no pending invite, or a MAC that
+      // does not verify under its nonce, means we are being injected into.
+      if (!this._inviteNonce || !env.hmac) return;
+      const welcomeBytes = base64ToBytes(env.welcome);
+      const treeBytes = base64ToBytes(env.tree);
+      const expected = this._welcomeMac(this._inviteNonce, welcomeBytes, treeBytes, env.groupId);
+      if (!constantTimeEqual(expected, base64ToBytes(env.hmac))) return;
+      this._inviteNonce = null; // single-use: a photographed QR cannot be replayed
+      await this._backend?.delete(INVITE_NONCE_KEY);
+      this._engine.joinSession(from, welcomeBytes, treeBytes);
       if (env.groupId) this._groups[from] = env.groupId;
       await this._persistMls();
       if (!(await this._roster.get(from))) {

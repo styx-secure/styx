@@ -111,6 +111,33 @@ describe('StyxChat assembly (real identity + MLS + BroadcastChannel)', () => {
     expect(msg.text).toBe('ciao dopo reload invito');
   });
 
+  test('a used invite cannot be replayed by a second peer after a reload', async () => {
+    // The invite nonce is single-use AND persisted: burning it must survive the
+    // reload, or a photographed QR would pair an attacker after a refresh.
+    const ch = 'invite-replay';
+    const aBackend = memBackend();
+    let a = await realPeer({ backend: aBackend, channelName: ch, alias: 'A' });
+    const aPubkey = a.me.pubkey;
+    const { qr } = await a.createQrInvite();
+
+    const b = await realPeer({ backend: memBackend(), channelName: ch, alias: 'B' });
+    await b.acceptQrInvite(qr); // legitimate scan burns the nonce
+    await flush();
+    expect((await a.listContacts()).map((c) => c.pubkey)).toContain(b.me.pubkey);
+
+    // A reloads; the burned nonce must not come back.
+    a.destroy();
+    a = new StyxChat();
+    await a.init({ password: 'pw', backend: aBackend, channelName: ch });
+    live.push(a);
+
+    const mallory = await realPeer({ backend: memBackend(), channelName: ch, alias: 'M' });
+    await mallory.acceptQrInvite(qr); // replays the same QR
+    await flush();
+    expect((await a.listContacts()).map((c) => c.pubkey)).not.toContain(mallory.me.pubkey);
+    expect(a._engine.session(mallory.me.pubkey)).toBeFalsy();
+  });
+
   test('a peer survives a reload and still receives on the restored MLS session', async () => {
     const ch = 'reload';
     const bobBackend = memBackend();
