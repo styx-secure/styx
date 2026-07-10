@@ -5,8 +5,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getStyxChat } from '../lib/styx-adapter.js';
 import { peerNamespace } from '../lib/ns.js';
-import { getRelays } from '../lib/config.js';
+import { getRelays, getBridgeUrl } from '../lib/config.js';
 import { browserNotifier } from '../lib/notify.js';
+import { PushRegistrar } from 'styx-js';
 
 const PAGE = 20;
 
@@ -57,6 +58,29 @@ export function useStyxChat() {
   }, []);
 
   // --- lifecycle ---
+  const enablePush = useCallback(async () => {
+    const chat = chatRef.current;
+    if (!chat) return false;
+    const bridgeUrl = getBridgeUrl();
+    if (!bridgeUrl) return false;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return false;
+    if (!('serviceWorker' in navigator)) return false;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const registrar = new PushRegistrar({
+        bridgeUrl,
+        pubkey: chat.me.pubkey,
+        sign: (action, endpoint) => chat.signBridgeRegistration(action, endpoint),
+        fetchImpl: (...a) => fetch(...a),
+        pushManager: reg.pushManager,
+      });
+      return await registrar.enable();
+    } catch (e) {
+      console.debug('enablePush failed', e);
+      return false;
+    }
+  }, []);
+
   const unlock = useCallback(async ({ password, alias, firstRun }) => {
     const StyxChat = await getStyxChat();
     const chat = new StyxChat();
@@ -98,6 +122,8 @@ export function useStyxChat() {
     setMe(chat.me || identity);
     setContacts(await chat.listContacts());
     setReady(true);
+    // Opt-in: if a bridge is configured and permission is already granted, register.
+    enablePush();
     return chat.me || identity;
   }, [upsertMessage, patchMessageState]);
 
@@ -181,6 +207,6 @@ export function useStyxChat() {
   return {
     ready, me, contacts, messagesByContact, typingByContact, noMore,
     unlock, lock, openConversation, loadOlder, sendText, markRead, setTyping,
-    setAlias, ...pairing,
+    setAlias, enablePush, ...pairing,
   };
 }

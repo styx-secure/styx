@@ -8,8 +8,13 @@ precacheAndRoute(self.__WB_MANIFEST);
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 
-// Phase 2 fills this in: show a generic notification on a Web Push. No-op for now.
-self.addEventListener('push', () => {});
+// Show the single generic notification on a Web Push wake-up. The payload is
+// empty by design (content stays E2E); we never read event.data.
+self.addEventListener('push', (event) => {
+  event.waitUntil(
+    self.registration.showNotification('Styx Chat', { body: 'Hai un nuovo messaggio', tag: 'styx-new' }),
+  );
+});
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();

@@ -116,6 +116,7 @@ export default function App() {
           onLock={onLock}
           onReset={onReset}
           onToast={showToast}
+          onEnablePush={chat.enablePush}
         />
       )}
 

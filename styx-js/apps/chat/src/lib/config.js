@@ -16,3 +16,24 @@ export function getRelays() {
     return DEFAULT_RELAYS;
   }
 }
+
+/**
+ * Parse the opt-in bridge URL from a query string. Pure (no window) for testing.
+ * @param {string} search e.g. '?bridge=https://b'
+ * @param {string} [fallback] build-time default
+ * @returns {string} bridge base URL, '' when unset
+ */
+export function parseBridgeUrl(search, fallback = '') {
+  try {
+    const v = new URLSearchParams(search).get('bridge');
+    return (v || fallback).replace(/\/$/, '');
+  } catch {
+    return fallback.replace(/\/$/, '');
+  }
+}
+
+/** The bridge URL for this session: ?bridge=… or the build-time VITE_BRIDGE_URL. */
+export function getBridgeUrl() {
+  const fallback = (import.meta.env && import.meta.env.VITE_BRIDGE_URL) || '';
+  try { return parseBridgeUrl(window.location.search, fallback); } catch { return ''; }
+}

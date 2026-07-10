@@ -3,7 +3,7 @@ import { identicon, shortKey } from '../lib/identicon.js';
 import { Close, Copy, Trash, Lock } from './Icons.jsx';
 import { requestNotificationPermission } from '../lib/notify.js';
 
-export default function SettingsPanel({ me, contacts, onClose, onSetAlias, onRemoveContact, onLock, onReset, onToast }) {
+export default function SettingsPanel({ me, contacts, onClose, onSetAlias, onRemoveContact, onLock, onReset, onToast, onEnablePush }) {
   const [alias, setAlias] = useState(me?.alias || '');
   const [notifPerm, setNotifPerm] = useState(
     typeof Notification !== 'undefined' ? Notification.permission : 'denied',
@@ -19,6 +19,7 @@ export default function SettingsPanel({ me, contacts, onClose, onSetAlias, onRem
   const enableNotifications = async () => {
     const p = await requestNotificationPermission();
     setNotifPerm(p);
+    if (p === 'granted') { try { await onEnablePush?.(); } catch { /* best-effort */ } }
     onToast?.(p === 'granted' ? 'Notifiche attive ✓' : 'Notifiche non attive');
   };
 

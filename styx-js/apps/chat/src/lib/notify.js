@@ -2,9 +2,9 @@
 // decision logic (permission × page visibility × coalescing) with injected deps
 // so it is unit-testable; `browserNotifier` wires the real browser globals.
 
-const TITLE = 'Styx Chat';
-const BODY = 'Hai un nuovo messaggio'; // generic on purpose — content stays E2E
-const TAG = 'styx-new';
+// Single generic payload for BOTH the local notifier and the service-worker push
+// handler. Generic on purpose — content stays E2E, never shown in a notification.
+export const NOTIFICATION = { title: 'Styx Chat', body: 'Hai un nuovo messaggio', tag: 'styx-new' };
 
 /**
  * @param {object} deps
@@ -24,7 +24,7 @@ export function createNotifier({ getPermission, isPageVisible, show, now, coales
       const t = now();
       if (t - lastShownAt < coalesceMs) return false; // coalesce bursts
       lastShownAt = t;
-      show({ title: TITLE, body: BODY, tag: TAG });
+      show({ title: NOTIFICATION.title, body: NOTIFICATION.body, tag: NOTIFICATION.tag });
       return true;
     },
   };
