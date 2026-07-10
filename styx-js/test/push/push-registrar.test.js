@@ -40,6 +40,15 @@ describe('PushRegistrar', () => {
     expect(body.subscription.endpoint).toBe('https://push/xyz');
     expect(body.sig).toBe('sig(register,https://push/xyz)');
   });
+
+  test('resolves to false (never throws) when the bridge is unreachable', async () => {
+    const pushManager = { subscribe: jest.fn() };
+    const sign = jest.fn();
+    const fetchImpl = jest.fn(async () => { throw new Error('network down'); });
+    const r = new PushRegistrar({ bridgeUrl: 'https://bridge', pubkey: 'pk', sign, fetchImpl, pushManager });
+    await expect(r.enable()).resolves.toBe(false);
+    expect(pushManager.subscribe).not.toHaveBeenCalled();
+  });
 });
 
 describe('urlBase64ToUint8Array', () => {

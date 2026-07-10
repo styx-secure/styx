@@ -33,19 +33,24 @@ export class PushRegistrar {
   /** @returns {Promise<boolean>} whether a registration was sent + accepted. */
   async enable() {
     if (!this._bridgeUrl) return false; // opt-in: no bridge configured
-    const keyRes = await this._fetch(`${this._bridgeUrl}/vapidPublicKey`);
-    const { key } = await keyRes.json();
-    const sub = await this._pm.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(key),
-    });
-    const json = sub.toJSON();
-    const sig = await this._sign('register', json.endpoint);
-    const res = await this._fetch(`${this._bridgeUrl}/register`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ pubkey: this._pubkey, subscription: json, sig }),
-    });
-    return !!res.ok;
+    try {
+      const keyRes = await this._fetch(`${this._bridgeUrl}/vapidPublicKey`);
+      const { key } = await keyRes.json();
+      const sub = await this._pm.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key),
+      });
+      const json = sub.toJSON();
+      const sig = await this._sign('register', json.endpoint);
+      const res = await this._fetch(`${this._bridgeUrl}/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pubkey: this._pubkey, subscription: json, sig }),
+      });
+      return !!res.ok;
+    } catch (e) {
+      console.debug('push registration failed', e);
+      return false;
+    }
   }
 }
