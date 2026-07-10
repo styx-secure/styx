@@ -71,6 +71,7 @@ describe('StyxChat assembly (real identity + MLS + BroadcastChannel)', () => {
     expect(contactPubkey).toBe(bob.me.pubkey);
     await alice.confirmPairing({ contactPubkey, alias: 'Bob' });
     await flush();
+    await bob.confirmPairing({ contactPubkey: alice.me.pubkey, alias: 'Alice' }); // A4: explicit
 
     expect((await alice.listContacts()).map((c) => c.pubkey)).toContain(bob.me.pubkey);
     expect((await bob.listContacts()).map((c) => c.pubkey)).toContain(alice.me.pubkey);
@@ -100,6 +101,7 @@ describe('StyxChat assembly (real identity + MLS + BroadcastChannel)', () => {
     await b.acceptQrInvite(qr);
     await b.confirmPairing({ contactPubkey: aPubkey, alias: 'A' });
     await flush();
+    await a.confirmPairing({ contactPubkey: b.me.pubkey, alias: 'B' }); // A4: explicit
 
     expect((await a.listContacts()).map((c) => c.pubkey)).toContain(b.me.pubkey);
     const gotAtA = new Promise((res) => a.onMessage((m) => res(m)));
@@ -123,6 +125,7 @@ describe('StyxChat assembly (real identity + MLS + BroadcastChannel)', () => {
     const b = await realPeer({ backend: memBackend(), channelName: ch, alias: 'B' });
     await b.acceptQrInvite(qr); // legitimate scan burns the nonce
     await flush();
+    await a.confirmPairing({ contactPubkey: b.me.pubkey, alias: 'B' }); // A4: explicit
     expect((await a.listContacts()).map((c) => c.pubkey)).toContain(b.me.pubkey);
 
     // A reloads; the burned nonce must not come back.
@@ -149,6 +152,7 @@ describe('StyxChat assembly (real identity + MLS + BroadcastChannel)', () => {
     const { contactPubkey } = await alice.acceptQrInvite(qr);
     await alice.confirmPairing({ contactPubkey, alias: 'Bob' });
     await flush();
+    await bob.confirmPairing({ contactPubkey: alice.me.pubkey, alias: 'Alice' }); // A4: explicit
     await alice.sendText(bobPubkey, 'prima del reload');
     await flush();
 

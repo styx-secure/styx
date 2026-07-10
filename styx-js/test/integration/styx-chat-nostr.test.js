@@ -55,8 +55,15 @@ describe('StyxChat over a real Nostr relay', () => {
     expect(contactPubkey).toBe(bob.me.pubkey);
     await alice.confirmPairing({ contactPubkey, alias: 'Bob' });
 
-    // Welcome travels over the relay; Bob joins and learns Alice.
-    await waitUntil(async () => (await bob.listContacts()).some((c) => c.pubkey === alice.me.pubkey));
+    // The welcome travels over the relay; Bob authenticates it and it surfaces as
+    // a pending pairing. A4: only an explicit confirm turns it into a contact.
+    await waitUntil(() => bob.listPendingPairings().some((p) => p.pubkey === alice.me.pubkey));
+    expect(await bob.listContacts()).toHaveLength(0);
+    await bob.confirmPairing({ contactPubkey: alice.me.pubkey });
+
+    // Alice's alias reached Bob encrypted (intro), not via the cleartext welcome.
+    const bobsAlice = (await bob.listContacts()).find((c) => c.pubkey === alice.me.pubkey);
+    expect(bobsAlice.alias).toBe('Alice');
 
     const gotAtBob = new Promise((res) => bob.onMessage((m) => res(m)));
     await alice.sendText(bob.me.pubkey, 'Ciao Bob, via relay Nostr reale 🔐');

@@ -65,7 +65,8 @@ describe('StyxChat orchestrator (in-memory transport, real MLS)', () => {
     const { contactPubkey } = await alice.acceptQrInvite(qr);
     expect(contactPubkey).toBe('bob_pk');
     await alice.confirmPairing({ contactPubkey, alias: 'Bob' });
-    await flush(); // welcome delivered → Bob joins + adds Alice
+    await flush(); // welcome delivered → Bob has a pending pairing (A4: no auto-add)
+    await bob.confirmPairing({ contactPubkey: 'alice_pk', alias: 'Alice' });
 
     // Both sides now have the contact.
     expect((await alice.listContacts()).map((c) => c.pubkey)).toContain('bob_pk');
@@ -89,6 +90,7 @@ describe('StyxChat orchestrator (in-memory transport, real MLS)', () => {
     await alice.acceptQrInvite(qr);
     await alice.confirmPairing({ contactPubkey: 'b_pk', alias: 'Bob' });
     await flush();
+    await bob.confirmPairing({ contactPubkey: 'a_pk', alias: 'Alice' }); // A4: explicit
     return { alice, bob };
   }
 
