@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getStyxChat } from '../lib/styx-adapter.js';
 import { peerNamespace } from '../lib/ns.js';
 import { getRelays } from '../lib/config.js';
+import { browserNotifier } from '../lib/notify.js';
 
 const PAGE = 20;
 
@@ -18,6 +19,8 @@ export function useStyxChat() {
   const chatRef = useRef(null);
   const subsRef = useRef([]);
   const typingTimers = useRef({});
+  const notifierRef = useRef(null);
+  if (!notifierRef.current) notifierRef.current = browserNotifier();
 
   const [ready, setReady] = useState(false);
   const [me, setMe] = useState(null);
@@ -72,7 +75,10 @@ export function useStyxChat() {
     };
 
     subsRef.current = [
-      chat.onMessage((msg) => upsertMessage(msg)),
+      chat.onMessage((msg) => {
+        upsertMessage(msg);
+        if (msg.direction === 'in') notifierRef.current.notifyIncoming();
+      }),
       chat.onMessageState((id, state) => patchMessageState(id, state)),
       chat.onContactsChanged((list) => { refreshContacts(list); }),
       chat.onTyping((pubkey, isTyping) => {

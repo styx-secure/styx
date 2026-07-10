@@ -8,7 +8,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:e2e": "playwright test"
+    "gen:icons": "node scripts/gen-icons.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:pwa": "playwright test -c playwright.pwa.config.js"
   },
   "dependencies": {
     "@zxing/browser": "^0.1.5",
@@ -18,6 +20,9 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^5.4.11"
+    "sharp": "^0.35.3",
+    "vite": "^5.4.11",
+    "vite-plugin-pwa": "^1.3.0",
+    "workbox-precaching": "^7.4.1"
   }
 }
