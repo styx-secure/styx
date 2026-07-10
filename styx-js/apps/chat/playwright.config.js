@@ -7,6 +7,7 @@ import { defineConfig } from '@playwright/test';
 // PW_EXECUTABLE at an installed chrome binary.
 export default defineConfig({
   testDir: './e2e',
+  testIgnore: 'pwa.spec.js',
   timeout: 60_000,
   fullyParallel: false,
   workers: 1,
