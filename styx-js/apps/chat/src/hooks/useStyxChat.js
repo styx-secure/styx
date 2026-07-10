@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getStyxChat } from '../lib/styx-adapter.js';
 import { peerNamespace } from '../lib/ns.js';
-import { getRelays, getBridgeUrl } from '../lib/config.js';
+import { getRelays, getBridgeUrl, transportOptions } from '../lib/config.js';
 import { browserNotifier } from '../lib/notify.js';
 import { PushRegistrar } from 'styx-js';
 
@@ -29,6 +29,7 @@ export function useStyxChat() {
   const [messagesByContact, setMessagesByContact] = useState({});
   const [typingByContact, setTypingByContact] = useState({});
   const [noMore, setNoMore] = useState({});
+  const [pendingPairings, setPendingPairings] = useState([]);
 
   // --- append/patch helpers (functional, closure-safe) ---
   const upsertMessage = useCallback((msg) => {
@@ -85,7 +86,9 @@ export function useStyxChat() {
     const StyxChat = await getStyxChat();
     const chat = new StyxChat();
     const ns = peerNamespace();
-    const identity = await chat.init({ password, alias: alias?.trim(), ns, relays: getRelays() }); // throws on wrong password
+    const identity = await chat.init({
+      password, alias: alias?.trim(), ns, ...transportOptions(getRelays()),
+    }); // throws on wrong password
     if (firstRun && alias && alias.trim() && chat.me?.alias !== alias.trim()) {
       await chat.setAlias(alias.trim());
     }
@@ -105,6 +108,10 @@ export function useStyxChat() {
       }),
       chat.onMessageState((id, state) => patchMessageState(id, state)),
       chat.onContactsChanged((list) => { refreshContacts(list); }),
+      // A peer we authenticated joined our group, but adding them is the user's call.
+      chat.onPairing?.(({ pubkey }) => setPendingPairings((prev) => (
+        prev.some((p) => p.pubkey === pubkey) ? prev : [...prev, { pubkey }]
+      ))),
       chat.onTyping((pubkey, isTyping) => {
         // Auto-expire: if no "stopped typing" arrives (lost, or a stale relayed
         // event), clear the indicator after a few seconds so it never sticks.
@@ -118,6 +125,8 @@ export function useStyxChat() {
         setTypingByContact((prev) => ({ ...prev, [pubkey]: !!isTyping }));
       }),
     ];
+
+    subsRef.current = subsRef.current.filter(Boolean); // onPairing is absent on the mock
 
     setMe(chat.me || identity);
     setContacts(await chat.listContacts());
@@ -140,6 +149,7 @@ export function useStyxChat() {
     setMessagesByContact({});
     setTypingByContact({});
     setNoMore({});
+    setPendingPairings([]);
   }, []);
 
   useEffect(() => () => lock(), [lock]); // teardown on unmount
@@ -188,6 +198,31 @@ export function useStyxChat() {
     chatRef.current?.setTyping(pubkey, isTyping);
   }, []);
 
+  // A welcome no longer adds a contact on its own: the user accepts it here.
+  const acceptPending = useCallback(async (pubkey, alias) => {
+    const chat = chatRef.current;
+    if (!chat) return;
+    await chat.confirmPairing({ contactPubkey: pubkey, alias });
+    setPendingPairings((prev) => prev.filter((p) => p.pubkey !== pubkey));
+    setContacts(await chat.listContacts());
+  }, []);
+
+  const dismissPending = useCallback((pubkey) => {
+    setPendingPairings((prev) => prev.filter((p) => p.pubkey !== pubkey));
+  }, []);
+
+  /** The number to read aloud. '' when no session exists yet. */
+  const safetyNumber = useCallback((pubkey) => {
+    try { return chatRef.current?.safetyNumber(pubkey) || ''; } catch { return ''; }
+  }, []);
+
+  const setVerified = useCallback(async (pubkey, verified) => {
+    const chat = chatRef.current;
+    if (!chat?.setVerified) return;
+    await chat.setVerified(pubkey, verified);
+    setContacts(await chat.listContacts());
+  }, []);
+
   const setAlias = useCallback(async (alias) => {
     const updated = await chatRef.current?.setAlias(alias);
     if (updated) setMe({ ...updated });
@@ -205,8 +240,9 @@ export function useStyxChat() {
   };
 
   return {
-    ready, me, contacts, messagesByContact, typingByContact, noMore,
+    ready, me, contacts, messagesByContact, typingByContact, noMore, pendingPairings,
     unlock, lock, openConversation, loadOlder, sendText, markRead, setTyping,
-    setAlias, enablePush, ...pairing,
+    setAlias, enablePush, acceptPending, dismissPending, safetyNumber, setVerified,
+    ...pairing,
   };
 }

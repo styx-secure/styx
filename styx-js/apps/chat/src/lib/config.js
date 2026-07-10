@@ -18,6 +18,18 @@ export function getRelays() {
 }
 
 /**
+ * The transport options to hand StyxChat.init. Having no relays means `?local=1`,
+ * i.e. the same-origin BroadcastChannel transport, which carries no signatures —
+ * so the insecure opt-in is granted there and only there. Pure, for testing.
+ * @param {string[]} relays
+ * @returns {{relays: string[], allowInsecureTransport: boolean}}
+ */
+export function transportOptions(relays) {
+  const list = Array.isArray(relays) ? relays : [];
+  return { relays: list, allowInsecureTransport: list.length === 0 };
+}
+
+/**
  * Parse the opt-in bridge URL from a query string. Pure (no window) for testing.
  * @param {string} search e.g. '?bridge=https://b'
  * @param {string} [fallback] build-time default

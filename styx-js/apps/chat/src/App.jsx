@@ -3,6 +3,8 @@ import { useStyxChat } from './hooks/useStyxChat.js';
 import UnlockScreen from './components/UnlockScreen.jsx';
 import ChatShell from './components/ChatShell.jsx';
 import PairingModal from './components/PairingModal.jsx';
+import PairingRequest from './components/PairingRequest.jsx';
+import SafetyNumberModal from './components/SafetyNumberModal.jsx';
 import SettingsPanel from './components/SettingsPanel.jsx';
 import InstallHint from './components/InstallHint.jsx';
 import { getStyxChat } from './lib/styx-adapter.js';
@@ -13,6 +15,7 @@ export default function App() {
   const chat = useStyxChat();
   const [activeKey, setActiveKey] = useState(null);
   const [modal, setModal] = useState(null); // 'new' | 'settings'
+  const [safetyFor, setSafetyFor] = useState(null); // pubkey whose safety number is shown
   const [toast, setToast] = useState('');
   const [isMobile, setIsMobile] = useState(() => window.innerWidth < MOBILE_BP);
   const [mobileView, setMobileView] = useState('list');
@@ -53,7 +56,13 @@ export default function App() {
     await chat.unlock(creds);
   }, [chat]);
 
-  const onLock = () => { chat.lock(); setActiveKey(null); setModal(null); setMobileView('list'); };
+  const onLock = () => {
+    chat.lock();
+    setActiveKey(null);
+    setModal(null);
+    setSafetyFor(null);
+    setMobileView('list');
+  };
 
   const onReset = async () => {
     const S = await getStyxChat();
@@ -97,7 +106,32 @@ export default function App() {
         onLoadOlder={() => chat.loadOlder(activeKey)}
         onMarkRead={(id) => chat.markRead(activeKey, id)}
         onRetry={(m) => chat.sendText(activeKey, m.text)}
+        onShowSafetyNumber={(pubkey) => setSafetyFor(pubkey)}
       />
+
+      {/* A security decision: it precedes whatever else is open. */}
+      {chat.pendingPairings.length > 0 && (
+        <PairingRequest
+          request={chat.pendingPairings[0]}
+          onAccept={async (pubkey, alias) => {
+            await chat.acceptPending(pubkey, alias);
+            showToast('Contatto aggiunto ✓');
+          }}
+          onDismiss={chat.dismissPending}
+        />
+      )}
+
+      {safetyFor && (
+        <SafetyNumberModal
+          contact={chat.contacts.find((c) => c.pubkey === safetyFor) || { pubkey: safetyFor, alias: safetyFor }}
+          number={chat.safetyNumber(safetyFor)}
+          onVerify={async (pubkey, verified) => {
+            await chat.setVerified(pubkey, verified);
+            showToast(verified ? 'Contatto verificato ✓' : 'Verifica rimossa');
+          }}
+          onClose={() => setSafetyFor(null)}
+        />
+      )}
 
       {modal === 'new' && (
         <PairingModal

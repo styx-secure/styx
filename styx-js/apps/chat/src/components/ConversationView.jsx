@@ -7,7 +7,7 @@ import { ShieldCheck, Lock, Back } from './Icons.jsx';
 
 export default function ConversationView({
   contact, messages, typing, noMore, isMobile,
-  onBack, onSend, onSetTyping, onLoadOlder, onMarkRead, onRetry,
+  onBack, onSend, onSetTyping, onLoadOlder, onMarkRead, onRetry, onShowSafetyNumber,
 }) {
   const scrollRef = useRef(null);
   const bottomRef = useRef(null);
@@ -86,7 +86,16 @@ export default function ConversationView({
           </div>
         </div>
         <div className="spacer" />
-        <span className="e2e-badge"><Lock size={13} /> E2E</span>
+        <button
+          className="e2e-badge"
+          data-testid="safety-badge"
+          title="Mostra il numero di sicurezza"
+          onClick={() => onShowSafetyNumber?.(contact.pubkey)}
+        >
+          {contact.verified
+            ? <><ShieldCheck size={13} /> Verificato</>
+            : <><Lock size={13} /> E2E</>}
+        </button>
       </div>
 
       <div className="cv-msgs sx-scroll" ref={scrollRef} onScroll={onScroll}>

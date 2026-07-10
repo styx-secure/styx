@@ -33,6 +33,12 @@ test('two peers pair via QR invite and exchange an MLS-encrypted message', async
   await alice.getByPlaceholder('Come chiamarlo').fill('Bob');
   await alice.getByRole('button', { name: /Aggiungi contatto/ }).click();
 
+  // Bob's side raises an explicit pairing request: a valid welcome proves the scan,
+  // not consent. He must accept before Alice becomes a contact.
+  await expect(bob.getByRole('dialog', { name: /Richiesta di contatto/ })).toBeVisible();
+  await bob.getByPlaceholder('Come chiamarlo (opzionale)').fill('Alice');
+  await bob.getByRole('button', { name: /Aggiungi contatto/ }).click();
+
   // Both rosters populate.
   await expect(alice.locator('.crow .alias')).toHaveText(['Bob']);
   await expect(bob.locator('.crow .alias')).toHaveText(['Alice']);
@@ -49,5 +55,14 @@ test('two peers pair via QR invite and exchange an MLS-encrypted message', async
 
   // Bob receives it decrypted.
   await expect(bob.locator('.bubble.in').first()).toContainText('MLS reale');
+
+  // Both sides show the same safety number: no one is in the middle.
+  await alice.getByTestId('safety-badge').click();
+  const aliceNumber = await alice.getByTestId('safety-number').innerText();
+  await bob.getByTestId('safety-badge').click();
+  const bobNumber = await bob.getByTestId('safety-number').innerText();
+  expect(aliceNumber.replace(/\s/g, '')).toMatch(/^\d{60}$/);
+  expect(aliceNumber).toBe(bobNumber);
+
   expect(errors).toEqual([]);
 });

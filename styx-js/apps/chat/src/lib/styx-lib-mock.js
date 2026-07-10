@@ -96,7 +96,7 @@ export class MockStyxChat {
     this._me = null;
     this._contacts = [];
     this._messages = {};              // pubkey -> Message[]
-    this._subs = { message: [], state: [], contacts: [], typing: [] };
+    this._subs = { message: [], state: [], contacts: [], typing: [], pairing: [] };
     this._timers = [];
     this._presence = null;
     this._pendingMnemonic = null;
@@ -144,6 +144,26 @@ export class MockStyxChat {
   onMessage(cb)         { this._subs.message.push(cb);  return () => this._off('message', cb); }
   onMessageState(cb)    { this._subs.state.push(cb);    return () => this._off('state', cb); }
   onTyping(cb)          { this._subs.typing.push(cb);   return () => this._off('typing', cb); }
+  onPairing(cb)         { this._subs.pairing.push(cb);  return () => this._off('pairing', cb); }
+
+  /** Deterministic 60-digit stand-in — NOT cryptographic, mock only. */
+  safetyNumber(pubkey) {
+    let h = 0n;
+    for (const ch of String(pubkey)) h = (h * 131n + BigInt(ch.charCodeAt(0))) % (10n ** 60n);
+    return h.toString().padStart(60, '0').match(/.{5}/g).join(' ');
+  }
+
+  async setVerified(pubkey, verified) {
+    const c = this._contacts.find((x) => x.pubkey === pubkey);
+    if (c) {
+      c.verified = !!verified;
+      c.verifiedAt = verified ? now() : null;
+      this._emit('contacts');
+    }
+    return c;
+  }
+
+  listPendingPairings() { return []; }
 
   async createQrInvite() {
     return { qr: 'styx://invite/' + this._me.pubkey + '#' + ((Math.random() * 1e6) | 0).toString(36) };
@@ -165,7 +185,8 @@ export class MockStyxChat {
     if (!this._contacts.some((c) => c.pubkey === pubkey)) {
       this._contacts.push({
         pubkey, alias: alias || shortKey(pubkey),
-        online: true, unread: 0, lastPreview: 'Contatto aggiunto', lastTs: now()
+        online: true, unread: 0, lastPreview: 'Contatto aggiunto', lastTs: now(),
+        verified: false, verifiedAt: null,
       });
       this._messages[pubkey] = this._messages[pubkey] || [];
       this._emit('contacts');
@@ -212,7 +233,7 @@ export class MockStyxChat {
   destroy() {
     this._timers.forEach(clearTimeout);
     if (this._presence) clearInterval(this._presence);
-    this._subs = { message: [], state: [], contacts: [], typing: [] };
+    this._subs = { message: [], state: [], contacts: [], typing: [], pairing: [] };
   }
 
   // ---- internals ----

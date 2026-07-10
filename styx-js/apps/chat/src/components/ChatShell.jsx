@@ -5,7 +5,7 @@ export default function ChatShell({
   me, contacts, activeKey, messages, typing, noMore,
   isMobile, mobileView,
   theme, onToggleTheme, onOpen, onBack, onNew, onSettings,
-  onSend, onSetTyping, onLoadOlder, onMarkRead, onRetry,
+  onSend, onSetTyping, onLoadOlder, onMarkRead, onRetry, onShowSafetyNumber,
 }) {
   const activeContact = contacts.find((c) => c.pubkey === activeKey) || null;
   const showList = !isMobile || mobileView === 'list';
@@ -33,6 +33,7 @@ export default function ChatShell({
           onLoadOlder={onLoadOlder}
           onMarkRead={onMarkRead}
           onRetry={onRetry}
+          onShowSafetyNumber={onShowSafetyNumber}
         />
       </main>
     </div>
