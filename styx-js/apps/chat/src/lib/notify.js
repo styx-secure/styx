@@ -37,7 +37,7 @@ export function browserNotifier() {
   return createNotifier({
     getPermission: () => Notification.permission,
     isPageVisible: () => document.visibilityState === 'visible',
-    show: ({ title, body, tag }) => { try { new Notification(title, { body, tag }); } catch { /* ignore */ } },
+    show: ({ title, body, tag }) => { try { new Notification(title, { body, tag }); } catch (e) { console.debug('notify: show failed', e); } },
     now: () => Date.now(),
   });
 }
@@ -45,5 +45,5 @@ export function browserNotifier() {
 /** Ask for notification permission (call on a user gesture). @returns {Promise<string>} */
 export async function requestNotificationPermission() {
   if (typeof Notification === 'undefined') return 'denied';
-  try { return await Notification.requestPermission(); } catch { return 'denied'; }
+  try { return await Notification.requestPermission(); } catch (e) { console.debug('notify: permission request failed', e); return 'denied'; }
 }

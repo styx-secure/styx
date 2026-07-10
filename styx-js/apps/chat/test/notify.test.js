@@ -1,6 +1,6 @@
 // test/notify.test.js — the local notifier decides whether to raise a browser
 // notification, using injected deps so it is testable without a DOM.
-import { describe, test, expect, jest } from '@jest/globals';
+import { describe, test, expect } from '@jest/globals';
 import { createNotifier } from '../src/lib/notify.js';
 
 function harness({ permission = 'granted', visible = false, t = 1000 } = {}) {

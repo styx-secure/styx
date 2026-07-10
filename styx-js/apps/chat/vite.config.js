@@ -18,7 +18,6 @@ export default defineConfig({
       filename: 'sw.js',
       registerType: 'autoUpdate',
       injectRegister: 'auto',
-      includeAssets: ['apple-touch-icon.png', 'icon.svg'],
       manifest,
       injectManifest: {
         // The OpenMLS WASM is ~1.8 MB — raise the precache size ceiling.
