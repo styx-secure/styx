@@ -7,6 +7,7 @@ export { SovereignLedger, LedgerConfig, StyxState, LogLevel } from './facade/sov
 // === Chat (multi-contact messaging orchestrator + MLS) ===
 export { StyxChat, MemoryMessageStore } from './chat/styx-chat.js';
 export { registrationDigest } from './push/registration-digest.js';
+export { PushRegistrar } from './push/push-registrar.js';
 export { ContactRoster } from './chat/contact-roster.js';
 export { MlsEngine } from './crypto/mls/mls-engine.js';
 export { MlsSession } from './crypto/mls/mls-session.js';
