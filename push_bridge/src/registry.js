@@ -27,21 +27,21 @@ export class Registry {
   }
 
   /** @returns {boolean} whether the set changed. */
-  add(pubkey, subscription) {
+  async add(pubkey, subscription) {
     const subs = this._map.get(pubkey) || new Map();
     if (subs.has(subscription.endpoint)) return false;
     subs.set(subscription.endpoint, subscription);
     this._map.set(pubkey, subs);
-    this._save().catch((e) => console.error('[registry] save failed:', e));
+    await this._save();
     return true;
   }
 
   /** @returns {boolean} whether something was removed. */
-  remove(pubkey, endpoint) {
+  async remove(pubkey, endpoint) {
     const subs = this._map.get(pubkey);
     if (!subs || !subs.delete(endpoint)) return false;
     if (subs.size === 0) this._map.delete(pubkey);
-    this._save().catch((e) => console.error('[registry] save failed:', e));
+    await this._save();
     return true;
   }
 

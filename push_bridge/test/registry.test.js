@@ -20,7 +20,7 @@ test('add stores a subscription and get returns it', async () => {
   try {
     const r = new Registry({ filePath: path });
     await r.load();
-    assert.equal(r.add('pk1', subA), true);
+    assert.equal(await r.add('pk1', subA), true);
     assert.deepEqual(r.get('pk1'), [subA]);
     assert.deepEqual(r.pubkeys(), ['pk1']);
   } finally { cleanup(); }
@@ -31,9 +31,9 @@ test('add is idempotent per endpoint (dedupe)', async () => {
   try {
     const r = new Registry({ filePath: path });
     await r.load();
-    r.add('pk1', subA);
-    assert.equal(r.add('pk1', subA), false); // same endpoint → no change
-    r.add('pk1', subB);
+    await r.add('pk1', subA);
+    assert.equal(await r.add('pk1', subA), false); // same endpoint → no change
+    await r.add('pk1', subB);
     assert.equal(r.get('pk1').length, 2);
   } finally { cleanup(); }
 });
@@ -43,10 +43,10 @@ test('remove drops one subscription by endpoint and forgets an empty pubkey', as
   try {
     const r = new Registry({ filePath: path });
     await r.load();
-    r.add('pk1', subA); r.add('pk1', subB);
-    assert.equal(r.remove('pk1', subA.endpoint), true);
+    await r.add('pk1', subA); await r.add('pk1', subB);
+    assert.equal(await r.remove('pk1', subA.endpoint), true);
     assert.deepEqual(r.get('pk1'), [subB]);
-    r.remove('pk1', subB.endpoint);
+    await r.remove('pk1', subB.endpoint);
     assert.deepEqual(r.pubkeys(), []); // pubkey with no subs is forgotten
   } finally { cleanup(); }
 });
@@ -56,7 +56,7 @@ test('state survives a reload from disk', async () => {
   try {
     const r1 = new Registry({ filePath: path });
     await r1.load();
-    r1.add('pk1', subA);
+    await r1.add('pk1', subA);
     const r2 = new Registry({ filePath: path });
     await r2.load();
     assert.deepEqual(r2.get('pk1'), [subA]);
