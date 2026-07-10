@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "gen:icons": "node scripts/gen-icons.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:pwa": "playwright test -c playwright.pwa.config.js"
   },
   "dependencies": {
     "@zxing/browser": "^0.1.5",
