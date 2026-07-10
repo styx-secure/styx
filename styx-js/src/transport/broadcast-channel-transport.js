@@ -6,14 +6,25 @@
 // Framing: every message is broadcast to the channel wrapped as
 // { to, from, data }; each transport delivers to its handler only the messages
 // addressed to its own pubkey. BroadcastChannel never echoes to the sender.
+//
+// DEVELOPMENT ONLY. The framing carries no signature, so `from` is whatever the
+// sender claims — any script on the origin can impersonate any peer. Callers must
+// opt in explicitly; nothing should select this transport by default.
 
 export class BroadcastChannelTransport {
   /**
    * @param {string} selfPubkey this peer's public key (address)
    * @param {object} [opts]
    * @param {string} [opts.channelName='styx-chat']
+   * @param {boolean} [opts.allowInsecure=false] acknowledge the transport is
+   *   unauthenticated. Required: without it the constructor throws.
    */
-  constructor(selfPubkey, { channelName = 'styx-chat' } = {}) {
+  constructor(selfPubkey, { channelName = 'styx-chat', allowInsecure = false } = {}) {
+    if (!allowInsecure) {
+      throw new Error(
+        'BroadcastChannelTransport is unauthenticated — pass { allowInsecure: true } to use it in development',
+      );
+    }
     this._self = selfPubkey;
     this._bc = new BroadcastChannel(channelName);
     this._handler = null;

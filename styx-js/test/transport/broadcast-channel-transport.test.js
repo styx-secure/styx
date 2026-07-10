@@ -5,11 +5,25 @@ import { BroadcastChannelTransport } from '../../src/transport/broadcast-channel
 const tick = () => new Promise((r) => setTimeout(r, 10));
 const open = [];
 function make(pubkey, channel) {
-  const t = new BroadcastChannelTransport(pubkey, { channelName: channel });
+  const t = new BroadcastChannelTransport(pubkey, { channelName: channel, allowInsecure: true });
   open.push(t);
   return t;
 }
 afterEach(() => { open.splice(0).forEach((t) => t.close()); });
+
+describe('BroadcastChannelTransport dev-only guard', () => {
+  test('refuses to instantiate without an explicit insecure opt-in', () => {
+    // It carries no signatures: nothing must select it by accident in a build.
+    expect(() => new BroadcastChannelTransport('pk', { channelName: 'guard-1' }))
+      .toThrow(/unauthenticated/i);
+  });
+
+  test('instantiates when the caller opts in', () => {
+    const t = new BroadcastChannelTransport('pk', { channelName: 'guard-2', allowInsecure: true });
+    expect(t).toBeTruthy();
+    t.close();
+  });
+});
 
 describe('BroadcastChannelTransport', () => {
   test('delivers a message addressed to a specific peer', async () => {

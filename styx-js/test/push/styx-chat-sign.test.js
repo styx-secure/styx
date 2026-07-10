@@ -28,7 +28,10 @@ describe('StyxChat.signBridgeRegistration', () => {
 
   test('produces a schnorr signature that verifies over the shared digest', async () => {
     const chat = new StyxChat();
-    await chat.init({ password: 'pw', backend: memBackend(), channelName: 'sign-1', alias: 'A' });
+    await chat.init({
+      password: 'pw', backend: memBackend(), channelName: 'sign-1', alias: 'A',
+      allowInsecureTransport: true, // no relays in this unit test
+    });
     const endpoint = 'https://push.example/xyz';
     const sig = await chat.signBridgeRegistration('register', endpoint);
     const digest = registrationDigest('register', chat.me.pubkey, endpoint);

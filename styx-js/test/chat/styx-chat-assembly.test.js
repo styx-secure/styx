@@ -26,10 +26,27 @@ afterEach(() => { live.splice(0).forEach((c) => c.destroy()); });
 
 async function realPeer({ backend, channelName, alias, password = 'pw' }) {
   const chat = new StyxChat();
-  await chat.init({ password, backend, channelName, alias });
+  await chat.init({ password, backend, channelName, alias, allowInsecureTransport: true });
   live.push(chat);
   return chat;
 }
+
+describe('StyxChat transport selection (A6)', () => {
+  beforeAll(async () => { await MlsEngine.initWasm({ wasmBytes }); });
+
+  test('init without relays refuses the unauthenticated transport by default', async () => {
+    const chat = new StyxChat();
+    await expect(chat.init({ password: 'pw', backend: memBackend(), channelName: 'a6-1' }))
+      .rejects.toThrow(/no authenticated transport/i);
+  });
+
+  test('init without relays works when the caller explicitly opts in (dev)', async () => {
+    const chat = new StyxChat();
+    await chat.init({ password: 'pw', backend: memBackend(), channelName: 'a6-2', allowInsecureTransport: true });
+    live.push(chat);
+    expect(chat.me.pubkey).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
 
 describe('StyxChat assembly (real identity + MLS + BroadcastChannel)', () => {
   beforeAll(async () => { await MlsEngine.initWasm({ wasmBytes }); });
@@ -57,7 +74,7 @@ describe('StyxChat assembly (real identity + MLS + BroadcastChannel)', () => {
     const backend = memBackend();
     (await realPeer({ backend, channelName: 'asm-3', password: 'right' })).destroy();
     const chat = new StyxChat();
-    await expect(chat.init({ password: 'wrong', backend, channelName: 'asm-3' }))
+    await expect(chat.init({ password: 'wrong', backend, channelName: 'asm-3', allowInsecureTransport: true }))
       .rejects.toThrow('Invalid password');
   });
 
@@ -93,7 +110,7 @@ describe('StyxChat assembly (real identity + MLS + BroadcastChannel)', () => {
     // A reloads BEFORE the peer accepts the invite.
     a.destroy();
     a = new StyxChat();
-    await a.init({ password: 'pw', backend: aBackend, channelName: ch });
+    await a.init({ password: 'pw', backend: aBackend, channelName: ch, allowInsecureTransport: true });
     live.push(a);
 
     // B accepts A's invite → sends the Welcome to A, who must be able to join.
@@ -131,7 +148,7 @@ describe('StyxChat assembly (real identity + MLS + BroadcastChannel)', () => {
     // A reloads; the burned nonce must not come back.
     a.destroy();
     a = new StyxChat();
-    await a.init({ password: 'pw', backend: aBackend, channelName: ch });
+    await a.init({ password: 'pw', backend: aBackend, channelName: ch, allowInsecureTransport: true });
     live.push(a);
 
     const mallory = await realPeer({ backend: memBackend(), channelName: ch, alias: 'M' });
@@ -159,7 +176,7 @@ describe('StyxChat assembly (real identity + MLS + BroadcastChannel)', () => {
     // Reload Bob: tear down and re-create from the SAME backend + password.
     bob.destroy();
     bob = new StyxChat();
-    await bob.init({ password: 'pw', backend: bobBackend, channelName: ch });
+    await bob.init({ password: 'pw', backend: bobBackend, channelName: ch, allowInsecureTransport: true });
     live.push(bob);
 
     // Same identity, contact restored, session reloaded.
