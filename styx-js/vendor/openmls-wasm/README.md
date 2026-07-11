@@ -20,7 +20,7 @@ hash dell'artefatto, rischi residui — sta in **[`PROVENANCE.md`](./PROVENANCE.
 - **Provider crypto:** `openmls_rust_crypto` (RustCrypto)
 - **Toolchain:** `rust:1.96.1` pinnata **per digest** + `wasm-pack` 0.15.0 con **sha256
   verificato**, `Cargo.lock` vendorizzato e build `-- --locked`
-- **Dimensione:** `openmls_wasm_bg.wasm` ≈ 1,81 MB raw / **≈ 644 KB gzip** (ok per PWA/Capacitor)
+- **Dimensione:** `openmls_wasm_bg.wasm` = 1 813 110 byte raw / **≈ 644 KiB gzip** (ok per PWA/Capacitor)
 
 Rigenera con `./build.sh` (richiede Docker). Verifica la riproducibilità con `./verify.sh`: due
 build dai medesimi pin devono essere byte-identiche tra loro e uguali all'artefatto committato.

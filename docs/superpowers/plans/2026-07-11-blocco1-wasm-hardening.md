@@ -1,5 +1,12 @@
 # Blocco 1 — Emergenza WASM — Implementation Plan
 
+> **STATO: COMPLETATO (2026-07-11).** Tutti gli 11 task eseguiti; suite completa verde
+> (575 test, 52 suite). Due scostamenti dal piano, entrambi documentati nel testo:
+> il Task 1 è diventato *verifica e documentazione* (il pin portava già i fix dell'audit),
+> e il Task 9 ha riusato `removeSession()` invece di aggiungere un `dropSession()` doppione.
+> Prossimo passo previsto dal documento di fattibilità §6: **review architetturale**
+> prima di aprire il Blocco 2.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans (or superpowers:subagent-driven-development) to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Execute tasks **in order** — the ordering is load-bearing (one WASM rebuild only).
 
 **Goal:** Close all seven Blocco 1 requirements from the feasibility document (`docs/security/2026-07-11-fattibilita-piano-utente.md` §5): remove panics reachable from network input, pin OpenMLS to a post-audit release, pin the build toolchain, vendor `Cargo.lock`, make the build reproducible, fix the ciphersuite documentation, and cover the untrusted parsers with negative tests and fuzzing. Along the way, land the MLS↔transport identity binding (N2) that the same crate work unblocks.
@@ -118,7 +125,7 @@ move the pin to the first upstream tag that descends from this commit, once one 
 - *wasm-pack:* install the **release binary with a verified sha256**, not `cargo install`. `cargo install` recompiles wasm-pack inside every ephemeral container (~5–10 min, ×2 in `verify.sh`) and pins only a version, not a hash.
 - *`Cargo.lock`:* openmls is a cargo **workspace**, so the lockfile is at `$WORK/openmls/Cargo.lock`, not inside `openmls-wasm/`. Steady state: copy the vendored lockfile in **before** the build, compile with `-- --locked`, then `cmp` as a drift guard. Bootstrap (no vendored lockfile yet, or right after a commit bump): build unlocked, export the generated lockfile, commit it.
 
-- [ ] **Step 1: Resolve the three pins** (needs network + Docker; if unavailable, **STOP** and surface — do not guess)
+- [x] **Step 1: Resolve the three pins** (needs network + Docker; if unavailable, **STOP** and surface — do not guess)
 
 ```bash
 docker run --rm rust:latest rustc --version                 # → X.Y.Z
@@ -129,7 +136,7 @@ curl -sSfLO https://github.com/rustwasm/wasm-pack/releases/download/v<V>/wasm-pa
 sha256sum wasm-pack-v<V>-x86_64-unknown-linux-musl.tar.gz              # → <WASM_PACK_SHA256>
 ```
 
-- [ ] **Step 2: Rewrite `build.sh`**
+- [x] **Step 2: Rewrite `build.sh`**
 
 ```bash
 #!/usr/bin/env bash
@@ -214,7 +221,7 @@ sha256sum "$OUT_DIR/openmls_wasm_bg.wasm" "$OUT_DIR/openmls_wasm.js"
 echo "Done. Artifact refreshed in $OUT_DIR"
 ```
 
-- [ ] **Step 3: Create `verify.sh`** (`chmod +x`)
+- [x] **Step 3: Create `verify.sh`** (`chmod +x`)
 
 ```bash
 #!/usr/bin/env bash
@@ -243,12 +250,12 @@ done
 exit $status
 ```
 
-- [ ] **Step 4: Syntax check** (no rebuild here — the rebuild is Task 4)
+- [x] **Step 4: Syntax check** (no rebuild here — the rebuild is Task 4)
 
 Run: `bash -n styx-js/vendor/openmls-wasm/build.sh styx-js/vendor/openmls-wasm/verify.sh`
 Expected: no output, exit 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add styx-js/vendor/openmls-wasm/build.sh styx-js/vendor/openmls-wasm/verify.sh
@@ -263,12 +270,12 @@ git commit -m "chore(openmls-wasm): pin build toolchain and add Cargo.lock round
 
 **Interfaces:** `Group.process_message` returns a JS error instead of trapping the WASM instance on malformed or unexpected-type input. `MlsSession.decrypt` already wraps this in `try/catch`; the point is that **the instance stays usable afterwards**.
 
-- [ ] **Step 1: Read the current `process_message`**
+- [x] **Step 1: Read the current `process_message`**
 
 Run: `sed -n '314,363p' styx-js/vendor/openmls-wasm/patch/lib.rs`
 Expected: `let msg = MlsMessageIn::tls_deserialize(&mut msg).unwrap();` plus `todo!()` arms for `Welcome(_)`, `GroupInfo(_)`, `KeyPackage(_)` (and a feature-gated `TargetedMessage(_)`).
 
-- [ ] **Step 2: Replace the deserialization `unwrap()` and the `todo!()` arms with errors**
+- [x] **Step 2: Replace the deserialization `unwrap()` and the `todo!()` arms with errors**
 
 ```rust
     pub fn process_message(
@@ -298,12 +305,12 @@ Expected: `let msg = MlsMessageIn::tls_deserialize(&mut msg).unwrap();` plus `to
 
 The single `other =>` arm replaces every `todo!()` arm at once, so no `todo!()` remains on the input path. Keep the `match msg.into_content() { ... }` block unchanged.
 
-- [ ] **Step 3: Scan for remaining panics on the network path**
+- [x] **Step 3: Scan for remaining panics on the network path**
 
 Run: `grep -n 'unwrap()\|todo!\|expect(\|panic!' styx-js/vendor/openmls-wasm/patch/lib.rs`
 Expected: no `unwrap()`/`todo!()` on the `process_message` path. Remaining `unwrap()`s on internal, non-network data (storage `RwLock`, locally-built KeyPackage material) are acceptable — list them in the commit body; they are not reachable from untrusted input.
 
-- [ ] **Step 4: Commit** (rebuild happens in Task 4)
+- [x] **Step 4: Commit** (rebuild happens in Task 4)
 
 ```bash
 git add styx-js/vendor/openmls-wasm/patch/lib.rs
@@ -320,7 +327,7 @@ git commit -m "fix(openmls-wasm): return errors instead of panicking on wire inp
 - Consumes `self.mls_group.members()`, yielding `Member { credential, .. }` whose `BasicCredential` identity bytes are the pubkey hex string.
 - Produces `Group.member_identities(): string[]` in the WASM API. Consumed by `MlsSession.memberIdentities()` in Task 8.
 
-- [ ] **Step 1: Add the Rust method inside `#[wasm_bindgen] impl Group`**
+- [x] **Step 1: Add the Rust method inside `#[wasm_bindgen] impl Group`**
 
 ```rust
     /// The identity string of every current group member (the BasicCredential
@@ -336,24 +343,24 @@ git commit -m "fix(openmls-wasm): return errors instead of panicking on wire inp
 
 > **Credential API drift:** `Member.credential` is a `Credential`; the accessor for its identity bytes varies across OpenMLS versions. If `serialized_content()` is not the accessor in the pinned version, use the `BasicCredential` conversion (`BasicCredential::try_from(m.credential.clone())` then `.identity()`). Confirm against the pinned crate's `credentials` module — do not guess from memory.
 
-- [ ] **Step 2: Rebuild the WASM artifact (the ONE rebuild)**
+- [x] **Step 2: Rebuild the WASM artifact (the ONE rebuild)**
 
 Run: `cd styx-js/vendor/openmls-wasm && ./build.sh`
 Expected: the pinned image is pulled, openmls is cloned at `<AUDITED_SHA>`, `patch/lib.rs` is applied, wasm-pack's sha256 checks out, `WARNING: no vendored Cargo.lock — bootstrap build` appears, the build succeeds, `Bootstrapped Cargo.lock into ...` appears, the five artifacts are copied back, and two sha256 lines are printed.
 
 > If the build fails on the `member_identities` credential accessor, fix per Step 1's note and re-run. Do not proceed until `build.sh` succeeds.
 
-- [ ] **Step 3: Confirm the new API is in the generated typings**
+- [x] **Step 3: Confirm the new API is in the generated typings**
 
 Run: `grep -n 'member_identities' styx-js/vendor/openmls-wasm/openmls_wasm.d.ts`
 Expected: `member_identities(): string[];` inside `export class Group`.
 
-- [ ] **Step 4: Confirm the rebuilt WASM does not break the existing surface**
+- [x] **Step 4: Confirm the rebuilt WASM does not break the existing surface**
 
 Run: `cd styx-js && npx jest test/crypto/mls-session.test.js test/chat/`
 Expected: PASS. **In particular the reload/persistence test must still pass** — if a test that restores persisted MLS state now fails, this is a `serialize_state` format incompatibility introduced by the version bump, **not** a build problem. Stop and surface it (see Rollback).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add styx-js/vendor/openmls-wasm/patch/lib.rs styx-js/vendor/openmls-wasm/Cargo.lock \
@@ -371,14 +378,14 @@ git commit -m "feat(openmls-wasm): expose Group.member_identities and rebuild ag
 
 **Interfaces:** produces the evidence for the feasibility doc's "build riproducibile" requirement.
 
-- [ ] **Step 1: Run the double build**
+- [x] **Step 1: Run the double build**
 
 Run: `cd styx-js/vendor/openmls-wasm && ./verify.sh`
 Expected: two `REPRODUCIBLE:` lines with identical hashes, no `MISMATCH`, exit 0. This proves three things at once: the double build is byte-identical; the committed artifact was produced by these pins; `-- --locked` and the drift guard work in steady state.
 
 > If it reports `NON-REPRODUCIBLE`: **STOP**. Do not write a hash into PROVENANCE.md. Localize the divergence (`wasm-objdump -h`, `strings`, `cmp -l | head`) and surface it — this is exactly risk §7.3(6) of the feasibility document and is allowed to become a spike. Keep the pinning commits (they still narrow variance) and record the failure mode in PROVENANCE.md instead of the hash.
 
-- [ ] **Step 2: Record the pins and hashes in `PROVENANCE.md`**
+- [x] **Step 2: Record the pins and hashes in `PROVENANCE.md`**
 
 ```markdown
 ## Toolchain pins & artifact hashes
@@ -404,7 +411,7 @@ Expected: two `REPRODUCIBLE:` lines with identical hashes, no `MISMATCH`, exit 0
 
 Also fix the Task 1 template's `Rebuild:` line so it names the pinned image, not `rust:latest`.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add styx-js/vendor/openmls-wasm/PROVENANCE.md
@@ -419,7 +426,7 @@ git commit -m "chore(openmls-wasm): verify reproducible build; record artifact s
 
 Follow the wasm-loading pattern already used by `test/crypto/mls-session.test.js` (`readFileSync(wasmPath)` + `await MlsEngine.initWasm({ wasmBytes })` in `beforeAll`).
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 ```javascript
 import { MlsEngine } from '../../src/crypto/mls/mls-engine.js';
@@ -448,12 +455,12 @@ test('malformed ciphertext does not brick the engine for other messages', async 
 });
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 Run: `cd styx-js && npx jest test/crypto/mls-panic.test.js`
 Expected: PASS against the rebuilt WASM (against the *old* artifact it would have errored — the instance was poisoned).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add styx-js/test/crypto/mls-panic.test.js
@@ -468,7 +475,7 @@ git commit -m "test(mls): malformed ciphertext throws without poisoning the engi
 
 **Interfaces:** produces the evidence for the P0 criterion *"nessun panic noto raggiungibile da input non fidato; parser coperti da test negativi, fuzzing e gestione esplicita degli errori"*.
 
-- [ ] **Step 1: Write the tests**
+- [x] **Step 1: Write the tests**
 
 Every corruption case must be followed by proof the engine is still alive (a pristine join and/or a real message round-trip). Cases:
 
@@ -489,14 +496,14 @@ test('fuzz-lite: 100 seeded random buffers through joinSession/startSession neve
   // After the loop, a real pairing + message round-trip must still succeed.
 ```
 
-- [ ] **Step 2: Run them**
+- [x] **Step 2: Run them**
 
 Run: `cd styx-js && npx jest test/crypto/mls-adversarial.test.js`
 Expected: PASS.
 
 > **Contingency:** if any case traps (a panic *inside* openmls, past the `Result` boundary — e.g. tree validation in `StagedWelcome::new_from_welcome`), **STOP**: that is a genuine upstream finding. Record the reproducer, surface it, and evaluate pre-validating the input in `patch/lib.rs` before the openmls call. **Do not** delete the test to make the suite green.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add styx-js/test/crypto/mls-adversarial.test.js
@@ -513,7 +520,7 @@ git commit -m "test(mls): adversarial welcome/ratchet-tree/KeyPackage inputs thr
 - `MlsSession.memberIdentities(): string[]` — every member credential string.
 - `MlsEngine.peerIdentity(contactId): string | null` — the one member identity that is not ours, or `null` if the session is unknown or the membership is not exactly `{us, one peer}`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```javascript
 import { MlsEngine } from '../../src/crypto/mls/mls-engine.js';
@@ -548,7 +555,7 @@ test('peerIdentity is null for an unknown contact', async () => {
 
 Run it: `cd styx-js && npx jest test/crypto/mls-member-identity.test.js` → FAIL (methods undefined).
 
-- [ ] **Step 2: Add `memberIdentities()` to `MlsSession`**
+- [x] **Step 2: Add `memberIdentities()` to `MlsSession`**
 
 ```javascript
   /**
@@ -561,7 +568,7 @@ Run it: `cd styx-js && npx jest test/crypto/mls-member-identity.test.js` → FAI
   }
 ```
 
-- [ ] **Step 3: Add `peerIdentity()` to `MlsEngine`**
+- [x] **Step 3: Add `peerIdentity()` to `MlsEngine`**
 
 The engine must remember its own credential name (the pubkey hex passed to `MlsEngine.create({ name })`). If it is not already retained, store it in the constructor as `this._name`. Do **not** derive it from `identityPublicKey()` — that is the MLS signature key, not the credential string.
 
@@ -581,9 +588,9 @@ The engine must remember its own credential name (the pubkey hex passed to `MlsE
   }
 ```
 
-- [ ] **Step 4: Run the test** → PASS.
+- [x] **Step 4: Run the test** → PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add styx-js/src/crypto/mls/mls-session.js styx-js/src/crypto/mls/mls-engine.js styx-js/test/crypto/mls-member-identity.test.js
@@ -598,7 +605,7 @@ git commit -m "feat(mls): expose peerIdentity for transport-identity binding (N2
 
 **Interfaces:** produces the invariant `engine.peerIdentity(from) === from` for every retained session. On mismatch the session is discarded and no pending pairing is created.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Follow the DI construction used by `test/chat/styx-chat-no-overwrite.test.js` (copy its in-memory transport/backend pattern rather than inventing a helper). Two cases, both with concrete bodies — **do not commit `// Arrange…` placeholders**:
 
@@ -607,7 +614,7 @@ Follow the DI construction used by `test/chat/styx-chat-no-overwrite.test.js` (c
 
 Run it → FAIL (the mismatched welcome is currently accepted).
 
-- [ ] **Step 2: Add `dropSession()` to `MlsEngine`**
+- [x] **Step 2: Add `dropSession()` to `MlsEngine`**
 
 ```javascript
   /** Forget a session (used to roll back a join that failed identity binding). */
@@ -616,7 +623,7 @@ Run it → FAIL (the mismatched welcome is currently accepted).
   }
 ```
 
-- [ ] **Step 3: Add the binding check to `_onWire`'s welcome branch**
+- [x] **Step 3: Add the binding check to `_onWire`'s welcome branch**
 
 Immediately after `this._engine.joinSession(from, welcomeBytes, treeBytes);`, before persisting or emitting:
 
@@ -630,7 +637,7 @@ Immediately after `this._engine.joinSession(from, welcomeBytes, treeBytes);`, be
       }
 ```
 
-- [ ] **Step 4: Add the same check to `acceptQrInvite`**
+- [x] **Step 4: Add the same check to `acceptQrInvite`**
 
 After `startSession`, assert the resulting group binds `inv.pubkey`:
 
@@ -641,14 +648,14 @@ After `startSession`, assert the resulting group binds `inv.pubkey`:
     }
 ```
 
-- [ ] **Step 5: Run the new test** → PASS.
+- [x] **Step 5: Run the new test** → PASS.
 
-- [ ] **Step 6: Run the full suite**
+- [x] **Step 6: Run the full suite**
 
 Run: `cd styx-js && npm test`
 Expected: PASS — every pre-existing test (`styx-chat-no-overwrite`, `styx-chat-invite-nonce`, `styx-chat-safety-number`, `styx-chat-explicit-pairing`, …) plus the four new files, with the coverage gates met.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add styx-js/src/chat/styx-chat.js styx-js/src/crypto/mls/mls-engine.js styx-js/test/chat/styx-chat-identity-binding.test.js
@@ -663,14 +670,14 @@ git commit -m "feat(chat): bind MLS peer credential to transport pubkey at join 
 
 The README currently makes three false claims. Fix all three plus the API list:
 
-- [ ] **Step 1: Fix the claims**
+- [x] **Step 1: Fix the claims**
   - line 11 — commit: keep `09e92777…`, but add its date (2026-07-08) and its position (76 commits after tag `openmls-v0.8.1`); point to `PROVENANCE.md` for the audit status.
   - line 13 — ciphersuite: `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` → **`MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519`** (what `patch/lib.rs:29` actually compiles). Drop the "(MTI di OpenMLS)" note.
   - line 14 — toolchain: `rust:latest` → the pinned `rust:<X.Y.Z>@sha256:…` + `wasm-pack v<V>` + "`Cargo.lock` vendorizzato, build `--locked`". Point to `PROVENANCE.md` and `verify.sh`.
   - line 15 — re-measure the artifact size: `ls -l openmls_wasm_bg.wasm`; `gzip -c openmls_wasm_bg.wasm | wc -c`.
   - API paragraph (~lines 28–31) — add `Group.member_identities()`.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add styx-js/vendor/openmls-wasm/README.md
@@ -683,7 +690,7 @@ git commit -m "docs(openmls-wasm): fix ciphersuite claim and record pinned toolc
 
 **Files:** modify `docs/security/2026-07-10-styx-chat-security-report.md`.
 
-- [ ] **Step 1: Annotate the closed items**
+- [x] **Step 1: Annotate the closed items**
 
 Mark A1–A6, M1, M2, M3 as **implemented** (JS layer, already committed) and R1, N1, N2 as **implemented** (this plan). Add a short "Stato di attuazione — Blocco 1" note mapping the feasibility document's seven Blocco 1 requirements (§5) to the tasks that closed them:
 
@@ -699,7 +706,7 @@ Mark A1–A6, M1, M2, M3 as **implemented** (JS layer, already committed) and R1
 
 Leave N3/N4, R2 (FS/PCS), and Fasi B/C/D **open**. Point to this plan file. Keep the edit small — a status note, not a rewrite of the analysis.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add docs/security/2026-07-10-styx-chat-security-report.md

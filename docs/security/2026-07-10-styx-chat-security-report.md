@@ -9,6 +9,27 @@
 
 ---
 
+## Stato di attuazione — aggiornato al 2026-07-11
+
+Il documento resta l'audit originale; questa sezione dice soltanto **cosa è stato chiuso da allora**, per non lasciar credere aperto ciò che non lo è più.
+
+**Chiuso — Fase A, autenticazione del canale** (JS, commit `d0a4462`…`6999cb0`): **C1** (verifica firma/id Nostr in ricezione), **C2** (nessuna sovrascrittura di sessione), **C3** (trasporto non autenticato dietro opt-in di sviluppo), **H3** (safety number verificabile dall'utente), **M1**, **M2**, **M3**.
+
+**Chiuso — Blocco 1, hardening del crate vendorizzato** (commit `363a3ad`…`d7445fd`; piano: `docs/superpowers/plans/2026-07-11-blocco1-wasm-hardening.md`):
+
+| Voce | Esito |
+|---|---|
+| **N1** — panic del WASM = DoS del motore | **Chiusa.** `process_message` restituisce errori invece di trappare. Dimostrata empiricamente: contro l'artefatto pre-fix i test catturano un `WebAssembly.RuntimeError`; dopo il fix l'engine continua a funzionare. Copertura: `test/crypto/mls-panic.test.js` + `test/crypto/mls-adversarial.test.js` (Welcome, ratchet tree, KeyPackage corrotti + fuzz seminato su 300 parse). |
+| **N2** — binding credenziale MLS↔identità | **Chiusa.** `Group.member_identities()` nel patch Rust, `MlsEngine.peerIdentity()` in JS, e il rifiuto del join se la credenziale del peer ≠ il pubkey che ha inviato il gruppo. Erano **due** buchi vivi, entrambi dimostrati da test rossi prima del fix: lato scanner (QR forgiato con il KeyPackage di un terzo) e lato wire (Welcome di terzi rilanciato da chi ha fotografato il QR). |
+| **R1** — versione OpenMLS | **Rettificata, non applicata.** Il pin `09e9277` **portava già** i fix dell'audit SRLabs: è discendente del tag `openmls-v0.8.1` (76 commit avanti, 0 indietro) e il fix S3-7 è verificato nel sorgente (`equal_ct` esegue il controllo di lunghezza che in v0.7.0 mancava). Aggiornare al tag sarebbe stato un **downgrade** e avrebbe rotto il formato di storage persistito. Vedi `vendor/openmls-wasm/PROVENANCE.md`. |
+| Supply chain del crate | Toolchain pinnata per digest, wasm-pack con sha256 verificato, `Cargo.lock` vendorizzato, build **riproducibile byte per byte** (`verify.sh`), README riallineato al ciphersuite realmente compilato. |
+
+**Scoperto durante il lavoro, ancora aperto:** processare un Welcome fa **consumare a MLS la chiave init privata** del KeyPackage. Un invito QR è quindi speso anche quando il gruppo viene rifiutato: chi fotografa il QR può bruciarlo. Mitigato (l'invito viene ritirato onestamente e l'app riceve un evento `invite-rejected`), non eliminato — rientra in **N4**/R2, insieme alla scadenza degli inviti.
+
+**Restano aperte:** **H1** (storage in chiaro a riposo), **H2** (metadati esposti al relay), **M4**, **M5**, **M6**, **N3**, **N4**, **R2**–**R6**, Fasi B/C/D. La roadmap normativa è `docs/security/2026-07-11-fattibilita-piano-utente.md`.
+
+---
+
 ## 0. Verdetto
 
 **Intercettare e leggere i messaggi: possibile, ma a una precondizione precisa.** Non è alla portata di un relay dal nulla: la chiave d'invito (il **KeyPackage**, con il suo `init_key` a cui è sigillato il Welcome MLS) viaggia **solo dentro il QR** e non tocca mai la rete. Finché il QR è scambiato di persona e resta confidenziale, il contenuto è protetto **anche contro un relay attivo**. L'attacco diventa possibile solo quando l'invito passa su un **canale osservabile** (email, telefono, screenshot, QR riusato o mostrato in videochiamata) o quando il pairing è **remoto**: in quel caso un relay ostile monta un MITM completo e **non rilevabile**, senza rompere la crittografia. Il difetto quindi non è in MLS, né "il QR è insicuro" — è che **manca ogni difesa in profondità** (verifica firma, rifiuto di sessioni sostitutive, safety number), così la fuga dell'invito diventa catastrofica invece che innocua. Vedi C1, C2, H3 e la §5.2.
