@@ -8,6 +8,7 @@
 import { describe, test, expect, beforeAll, afterEach } from '@jest/globals';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import WebSocket from 'ws';
 import { StyxChat } from '../../src/chat/styx-chat.js';
 import { MlsEngine } from '../../src/crypto/mls/mls-engine.js';
 
@@ -15,6 +16,22 @@ const RELAY = process.env.NOSTR_RELAY || 'ws://localhost:17777';
 const wasmBytes = readFileSync(
   fileURLToPath(new URL('../../vendor/openmls-wasm/openmls_wasm_bg.wasm', import.meta.url)),
 );
+
+// Needs a live relay; skip gracefully where none is reachable (e.g. CI without strfry).
+globalThis.WebSocket = globalThis.WebSocket || WebSocket;
+let relayAvailable = false;
+beforeAll(async () => {
+  relayAvailable = await new Promise((resolve) => {
+    const ws = new WebSocket(RELAY);
+    const t = setTimeout(() => { try { ws.close(); } catch {} resolve(false); }, 2000);
+    ws.on('open', () => { clearTimeout(t); ws.close(); resolve(true); });
+    ws.on('error', () => { clearTimeout(t); resolve(false); });
+  });
+  if (!relayAvailable) {
+    console.warn('\n⚠ Nostr relay not available at ' + RELAY + ' — skipping relay integration tests.\n');
+  }
+}, 10000);
+const skipIfNoRelay = () => !relayAvailable;
 
 function memBackend() {
   const m = new Map();
@@ -47,6 +64,7 @@ describe('StyxChat over a real Nostr relay', () => {
   beforeAll(async () => { await MlsEngine.initWasm({ wasmBytes }); });
 
   test('two peers pair and exchange an MLS-encrypted message over the relay', async () => {
+    if (skipIfNoRelay()) return;
     const alice = await realPeer('Alice');
     const bob = await realPeer('Bob');
 

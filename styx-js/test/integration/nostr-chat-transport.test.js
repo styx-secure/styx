@@ -3,12 +3,30 @@
 //   cd styx-js && docker compose -f docker-compose.test.yml up -d
 //   NOSTR_RELAY=ws://localhost:17777 node --experimental-vm-modules \
 //     node_modules/.bin/jest test/integration/nostr-chat-transport.test.js --forceExit
-import { describe, test, expect, afterEach } from '@jest/globals';
+import { describe, test, expect, afterEach, beforeAll } from '@jest/globals';
+import WebSocket from 'ws';
 import { schnorr } from '@noble/curves/secp256k1';
 import { NostrChatTransport } from '../../src/transport/nostr-chat-transport.js';
 import { bytesToHex } from '../../src/utils.js';
 
 const RELAY = process.env.NOSTR_RELAY || 'ws://localhost:17777';
+
+// These tests need a live relay. Where none is reachable (e.g. CI without strfry) they
+// skip gracefully instead of failing — same pattern as nostr-relay.test.js.
+globalThis.WebSocket = globalThis.WebSocket || WebSocket;
+let relayAvailable = false;
+beforeAll(async () => {
+  relayAvailable = await new Promise((resolve) => {
+    const ws = new WebSocket(RELAY);
+    const t = setTimeout(() => { try { ws.close(); } catch {} resolve(false); }, 2000);
+    ws.on('open', () => { clearTimeout(t); ws.close(); resolve(true); });
+    ws.on('error', () => { clearTimeout(t); resolve(false); });
+  });
+  if (!relayAvailable) {
+    console.warn('\n⚠ Nostr relay not available at ' + RELAY + ' — skipping relay integration tests.\n');
+  }
+}, 10000);
+const skipIfNoRelay = () => !relayAvailable;
 
 function newPeer() {
   const sk = schnorr.utils.randomPrivateKey();
@@ -27,6 +45,7 @@ function transport({ sk, pk }) {
 
 describe('NostrChatTransport (real strfry relay)', () => {
   test('delivers an addressed message from one peer to another', async () => {
+    if (skipIfNoRelay()) return;
     const alice = newPeer();
     const bob = newPeer();
     const at = transport(alice);
@@ -50,6 +69,7 @@ describe('NostrChatTransport (real strfry relay)', () => {
   }, 15000);
 
   test('a peer receives a message stored before it subscribed (offline delivery)', async () => {
+    if (skipIfNoRelay()) return;
     const alice = newPeer();
     const bob = newPeer();
     const at = transport(alice);
@@ -71,6 +91,7 @@ describe('NostrChatTransport (real strfry relay)', () => {
   }, 15000);
 
   test('multiple messages sent while offline are all stored and delivered', async () => {
+    if (skipIfNoRelay()) return;
     const alice = newPeer();
     const bob = newPeer();
     const at = transport(alice);
@@ -98,6 +119,7 @@ describe('NostrChatTransport (real strfry relay)', () => {
   }, 15000);
 
   test('reconnect resumes delivery and does not re-deliver replayed events', async () => {
+    if (skipIfNoRelay()) return;
     const alice = newPeer();
     const bob = newPeer();
     const at = transport(alice);
