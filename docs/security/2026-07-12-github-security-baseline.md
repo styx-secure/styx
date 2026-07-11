@@ -110,6 +110,24 @@ pinned Rust/toolchain were **not** touched.
 **Residual alerts after triage:** 1 High (vite, dev-only, risk-accepted/deferred), 7 medium, 1 low
 — all in build/dev tooling, none reachable in the shipped runtime. No Critical.
 
+### Accepted risk — vite High (GHSA-fx2h-pf6j-xcff), formal record
+
+Accepted **temporarily** on 2026-07-12, with these grounds and conditions:
+
+- **Scope:** the advisory (`server.fs.deny` bypass) affects the Vite **dev server** only.
+  Vite is a `devDependency` of `styx-js/apps/chat`; it is not part of the shipped static
+  bundle (runtime deps: react, react-dom, @zxing/* only), so the flaw is **not reachable
+  in production**.
+- **Exposure control:** no Vite server may listen on public interfaces by default. The
+  app's `vite.config.js` pins `server.host` and `preview.host` to `127.0.0.1`; exposing
+  them requires an explicit `--host` CLI opt-in. Local scripts must use localhost.
+- **Re-evaluation deadline:** whichever comes first — **2026-08-11** (30 days), the
+  first controlled React/Vite upgrade (Dependabot PRs #10/#11/#21 track it), or the
+  Public Alpha preparation. At that point the risk is either eliminated by the upgrade
+  or must be re-accepted in writing here.
+
+This follow-up does not block the Fase D (MLS state envelope) work.
+
 ## Supplementary scanners (CodeQL is not sufficient alone)
 
 CodeQL covers JavaScript/TypeScript only. It does **not** replace, and must be complemented by:
