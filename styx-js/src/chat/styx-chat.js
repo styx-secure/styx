@@ -280,6 +280,12 @@ export class StyxChat {
   onTyping(cb) { return this._emitter.on('typing', cb); }
   /** An authenticated peer joined our group and awaits an explicit confirmPairing. */
   onPairing(cb) { return this._emitter.on('pairing', cb); }
+  /**
+   * A Welcome was dropped because the group's MLS credential did not match the peer
+   * who sent it. The QR invite is spent and the user needs a fresh one — the UI should
+   * say so rather than leaving them staring at a code that can no longer work.
+   */
+  onInviteRejected(cb) { return this._emitter.on('invite-rejected', cb); }
 
   /** Pairings authenticated but not yet accepted into the roster. */
   listPendingPairings() { return [...this._pending.values()]; }
@@ -313,6 +319,14 @@ export class StyxChat {
       throw new Error('A session with this contact already exists — remove it before re-pairing');
     }
     const { welcome, ratchetTree, groupId } = this._engine.startSession(inv.pubkey, base64ToBytes(inv.kp));
+    // N2, scanner side: the KeyPackage came from the QR, and nothing so far ties it to
+    // the pubkey the QR claims. A forged invite can advertise Alice's pubkey while
+    // carrying Mallory's KeyPackage — we would build a group with Mallory and label it
+    // Alice. Bind them here, and roll the group back on mismatch.
+    if (this._engine.peerIdentity(inv.pubkey) !== inv.pubkey) {
+      this._engine.removeSession(inv.pubkey);
+      throw new Error('Invite rejected: the KeyPackage credential does not match the invite pubkey');
+    }
     this._groups[inv.pubkey] = groupId;
     await this._persistMls();
     const nonce = inv.nonce ? base64ToBytes(inv.nonce) : new Uint8Array(0);
@@ -482,6 +496,20 @@ export class StyxChat {
     return hmac(sha256, nonce, concatBytes(welcomeBytes, treeBytes, utf8Encode(String(groupId))));
   }
 
+  /**
+   * @private Retire the outstanding QR invite.
+   *
+   * Called once a Welcome has been processed under this invite's nonce — whether we
+   * kept the resulting group or rejected it. Either way the invite is spent: MLS
+   * consumes the KeyPackage's private init key when it decrypts the Welcome, so no
+   * further Welcome for this QR can ever be decrypted. Leaving the nonce behind would
+   * advertise a pairing that cannot succeed.
+   */
+  async _retireInvite() {
+    this._inviteNonce = null;
+    await this._backend?.delete(INVITE_NONCE_KEY);
+  }
+
   _setState(msg, state) {
     msg.state = state;
     this._emitter.emit('state', msg.id, state);
@@ -521,8 +549,24 @@ export class StyxChat {
       // Join first: if the welcome bytes are malformed and joinSession throws, the
       // nonce must survive so the legitimate joiner (who saw the QR) can retry.
       this._engine.joinSession(from, welcomeBytes, treeBytes);
-      this._inviteNonce = null; // single-use: a photographed QR cannot be replayed
-      await this._backend?.delete(INVITE_NONCE_KEY);
+      // N2: the MLS credential in the group we just joined must be the peer who sent
+      // it. A valid MAC only proves the sender saw our QR — it does not prove the
+      // group is theirs. Somebody who photographed the QR can relay a group built by
+      // (or for) a third party, and we would file that conversation under the wrong
+      // name: the safety number, the verified badge and "who am I talking to" would
+      // all describe someone who is not in the room.
+      if (this._engine.peerIdentity(from) !== from) {
+        this._engine.removeSession(from);
+        // The invite is spent even though we rejected the group: processing the
+        // Welcome made MLS consume the KeyPackage's private init key, so no later
+        // Welcome for this QR can be decrypted. Retire the nonce too, rather than
+        // leaving a pending invite that can no longer work, and tell the app so it
+        // can ask the user for a fresh QR.
+        await this._retireInvite();
+        this._emitter.emit('invite-rejected', { from, reason: 'identity-mismatch' });
+        return;
+      }
+      await this._retireInvite(); // single-use: a photographed QR cannot be replayed
       if (env.groupId) this._groups[from] = env.groupId;
       await this._persistMls();
       // A welcome buys a pending pairing, not a contact: the user decides. Our
