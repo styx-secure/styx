@@ -45,23 +45,44 @@ async function peer(bus, pubkey, alias) {
 }
 
 describe('sanitizeAlias', () => {
+  const wrap = (cp) => 'a' + String.fromCodePoint(cp) + 'b';
+
   test('trims and preserves ordinary text', () => {
     expect(sanitizeAlias('  Alice  ')).toBe('Alice');
-    expect(sanitizeAlias('Zoë 🔐')).toBe('Zoë 🔐');
+    expect(sanitizeAlias('Zoë \u{1F510}')).toBe('Zoë \u{1F510}');
   });
 
-  test('strips Unicode bidi overrides used for display spoofing', () => {
-    expect(sanitizeAlias('A‮evil')).toBe('Aevil');
-    expect(sanitizeAlias('⁦x⁩')).toBe('x');
+  test('strips bidi overrides and isolates used for display spoofing', () => {
+    expect(sanitizeAlias(wrap(0x202E))).toBe('ab'); // RLO
+    expect(sanitizeAlias(wrap(0x202A))).toBe('ab'); // LRE
+    expect(sanitizeAlias(wrap(0x2066))).toBe('ab'); // LRI
+    expect(sanitizeAlias(wrap(0x2069))).toBe('ab'); // PDI
+  });
+
+  test('strips directional marks (LRM/RLM/ALM)', () => {
+    expect(sanitizeAlias(wrap(0x200E))).toBe('ab'); // LRM
+    expect(sanitizeAlias(wrap(0x200F))).toBe('ab'); // RLM
+    expect(sanitizeAlias(wrap(0x061C))).toBe('ab'); // Arabic letter mark
+  });
+
+  test('strips zero-width characters and the BOM', () => {
+    expect(sanitizeAlias(wrap(0x200B))).toBe('ab'); // ZWSP
+    expect(sanitizeAlias(wrap(0x200D))).toBe('ab'); // ZWJ
+    expect(sanitizeAlias(wrap(0x2060))).toBe('ab'); // word joiner
+    expect(sanitizeAlias(wrap(0xFEFF))).toBe('ab'); // ZWNBSP / BOM
   });
 
   test('strips C0/C1 control characters', () => {
-    expect(sanitizeAlias('badbell')).toBe('badbell');
+    expect(sanitizeAlias(wrap(0x0007))).toBe('ab'); // BEL (C0)
     expect(sanitizeAlias('two\nlines')).toBe('twolines');
+    expect(sanitizeAlias(wrap(0x0085))).toBe('ab'); // NEL (C1)
   });
 
-  test('caps the length at 64 characters', () => {
-    expect(sanitizeAlias('x'.repeat(200))).toHaveLength(64);
+  test('caps the length at 64 code points without splitting astral chars', () => {
+    expect([...sanitizeAlias('x'.repeat(200))]).toHaveLength(64);
+    const capped = sanitizeAlias('\u{1F600}'.repeat(100)); // astral, 2 UTF-16 units each
+    expect([...capped]).toHaveLength(64);
+    expect(capped).toBe('\u{1F600}'.repeat(64)); // whole emoji, never a lone surrogate
   });
 
   test('returns empty string for blank/nullish input', () => {
@@ -70,6 +91,7 @@ describe('sanitizeAlias', () => {
     expect(sanitizeAlias(undefined)).toBe('');
   });
 });
+
 
 describe('StyxChat A4 explicit pairing + alias inside MLS', () => {
   beforeAll(async () => { await MlsEngine.initWasm({ wasmBytes }); });
