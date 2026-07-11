@@ -117,6 +117,9 @@ export class MlsEngine {
    *   can join and later reload the session.
    */
   startSession(contactId, peerKeyPackageBytes) {
+    if (this._sessions.has(contactId)) {
+      throw new Error(`MlsEngine: session already exists for ${contactId}`);
+    }
     const groupId = `styx:${uuidv4()}`;
     const group = Group.create_new(this._provider, this._identity, groupId);
     const peerKp = KeyPackage.from_bytes(peerKeyPackageBytes);
@@ -156,5 +159,17 @@ export class MlsEngine {
   /** @param {string} contactId @returns {MlsSession|undefined} */
   session(contactId) {
     return this._sessions.get(contactId);
+  }
+
+  /**
+   * Drop a session handle so the contact can be paired again (deliberate re-pair
+   * after removeContact). The group's key material stays in provider storage —
+   * the WASM crate exposes no delete — but it is unreachable and gets pruned when
+   * state is next re-serialized around remaining sessions.
+   * @param {string} contactId
+   * @returns {boolean} whether a session existed
+   */
+  removeSession(contactId) {
+    return this._sessions.delete(contactId);
   }
 }
