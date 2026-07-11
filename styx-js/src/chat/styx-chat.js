@@ -487,6 +487,22 @@ export class StyxChat {
     this._started = false;
   }
 
+  /**
+   * Irreversibly wipe this identity from its backend.
+   *
+   * Order matters: tear down the transport and drop the in-RAM crypto engine first, so
+   * nothing can write state back after the erase, then delete every key the backend
+   * owns. This is the library half of a factory reset — the browser-global surfaces
+   * (push subscription, Cache Storage, service worker, IndexedDB) are the caller's job,
+   * because the library does not own them.
+   */
+  async wipe() {
+    try { this.destroy(); } catch { /* best effort — we are erasing anyway */ }
+    this._engine = null;
+    this._groups = {};
+    await this._backend?.clear?.();
+  }
+
   // ---- internals ----
   async _send(toPubkey, obj, opts) {
     await this._transport.send(toPubkey, utf8Encode(JSON.stringify(obj)), opts);

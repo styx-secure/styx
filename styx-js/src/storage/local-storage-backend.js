@@ -16,4 +16,13 @@ export class LocalStorageBackend {
   async delete(key) {
     localStorage.removeItem(this._p + key);
   }
+  /** Delete every key this backend owns (its whole prefix). Used by factory reset. */
+  async clear() {
+    const doomed = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const k = localStorage.key(i);
+      if (k != null && k.startsWith(this._p)) doomed.push(k);
+    }
+    doomed.forEach((k) => localStorage.removeItem(k));
+  }
 }
