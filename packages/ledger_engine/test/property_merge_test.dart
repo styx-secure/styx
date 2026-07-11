@@ -89,7 +89,6 @@ void main() {
         keyPairA: keyPairA,
         keyPairB: keyPairB,
         branchACount: 3,
-        branchBCount: 2,
       );
 
       final fork = Fork(

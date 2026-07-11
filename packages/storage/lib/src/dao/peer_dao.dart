@@ -25,16 +25,18 @@ class PeerDao extends DatabaseAccessor<StyxDatabase> with _$PeerDaoMixin {
 
   /// Deactivates a peer.
   Future<int> deactivatePeer(String pubkey) =>
-      (update(peers)..where((p) => p.pubkey.equals(pubkey)))
-          .write(const PeersCompanion(isActive: Value(false)));
+      (update(peers)..where((p) => p.pubkey.equals(pubkey))).write(
+        const PeersCompanion(isActive: Value(false)),
+      );
 
   /// Updates a peer's public key during rekey.
   Future<void> updatePeerKey({
     required String oldPubkey,
     required String newPubkey,
   }) async {
-    await (update(peers)..where((p) => p.pubkey.equals(oldPubkey)))
-        .write(PeersCompanion(pubkey: Value(newPubkey)));
+    await (update(peers)..where((p) => p.pubkey.equals(oldPubkey))).write(
+      PeersCompanion(pubkey: Value(newPubkey)),
+    );
   }
 
   /// Adds a rekey history entry to a peer.
@@ -47,14 +49,14 @@ class PeerDao extends DatabaseAccessor<StyxDatabase> with _$PeerDaoMixin {
     if (peer == null) return;
 
     final history =
-        (jsonDecode(peer.rekeyHistory) as List<dynamic>).cast<Object>()
-          ..add({
-            'oldKey': oldKey,
-            'newKey': newKey,
-            'timestamp': DateTime.now().toIso8601String(),
-          });
+        (jsonDecode(peer.rekeyHistory) as List<dynamic>).cast<Object>()..add({
+          'oldKey': oldKey,
+          'newKey': newKey,
+          'timestamp': DateTime.now().toIso8601String(),
+        });
 
-    await (update(peers)..where((p) => p.pubkey.equals(pubkey)))
-        .write(PeersCompanion(rekeyHistory: Value(jsonEncode(history))));
+    await (update(peers)..where((p) => p.pubkey.equals(pubkey))).write(
+      PeersCompanion(rekeyHistory: Value(jsonEncode(history))),
+    );
   }
 }

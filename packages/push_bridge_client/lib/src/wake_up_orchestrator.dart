@@ -35,9 +35,9 @@ class WakeUpOrchestrator {
     required LedgerOperations ledger,
     required OutboxProcessor outbox,
     this.downloadTimeout = const Duration(seconds: 10),
-  })  : _transport = transport,
-        _ledger = ledger,
-        _outbox = outbox;
+  }) : _transport = transport,
+       _ledger = ledger,
+       _outbox = outbox;
 
   final TransportInterface _transport;
   final LedgerOperations _ledger;

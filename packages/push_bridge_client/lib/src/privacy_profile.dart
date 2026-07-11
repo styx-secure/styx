@@ -22,7 +22,8 @@ enum PrivacyProfile {
   ///
   /// Pro: traffic patterns fully masked.
   /// Con: measurable battery consumption.
-  paranoid;
+  paranoid
+  ;
 
   /// Parses a profile from its string name.
   static PrivacyProfile fromString(String value) {

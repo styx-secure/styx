@@ -58,9 +58,9 @@ class KeyMigrationService {
     required IdentityManager identityManager,
     required ReKeyProtocol reKeyProtocol,
     required KeyBackup keyBackup,
-  })  : _identityManager = identityManager,
-        _reKeyProtocol = reKeyProtocol,
-        _keyBackup = keyBackup;
+  }) : _identityManager = identityManager,
+       _reKeyProtocol = reKeyProtocol,
+       _keyBackup = keyBackup;
 
   final IdentityManager _identityManager;
   final ReKeyProtocol _reKeyProtocol;

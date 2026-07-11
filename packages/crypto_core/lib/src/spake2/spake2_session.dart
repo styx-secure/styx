@@ -121,8 +121,9 @@ class Spake2Session {
       // Remove the password blinding from the peer's message.
       // If we are initiator, peer used N, so: K = x*(pB - pw*N)
       // If we are responder, peer used M, so: K = y*(pA - pw*M)
-      final peerBlindingPoint =
-          role == Spake2Role.initiator ? spake2N : spake2M;
+      final peerBlindingPoint = role == Spake2Role.initiator
+          ? spake2N
+          : spake2M;
       final pwBlind = p256ScalarMul(peerBlindingPoint, _passwordScalar);
       final unblinded = p256Sub(peerPoint, pwBlind);
 

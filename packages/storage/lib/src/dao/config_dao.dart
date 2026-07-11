@@ -18,8 +18,9 @@ class ConfigDao extends DatabaseAccessor<StyxDatabase> with _$ConfigDaoMixin {
 
   /// Gets a configuration value by key.
   Future<String?> get(String key) async {
-    final entry = await (select(config)..where((c) => c.key.equals(key)))
-        .getSingleOrNull();
+    final entry = await (select(
+      config,
+    )..where((c) => c.key.equals(key))).getSingleOrNull();
     return entry?.value;
   }
 

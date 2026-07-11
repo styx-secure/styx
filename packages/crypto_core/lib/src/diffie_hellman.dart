@@ -9,8 +9,8 @@ final class X25519KeyPair {
   X25519KeyPair({
     required Uint8List publicKey,
     required Uint8List privateKey,
-  })  : _publicKey = Uint8List.fromList(publicKey),
-        _privateKey = Uint8List.fromList(privateKey);
+  }) : _publicKey = Uint8List.fromList(publicKey),
+       _privateKey = Uint8List.fromList(privateKey);
 
   final Uint8List _publicKey;
   final Uint8List _privateKey;

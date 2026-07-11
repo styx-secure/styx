@@ -46,11 +46,13 @@ Future<List<LedgerEvent>> buildChain(
 /// Builds a fork: a common base of [baseCount] events, then [branchACount]
 /// events on branch A and [branchBCount] events on branch B.
 Future<
-    ({
-      List<LedgerEvent> base,
-      List<LedgerEvent> branchA,
-      List<LedgerEvent> branchB,
-    })> buildFork({
+  ({
+    List<LedgerEvent> base,
+    List<LedgerEvent> branchA,
+    List<LedgerEvent> branchB,
+  })
+>
+buildFork({
   required EventFactory factory,
   required StyxKeyPair keyPairA,
   required StyxKeyPair keyPairB,

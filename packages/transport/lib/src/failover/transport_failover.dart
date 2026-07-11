@@ -32,7 +32,7 @@ class TransportPriority {
 class TransportFailover implements TransportInterface {
   /// Creates a [TransportFailover].
   TransportFailover({required List<TransportPriority> transports})
-      : _transports = List.unmodifiable(transports);
+    : _transports = List.unmodifiable(transports);
 
   final List<TransportPriority> _transports;
 

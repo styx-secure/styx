@@ -7,9 +7,11 @@ import 'package:test/test.dart';
 
 TransportMessage _testMessage({
   String id = 'msg-1',
-  String senderPubkey = 'aabbccdd11223344aabbccdd11223344'
+  String senderPubkey =
+      'aabbccdd11223344aabbccdd11223344'
       'aabbccdd11223344aabbccdd11223344',
-  String recipientPubkey = '11223344aabbccdd11223344aabbccdd'
+  String recipientPubkey =
+      '11223344aabbccdd11223344aabbccdd'
       '11223344aabbccdd11223344aabbccdd',
   Uint8List? payload,
 }) {
@@ -54,7 +56,8 @@ void main() {
     expect(pattern, '[STYX:v1:a1b2c3d4]');
 
     final message = _testMessage(
-      recipientPubkey: 'a1b2c3d4eeff0011a1b2c3d4eeff0011'
+      recipientPubkey:
+          'a1b2c3d4eeff0011a1b2c3d4eeff0011'
           'a1b2c3d4eeff0011a1b2c3d4eeff0011',
     );
 

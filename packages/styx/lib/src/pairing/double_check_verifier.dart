@@ -9,7 +9,7 @@ import 'package:styx_crypto_core/styx_crypto_core.dart';
 class DoubleCheckVerifier {
   /// Creates a [DoubleCheckVerifier].
   DoubleCheckVerifier({required SessionVerifier sessionVerifier})
-      : _sessionVerifier = sessionVerifier;
+    : _sessionVerifier = sessionVerifier;
 
   final SessionVerifier _sessionVerifier;
 

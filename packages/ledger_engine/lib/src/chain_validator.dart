@@ -50,8 +50,8 @@ class ChainValidator {
   ChainValidator({
     required Hasher hasher,
     required Verifier verifier,
-  })  : _eventFactory = EventFactory(signer: Signer(), hasher: hasher),
-        _verifier = verifier;
+  }) : _eventFactory = EventFactory(signer: Signer(), hasher: hasher),
+       _verifier = verifier;
 
   final EventFactory _eventFactory;
   final Verifier _verifier;
@@ -150,8 +150,9 @@ class ChainValidator {
       payload: event.payload,
       hlcBytes: event.hlc.toBytes(),
     );
-    final computedHex =
-        computed.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    final computedHex = computed
+        .map((b) => b.toRadixString(16).padLeft(2, '0'))
+        .join();
     return computedHex == event.eventHash;
   }
 

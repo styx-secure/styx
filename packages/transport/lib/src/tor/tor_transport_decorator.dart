@@ -13,8 +13,8 @@ class TorTransportDecorator implements TransportInterface {
   TorTransportDecorator({
     required TransportInterface inner,
     required TorManager torManager,
-  })  : _inner = inner,
-        _torManager = torManager;
+  }) : _inner = inner,
+       _torManager = torManager;
 
   final TransportInterface _inner;
   final TorManager _torManager;

@@ -22,20 +22,21 @@ class OutboxDao extends DatabaseAccessor<StyxDatabase> with _$OutboxDaoMixin {
 
   /// Enqueues an event for sending.
   Future<int> enqueue(String eventId) => into(outbox).insert(
-        OutboxCompanion.insert(
-          eventId: eventId,
-          createdAt: DateTime.now(),
-        ),
-      );
+    OutboxCompanion.insert(
+      eventId: eventId,
+      createdAt: DateTime.now(),
+    ),
+  );
 
   /// Dequeues the next event to send (FIFO by creation time).
-  Future<OutboxData?> dequeueNext() => (select(outbox)
-        ..where(
-          (o) => o.status.isIn(['pending', 'failed']),
-        )
-        ..orderBy([(o) => OrderingTerm.asc(o.createdAt)])
-        ..limit(1))
-      .getSingleOrNull();
+  Future<OutboxData?> dequeueNext() =>
+      (select(outbox)
+            ..where(
+              (o) => o.status.isIn(['pending', 'failed']),
+            )
+            ..orderBy([(o) => OrderingTerm.asc(o.createdAt)])
+            ..limit(1))
+          .getSingleOrNull();
 
   /// Returns all events ready to send (pending or failed with
   /// expired retry timer).
@@ -57,20 +58,19 @@ class OutboxDao extends DatabaseAccessor<StyxDatabase> with _$OutboxDaoMixin {
   Future<int> markSent({
     required String eventId,
     required String transport,
-  }) =>
-      (update(outbox)..where((o) => o.eventId.equals(eventId))).write(
-        OutboxCompanion(
-          status: const Value('sent'),
-          transportUsed: Value(transport),
-          sentAt: Value(DateTime.now()),
-        ),
-      );
+  }) => (update(outbox)..where((o) => o.eventId.equals(eventId))).write(
+    OutboxCompanion(
+      status: const Value('sent'),
+      transportUsed: Value(transport),
+      sentAt: Value(DateTime.now()),
+    ),
+  );
 
   /// Marks an event as failed with exponential backoff.
   Future<void> markFailed({required String eventId}) async {
-    final entry = await (select(outbox)
-          ..where((o) => o.eventId.equals(eventId)))
-        .getSingleOrNull();
+    final entry = await (select(
+      outbox,
+    )..where((o) => o.eventId.equals(eventId))).getSingleOrNull();
 
     if (entry == null) return;
 

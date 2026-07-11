@@ -14,30 +14,31 @@ class EventDao extends DatabaseAccessor<StyxDatabase> with _$EventDaoMixin {
   Future<int> insertEvent(EventsCompanion event) => into(events).insert(event);
 
   /// Retrieves an event by its unique [eventId].
-  Future<Event?> getByEventId(String eventId) =>
-      (select(events)..where((e) => e.eventId.equals(eventId)))
-          .getSingleOrNull();
+  Future<Event?> getByEventId(String eventId) => (select(
+    events,
+  )..where((e) => e.eventId.equals(eventId))).getSingleOrNull();
 
   /// Retrieves an event by its [hash].
-  Future<Event?> getByHash(String hash) =>
-      (select(events)..where((e) => e.eventHash.equals(hash)))
-          .getSingleOrNull();
+  Future<Event?> getByHash(String hash) => (select(
+    events,
+  )..where((e) => e.eventHash.equals(hash))).getSingleOrNull();
 
   /// Gets the most recently inserted event.
-  Future<Event?> getLatestEvent() => (select(events)
-        ..orderBy([
-          (e) => OrderingTerm.desc(e.id),
-        ])
-        ..limit(1))
-      .getSingleOrNull();
+  Future<Event?> getLatestEvent() =>
+      (select(events)
+            ..orderBy([
+              (e) => OrderingTerm.desc(e.id),
+            ])
+            ..limit(1))
+          .getSingleOrNull();
 
   /// Returns all events ordered by HLC timestamp ascending.
-  Future<List<Event>> getAllEventsOrdered() => (select(events)
-        ..orderBy([
-          (e) => OrderingTerm.asc(e.hlcTimestamp),
-          (e) => OrderingTerm.asc(e.hlcCounter),
-        ]))
-      .get();
+  Future<List<Event>> getAllEventsOrdered() =>
+      (select(events)..orderBy([
+            (e) => OrderingTerm.asc(e.hlcTimestamp),
+            (e) => OrderingTerm.asc(e.hlcCounter),
+          ]))
+          .get();
 
   /// Returns events within an HLC timestamp range.
   Future<List<Event>> getEventsInRange({
@@ -73,8 +74,9 @@ class EventDao extends DatabaseAccessor<StyxDatabase> with _$EventDaoMixin {
   /// Note: this checks that each event's previousHash matches
   /// the eventHash of the preceding event in insertion order.
   Future<String?> verifyChainIntegrity() async {
-    final allEvents =
-        await (select(events)..orderBy([(e) => OrderingTerm.asc(e.id)])).get();
+    final allEvents = await (select(
+      events,
+    )..orderBy([(e) => OrderingTerm.asc(e.id)])).get();
 
     for (var i = 0; i < allEvents.length; i++) {
       final event = allEvents[i];
@@ -100,10 +102,10 @@ class EventDao extends DatabaseAccessor<StyxDatabase> with _$EventDaoMixin {
   }
 
   /// Returns a reactive stream of all events ordered by HLC.
-  Stream<List<Event>> watchEvents() => (select(events)
-        ..orderBy([
-          (e) => OrderingTerm.asc(e.hlcTimestamp),
-          (e) => OrderingTerm.asc(e.hlcCounter),
-        ]))
-      .watch();
+  Stream<List<Event>> watchEvents() =>
+      (select(events)..orderBy([
+            (e) => OrderingTerm.asc(e.hlcTimestamp),
+            (e) => OrderingTerm.asc(e.hlcCounter),
+          ]))
+          .watch();
 }
