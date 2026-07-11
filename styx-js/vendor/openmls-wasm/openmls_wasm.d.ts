@@ -24,6 +24,14 @@ export class Group {
      * Returns undefined if no group with that id exists.
      */
     static load(provider: Provider, group_id: string): Group | undefined;
+    /**
+     * The identity string of every current group member — the BasicCredential's
+     * serialized identity, which Styx sets to the member's Nostr pubkey hex.
+     *
+     * This is what lets the app bind an MLS member to a transport identity: a peer
+     * who hands us a group built for somebody else can be detected and rejected.
+     */
+    member_identities(): string[];
     merge_pending_commit(provider: Provider): void;
     process_message(provider: Provider, msg: Uint8Array): Uint8Array;
     propose_and_commit_add(provider: Provider, sender: Identity, new_member: KeyPackage): AddMessages;
@@ -118,6 +126,7 @@ export interface InitOutput {
     readonly group_export_ratchet_tree: (a: number) => number;
     readonly group_join: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly group_load: (a: number, b: number, c: number) => [number, number, number];
+    readonly group_member_identities: (a: number) => [number, number];
     readonly group_merge_pending_commit: (a: number, b: number) => [number, number];
     readonly group_process_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly group_propose_and_commit_add: (a: number, b: number, c: number, d: number) => [number, number, number];
@@ -140,6 +149,7 @@ export interface InitOutput {
     readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __externref_drop_slice: (a: number, b: number) => void;
     readonly __wbindgen_start: () => void;
 }
 
