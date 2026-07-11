@@ -6,3 +6,8 @@ coverage/
 *.db-shm
 .cache/
 dist-demo/
+
+# Local secrets — never commit
+.env
+.env.local
+*.env

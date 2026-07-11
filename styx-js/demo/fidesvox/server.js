@@ -38,10 +38,12 @@ import db, {
   getAllMetadata,
 } from './db.js';
 
+import { requireJwtSecret } from './config.js';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = 3456;
 const RELAY_URL = 'ws://localhost:17777';
-const JWT_SECRET = 'fidesvox-demo-secret';
+const JWT_SECRET = requireJwtSecret(process.env);
 
 // --- Server Nostr identity (hardcoded for demo) ---
 const SERVER_PRIV_HEX = '2a31383f464d545b626970777e858c939aa1a8afb6bdc4cbd2d9e0e7eef5fc03';
