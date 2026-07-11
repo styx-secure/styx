@@ -148,7 +148,7 @@ jobs:
           retention-days: 14
 
   gate:
-    name: Gate
+    name: WASM integrity gate
     needs: [changes, light, hermetic]
     if: always()
     runs-on: ubuntu-latest

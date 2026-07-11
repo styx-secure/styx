@@ -107,8 +107,8 @@ jobs:
       - run: melos run coverage:check
 
   gate:
-    # Single stable check ("Dart reference stack / Gate") — always present on every PR.
-    name: Gate
+    # Stable required check (unique context).
+    name: Dart reference stack gate
     needs: [changes, analyze, test, coverage]
     if: always()
     runs-on: ubuntu-latest
