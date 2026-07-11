@@ -126,7 +126,8 @@ void main() {
     // T4.10: GetEventsInRange
     test('T4.10 — getEventsInRange returns events in range', () async {
       for (var i = 0; i < 100; i++) {
-        final ts = '2025-01-${(i ~/ 24 + 1).toString().padLeft(2, '0')}'
+        final ts =
+            '2025-01-${(i ~/ 24 + 1).toString().padLeft(2, '0')}'
             'T${(i % 24).toString().padLeft(2, '0')}:00:00Z';
         await db.eventDao.insertEvent(
           _makeEvent(

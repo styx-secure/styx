@@ -76,12 +76,12 @@ class MockTransport implements TransportInterface {
 // ---------------------------------------------------------------------------
 
 TransportMessage _testMessage({String id = 'msg-1'}) => TransportMessage(
-      id: id,
-      senderPubkey: 'sender-key',
-      recipientPubkey: 'recipient-key',
-      payload: Uint8List.fromList([1, 2, 3]),
-      timestamp: DateTime.utc(2026),
-    );
+  id: id,
+  senderPubkey: 'sender-key',
+  recipientPubkey: 'recipient-key',
+  payload: Uint8List.fromList([1, 2, 3]),
+  timestamp: DateTime.utc(2026),
+);
 
 // ---------------------------------------------------------------------------
 // Tests

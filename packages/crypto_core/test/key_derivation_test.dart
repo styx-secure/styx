@@ -132,57 +132,67 @@ void main() {
       final salt1 = Uint8List.fromList([10, 20, 30]);
       final salt2 = Uint8List.fromList([40, 50, 60]);
 
-      final result1 =
-          await kd.deriveKey(sharedSecret: secret, salt: salt1, info: info);
-      final result2 =
-          await kd.deriveKey(sharedSecret: secret, salt: salt2, info: info);
+      final result1 = await kd.deriveKey(
+        sharedSecret: secret,
+        salt: salt1,
+        info: info,
+      );
+      final result2 = await kd.deriveKey(
+        sharedSecret: secret,
+        salt: salt2,
+        info: info,
+      );
 
       expect(result1, isNot(equals(result2)));
     });
   });
 
   group('KeyDerivation — directional keys', () {
-    test('T2.13 — Directional keys asymmetry: A.sendKey == B.receiveKey',
-        () async {
-      final secret = Uint8List.fromList(List.generate(32, (i) => i));
-      final pubA = Uint8List.fromList(List.generate(32, (i) => i));
-      final pubB = Uint8List.fromList(List.generate(32, (i) => i + 100));
+    test(
+      'T2.13 — Directional keys asymmetry: A.sendKey == B.receiveKey',
+      () async {
+        final secret = Uint8List.fromList(List.generate(32, (i) => i));
+        final pubA = Uint8List.fromList(List.generate(32, (i) => i));
+        final pubB = Uint8List.fromList(List.generate(32, (i) => i + 100));
 
-      final keysA = await kd.deriveDirectionalKeys(
-        sharedSecret: secret,
-        localPubKey: pubA,
-        remotePubKey: pubB,
-      );
-      final keysB = await kd.deriveDirectionalKeys(
-        sharedSecret: secret,
-        localPubKey: pubB,
-        remotePubKey: pubA,
-      );
+        final keysA = await kd.deriveDirectionalKeys(
+          sharedSecret: secret,
+          localPubKey: pubA,
+          remotePubKey: pubB,
+        );
+        final keysB = await kd.deriveDirectionalKeys(
+          sharedSecret: secret,
+          localPubKey: pubB,
+          remotePubKey: pubA,
+        );
 
-      expect(keysA.sendKey, equals(keysB.receiveKey));
-      expect(keysA.receiveKey, equals(keysB.sendKey));
-    });
+        expect(keysA.sendKey, equals(keysB.receiveKey));
+        expect(keysA.receiveKey, equals(keysB.sendKey));
+      },
+    );
 
-    test('T2.14 — Directional keys determinism: reversed pubkey order',
-        () async {
-      final secret = Uint8List.fromList(List.generate(32, (i) => i));
-      final pubA = Uint8List.fromList(List.generate(32, (i) => i));
-      final pubB = Uint8List.fromList(List.generate(32, (i) => i + 100));
+    test(
+      'T2.14 — Directional keys determinism: reversed pubkey order',
+      () async {
+        final secret = Uint8List.fromList(List.generate(32, (i) => i));
+        final pubA = Uint8List.fromList(List.generate(32, (i) => i));
+        final pubB = Uint8List.fromList(List.generate(32, (i) => i + 100));
 
-      final keys1 = await kd.deriveDirectionalKeys(
-        sharedSecret: secret,
-        localPubKey: pubA,
-        remotePubKey: pubB,
-      );
-      final keys2 = await kd.deriveDirectionalKeys(
-        sharedSecret: secret,
-        localPubKey: pubA,
-        remotePubKey: pubB,
-      );
+        final keys1 = await kd.deriveDirectionalKeys(
+          sharedSecret: secret,
+          localPubKey: pubA,
+          remotePubKey: pubB,
+        );
+        final keys2 = await kd.deriveDirectionalKeys(
+          sharedSecret: secret,
+          localPubKey: pubA,
+          remotePubKey: pubB,
+        );
 
-      expect(keys1.sendKey, equals(keys2.sendKey));
-      expect(keys1.receiveKey, equals(keys2.receiveKey));
-    });
+        expect(keys1.sendKey, equals(keys2.sendKey));
+        expect(keys1.receiveKey, equals(keys2.receiveKey));
+      },
+    );
   });
 
   group('DirectionalKeys', () {

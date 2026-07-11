@@ -8,7 +8,7 @@ void main() {
 
   /// Helper to run a full SPAKE2 round-trip with a given password.
   ({Uint8List keyA, Uint8List keyB, Spake2Session a, Spake2Session b})
-      runRoundTrip(Uint8List password) {
+  runRoundTrip(Uint8List password) {
     final a = protocol.createInitiatorSession(password);
     final b = protocol.createResponderSession(password);
 

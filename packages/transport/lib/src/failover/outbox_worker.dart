@@ -101,10 +101,10 @@ class OutboxWorker {
     required NostrEncryptor encryptor,
     required this.localPubkey,
     required this.peerPubkey,
-  })  : _outboxStore = outboxStore,
-        _eventStore = eventStore,
-        _transport = transport,
-        _encryptor = encryptor;
+  }) : _outboxStore = outboxStore,
+       _eventStore = eventStore,
+       _transport = transport,
+       _encryptor = encryptor;
 
   final OutboxStore _outboxStore;
   final EventStore _eventStore;

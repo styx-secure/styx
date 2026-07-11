@@ -8,8 +8,8 @@ final class DirectionalKeys {
   DirectionalKeys({
     required Uint8List sendKey,
     required Uint8List receiveKey,
-  })  : _sendKey = Uint8List.fromList(sendKey),
-        _receiveKey = Uint8List.fromList(receiveKey);
+  }) : _sendKey = Uint8List.fromList(sendKey),
+       _receiveKey = Uint8List.fromList(receiveKey);
 
   final Uint8List _sendKey;
   final Uint8List _receiveKey;

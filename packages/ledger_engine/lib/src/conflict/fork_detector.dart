@@ -26,7 +26,7 @@ class Fork {
 class ForkDetector {
   /// Creates a [ForkDetector].
   ForkDetector({CausalityChecker? causalityChecker})
-      : _causality = causalityChecker ?? CausalityChecker();
+    : _causality = causalityChecker ?? CausalityChecker();
 
   final CausalityChecker _causality;
 
