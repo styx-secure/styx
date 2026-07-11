@@ -176,6 +176,12 @@ styx/
 └── docs/                      # Specification (Italian)
 ```
 
-## License
+## Licensing status
 
-TBD
+The source code is publicly visible, but the project-wide open-source license is still being
+finalized (see [`docs/architecture/decisions/ADR-0004-licensing-strategy.md`](docs/architecture/decisions/ADR-0004-licensing-strategy.md)).
+No additional permissions are granted beyond those provided by applicable law and GitHub's
+Terms of Service. External contributions are temporarily paused until the licensing and
+contributor terms are finalized.
+
+This is a **public-source experimental project**, not (yet) a licensed open-source release.
