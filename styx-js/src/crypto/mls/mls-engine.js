@@ -45,7 +45,7 @@ export class MlsEngine {
     await MlsEngine.initWasm();
     const provider = new Provider();
     const identity = new Identity(provider, name);
-    return new MlsEngine(provider, identity);
+    return new MlsEngine(provider, identity, name);
   }
 
   /**
@@ -63,7 +63,7 @@ export class MlsEngine {
     provider.restore_state(stateBytes);
     const identity = Identity.load(provider, name, identityPubKey);
     if (!identity) throw new Error('MlsEngine.restore: identity not found in state');
-    return new MlsEngine(provider, identity);
+    return new MlsEngine(provider, identity, name);
   }
 
   /** Serialize all MLS state (groups + keys) for persistence. @returns {Uint8Array} */
@@ -91,9 +91,10 @@ export class MlsEngine {
   }
 
   /** @private */
-  constructor(provider, identity) {
+  constructor(provider, identity, name) {
     this._provider = provider;
     this._identity = identity;
+    this._name = name; // our MLS credential string (the pubkey hex)
     this._sessions = new Map(); // contactId -> MlsSession
   }
 
@@ -159,6 +160,25 @@ export class MlsEngine {
   /** @param {string} contactId @returns {MlsSession|undefined} */
   session(contactId) {
     return this._sessions.get(contactId);
+  }
+
+  /**
+   * The one member of this session's group that is not us, identified by MLS
+   * credential (== the peer's pubkey hex).
+   *
+   * This is the anchor for binding an MLS group to a transport identity: a group is
+   * only trustworthy if the peer inside it is the same peer who sent it to us. Null
+   * when the session is unknown, or when the membership is not exactly {us, one
+   * peer} — an unexpected membership must never be silently accepted.
+   *
+   * @param {string} contactId
+   * @returns {string|null}
+   */
+  peerIdentity(contactId) {
+    const session = this._sessions.get(contactId);
+    if (!session) return null;
+    const others = session.memberIdentities().filter((id) => id !== this._name);
+    return others.length === 1 ? others[0] : null;
   }
 
   /**

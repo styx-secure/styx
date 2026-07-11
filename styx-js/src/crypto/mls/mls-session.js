@@ -49,4 +49,14 @@ export class MlsSession {
   exportSecret(label, context, length) {
     return this._group.export_key(this._engine.provider, label, context, length);
   }
+
+  /**
+   * The MLS credential of every current group member — which Styx sets to the
+   * member's Nostr pubkey hex. Lets a caller check who is actually in this group,
+   * rather than trusting who claims to have sent it.
+   * @returns {string[]}
+   */
+  memberIdentities() {
+    return this._group.member_identities();
+  }
 }
