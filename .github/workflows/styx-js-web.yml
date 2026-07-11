@@ -91,6 +91,16 @@ jobs:
           fi
           echo "Production bundle is mock-free."
 
+      - name: Fail if spike prototypes shipped
+        working-directory: styx-js/apps/chat
+        run: |
+          # Every file under styx-js/spikes/ carries this marker; none may reach dist/.
+          if grep -rl 'STYX_SPIKE_PROTOTYPE' dist/; then
+            echo "::error::Spike prototype code found in the production bundle"
+            exit 1
+          fi
+          echo "Production bundle is spike-free."
+
   gate:
     name: styx-js web gate
     needs: [changes, build-and-gate]
