@@ -29,7 +29,12 @@ import {
   parseMlsStateEnvelope,
   assertMlsStateCompatibility,
 } from '../storage/mls-state-envelope.js';
-import { MLS_STATE_KEY, migrateLegacyMlsState } from '../storage/mls-state-migration.js';
+import {
+  MLS_STATE_KEY,
+  MLS_MIGRATION_PENDING_KEY,
+  MLS_MIGRATION_BACKUP_KEY,
+  migrateLegacyMlsState,
+} from '../storage/mls-state-migration.js';
 import { ContactRoster } from './contact-roster.js';
 import { EncryptedKeyStore } from '../storage/encrypted-key-store.js';
 import { registrationDigest } from '../push/registration-digest.js';
@@ -571,10 +576,25 @@ export class StyxChat {
         'MLS state exists but the identity public key is missing',
       );
     }
-    const identityPubKey = base64ToBytes(savedIdPk);
+    let identityPubKey;
+    try {
+      identityPubKey = base64ToBytes(savedIdPk);
+      if (typeof savedIdPk !== 'string' || identityPubKey.length === 0) throw new Error('empty');
+    } catch {
+      throw new MlsStateError(
+        MlsStateErrorCodes.INVALID,
+        'the stored MLS identity public key is not decodable',
+      );
+    }
     const restore = (stateBytes) => MlsEngine.restore({ name: pubkey, stateBytes, identityPubKey });
 
-    if (fmt === 'legacy-base64') {
+    // Migrate legacy state — and also RESUME a migration that crashed between its
+    // write and cleanup steps: the state is already an envelope then, but the
+    // pending/backup markers are still there, and the backup holds a plaintext
+    // copy of the pre-migration state that must not outlive the migration.
+    const hasLeftoverMarkers = (await be.get(MLS_MIGRATION_PENDING_KEY)) !== null
+      || (await be.get(MLS_MIGRATION_BACKUP_KEY)) !== null;
+    if (fmt === 'legacy-base64' || hasLeftoverMarkers) {
       await migrateLegacyMlsState({
         backend: be,
         restoreProbe: async (stateBytes) => { await restore(stateBytes); },

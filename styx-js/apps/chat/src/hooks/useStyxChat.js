@@ -106,9 +106,18 @@ export function useStyxChat() {
     lockReleaseRef.current = release;
 
     const chat = new StyxChat();
-    const identity = await chat.init({
-      password, alias: alias?.trim(), ns, ...transportOptions(getRelays()),
-    }); // throws on wrong password
+    let identity;
+    try {
+      identity = await chat.init({
+        password, alias: alias?.trim(), ns, ...transportOptions(getRelays()),
+      }); // throws on wrong password or unloadable MLS state (fail-closed)
+    } catch (e) {
+      // Web Locks are not reentrant: without releasing here, the retry after a
+      // failed init would find OUR OWN lock held and misreport "secondary tab".
+      release();
+      lockReleaseRef.current = null;
+      throw e;
+    }
     if (firstRun && alias && alias.trim() && chat.me?.alias !== alias.trim()) {
       await chat.setAlias(alias.trim());
     }

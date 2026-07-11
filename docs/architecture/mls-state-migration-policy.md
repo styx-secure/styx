@@ -159,6 +159,13 @@ un nuovo tentativo al prossimo avvio è lecito.
 
 La seconda esecuzione su uno stato già migrato è un no-op verificabile.
 
+Il percorso di caricamento (`StyxChat.init`) invoca la migrazione **sia** quando lo stato
+è legacy **sia** quando esistono marker residui accanto a un envelope: la riga 3 della
+matrice deve essere raggiungibile a ogni avvio, perché il backup contiene una copia in
+chiaro dello stato pre-migrazione che non deve sopravvivere alla migrazione. Il backup è
+un artefatto di recovery *manuale*: nessun percorso di codice lo rilegge automaticamente
+per ripristinare — evita che un bug di ripresa possa reintrodurre stato vecchio da solo.
+
 ### 5.2 Perché non serve (ancora) più atomicità
 
 `localStorage` è sincrono e single-key-atomico: ogni `setItem` riesce o lancia

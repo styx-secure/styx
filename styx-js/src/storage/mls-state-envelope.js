@@ -123,7 +123,7 @@ export function parseMlsStateEnvelope(value, { maxPayloadBytes = MAX_PAYLOAD_BYT
     throw new MlsStateError(INVALID, 'unrecognized state format magic');
   }
   for (const field of ENVELOPE_FIELDS) {
-    if (!(field in value)) {
+    if (!Object.hasOwn(value, field)) {
       throw new MlsStateError(INVALID, `missing required field "${field}"`);
     }
   }

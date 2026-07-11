@@ -98,6 +98,33 @@ describe('StyxChat + MLS state envelope', () => {
     expect(msg.text).toBe('dopo la migrazione');
   });
 
+  test('init resumes a migration that crashed between write and cleanup (matrix row 3)', async () => {
+    const { backend, alice, bobPubkey } = await pairedBobBackend('env-resume');
+    // Simulate the crash window: envelope already written, markers (including the
+    // plaintext backup of the pre-migration state) still there.
+    const envelope = await backend.get(MLS_STATE_KEY);
+    await backend.set(MLS_MIGRATION_BACKUP_KEY, envelope.payload);
+    await backend.set(MLS_MIGRATION_PENDING_KEY, { toVersion: 1 });
+
+    const bob = new StyxChat();
+    await bob.init({ password: 'pw', backend, channelName: 'env-resume', allowInsecureTransport: true });
+    live.push(bob);
+
+    // The interrupted migration was completed: markers swept, backup gone, version set.
+    expect(await backend.get(MLS_MIGRATION_PENDING_KEY)).toBeNull();
+    expect(await backend.get(MLS_MIGRATION_BACKUP_KEY)).toBeNull();
+    expect(await backend.get(MLS_MIGRATION_VERSION_KEY)).toBe(1);
+
+    // And the session still works.
+    const got = new Promise((res) => bob.onMessage((m) => res(m)));
+    await alice.sendText(bobPubkey, 'dopo la ripresa');
+    const msg = await Promise.race([
+      got,
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 6000)),
+    ]);
+    expect(msg.text).toBe('dopo la ripresa');
+  });
+
   test('a corrupted envelope fails init closed: no fresh engine, storage untouched', async () => {
     const { backend } = await pairedBobBackend('env-corrupt');
     const envelope = await backend.get(MLS_STATE_KEY);
