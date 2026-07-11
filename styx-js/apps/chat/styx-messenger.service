@@ -1,0 +1,23 @@
+[Unit]
+Description=Styx Messenger PWA static server (127.0.0.1:8090, behind Cloudflare tunnel)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mverde
+Group=mverde
+WorkingDirectory=/mnt/storage/home-mverde/src/Styx/styx-js/apps/chat
+Environment=STYX_HOST=127.0.0.1
+Environment=STYX_PORT=8090
+Environment=STYX_DIST=/mnt/storage/home-mverde/src/Styx/styx-js/apps/chat/dist
+ExecStart=/home/mverde/.nvm/versions/node/v24.18.0/bin/node /mnt/storage/home-mverde/src/Styx/styx-js/apps/chat/static-server.mjs
+Restart=always
+RestartSec=3
+
+# Basic hardening: the server only reads dist/ and needs no privileges.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
