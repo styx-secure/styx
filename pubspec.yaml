@@ -2,7 +2,7 @@ name: styx_workspace
 publish_to: none
 
 environment:
-  sdk: ^3.6.0
+  sdk: ^3.10.0
 
 workspace:
   - packages/crypto_core
@@ -24,10 +24,23 @@ melos:
     - packages/*
     - test_integration
 
+  # themis_survey is a Flutter package (depends on the flutter SDK) and is not a member
+  # of the Dart pub `workspace:` above. The reference-stack CI runs on the pure-Dart
+  # toolchain (dart-lang/setup-dart, no Flutter), so melos must skip it — otherwise
+  # analyze/test would fail resolving `package:flutter`. See docs/architecture/decisions/ADR-0003.
+  ignore:
+    - packages/themis_survey
+
   scripts:
     analyze:
-      exec: dart analyze --fatal-infos .
-      description: Run static analysis on all packages.
+      # Serial (concurrency: 1): each `dart analyze` spawns an analysis server, and
+      # running all packages at once can exhaust memory and crash the server on smaller
+      # CI runners. failFast: false so every package is reported, not just the first.
+      run: dart analyze --fatal-infos .
+      exec:
+        concurrency: 1
+        failFast: false
+      description: Run static analysis on all packages (serial, all reported).
 
     format:check:
       exec: dart format --output none --set-exit-if-changed .

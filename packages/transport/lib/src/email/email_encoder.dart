@@ -27,8 +27,9 @@ class EmailEncoder {
         : message.recipientPubkey;
 
     final subject = subjectPattern(recipientShort);
-    final jsonBytes =
-        Uint8List.fromList(utf8.encode(jsonEncode(message.toJson())));
+    final jsonBytes = Uint8List.fromList(
+      utf8.encode(jsonEncode(message.toJson())),
+    );
     final filename = 'styx_msg_${message.id}.bin';
 
     final builder = MessageBuilder()

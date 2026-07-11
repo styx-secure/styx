@@ -133,11 +133,11 @@ void main() {
         // Chronological order: first record before second.
         expect(
           history[0].timestamp.isBefore(
-                    history[1].timestamp,
-                  ) ||
+                history[1].timestamp,
+              ) ||
               history[0].timestamp.isAtSameMomentAs(
-                    history[1].timestamp,
-                  ),
+                history[1].timestamp,
+              ),
           isTrue,
         );
       },

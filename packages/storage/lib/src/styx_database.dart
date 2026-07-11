@@ -59,13 +59,13 @@ class StyxDatabase extends _$StyxDatabase {
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-        onCreate: (m) async {
-          await m.createAll();
+    onCreate: (m) async {
+      await m.createAll();
 
-          // Append-only trigger: only allow pruning updates.
-          // A valid prune sets is_pruned=1 and payload_encrypted=NULL
-          // while preserving all identity/hash fields.
-          await customStatement('''
+      // Append-only trigger: only allow pruning updates.
+      // A valid prune sets is_pruned=1 and payload_encrypted=NULL
+      // while preserving all identity/hash fields.
+      await customStatement('''
             CREATE TRIGGER events_no_update
             BEFORE UPDATE ON events
             WHEN NEW.is_pruned = 0
@@ -79,7 +79,7 @@ class StyxDatabase extends _$StyxDatabase {
                 'Events table is append-only');
             END
           ''');
-          await customStatement('''
+      await customStatement('''
             CREATE TRIGGER events_no_delete
             BEFORE DELETE ON events
             BEGIN
@@ -88,27 +88,27 @@ class StyxDatabase extends _$StyxDatabase {
             END
           ''');
 
-          // Indices for performance.
-          await customStatement('''
+      // Indices for performance.
+      await customStatement('''
             CREATE INDEX idx_events_hlc
             ON events (hlc_timestamp, hlc_counter)
           ''');
-          await customStatement('''
+      await customStatement('''
             CREATE INDEX idx_events_previous_hash
             ON events (previous_hash)
           ''');
-          await customStatement('''
+      await customStatement('''
             CREATE INDEX idx_events_sender
             ON events (sender_pubkey)
           ''');
-          await customStatement('''
+      await customStatement('''
             CREATE INDEX idx_events_type
             ON events (event_type)
           ''');
-          await customStatement('''
+      await customStatement('''
             CREATE INDEX idx_outbox_status
             ON outbox (status, next_retry_at)
           ''');
-        },
-      );
+    },
+  );
 }

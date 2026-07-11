@@ -9,8 +9,8 @@ class ShamirBackupService {
   ShamirBackupService({
     required KeyBackup keyBackup,
     required SecureKeyStore secureKeyStore,
-  })  : _keyBackup = keyBackup,
-        _secureKeyStore = secureKeyStore;
+  }) : _keyBackup = keyBackup,
+       _secureKeyStore = secureKeyStore;
 
   final KeyBackup _keyBackup;
   final SecureKeyStore _secureKeyStore;

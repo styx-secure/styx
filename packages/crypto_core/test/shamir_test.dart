@@ -8,8 +8,9 @@ void main() {
   final reconstructor = ShamirReconstructor();
 
   /// Helper: picks shares at given indices from the list.
-  List<ShamirShare> pick(List<ShamirShare> shares, List<int> indices) =>
-      [for (final i in indices) shares[i]];
+  List<ShamirShare> pick(List<ShamirShare> shares, List<int> indices) => [
+    for (final i in indices) shares[i],
+  ];
 
   group('Shamir Secret Sharing', () {
     test('T3.19 — 2-of-3 reconstruction (shares 1,2)', () {

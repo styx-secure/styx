@@ -33,10 +33,10 @@ class EmailTransport implements TransportInterface {
     required EmailEncoder encoder,
     required ImapWatcher watcher,
     required SmtpSender smtpSender,
-  })  : _config = config,
-        _encoder = encoder,
-        _watcher = watcher,
-        _smtpSender = smtpSender;
+  }) : _config = config,
+       _encoder = encoder,
+       _watcher = watcher,
+       _smtpSender = smtpSender;
 
   final EmailConfig _config;
   final EmailEncoder _encoder;

@@ -38,8 +38,8 @@ class QrPairingService {
   QrPairingService({
     required TrustStoreManager trustStore,
     Random? random,
-  })  : _trustStore = trustStore,
-        _random = random ?? Random.secure();
+  }) : _trustStore = trustStore,
+       _random = random ?? Random.secure();
 
   final TrustStoreManager _trustStore;
   final Random _random;

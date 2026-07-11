@@ -43,12 +43,12 @@ class TransportMessage {
 
   /// Serializes to a JSON map (payload as base64).
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'senderPubkey': senderPubkey,
-        'recipientPubkey': recipientPubkey,
-        'payload': base64Encode(payload),
-        'timestamp': timestamp.toUtc().toIso8601String(),
-      };
+    'id': id,
+    'senderPubkey': senderPubkey,
+    'recipientPubkey': recipientPubkey,
+    'payload': base64Encode(payload),
+    'timestamp': timestamp.toUtc().toIso8601String(),
+  };
 
   @override
   bool operator ==(Object other) =>

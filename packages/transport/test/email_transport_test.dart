@@ -130,28 +130,30 @@ class FakeImapClientAdapter implements ImapClientAdapter {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const _senderPubkey = 'aabbccdd11223344aabbccdd11223344'
+const _senderPubkey =
+    'aabbccdd11223344aabbccdd11223344'
     'aabbccdd11223344aabbccdd11223344';
-const _recipientPubkey = '11223344aabbccdd11223344aabbccdd'
+const _recipientPubkey =
+    '11223344aabbccdd11223344aabbccdd'
     '11223344aabbccdd11223344aabbccdd';
 
 EmailConfig _testConfig() => const EmailConfig(
-      imapHost: 'imap.test.com',
-      imapPort: 993,
-      smtpHost: 'smtp.test.com',
-      smtpPort: 465,
-      username: 'alice@test.com',
-      password: 'secret',
-      recipientAddress: 'bob@test.com',
-    );
+  imapHost: 'imap.test.com',
+  imapPort: 993,
+  smtpHost: 'smtp.test.com',
+  smtpPort: 465,
+  username: 'alice@test.com',
+  password: 'secret',
+  recipientAddress: 'bob@test.com',
+);
 
 TransportMessage _testMessage({String id = 'msg-1'}) => TransportMessage(
-      id: id,
-      senderPubkey: _senderPubkey,
-      recipientPubkey: _recipientPubkey,
-      payload: Uint8List.fromList('hello email'.codeUnits),
-      timestamp: DateTime.utc(2026, 2, 24),
-    );
+  id: id,
+  senderPubkey: _senderPubkey,
+  recipientPubkey: _recipientPubkey,
+  payload: Uint8List.fromList('hello email'.codeUnits),
+  timestamp: DateTime.utc(2026, 2, 24),
+);
 
 /// Creates a fake Styx MimeMessage for receive tests.
 MimeMessage _buildStyxMime(TransportMessage message) {

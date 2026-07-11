@@ -16,13 +16,17 @@ Styx è **due implementazioni parallele e volutamente non interoperabili** di un
 
 | | |
 |---|---|
-| Remote | `git@github.com:maverde73/styx.git` |
-| Branch di default | `main` · **branch attivo:** `feature/pwa-push-bridge` |
-| Commit totali | 94 |
-| Arco temporale | 2026-02-23 → 2026-07-11 (~4,5 mesi) |
+| Repository canonico | `github.com/styx-secure/styx` — **pubblico** (dal 2026-07-12) |
+| Branch canonico | `main` (SHA baseline migrazione: `8b275bc`) |
+| Remote legacy | `github.com/maverde73/styx` (sola lettura, intatto) |
+| Commit totali | 94 (+ CI/security baseline PR post-migrazione) |
+| Arco temporale | 2026-02-23 → 2026-07-12 (~4,5 mesi) |
 | Autore | maverde73 &lt;cirrosi@gmail.com&gt; (unico) |
 | Dimensione tracciata | ~6,1 MB (di cui 1,8 MB è l'artefatto WASM vendorizzato) |
-| Licenza | vendored OpenMLS: MIT; licenza di progetto non dichiarata a root |
+| Licenza | vendored OpenMLS: MIT; licenza di progetto **non ancora applicata** (ADR-0004 *Proposta*). Repo "public-source experimental"; contributi esterni sospesi |
+| Blocchi | 1 (WASM hardening) ✅ · 2 (riduzione rischio) ✅ · review Blocco 2 **GO** |
+| CI | `styx-js web` ✅ verde · Dart reference stack ✅ verde (dopo fix baseline) · WASM integrity ✅ · CodeQL (JS/TS) ✅ |
+| Sicurezza GitHub | secret scanning + push protection, Dependabot, PVR, CodeQL, ruleset su `main`, SHA-pinning, token read-only (vedi `docs/security/2026-07-12-github-security-baseline.md`) |
 
 **Linguaggi** (file tracciati): 170 Dart · 150 JS · 42 Markdown · 18 YAML · 15 JSX · 11 HTML · 9 Go · 3 shell · 3 MJS · 2 TS.
 
@@ -36,7 +40,7 @@ Styx è **due implementazioni parallele e volutamente non interoperabili** di un
 | `push_bridge/` (Node) | 247 | — | bridge push attivo |
 | `push_bridge_server/` (Go) | 888 | — | bridge legacy (scaffold) |
 
-**Test complessivi:** 61 file `*_test.dart` + 58 file `*.test.js`. Al momento dello snapshot la suite JS è verde (597 test), la suite Dart gira in CI.
+**Test complessivi:** 61 file `*_test.dart` + 58 file `*.test.js`. La suite JS è verde (~601 test); la suite Dart è **verde** dopo il fix della baseline CI (390 test: 135 crypto_core, 76 styx, 69 ledger_engine, 61 transport, 37 storage, 11 push_bridge_client, 1 test_integration; `themis_survey` Flutter escluso dallo stack di riferimento). La coverage Dart è gestita a **baseline non-regressione** per package: il 90% resta un obiettivo, non ancora raggiunto ovunque (storage ~78%, styx ~82%, transport ~85%; gli altri ≥90%).
 
 ---
 
@@ -163,7 +167,7 @@ Debiti at-rest tracciati (Blocco 1/2): residuo forense di un join rifiutato in `
 | **5 — Evoluzione MLS** | ack-gating, fork detection, StorageProvider, rekey, multi-device | ⬜ da fare |
 | Metadati pre-audit + Audit | gift-wrap, mailbox/push handle; audit esterno | ⬜ da fare (chiude H2) |
 
-**Stime a "beta auditabile":** ottimistico 5–7 mesi, probabile 7–10, prudenziale 10–14 (ne è passato ~1). Modalità: un blocco alla volta con **review architetturale tra i blocchi** (quella del Blocco 1 è fatta ed è in `§7.7` del documento di fattibilità; quella del Blocco 2 è ancora da fare).
+**Stime a "beta auditabile":** ottimistico 5–7 mesi, probabile 7–10, prudenziale 10–14 (ne è passato ~1). Modalità: un blocco alla volta con **review architetturale tra i blocchi** (Blocco 1 in `§7.7` del documento di fattibilità; **review del Blocco 2 fatta, verdetto GO**, in `docs/security/2026-07-11-review-architetturale-blocco-2.md`). Tra il Blocco 2 e il Blocco 3 è stato inserito un gate di consolidamento GitHub/CI (repo reso pubblico, protezioni, CI Dart resa verde, integrità WASM in CI).
 
 ---
 
@@ -187,7 +191,7 @@ La chat non è adatta a comunicazioni sensibili finché H1 (storage in chiaro) e
 - Il binding N2 non sopravvive al multi-device così com'è, ma la primitiva (`member_identities`) generalizza: è da evolvere, non da strappare.
 
 **Igiene del repository.**
-Un solo autore, storia lineare e leggibile, `docs/` riordinata (gli storici in `archive/`, i `CLAUDE.md`/`AGENTS.md` allineati alla realtà dopo il Blocco 2). CI Dart in funzione; CI web appena aggiunta. Punti deboli: `push_bridge_server` (Go) è uno scaffold inattivo che convive col bridge Node attivo (potenziale confusione — andrebbe marcato come legacy nel suo README); `test_integration` è quasi solo il generatore di vector con un test stub; `push_bridge_client` ha una copertura test sottile (1 file per 6 sorgenti).
+Un solo autore, storia lineare e leggibile, `docs/` riordinata (gli storici in `archive/`, i `CLAUDE.md`/`AGENTS.md` allineati alla realtà dopo il Blocco 2). CI Dart, CI web, integrità WASM e CodeQL tutte verdi su `main`, con ruleset e protezioni GitHub attive; azioni pinnate a SHA e token read-only. Punti deboli: `push_bridge_server` (Go) è uno scaffold inattivo che convive col bridge Node attivo (potenziale confusione — andrebbe marcato come legacy nel suo README); `test_integration` è quasi solo il generatore di vector con un test stub; `push_bridge_client` ha una copertura test sottile (1 file per 6 sorgenti).
 
 **Giudizio complessivo.** Fondazioni solide su entrambi gli stack, processo di sicurezza serio e onesto, e due blocchi di hardening completati bene. Il progetto è **circa a un terzo** del percorso verso una beta auditabile per il target dichiarato, con il critical path che passa dal vault cifrato (Blocco 3) e dalla protezione dei metadati. La cosa più utile da decidere a livello di prodotto non è tecnica: **chiarire lo status dello stack Dart**, per non pagare due volte funzionalità che esistono già.
 
