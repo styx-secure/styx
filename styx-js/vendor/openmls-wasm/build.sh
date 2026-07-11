@@ -49,12 +49,18 @@ else
 fi
 
 echo "Building openmls-wasm in $RUST_IMAGE ..."
+# The container builds as root (rustup/cargo own /usr/local/cargo), so it chowns the
+# work tree back to us on the way out — otherwise root-owned build output would make
+# the cleanup trap fail and leak temp dirs on every run.
 docker run --rm -v "$WORK:/work" -w /work \
   -e WASM_PACK_VERSION="$WASM_PACK_VERSION" \
   -e WASM_PACK_SHA256="$WASM_PACK_SHA256" \
   -e LOCKED="$LOCKED" \
+  -e HOST_UID="$(id -u)" \
+  -e HOST_GID="$(id -g)" \
   "$RUST_IMAGE" bash -c '
     set -euo pipefail
+    trap "chown -R ${HOST_UID}:${HOST_GID} /work" EXIT
     rustup target add wasm32-unknown-unknown
     wp="wasm-pack-v${WASM_PACK_VERSION}-x86_64-unknown-linux-musl"
     curl -sSfLo /tmp/wp.tar.gz "https://github.com/rustwasm/wasm-pack/releases/download/v${WASM_PACK_VERSION}/${wp}.tar.gz"

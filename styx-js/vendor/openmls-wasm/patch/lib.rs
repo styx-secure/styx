@@ -316,7 +316,12 @@ impl Group {
         provider: &mut Provider,
         mut msg: &[u8],
     ) -> Result<Vec<u8>, JsError> {
-        let msg = MlsMessageIn::tls_deserialize(&mut msg).unwrap();
+        // These bytes come straight off the relay: an attacker controls them. Every
+        // failure here must be a returned error, never a panic — a panic traps the
+        // WASM instance, and the instance (and its Provider) is shared by every
+        // session in the app.
+        let msg = MlsMessageIn::tls_deserialize(&mut msg)
+            .map_err(|e| JsError::new(&format!("process_message: malformed MLS message: {e:?}")))?;
 
         let msg = match msg.extract() {
             openmls::framing::MlsMessageBodyIn::PublicMessage(msg) => {
@@ -326,11 +331,16 @@ impl Group {
             openmls::framing::MlsMessageBodyIn::PrivateMessage(msg) => {
                 self.mls_group.process_message(provider.as_ref(), msg)?
             }
-            openmls::framing::MlsMessageBodyIn::Welcome(_) => todo!(),
-            openmls::framing::MlsMessageBodyIn::GroupInfo(_) => todo!(),
-            openmls::framing::MlsMessageBodyIn::KeyPackage(_) => todo!(),
-            #[cfg(feature = "targeted-messages-draft")]
-            openmls::framing::MlsMessageBodyIn::TargetedMessage(_) => todo!(),
+            // Welcome / GroupInfo / KeyPackage arrive through their own entry points,
+            // never through process_message. Seeing one here means the peer is
+            // confused or hostile: reject it, do not trap. The body is deliberately
+            // NOT formatted into the error — it would put attacker-chosen bytes into
+            // logs.
+            _ => {
+                return Err(JsError::new(
+                    "process_message: unsupported message body over the wire",
+                ));
+            }
         };
 
         match msg.into_content() {
@@ -355,10 +365,11 @@ impl Group {
             // Own PrivateMessages echoed by the DS cannot be decrypted, so skip
             // them.
             openmls::framing::ProcessedMessageContent::OwnPrivateMessage => Ok(vec![]),
+            // Also wire-driven: a peer can send one. Reject, do not panic.
             #[cfg(feature = "extensions-draft")]
-            openmls::framing::ProcessedMessageContent::UnresolvedAppDataCommit(_) => {
-                unimplemented!("openmls-wasm does not support AppDataUpdate proposals")
-            }
+            openmls::framing::ProcessedMessageContent::UnresolvedAppDataCommit(_) => Err(
+                JsError::new("process_message: AppDataUpdate proposals are not supported"),
+            ),
         }
     }
 
@@ -375,6 +386,18 @@ impl Group {
                 println!("export key error: {e}");
                 e.into()
             })
+    }
+
+    /// The identity string of every current group member — the BasicCredential's
+    /// serialized identity, which Styx sets to the member's Nostr pubkey hex.
+    ///
+    /// This is what lets the app bind an MLS member to a transport identity: a peer
+    /// who hands us a group built for somebody else can be detected and rejected.
+    pub fn member_identities(&self) -> Vec<String> {
+        self.mls_group
+            .members()
+            .map(|m| String::from_utf8_lossy(m.credential.serialized_content()).into_owned())
+            .collect()
     }
 }
 
