@@ -79,8 +79,9 @@ export default function UnlockScreen({ onUnlock }) {
         <div className="claim">
           <Lock size={18} />
           <span>
-            Nessun server, nessun account. Le chiavi restano cifrate qui, e ogni messaggio usa{' '}
-            <b>forward secrecy</b>: il passato resta illeggibile anche se una chiave viene compromessa.
+            Cifratura end-to-end con <b>forward secrecy</b>: il passato resta illeggibile anche
+            se una chiave viene compromessa. I messaggi viaggiano su relay federati che non
+            possono leggerne il contenuto, ma vedono parte dei metadati di trasporto.
           </span>
         </div>
       </div>

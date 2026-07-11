@@ -20,4 +20,8 @@ describe('PWA manifest', () => {
     expect(manifest.icons.some((i) => i.purpose === 'maskable')).toBe(true);
     expect(manifest.icons.every((i) => i.type === 'image/png')).toBe(true);
   });
+
+  test('the description makes no serverless / no-server claim', () => {
+    expect(manifest.description).not.toMatch(/serverless|nessun server|zero.server|peer-to-peer/i);
+  });
 });

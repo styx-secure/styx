@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Styx Chat — serverless E2E messaging UI (consumes the StyxChat contract)",
+  "description": "Styx Chat — E2E messaging UI over federated relays (consumes the StyxChat contract)",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

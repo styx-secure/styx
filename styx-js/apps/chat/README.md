@@ -1,6 +1,6 @@
 # Styx Chat — frontend web
 
-SPA React/Vite dell'app di messaggistica E2E serverless. Consuma il contratto `StyxChat`
+SPA React/Vite dell'app di messaggistica E2E su relay federati (Nostr). Consuma il contratto `StyxChat`
 tramite `src/lib/styx-adapter.js`: usa la libreria reale (`import { StyxChat } from 'styx-js'`)
 se presente, altrimenti ripiega sul **mock in-memory** (`src/lib/styx-lib-mock.js`), così la UI
 è navigabile in isolamento.

@@ -66,7 +66,7 @@ export default function ConversationView({
         <div className="card">
           <div className="shield"><ShieldCheck size={32} /></div>
           <h3>Seleziona una conversazione</h3>
-          <p>Ogni messaggio è cifrato end-to-end con forward secrecy. Nessun server conserva i tuoi dati.</p>
+          <p>Cifrato end-to-end con forward secrecy. I relay instradano i messaggi ma non possono leggerli.</p>
         </div>
       </div>
     );

@@ -3,7 +3,7 @@
 export const manifest = {
   name: 'Styx Chat',
   short_name: 'Styx',
-  description: 'Messaggistica sovrana, end-to-end e serverless.',
+  description: 'Messaggistica cifrata end-to-end, distribuita tramite relay federati.',
   id: '/',
   start_url: '/',
   scope: '/',
