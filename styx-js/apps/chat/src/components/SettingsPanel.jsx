@@ -90,7 +90,7 @@ export default function SettingsPanel({ me, contacts, onClose, onSetAlias, onRem
 
         <div className="section" style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-ghost" style={{ flex: 1 }} onClick={onLock}>Blocca</button>
-          <button className="btn btn-danger" style={{ flex: 1 }} onClick={onReset}>Reimposta identità</button>
+          <button className="btn btn-danger" style={{ flex: 1 }} onClick={onReset}>Reset totale del dispositivo</button>
         </div>
       </div>
     </div>

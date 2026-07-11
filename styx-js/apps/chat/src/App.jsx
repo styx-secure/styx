@@ -7,7 +7,7 @@ import PairingRequest from './components/PairingRequest.jsx';
 import SafetyNumberModal from './components/SafetyNumberModal.jsx';
 import SettingsPanel from './components/SettingsPanel.jsx';
 import InstallHint from './components/InstallHint.jsx';
-import { getStyxChat } from './lib/styx-adapter.js';
+import { factoryReset } from './lib/factory-reset.js';
 
 const MOBILE_BP = 820;
 
@@ -65,12 +65,12 @@ export default function App() {
   };
 
   const onReset = async () => {
-    const S = await getStyxChat();
-    if (S.hasIdentity) {
-      // Best-effort local identity wipe for the mock/demo.
-      try { localStorage.removeItem('styx-identity'); } catch { /* ignore */ }
-    }
-    onLock();
+    if (!window.confirm(
+      'Reset totale: identità, messaggi, contatti e chiavi verranno eliminati da questo '
+      + 'dispositivo. Operazione irreversibile. Procedere?',
+    )) return;
+    await factoryReset({ chat: chat.chatRef.current });
+    // factoryReset reloads the page; nothing runs after it.
   };
 
   const removeContact = async (pubkey) => {
