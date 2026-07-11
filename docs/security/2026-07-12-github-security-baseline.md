@@ -78,6 +78,38 @@ Note: the pre-hardening `ci.yml`/`styx-js-web.yml` used tag refs (`@v4`, `@v1`);
 `sha_pinning_required` made those runs fail until the hardening PRs (SHA-pinned) merged. This
 is expected and is the mechanism working as intended.
 
+## Dependabot triage (2026-07-12)
+
+Enabling Dependabot opened 13 update PRs. Triaged against the frozen pre-Block-3 baseline;
+crypto, MLS, the WASM crate, the OpenMLS pin, the ciphersuite, the MLS storage format and the
+pinned Rust/toolchain were **not** touched.
+
+**Merged (safe security fixes, one at a time, all required checks green):**
+
+| PR | Update | Sev | Rationale |
+|---|---|---|---|
+| #15 | `ws` 8.19.0→8.21.0 (styx-js runtime) | **High** | Memory-exhaustion DoS; minor bump, WebSocket transport tested by the web gate |
+| #16 | `serialize-javascript` 7.0.4→7.0.7 | Medium | CPU-DoS; patch, build/tooling, tested |
+| #9 | `qs` 6.15.0→6.15.3 | Medium | DoS; patch, tested |
+
+**Deferred (annotated on each PR):**
+
+- **Crypto — do not auto-update** (policy §3): `@noble/curves`, `@noble/hashes`, `@noble/ciphers`,
+  `@noble/ed25519` major bumps in `push_bridge` (#5) and `styx-js` (#12/#20). Require a dedicated
+  crypto review, split from tooling; never bulk-merged.
+- **Unplanned major migration**: React 18→19 + Vite 5→8 in `apps/chat` (#10/#11/#21). The one
+  **remaining High** (`vite` GHSA-fx2h-pf6j-xcff, `server.fs.deny` bypass) is a **dev-server-only**
+  advisory on a `devDependency` — Vite is not in the shipped static bundle (runtime deps are only
+  react/react-dom/@zxing/qrcode), so it is **not reachable in production**. A controlled Vite/React
+  upgrade is tracked separately; not merged as a major jump.
+- **Frozen Dart reference stack** (#13, `dart_code_linter` 3→4): major, no security benefit.
+- **Legacy Go `push_bridge_server`** (#4/#6/#7): no advisories, non-canonical component.
+- **Test-framework major** (#14, jest 29→30) and transitive dev patches (#19 picomatch): low
+  priority; revisit with targeted bumps.
+
+**Residual alerts after triage:** 1 High (vite, dev-only, risk-accepted/deferred), 7 medium, 1 low
+— all in build/dev tooling, none reachable in the shipped runtime. No Critical.
+
 ## Supplementary scanners (CodeQL is not sufficient alone)
 
 CodeQL covers JavaScript/TypeScript only. It does **not** replace, and must be complemented by:
