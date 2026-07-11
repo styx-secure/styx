@@ -182,10 +182,17 @@ export class MlsEngine {
   }
 
   /**
-   * Drop a session handle so the contact can be paired again (deliberate re-pair
-   * after removeContact). The group's key material stays in provider storage —
-   * the WASM crate exposes no delete — but it is unreachable and gets pruned when
-   * state is next re-serialized around remaining sessions.
+   * Drop a session handle — used both for a deliberate re-pair (after removeContact)
+   * and to roll back a join that failed identity binding.
+   *
+   * This forgets the JS handle only. The group's key material stays in the WASM
+   * provider storage: the crate exposes no delete, and `serialize_state` dumps the
+   * ENTIRE provider map, so on the next persist the orphaned group — including a
+   * rejected peer's credential — is written into `mls:state` and stays there. It is
+   * unreachable at runtime (`_groups[contactId]` is never set on the reject path, so
+   * it is never reloaded), but it IS durable at-rest residue. That matters for a
+   * seized-device threat model: the blob records who attempted to pair. A real
+   * per-group delete in the crate is tracked for the storage work (Blocco 3/5).
    * @param {string} contactId
    * @returns {boolean} whether a session existed
    */

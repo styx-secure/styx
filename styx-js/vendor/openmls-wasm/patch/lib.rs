@@ -68,29 +68,43 @@ impl Provider {
     }
 
     /// Restore storage previously produced by `serialize_state`.
+    ///
+    /// Every length is read from the input and MUST be treated as hostile: this blob
+    /// can be a corrupted or attacker-supplied `mls:state`. All offset arithmetic is
+    /// therefore checked. A naive `i + kl + vl > bytes.len()` wraps on wasm32 (usize
+    /// is 32-bit) and would let a crafted length slip past the bound into an
+    /// out-of-range slice — a panic, i.e. a trap that poisons the shared instance at
+    /// init. Checked arithmetic turns every such case into a returned error.
     pub fn restore_state(&self, bytes: &[u8]) -> Result<(), JsError> {
+        fn err(_: &str) -> JsError {
+            // Deliberately generic: the message must not echo attacker-controlled
+            // offsets or bytes into logs.
+            JsError::new("restore_state: malformed state blob")
+        }
         fn read_u64(bytes: &[u8], i: &mut usize) -> Result<u64, JsError> {
-            if *i + 8 > bytes.len() {
-                return Err(JsError::new("restore_state: truncated"));
-            }
+            let end = i.checked_add(8).filter(|&e| e <= bytes.len()).ok_or_else(|| err("len"))?;
             let mut b = [0u8; 8];
-            b.copy_from_slice(&bytes[*i..*i + 8]);
-            *i += 8;
+            b.copy_from_slice(&bytes[*i..end]);
+            *i = end;
             Ok(u64::from_be_bytes(b))
+        }
+        // A length that does not fit in usize (32-bit on wasm32) can never index this
+        // buffer, so reject it up front rather than truncating it.
+        fn as_len(n: u64) -> Result<usize, JsError> {
+            usize::try_from(n).map_err(|_| err("size"))
         }
         let mut map = std::collections::HashMap::new();
         let mut i = 0usize;
         let count = read_u64(bytes, &mut i)?;
         for _ in 0..count {
-            let kl = read_u64(bytes, &mut i)? as usize;
-            let vl = read_u64(bytes, &mut i)? as usize;
-            if i + kl + vl > bytes.len() {
-                return Err(JsError::new("restore_state: truncated entry"));
-            }
-            let k = bytes[i..i + kl].to_vec();
-            i += kl;
-            let v = bytes[i..i + vl].to_vec();
-            i += vl;
+            let kl = as_len(read_u64(bytes, &mut i)?)?;
+            let vl = as_len(read_u64(bytes, &mut i)?)?;
+            let k_end = i.checked_add(kl).filter(|&e| e <= bytes.len()).ok_or_else(|| err("k"))?;
+            let k = bytes[i..k_end].to_vec();
+            i = k_end;
+            let v_end = i.checked_add(vl).filter(|&e| e <= bytes.len()).ok_or_else(|| err("v"))?;
+            let v = bytes[i..v_end].to_vec();
+            i = v_end;
             map.insert(k, v);
         }
         *self.0.storage().values.write().unwrap() = map;

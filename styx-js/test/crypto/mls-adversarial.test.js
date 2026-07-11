@@ -149,6 +149,56 @@ describe('MLS engine — hostile KeyPackage', () => {
   });
 });
 
+describe('MLS engine — hostile persisted state (restore_state)', () => {
+  beforeAll(async () => {
+    await MlsEngine.initWasm({ wasmBytes });
+  });
+
+  // Blob format: u64 count (BE), then per entry u64 key_len, u64 val_len, key, val.
+  // restore runs before Identity.load, so a malformed blob is rejected regardless of
+  // the name/pubkey we pass.
+  const restore = (stateBytes) =>
+    MlsEngine.restore({ name: 'x'.repeat(64), stateBytes, identityPubKey: new Uint8Array(32) });
+
+  function blob(...u64s) {
+    const out = new Uint8Array(u64s.length * 8);
+    const dv = new DataView(out.buffer);
+    u64s.forEach((n, i) => dv.setBigUint64(i * 8, BigInt(n), false));
+    return out;
+  }
+
+  test('a key length that overflows the offset math throws, it does not trap', async () => {
+    // count=1, key_len=0xFFFFFFFF (fits u32 but i+kl overflows on wasm32), val_len=0.
+    // Pre-fix this wrapped past the bound check into an out-of-range slice → trap.
+    const evil = blob(1, 0xffffffff, 0);
+    let caught;
+    try { await restore(evil); } catch (e) { caught = e; }
+    expect(caught).toBeDefined();
+    expect(caught).not.toBeInstanceOf(WebAssembly.RuntimeError);
+  });
+
+  test('a length that does not fit in usize is rejected', async () => {
+    const evil = blob(1, 0x100000000, 0); // 2^32, cannot index a wasm32 buffer
+    await expect(restore(evil)).rejects.toBeDefined();
+  });
+
+  test('a truncated blob is rejected', async () => {
+    const evil = blob(5); // claims 5 entries, carries none
+    await expect(restore(evil)).rejects.toBeDefined();
+  });
+
+  test('the engine still works after a rejected restore', async () => {
+    try { await restore(blob(1, 0xffffffff, 0)); } catch { /* expected */ }
+    // A fresh pairing must still succeed — the failed restore did not poison the wasm.
+    const a = await MlsEngine.create({ name: A });
+    const b = await MlsEngine.create({ name: B });
+    const { welcome, ratchetTree } = a.startSession('b', b.keyPackageBytes());
+    b.joinSession('a', welcome, ratchetTree);
+    const ct = a.session('b').encrypt(enc('alive after bad restore'));
+    expect(dec(b.session('a').decrypt(ct).plaintext)).toBe('alive after bad restore');
+  });
+});
+
 describe('MLS engine — seeded fuzz over every untrusted parser', () => {
   beforeAll(async () => {
     await MlsEngine.initWasm({ wasmBytes });
@@ -156,6 +206,10 @@ describe('MLS engine — seeded fuzz over every untrusted parser', () => {
 
   test('100 random buffers never trap the WASM, and the engine survives them all', async () => {
     const { a, b, welcome, ratchetTree } = await freshPair();
+    // A live session so the fuzz can reach process_message — the parser N1 actually
+    // changed. Without this the loop would only exercise the join/KeyPackage parsers,
+    // which already returned Result before this work.
+    b.joinSession('live', welcome, ratchetTree);
     const rnd = mulberry32(42);
 
     for (let i = 0; i < 100; i += 1) {
@@ -164,8 +218,9 @@ describe('MLS engine — seeded fuzz over every untrusted parser', () => {
       for (let j = 0; j < len; j += 1) buf[j] = Math.floor(rnd() * 256);
 
       // Each buffer is fed to every untrusted parser. None may trap; all must throw
-      // (a random buffer is not a valid Welcome, tree, or KeyPackage).
+      // (a random buffer is not a valid message, Welcome, tree, or KeyPackage).
       for (const attempt of [
+        () => b.session('live').decrypt(buf), // process_message — the N1 surface
         () => b.joinSession(`fuzz-w-${i}`, buf, ratchetTree),
         () => b.joinSession(`fuzz-t-${i}`, welcome, buf),
         () => a.startSession(`fuzz-k-${i}`, buf),
@@ -181,7 +236,10 @@ describe('MLS engine — seeded fuzz over every untrusted parser', () => {
       }
     }
 
-    // 300 rejected parses later, the engine must still pair and talk.
-    expectStillUsable(a, b, welcome, ratchetTree, 'alive after fuzzing');
+    // 400 rejected parses later, the live session must still carry a real message.
+    const ct = a.session('b').encrypt(enc('alive after fuzzing'));
+    const out = b.session('live').decrypt(ct);
+    expect(out.kind).toBe('application');
+    expect(dec(out.plaintext)).toBe('alive after fuzzing');
   });
 });

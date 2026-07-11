@@ -319,10 +319,14 @@ export class StyxChat {
       throw new Error('A session with this contact already exists — remove it before re-pairing');
     }
     const { welcome, ratchetTree, groupId } = this._engine.startSession(inv.pubkey, base64ToBytes(inv.kp));
-    // N2, scanner side: the KeyPackage came from the QR, and nothing so far ties it to
-    // the pubkey the QR claims. A forged invite can advertise Alice's pubkey while
-    // carrying Mallory's KeyPackage — we would build a group with Mallory and label it
-    // Alice. Bind them here, and roll the group back on mismatch.
+    // N2, scanner side: bind the KeyPackage credential to the pubkey the QR claims.
+    // This is a consistency check, not the trust anchor — both values come from the
+    // (possibly forged) QR, so an attacker who forges *both* to agree passes it. What
+    // actually protects the scanner is (a) the in-person scan itself and (b) our
+    // Welcome being addressed to inv.pubkey's Nostr address, so a forged-but-consistent
+    // KeyPackage yields a group nobody can talk to, not a MITM. The check still earns
+    // its place: it turns a merely-inconsistent forgery into an immediate, explained
+    // rejection instead of a silently mislabelled contact.
     if (this._engine.peerIdentity(inv.pubkey) !== inv.pubkey) {
       this._engine.removeSession(inv.pubkey);
       throw new Error('Invite rejected: the KeyPackage credential does not match the invite pubkey');
