@@ -148,28 +148,30 @@ void main() {
     });
 
     // T5.26: Genesis not in first position
-    test('T5.26 — genesis violation when first event has previousHash',
-        () async {
-      final chain = await _buildChain(factory, keyPair, 5);
-      // Replace first event with one that has a previousHash.
-      final badGenesis = LedgerEvent(
-        eventId: chain[0].eventId,
-        eventType: chain[0].eventType,
-        payload: chain[0].payload,
-        previousHash: 'some_hash',
-        eventHash: chain[0].eventHash,
-        hlc: chain[0].hlc,
-        vectorClock: chain[0].vectorClock,
-        senderPubkey: chain[0].senderPubkey,
-        signature: chain[0].signature,
-        createdAt: chain[0].createdAt,
-      );
-      final tamperedChain = [badGenesis, ...chain.skip(1)];
+    test(
+      'T5.26 — genesis violation when first event has previousHash',
+      () async {
+        final chain = await _buildChain(factory, keyPair, 5);
+        // Replace first event with one that has a previousHash.
+        final badGenesis = LedgerEvent(
+          eventId: chain[0].eventId,
+          eventType: chain[0].eventType,
+          payload: chain[0].payload,
+          previousHash: 'some_hash',
+          eventHash: chain[0].eventHash,
+          hlc: chain[0].hlc,
+          vectorClock: chain[0].vectorClock,
+          senderPubkey: chain[0].senderPubkey,
+          signature: chain[0].signature,
+          createdAt: chain[0].createdAt,
+        );
+        final tamperedChain = [badGenesis, ...chain.skip(1)];
 
-      final error = await validator.validateFullChain(tamperedChain);
-      expect(error, isNotNull);
-      expect(error!.errorType, ChainErrorType.genesisViolation);
-    });
+        final error = await validator.validateFullChain(tamperedChain);
+        expect(error, isNotNull);
+        expect(error!.errorType, ChainErrorType.genesisViolation);
+      },
+    );
 
     // T5.27: Empty chain is valid
     test('T5.27 — empty chain validates', () async {

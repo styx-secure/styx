@@ -8,8 +8,8 @@ class LedgerEventStream {
   LedgerEventStream({
     required Stream<LedgerEvent> localEventSource,
     required Stream<LedgerEvent> remoteEventSource,
-  })  : _localSource = localEventSource,
-        _remoteSource = remoteEventSource;
+  }) : _localSource = localEventSource,
+       _remoteSource = remoteEventSource;
 
   final Stream<LedgerEvent> _localSource;
   final Stream<LedgerEvent> _remoteSource;

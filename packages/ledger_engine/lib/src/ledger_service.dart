@@ -18,10 +18,10 @@ class LedgerService {
     required ChainValidator chainValidator,
     required EventDao eventDao,
     required String localPeerRole,
-  })  : _eventFactory = eventFactory,
-        _chainValidator = chainValidator,
-        _eventDao = eventDao,
-        _localPeerRole = localPeerRole;
+  }) : _eventFactory = eventFactory,
+       _chainValidator = chainValidator,
+       _eventDao = eventDao,
+       _localPeerRole = localPeerRole;
 
   final EventFactory _eventFactory;
   final ChainValidator _chainValidator;

@@ -79,19 +79,19 @@ class SovereignLedger {
     StyxKeyPair? keyPair,
     PushBridgeRegistrar? pushBridge,
     LedgerEventStream? eventStream,
-  })  : _ledgerStore = ledgerStore,
-        _transport = transport,
-        _trustStore = trustStore,
-        _qrPairing = qrPairing,
-        _remotePairing = remotePairing,
-        _reKeyProtocol = reKeyProtocol,
-        _migrationService = migrationService,
-        _backupService = backupService,
-        _retentionManager = retentionManager,
-        _pruneProtocol = pruneProtocol,
-        _keyPair = keyPair,
-        _pushBridge = pushBridge,
-        _eventStream = eventStream;
+  }) : _ledgerStore = ledgerStore,
+       _transport = transport,
+       _trustStore = trustStore,
+       _qrPairing = qrPairing,
+       _remotePairing = remotePairing,
+       _reKeyProtocol = reKeyProtocol,
+       _migrationService = migrationService,
+       _backupService = backupService,
+       _retentionManager = retentionManager,
+       _pruneProtocol = pruneProtocol,
+       _keyPair = keyPair,
+       _pushBridge = pushBridge,
+       _eventStream = eventStream;
 
   /// Current identity (public key + role).
   final StyxIdentity identity;

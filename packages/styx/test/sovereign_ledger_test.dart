@@ -64,7 +64,6 @@ class FakeLedgerStore implements LedgerStore {
 
   @override
   Stream<LedgerEvent> watchNewEvents() => newEventController.stream;
-
 }
 
 // ---------------------------------------------------------------------------
@@ -103,7 +102,6 @@ class FakeTransport implements TransportInterface {
 
   @override
   Stream<TransportState> get stateChanges => stateController.stream;
-
 }
 
 // ---------------------------------------------------------------------------
@@ -159,7 +157,8 @@ StyxIdentity makeIdentity(StyxKeyPair keyPair) {
   InMemoryPeerStore peerStore,
   TrustStoreManager trustStore,
   LedgerEventStream? eventStream,
-}) buildLedger({
+})
+buildLedger({
   required StyxKeyPair keyPair,
   FakeLedgerStore? store,
   FakeTransport? transport,
@@ -210,7 +209,8 @@ StyxIdentity makeIdentity(StyxKeyPair keyPair) {
   final retentionManager = RetentionManager();
   final pruneProtocol = PruneProtocol(eventFactory: eventFactory);
 
-  final ledgerConfig = config ??
+  final ledgerConfig =
+      config ??
       const LedgerConfig(
         relayUrls: ['wss://relay.example.com'],
       );

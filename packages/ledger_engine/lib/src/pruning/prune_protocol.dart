@@ -42,7 +42,7 @@ enum PruneReason {
 class PruneProtocol {
   /// Creates a [PruneProtocol].
   PruneProtocol({required EventFactory eventFactory})
-      : _eventFactory = eventFactory;
+    : _eventFactory = eventFactory;
 
   final EventFactory _eventFactory;
 

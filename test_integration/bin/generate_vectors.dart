@@ -1,13 +1,17 @@
-// ignore_for_file: avoid_print
+// avoid_print: this is a CLI generator that reports progress on stdout by design.
+// lines_longer_than_80_chars: the interop-diff reference table below holds long
+// descriptive strings that are clearer kept on a single line than wrapped.
+// ignore_for_file: avoid_print, lines_longer_than_80_chars
 /// Generates interoperability test vectors from the Dart implementation.
 ///
 /// Run: cd test_integration && dart run bin/generate_vectors.dart
 /// Output: vectors/dart_vectors.json
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:styx/styx.dart';
 import 'package:styx_crypto_core/styx_crypto_core.dart';
 import 'package:styx_ledger_engine/styx_ledger_engine.dart';
@@ -113,7 +117,7 @@ Future<void> main() async {
   };
 
   // --- 5. Vector Clock ---
-  final vc = VectorClock(a: 5, b: 3);
+  const vc = VectorClock(a: 5, b: 3);
   vectors['vectorClock'] = {
     'a': 5,
     'b': 3,
@@ -125,7 +129,7 @@ Future<void> main() async {
 
   final vcIncrA = vc.increment('A');
   final vcIncrB = vc.increment('B');
-  final vc2 = VectorClock(a: 3, b: 7);
+  const vc2 = VectorClock(a: 3, b: 7);
   final vcMerged = vc.merge(vc2);
 
   vectors['vectorClockOps'] = {
@@ -136,9 +140,9 @@ Future<void> main() async {
   };
 
   // --- 6. Event Hash ---
-  final eventPreviousHash =
+  const eventPreviousHash =
       'abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
-  final eventType = EventType.transaction;
+  const eventType = EventType.transaction;
   final eventPayload = _utf8('{"amount": 100}');
   final eventHlcBytes = hlc.toBytes();
 
@@ -178,13 +182,10 @@ Future<void> main() async {
   final splitter = ShamirSplitter();
   final shares = splitter.split(
     secret: secret,
-    threshold: 2,
-    totalShares: 3,
   );
 
   final reconstructor = ShamirReconstructor();
-  final reconstructed =
-      reconstructor.reconstruct([shares[0], shares[2]]);
+  final reconstructed = reconstructor.reconstruct([shares[0], shares[2]]);
 
   vectors['shamir'] = {
     'secret': _b64(secret),
@@ -192,11 +193,13 @@ Future<void> main() async {
     'threshold': 2,
     'totalShares': 3,
     'shares': shares
-        .map((s) => {
-              'index': s.index,
-              'data': _b64(s.data),
-              'serialized': s.serialize(),
-            })
+        .map(
+          (s) => {
+            'index': s.index,
+            'data': _b64(s.data),
+            'serialized': s.serialize(),
+          },
+        )
         .toList(),
     'reconstructedFromShares_0_2': _hex(reconstructed),
     'reconstructionMatches': _hex(reconstructed) == _hex(secret),
@@ -206,7 +209,7 @@ Future<void> main() async {
   final qrData = QrPairingData(
     publicKey: keyPair.publicKey,
     nonce: Uint8List.fromList(List.generate(16, (i) => i * 10)),
-    relayHints: ['wss://relay.example.com'],
+    relayHints: const ['wss://relay.example.com'],
   );
   final qrPayload = qrData.toQrPayload();
 
@@ -220,7 +223,7 @@ Future<void> main() async {
 
   // --- 9. SPAKE2 ---
   final spake2 = Spake2Protocol();
-  final mnemonic = 'abandon ability able about above absent';
+  const mnemonic = 'abandon ability able about above absent';
   final spake2Password = spake2.mnemonicToPassword(mnemonic);
 
   vectors['spake2'] = {
@@ -248,8 +251,7 @@ Future<void> main() async {
   // --- 11. Double Check ---
   final sessionKey = hasher.hash(_utf8('test-session-key'));
   final sessionVerifier = SessionVerifier();
-  final doubleCheckCode =
-      sessionVerifier.generateDoubleCheckCode(sessionKey);
+  final doubleCheckCode = sessionVerifier.generateDoubleCheckCode(sessionKey);
 
   vectors['doubleCheck'] = {
     'sessionKeyHex': _hex(sessionKey),
@@ -261,13 +263,20 @@ Future<void> main() async {
   vectors['_incompatibilities'] = {
     'hlcCounter': 'Dart=decimal padLeft(4,"0"), JS=hex padStart(4,"0")',
     'qrFormat': 'Dart=JSON, JS=binary base64',
-    'shamirSerialization': 'Dart=styx-share-v1:index:base64, JS=base64(indexByte||data)',
-    'encryption': 'Dart=ChaCha20-Poly1305 nonce=12, JS=XChaCha20-Poly1305 nonce=24',
-    'spake2Password': 'Dart=utf8(mnemonic), JS=sha256("SPAKE2-P256-password"||password)',
-    'spake2MessageFormat': 'Dart=uncompressed(65 bytes), JS=compressed(33 bytes)',
-    'spake2Transcript': 'Dart=SHA256(pA||pB||K), JS=SHA256(K||myPoint||peerPoint||password)',
-    'spake2Confirmation': 'Dart=HMAC(confirmKey, roleByte||ourMsg||peerMsg), JS=HMAC(sessionKey, tagString)',
-    'mnemonicToSeed': 'Dart=PBKDF2-SHA512 2048iter 64bytes salt=mnemonic, JS=PBKDF2-SHA256 100000iter 32bytes salt=styx-mnemonic-seed',
+    'shamirSerialization':
+        'Dart=styx-share-v1:index:base64, JS=base64(indexByte||data)',
+    'encryption':
+        'Dart=ChaCha20-Poly1305 nonce=12, JS=XChaCha20-Poly1305 nonce=24',
+    'spake2Password':
+        'Dart=utf8(mnemonic), JS=sha256("SPAKE2-P256-password"||password)',
+    'spake2MessageFormat':
+        'Dart=uncompressed(65 bytes), JS=compressed(33 bytes)',
+    'spake2Transcript':
+        'Dart=SHA256(pA||pB||K), JS=SHA256(K||myPoint||peerPoint||password)',
+    'spake2Confirmation':
+        'Dart=HMAC(confirmKey, roleByte||ourMsg||peerMsg), JS=HMAC(sessionKey, tagString)',
+    'mnemonicToSeed':
+        'Dart=PBKDF2-SHA512 2048iter 64bytes salt=mnemonic, JS=PBKDF2-SHA256 100000iter 32bytes salt=styx-mnemonic-seed',
     'hkdfInfo': 'Dart=styx-transport-v1, JS=styx-send-a+orderedPubs',
   };
 
@@ -280,8 +289,10 @@ Future<void> main() async {
 
   // --- Write output ---
   final outputFile = File('vectors/dart_vectors.json');
-  final encoder = const JsonEncoder.withIndent('  ');
+  const encoder = JsonEncoder.withIndent('  ');
   await outputFile.writeAsString(encoder.convert(vectors));
   print('Generated: ${outputFile.path}');
-  print('Vectors: ${vectors.keys.where((k) => !k.startsWith('_')).length} sections');
+  print(
+    'Vectors: ${vectors.keys.where((k) => !k.startsWith('_')).length} sections',
+  );
 }

@@ -49,10 +49,10 @@ class RemotePairingService {
     required DoubleCheckVerifier doubleCheckVerifier,
     required TrustStoreManager trustStore,
     this.timeout = const Duration(minutes: 5),
-  })  : _spake2Protocol = spake2Protocol,
-        _mnemonicGenerator = mnemonicGenerator,
-        _doubleCheckVerifier = doubleCheckVerifier,
-        _trustStore = trustStore;
+  }) : _spake2Protocol = spake2Protocol,
+       _mnemonicGenerator = mnemonicGenerator,
+       _doubleCheckVerifier = doubleCheckVerifier,
+       _trustStore = trustStore;
 
   final Spake2Protocol _spake2Protocol;
   final MnemonicGenerator _mnemonicGenerator;
