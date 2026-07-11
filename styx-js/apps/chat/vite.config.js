@@ -34,6 +34,10 @@ export default defineConfig({
   },
   server: {
     port: 5175,
+    // Loopback only, stated explicitly: the dev server must never listen on a
+    // public interface by default (accepted-risk register: GHSA-fx2h-pf6j-xcff
+    // is dev-server-only). Opting out requires an explicit --host on the CLI.
+    host: '127.0.0.1',
     fs: { allow: [styxJsRoot] },
   },
   preview: {

@@ -21,6 +21,20 @@ import { schnorr } from '@noble/curves/secp256k1';
 import { hmac } from '@noble/hashes/hmac';
 import { sha256 } from '@noble/hashes/sha256';
 import { MlsEngine } from '../crypto/mls/mls-engine.js';
+import {
+  MlsStateError,
+  MlsStateErrorCodes,
+  detectMlsStateFormat,
+  encodeMlsStateEnvelope,
+  parseMlsStateEnvelope,
+  assertMlsStateCompatibility,
+} from '../storage/mls-state-envelope.js';
+import {
+  MLS_STATE_KEY,
+  MLS_MIGRATION_PENDING_KEY,
+  MLS_MIGRATION_BACKUP_KEY,
+  migrateLegacyMlsState,
+} from '../storage/mls-state-migration.js';
 import { ContactRoster } from './contact-roster.js';
 import { EncryptedKeyStore } from '../storage/encrypted-key-store.js';
 import { registrationDigest } from '../push/registration-digest.js';
@@ -172,19 +186,12 @@ export class StyxChat {
       this._backend = be;
       this._keyStore = keyStore;
 
-      // Restore MLS state (identity + groups) if present, else create fresh.
-      const savedState = await be.get('mls:state');
-      const savedIdPk = await be.get('mls:idpk');
-      if (savedState && savedIdPk) {
-        this._engine = await MlsEngine.restore({
-          name: pubkey,
-          stateBytes: base64ToBytes(savedState),
-          identityPubKey: base64ToBytes(savedIdPk),
-        });
-      } else {
-        this._engine = await MlsEngine.create({ name: pubkey });
-        await be.set('mls:idpk', bytesToBase64(this._engine.identityPublicKey()));
-      }
+      // Restore MLS state if present; create fresh ONLY when no state exists at all.
+      // Everything else is fail-closed (migration policy §2): a state we cannot parse,
+      // migrate or restore raises a structured MlsStateError from init() — it never
+      // degrades into a fresh engine, which would silently lose the MLS session.
+      // PRECONDITION on the app path: the caller holds the MLS writer Web Lock.
+      this._engine = await this._loadOrCreateEngine(be, pubkey);
 
       this._roster = new ContactRoster({ backend: be });
       await this._roster.load();
@@ -539,10 +546,80 @@ export class StyxChat {
     try { await this._roster.touch(pubkey, { preview, ts, incrementUnread }); } catch { /* not yet a contact */ }
   }
 
+  /**
+   * @private Load the MLS engine from persisted state, migrating the legacy format
+   * on the way, or create a fresh one when — and only when — no state exists.
+   * @param {object} be the storage backend
+   * @param {string} pubkey our identity (MLS credential label)
+   * @returns {Promise<MlsEngine>}
+   * @throws {MlsStateError} fail-closed on unknown/corrupted/incompatible state
+   */
+  async _loadOrCreateEngine(be, pubkey) {
+    let saved = await be.get(MLS_STATE_KEY);
+    let fmt = detectMlsStateFormat(saved);
+
+    if (fmt === 'none') {
+      const engine = await MlsEngine.create({ name: pubkey });
+      await be.set('mls:idpk', bytesToBase64(engine.identityPublicKey()));
+      return engine;
+    }
+    if (fmt === 'unknown') {
+      throw new MlsStateError(MlsStateErrorCodes.INVALID, 'stored MLS state has an unrecognized shape');
+    }
+
+    // State exists in some form: the identity key MUST exist too. Its absence used to
+    // fall through to a fresh engine — the forbidden silent-loss path.
+    const savedIdPk = await be.get('mls:idpk');
+    if (!savedIdPk) {
+      throw new MlsStateError(
+        MlsStateErrorCodes.INVALID,
+        'MLS state exists but the identity public key is missing',
+      );
+    }
+    let identityPubKey;
+    try {
+      identityPubKey = base64ToBytes(savedIdPk);
+      if (typeof savedIdPk !== 'string' || identityPubKey.length === 0) throw new Error('empty');
+    } catch {
+      throw new MlsStateError(
+        MlsStateErrorCodes.INVALID,
+        'the stored MLS identity public key is not decodable',
+      );
+    }
+    const restore = (stateBytes) => MlsEngine.restore({ name: pubkey, stateBytes, identityPubKey });
+
+    // Migrate legacy state — and also RESUME a migration that crashed between its
+    // write and cleanup steps: the state is already an envelope then, but the
+    // pending/backup markers are still there, and the backup holds a plaintext
+    // copy of the pre-migration state that must not outlive the migration.
+    const hasLeftoverMarkers = (await be.get(MLS_MIGRATION_PENDING_KEY)) !== null
+      || (await be.get(MLS_MIGRATION_BACKUP_KEY)) !== null;
+    if (fmt === 'legacy-base64' || hasLeftoverMarkers) {
+      await migrateLegacyMlsState({
+        backend: be,
+        restoreProbe: async (stateBytes) => { await restore(stateBytes); },
+      });
+      saved = await be.get(MLS_STATE_KEY); // reload; from here the envelope path applies
+      fmt = detectMlsStateFormat(saved);
+    }
+
+    const { envelope, stateBytes } = parseMlsStateEnvelope(saved);
+    assertMlsStateCompatibility(envelope);
+    try {
+      return await restore(stateBytes);
+    } catch (err) {
+      throw new MlsStateError(
+        MlsStateErrorCodes.RESTORE_FAILED,
+        'the MLS runtime could not restore the persisted state',
+        { causeMessage: err?.message },
+      );
+    }
+  }
+
   /** Persist MLS state + group map so sessions survive a reload. No-op without a backend (DI/tests). */
   async _persistMls() {
     if (!this._backend || !this._engine?.serializeState) return;
-    await this._backend.set('mls:state', bytesToBase64(this._engine.serializeState()));
+    await this._backend.set(MLS_STATE_KEY, encodeMlsStateEnvelope(this._engine.serializeState()));
     await this._backend.set('mls:groups', this._groups);
   }
 
