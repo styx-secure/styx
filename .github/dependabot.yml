@@ -1,0 +1,69 @@
+version: 2
+
+# Deliberately NOT covered: styx-js/vendor/openmls-wasm. That crate is vendored and
+# pinned by commit for reproducibility; Dependabot must not bump it (see PROVENANCE.md
+# and "Non modificare il pin OpenMLS"). The WASM integrity workflow guards it instead.
+updates:
+  # Keep pinned GitHub Actions SHAs current (Dependabot pins to SHA and annotates the tag).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(actions)
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Active JavaScript line: the PWA, the chat library, and the Node push bridge.
+  - package-ecosystem: npm
+    directory: /styx-js
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      npm:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /styx-js/apps/chat
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      npm:
+        patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /push_bridge
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+    groups:
+      npm:
+        patterns: ["*"]
+
+  # Dart reference stack (workspace root).
+  - package-ecosystem: pub
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)
+
+  # Go push bridge (legacy).
+  - package-ecosystem: gomod
+    directory: /push_bridge_server
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore(deps)

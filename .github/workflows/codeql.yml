@@ -1,0 +1,41 @@
+name: CodeQL
+
+# Static security analysis. CodeQL supports JavaScript/TypeScript (the active styx-js PWA
+# and the Node push bridge) but NOT Dart, Rust or WebAssembly. Coverage of the other
+# stacks is provided elsewhere and documented in docs/security/2026-07-12-github-security-baseline.md:
+#   * Dart        -> `dart analyze --fatal-infos` (Dart reference stack workflow)
+#   * Rust/WASM   -> reproducible-build + adversarial-parser gate (WASM integrity workflow)
+#   * Go (legacy push_bridge_server) -> not yet analysed; tracked as follow-up.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '27 3 * * 1' # weekly, catches newly-published CodeQL queries
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to the code-scanning dashboard
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@2a2dd30f8030072d379eb0c9ea51789aa2ea9ca4 # v3.29.5
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@2a2dd30f8030072d379eb0c9ea51789aa2ea9ca4 # v3.29.5
+        with:
+          category: "/language:${{ matrix.language }}"
