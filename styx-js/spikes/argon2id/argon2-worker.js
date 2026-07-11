@@ -62,6 +62,10 @@ const handlers = {
 };
 
 self.onmessage = async (ev) => {
+  // Dedicated workers only receive messages from their owning page (ev.origin is
+  // the empty string there); refuse anything else defensively
+  // (CodeQL js/missing-origin-check).
+  if (ev.origin !== '' && ev.origin !== self.location.origin) return;
   const { id, type, payload } = ev.data || {};
   const handler = handlers[type];
   if (!handler) { self.postMessage({ id, ok: false, error: { code: 'BAD_REQUEST', message: `unknown ${type}` } }); return; }
