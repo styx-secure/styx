@@ -126,7 +126,7 @@ Fatti a supporto: ogni evento espone il destinatario in tag `p` in chiaro ed è 
 
 ### 3.7 CSP
 
-Verificare **sperimentalmente** se browser e build richiedono `'wasm-unsafe-eval'` (non inserirlo automaticamente). Criteri di completamento: app funzionante con CSP attiva; WASM funzionante; nessun `unsafe-inline`; nessun `unsafe-eval`; Trusted Types testato con React/Vite; test automatici anti-regressione.
+Verificare **sperimentalmente** se browser e build richiedono `'wasm-unsafe-eval'` (non inserirlo automaticamente). Criteri di completamento: app funzionante con CSP attiva; WASM funzionante; **nessun `unsafe-inline` sugli script** e nessun `unsafe-eval`; `style-src 'unsafe-inline'` ammesso come eccezione documentata a basso rischio per gli attributi `style=` di React (iniezione di stile, non esecuzione di codice) finché non si rimuovono gli stili inline; Trusted Types testato con React/Vite; test automatici anti-regressione.
 
 ### 3.8 Due livelli di prodotto (la nativa non è "automaticamente sicura")
 
@@ -216,7 +216,7 @@ Vedi §4 (ottimistico 5–7, probabile 7–10, prudenziale 10–14 mesi).
 
 ### 7.5 Criteri di uscita per priorità
 
-- **P0 (fine Blocchi 1–2):** nessun mock nel bundle production (gate CI); stub disabilitati; reset elimina esplicitamente IndexedDB, `localStorage`, Cache Storage, outbox, stato MLS, sottoscrizione push, eventuali service worker registration e dati temporanei; un solo writer MLS (Web Locks); CSP attiva senza unsafe-inline; copy onesto; pin OpenMLS verificato post-audit e documentato in `PROVENANCE.md` (incluso il rischio residuo di `main` non rilasciato); nessun panic noto raggiungibile da input non fidato, con parser coperti da test negativi, fuzzing e gestione esplicita degli errori; `Cargo.lock` committato.
+- **P0 (fine Blocchi 1–2):** nessun mock nel bundle production (gate CI); stub disabilitati; reset elimina esplicitamente IndexedDB, `localStorage`, Cache Storage, outbox, stato MLS, sottoscrizione push, eventuali service worker registration e dati temporanei; un solo writer MLS (Web Locks); CSP attiva senza unsafe-inline sugli script (style-src 'unsafe-inline' come eccezione documentata); copy onesto; pin OpenMLS verificato post-audit e documentato in `PROVENANCE.md` (incluso il rischio residuo di `main` non rilasciato); nessun panic noto raggiungibile da input non fidato, con parser coperti da test negativi, fuzzing e gestione esplicita degli errori; `Cargo.lock` committato.
 - **P1 (fine Blocchi 3–4):** nessun dato sensibile in chiaro a riposo; Root Key avvolta con Argon2id; migrazione atomica versionata con protezione rollback; `sent` = almeno un `OK=true`; outbox persistente; lettura/composizione offline; TTL sugli inviti QR; backup identity-only.
 - **P2 (fine Blocco 5 + metadati):** il bridge non conserva alcuna relazione applicativa tra identità permanente e subscription (restano possibili correlazioni tramite IP, tempi e volumi di traffico, da documentare come metadati residui); pairing remoto PAKE; update flow sicuro; supply chain completa (SBOM, firma, build riproducibile); gift wrap e mailbox key attivi; audit esterno senza finding critici o alti; correzioni post-audit chiuse e retestate.
 
