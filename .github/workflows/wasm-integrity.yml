@@ -67,11 +67,12 @@ jobs:
           fi
           changed="$(git diff --name-only "$base_sha" HEAD)"
           echo "Changed files:"; echo "$changed"
-          # Crate-level: source/patch/pin/toolchain/lockfile/provenance/artifact, or this workflow.
-          if echo "$changed" | grep -qE '^styx-js/vendor/openmls-wasm/(patch/|build\.sh|verify\.sh|Cargo\.lock|PROVENANCE\.md|openmls_wasm(_bg)?\.(wasm|js)|.*\.d\.ts|package\.json)|^\.github/workflows/wasm-integrity\.yml'; then
+          # Crate-level: source/patch/pin/toolchain/lockfile/provenance/artifact. Editing
+          # the workflow itself does NOT force a rebuild (it cannot change the artifact).
+          if echo "$changed" | grep -qE '^styx-js/vendor/openmls-wasm/(patch/|build\.sh|verify\.sh|Cargo\.lock|PROVENANCE\.md|openmls_wasm(_bg)?\.(wasm|js)|.*\.d\.ts|package\.json)'; then
             crate=true; else crate=false; fi
-          # Light-level: crate changes OR the MLS/chat consumers of the artifact.
-          if [ "$crate" = "true" ] || echo "$changed" | grep -qE '^styx-js/src/(crypto/mls/|chat/)'; then
+          # Light-level: crate changes, the MLS/chat consumers, or this workflow (self-check).
+          if [ "$crate" = "true" ] || echo "$changed" | grep -qE '^styx-js/src/(crypto/mls/|chat/)|^\.github/workflows/wasm-integrity\.yml'; then
             light=true; else light=false; fi
           echo "crate=$crate" >> "$GITHUB_OUTPUT"
           echo "light=$light" >> "$GITHUB_OUTPUT"
