@@ -62,8 +62,14 @@ function fail(code, message) {
 
 const handlers = {
   async INIT({ wasmUrl }) {
+    // Allowlist, not a free URL: the worker only ever loads the vendored engine
+    // from its own origin (also satisfies CodeQL js/client-side-request-forgery).
+    const allowed = new URL('/vendor/openmls-wasm/openmls_wasm_bg.wasm', self.location.origin);
+    if (new URL(wasmUrl, self.location.origin).href !== allowed.href) {
+      throw fail(errors.BAD_REQUEST, 'wasmUrl is not the vendored engine path');
+    }
     const t0 = performance.now();
-    const bytes = new Uint8Array(await (await fetch(wasmUrl)).arrayBuffer());
+    const bytes = new Uint8Array(await (await fetch(allowed)).arrayBuffer());
     await initWasm({ module_or_path: bytes });
     return { wasmInitMs: performance.now() - t0 };
   },
@@ -98,12 +104,16 @@ const handlers = {
 
   async MLS_RESTORE({ name, idpk, state, groupMap }) {
     await handlers.UNLOCK({ name, idpk, state });
-    const members = {};
+    // Contacts are 64-hex pubkeys by contract; enforce it so an attacker-chosen
+    // key can never become a property write (CodeQL js/remote-property-injection)
+    // — and build the result via entries, never by assigning dynamic keys.
+    const entries = [];
     for (const [contact, groupId] of Object.entries(groupMap || {})) {
+      if (!/^[0-9a-f]{64}$/.test(contact)) throw fail(errors.BAD_REQUEST, 'contact is not a 64-hex pubkey');
       const g = Group.load(provider, groupId);
-      if (g) { groups.set(contact, g); members[contact] = g.member_identities(); }
+      if (g) { groups.set(contact, g); entries.push([contact, g.member_identities()]); }
     }
-    return { members };
+    return { members: Object.fromEntries(entries) };
   },
 
   async MLS_SERIALIZE() {
@@ -184,6 +194,10 @@ const handlers = {
 };
 
 self.onmessage = async (ev) => {
+  // Dedicated workers only receive messages from their owning page (ev.origin is
+  // the empty string there); refuse anything else defensively
+  // (CodeQL js/missing-origin-check).
+  if (ev.origin !== '' && ev.origin !== self.location.origin) return;
   const { id, type, payload } = ev.data || {};
   const handler = handlers[type];
   if (!handler) {
