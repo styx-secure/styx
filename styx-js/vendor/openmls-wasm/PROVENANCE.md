@@ -58,3 +58,29 @@ MLS state already written to disk by this artifact.
 - **Rebuild:** `./build.sh` — Docker, no host Rust toolchain needed.
 - **Verify:** `./verify.sh` — two builds must be byte-identical to each other and to the
   committed artifact.
+
+## Toolchain pins and artifact hashes
+
+Every input to the build is pinned. The digest — not the tag — is the real pin for the
+image: a tag can be re-pushed, a digest cannot.
+
+| Input | Pin |
+|---|---|
+| Rust toolchain | `rust:1.96.1@sha256:1f0dbad1df66647807e6952d1db85d0b2bda7606cb2139d82517e4f009967376` |
+| wasm-pack | `0.15.0`, release binary, sha256 `c09f971ecaed9a2efc80fdcea7a00ef6b53c7fadc8c57d1f61b53a6aa66b668a` |
+| Dependency graph | `./Cargo.lock` (workspace lockfile; builds run `-- --locked`, and `build.sh` aborts on drift) |
+| OpenMLS source | commit `09e9277…` (above) |
+
+**Artifact (built 2026-07-11 from the pins above):**
+
+| File | sha256 |
+|---|---|
+| `openmls_wasm_bg.wasm` (1 813 110 B; 659 368 B gzip) | `e3e56463bf1ac8418fd3632ac6e5f72d157796e62bd2fbb421b7fa8c3626ed4a` |
+| `openmls_wasm.js` | `b05d5d9d8bad9d9792f0d998d9b4701bd8dbd9e7a2def33e2e143bf6bb871c5b` |
+
+**Reproducibility: verified 2026-07-11.** `./verify.sh` built twice from these pins; both
+builds were byte-identical to each other *and* to the committed artifact above.
+
+Two build inputs remain pinned only indirectly, and are listed here rather than hidden:
+`wasm-bindgen-cli` is fetched by wasm-pack at the version the lockfile dictates, but the
+download itself is not hash-verified; `wasm-opt`/binaryen is pinned by the wasm-pack version.
