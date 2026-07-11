@@ -14,5 +14,5 @@
 ## Task-specific constraints
 
 - **Dual-language API docs must stay in sync:** `docs/API_REFERENCE.md` (EN) and `docs/API_REFERENCE_IT.md` (IT) are parallel documents. Any structural or content change to one must be mirrored in the other.
-- **Task implementation order is strict:** `docs/tasks/TASK_*.md` define a bottom-up build order. Each task must pass all previous task tests before it is considered complete.
+- **The Dart build order is history, not a plan:** `docs/archive/tasks/TASK_*.md` describe the bottom-up order the Dart layer was built in. That work is done — the files still say "Da iniziare", so trust `packages/` and its tests, not them. Current work is driven by `docs/security/2026-07-11-fattibilita-piano-utente.md` (five blocks, one at a time) and the active plans in `docs/superpowers/plans/`.
 - **Primary documentation language is Italian:** Design specs in `docs/` are written in Italian. Code, commit messages, and comments are in English.

@@ -4,11 +4,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Styx is a Dart/Flutter library for building sovereign, peer-to-peer cryptographic ledgers. Zero-server architecture where two peers (Affidante and Custode) maintain a shared cryptographic event chain. The primary documentation is in Italian (see `docs/`).
+Styx started as a Dart/Flutter library for sovereign, peer-to-peer cryptographic ledgers (two peers — Affidante and Custode — sharing a tamper-evident event chain, no server). It now contains **two codebases**, and most active work is in the second:
 
-**Current status:** Specification/planning phase — only documentation exists in `docs/`. No code has been implemented yet.
+1. **`packages/` — the Dart ledger library.** Implemented and tested (Melos monorepo, ~107 production files, ~60 test files). This is what the "Architecture" section below describes, and the only thing CI covers.
+2. **`styx-js/` — the JavaScript/PWA E2EE chat.** A separate port whose messaging layer is **MLS (RFC 9420)** via a vendored OpenMLS→WASM crate (`styx-js/vendor/openmls-wasm/`), with a Nostr transport, a React PWA under `styx-js/apps/chat/`, and a Node push bridge in `push_bridge/`. It has its own npm/jest suite and **no crypto interop with the Dart port**. It is outside CI.
+
+The primary documentation is in Italian (see `docs/`).
+
+**Current direction — read before planning any work:**
+- `docs/security/2026-07-11-fattibilita-piano-utente.md` — the normative roadmap: five blocks, executed one at a time with an architectural review between them. The vendored Rust/WASM crate is the critical path.
+- `docs/security/2026-07-10-styx-chat-security-report.md` — audit; H1 (plaintext at-rest storage) and H2 (metadata exposed to relays) are still open.
+- `docs/superpowers/plans/` — active implementation plans. `docs/archive/` is historical and non-normative.
+
+**Security posture:** the chat is not yet fit for sensitive use. Do not add "serverless"/"zero-knowledge" claims to UI or docs; the relays see transport metadata.
 
 ## Build & Test Commands
+
+Dart library (`packages/`):
 
 ```bash
 melos bootstrap                # Initialize all packages in the monorepo
@@ -21,7 +33,16 @@ dart test                      # Run tests in a single package (from package dir
 dart test test/some_test.dart  # Run a single test file
 ```
 
-**CI pipeline:** `analyze → format check → test:all → coverage gate → build Android → build iOS`
+JavaScript chat (`styx-js/`) — separate toolchain, not in CI:
+
+```bash
+cd styx-js && npm test                        # jest (native ESM, no Babel)
+cd styx-js && npx jest test/path/to/file.test.js
+cd styx-js/vendor/openmls-wasm && ./build.sh  # rebuild the WASM artifact (needs Docker)
+cd styx-js/apps/chat && npm run dev           # the React PWA (its own package.json)
+```
+
+**CI pipeline** (Dart only): `analyze → format check → test:all → coverage gate → build Android → build iOS`
 
 Coverage gates: 90% global minimum, 95% for crypto modules. Uses lcov.
 
@@ -29,22 +50,27 @@ Linting: `very_good_analysis` baseline + `dart_code_linter`. Dart SDK ≥ 3.6.0 
 
 ## Architecture
 
-The project is a Dart monorepo managed with Melos 7.x + Pub Workspaces.
-
-### Package Structure
+### Repository layout
 
 ```
 styx/
-├── packages/
+├── packages/                  # Dart ledger library (Melos 7.x + Pub Workspaces) — see below
 │   ├── crypto_core/           # Identity layer: Ed25519/X25519 keys, SPAKE2, BIP-39, Shamir SSS
 │   ├── storage/               # Encrypted DB: Drift + SQLCipher (AES-256)
 │   ├── ledger_engine/         # Event sourcing, SHA-256 hash chain, vector clocks, merge, pruning
 │   ├── transport/             # Nostr (primary), Email/IMAP (fallback), Tor overlay, failover engine
 │   ├── push_bridge_client/    # Flutter FCM/APNs client with privacy profiles
 │   └── styx/                  # Public façade (Styx entry point) + pairing protocols
-├── push_bridge_server/        # Go microservice — stateless push notification bridge
-└── test_integration/          # Cross-package integration tests
+├── styx-js/                   # JavaScript E2EE chat (MLS) — the active line of work
+│   ├── src/{crypto,chat,transport,storage,pairing,push,ledger,facade}/
+│   ├── apps/chat/             # React PWA (own package.json, own Vite build)
+│   └── vendor/openmls-wasm/   # Vendored OpenMLS → WASM (Rust patch + built artifact)
+├── push_bridge/               # Node push bridge for the JS chat (wake-up only, no content)
+├── push_bridge_server/        # Go microservice — push bridge for the Dart client
+└── test_integration/          # Cross-package Dart integration tests
 ```
+
+The sections below describe the **Dart** library.
 
 ### Layered Architecture (bottom-up dependency order)
 

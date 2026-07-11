@@ -6,8 +6,17 @@ pubspec.lock
 # Melos
 .melos/
 
-# Coverage
+# Node
+node_modules/
+
+# Test/build artifacts
 coverage/
+test-results/
+playwright-report/
+
+# Agent working files (briefs, reports, review diffs — not project artifacts)
+.superpowers/
+.claude/
 
 # IDE
 .idea/
