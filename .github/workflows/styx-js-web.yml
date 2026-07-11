@@ -92,7 +92,7 @@ jobs:
           echo "Production bundle is mock-free."
 
   gate:
-    name: Gate
+    name: styx-js web gate
     needs: [changes, build-and-gate]
     if: always()
     runs-on: ubuntu-latest

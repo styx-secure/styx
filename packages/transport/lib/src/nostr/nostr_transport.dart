@@ -27,9 +27,9 @@ class NostrTransport implements TransportInterface {
     required this.localPubkey,
     required this.remotePubkey,
     int maxDedup = 1000,
-  })  : _relayPool = relayPool,
-        _encryptor = encryptor,
-        _maxDedup = maxDedup;
+  }) : _relayPool = relayPool,
+       _encryptor = encryptor,
+       _maxDedup = maxDedup;
 
   final RelayPool _relayPool;
   final NostrEncryptor _encryptor;
@@ -129,8 +129,8 @@ class NostrTransport implements TransportInterface {
       // Check if addressed to us.
       final tags = event['tags'] as List<dynamic>;
       final pTag = tags.cast<List<dynamic>>().where(
-            (t) => t.isNotEmpty && t[0] == 'p',
-          );
+        (t) => t.isNotEmpty && t[0] == 'p',
+      );
       if (pTag.isEmpty) return;
       final recipient = pTag.first[1] as String;
       if (recipient != localPubkey) return;

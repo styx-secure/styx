@@ -30,10 +30,10 @@ class PushHandler {
     required WakeUpCallback onConnectRelay,
     TokenRefreshCallback? onTokenRefresh,
     DummyDetector? detector,
-  })  : _onWakeUp = onWakeUp,
-        _onConnectRelay = onConnectRelay,
-        _onTokenRefresh = onTokenRefresh,
-        _detector = detector ?? const DummyDetector();
+  }) : _onWakeUp = onWakeUp,
+       _onConnectRelay = onConnectRelay,
+       _onTokenRefresh = onTokenRefresh,
+       _detector = detector ?? const DummyDetector();
 
   /// The active privacy profile.
   final PrivacyProfile profile;

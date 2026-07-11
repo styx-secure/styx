@@ -13,8 +13,8 @@ class KeyBackup {
   KeyBackup({
     required ShamirSplitter splitter,
     required ShamirReconstructor reconstructor,
-  })  : _splitter = splitter,
-        _reconstructor = reconstructor;
+  }) : _splitter = splitter,
+       _reconstructor = reconstructor;
 
   final ShamirSplitter _splitter;
   final ShamirReconstructor _reconstructor;

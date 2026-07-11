@@ -82,7 +82,6 @@ void main() {
         keyPairA: keyPairA,
         keyPairB: keyPairB,
         branchACount: 3,
-        branchBCount: 2,
       );
 
       final forkAB = Fork(
@@ -139,7 +138,6 @@ void main() {
         keyPairA: keyPairA,
         keyPairB: keyPairB,
         branchACount: 3,
-        branchBCount: 2,
       );
 
       final fork = Fork(
@@ -159,8 +157,6 @@ void main() {
         factory: factory,
         keyPairA: keyPairA,
         keyPairB: keyPairB,
-        branchACount: 2,
-        branchBCount: 2,
       );
 
       final fork = Fork(

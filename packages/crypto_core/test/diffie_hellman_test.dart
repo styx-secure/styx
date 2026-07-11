@@ -50,8 +50,9 @@ void main() {
           localPrivateKey: a.privateKey,
           remotePublicKey: b.publicKey,
         );
-        final hex =
-            secret.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+        final hex = secret
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join();
         secrets.add(hex);
       }
       expect(secrets.length, 100);
@@ -72,8 +73,9 @@ void main() {
       final pubKeys = <String>{};
       for (var i = 0; i < 100; i++) {
         final kp = await dh.generateEphemeralKeyPair();
-        final hex =
-            kp.publicKey.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+        final hex = kp.publicKey
+            .map((b) => b.toRadixString(16).padLeft(2, '0'))
+            .join();
         pubKeys.add(hex);
       }
       expect(pubKeys.length, 100);

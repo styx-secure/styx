@@ -3,6 +3,13 @@
 - **Stato:** **PROPOSTA — NON APPLICATA.** Richiede revisione legale prima di qualsiasi applicazione definitiva e prima di accettare contributi esterni.
 - **Contesto normativo:** piano operativo Styx Secure §8 (ADR-0004), §9, §15.
 
+> **Aggiornamento 2026-07-12 — il repository è ora pubblico, ma la licenza resta questa PROPOSTA.**
+> Fino all'applicazione definitiva: il progetto è **"public-source experimental"**, non un rilascio
+> open-source licenziato; il README riporta lo stato temporaneo; **nessun permesso ulteriore** oltre
+> alla legge applicabile e ai ToS di GitHub; **i contributi esterni sono temporaneamente sospesi**.
+> Portare ADR-0004 e la verifica delle licenze delle dipendenze tra le attività immediatamente
+> successive al gate GitHub/CI. Nessun `LICENSE`/CLA/SPDX ancora applicato.
+
 ## Contesto
 
 Il repository non ha ancora una `LICENSE` a livello di prodotto. Prima di renderlo pubblico serve una strategia di licenza coerente col modello (comunicazione sovrana, sicurezza) e con la presenza di dipendenze vendorizzate con licenze proprie (OpenMLS, MIT).

@@ -209,7 +209,9 @@ class InMemoryPeerStore implements PeerStore {
     required String oldKey,
     required String newKey,
   }) async {
-    _rekeyHistory.putIfAbsent(pubkey, () => []).add(
+    _rekeyHistory
+        .putIfAbsent(pubkey, () => [])
+        .add(
           RekeyRecord(
             oldKey: oldKey,
             newKey: newKey,

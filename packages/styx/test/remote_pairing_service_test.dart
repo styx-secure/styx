@@ -28,7 +28,8 @@ void main() {
     RemotePairingService service,
     TrustStoreManager trustStore,
     InMemoryPeerStore peerStore,
-  }) buildService({
+  })
+  buildService({
     Duration timeout = const Duration(minutes: 5),
   }) {
     final peerStore = InMemoryPeerStore();
@@ -188,10 +189,12 @@ void main() {
         final responderKey = makeKey(2);
 
         // Initiator uses one mnemonic.
-        const mnemonicA = 'abandon ability able '
+        const mnemonicA =
+            'abandon ability able '
             'about above absent';
         // Responder uses a DIFFERENT mnemonic.
-        const mnemonicB = 'zoo zone zero yield '
+        const mnemonicB =
+            'zoo zone zero yield '
             'year wrong';
 
         final messageA = await initiator.startAsInitiator(
@@ -224,7 +227,8 @@ void main() {
         expect(
           codeA,
           isNot(equals(codeB)),
-          reason: 'Different passwords must produce '
+          reason:
+              'Different passwords must produce '
               'different Double Check codes',
         );
 
@@ -243,7 +247,8 @@ void main() {
         final initiator = initiatorDeps.service;
         final responder = responderDeps.service;
 
-        const mnemonic = 'abandon ability able '
+        const mnemonic =
+            'abandon ability able '
             'about above absent';
 
         final messageA = await initiator.startAsInitiator(
@@ -304,7 +309,8 @@ void main() {
         final service = deps.service;
         final peerKey = makeKey(99);
 
-        const mnemonic = 'abandon ability able '
+        const mnemonic =
+            'abandon ability able '
             'about above absent';
 
         // Set up a completed SPAKE2 session via a
@@ -355,7 +361,8 @@ void main() {
         final service = deps.service;
         final peerKey = makeKey(99);
 
-        const mnemonic = 'abandon ability able '
+        const mnemonic =
+            'abandon ability able '
             'about above absent';
 
         final respDeps = buildService();
@@ -428,7 +435,8 @@ void main() {
         );
         final service = deps.service;
 
-        const mnemonic = 'abandon ability able '
+        const mnemonic =
+            'abandon ability able '
             'about above absent';
 
         await service.startAsInitiator(
@@ -497,7 +505,8 @@ void main() {
           states.add,
         );
 
-        const mnemonic = 'abandon ability able '
+        const mnemonic =
+            'abandon ability able '
             'about above absent';
 
         // Generate mnemonic.
@@ -557,7 +566,8 @@ void main() {
           states.add,
         );
 
-        const mnemonic = 'abandon ability able '
+        const mnemonic =
+            'abandon ability able '
             'about above absent';
 
         await service.startAsInitiator(
@@ -582,7 +592,8 @@ void main() {
     test(
       'produces deterministic hex tag from mnemonic',
       () {
-        const mnemonic = 'abandon ability able '
+        const mnemonic =
+            'abandon ability able '
             'about above absent';
 
         final tag1 = RemotePairingService.deriveSharedTag(

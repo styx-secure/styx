@@ -11,7 +11,7 @@ import 'package:styx_ledger_engine/src/vector_clock.dart';
 class MergeEventFactory {
   /// Creates a [MergeEventFactory].
   MergeEventFactory({required EventFactory eventFactory})
-      : _eventFactory = eventFactory;
+    : _eventFactory = eventFactory;
 
   final EventFactory _eventFactory;
 

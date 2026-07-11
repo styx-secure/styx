@@ -45,9 +45,9 @@ class ImapWatcher {
     required ImapClientAdapter client,
     required String subjectFilter,
     Duration pollingInterval = const Duration(seconds: 60),
-  })  : _client = client,
-        _subjectFilter = subjectFilter,
-        _pollingInterval = pollingInterval;
+  }) : _client = client,
+       _subjectFilter = subjectFilter,
+       _pollingInterval = pollingInterval;
 
   final ImapClientAdapter _client;
   final String _subjectFilter;

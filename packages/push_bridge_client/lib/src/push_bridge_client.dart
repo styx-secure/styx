@@ -18,8 +18,8 @@ class PushBridgeClient {
   PushBridgeClient({
     required String bridgeUrl,
     required BridgeHttpClient httpClient,
-  })  : _bridgeUrl = bridgeUrl,
-        _httpClient = httpClient;
+  }) : _bridgeUrl = bridgeUrl,
+       _httpClient = httpClient;
 
   final String _bridgeUrl;
   final BridgeHttpClient _httpClient;

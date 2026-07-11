@@ -84,10 +84,7 @@ class P256Point {
   const P256Point(this.x, this.y) : isInfinity = false;
 
   /// Creates the point at infinity (identity element).
-  P256Point._infinity()
-      : x = BigInt.zero,
-        y = BigInt.zero,
-        isInfinity = true;
+  P256Point._infinity() : x = BigInt.zero, y = BigInt.zero, isInfinity = true;
 
   /// Decodes a point from uncompressed SEC1 format.
   ///

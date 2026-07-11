@@ -74,9 +74,9 @@ void main() {
       DateTime? previousRetry;
       for (var i = 0; i < 3; i++) {
         await db.outboxDao.markFailed(eventId: eid);
-        final entry = await (db.select(db.outbox)
-              ..where((o) => o.eventId.equals(eid)))
-            .getSingle();
+        final entry = await (db.select(
+          db.outbox,
+        )..where((o) => o.eventId.equals(eid))).getSingle();
 
         expect(entry.retryCount, i + 1);
         expect(entry.status, 'failed');

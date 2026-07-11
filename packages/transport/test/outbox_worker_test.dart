@@ -121,7 +121,7 @@ class _MockTransport implements TransportInterface {
 // ---------------------------------------------------------------------------
 
 Future<({NostrEncryptor encryptor, String localPub, String remotePub})>
-    _setupEncryptor() async {
+_setupEncryptor() async {
   final dh = DiffieHellman();
   final localKP = await dh.generateEphemeralKeyPair();
   final remoteKP = await dh.generateEphemeralKeyPair();
@@ -133,10 +133,12 @@ Future<({NostrEncryptor encryptor, String localPub, String remotePub})>
   await encryptor.initialize();
 
   // Use hex-like strings for pubkeys.
-  final localPub =
-      localKP.publicKey.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-  final remotePub =
-      remoteKP.publicKey.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  final localPub = localKP.publicKey
+      .map((b) => b.toRadixString(16).padLeft(2, '0'))
+      .join();
+  final remotePub = remoteKP.publicKey
+      .map((b) => b.toRadixString(16).padLeft(2, '0'))
+      .join();
 
   return (encryptor: encryptor, localPub: localPub, remotePub: remotePub);
 }

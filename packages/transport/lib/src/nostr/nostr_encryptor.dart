@@ -16,8 +16,8 @@ class NostrEncryptor {
   NostrEncryptor({
     required Uint8List localPrivateKey,
     required Uint8List remotePublicKey,
-  })  : _localPrivateKey = Uint8List.fromList(localPrivateKey),
-        _remotePublicKey = Uint8List.fromList(remotePublicKey);
+  }) : _localPrivateKey = Uint8List.fromList(localPrivateKey),
+       _remotePublicKey = Uint8List.fromList(remotePublicKey);
 
   final Uint8List _localPrivateKey;
   final Uint8List _remotePublicKey;

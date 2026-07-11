@@ -24,9 +24,7 @@ class VectorClock {
   const VectorClock({required this.a, required this.b});
 
   /// Creates a zero vector clock.
-  const VectorClock.zero()
-      : a = 0,
-        b = 0;
+  const VectorClock.zero() : a = 0, b = 0;
 
   /// Deserializes from a JSON-compatible map.
   factory VectorClock.fromJson(Map<String, dynamic> json) {
@@ -45,10 +43,10 @@ class VectorClock {
       'A' => VectorClock(a: a + 1, b: b),
       'B' => VectorClock(a: a, b: b + 1),
       _ => throw ArgumentError.value(
-          localPeerRole,
-          'localPeerRole',
-          "Must be 'A' or 'B'",
-        ),
+        localPeerRole,
+        'localPeerRole',
+        "Must be 'A' or 'B'",
+      ),
     };
   }
 
