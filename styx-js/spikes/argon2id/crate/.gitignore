@@ -1,0 +1,7 @@
+# Build cache and downloaded tooling must never be tracked (spike hygiene).
+/target/
+/wasm-pack-*.tar.gz
+# wasm-pack regenerates pkg/.gitignore ('*') and package.json on every build;
+# the minimal reproducible artifact set in pkg/ is tracked explicitly instead.
+/pkg/.gitignore
+/pkg/package.json
