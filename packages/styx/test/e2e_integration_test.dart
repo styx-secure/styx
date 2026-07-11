@@ -21,9 +21,9 @@ class InMemoryLedgerStore implements LedgerStore {
     required EventFactory eventFactory,
     required ChainValidator chainValidator,
     required String localPeerRole,
-  })  : _eventFactory = eventFactory,
-        _chainValidator = chainValidator,
-        _localPeerRole = localPeerRole;
+  }) : _eventFactory = eventFactory,
+       _chainValidator = chainValidator,
+       _localPeerRole = localPeerRole;
 
   final EventFactory _eventFactory;
   final ChainValidator _chainValidator;
@@ -66,8 +66,7 @@ class InMemoryLedgerStore implements LedgerStore {
   }
 
   @override
-  Future<List<LedgerEvent>> getHistory() async =>
-      List.unmodifiable(_events);
+  Future<List<LedgerEvent>> getHistory() async => List.unmodifiable(_events);
 
   @override
   Future<ChainValidationError?> validateChain() async =>
@@ -147,15 +146,18 @@ final _verifier = Verifier();
 final _identityManager = IdentityManager();
 
 /// Creates a fully wired [SovereignLedger] for testing.
-Future<({
-  SovereignLedger ledger,
-  InMemoryLedgerStore store,
-  FakeTransport transport,
-  TrustStoreManager trustStore,
-  InMemoryPeerStore peerStore,
-  QrPairingService qrPairing,
-  StyxKeyPair keyPair,
-})> createTestLedger({
+Future<
+  ({
+    SovereignLedger ledger,
+    InMemoryLedgerStore store,
+    FakeTransport transport,
+    TrustStoreManager trustStore,
+    InMemoryPeerStore peerStore,
+    QrPairingService qrPairing,
+    StyxKeyPair keyPair,
+  })
+>
+createTestLedger({
   required String peerRole,
   StyxKeyPair? existingKeyPair,
 }) async {
@@ -447,14 +449,18 @@ void main() {
       final history = await a.store.getHistory();
       expect(history, hasLength(46));
 
-      final txCount =
-          history.where((e) => e.eventType == EventType.transaction).length;
-      final msgCount =
-          history.where((e) => e.eventType == EventType.message).length;
-      final cfgCount =
-          history.where((e) => e.eventType == EventType.config).length;
-      final sosCount =
-          history.where((e) => e.eventType == EventType.sos).length;
+      final txCount = history
+          .where((e) => e.eventType == EventType.transaction)
+          .length;
+      final msgCount = history
+          .where((e) => e.eventType == EventType.message)
+          .length;
+      final cfgCount = history
+          .where((e) => e.eventType == EventType.config)
+          .length;
+      final sosCount = history
+          .where((e) => e.eventType == EventType.sos)
+          .length;
 
       expect(txCount, 30);
       expect(msgCount, 10);

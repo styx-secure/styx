@@ -5,8 +5,9 @@ import 'package:crypto/crypto.dart' as crypto;
 
 /// Generates a 6-digit Double Check verification code from a session key.
 class SessionVerifier {
-  static final Uint8List _suffix =
-      Uint8List.fromList(utf8.encode('styx-double-check-v1'));
+  static final Uint8List _suffix = Uint8List.fromList(
+    utf8.encode('styx-double-check-v1'),
+  );
 
   /// Generates a 6-digit verification code from [sessionKey].
   ///
@@ -25,7 +26,7 @@ class SessionVerifier {
     // Take first 3 bytes → 24-bit number → mod 1,000,000
     final code =
         (digest.bytes[0] << 16 | digest.bytes[1] << 8 | digest.bytes[2]) %
-            1000000;
+        1000000;
 
     return code.toString().padLeft(6, '0');
   }

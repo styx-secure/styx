@@ -42,8 +42,8 @@ class RelayPool {
   RelayPool({
     required List<String> relayUrls,
     required WebSocketFactory factory,
-  })  : _relayUrls = List.of(relayUrls),
-        _factory = factory;
+  }) : _relayUrls = List.of(relayUrls),
+       _factory = factory;
 
   final List<String> _relayUrls;
   final WebSocketFactory _factory;

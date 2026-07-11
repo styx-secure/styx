@@ -14,8 +14,8 @@ const _uuid = Uuid();
 class EventFactory {
   /// Creates an [EventFactory] with the given [signer] and [hasher].
   EventFactory({required Signer signer, required Hasher hasher})
-      : _signer = signer,
-        _hasher = hasher;
+    : _signer = signer,
+      _hasher = hasher;
 
   final Signer _signer;
   final Hasher _hasher;

@@ -59,9 +59,9 @@ class ReKeyProtocol {
     required EventFactory eventFactory,
     required TrustStoreManager trustStoreManager,
     required Verifier verifier,
-  })  : _eventFactory = eventFactory,
-        _trustStore = trustStoreManager,
-        _verifier = verifier;
+  }) : _eventFactory = eventFactory,
+       _trustStore = trustStoreManager,
+       _verifier = verifier;
 
   final EventFactory _eventFactory;
   final TrustStoreManager _trustStore;

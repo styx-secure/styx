@@ -24,14 +24,16 @@ void main() {
       expect(code1, equals(code2));
     });
 
-    test('T2.27 — Double Check diversity: different keys → different codes',
-        () {
-      final key1 = Uint8List.fromList(List.generate(32, (i) => i));
-      final key2 = Uint8List.fromList(List.generate(32, (i) => i + 1));
-      final code1 = verifier.generateDoubleCheckCode(key1);
-      final code2 = verifier.generateDoubleCheckCode(key2);
-      expect(code1, isNot(equals(code2)));
-    });
+    test(
+      'T2.27 — Double Check diversity: different keys → different codes',
+      () {
+        final key1 = Uint8List.fromList(List.generate(32, (i) => i));
+        final key2 = Uint8List.fromList(List.generate(32, (i) => i + 1));
+        final code1 = verifier.generateDoubleCheckCode(key1);
+        final code2 = verifier.generateDoubleCheckCode(key2);
+        expect(code1, isNot(equals(code2)));
+      },
+    );
 
     test('T2.28 — Double Check distribution: ~uniform on [000000, 999999]', () {
       final random = Random(42); // Deterministic seed for reproducibility

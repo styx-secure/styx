@@ -60,9 +60,11 @@ void main() {
         );
 
         // Parse payload JSON to verify old_key and new_key.
-        final payloadJson = jsonDecode(
-          utf8.decode(event.payload!),
-        ) as Map<String, dynamic>;
+        final payloadJson =
+            jsonDecode(
+                  utf8.decode(event.payload!),
+                )
+                as Map<String, dynamic>;
 
         expect(
           payloadJson['old_key'],

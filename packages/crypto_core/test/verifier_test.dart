@@ -168,39 +168,41 @@ void main() {
       expect(valid, isTrue);
     });
 
-    test('RFC 8032 Ed25519 TEST 2: sign and verify with seed (T1.18)',
-        () async {
-      // Seed from RFC 8032 Section 7.1 TEST 2.
-      // Message: 0x72
-      //
-      // Note: The pure-Dart `cryptography` package derives a slightly
-      // different internal public key representation than the RFC, which
-      // affects signature bytes for non-empty messages. We verify that
-      // sign→verify round-trip succeeds with this seed and that the
-      // signature is deterministic and 64 bytes.
-      final seed = _hexToBytes(
-        '4ccd089b28ff96da9db6c346ec114e0f'
-        '5b8a319f35aba624da8cf6ed4fb8a6fb',
-      );
-      final message = Uint8List.fromList([0x72]);
+    test(
+      'RFC 8032 Ed25519 TEST 2: sign and verify with seed (T1.18)',
+      () async {
+        // Seed from RFC 8032 Section 7.1 TEST 2.
+        // Message: 0x72
+        //
+        // Note: The pure-Dart `cryptography` package derives a slightly
+        // different internal public key representation than the RFC, which
+        // affects signature bytes for non-empty messages. We verify that
+        // sign→verify round-trip succeeds with this seed and that the
+        // signature is deterministic and 64 bytes.
+        final seed = _hexToBytes(
+          '4ccd089b28ff96da9db6c346ec114e0f'
+          '5b8a319f35aba624da8cf6ed4fb8a6fb',
+        );
+        final message = Uint8List.fromList([0x72]);
 
-      final privateKey = StyxPrivateKey(seed);
-      final sig = await signer.sign(message, privateKey);
-      expect(sig.length, 64);
+        final privateKey = StyxPrivateKey(seed);
+        final sig = await signer.sign(message, privateKey);
+        expect(sig.length, 64);
 
-      // Deterministic: same seed + message → same signature.
-      final sig2 = await signer.sign(message, privateKey);
-      expect(sig, equals(sig2));
+        // Deterministic: same seed + message → same signature.
+        final sig2 = await signer.sign(message, privateKey);
+        expect(sig, equals(sig2));
 
-      // Round-trip: verify the signature we produced.
-      final kp = await manager.importPrivateKey(seed);
-      final valid = await verifier.verify(
-        payload: message,
-        signatureBytes: sig,
-        publicKey: kp.publicKey,
-      );
-      expect(valid, isTrue);
-    });
+        // Round-trip: verify the signature we produced.
+        final kp = await manager.importPrivateKey(seed);
+        final valid = await verifier.verify(
+          payload: message,
+          signatureBytes: sig,
+          publicKey: kp.publicKey,
+        );
+        expect(valid, isTrue);
+      },
+    );
   });
 }
 

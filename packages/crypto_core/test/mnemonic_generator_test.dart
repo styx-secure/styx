@@ -58,14 +58,16 @@ void main() {
       expect(seed1, equals(seed2));
     });
 
-    test('T3.17 — MnemonicToSeed different mnemonics → different seeds',
-        () async {
-      final m1 = gen.generate(wordCount: 12);
-      final m2 = gen.generate(wordCount: 12);
-      final seed1 = await gen.mnemonicToSeed(m1);
-      final seed2 = await gen.mnemonicToSeed(m2);
-      expect(seed1, isNot(equals(seed2)));
-    });
+    test(
+      'T3.17 — MnemonicToSeed different mnemonics → different seeds',
+      () async {
+        final m1 = gen.generate(wordCount: 12);
+        final m2 = gen.generate(wordCount: 12);
+        final seed1 = await gen.mnemonicToSeed(m1);
+        final seed2 = await gen.mnemonicToSeed(m2);
+        expect(seed1, isNot(equals(seed2)));
+      },
+    );
 
     test('T3.18 — 12-word mnemonic: standard BIP-39 validation OK', () {
       final mnemonic = gen.generate(wordCount: 12);
