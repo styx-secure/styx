@@ -1,0 +1,8 @@
+{
+  "name": "argon2id-spike",
+  "private": true,
+  "description": "STYX_SPIKE_PROTOTYPE - isolated package for the Argon2id spike's candidate B (hash-wasm). Never a dependency of styx-js or the product.",
+  "dependencies": {
+    "hash-wasm": "4.12.0"
+  }
+}

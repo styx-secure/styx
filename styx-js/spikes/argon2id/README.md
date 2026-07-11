@@ -11,12 +11,14 @@ Candidates:
 - **A** — `crate/`: RustCrypto `argon2` compiled to WASM (36.5 KB) with the SAME
   pinned toolchain as the canonical vendored crate (`crate/build.sh`, identical
   image digest + wasm-pack release; the canonical artifact is untouched).
-- **B** — `hash-wasm@4.12.0`, exact-pinned devDependency (npm integrity recorded
-  in the spike doc). Never a production dependency.
+- **B** — `hash-wasm@4.12.0`, exact-pinned in the **spike-local** `package.json`
+  (npm integrity recorded in the spike doc). Never a dependency of `styx-js`
+  nor of the product.
 
 Run (from `styx-js/`):
 
 ```bash
+(cd spikes/argon2id && npm install)   # spike-local hash-wasm, isolated lockfile
 npx playwright test -c spikes/argon2id/playwright.spike.config.js
 # rebuild candidate A (needs Docker):
 spikes/argon2id/crate/build.sh

@@ -3,13 +3,14 @@
 // Benchmark worker for the two Argon2id candidates, run in the context the
 // crypto-worker spike selected (a dedicated module worker):
 //   A: project-built Rust/WASM crate (RustCrypto `argon2`, pinned toolchain)
-//   B: hash-wasm (pinned devDependency, npm provenance recorded in the doc)
+//   B: hash-wasm (exact-pinned in the spike-local package.json, never in styx-js;
+//      npm provenance recorded in the doc)
 //
 // Typed protocol like the crypto worker: {id,type,payload} → {id,ok,result|error}.
 // Types: INIT_A · INIT_B · DERIVE · CROSS_CHECK · SHUTDOWN
 
 import initA, { argon2id_derive } from './crate/pkg/argon2id_spike.js';
-import { argon2id as argon2idB } from '../../node_modules/hash-wasm/dist/index.esm.js';
+import { argon2id as argon2idB } from './node_modules/hash-wasm/dist/index.esm.js';
 
 let aReady = false;
 

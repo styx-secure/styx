@@ -2,7 +2,7 @@
 // parameter benchmarks, run in the context the crypto-worker spike selected (a
 // dedicated module worker). Candidates:
 //   A: project-built Rust/WASM crate (RustCrypto argon2, pinned toolchain)
-//   B: hash-wasm 4.12.0 (pinned devDependency)
+//   B: hash-wasm 4.12.0 (exact-pinned in the spike-local package.json)
 // Results: docs/superpowers/spikes/2026-07-12-argon2id.md
 import { test, expect, chromium } from '@playwright/test';
 import http from 'node:http';
