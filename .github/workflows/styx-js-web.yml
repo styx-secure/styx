@@ -1,10 +1,10 @@
 name: styx-js web
 on:
   pull_request:
-    paths: ['styx-js/**']
+    paths: ['styx-js/**', '.github/workflows/styx-js-web.yml']
   push:
     branches: [main]
-    paths: ['styx-js/**']
+    paths: ['styx-js/**', '.github/workflows/styx-js-web.yml']
 
 jobs:
   build-and-gate:
@@ -15,8 +15,22 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Unit tests (lib + app)
+      # The integration tests exercise the real Nostr transport against a strfry relay.
+      # Without one they throw "could not connect to any relay". Start the same relay the
+      # local docker-compose.test.yml uses so the full suite runs in CI.
+      - name: Start strfry relay
         working-directory: styx-js
+        run: |
+          docker compose -f docker-compose.test.yml up -d
+          for i in $(seq 1 30); do
+            (exec 3<>/dev/tcp/127.0.0.1/17777) 2>/dev/null && { echo "relay up"; break; }
+            sleep 1
+          done
+
+      - name: Unit + integration tests (lib + app)
+        working-directory: styx-js
+        env:
+          NOSTR_RELAY: ws://localhost:17777
         run: |
           npm ci
           npm test -- --testTimeout=20000
@@ -36,3 +50,8 @@ jobs:
             exit 1
           fi
           echo "Production bundle is mock-free."
+
+      - name: Stop strfry relay
+        if: always()
+        working-directory: styx-js
+        run: docker compose -f docker-compose.test.yml down || true
