@@ -124,7 +124,9 @@ Styx is structured as a monorepo of composable packages, layered bottom-up:
 
 ## Principles
 
-- **Zero-Server** — No data ever touches a central server
+- **No central server of record** — peers hold the authoritative event chain; messages are
+  E2E-encrypted and routed by federated relays that cannot read content but do observe some
+  transport metadata (not a zero-metadata or "serverless" system)
 - **Cryptographic Trust** — Every event is signed, hashed, and chained
 - **Sovereign Identity** — Keys generated locally, stored in hardware enclaves
 - **GDPR by Design** — Bilateral pruning with hash persistence
@@ -134,14 +136,14 @@ Styx is structured as a monorepo of composable packages, layered bottom-up:
 
 ### Prerequisites
 
-- Dart SDK ≥ 3.6.0
+- Dart SDK ≥ 3.10.0 (the locked dependency graph requires it; see `pubspec.yaml`)
 - Melos (`dart pub global activate melos`)
 - Go 1.21+ (for `push_bridge_server` only)
 
 ### Setup
 
 ```bash
-git clone https://github.com/maverde73/styx.git
+git clone https://github.com/styx-secure/styx.git
 cd styx
 melos bootstrap
 ```
@@ -153,7 +155,7 @@ melos run test:all        # Run all tests across all packages
 melos run analyze         # Static analysis
 melos run format:check    # Check formatting
 melos run ci              # Full CI pipeline locally
-melos run coverage:check  # Verify 90% coverage threshold
+melos run coverage:check  # Enforce the per-package coverage baseline (90% is a target, not yet met everywhere)
 
 # Single package
 cd packages/styx && dart test                    # All tests in one package
