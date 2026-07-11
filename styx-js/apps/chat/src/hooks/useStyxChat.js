@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getStyxChat } from '../lib/styx-adapter.js';
+import { acquireWriterLock } from '../lib/writer-lock.js';
 import { peerNamespace } from '../lib/ns.js';
 import { getRelays, getBridgeUrl, transportOptions } from '../lib/config.js';
 import { browserNotifier } from '../lib/notify.js';
@@ -19,12 +20,14 @@ const advances = (from, to) => (STATE_RANK[to] ?? -1) > (STATE_RANK[from] ?? -1)
 export function useStyxChat() {
   const chatRef = useRef(null);
   const subsRef = useRef([]);
+  const lockReleaseRef = useRef(null);
   const typingTimers = useRef({});
   const notifierRef = useRef(null);
   if (!notifierRef.current) notifierRef.current = browserNotifier();
 
   const [ready, setReady] = useState(false);
   const [fatalError, setFatalError] = useState(null);
+  const [secondaryTab, setSecondaryTab] = useState(false);
   const [me, setMe] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [messagesByContact, setMessagesByContact] = useState({});
@@ -93,8 +96,16 @@ export function useStyxChat() {
       if (e?.name === 'FatalCryptoError') { setFatalError(e); return; }
       throw e;
     }
-    const chat = new StyxChat();
     const ns = peerNamespace();
+
+    // Become the single MLS writer for this profile, or refuse to start a writer.
+    // A second tab that cannot get the lock must not construct a writable engine —
+    // that is what corrupts mls:state.
+    const { held, release } = await acquireWriterLock(navigator.locks, `styx-mls:${ns}`);
+    if (!held) { setSecondaryTab(true); return; }
+    lockReleaseRef.current = release;
+
+    const chat = new StyxChat();
     const identity = await chat.init({
       password, alias: alias?.trim(), ns, ...transportOptions(getRelays()),
     }); // throws on wrong password
@@ -152,6 +163,8 @@ export function useStyxChat() {
     subsRef.current = [];
     try { chatRef.current?.destroy?.(); } catch { /* ignore */ }
     chatRef.current = null;
+    try { lockReleaseRef.current?.(); } catch { /* ignore */ }
+    lockReleaseRef.current = null;
     setReady(false);
     setMe(null);
     setContacts([]);
@@ -249,7 +262,7 @@ export function useStyxChat() {
   };
 
   return {
-    ready, fatalError, me, contacts, messagesByContact, typingByContact, noMore, pendingPairings,
+    ready, fatalError, secondaryTab, me, contacts, messagesByContact, typingByContact, noMore, pendingPairings,
     unlock, lock, openConversation, loadOlder, sendText, markRead, setTyping,
     setAlias, enablePush, acceptPending, dismissPending, safetyNumber, setVerified,
     chatRef,

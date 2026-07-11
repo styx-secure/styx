@@ -93,6 +93,16 @@ export default function App() {
     );
   }
 
+  if (chat.secondaryTab) {
+    return (
+      <div className="fatal">
+        <h1>Styx è già aperto in un'altra scheda</h1>
+        <p>Per proteggere lo stato cifrato, una sola scheda alla volta può scrivere. Usa la scheda già aperta, oppure chiudila e ricarica qui.</p>
+        <button onClick={() => location.reload()}>Ricarica</button>
+      </div>
+    );
+  }
+
   if (!chat.ready) return <UnlockScreen onUnlock={onUnlock} />;
 
   return (
