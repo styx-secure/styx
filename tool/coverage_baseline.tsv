@@ -1,0 +1,23 @@
+# Coverage baseline — Dart reference stack (ADR-0003), line coverage, per package.
+#
+# Policy (non-regression baseline):
+#   * 90% is an IMPROVEMENT TARGET, not a current guarantee for every package.
+#   * Each package must not drop below the floor recorded here (tool/check_coverage.sh),
+#     with a documented tolerance of 0.1 percentage points for non-deterministic noise.
+#   * Generated Drift code (*.g.dart) is excluded — it is machine-generated, not
+#     hand-written. NO other real source is excluded (tables, adapters, transports,
+#     error handling, crypto and storage all count).
+#   * Packages that currently meet 90% keep 90.0 as their floor.
+#   * The three packages below target keep their real, deterministic current coverage as
+#     floor (measured 2026-07-12, DETERMINISTIC across repeated runs).
+#
+# Raise a floor (never lower it to make a PR pass) when coverage genuinely improves.
+#
+# package<TAB>floor_percent
+crypto_core	90.0
+ledger_engine	90.0
+push_bridge_client	90.0
+storage	78.24
+styx	81.79
+test_integration	90.0
+transport	85.11
