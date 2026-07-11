@@ -30,4 +30,23 @@ npm run preview  # serve dist/
 - Il contratto `onContactsChanged` è trattato come segnale: se non porta la lista (come nel mock)
   la UI la rifetcha con `listContacts()`.
 - Il bundle include `@zxing/browser` (scanner QR), che è pesante: candidato a lazy-load futuro.
-- **Solo mock**: nessuna crittografia/rete reale finché non si collega `styx-js` (MLS/OpenMLS).
+- **Build di produzione = crittografia reale.** `npm run build` produce solo la lib reale (MLS/OpenMLS);
+  se il modulo crittografico manca, l'app si ferma con un errore, non ripiega su dati finti. Il mock vive
+  solo nel build demo: `npm run build:demo` → `dist-demo/` (da servire su un'origine separata).
+
+## Deployment (static-server.mjs)
+
+`static-server.mjs` serve `dist/` senza dipendenze npm e applica una CSP completa più gli header di
+sicurezza. Due allowance non ovvie:
+
+- `script-src` include `'wasm-unsafe-eval'` perché OpenMLS compila WebAssembly
+  (`WebAssembly.instantiateStreaming`). Nessun `'unsafe-inline'` sugli script (Vite emette solo
+  `/assets/*.js` esterni e `/registerSW.js`). Verificato in Chromium: il WASM istanzia e non ci sono
+  violazioni CSP.
+- `style-src` mantiene `'unsafe-inline'` per gli attributi `style=` inline di React — eccezione
+  documentata e a basso rischio (iniezione di stile, non esecuzione di script); eliminarla richiede di
+  spostare gli stili inline in classi (follow-up tracciato).
+
+`connect-src` è limitato a `self` + i relay di default. Un deployer che usa relay o un push bridge
+propri li aggiunge con la variabile d'ambiente `STYX_CONNECT_SRC` (origini separate da spazio), es.
+`STYX_CONNECT_SRC="https://push.miodominio wss://relay.miodominio" node static-server.mjs`.

@@ -6,7 +6,7 @@
 import { createServer } from 'node:http';
 import { readFile, stat, realpath } from 'node:fs/promises';
 import { join, normalize, extname, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT_RAW = process.env.STYX_DIST
   ? normalize(process.env.STYX_DIST)
@@ -17,15 +17,42 @@ const ROOT = await realpath(ROOT_RAW).catch(() => ROOT_RAW);
 const HOST = process.env.STYX_HOST || '127.0.0.1';
 const PORT = Number(process.env.STYX_PORT || 8090);
 
-// Hardening headers chosen to NOT break the app: no default-src/script-src (WASM
-// needs 'wasm-unsafe-eval' and this is only verifiable in a real browser), only
-// directives that don't govern script/style/wasm/connect. A full script/style
-// CSP should be added after browser verification.
+// Full CSP. Notes on the two non-obvious allowances:
+//  - script-src needs 'wasm-unsafe-eval': the OpenMLS engine compiles WebAssembly
+//    (WebAssembly.instantiateStreaming). No script 'unsafe-inline' — Vite emits only
+//    external /assets/*.js and /registerSW.js.
+//  - style-src keeps 'unsafe-inline' for React inline style= attributes. This is a
+//    documented, low-risk exception (style injection, not script execution); removing
+//    it means refactoring inline styles to classes, tracked as a follow-up.
+// connect-src is limited to self + the default relays + whatever the deployer adds via
+// STYX_CONNECT_SRC (space-separated origins) for custom relays or a push bridge.
+export function buildCsp(extraConnect = '') {
+  const extra = String(extraConnect).trim();
+  return [
+    "default-src 'none'",
+    "script-src 'self' 'wasm-unsafe-eval'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self'",
+    "manifest-src 'self'",
+    "worker-src 'self'",
+    `connect-src 'self' wss://relay.damus.io wss://nos.lol${extra ? ' ' + extra : ''}`,
+    "base-uri 'none'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'none'",
+    'upgrade-insecure-requests',
+  ].join('; ');
+}
+
 const SECURITY_HEADERS = {
+  'content-security-policy': buildCsp(process.env.STYX_CONNECT_SRC),
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
   'x-frame-options': 'DENY',
-  'content-security-policy': "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+  'cross-origin-opener-policy': 'same-origin',
+  'strict-transport-security': 'max-age=63072000; includeSubDomains',
+  'permissions-policy': 'camera=(self), microphone=(), geolocation=()',
 };
 
 const MIME = {
@@ -120,6 +147,12 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, HOST, () => {
-  process.stdout.write(`[static-server] serving ${ROOT} at http://${HOST}:${PORT}\n`);
-});
+// Only bind a port when run as a program (`node static-server.mjs`), not when imported
+// for its exports (e.g. buildCsp in tests).
+const isMain = process.argv[1]
+  && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) {
+  server.listen(PORT, HOST, () => {
+    process.stdout.write(`[static-server] serving ${ROOT} at http://${HOST}:${PORT}\n`);
+  });
+}
