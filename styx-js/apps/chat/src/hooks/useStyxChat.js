@@ -24,6 +24,7 @@ export function useStyxChat() {
   if (!notifierRef.current) notifierRef.current = browserNotifier();
 
   const [ready, setReady] = useState(false);
+  const [fatalError, setFatalError] = useState(null);
   const [me, setMe] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [messagesByContact, setMessagesByContact] = useState({});
@@ -83,7 +84,15 @@ export function useStyxChat() {
   }, []);
 
   const unlock = useCallback(async ({ password, alias, firstRun }) => {
-    const StyxChat = await getStyxChat();
+    let StyxChat;
+    try {
+      StyxChat = await getStyxChat();
+    } catch (e) {
+      // A missing crypto module is a hard stop, not a wrong-password error: surface it
+      // as a blocking state instead of letting the app fall through to fake data.
+      if (e?.name === 'FatalCryptoError') { setFatalError(e); return; }
+      throw e;
+    }
     const chat = new StyxChat();
     const ns = peerNamespace();
     const identity = await chat.init({
@@ -240,9 +249,10 @@ export function useStyxChat() {
   };
 
   return {
-    ready, me, contacts, messagesByContact, typingByContact, noMore, pendingPairings,
+    ready, fatalError, me, contacts, messagesByContact, typingByContact, noMore, pendingPairings,
     unlock, lock, openConversation, loadOlder, sendText, markRead, setTyping,
     setAlias, enablePush, acceptPending, dismissPending, safetyNumber, setVerified,
+    chatRef,
     ...pairing,
   };
 }

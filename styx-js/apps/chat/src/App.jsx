@@ -82,6 +82,17 @@ export default function App() {
   const activeTyping = !!(activeKey && chat.typingByContact[activeKey]);
   const activeNoMore = !!(activeKey && chat.noMore[activeKey]);
 
+  if (chat.fatalError) {
+    return (
+      <div className="fatal">
+        <h1>Impossibile avviare Styx in sicurezza</h1>
+        <p>{chat.fatalError.message}</p>
+        <p>Ricarica la pagina. Se il problema persiste, la build potrebbe essere corrotta o incompleta.</p>
+        <button onClick={() => location.reload()}>Ricarica</button>
+      </div>
+    );
+  }
+
   if (!chat.ready) return <UnlockScreen onUnlock={onUnlock} />;
 
   return (
