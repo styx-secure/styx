@@ -80,6 +80,13 @@ export class Provider {
     constructor();
     /**
      * Restore storage previously produced by `serialize_state`.
+     *
+     * Every length is read from the input and MUST be treated as hostile: this blob
+     * can be a corrupted or attacker-supplied `mls:state`. All offset arithmetic is
+     * therefore checked. A naive `i + kl + vl > bytes.len()` wraps on wasm32 (usize
+     * is 32-bit) and would let a crafted length slip past the bound into an
+     * out-of-range slice — a panic, i.e. a trap that poisons the shared instance at
+     * init. Checked arithmetic turns every such case into a returned error.
      */
     restore_state(bytes: Uint8Array): void;
     /**

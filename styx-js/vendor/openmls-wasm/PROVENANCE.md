@@ -44,8 +44,10 @@ MLS state already written to disk by this artifact.
   adds `Provider.serialize_state`/`restore_state`, `Group.load`, `Identity.public_key`/`load`,
   `Group.member_identities`, and replaces panics on wire input with `Result`s. It is outside
   the scope of any upstream audit; review it separately.
-- **`Provider::restore_state`** does `u64 as usize` length arithmetic that can wrap on wasm32.
-  Reachable only from locally persisted state, never from the wire.
+- ~~`Provider::restore_state` `u64 as usize` length arithmetic wraps on wasm32.~~ **Fixed
+  2026-07-11** (code review): all offsets use checked arithmetic and oversized lengths are
+  rejected, so a crafted `mls:state` blob returns an error instead of trapping. Regression
+  test: `test/crypto/mls-adversarial.test.js` (the wrap case traps on the pre-fix artifact).
 - Some `unwrap()`s remain on locally-built material (KeyPackage builder, storage `RwLock`,
   `to_bytes`/serialize paths). They are not reachable from untrusted input; the wire-facing
   parsers all return `Result`.
@@ -71,12 +73,12 @@ image: a tag can be re-pushed, a digest cannot.
 | Dependency graph | `./Cargo.lock` (workspace lockfile; builds run `-- --locked`, and `build.sh` aborts on drift) |
 | OpenMLS source | commit `09e9277…` (above) |
 
-**Artifact (built 2026-07-11 from the pins above):**
+**Artifact (rebuilt 2026-07-11 after the `restore_state` hardening, from the pins above):**
 
 | File | sha256 |
 |---|---|
-| `openmls_wasm_bg.wasm` (1 813 110 B; 659 368 B gzip) | `e3e56463bf1ac8418fd3632ac6e5f72d157796e62bd2fbb421b7fa8c3626ed4a` |
-| `openmls_wasm.js` | `b05d5d9d8bad9d9792f0d998d9b4701bd8dbd9e7a2def33e2e143bf6bb871c5b` |
+| `openmls_wasm_bg.wasm` | `b56e3ea095c3be3dc9a589e27ad2092bcc6de663cc788db30853e89c02ff386a` |
+| `openmls_wasm.js` | `2126829daa2886cb818683b2def23af999ed801e2d731fda6c16e0dea41a59a8` |
 
 **Reproducibility: verified 2026-07-11.** `./verify.sh` built twice from these pins; both
 builds were byte-identical to each other *and* to the committed artifact above.
