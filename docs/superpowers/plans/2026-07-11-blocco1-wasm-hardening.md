@@ -70,57 +70,40 @@
 
 ---
 
-## Task 1: Pin OpenMLS to a post-audit release (R1)
+## Task 1: Verify and document the OpenMLS pin (R1) — ✅ DONE
 
-**Files:** modify `vendor/openmls-wasm/build.sh:8`; create `vendor/openmls-wasm/PROVENANCE.md`.
+> **Premise correction (2026-07-11).** This task originally said "bump the pin to a post-audit
+> release", on the assumption that `09e9277` predated the SRLabs fixes. **That assumption was
+> false and is now disproven.** No bump is performed. The task is a *verification and
+> documentation* task instead. The feasibility document has been corrected accordingly.
 
-**Interfaces:** produces a pinned `OPENMLS_COMMIT` carrying the SRLabs audit fixes. Task 4 rebuilds against it.
+**Files:** create `vendor/openmls-wasm/PROVENANCE.md`. `build.sh:8` is **unchanged**.
 
-- [ ] **Step 1: Confirm the current pin predates the audit fixes**
+**Evidence gathered:**
 
-Run: `grep OPENMLS_COMMIT styx-js/vendor/openmls-wasm/build.sh`
-Expected: `OPENMLS_COMMIT="${1:-09e92777dba0528d3d29e2e5e681b7e91637c7be}"`.
+- The pin `09e92777dba0528d3d29e2e5e681b7e91637c7be` (2026-07-08) is a **descendant of tag
+  `openmls-v0.8.1`** (2026-02-13): **76 commits ahead, 0 behind** (GitHub compare API).
+- **S3-7 (High, CWE-354) is fixed at the pin**, verified in the source, not inferred:
+  - `openmls-v0.7.0`, `openmls/src/ciphersuite/mod.rs` → `equal_ct` zips without a length
+    check, so a truncated/empty MAC compares equal.
+  - At the pin, same file → `if a.len() != b.len() { return false }` precedes the
+    constant-time loop.
+- Release 0.8.1 (fully contained in the pin) updated `libcrux`/`rust_crypto` for
+  GHSA-435g-fcv3-8j26 and GHSA-g433-pq76-6cmf.
 
-Resolve the target commit. The audit fixes shipped in crate **v8.1** (backport **v7.3**):
+**Decision: keep the pin.** Moving to the `openmls-v0.8.1` tag would be a five-month
+downgrade (−76 commits) **and** would change the persisted storage format — PR #2034 (present
+at the pin, absent in 0.8.1) restores serde storage-tag compatibility with v0.7.1 by default.
+Downgrading would break MLS state already written to disk.
 
-Run: `git ls-remote --tags https://github.com/openmls/openmls.git | grep -Ei 'v0\.8\.|v0\.7\.|openmls-v'`
-Expected: tag → SHA lines. Pick the newest `v0.8.x` tag at or after the audit remediations. Record it as `<AUDITED_SHA>` and `<TAG>`.
+**Residual risk, recorded not hidden:** the pin is an **unreleased `main` commit**. Those 76
+commits are in no crates.io release and were not the subject of the SRLabs audit. Follow-up:
+move the pin to the first upstream tag that descends from this commit, once one exists.
 
-> If `git ls-remote` has no network access, **STOP** and surface the candidate tags to the reviewer — do not guess a SHA.
-
-- [ ] **Step 2: Update the default pin**
-
-Edit `vendor/openmls-wasm/build.sh` line 8: `OPENMLS_COMMIT="${1:-<AUDITED_SHA>}"`.
-
-- [ ] **Step 3: Write the provenance record**
-
-Create `vendor/openmls-wasm/PROVENANCE.md`:
-
-```markdown
-# OpenMLS-WASM artifact provenance
-
-- **Upstream:** https://github.com/openmls/openmls
-- **Pinned commit:** <AUDITED_SHA> (tag <TAG>, first release ≥ the SRLabs audit remediations)
-- **Why this pin:** the SRLabs security audit (funded by the Sovereign Tech Agency)
-  found 8 issues; the security-relevant fixes shipped in crate v8.1 / v7.3. Two are
-  load-bearing for Styx:
-  - S3-7 (High, CWE-354): MAC equality `equal_ct` compared only `min(len)` bytes,
-    accepting truncated/zero-length MACs — impersonation / group fork.
-  - S2-5 (Medium): blank-leaf index shift permanently broke decryption of delayed
-    past-epoch messages — directly on Styx's offline-delivery path.
-- **Local patch:** `patch/lib.rs` adds serialize_state/restore_state, Group.load,
-  Identity.public_key/load, Group.member_identities, and replaces panics on network
-  input with Results. NOT covered by the SRLabs audit — review the patch separately.
-- **Rebuild:** `./build.sh` (Docker, pinned rust image + pinned wasm-pack, --locked).
-- **Verify:** `./verify.sh` (double build must be byte-identical and match the committed artifact).
-```
-
-- [ ] **Step 4: Commit** (the rebuild waits for Task 4 — one rebuild only)
-
-```bash
-git add styx-js/vendor/openmls-wasm/build.sh styx-js/vendor/openmls-wasm/PROVENANCE.md
-git commit -m "chore(openmls-wasm): pin OpenMLS to post-audit release (R1)"
-```
+- [x] **Step 1: Establish the pin's position** — `git ls-remote --tags` + GitHub compare API.
+- [x] **Step 2: Verify the audit fix at source level** — `equal_ct` length check, pin vs v0.7.0.
+- [x] **Step 3: Write `PROVENANCE.md`** with the evidence, the do-not-downgrade rationale, and the residual risks.
+- [x] **Step 4: Commit.**
 
 ---
 
@@ -158,7 +141,7 @@ sha256sum wasm-pack-v<V>-x86_64-unknown-linux-musl.tar.gz              # → <WA
 #        OUT_DIR=/tmp/x ./build.sh       artifacts land in OUT_DIR (used by verify.sh)
 set -euo pipefail
 
-OPENMLS_COMMIT="${1:-<AUDITED_SHA>}"
+OPENMLS_COMMIT="${1:-09e92777dba0528d3d29e2e5e681b7e91637c7be}"   # unchanged — see PROVENANCE.md
 RUST_IMAGE="rust:<X.Y.Z>@sha256:<digest>"
 WASM_PACK_VERSION="<V>"
 WASM_PACK_SHA256="<WASM_PACK_SHA256>"
@@ -681,7 +664,7 @@ git commit -m "feat(chat): bind MLS peer credential to transport pubkey at join 
 The README currently makes three false claims. Fix all three plus the API list:
 
 - [ ] **Step 1: Fix the claims**
-  - line 11 — commit: `09e92777…` → `<AUDITED_SHA>` (+ `<TAG>`, date).
+  - line 11 — commit: keep `09e92777…`, but add its date (2026-07-08) and its position (76 commits after tag `openmls-v0.8.1`); point to `PROVENANCE.md` for the audit status.
   - line 13 — ciphersuite: `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` → **`MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519`** (what `patch/lib.rs:29` actually compiles). Drop the "(MTI di OpenMLS)" note.
   - line 14 — toolchain: `rust:latest` → the pinned `rust:<X.Y.Z>@sha256:…` + `wasm-pack v<V>` + "`Cargo.lock` vendorizzato, build `--locked`". Point to `PROVENANCE.md` and `verify.sh`.
   - line 15 — re-measure the artifact size: `ls -l openmls_wasm_bg.wasm`; `gzip -c openmls_wasm_bg.wasm | wc -c`.
@@ -727,7 +710,7 @@ git commit -m "docs(security): mark Fase A and Blocco 1 (R1/N1/N2) as implemente
 
 ## Acceptance criteria — Blocco 1 (feasibility doc §7.5, P0/WASM)
 
-1. `grep OPENMLS_COMMIT build.sh` shows the post-audit SHA; `PROVENANCE.md` names the tag and the two load-bearing findings (S3-7, S2-5).
+1. `PROVENANCE.md` documents the pin's position (descendant of `openmls-v0.8.1`, 76 ahead / 0 behind), the source-level verification of the S3-7 fix (`equal_ct` length check), the do-not-downgrade rationale (PR #2034 storage format), and the unreleased-`main` residual risk.
 2. `grep -n 'unwrap()\|todo!\|expect(\|panic!' patch/lib.rs` shows no hits on the `process_message` / `join` / `from_bytes` paths; the remaining ones (local material) are enumerated in `PROVENANCE.md`.
 3. `test/crypto/mls-panic.test.js` + `test/crypto/mls-adversarial.test.js` are green: all four untrusted parsers covered plus the seeded fuzz loop; every failure is a catchable `Error`, never a `WebAssembly.RuntimeError`; the engine round-trips a real message afterwards.
 4. `vendor/openmls-wasm/Cargo.lock` is committed; `build.sh` fails on lockfile drift; `verify.sh` exits 0.
@@ -746,7 +729,7 @@ Every task is a separate conventional commit.
 
 ## Open questions the executor must resolve (do not guess)
 
-1. **Post-audit OpenMLS tag/SHA** — needs `git ls-remote` (Task 1 Step 1 gates on it).
+1. ~~Post-audit OpenMLS tag/SHA~~ — **resolved in Task 1:** the pin already carries the fixes; no bump. See `PROVENANCE.md`.
 2. **Current stable Rust version + image digest; latest wasm-pack version + tarball sha256** — need network/Docker (Task 2 Step 1 gates on them).
 3. **`wasm-pack build --target web -- --locked` forwarding** — documented wasm-pack behaviour (args after `--` go to `cargo build`) but not provable from this repo. Failure is loud and immediate in Task 4; the post-build `cmp` drift guard also covers the case where wasm-pack's internal `cargo metadata` rewrites the lockfile before the locked build runs.
 4. **Whether openmls at the new pin ships its own workspace `Cargo.lock`** — if it does, the bootstrap simply inherits it; the flow is unchanged.

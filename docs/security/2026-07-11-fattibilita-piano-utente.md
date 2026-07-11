@@ -2,6 +2,30 @@
 
 **Data:** 2026-07-11 · **Branch:** `feature/pwa-push-bridge` · **Metodo:** verifica del piano contro il codice (`styx-js/`), la storia git (67 commit) e il crate WASM vendorizzato (`styx-js/vendor/openmls-wasm/`), incrociata con il security report `docs/security/2026-07-10-styx-chat-security-report.md`.
 
+> ### Rettifica del 2026-07-11 (in fase di esecuzione del Blocco 1)
+>
+> La prima versione di questo documento affermava che il pin OpenMLS `09e9277` fosse
+> **precedente ai fix dell'audit SRLabs**, e prescriveva di aggiornarlo (§3.1 punto 2, §5
+> Blocco 1 punto 2). **L'affermazione era falsa.** Verificato all'esecuzione:
+>
+> - il pin (2026-07-08) è **discendente del tag `openmls-v0.8.1`** (2026-02-13): 76 commit
+>   avanti, **0 indietro**;
+> - il fix **S3-7** (High, CWE-354) è **presente nel sorgente al pin**: `equal_ct` in
+>   `openmls/src/ciphersuite/mod.rs` esegue il controllo di lunghezza che in v0.7.0 mancava
+>   (senza il quale un MAC troncato risultava uguale, perché `zip` si ferma al più corto).
+>
+> **Conseguenza:** nessun bump. Aggiornare al tag v0.8.1 sarebbe stato un **downgrade** di 76
+> commit e avrebbe **rotto il formato di storage MLS persistito** (PR #2034, presente al pin e
+> assente in 0.8.1). Il requisito 2 del Blocco 1 diventa *verificare e documentare* il pin, non
+> aggiornarlo — vedi `styx-js/vendor/openmls-wasm/PROVENANCE.md`.
+>
+> **Rischio residuo, che resta reale:** il pin è un commit di `main` **non rilasciato**; quei
+> 76 commit non appartengono ad alcuna release pubblicata né rientravano nell'audit. Follow-up:
+> spostare il pin al primo tag upstream che discenda da questo commit.
+>
+> Il punto 3 di §0 (il crate come critical path) **non cambia**: resta valido per
+> `StorageProvider`, commit ack-gated, fork detection e multi-device.
+
 ---
 
 ## 0. Verdetto
@@ -45,7 +69,7 @@ Note a favore della fattibilità: `src/crypto/spake2.js` e `RemotePairingService
 | Blocco trasporto non autenticato (A6) | `82b09be` | Fase 0.2 parziale |
 | Password change su `EncryptedKeyStore` | pre-esistente | Fase 10 parziale (da rifare sul nuovo vault) |
 | Push bridge cieco sui contenuti, registrazione firmata | serie fino a `da59ff1` | Fase 8 ≈ 60% |
-| Piano vendored-crate non committato (bump OpenMLS, N1, N2) | doc `2026-07-11-fase-a-vendored-crate-hardening.md` | base della nuova Fase 0.5 |
+| Piano di hardening del crate vendorizzato (N1, N2, pin, riproducibilità) | doc `docs/superpowers/plans/2026-07-11-blocco1-wasm-hardening.md` | il Blocco 1 |
 
 Vulnerabilità del security report ancora aperte e mappate al piano: **H1** (storage in chiaro → Blocco 3), **H2** (metadati → Blocco metadati pre-audit), M4/M5/M6, N1–N4, R1–R6. Nessuna vulnerabilità aperta risulta non mappata.
 
@@ -54,7 +78,7 @@ Vulnerabilità del security report ancora aperte e mappate al piano: **H1** (sto
 ### 3.1 Nuova Fase 0.5 — Hardening Rust/WASM (prerequisito di tutto il lavoro MLS)
 
 1. Eliminazione di tutti gli `unwrap()`/`expect()` raggiungibili da input di rete (oggi: `patch/lib.rs:319` `tls_deserialize(..).unwrap()` su bytes del relay → trap; più `:172,240,329-331,450,477,494`);
-2. aggiornamento OpenMLS a versione post-audit supportata (pin attuale `09e9277` pre-audit);
+2. ~~aggiornamento OpenMLS a versione post-audit supportata (pin attuale `09e9277` pre-audit)~~ → **rettificato:** il pin porta già i fix (S3-7 verificato nel sorgente). Il requisito diventa *verificare e documentare* il pin in `PROVENANCE.md`, incluso il rischio residuo di stare su `main` non rilasciato. **Non aggiornare** al tag v0.8.1: sarebbe un downgrade e romperebbe il formato di storage persistito. Vedi la rettifica in testa al documento;
 3. aggiunta di `clear_pending_commit` e delle API mancanti;
 4. esposizione controllata di epoch, group context, tree hash e dati per la fork detection (oggi il wasm non espone nulla di tutto ciò — unico valore confrontabile: exporter secret);
 5. pin della toolchain Rust (oggi `rust:latest`);
@@ -135,7 +159,7 @@ Le stime comprendono: sviluppo, test, migrazioni, documentazione, compatibilità
 ## 5. Ordine operativo approvato
 
 ### Blocco 1 — Emergenza WASM
-1. eliminazione dei panic da input; 2. aggiornamento OpenMLS; 3. pin toolchain; 4. `Cargo.lock`; 5. build riproducibile; 6. correzione doc ciphersuite; 7. test con input malevoli.
+1. eliminazione dei panic da input; 2. ~~aggiornamento OpenMLS~~ → **verifica e documentazione del pin** (vedi rettifica in testa: il pin porta già i fix dell'audit; aggiornarlo sarebbe un downgrade); 3. pin toolchain; 4. `Cargo.lock`; 5. build riproducibile; 6. correzione doc ciphersuite; 7. test con input malevoli.
 
 ### Blocco 2 — Riduzione immediata del rischio
 1. eliminazione del mock dalla build production; 2. disabilitazione stub; 3. factory reset reale; 4. Web Locks; 5. CSP e header; 6. correzione copy "serverless"; 7. test CI che blocchi la presenza del mock.
@@ -185,7 +209,7 @@ Vedi §4 (ottimistico 5–7, probabile 7–10, prudenziale 10–14 mesi).
 
 ### 7.5 Criteri di uscita per priorità
 
-- **P0 (fine Blocchi 1–2):** nessun mock nel bundle production (gate CI); stub disabilitati; reset elimina esplicitamente IndexedDB, `localStorage`, Cache Storage, outbox, stato MLS, sottoscrizione push, eventuali service worker registration e dati temporanei; un solo writer MLS (Web Locks); CSP attiva senza unsafe-inline; copy onesto; OpenMLS post-audit pinnato; nessun panic noto raggiungibile da input non fidato, con parser coperti da test negativi, fuzzing e gestione esplicita degli errori; `Cargo.lock` committato.
+- **P0 (fine Blocchi 1–2):** nessun mock nel bundle production (gate CI); stub disabilitati; reset elimina esplicitamente IndexedDB, `localStorage`, Cache Storage, outbox, stato MLS, sottoscrizione push, eventuali service worker registration e dati temporanei; un solo writer MLS (Web Locks); CSP attiva senza unsafe-inline; copy onesto; pin OpenMLS verificato post-audit e documentato in `PROVENANCE.md` (incluso il rischio residuo di `main` non rilasciato); nessun panic noto raggiungibile da input non fidato, con parser coperti da test negativi, fuzzing e gestione esplicita degli errori; `Cargo.lock` committato.
 - **P1 (fine Blocchi 3–4):** nessun dato sensibile in chiaro a riposo; Root Key avvolta con Argon2id; migrazione atomica versionata con protezione rollback; `sent` = almeno un `OK=true`; outbox persistente; lettura/composizione offline; TTL sugli inviti QR; backup identity-only.
 - **P2 (fine Blocco 5 + metadati):** il bridge non conserva alcuna relazione applicativa tra identità permanente e subscription (restano possibili correlazioni tramite IP, tempi e volumi di traffico, da documentare come metadati residui); pairing remoto PAKE; update flow sicuro; supply chain completa (SBOM, firma, build riproducibile); gift wrap e mailbox key attivi; audit esterno senza finding critici o alti; correzioni post-audit chiuse e retestate.
 
