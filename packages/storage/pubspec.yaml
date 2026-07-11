@@ -13,7 +13,7 @@ dependencies:
 
 dev_dependencies:
   build_runner: any
-  dart_code_linter: any
+  dart_code_linter: ^4.1.6
   drift_dev: any
   test: any
   very_good_analysis: any

@@ -12,7 +12,7 @@ dependencies:
   meta: any
 
 dev_dependencies:
-  dart_code_linter: any
+  dart_code_linter: ^4.1.6
   glados: any
   test: any
   very_good_analysis: any

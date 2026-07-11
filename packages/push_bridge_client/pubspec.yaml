@@ -11,6 +11,6 @@ dependencies:
   styx_transport: {path: ../transport}
 
 dev_dependencies:
-  dart_code_linter: any
+  dart_code_linter: ^4.1.6
   test: any
   very_good_analysis: any
