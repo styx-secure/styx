@@ -2,6 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Close, QrFrame } from './Icons.jsx';
 import { qrToSvg, startQrScanner } from '../lib/qr.js';
 
+// Remote pairing is not implemented in the real library (startRemotePairing/
+// joinRemotePairing throw); only the mock fakes it. Expose the tab exclusively in a
+// demo build, so production never shows a control that throws.
+const REMOTE_PAIRING = import.meta.env && import.meta.env.VITE_DEMO === '1';
+
 export default function PairingModal({ api, onClose, onAdded }) {
   const [tab, setTab] = useState('qr');
   return (
@@ -13,11 +18,13 @@ export default function PairingModal({ api, onClose, onAdded }) {
         </div>
         <div className="tabs">
           <button className={`tab${tab === 'qr' ? ' active' : ''}`} onClick={() => setTab('qr')}>Codice QR</button>
-          <button className={`tab${tab === 'remote' ? ' active' : ''}`} onClick={() => setTab('remote')}>Pairing remoto</button>
+          {REMOTE_PAIRING && (
+            <button className={`tab${tab === 'remote' ? ' active' : ''}`} onClick={() => setTab('remote')}>Pairing remoto</button>
+          )}
         </div>
-        {tab === 'qr'
-          ? <QrTab api={api} onAdded={onAdded} />
-          : <RemoteTab api={api} onAdded={onAdded} />}
+        {REMOTE_PAIRING && tab === 'remote'
+          ? <RemoteTab api={api} onAdded={onAdded} />
+          : <QrTab api={api} onAdded={onAdded} />}
       </div>
     </div>
   );

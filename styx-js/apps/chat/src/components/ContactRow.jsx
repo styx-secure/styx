@@ -2,7 +2,9 @@ import { identicon } from '../lib/identicon.js';
 import { relTime } from '../lib/format.js';
 
 export default function ContactRow({ contact, active, onClick }) {
-  const { pubkey, alias, online, unread, lastPreview, lastTs } = contact;
+  // No `online`: the real library has no presence protocol, so the dot only ever
+  // reflected fabricated mock data. It returns when presence is real, not before.
+  const { pubkey, alias, unread, lastPreview, lastTs } = contact;
   return (
     <div
       className={`crow${active ? ' active' : ''}`}
@@ -13,7 +15,6 @@ export default function ContactRow({ contact, active, onClick }) {
     >
       <div className="avatar-wrap">
         <img className="avatar" src={identicon(pubkey)} alt="" />
-        <span className={`presence${online ? ' on' : ''}`} />
       </div>
       <div style={{ minWidth: 0 }}>
         <div className="row1">
