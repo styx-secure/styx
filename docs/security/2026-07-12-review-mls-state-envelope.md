@@ -23,13 +23,13 @@ dei rilievi e ri-verifica (646/646 test verdi, build PWA ok).
 
 ## Rilievi della review indipendente e risoluzione
 
-- **Importante I1 — risolto (`26878f0`).** Il resume path della migrazione (envelope +
+- **Importante I1 — risolto (fix incluso in PR #23).** Il resume path della migrazione (envelope +
   marker residui, crash tra i passi 9 e 12) non era raggiungibile da `init`: il backup —
   copia **in chiaro** dello stato pre-migrazione, con segreti di ratchet che la forward
   secrecy avrebbe ritirato — sarebbe sopravvissuto indefinitamente. Ora `init` invoca la
   migrazione anche quando trova marker residui accanto a un envelope; test di
   integrazione aggiunto.
-- **Importante I2 — risolto (`26878f0`).** `useStyxChat.unlock` non rilasciava il Web
+- **Importante I2 — risolto (fix incluso in PR #23).** `useStyxChat.unlock` non rilasciava il Web
   Lock su `init` fallito: al retry la stessa tab si vedeva negare il lock (non
   rientrante) e mostrava una schermata "tab secondaria" fuorviante — proprio nel punto
   in cui i nuovi errori strutturati raggiungono l'utente. Ora il lock è rilasciato nel
