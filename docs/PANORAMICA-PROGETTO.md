@@ -24,7 +24,7 @@ Styx è **due implementazioni parallele e volutamente non interoperabili** di un
 | Autore | maverde73 &lt;cirrosi@gmail.com&gt; (unico) |
 | Dimensione tracciata | ~6,1 MB (di cui 1,8 MB è l'artefatto WASM vendorizzato) |
 | Licenza | vendored OpenMLS: MIT; licenza di progetto **non ancora applicata** (ADR-0004 *Proposta*). Repo "public-source experimental"; contributi esterni sospesi |
-| Blocchi | 1 (WASM hardening) ✅ · 2 (riduzione rischio) ✅ · review Blocco 2 **GO** |
+| Blocchi | 1 (WASM hardening) ✅ · 2 (riduzione rischio) ✅ · review Blocco 2 **GO** · Fase D envelope MLS ✅ (PR #23, squash `b4f00ac`) |
 | CI | `styx-js web` ✅ verde · Dart reference stack ✅ verde (dopo fix baseline) · WASM integrity ✅ · CodeQL (JS/TS) ✅ |
 | Sicurezza GitHub | secret scanning + push protection, Dependabot, PVR, CodeQL, ruleset su `main`, SHA-pinning, token read-only (vedi `docs/security/2026-07-12-github-security-baseline.md`) |
 
@@ -40,7 +40,7 @@ Styx è **due implementazioni parallele e volutamente non interoperabili** di un
 | `push_bridge/` (Node) | 247 | — | bridge push attivo |
 | `push_bridge_server/` (Go) | 888 | — | bridge legacy (scaffold) |
 
-**Test complessivi:** 61 file `*_test.dart` + 58 file `*.test.js`. La suite JS è verde (~601 test); la suite Dart è **verde** dopo il fix della baseline CI (390 test: 135 crypto_core, 76 styx, 69 ledger_engine, 61 transport, 37 storage, 11 push_bridge_client, 1 test_integration; `themis_survey` Flutter escluso dallo stack di riferimento). La coverage Dart è gestita a **baseline non-regressione** per package: il 90% resta un obiettivo, non ancora raggiunto ovunque (storage ~78%, styx ~82%, transport ~85%; gli altri ≥90%).
+**Test complessivi:** 61 file `*_test.dart` + 58 file `*.test.js`. La suite JS è verde (646 test, dopo l'envelope MLS di PR #23); la suite Dart è **verde** dopo il fix della baseline CI (390 test: 135 crypto_core, 76 styx, 69 ledger_engine, 61 transport, 37 storage, 11 push_bridge_client, 1 test_integration; `themis_survey` Flutter escluso dallo stack di riferimento). La coverage Dart è gestita a **baseline non-regressione** per package: il 90% resta un obiettivo, non ancora raggiunto ovunque (storage ~78%, styx ~82%, transport ~85%; gli altri ≥90%).
 
 ---
 
@@ -162,7 +162,7 @@ Debiti at-rest tracciati (Blocco 1/2): residuo forense di un join rifiutato in `
 |---|---|---|
 | **0.5 / 1 — Emergenza WASM** | panic-free, pin OpenMLS verificato, toolchain+lockfile, build riproducibile, binding N2 | ✅ **fatto** (commit `363a3ad`…`80a0ded`) |
 | **2 — Riduzione rischio** | mock fuori prod, stub off, factory reset, Web Lock, CSP, copy, gate CI | ✅ **fatto** (commit `4e40721`…`598fee8`) |
-| **3 — Vault minimo** | IndexedDB, Root Key, Argon2id, cifratura at-rest, migrazione | ⬜ da fare (chiude H1) |
+| **3 — Vault minimo** | IndexedDB, Root Key, Argon2id, cifratura at-rest, migrazione | 🟡 preparazione: envelope MLS versionato + migration policy ✅ (PR #23, `b4f00ac`); spike autorizzati; vault non iniziato (chiude H1) |
 | **4 — Trasporto affidabile** | ACK, outbox, retry, ricevute cifrate | ⬜ da fare |
 | **5 — Evoluzione MLS** | ack-gating, fork detection, StorageProvider, rekey, multi-device | ⬜ da fare |
 | Metadati pre-audit + Audit | gift-wrap, mailbox/push handle; audit esterno | ⬜ da fare (chiude H2) |

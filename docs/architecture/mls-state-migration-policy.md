@@ -1,6 +1,8 @@
 # MLS state migration policy
 
 Data: 2026-07-12 · Ambito: `styx-js` (chat MLS) · Stato: **normativo per la Fase D (envelope)**
+Implementata in PR #23 (squash su `main` = `b4f00ac`), review con esito GO in
+`docs/security/2026-07-12-review-mls-state-envelope.md`.
 
 Questo documento definisce come lo stato MLS persistito viene versionato, riconosciuto,
 migrato e — quando incompatibile — **rifiutato senza perdita di dati**. Vale per il

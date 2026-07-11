@@ -1,6 +1,8 @@
 # Review di sicurezza — MLS state envelope (Fase D)
 
 Data: 2026-07-12 · Branch: `feature/mls-state-envelope` (base `main@6ab94f6`)
+**Merged:** PR #23, squash su `main` = **`b4f00ac`** (2026-07-12); riferimento canonico
+permanente di questa fase.
 Ambito: envelope v1, migrazione legacy, integrazione `StyxChat.init`, fixture, test.
 Metodo: review indipendente del diff completo (reviewer dedicato, worktree isolato,
 esecuzione reale delle suite), verifica empirica dei percorsi di ripresa, quindi fix
