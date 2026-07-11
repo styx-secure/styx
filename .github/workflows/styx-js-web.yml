@@ -1,0 +1,38 @@
+name: styx-js web
+on:
+  pull_request:
+    paths: ['styx-js/**']
+  push:
+    branches: [main]
+    paths: ['styx-js/**']
+
+jobs:
+  build-and-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Unit tests (lib + app)
+        working-directory: styx-js
+        run: |
+          npm ci
+          npm test -- --testTimeout=20000
+
+      - name: Build the PWA
+        working-directory: styx-js/apps/chat
+        run: |
+          npm ci
+          npm run build
+
+      - name: Fail if the mock or demo data shipped
+        working-directory: styx-js/apps/chat
+        run: |
+          # Distinctive markers only — no generic contact names that could false-positive.
+          if grep -rlE 'MockStyxChat|styx-lib-mock|seedDemo|Nodo Berlino' dist/; then
+            echo "::error::Mock/demo artifacts found in the production bundle"
+            exit 1
+          fi
+          echo "Production bundle is mock-free."
