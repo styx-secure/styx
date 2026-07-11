@@ -259,7 +259,7 @@ export class MockStyxChat {
       { alias: 'Aurora', online: true, unread: 2, msgs: [
         ['in', 'Ciao! Hai visto il nuovo protocollo di pairing?', 42],
         ['out', 'Sì, il double-check a 6 cifre è elegante', 40],
-        ['in', 'Zero server, tutto peer-to-peer 🔐', 6],
+        ['in', 'Cifrato end-to-end su relay federati 🔐', 6],
         ['in', 'Ci vediamo dopo per la review?', 3] ] },
       { alias: 'Marco', online: false, unread: 0, msgs: [
         ['out', 'Ti mando le chiavi via QR', 70],
