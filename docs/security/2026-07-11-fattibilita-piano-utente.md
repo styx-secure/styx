@@ -188,8 +188,15 @@ Blocco 2 (rischio) ──► Blocco 3 (vault) ──► Blocco 4 (trasporto) ─
         (Web Locks del Blocco 2 è prerequisito della migrazione del Blocco 3)
 
 Blocco 4 ──► Metadati pre-audit (mailbox/push handle, gift wrap) ──► Audit esterno
-Blocco 1.4 (epoch/context API) ──► fork detection (Blocco 5.3) ──► multi-device
+Blocco 5.0 (batch API wasm: epoch/tree-hash/context) ──► fork detection (Blocco 5.3) ──► multi-device
 ```
+
+> **Nota (review Blocco 1).** Nella prima stesura questa freccia partiva da un fantomatico
+> "Blocco 1.4". Gli accessor read-only (epoch, tree hash, group context) e `clear_pending_commit`
+> **non** erano nello scope del Blocco 1 (§5 li ometteva; solo §3.1 li elencava — incoerenza sanata
+> qui) e non sono stati implementati. Vengono raggruppati in un **unico rebuild pianificato a inizio
+> Blocco 5** ("Blocco 5.0"), perché ogni rebuild costa (tempo + artefatto in git + verifica): vedi
+> le raccomandazioni R1–R4 della review in §7.7.
 
 ### 7.2 Critical path
 
@@ -215,3 +222,16 @@ Vedi §4 (ottimistico 5–7, probabile 7–10, prudenziale 10–14 mesi).
 
 ### 7.6 Rischi che richiedono prototipazione prima di confermare le stime
 Elencati in §7.3, riga "Rischi da prototipare": ciascuno va validato con uno spike a inizio del blocco corrispondente (spike 1–3 giorni, esito documentato) prima di impegnare la stima del blocco.
+
+### 7.7 Esiti della review architetturale del Blocco 1 (2026-07-11)
+
+La review a fine Blocco 1 (prescritta da §6) ha confermato la fondazione come **solida per costruire il Blocco 2**, e ha prodotto quattro azioni da schedulare **prima** dei blocchi indicati. Non toccano il Blocco 2, ma ignorarle rende più caro il lavoro successivo.
+
+- **R1 — Il blob di stato MLS non ha versione né migration story.** `serialize_state` (`patch/lib.rs`) produce un dump length-prefixed della HashMap del provider, senza magic number né campo versione; il contenuto è la codifica serde interna di OpenMLS, i cui tag sono già cambiati una volta (PR #2034 — è il motivo per cui il downgrade è vietato). Al prossimo spostamento del pin — **già pianificato** come follow-up in `PROVENANCE.md` — `restore_state` riesce ma `Group.load` non trova i gruppi: le sessioni **svaniscono in silenzio**, e in 1:1 senza rejoin il contatto è irrecuperabile. **Da fare prima del Blocco 3** (che cifrerebbe questi blob consacrandoli): envelope versionato in JS (nessun rebuild), fixture di un blob reale + test di restore come regression detector, e una policy scritta (migrazione in-place vs re-pairing forzato).
+- **R2 — Il loop di build non ha caching.** Ogni `build.sh` fa clone fresco + build fredda di ~490 crate in container effimero (5–15 min); `verify.sh` ne fa altre due. Accettabile per l'hardening one-shot; **ostile allo sviluppo iterativo dello StorageProvider** (Blocco 5, decine di cicli) e all'eventuale Argon2id in-crate (Blocco 3). Mitigazione: un flag dev in `build.sh` con cache mounts (registry cargo + target dir), tenendo il percorso ermetico per release/verify.
+- **R3 — `patch/lib.rs` è una sostituzione integrale del file upstream** (`build.sh` fa `cp patch/lib.rs → src/lib.rs`): qualunque modifica upstream a quel file viene **scartata senza segnale**, e il pin è su un commit che evolve proprio quell'area. **Prima di ulteriore lavoro sul crate** (Blocco 5): convertire in un crate Styx-owned con `openmls = { git, rev }` come dipendenza, così `lib.rs` diventa sorgente di prima classe, Cargo cacha la git-dep e un pin bump è un edit di `Cargo.toml`. ~1 giorno.
+- **R4 — Raggruppare le API mancanti in un unico rebuild pianificato** ("Blocco 5.0", vedi §7.1): accessor epoch/tree-hash/group-context (forma dettata da RFC 9420, zero design risk), delete/enumerate dello storage (serve a R1 e alla cancellazione crittografica), `clear_pending_commit` (la sua forma dipende dal design del gating ACK, quindi decidere lì). Aggiungerle a spizzichi è il modo più caro.
+
+**Emendamento di sequenza (confermato l'ordine 2→3→4→5):** il vault del Blocco 3 deve esporre l'area MLS come **keyspace record-oriented** (get/put/delete per chiave, transazionale) fin dal giorno 1, anche se al suo interno c'è un solo record-blob. Così lo StorageProvider granulare del Blocco 5 (3.1b) è un drop-in e non serve una seconda migrazione. Il lavoro del Blocco 3 **non** viene buttato: IndexedDB, Root Key, Argon2id, migrazione atomica e cifratura di messaggi/contatti/metadati sopravvivono; solo "stato MLS = un blob" viene sostituito.
+
+**Debiti at-rest tracciati (dal Blocco 1, non bloccanti):** un join MLS rifiutato lascia la credenziale e il materiale di gruppo del peer respinto dentro `mls:state` (il crate non espone delete — vedi il commento onesto di `removeSession`); chi fotografa un QR può bruciare l'invito forzando `_retireInvite` (DoS di griefing inerente al KeyPackage monouso). Entrambi confluiscono in N4/R2 e nella cancellazione per-gruppo del Blocco 5.0.
