@@ -67,7 +67,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
         with:
-          sdk: stable
+          sdk: "3.10.8"
       - run: dart pub global activate melos 7.8.2
       - run: melos bootstrap
       - run: melos run analyze
@@ -82,7 +82,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
         with:
-          sdk: stable
+          sdk: "3.10.8"
       # Drift/sqlite3 DAO tests dlopen libsqlite3.so; runners ship only libsqlite3.so.0,
       # so install the -dev package that provides the unversioned symlink.
       - run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
@@ -99,7 +99,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
         with:
-          sdk: stable
+          sdk: "3.10.8"
       - run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
       - run: dart pub global activate melos 7.8.2
       - run: dart pub global activate coverage
