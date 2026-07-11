@@ -7,36 +7,56 @@ produzione (XMTP). Fornisce forward secrecy e post-compromise security per il ca
 
 ## Provenienza (riproducibile)
 
+Il dettaglio completo — posizione del pin rispetto alle release, verifica dei fix dell'audit,
+hash dell'artefatto, rischi residui — sta in **[`PROVENANCE.md`](./PROVENANCE.md)**. In sintesi:
+
 - **Sorgente:** `github.com/openmls/openmls`, crate `openmls-wasm`
-- **Commit:** `09e92777dba0528d3d29e2e5e681b7e91637c7be` (2026-07-08)
+- **Commit:** `09e92777dba0528d3d29e2e5e681b7e91637c7be` (2026-07-08) — discendente del tag
+  `openmls-v0.8.1`, quindi **porta i fix dell'audit SRLabs** (verificato nel sorgente).
+  ⚠️ È un commit di `main` **non rilasciato**: vedi i rischi residui in `PROVENANCE.md`.
 - **Licenza:** MIT
-- **Ciphersuite:** `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` (MTI di OpenMLS)
-- **Toolchain:** `rust:latest` in Docker + `wasm-pack build --target web`
-- **Dimensione:** `openmls_wasm_bg.wasm` ≈ 1.8 MB raw / **≈ 655 KB gzip** (ok per PWA/Capacitor)
+- **Ciphersuite:** `MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519` — X25519 HPKE,
+  ChaCha20-Poly1305, SHA-256, Ed25519 (fissata in `patch/lib.rs`)
+- **Provider crypto:** `openmls_rust_crypto` (RustCrypto)
+- **Toolchain:** `rust:1.96.1` pinnata **per digest** + `wasm-pack` 0.15.0 con **sha256
+  verificato**, `Cargo.lock` vendorizzato e build `-- --locked`
+- **Dimensione:** `openmls_wasm_bg.wasm` ≈ 1,81 MB raw / **≈ 644 KB gzip** (ok per PWA/Capacitor)
 
-Rigenera con `./build.sh` (richiede Docker). L'artefatto è vendorizzato deliberatamente perché
-OpenMLS non pubblica un pacchetto npm.
+Rigenera con `./build.sh` (richiede Docker). Verifica la riproducibilità con `./verify.sh`: due
+build dai medesimi pin devono essere byte-identiche tra loro e uguali all'artefatto committato.
+L'artefatto è vendorizzato deliberatamente perché OpenMLS non pubblica un pacchetto npm.
 
-**Patch Styx:** oltre all'esempio ufficiale, applichiamo `patch/lib.rs` (via `build.sh`) che
-aggiunge i metodi di persistenza: `Provider.serialize_state()/restore_state()`,
-`Group.load(provider, groupId)`, `Identity.public_key()/load(...)`. Servono a salvare lo stato
-MLS (gruppi + chiavi) su IndexedDB/localStorage e ricaricare le sessioni dopo un refresh della
-pagina — senza, ricaricando si perderebbero le sessioni.
+**Patch Styx** (`patch/lib.rs`, applicata da `build.sh` — *non* coperta dall'audit upstream):
+
+- **persistenza:** `Provider.serialize_state()/restore_state()`, `Group.load(provider, groupId)`,
+  `Identity.public_key()/load(...)` — servono a salvare lo stato MLS e ricaricare le sessioni
+  dopo un refresh della pagina;
+- **binding d'identità:** `Group.member_identities()` — espone le credenziali dei membri, così
+  l'app può rifiutare un gruppo il cui peer non è chi lo ha inviato;
+- **niente panic da rete:** `process_message` restituisce errori invece di trappare il WASM su
+  input malformato. Un trap avvelenerebbe l'istanza, che è condivisa da tutte le sessioni.
 
 ## API esposta (vedi `openmls_wasm.d.ts`)
 
 `Provider` (crypto+storage per-peer) · `Identity(provider, name)` + `key_package()` ·
 `Group.create_new` · `Group.join(provider, welcome, ratchetTree)` · `propose_and_commit_add` →
 `{ proposal, commit, welcome }` · `merge_pending_commit` · `create_message` / `process_message`
-· `export_ratchet_tree` · `KeyPackage`/`RatchetTree` `to_bytes`/`from_bytes`.
+· `export_ratchet_tree` · `export_key` · `member_identities` ·
+`KeyPackage`/`RatchetTree` `to_bytes`/`from_bytes`.
 
 Verificato con un round-trip 1:1 in Node: KeyPackage → gruppo 2-membri → Welcome → join →
 messaggi applicativi bidirezionali decifrati (vedi `roundtrip.mjs`).
 
-## Persistenza (risolta)
+## Limiti noti
 
-Lo stato del gruppo era **in memoria**; ora la patch espone serialize/restore dello storage del
-`Provider` + `Group.load`/`Identity.load`, e `StyxChat` li usa per persistere su localStorage e
-ricaricare le sessioni dopo un refresh. Verificato da `test/chat/styx-chat-assembly.test.js`
-(«a peer survives a reload…»). *Nota:* è persistenza whole-storage after-each-op; per volumi
-elevati si passerà a un `StorageProvider` backato direttamente su IndexedDB.
+- **Persistenza whole-storage.** Lo stato è serializzato per intero dopo *ogni* operazione
+  (`serialize_state`), con riscritture O(stato totale) per messaggio. Verificato da
+  `test/chat/styx-chat-assembly.test.js` («a peer survives a reload…»). Il passo successivo è
+  uno `StorageProvider` granulare su IndexedDB, che abilita anche la cancellazione delle chiavi
+  per epoca.
+- **Commit non subordinati agli ACK.** `merge_pending_commit` è esposto, `clear_pending_commit`
+  no, e `process_message` fonde i commit in ingresso dentro il WASM: non c'è modo di annullare
+  un commit non confermato. Irrilevante oggi (in 1:1 i commit non attraversano il filo), da
+  risolvere prima del multi-device.
+- **Nessuna fork detection.** Epoch, tree hash e group context non sono esposti; l'unico valore
+  confrontabile tra i peer è il secret esportato usato per il safety number.
