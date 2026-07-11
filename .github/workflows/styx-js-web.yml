@@ -1,10 +1,10 @@
 name: styx-js web
 on:
   pull_request:
-    paths: ['styx-js/**', '.github/workflows/styx-js-web.yml']
+    paths: ['styx-js/**', '.github/workflows/**']
   push:
     branches: [main]
-    paths: ['styx-js/**', '.github/workflows/styx-js-web.yml']
+    paths: ['styx-js/**', '.github/workflows/**']
 
 jobs:
   build-and-gate:

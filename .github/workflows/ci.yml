@@ -1,10 +1,15 @@
 name: CI
 
 on:
+  # This is the Dart reference-stack CI (ADR-0003). It runs only when Dart code changes,
+  # so it does not gate product PRs that touch only styx-js/ or docs. The Dart stack has
+  # a pre-existing CI failure tracked separately (see workspace MIGRATION-LOG).
   push:
     branches: [main, develop]
+    paths: ['packages/**', 'test_integration/**', 'pubspec.yaml', 'pubspec.lock', 'analysis_options.yaml', 'tool/**']
   pull_request:
     branches: [main, develop]
+    paths: ['packages/**', 'test_integration/**', 'pubspec.yaml', 'pubspec.lock', 'analysis_options.yaml', 'tool/**']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
