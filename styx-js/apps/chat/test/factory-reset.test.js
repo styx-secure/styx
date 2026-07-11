@@ -9,7 +9,7 @@ function installGlobals() {
   const state = {
     caches: new Map([['workbox-precache-v2', {}], ['other', {}]]),
     idbDeleted: [],
-    localStore: new Map([['styx-identity', 'x'], ['styx-theme', 'dark'], ['keep', '1']]),
+    localStore: new Map([['styx-identity', 'x'], ['styx-theme', 'dark'], ['styx-install-dismissed', '1'], ['keep', '1']]),
     unregistered: 0,
     unsubscribed: 0,
   };
@@ -54,6 +54,7 @@ describe('factoryReset — app-layer total wipe', () => {
     expect(state.idbDeleted).toContain('styx-ledger');
     expect(state.localStore.has('styx-identity')).toBe(false);
     expect(state.localStore.has('styx-theme')).toBe(false);
+    expect(state.localStore.has('styx-install-dismissed')).toBe(false);
     expect(state.localStore.has('keep')).toBe(true); // only our keys, not everything
   });
 

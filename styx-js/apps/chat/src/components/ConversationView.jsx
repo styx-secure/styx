@@ -80,10 +80,13 @@ export default function ConversationView({
         <img className="avatar" src={identicon(contact.pubkey)} alt="" />
         <div style={{ minWidth: 0 }}>
           <div className="alias">{contact.alias}</div>
-          <div className={`status${contact.online || typing ? ' on' : ''}`}>
-            {typing ? (<><span className="sx-dot" /><span className="sx-dot" /><span className="sx-dot" /> sta scrivendo…</>)
-              : contact.online ? 'online' : 'offline'}
-          </div>
+          {/* No online/offline: the lib has no presence protocol, so any dot would be
+              fabricated. The typing indicator is real (typing events) and stays. */}
+          {typing && (
+            <div className="status on">
+              <span className="sx-dot" /><span className="sx-dot" /><span className="sx-dot" /> sta scrivendo…
+            </div>
+          )}
         </div>
         <div className="spacer" />
         <button

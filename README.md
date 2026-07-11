@@ -2,7 +2,14 @@
 
 **Oaths sealed in code. Trust forged in math.**
 
-Styx is a Dart/Flutter library for building sovereign, peer-to-peer cryptographic ledgers. No servers, no accounts, no trust assumptions — just two peers and an unbreakable chain of signed events.
+> ⚠️ **EXPERIMENTAL SOFTWARE** — Styx is under active development and has **not** completed an
+> independent security audit. Do not use current builds for sensitive, high-risk, or life-critical
+> communications. See `docs/PANORAMICA-PROGETTO.md` for the real project state.
+
+Styx is a project for sovereign, end-to-end encrypted, metadata-minimizing communication. It contains
+two codebases: a mature **Dart** ledger library (`packages/`) and the active **JavaScript/MLS chat**
+(`styx-js/`, an E2EE PWA over federated Nostr relays). Messages are end-to-end encrypted; relays route
+them but cannot read the content, though they observe some transport metadata.
 
 > *In Greek mythology, the River Styx was the boundary between the mortal world and the underworld. The gods swore their most sacred oaths upon its waters — oaths that could never be broken. Styx brings that same inviolable trust to digital agreements.*
 

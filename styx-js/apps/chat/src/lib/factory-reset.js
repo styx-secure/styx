@@ -59,6 +59,7 @@ export async function factoryReset({ chat, reload = true } = {}) {
   try {
     localStorage.removeItem('styx-identity');
     localStorage.removeItem('styx-theme');
+    localStorage.removeItem('styx-install-dismissed');
   } catch { /* ignore */ }
 
   if (reload) location.reload();

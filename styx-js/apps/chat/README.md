@@ -1,9 +1,14 @@
 # Styx Chat — frontend web
 
+> ⚠️ **EXPERIMENTAL SOFTWARE** — Styx is under active development and has **not** completed an
+> independent security audit. Do not use current builds for sensitive, high-risk, or
+> life-critical communications.
+
 SPA React/Vite dell'app di messaggistica E2E su relay federati (Nostr). Consuma il contratto `StyxChat`
-tramite `src/lib/styx-adapter.js`: usa la libreria reale (`import { StyxChat } from 'styx-js'`)
-se presente, altrimenti ripiega sul **mock in-memory** (`src/lib/styx-lib-mock.js`), così la UI
-è navigabile in isolamento.
+tramite `src/lib/styx-adapter.js`: una build di produzione usa **solo** la libreria reale
+(`import { StyxChat } from 'styx-js'`) e si arresta con un errore se il modulo crittografico manca —
+nessun fallback silenzioso. Il **mock in-memory** (`src/lib/styx-lib-mock.js`) è incluso solo nella
+build demo (`npm run build:demo`, `VITE_DEMO=1`) e viene eliminato dal bundle di produzione.
 
 ## Avvio
 ```bash
