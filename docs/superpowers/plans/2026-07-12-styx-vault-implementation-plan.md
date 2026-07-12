@@ -64,9 +64,11 @@ successiva deve rispettare e la matrice di tracciabilità.
 `VAULT_WRONG_PASSWORD` · `VAULT_RECORD_INVALID` · `VAULT_RECORD_CORRUPTED` ·
 `VAULT_MANIFEST_TAMPERED` · `VAULT_BLOCKED` · `VAULT_QUOTA_EXCEEDED` ·
 `VAULT_WRONG_STATE` · `VAULT_MIGRATION_FAILED` · `VAULT_DESTROY_FAILED` ·
-`WORKER_TERMINATED` · `WORKER_CRASHED` · `BAD_REQUEST` — più i codici
-`MLS_STATE_*` esistenti, invariati. Nessun messaggio contiene payload, chiavi o
-stato (§11 di questo piano).
+`WORKER_TERMINATED` · `WORKER_CRASHED` · `WORKER_TIMEOUT` · `BAD_REQUEST` — più i
+codici `MLS_STATE_*` esistenti, invariati. Nessun messaggio contiene payload,
+chiavi o stato (§11 di questo piano). `WORKER_TIMEOUT` (aggiunto in PR‑3): il
+worker non ha risposto in tempo; il timeout è fatale per il processo worker
+(terminate + respawn), mai un semplice scarto della risposta tardiva.
 
 ### B3.0.4 Limiti dimensionali
 
