@@ -6,15 +6,19 @@ aver verificato i gate su `main`. GitHub resta la fonte di verità; il Gantt Exc
 
 ## 1. Project
 
-Creare un Project organizzativo chiamato **Styx Secure Delivery** e collegare il
-repository `styx-secure/styx`.
+Il Project organizzativo è stato creato e collegato:
+
+- nome: **Styx Secure Delivery**;
+- numero: `1`;
+- URL: <https://github.com/orgs/styx-secure/projects/1>;
+- repository collegato: `styx-secure/styx`.
 
 Campi:
 
 | Campo | Tipo | Valori |
 |---|---|---|
 | Status | single select | Inbox, Needs contract, Blocked, Ready, In progress, In review, Human gate, Merge queue, Done, Cancelled |
-| Type | single select | Epic, Task, Gate, Bug, Review, Chore, Research |
+| Type | nativo (issue type) | Epic, Task, Gate, Bug, Review, Chore, Research |
 | Priority | single select | P0, P1, P2, P3 |
 | Risk | single select | Low, Medium, High, Crypto-critical |
 | Phase | single select | Governance, Agent harness, Orchestration, Product |
@@ -28,19 +32,36 @@ Campi:
 | Confidence | single select | High, Medium, Low |
 | Execution ID | text | identificatore immutabile del tentativo |
 
-Viste minime: Intake, Execution board, Dependency queue, Human gates, Roadmap,
-Agent performance. Lo stato vive nel Project; non creare label di stato.
+`Type` non è un campo custom single-select: il nome è riservato da GitHub
+Projects. È il campo nativo alimentato dagli organization issue types di
+`styx-secure` (Epic, Task, Gate, Bug, Review, Chore, Research; il tipo
+predefinito `Feature` esiste ma è disabilitato, non eliminato).
 
-Automazioni iniziali:
+Viste effettive: Intake, Execution board, Dependency queue, Roadmap,
+Agent performance, Human gates — Status, Human gates — Risk. Lo stato vive nel
+Project; non creare label di stato.
 
-- nuovo elemento -> `Inbox`;
-- Issue riaperta -> `Needs contract`;
-- PR collegata aperta -> `In progress`;
-- PR pronta per review -> `In review`;
+La vista unica `Human gates` è stata divisa in due viste complementari perché
+GitHub Projects non supporta filtri OR tra campi differenti:
+
+- **Human gates — Status**: filtro `status:"Human gate"`;
+- **Human gates — Risk**: filtro `risk:High,"Crypto-critical"`.
+
+Limiti WIP della Execution board: `In progress` 3, `In review` 3,
+`Human gate` 5, `Merge queue` 1.
+
+Automazioni attive:
+
+- auto-add delle Issue e PR aperte di `styx-secure/styx`;
+- auto-add delle sub-issue;
+- elemento aggiunto -> `Inbox`;
+- elemento riaperto -> `Needs contract`;
+- PR collegata a una Issue -> `In progress`;
 - PR mergiata -> `Done`;
-- Issue chiusa come not planned -> `Cancelled`.
+- elemento chiuso -> `Done`.
 
-Le transizioni `Ready`, `Human gate` e `Merge queue` restano manuali in Fase 1.
+Le transizioni `Ready`, `In review`, `Human gate`, `Merge queue` e `Cancelled`
+(per le Issue chiuse come not planned) restano manuali in Fase 1.
 
 ## 2. Label
 
@@ -79,29 +100,33 @@ repository non sostituisce l'enforcement dei permessi.
 
 Applicare in due passaggi per non bloccare la stessa PR che introduce i gate.
 
-### Passaggio A — subito dopo il merge governance
+### Passaggio A — applicato
 
-- target branch esatto: `main`;
+Il Passaggio A è applicato nel ruleset **`main branch protection`**
+(ID `18814814`), enforcement `active`:
+
+- target esatto: `refs/heads/main`;
+- bypass list vuota;
 - pull request obbligatoria;
 - conversazioni risolte;
 - cronologia lineare;
 - force-push e cancellazione vietati;
 - branch aggiornato prima del merge;
 - squash merge soltanto;
-- required checks, selezionati dal picker dei check osservati e associati
-  all'app **GitHub Actions**:
+- required checks associati all'app **GitHub Actions**
+  (`integration_id` `15368`):
   - `Dart reference stack gate`;
   - `styx-js web gate`;
   - `WASM integrity gate`;
-  - `Analyze (javascript-typescript)`;
-- nessun bypass permanente.
+  - `Analyze (javascript-typescript)`.
 
 I nomi sopra sono i context reali dei job. Il nome del workflow non deve essere
 premesso al context memorizzato nel ruleset.
 
-Verificare una PR di prova non-prodotto e un run `merge_group`: tutti e quattro i
-check devono risultare `Successful`, mai `Expected` o permanentemente pending,
-prima del Passaggio B.
+La PR innocua non-prodotto #44 ha pubblicato e completato con successo tutti e
+quattro i check sull'evento `pull_request`. Il run `merge_group` non è ancora
+stato validato: tutti e quattro i check devono risultare `Successful`, mai
+`Expected` o permanentemente pending, prima del Passaggio B.
 
 ### Passaggio B — enforcement umano
 
