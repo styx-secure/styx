@@ -10,6 +10,7 @@
 // and is the caller's responsibility.
 
 import { VaultCryptoError, VaultCryptoErrorCodes as Codes } from './vault-errors.js';
+import { assertHmacSha256CryptoKey } from './vault-key-guards.js';
 
 /** Closed v1 namespace allowlist (spec §5/§8 as amended: settings, canary). */
 export const VAULT_NAMESPACES = Object.freeze([
@@ -114,11 +115,9 @@ export async function deriveManifestKey(rootKey, keyVersion) {
   );
 }
 
-function assertManifestKey(key) {
-  if (!(key instanceof CryptoKey) || key.algorithm?.name !== 'HMAC') {
-    throw new VaultCryptoError(Codes.CRYPTO_FAILED, 'manifest key must be an HMAC CryptoKey');
-  }
-}
+// Exact contract (review F7): secret HMAC-SHA-256, 256-bit, non-extractable,
+// usages exactly sign+verify — see vault-key-guards.js.
+const assertManifestKey = assertHmacSha256CryptoKey;
 
 /**
  * HMAC-SHA-256 over already-canonicalized manifest bytes. The persisted
@@ -130,7 +129,12 @@ export async function signManifestBytes(key, canonicalBytes) {
   if (!(canonicalBytes instanceof Uint8Array)) {
     throw new VaultCryptoError(Codes.CRYPTO_FAILED, 'manifest bytes must be a Uint8Array');
   }
-  return new Uint8Array(await subtle.sign('HMAC', key, canonicalBytes));
+  const mac = new Uint8Array(await subtle.sign('HMAC', key, canonicalBytes));
+  if (mac.length !== MANIFEST_MAC_BYTES) {
+    // Review F7: the persisted MAC contract is exactly 32 bytes.
+    throw new VaultCryptoError(Codes.CRYPTO_FAILED, 'unexpected manifest MAC length');
+  }
+  return mac;
 }
 
 /**
