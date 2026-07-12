@@ -1,5 +1,5 @@
 name: Manual gate
-about: Record a human authorization, verification or GO/NO-GO decision
+description: Record a human authorization, verification or GO/NO-GO decision
 title: "[Gate] "
 body:
   - type: textarea
