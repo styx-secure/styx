@@ -9,7 +9,7 @@ body:
     id: contract_version
     attributes:
       label: Contract marker
-      description: Keep this exact value; the contract validator fails closed if it is changed.
+      description: Keep this exact value. Fase 1 verifies it during human triage; the Fase 2 validator will reject changed or missing markers automatically.
       value: "<!-- styx-task-contract:v1 -->"
     validations:
       required: true
