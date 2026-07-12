@@ -144,7 +144,7 @@ rappresentato anche nel campo `Status` del Project.
 | Campo | Tipo | Valori / uso |
 |---|---|---|
 | `Status` | single select | stati della tabella precedente |
-| `Type` | single select | Epic, Task, Gate, Bug, Review, Chore, Research |
+| `Type` | nativo (issue type) | Epic, Task, Gate, Bug, Review, Chore, Research |
 | `Priority` | single select | P0, P1, P2, P3 |
 | `Risk` | single select | Low, Medium, High, Crypto-critical |
 | `Phase` | single select | Governance, Agent harness, Orchestration, Product |
@@ -158,6 +158,11 @@ rappresentato anche nel campo `Status` del Project.
 | `Confidence` | single select | High, Medium, Low |
 | `Execution ID` | text | identificatore immutabile del tentativo |
 
+`Type` non è un campo custom single-select: il nome è riservato da GitHub
+Projects. È il campo nativo alimentato dagli organization issue types di
+`styx-secure` (Epic, Task, Gate, Bug, Review, Chore, Research; il tipo
+predefinito `Feature` esiste ma è disabilitato).
+
 I path consentiti, i path vietati e i criteri di accettazione restano nel corpo
 dell'Issue: sono dati versionati e revisionabili, non semplici campi di
 visualizzazione.
@@ -167,9 +172,23 @@ visualizzazione.
 1. **Intake** — tabella filtrata su `Inbox` e `Needs contract`.
 2. **Execution board** — board raggruppata per `Status`, con limiti WIP.
 3. **Dependency queue** — `Blocked` e `Ready`, ordinata per priorità.
-4. **Human gates** — `Risk:High,Crypto-critical` o `Status:Human gate`.
-5. **Roadmap** — layout roadmap con `Start date` e `Target date`.
-6. **Agent performance** — raggruppata per `Agent/tool` ed `Executor`.
+4. **Human gates — Status** — tabella filtrata su `status:"Human gate"`.
+5. **Human gates — Risk** — tabella filtrata su `risk:High,"Crypto-critical"`.
+6. **Roadmap** — layout roadmap con `Start date` e `Target date`.
+7. **Agent performance** — filtrata su `Executor kind` `Agent` o `Pair`.
+
+La vista unica `Human gates` originariamente prevista è stata divisa nelle due
+viste complementari 4 e 5 perché GitHub Projects non supporta filtri OR tra
+campi differenti.
+
+Limiti WIP della Execution board:
+
+| Colonna | Limite |
+|---|---|
+| `In progress` | 3 |
+| `In review` | 3 |
+| `Human gate` | 5 |
+| `Merge queue` | 1 |
 
 ## 5. Tassonomia delle label
 
@@ -378,16 +397,20 @@ L'automazione completa appartiene alla Fase 3.
 
 ## 14. Automazioni della Fase 1
 
-Usare subito le automazioni native del Project:
+Automazioni native del Project attive:
 
-- auto-add di Issue e PR di `styx-secure/styx`;
-- nuovo elemento -> `Inbox`;
-- Issue chiusa o PR mergiata -> `Done`;
-- riapertura -> stato non terminale;
-- archiviazione solo dopo una finestra definita.
+- auto-add delle Issue e PR aperte di `styx-secure/styx`;
+- auto-add delle sub-issue;
+- elemento aggiunto -> `Inbox`;
+- elemento riaperto -> `Needs contract`;
+- PR collegata a una Issue -> `In progress`;
+- PR mergiata -> `Done`;
+- elemento chiuso -> `Done`.
 
-Le transizioni che richiedono verifica semantica restano manuali fino ai gate
-della Fase 2.
+Restano manuali in Fase 1 le transizioni verso `Ready`, `In review`,
+`Human gate`, `Merge queue` e `Cancelled` (quest'ultima per le Issue chiuse
+come not planned). Le transizioni che richiedono verifica semantica restano
+manuali fino ai gate della Fase 2.
 
 ## 15. Rollout
 

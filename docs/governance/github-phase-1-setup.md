@@ -6,15 +6,19 @@ aver verificato i gate su `main`. GitHub resta la fonte di verità; il Gantt Exc
 
 ## 1. Project
 
-Creare un Project organizzativo chiamato **Styx Secure Delivery** e collegare il
-repository `styx-secure/styx`.
+Il Project organizzativo è stato creato e collegato:
+
+- nome: **Styx Secure Delivery**;
+- numero: `1`;
+- URL: <https://github.com/orgs/styx-secure/projects/1>;
+- repository collegato: `styx-secure/styx`.
 
 Campi:
 
 | Campo | Tipo | Valori |
 |---|---|---|
 | Status | single select | Inbox, Needs contract, Blocked, Ready, In progress, In review, Human gate, Merge queue, Done, Cancelled |
-| Type | single select | Epic, Task, Gate, Bug, Review, Chore, Research |
+| Type | nativo (issue type) | Epic, Task, Gate, Bug, Review, Chore, Research |
 | Priority | single select | P0, P1, P2, P3 |
 | Risk | single select | Low, Medium, High, Crypto-critical |
 | Phase | single select | Governance, Agent harness, Orchestration, Product |
@@ -28,19 +32,36 @@ Campi:
 | Confidence | single select | High, Medium, Low |
 | Execution ID | text | identificatore immutabile del tentativo |
 
-Viste minime: Intake, Execution board, Dependency queue, Human gates, Roadmap,
-Agent performance. Lo stato vive nel Project; non creare label di stato.
+`Type` non è un campo custom single-select: il nome è riservato da GitHub
+Projects. È il campo nativo alimentato dagli organization issue types di
+`styx-secure` (Epic, Task, Gate, Bug, Review, Chore, Research; il tipo
+predefinito `Feature` esiste ma è disabilitato, non eliminato).
 
-Automazioni iniziali:
+Viste effettive: Intake, Execution board, Dependency queue, Roadmap,
+Agent performance, Human gates — Status, Human gates — Risk. Lo stato vive nel
+Project; non creare label di stato.
 
-- nuovo elemento -> `Inbox`;
-- Issue riaperta -> `Needs contract`;
-- PR collegata aperta -> `In progress`;
-- PR pronta per review -> `In review`;
+La vista unica `Human gates` è stata divisa in due viste complementari perché
+GitHub Projects non supporta filtri OR tra campi differenti:
+
+- **Human gates — Status**: filtro `status:"Human gate"`;
+- **Human gates — Risk**: filtro `risk:High,"Crypto-critical"`.
+
+Limiti WIP della Execution board: `In progress` 3, `In review` 3,
+`Human gate` 5, `Merge queue` 1.
+
+Automazioni attive:
+
+- auto-add delle Issue e PR aperte di `styx-secure/styx`;
+- auto-add delle sub-issue;
+- elemento aggiunto -> `Inbox`;
+- elemento riaperto -> `Needs contract`;
+- PR collegata a una Issue -> `In progress`;
 - PR mergiata -> `Done`;
-- Issue chiusa come not planned -> `Cancelled`.
+- elemento chiuso -> `Done`.
 
-Le transizioni `Ready`, `Human gate` e `Merge queue` restano manuali in Fase 1.
+Le transizioni `Ready`, `In review`, `Human gate`, `Merge queue` e `Cancelled`
+(per le Issue chiuse come not planned) restano manuali in Fase 1.
 
 ## 2. Label
 
@@ -61,47 +82,78 @@ Usare esclusivamente le relazioni native GitHub `blocked by` / `blocking`.
 Riferimenti testuali nel corpo sono ridondanza validabile, non la fonte dello
 stato. Un task non passa a `Ready` finché ogni dipendenza nativa è chiusa.
 
-## 4. Prerequisiti amministrativi
+## 4. Prerequisiti amministrativi e identità
 
-Prima di applicare il ruleset verificare manualmente:
+Prima di applicare o modificare il ruleset verificare manualmente:
 
 - `@maverde73` è riconosciuto da GitHub come CODEOWNER con accesso write o superiore;
 - l'editor CODEOWNERS non mostra owner sconosciuti o senza permessi sufficienti;
-- ogni identità App/agente è priva di permessi di merge, approval, amministrazione
-  repository e modifica ruleset;
+- tutte le identità non umane con accesso al repository sono inventariate e i
+  loro permessi effettivi sono registrati;
+- nessuna identità App/agente possiede amministrazione repository, modifica di
+  ruleset o branch protection, amministrazione organizzazione o bypass su
+  `styx-secure/styx`;
 - nessuna identità App/agente è presente nelle bypass list;
 - la bypass list del ruleset è vuota.
 
-La configurazione dell'App/token è parte del gate amministrativo: la policy nel
-repository non sostituisce l'enforcement dei permessi.
+Le GitHub App usate per lo sviluppo possono mantenere i permessi tecnici minimi
+necessari a creare branch, commit e pull request. Tali permessi non costituiscono
+autorità di governance: l'orchestratore e il processo non devono esporre o
+invocare operazioni di `APPROVE`, merge, auto-merge, inserimento in Merge Queue,
+modifica ruleset o modifica delle bypass list. Queste operazioni restano gate
+umani espliciti.
+
+Stato applicato al termine della Fase 1B:
+
+- **Cloudflare Workers and Pages** è limitata al solo repository
+  `styx-secure/styx-website` e non ha accesso a `styx-secure/styx`;
+- **chatgpt-codex-connector** mantiene accesso a `styx-secure/styx` per il lavoro
+  di sviluppo. Non dispone di amministrazione repository o ruleset e non è un
+  bypass actor; i suoi scope di scrittura su contenuti, pull request e workflow
+  restano un rischio residuo documentato finché la Fase 2 non introduce il
+  broker a operazioni ristrette e il Passaggio B non aggiunge enforcement umano
+  tecnico.
+
+La configurazione dell'App/token è parte del gate amministrativo. La policy nel
+repository definisce l'autorità consentita, ma non sostituisce il principio del
+minimo privilegio né il futuro enforcement del broker.
 
 ## 5. Ruleset `main`
 
 Applicare in due passaggi per non bloccare la stessa PR che introduce i gate.
 
-### Passaggio A — subito dopo il merge governance
+### Passaggio A — applicato
 
-- target branch esatto: `main`;
+Il Passaggio A è applicato nel ruleset **`main branch protection`**
+(ID `18814814`), enforcement `active`:
+
+- target esatto: `refs/heads/main`;
+- bypass list vuota;
 - pull request obbligatoria;
 - conversazioni risolte;
 - cronologia lineare;
 - force-push e cancellazione vietati;
 - branch aggiornato prima del merge;
 - squash merge soltanto;
-- required checks, selezionati dal picker dei check osservati e associati
-  all'app **GitHub Actions**:
+- required checks associati all'app **GitHub Actions**
+  (`integration_id` `15368`):
   - `Dart reference stack gate`;
   - `styx-js web gate`;
   - `WASM integrity gate`;
-  - `Analyze (javascript-typescript)`;
-- nessun bypass permanente.
+  - `Analyze (javascript-typescript)`.
 
 I nomi sopra sono i context reali dei job. Il nome del workflow non deve essere
 premesso al context memorizzato nel ruleset.
 
-Verificare una PR di prova non-prodotto e un run `merge_group`: tutti e quattro i
-check devono risultare `Successful`, mai `Expected` o permanentemente pending,
-prima del Passaggio B.
+La PR innocua non-prodotto #44 ha pubblicato e completato con successo tutti e
+quattro i check sull'evento `pull_request`.
+
+Il test controllato della Merge Queue ha inoltre generato il vero commit
+`merge_group` `e6df3a4aac947de9b59b0ae890edd9ce9554af51`: tutti e quattro i
+required check sono risultati `Successful` con app GitHub Actions `15368`. Un
+required check temporaneo senza producer sul merge group ha impedito il merge;
+la PR è stata rimossa dalla coda e il ruleset temporaneo `18844368` è stato
+eliminato. `main` e il ruleset permanente `18814814` sono rimasti invariati.
 
 ### Passaggio B — enforcement umano
 
@@ -121,9 +173,11 @@ Dopo il prerequisito:
 - concorrenza iniziale: 1 PR;
 - accodamento consentito solo da umano autorizzato.
 
-Le PR prodotte da una GitHub App agente possono essere approvate dall'umano, ma
-l'App non deve avere permessi di merge o approval e non deve comparire in alcuna
-bypass list.
+Le PR prodotte da una GitHub App agente possono essere revisionate e approvate
+dall'umano. Un'App di sviluppo può avere scope tecnici necessari a produrre la
+PR, ma non riceve autorità di approvazione, merge, auto-merge, accodamento,
+modifica ruleset o bypass. Fino al broker della Fase 2 e al Passaggio B questa
+separazione è anche procedurale e viene registrata come rischio residuo.
 
 ## 6. Break-glass
 
