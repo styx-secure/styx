@@ -49,8 +49,12 @@ successiva deve rispettare e la matrice di tracciabilità.
    MAI payload (spec §5).
 5. **Envelope MLS v1** — INVARIATO (PR #23); nel vault vive scomposto secondo il
    mapping §10.1 della spec.
-6. **Schema IndexedDB v1** — 9 store: `meta identity contacts messages mls outbox
-   push migrations canary`.
+6. **Schema IndexedDB v1** — 10 store: `meta identity contacts messages mls outbox
+   push settings migrations canary`. **Emendamento registrato della spec §5/§8**
+   (da riportare nella spec al primo aggiornamento): si aggiungono gli store
+   `settings` e `canary` e le corrispondenti info string HKDF
+   `styx/vault/settings/v1` e `styx/vault/canary/v1` — mai riuso di subkey di
+   altri namespace (invariante B3.0.5.5).
 7. **Formato legacy localStorage** — sola lettura durante la migrazione; eliminato
    solo alla fase `legacy removed` (§7 rollout).
 
@@ -147,9 +151,12 @@ criterio di accettazione è dimostrato". Le classi di rollback sono definite in 
 - **Vincoli**: stessa immagine Docker pinnata per digest e wasm-pack sha-verificato
   del crate canonico; build riproducibile (doppia build byte-identica, `verify.sh`);
   `--locked`; nessuna integrazione col binario OpenMLS; nessun `hash-wasm`;
-  la validazione dei parametri (bounds spec §7.1) sta nel chiamante JS e viene
-  testata QUI con un harness che dimostra che nessun parametro fuori bounds
-  raggiunge l'allocazione WASM.
+  la validazione dei parametri (bounds spec §7.1) sta nel chiamante JS: PR‑1
+  introduce il **modulo unico** `src/crypto/kdf-bounds.js` (puro, senza
+  dipendenze), riusato tal quale dal validatore del wrapper (PR‑2) e dal worker
+  (PR‑3) — un solo validatore, nessuna copia divergente — e testato QUI con un
+  harness che dimostra che nessun parametro fuori bounds raggiunge l'allocazione
+  WASM; PR‑3 ri-esegue lo stesso harness sul percorso definitivo nel worker.
 - **Test**: known-answer test = le tre ancore hex dello spike (`743669d5…`,
   `b0e838c9…`, `fe175848…`) + vettori RFC 9106; cross-check con l'artefatto dello
   spike (byte-identico output, non byte-identico artefatto); anti-drift su
@@ -236,6 +243,9 @@ criterio di accettazione è dimostrato". Le classi di rollback sono definite in 
   wrapper-corrotto (§16.8: stessa risposta `VAULT_WRONG_PASSWORD` se l'unwrap
   fallisce con wrapper ben formato; `VAULT_WRAPPER_INVALID` solo per forma invalida
   PRIMA della derivazione — nessun oracle oltre la forma, che è comunque pubblica).
+- **File aggiuntivo**: `src/config/vault-stage.js` — implementazione del flag
+  `styx.vault.stage` (B3.0.6), introdotta QUI (prima PR che ne ha bisogno); il
+  test anti-bundle di PR‑3 viene aggiornato di conseguenza.
 - **Accettazione**: vault creabile/sbloccabile/distruggibile dietro flag
   `developer-only`, zero dati di prodotto. **Formati persistiti**: primo uso REALE
   di wrapper v1 + manifest v1. **Rollback**: R1 (flag off; i vault dev si
@@ -263,7 +273,9 @@ criterio di accettazione è dimostrato". Le classi di rollback sono definite in 
   valida la macchina dual-write/shadow-read su dati la cui perdita non è
   catastrofica PRIMA di toccare identità e messaggi (non è scelto "perché è il più
   facile da programmare": è scelto perché minimizza il blast radius del primo
-  contatto con dati reali, che è il criterio dominante a parità di copertura).
+  contatto con dati reali, che è il criterio dominante a parità di copertura);
+  comportamento offline: banalmente soddisfatto — `settings` è puramente locale,
+  nessuna dipendenza di rete in lettura o scrittura.
   `push` (l'altro candidato non riservato alle fasi successive) è scartato: la
   subscription ha stato esterno (endpoint push) che complica rollback e confronto.
 - **Meccanica**: dietro flag (`opt-in` non ancora attivo: solo `developer-only`/
@@ -290,7 +302,7 @@ criterio di accettazione è dimostrato". Le classi di rollback sono definite in 
 - **Rollback**: R2 (legacy presente e leggibile; flag off torna al legacy).
 - **Gate**: fixture di identità/contatti reali di test migrate e verificate.
 
-### PR‑9a / PR‑9b — B3.9 `messages` poi `outbox`
+### PR‑9a / PR‑9b — B3.9 `messages` poi `outbox` (+ ri-creazione `push`)
 
 - **Separazioni obbligatorie**: messaggi ricevuti vs inviati (campo direzione nel
   valore, stessa chiave `<contactId>:<seq>`), stato locale di lettura, outbox
@@ -324,10 +336,19 @@ criterio di accettazione è dimostrato". Le classi di rollback sono definite in 
 ### PR‑11 — B3.11 Factory reset (PR dedicata)
 
 - **Ordine**: (1) blocco nuove operazioni (`VAULT_WRONG_STATE`); (2) terminate del
-  worker; (3) wrapper attivo reso irrecuperabile (sovrascrittura record `meta`);
-  (4) `deleteDatabase`; (5) localStorage legacy; (6) marker e backup; (7) push
-  subscription; (8) Cache Storage pertinente; (9) service worker data;
-  (10) verifica di riapertura come installazione vergine (probe automatica).
+  worker corrente (scarto immediato delle chiavi in memoria e delle operazioni in
+  volo — la "cancellazione best-effort della memoria") e **respawn di un worker
+  fresco in stato DESTROYING**, che esegue i passi successivi (il worker è l'unico
+  accesso al DB: senza respawn i passi 3–9 non avrebbero esecutore); (3) wrapper
+  attivo reso irrecuperabile (sovrascrittura record `meta`); (4) `deleteDatabase`;
+  (5) localStorage legacy; (6) marker e backup; (7) push subscription; (8) Cache
+  Storage pertinente; (9) service worker data; (10) transizione del worker a
+  UNINITIALIZED e verifica di riapertura come installazione vergine (probe
+  automatica). Crash tra (2) e (4): alla riapertura il wrapper è ancora presente →
+  vault normalmente LOCKED, il reset si ripete da capo (idempotente). Nota di
+  allineamento alla spec §12 (emendamento registrato): il wipe best-effort del
+  LOCK è sostituito dal terminate immediato + respawn dedicato, che è più forte e
+  definisce l'esecutore dei passi IDB.
 - **Distinzioni dichiarate**: cancellazione **logica** (record non più
   raggiungibili), **crittografica** (wrapper distrutto ⇒ ciphertext residui
   indecifrabili senza password+salt), **fisica** (non garantibile dal browser —
@@ -373,8 +394,14 @@ Fase 2 (PR‑14):      OpenMLS e serializzazione MLS traslocano nel Worker.
 
 ## §6 Migrazione: piano eseguibile
 
-Per OGNI namespace (settings, identity, contacts, messages, outbox, push, mls) la
-PR corrispondente deve compilare questa scheda (qui il contratto comune):
+Per OGNI namespace migrato (settings, identity, contacts, messages, outbox, mls)
+la PR corrispondente deve compilare questa scheda (qui il contratto comune).
+**Decisione per `push`**: la registrazione push NON si migra — si **ri-crea** una
+subscription nuova al primo avvio con vault attivo (PR‑9b, stessa PR dell'outbox):
+la subscription è stato esterno ri-derivabile (endpoint del push service, spesso
+già stale), migrarla non conserva alcun valore e complicherebbe rollback e
+confronto; il legacy viene disiscritto e il nuovo record scritto nello store
+`push` del vault. Test dedicato: wake-up funzionante dopo la ri-creazione.
 
 - **sorgente legacy**: chiavi localStorage enumerate nella PR;
 - **destinazione**: store IDB + schema chiavi;
@@ -386,7 +413,11 @@ PR corrispondente deve compilare questa scheda (qui il contratto comune):
 - **marker**: `migrations/<ns>` = `{state: pending|written|verified|cleaned,
   counts, digests}`;
 - **verifica**: re-read → decrypt → confronto byte-a-byte col legacy;
-- **cleanup**: rimozione legacy SOLO a `verified`, ordine dati → marker;
+- **cleanup**: rimozione legacy SOLO a `verified` E SOLO nella fase
+  `legacy-removed` (PR‑13, autorizzazione R4): le migrazioni di PR‑7…PR‑10 si
+  **arrestano a `verified`** e non eseguono mai il cleanup — è questo che rende
+  vere le classi R2 e la promessa "flag off ripristina il legacy" (§16.12);
+  ordine del cleanup, quando autorizzato: dati → marker;
 - **crash point / resume / rollback / errore utente**: tabella sotto.
 
 ### Tabella dei crash point (fonte di verità per ciascuno)
@@ -428,8 +459,8 @@ un commit documentato con i criteri spuntati.
 |---|---|---|
 | M1 Safari/iOS PWA (IDB, worker, persist, ITP) | dopo PR‑6 (harness canary disponibile) | Accepted; supporto iOS; default-on |
 | M2 Chrome Android (kill in transazione, quota) | dopo PR‑6 | Accepted; supporto Android; default-on |
-| M3 quota/storage pressure reale desktop | dopo PR‑4 | default-on |
-| M4 private browsing (tutti i motori) | dopo PR‑6 | default-on; UX avvisi |
+| M3 quota/storage pressure reale desktop | dopo PR‑4 | Accepted; default-on |
+| M4 private browsing (tutti i motori) | dopo PR‑6 | Accepted; default-on; UX avvisi |
 | M5 Argon2id su device reali + memoria WASM iPhone + worker/IDB Safari | dopo PR‑1 (bastano crate+harness) | Accepted; profili mobile definitivi; supporto iOS/Android; default-on |
 
 Non bloccano: la scrittura di questo piano; lo sviluppo dietro flag `off`.
@@ -458,6 +489,7 @@ Bloccano (tutti): `Proposed→Accepted`, supporto dichiarato iOS/Android,
 | Private browsing | M4 (manuale) | — |
 | Multi-tab (election, steal, single-tab access) | Playwright | 4 |
 | Service worker update durante UNLOCKED/MIGRATING | Playwright | 6 |
+| Offline: vault pienamente funzionante senza rete | Playwright | 6 |
 | Factory reset da ogni stato | integration | 11 |
 | Restore fixture MLS reale post-migrazione | integration | 10 |
 | Build da clone pulito (CI) | CI | 1 |
@@ -522,6 +554,16 @@ condiviso).
 
 ## §13 Classi di rollback per PR
 
+Definizioni:
+
+```text
+R0 — rimozione del codice senza dati persistiti né riferimenti dal prodotto
+R1 — feature flag off; i dati nuovi vengono ignorati (o distrutti, se di sviluppo)
+R2 — rollback con reader compatibile: il legacy è presente e leggibile
+R3 — richiederebbe una migrazione inversa (nessuna PR di questo piano lo è)
+R4 — non reversibile senza perdita o export
+```
+
 | PR | Classe | Motivazione |
 |---|---|---|
 | 1 KDF crate | R0 | nessun dato persistito, nessun riferimento dal prodotto |
@@ -580,10 +622,10 @@ dopo PR‑6.
 | 8a | feat(vault): identity migration | feat/vault-identity | 7 | store identity | R2 | fixture verificate |
 | 8b | feat(vault): contacts migration | feat/vault-contacts | 8a | store contacts | R2 | fixture verificate |
 | 9a | feat(vault): messages migration | feat/vault-messages | 8b | store messages | R2 | kill-test senza perdite |
-| 9b | feat(vault): outbox migration | feat/vault-outbox | 9a | store outbox | R2 | idem |
+| 9b | feat(vault): outbox migration + push re-creation | feat/vault-outbox | 9a | store outbox, push | R2 (outbox) / R1 (push: si ri-crea) | idem |
 | 10 | feat(vault): MLS state migration | feat/vault-mls | 9b | store mls (mapping §10.1) | R2 | restore reale in CI |
 | 11 | feat(vault): factory reset | feat/vault-reset | 6 | tutti (distruzione) | R1 | probe vergine |
-| 12 | feat(app): vault UI/UX | feat/vault-ui | 6 | nessuno | R1 | review testi UX |
+| 12 | feat(app): vault UI/UX | feat/vault-ui | 6 (core, parallelizzabile) + 7…10 per gli scenari di migrazione/recovery | nessuno | R1 | review testi UX |
 | 13 | chore(vault): remove legacy backend | feat/vault-legacy-removal | 10–12 + §7 | rimozione legacy | **R4 — nuova autorizzazione** | Blocco 3 chiuso |
 | 14 | feat(crypto): OpenMLS into the worker | feat/vault-mls-worker | 13 (o post-B3) | nessuno | R1 | fase 2 |
 
@@ -596,8 +638,11 @@ migrazione, UI e factory reset **mai nella stessa PR**.
 1. **Root Key per stato**: UNINITIALIZED/LOCKED/RECOVERING/ERROR: solo wrappata in
    `meta` (o assente); UNLOCKING: mai in memoria (esiste solo la KEK appena
    derivata + il tentativo di unwrap); UNLOCKED/MIGRATING: nel worker (buffer
-   privato); LOCKING: in corso di wipe; DESTROYING: già scartata (terminate
-   precede la distruzione del wrapper).
+   privato); LOCKING: in corso di wipe; DESTROYING: già scartata — il terminate
+   del worker precedente l'ha eliminata, e il worker fresco respawnato in
+   DESTROYING (PR‑11) esegue la distruzione di wrapper e DB senza mai possederla.
+   In UNLOCKING, più precisamente: la Root Key compare in memoria solo come esito
+   dell'unwrap riuscito, un istante prima della transizione a UNLOCKED — mai prima.
 2. **Confine worker**: verso il worker: password (stringa, limite V10 dichiarato),
    parametri validabili, chiavi/namespace in allowlist, byte transferable; verso
    la pagina: plaintext richiesti dei record, codici errore + details allowlist,
@@ -637,8 +682,12 @@ migrazione, UI e factory reset **mai nella stessa PR**.
     il legacy esiste e il flag off ripristina il comportamento attuale.
 13. **Irreversibilità**: (a) dal primo vault reale (PR‑5) wrapper v1/record v1
     diventano contratti → solo migratori versionati; (b) PR‑13 elimina il
-    percorso di ritorno (R4); (c) il digest del primo artefatto `styx-kdf-wasm`
-    entra in PROVENANCE (storia, non compatibilità). Tutto il resto è reversibile.
+    percorso di ritorno (R4); (c) il **cleanup per-namespace** (`verified` →
+    `cleaned`, cioè la rimozione delle chiavi localStorage dell'utente) è
+    irreversibile per quell'utente — per questo è confinato alla fase
+    `legacy-removed` (§6/PR‑13); (d) il digest del primo artefatto
+    `styx-kdf-wasm` entra in PROVENANCE (storia, non compatibilità). Tutto il
+    resto è reversibile.
 14. **Perdita della password**: i dati sono irrecuperabili by design (RK3); UI e
     docs lo dichiarano PRIMA della creazione del vault; niente recovery deboli;
     un meccanismo di export/backup (K_backup) è demandato a un blocco successivo
