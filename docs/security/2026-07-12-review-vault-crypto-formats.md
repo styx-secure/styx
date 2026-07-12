@@ -7,10 +7,13 @@ browser, i vettori congelati `styx-js/test/fixtures/vault-crypto-v1/`, gli
 emendamenti alla spec di design e lo step anti-bundle in CI.
 
 - **Data:** 2026-07-12
-- **Revisore:** indipendente dalla stesura (agente separato, contesto pulito)
-- **Base:** `9344985` (main) — **HEAD:** `6cf381c` (`feat/vault-crypto-formats`)
-- **Scope:** esclusivamente `git diff 9344985..6cf381c` (primo round su
-  `277a671`; secondo round di verifica sul fix `6cf381c`, vedi §5)
+- **Revisore:** indipendente dalla stesura (agente separato, contesto pulito;
+  il terzo round è condotto da un ULTERIORE revisore indipendente, a contesto
+  pulito, diverso da quello dei primi due round)
+- **Base:** `9344985` (main) — **HEAD:** `2ad9504` (`feat/vault-crypto-formats`)
+- **Scope:** esclusivamente `git diff 9344985..2ad9504` (primo round su
+  `277a671`; secondo round di verifica sul fix `6cf381c`, vedi §5; terzo round
+  di verifica dei fix F6–F9 sul range `a0997dc..2ad9504`, vedi §6)
 
 Review condotta con verifiche **attive**: riesecuzione delle tre suite jest
 (66/66 su `277a671`; 70/70 su `6cf381c`, §5) e della spec Playwright
@@ -58,8 +61,15 @@ della PWA con grep sul bundle. Probe in
 | F3 | Info | `vault-record.js` / `vault-wrapper.js` (API encrypt/wrap) | Le API di scrittura ignorano silenziosamente le proprietà sconosciute dei loro oggetti input (probe: `nonce`/`iv`/`wrapNonce` extra ignorati, nonce interno comunque casuale) — asimmetria con la validazione strict dei formati letti. Il nonce NON è comunque iniettabile; solo una questione di coerenza d'interfaccia. | Facoltativo: rifiutare chiavi sconosciute anche negli input di `encryptVaultRecord`/`wrapSyntheticRootKey`. | aperto (accettabile) |
 | F4 | Info | `vault-record.js:269` | Il payload autenticato ma non decodificabile (UTF-8/JSON) produce `VAULT_RECORD_CORRUPTED` con messaggio DIVERSO (`authenticated payload is not decodable` vs `record authentication failed`). Il codice è uniforme e il ramo è raggiungibile SOLO con la chiave giusta (post-autenticazione GCM), quindi non è un oracolo di password/corruzione; distingue però due stati interni nel messaggio. | Facoltativo: unificare il messaggio, o registrare esplicitamente che i messaggi (a differenza dei codici) non sono superficie UI. | aperto (accettabile) |
 | F5 | Info | `vault-keys.js:51-55` | `hkdfSalt()` memoizza la promise del digest: se il primo `subtle.digest` fallisse (ambiente degradato), la promise rigettata resta in cache per sempre e ogni derivazione successiva fallisce anche a ambiente ripristinato. Solo robustezza, nessun impatto di sicurezza. | Facoltativo: azzerare la cache su rejection (`saltPromise = null` nel catch). | aperto (accettabile) |
+| F6 | **Important** | `vault-wrapper.js` / `vault-record.js` (validazione shape su `a0997dc`) | Bypass accessor/non-enumerable: la validazione strict usava `Object.keys`, che vede solo le proprietà STRING ENUMERABILI — chiavi Symbol e campi extra non-enumerabili passavano inosservati, e un campo OBBLIGATORIO definito come accessor (anche non-enumerabile, anche throwing) superava il check di shape con INVOCAZIONE del getter ostile (side effect ed eccezioni native non tipizzate raggiungibili dal chiamante). Sollevato al gate utente (NO-GO). | Gate unico `snapshotStrictPlainObject` (`vault-shape.js`): `Reflect.ownKeys`, solo data property enumerabili da allowlist chiusa, Symbol rifiutati, snapshot costruito dai DESCRITTORI (accessor rifiutati senza mai invocarli); i codec usano esclusivamente lo snapshot. | **risolto (commit `dea63a9`)** — verificato dal revisore del terzo round, vedi §6 |
+| F7 | **Important** | `vault-keys.js` / `vault-wrapper.js` / `vault-record.js` (su `a0997dc`) | Contratto CryptoKey incompleto: veniva verificato solo `algorithm.name`, quindi AES-GCM-128/192, chiavi extractable, chiavi single-usage e HMAC su hash sbagliato erano accettate come KEK/subkey/manifest key (una HMAC-SHA-1 produceva un MAC di manifest di 20 byte invece dei 32 del contratto). Sollevato al gate utente (NO-GO). | `vault-key-guards.js`: `assertAes256GcmCryptoKey` (secret, AES-GCM, 256 bit, non-extractable, usages esattamente encrypt+decrypt) e `assertHmacSha256CryptoKey` (secret, HMAC-SHA-256, 256 bit, non-extractable, usages esattamente sign+verify), applicati PRIMA di ogni chiamata WebCrypto; guardia esplicita sulla lunghezza del MAC (32 byte) in `signManifestBytes`. | **risolto (commit `1a6ec73`)** — verificato dal revisore del terzo round, vedi §6 |
+| F8 | **Important** | `vault-wrapper.js` (`wrapSyntheticRootKey`, su `a0997dc`) | WebCrypto prima della validazione completa: `wrapSyntheticRootKey` chiamava `subtle.importKey` e `crypto.getRandomValues` PRIMA che il wrapper draft fosse interamente validato — metadati invalidi (data impossibile, profilo incoerente, parametri KDF fuori policy) raggiungevano comunque crypto/RNG. Sollevato al gate utente (NO-GO). | Ordine normativo documentato e implementato: shape → draft con placeholder DETERMINISTICI → validazione COMPLETA (`validateVaultWrapper`) → contratto/import KEK → nonce (RNG) → AAD → AES-GCM → validazione dell'output. | **risolto (commit `0e36913`)** — verificato dal revisore del terzo round, vedi §6 |
+| F9 | Minor | `docs/superpowers/plans/2026-07-12-styx-vault-implementation-plan.md` (obiettivo PR‑4) | L'obiettivo PR‑4 diceva "schema v1 (9 store)" mentre l'elenco congelato (B3.0.1, spec §8 emendata) ne conta dieci. Incoerenza documentale, nessun impatto sul codice. | Elencare i 10 store per nome nell'obiettivo PR‑4, coerente con §B3.0.1. | **risolto (commit `118f32e`)** — verificato dal revisore del terzo round, vedi §6 |
 
-Nessun finding Critical o Important.
+Nessun finding Critical. I primi due round non avevano rilevato Important; i
+tre Important F6–F8 (più il Minor F9) sono stati sollevati al **gate utente**
+(NO-GO) sullo stato `a0997dc` e risultano risolti nei commit
+`1a6ec73..2ad9504`, ri-verificati attivamente nel terzo round (§6).
 
 ## 3. Rischi residui / limiti accettati
 
@@ -96,7 +106,8 @@ Nessun finding Critical o Important.
 GO
 ```
 
-Nessun finding Critical o Important. Le 20 voci della checklist risultano
+Nessun finding Critical o Important nei primi due round (per gli Important
+F6–F8 sollevati al gate utente e risolti, vedi §2 e §6). Le 20 voci della checklist risultano
 verificate attivamente, i vettori congelati sono stati ri-derivati in modo
 indipendente (WebCrypto grezza, AAD a mano) e le proprietà di sicurezza
 dichiarate (fail-closed, no oracolo, nonce non iniettabile, separazione dei
@@ -152,3 +163,124 @@ GO
 
 F1 e F2 risolti e ri-verificati; nessuna regressione; il verdetto GO è
 confermato su HEAD `6cf381c`.
+
+## 6. Terzo round — verifica dei fix F6–F9 (HEAD `2ad9504`)
+
+Round condotto da un **nuovo revisore indipendente a contesto pulito** (non
+l'autore, non il revisore dei round 1–2) sul range `a0997dc..2ad9504`
+(5 commit: `1a6ec73` contratti chiave, `dea63a9` shape strict, `0e36913`
+ordine wrap, `118f32e` conteggio store, `2ad9504` test). Verifica **attiva**:
+tre probe nuove scritte dal revisore in `scratchpad/review3-probes/`
+(`probe-f6-shape.mjs`, `probe-f7-keys.mjs`, `probe-f8-order.mjs`), con **spy
+contatori su `SubtleCrypto.prototype.{decrypt,encrypt,sign,importKey}` e
+`Crypto.prototype.getRandomValues`** per osservare che cosa raggiunge davvero
+WebCrypto/RNG; mai riusando i test dell'autore.
+
+**F6 — shape strict via snapshot da descrittori (`dea63a9`), probe 17/17 PASS:**
+
+- campo OBBLIGATORIO come getter NON-enumerabile (wrapper `format`) e come
+  getter ENUMERABILE (wrapper `createdAt`) → `VAULT_WRAPPER_INVALID` con
+  **contatore del getter a 0** in entrambi i casi (mai invocato);
+- accessor THROWING (`wrappedRootKey` con `get(){ throw new RangeError }`) →
+  `VaultCryptoError`/`VAULT_WRAPPER_INVALID`, il `RangeError` nativo non
+  emerge mai (il descrittore è rifiutato senza lettura);
+- proprietà Symbol su wrapper e record → `VAULT_WRAPPER_INVALID` /
+  `VAULT_RECORD_INVALID` ("symbol properties are not allowed");
+- extra SCONOSCIUTO non-enumerabile → rifiutato ("unknown field", `field`
+  troncato); campo OBBLIGATORIO come data property NON-enumerabile (wrapper e
+  record) → rifiutato ("fields must be enumerable");
+- record con `data` getter-backed passato a `decryptVaultRecord` →
+  `VAULT_RECORD_INVALID` con getter a 0 e **0 chiamate a `subtle.decrypt`**;
+- oggetti a **prototipo null** con soli data field enumerabili validi →
+  ACCETTATI (wrapper e record);
+- semantica snapshot: output di `parseVaultWrapper` congelato e costruito dai
+  valori dei descrittori — mutazione successiva dei buffer e dei campi
+  dell'input irrilevante; mutazione ostile nel gap di microtask di
+  `unwrapSyntheticRootKey` irrilevante (Root Key fixture ricavata intatta,
+  TOCTOU F2 tuttora chiuso).
+
+**F7 — contratti CryptoKey esatti (`1a6ec73`), probe 23/23 PASS (WebCrypto
+reale, chiavi generate dal revisore):**
+
+- AES: AES-GCM **128** e **192** bit, AES-GCM-256 **extractable**,
+  **encrypt-only**, **decrypt-only**, **usages extra** (wrapKey/unwrapKey),
+  **AES-CBC-256**, chiave EC **pubblica** e **privata** (ECDH P-256), oggetto
+  **impostore** plain che mima la shape di una CryptoKey → tutti rifiutati
+  `VAULT_CRYPTO_FAILED` su `unwrapSyntheticRootKey` + `decryptVaultRecord` +
+  `encryptVaultRecord`, con **`subtle.decrypt` = 0 e `subtle.encrypt` = 0** in
+  ogni caso;
+- HMAC: **SHA-1**, **SHA-384**, **SHA-512**, HMAC-SHA-256 a **512 bit**
+  (esplicito E default di `generateKey`), **extractable**, **sign-only**,
+  **verify-only** → tutti rifiutati `VAULT_CRYPTO_FAILED` su
+  `signManifestBytes` + `verifyManifestBytes` con **`subtle.sign` = 0**;
+  verificato che una HMAC-SHA-1 grezza produce davvero un MAC di 20 byte
+  (l'hazard originario);
+- guardia di lunghezza del MAC attiva: `subtle.sign` dirottato a restituire 20
+  byte con chiave CONFORME → `VAULT_CRYPTO_FAILED: unexpected manifest MAC
+  length`;
+- vettori CONGELATI riprodotti esattamente con chiavi conformi: unwrap del
+  wrapper fixture → `rootKeyHex` identico; decrypt del record fixture →
+  plaintext identico; HMAC manifest → `macHex` identico (e verifica OK).
+
+**F8 — nessuna crypto/RNG prima della validazione completa (`0e36913`),
+probe 16/16 PASS (spy su `importKey`, `encrypt`, `getRandomValues`):**
+
+- KEK invalida (Uint8Array da 31 byte; CryptoKey AES-CBC) →
+  `VAULT_CRYPTO_FAILED` con **importKey=0, encrypt=0, getRandomValues=0**;
+- ogni caso di metadati invalidi — data impossibile `2026-02-30`, profilo
+  incoerente (`desktop` con terna mobile), profilo fuori allowlist, `mKib`
+  sopra il massimo (524288) e sotto il floor OWASP (8192), salt da 15 byte,
+  `calibratedMs` 600001 e −1 → errore tipizzato atteso
+  (`VAULT_WRAPPER_INVALID`/`VAULT_KDF_PARAMS_INVALID`) con **tutti e tre i
+  contatori a 0**;
+- KEK invalida **E** metadati invalidi insieme → emerge l'errore dei METADATI
+  (la validazione precede il passo KEK), contatori a 0;
+- controllo positivo: wrap valido → esattamente importKey=1, encrypt=1,
+  getRandomValues=1; l'output fa round-trip `encodeVaultWrapper` →
+  `parseVaultWrapper` → `unwrapSyntheticRootKey` sulla stessa Root Key; due
+  wrap → nonce interni distinti;
+- lettura del codice: l'ordine normativo `shape → draft con placeholder
+  deterministici → validazione completa → import KEK → nonce → AAD → encrypt
+  → validazione output` è commentato e rispettato (`vault-wrapper.js:241-295`).
+
+**F9 — conteggio store (`118f32e`):** l'obiettivo PR‑4 del piano ora elenca i
+**10 store per nome** (`meta, identity, contacts, messages, mls, outbox,
+push, settings, migrations, canary`, coerente con §B3.0.1); zero occorrenze
+residue di "9 store" nel piano.
+
+**Regressioni e invarianza dei formati:**
+
+- diff del range su `vault-aad.js`, `vault-errors.js`, `kdf-bounds.js`,
+  fixture e `package.json`/lockfile (root e app): **0 righe** — AAD builder,
+  info string HKDF e vettori intoccati;
+- `node test/fixtures/vault-crypto-v1/generate.js` eseguito **due volte** dal
+  revisore + `git diff --exit-code -- test/fixtures/vault-crypto-v1` →
+  fixture byte-identiche (repo pulito dopo);
+- regola AAD lato richiesta tuttora vincolante (probe): richiesta `push` su
+  record `settings` → `VAULT_RECORD_INVALID` (equality gate); record con `ns`
+  auto-dichiarato riscritto per combaciare → `VAULT_RECORD_CORRUPTED` (AAD
+  dalla RICHIESTA, mai "riparato");
+- nessun percorso rilegge l'oggetto grezzo dopo la validazione: wrapper e
+  record operano solo su snapshot/copie congelate (ispezione + probe TOCTOU).
+
+**Riesecuzioni del revisore su `2ad9504`:** le tre suite jest vault → **84/84
+pass** (70 del secondo round + 14 regressioni F6/F7/F8 nuove); spec browser
+`PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright test -c
+playwright.vault.config.js` → **2/2 pass** (Chromium 79 ms, Firefox 518 ms);
+`npm run build` in `apps/chat` + grep su `dist/` → **11 firme assenti** (le
+tre del gate CI più `VAULT_RECORD_CORRUPTED`, `VAULT_WRONG_PASSWORD`,
+`styx-vault-v1` e i NUOVI identificatori `vault-shape`, `vault-key-guards`,
+`snapshotStrictPlainObject`, `assertAes256GcmCryptoKey`,
+`assertHmacSha256CryptoKey`); zero nuove dipendenze runtime.
+
+### Verdetto del terzo round
+
+```text
+GO
+```
+
+F6, F7, F8 (Important) e F9 (Minor) risolti e ri-verificati attivamente con
+probe indipendenti (56/56 PASS complessivi, contatori spy a zero su ogni
+percorso di rifiuto); vettori congelati invariati e riprodotti; suite 84/84 +
+2/2; bundle pulito; nessuna regressione introdotta dai fix. Il verdetto GO è
+confermato su HEAD `2ad9504`.
