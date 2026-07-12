@@ -112,26 +112,68 @@ L'aggiornamento del ruleset (target esplicito e binding dei check all'app) è
 stato applicato il 2026-07-12 previa autorizzazione umana esplicita, verifica
 TOCTOU e diff semantico limitato alle cinque modifiche autorizzate.
 
-## 7. Validazione su PR innocua
+## 7. Validazione su PR e merge group
 
 La PR #44, limitata a `docs/governance/**`, ha pubblicato e completato con
 successo tutti e quattro i required check sull'evento `pull_request`. I job
 pesanti non pertinenti sono stati green-skippati solo dopo change detection
 riuscita, come previsto da `AGENTS.md`.
 
-## 8. Rinvii espliciti
+Il test controllato della Merge Queue ha creato il vero commit `merge_group`
+`e6df3a4aac947de9b59b0ae890edd9ce9554af51` sul branch temporaneo della
+queue. I quattro context obbligatori sono stati pubblicati dall'app GitHub
+Actions `15368` e sono risultati tutti `completed/success`.
 
-- Il run `merge_group` **non è ancora stato validato**: la validazione della
-  Merge Queue richiede un'autorizzazione umana separata.
+Per impedire un merge accidentale è stato usato il required check temporaneo
+`styx-phase1b-merge-guard`, verde soltanto sull'HEAD della PR e senza producer
+sul merge group. Dopo la raccolta delle evidenze, la PR è stata rimossa dalla
+queue e il ruleset temporaneo `18844368` è stato eliminato. Verifiche finali:
+
+- PR #44 ancora open e non mergiata;
+- Merge Queue vuota;
+- `main` invariato a `c7857c542ece1ad5f23f850b726a8f4e5cd0cf91`;
+- ruleset permanente `18814814` invariato;
+- nessuna regola `merge_queue` permanente applicata.
+
+## 8. Identità App/agente
+
+L'audit dei permessi ha distinto capacità tecnica dell'App e autorità concessa
+dal processo.
+
+- **Cloudflare Workers and Pages** esponeva permessi amministrativi troppo ampi
+  perché installata su tutti i repository dell'organizzazione. L'amministratore
+  umano ha limitato l'installazione al solo `styx-secure/styx-website`; l'App non
+  ha più accesso a `styx-secure/styx`.
+- **chatgpt-codex-connector** resta installata su `styx-secure/styx` per consentire
+  lavoro di sviluppo, branch, commit e pull request. Non possiede
+  amministrazione repository o ruleset e non compare in alcuna bypass list.
+  I suoi scope di scrittura su contenuti, pull request e workflow implicano una
+  capacità tecnica più ampia dell'autorità consentita: il processo non delega
+  all'agente `APPROVE`, merge, auto-merge, inserimento in Merge Queue, modifica
+  ruleset o bypass.
+- Il `GITHUB_TOKEN` dei workflow usa permessi predefiniti read-only,
+  `can_approve_pull_request_reviews: false`; i workflow richiesti dichiarano
+  `contents: read`, salvo `security-events: write` nel job CodeQL.
+- Non risultano deploy key scrivibili o attori non umani nelle bypass list.
+
+La separazione fra capacità tecnica dell'App Codex e autorità agentica è un
+rischio residuo esplicito della Fase 1. La Fase 2 deve introdurre un broker che
+esponga soltanto operazioni ristrette; il Passaggio B, dopo il secondo
+CODEOWNER umano, deve aggiungere l'enforcement tecnico dell'approvazione umana.
+
+## 9. Rinvii espliciti
+
 - La Merge Queue permanente e il **Passaggio B** (approvazione distinta,
   dismiss stale approvals, approvazione dell'ultimo push, review CODEOWNERS)
   restano rinviati finché non esiste un secondo CODEOWNER umano idoneo.
 - Nessuna approvazione distinta o review CODEOWNERS è oggi obbligatoria.
+- Il broker agentico a operazioni ristrette resta un deliverable della Fase 2.
 
-## 9. Audit trail
+## 10. Audit trail
 
-Le evidenze API primarie (export JSON, timestamp, diff semantici ed esiti dei
-check) sono registrate nei commenti di audit dell'Issue #43. I limiti WIP e la
-configurazione completa delle automazioni, non integralmente leggibili tramite
-le API pubbliche utilizzate, sono attestati dall'amministratore umano sulla base
-della verifica visiva eseguita durante il rollout.
+Le evidenze API primarie (export JSON, timestamp, diff semantici, esiti dei
+check, evento `merge_group`, ripristino del ruleset temporaneo e audit dei
+permessi App) sono registrate nei commenti di audit dell'Issue #43. I limiti WIP
+e la configurazione completa delle automazioni, non integralmente leggibili
+tramite le API pubbliche utilizzate, sono attestati dall'amministratore umano
+sulla base della verifica visiva eseguita durante il rollout.
