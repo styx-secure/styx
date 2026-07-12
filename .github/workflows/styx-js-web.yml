@@ -118,12 +118,20 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Aggregate result
+      - name: Aggregate result (fail-closed — review K9)
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
           WEB: ${{ needs.changes.outputs.web }}
           BUILD: ${{ needs.build-and-gate.result }}
         run: |
           set -euo pipefail
+          # Green-skip is only reachable when change detection itself
+          # succeeded: a failed/cancelled/skipped `changes` job yields empty
+          # outputs, which must never read as "nothing changed".
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::styx-js change detection did not complete successfully: ${CHANGES_RESULT:-<empty>}"
+            exit 1
+          fi
           if [ "$WEB" != "true" ]; then
             echo "No styx-js paths changed — web build/gate skipped (green)."
             exit 0

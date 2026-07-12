@@ -257,8 +257,10 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Aggregate result
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Aggregate result (fail-closed — review K9)
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
           LIGHT_NEEDED: ${{ needs.changes.outputs.light }}
           CRATE_NEEDED: ${{ needs.changes.outputs.crate }}
           KDF_NEEDED: ${{ needs.changes.outputs.kdf }}
@@ -267,27 +269,6 @@ jobs:
           HERMETIC: ${{ needs.hermetic.result }}
           KDF_LIGHT: ${{ needs.kdf-light.result }}
           KDF_HERMETIC: ${{ needs.kdf-hermetic.result }}
-        run: |
-          set -euo pipefail
-          if [ "$LIGHT_NEEDED" != "true" ] && [ "$CRATE_NEEDED" != "true" ] \
-             && [ "$KDF_NEEDED" != "true" ] && [ "$KDFLIGHT_NEEDED" != "true" ]; then
-            echo "No WASM/MLS/chat/KDF paths changed — integrity checks skipped (green)."
-            exit 0
-          fi
-          fail=0
-          if [ "$LIGHT_NEEDED" = "true" ]; then
-            echo "light: $LIGHT"; [ "$LIGHT" = "success" ] || fail=1
-          fi
-          if [ "$CRATE_NEEDED" = "true" ]; then
-            echo "hermetic: $HERMETIC"; [ "$HERMETIC" = "success" ] || fail=1
-          fi
-          if [ "$KDFLIGHT_NEEDED" = "true" ]; then
-            echo "kdf-light: $KDF_LIGHT"; [ "$KDF_LIGHT" = "success" ] || fail=1
-          fi
-          if [ "$KDF_NEEDED" = "true" ]; then
-            echo "kdf-hermetic: $KDF_HERMETIC"; [ "$KDF_HERMETIC" = "success" ] || fail=1
-          fi
-          if [ "$fail" -ne 0 ]; then
-            echo "WASM integrity checks FAILED."; exit 1
-          fi
-          echo "WASM integrity checks passed."
+        # The decision logic lives in a pure, testable script; the full
+        # decision table runs in jest (styx-js/test/ci/wasm-gate.test.js).
+        run: bash .github/scripts/wasm-integrity-gate.sh
