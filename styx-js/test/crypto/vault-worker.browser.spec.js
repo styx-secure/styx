@@ -148,6 +148,44 @@ test('supervisor: fatal timeout terminates and respawns; crash respawns; STATUS 
   console.log(`[vault-worker:${info.project.name}] timeout→respawn and crash→respawn verified`);
 });
 
+test('circuit breaker: repeated post-READY crashes reach FAILED, never respawn forever (review W7)', async ({ page }, info) => {
+  test.setTimeout(120000);
+  await page.goto(`${base}/harness`);
+  const out = await page.evaluate(async ({ workerPath, wasmUrl }) => {
+    const { createVaultWorkerSupervisor } = await import('/src/crypto/vault-worker-supervisor.js');
+    let spawns = 0;
+    const supervisor = createVaultWorkerSupervisor({
+      createWorker: () => { spawns += 1; return new Worker(workerPath, { type: 'module' }); },
+      wasmUrl,
+      requestTimeoutMs: 20000,
+      backoff: { baseMs: 25, maxDelayMs: 400, maxAttempts: 5 }, // faster ladder, same 5-attempt bound
+    });
+    await supervisor.start();
+    // every worker that reaches READY gets crashed (DESTROY schedules an
+    // uncaught throw): without the W7 breaker this would respawn forever,
+    // because each generation completes a fully verified INIT
+    const deadline = Date.now() + 90000;
+    while (supervisor.getState() !== 'FAILED' && Date.now() < deadline) {
+      if (supervisor.getState() === 'RUNNING') {
+        await supervisor.request('DESTROY').catch(() => {});
+      }
+      await new Promise((resolve) => { setTimeout(resolve, 50); });
+    }
+    const result = { state: supervisor.getState(), spawns, attempts: supervisor.getAttempts() };
+    supervisor.stop();
+    // after FAILED + stop nothing else spawns
+    await new Promise((resolve) => { setTimeout(resolve, 800); });
+    result.spawnsAfterStop = spawns;
+    return result;
+  }, { workerPath: TEST_WORKER, wasmUrl: WASM_URL });
+
+  expect(out.state).toBe('FAILED');
+  expect(out.spawns).toBe(6); // 1 initial + 5 bounded respawns — never a 7th
+  expect(out.spawnsAfterStop).toBe(6);
+  expect(out.attempts).toBe(6);
+  console.log(`[vault-worker:${info.project.name}] crash loop tripped the breaker: ${out.spawns} spawns then FAILED`);
+});
+
 test('strong cancellation: terminate DURING a real synchronous Argon2id run', async ({ page }, info) => {
   test.setTimeout(180000);
   await page.goto(`${base}/harness`);

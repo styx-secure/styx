@@ -63,6 +63,64 @@ describe('worker error discipline', () => {
     const typed = toWireError(new VaultWorkerError(Codes.TIMEOUT, 'x', { reason: 'timeout' }));
     expect(typed).toEqual({ code: Codes.TIMEOUT, details: { reason: 'timeout' } });
   });
+
+  test('details follow the descriptor discipline: accessors never invoked (review W6)', () => {
+    let calls = 0;
+    const track = { get() { calls += 1; throw new Error('S3CR3T detail'); } };
+
+    const enumGetter = {};
+    Object.defineProperty(enumGetter, 'reason', { enumerable: true, configurable: true, ...track });
+    expect(() => sanitizeWorkerErrorDetails(enumGetter)).toThrow(TypeError);
+    expect(() => new VaultWorkerError(Codes.CRASHED, 'x', enumGetter)).toThrow(TypeError);
+
+    const hiddenGetter = {};
+    Object.defineProperty(hiddenGetter, 'reason', { enumerable: false, configurable: true, ...track });
+    expect(() => sanitizeWorkerErrorDetails(hiddenGetter)).toThrow(TypeError);
+
+    const setterOnly = {};
+    Object.defineProperty(setterOnly, 'reason', { enumerable: true, configurable: true, set() { calls += 1; } });
+    expect(() => sanitizeWorkerErrorDetails(setterOnly)).toThrow(TypeError);
+
+    expect(() => sanitizeWorkerErrorDetails({ [Symbol('s')]: 1 })).toThrow(TypeError);
+
+    const hiddenUnknown = {};
+    Object.defineProperty(hiddenUnknown, 'stack', { value: 'S3CR3T stack', enumerable: false, configurable: true });
+    expect(() => sanitizeWorkerErrorDetails(hiddenUnknown)).toThrow(TypeError);
+
+    const hiddenAllowed = {};
+    Object.defineProperty(hiddenAllowed, 'reason', { value: 'x', enumerable: false, configurable: true });
+    expect(() => sanitizeWorkerErrorDetails(hiddenAllowed)).toThrow(TypeError);
+
+    expect(() => sanitizeWorkerErrorDetails(Object.create({ reason: 'proto' }))).toThrow(TypeError);
+    expect(() => sanitizeWorkerErrorDetails([])).toThrow(TypeError);
+    expect(() => sanitizeWorkerErrorDetails({ attempt: 1.5 })).toThrow(TypeError);
+    expect(calls).toBe(0); // NO accessor was ever invoked
+
+    // valid shapes: empty, subsets, null prototype with enumerable data fields
+    expect(sanitizeWorkerErrorDetails({})).toEqual({});
+    expect(sanitizeWorkerErrorDetails({ attempt: 2 })).toEqual({ attempt: 2 });
+    const nullProto = Object.create(null);
+    nullProto.reason = 'ok';
+    nullProto.phase = 'init';
+    expect(sanitizeWorkerErrorDetails(nullProto)).toEqual({ reason: 'ok', phase: 'init' });
+    const frozen = sanitizeWorkerErrorDetails({ type: 'INIT' });
+    expect(Object.isFrozen(frozen)).toBe(true);
+  });
+
+  test('toWireError re-sanitizes: a mutated recognized error cannot leak (review W6)', () => {
+    const forged = new VaultWorkerError(Codes.TIMEOUT, 'x', { reason: 'timeout' });
+    forged.details = { stack: 'S3CR3T', password: 'STYX-TEST-ONLY' }; // post-construction mutation
+    const wire = toWireError(forged);
+    expect(wire).toEqual({ code: Codes.CRASHED, details: { reason: 'unhandled-exception' } });
+    expect(JSON.stringify(wire)).not.toContain('S3CR3T');
+
+    const badCode = new VaultWorkerError(Codes.TIMEOUT, 'x', { reason: 'timeout' });
+    badCode.code = 'MADE_UP';
+    expect(toWireError(badCode)).toEqual({ code: Codes.CRASHED, details: { reason: 'unhandled-exception' } });
+
+    const noDetails = new VaultWorkerError(Codes.TIMEOUT, 'x');
+    expect(toWireError(noDetails)).toEqual({ code: Codes.TIMEOUT, details: {} });
+  });
 });
 
 describe('wire value grammar (mandate §19)', () => {
@@ -135,7 +193,81 @@ describe('wire value grammar (mandate §19)', () => {
     arr.extra = 3;
     expectCode(() => validateWireValue(arr), Codes.BAD_REQUEST, 'exotic-array');
     // eslint-disable-next-line no-sparse-arrays
-    expectCode(() => validateWireValue([1, , 3]), Codes.BAD_REQUEST, 'exotic-array');
+    expectCode(() => validateWireValue([1, , 3]), Codes.BAD_REQUEST, 'sparse-array');
+  });
+
+  test('wire arrays follow the descriptor discipline: accessors never invoked (review W5)', () => {
+    let calls = 0;
+    const track = { get() { calls += 1; throw new Error('S3CR3T from getter'); } };
+
+    const enumGetter = [];
+    Object.defineProperty(enumGetter, '0', { enumerable: true, configurable: true, ...track });
+    const err = expectCode(() => validateWireValue(enumGetter), Codes.BAD_REQUEST, 'accessor-or-hidden');
+    expect(JSON.stringify({ m: err.message, d: err.details })).not.toContain('S3CR3T');
+
+    const hiddenGetter = [];
+    Object.defineProperty(hiddenGetter, '0', { enumerable: false, configurable: true, ...track });
+    expectCode(() => validateWireValue(hiddenGetter), Codes.BAD_REQUEST, 'accessor-or-hidden');
+
+    const setterOnly = [];
+    Object.defineProperty(setterOnly, '0', { enumerable: true, configurable: true, set() { calls += 1; } });
+    expectCode(() => validateWireValue(setterOnly), Codes.BAD_REQUEST, 'accessor-or-hidden');
+
+    const hiddenData = [];
+    Object.defineProperty(hiddenData, '0', { value: 1, enumerable: false, configurable: true });
+    expectCode(() => validateWireValue(hiddenData), Codes.BAD_REQUEST, 'accessor-or-hidden');
+
+    const nested = [1, [{ deep: [] }]];
+    Object.defineProperty(nested[1][0].deep, '0', { enumerable: true, configurable: true, ...track });
+    expectCode(() => validateWireValue({ wrap: nested }), Codes.BAD_REQUEST, 'accessor-or-hidden');
+
+    expect(calls).toBe(0); // NO accessor was ever invoked
+  });
+
+  test('wire arrays reject Symbols, custom prototypes, named and compensated holes (review W5)', () => {
+    const sym = [1];
+    sym[Symbol('k')] = 2;
+    expectCode(() => validateWireValue(sym), Codes.BAD_REQUEST, 'symbol-key');
+
+    const custom = [1];
+    Object.setPrototypeOf(custom, Object.create(Array.prototype));
+    expectCode(() => validateWireValue(custom), Codes.BAD_REQUEST, 'custom-prototype');
+
+    // a hole "compensated" by a Symbol keeps the own-key count at len+1
+    // eslint-disable-next-line no-sparse-arrays
+    const holeSym = [, 2];
+    holeSym[Symbol('pad')] = 0;
+    expectCode(() => validateWireValue(holeSym), Codes.BAD_REQUEST, 'symbol-key');
+
+    // a hole "compensated" by a named property keeps the count too
+    // eslint-disable-next-line no-sparse-arrays
+    const holeNamed = [, 2];
+    holeNamed.pad = 0;
+    expectCode(() => validateWireValue(holeNamed), Codes.BAD_REQUEST, 'exotic-array');
+
+    // out-of-range / non-canonical index names are exotic
+    const stretched = [1];
+    Object.defineProperty(stretched, '5', { value: 9, enumerable: true, configurable: true });
+    expectCode(() => validateWireValue(stretched), Codes.BAD_REQUEST);
+
+    // valid dense arrays with nested plain objects still pass untouched
+    expect(() => validateWireValue([1, 'x', [true, null], { a: [new Uint8Array(2)] }])).not.toThrow();
+    expect(() => validateWireValue([])).not.toThrow();
+  });
+
+  test('accessor arrays are rejected on BOTH sides: request and result (review W5)', () => {
+    let calls = 0;
+    const evil = [];
+    Object.defineProperty(evil, '0', { enumerable: true, configurable: true, get() { calls += 1; return 1; } });
+
+    // request side: BAD_REQUEST
+    expectCode(
+      () => validateRequestEnvelope({ id: 1, type: 'PUT', payload: { list: evil } }),
+      Codes.BAD_REQUEST, 'accessor-or-hidden',
+    );
+    // result side: WORKER_CRASHED, nothing would reach postMessage
+    expectCode(() => buildResultResponse(1, { list: evil }), Codes.CRASHED, 'accessor-or-hidden');
+    expect(calls).toBe(0);
   });
 });
 
@@ -207,6 +339,31 @@ describe('response envelope (client side): every deviation is a protocol violati
     for (const raw of cases) {
       expectCode(() => validateResponseEnvelope(raw), Codes.CRASHED);
     }
+  });
+
+  test('hostile response error details are a violation; getters never invoked (review W6)', () => {
+    let calls = 0;
+    const resp = (details) => ({ id: 1, ok: false, error: { code: 'BAD_REQUEST', details } });
+
+    const enumGetter = {};
+    Object.defineProperty(enumGetter, 'reason', {
+      enumerable: true, configurable: true, get() { calls += 1; return 'S3CR3T'; },
+    });
+    const err = expectCode(() => validateResponseEnvelope(resp(enumGetter)), Codes.CRASHED, 'bad-error-details');
+    expect(JSON.stringify({ m: err.message, d: err.details })).not.toContain('S3CR3T');
+
+    const hiddenUnknown = { reason: 'x' };
+    Object.defineProperty(hiddenUnknown, 'stack', { value: 'S3CR3T', enumerable: false, configurable: true });
+    expectCode(() => validateResponseEnvelope(resp(hiddenUnknown)), Codes.CRASHED, 'bad-error-details');
+
+    expectCode(() => validateResponseEnvelope(resp({ [Symbol('s')]: 1 })), Codes.CRASHED, 'bad-error-details');
+    expectCode(() => validateResponseEnvelope(resp(Object.create({ reason: 'p' }))), Codes.CRASHED, 'bad-error-details');
+    expectCode(() => validateResponseEnvelope(resp({ reason: 'r'.repeat(65) })), Codes.CRASHED, 'bad-error-details');
+    expect(calls).toBe(0);
+
+    // a valid subset still passes
+    const ok = validateResponseEnvelope(resp({ attempt: 3 }));
+    expect(ok.error.details).toEqual({ attempt: 3 });
   });
 
   test('buildResultResponse refuses unserializable results with a typed error', () => {
@@ -430,6 +587,49 @@ describe('worker runtime: states, active and reserved types', () => {
     expect(p2[p2.length - 1].m.error.details.reason).toBe('duplicate-id');
     release();
     await first;
+  });
+
+  test('STATUS and SHUTDOWN accept ONLY a null payload (review W8)', async () => {
+    const { runtime, posted, closedCount } = makeRuntime();
+    await runtime.handleMessage({ data: initReq() });
+
+    let getterCalls = 0;
+    const withGetter = {};
+    Object.defineProperty(withGetter, 'x', {
+      enumerable: true, configurable: true, get() { getterCalls += 1; return 1; },
+    });
+    const cases = [
+      {}, // empty object is NOT null
+      'x', // string
+      new Uint8Array(1), // 1-byte payload
+      new Uint8Array(MAX_WIRE_BYTES), // the maximum wire size still is not null
+      withGetter, // rejected by the generic grammar, getter untouched
+    ];
+    let id = 20;
+    for (const type of ['STATUS', 'SHUTDOWN']) {
+      for (const payload of cases) {
+        await runtime.handleMessage({ data: { id, type, payload } });
+        const last = posted[posted.length - 1].m;
+        expect(last.ok).toBe(false);
+        expect(last.error.code).toBe(Codes.BAD_REQUEST);
+        id += 1;
+      }
+    }
+    // the closed-schema rejections carry the stable reason
+    await runtime.handleMessage({ data: { id, type: 'SHUTDOWN', payload: {} } });
+    expect(posted[posted.length - 1].m.error.details).toEqual({ type: 'SHUTDOWN', reason: 'unexpected-payload' });
+    expect(getterCalls).toBe(0);
+
+    // no SHUTDOWN with a payload ever closed the worker: it is still READY
+    expect(closedCount()).toBe(0);
+    expect(runtime.getState()).toBe(WORKER_STATES.READY);
+    await runtime.handleMessage({ data: { id: id + 1, type: 'STATUS', payload: null } });
+    expect(posted[posted.length - 1].m.ok).toBe(true);
+
+    // the exact null payload is the only accepted form for SHUTDOWN too
+    await runtime.handleMessage({ data: { id: id + 2, type: 'SHUTDOWN', payload: null } });
+    expect(posted[posted.length - 1].m).toEqual({ id: id + 2, ok: true, result: { closed: true } });
+    expect(closedCount()).toBe(1);
   });
 
   test('an unrecognized exception becomes WORKER_CRASHED and closes the worker', async () => {

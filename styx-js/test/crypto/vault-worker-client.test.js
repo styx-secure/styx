@@ -138,6 +138,25 @@ describe('protocol violations are fatal (WORKER_CRASHED + _rejectAll once)', () 
     });
   }
 
+  test('hostile error details from the worker are fatal, without invoking getters (review W6)', async () => {
+    const { worker, fatals, client } = makeClient();
+    const p = client.request('STATUS');
+    let calls = 0;
+    const hostile = {};
+    Object.defineProperty(hostile, 'reason', {
+      enumerable: true, configurable: true, get() { calls += 1; return 'S3CR3T from getter'; },
+    });
+    Object.defineProperty(hostile, 'stack', { value: 'S3CR3T stack', enumerable: false, configurable: true });
+    worker.replyError(1, 'BAD_REQUEST', hostile);
+    const err = await p.then(() => null, (e) => e);
+    expect(err.code).toBe(Codes.CRASHED);
+    expect(err.details.reason).toBe('bad-error-details');
+    expect(JSON.stringify({ m: err.message, d: err.details })).not.toContain('S3CR3T');
+    expect(calls).toBe(0); // the getter was never invoked
+    expect(fatals.length).toBe(1); // protocol violation → the worker is gone
+    expect(client.isClosed()).toBe(true);
+  });
+
   test('a postMessage exception is fatal too', async () => {
     const { worker, fatals, client } = makeClient();
     worker.throwOnPost = true;
