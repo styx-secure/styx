@@ -146,13 +146,41 @@ export function validateWireValue(value, {
     seen.add(v);
 
     if (Array.isArray(v)) {
-      if (v.length > MAX_WIRE_ARRAY_LENGTH) throw error('wire array too long', { reason: 'over-array-length' });
-      // reject sparse arrays and extra own props (e.g. named fields on arrays)
-      if (Reflect.ownKeys(v).length !== v.length + 1) {
-        throw error('arrays must be dense with no extra properties', { reason: 'exotic-array' });
+      // Descriptor-based array walk (review W5): elements are read from their
+      // own data descriptors, NEVER through v[i] — an accessor on an index
+      // must be rejected without being invoked, exactly like object fields.
+      if (Object.getPrototypeOf(v) !== Array.prototype) {
+        throw error('wire arrays must have the plain Array prototype', { reason: 'custom-prototype' });
+      }
+      const lengthDesc = Object.getOwnPropertyDescriptor(v, 'length');
+      if (lengthDesc === undefined || !Object.hasOwn(lengthDesc, 'value')
+        || lengthDesc.get !== undefined || lengthDesc.set !== undefined
+        || !isSafeInt(lengthDesc.value) || lengthDesc.value < 0) {
+        throw error('wire array length must be a standard data property', { reason: 'exotic-array' });
+      }
+      const len = lengthDesc.value;
+      if (len > MAX_WIRE_ARRAY_LENGTH) throw error('wire array too long', { reason: 'over-array-length' });
+      const keys = Reflect.ownKeys(v);
+      for (const key of keys) {
+        if (typeof key !== 'string') throw error('symbol keys are rejected on the wire', { reason: 'symbol-key' });
+        if (key === 'length') continue;
+        const idx = Number(key);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= len || String(idx) !== key) {
+          throw error('arrays must carry index properties only', { reason: 'exotic-array' });
+        }
+      }
+      if (keys.length !== len + 1) {
+        throw error('arrays must be dense with no extra properties', { reason: 'sparse-array' });
       }
       spend(16);
-      for (let i = 0; i < v.length; i += 1) walk(v[i], depth + 1);
+      for (let i = 0; i < len; i += 1) {
+        const desc = Object.getOwnPropertyDescriptor(v, String(i));
+        if (desc === undefined || !Object.hasOwn(desc, 'value')
+          || desc.get !== undefined || desc.set !== undefined || desc.enumerable !== true) {
+          throw error('array elements must be enumerable data properties', { reason: 'accessor-or-hidden' });
+        }
+        walk(desc.value, depth + 1);
+      }
       seen.delete(v);
       return;
     }
