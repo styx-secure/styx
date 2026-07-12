@@ -65,10 +65,11 @@ export function validateVaultRecord(raw) {
     throw invalid('record must not carry a custom prototype');
   }
   for (const key of Object.keys(raw)) {
-    if (!RECORD_KEYS.includes(key)) throw invalid('unknown record field', { field: key });
+    // slice: attacker-chosen field names must fit the closed details shape (review F1)
+    if (!RECORD_KEYS.includes(key)) throw invalid('unknown record field', { field: key.slice(0, 64) });
     const desc = Object.getOwnPropertyDescriptor(raw, key);
     if (desc === undefined || !Object.hasOwn(desc, 'value')) {
-      throw invalid('record fields must be plain data properties', { field: key });
+      throw invalid('record fields must be plain data properties', { field: key.slice(0, 64) });
     }
   }
   for (const key of RECORD_KEYS) {
@@ -242,24 +243,31 @@ export async function decryptVaultRecord(record, { namespace, recordKey }, names
   if (record.ns !== namespace || record.k !== recordKey) {
     throw invalid('record does not belong to the requested namespace and key');
   }
+  // Synchronous snapshot of everything used after an await: a caller mutating
+  // the record cannot swap what was validated for what gets decrypted
+  // (review F2, TOCTOU). ns/k deliberately come from the REQUEST.
+  const rec = {
+    v: record.v, rv: record.rv, kv: record.kv, ct: record.ct,
+    nonce: record.nonce.slice(), data: record.data.slice(),
+  };
 
   const aad = buildRecordAadBytes({
-    v: record.v, ns: namespace, k: recordKey, rv: record.rv, kv: record.kv, ct: record.ct,
+    v: rec.v, ns: namespace, k: recordKey, rv: rec.rv, kv: rec.kv, ct: rec.ct,
   });
   let plainBytes;
   try {
     plainBytes = new Uint8Array(await subtle.decrypt(
-      { name: 'AES-GCM', iv: record.nonce, additionalData: aad, tagLength: 128 },
+      { name: 'AES-GCM', iv: rec.nonce, additionalData: aad, tagLength: 128 },
       namespaceKey,
-      record.data,
+      rec.data,
     ));
   } catch {
     throw new VaultCryptoError(Codes.RECORD_CORRUPTED, 'record authentication failed');
   }
 
-  if (record.ct === 'bytes') {
+  if (rec.ct === 'bytes') {
     return {
-      value: plainBytes, contentType: record.ct, recordVersion: record.rv, keyVersion: record.kv,
+      value: plainBytes, contentType: rec.ct, recordVersion: rec.rv, keyVersion: rec.kv,
     };
   }
   let value;
@@ -271,6 +279,6 @@ export async function decryptVaultRecord(record, { namespace, recordKey }, names
     plainBytes.fill(0); // best-effort: the JSON value survives, the raw buffer does not
   }
   return {
-    value, contentType: record.ct, recordVersion: record.rv, keyVersion: record.kv,
+    value, contentType: rec.ct, recordVersion: rec.rv, keyVersion: rec.kv,
   };
 }

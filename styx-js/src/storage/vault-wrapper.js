@@ -63,10 +63,11 @@ function assertStrictShape(raw) {
     throw invalid('wrapper must not carry a custom prototype');
   }
   for (const key of Object.keys(raw)) {
-    if (!WRAPPER_KEYS.includes(key)) throw invalid('unknown wrapper field', { field: key });
+    // slice: attacker-chosen field names must fit the closed details shape (review F1)
+    if (!WRAPPER_KEYS.includes(key)) throw invalid('unknown wrapper field', { field: key.slice(0, 64) });
     const desc = Object.getOwnPropertyDescriptor(raw, key);
     if (desc === undefined || !Object.hasOwn(desc, 'value')) {
-      throw invalid('wrapper fields must be plain data properties', { field: key });
+      throw invalid('wrapper fields must be plain data properties', { field: key.slice(0, 64) });
     }
   }
   for (const key of WRAPPER_KEYS) {
@@ -306,15 +307,18 @@ export async function wrapSyntheticRootKey({
  * @throws {VaultCryptoError}
  */
 export async function unwrapSyntheticRootKey(wrapper, kek) {
-  validateVaultWrapper(wrapper);
+  // parse = validate + independent deep copy, taken SYNCHRONOUSLY: a caller
+  // mutating the wrapper while we await cannot swap what was validated for
+  // what gets decrypted (review F2, TOCTOU).
+  const w = parseVaultWrapper(wrapper);
   const key = await importKek(kek);
-  const aad = buildWrapperAadBytes(wrapper);
+  const aad = buildWrapperAadBytes(w);
   let plain;
   try {
     plain = new Uint8Array(await subtle.decrypt(
-      { name: 'AES-GCM', iv: wrapper.wrapNonce, additionalData: aad, tagLength: 128 },
+      { name: 'AES-GCM', iv: w.wrapNonce, additionalData: aad, tagLength: 128 },
       key,
-      wrapper.wrappedRootKey,
+      w.wrappedRootKey,
     ));
   } catch {
     throw new VaultCryptoError(Codes.WRONG_PASSWORD, 'wrong password or tampered wrapper');

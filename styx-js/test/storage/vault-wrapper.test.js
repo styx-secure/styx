@@ -153,6 +153,20 @@ describe('adversarial matrix (mandate §21) — fail-closed with exact codes', (
     expect(() => validateVaultWrapper(nullProto)).not.toThrow();
   });
 
+  test('an unknown field with an oversized name still raises the typed error (review F1)', () => {
+    const err = expectSyncCode(() => validateVaultWrapper(mutated({ ['x'.repeat(200)]: 1 })), Codes.WRAPPER_INVALID);
+    expect(err.details.field).toBe('x'.repeat(64));
+  });
+
+  test('mutating the wrapper AFTER the unwrap call starts cannot bypass validation (review F2)', async () => {
+    const raw = fixtureWrapper();
+    const pending = unwrapSyntheticRootKey(raw, KEK); // snapshot taken synchronously
+    raw.wrapNonce = new Uint8Array(13); // would be invalid — must be ignored
+    raw.wrappedRootKey.fill(0); // mutation of the original buffer — must be ignored
+    const rootKey = await pending;
+    expect(toHex(rootKey)).toBe(fixture.inputs.rootKeyHex);
+  });
+
   test('extra fields, inherited fields and accessors are rejected', () => {
     expectSyncCode(() => validateVaultWrapper(mutated({ extra: 1 })), Codes.WRAPPER_INVALID);
     // All required fields live on the PROTOTYPE: own-property discipline must refuse them.

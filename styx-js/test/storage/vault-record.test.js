@@ -294,6 +294,23 @@ describe('adversarial matrix (mandate §22) — authentication and binding', () 
     expect(out.recordVersion).toBe(3);
   });
 
+  test('an unknown field with an oversized name still raises the typed error (review F1)', () => {
+    const err = expectSyncCode(
+      () => validateVaultRecord(mutated(jsonFx, { ['y'.repeat(200)]: 1 })),
+      Codes.RECORD_INVALID,
+    );
+    expect(err.details.field).toBe('y'.repeat(64));
+  });
+
+  test('mutating the record AFTER the decrypt call starts cannot bypass validation (review F2)', async () => {
+    const raw = fixtureRecord(jsonFx);
+    const pending = decryptVaultRecord(raw, { namespace: 'settings', recordKey: 'ui:theme' }, sharedKey);
+    raw.nonce = new Uint8Array(13); // would be invalid — must be ignored
+    raw.data.fill(0); // mutation of the original buffer — must be ignored
+    const out = await pending;
+    expect(out.value).toEqual(jsonFx.plaintextValue);
+  });
+
   test('a wrong-shaped CryptoKey fails closed', async () => {
     const hmac = await subtle.importKey('raw', ROOT_KEY, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
     await expectAsyncCode(
