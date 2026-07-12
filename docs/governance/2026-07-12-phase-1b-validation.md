@@ -4,8 +4,9 @@
 **PR di validazione:** [#44](https://github.com/styx-secure/styx/pull/44)
 **Periodo di applicazione:** 2026-07-12
 **Fonte di verità:** GitHub; questo documento è una fotografia revisionata dello
-stato amministrativo applicato. Le evidenze primarie sono i commenti di audit
-dell'Issue #43.
+stato amministrativo applicato. Le evidenze verificabili via API sono registrate
+nei commenti di audit dell'Issue #43; le impostazioni non esposte dalle API
+pubbliche sono qualificate come attestazioni manuali dell'amministratore umano.
 
 ## 1. Label
 
@@ -65,7 +66,9 @@ complementari perché GitHub Projects non supporta filtri OR tra campi
 differenti.
 
 Limiti WIP della Execution board: `In progress` 3, `In review` 3,
-`Human gate` 5, `Merge queue` 1.
+`Human gate` 5, `Merge queue` 1. I limiti WIP non sono esposti dalle API
+pubbliche utilizzate per l'audit: questi valori sono attestati dall'amministratore
+umano dopo verifica visiva nell'interfaccia GitHub Projects.
 
 ## 5. Automazioni attive
 
@@ -76,6 +79,12 @@ Limiti WIP della Execution board: `In progress` 3, `In review` 3,
 - PR collegata a una Issue -> `In progress`.
 - PR mergiata -> `Done`.
 - Elemento chiuso -> `Done`.
+
+La configurazione dei workflow nativi del Project è attestata
+dall'amministratore umano dopo verifica visiva nell'interfaccia. Le API pubbliche
+usate nell'audit non espongono integralmente questa configurazione; l'auto-add e
+alcune transizioni sono inoltre corroborati dagli effetti osservabili nel
+Project.
 
 Transizioni manuali in Fase 1: `Ready`, `In review`, `Human gate`,
 `Merge queue`, `Cancelled` (per le Issue chiuse come not planned).
@@ -121,5 +130,8 @@ riuscita, come previsto da `AGENTS.md`.
 
 ## 9. Audit trail
 
-Le evidenze primarie (export JSON, timestamp, diff semantici, esiti API) sono
-registrate nei commenti di audit dell'Issue #43.
+Le evidenze API primarie (export JSON, timestamp, diff semantici ed esiti dei
+check) sono registrate nei commenti di audit dell'Issue #43. I limiti WIP e la
+configurazione completa delle automazioni, non integralmente leggibili tramite
+le API pubbliche utilizzate, sono attestati dall'amministratore umano sulla base
+della verifica visiva eseguita durante il rollout.
