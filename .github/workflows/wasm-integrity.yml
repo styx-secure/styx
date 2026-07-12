@@ -37,6 +37,8 @@ jobs:
     outputs:
       crate: ${{ steps.f.outputs.crate }}
       light: ${{ steps.f.outputs.light }}
+      kdf: ${{ steps.f.outputs.kdf }}
+      kdflight: ${{ steps.f.outputs.kdflight }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -49,7 +51,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT" = "workflow_dispatch" ]; then
-            echo "crate=true" >> "$GITHUB_OUTPUT"; echo "light=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "crate=true" >> "$GITHUB_OUTPUT"; echo "light=true" >> "$GITHUB_OUTPUT"
+            echo "kdf=true" >> "$GITHUB_OUTPUT"; echo "kdflight=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           if [ "$EVENT" = "pull_request" ]; then
             git fetch --no-tags --depth=50 origin "$BASE_REF" >/dev/null 2>&1 || true
@@ -63,7 +66,8 @@ jobs:
             fi
           fi
           if [ -z "$base_sha" ]; then
-            echo "crate=true" >> "$GITHUB_OUTPUT"; echo "light=true" >> "$GITHUB_OUTPUT"; exit 0
+            echo "crate=true" >> "$GITHUB_OUTPUT"; echo "light=true" >> "$GITHUB_OUTPUT"
+            echo "kdf=true" >> "$GITHUB_OUTPUT"; echo "kdflight=true" >> "$GITHUB_OUTPUT"; exit 0
           fi
           changed="$(git diff --name-only "$base_sha" HEAD)"
           echo "Changed files:"; echo "$changed"
@@ -76,6 +80,13 @@ jobs:
             light=true; else light=false; fi
           echo "crate=$crate" >> "$GITHUB_OUTPUT"
           echo "light=$light" >> "$GITHUB_OUTPUT"
+          # styx-kdf-wasm: same two tiers, separate lifecycle from openmls-wasm.
+          if echo "$changed" | grep -qE '^styx-js/vendor/styx-kdf-wasm/'; then
+            kdf=true; else kdf=false; fi
+          if [ "$kdf" = "true" ] || echo "$changed" | grep -qE '^styx-js/src/crypto/kdf-bounds\.js|^styx-js/test/crypto/kdf-|^styx-js/test/fixtures/kdf-|^styx-js/playwright\.kdf\.config\.js|^\.github/workflows/wasm-integrity\.yml'; then
+            kdflight=true; else kdflight=false; fi
+          echo "kdf=$kdf" >> "$GITHUB_OUTPUT"
+          echo "kdflight=$kdflight" >> "$GITHUB_OUTPUT"
 
   light:
     name: Artifact + parser checks
@@ -147,9 +158,85 @@ jobs:
           path: /tmp/verify.out
           retention-days: 14
 
+  kdf-light:
+    name: KDF artifact + KAT checks
+    needs: changes
+    if: needs.changes.outputs.kdflight == 'true'
+    runs-on: ubuntu-latest
+    env:
+      KDF_DIR: styx-js/vendor/styx-kdf-wasm
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: No build cache or tool archives may ever be tracked
+        run: |
+          set -euo pipefail
+          if git ls-files | grep '/target/'; then
+            echo "::error::Cargo build cache (target/) is tracked in git"; exit 1; fi
+          if git ls-files | grep -E 'wasm-pack-.*\.tar\.'; then
+            echo "::error::wasm-pack tool archive is tracked in git"; exit 1; fi
+          echo "No build cache or tool archives tracked."
+      - name: Artifact present, checksums match, provenance agrees
+        run: |
+          set -euo pipefail
+          cd "$KDF_DIR/pkg"
+          sha256sum -c SHA256SUMS
+          wasm_hash=$(sha256sum styx_kdf_wasm_bg.wasm | cut -d' ' -f1)
+          echo "committed kdf wasm sha256 = $wasm_hash"
+          grep -q "$wasm_hash" ../PROVENANCE.md \
+            || { echo "::error::kdf wasm sha256 $wasm_hash is not recorded in PROVENANCE.md"; exit 1; }
+          mls_hash=$(sha256sum ../../openmls-wasm/openmls_wasm_bg.wasm | cut -d' ' -f1)
+          [ "$wasm_hash" != "$mls_hash" ] \
+            || { echo "::error::KDF artifact must never equal the OpenMLS artifact"; exit 1; }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - name: KAT + bounds + anti-allocation (node)
+        working-directory: styx-js
+        run: |
+          npm ci
+          node --experimental-vm-modules node_modules/.bin/jest \
+            test/crypto/kdf-bounds.test.js \
+            test/crypto/kdf-wasm.test.js \
+            --forceExit --testTimeout=60000
+      - name: KAT on real browsers (Chromium + Firefox)
+        working-directory: styx-js
+        run: |
+          npx playwright install --with-deps chromium firefox
+          npx playwright test -c playwright.kdf.config.js
+
+  kdf-hermetic:
+    name: KDF reproducible rebuild + supply chain
+    needs: changes
+    if: needs.changes.outputs.kdf == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Reproducible double build (with cargo test) must match the committed artifact
+        working-directory: styx-js/vendor/styx-kdf-wasm
+        run: |
+          set -euo pipefail
+          chmod +x ./build.sh ./verify.sh
+          ./verify.sh | tee /tmp/kdf-verify.out
+      - name: cargo audit + cargo deny (pinned, sha256-verified binaries)
+        working-directory: styx-js/vendor/styx-kdf-wasm
+        run: |
+          set -euo pipefail
+          chmod +x ./audit.sh
+          ./audit.sh | tee /tmp/kdf-audit.out
+      - name: Publish verified hashes and reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: kdf-verify-reports
+          path: |
+            /tmp/kdf-verify.out
+            /tmp/kdf-audit.out
+          retention-days: 14
+
   gate:
     name: WASM integrity gate
-    needs: [changes, light, hermetic]
+    needs: [changes, light, hermetic, kdf-light, kdf-hermetic]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -157,12 +244,17 @@ jobs:
         env:
           LIGHT_NEEDED: ${{ needs.changes.outputs.light }}
           CRATE_NEEDED: ${{ needs.changes.outputs.crate }}
+          KDF_NEEDED: ${{ needs.changes.outputs.kdf }}
+          KDFLIGHT_NEEDED: ${{ needs.changes.outputs.kdflight }}
           LIGHT: ${{ needs.light.result }}
           HERMETIC: ${{ needs.hermetic.result }}
+          KDF_LIGHT: ${{ needs.kdf-light.result }}
+          KDF_HERMETIC: ${{ needs.kdf-hermetic.result }}
         run: |
           set -euo pipefail
-          if [ "$LIGHT_NEEDED" != "true" ] && [ "$CRATE_NEEDED" != "true" ]; then
-            echo "No WASM/MLS/chat paths changed — integrity checks skipped (green)."
+          if [ "$LIGHT_NEEDED" != "true" ] && [ "$CRATE_NEEDED" != "true" ] \
+             && [ "$KDF_NEEDED" != "true" ] && [ "$KDFLIGHT_NEEDED" != "true" ]; then
+            echo "No WASM/MLS/chat/KDF paths changed — integrity checks skipped (green)."
             exit 0
           fi
           fail=0
@@ -171,6 +263,12 @@ jobs:
           fi
           if [ "$CRATE_NEEDED" = "true" ]; then
             echo "hermetic: $HERMETIC"; [ "$HERMETIC" = "success" ] || fail=1
+          fi
+          if [ "$KDFLIGHT_NEEDED" = "true" ]; then
+            echo "kdf-light: $KDF_LIGHT"; [ "$KDF_LIGHT" = "success" ] || fail=1
+          fi
+          if [ "$KDF_NEEDED" = "true" ]; then
+            echo "kdf-hermetic: $KDF_HERMETIC"; [ "$KDF_HERMETIC" = "success" ] || fail=1
           fi
           if [ "$fail" -ne 0 ]; then
             echo "WASM integrity checks FAILED."; exit 1
