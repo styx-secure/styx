@@ -20,7 +20,11 @@ class FakeWorker {
 
   postMessage(message) {
     if (message.type === 'INIT') {
-      if (this.behavior === 'init-ok') {
+      if (this.behavior === 'init-crash') {
+        // fatal DURING INIT: the error event kills the client AND makes the
+        // in-flight INIT request reject — the review-W1 double path
+        queueMicrotask(() => this.emit('error', {}));
+      } else if (this.behavior === 'init-ok') {
         queueMicrotask(() => this.emit('message', {
           data: { id: message.id, ok: true, result: { protocolVersion: 1, workerState: 'READY', wasmBytes: 42082, digestVerified: true, katVerified: true } },
         }));
@@ -145,6 +149,38 @@ describe('respawn and backoff (mandate §14)', () => {
     expect(supervisor.getState()).toBe(SUPERVISOR_STATES.FAILED);
     expect(workers.length).toBe(6); // 1 initial + 5 retries
     expect(respawns.map((r) => r.error.attempt)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  test('a fatal DURING INIT schedules exactly ONE respawn (review W1)', async () => {
+    const { supervisor, workers, timers, respawns } = makeSupervisor(['init-crash', 'init-ok']);
+    await codeOf(supervisor.start());
+    // one crash → one attempt, one timer, one onRespawn — never two
+    expect(supervisor.getAttempts()).toBe(1);
+    expect(timers.armed()).toBe(1);
+    expect(timers.delays).toEqual([100]);
+    expect(respawns.length).toBe(1);
+    await timers.fireNext();
+    expect(supervisor.getState()).toBe(SUPERVISOR_STATES.RUNNING);
+    expect(supervisor.getAttempts()).toBe(0);
+    expect(workers.length).toBe(2);
+  });
+
+  test('the full ladder holds when EVERY init crashes fatally (review W1)', async () => {
+    const { supervisor, workers, timers } = makeSupervisor(['init-crash']);
+    await codeOf(supervisor.start());
+    while (timers.armed() > 0) await timers.fireNext(); // eslint-disable-line no-await-in-loop
+    expect(timers.delays).toEqual([100, 200, 400, 800, 1600]); // 5 attempts, not 3
+    expect(supervisor.getState()).toBe(SUPERVISOR_STATES.FAILED);
+    expect(workers.length).toBe(6);
+  });
+
+  test('stop during an init-crash backoff leaves no armed timer (review W1)', async () => {
+    const { supervisor, timers } = makeSupervisor(['init-crash']);
+    await codeOf(supervisor.start());
+    expect(timers.armed()).toBe(1);
+    supervisor.stop();
+    expect(timers.armed()).toBe(0);
+    expect(supervisor.getState()).toBe(SUPERVISOR_STATES.STOPPED);
   });
 
   test('jitter is injectable and bounded to +10%', async () => {

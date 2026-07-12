@@ -60,6 +60,7 @@ export function createVaultWorkerSupervisor({
   let attempts = 0;
   let backoffTimer = null;
   let spawning = null; // in-flight spawn promise: never two workers at once
+  let respawnScheduledFor = 0; // review W1: one respawn per generation
 
   function backoffDelay() {
     const raw = backoff.baseMs * 2 ** Math.max(0, attempts - 1);
@@ -86,6 +87,12 @@ export function createVaultWorkerSupervisor({
   }
 
   function scheduleRespawn(error) {
+    // A fatal DURING INIT reaches here twice (client onFatal + the spawn
+    // rejection): exactly one respawn may be scheduled per generation, or a
+    // single crash would burn two backoff attempts and arm two timers
+    // (review W1).
+    if (respawnScheduledFor === generation) return;
+    respawnScheduledFor = generation;
     attempts += 1;
     if (attempts > backoff.maxAttempts) {
       state = SUPERVISOR_STATES.FAILED;
