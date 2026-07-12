@@ -1,5 +1,5 @@
 name: Epic
-about: Define an approved outcome that must be decomposed into atomic tasks
+description: Define an approved outcome that must be decomposed into atomic tasks
 title: "[Epic] "
 body:
   - type: markdown
