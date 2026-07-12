@@ -12,4 +12,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # Exact pins; the committed Cargo.lock is authoritative and builds run --locked.
 wasm-bindgen = "=0.2.126"
+# js-sys minor tracks the wasm-bindgen release (0.3.103 <-> 0.2.126): needed to
+# type- and length-check Uint8Array buffers WITHOUT a pre-validation copy (K8).
+js-sys = "=0.3.103"
 argon2 = { version = "=0.5.3", default-features = false, features = ["alloc"] }

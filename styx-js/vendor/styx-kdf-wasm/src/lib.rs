@@ -8,6 +8,13 @@
 //! Surface: one derive-only function. No internal Argon2 objects, no persistent
 //! handles, no raw memory, no other algorithms.
 //!
+//! ABI hardening (review K7/K8): the export takes `JsValue` buffers and `f64`
+//! numbers so that NOTHING is converted, truncated or copied before Rust
+//! validates it. Numbers are checked to be finite, non-negative, integral and
+//! ≤ u32::MAX before the u32 conversion (no mod-2³² wrap); password and salt
+//! are type-checked as real Uint8Array and LENGTH-checked before their bytes
+//! are copied into WASM memory (no pre-validation allocation).
+//!
 //! Two validation layers exist by design:
 //!   * JS policy (styx-js/src/crypto/kdf-bounds.js): profiles, OWASP floor,
 //!     exact production shapes. THE policy source of truth.
@@ -17,7 +24,9 @@
 //!     allocations (e.g. multi-GiB) regardless of what the caller does.
 
 use argon2::{Algorithm, Argon2, Block, Params, Version};
+use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 
 /// Absolute component bounds (see module docs; the JS policy is stricter).
 pub const MIN_PASSWORD_LEN: usize = 1;
@@ -42,6 +51,17 @@ pub const MAX_P: u32 = 4;
 const ERR_PARAMS: &str = "KDF_PARAMS_INVALID";
 const ERR_MEMORY: &str = "KDF_MEMORY_UNAVAILABLE";
 const ERR_DERIVE: &str = "KDF_DERIVATION_FAILED";
+
+/// Exact f64 → u32 conversion (review K7): the JS number must be finite,
+/// non-negative, integral and ≤ u32::MAX. Rejecting BEFORE the conversion
+/// means a value like 2^32 + 1024 can never wrap into a small (weaker) cost.
+/// Pure; exercised natively by `cargo test`.
+fn checked_u32(name: &str, value: f64) -> Result<u32, String> {
+    if !value.is_finite() || value.fract() != 0.0 || value < 0.0 || value > u32::MAX as f64 {
+        return Err(format!("{ERR_PARAMS}: {name} is not an exact unsigned 32-bit integer"));
+    }
+    Ok(value as u32)
+}
 
 /// Absolute-bounds check. Pure; also exercised natively by `cargo test`.
 fn validate_absolute_bounds(
@@ -111,19 +131,51 @@ fn derive_impl(
     Ok(out)
 }
 
+/// Type-check a JsValue as a real Uint8Array and bounds-check its LENGTH
+/// without copying any content (review K8). Only after this may the bytes be
+/// copied into WASM memory.
+fn checked_bytes_len(name: &str, value: &JsValue, min: usize, max: usize) -> Result<u32, String> {
+    let arr: &Uint8Array = value
+        .dyn_ref::<Uint8Array>()
+        .ok_or_else(|| format!("{ERR_PARAMS}: {name} must be a Uint8Array"))?;
+    let len = arr.length() as usize;
+    if !(min..=max).contains(&len) {
+        return Err(format!("{ERR_PARAMS}: {name} length out of absolute bounds"));
+    }
+    Ok(len as u32)
+}
+
 /// Derive `out_len` bytes with Argon2id (v0x13) from password and salt bytes.
 /// Byte arrays only — no string/encoding ambiguity. Production callers use
 /// out_len = 32 (enforced by the JS policy layer, not here).
+///
+/// Validation order (K7/K8 — nothing is converted, copied or allocated first):
+///   1. password/salt really are Uint8Array; lengths read WITHOUT copying
+///   2. every number is a finite, integral, in-range u32 (no mod-2³² wrap)
+///   3. absolute component bounds
+///   4. only now: the two small byte copies, then the Argon2 block memory
 #[wasm_bindgen]
 pub fn argon2id_derive(
-    password: &[u8],
-    salt: &[u8],
-    m_kib: u32,
-    t_cost: u32,
-    p_lanes: u32,
-    out_len: u32,
+    password: &JsValue,
+    salt: &JsValue,
+    m_kib: f64,
+    t_cost: f64,
+    p_lanes: f64,
+    out_len: f64,
 ) -> Result<Vec<u8>, JsError> {
-    derive_impl(password, salt, m_kib, t_cost, p_lanes, out_len).map_err(|e| JsError::new(&e))
+    let inner = || -> Result<Vec<u8>, String> {
+        checked_bytes_len("password", password, MIN_PASSWORD_LEN, MAX_PASSWORD_LEN)?;
+        checked_bytes_len("salt", salt, MIN_SALT_LEN, MAX_SALT_LEN)?;
+        let m = checked_u32("m_kib", m_kib)?;
+        let t = checked_u32("t_cost", t_cost)?;
+        let p = checked_u32("p_lanes", p_lanes)?;
+        let out = checked_u32("out_len", out_len)?;
+        // All checks passed: the two small copies may now happen.
+        let pw_bytes = password.unchecked_ref::<Uint8Array>().to_vec();
+        let salt_bytes = salt.unchecked_ref::<Uint8Array>().to_vec();
+        derive_impl(&pw_bytes, &salt_bytes, m, t, p, out)
+    };
+    inner().map_err(|e| JsError::new(&e))
 }
 
 #[cfg(test)]
@@ -164,6 +216,29 @@ mod tests {
         let salt: Vec<u8> = (0..8u8).collect();
         let out = derive_impl(b"k", &salt, 1024, 1, 1, 16).unwrap();
         assert_eq!(hex(&out), "7a6ebb2e8257e4c8ea88b5d3bf7c5a95");
+    }
+
+    // K7: the f64 gate must reject anything that is not an exact u32 BEFORE
+    // any conversion — a huge value must never wrap into a small one.
+    #[test]
+    fn checked_u32_rejects_non_exact_values() {
+        let bad = [
+            -1.0,
+            1.5,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            4_294_967_296.0,          // 2^32
+            4_294_968_320.0,          // 2^32 + 1024: the wrap-to-1024 attack
+            9_007_199_254_740_991.0,  // Number.MAX_SAFE_INTEGER
+        ];
+        for v in bad {
+            let err = checked_u32("m_kib", v).expect_err("must be rejected");
+            assert!(err.starts_with("KDF_PARAMS_INVALID"), "unexpected: {err}");
+        }
+        assert_eq!(checked_u32("m_kib", 0.0).unwrap(), 0);
+        assert_eq!(checked_u32("m_kib", 4_294_967_295.0).unwrap(), u32::MAX);
+        assert_eq!(checked_u32("m_kib", 19_456.0).unwrap(), 19_456);
     }
 
     // Absolute bounds are rejected BEFORE any Argon2 execution or block

@@ -5,16 +5,21 @@
  * Derive `out_len` bytes with Argon2id (v0x13) from password and salt bytes.
  * Byte arrays only — no string/encoding ambiguity. Production callers use
  * out_len = 32 (enforced by the JS policy layer, not here).
+ *
+ * Validation order (K7/K8 — nothing is converted, copied or allocated first):
+ *   1. password/salt really are Uint8Array; lengths read WITHOUT copying
+ *   2. every number is a finite, integral, in-range u32 (no mod-2³² wrap)
+ *   3. absolute component bounds
+ *   4. only now: the two small byte copies, then the Argon2 block memory
  */
-export function argon2id_derive(password: Uint8Array, salt: Uint8Array, m_kib: number, t_cost: number, p_lanes: number, out_len: number): Uint8Array;
+export function argon2id_derive(password: any, salt: any, m_kib: number, t_cost: number, p_lanes: number, out_len: number): Uint8Array;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly argon2id_derive: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
+    readonly argon2id_derive: (a: any, b: any, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly __wbindgen_externrefs: WebAssembly.Table;
-    readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __externref_table_dealloc: (a: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_start: () => void;

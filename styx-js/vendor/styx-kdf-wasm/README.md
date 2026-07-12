@@ -29,10 +29,13 @@ Stable error codes: `KDF_PARAMS_INVALID`, `KDF_MEMORY_UNAVAILABLE`,
 `KDF_DERIVATION_FAILED`. Messages never contain password, salt or output
 material.
 
-ABI caveat: JS numbers are reduced mod 2³² (and floats truncated) by the
-wasm-bindgen u32 boundary before the absolute bounds see them — integer
-enforcement lives ONLY in the JS policy layer, which is the single sanctioned
-call path. Both behaviours are pinned by tests.
+Hardened ABI (reviews K7/K8): the export receives `f64` numbers and `JsValue`
+buffers, so nothing is converted, truncated or copied before Rust validates
+it. Numbers must be finite, integral, non-negative and ≤ 2³²−1 (no mod-2³²
+wrap: `2^32+1024` is rejected, never read as `1024`); password and salt must
+be real `Uint8Array`s whose LENGTH is checked before any byte is copied into
+WASM memory (the glue contains no `passArray8ToWasm0` — guarded by an
+anti-drift test).
 
 ## Scripts (all need Docker; no host Rust toolchain)
 

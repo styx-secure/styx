@@ -4,8 +4,14 @@
  * Derive `out_len` bytes with Argon2id (v0x13) from password and salt bytes.
  * Byte arrays only — no string/encoding ambiguity. Production callers use
  * out_len = 32 (enforced by the JS policy layer, not here).
- * @param {Uint8Array} password
- * @param {Uint8Array} salt
+ *
+ * Validation order (K7/K8 — nothing is converted, copied or allocated first):
+ *   1. password/salt really are Uint8Array; lengths read WITHOUT copying
+ *   2. every number is a finite, integral, in-range u32 (no mod-2³² wrap)
+ *   3. absolute component bounds
+ *   4. only now: the two small byte copies, then the Argon2 block memory
+ * @param {any} password
+ * @param {any} salt
  * @param {number} m_kib
  * @param {number} t_cost
  * @param {number} p_lanes
@@ -13,17 +19,13 @@
  * @returns {Uint8Array}
  */
 export function argon2id_derive(password, salt, m_kib, t_cost, p_lanes, out_len) {
-    const ptr0 = passArray8ToWasm0(password, wasm.__wbindgen_malloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passArray8ToWasm0(salt, wasm.__wbindgen_malloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ret = wasm.argon2id_derive(ptr0, len0, ptr1, len1, m_kib, t_cost, p_lanes, out_len);
+    const ret = wasm.argon2id_derive(password, salt, m_kib, t_cost, p_lanes, out_len);
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }
-    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
-    return v3;
+    return v1;
 }
 function __wbg_get_imports() {
     const import0 = {
@@ -31,6 +33,26 @@ function __wbg_get_imports() {
         __wbg_Error_92b29b0548f8b746: function(arg0, arg1) {
             const ret = Error(getStringFromWasm0(arg0, arg1));
             return ret;
+        },
+        __wbg___wbindgen_throw_344f42d3211c4765: function(arg0, arg1) {
+            throw new Error(getStringFromWasm0(arg0, arg1));
+        },
+        __wbg_instanceof_Uint8Array_309b927aaf7a3fc7: function(arg0) {
+            let result;
+            try {
+                result = arg0 instanceof Uint8Array;
+            } catch (_) {
+                result = false;
+            }
+            const ret = result;
+            return ret;
+        },
+        __wbg_length_1f0964f4a5e2c6d8: function(arg0) {
+            const ret = arg0.length;
+            return ret;
+        },
+        __wbg_prototypesetcall_4770620bbe4688a0: function(arg0, arg1, arg2) {
+            Uint8Array.prototype.set.call(getArrayU8FromWasm0(arg0, arg1), arg2);
         },
         __wbindgen_init_externref_table: function() {
             const table = wasm.__wbindgen_externrefs;
@@ -65,13 +87,6 @@ function getUint8ArrayMemory0() {
     return cachedUint8ArrayMemory0;
 }
 
-function passArray8ToWasm0(arg, malloc) {
-    const ptr = malloc(arg.length * 1, 1) >>> 0;
-    getUint8ArrayMemory0().set(arg, ptr / 1);
-    WASM_VECTOR_LEN = arg.length;
-    return ptr;
-}
-
 function takeFromExternrefTable0(idx) {
     const value = wasm.__wbindgen_externrefs.get(idx);
     wasm.__externref_table_dealloc(idx);
@@ -91,8 +106,6 @@ function decodeText(ptr, len) {
     }
     return cachedTextDecoder.decode(getUint8ArrayMemory0().subarray(ptr, ptr + len));
 }
-
-let WASM_VECTOR_LEN = 0;
 
 let wasmModule, wasmInstance, wasm;
 function __wbg_finalize_init(instance, module) {

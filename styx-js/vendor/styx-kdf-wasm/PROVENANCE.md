@@ -14,7 +14,11 @@ MLS state, and an OpenMLS update cannot change this artifact.
   - `argon2 = 0.5.3` (RustCrypto) — sha256 of the crates.io archive recorded in
     `Cargo.lock` (`checksum` field), license MIT OR Apache-2.0
   - `wasm-bindgen = 0.2.126` — checksum in `Cargo.lock`, MIT OR Apache-2.0
-- Full dependency graph: 26 crates from crates.io (checksums in `Cargo.lock`)
+  - `js-sys = 0.3.103` (the wasm-bindgen release paired with 0.2.126) —
+    checksum in `Cargo.lock`, MIT OR Apache-2.0. Added for the hardened ABI
+    (review K8): Uint8Array buffers are type- and length-checked in Rust
+    WITHOUT a pre-validation copy into WASM memory.
+- Full dependency graph: 32 crates from crates.io (checksums in `Cargo.lock`)
   plus this root crate. Notable transitive crates and why they exist:
   - `blake2`, `password-hash`, `digest`, `block-buffer`, `crypto-common`,
     `generic-array`, `typenum`, `subtle`, `base64ct`, `rand_core`,
@@ -37,10 +41,10 @@ MLS state, and an OpenMLS update cannot change this artifact.
 
 | File | sha256 |
 |---|---|
-| `pkg/styx_kdf_wasm_bg.wasm` (36 912 bytes) | `0456f5d38a5b11e1e1d306a46049480d1dfe4a58d77ab4154fe1559d2042891b` |
-| `pkg/styx_kdf_wasm.js` | `dbeacb4fda86c8a7f7514e773ad4cdb4b76f2114806c9f0a2516f8664f31e8ec` |
-| `pkg/styx_kdf_wasm.d.ts` | `ec952ab231c25ddb075015cbc142a7c11eeef0732617fafb99d8b2ee53ef0310` |
-| `pkg/styx_kdf_wasm_bg.wasm.d.ts` | `b2d9a34e455bb548b7ef372cd9cbdb4bc09792e3d4d469bf10a1a77a34bc81bf` |
+| `pkg/styx_kdf_wasm_bg.wasm` (42 082 bytes) | `ad67202689c58d5e7b7a0b845d7b9d7253ecc04542f8921804c11d62942ae8f5` |
+| `pkg/styx_kdf_wasm.js` | `e2a9b15c55c6e485de53a450c5a471d5138d71a987ca9bb6dbd9c0da2cacf2d7` |
+| `pkg/styx_kdf_wasm.d.ts` | `c54d7288c263e4fa5f3fd7f48cb5deaf99da436555b2ccceec179c7a986d732b` |
+| `pkg/styx_kdf_wasm_bg.wasm.d.ts` | `c54c3ec5abba29c7de59a15174cefdf6f3408636034403dde7a6945ff5f80a12` |
 
 Machine-readable copy: `pkg/SHA256SUMS` (checked by `verify.sh` and by the
 jest anti-drift test).
@@ -51,17 +55,25 @@ jest anti-drift test).
 - **Double-build verification**: `./verify.sh` executed 2026-07-12 — two
   independent container builds byte-identical to each other AND to the
   committed `pkg/` files (all four `REPRODUCIBLE`, `SHA256SUMS: OK`, exit 0).
-- `cargo test --locked` (native, in the pinned image): 5/5 passed — one spike
+- `cargo test --locked` (native, in the pinned image): 6/6 passed — one spike
   known-answer anchor plus two additional cross-validated vectors (all outputs
-  byte-identical to hash-wasm 4.12.0), the absolute-bounds rejection table,
+  byte-identical to hash-wasm 4.12.0), the exact f64→u32 gate (review K7:
+  2^32+1024 can never wrap into 1024), the absolute-bounds rejection table,
   failure-then-recovery. All three spike anchors run in the JS and browser KAT
   suites (Node, Chromium, Firefox).
+- **ABI hardening (reviews K7/K8, 2026-07-12)**: the export takes `JsValue`
+  buffers and `f64` numbers; numbers are validated (finite, integral,
+  non-negative, ≤ u32::MAX) BEFORE the u32 conversion, and Uint8Array buffers
+  are type- and length-checked BEFORE their bytes are copied into WASM memory
+  (the glue contains no `passArray8ToWasm0`; guarded by an anti-drift test).
+  The five KAT outputs are unchanged: the ABI changed, Argon2id did not.
 
 ## Supply-chain checks (2026-07-12, `./audit.sh`)
 
 - `cargo audit` (cargo-audit 0.22.2, release binary sha256
   `7fb9497f8594b389e5fce5ef9b92db08432996895b2e0c5a0167a69ed445c428`):
-  1159 advisories loaded, 27 dependencies scanned, **0 vulnerabilities**.
+  1159 advisories loaded, 33 crate dependencies scanned (post js-sys),
+  **0 vulnerabilities**.
 - `cargo deny --locked check` (cargo-deny 0.20.2, release binary sha256
   `9f12ed4c49936e09b48bf862b595cde2fe64fcbd9d74dfacac6131ca824c8d5f`, policy
   `./deny.toml`): **advisories ok, bans ok, licenses ok, sources ok**.
