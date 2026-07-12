@@ -4,11 +4,11 @@ name: Dart reference stack
 # merge-group commit. A failed detector can never become a green skip.
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main]
   merge_group:
     types: [checks_requested]
   push:
-    branches: [main, develop]
+    branches: [main]
 
 permissions:
   contents: read
