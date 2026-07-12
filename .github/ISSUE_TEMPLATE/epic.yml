@@ -1,0 +1,51 @@
+name: Epic
+description: Define an approved outcome that must be decomposed into atomic tasks
+title: "[Epic] "
+body:
+  - type: markdown
+    attributes:
+      value: An Epic is not directly executable. Create sub-issues with complete atomic task contracts.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome and success measure
+    validations:
+      required: true
+  - type: textarea
+    id: boundaries
+    attributes:
+      label: Scope boundaries and non-goals
+    validations:
+      required: true
+  - type: textarea
+    id: deliverables
+    attributes:
+      label: Deliverables and decomposition
+      description: List planned sub-issues, interfaces to freeze and integration points.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and ordering
+      description: Record expected native blocked-by/blocking relationships.
+    validations:
+      required: true
+  - type: textarea
+    id: gates
+    attributes:
+      label: Human gates and decision owners
+    validations:
+      required: true
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollout and rollback strategy
+    validations:
+      required: true
+  - type: input
+    id: target
+    attributes:
+      label: Target milestone or date
+    validations:
+      required: true

@@ -1,16 +1,15 @@
 name: Dart reference stack
 
-# Path-aware but ALWAYS runs, so the final "Dart reference stack" check is present on
-# every PR (never "Expected"/absent) and can be a stable required check. When no Dart
-# paths change, the heavy jobs are skipped and the gate reports an explicit green skip.
-# The Dart stack is reference/archive (ADR-0003); it runs on the pure-Dart toolchain.
+# Path-aware but ALWAYS runs, so the final gate is present on every PR and
+# merge-group commit. A failed detector can never become a green skip.
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
   push:
-    branches: [main, develop]
+    branches: [main]
 
-# Least privilege: these jobs only read the repository.
 permissions:
   contents: read
 
@@ -32,10 +31,13 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" = "pull_request" ]; then
+          if [ "$EVENT" = "merge_group" ]; then
+            base_sha="$MERGE_GROUP_BASE_SHA"
+          elif [ "$EVENT" = "pull_request" ]; then
             git fetch --no-tags --depth=50 origin "$BASE_REF" >/dev/null 2>&1 || true
             base_sha="$(git merge-base "origin/$BASE_REF" HEAD || echo "")"
           else
@@ -46,9 +48,10 @@ jobs:
               base_sha="$(git rev-parse HEAD~1 2>/dev/null || echo "")"
             fi
           fi
-          if [ -z "$base_sha" ]; then
-            # No base to diff against (first commit): run the full suite to be safe.
-            echo "dart=true" >> "$GITHUB_OUTPUT"; exit 0
+          if [ -z "$base_sha" ] || ! git cat-file -e "${base_sha}^{commit}" 2>/dev/null; then
+            echo "Dart change base unavailable; running full suite fail-closed."
+            echo "dart=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           changed="$(git diff --name-only "$base_sha" HEAD)"
           echo "Changed files:"; echo "$changed"
@@ -83,8 +86,6 @@ jobs:
       - uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1.7.2
         with:
           sdk: "3.10.8"
-      # Drift/sqlite3 DAO tests dlopen libsqlite3.so; runners ship only libsqlite3.so.0,
-      # so install the -dev package that provides the unversioned symlink.
       - run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
       - run: dart pub global activate melos 7.8.2
       - run: melos bootstrap
@@ -107,7 +108,6 @@ jobs:
       - run: melos run coverage:check
 
   gate:
-    # Stable required check (unique context).
     name: Dart reference stack gate
     needs: [changes, analyze, test, coverage]
     if: always()
@@ -115,12 +115,17 @@ jobs:
     steps:
       - name: Aggregate result
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
           DART: ${{ needs.changes.outputs.dart }}
           ANALYZE: ${{ needs.analyze.result }}
           TEST: ${{ needs.test.result }}
           COVERAGE: ${{ needs.coverage.result }}
         run: |
           set -euo pipefail
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::Dart change detection failed: ${CHANGES_RESULT:-<empty>}"
+            exit 1
+          fi
           if [ "$DART" != "true" ]; then
             echo "No Dart paths changed — reference-stack checks skipped (green)."
             exit 0
@@ -131,7 +136,5 @@ jobs:
             echo "$name: $res"
             [ "$res" = "success" ] || fail=1
           done
-          if [ "$fail" -ne 0 ]; then
-            echo "Dart reference-stack checks FAILED."; exit 1
-          fi
+          [ "$fail" -eq 0 ] || { echo "Dart reference-stack checks FAILED."; exit 1; }
           echo "All Dart reference-stack checks passed."

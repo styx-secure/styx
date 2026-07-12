@@ -1,0 +1,47 @@
+name: Manual gate
+description: Record a human authorization, verification or GO/NO-GO decision
+title: "[Gate] "
+body:
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decision requested
+      description: State the exact binary or bounded decision.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Required evidence
+      description: Link Issues, PRs, checks, reports and manual-test records.
+    validations:
+      required: true
+  - type: textarea
+    id: criteria
+    attributes:
+      label: GO criteria
+      placeholder: |
+        - [ ] All required checks are successful
+        - [ ] Blocking findings are closed and re-verified
+    validations:
+      required: true
+  - type: textarea
+    id: authority
+    attributes:
+      label: Authorized human decision owner
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Initial state
+      options: [Pending, GO, GO with conditions, NO-GO]
+    validations:
+      required: true
+  - type: textarea
+    id: conditions
+    attributes:
+      label: Conditions, expiry and rollback
+      description: Use NONE only when the decision is unconditional.
+    validations:
+      required: true
