@@ -177,3 +177,53 @@ GO
 W1 risolto e ri-verificato con la probe indipendente che lo aveva scoperto;
 nessuna regressione (probe D 18/18, suite 56/56); la condizione del primo
 round è sciolta. Il verdetto GO è confermato su HEAD `415d808`.
+
+## 6. Terzo round — verifica dei fix W4–W8 (HEAD `b67c9b0`)
+
+Un gate utente successivo al secondo round ha emesso cinque finding sul
+runtime worker, corretti nei commit da `835af17` a `b67c9b0` più il rebase su
+`origin/main` (`0a2c2c0`, governance Merge Queue di PR #37). Terzo round
+condotto da revisore indipendente a contesto pulito, in un worktree read-only
+su `b67c9b0`, con verifiche **attive**: quattro probe proprie (145 asserzioni
+complessive, con contatori sulle invocazioni degli accessor e fake
+worker/timer del revisore, mai riusando i test dell'autore), riesecuzione
+delle sei suite jest (**154/154**), rigenerazione delle fixture congelate
+(zero drift), ricalcolo del digest KDF (`ad67202…8f5`, 42082 byte, costanti
+del loader identiche), diff di perimetro sull'intero range
+`origin/main..HEAD` (15 commit, 17 file, tutti nell'autorizzazione; zero
+tocchi a vendor/, @noble, formati wire, Dart, apps/chat; lockfile intoccato).
+La spec Playwright non è stata rieseguita (16/16 già documentati su
+Chromium+Firefox); il nuovo test browser del circuit breaker è stato
+verificato staticamente (`vault-worker.browser.spec.js:151‑187`: crash loop
+reale via DESTROY, atteso FAILED con 6 spawn, mai un settimo, nessuno spawn
+dopo stop).
+
+| ID | Severità | Finding | Esito |
+|---|---|---|---|
+| W4 | Important | Base della PR superata/non-mergeable e perdita della semantica Merge Queue del workflow | **risolto** — merge-base == `0a2c2c0`; nel range solo i 15 commit PR‑3; il diff di `styx-js-web.yml` contiene ESCLUSIVAMENTE lo step anti-bundle del worker (+17 righe); sul branch restano `merge_group: [checks_requested]`, `MERGE_GROUP_BASE_SHA` con fallback fail-closed, gate aggregatore fail-closed, action pinnate a SHA, gate KDF e gate formati vault. |
+| W5 | Important | Bypass su array via accessor/descrittori esotici in `validateWireValue` (lettura `v[i]`) | **risolto** — probe con contatori (49/49): 14 costruzioni ostili × request/result/diretto → errori tipizzati `BAD_REQUEST`/`WORKER_CRASHED` con **0 invocazioni di getter** e nessun testo dell'attaccante; prototype `Array.prototype` obbligatorio, `length` come data descriptor standard, `Reflect.ownKeys` limitato a length+indici canonici densi, elementi letti SOLO da `desc.value` enumerabile; array validi (densi, annidati, vuoti, `Uint8Array` interni) passano. |
+| W6 | Important | Bypass strict-shape sui `details` degli errori (`Object.keys`+`details[key]`) | **risolto** — `sanitizeWorkerErrorDetails` passa da `snapshotStrictPlainObject` con `{requiredKeys: []}`; probe 29/29: 13 shape ostili → `TypeError` con getter a 0 invocazioni; risposta con details ostili → `WORKER_CRASHED/bad-error-details` senza contenuto; il client la tratta come violazione fatale (onFatal ×1, terminate); `toWireError` ri-sanitizza le istanze mutate post-costruzione → `{code:'WORKER_CRASHED', details:{reason:'unhandled-exception'}}`; retro-compatibilità PR‑2 confermata (`vault-wrapper`/`vault-record` a 3 argomenti, tutti i campi obbligatori, suite verdi). |
+| W7 | Important | Crash loop post-READY illimitato (attempts azzerati da ogni INIT verificato) | **risolto** — probe con fake worker/timer del revisore (37/37): 6 generazioni INIT-ok-poi-crash → delays `[100,200,400,800,1600]`, FAILED, 6 worker e mai un settimo, mai due vivi, 0 timer residui; la streak NON è azzerata dall'INIT ma solo da 30000 ms continuativi in RUNNING (`STABILITY_RESET_MS`, timer iniettabile) o da `start()` deliberato da STOPPED/FAILED; crash prima della scadenza → 200/attempt 2, dopo la scadenza → 100/attempt 1; `stop()` cancella backoff E stability timer senza reset tardivi; stessa protezione per i TIMEOUT fatali post-READY (ladder completo fino a FAILED); regressione W1 confermata (un solo attempt/timer/onRespawn per crash fatale durante INIT); `cancelUnlock` non consuma né azzera il budget. |
+| W8 | Minor | Payload STATUS/SHUTDOWN non chiusi dalla grammatica | **risolto** — probe 30/30: solo `payload === null` accettato; `{}`, stringa, `Uint8Array` da 1 byte e da 32 MiB (massimo del budget), boolean, numero, array → `BAD_REQUEST/unexpected-payload` PRIMA di ogni handler, worker sempre READY; payload con getter respinto dalla grammatica wire con getter mai invocato; SHUTDOWN invalido → `close()` a **0** chiamate e worker ancora attivo; INIT esige esattamente `{wasmUrl}`; i riservati mantengono la sola validazione generica prima di `VAULT_WRONG_STATE`. |
+
+Tre osservazioni informative nuove, nessuna bloccante: N1 — doppia lettura di
+`err.code` in `toWireError` (`vault-worker-errors.js:82,87`; TOCTOU teorico
+in-realm, contenuto dal rigetto client dei codici ignoti; leggere il codice
+una sola volta); N2 — un `Proxy` può superare `validateWireValue` solo per
+valori prodotti nello stesso realm (gli input del confine sono già output di
+structured clone); da ricordare per gli handler PR‑5; N3 —
+`supervisor.request()` non esclude `SHUTDOWN` (auto-DoS in-realm che consuma
+un attempt; da chiudere in PR‑5). W2/W3 (Info) restano aperti come accettati.
+
+### Verdetto del terzo round
+
+```text
+GO
+```
+
+W4, W5, W6 e W7 (Important) e W8 (Minor) risultano risolti e ri-verificati
+attivamente su HEAD `b67c9b0`; batteria di non-regressione integralmente
+verde (jest 154/154, fixture congelate senza drift, digest KDF invariato,
+zero nuove dipendenze, perimetro del range conforme all'autorizzazione,
+registri del protocollo invariati: 13 tipi, 3 attivi, v1, 5 codici). Il
+verdetto GO è confermato su HEAD `b67c9b0`.
