@@ -82,19 +82,41 @@ Usare esclusivamente le relazioni native GitHub `blocked by` / `blocking`.
 Riferimenti testuali nel corpo sono ridondanza validabile, non la fonte dello
 stato. Un task non passa a `Ready` finché ogni dipendenza nativa è chiusa.
 
-## 4. Prerequisiti amministrativi
+## 4. Prerequisiti amministrativi e identità
 
-Prima di applicare il ruleset verificare manualmente:
+Prima di applicare o modificare il ruleset verificare manualmente:
 
 - `@maverde73` è riconosciuto da GitHub come CODEOWNER con accesso write o superiore;
 - l'editor CODEOWNERS non mostra owner sconosciuti o senza permessi sufficienti;
-- ogni identità App/agente è priva di permessi di merge, approval, amministrazione
-  repository e modifica ruleset;
+- tutte le identità non umane con accesso al repository sono inventariate e i
+  loro permessi effettivi sono registrati;
+- nessuna identità App/agente possiede amministrazione repository, modifica di
+  ruleset o branch protection, amministrazione organizzazione o bypass su
+  `styx-secure/styx`;
 - nessuna identità App/agente è presente nelle bypass list;
 - la bypass list del ruleset è vuota.
 
-La configurazione dell'App/token è parte del gate amministrativo: la policy nel
-repository non sostituisce l'enforcement dei permessi.
+Le GitHub App usate per lo sviluppo possono mantenere i permessi tecnici minimi
+necessari a creare branch, commit e pull request. Tali permessi non costituiscono
+autorità di governance: l'orchestratore e il processo non devono esporre o
+invocare operazioni di `APPROVE`, merge, auto-merge, inserimento in Merge Queue,
+modifica ruleset o modifica delle bypass list. Queste operazioni restano gate
+umani espliciti.
+
+Stato applicato al termine della Fase 1B:
+
+- **Cloudflare Workers and Pages** è limitata al solo repository
+  `styx-secure/styx-website` e non ha accesso a `styx-secure/styx`;
+- **chatgpt-codex-connector** mantiene accesso a `styx-secure/styx` per il lavoro
+  di sviluppo. Non dispone di amministrazione repository o ruleset e non è un
+  bypass actor; i suoi scope di scrittura su contenuti, pull request e workflow
+  restano un rischio residuo documentato finché la Fase 2 non introduce il
+  broker a operazioni ristrette e il Passaggio B non aggiunge enforcement umano
+  tecnico.
+
+La configurazione dell'App/token è parte del gate amministrativo. La policy nel
+repository definisce l'autorità consentita, ma non sostituisce il principio del
+minimo privilegio né il futuro enforcement del broker.
 
 ## 5. Ruleset `main`
 
@@ -124,9 +146,14 @@ I nomi sopra sono i context reali dei job. Il nome del workflow non deve essere
 premesso al context memorizzato nel ruleset.
 
 La PR innocua non-prodotto #44 ha pubblicato e completato con successo tutti e
-quattro i check sull'evento `pull_request`. Il run `merge_group` non è ancora
-stato validato: tutti e quattro i check devono risultare `Successful`, mai
-`Expected` o permanentemente pending, prima del Passaggio B.
+quattro i check sull'evento `pull_request`.
+
+Il test controllato della Merge Queue ha inoltre generato il vero commit
+`merge_group` `e6df3a4aac947de9b59b0ae890edd9ce9554af51`: tutti e quattro i
+required check sono risultati `Successful` con app GitHub Actions `15368`. Un
+required check temporaneo senza producer sul merge group ha impedito il merge;
+la PR è stata rimossa dalla coda e il ruleset temporaneo `18844368` è stato
+eliminato. `main` e il ruleset permanente `18814814` sono rimasti invariati.
 
 ### Passaggio B — enforcement umano
 
@@ -146,9 +173,11 @@ Dopo il prerequisito:
 - concorrenza iniziale: 1 PR;
 - accodamento consentito solo da umano autorizzato.
 
-Le PR prodotte da una GitHub App agente possono essere approvate dall'umano, ma
-l'App non deve avere permessi di merge o approval e non deve comparire in alcuna
-bypass list.
+Le PR prodotte da una GitHub App agente possono essere revisionate e approvate
+dall'umano. Un'App di sviluppo può avere scope tecnici necessari a produrre la
+PR, ma non riceve autorità di approvazione, merge, auto-merge, accodamento,
+modifica ruleset o bypass. Fino al broker della Fase 2 e al Passaggio B questa
+separazione è anche procedurale e viene registrata come rischio residuo.
 
 ## 6. Break-glass
 
