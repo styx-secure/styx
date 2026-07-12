@@ -1,0 +1,7 @@
+# Build cache and downloaded tooling must never be tracked.
+/target/
+/wasm-pack-*.tar.gz
+# wasm-pack regenerates these on every build; the tracked artifact set in pkg/
+# is explicit (see verify.sh).
+/pkg/.gitignore
+/pkg/package.json

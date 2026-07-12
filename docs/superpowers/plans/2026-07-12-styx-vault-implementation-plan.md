@@ -1,6 +1,6 @@
 # Piano di implementazione — Blocco 3 "Styx Vault"
 
-**Status: Proposed**
+**Status: Proposed** — Merged: PR #33 (squash su `main` = `613f58f`).
 
 Spec di riferimento: `docs/superpowers/specs/2026-07-12-styx-vault-design.md`
 (Status: Proposed; review GO in

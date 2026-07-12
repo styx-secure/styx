@@ -101,18 +101,37 @@ jobs:
           fi
           echo "Production bundle is spike-free."
 
+      - name: Fail if the KDF artifact leaks into the bundle
+        working-directory: styx-js/apps/chat
+        run: |
+          # styx-kdf-wasm is not integrated in this phase (Blocco 3, PR-1):
+          # neither the artifact nor its identifiers may reach dist/.
+          if grep -rl 'styx_kdf_wasm\|argon2id_derive' dist/; then
+            echo "::error::styx-kdf-wasm code found in the production bundle"
+            exit 1
+          fi
+          echo "Production bundle is KDF-free."
+
   gate:
     name: styx-js web gate
     needs: [changes, build-and-gate]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Aggregate result
+      - name: Aggregate result (fail-closed — review K9)
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
           WEB: ${{ needs.changes.outputs.web }}
           BUILD: ${{ needs.build-and-gate.result }}
         run: |
           set -euo pipefail
+          # Green-skip is only reachable when change detection itself
+          # succeeded: a failed/cancelled/skipped `changes` job yields empty
+          # outputs, which must never read as "nothing changed".
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::styx-js change detection did not complete successfully: ${CHANGES_RESULT:-<empty>}"
+            exit 1
+          fi
           if [ "$WEB" != "true" ]; then
             echo "No styx-js paths changed — web build/gate skipped (green)."
             exit 0

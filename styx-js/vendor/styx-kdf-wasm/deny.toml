@@ -1,0 +1,20 @@
+# cargo-deny policy for styx-kdf-wasm (checked by audit.sh and CI).
+[graph]
+all-features = false
+
+[advisories]
+version = 2
+yanked = "deny"
+
+[licenses]
+version = 2
+# Everything in the tree is permissive; see PROVENANCE.md for the full list.
+allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "Unicode-3.0"]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
