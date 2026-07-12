@@ -12,6 +12,8 @@
 import { VaultCryptoError, VaultCryptoErrorCodes as Codes } from '../crypto/vault-errors.js';
 import { buildRecordAadBytes } from '../crypto/vault-aad.js';
 import { VAULT_NAMESPACES, VAULT_KEY_VERSION } from '../crypto/vault-keys.js';
+import { snapshotStrictPlainObject } from '../crypto/vault-shape.js';
+import { assertAes256GcmCryptoKey } from '../crypto/vault-key-guards.js';
 
 export const VAULT_RECORD_VERSION = 1;
 export const RECORD_NONCE_BYTES = 12;
@@ -57,51 +59,50 @@ function assertNamespace(ns) {
  * @throws {VaultCryptoError}
  */
 export function validateVaultRecord(raw) {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw invalid('record must be a plain object');
-  }
-  const proto = Object.getPrototypeOf(raw);
-  if (proto !== Object.prototype && proto !== null) {
-    throw invalid('record must not carry a custom prototype');
-  }
-  for (const key of Object.keys(raw)) {
-    // slice: attacker-chosen field names must fit the closed details shape (review F1)
-    if (!RECORD_KEYS.includes(key)) throw invalid('unknown record field', { field: key.slice(0, 64) });
-    const desc = Object.getOwnPropertyDescriptor(raw, key);
-    if (desc === undefined || !Object.hasOwn(desc, 'value')) {
-      throw invalid('record fields must be plain data properties', { field: key.slice(0, 64) });
-    }
-  }
-  for (const key of RECORD_KEYS) {
-    if (!Object.hasOwn(raw, key)) throw invalid('missing record field', { field: key });
-  }
+  parseRecordSnapshot(raw);
+}
 
-  if (!isSafeInt(raw.v) || raw.v !== VAULT_RECORD_VERSION) {
+/**
+ * Strict descriptor snapshot (review F6: Reflect.ownKeys, enumerable data
+ * properties only, accessors rejected without invocation) + full field
+ * validation. Returns the snapshot; with `copyBuffers` the byte fields are
+ * independent copies so later mutation of the input cannot affect callers
+ * (review F2, TOCTOU).
+ */
+function parseRecordSnapshot(raw, { copyBuffers = false } = {}) {
+  const s = snapshotStrictPlainObject(raw, RECORD_KEYS, invalid);
+
+  if (!isSafeInt(s.v) || s.v !== VAULT_RECORD_VERSION) {
     // No separate "unsupported" code exists for records in the closed v1
     // error list: any non-v1 record (including future versions) fails closed.
     throw invalid('record format version must be exactly 1', { field: 'v' });
   }
-  assertNamespace(raw.ns);
-  assertRecordKeyString(raw.k);
-  if (!isSafeInt(raw.rv) || raw.rv < 1) {
+  assertNamespace(s.ns);
+  assertRecordKeyString(s.k);
+  if (!isSafeInt(s.rv) || s.rv < 1) {
     throw invalid('record version must be a safe integer >= 1', { field: 'rv' });
   }
-  if (!isSafeInt(raw.kv) || raw.kv < 1) {
+  if (!isSafeInt(s.kv) || s.kv < 1) {
     throw invalid('key version must be a safe integer >= 1', { field: 'kv' });
   }
-  if (raw.kv !== VAULT_KEY_VERSION) {
+  if (s.kv !== VAULT_KEY_VERSION) {
     throw new VaultCryptoError(Codes.KEY_VERSION_UNSUPPORTED, 'record key version not supported', { field: 'kv' });
   }
-  if (!CONTENT_TYPES.includes(raw.ct)) {
+  if (!CONTENT_TYPES.includes(s.ct)) {
     throw invalid('content type must be json or bytes', { field: 'ct' });
   }
-  if (!(raw.nonce instanceof Uint8Array) || raw.nonce.length !== RECORD_NONCE_BYTES) {
+  if (!(s.nonce instanceof Uint8Array) || s.nonce.length !== RECORD_NONCE_BYTES) {
     throw invalid('nonce must be a Uint8Array of 12 bytes', { field: 'nonce' });
   }
   const maxData = MAX_PLAINTEXT_BYTES + MIN_DATA_BYTES;
-  if (!(raw.data instanceof Uint8Array) || raw.data.length < MIN_DATA_BYTES || raw.data.length > maxData) {
+  if (!(s.data instanceof Uint8Array) || s.data.length < MIN_DATA_BYTES || s.data.length > maxData) {
     throw invalid('ciphertext length out of bounds', { field: 'data' });
   }
+  if (copyBuffers) {
+    s.nonce = s.nonce.slice();
+    s.data = s.data.slice();
+  }
+  return s;
 }
 
 /**
@@ -114,11 +115,9 @@ export function buildRecordAad({ v, ns, k, rv, kv, ct }) {
   return buildRecordAadBytes({ v, ns, k, rv, kv, ct });
 }
 
-function assertNamespaceKey(key) {
-  if (!(key instanceof CryptoKey) || key.algorithm?.name !== 'AES-GCM') {
-    throw new VaultCryptoError(Codes.CRYPTO_FAILED, 'namespace key must be an AES-GCM CryptoKey');
-  }
-}
+// Exact contract (review F7): secret AES-GCM-256, non-extractable, usages
+// exactly encrypt+decrypt — see vault-key-guards.js.
+const assertNamespaceKey = assertAes256GcmCryptoKey;
 
 function serializePlaintext(contentType, plaintext) {
   if (contentType === 'bytes') {
@@ -239,17 +238,12 @@ export async function decryptVaultRecord(record, { namespace, recordKey }, names
   assertNamespace(namespace);
   assertRecordKeyString(recordKey);
   assertNamespaceKey(namespaceKey);
-  validateVaultRecord(record);
-  if (record.ns !== namespace || record.k !== recordKey) {
+  // Strict validated snapshot, taken synchronously BEFORE any await: the AAD
+  // and decrypt below use only this copy (reviews F2/F6).
+  const rec = parseRecordSnapshot(record, { copyBuffers: true });
+  if (rec.ns !== namespace || rec.k !== recordKey) {
     throw invalid('record does not belong to the requested namespace and key');
   }
-  // Synchronous snapshot of everything used after an await: a caller mutating
-  // the record cannot swap what was validated for what gets decrypted
-  // (review F2, TOCTOU). ns/k deliberately come from the REQUEST.
-  const rec = {
-    v: record.v, rv: record.rv, kv: record.kv, ct: record.ct,
-    nonce: record.nonce.slice(), data: record.data.slice(),
-  };
 
   const aad = buildRecordAadBytes({
     v: rec.v, ns: namespace, k: recordKey, rv: rec.rv, kv: rec.kv, ct: rec.ct,
