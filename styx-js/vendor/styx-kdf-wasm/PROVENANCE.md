@@ -27,6 +27,9 @@ MLS state, and an OpenMLS update cannot change this artifact.
     `proc-macro2`, `unicode-ident`, `bumpalo`, `once_cell`, `cfg-if`,
     `rustversion`, `version_check`, `libc` — the wasm-bindgen binding layer
     (build-time proc-macros; only the minimal runtime reaches the artifact)
+  - `futures-core`, `futures-task`, `futures-util`, `pin-project-lite`,
+    `slab` — pulled in by the js-sys/wasm-bindgen dependency graph; unused by
+    this crate's derive-only code path, covered by the audit/deny scans
 
 ## Toolchain
 

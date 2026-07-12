@@ -1,5 +1,14 @@
 # Review — styx-kdf-wasm (Blocco 3, PR‑1)
 
+> **Secondo round (gate utente su PR #34):** i finding K1 e i rischi residui
+> di questo documento sono stati riclassificati dal gate utente in tre
+> **Important** (K7 wrap ABI, K8 copia buffer pre-validazione, K9 gate CI
+> fail-open), corretti e ri-verificati da un **secondo revisore indipendente a
+> contesto pulito**: vedi la §5 in coda. Le parti seguenti del primo round
+> restano valide salvo dove la §5 le sostituisce (in particolare: il wrap u32
+> ora è RIFIUTATO, non più "pinnato"; il gate fail-open non è più un rischio
+> residuo accettato).
+
 Oggetto: il crate `styx-js/vendor/styx-kdf-wasm/` (artefatto Argon2id separato),
 il validatore di policy `styx-js/src/crypto/kdf-bounds.js`, le suite di test
 KAT/bounds e l'estensione dei gate CI — i 5 commit di `feat/vault-kdf-wasm`.
@@ -73,3 +82,48 @@ KDF separato e riproducibile, doppio layer di bounds con boundary verificati,
 KAT cross-validati su tre engine, supply chain pinnata e pulita, nessuna
 integrazione anticipata del vault. Il merge resta una decisione dell'utente;
 PR‑2 non è autorizzata da questo documento.
+
+---
+
+## 5. Secondo round — confine ABI indurito (K7/K8/K9)
+
+Gate utente su PR #34: NO-GO temporaneo con tre Important. Correzioni nei
+commit `3bf58bd` (ABI), `93bf1bf` (gate CI), `965f3cf` (test). Ri-verifica di
+un **nuovo revisore indipendente** (agente separato dal primo e dalla
+stesura), con verifica ATTIVA: sonde dirette sull'artefatto reale, esecuzione
+dello script di gate con tutte le combinazioni, riesecuzione di `verify.sh`
+(doppia build) e di `cargo test` nel container pinnato.
+
+| ID | Finding | Correzione | Evidenza del revisore | Stato |
+|---|---|---|---|---|
+| K7 | L'export u32 faceva wrappare i numeri JS mod 2³² PRIMA della validazione Rust: `2^32+1024` diventava `1024` — un costo Argon2 valido ma molto più debole. | Export a parametri `f64` + `checked_u32` in Rust (finito, integrale, ≥0, ≤ u32::MAX) PRIMA della conversione; correzione nel sorgente, non nel glue. | Sonda diretta: `2^32+1024` → throw tipizzato `KDF_PARAMS_INVALID`, mai un output (baseline 1024 diversa e mai raggiunta); stessa prova su t/p/outLen, negativi che wrapperebbero in valori validi, frazionari; 32 casi jest (8 valori × 4 parametri) + probe browser; `cargo test` 6/6 nel container pinnato incluso il caso `4_294_968_320.0`. | **Important → risolto** |
+| K8 | Il glue copiava password/salt in memoria WASM (`passArray8ToWasm0`) prima che Rust validasse le lunghezze: allocazione pre-validazione, contro la garanzia dichiarata. | Export a `JsValue` + `dyn_ref::<Uint8Array>` (type check) + lettura della sola `length` senza copia; le copie avvengono solo dopo TUTTI i check; `js-sys =0.3.103` aggiunto e registrato in provenance. | Glue verificato: zero `passArray8ToWasm0`, buffer passati per riferimento; Uint8Array da 100 MiB respinto in 0,02 ms (incompatibile con una copia); tipi sbagliati (string/array/ArrayBuffer/Uint16Array/DataView/Proxy TOCTOU) respinti; recovery dopo ogni errore; guardia anti-drift sul glue. | **Important → risolto** |
+| K9 | I required gate (WASM integrity, styx-js web) erano fail-open: `changes` fallito/cancellato/skipped → output vuoti → letti come green-skip. | `needs.changes.result` verificato per primo (`!= success` → rosso) in entrambi i gate; logica WASM estratta in `.github/scripts/wasm-integrity-gate.sh` puro e testabile; tabella di decisione in jest (`test/ci/wasm-gate.test.js`, 9 casi). | Script eseguito dal revisore con le 6 righe della tabella + env unset (`env -i`) + tier needed con risultato skipped/cancelled/vuoto: green-skip SOLO con `changes=success`; ogni altra combinazione → exit ≠ 0. | **Important → risolto** |
+
+Verifiche aggiuntive del secondo revisore: **KAT invariati** (fixture identica
+byte-a-byte, 5 vettori verdi sul nuovo artefatto — è cambiata l'ABI, non
+Argon2id); nuovo digest `ad672026…` coerente in `SHA256SUMS` e PROVENANCE;
+**doppia build riprodotta di persona** (4/4 `REPRODUCIBLE`, byte-identica al
+committato); `js-sys` coerente tra Cargo.toml e lockfile (33 crate, audit/deny
+ri-eseguiti puliti); integrazione `deriveWithBounds` intatta; scope dei tre
+commit pulito (solo crate, test, workflow+script; `openmls-wasm` e runtime di
+prodotto intatti).
+
+Nuovi finding del secondo round:
+
+| ID | Severità | Finding | Stato |
+|---|---|---|---|
+| K10 | Info | Un `Proxy` attorno a un Uint8Array supera l'`instanceof`; il tentativo TOCTOU sulla `length` è comunque respinto tipizzato (ri-validazione sulle copie effettive) e un proxy pass-through produce al più un `TypeError` grezzo. Chiamante same-realm ostile fuori dal threat model. | Registrato, nessuna azione |
+| K11 | Info | Coercizione JS `ToNumber` al confine (es. `"1024"` accettata): verificato che NON reintroduce il wrap (la validazione avviene sull'f64 esatto post-coercizione); il layer di policy JS resta più stretto (`Number.isInteger`). | Registrato, nessuna azione per PR‑1 |
+| K12 | Minor | Elenco esplicativo dei transitivi in PROVENANCE senza lo stack futures trascinato da js-sys (conteggi e scansioni comunque corretti). | **Applicato** (riga aggiunta) |
+| K13 | Minor | Questo documento era stantio rispetto ai fix (descriveva il wrap come "pinnato" e il gate fail-open come rischio accettato). | **Applicato** (questa sezione + avvertenza in testa) |
+
+### Verdetto del secondo round
+
+```text
+GO
+```
+
+K7, K8 e K9 risultano **Important → risolto** con prova attiva; le due
+condizioni documentali (K12, K13) sono applicate in questa stessa PR. Il
+merge di PR #34 resta una decisione dell'utente; PR‑2 non è autorizzata.
