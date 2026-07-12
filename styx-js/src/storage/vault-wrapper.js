@@ -6,15 +6,19 @@
 // `password → KDF` and `KEK → wrap/unwrap` stay separated by design).
 //
 // The wrapper is read BEFORE unlock, so every field is untrusted input:
-// validation is fail-closed and completes BEFORE Argon2id or WebCrypto could
-// ever be reached with out-of-shape values (spec §7.1). KDF parameter policy
-// is delegated to the single validator in kdf-bounds.js — never re-copied.
+// validation is fail-closed, works on a descriptor-based snapshot (accessors
+// and non-enumerable smuggling rejected without ever invoking a getter —
+// review F6), and completes BEFORE any WebCrypto or RNG call (review F8).
+// KDF parameter policy is delegated to the single validator in kdf-bounds.js
+// — never re-copied.
 
 import {
   validateKdfParams, KdfBoundsError, KDF_POLICY,
 } from '../crypto/kdf-bounds.js';
 import { VaultCryptoError, VaultCryptoErrorCodes as Codes } from '../crypto/vault-errors.js';
 import { buildWrapperAadBytes, encodeBase64, decodeCanonicalBase64 } from '../crypto/vault-aad.js';
+import { snapshotStrictPlainObject } from '../crypto/vault-shape.js';
+import { assertAes256GcmCryptoKey } from '../crypto/vault-key-guards.js';
 
 export const VAULT_WRAPPER_FORMAT = 'styx-vault-wrapper';
 export const VAULT_WRAPPER_VERSION = 1;
@@ -54,44 +58,28 @@ function isRealCalendarDate(str) {
   return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
 }
 
-function assertStrictShape(raw) {
-  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
-    throw invalid('wrapper must be a plain object');
-  }
-  const proto = Object.getPrototypeOf(raw);
-  if (proto !== Object.prototype && proto !== null) {
-    throw invalid('wrapper must not carry a custom prototype');
-  }
-  for (const key of Object.keys(raw)) {
-    // slice: attacker-chosen field names must fit the closed details shape (review F1)
-    if (!WRAPPER_KEYS.includes(key)) throw invalid('unknown wrapper field', { field: key.slice(0, 64) });
-    const desc = Object.getOwnPropertyDescriptor(raw, key);
-    if (desc === undefined || !Object.hasOwn(desc, 'value')) {
-      throw invalid('wrapper fields must be plain data properties', { field: key.slice(0, 64) });
-    }
-  }
-  for (const key of WRAPPER_KEYS) {
-    if (!Object.hasOwn(raw, key)) throw invalid('missing wrapper field', { field: key });
-  }
-}
+/**
+ * Validate one wrapper level from a strict descriptor snapshot (review F6)
+ * and return an independent frozen copy. Everything downstream — AAD,
+ * unwrap, persistence — uses ONLY the returned copy, never the input object.
+ */
+function parseWrapperAtDepth(raw, depth) {
+  const s = snapshotStrictPlainObject(raw, WRAPPER_KEYS, invalid);
 
-function validateWrapperAtDepth(raw, depth) {
-  assertStrictShape(raw);
-
-  if (raw.format !== VAULT_WRAPPER_FORMAT) throw invalid('wrong wrapper format', { field: 'format' });
-  if (!isSafeInt(raw.version)) throw invalid('wrapper version must be an integer', { field: 'version' });
-  if (raw.version !== VAULT_WRAPPER_VERSION) {
+  if (s.format !== VAULT_WRAPPER_FORMAT) throw invalid('wrong wrapper format', { field: 'format' });
+  if (!isSafeInt(s.version)) throw invalid('wrapper version must be an integer', { field: 'version' });
+  if (s.version !== VAULT_WRAPPER_VERSION) {
     // A well-formed FUTURE version is "unsupported" (a newer build may read
     // it); anything else is plain invalid.
-    if (raw.version > VAULT_WRAPPER_VERSION) {
+    if (s.version > VAULT_WRAPPER_VERSION) {
       throw new VaultCryptoError(Codes.WRAPPER_UNSUPPORTED, 'wrapper version not supported by this build', { field: 'version' });
     }
     throw invalid('wrapper version must be exactly 1', { field: 'version' });
   }
 
   // Canonical Base64, exactly one accepted encoding per salt value (§7.1).
-  const salt = typeof raw.saltB64 === 'string' && !/\s/.test(raw.saltB64)
-    ? decodeCanonicalBase64(raw.saltB64)
+  const salt = typeof s.saltB64 === 'string' && !/\s/.test(s.saltB64)
+    ? decodeCanonicalBase64(s.saltB64)
     : null;
   if (salt === null) {
     throw new VaultCryptoError(Codes.KDF_PARAMS_INVALID, 'salt is not canonical base64', { field: 'saltB64' });
@@ -101,14 +89,14 @@ function validateWrapperAtDepth(raw, depth) {
   // floor, maxima, profile allowlist and exact profile combination.
   try {
     validateKdfParams({
-      kdf: raw.kdf,
-      kdfVersion: raw.kdfVersion,
-      mKib: raw.mKib,
-      t: raw.t,
-      p: raw.p,
+      kdf: s.kdf,
+      kdfVersion: s.kdfVersion,
+      mKib: s.mKib,
+      t: s.t,
+      p: s.p,
       salt,
-      outLen: raw.outLen,
-      profile: raw.profile,
+      outLen: s.outLen,
+      profile: s.profile,
     });
   } catch (e) {
     if (e instanceof KdfBoundsError) {
@@ -119,36 +107,57 @@ function validateWrapperAtDepth(raw, depth) {
     salt.fill(0);
   }
 
-  if (raw.wrapAlg !== WRAP_ALG) {
+  if (s.wrapAlg !== WRAP_ALG) {
     throw new VaultCryptoError(Codes.WRAPPER_UNSUPPORTED, 'unsupported wrap algorithm', { field: 'wrapAlg' });
   }
-  if (!(raw.wrapNonce instanceof Uint8Array) || raw.wrapNonce.length !== WRAP_NONCE_BYTES) {
+  if (!(s.wrapNonce instanceof Uint8Array) || s.wrapNonce.length !== WRAP_NONCE_BYTES) {
     throw invalid('wrap nonce must be a Uint8Array of 12 bytes', { field: 'wrapNonce' });
   }
-  if (!(raw.wrappedRootKey instanceof Uint8Array) || raw.wrappedRootKey.length !== WRAPPED_ROOT_KEY_BYTES) {
+  if (!(s.wrappedRootKey instanceof Uint8Array) || s.wrappedRootKey.length !== WRAPPED_ROOT_KEY_BYTES) {
     throw invalid('wrapped root key must be a Uint8Array of 48 bytes', { field: 'wrappedRootKey' });
   }
 
-  if (!isSafeInt(raw.keyVersion) || raw.keyVersion < 1) {
+  if (!isSafeInt(s.keyVersion) || s.keyVersion < 1) {
     throw invalid('key version must be a safe integer >= 1', { field: 'keyVersion' });
   }
-  if (raw.keyVersion !== 1) {
+  if (s.keyVersion !== 1) {
     throw new VaultCryptoError(Codes.KEY_VERSION_UNSUPPORTED, 'wrapper key version not supported', { field: 'keyVersion' });
   }
 
-  if (typeof raw.createdAt !== 'string' || !isRealCalendarDate(raw.createdAt)) {
+  if (typeof s.createdAt !== 'string' || !isRealCalendarDate(s.createdAt)) {
     throw invalid('createdAt must be a real YYYY-MM-DD date', { field: 'createdAt' });
   }
-  if (!isSafeInt(raw.calibratedMs) || raw.calibratedMs < 0 || raw.calibratedMs > MAX_CALIBRATED_MS) {
+  if (!isSafeInt(s.calibratedMs) || s.calibratedMs < 0 || s.calibratedMs > MAX_CALIBRATED_MS) {
     throw invalid('calibratedMs out of bounds', { field: 'calibratedMs' });
   }
 
-  if (raw.rewrapPending !== null) {
+  let rewrapPending = null;
+  if (s.rewrapPending !== null) {
     if (depth >= MAX_REWRAP_PENDING_DEPTH) {
       throw invalid('rewrapPending exceeds the maximum depth of 1', { field: 'rewrapPending' });
     }
-    validateWrapperAtDepth(raw.rewrapPending, depth + 1);
+    rewrapPending = parseWrapperAtDepth(s.rewrapPending, depth + 1);
   }
+
+  return Object.freeze({
+    format: s.format,
+    version: s.version,
+    kdf: s.kdf,
+    kdfVersion: s.kdfVersion,
+    mKib: s.mKib,
+    t: s.t,
+    p: s.p,
+    profile: s.profile,
+    saltB64: s.saltB64,
+    outLen: s.outLen,
+    wrapAlg: s.wrapAlg,
+    wrapNonce: s.wrapNonce.slice(),
+    wrappedRootKey: s.wrappedRootKey.slice(),
+    keyVersion: s.keyVersion,
+    createdAt: s.createdAt,
+    calibratedMs: s.calibratedMs,
+    rewrapPending,
+  });
 }
 
 /**
@@ -157,39 +166,17 @@ function validateWrapperAtDepth(raw, depth) {
  * @throws {VaultCryptoError}
  */
 export function validateVaultWrapper(raw) {
-  validateWrapperAtDepth(raw, 0);
-}
-
-function copyWrapper(wrapper) {
-  return Object.freeze({
-    format: wrapper.format,
-    version: wrapper.version,
-    kdf: wrapper.kdf,
-    kdfVersion: wrapper.kdfVersion,
-    mKib: wrapper.mKib,
-    t: wrapper.t,
-    p: wrapper.p,
-    profile: wrapper.profile,
-    saltB64: wrapper.saltB64,
-    outLen: wrapper.outLen,
-    wrapAlg: wrapper.wrapAlg,
-    wrapNonce: wrapper.wrapNonce.slice(),
-    wrappedRootKey: wrapper.wrappedRootKey.slice(),
-    keyVersion: wrapper.keyVersion,
-    createdAt: wrapper.createdAt,
-    calibratedMs: wrapper.calibratedMs,
-    rewrapPending: wrapper.rewrapPending === null ? null : copyWrapper(wrapper.rewrapPending),
-  });
+  parseWrapperAtDepth(raw, 0);
 }
 
 /**
- * Validate an untrusted wrapper and return an independent, frozen copy
- * (buffers included): later mutation of the input cannot affect the result.
+ * Validate an untrusted wrapper and return an independent, frozen copy built
+ * exclusively from property-descriptor values (buffers included): accessors
+ * are never invoked and later mutation of the input cannot affect the result.
  * @returns {object} @throws {VaultCryptoError}
  */
 export function parseVaultWrapper(raw) {
-  validateVaultWrapper(raw);
-  return copyWrapper(raw);
+  return parseWrapperAtDepth(raw, 0);
 }
 
 /**
@@ -199,31 +186,29 @@ export function parseVaultWrapper(raw) {
  * @returns {object} @throws {VaultCryptoError}
  */
 export function encodeVaultWrapper(wrapper) {
-  validateVaultWrapper(wrapper);
-  return copyWrapper(wrapper);
+  return parseWrapperAtDepth(wrapper, 0);
 }
 
 /**
- * Canonical unwrap AAD of a VALIDATED wrapper (delegates to vault-aad.js).
+ * Canonical unwrap AAD of a wrapper, built from its VALIDATED snapshot
+ * (delegates to vault-aad.js).
  * @returns {Uint8Array}
  */
 export function buildWrapperAad(wrapper) {
-  validateVaultWrapper(wrapper);
-  return buildWrapperAadBytes(wrapper);
+  return buildWrapperAadBytes(parseWrapperAtDepth(wrapper, 0));
 }
 
 async function importKek(kek) {
   if (kek instanceof CryptoKey) {
-    if (kek.algorithm?.name !== 'AES-GCM') {
-      throw new VaultCryptoError(Codes.CRYPTO_FAILED, 'KEK CryptoKey must be AES-GCM');
-    }
-    return kek;
+    // Exact contract (review F7): secret AES-GCM-256, non-extractable,
+    // usages exactly encrypt+decrypt.
+    return assertAes256GcmCryptoKey(kek);
   }
   if (!(kek instanceof Uint8Array) || kek.length !== KEK_BYTES) {
     throw new VaultCryptoError(Codes.CRYPTO_FAILED, 'KEK must be a 32-byte Uint8Array or an AES-GCM CryptoKey');
   }
-  // Non-extractable, single purpose; importKey copies, the caller keeps
-  // ownership (and best-effort zeroization duty) of its own buffer.
+  // Non-extractable, exact contract usages; importKey copies, the caller
+  // keeps ownership (and best-effort zeroization duty) of its own buffer.
   return subtle.importKey('raw', kek, 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
 
@@ -231,6 +216,11 @@ async function importKek(kek) {
  * Wrap a SYNTHETIC 32-byte Root Key under an already-derived KEK and return a
  * complete, validated wrapper v1 object. PR-2 scope guard: no real Root
  * Storage Key exists yet — callers are tests and fixtures only.
+ *
+ * Order is normative (review F8): shape checks → draft with DETERMINISTIC
+ * placeholders → FULL wrapper validation → KEK contract/import → nonce
+ * generation → AAD → AES-GCM → output validation. No WebCrypto call and no
+ * RNG call can happen while any metadata field is still unvalidated.
  *
  * The 12-byte nonce is generated INTERNALLY (`crypto.getRandomValues`); there
  * is deliberately no parameter to choose it (spec §6 discipline applies to
@@ -251,13 +241,14 @@ async function importKek(kek) {
 export async function wrapSyntheticRootKey({
   kek, rootKey, salt, mKib, t, p, profile, createdAt, calibratedMs = 0,
 }) {
+  // 1. shape of the non-crypto inputs
   if (!(rootKey instanceof Uint8Array) || rootKey.length !== ROOT_KEY_BYTES) {
     throw new VaultCryptoError(Codes.CRYPTO_FAILED, 'root key must be a Uint8Array of 32 bytes');
   }
   if (!(salt instanceof Uint8Array) || salt.length !== KDF_POLICY.saltLen) {
     throw new VaultCryptoError(Codes.KDF_PARAMS_INVALID, 'salt must be a Uint8Array of 16 bytes', { field: 'salt' });
   }
-  const key = await importKek(kek);
+  // 2. draft with deterministic placeholders — no RNG, no WebCrypto yet
   const draft = {
     format: VAULT_WRAPPER_FORMAT,
     version: VAULT_WRAPPER_VERSION,
@@ -270,19 +261,26 @@ export async function wrapSyntheticRootKey({
     saltB64: encodeBase64(salt),
     outLen: KDF_POLICY.outLen,
     wrapAlg: WRAP_ALG,
-    wrapNonce: crypto.getRandomValues(new Uint8Array(WRAP_NONCE_BYTES)),
-    wrappedRootKey: new Uint8Array(WRAPPED_ROOT_KEY_BYTES), // placeholder, replaced below
+    wrapNonce: new Uint8Array(WRAP_NONCE_BYTES), // placeholder, replaced after validation
+    wrappedRootKey: new Uint8Array(WRAPPED_ROOT_KEY_BYTES), // placeholder
     keyVersion: 1,
     createdAt,
     calibratedMs,
+    rewrapPending: null,
   };
-  // Validate BEFORE any crypto: bad KDF metadata or dates never reach AES-GCM.
-  validateVaultWrapper({ ...draft, rewrapPending: null });
+  // 3. FULL validation before any crypto or randomness (review F8)
+  validateVaultWrapper(draft);
+  // 4. KEK contract + import
+  const key = await importKek(kek);
+  // 5. nonce — only now that every metadata field is validated
+  const wrapNonce = crypto.getRandomValues(new Uint8Array(WRAP_NONCE_BYTES));
+  // 6. canonical AAD (the nonce is not part of it)
   const aad = buildWrapperAadBytes(draft);
+  // 7. AES-256-GCM
   let wrapped;
   try {
     wrapped = new Uint8Array(await subtle.encrypt(
-      { name: 'AES-GCM', iv: draft.wrapNonce, additionalData: aad, tagLength: 128 },
+      { name: 'AES-GCM', iv: wrapNonce, additionalData: aad, tagLength: 128 },
       key,
       rootKey,
     ));
@@ -292,7 +290,8 @@ export async function wrapSyntheticRootKey({
   if (wrapped.length !== WRAPPED_ROOT_KEY_BYTES) {
     throw new VaultCryptoError(Codes.CRYPTO_FAILED, 'unexpected wrapped root key length');
   }
-  return encodeVaultWrapper({ ...draft, wrappedRootKey: wrapped, rewrapPending: null });
+  // 8. output validation (this module never emits what it would not accept)
+  return encodeVaultWrapper({ ...draft, wrapNonce, wrappedRootKey: wrapped });
 }
 
 /**
@@ -307,9 +306,9 @@ export async function wrapSyntheticRootKey({
  * @throws {VaultCryptoError}
  */
 export async function unwrapSyntheticRootKey(wrapper, kek) {
-  // parse = validate + independent deep copy, taken SYNCHRONOUSLY: a caller
-  // mutating the wrapper while we await cannot swap what was validated for
-  // what gets decrypted (review F2, TOCTOU).
+  // parse = strict snapshot + validation + independent deep copy, taken
+  // SYNCHRONOUSLY: a caller mutating the wrapper while we await cannot swap
+  // what was validated for what gets decrypted (review F2, TOCTOU).
   const w = parseVaultWrapper(wrapper);
   const key = await importKek(kek);
   const aad = buildWrapperAadBytes(w);
