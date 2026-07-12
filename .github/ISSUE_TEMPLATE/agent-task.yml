@@ -1,12 +1,18 @@
 name: Atomic task
-about: Create an executable human or agent task with a fail-closed contract
+description: Create an executable human or agent task with a fail-closed contract
 title: "[Task] "
 body:
   - type: markdown
     attributes:
-      value: |
-        <!-- styx-task-contract:v1 -->
-        This form is the execution contract. Missing or ambiguous data keeps the task out of Ready.
+      value: This form is the execution contract. Missing or ambiguous data keeps the task out of Ready.
+  - type: input
+    id: contract_version
+    attributes:
+      label: Contract marker
+      description: Keep this exact value; the contract validator fails closed if it is changed.
+      value: "<!-- styx-task-contract:v1 -->"
+    validations:
+      required: true
   - type: textarea
     id: outcome
     attributes:
