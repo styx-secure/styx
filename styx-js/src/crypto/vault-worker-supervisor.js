@@ -25,6 +25,14 @@ export const DEFAULT_BACKOFF = Object.freeze({
   maxAttempts: 5,
 });
 
+/**
+ * How long a worker must stay RUNNING without any fatal before the failure
+ * streak resets (review W7). A verified INIT alone must NOT reset it: a
+ * worker that reaches READY and then crashes immediately would otherwise
+ * respawn forever at the first backoff step, never reaching FAILED.
+ */
+export const STABILITY_RESET_MS = 30000;
+
 const wrongState = (message, details) => new VaultWorkerError(Codes.WRONG_STATE, message, details);
 
 /**
@@ -35,8 +43,14 @@ const wrongState = (message, details) => new VaultWorkerError(Codes.WRONG_STATE,
  * @param {string} deps.wasmUrl the non-sensitive INIT configuration
  * @param {object} [deps.backoff] {baseMs, maxDelayMs, maxAttempts}
  * @param {number} [deps.requestTimeoutMs]
+ * @param {number} [deps.stabilityResetMs] continuous-RUNNING window after
+ *   which the failure streak resets (review W7; tests only)
  * @param {Function} [deps.setTimeoutImpl] injectable scheduler (tests only)
  * @param {Function} [deps.clearTimeoutImpl]
+ * @param {Function} [deps.clientSetTimeoutImpl] injectable scheduler for the
+ *   INNER client request timeouts (tests only — lets a test drive a fatal
+ *   WORKER_TIMEOUT deterministically)
+ * @param {Function} [deps.clientClearTimeoutImpl]
  * @param {() => number} [deps.jitter] injectable 0..1 source for backoff
  *   jitter (tests only; production defaults are module-internal)
  * @param {(info: {generation: number, error: object}) => void} [deps.onRespawn]
@@ -46,8 +60,11 @@ export function createVaultWorkerSupervisor({
   wasmUrl,
   backoff = DEFAULT_BACKOFF,
   requestTimeoutMs,
+  stabilityResetMs = STABILITY_RESET_MS,
   setTimeoutImpl = (fn, ms) => setTimeout(fn, ms),
   clearTimeoutImpl = (t) => clearTimeout(t),
+  clientSetTimeoutImpl,
+  clientClearTimeoutImpl,
   jitter = () => 0,
   onRespawn,
 } = {}) {
@@ -57,15 +74,36 @@ export function createVaultWorkerSupervisor({
   let state = SUPERVISOR_STATES.STOPPED;
   let generation = 0;
   let client = null;
-  let attempts = 0;
+  // Review W7: counts consecutive FAILED GENERATIONS — a generation fails
+  // whether INIT never completed OR the worker crashed/timed out after
+  // READY. It is NOT reset by a verified INIT (that would let a
+  // crash-after-READY loop respawn forever); it resets only after the
+  // stability window below, or on a deliberate start() from STOPPED/FAILED.
+  let failureStreak = 0;
   let backoffTimer = null;
+  let stabilityTimer = null; // review W7: armed on INIT, cleared on any fatal
   let spawning = null; // in-flight spawn promise: never two workers at once
   let respawnScheduledFor = 0; // review W1: one respawn per generation
 
   function backoffDelay() {
-    const raw = backoff.baseMs * 2 ** Math.max(0, attempts - 1);
+    const raw = backoff.baseMs * 2 ** Math.max(0, failureStreak - 1);
     const capped = Math.min(raw, backoff.maxDelayMs);
     return Math.round(capped + capped * 0.1 * jitter());
+  }
+
+  function clearStabilityTimer() {
+    if (stabilityTimer !== null) { clearTimeoutImpl(stabilityTimer); stabilityTimer = null; }
+  }
+
+  function armStabilityTimer(gen) {
+    clearStabilityTimer();
+    stabilityTimer = setTimeoutImpl(() => {
+      stabilityTimer = null;
+      // Reset only if THIS generation is still the current one, still
+      // RUNNING, and no fatal happened meanwhile (a fatal clears the timer).
+      if (gen !== generation || state !== SUPERVISOR_STATES.RUNNING) return;
+      failureStreak = 0;
+    }, stabilityResetMs);
   }
 
   async function spawn(gen) {
@@ -73,6 +111,8 @@ export function createVaultWorkerSupervisor({
     const c = createVaultWorkerClient(worker, {
       defaultTimeoutMs: requestTimeoutMs,
       onFatal: (error) => handleFatal(gen, error),
+      ...(clientSetTimeoutImpl !== undefined ? { setTimeoutImpl: clientSetTimeoutImpl } : {}),
+      ...(clientClearTimeoutImpl !== undefined ? { clearTimeoutImpl: clientClearTimeoutImpl } : {}),
     });
     client = c;
     const summary = await c.request('INIT', { wasmUrl });
@@ -81,8 +121,10 @@ export function createVaultWorkerSupervisor({
       c.terminate('stale-generation');
       throw wrongState('stale worker generation', { reason: 'stale-generation' });
     }
-    attempts = 0; // a fully verified INIT resets the backoff ladder
     state = SUPERVISOR_STATES.RUNNING;
+    // The verified INIT does NOT reset the streak (review W7): only a
+    // continuous stability window does.
+    armStabilityTimer(gen);
     return summary;
   }
 
@@ -93,15 +135,16 @@ export function createVaultWorkerSupervisor({
     // (review W1).
     if (respawnScheduledFor === generation) return;
     respawnScheduledFor = generation;
-    attempts += 1;
-    if (attempts > backoff.maxAttempts) {
+    clearStabilityTimer(); // this generation was NOT stable
+    failureStreak += 1;
+    if (failureStreak > backoff.maxAttempts) {
       state = SUPERVISOR_STATES.FAILED;
       return;
     }
     state = SUPERVISOR_STATES.BACKOFF;
     const delay = backoffDelay();
     if (typeof onRespawn === 'function') {
-      onRespawn({ generation, error: { code: error?.code ?? Codes.CRASHED, attempt: attempts, delayMs: delay } });
+      onRespawn({ generation, error: { code: error?.code ?? Codes.CRASHED, attempt: failureStreak, delayMs: delay } });
     }
     backoffTimer = setTimeoutImpl(() => {
       backoffTimer = null;
@@ -136,7 +179,7 @@ export function createVaultWorkerSupervisor({
     if (state !== SUPERVISOR_STATES.STOPPED && state !== SUPERVISOR_STATES.FAILED) {
       throw wrongState('supervisor already started', { reason: 'already-started' });
     }
-    attempts = 0;
+    failureStreak = 0; // deliberate fresh start from STOPPED/FAILED
     startGeneration();
     await spawning;
     if (state !== SUPERVISOR_STATES.RUNNING) {
@@ -148,6 +191,7 @@ export function createVaultWorkerSupervisor({
   function stop() {
     generation += 1; // everything in flight becomes stale
     if (backoffTimer !== null) { clearTimeoutImpl(backoffTimer); backoffTimer = null; }
+    clearStabilityTimer(); // review W7: no late streak reset after stop()
     if (client !== null) { client.terminate('supervisor-stopped'); client = null; }
     state = SUPERVISOR_STATES.STOPPED;
   }
@@ -171,9 +215,11 @@ export function createVaultWorkerSupervisor({
       throw wrongState('no worker to cancel', { reason: `state:${state}` });
     }
     if (backoffTimer !== null) { clearTimeoutImpl(backoffTimer); backoffTimer = null; }
+    clearStabilityTimer();
     client.terminate('unlock-cancelled');
     client = null;
-    attempts = 0;
+    // A user cancel is deliberate: it neither spends nor resets the crash
+    // budget (review W7) — the streak resets only through the stability window.
     startGeneration();
     await spawning;
     if (state !== SUPERVISOR_STATES.RUNNING) {
@@ -188,6 +234,6 @@ export function createVaultWorkerSupervisor({
     cancelUnlock,
     getState: () => state,
     getGeneration: () => generation,
-    getAttempts: () => attempts,
+    getAttempts: () => failureStreak,
   });
 }
