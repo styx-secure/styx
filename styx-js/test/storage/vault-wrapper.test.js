@@ -266,6 +266,165 @@ describe('adversarial matrix (mandate §21) — fail-closed with exact codes', (
   });
 });
 
+describe('strict shape via descriptor snapshot (review F6) — accessors never invoked', () => {
+  const withAccessor = (base, field, descriptor) => {
+    const obj = { ...base };
+    delete obj[field];
+    Object.defineProperty(obj, field, { ...descriptor, configurable: true });
+    return obj;
+  };
+
+  test('an ENUMERABLE getter on EVERY field is rejected without being invoked', () => {
+    const base = fixtureWrapper();
+    for (const field of Object.keys(base)) {
+      let calls = 0;
+      const evil = withAccessor(base, field, { get() { calls += 1; return base[field]; }, enumerable: true });
+      expectSyncCode(() => validateVaultWrapper(evil), Codes.WRAPPER_INVALID);
+      expect(calls).toBe(0);
+    }
+  });
+
+  test('a NON-ENUMERABLE getter on a required field is rejected without being invoked', () => {
+    let calls = 0;
+    const evil = withAccessor(fixtureWrapper(), 'format', {
+      get() { calls += 1; return VAULT_WRAPPER_FORMAT; }, enumerable: false,
+    });
+    expectSyncCode(() => validateVaultWrapper(evil), Codes.WRAPPER_INVALID);
+    expect(calls).toBe(0);
+  });
+
+  test('a THROWING accessor still yields the typed error, never the native one', () => {
+    const evil = withAccessor(fixtureWrapper(), 'mKib', {
+      get() { throw new RangeError('side effect'); }, enumerable: false,
+    });
+    expectSyncCode(() => validateVaultWrapper(evil), Codes.WRAPPER_INVALID);
+  });
+
+  test('setter-only, non-enumerable data fields, non-enumerable extras and Symbols are rejected', () => {
+    expectSyncCode(() => validateVaultWrapper(
+      withAccessor(fixtureWrapper(), 'profile', { set() {}, enumerable: true }),
+    ), Codes.WRAPPER_INVALID);
+    expectSyncCode(() => validateVaultWrapper(
+      withAccessor(fixtureWrapper(), 'version', { value: 1, enumerable: false }),
+    ), Codes.WRAPPER_INVALID);
+    const extra = fixtureWrapper();
+    Object.defineProperty(extra, 'smuggled', { value: 1, enumerable: false, configurable: true });
+    expectSyncCode(() => validateVaultWrapper(extra), Codes.WRAPPER_INVALID);
+    const sym = fixtureWrapper();
+    sym[Symbol('smuggle')] = 'x';
+    expectSyncCode(() => validateVaultWrapper(sym), Codes.WRAPPER_INVALID);
+  });
+
+  test('the parsed copy is built from descriptor values, not re-reads', () => {
+    // A data property swapped between two hypothetical reads cannot differ in
+    // the snapshot: parse output equals the descriptor value at snapshot time.
+    const raw = fixtureWrapper();
+    const parsed = parseVaultWrapper(raw);
+    raw.calibratedMs = 599999;
+    expect(parsed.calibratedMs).toBe(130);
+  });
+});
+
+describe('exact KEK CryptoKey contract (review F7)', () => {
+  const { subtle } = globalThis.crypto;
+  const aes = (bytes, extractable, usages) => subtle.importKey('raw', new Uint8Array(bytes), 'AES-GCM', extractable, usages);
+
+  test('accepted: secret AES-GCM-256, non-extractable, usages exactly encrypt+decrypt (any order)', async () => {
+    const key = await subtle.importKey('raw', KEK, 'AES-GCM', false, ['decrypt', 'encrypt']);
+    const rootKey = await unwrapSyntheticRootKey(fixtureWrapper(), key);
+    expect(toHex(rootKey)).toBe(fixture.inputs.rootKeyHex);
+  });
+
+  test('rejected: every non-conforming key fails typed BEFORE any decrypt call', async () => {
+    const ecdsa = await subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']);
+    const wrongKeys = [
+      await aes(16, false, ['encrypt', 'decrypt']), // AES-GCM 128
+      await aes(24, false, ['encrypt', 'decrypt']), // AES-GCM 192
+      await aes(32, true, ['encrypt', 'decrypt']), // extractable
+      await aes(32, false, ['encrypt']), // encrypt-only
+      await aes(32, false, ['decrypt']), // decrypt-only
+      await aes(32, false, ['encrypt', 'decrypt', 'wrapKey']), // extra usage
+      await subtle.importKey('raw', new Uint8Array(32), 'AES-CBC', false, ['encrypt', 'decrypt']),
+      ecdsa.publicKey,
+      ecdsa.privateKey,
+      { type: 'secret', algorithm: { name: 'AES-GCM', length: 256 }, extractable: false, usages: ['encrypt', 'decrypt'] }, // impostor
+    ];
+    const origDecrypt = SubtleCrypto.prototype.decrypt;
+    let decryptCalls = 0;
+    SubtleCrypto.prototype.decrypt = function patched(...args) { decryptCalls += 1; return origDecrypt.apply(this, args); };
+    try {
+      for (const key of wrongKeys) {
+        const err = await expectAsyncCode(() => unwrapSyntheticRootKey(fixtureWrapper(), key), Codes.CRYPTO_FAILED);
+        // Static messages only; neither describes the key material.
+        expect([
+          'VAULT_CRYPTO_FAILED: key does not satisfy the AES-256-GCM vault contract',
+          'VAULT_CRYPTO_FAILED: KEK must be a 32-byte Uint8Array or an AES-GCM CryptoKey',
+        ]).toContain(err.message);
+      }
+      expect(decryptCalls).toBe(0);
+    } finally {
+      SubtleCrypto.prototype.decrypt = origDecrypt;
+    }
+  });
+});
+
+describe('no WebCrypto and no RNG before full metadata validation (review F8)', () => {
+  const goodInput = () => ({
+    kek: new Uint8Array(31), // ALSO invalid: the metadata error must win, with zero crypto calls
+    rootKey: ROOT_KEY.slice(),
+    salt: fromHex(fixture.inputs.kdfSaltHex),
+    mKib: 65536,
+    t: 3,
+    p: 1,
+    profile: 'mobile-balanced',
+    createdAt: '2026-07-12',
+    calibratedMs: 130,
+  });
+  const badMetadata = [
+    { patch: { createdAt: '2026-02-31' }, code: Codes.WRAPPER_INVALID }, // impossible date
+    { patch: { profile: 'desktop' }, code: Codes.KDF_PARAMS_INVALID }, // incoherent combination
+    { patch: { mKib: 19455 }, code: Codes.KDF_PARAMS_INVALID }, // below the OWASP floor
+    { patch: { salt: new Uint8Array(8) }, code: Codes.KDF_PARAMS_INVALID }, // wrong salt shape
+    { patch: { calibratedMs: 600001 }, code: Codes.WRAPPER_INVALID }, // out of bounds
+  ];
+
+  test('invalid metadata + invalid KEK → metadata error, 0 importKey / 0 getRandomValues / 0 encrypt', async () => {
+    const origImport = SubtleCrypto.prototype.importKey;
+    const origEncrypt = SubtleCrypto.prototype.encrypt;
+    const origRnd = globalThis.crypto.getRandomValues.bind(globalThis.crypto);
+    let importCalls = 0;
+    let encryptCalls = 0;
+    let rndCalls = 0;
+    SubtleCrypto.prototype.importKey = function patched(...a) { importCalls += 1; return origImport.apply(this, a); };
+    SubtleCrypto.prototype.encrypt = function patched(...a) { encryptCalls += 1; return origEncrypt.apply(this, a); };
+    globalThis.crypto.getRandomValues = (buf) => { rndCalls += 1; return origRnd(buf); };
+    try {
+      for (const { patch, code } of badMetadata) {
+        await expectAsyncCode(() => wrapSyntheticRootKey({ ...goodInput(), ...patch }), code);
+      }
+      expect(importCalls).toBe(0);
+      expect(rndCalls).toBe(0);
+      expect(encryptCalls).toBe(0);
+    } finally {
+      SubtleCrypto.prototype.importKey = origImport;
+      SubtleCrypto.prototype.encrypt = origEncrypt;
+      delete globalThis.crypto.getRandomValues;
+    }
+  });
+
+  test('with valid metadata the KEK error surfaces and RNG/encrypt still stay untouched', async () => {
+    const origEncrypt = SubtleCrypto.prototype.encrypt;
+    let encryptCalls = 0;
+    SubtleCrypto.prototype.encrypt = function patched(...a) { encryptCalls += 1; return origEncrypt.apply(this, a); };
+    try {
+      await expectAsyncCode(() => wrapSyntheticRootKey(goodInput()), Codes.CRYPTO_FAILED);
+      expect(encryptCalls).toBe(0);
+    } finally {
+      SubtleCrypto.prototype.encrypt = origEncrypt;
+    }
+  });
+});
+
 describe('uniform authentication failure (no corruption oracle)', () => {
   test('wrong KEK, flipped ciphertext, flipped tag, altered nonce, AAD swaps → ONE code and message', async () => {
     const flippedCt = fixtureWrapper();

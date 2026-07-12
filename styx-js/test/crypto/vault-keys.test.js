@@ -215,6 +215,38 @@ describe('manifest HMAC primitives', () => {
     const aes = await deriveNamespaceKey(ROOT_KEY, 'settings', 1);
     await expectCode(signManifestBytes(aes, canonical), Codes.CRYPTO_FAILED);
   });
+
+  test('exact HMAC CryptoKey contract (review F7): every non-conforming variant is rejected typed', async () => {
+    const hmac = (hash, bytes, extractable, usages) => subtle.importKey(
+      'raw', new Uint8Array(bytes), { name: 'HMAC', hash }, extractable, usages,
+    );
+    const wrongKeys = [
+      await hmac('SHA-1', 32, false, ['sign', 'verify']),
+      await hmac('SHA-384', 32, false, ['sign', 'verify']),
+      await hmac('SHA-512', 32, false, ['sign', 'verify']),
+      await hmac('SHA-256', 64, false, ['sign', 'verify']), // length 512, not 256
+      await hmac('SHA-256', 32, true, ['sign', 'verify']), // extractable
+      await hmac('SHA-256', 32, false, ['sign']), // sign-only
+      await hmac('SHA-256', 32, false, ['verify']), // verify-only
+      { type: 'secret', algorithm: { name: 'HMAC', hash: { name: 'SHA-256' }, length: 256 }, extractable: false, usages: ['sign', 'verify'] },
+    ];
+    const origSign = SubtleCrypto.prototype.sign;
+    let signCalls = 0;
+    SubtleCrypto.prototype.sign = function patched(...a) { signCalls += 1; return origSign.apply(this, a); };
+    try {
+      for (const key of wrongKeys) {
+        const err = await expectCode(signManifestBytes(key, canonical), Codes.CRYPTO_FAILED);
+        expect(err.message).toBe('VAULT_CRYPTO_FAILED: key does not satisfy the HMAC-SHA-256 vault contract');
+        await expectCode(verifyManifestBytes(key, canonical, fromHex(manifestFx.macHex)), Codes.CRYPTO_FAILED);
+      }
+      expect(signCalls).toBe(0);
+    } finally {
+      SubtleCrypto.prototype.sign = origSign;
+    }
+    // the conforming derived key still reproduces the frozen vector
+    const good = await deriveManifestKey(ROOT_KEY, 1);
+    expect(toHex(await signManifestBytes(good, canonical))).toBe(manifestFx.macHex);
+  });
 });
 
 describe('VaultCryptoError discipline', () => {

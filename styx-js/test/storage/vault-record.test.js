@@ -209,6 +209,90 @@ describe('adversarial matrix (mandate §22) — shape', () => {
   });
 });
 
+describe('strict shape via descriptor snapshot (review F6) — records', () => {
+  test('an ENUMERABLE getter on EVERY field is rejected without being invoked', () => {
+    const base = fixtureRecord(jsonFx);
+    for (const field of Object.keys(base)) {
+      let calls = 0;
+      const evil = { ...base };
+      delete evil[field];
+      Object.defineProperty(evil, field, {
+        get() { calls += 1; return base[field]; }, enumerable: true, configurable: true,
+      });
+      expectSyncCode(() => validateVaultRecord(evil), Codes.RECORD_INVALID);
+      expect(calls).toBe(0);
+    }
+  });
+
+  test('non-enumerable getters, non-enumerable fields, Symbols, setters and throwing accessors are rejected typed', () => {
+    let calls = 0;
+    const hiddenGetter = { ...fixtureRecord(jsonFx) };
+    delete hiddenGetter.ns;
+    Object.defineProperty(hiddenGetter, 'ns', { get() { calls += 1; return 'settings'; }, enumerable: false, configurable: true });
+    expectSyncCode(() => validateVaultRecord(hiddenGetter), Codes.RECORD_INVALID);
+    expect(calls).toBe(0);
+
+    const thrower = { ...fixtureRecord(jsonFx) };
+    delete thrower.kv;
+    Object.defineProperty(thrower, 'kv', { get() { throw new EvalError('boom'); }, enumerable: true, configurable: true });
+    expectSyncCode(() => validateVaultRecord(thrower), Codes.RECORD_INVALID);
+
+    const hiddenData = { ...fixtureRecord(jsonFx) };
+    delete hiddenData.rv;
+    Object.defineProperty(hiddenData, 'rv', { value: 3, enumerable: false, configurable: true });
+    expectSyncCode(() => validateVaultRecord(hiddenData), Codes.RECORD_INVALID);
+
+    const hiddenExtra = fixtureRecord(jsonFx);
+    Object.defineProperty(hiddenExtra, 'smuggled', { value: 1, enumerable: false, configurable: true });
+    expectSyncCode(() => validateVaultRecord(hiddenExtra), Codes.RECORD_INVALID);
+
+    const sym = fixtureRecord(jsonFx);
+    sym[Symbol('smuggle')] = 1;
+    expectSyncCode(() => validateVaultRecord(sym), Codes.RECORD_INVALID);
+
+    const setter = { ...fixtureRecord(jsonFx) };
+    delete setter.ct;
+    Object.defineProperty(setter, 'ct', { set() {}, enumerable: true, configurable: true });
+    expectSyncCode(() => validateVaultRecord(setter), Codes.RECORD_INVALID);
+  });
+
+  test('null-prototype records with valid enumerable data fields stay accepted', () => {
+    const rec = Object.assign(Object.create(null), fixtureRecord(jsonFx));
+    expect(() => validateVaultRecord(rec)).not.toThrow();
+  });
+});
+
+describe('exact namespace-key CryptoKey contract (review F7) — records', () => {
+  test('non-conforming keys fail typed before any decrypt call', async () => {
+    const { subtle } = globalThis.crypto;
+    const wrongKeys = [
+      await subtle.importKey('raw', new Uint8Array(16), 'AES-GCM', false, ['encrypt', 'decrypt']), // 128
+      await subtle.importKey('raw', new Uint8Array(32), 'AES-GCM', true, ['encrypt', 'decrypt']), // extractable
+      await subtle.importKey('raw', new Uint8Array(32), 'AES-GCM', false, ['decrypt']), // decrypt-only
+      await subtle.importKey('raw', new Uint8Array(32), 'AES-CBC', false, ['encrypt', 'decrypt']),
+      { type: 'secret', algorithm: { name: 'AES-GCM', length: 256 }, extractable: false, usages: ['encrypt', 'decrypt'] },
+    ];
+    const origDecrypt = SubtleCrypto.prototype.decrypt;
+    let decryptCalls = 0;
+    SubtleCrypto.prototype.decrypt = function patched(...a) { decryptCalls += 1; return origDecrypt.apply(this, a); };
+    try {
+      for (const key of wrongKeys) {
+        const err = await expectAsyncCode(
+          () => decryptVaultRecord(fixtureRecord(jsonFx), { namespace: 'settings', recordKey: 'ui:theme' }, key),
+          Codes.CRYPTO_FAILED,
+        );
+        expect(err.message).toBe('VAULT_CRYPTO_FAILED: key does not satisfy the AES-256-GCM vault contract');
+        await expectAsyncCode(() => encryptVaultRecord({
+          namespace: 'settings', recordKey: 'x', plaintext: 1, contentType: 'json',
+        }, key), Codes.CRYPTO_FAILED);
+      }
+      expect(decryptCalls).toBe(0);
+    } finally {
+      SubtleCrypto.prototype.decrypt = origDecrypt;
+    }
+  });
+});
+
 describe('adversarial matrix (mandate §22) — authentication and binding', () => {
   let sharedKey; // ONE key across namespaces isolates the AAD binding from key separation
   beforeAll(async () => { sharedKey = await importAes(jsonFx.namespaceKeyHex); });
