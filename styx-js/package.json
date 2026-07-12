@@ -1,6 +1,7 @@
 {
   "name": "styx-js",
   "version": "1.0.0",
+  "private": true,
   "description": "Sovereign P2P cryptographic ledger for the browser — JavaScript port of the Styx Dart library",
   "type": "module",
   "main": "src/index.js",
@@ -47,7 +48,7 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "keywords": [
     "p2p",
     "cryptography",

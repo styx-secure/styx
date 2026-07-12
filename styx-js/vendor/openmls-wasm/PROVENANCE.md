@@ -4,6 +4,17 @@ This directory contains a **vendored, pre-built** WASM artifact. OpenMLS publish
 package, so the crate is compiled here and the binary is committed. This file records where
 that binary comes from, so its origin is auditable without a rebuild.
 
+## Licensing classification
+
+This directory is licensed path by path (root `REUSE.toml` + `LICENSING.md`), not as a
+whole: upstream, derived and generated OpenMLS material (`openmls_wasm_bg.wasm`,
+`openmls_wasm.js`, `.d.ts` files, `package.json`, `Cargo.lock`) is MIT — Copyright (c)
+2020 OpenMLS Authors; `patch/lib.rs` is a Styx-modified MIT derivative (OpenMLS Authors +
+Maurizio Verde, modifications); the Styx-authored scripts and docs (`build.sh`,
+`verify.sh`, `roundtrip.mjs`, `README.md`, this file) are `AGPL-3.0-or-later`. The
+committed artifact also statically links third-party crates (e.g. BSD-3-Clause `subtle`);
+see the root `THIRD_PARTY_NOTICES.md`.
+
 ## Upstream pin
 
 - **Upstream:** https://github.com/openmls/openmls
