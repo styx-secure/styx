@@ -112,6 +112,19 @@ jobs:
           fi
           echo "Production bundle is KDF-free."
 
+      - name: Fail if the vault crypto formats leak into the bundle
+        working-directory: styx-js/apps/chat
+        run: |
+          # TEMPORARY gate (Blocco 3, PR-2): the vault format modules live in
+          # the source tree but are NOT runtime-integrated; unequivocal
+          # identifiers may not reach dist/. This step will be revised by the
+          # (separately authorized) PR that wires the vault into the app.
+          if grep -rl 'styx-vault-wrapper\|VAULT_WRAPPER_INVALID\|styx/vault/identity/v1' dist/; then
+            echo "::error::vault crypto-format code found in the production bundle"
+            exit 1
+          fi
+          echo "Production bundle is vault-free."
+
   gate:
     name: styx-js web gate
     needs: [changes, build-and-gate]
