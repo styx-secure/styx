@@ -152,6 +152,13 @@ export function createVaultWorkerRuntime({
 
     inFlight.add(request.id);
     try {
+      // Closed payload schemas (review W8): the v1 table defines NO payload
+      // for STATUS and SHUTDOWN — only the exact `null` is accepted, before
+      // any handler runs. INIT keeps requiring exactly {wasmUrl}; reserved
+      // types keep the generic wire validation before VAULT_WRONG_STATE.
+      if ((request.type === 'STATUS' || request.type === 'SHUTDOWN') && request.payload !== null) {
+        throw badRequest('this message type takes no payload', { type: request.type, reason: 'unexpected-payload' });
+      }
       let outcome;
       if (request.type === 'STATUS') {
         if (state === WORKER_STATES.SHUTTING_DOWN || state === WORKER_STATES.CLOSED) {
