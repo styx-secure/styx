@@ -204,6 +204,13 @@ senza modifiche dal titolare nell'Issue #41 (2026-07-12).**
    repo (il lockfile upstream include rami non compilati) → residuo, documentato.
 5. Provenienza delle 4 icone PWA (presumibilmente originali del titolare) → residuo
    minore da confermare.
+6. *(Aggiunto in Fase B su finding Minor della review indipendente)* La wordlist
+   inglese BIP-39 (`packages/crypto_core/lib/src/bip39_english.dart`, ripresa in
+   `styx-js/src/crypto/mnemonic.js`) è un dato di riferimento della specifica Bitcoin
+   BIP-39 e ricade oggi nel default AGPL (© Maurizio Verde). Probabilmente non
+   copyrightabile / de minimis come elenco di parole standard, ma resta un residuo:
+   ogni eventuale classificazione esplicita richiede un emendamento umano dell'Issue,
+   non una decisione dell'esecutore.
 
 ## 22. Residual risks
 
