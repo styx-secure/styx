@@ -1,10 +1,11 @@
 name: styx-js web
 
-# Always runs so the final "Gate" check is present on every PR (stable required check),
-# green-skipping when no styx-js paths changed.
+# Always reports a stable gate on pull requests and merge-group commits.
 on:
   pull_request:
     branches: [main]
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
 
@@ -29,10 +30,13 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
           BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          if [ "$EVENT" = "pull_request" ]; then
+          if [ "$EVENT" = "merge_group" ]; then
+            base_sha="$MERGE_GROUP_BASE_SHA"
+          elif [ "$EVENT" = "pull_request" ]; then
             git fetch --no-tags --depth=50 origin "$BASE_REF" >/dev/null 2>&1 || true
             base_sha="$(git merge-base "origin/$BASE_REF" HEAD || echo "")"
           else
@@ -43,8 +47,10 @@ jobs:
               base_sha="$(git rev-parse HEAD~1 2>/dev/null || echo "")"
             fi
           fi
-          if [ -z "$base_sha" ]; then
-            echo "web=true" >> "$GITHUB_OUTPUT"; exit 0
+          if [ -z "$base_sha" ] || ! git cat-file -e "${base_sha}^{commit}" 2>/dev/null; then
+            echo "Web change base unavailable; running full suite fail-closed."
+            echo "web=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           changed="$(git diff --name-only "$base_sha" HEAD)"
           echo "Changed files:"; echo "$changed"
@@ -64,48 +70,35 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'
-
-      # Relay integration tests (nostr-*, styx-chat-nostr) need a live strfry relay.
-      # They skip gracefully when none is reachable, so this gate runs the unit + app
-      # suite without external infra. Relay integration is exercised locally with
-      # `docker compose -f styx-js/docker-compose.test.yml up -d`.
       - name: Unit + app tests
         working-directory: styx-js
         run: |
           npm ci
           npm test -- --testTimeout=20000
-
       - name: Build the PWA
         working-directory: styx-js/apps/chat
         run: |
           npm ci
           npm run build
-
       - name: Fail if the mock or demo data shipped
         working-directory: styx-js/apps/chat
         run: |
-          # Distinctive markers only — no generic contact names that could false-positive.
           if grep -rlE 'MockStyxChat|styx-lib-mock|seedDemo|Nodo Berlino' dist/; then
             echo "::error::Mock/demo artifacts found in the production bundle"
             exit 1
           fi
           echo "Production bundle is mock-free."
-
       - name: Fail if spike prototypes shipped
         working-directory: styx-js/apps/chat
         run: |
-          # Every file under styx-js/spikes/ carries this marker; none may reach dist/.
           if grep -rl 'STYX_SPIKE_PROTOTYPE' dist/; then
             echo "::error::Spike prototype code found in the production bundle"
             exit 1
           fi
           echo "Production bundle is spike-free."
-
       - name: Fail if the KDF artifact leaks into the bundle
         working-directory: styx-js/apps/chat
         run: |
-          # styx-kdf-wasm is not integrated in this phase (Blocco 3, PR-1):
-          # neither the artifact nor its identifiers may reach dist/.
           if grep -rl 'styx_kdf_wasm\|argon2id_derive' dist/; then
             echo "::error::styx-kdf-wasm code found in the production bundle"
             exit 1
@@ -118,16 +111,13 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Aggregate result (fail-closed — review K9)
+      - name: Aggregate result
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           WEB: ${{ needs.changes.outputs.web }}
           BUILD: ${{ needs.build-and-gate.result }}
         run: |
           set -euo pipefail
-          # Green-skip is only reachable when change detection itself
-          # succeeded: a failed/cancelled/skipped `changes` job yields empty
-          # outputs, which must never read as "nothing changed".
           if [ "$CHANGES_RESULT" != "success" ]; then
             echo "::error::styx-js change detection did not complete successfully: ${CHANGES_RESULT:-<empty>}"
             exit 1
