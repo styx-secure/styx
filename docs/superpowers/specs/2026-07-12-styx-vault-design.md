@@ -47,7 +47,19 @@ Questo documento è una specifica di design. **Non autorizza alcuna implementazi
   rilevabile solo se sopravvive un riferimento esterno; nessuna promessa oltre
   questo.
 - zeroization garantita: JavaScript/WASM non offrono cancellazione fisica immediata
-  della memoria; la zeroization è best-effort (§4).
+  della memoria; la zeroization è best-effort (§4). Vale anche per la **password**,
+  che attraversa il form e `postMessage` come stringa JS immutabile: non è
+  zeroizzabile e possono restarne copie nel runtime;
+- **rollback per-record**: il replay di un VECCHIO record valido sulla stessa chiave
+  (con il suo `rv` storico) autentica correttamente — `rv` nell'AAD previene lo swap
+  di posizione, non il rollback temporale del singolo record; il manifest (§11)
+  rileva solo regressioni grossolane dell'intero vault, non per-record;
+- **metadati strutturali at-rest**: i valori sono cifrati ma le chiavi dei record
+  IndexedDB no (es. `<contactId>:<seq>` in `messages`), quindi chi legge il profilo
+  vede identificativi interni dei contatti, conteggi, dimensioni e il nome del DB.
+  Rischio registrato e accettato per il Blocco 3; mitigazione designata se servirà:
+  chiavi opache derivate (HMAC sotto una subkey di indice). I contenuti restano
+  protetti (H1 chiuso comunque).
 
 ## 2. Architettura
 
@@ -92,7 +104,10 @@ LOCKED          vault presente, Root Key non in memoria
 UNLOCKING       Argon2id in corso (cancellabile: terminate+respawn)
 UNLOCKED        Root Key e subkey in memoria nel worker
 MIGRATING       migrazione legacy→vault o upgrade schema in corso
-RECOVERING      ripresa post-crash (marker pending presenti)
+RECOVERING      classificazione/spazzamento post-crash dei marker pending — SOLO
+                operazioni che non richiedono chiavi (commit/scarto di un re-wrap
+                pending §7.2, ispezione del manifest di migrazione); la ripresa
+                della migrazione vera avviene in MIGRATING dopo UNLOCK
 LOCKING         wipe best-effort delle chiavi in corso
 DESTROYING      factory reset in corso
 ERROR           errore strutturato; solo transizioni di recovery ammesse
@@ -107,17 +122,20 @@ Transizioni valide:
 | UNLOCKING | UNLOCKED | unwrap verificato |
 | UNLOCKING | LOCKED | password errata / parametri invalidi (errore tipizzato) |
 | LOCKED/UNLOCKED | RECOVERING | marker pending rilevati all'apertura |
-| RECOVERING | LOCKED | ripresa completata (o refusal fail-closed) |
-| UNLOCKED | MIGRATING | `MIGRATE` esplicito |
+| RECOVERING | LOCKED | spazzamento senza-chiavi completato (o refusal fail-closed) |
+| UNLOCKED | MIGRATING | `MIGRATE` esplicito, oppure automatico all'UNLOCK se il manifest di migrazione è pending (ripresa §10) |
 | MIGRATING | UNLOCKED | migrazione committata |
+| MIGRATING | LOCKING → LOCKED | `LOCK`/`pagehide`: il passo transazionale corrente completa o abortisce atomicamente, il manifest resta pending, ripresa al prossimo UNLOCK |
 | UNLOCKED | LOCKING → LOCKED | `LOCK`, timeout di inattività, `pagehide` |
+| ERROR | LOCKED | riavvio del worker (respawn) o reset esplicito dello stato; le chiavi in memoria sono state scartate |
 | qualsiasi | DESTROYING → UNINITIALIZED | `DESTROY` (factory reset, §12) |
 | qualsiasi | ERROR | errore non recuperabile nella transizione corrente |
 
 Vietate esplicitamente: UNINITIALIZED→UNLOCKING (niente unlock senza wrapper);
 MIGRATING→DESTROYING implicito (il reset durante migrazione è ammesso solo come
-`DESTROY` esplicito dell'utente); ERROR→UNLOCKED senza ripassare da una transizione
-di recovery; qualunque scrittura di record fuori da UNLOCKED/MIGRATING.
+`DESTROY` esplicito dell'utente); ERROR→UNLOCKED diretto (da ERROR si passa da
+LOCKED e da un nuovo UNLOCK); operazioni che richiedono chiavi in RECOVERING;
+qualunque scrittura di record fuori da UNLOCKED/MIGRATING.
 
 ## 4. Root Storage Key
 
@@ -148,13 +166,21 @@ Root Storage Key (32 B, casuale)
  ├── HKDF info "styx/vault/mls/v1"       → K_mls
  ├── HKDF info "styx/vault/outbox/v1"    → K_outbox
  ├── HKDF info "styx/vault/push/v1"      → K_push
- └── HKDF info "styx/vault/backup/v1"    → K_backup (export/backup futuri)
+ ├── HKDF info "styx/vault/manifest/v1" → K_manifest (HMAC-SHA-256 del manifest, §11)
+ └── HKDF info "styx/vault/backup/v1"   → K_backup (export/backup futuri)
 ```
 
 - Una chiave AES-256 per namespace; **mai** riutilizzare la stessa chiave tra
   namespace; le subkey si derivano on-demand allo sblocco e si distruggono al LOCK.
 - Il suffisso `/v1` è la key version del namespace: una rotazione futura introduce
   `/v2` e un migratore per-namespace (§11), senza cambiare la Root Key.
+- **`meta` e `migrations` non hanno subkey di cifratura perché non contengono MAI
+  payload dell'utente**: `meta` ospita il wrapper (la Root Key lì dentro è già
+  protetta dalla KEK) e il manifest (esigenza di integrità, non di confidenzialità:
+  `K_manifest`); `migrations` ospita solo marker, conteggi e digest — mai payload,
+  né in chiaro né cifrati. Il "backup" pre-verifica della migrazione **È
+  localStorage stesso**, che resta fonte di verità fino al passo 6 di §10: non
+  esiste alcuna copia dei dati legacy dentro IndexedDB.
 
 ## 6. Record encryption
 
@@ -165,10 +191,19 @@ AES-256-GCM (WebCrypto), per singolo record:
   chiavi per-namespace e volumi attesi (≤10^6 scritture/namespace) il rischio di
   collisione casuale è ≪ 2⁻³², molto sotto il bound NIST; il test di unicità è in
   matrice (§13);
-- **AAD canonica**: serializzazione deterministica (ordine di campi fisso, UTF-8) di
-  `{schemaVersion, namespace, recordKey, recordVersion, keyVersion, contentType}` —
-  lega il ciphertext alla sua posizione logica: un record valido copiato su un'altra
-  chiave/namespace fallisce l'autenticazione;
+- **AAD canonica**: i byte UTF-8 di `JSON.stringify([v, ns, k, rv, kv, ct])` — array
+  JSON a ordine fisso, interi in base 10, stringhe con l'escaping di JSON.stringify,
+  nessuno spazio. I nomi sono quelli del formato record (sotto): `v` = record format
+  version (lo "schemaVersion" dell'AAD), poi namespace, record key, record version,
+  key version, content type. La stessa serializzazione vale per qualunque
+  implementazione (JS oggi, Dart domani, §16);
+- **fonte dell'AAD in lettura** (vincolante): `ns` e `k` si prendono dalla
+  RICHIESTA (store e chiave richiesti), mentre `v`, `rv`, `kv`, `ct` dal record
+  letto. Così un record valido copiato su un'altra chiave o namespace fallisce
+  l'autenticazione. Un'implementazione che ricostruisse l'AAD interamente dai campi
+  auto-dichiarati del record annullerebbe in silenzio la proprietà anti-swap: la
+  matrice §13 (AAD tampering) deve coprire esattamente questo caso. Il limite
+  residuo (replay di un vecchio record della stessa chiave) è dichiarato in §1.2;
 - **plaintext**: bytes (i valori strutturati sono serializzati prima, JSON o binario
   secondo `contentType`).
 
@@ -210,8 +245,9 @@ mai il plaintext o la chiave nei messaggi/log (stessa disciplina dei codici
   keyVersion: 1,
   createdAt: '<ISO, solo data>',     // metadata non sensibile
   calibratedMs: 130,                 // informativo, mai fidato
-  aad: (canonica: format/version/kdf/params/keyVersion),
-  rewrapPending: null,               // stato di re-wrap in corso (§7.2)
+  // AAD dell'unwrap (non persistita): byte UTF-8 di JSON.stringify(
+  //   [format, version, kdf, kdfVersion, mKib, t, p, saltB64, outLen, keyVersion])
+  rewrapPending: null,               // null | wrapper completo in attesa (§7.2)
 }
 ```
 
@@ -223,17 +259,32 @@ come autenticatore separato (l'unica verifica della password è l'unwrap GCM).
 Il wrapper si legge PRIMA dello sblocco → validazione fail-closed prima di toccare
 Argon2id:
 
+**Tutti** i campi del wrapper sono vincolati (nessun campo sconosciuto ammesso,
+stessa disciplina del parser envelope):
+
 | Campo | Vincolo |
 |---|---|
+| `format` | esattamente `styx-vault-wrapper` |
+| `version` | esattamente 1 (intero) |
 | `kdf` | esattamente `argon2id` |
 | `kdfVersion` | esattamente 19 |
-| `saltB64` | esattamente 16 byte decodificati |
+| `saltB64` | base64 valida, esattamente 16 byte decodificati |
 | `outLen` | esattamente 32 |
 | `p` | esattamente 1 (WASM senza thread) |
-| `mKib` | min 19456 (floor OWASP) … max 262144 (256 MiB) |
-| `t` | min 2 … max 8 |
+| `mKib` | intero, min 19456 (floor OWASP) … max 262144 (256 MiB) |
+| `t` | intero, min 2 … max 8 |
 | `(mKib,t,profile)` | combinazione dentro l'allowlist dei profili |
 | `profile` | allowlist: `desktop`, `mobile-balanced`, `mobile-low-memory` |
+| `wrapAlg` | esattamente `A256GCM` |
+| `wrapNonce` | `Uint8Array` di esattamente 12 byte |
+| `wrappedRootKey` | `Uint8Array` di esattamente 48 byte (32 + tag GCM) |
+| `keyVersion` | intero ≥ 1 |
+| `createdAt` | stringa `YYYY-MM-DD` (10 char, solo data) |
+| `calibratedMs` | intero 0…600000, informativo |
+| `rewrapPending` | `null` oppure un wrapper che supera INTERA questa tabella |
+
+La validazione avviene per intero PRIMA di toccare Argon2id o WebCrypto: un wrapper
+manipolato non raggiunge mai la derivazione né l'unwrap con valori fuori forma.
 
 Fuori intervallo → `VAULT_KDF_PARAMS_INVALID`, nessuna derivazione (anti-DoS: un
 record manipolato non può chiedere 3 GiB o iterazioni arbitrarie). `profile` e
@@ -267,8 +318,8 @@ meta        wrapper KDF, manifest, versioni schema     (out-of-line key: string)
 identity    identità cifrata                            (idem)
 contacts    contatti                                    (idem)
 messages    messaggi (chiave: `<contactId>:<seq>`)      (idem)
-mls         envelope MLS v1 (meta + payload separati: record `state:meta` JSON
-            cifrato + `state:payload` bytes cifrati — finding F10, chiude #25)
+mls         stato MLS: record `state:meta` (header dell'envelope, JSON cifrato) +
+            `state:payload` (byte nativi cifrati) — mapping esatto in §10.1
 outbox      coda in uscita                              (idem)
 push        registrazione push (wake-up only)           (idem)
 migrations  marker/manifest di migrazione, backup temporanei
@@ -293,8 +344,10 @@ Regole (tutte validate dallo spike, finding F1–F10):
 - **quota**: `estimate()` informativo; `QuotaExceededError` → errore tipizzato
   fail-closed e non distruttivo (issue #27: la quota sostituisce il cap dei 16 MiB
   del parser envelope);
-- **multi-tab**: elezione writer via Web Lock esistente; i reader non aprono il
-  vault in scrittura; `onblocked` gestito sempre;
+- **multi-tab**: nel Blocco 3 l'accesso al vault è **single-tab**: solo la tab che
+  detiene il Web Lock esistente apre il vault (in lettura e scrittura); le altre
+  restano nello stato "sessione attiva in un'altra scheda" come oggi — nessun reader
+  concorrente, nessuna copia delle chiavi in più worker. `onblocked` gestito sempre;
 - **destroy**: `deleteDatabase` con gestione `onblocked` (chiusura di tutte le
   connessioni prima, F6);
 - **private browsing**: il vault funziona ma è effimero; da verificare in M4.
@@ -320,7 +373,10 @@ TypeScript/JSDoc); payload massimi per tipo; `{id, type, payload}` →
 | `DESTROY` | conferma esplicita (token) | §12 |
 | `SHUTDOWN` | — | chiusura pulita |
 
-- `onmessage` con origin guard difensivo (CodeQL js/missing-origin-check);
+- `onmessage` con origin guard difensivo: su un dedicated worker `event.origin` è
+  la stringa vuota, quindi il guard è vacuo come controllo — si mantiene solo come
+  difesa in profondità e per CodeQL (js/missing-origin-check); la difesa reale del
+  confine è l'allowlist + la validazione runtime;
 - chiavi/namespace validati con regex e `Object.fromEntries` su strutture costruite
   (CodeQL js/remote-property-injection);
 - nessun oggetto WASM nel protocollo (W-F3); i byte grandi viaggiano come
@@ -330,10 +386,28 @@ TypeScript/JSDoc); payload massimi per tipo; `{id, type, payload}` →
 
 ## 10. Migrazione localStorage → vault
 
-Riusa la disciplina a 12 passi già rodata (PR #23), con l'**envelope MLS come unità
-trasportata intatta** (non si ri-serializza lo stato MLS: si cifra l'envelope
-com'è). Sorgenti: identità cifrata esistente, contatti, messaggi, envelope MLS,
-impostazioni, outbox eventuale, push registration.
+Riusa la disciplina a 12 passi già rodata (PR #23). Sorgenti: identità cifrata
+esistente, contatti, messaggi, envelope MLS, impostazioni, outbox eventuale, push
+registration. **Lo stato MLS non viene mai ri-serializzato**: si trasporta
+l'envelope validato dal codec esistente.
+
+### 10.1 Mapping envelope MLS ↔ record del vault
+
+Il codec `mls-state-envelope.js` resta l'unico validatore del formato envelope
+(§16); il worker lo usa in entrambe le direzioni:
+
+- **scrittura** (migrazione o `_persistMls`): l'envelope viene parsato dal codec;
+  `state:meta` = il JSON dell'envelope SENZA il campo `payload` (restano tutti i
+  campi header, inclusi `payloadSha256` e `payloadEncoding`), cifrato come
+  `ct:'json'`; `state:payload` = i byte del payload decodificati da base64, cifrati
+  come `ct:'bytes'` (binario nativo — finding F10, chiude issue #25); i due PUT
+  avvengono nella stessa transazione;
+- **lettura** (restore): il worker decifra entrambi i record, ricalcola
+  `payloadSha256` sui byte e lo confronta con quello in `state:meta` (fail-closed:
+  mismatch → `MLS_STATE_CORRUPTED`), ricompone l'envelope e lo passa alla verifica
+  di compatibilità e al restore esistenti;
+- **verifica di migrazione (passo 4)**: payload byte-identico alla decodifica della
+  sorgente + campi header deep-equal + `payloadSha256` ricalcolato sui byte.
 
 ```text
  1. vault UNLOCKED (creato con CREATE_VAULT; la migrazione richiede la password)
@@ -346,7 +420,8 @@ impostazioni, outbox eventuale, push registration.
 ```
 
 - Fail-closed: qualunque errore ai passi 2–5 lascia localStorage intatto e il vault
-  parziale marcato pending (ripresa da `RECOVERING`, idempotente);
+  parziale marcato pending (ripresa in MIGRATING al prossimo UNLOCK, idempotente;
+  RECOVERING si limita a classificare i marker, §3);
 - crash tra 6 e 7: la ripresa completa la rimozione (i dati sono già verificati);
 - mai cancellare localStorage finché ogni record non è scritto, riletto, decifrato,
   confrontato e committato;
@@ -364,11 +439,15 @@ rilevante):
   migrationVersion: 1,       // ultima migrazione completata
   generation: 42,            // counter monotono incrementato a ogni commit
   lastTxId: '<uuid>',        // ultima transazione riuscita
-  digestB64: '<SHA-256 dei campi precedenti in forma canonica>',
+  hmacB64: '<HMAC-SHA-256 sotto K_manifest dei campi precedenti in forma canonica
+             (stessa regola di serializzazione dell'AAD, §6)>',
 }
 ```
 
-- Il digest rileva manomissioni/corruzioni grossolane del manifest; il generation
+- L'HMAC sotto `K_manifest` (§5) rende il tampering del manifest rilevabile
+  post-sblocco (un attaccante che scrive IDB non ha la subkey); prima dello sblocco
+  il manifest non è fidato e nessuna decisione di sicurezza vi si appoggia. Il
+  generation
   counter rende **rilevabile** (non prevenibile) un rollback del profilo se un
   riferimento esterno sopravvive (es. il device peer nota `generation` regredita nel
   gossip applicativo futuro). **Nessuna promessa di rollback resistance assoluta**
@@ -394,7 +473,8 @@ dei ciphertext**:
 
 ```text
  1. LOCK del worker (wipe best-effort chiavi in memoria)
- 2. sovrascrittura del record wrapper in `meta` (il wrapped Root Key smette di esistere)
+ 2. sovrascrittura del record wrapper in `meta` (best-effort: la `put` IDB non
+    cancella fisicamente i byte precedenti nel backing store fino a compaction)
  3. deleteDatabase del vault (tutti gli store, backup e marker inclusi)
  4. localStorage legacy: chiavi `mls:*`, marker di migrazione, resto del namespace
  5. Cache Storage + dati del service worker (unregister o clear scoped)
@@ -403,8 +483,11 @@ dei ciphertext**:
  8. terminate() del worker + respawn in UNINITIALIZED
 ```
 
-Il passo 2 garantisce che anche se 3–7 falliscono parzialmente, i ciphertext residui
-sono indecifrabili senza il wrapper. Il reset è idempotente e ripetibile.
+L'ordine (2 prima di 3–7) fa sì che, se la pulizia fallisce parzialmente, gli
+eventuali ciphertext residui non abbiano più un wrapper attivo; un residuo fisico
+del vecchio wrapper nel backing store resta comunque protetto da Argon2id + qualità
+della password (nessuna garanzia di cancellazione fisica: coerente con §4). Il reset
+è idempotente e ripetibile.
 
 ## 13. Matrice di test
 
