@@ -14,8 +14,8 @@ MLS state, and an OpenMLS update cannot change this artifact.
   - `argon2 = 0.5.3` (RustCrypto) — sha256 of the crates.io archive recorded in
     `Cargo.lock` (`checksum` field), license MIT OR Apache-2.0
   - `wasm-bindgen = 0.2.126` — checksum in `Cargo.lock`, MIT OR Apache-2.0
-- Full dependency graph: 27 crates, all from crates.io, checksums in
-  `Cargo.lock`. Notable transitive crates and why they exist:
+- Full dependency graph: 26 crates from crates.io (checksums in `Cargo.lock`)
+  plus this root crate. Notable transitive crates and why they exist:
   - `blake2`, `password-hash`, `digest`, `block-buffer`, `crypto-common`,
     `generic-array`, `typenum`, `subtle`, `base64ct`, `rand_core`,
     `cpufeatures` — the RustCrypto Argon2 implementation stack
@@ -51,10 +51,11 @@ jest anti-drift test).
 - **Double-build verification**: `./verify.sh` executed 2026-07-12 — two
   independent container builds byte-identical to each other AND to the
   committed `pkg/` files (all four `REPRODUCIBLE`, `SHA256SUMS: OK`, exit 0).
-- `cargo test --locked` (native, in the pinned image): 5/5 passed — three
-  known-answer anchors (cross-validated against hash-wasm 4.12.0 and stable
-  across Chromium/Firefox in the Argon2id spike), the absolute-bounds
-  rejection table, failure-then-recovery.
+- `cargo test --locked` (native, in the pinned image): 5/5 passed — one spike
+  known-answer anchor plus two additional cross-validated vectors (all outputs
+  byte-identical to hash-wasm 4.12.0), the absolute-bounds rejection table,
+  failure-then-recovery. All three spike anchors run in the JS and browser KAT
+  suites (Node, Chromium, Firefox).
 
 ## Supply-chain checks (2026-07-12, `./audit.sh`)
 

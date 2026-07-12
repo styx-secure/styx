@@ -77,6 +77,15 @@ describe('styx-kdf-wasm: absolute component bounds (direct calls, no JS policy)'
     const b = argon2id_derive(pw, salt16, 1024, 1, 1, 32);
     expect(toHex(a)).toBe(toHex(b));
   });
+  test('numbers >= 2^32 wrap at the ABI boundary: integer enforcement is the JS policy layer', () => {
+    // Review K1: the u32 ABI reduces JS numbers mod 2^32, so a direct caller
+    // passing a huge mKib silently degrades to a small memory cost instead of
+    // being rejected. Pinned here; the sanctioned production path
+    // (kdf-bounds.js) rejects mKib > 262144 long before this boundary.
+    const wrapped = argon2id_derive(pw, salt16, 2 ** 32 + 1024, 1, 1, 32);
+    const small = argon2id_derive(pw, salt16, 1024, 1, 1, 32);
+    expect(toHex(wrapped)).toBe(toHex(small));
+  });
   test('error messages never echo password or salt material', () => {
     const noisyPw = new TextEncoder().encode('SUPER-secret-PW-material');
     let err;

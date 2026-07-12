@@ -187,6 +187,23 @@ jobs:
           mls_hash=$(sha256sum ../../openmls-wasm/openmls_wasm_bg.wasm | cut -d' ' -f1)
           [ "$wasm_hash" != "$mls_hash" ] \
             || { echo "::error::KDF artifact must never equal the OpenMLS artifact"; exit 1; }
+      - name: Pin coherence (build.sh vs PROVENANCE vs canonical crate)
+        run: |
+          set -euo pipefail
+          cd "$KDF_DIR"
+          image=$(grep -oE 'RUST_IMAGE="[^"]+"' build.sh | cut -d'"' -f2)
+          wp_sha=$(grep -oE 'WASM_PACK_SHA256="[0-9a-f]{64}"' build.sh | grep -oE '[0-9a-f]{64}')
+          [ -n "$image" ] && [ -n "$wp_sha" ] || { echo "::error::could not read pins from build.sh"; exit 1; }
+          echo "kdf pins: $image / wasm-pack sha $wp_sha"
+          grep -qF "$image" PROVENANCE.md \
+            || { echo "::error::pinned image is not documented in PROVENANCE.md"; exit 1; }
+          grep -qF "$wp_sha" PROVENANCE.md \
+            || { echo "::error::pinned wasm-pack sha256 is not documented in PROVENANCE.md"; exit 1; }
+          # The mandate requires the SAME pinned toolchain as the canonical crate:
+          grep -qF "$image" ../openmls-wasm/build.sh \
+            || { echo "::error::KDF toolchain image diverges from the canonical openmls-wasm build"; exit 1; }
+          grep -qF "$wp_sha" ../openmls-wasm/build.sh \
+            || { echo "::error::KDF wasm-pack pin diverges from the canonical openmls-wasm build"; exit 1; }
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '20'

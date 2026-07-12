@@ -35,6 +35,10 @@ export const KDF_POLICY = Object.freeze({
   tMin: 2,
   tMax: 8,
   mMaxKib: 262144, // 256 MiB
+  // KDF-layer bounds in UTF-8 BYTES. The user-facing password policy of the
+  // vault (8-1024 characters, plan B3.0.4) is a separate constraint imposed by
+  // the vault caller in PR-2/PR-3 — characters are not bytes, and this module
+  // must accept any byte string the vault layer has already accepted.
   passwordMinLen: 1,
   passwordMaxLen: 4096,
 });
@@ -86,8 +90,12 @@ export function validateKdfParams(params) {
   if (params.t < KDF_POLICY.tMin || params.t > KDF_POLICY.tMax) {
     throw new KdfBoundsError('iteration count out of policy bounds');
   }
-  const profile = KDF_PROFILES[params.profile];
-  if (typeof params.profile !== 'string' || profile === undefined) {
+  // Object.hasOwn: a profile name like '__proto__' or 'constructor' must not
+  // resolve through the prototype chain (review K2).
+  const profile = typeof params.profile === 'string' && Object.hasOwn(KDF_PROFILES, params.profile)
+    ? KDF_PROFILES[params.profile]
+    : undefined;
+  if (profile === undefined) {
     throw new KdfBoundsError('unknown profile');
   }
   if (params.mKib !== profile.mKib || params.t !== profile.t || params.p !== profile.p) {

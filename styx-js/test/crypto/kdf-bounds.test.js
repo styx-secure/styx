@@ -105,6 +105,10 @@ describe('kdf-bounds: fail-closed rejection', () => {
   test('unknown profile and profile/parameter mismatch', () => {
     expectRejected(validParams({ profile: 'paranoid' }), 'profile');
     expectRejected(validParams({ profile: 42 }), 'profile');
+    // prototype-chain names must not resolve to a "profile" (review K2):
+    expectRejected(validParams({ profile: '__proto__' }), 'profile');
+    expectRejected(validParams({ profile: 'constructor' }), 'profile');
+    expectRejected(validParams({ profile: 'toString' }), 'profile');
     // valid numbers, but not the numbers of the declared profile:
     expectRejected(validParams({ profile: 'desktop' }), 'declared profile');
     expectRejected(validParams({ t: 5 })); // in range, but not mobile-low-memory's t

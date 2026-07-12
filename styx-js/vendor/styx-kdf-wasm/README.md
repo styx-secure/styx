@@ -29,6 +29,11 @@ Stable error codes: `KDF_PARAMS_INVALID`, `KDF_MEMORY_UNAVAILABLE`,
 `KDF_DERIVATION_FAILED`. Messages never contain password, salt or output
 material.
 
+ABI caveat: JS numbers are reduced mod 2³² (and floats truncated) by the
+wasm-bindgen u32 boundary before the absolute bounds see them — integer
+enforcement lives ONLY in the JS policy layer, which is the single sanctioned
+call path. Both behaviours are pinned by tests.
+
 ## Scripts (all need Docker; no host Rust toolchain)
 
 ```bash
