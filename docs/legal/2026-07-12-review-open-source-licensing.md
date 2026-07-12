@@ -90,3 +90,63 @@ trailing whitespace in `LICENSES/BSD-3-Clause.txt:1`; è un byte del testo canon
 Nessun finding Critical o Important. I due finding Minor sono rimediati e riverificati.
 La PR resta **Draft**: l'approvazione finale, il gate del titolare e l'ingresso in Merge
 Queue restano decisioni umane, fuori dal mandato di questa review.
+
+## Addendum — riverifica del round correttivo REUSE
+
+La review originale sopra riportata è stata eseguita **prima** che questo stesso
+record venisse committato nella PR. I valori storici che essa riporta —
+**21 path modificati** e **582/582 file coperti da REUSE** — sono quindi corretti
+per lo stato allora esaminato e non vanno riscritti.
+
+Questa riverifica, condotta in un contesto pulito e indipendente, copre il round
+correttivo successivo. Il commit correttivo esaminato è:
+
+```text
+9c67473d102f176e98fdcc2942c0506860ff2fa5
+```
+
+(`chore(legal): make REUSE annotation precedence explicit` — da leggersi come il
+commit correttivo oggetto di riverifica, non come la testa finale della PR dopo
+il commit di questo addendum).
+
+Esiti della riverifica:
+
+1. **Path modificati.** La PR contiene ora esattamente **22 path modificati**
+   (`git diff --name-only 0a2c2c0…...9c67473…`): i 21 originali più questo
+   stesso record di review, committato al path referenziato da ADR-0004.
+   Tutti i path restano nell'allowlist dell'Issue #41.
+2. **REUSE lint.** `reuse lint` con `reuse==6.2.0` in venv pinnata passa,
+   conforme alla REUSE Specification 3.3, con esattamente **583/583** file
+   dotati di informazioni di copyright e licenza (582 + questo record);
+   0 licenze bad/deprecated/missing/unused; licenze usate:
+   `AGPL-3.0-or-later`, `Apache-2.0`, `BSD-3-Clause`, `MIT`.
+3. **Eccezioni Apache.** `reuse spdx` risolve ad `Apache-2.0` **esattamente i
+   sei file approvati dal titolare** — i cinque JSON di
+   `styx-js/test/fixtures/vault-crypto-v1/` più
+   `styx-js/test/fixtures/kdf-kat-vectors.js` — e nessun altro file
+   (verificato programmaticamente sull'output SPDX completo).
+4. **Precedenza delle annotazioni.** In `REUSE.toml` ogni annotazione esatta
+   non-default (eccezioni Apache, patch OpenMLS, metadata upstream, output
+   generati, artefatti WASM, spike Argon2id) usa `precedence = "override"`;
+   l'annotazione larga di fallback AGPL (`path = "**"`) **non** usa `override`
+   e mantiene il comportamento implicito `closest`. Il diff del commit
+   correttivo aggiunge soltanto le righe `precedence = "override"` e commenti
+   esplicativi: le risoluzioni per file sono invariate.
+5. **Classificazioni invariate.** Le classificazioni di OpenMLS (patch MIT a
+   doppio copyright, metadata upstream MIT, output generati MIT, artefatto
+   `MIT AND BSD-3-Clause`), della crate KDF (`AGPL-3.0-or-later` con output
+   generati `AGPL AND MIT` / `AGPL AND MIT AND BSD-3-Clause`) e dello spike
+   Argon2id sono immutate rispetto alla review originale.
+6. **Nessuna nuova eccezione.** Nessuna nuova eccezione di licenza è stata
+   introdotta nel round correttivo.
+7. **Nessuna modifica di prodotto.** Nessun sorgente di prodotto, fixture,
+   vettore, grafo di dipendenze, dipendenza di lockfile, artefatto generato,
+   WASM o workflow è cambiato: il commit correttivo tocca esclusivamente
+   `REUSE.toml`.
+8. **Finding.** Nessun nuovo finding Critical, Important o Minor è stato
+   identificato in questa riverifica.
+9. **Esito sostanziale.** Il risultato resta **PASS-WITH-FINDINGS**, con i due
+   finding Minor originali già rimediati e riverificati.
+
+Questa riverifica, come la review originale, è una review di governance di
+repository e di licensing tecnico; non costituisce parere legale professionale.
