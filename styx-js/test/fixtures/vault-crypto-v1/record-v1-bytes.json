@@ -1,0 +1,17 @@
+{
+  "note": "TEST-ONLY synthetic vectors — see README.md; regenerate with generate.js",
+  "namespaceKeyHex": "af4e3d49764769214e055aa445aad9112c19094f10e2520076959edfad4eeb87",
+  "plaintextHex": "afa52aa934dfb8f1ff08e827797abb5a3ded152bfe39b8a553a2bade8fcd1a71",
+  "aadUtf8": "[1,\"canary\",\"canary:0001\",1,1,\"bytes\"]",
+  "aadHex": "5b312c2263616e617279222c2263616e6172793a30303031222c312c312c226279746573225d",
+  "record": {
+    "v": 1,
+    "ns": "canary",
+    "k": "canary:0001",
+    "rv": 1,
+    "kv": 1,
+    "ct": "bytes",
+    "nonceHex": "ee687b7947a6de1d9dd2ea9c",
+    "dataHex": "13ee10218cab7a338134e5c9a557d85c96b6cca53b49c8a5b8c6a488f4e44709d1d110737cf6c34b11f7abf857f7e50c"
+  }
+}

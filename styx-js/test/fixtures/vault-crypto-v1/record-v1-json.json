@@ -1,0 +1,22 @@
+{
+  "note": "TEST-ONLY synthetic vectors — see README.md; regenerate with generate.js",
+  "namespaceKeyHex": "62d3b2a7f5b980acd5fe39d9e8636f616132e219e3c1a22eeea9c5bab5476900",
+  "plaintextValue": {
+    "theme": "dark",
+    "language": "it",
+    "notifications": false
+  },
+  "plaintextUtf8": "{\"theme\":\"dark\",\"language\":\"it\",\"notifications\":false}",
+  "aadUtf8": "[1,\"settings\",\"ui:theme\",3,1,\"json\"]",
+  "aadHex": "5b312c2273657474696e6773222c2275693a7468656d65222c332c312c226a736f6e225d",
+  "record": {
+    "v": 1,
+    "ns": "settings",
+    "k": "ui:theme",
+    "rv": 3,
+    "kv": 1,
+    "ct": "json",
+    "nonceHex": "6acccfd65b14d4fa628007c5",
+    "dataHex": "a5f32b59921e7fb61a092c376aa0d341b6db8c7918c362a3d4107b97f04869798450a74fbbbcd06339d403e9c35ae3bff1ec3cf4df408308386abe5a1890ce2d5b55d048485d"
+  }
+}

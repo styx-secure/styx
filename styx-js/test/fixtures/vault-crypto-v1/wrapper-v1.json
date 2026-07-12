@@ -1,0 +1,30 @@
+{
+  "note": "TEST-ONLY synthetic vectors — see README.md; regenerate with generate.js",
+  "inputs": {
+    "rootKeyHex": "4432f1ed5bbcbf4ac310bd593933a078b40a446e606f94fae7c993d8a99761ac",
+    "kekHex": "78ca82dfa21b5d01c84c62783ee78304b731a8a77339e1d86e2b4199c0420569",
+    "kdfSaltHex": "d1bc28c36dd04ea629e8bccd7023d0be",
+    "wrapNonceHex": "e429817e05c3ad1b8f564162"
+  },
+  "aadUtf8": "[\"styx-vault-wrapper\",1,\"argon2id\",19,65536,3,1,\"0bwow23QTqYp6LzNcCPQvg==\",32,1]",
+  "aadHex": "5b22737479782d7661756c742d77726170706572222c312c226172676f6e326964222c31392c36353533362c332c312c223062776f7732335154715970364c7a4e6343505176673d3d222c33322c315d",
+  "wrapper": {
+    "format": "styx-vault-wrapper",
+    "version": 1,
+    "kdf": "argon2id",
+    "kdfVersion": 19,
+    "mKib": 65536,
+    "t": 3,
+    "p": 1,
+    "profile": "mobile-balanced",
+    "saltB64": "0bwow23QTqYp6LzNcCPQvg==",
+    "outLen": 32,
+    "keyVersion": 1,
+    "wrapAlg": "A256GCM",
+    "wrapNonceHex": "e429817e05c3ad1b8f564162",
+    "wrappedRootKeyHex": "c7c72ed8d920ffce9d2558a0c53504e6027e6c555817e75c7ec67df5099d0334335df1cb32226532246668921c4dcb39",
+    "createdAt": "2026-07-12",
+    "calibratedMs": 130,
+    "rewrapPending": null
+  }
+}

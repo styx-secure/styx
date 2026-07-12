@@ -1,0 +1,49 @@
+{
+  "note": "TEST-ONLY synthetic vectors — see README.md; regenerate with generate.js",
+  "rootKeyHex": "4432f1ed5bbcbf4ac310bd593933a078b40a446e606f94fae7c993d8a99761ac",
+  "saltLabel": "styx-vault-v1",
+  "saltHex": "db3cc22e655ba9c2937d292cde138d618b17398f22e19f6b9a023d52e6abe8b4",
+  "okmBitsPerDerivation": 256,
+  "derivations": {
+    "identity": {
+      "info": "styx/vault/identity/v1",
+      "okmHex": "0b6c5716ea73c8c79fb21e11e1ed2f7a590844b3bdf9bcc5857c1b4673ff23d4"
+    },
+    "contacts": {
+      "info": "styx/vault/contacts/v1",
+      "okmHex": "eaddf56a0dd966ecc3fd6da70ac4df688a9d8011a765217a158d282a686212df"
+    },
+    "messages": {
+      "info": "styx/vault/messages/v1",
+      "okmHex": "5da753f737c0160d6a8416778bcbf889d8846fa0e2254b3adda91d8f8b85c19b"
+    },
+    "mls": {
+      "info": "styx/vault/mls/v1",
+      "okmHex": "055821fad8e228b0dd7ed61c7f9d9c2f45dd82c66c2a7e4eeba3a033c57daca5"
+    },
+    "outbox": {
+      "info": "styx/vault/outbox/v1",
+      "okmHex": "40d9a35aed7dafbc45eb8fd9a381e805df909f87c4bc30f12f3a74e638031fa6"
+    },
+    "push": {
+      "info": "styx/vault/push/v1",
+      "okmHex": "28a377775b9ef6f914988cb02e1a828eb78ef821f54479dc80da2bc44b26f502"
+    },
+    "settings": {
+      "info": "styx/vault/settings/v1",
+      "okmHex": "62d3b2a7f5b980acd5fe39d9e8636f616132e219e3c1a22eeea9c5bab5476900"
+    },
+    "canary": {
+      "info": "styx/vault/canary/v1",
+      "okmHex": "af4e3d49764769214e055aa445aad9112c19094f10e2520076959edfad4eeb87"
+    },
+    "manifest": {
+      "info": "styx/vault/manifest/v1",
+      "okmHex": "6adeac70a12a423bfac385804b7fb9c75ff08a9588df968b62360361233d34e4"
+    },
+    "backup": {
+      "info": "styx/vault/backup/v1",
+      "okmHex": "81dd4d6467781085664bf021d0e71e72446dd76fe1523ac41d3d858e2a528da0"
+    }
+  }
+}

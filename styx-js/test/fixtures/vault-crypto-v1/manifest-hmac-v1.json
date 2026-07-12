@@ -1,0 +1,6 @@
+{
+  "note": "TEST-ONLY synthetic vectors — see README.md; regenerate with generate.js",
+  "manifestKeyHex": "6adeac70a12a423bfac385804b7fb9c75ff08a9588df968b62360361233d34e4",
+  "canonicalUtf8": "[\"styx-vault-manifest\",1,1,[\"settings\",\"canary\"],\"STYX-VAULT-TEST-ONLY sample manifest\"]",
+  "macHex": "1bd38e3551d587aa91fed0f7819d4e13531a3a9d361ffd43bcf8e5858d15a189"
+}

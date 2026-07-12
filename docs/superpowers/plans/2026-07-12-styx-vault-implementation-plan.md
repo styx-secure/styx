@@ -211,7 +211,9 @@ criterio di accettazione è dimostrato". Le classi di rollback sono definite in 
 
 ### PR‑4 — B3.4 Motore IndexedDB del vault
 
-- **Obiettivo**: `src/storage/vault-db.js` dentro il worker: schema v1 (9 store),
+- **Obiettivo**: `src/storage/vault-db.js` dentro il worker: schema v1 (10 store:
+  `meta`, `identity`, `contacts`, `messages`, `mls`, `outbox`, `push`, `settings`,
+  `migrations`, `canary` — coerente con l'elenco congelato in §B3.0.1),
   transazioni multi-store risolte su `oncomplete`, `durability:'strict'` dove
   supportato, auto-close su `versionchange`, retry bounded su open bloccati
   (`VAULT_BLOCKED`, backoff 50 ms), quota → `VAULT_QUOTA_EXCEEDED` fail-closed,
