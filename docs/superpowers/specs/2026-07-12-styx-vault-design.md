@@ -166,9 +166,19 @@ Root Storage Key (32 B, casuale)
  ├── HKDF info "styx/vault/mls/v1"       → K_mls
  ├── HKDF info "styx/vault/outbox/v1"    → K_outbox
  ├── HKDF info "styx/vault/push/v1"      → K_push
+ ├── HKDF info "styx/vault/settings/v1"  → K_settings
+ ├── HKDF info "styx/vault/canary/v1"    → K_canary
  ├── HKDF info "styx/vault/manifest/v1" → K_manifest (HMAC-SHA-256 del manifest, §11)
  └── HKDF info "styx/vault/backup/v1"   → K_backup (export/backup futuri)
 ```
+
+> **Emendamento (2026-07-12, incorporato dal piano Blocco 3 §B3.0):** l'elenco
+> chiuso dei namespace payload v1 è `identity, contacts, messages, mls, outbox,
+> push, settings, canary` — `settings` (primo namespace di prodotto, PR‑7 del
+> piano) e `canary` (record sintetici end-to-end, PR‑6) hanno le info string
+> HKDF `styx/vault/settings/v1` e `styx/vault/canary/v1` riportate sopra; mai
+> riuso di subkey tra namespace. Implementazione di riferimento:
+> `styx-js/src/crypto/vault-keys.js` (PR‑2).
 
 - Una chiave AES-256 per namespace; **mai** riutilizzare la stessa chiave tra
   namespace; le subkey si derivano on-demand allo sblocco e si distruggono al LOCK.
@@ -281,7 +291,15 @@ stessa disciplina del parser envelope):
 | `keyVersion` | intero ≥ 1 |
 | `createdAt` | stringa `YYYY-MM-DD` (10 char, solo data) |
 | `calibratedMs` | intero 0…600000, informativo |
-| `rewrapPending` | `null` oppure un wrapper che supera INTERA questa tabella |
+| `rewrapPending` | `null` oppure un wrapper che supera INTERA questa tabella, con profondità massima 1 (sotto) |
+
+> **Chiarimento normativo (2026-07-12, PR‑2):** `rewrapPending` NON è ricorsivo
+> arbitrariamente. Il wrapper attivo può contenere al più UN wrapper pending
+> (`rewrapPending = null | pendingWrapper`); il `rewrapPending` di un
+> pendingWrapper DEVE essere `null`. Profondità massima: **1**. Un pending che
+> contiene un ulteriore pending è rifiutato con `VAULT_WRAPPER_INVALID`.
+> Implementazione di riferimento: `styx-js/src/storage/vault-wrapper.js`
+> (`MAX_REWRAP_PENDING_DEPTH`).
 
 La validazione avviene per intero PRIMA di toccare Argon2id o WebCrypto: un wrapper
 manipolato non raggiunge mai la derivazione né l'unwrap con valori fuori forma.
@@ -322,8 +340,14 @@ mls         stato MLS: record `state:meta` (header dell'envelope, JSON cifrato) 
             `state:payload` (byte nativi cifrati) — mapping esatto in §10.1
 outbox      coda in uscita                              (idem)
 push        registrazione push (wake-up only)           (idem)
+settings    impostazioni (primo namespace di prodotto, piano PR‑7)   (idem)
+canary      record sintetici end-to-end (piano PR‑6)    (idem)
 migrations  marker/manifest di migrazione, backup temporanei
 ```
+
+> **Emendamento (2026-07-12, incorporato dal piano Blocco 3 §B3.0):** gli store
+> `settings` e `canary` completano l'elenco chiuso v1 (vedi §5 per le relative
+> subkey HKDF). `meta` e `migrations` restano senza subkey di cifratura (§5).
 
 Regole (tutte validate dallo spike, finding F1–F10):
 
