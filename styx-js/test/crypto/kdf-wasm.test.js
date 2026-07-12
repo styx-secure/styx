@@ -68,23 +68,123 @@ describe('styx-kdf-wasm: absolute component bounds (direct calls, no JS policy)'
       expect(elapsed).toBeLessThan(200);
     });
   }
-  test('float parameters: the binding layer coerces deterministically, never traps', () => {
-    // wasm-bindgen converts JS numbers to u32 by truncation — it does NOT
-    // reject non-integers. Integer enforcement therefore lives in the JS
-    // policy layer (kdf-bounds.js, tested in kdf-bounds.test.js); here we pin
-    // the coercion behaviour so a change in the binding layer is visible.
-    const a = argon2id_derive(pw, salt16, 1024.9, 1, 1, 32);
-    const b = argon2id_derive(pw, salt16, 1024, 1, 1, 32);
-    expect(toHex(a)).toBe(toHex(b));
+  // Review K7: the f64 ABI validates every number in Rust BEFORE any u32
+  // conversion — no truncation, no mod-2^32 wrap. A huge or manipulated value
+  // can never degrade into a small (weaker) Argon2 cost.
+  describe('K7: non-exact numbers are rejected for every numeric parameter', () => {
+    const badNumbers = [
+      ['-1', -1],
+      ['1.5', 1.5],
+      ['NaN', NaN],
+      ['Infinity', Infinity],
+      ['-Infinity', -Infinity],
+      ['2^32', 2 ** 32],
+      ['2^32+1024 (wrap-to-1024 attack)', 2 ** 32 + 1024],
+      ['Number.MAX_SAFE_INTEGER', Number.MAX_SAFE_INTEGER],
+    ];
+    const good = { mKib: 19456, t: 2, p: 1, outLen: 32 };
+    const call = (over) => argon2id_derive(
+      pw, salt16,
+      over.mKib ?? good.mKib, over.t ?? good.t, over.p ?? good.p, over.outLen ?? good.outLen,
+    );
+    for (const param of ['mKib', 't', 'p', 'outLen']) {
+      for (const [label, value] of badNumbers) {
+        test(`${param} = ${label} → KDF_PARAMS_INVALID without running Argon2`, () => {
+          let err;
+          const t0 = performance.now();
+          try {
+            call({ [param]: value });
+          } catch (e) {
+            err = e;
+          }
+          const elapsed = performance.now() - t0;
+          expect(err).toBeDefined();
+          expect(err).not.toBeInstanceOf(WebAssembly.RuntimeError);
+          expect(String(err.message)).toMatch(/^KDF_PARAMS_INVALID/);
+          expect(elapsed).toBeLessThan(200); // rejected before any Argon2 work
+        });
+      }
+    }
+    test('a valid derivation still works right after the whole rejection table', () => {
+      const v = KDF_KAT_VECTORS[4];
+      expect(toHex(argon2id_derive(v.password, v.salt, v.mKib, v.t, v.p, v.outLen))).toBe(v.hex);
+    });
   });
-  test('numbers >= 2^32 wrap at the ABI boundary: integer enforcement is the JS policy layer', () => {
-    // Review K1: the u32 ABI reduces JS numbers mod 2^32, so a direct caller
-    // passing a huge mKib silently degrades to a small memory cost instead of
-    // being rejected. Pinned here; the sanctioned production path
-    // (kdf-bounds.js) rejects mKib > 262144 long before this boundary.
-    const wrapped = argon2id_derive(pw, salt16, 2 ** 32 + 1024, 1, 1, 32);
-    const small = argon2id_derive(pw, salt16, 1024, 1, 1, 32);
-    expect(toHex(wrapped)).toBe(toHex(small));
+
+  // Review K8: password and salt are type- and LENGTH-checked in Rust before
+  // any byte is copied into WASM memory (the glue no longer pre-copies:
+  // asserted by the anti-drift test below).
+  describe('K8: buffers are validated before any copy', () => {
+    const notBytes = [
+      ['string', 'password'],
+      ['null', null],
+      ['undefined', undefined],
+      ['plain array', [1, 2, 3, 4, 5, 6, 7, 8]],
+      ['ArrayBuffer', new ArrayBuffer(16)],
+      ['Uint16Array', new Uint16Array(8)],
+      ['DataView', new DataView(new ArrayBuffer(16))],
+      ['object', { length: 16 }],
+    ];
+    for (const [label, value] of notBytes) {
+      test(`password as ${label} → typed error, no Argon2`, () => {
+        let err;
+        try {
+          argon2id_derive(value, salt16, 19456, 2, 1, 32);
+        } catch (e) {
+          err = e;
+        }
+        expect(err).toBeDefined();
+        expect(err).not.toBeInstanceOf(WebAssembly.RuntimeError);
+        expect(String(err.message)).toMatch(/^KDF_PARAMS_INVALID/);
+      });
+      test(`salt as ${label} → typed error, no Argon2`, () => {
+        let err;
+        try {
+          argon2id_derive(pw, value, 19456, 2, 1, 32);
+        } catch (e) {
+          err = e;
+        }
+        expect(err).toBeDefined();
+        expect(String(err.message)).toMatch(/^KDF_PARAMS_INVALID/);
+      });
+    }
+    test('oversized buffers are rejected by length BEFORE the copy (fast even at 100 MiB)', () => {
+      const huge = new Uint8Array(100 * 1024 * 1024);
+      const t0 = performance.now();
+      let err;
+      try {
+        argon2id_derive(huge, salt16, 19456, 2, 1, 32);
+      } catch (e) {
+        err = e;
+      }
+      const elapsed = performance.now() - t0;
+      expect(String(err.message)).toMatch(/^KDF_PARAMS_INVALID/);
+      expect(elapsed).toBeLessThan(200);
+      let err2;
+      try {
+        argon2id_derive(pw, huge, 19456, 2, 1, 32);
+      } catch (e) {
+        err2 = e;
+      }
+      expect(String(err2.message)).toMatch(/^KDF_PARAMS_INVALID/);
+    });
+    test('every buffer error is followed by a working valid derivation (no poisoning, no partial output)', () => {
+      const v = KDF_KAT_VECTORS[4];
+      for (const bad of [null, 'x', new Uint8Array(0), new Uint8Array(4097)]) {
+        expect(() => argon2id_derive(bad, salt16, 19456, 2, 1, 32)).toThrow(/KDF_PARAMS_INVALID/);
+        expect(toHex(argon2id_derive(v.password, v.salt, v.mKib, v.t, v.p, v.outLen))).toBe(v.hex);
+      }
+      expect(() => argon2id_derive(pw, new Uint8Array(7), 19456, 2, 1, 32)).toThrow(/KDF_PARAMS_INVALID/);
+      expect(() => argon2id_derive(pw, new Uint8Array(65), 19456, 2, 1, 32)).toThrow(/KDF_PARAMS_INVALID/);
+      expect(toHex(argon2id_derive(v.password, v.salt, v.mKib, v.t, v.p, v.outLen))).toBe(v.hex);
+    });
+  });
+
+  test('anti-drift: the generated glue must not pre-copy buffers before Rust validation', () => {
+    // K8 regression guard: a future signature change back to &[u8] would make
+    // wasm-bindgen emit passArray8ToWasm0 in the public export again.
+    const glue = readFileSync(new URL('../../vendor/styx-kdf-wasm/pkg/styx_kdf_wasm.js', import.meta.url), 'utf8');
+    expect(glue).not.toContain('passArray8ToWasm0');
   });
   test('error messages never echo password or salt material', () => {
     const noisyPw = new TextEncoder().encode('SUPER-secret-PW-material');

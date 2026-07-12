@@ -65,7 +65,14 @@ test('KAT vectors are byte-identical on this browser', async ({ page }, info) =>
     } catch (e) {
       boundsError = { message: String(e.message), isTrap: e instanceof WebAssembly.RuntimeError };
     }
-    return { out, boundsError };
+    // K7 in the browser: 2^32+1024 must be rejected, never wrap into 1024.
+    let wrapError = null;
+    try {
+      mod.argon2id_derive(new Uint8Array([1]), new Uint8Array(16), 2 ** 32 + 1024, 1, 1, 32);
+    } catch (e) {
+      wrapError = { message: String(e.message), isTrap: e instanceof WebAssembly.RuntimeError };
+    }
+    return { out, boundsError, wrapError };
   }, { moduleUrl: `${base}/vendor/styx-kdf-wasm/pkg/styx_kdf_wasm.js`, cases: vectors });
 
   for (let i = 0; i < vectors.length; i += 1) {
@@ -75,6 +82,9 @@ test('KAT vectors are byte-identical on this browser', async ({ page }, info) =>
   expect(results.boundsError).not.toBeNull();
   expect(results.boundsError.isTrap).toBe(false);
   expect(results.boundsError.message).toMatch(/^KDF_PARAMS_INVALID/);
+  expect(results.wrapError).not.toBeNull();
+  expect(results.wrapError.isTrap).toBe(false);
+  expect(results.wrapError.message).toMatch(/^KDF_PARAMS_INVALID/);
   console.log(`[kdf-kat:${info.project.name}] ${results.out.length} vectors byte-identical; bounds typed-fail OK`);
   expect(toHex(new Uint8Array([255, 0]))).toBe('ff00'); // fixture helper sanity
 });
