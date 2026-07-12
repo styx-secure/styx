@@ -1,0 +1,142 @@
+name: Atomic task
+about: Create an executable human or agent task with a fail-closed contract
+title: "[Task] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        <!-- styx-task-contract:v1 -->
+        This form is the execution contract. Missing or ambiguous data keeps the task out of Ready.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Observable outcome
+      description: State the externally verifiable result, not the implementation method.
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: Explicitly list adjacent work that must not be performed.
+    validations:
+      required: true
+  - type: textarea
+    id: allowed_paths
+    attributes:
+      label: Allowed paths
+      description: Repository-root-relative glob patterns, one per line.
+      placeholder: |
+        AGENTS.md
+        .github/ISSUE_TEMPLATE/**
+    validations:
+      required: true
+  - type: textarea
+    id: forbidden_paths
+    attributes:
+      label: Forbidden paths
+      description: Patterns that always win over allowed paths, one per line. Use `NONE` only when justified.
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Native dependencies
+      description: Add GitHub blocked-by/blocking relations after creation; list expected issue numbers here for validation.
+      placeholder: "Blocked by #123, #124; blocks #130"
+    validations:
+      required: true
+  - type: textarea
+    id: frozen_interfaces
+    attributes:
+      label: Frozen shared interfaces
+      description: Name contracts that parallel tasks must not change, or state NONE.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Use verifiable checkboxes.
+      placeholder: |
+        - [ ] Required file exists and validates
+        - [ ] No product files changed
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Required tests
+      description: Exact commands and expected evidence. Use NONE only for a justified docs-only task.
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: rollback_class
+    attributes:
+      label: Rollback class
+      options:
+        - R0 - revert before any persisted dependency
+        - R1 - reversible configuration or additive change
+        - R2 - coordinated rollback required
+        - R3 - data migration or compatibility window
+        - R4 - irreversible without new authorization
+    validations:
+      required: true
+  - type: textarea
+    id: rollback
+    attributes:
+      label: Rollback procedure
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk
+      options: [Low, Medium, High, Crypto-critical]
+    validations:
+      required: true
+  - type: textarea
+    id: residual_risk
+    attributes:
+      label: Residual risks
+    validations:
+      required: true
+  - type: dropdown
+    id: executor_kind
+    attributes:
+      label: Executor kind
+      options: [Human, Agent, Pair]
+    validations:
+      required: true
+  - type: dropdown
+    id: persona
+    attributes:
+      label: Persona
+      options: [Implementer, Test author, Security reviewer, Spec reviewer, CI debugger, Maintainer]
+    validations:
+      required: true
+  - type: textarea
+    id: reviewers
+    attributes:
+      label: Independent reviewers
+      description: Identify required personas or humans. The implementer cannot review its own work.
+    validations:
+      required: true
+  - type: checkboxes
+    id: gates
+    attributes:
+      label: Human gates
+      options:
+        - label: Final human approval is required before Merge Queue entry.
+          required: true
+        - label: Security/crypto/persistence review is required.
+        - label: Architecture review is required.
+        - label: Manual device or environment test is required.
+  - type: input
+    id: base
+    attributes:
+      label: Base branch and exact SHA
+      placeholder: "main @ 0123456789abcdef..."
+    validations:
+      required: true
