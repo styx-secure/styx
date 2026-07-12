@@ -61,7 +61,21 @@ Usare esclusivamente le relazioni native GitHub `blocked by` / `blocking`.
 Riferimenti testuali nel corpo sono ridondanza validabile, non la fonte dello
 stato. Un task non passa a `Ready` finché ogni dipendenza nativa è chiusa.
 
-## 4. Ruleset `main`
+## 4. Prerequisiti amministrativi
+
+Prima di applicare il ruleset verificare manualmente:
+
+- `@maverde73` è riconosciuto da GitHub come CODEOWNER con accesso write o superiore;
+- l'editor CODEOWNERS non mostra owner sconosciuti o senza permessi sufficienti;
+- ogni identità App/agente è priva di permessi di merge, approval, amministrazione
+  repository e modifica ruleset;
+- nessuna identità App/agente è presente nelle bypass list;
+- la bypass list del ruleset è vuota.
+
+La configurazione dell'App/token è parte del gate amministrativo: la policy nel
+repository non sostituisce l'enforcement dei permessi.
+
+## 5. Ruleset `main`
 
 Applicare in due passaggi per non bloccare la stessa PR che introduce i gate.
 
@@ -74,33 +88,44 @@ Applicare in due passaggi per non bloccare la stessa PR che introduce i gate.
 - force-push e cancellazione vietati;
 - branch aggiornato prima del merge;
 - squash merge soltanto;
-- required checks:
-  - `Dart reference stack / Dart reference stack gate`;
-  - `styx-js web / styx-js web gate`;
-  - `WASM integrity / WASM integrity gate`;
-  - `CodeQL / Analyze (javascript-typescript)`;
+- required checks, selezionati dal picker dei check osservati e associati
+  all'app **GitHub Actions**:
+  - `Dart reference stack gate`;
+  - `styx-js web gate`;
+  - `WASM integrity gate`;
+  - `Analyze (javascript-typescript)`;
 - nessun bypass permanente.
 
-Verificare una PR di prova non-prodotto e un run `merge_group` prima del
-Passaggio B.
+I nomi sopra sono i context reali dei job. Il nome del workflow non deve essere
+premesso al context memorizzato nel ruleset.
+
+Verificare una PR di prova non-prodotto e un run `merge_group`: tutti e quattro i
+check devono risultare `Successful`, mai `Expected` o permanentemente pending,
+prima del Passaggio B.
 
 ### Passaggio B — enforcement umano
 
-- almeno una approvazione;
+Abilitare questo passaggio solo dopo l'onboarding di una seconda identità umana
+idonea sia ad approvare sia a essere CODEOWNER. Fino ad allora restano rinviati:
+
+- almeno una approvazione distinta;
 - dismiss stale approvals;
 - approvazione del push più recente da persona diversa dall'autore;
-- review CODEOWNERS richiesta;
-- Merge Queue richiesta;
+- review CODEOWNERS richiesta.
+
+Dopo il prerequisito:
+
+- rendere obbligatorie le quattro regole sopra;
+- richiedere la Merge Queue;
 - metodo della queue: squash;
 - concorrenza iniziale: 1 PR;
 - accodamento consentito solo da umano autorizzato.
 
-Con un solo maintainer, una PR umana richiede l'onboarding di un secondo reviewer
-prima di rendere obbligatoria l'approvazione distinta. Le PR prodotte da una
-GitHub App agente possono essere approvate dall'umano, ma l'App non deve avere
-permessi di merge o approval.
+Le PR prodotte da una GitHub App agente possono essere approvate dall'umano, ma
+l'App non deve avere permessi di merge o approval e non deve comparire in alcuna
+bypass list.
 
-## 5. Break-glass
+## 6. Break-glass
 
 Non configurare attori in bypass permanente. Un'emergenza richiede:
 
@@ -109,7 +134,7 @@ Non configurare attori in bypass permanente. Un'emergenza richiede:
 3. ripristino immediato delle regole;
 4. audit post-evento collegato all'Issue.
 
-## 6. Gantt
+## 7. Gantt
 
 Il Project è autorevole per stato e date. L'Excel viene rigenerato o aggiornato
 solo da dati Project/Issue. Un'importazione dall'Excel verso GitHub è vietata,
