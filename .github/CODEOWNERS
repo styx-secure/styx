@@ -1,0 +1,35 @@
+# CODEOWNERS routes review; it never grants an agent approval or merge authority.
+# Current human owner. Replace or extend with teams as maintainers are onboarded.
+* @maverde73
+
+# Governance and automation
+/AGENTS.md @maverde73
+/CLAUDE.md @maverde73
+/.github/ @maverde73
+/docs/governance/ @maverde73
+
+# Normative architecture and security documents
+/docs/architecture/ @maverde73
+/docs/security/ @maverde73
+/docs/superpowers/specs/ @maverde73
+/docs/superpowers/plans/ @maverde73
+
+# Active security-critical product boundaries
+/styx-js/src/crypto/ @maverde73
+/styx-js/src/storage/ @maverde73
+/styx-js/vendor/ @maverde73
+/styx-js/test/fixtures/ @maverde73
+
+# Dependency and build surfaces
+/package.json @maverde73
+/package-lock.json @maverde73
+/pubspec.yaml @maverde73
+/pubspec.lock @maverde73
+/**/package.json @maverde73
+/**/package-lock.json @maverde73
+/**/pubspec.yaml @maverde73
+/**/pubspec.lock @maverde73
+/**/Cargo.toml @maverde73
+/**/Cargo.lock @maverde73
+/**/go.mod @maverde73
+/**/go.sum @maverde73
