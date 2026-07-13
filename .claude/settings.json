@@ -26,7 +26,11 @@
       "Bash(wget *)",
       "Bash(ssh *)",
       "Bash(scp *)",
-      "Bash(sftp *)"
+      "Bash(sftp *)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.git-credentials)",
+      "Read(~/.netrc)"
     ]
   },
   "hooks": {
