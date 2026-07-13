@@ -8,7 +8,8 @@
 - it reads a local Git worktree and explicit base/head commits;
 - it writes one canonical JSON report outside the tested repository;
 - it performs no network request and no GitHub write;
-- it never changes the index, worktree, refs, configuration, workflows or repository settings.
+- it never changes the index, worktree, refs, configuration, workflows or repository settings;
+- it disables local bytecode-cache creation before importing its modules, so a self-hosted run does not create `__pycache__`.
 
 A `PASS` report is evidence, not merge authority. Human gates from `AGENTS.md` and the Issue remain authoritative.
 
@@ -87,7 +88,7 @@ The repository must satisfy all of the following:
 - index and worktree are clean, including untracked files;
 - the report output path is outside the tested repository.
 
-Changed entries are obtained without shell interpolation using the equivalent of:
+Git subprocesses are invoked without a shell. Repository-redirecting Git environment variables are removed, optional locks are disabled, and filesystem-monitor/untracked-cache refreshes are disabled for the read-only run. Changed entries are obtained using the equivalent of:
 
 ```shell
 git -c core.quotepath=false diff-tree \
@@ -126,7 +127,7 @@ python3 tools/agent-enforcement/scope_guard.py \
   --repo /absolute/path/to/styx
 ```
 
-The output file must be outside `--repo`. The tool writes through a temporary sibling file and atomically replaces the requested output.
+The output file must be outside `--repo`. The tool creates a unique temporary sibling file with exclusive creation and atomically replaces the requested output.
 
 ## Exit codes
 
