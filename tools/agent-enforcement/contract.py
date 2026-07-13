@@ -10,7 +10,11 @@ from typing import Iterable
 from model import CONTRACT_MARKER, Contract, ContractError, GitInputError, PathEvaluation
 
 HEADING_RE = re.compile(r"^##[ \t]+(.+?)[ \t]*$")
-FENCE_OPEN_RE = re.compile(r"^[ \t]*(`{3,})([^`]*)$")
+BACKTICK_FENCE_OPEN_RE = re.compile(r"^ {0,3}(`{3,})[ \t]*[^`]*$")
+TILDE_FENCE_OPEN_RE = re.compile(r"^ {0,3}(~{3,}).*$")
+INDENTED_CODE_RE = re.compile(r"^(?: {4}|\t)")
+
+MAX_PATH_SEGMENTS = 255
 
 REQUIRED_HEADINGS = (
     "Observable outcome",
@@ -29,27 +33,48 @@ REQUIRED_HEADINGS = (
 ALTERNATIVE_TEST_HEADINGS = ("Required tests", "Required verification")
 
 
+def _fence_open(logical: str) -> tuple[str, int] | None:
+    """Return (fence character, fence length) when the line opens a fenced block."""
+
+    match = BACKTICK_FENCE_OPEN_RE.match(logical)
+    if match:
+        return "`", len(match.group(1))
+    match = TILDE_FENCE_OPEN_RE.match(logical)
+    if match:
+        return "~", len(match.group(1))
+    return None
+
+
+def _fence_close(logical: str, char: str, size: int) -> bool:
+    return re.fullmatch(rf" {{0,3}}{re.escape(char)}{{{size},}}[ \t]*", logical) is not None
+
+
 def _scan_structure(body: str) -> tuple[list[tuple[str, int, int]], list[tuple[str, int]]]:
-    """Return headings and contract markers that occur outside fenced blocks."""
+    """Return headings and contract markers that occur outside code blocks.
+
+    Code blocks are backtick fences, tilde fences and lines indented with at
+    least four spaces or one tab. Structure inside them is never structural.
+    """
 
     headings: list[tuple[str, int, int]] = []
     markers: list[tuple[str, int]] = []
     offset = 0
-    fence: str | None = None
+    fence: tuple[str, int] | None = None
     for line_number, line in enumerate(body.splitlines(keepends=True), start=1):
         logical = line.rstrip("\r\n")
-        if fence is None:
-            fence_match = FENCE_OPEN_RE.match(logical)
-            if fence_match:
-                fence = fence_match.group(1)
+        if fence is not None:
+            if _fence_close(logical, *fence):
+                fence = None
+        elif not INDENTED_CODE_RE.match(logical):
+            opened = _fence_open(logical)
+            if opened:
+                fence = opened
             else:
                 heading_match = HEADING_RE.match(logical)
                 if heading_match:
                     headings.append((heading_match.group(1).strip(), offset, line_number))
                 if "styx-task-contract:" in logical:
                     markers.append((logical.strip(), line_number))
-        elif re.match(rf"^[ \t]*{re.escape(fence)}[ \t]*$", logical):
-            fence = None
         offset += len(line)
     if fence is not None:
         raise ContractError("unterminated fenced code block")
@@ -90,16 +115,18 @@ def _section_map(body: str) -> tuple[dict[str, str], list[tuple[str, int]], list
 def _extract_single_fenced_block(section: str, heading: str) -> list[str]:
     blocks: list[list[str]] = []
     current: list[str] | None = None
-    fence: str | None = None
+    fence: tuple[str, int] | None = None
     for line in section.splitlines():
         if current is None:
-            match = FENCE_OPEN_RE.match(line)
-            if match:
-                fence = match.group(1)
+            if INDENTED_CODE_RE.match(line):
+                continue
+            opened = _fence_open(line)
+            if opened:
+                fence = opened
                 current = []
         else:
             assert fence is not None
-            if re.match(rf"^[ \t]*{re.escape(fence)}[ \t]*$", line):
+            if _fence_close(line, *fence):
                 blocks.append(current)
                 current = None
                 fence = None
@@ -131,6 +158,8 @@ def validate_pattern(pattern: str) -> str:
         raise ContractError(f"negation and extglob are not allowed: {pattern!r}")
 
     segments = pattern.split("/")
+    if len(segments) > MAX_PATH_SEGMENTS:
+        raise ContractError(f"path pattern exceeds {MAX_PATH_SEGMENTS} segments")
     if any(segment in {"", ".", ".."} for segment in segments):
         raise ContractError(f"dot or empty path segment is not allowed: {pattern!r}")
     for segment in segments:
@@ -180,28 +209,29 @@ def parse_contract(body_bytes: bytes) -> Contract:
 
 
 def pattern_matches(pattern: str, path: str) -> bool:
+    """Iterative segment matcher: no recursion, O(pattern x path) worst case."""
+
     pattern_segments = pattern.split("/")
     path_segments = path.split("/")
-    memo: dict[tuple[int, int], bool] = {}
+    total = len(path_segments)
 
-    def visit(i: int, j: int) -> bool:
-        key = (i, j)
-        if key in memo:
-            return memo[key]
-        if i == len(pattern_segments):
-            result = j == len(path_segments)
-        elif pattern_segments[i] == "**":
-            result = visit(i + 1, j) or (j < len(path_segments) and visit(i, j + 1))
+    # suffix[j] answers: does pattern_segments[i:] match path_segments[j:]?
+    # Start from the empty pattern suffix and fold pattern segments backwards.
+    suffix = [j == total for j in range(total + 1)]
+    for segment in reversed(pattern_segments):
+        if segment == "**":
+            reachable = suffix[total]
+            folded = [False] * (total + 1)
+            folded[total] = reachable
+            for j in range(total - 1, -1, -1):
+                reachable = reachable or suffix[j]
+                folded[j] = reachable
         else:
-            result = (
-                j < len(path_segments)
-                and fnmatch.fnmatchcase(path_segments[j], pattern_segments[i])
-                and visit(i + 1, j + 1)
-            )
-        memo[key] = result
-        return result
-
-    return visit(0, 0)
+            folded = [False] * (total + 1)
+            for j in range(total):
+                folded[j] = suffix[j + 1] and fnmatch.fnmatchcase(path_segments[j], segment)
+        suffix = folded
+    return suffix[0]
 
 
 def validate_repo_path(path: str) -> str:
@@ -210,6 +240,8 @@ def validate_repo_path(path: str) -> str:
     if any(ord(char) < 32 or ord(char) == 127 for char in path):
         raise GitInputError("repository path contains control characters")
     segments = path.split("/")
+    if len(segments) > MAX_PATH_SEGMENTS:
+        raise GitInputError(f"repository path exceeds {MAX_PATH_SEGMENTS} segments")
     if any(segment in {"", ".", ".."} for segment in segments):
         raise GitInputError(f"repository path is not normalized: {path!r}")
     if str(PurePosixPath(path)) != path:
