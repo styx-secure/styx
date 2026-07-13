@@ -23,6 +23,12 @@ DANGEROUS_BASH = (
 )
 REDIRECT_RE = re.compile(r"(?:^|[\s;|&])(?:>|>>|2>|2>>|tee(?:\s+-a)?)\s*([\"']?)(/[^\s\"']+)\1")
 COPY_TARGET_RE = re.compile(r"(?:^|[;&|]\s*|\s)(?:cp|mv|install)\b[^\n;|&]*\s([\"']?)(/[^\s\"']+)\1")
+SENSITIVE_REFERENCE_RE = re.compile(
+    r"(?:~|\$HOME|\$\{HOME\}|\$XDG_CONFIG_HOME|\$\{XDG_CONFIG_HOME\})/"
+    r"(?:\.config/gh|\.ssh|\.git-credentials|\.netrc)"
+    r"|(?:^|[\s/])(?:\.git-credentials|\.netrc)(?:$|[\s/])",
+    re.I,
+)
 
 
 class HookError(Exception):
@@ -122,6 +128,20 @@ def _bash_absolute_write_targets(command: str) -> list[Path]:
     return targets
 
 
+def _references_sensitive_path(command: str) -> bool:
+    if SENSITIVE_REFERENCE_RE.search(command):
+        return True
+    home = Path.home().resolve(strict=False)
+    config = Path(os.environ.get("XDG_CONFIG_HOME", str(home / ".config"))).resolve(strict=False)
+    sensitive = (
+        config / "gh",
+        home / ".ssh",
+        home / ".git-credentials",
+        home / ".netrc",
+    )
+    return any(str(path) in command for path in sensitive)
+
+
 def _safe_before_state(command: str) -> bool:
     if any(token in command for token in ("\n", ";", "&&", "||", "|", "`", "$(", ">", "<")):
         return False
@@ -169,6 +189,8 @@ def inspect_pre_tool(payload: Mapping[str, Any], state: Mapping[str, Any] | None
     command = tool_input.get("command")
     if not isinstance(command, str) or not command.strip():
         return "Bash command is missing"
+    if _references_sensitive_path(command):
+        return "commands may not read credential or authentication files"
     for pattern in DANGEROUS_BASH:
         if pattern.search(command):
             return "command is prohibited by the Styx agent contract"
