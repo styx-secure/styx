@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+import sys
+
+# Set before any further import so the suite does not write bytecode caches
+# for the modules it loads (the scoped .gitignore covers the test modules
+# themselves, which the interpreter caches before this line runs).
+sys.dont_write_bytecode = True
+
 import hashlib
 import importlib.util
 import json
@@ -7,7 +14,6 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 import unittest
 
