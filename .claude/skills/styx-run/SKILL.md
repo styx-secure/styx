@@ -12,6 +12,7 @@ Execute exactly one issue-bound Styx task. The invocation argument is `$ARGUMENT
 2. Read `AGENTS.md` and `CLAUDE.md`. They remain authoritative.
 3. From the repository root, derive the numeric Issue exactly once and run:
    ```bash
+   set -eu
    ISSUE_REF='$ARGUMENTS'
    case "$ISSUE_REF" in
      \#*) ;;
@@ -26,7 +27,7 @@ Execute exactly one issue-bound Styx task. The invocation argument is `$ARGUMENT
    python3 tools/agent-runner/styx-agent verify --execution-id "issue-${ISSUE_NUMBER}-verify"
    python3 tools/agent-runner/styx-agent run --issue "$ISSUE_NUMBER" --execution-id "issue-${ISSUE_NUMBER}"
    ```
-   A status `READY_FOR_IMPLEMENTATION` with exit `0` means the local phase is prepared, not complete.
+   Execute the block as one shell command and stop immediately on any non-zero exit. A status `READY_FOR_IMPLEMENTATION` with exit `0` means the local phase is prepared, not complete.
 4. Read the generated execution manifest and authoritative Issue. Work only in the manifest worktree and branch. Do not modify the source checkout.
 5. Implement only the allowed paths. Forbidden paths win. Do not broaden scope, alter dependencies, install system software, invoke `sudo`, or perform any GitHub write.
 6. Run the exact tests from the manifest while developing. Commit small coherent changes with English messages containing `Refs #<issue>`.
