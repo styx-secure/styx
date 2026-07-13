@@ -92,7 +92,10 @@ class NoGoFixTests(unittest.TestCase):
             self.assertIn(str(home / ".config/gh"), command)
             self.assertIn(str(home / ".ssh"), command)
             self.assertIn(str(home / ".netrc"), command)
-            self.assertEqual(command[-4:], ["/bin/bash", "--noprofile", "--norc", "-lc"] + ["python3 -m unittest"][-0:])
+            self.assertEqual(
+                command[-5:],
+                ["/bin/bash", "--noprofile", "--norc", "-lc", "python3 -m unittest"],
+            )
 
     def test_settings_are_noninteractive_and_runner_state_is_not_task_writable(self):
         settings = json.loads((ROOT / ".claude/settings.json").read_text(encoding="utf-8"))
