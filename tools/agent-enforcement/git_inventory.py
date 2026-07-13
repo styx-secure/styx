@@ -22,15 +22,46 @@ def run_git(
     text: bool = False,
     check: bool = True,
 ) -> subprocess.CompletedProcess[bytes] | subprocess.CompletedProcess[str]:
+    environment = os.environ.copy()
+    for key in (
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_COMMON_DIR",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    ):
+        environment.pop(key, None)
+    for key in tuple(environment):
+        if key == "GIT_CONFIG_COUNT" or key.startswith("GIT_CONFIG_KEY_") or key.startswith("GIT_CONFIG_VALUE_"):
+            environment.pop(key, None)
+    environment.update(
+        {
+            "GIT_OPTIONAL_LOCKS": "0",
+            "GIT_PAGER": "cat",
+            "GIT_TERMINAL_PROMPT": "0",
+            "LC_ALL": "C",
+            "LANG": "C",
+        }
+    )
     try:
         return subprocess.run(
-            ["git", "-c", "core.quotepath=false", *args],
+            [
+                "git",
+                "-c",
+                "core.quotepath=false",
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "core.untrackedCache=false",
+                *args,
+            ],
             cwd=repo,
             check=check,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=text,
-            env={**os.environ, "LC_ALL": "C", "LANG": "C"},
+            env=environment,
         )
     except FileNotFoundError as exc:
         raise GitInputError("git executable was not found") from exc
