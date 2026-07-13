@@ -106,7 +106,10 @@ class NoGoFixTests(unittest.TestCase):
         )
         self.assertTrue(settings["sandbox"]["autoAllowBashIfSandboxed"])
         self.assertFalse(settings["sandbox"]["allowUnsandboxedCommands"])
-        self.assertIn("python3 tools/agent-runner/styx-agent run *", settings["sandbox"]["excludedCommands"])
+        self.assertIn(
+            "python3 tools/agent-runner/styx-agent run --issue * --execution-id issue-*",
+            settings["sandbox"]["excludedCommands"],
+        )
         allow_write = set(settings["sandbox"]["filesystem"]["allowWrite"])
         deny_write = set(settings["sandbox"]["filesystem"]["denyWrite"])
         self.assertEqual(
