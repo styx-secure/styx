@@ -61,6 +61,19 @@
         ]
       }
     ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/styx_guard.py\" post",
+            "timeout": 30,
+            "statusMessage": "Attesting Styx blocked or terminal state"
+          }
+        ]
+      }
+    ],
     "PostToolBatch": [
       {
         "hooks": [
