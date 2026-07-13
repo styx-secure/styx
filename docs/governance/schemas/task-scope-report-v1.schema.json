@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/styx-secure/styx/blob/main/docs/governance/schemas/task-scope-report-v1.schema.json",
+  "title": "Styx task scope report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tool_version",
+    "issue_number",
+    "execution_id",
+    "base_sha",
+    "head_sha",
+    "issue_body_sha256",
+    "contract_version",
+    "allowed_patterns",
+    "forbidden_patterns",
+    "changed_entries",
+    "diagnostics",
+    "generation",
+    "verdict"
+  ],
+  "properties": {
+    "schema": {
+      "const": "styx.task-scope-report/v1"
+    },
+    "tool_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "issue_number": {
+      "type": "integer"
+    },
+    "execution_id": {
+      "type": "string"
+    },
+    "base_sha": {
+      "type": "string"
+    },
+    "head_sha": {
+      "type": "string"
+    },
+    "issue_body_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "contract_version": {
+      "oneOf": [
+        {
+          "const": "v1"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "allowed_patterns": {
+      "$ref": "#/$defs/patternList"
+    },
+    "forbidden_patterns": {
+      "$ref": "#/$defs/patternList"
+    },
+    "changed_entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/changedEntry"
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/diagnostic"
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonical_json",
+        "timestamp_omitted"
+      ],
+      "properties": {
+        "canonical_json": {
+          "const": "RFC8259-sort-keys-utf8-lf"
+        },
+        "timestamp_omitted": {
+          "const": true
+        }
+      }
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "ERROR"
+      ]
+    }
+  },
+  "$defs": {
+    "patternList": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "nullablePath": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "pathEvaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "allowed_matches",
+        "forbidden_matches",
+        "violations"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allowed_matches": {
+          "$ref": "#/$defs/patternList"
+        },
+        "forbidden_matches": {
+          "$ref": "#/$defs/patternList"
+        },
+        "violations": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "PATH_NOT_ALLOWED",
+              "PATH_FORBIDDEN"
+            ]
+          }
+        }
+      }
+    },
+    "changedEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "score",
+        "old_path",
+        "new_path",
+        "paths"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "A",
+            "M",
+            "D",
+            "R",
+            "C"
+          ]
+        },
+        "score": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "old_path": {
+          "$ref": "#/$defs/nullablePath"
+        },
+        "new_path": {
+          "$ref": "#/$defs/nullablePath"
+        },
+        "paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/pathEvaluation"
+          }
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "severity"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[EP]_[A-Z0-9_]+$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "enum": [
+            "error"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
