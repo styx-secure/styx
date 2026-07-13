@@ -1,19 +1,25 @@
 {
   "disableBypassPermissionsMode": "disable",
   "permissions": {
+    "defaultMode": "dontAsk",
+    "allow": [
+      "Bash(*)",
+      "Edit(~/.local/state/styx-agent-runner/worktrees/**)",
+      "Write(~/.local/state/styx-agent-runner/worktrees/**)",
+      "MultiEdit(~/.local/state/styx-agent-runner/worktrees/**)",
+      "NotebookEdit(~/.local/state/styx-agent-runner/worktrees/**)"
+    ],
     "deny": [
       "Bash(git push *)",
-      "Bash(gh pr create *)",
-      "Bash(gh pr merge *)",
-      "Bash(gh pr ready *)",
-      "Bash(gh pr review *)",
-      "Bash(gh pr edit *)",
-      "Bash(gh pr comment *)",
-      "Bash(gh issue create *)",
-      "Bash(gh issue edit *)",
-      "Bash(gh issue comment *)",
-      "Bash(gh issue close *)",
-      "Bash(gh issue reopen *)",
+      "Bash(gh *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(sftp *)",
+      "Bash(nc *)",
+      "Bash(ncat *)",
+      "Bash(socat *)",
       "Bash(sudo *)",
       "Bash(apt *)",
       "Bash(apt-get *)",
@@ -21,16 +27,11 @@
       "Bash(snap *)",
       "Bash(systemctl *)",
       "Bash(service *)",
-      "Bash(gh *)",
-      "Bash(curl *)",
-      "Bash(wget *)",
-      "Bash(ssh *)",
-      "Bash(scp *)",
-      "Bash(sftp *)",
       "Read(~/.config/gh/**)",
       "Read(~/.ssh/**)",
       "Read(~/.git-credentials)",
-      "Read(~/.netrc)"
+      "Read(~/.netrc)",
+      "Read(~/.local/state/styx-agent-runner-trust/**)"
     ]
   },
   "hooks": {
@@ -41,8 +42,33 @@
           {
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/styx_guard.py\" pre",
-            "timeout": 15,
+            "timeout": 20,
             "statusMessage": "Validating Styx task boundary"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/styx_guard.py\" post",
+            "timeout": 30,
+            "statusMessage": "Attesting Styx state and scope"
+          }
+        ]
+      }
+    ],
+    "PostToolBatch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/styx_guard.py\" batch",
+            "timeout": 30,
+            "statusMessage": "Checking the real Styx worktree diff"
           }
         ]
       }
@@ -53,8 +79,8 @@
           {
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/styx_guard.py\" stop",
-            "timeout": 15,
-            "statusMessage": "Verifying Styx completion evidence"
+            "timeout": 30,
+            "statusMessage": "Verifying trusted Styx completion evidence"
           }
         ]
       }
@@ -63,41 +89,42 @@
   "sandbox": {
     "enabled": true,
     "failIfUnavailable": true,
-    "autoAllowBashIfSandboxed": false,
+    "autoAllowBashIfSandboxed": true,
     "allowUnsandboxedCommands": false,
+    "excludedCommands": [
+      "python3 tools/agent-runner/styx-agent run *"
+    ],
     "filesystem": {
-      "allowWrite": [
-        "~/.local/share/styx-agent-runner",
-        "~/.cache/styx-agent-runner",
+      "allowRead": [
         "~/.local/state/styx-agent-runner"
       ],
+      "allowWrite": [
+        "~/.local/state/styx-agent-runner/worktrees",
+        "~/.local/state/styx-agent-runner/git"
+      ],
+      "denyRead": [
+        "~/.config/gh",
+        "~/.ssh",
+        "~/.git-credentials",
+        "~/.netrc",
+        "~/.local/state/styx-agent-runner-trust"
+      ],
       "denyWrite": [
-        "."
+        ".",
+        "~/.local/state/styx-agent-runner/active.json",
+        "~/.local/state/styx-agent-runner/runs",
+        "~/.local/state/styx-agent-runner/evidence",
+        "~/.local/state/styx-agent-runner/guard-worktrees",
+        "~/.local/state/styx-agent-runner-trust"
       ]
     },
-    "credentials": {
-      "envVars": [
-        {
-          "name": "GITHUB_TOKEN",
-          "mode": "deny"
-        },
-        {
-          "name": "GH_TOKEN",
-          "mode": "deny"
-        },
-        {
-          "name": "ANTHROPIC_API_KEY",
-          "mode": "deny"
-        },
-        {
-          "name": "CLAUDE_API_KEY",
-          "mode": "deny"
-        },
-        {
-          "name": "OPENAI_API_KEY",
-          "mode": "deny"
-        }
-      ]
+    "network": {
+      "allowedDomains": [],
+      "deniedDomains": [
+        "*"
+      ],
+      "allowLocalBinding": false,
+      "allowUnixSockets": []
     }
   }
 }
