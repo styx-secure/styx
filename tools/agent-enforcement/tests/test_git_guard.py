@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 import shutil
+import subprocess
 import unittest
 
-from support import GuardIntegrationCase, Repo, contract_body, run
+from support import GuardIntegrationCase, Repo, TOOL, contract_body, run
 
 
 class GitGuardTests(GuardIntegrationCase):
@@ -130,6 +131,54 @@ class GitGuardTests(GuardIntegrationCase):
         self.assertEqual(3, result.returncode)
         self.assertIsNone(report)
         self.assertFalse(destination.exists())
+
+    def test_self_host_execution_does_not_create_bytecode_or_dirty_repo(self) -> None:
+        self.repo = Repo(self.root / "self-host-repo")
+        run(["git", "commit", "--allow-empty", "-qm", "empty base"], self.repo.root)
+        base = run(["git", "rev-parse", "HEAD"], self.repo.root).stdout.strip()
+
+        destination = self.repo.root / "tools" / "agent-enforcement"
+        destination.mkdir(parents=True)
+        for name in ("model.py", "contract.py", "git_inventory.py", "report.py", "scope_guard.py"):
+            shutil.copy2(TOOL.parent / name, destination / name)
+        head = self.repo.commit("implementation")
+
+        issue = self.root / "self-host-issue.md"
+        report_path = self.root / "self-host-report.json"
+        issue.write_text(contract_body(), encoding="utf-8")
+        result = subprocess.run(
+            [
+                "python3",
+                str(destination / "scope_guard.py"),
+                "--issue-number",
+                "46",
+                "--issue-body-file",
+                str(issue),
+                "--base-sha",
+                base,
+                "--head-sha",
+                head,
+                "--execution-id",
+                "self-host-regression",
+                "--output",
+                str(report_path),
+                "--repo",
+                str(self.repo.root),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertFalse((destination / "__pycache__").exists())
+        self.assertEqual(
+            b"",
+            run(
+                ["git", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+                self.repo.root,
+                text=False,
+            ).stdout,
+        )
 
 
 if __name__ == "__main__":
