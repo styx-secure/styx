@@ -23,6 +23,20 @@ class ContractParserTests(unittest.TestCase):
             with self.subTest(name=name), self.assertRaises(scope_guard.ContractError):
                 scope_guard.parse_contract(body.encode("utf-8"))
 
+    def test_markers_and_headings_inside_fences_are_not_structural(self) -> None:
+        body = contract_body().replace(
+            "Test contract.",
+            "Test contract.\n\n```text\n## Base\n<!-- styx-task-contract:v1 -->\n```",
+        )
+        parsed = scope_guard.parse_contract(body.encode("utf-8"))
+        self.assertEqual("v1", parsed.version)
+
+        only_fenced_marker = body.replace(
+            "<!-- styx-task-contract:v1 -->\n\n", "", 1
+        )
+        with self.assertRaises(scope_guard.ContractError):
+            scope_guard.parse_contract(only_fenced_marker.encode("utf-8"))
+
     def test_required_verification_is_accepted(self) -> None:
         parsed = scope_guard.parse_contract(
             contract_body(test_heading="Required verification").encode("utf-8")
