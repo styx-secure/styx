@@ -17,9 +17,11 @@ sys.dont_write_bytecode = True
 
 from contract import ContractError, evaluate_path, parse_contract, pattern_matches, validate_pattern
 from git_inventory import (
+    SHA_RE,
     content_diagnostics,
     inventory_changes,
     output_is_inside_repository,
+    repository_toplevel,
     run_git,
     verify_repository,
 )
@@ -52,8 +54,21 @@ __all__ = [
 ]
 
 
+class GuardArgumentParser(argparse.ArgumentParser):
+    """Argument parser whose usage errors exit with the documented ERROR code.
+
+    ``argparse`` exits with status 2 by default, which would collide with the
+    documented policy-FAIL exit code.
+    """
+
+    def error(self, message: str) -> None:  # type: ignore[override]
+        self.print_usage(sys.stderr)
+        print(f"{self.prog}: error: {message}", file=sys.stderr)
+        raise SystemExit(EXIT_ERROR)
+
+
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+    parser = GuardArgumentParser(
         description="Parse a Styx task contract, compare it with a Git diff, and emit canonical JSON evidence."
     )
     parser.add_argument("--issue-number", type=int, required=True)
@@ -79,12 +94,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     repo = args.repo.resolve()
     output_path = args.output.resolve(strict=False)
-    if output_is_inside_repository(repo, output_path):
+    # Guard the output location against the declared --repo directory AND the
+    # real worktree root containing it: when --repo points at a subdirectory of
+    # a repository, the report must still never land inside that repository.
+    protected_roots = [repo]
+    toplevel = repository_toplevel(repo)
+    if toplevel is not None:
+        protected_roots.append(toplevel)
+    if any(output_is_inside_repository(root, output_path) for root in protected_roots):
         print("scope_guard: output file must be outside the tested repository", file=sys.stderr)
         return EXIT_ERROR
 
-    issue_body_bytes = b""
-    issue_hash = hashlib.sha256(issue_body_bytes).hexdigest()
+    issue_hash: str | None = None
     contract: Contract | None = None
     entries: tuple[ChangedEntry, ...] = ()
     evaluations: dict[str, PathEvaluation] = {}
@@ -132,19 +153,23 @@ def main(argv: Sequence[str] | None = None) -> int:
             verdict, exit_code = "FAIL", EXIT_FAIL
         else:
             verdict, exit_code = "PASS", EXIT_PASS
-    except (OSError, GuardError, UnicodeError) as exc:
+    except (OSError, GuardError, UnicodeError, RecursionError) as exc:
         if isinstance(exc, GuardError):
             code, message, path = exc.code, exc.message, exc.path
+        elif isinstance(exc, RecursionError):
+            code, message, path = "E_INTERNAL", "internal recursion limit exceeded", None
         else:
             code, message, path = "E_IO", str(exc), None
         diagnostics.append(Diagnostic(code, message, "error", path))
         verdict, exit_code = "ERROR", EXIT_ERROR
 
+    # Fields that echo CLI input are reported as null when the input failed
+    # validation, so every written report satisfies the published schema.
     report = build_report(
-        issue_number=args.issue_number,
+        issue_number=args.issue_number if args.issue_number >= 1 else None,
         execution_id=args.execution_id,
-        base_sha=args.base_sha,
-        head_sha=args.head_sha,
+        base_sha=args.base_sha if SHA_RE.fullmatch(args.base_sha) else None,
+        head_sha=args.head_sha if SHA_RE.fullmatch(args.head_sha) else None,
         issue_body_sha256=issue_hash,
         contract=contract,
         entries=entries,

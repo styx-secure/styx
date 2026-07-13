@@ -27,11 +27,11 @@ def canonical_json_bytes(report: dict[str, object]) -> bytes:
 
 def build_report(
     *,
-    issue_number: int,
+    issue_number: int | None,
     execution_id: str,
-    base_sha: str,
-    head_sha: str,
-    issue_body_sha256: str,
+    base_sha: str | None,
+    head_sha: str | None,
+    issue_body_sha256: str | None,
     contract: Contract | None,
     entries: Sequence[ChangedEntry],
     evaluations: dict[str, PathEvaluation],

@@ -37,6 +37,10 @@ def run_git(
             environment.pop(key, None)
     environment.update(
         {
+            # Neutralize global/system configuration so host-level settings
+            # cannot alter diff, status or object inspection semantics.
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_SYSTEM": os.devnull,
             "GIT_OPTIONAL_LOCKS": "0",
             "GIT_PAGER": "cat",
             "GIT_TERMINAL_PROMPT": "0",
@@ -68,6 +72,29 @@ def run_git(
     except subprocess.CalledProcessError as exc:
         stderr = exc.stderr.decode("utf-8", "replace") if isinstance(exc.stderr, bytes) else exc.stderr
         raise GitInputError(stderr.strip() or f"git exited with status {exc.returncode}") from exc
+
+
+def literal_pathspec(path: str) -> str:
+    """Return a pathspec that treats every character literally.
+
+    Without the ``:(literal)`` magic a repository file whose name starts with
+    ``:`` would be parsed as pathspec magic, and glob characters would expand.
+    """
+
+    return ":(literal)" + path
+
+
+def repository_toplevel(repo: Path) -> Path | None:
+    """Return the resolved worktree root containing ``repo``, if any."""
+
+    try:
+        result = run_git(repo, ["rev-parse", "--show-toplevel"], text=True, check=False)
+    except GitInputError:
+        return None
+    if result.returncode != 0:
+        return None
+    top = result.stdout.strip()
+    return Path(top).resolve() if top else None
 
 
 def output_is_inside_repository(repo: Path, output_path: Path) -> bool:
@@ -176,7 +203,7 @@ def inventory_changes(repo: Path, base_sha: str, head_sha: str) -> tuple[Changed
 
 
 def tree_object(repo: Path, commit_sha: str, path: str) -> TreeObject | None:
-    raw = run_git(repo, ["ls-tree", "-z", commit_sha, "--", path]).stdout
+    raw = run_git(repo, ["ls-tree", "-z", commit_sha, "--", literal_pathspec(path)]).stdout
     if not raw:
         return None
     records = [record for record in raw.split(b"\0") if record]
@@ -202,7 +229,7 @@ def _entry_is_binary(repo: Path, base_sha: str, head_sha: str, entry: ChangedEnt
             base_sha,
             head_sha,
             "--",
-            *entry.checked_paths(),
+            *(literal_pathspec(path) for path in entry.checked_paths()),
         ],
     ).stdout
     return raw.startswith(b"-\t-\t") or b"\0-\t-\t" in raw

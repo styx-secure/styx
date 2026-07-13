@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import shutil
 import subprocess
 import unittest
+from unittest import mock
 
-from support import GuardIntegrationCase, Repo, TOOL, contract_body, run
+from support import GuardIntegrationCase, Repo, TOOL, contract_body, run, scope_guard
+
+import git_inventory
 
 
 class GitGuardTests(GuardIntegrationCase):
@@ -131,6 +135,173 @@ class GitGuardTests(GuardIntegrationCase):
         self.assertEqual(3, result.returncode)
         self.assertIsNone(report)
         self.assertFalse(destination.exists())
+
+    def test_cli_usage_errors_exit_with_documented_error_code(self) -> None:
+        cases = (
+            [],
+            ["--issue-number", "not-an-integer"],
+            ["--unknown-flag"],
+        )
+        for extra in cases:
+            with self.subTest(extra=extra):
+                result = subprocess.run(
+                    ["python3", str(TOOL), *extra],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                self.assertEqual(3, result.returncode, result.stderr)
+                self.assertIn("usage:", result.stderr)
+
+        result = subprocess.run(
+            ["python3", str(TOOL), "--help"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(0, result.returncode)
+
+    def test_missing_commit_object_is_error(self) -> None:
+        _, head = self.simple_history()
+        absent = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+        result, report, _ = self.invoke(absent, head)
+        self.assert_verdict(result, report, "ERROR", 3)
+        self.assertIn("E_GIT_INPUT", {item["code"] for item in report["diagnostics"]})
+        self.assertEqual(absent, report["base_sha"])
+
+    def test_invalid_execution_ids_are_errors(self) -> None:
+        base, head = self.simple_history()
+        for index, execution_id in enumerate(("", " padded ", "control\x01char")):
+            with self.subTest(execution_id=execution_id):
+                result, report, _ = self.invoke(
+                    base,
+                    head,
+                    execution_id=execution_id,
+                    output=self.root / f"execution-{index}.json",
+                )
+                self.assert_verdict(result, report, "ERROR", 3)
+
+    def test_shallow_repository_is_error(self) -> None:
+        base, head = self.simple_history()
+        self.issue.write_text(contract_body(), encoding="utf-8")
+        clone_root = self.root / "shallow-clone"
+        run(
+            ["git", "clone", "-q", "--depth", "1", f"file://{self.repo.root}", str(clone_root)],
+            self.root,
+        )
+        result = subprocess.run(
+            [
+                "python3",
+                str(TOOL),
+                "--issue-number",
+                "46",
+                "--issue-body-file",
+                str(self.issue),
+                "--base-sha",
+                base,
+                "--head-sha",
+                head,
+                "--execution-id",
+                "shallow-regression",
+                "--output",
+                str(self.root / "shallow.json"),
+                "--repo",
+                str(clone_root),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(3, result.returncode, result.stderr)
+
+    def test_concurrent_mutation_is_repository_changed_error(self) -> None:
+        base, head = self.simple_history()
+        self.issue.write_text(contract_body(), encoding="utf-8")
+        intruder = self.repo.root / "intruder.txt"
+        original_inventory = scope_guard.inventory_changes
+
+        def mutating_inventory(repo, base_sha, head_sha):
+            intruder.write_text("raced\n", encoding="utf-8")
+            return original_inventory(repo, base_sha, head_sha)
+
+        argv = [
+            "--issue-number",
+            "46",
+            "--issue-body-file",
+            str(self.issue),
+            "--base-sha",
+            base,
+            "--head-sha",
+            head,
+            "--execution-id",
+            "race-regression",
+            "--output",
+            str(self.output),
+            "--repo",
+            str(self.repo.root),
+        ]
+        try:
+            with mock.patch.object(scope_guard, "inventory_changes", mutating_inventory):
+                exit_code = scope_guard.main(argv)
+        finally:
+            intruder.unlink()
+        self.assertEqual(3, exit_code)
+        report = json.loads(self.output.read_text(encoding="utf-8"))
+        self.assertEqual("ERROR", report["verdict"])
+        self.assertIn("E_REPOSITORY_CHANGED", {item["code"] for item in report["diagnostics"]})
+
+    def test_output_inside_real_repository_is_refused_for_subdirectory_repo(self) -> None:
+        base, head = self.simple_history()
+        subdirectory = self.repo.root / "tools"
+        destination = self.repo.root / "smuggled-report.json"
+        self.issue.write_text(contract_body(), encoding="utf-8")
+        result = subprocess.run(
+            [
+                "python3",
+                str(TOOL),
+                "--issue-number",
+                "46",
+                "--issue-body-file",
+                str(self.issue),
+                "--base-sha",
+                base,
+                "--head-sha",
+                head,
+                "--execution-id",
+                "subdir-output-regression",
+                "--output",
+                str(destination),
+                "--repo",
+                str(subdirectory),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(3, result.returncode, result.stderr)
+        self.assertIn("outside the tested repository", result.stderr)
+        self.assertFalse(destination.exists())
+
+    def test_leading_colon_file_name_uses_literal_pathspec(self) -> None:
+        self.repo.write(":odd.txt", "base\n")
+        base = self.repo.commit("base")
+        self.repo.write(":odd.txt", "base\nhead\n")
+        head = self.repo.commit("head")
+        body = contract_body(allowed=("tools/agent-enforcement/**", ":odd.txt"))
+        result, report, _ = self.invoke(base, head, body=body)
+        self.assert_verdict(result, report, "PASS", 0)
+        self.assertEqual(":odd.txt", report["changed_entries"][0]["paths"][0]["path"])
+
+    def test_base_equal_head_is_empty_diff(self) -> None:
+        _, head = self.simple_history()
+        result, report, _ = self.invoke(head, head)
+        self.assert_verdict(result, report, "PASS", 0)
+        self.assertEqual([], report["changed_entries"])
+
+    def test_adversarial_deep_diff_path_is_deterministic_error(self) -> None:
+        deep = b"a/" * 5000 + b"a"
+        with self.assertRaises(git_inventory.GitInputError):
+            git_inventory.parse_changed_entries(b"M\0" + deep + b"\0")
 
     def test_self_host_execution_does_not_create_bytecode_or_dirty_repo(self) -> None:
         self.repo = Repo(self.root / "self-host-repo")

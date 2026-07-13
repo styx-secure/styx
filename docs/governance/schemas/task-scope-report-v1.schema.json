@@ -29,20 +29,35 @@
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
     },
     "issue_number": {
-      "type": "integer"
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "execution_id": {
       "type": "string"
     },
     "base_sha": {
-      "type": "string"
+      "$ref": "#/$defs/nullableCommitSha"
     },
     "head_sha": {
-      "type": "string"
+      "$ref": "#/$defs/nullableCommitSha"
     },
     "issue_body_sha256": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{64}$"
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "contract_version": {
       "oneOf": [
@@ -97,6 +112,17 @@
     }
   },
   "$defs": {
+    "nullableCommitSha": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "patternList": {
       "type": "array",
       "uniqueItems": true,
