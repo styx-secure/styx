@@ -25,9 +25,6 @@ jobs:
     name: Agent scope evidence (observation)
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      STYX_REPORT_PATH: ${{ runner.temp }}/styx-task-scope-report.json
-      STYX_RESULT_PATH: ${{ runner.temp }}/styx-scope-exit-code.txt
 
     steps:
       - name: Checkout trusted base commit
@@ -43,6 +40,8 @@ jobs:
       - name: Run trusted-base scope observation
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          STYX_REPORT_PATH: ${{ runner.temp }}/styx-task-scope-report.json
+          STYX_RESULT_PATH: ${{ runner.temp }}/styx-scope-exit-code.txt
         shell: bash
         run: |
           set +e
@@ -78,6 +77,9 @@ jobs:
 
       - name: Write safe job summary
         if: always()
+        env:
+          STYX_REPORT_PATH: ${{ runner.temp }}/styx-task-scope-report.json
+          STYX_RESULT_PATH: ${{ runner.temp }}/styx-scope-exit-code.txt
         shell: bash
         run: |
           set +e
@@ -104,6 +106,8 @@ jobs:
 
       - name: Conclude observation
         if: always()
+        env:
+          STYX_RESULT_PATH: ${{ runner.temp }}/styx-scope-exit-code.txt
         shell: bash
         run: |
           if [[ ! -f "$STYX_RESULT_PATH" ]]; then
