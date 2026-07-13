@@ -19,8 +19,13 @@ The equivalent local commands are:
 python3 tools/agent-runner/styx-agent check
 python3 tools/agent-runner/styx-agent provision
 python3 tools/agent-runner/styx-agent verify
-python3 tools/agent-runner/styx-agent run --issue 50
+python3 tools/agent-runner/styx-agent run --issue 50 --execution-id issue-50
 ```
+
+The project defaults Claude Code to `dontAsk` mode and pre-approves only the
+bounded local tool classes. The normal task loop therefore does not pause for
+permission prompts. Hooks and the operating-system sandbox still deny operations
+outside the Issue contract.
 
 ## Supported environment
 
@@ -29,13 +34,26 @@ path and detected version for every required tool. Baseline requirements are:
 
 - Python 3.11 or newer;
 - Git 2.39 or newer;
-- GitHub CLI 2.x with read authentication;
 - Claude Code 2.1.195 or newer;
+- bubblewrap 0.8 or newer;
 - task-specific tools inferred from the Issue's exact test commands.
 
-Missing or incompatible system tools produce `BLOCKED_ADMIN_PROVISIONING`.
-The runner never invokes `sudo`, APT, Snap, systemd, a remote shell installer, or
-a system daemon.
+GitHub CLI and GitHub credentials are not required. Public Issue and dependency
+reads use a standard-library HTTPS client with a fixed `api.github.com` endpoint,
+GET only, no redirects, no token, strict response validation, and a one-MiB size
+limit.
+
+Missing or incompatible system tools produce `BLOCKED_ADMIN_PROVISIONING`. The
+runner never invokes `sudo`, APT, Snap, systemd, a remote shell installer, or a
+system daemon. On Ubuntu, installation of bubblewrap is an operator action, for
+example:
+
+```bash
+sudo apt install bubblewrap
+```
+
+Run that command outside Claude, review the package transaction, then rerun the
+Styx command.
 
 ## User-space provisioning
 
@@ -57,16 +75,18 @@ STYX_AGENT_DATA_DIR
 STYX_AGENT_CACHE_DIR
 STYX_AGENT_STATE_DIR
 STYX_AGENT_WORKTREE_ROOT
+STYX_AGENT_TRUST_DIR
 ```
 
-Each value is treated as a parent directory; the runner appends
-`styx-agent-runner` to the first three.
+The first three values are treated as parent directories and receive the
+`styx-agent-runner` suffix. `STYX_AGENT_TRUST_DIR` is a separate trusted hook
+location and must never be placed inside a task-writable directory.
 
 ## Issue contract
 
 `run --issue N` accepts one positive integer only. It retrieves exactly
-`styx-secure/styx#N` through `gh api --method GET`, preserves the Issue body as
-UTF-8 bytes, and invokes the existing `styx-task-contract:v1` parser.
+`styx-secure/styx#N` through the anonymous public reader, preserves the Issue body
+as UTF-8 bytes, and invokes the existing `styx-task-contract:v1` parser.
 
 The Base section must contain exactly:
 
@@ -77,19 +97,13 @@ The Base section must contain exactly:
 Only dependencies declared with this exact syntax are blocking:
 
 ```text
-- Required closed Issue: #46.
-```
-
-The period is optional only when it is outside the strict declaration line; the
-recommended declaration is without punctuation:
-
-```text
 - Required closed Issue: #46
 ```
 
 Required tests come from the single fenced block under `Required tests` or
-`Required verification`. Commands containing system administration or GitHub
-write operations are rejected before execution.
+`Required verification`. Commands containing system administration, GitHub
+operations, direct network clients, or credential paths are rejected before
+execution.
 
 ## Lifecycle
 
@@ -97,8 +111,8 @@ On the first valid `run`:
 
 1. the source checkout must be clean, point to `styx-secure/styx`, and have
    `HEAD` and local `main` at the Issue's exact base SHA;
-2. declared dependencies must be closed Issues;
-3. the environment must verify;
+2. the Issue and declared dependencies are read anonymously and validated;
+3. the environment, including bubblewrap, must verify;
 4. the base objects are copied into a runner-owned bare Git store under the XDG
    state directory; its default remote is removed;
 5. a linked worktree and branch are created from that private store under the
@@ -106,20 +120,32 @@ On the first valid `run`:
    read-only;
 6. the branch is named `task/<issue>-<slug>`;
 7. an execution manifest and status report are written;
-8. terminal status is `READY_FOR_IMPLEMENTATION`, exit `0`.
+8. the PostToolUse hook writes a trusted hash attestation outside all task-write
+   paths;
+9. terminal status is `READY_FOR_IMPLEMENTATION`, exit `0`.
 
-Claude then works only inside that worktree. After the implementation is clean
-and committed, the same `run` command:
+Claude then works only inside that worktree. The Claude Bash sandbox has no
+network and may write only the task worktree and the private Git object store
+needed for commits. It cannot write `active.json`, runner reports, scope evidence,
+temporary guard worktrees, or hook attestations.
 
-1. re-fetches the Issue and rejects contract drift;
+After the implementation is clean and committed, the same `run` command:
+
+1. re-fetches the Issue anonymously and rejects contract drift;
 2. verifies the task branch descends from the original base;
-3. runs every exact required test;
-4. creates a temporary clean trusted-base worktree from the private object
-   store and invokes the trusted scope guard there, while inspecting the task
-   head only as Git object data;
-5. removes that temporary guard worktree;
-6. requires verdict `PASS`;
-7. emits `BLOCKED_BROKER_UNAVAILABLE`, exit `2`.
+3. runs every exact required test inside a nested bubblewrap sandbox;
+4. gives that test sandbox no network, a read-only root filesystem, a writable
+   task worktree, ephemeral caches, and masked GitHub/SSH/netrc/Git credential
+   locations;
+5. creates a temporary clean trusted-base worktree from the private object store
+   and invokes the trusted scope guard there, while inspecting the task head only
+   as Git object data;
+6. removes that temporary guard worktree;
+7. requires every test and the scope verdict to be `PASS`;
+8. emits `BLOCKED_BROKER_UNAVAILABLE`, exit `2`;
+9. the PostToolUseFailure hook, which handles the expected non-zero handoff exit,
+   independently hashes and attests the final state, report, scope report, branch,
+   HEAD, clean status, and changed paths.
 
 That final exit `2` is the expected successful local handoff. A future restricted
 broker must perform only:
@@ -148,6 +174,24 @@ directory. Reports contain hashes of test stdout/stderr, not their raw content.
 Known token formats, authorization headers, userinfo URLs, and secret-valued
 environment variables are redacted from error text.
 
+Trusted hook attestations use:
+
+```text
+styx.agent-hook-attestation/v1
+```
+
+and are stored by default at:
+
+```text
+$HOME/.local/state/styx-agent-runner-trust/active-attestation.json
+```
+
+The task sandbox cannot read or write this location. A trusted hook compares the
+attestation against the real regular files and Git state before each mutating
+tool call, after each tool call or batch, and at Stop. Symlinked evidence,
+duplicate JSON keys, path escape, state/report changes, dirty final worktrees,
+non-PASS tests, non-PASS scope evidence, or a different HEAD fail closed.
+
 Exit classes:
 
 - `0`: the currently authorized local phase completed;
@@ -156,44 +200,49 @@ Exit classes:
 
 ## Claude Code controls
 
-`.claude/settings.json` does not grant any new permission. It disables bypass
-permissions mode, makes the source checkout read-only in the sandbox, allows
-writes only in the runner-owned XDG directories, denies direct GitHub/network
-clients and system administration, denies direct Claude Read access to common
-GitHub/SSH credential files, and registers standard-library hooks.
+`.claude/settings.json` disables bypass mode and selects `dontAsk` so the bounded
+workflow is non-interactive. `Bash` and worktree file tools are pre-approved, but
+they remain constrained by deny rules, standard-library hooks, and the
+operating-system sandbox.
 
-The PreToolUse hook rejects:
+The settings enforce:
 
-- writes without an active issue-bound task;
-- file-tool writes outside the active worktree;
-- paths outside the Issue allowlist or inside its forbidden list;
-- Git network/ref-administration operations such as push, fetch, remotes,
-  worktrees, submodules and update-ref;
-- every direct `gh` invocation; the runner performs the only permitted read-only
-  GitHub request internally;
-- direct curl, wget and SSH-family clients;
-- common GitHub CLI, SSH, netrc and Git credential-file paths;
-- approval, Ready, auto-merge, Merge Queue, and merge operations;
-- `sudo`, package-manager and service-manager commands;
-- obvious absolute shell write targets outside the worktree and runner-owned XDG
-  directories.
+- source checkout read-only;
+- task writes only to the dedicated worktree and its private Git store;
+- runner state, reports, evidence, guard worktrees, and trust attestations not
+  task-writable;
+- task network denied;
+- direct reads of GitHub CLI, SSH, netrc, Git credential files, and the trust
+  directory denied;
+- direct `gh`, curl, wget, SSH-family tools, socket tools, Git publication/ref
+  administration, `sudo`, package managers, and service managers denied;
+- only the exact `styx-agent run --issue N --execution-id issue-N` family excluded
+  from the Claude Bash sandbox, with the PreToolUse hook accepting one exact
+  unchained command from the project root.
 
-The Stop hook blocks completion while an active task lacks committed work,
-mandatory PASS tests, or PASS scope evidence. Hooks fail closed on malformed
-state. They reduce accidental misuse but are not a security boundary against a
-compromised host. This increment also does not claim hostile task-code
-containment: exact test commands run on the same developer host inside Claude's
-configured sandbox, so only human-approved Issue contracts and repositories may
-be executed.
+The PreToolUse hook rejects malformed or chained runner commands, another Issue,
+writes without an active task, file-tool writes outside the worktree, forbidden
+paths, dangerous commands, source-checkout commands, and any continuation after
+state or evidence no longer matches its trusted attestation.
+
+PostToolUse and PostToolBatch inspect the real Git diff plus untracked files, not
+shell syntax. An out-of-scope path or symlink blocks the next agent step. The Stop
+hook accepts completion only at the final broker handoff with a matching trusted
+attestation and freshly verified Git/evidence state.
+
+Hooks run with the user's privileges and are therefore trusted code, not task
+code. They reduce accidental or model-driven misuse but are not a security
+boundary against a compromised operating system or human account.
 
 ## Headless use
 
-A non-interactive caller may invoke Claude with the project skill, but must
-preconfigure only the minimum permissions needed for local work. Do not use
-`--dangerously-skip-permissions` on the developer host.
+The project setting uses `permissions.defaultMode: dontAsk`, so the same skill can
+run non-interactively without `--dangerously-skip-permissions`. Do not enable
+bypass mode on the developer host.
 
-The caller should interpret `BLOCKED_BROKER_UNAVAILABLE` as the expected local
-completion boundary and surface the status-report path to the operator.
+A caller should interpret `BLOCKED_BROKER_UNAVAILABLE` as the expected local
+completion boundary and surface the status-report path, task branch, HEAD, test
+results, and scope verdict to the operator.
 
 ## Cleanup
 
@@ -216,9 +265,10 @@ git --git-dir="$STATE_ROOT/git/styx.git" branch -d task/N-slug
 Runner-owned state may then be removed selectively:
 
 ```bash
-rm -rf "$XDG_STATE_HOME/styx-agent-runner"
-rm -rf "$XDG_CACHE_HOME/styx-agent-runner"
-rm -rf "$XDG_DATA_HOME/styx-agent-runner"
+rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/styx-agent-runner"
+rm -rf "${XDG_CACHE_HOME:-$HOME/.cache}/styx-agent-runner"
+rm -rf "${XDG_DATA_HOME:-$HOME/.local/share}/styx-agent-runner"
+rm -rf "$HOME/.local/state/styx-agent-runner-trust"
 ```
 
 Never delete an unrelated worktree, branch, XDG directory, credential store, or
@@ -228,8 +278,8 @@ user shell file.
 
 The runner cannot satisfy:
 
-- authentication setup;
-- administrator/system provisioning;
+- administrator/system provisioning such as installing bubblewrap;
+- private-repository authentication or an unavailable public GitHub API;
 - contract or scope expansion;
 - settings/hook security acceptance;
 - Ready-for-review authorization;
