@@ -1,0 +1,3 @@
+#!/usr/bin/env python3
+from styx_agent import main
+raise SystemExit(main())
