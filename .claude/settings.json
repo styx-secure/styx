@@ -1,0 +1,194 @@
+{
+  "disableBypassPermissionsMode": "disable",
+  "permissions": {
+    "defaultMode": "dontAsk",
+    "additionalDirectories": [
+      "~/.local/state/styx-agent-runner/worktrees"
+    ],
+    "allow": [
+      "Bash(*)",
+      "Edit(~/.local/state/styx-agent-runner/worktrees/**)",
+      "Write(~/.local/state/styx-agent-runner/worktrees/**)",
+      "MultiEdit(~/.local/state/styx-agent-runner/worktrees/**)",
+      "NotebookEdit(~/.local/state/styx-agent-runner/worktrees/**)"
+    ],
+    "deny": [
+      "Bash(git push *)",
+      "Bash(gh *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(sftp *)",
+      "Bash(nc *)",
+      "Bash(ncat *)",
+      "Bash(socat *)",
+      "Bash(find *)",
+      "Bash(sed *)",
+      "Bash(sudo *)",
+      "Bash(apt *)",
+      "Bash(apt-get *)",
+      "Bash(dpkg *)",
+      "Bash(snap *)",
+      "Bash(systemctl *)",
+      "Bash(service *)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.config/git/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.docker/config.json)",
+      "Read(~/.git-credentials)",
+      "Read(~/.gitconfig)",
+      "Read(~/.netrc)",
+      "Read(~/.local/state/styx-agent-runner-trust/**)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/read_only_guard.py\"",
+            "timeout": 20,
+            "statusMessage": "Rejecting ambiguous read-only commands"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/worktree_integrity.py\" pre",
+            "timeout": 20,
+            "statusMessage": "Validating private Styx worktree metadata"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/styx_guard.py\" pre",
+            "timeout": 20,
+            "statusMessage": "Validating Styx task boundary"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/worktree_integrity.py\" post",
+            "timeout": 20,
+            "statusMessage": "Rechecking private Styx worktree metadata"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/styx_guard.py\" post",
+            "timeout": 30,
+            "statusMessage": "Attesting Styx state and scope"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/worktree_integrity.py\" post",
+            "timeout": 20,
+            "statusMessage": "Rechecking private Styx worktree metadata"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/styx_guard.py\" post",
+            "timeout": 30,
+            "statusMessage": "Attesting Styx blocked or terminal state"
+          }
+        ]
+      }
+    ],
+    "PostToolBatch": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/worktree_integrity.py\" batch",
+            "timeout": 20,
+            "statusMessage": "Rechecking private Styx worktree metadata"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/styx_guard.py\" batch",
+            "timeout": 30,
+            "statusMessage": "Checking the real Styx worktree diff"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/worktree_integrity.py\" stop",
+            "timeout": 20,
+            "statusMessage": "Validating final private Styx worktree metadata"
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/styx_guard.py\" stop",
+            "timeout": 30,
+            "statusMessage": "Verifying trusted Styx completion evidence"
+          }
+        ]
+      }
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "autoAllowBashIfSandboxed": true,
+    "allowUnsandboxedCommands": false,
+    "excludedCommands": [
+      "python3 tools/agent-runner/styx-agent run --issue * --execution-id issue-*"
+    ],
+    "filesystem": {
+      "allowRead": [
+        "~/.local/state/styx-agent-runner"
+      ],
+      "allowWrite": [
+        "~/.local/state/styx-agent-runner/worktrees",
+        "~/.local/state/styx-agent-runner/git"
+      ],
+      "denyRead": [
+        "~/.config/gh",
+        "~/.config/git",
+        "~/.ssh",
+        "~/.aws",
+        "~/.gnupg",
+        "~/.docker/config.json",
+        "~/.git-credentials",
+        "~/.gitconfig",
+        "~/.netrc",
+        "~/.local/state/styx-agent-runner-trust"
+      ],
+      "denyWrite": [
+        ".",
+        "~/.local/state/styx-agent-runner/active.json",
+        "~/.local/state/styx-agent-runner/runs",
+        "~/.local/state/styx-agent-runner/evidence",
+        "~/.local/state/styx-agent-runner/guard-worktrees",
+        "~/.local/state/styx-agent-runner-trust"
+      ]
+    },
+    "network": {
+      "allowedDomains": [],
+      "deniedDomains": [
+        "*"
+      ],
+      "allowLocalBinding": false,
+      "allowUnixSockets": []
+    }
+  }
+}
