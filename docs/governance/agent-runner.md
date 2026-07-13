@@ -159,7 +159,8 @@ Exit classes:
 `.claude/settings.json` does not grant any new permission. It disables bypass
 permissions mode, makes the source checkout read-only in the sandbox, allows
 writes only in the runner-owned XDG directories, denies direct GitHub/network
-clients and system administration, and registers standard-library hooks.
+clients and system administration, denies direct Claude Read access to common
+GitHub/SSH credential files, and registers standard-library hooks.
 
 The PreToolUse hook rejects:
 
@@ -171,6 +172,7 @@ The PreToolUse hook rejects:
 - every direct `gh` invocation; the runner performs the only permitted read-only
   GitHub request internally;
 - direct curl, wget and SSH-family clients;
+- common GitHub CLI, SSH, netrc and Git credential-file paths;
 - approval, Ready, auto-merge, Merge Queue, and merge operations;
 - `sudo`, package-manager and service-manager commands;
 - obvious absolute shell write targets outside the worktree and runner-owned XDG
@@ -179,7 +181,10 @@ The PreToolUse hook rejects:
 The Stop hook blocks completion while an active task lacks committed work,
 mandatory PASS tests, or PASS scope evidence. Hooks fail closed on malformed
 state. They reduce accidental misuse but are not a security boundary against a
-compromised host.
+compromised host. This increment also does not claim hostile task-code
+containment: exact test commands run on the same developer host inside Claude's
+configured sandbox, so only human-approved Issue contracts and repositories may
+be executed.
 
 ## Headless use
 
