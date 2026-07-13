@@ -29,15 +29,35 @@ REQUIRED_HEADINGS = (
 ALTERNATIVE_TEST_HEADINGS = ("Required tests", "Required verification")
 
 
-def _section_map(body: str) -> tuple[dict[str, str], list[tuple[str, int]]]:
+def _scan_structure(body: str) -> tuple[list[tuple[str, int, int]], list[tuple[str, int]]]:
+    """Return headings and contract markers that occur outside fenced blocks."""
+
     headings: list[tuple[str, int, int]] = []
+    markers: list[tuple[str, int]] = []
     offset = 0
+    fence: str | None = None
     for line_number, line in enumerate(body.splitlines(keepends=True), start=1):
         logical = line.rstrip("\r\n")
-        match = HEADING_RE.match(logical)
-        if match:
-            headings.append((match.group(1).strip(), offset, line_number))
+        if fence is None:
+            fence_match = FENCE_OPEN_RE.match(logical)
+            if fence_match:
+                fence = fence_match.group(1)
+            else:
+                heading_match = HEADING_RE.match(logical)
+                if heading_match:
+                    headings.append((heading_match.group(1).strip(), offset, line_number))
+                if "styx-task-contract:" in logical:
+                    markers.append((logical.strip(), line_number))
+        elif re.match(rf"^[ \t]*{re.escape(fence)}[ \t]*$", logical):
+            fence = None
         offset += len(line)
+    if fence is not None:
+        raise ContractError("unterminated fenced code block")
+    return headings, markers
+
+
+def _section_map(body: str) -> tuple[dict[str, str], list[tuple[str, int]], list[tuple[str, int]]]:
+    headings, markers = _scan_structure(body)
 
     occurrences: dict[str, list[tuple[int, int]]] = {}
     for index, (name, start, _) in enumerate(headings):
@@ -62,9 +82,9 @@ def _section_map(body: str) -> tuple[dict[str, str], list[tuple[str, int]]]:
 
     sections: dict[str, str] = {}
     for name in (*REQUIRED_HEADINGS, chosen):
-        start, end = occurrences[name][0]
-        sections[name] = body[start:end]
-    return sections, [(name, line) for name, _, line in headings]
+        section_start, section_end = occurrences[name][0]
+        sections[name] = body[section_start:section_end]
+    return sections, [(name, line) for name, _, line in headings], markers
 
 
 def _extract_single_fenced_block(section: str, heading: str) -> list[str]:
@@ -127,13 +147,13 @@ def parse_contract(body_bytes: bytes) -> Contract:
     except UnicodeDecodeError as exc:
         raise ContractError("Issue body is not valid UTF-8") from exc
 
-    if body.count(CONTRACT_MARKER) != 1:
-        raise ContractError("contract must contain exactly one v1 marker")
-    sections, headings = _section_map(body)
+    sections, headings, markers = _section_map(body)
+    if len(markers) != 1 or markers[0][0] != CONTRACT_MARKER:
+        raise ContractError("contract must contain exactly one v1 marker outside fenced blocks")
     first_required_line = min(
         line for name, line in headings if name in REQUIRED_HEADINGS or name in ALTERNATIVE_TEST_HEADINGS
     )
-    marker_line = body[: body.index(CONTRACT_MARKER)].count("\n") + 1
+    marker_line = markers[0][1]
     if marker_line >= first_required_line:
         raise ContractError("contract marker must appear before the first required section")
 
