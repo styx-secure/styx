@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import isolated_git
+import security_hardening
 import styx_agent
 
 isolated_git.apply(styx_agent)
+security_hardening.apply(styx_agent)
 raise SystemExit(styx_agent.main())
