@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/styx-secure/styx/blob/main/docs/governance/schemas/test-failure-v1.schema.json",
+  "title": "Styx automatic test failure v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "test_id",
+    "category",
+    "expected_outcome",
+    "observed_class",
+    "verdict",
+    "reproduction",
+    "stdout_sha256",
+    "stderr_sha256",
+    "stdout_bytes",
+    "stderr_bytes",
+    "output_truncated"
+  ],
+  "properties": {
+    "schema": {
+      "const": "styx.test-failure/v1"
+    },
+    "test_id": {
+      "$ref": "#/$defs/testId"
+    },
+    "category": {
+      "enum": [
+        "MANDATORY",
+        "REGRESSION",
+        "GENERATED",
+        "ADVERSARIAL",
+        "STATIC",
+        "ROLLBACK",
+        "PLAN"
+      ]
+    },
+    "expected_outcome": {
+      "const": "PASS"
+    },
+    "observed_class": {
+      "enum": [
+        "nonzero_exit",
+        "timeout",
+        "output_limit_exceeded",
+        "missing_tool",
+        "rejected_command",
+        "plan_invalidated",
+        "internal_error"
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "FAIL",
+        "ERROR"
+      ]
+    },
+    "reproduction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "plan_sha256",
+        "check_id",
+        "command"
+      ],
+      "properties": {
+        "plan_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "check_id": {
+          "$ref": "#/$defs/testId"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "stdout_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "stderr_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "stdout_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "stderr_bytes": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "output_truncated": {
+      "type": "boolean"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "testId": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{64}|plan)$"
+    }
+  }
+}

@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/styx-secure/styx/blob/main/docs/governance/schemas/test-plan-v1.schema.json",
+  "title": "Styx automatic test plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tool_version",
+    "issue_number",
+    "execution_id",
+    "base_sha",
+    "head_sha",
+    "issue_body_sha256",
+    "scope_report_sha256",
+    "checks",
+    "rejected_proposals",
+    "generation"
+  ],
+  "properties": {
+    "schema": {
+      "const": "styx.test-plan/v1"
+    },
+    "tool_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "issue_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "execution_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_sha": {
+      "$ref": "#/$defs/commitSha"
+    },
+    "head_sha": {
+      "$ref": "#/$defs/commitSha"
+    },
+    "issue_body_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "scope_report_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/check"
+      }
+    },
+    "rejected_proposals": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/rejectedProposal"
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonical_json",
+        "timestamp_omitted"
+      ],
+      "properties": {
+        "canonical_json": {
+          "const": "RFC8259-sort-keys-utf8-lf"
+        },
+        "timestamp_omitted": {
+          "const": true
+        }
+      }
+    }
+  },
+  "$defs": {
+    "commitSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "origin",
+        "purpose",
+        "execution_class",
+        "head_sha",
+        "command",
+        "cwd",
+        "timeout_seconds",
+        "max_output_bytes",
+        "network",
+        "isolation",
+        "discard_stdout"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "origin": {
+          "enum": [
+            "issue-contract",
+            "regression-discovery",
+            "planner-builtin",
+            "generated-proposal"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "execution_class": {
+          "enum": [
+            "MANDATORY",
+            "REGRESSION",
+            "GENERATED",
+            "ADVERSARIAL",
+            "STATIC",
+            "ROLLBACK"
+          ]
+        },
+        "head_sha": {
+          "$ref": "#/$defs/commitSha"
+        },
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "cwd": {
+          "const": "."
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1800
+        },
+        "max_output_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10485760
+        },
+        "network": {
+          "const": "denied"
+        },
+        "isolation": {
+          "enum": [
+            "worktree",
+            "archive"
+          ]
+        },
+        "discard_stdout": {
+          "type": "boolean"
+        }
+      }
+    },
+    "rejectedProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "index",
+        "reason"
+      ],
+      "properties": {
+        "index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}
