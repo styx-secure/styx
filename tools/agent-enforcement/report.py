@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import tempfile
 from typing import Sequence
 
 from model import ChangedEntry, Contract, Diagnostic, PathEvaluation, SCHEMA_ID, TOOL_VERSION
@@ -64,9 +65,19 @@ def build_report(
 
 def write_report(output_path: Path, report: dict[str, object]) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = output_path.with_name(output_path.name + ".tmp")
-    with temp_path.open("wb") as handle:
-        handle.write(canonical_json_bytes(report))
-        handle.flush()
-        os.fsync(handle.fileno())
-    os.replace(temp_path, output_path)
+    descriptor, raw_temp_path = tempfile.mkstemp(
+        prefix=f".{output_path.name}.", suffix=".tmp", dir=output_path.parent
+    )
+    temp_path = Path(raw_temp_path)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(canonical_json_bytes(report))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, output_path)
+    except BaseException:
+        try:
+            temp_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
