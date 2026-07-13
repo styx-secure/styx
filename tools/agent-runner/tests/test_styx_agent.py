@@ -3,14 +3,11 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import types
 import unittest
-from unittest import mock
 
 HERE = Path(__file__).resolve()
 RUNNER_DIR = HERE.parents[1]
@@ -308,6 +305,23 @@ class HookTests(unittest.TestCase):
             self.assertIsNone(hook.inspect_stop(state))
             report.write_text(json.dumps({"tests": [], "scope_guard": None}), encoding="utf-8")
             self.assertIsNotNone(hook.inspect_stop(state))
+            report.write_text(json.dumps({
+                "tests": [42],
+                "scope_guard": {"verdict": "PASS", "exit_code": 0},
+            }), encoding="utf-8")
+            self.assertIsNotNone(hook.inspect_stop(state))
+
+    def test_settings_deny_source_writes_and_permission_bypass(self):
+        settings_path = HERE.parents[3] / ".claude" / "settings.json"
+        settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        self.assertEqual(settings["disableBypassPermissionsMode"], "disable")
+        filesystem = settings["sandbox"]["filesystem"]
+        self.assertIn(".", filesystem["denyWrite"])
+        self.assertTrue(settings["sandbox"]["failIfUnavailable"])
+        deny = settings["permissions"]["deny"]
+        self.assertIn("Bash(git push *)", deny)
+        self.assertIn("Bash(gh pr merge *)", deny)
+        self.assertIn("Bash(sudo *)", deny)
 
 
 if __name__ == "__main__":
