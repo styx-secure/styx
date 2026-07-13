@@ -226,7 +226,7 @@ def inspect_stop(state: Mapping[str, Any] | None) -> str | None:
             return "final runner report is missing or malformed"
         tests = report.get("tests")
         scope = report.get("scope_guard")
-        if not isinstance(tests, list) or not tests or any(item.get("state") != "PASS" for item in tests if isinstance(item, dict)):
+        if not isinstance(tests, list) or not tests or any(not isinstance(item, dict) or item.get("state") != "PASS" for item in tests):
             return "mandatory test evidence is absent or not PASS"
         if not isinstance(scope, dict) or scope.get("verdict") != "PASS" or scope.get("exit_code") != 0:
             return "scope-guard evidence is absent or not PASS"
