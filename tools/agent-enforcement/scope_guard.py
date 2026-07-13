@@ -75,6 +75,13 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument("--issue-body-file", type=Path, required=True)
     parser.add_argument("--base-sha", required=True)
     parser.add_argument("--head-sha", required=True)
+    parser.add_argument(
+        "--worktree-sha",
+        help=(
+            "full SHA expected at worktree HEAD; defaults to --head-sha. "
+            "CI observation may set this to the trusted base SHA while inspecting the head as object data"
+        ),
+    )
     parser.add_argument("--execution-id", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repo", type=Path, default=Path.cwd())
@@ -111,13 +118,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     evaluations: dict[str, PathEvaluation] = {}
     diagnostics: list[Diagnostic] = []
     initial_status: bytes | None = None
+    expected_worktree_sha = args.worktree_sha or args.head_sha
 
     try:
         _validate_scalar_inputs(args)
         issue_body_bytes = args.issue_body_file.read_bytes()
         issue_hash = hashlib.sha256(issue_body_bytes).hexdigest()
         contract = parse_contract(issue_body_bytes)
-        initial_status = verify_repository(repo, args.base_sha, args.head_sha)
+        initial_status = verify_repository(
+            repo,
+            args.base_sha,
+            args.head_sha,
+            worktree_sha=expected_worktree_sha,
+        )
         entries = inventory_changes(repo, args.base_sha, args.head_sha)
 
         for entry in entries:
@@ -138,7 +151,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         final_status = run_git(
             repo, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]
         ).stdout
-        if final_head != args.head_sha or final_status != initial_status:
+        if final_head != expected_worktree_sha or final_status != initial_status:
             diagnostics.append(
                 Diagnostic(
                     "E_REPOSITORY_CHANGED",

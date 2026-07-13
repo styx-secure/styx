@@ -105,9 +105,28 @@ def output_is_inside_repository(repo: Path, output_path: Path) -> bool:
     return True
 
 
-def verify_repository(repo: Path, base_sha: str, head_sha: str) -> bytes:
-    if not SHA_RE.fullmatch(base_sha) or not SHA_RE.fullmatch(head_sha):
-        raise GitInputError("base and head must be lowercase full 40-hex commit SHAs")
+def verify_repository(
+    repo: Path,
+    base_sha: str,
+    head_sha: str,
+    *,
+    worktree_sha: str | None = None,
+) -> bytes:
+    """Verify immutable inputs and a clean checkout used only for object inspection.
+
+    By default the worktree must be checked out at ``head_sha``. Trusted-base CI
+    may set ``worktree_sha`` to the event base SHA, allowing the guard to inspect
+    the pull-request head strictly as Git object data without checking it out.
+    """
+
+    expected_worktree_sha = head_sha if worktree_sha is None else worktree_sha
+    for label, sha in (
+        ("base", base_sha),
+        ("head", head_sha),
+        ("worktree", expected_worktree_sha),
+    ):
+        if not SHA_RE.fullmatch(sha):
+            raise GitInputError(f"{label} must be a lowercase full 40-hex commit SHA")
     repo = repo.resolve()
     if not repo.is_dir():
         raise RepositoryStateError(f"repository path does not exist: {repo}")
@@ -117,14 +136,22 @@ def verify_repository(repo: Path, base_sha: str, head_sha: str) -> bytes:
     if run_git(repo, ["rev-parse", "--is-shallow-repository"], text=True).stdout.strip() == "true":
         raise RepositoryStateError("shallow repositories are not accepted in v1")
 
-    for label, sha in (("base", base_sha), ("head", head_sha)):
+    checked_objects: set[str] = set()
+    for label, sha in (
+        ("base", base_sha),
+        ("head", head_sha),
+        ("worktree", expected_worktree_sha),
+    ):
+        if sha in checked_objects:
+            continue
+        checked_objects.add(sha)
         result = run_git(repo, ["cat-file", "-e", f"{sha}^{{commit}}"], check=False)
         if result.returncode != 0:
             raise GitInputError(f"{label} SHA does not resolve to a local commit object")
     if run_git(repo, ["merge-base", "--is-ancestor", base_sha, head_sha], check=False).returncode != 0:
         raise GitInputError("base SHA is not an ancestor of head SHA")
-    if run_git(repo, ["rev-parse", "HEAD"], text=True).stdout.strip() != head_sha:
-        raise RepositoryStateError("worktree HEAD does not equal the declared head SHA")
+    if run_git(repo, ["rev-parse", "HEAD"], text=True).stdout.strip() != expected_worktree_sha:
+        raise RepositoryStateError("worktree HEAD does not equal the declared worktree SHA")
 
     status = run_git(repo, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).stdout
     if status:
