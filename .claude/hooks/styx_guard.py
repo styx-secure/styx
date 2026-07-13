@@ -16,11 +16,10 @@ from typing import Any, Mapping
 WRITE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 DANGEROUS_BASH = (
     re.compile(r"(^|[;&|()])\s*(sudo|apt|apt-get|dpkg|snap|systemctl|service)\b", re.I),
-    re.compile(r"\bgit\s+push\b", re.I),
-    re.compile(r"\bgh\s+(?:pr|issue|release|repo)\s+(?:create|edit|comment|close|reopen|delete|merge|ready|review)\b", re.I),
-    re.compile(r"\bgh\s+api\b.*(?:--method|-X)\s+(?!GET\b)", re.I),
-    re.compile(r"\bgh\s+api\s+graphql\b.*\bmutation\b", re.I),
-    re.compile(r"(curl|wget)[^|;\n]*\|\s*(?:ba)?sh\b", re.I),
+    re.compile(r"(^|[;&|()])\s*(curl|wget|ssh|scp|sftp)\b", re.I),
+    re.compile(r"\bgh\b", re.I),
+    re.compile(r"\bgit\s+(?:push|send-pack|http-push|fetch|pull|clone|remote|submodule|worktree|update-ref|config)\b", re.I),
+    re.compile(r"\bgit\s+(?:checkout|switch)\s+(?:--[^ ]+\s+)*(?:main|master)\b", re.I),
 )
 REDIRECT_RE = re.compile(r"(?:^|[\s;|&])(?:>|>>|2>|2>>|tee(?:\s+-a)?)\s*([\"']?)(/[^\s\"']+)\1")
 COPY_TARGET_RE = re.compile(r"(?:^|[;&|]\s*|\s)(?:cp|mv|install)\b[^\n;|&]*\s([\"']?)(/[^\s\"']+)\1")
@@ -144,12 +143,6 @@ def _safe_before_state(command: str) -> bool:
             return True
         if parts[1:3] == ["branch", "--show-current"]:
             return True
-    if parts[0] == "gh" and len(parts) >= 3:
-        if parts[1:3] in (["issue", "view"], ["pr", "view"], ["pr", "checks"], ["auth", "status"]):
-            return True
-        if parts[1] == "api" and "--method" in parts:
-            index = parts.index("--method")
-            return index + 1 < len(parts) and parts[index + 1] == "GET"
     if len(parts) >= 3 and parts[0] == "python3" and parts[1] == "tools/agent-runner/styx-agent":
         return parts[2] in {"check", "provision", "verify", "run"}
     return False
@@ -185,6 +178,12 @@ def inspect_pre_tool(payload: Mapping[str, Any], state: Mapping[str, Any] | None
             return "only read-only inspection and the Styx runner are allowed before /styx-run creates a worktree"
         return None
     worktree = Path(str(state.get("worktree", ""))).resolve(strict=False)
+    project_value = os.environ.get("CLAUDE_PROJECT_DIR")
+    project_root = Path(project_value).resolve(strict=False) if project_value else None
+    if "$CLAUDE_PROJECT_DIR" in command or "${CLAUDE_PROJECT_DIR}" in command:
+        return "commands may not target the read-only source checkout"
+    if project_root is not None and str(project_root) in command and not _inside(project_root, worktree):
+        return "commands may not target the read-only source checkout"
     state_root = _state_root()
     data_root = Path(os.environ.get("STYX_AGENT_DATA_DIR", str(Path.home() / ".local/share"))).resolve() / "styx-agent-runner"
     cache_root = Path(os.environ.get("STYX_AGENT_CACHE_DIR", str(Path.home() / ".cache"))).resolve() / "styx-agent-runner"
