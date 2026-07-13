@@ -60,6 +60,9 @@
         "~/.local/share/styx-agent-runner",
         "~/.cache/styx-agent-runner",
         "~/.local/state/styx-agent-runner"
+      ],
+      "denyWrite": [
+        "."
       ]
     },
     "credentials": {
