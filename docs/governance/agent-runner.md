@@ -95,11 +95,15 @@ write operations are rejected before execution.
 
 On the first valid `run`:
 
-1. the source checkout must be clean and point to `styx-secure/styx`;
-2. local `main` must equal the Issue's exact base SHA;
-3. declared dependencies must be closed Issues;
-4. the environment must verify;
-5. a worktree is created under the runner state directory;
+1. the source checkout must be clean, point to `styx-secure/styx`, and have
+   `HEAD` and local `main` at the Issue's exact base SHA;
+2. declared dependencies must be closed Issues;
+3. the environment must verify;
+4. the base objects are copied into a runner-owned bare Git store under the XDG
+   state directory; its default remote is removed;
+5. a linked worktree and branch are created from that private store under the
+   runner state directory, leaving the source repository and its `.git` metadata
+   read-only;
 6. the branch is named `task/<issue>-<slug>`;
 7. an execution manifest and status report are written;
 8. terminal status is `READY_FOR_IMPLEMENTATION`, exit `0`.
@@ -110,9 +114,12 @@ and committed, the same `run` command:
 1. re-fetches the Issue and rejects contract drift;
 2. verifies the task branch descends from the original base;
 3. runs every exact required test;
-4. invokes the trusted scope guard with evidence outside the repository;
-5. requires verdict `PASS`;
-6. emits `BLOCKED_BROKER_UNAVAILABLE`, exit `2`.
+4. creates a temporary clean trusted-base worktree from the private object
+   store and invokes the trusted scope guard there, while inspecting the task
+   head only as Git object data;
+5. removes that temporary guard worktree;
+6. requires verdict `PASS`;
+7. emits `BLOCKED_BROKER_UNAVAILABLE`, exit `2`.
 
 That final exit `2` is the expected successful local handoff. A future restricted
 broker must perform only:
@@ -150,16 +157,20 @@ Exit classes:
 ## Claude Code controls
 
 `.claude/settings.json` does not grant any new permission. It disables bypass
-permissions mode, adds deny rules for GitHub writes and system administration,
-and registers standard-library hooks.
+permissions mode, makes the source checkout read-only in the sandbox, allows
+writes only in the runner-owned XDG directories, denies direct GitHub/network
+clients and system administration, and registers standard-library hooks.
 
 The PreToolUse hook rejects:
 
 - writes without an active issue-bound task;
 - file-tool writes outside the active worktree;
 - paths outside the Issue allowlist or inside its forbidden list;
-- `git push`;
-- GitHub Issue/PR mutations;
+- Git network/ref-administration operations such as push, fetch, remotes,
+  worktrees, submodules and update-ref;
+- every direct `gh` invocation; the runner performs the only permitted read-only
+  GitHub request internally;
+- direct curl, wget and SSH-family clients;
 - approval, Ready, auto-merge, Merge Queue, and merge operations;
 - `sudo`, package-manager and service-manager commands;
 - obvious absolute shell write targets outside the worktree and runner-owned XDG
@@ -184,15 +195,17 @@ completion boundary and surface the status-report path to the operator.
 Cleanup is always explicit. Before removing a runner worktree, inspect it:
 
 ```bash
-git -C /path/to/styx worktree list
-git -C /path/to/worktree status --short
+STATE_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/styx-agent-runner"
+git --git-dir="$STATE_ROOT/git/styx.git" worktree list
+git -C "$STATE_ROOT/worktrees/issue-N" status --short
 ```
 
 After confirming that its commits are preserved elsewhere:
 
 ```bash
-git -C /path/to/styx worktree remove /runner/state/worktrees/issue-N
-git -C /path/to/styx branch -d task/N-slug
+git --git-dir="$STATE_ROOT/git/styx.git" worktree remove \
+  "$STATE_ROOT/worktrees/issue-N"
+git --git-dir="$STATE_ROOT/git/styx.git" branch -d task/N-slug
 ```
 
 Runner-owned state may then be removed selectively:
