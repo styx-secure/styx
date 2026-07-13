@@ -2,6 +2,9 @@
   "disableBypassPermissionsMode": "disable",
   "permissions": {
     "defaultMode": "dontAsk",
+    "additionalDirectories": [
+      "~/.local/state/styx-agent-runner/worktrees"
+    ],
     "allow": [
       "Bash(*)",
       "Edit(~/.local/state/styx-agent-runner/worktrees/**)",
