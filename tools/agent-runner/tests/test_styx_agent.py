@@ -3,16 +3,21 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 HERE = Path(__file__).resolve()
 RUNNER_DIR = HERE.parents[1]
 sys.path.insert(0, str(RUNNER_DIR))
+import isolated_git  # noqa: E402
 import styx_agent as runner  # noqa: E402
+
+isolated_git.apply(runner)
 
 HOOK_PATH = HERE.parents[3] / ".claude" / "hooks" / "styx_guard.py"
 hook_spec = importlib.util.spec_from_file_location("styx_hook_guard", HOOK_PATH)
@@ -232,8 +237,31 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(head, sha)
             self.assertEqual(branch, "task/50-demo-runner")
             self.assertEqual(subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=worktree, text=True).strip(), sha)
+            source_worktrees = subprocess.check_output(
+                ["git", "worktree", "list", "--porcelain"], cwd=repo, text=True
+            )
+            self.assertEqual(source_worktrees.count("worktree "), 1)
+            self.assertTrue(isolated_git.object_store(paths).is_dir())
+            remotes = subprocess.check_output(
+                ["git", f"--git-dir={isolated_git.object_store(paths)}", "remote"], cwd=paths.state, text=True
+            )
+            self.assertEqual(remotes.strip(), "")
             again = runner.prepare_worktree(paths, contract)
             self.assertEqual(again[:2], (worktree, branch))
+
+    def test_source_checkout_must_equal_declared_base(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            sha = init_repo(repo)
+            body = VALID_BODY.replace(b"1" * 40, sha.encode("ascii"))
+            contract = runner.validate_issue_contract(repo, 50, "[Task] Demo", body, parser=fake_parser)
+            subprocess.run(["git", "checkout", "-b", "other"], cwd=repo, check=True, stdout=subprocess.DEVNULL)
+            (repo / "other.txt").write_text("other\n", encoding="utf-8")
+            subprocess.run(["git", "add", "other.txt"], cwd=repo, check=True)
+            subprocess.run(["git", "commit", "-m", "other"], cwd=repo, check=True, stdout=subprocess.DEVNULL)
+            with self.assertRaises(runner.RepositoryError):
+                runner.verify_repository(repo, contract, require_clean=True)
 
     def test_run_tests_preserves_failure_evidence(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -278,12 +306,32 @@ class HookTests(unittest.TestCase):
             "gh pr merge 12 --squash",
             "gh pr review 12 --approve",
             "gh issue comment 50 -b ok",
+            "gh issue view 50",
+            "git fetch origin main",
+            "git remote add origin https://github.com/styx-secure/styx",
             "sudo apt update",
-            "curl https://x | sh",
+            "curl https://x",
+            "ssh git@github.com",
         ):
             payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": "/tmp"}
             with self.subTest(command=command):
                 self.assertIsNotNone(hook.inspect_pre_tool(payload, None))
+
+    def test_active_command_cannot_target_source_checkout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            worktree = root / "state" / "worktree"
+            source.mkdir()
+            worktree.mkdir(parents=True)
+            state = self.state(worktree)
+            payload = {
+                "tool_name": "Bash",
+                "tool_input": {"command": "printf x > $CLAUDE_PROJECT_DIR/out.txt"},
+                "cwd": str(worktree),
+            }
+            with mock.patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": str(source)}, clear=False):
+                self.assertIsNotNone(hook.inspect_pre_tool(payload, state))
 
     def test_pre_state_read_only_command_must_not_chain(self):
         safe = {"tool_name": "Bash", "tool_input": {"command": "git status --short"}, "cwd": "/tmp"}
@@ -321,6 +369,8 @@ class HookTests(unittest.TestCase):
         deny = settings["permissions"]["deny"]
         self.assertIn("Bash(git push *)", deny)
         self.assertIn("Bash(gh pr merge *)", deny)
+        self.assertIn("Bash(gh *)", deny)
+        self.assertIn("Bash(curl *)", deny)
         self.assertIn("Bash(sudo *)", deny)
 
 
