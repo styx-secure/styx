@@ -100,6 +100,10 @@ class NoGoFixTests(unittest.TestCase):
     def test_settings_are_noninteractive_and_runner_state_is_not_task_writable(self):
         settings = json.loads((ROOT / ".claude/settings.json").read_text(encoding="utf-8"))
         self.assertEqual(settings["permissions"]["defaultMode"], "dontAsk")
+        self.assertIn(
+            "~/.local/state/styx-agent-runner/worktrees",
+            settings["permissions"]["additionalDirectories"],
+        )
         self.assertTrue(settings["sandbox"]["autoAllowBashIfSandboxed"])
         self.assertFalse(settings["sandbox"]["allowUnsandboxedCommands"])
         self.assertIn("python3 tools/agent-runner/styx-agent run *", settings["sandbox"]["excludedCommands"])
@@ -117,7 +121,11 @@ class NoGoFixTests(unittest.TestCase):
         self.assertIn("~/.local/state/styx-agent-runner/evidence", deny_write)
         self.assertIn("*", settings["sandbox"]["network"]["deniedDomains"])
         self.assertIn("PostToolUse", settings["hooks"])
+        self.assertIn("PostToolUseFailure", settings["hooks"])
         self.assertIn("PostToolBatch", settings["hooks"])
+        hook_commands = json.dumps(settings["hooks"])
+        self.assertIn("worktree_integrity.py", hook_commands)
+        self.assertIn("styx_guard.py", hook_commands)
 
     def test_attestation_detects_state_tampering_and_real_diff_violation(self):
         with tempfile.TemporaryDirectory() as tmp:
