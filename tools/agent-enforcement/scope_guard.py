@@ -10,6 +10,11 @@ from pathlib import Path
 import sys
 from typing import Sequence
 
+# The guard is commonly executed from the repository it validates. Prevent
+# local module imports from creating __pycache__ and dirtying that worktree
+# before the read-only repository check runs.
+sys.dont_write_bytecode = True
+
 from contract import ContractError, evaluate_path, parse_contract, pattern_matches, validate_pattern
 from git_inventory import (
     content_diagnostics,
@@ -108,6 +113,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
         diagnostics.extend(content_diagnostics(repo, args.base_sha, args.head_sha, entries))
 
+        final_head = run_git(repo, ["rev-parse", "HEAD"], text=True).stdout.strip()
+        final_status = run_git(
+            repo, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]
+        ).stdout
+        if final_head != args.head_sha or final_status != initial_status:
+            diagnostics.append(
+                Diagnostic(
+                    "E_REPOSITORY_CHANGED",
+                    "repository HEAD, index or worktree changed during execution",
+                    "error",
+                )
+            )
+
         if any(item.code.startswith("E_") for item in diagnostics):
             verdict, exit_code = "ERROR", EXIT_ERROR
         elif diagnostics:
@@ -140,17 +158,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"scope_guard: unable to write report: {exc}", file=sys.stderr)
         return EXIT_ERROR
 
-    if initial_status is not None:
-        try:
-            final_status = run_git(
-                repo, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]
-            ).stdout
-            if final_status != initial_status:
-                print("scope_guard: repository state changed during execution", file=sys.stderr)
-                return EXIT_ERROR
-        except GuardError as exc:
-            print(f"scope_guard: post-run repository verification failed: {exc.message}", file=sys.stderr)
-            return EXIT_ERROR
     return exit_code
 
 
