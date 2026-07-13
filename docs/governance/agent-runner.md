@@ -22,10 +22,11 @@ python3 tools/agent-runner/styx-agent verify
 python3 tools/agent-runner/styx-agent run --issue 50 --execution-id issue-50
 ```
 
-The project defaults Claude Code to `dontAsk` mode and pre-approves only the
-bounded local tool classes. The normal task loop therefore does not pause for
-permission prompts. Hooks and the operating-system sandbox still deny operations
-outside the Issue contract.
+The project defaults Claude Code to `dontAsk` mode, declares the runner worktree
+root as an additional directory, and pre-approves only the bounded local tool
+classes. The normal task loop therefore does not pause for permission prompts.
+Hooks and the operating-system sandbox still deny operations outside the Issue
+contract.
 
 ## Supported environment
 
@@ -120,9 +121,12 @@ On the first valid `run`:
    read-only;
 6. the branch is named `task/<issue>-<slug>`;
 7. an execution manifest and status report are written;
-8. the PostToolUse hook writes a trusted hash attestation outside all task-write
+8. a dedicated integrity hook verifies that the worktree `.git` pointer is a
+   regular file resolving only into the private bare store and that Git's common
+   directory and toplevel match the declared task worktree;
+9. the PostToolUse hook writes a trusted hash attestation outside all task-write
    paths;
-9. terminal status is `READY_FOR_IMPLEMENTATION`, exit `0`.
+10. terminal status is `READY_FOR_IMPLEMENTATION`, exit `0`.
 
 Claude then works only inside that worktree. The Claude Bash sandbox has no
 network and may write only the task worktree and the private Git object store
@@ -145,7 +149,7 @@ After the implementation is clean and committed, the same `run` command:
 8. emits `BLOCKED_BROKER_UNAVAILABLE`, exit `2`;
 9. the PostToolUseFailure hook, which handles the expected non-zero handoff exit,
    independently hashes and attests the final state, report, scope report, branch,
-   HEAD, clean status, and changed paths.
+   HEAD, clean status, changed paths, and private Git metadata.
 
 That final exit `2` is the expected successful local handoff. A future restricted
 broker must perform only:
@@ -189,8 +193,9 @@ $HOME/.local/state/styx-agent-runner-trust/active-attestation.json
 The task sandbox cannot read or write this location. A trusted hook compares the
 attestation against the real regular files and Git state before each mutating
 tool call, after each tool call or batch, and at Stop. Symlinked evidence,
-duplicate JSON keys, path escape, state/report changes, dirty final worktrees,
-non-PASS tests, non-PASS scope evidence, or a different HEAD fail closed.
+duplicate JSON keys, path escape, changed `.git` metadata, state/report changes,
+dirty final worktrees, non-PASS tests, non-PASS scope evidence, or a different
+HEAD fail closed.
 
 Exit classes:
 
@@ -201,9 +206,10 @@ Exit classes:
 ## Claude Code controls
 
 `.claude/settings.json` disables bypass mode and selects `dontAsk` so the bounded
-workflow is non-interactive. `Bash` and worktree file tools are pre-approved, but
-they remain constrained by deny rules, standard-library hooks, and the
-operating-system sandbox.
+workflow is non-interactive. It registers the external worktree root in
+`permissions.additionalDirectories`. `Bash` and worktree file tools are
+pre-approved, but remain constrained by deny rules, standard-library hooks, and
+the operating-system sandbox.
 
 The settings enforce:
 
@@ -220,10 +226,11 @@ The settings enforce:
   from the Claude Bash sandbox, with the PreToolUse hook accepting one exact
   unchained command from the project root.
 
-The PreToolUse hook rejects malformed or chained runner commands, another Issue,
+The PreToolUse hooks reject malformed or chained runner commands, another Issue,
 writes without an active task, file-tool writes outside the worktree, forbidden
-paths, dangerous commands, source-checkout commands, and any continuation after
-state or evidence no longer matches its trusted attestation.
+paths, dangerous commands, source-checkout commands, repointed/symlinked `.git`
+metadata, and any continuation after state or evidence no longer matches its
+trusted attestation.
 
 PostToolUse and PostToolBatch inspect the real Git diff plus untracked files, not
 shell syntax. An out-of-scope path or symlink blocks the next agent step. The Stop
