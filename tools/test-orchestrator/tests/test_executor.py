@@ -4,10 +4,33 @@ from __future__ import annotations
 
 import json
 import os
+import socket
+import subprocess
+import tarfile
+import unittest
 from unittest import mock
 
 import support
 from support import FAKE_TOKEN, Fixture, MiniSchemaValidator, OrchestratorCase, load_schema
+
+NETWORK_PROBE_TEST_TEMPLATE = """import socket
+import unittest
+
+
+class NetworkDenialTest(unittest.TestCase):
+    def test_host_loopback_listener_is_unreachable(self):
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            client.settimeout(2)
+            with self.assertRaises(OSError):
+                client.connect(("127.0.0.1", {port}))
+        finally:
+            client.close()
+
+
+if __name__ == "__main__":
+    unittest.main()
+"""
 
 
 class ExecutorPassTest(OrchestratorCase):
@@ -177,6 +200,15 @@ class SandboxFailClosedTest(OrchestratorCase):
         self.use_broken_bwrap()
         self.assert_sandbox_blocked(fixture, plan_path)
 
+    def test_non_startable_bwrap_fails_the_probe_closed(self):
+        stub = self._write_sandbox_stub("non-executable-bwrap", "#!/bin/sh\nexit 0\n")
+        stub.chmod(0o644)
+        support.executor.locate_bwrap = lambda: str(stub)
+        environment = support.executor.ExecutionEnvironment(self.workdir, "0" * 40)
+        self.addCleanup(environment.cleanup)
+        with self.assertRaises(support.model.SandboxError):
+            environment.ensure_sandbox()
+
     def test_run_check_never_executes_without_a_sandbox(self):
         fixture = self.fixture()
         self.use_missing_bwrap()
@@ -192,6 +224,144 @@ class SandboxFailClosedTest(OrchestratorCase):
         outcome = support.executor.run_check(check, environment)
         self.assertEqual("ERROR", outcome["verdict"])
         self.assertEqual("sandbox_unavailable", outcome["observed_class"])
+
+
+class GeneratedPreparationFailureTest(OrchestratorCase):
+    ARCHIVE_CHECK = {
+        "command": ["python3", "-m", "py_compile", "tools/sample/newfile.py"],
+        "discard_stdout": False,
+        "timeout_seconds": 5,
+        "max_output_bytes": 1024,
+        "isolation": "archive",
+    }
+
+    def test_git_archive_failure_is_a_structured_error_and_is_not_retried(self):
+        fixture = self.fixture()
+        environment = support.executor.ExecutionEnvironment(fixture.repo.root, "0" * 40)
+        self.addCleanup(environment.cleanup)
+        first = support.executor.run_check(self.ARCHIVE_CHECK, environment)
+        self.assertEqual("ERROR", first["verdict"])
+        self.assertEqual("preparation_error", first["observed_class"])
+        with mock.patch.object(support.executor.subprocess, "run") as never_called:
+            second = support.executor.run_check(self.ARCHIVE_CHECK, environment)
+        self.assertEqual("preparation_error", second["observed_class"])
+        never_called.assert_not_called()
+
+    def test_tar_extraction_failure_is_a_structured_error(self):
+        fixture = self.fixture()
+        environment = support.executor.ExecutionEnvironment(fixture.repo.root, fixture.head_sha)
+        self.addCleanup(environment.cleanup)
+        with mock.patch.object(
+            support.executor.tarfile, "open", side_effect=tarfile.TarError("corrupt")
+        ):
+            outcome = support.executor.run_check(self.ARCHIVE_CHECK, environment)
+        self.assertEqual("ERROR", outcome["verdict"])
+        self.assertEqual("preparation_error", outcome["observed_class"])
+
+    def test_archive_timeout_is_a_structured_error(self):
+        fixture = self.fixture()
+        environment = support.executor.ExecutionEnvironment(fixture.repo.root, fixture.head_sha)
+        self.addCleanup(environment.cleanup)
+        with mock.patch.object(
+            support.executor.subprocess,
+            "run",
+            side_effect=subprocess.TimeoutExpired(cmd="git", timeout=1),
+        ):
+            with self.assertRaises(support.model.RepositoryStateError):
+                environment.archive_workdir()
+
+    def test_preparation_failure_blocks_generated_tests_and_reports_error(self):
+        fixture = self.fixture()
+        proposals = [
+            {"purpose": "first generated check",
+             "command": ["python3", "-m", "py_compile", "tools/sample/newfile.py"]},
+            {"purpose": "second generated check",
+             "command": ["python3", "-m", "compileall", "tools/sample"]},
+        ]
+        plan_path, _ = self.build_plan(fixture, proposals=proposals)
+        with mock.patch.object(
+            support.executor.ExecutionEnvironment,
+            "archive_workdir",
+            side_effect=support.model.RepositoryStateError("preparation failed"),
+        ):
+            code, report = self.execute_plan(fixture, plan_path)
+        self.assertEqual(3, code)
+        self.assertEqual("ERROR", report["verdict"])
+        self.assertEqual("ERROR", report["generated_verdict"])
+        generated = [item for item in report["failures"] if item["category"] == "GENERATED"]
+        self.assertEqual(2, len(generated))
+        self.assertEqual({"preparation_error"}, {item["observed_class"] for item in generated})
+        for entry in generated:
+            MiniSchemaValidator(load_schema(support.FAILURE_SCHEMA)).validate(entry)
+        MiniSchemaValidator(load_schema(support.REPORT_SCHEMA)).validate(report)
+
+
+class GitDiffHardeningTest(OrchestratorCase):
+    def test_hardened_command_injects_read_only_diff_flags(self):
+        sha_a, sha_b = "a" * 40, "b" * 40
+        hardened = support.executor.hardened_command(["git", "diff", "--check", sha_a, sha_b])
+        self.assertEqual(
+            ["git", "-c", "diff.external=", "diff", "--no-ext-diff", "--no-textconv",
+             "--check", sha_a, sha_b],
+            hardened,
+        )
+        untouched = ["git", "cat-file", "-e", f"{sha_a}^{{commit}}"]
+        self.assertEqual(untouched, support.executor.hardened_command(untouched))
+        python_command = ["python3", "-m", "unittest"]
+        self.assertEqual(python_command, support.executor.hardened_command(python_command))
+
+    def test_local_diff_external_sentinel_is_never_executed(self):
+        fixture = self.fixture()
+        marker = self.workdir / "external-diff-executed"
+        sentinel = self.workdir / "sentinel-diff.sh"
+        sentinel.write_text(f"#!/bin/sh\ntouch {marker}\nexit 0\n", encoding="utf-8")
+        sentinel.chmod(0o755)
+        support.run(
+            ["git", "config", "diff.external", str(sentinel)], fixture.repo.root
+        )
+        plan_path, plan = self.build_plan(fixture)
+        self.assertTrue(
+            any(check["command"][:2] == ["git", "diff"] for check in plan["checks"])
+        )
+        code, report = self.execute_plan(fixture, plan_path)
+        self.assertEqual(0, code)
+        self.assertEqual("PASS", report["verdict"])
+        self.assertFalse(marker.exists())
+
+
+@unittest.skipUnless(support.real_bwrap_usable(), "real bubblewrap is unavailable on this host")
+class RealSandboxIntegrationTest(OrchestratorCase):
+    def test_real_bwrap_denies_network_and_runs_the_pipeline(self):
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.addCleanup(listener.close)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        port = listener.getsockname()[1]
+
+        # The listener must be reachable from the host, otherwise the
+        # in-sandbox failure would not demonstrate isolation.
+        probe = socket.create_connection(("127.0.0.1", port), timeout=2)
+        probe.close()
+
+        fixture = Fixture(
+            self.workdir / "real-sandbox",
+            extra_files={
+                "tools/sample/netprobe/test_netprobe.py":
+                    NETWORK_PROBE_TEST_TEMPLATE.format(port=port),
+            },
+        )
+        self.use_real_bwrap()
+        proposals = [
+            {"purpose": "the host loopback listener must be unreachable inside the sandbox",
+             "command": ["python3", "-m", "unittest", "discover", "-s", "tools/sample/netprobe",
+                          "-p", "test_*.py"]},
+        ]
+        plan_path, _ = self.build_plan(fixture, proposals=proposals)
+        code, report = self.execute_plan(fixture, plan_path)
+        self.assertEqual(0, code)
+        self.assertEqual("PASS", report["verdict"])
+        self.assertEqual("PASS", report["generated_verdict"])
+        self.assertEqual("PASS", report["mandatory_verdict"])
 
 
 class RuntimePathContainmentTest(OrchestratorCase):

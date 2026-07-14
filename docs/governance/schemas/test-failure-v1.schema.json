@@ -48,6 +48,7 @@
         "rejected_command",
         "plan_invalidated",
         "sandbox_unavailable",
+        "preparation_error",
         "internal_error"
       ]
     },

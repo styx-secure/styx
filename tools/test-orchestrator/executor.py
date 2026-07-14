@@ -30,7 +30,7 @@ import threading
 import time
 from typing import Any, Mapping, Sequence
 
-from contract_inputs import ScopeReport
+from contract_inputs import ScopeReport, load_scope_report
 from model import (
     EXECUTION_CLASSES,
     FAILURE_SCHEMA_ID,
@@ -93,6 +93,66 @@ PLAN_FIELDS = frozenset(
         "rejected_proposals",
         "generation",
     }
+)
+REPORT_FIELDS = frozenset(
+    {
+        "schema",
+        "issue_number",
+        "execution_id",
+        "base_sha",
+        "head_sha",
+        "issue_body_sha256",
+        "plan_sha256",
+        "scope_report_sha256",
+        "command_policy_sha256",
+        "mandatory_verdict",
+        "regression_verdict",
+        "generated_verdict",
+        "adversarial_verdict",
+        "static_verdict",
+        "rollback_verdict",
+        "failures",
+        "generation",
+        "verdict",
+    }
+)
+FAILURE_FIELDS = frozenset(
+    {
+        "schema",
+        "test_id",
+        "category",
+        "expected_outcome",
+        "observed_class",
+        "verdict",
+        "reproduction",
+        "stdout_sha256",
+        "stderr_sha256",
+        "stdout_bytes",
+        "stderr_bytes",
+        "output_truncated",
+    }
+)
+FAILURE_CATEGORIES = (*EXECUTION_CLASSES, "PLAN")
+FAILURE_OBSERVED_CLASSES = (
+    "nonzero_exit",
+    "timeout",
+    "output_limit_exceeded",
+    "missing_tool",
+    "rejected_command",
+    "plan_invalidated",
+    "sandbox_unavailable",
+    "preparation_error",
+    "internal_error",
+)
+CLASS_VERDICTS = ("PASS", "FAIL", "ERROR", "NOT_RUN")
+REPORT_VERDICTS = ("PASS", "FAIL", "ERROR")
+CLASS_VERDICT_FIELDS = (
+    "mandatory_verdict",
+    "regression_verdict",
+    "generated_verdict",
+    "adversarial_verdict",
+    "static_verdict",
+    "rollback_verdict",
 )
 
 
@@ -247,8 +307,21 @@ def verify_binding(
         raise RepositoryStateError("repository worktree is not clean; evidence must bind to a committed HEAD")
 
 
+# Preferred absolute locations for bubblewrap; PATH lookup is the fallback
+# and its result is normalised to an absolute path. Defending against a
+# local administrator replacing the binary (same-host compromise) is out of
+# scope for the declared threat model.
+BWRAP_CANDIDATES = ("/usr/bin/bwrap", "/usr/local/bin/bwrap")
+
+
 def locate_bwrap() -> str | None:
-    return shutil.which("bwrap")
+    for candidate in BWRAP_CANDIDATES:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+    found = shutil.which("bwrap")
+    if found is None:
+        return None
+    return os.path.abspath(found)
 
 
 class ExecutionEnvironment:
@@ -267,7 +340,10 @@ class ExecutionEnvironment:
         self.tmp.mkdir()
         self.bwrap = locate_bwrap()
         self._archive_dir: Path | None = None
+        self._archive_failed = False
         self._sandbox_ok: bool | None = None
+
+    ARCHIVE_ERROR_MESSAGE = "unable to prepare the pristine archive copy of the planned HEAD"
 
     def cleanup(self) -> None:
         self._temp.cleanup()
@@ -325,29 +401,45 @@ class ExecutionEnvironment:
             "GIT_CONFIG_SYSTEM": os.devnull,
             "GIT_TERMINAL_PROMPT": "0",
             "GIT_PAGER": "cat",
+            "GIT_EXTERNAL_DIFF": "",
         }
 
     def archive_workdir(self) -> Path:
-        """Materialise a pristine copy of HEAD for isolated generated checks."""
+        """Materialise a pristine copy of HEAD for isolated generated checks.
 
+        Preparation failures (git archive, tar extraction, timeouts, I/O)
+        surface as a static, already-sanitized RepositoryStateError and are
+        cached: once preparation has failed, no later archive-isolated
+        check re-attempts it or runs.
+        """
+
+        if self._archive_failed:
+            raise RepositoryStateError(self.ARCHIVE_ERROR_MESSAGE)
         if self._archive_dir is not None:
             return self._archive_dir
-        archive_path = self.root / "head.tar"
-        with open(archive_path, "wb") as handle:
-            result = subprocess.run(
-                ["git", "-C", str(self.repo), "archive", "--format=tar", self.head_sha],
-                stdout=handle,
-                stderr=subprocess.PIPE,
-                check=False,
-                timeout=GIT_TIMEOUT_SECONDS,
-            )
-        if result.returncode != 0:
-            raise RepositoryStateError("unable to archive the planned HEAD for isolated execution")
-        workdir = self.root / "archive"
-        workdir.mkdir()
-        with tarfile.open(archive_path) as archive:
-            archive.extractall(workdir, filter="data")
-        archive_path.unlink()
+        try:
+            archive_path = self.root / "head.tar"
+            with open(archive_path, "wb") as handle:
+                result = subprocess.run(
+                    ["git", "-C", str(self.repo), "archive", "--format=tar", self.head_sha],
+                    stdout=handle,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                    timeout=GIT_TIMEOUT_SECONDS,
+                )
+            if result.returncode != 0:
+                raise RepositoryStateError(self.ARCHIVE_ERROR_MESSAGE)
+            workdir = self.root / "archive"
+            workdir.mkdir()
+            with tarfile.open(archive_path) as archive:
+                archive.extractall(workdir, filter="data")
+            archive_path.unlink()
+        except RepositoryStateError:
+            self._archive_failed = True
+            raise
+        except (OSError, subprocess.TimeoutExpired, tarfile.TarError, ValueError) as exc:
+            self._archive_failed = True
+            raise RepositoryStateError(self.ARCHIVE_ERROR_MESSAGE) from exc
         self._archive_dir = workdir
         return workdir
 
@@ -397,28 +489,52 @@ def _ensure_python_paths_within(command: Sequence[str], workdir: Path) -> None:
             raise CommandPolicyError(f"path escapes the execution root: {token!r}")
 
 
+GIT_DIFF_ENFORCED_OPTIONS = ("--no-ext-diff", "--no-textconv")
+
+
+def hardened_command(command: Sequence[str]) -> list[str]:
+    """Runtime hardening for executed git diff commands.
+
+    The plan may only carry ``--check``/``--quiet``; the executor
+    additionally forces ``--no-ext-diff``/``--no-textconv`` and explicitly
+    neutralizes a repository-local ``diff.external`` so no external diff
+    helper or textconv filter can ever be executed. Plan validation and
+    check identifiers keep referring to the original command.
+    """
+
+    if command[0] == "git" and len(command) >= 2 and command[1] == "diff":
+        return ["git", "-c", "diff.external=", "diff", *GIT_DIFF_ENFORCED_OPTIONS, *command[2:]]
+    return list(command)
+
+
 def run_check(check: Mapping[str, Any], environment: ExecutionEnvironment) -> dict[str, Any]:
     """Run one validated check and classify the outcome."""
 
     if environment.bwrap is None:
         return _outcome("ERROR", "sandbox_unavailable", b"", b"", truncated=False)
 
-    if check["isolation"] == "archive":
-        workdir = environment.archive_workdir()
-    else:
-        workdir = environment.repo
+    try:
+        if check["isolation"] == "archive":
+            workdir = environment.archive_workdir()
+        else:
+            workdir = environment.repo
+    except RepositoryStateError:
+        return _outcome("ERROR", "preparation_error", b"", b"", truncated=False)
 
     try:
         _ensure_python_paths_within(check["command"], workdir)
     except CommandPolicyError:
         return _outcome("ERROR", "rejected_command", b"", b"", truncated=False)
+    except OSError:
+        return _outcome("ERROR", "preparation_error", b"", b"", truncated=False)
 
     env = environment.environment()
-    executable = shutil.which(check["command"][0], path=env["PATH"])
+    command = hardened_command(check["command"])
+    executable = shutil.which(command[0], path=env["PATH"])
     if executable is None:
         return _outcome("ERROR", "missing_tool", b"", b"", truncated=False)
 
-    argv = [*environment.command_prefix(workdir), executable, *check["command"][1:]]
+    argv = [*environment.command_prefix(workdir), executable, *command[1:]]
     return _run_bounded(
         argv,
         workdir=workdir,
@@ -657,9 +773,15 @@ def execute_plan(
         blocked = True
         failures.append(_plan_level_failure(plan_sha256, "plan_invalidated"))
 
+    run_environment: ExecutionEnvironment | None = None
     if not blocked:
         owned_environment = environment is None
-        run_environment = environment or ExecutionEnvironment(repo, plan["head_sha"])
+        try:
+            run_environment = environment or ExecutionEnvironment(repo, plan["head_sha"])
+        except OSError:
+            blocked = True
+            failures.append(_plan_level_failure(plan_sha256, "preparation_error"))
+    if not blocked and run_environment is not None:
         try:
             try:
                 run_environment.ensure_sandbox()
@@ -718,3 +840,124 @@ def review_eligible(
         and scope_report.get("verdict") == "PASS"
         and scope_report.get("head_sha") == candidate_head_sha
     )
+
+
+def _is_test_id(value: Any) -> bool:
+    return isinstance(value, str) and (value == "plan" or SHA256_RE.fullmatch(value) is not None)
+
+
+def _validate_failure_entry(entry: Any, position: int) -> None:
+    where = f"failure entry {position}"
+    _require(isinstance(entry, dict), f"{where} must be a JSON object")
+    _require(set(entry) == FAILURE_FIELDS, f"{where} has missing or unknown fields")
+    _require(entry["schema"] == FAILURE_SCHEMA_ID, f"{where} has an unexpected schema identifier")
+    _require(_is_test_id(entry["test_id"]), f"{where} test_id is malformed")
+    _require(entry["category"] in FAILURE_CATEGORIES, f"{where} category is not recognised")
+    _require(entry["expected_outcome"] == "PASS", f"{where} expected_outcome must be PASS")
+    _require(entry["observed_class"] in FAILURE_OBSERVED_CLASSES, f"{where} observed_class is not recognised")
+    _require(entry["verdict"] in ("FAIL", "ERROR"), f"{where} verdict must be FAIL or ERROR")
+    reproduction = entry["reproduction"]
+    _require(
+        isinstance(reproduction, dict) and set(reproduction) == {"plan_sha256", "check_id", "command"},
+        f"{where} reproduction has missing or unknown fields",
+    )
+    _require(
+        isinstance(reproduction["plan_sha256"], str)
+        and SHA256_RE.fullmatch(reproduction["plan_sha256"]) is not None,
+        f"{where} reproduction plan_sha256 is malformed",
+    )
+    _require(_is_test_id(reproduction["check_id"]), f"{where} reproduction check_id is malformed")
+    _require(
+        isinstance(reproduction["command"], list)
+        and all(isinstance(token, str) and token != "" for token in reproduction["command"]),
+        f"{where} reproduction command must be an array of non-empty strings",
+    )
+    for field in ("stdout_sha256", "stderr_sha256"):
+        _require(
+            isinstance(entry[field], str) and SHA256_RE.fullmatch(entry[field]) is not None,
+            f"{where} {field} is malformed",
+        )
+    for field in ("stdout_bytes", "stderr_bytes"):
+        _require(
+            isinstance(entry[field], int) and not isinstance(entry[field], bool) and entry[field] >= 0,
+            f"{where} {field} must be a non-negative integer",
+        )
+    _require(isinstance(entry["output_truncated"], bool), f"{where} output_truncated must be a boolean")
+
+
+def validate_report_document(raw_bytes: bytes) -> dict[str, Any]:
+    """Strict runtime validation of a ``styx.test-report/v1`` document.
+
+    Closed shape, canonical bytes, field types, schema identifier, verdict
+    enums and per-entry failure validation — enough to reject minimal or
+    non-conforming reports without a general JSON Schema engine.
+    """
+
+    report = load_strict_json(raw_bytes, source="test report")
+    _require(isinstance(report, dict), "test report must be a JSON object")
+    _require(canonical_json_bytes(report) == raw_bytes, "test report is not in canonical JSON form")
+    _require(set(report) == REPORT_FIELDS, "test report has missing or unknown fields")
+    _require(report["schema"] == REPORT_SCHEMA_ID, "test report has an unexpected schema identifier")
+    _require(
+        isinstance(report["issue_number"], int)
+        and not isinstance(report["issue_number"], bool)
+        and report["issue_number"] >= 1,
+        "test report issue_number must be a positive integer",
+    )
+    _require(
+        isinstance(report["execution_id"], str) and report["execution_id"] != "",
+        "test report execution_id must be a non-empty string",
+    )
+    for field in ("base_sha", "head_sha"):
+        _require(
+            isinstance(report[field], str) and SHA_RE.fullmatch(report[field]) is not None,
+            f"test report {field} must be a full lowercase commit SHA",
+        )
+    for field in ("issue_body_sha256", "plan_sha256", "scope_report_sha256", "command_policy_sha256"):
+        _require(
+            isinstance(report[field], str) and SHA256_RE.fullmatch(report[field]) is not None,
+            f"test report {field} must be a sha256 digest",
+        )
+    for field in CLASS_VERDICT_FIELDS:
+        _require(report[field] in CLASS_VERDICTS, f"test report {field} is not a class verdict")
+    _require(report["verdict"] in REPORT_VERDICTS, "test report verdict is not recognised")
+    _require(report["generation"] == generation_stanza(), "test report generation stanza is unexpected")
+    _require(isinstance(report["failures"], list), "test report failures must be an array")
+    for position, entry in enumerate(report["failures"]):
+        _validate_failure_entry(entry, position)
+    if report["verdict"] == "PASS":
+        _require(
+            report["failures"] == [] and report["mandatory_verdict"] == "PASS",
+            "a PASS report cannot carry failures or a non-PASS mandatory verdict",
+        )
+    return report
+
+
+def evaluate_eligibility(
+    raw_test_report: bytes,
+    raw_scope_report: bytes,
+    candidate_head_sha: str,
+) -> bool:
+    """Validate both evidence documents, cross-bind them, apply the rule.
+
+    Structural or binding defects raise (the CLI reports ERROR); only a
+    consistent evidence pair reaches the frozen review-eligibility rule.
+    """
+
+    if not SHA_RE.fullmatch(candidate_head_sha or ""):
+        raise PlanError("candidate head must be a full lowercase commit SHA")
+    report = validate_report_document(raw_test_report)
+    scope = load_scope_report(raw_scope_report)
+    _require(
+        canonical_json_bytes(scope.document) == raw_scope_report,
+        "scope report is not in canonical JSON form",
+    )
+    if hashlib.sha256(raw_scope_report).hexdigest() != report["scope_report_sha256"]:
+        raise PlanError("scope report does not match the evidence bound by the test report")
+    if report["command_policy_sha256"] != command_policy_sha256():
+        raise PlanError("test report was produced under a different command policy")
+    if scope.document.get("issue_number") != report["issue_number"]:
+        raise PlanError("scope report and test report bind different issues")
+    if scope.base_sha != report["base_sha"] or scope.head_sha != report["head_sha"]:
+        raise PlanError("scope report and test report bind different commits")
+    return review_eligible(report, scope.document, candidate_head_sha)

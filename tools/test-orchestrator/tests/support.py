@@ -130,9 +130,11 @@ FAKE_TOKEN = "a" * 24
 
 # Deterministic stand-in for bubblewrap: it understands exactly the option
 # grammar emitted by ExecutionEnvironment.command_prefix and the sandbox
-# probe, honours --chdir, and execs the wrapped command. It provides no
-# kernel isolation; suites assert the fail-closed wiring and prefix content,
-# not namespace behaviour, so they stay reproducible on hosts without bwrap.
+# probe, honours --chdir, and execs the wrapped command. It provides NO
+# kernel isolation and is NOT evidence of real network denial: it exists so
+# the fail-closed wiring and prefix content stay testable on hosts without
+# bwrap. Real isolation is exercised by RealSandboxIntegrationTest, which
+# runs the actual bubblewrap binary when the host supports it.
 FAKE_BWRAP = """#!/usr/bin/env python3
 import os
 import sys
@@ -164,6 +166,43 @@ os.execvp(command[0], command)
 """
 
 BROKEN_BWRAP = "#!/bin/sh\nexit 1\n"
+
+_REAL_BWRAP_USABLE: bool | None = None
+
+
+def real_bwrap_usable() -> bool:
+    """True when the host has a bubblewrap that can create the namespace."""
+
+    global _REAL_BWRAP_USABLE
+    if _REAL_BWRAP_USABLE is None:
+        path = executor.locate_bwrap()
+        if path is None:
+            _REAL_BWRAP_USABLE = False
+        else:
+            probe = [
+                path,
+                "--die-with-parent", "--new-session", "--unshare-net",
+                "--ro-bind", "/", "/",
+                "--dev", "/dev",
+                "--proc", "/proc",
+                "--tmpfs", "/tmp",
+                "--chdir", "/",
+                "/bin/true",
+            ]
+            try:
+                _REAL_BWRAP_USABLE = (
+                    subprocess.run(
+                        probe,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                        timeout=30,
+                    ).returncode
+                    == 0
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                _REAL_BWRAP_USABLE = False
+    return _REAL_BWRAP_USABLE
 
 
 def contract_body(
@@ -277,7 +316,13 @@ class Repo:
 class Fixture:
     """A fixture repository with contract, scope evidence and helpers."""
 
-    def __init__(self, root: Path, *, failing_mandatory: bool = False):
+    def __init__(
+        self,
+        root: Path,
+        *,
+        failing_mandatory: bool = False,
+        extra_files: dict[str, str] | None = None,
+    ):
         self.root = root
         self.repo = Repo(root / "repo")
         self.evidence = root / "evidence"
@@ -297,6 +342,8 @@ class Fixture:
         self.repo.write("tools/sample/noisy/test_noisy.py", NOISY_TEST)
         self.repo.write("tools/sample/infinite/test_infinite.py", INFINITE_OUTPUT_TEST)
         self.repo.write("tools/sample/childwriter/test_childwriter.py", CHILD_WRITER_TEST)
+        for relative, content in (extra_files or {}).items():
+            self.repo.write(relative, content)
         self.head_sha = self.repo.commit("head")
 
         self.issue_number = 54
@@ -381,6 +428,9 @@ class OrchestratorCase(unittest.TestCase):
     def use_broken_bwrap(self) -> None:
         broken = self._write_sandbox_stub("broken-bwrap", BROKEN_BWRAP)
         executor.locate_bwrap = lambda: str(broken)
+
+    def use_real_bwrap(self) -> None:
+        executor.locate_bwrap = self._original_locate_bwrap
 
     def _restore_bwrap(self) -> None:
         executor.locate_bwrap = self._original_locate_bwrap

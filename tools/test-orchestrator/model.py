@@ -45,12 +45,24 @@ DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
-SECRET_KEY_RE = re.compile(r"(TOKEN|SECRET|PASSWORD|PASSWD|AUTHORIZATION|CREDENTIAL)", re.IGNORECASE)
+SECRET_KEY_RE = re.compile(
+    r"(TOKEN|SECRET|PASSWORD|PASSWD|AUTHORIZATION|CREDENTIAL|API[_-]?KEY|ACCESS[_-]?KEY|PRIVATE[_-]?KEY)",
+    re.IGNORECASE,
+)
+# Explicit, shape-specific secret patterns only. No generic entropy
+# heuristics: commit SHAs, SHA-256 digests and similar identifiers must
+# never be redacted.
 SECRET_VALUE_RE = re.compile(
     r"(?i)(authorization:\s*(?:bearer|token)\s+)[^\s]+"
     r"|\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"
+    r"|(?-i:\b(?:AKIA|ASIA)[0-9A-Z]{16}\b)"
+    r"|(?-i:\bxox[abps]-[0-9A-Za-z-]{10,}\b)"
+    r"|(?-i:\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b)"
 )
-SECRET_NAME_FRAGMENT = r"(?:token|passwd|password|secret|api[_-]?key|authorization|credential|bearer)"
+SECRET_NAME_FRAGMENT = (
+    r"(?:token|passwd|password|secret|api[_-]?key|access[_-]?key|client[_-]?secret"
+    r"|private[_-]?key|authorization|credential|bearer)"
+)
 SECRET_ARG_KEY_RE = re.compile(rf"(?i)^(--?[A-Za-z0-9_-]*{SECRET_NAME_FRAGMENT}|{SECRET_NAME_FRAGMENT})$")
 SECRET_ASSIGNMENT_RE = re.compile(rf"(?i)^([^=]*{SECRET_NAME_FRAGMENT}[^=]*)=(.+)$")
 CREDENTIAL_PATH_RE = re.compile(

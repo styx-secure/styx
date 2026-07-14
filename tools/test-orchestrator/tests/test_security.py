@@ -144,6 +144,8 @@ class EnvironmentMaskingTest(OrchestratorCase):
         self.assertEqual(os.devnull, env["GIT_CONFIG_GLOBAL"])
         self.assertEqual(os.devnull, env["GIT_CONFIG_SYSTEM"])
         self.assertEqual("0", env["GIT_TERMINAL_PROMPT"])
+        self.assertEqual("", env["GIT_EXTERNAL_DIFF"])
+        self.assertEqual("cat", env["GIT_PAGER"])
 
     def test_bwrap_prefix_denies_network_and_write_access(self):
         environment = support.executor.ExecutionEnvironment(self.workdir, "0" * 40)
@@ -200,6 +202,50 @@ class EnvironmentMaskingTest(OrchestratorCase):
     def test_command_redaction_keeps_ordinary_commands_intact(self):
         argv = ["python3", "-m", "unittest", "discover", "-s", "tools/sample/tests", "-p", "test_*.py"]
         self.assertEqual(argv, support.model.redact_command(argv, env={}))
+
+    def test_explicit_secret_shapes_are_redacted(self):
+        samples = (
+            "AKIA" + "A" * 16,
+            "ASIA" + "B" * 16,
+            "xoxb-123456789012-abcdefghijkl",
+            "xoxp-987654321098-zyxwvutsrqpo",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.abc_DEF-4567890",
+            "ghp_" + "x" * 24,
+            "github_pat_" + "y" * 24,
+        )
+        for sample in samples:
+            with self.subTest(sample=sample):
+                text = support.model.redact_text(f"before {sample} after", env={})
+                self.assertNotIn(sample, text)
+                self.assertIn("[REDACTED]", text)
+                command = support.model.redact_command(["python3", "-m", "unittest", sample], env={})
+                self.assertNotIn(sample, json.dumps(command))
+
+    def test_secret_key_value_forms_are_redacted(self):
+        secret = "swordfish-0123456789"
+        for token in (
+            f"AWS_ACCESS_KEY_ID={secret}",
+            f"CLIENT_SECRET={secret}",
+            f"api_key={secret}",
+            f"--client-secret={secret}",
+            f"--access-key={secret}",
+        ):
+            with self.subTest(token=token):
+                redacted = support.model.redact_command([token], env={})
+                self.assertNotIn(secret, json.dumps(redacted))
+                self.assertIn("[REDACTED]", redacted[0])
+        self.assertEqual(
+            ["--private-key", "[REDACTED]"],
+            support.model.redact_command(["--private-key", secret], env={}),
+        )
+
+    def test_legitimate_identifiers_are_never_redacted(self):
+        commit_sha = "48b1d6450b52c387993073977869dded42ed4588"
+        digest = "a" * 64
+        for value in (commit_sha, digest, "tools/sample/newfile.py", "1.2.3", "test_*.py"):
+            with self.subTest(value=value):
+                self.assertEqual(value, support.model.redact_text(value, env={}))
+                self.assertEqual([value], support.model.redact_command([value], env={}))
 
 
 class CommandPolicyBindingTest(unittest.TestCase):

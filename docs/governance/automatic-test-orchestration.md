@@ -104,12 +104,27 @@ invalidates the plan: the report is written with verdict `ERROR`, a
 `PLAN`-category `styx.test-failure/v1` entry (`plan_invalidated`) and
 every class verdict `NOT_RUN`.
 
-Network denial is fail-closed. Before any check runs, the executor
-requires bubblewrap and probes that it can actually establish the
-namespace; a missing binary or a failing probe stops execution before the
-first check, producing an `ERROR` report with a `sandbox_unavailable`
-entry and every class verdict `NOT_RUN`. There is no unsandboxed fallback
-path for any command.
+Network denial is fail-closed. The executor resolves bubblewrap to an
+absolute path (fixed system locations first, then `PATH`) and, before any
+check runs, probes that the binary actually starts and can establish the
+`--unshare-net` namespace; a missing binary, a probe that does not start
+or a probe that exits non-zero stops execution before the first check,
+producing an `ERROR` report with a `sandbox_unavailable` entry and every
+class verdict `NOT_RUN`. There is no unsandboxed fallback path for any
+command. Defending against a local administrator who replaces the
+bubblewrap binary (same-host compromise) is explicitly out of scope for
+the declared threat model. Real namespace isolation is exercised by an
+integration test that runs the actual bubblewrap binary where the host
+supports it; the deterministic sandbox stub used by the unit suite is
+wiring-level only and is not evidence of isolation.
+
+Preparation failures fail closed as well: any error while materialising
+the pristine `git archive` copy for `GENERATED` checks (archive, tar
+extraction, timeout, I/O), while resolving path containment, or while
+creating the scratch environment produces a structured, sanitized
+`styx.test-failure/v1` entry with observed class `preparation_error` and
+an `ERROR` report; once preparation has failed, no further
+archive-isolated check is attempted.
 
 Checks run with:
 
@@ -119,6 +134,12 @@ Checks run with:
   credential variable can leak;
 - mandatory `bwrap --unshare-net` network denial with the repository
   mounted read-only;
+- runtime hardening of executed `git diff` commands: the executor forces
+  `--no-ext-diff` and `--no-textconv`, sets `GIT_EXTERNAL_DIFF` to the
+  empty string and explicitly neutralizes a repository-local
+  `diff.external` (`-c diff.external=`), while global and system
+  configuration and the pager are already disabled. The plan itself may
+  only carry `--check`/`--quiet`;
 - a runtime path-containment check for python arguments: every existing
   path is resolved (following symlinks) and must stay inside the execution
   root, so a committed symlink cannot reach the primary worktree;
@@ -134,7 +155,8 @@ Checks run with:
 
 Per check: exit `0` is `PASS`; a non-zero exit is `FAIL`
 (`nonzero_exit`); timeout, output overflow, missing tool, rejected
-command, unavailable sandbox and internal faults are `ERROR`. Per class:
+command, unavailable sandbox, preparation failures and internal faults
+are `ERROR`. Per class:
 `ERROR` beats `FAIL` beats `PASS`; a class with no checks is `NOT_RUN`.
 Overall: any `ERROR` class gives `ERROR`, any `FAIL` class gives `FAIL`,
 and `PASS` additionally requires `mandatory_verdict == PASS`. `FAIL` and
@@ -145,10 +167,16 @@ stable test identifier, category, expected outcome, observed class, a safe
 reproduction reference (plan hash, check identifier, argv) and bounded
 SHA-256 stdout/stderr hashes computed over exactly the captured — possibly
 truncated — content. The reproduction argv is sanitized before it enters
-the report: secret-like `key=value` assignments, values following
-secret-like option tokens, credential file paths, token shapes and
-credentialed URLs are replaced with `[REDACTED]` while the command stays
-reproducible. Raw output never enters the evidence, so secrets cannot leak
+the report with explicit, shape-specific patterns only: `key=value`
+assignments and `--name=value`/`--name value` forms whose name contains
+`token`, `password`, `passwd`, `secret`, `api_key`, `access_key`,
+`client_secret`, `private_key`, `authorization`, `credential` or
+`bearer`; `Authorization: Bearer/Token` headers; GitHub token shapes
+(`ghp_…`, `github_pat_…`); AWS key IDs (`AKIA…`/`ASIA…`); Slack tokens
+(`xoxa/xoxb/xoxp/xoxs-…`); JWTs; URLs with embedded credentials; and
+known credential file paths. No generic entropy heuristic is applied, so
+commit SHAs, digests and other legitimate identifiers are never
+obscured. Raw output never enters the evidence, so secrets cannot leak
 through reports.
 
 ## Review eligibility
@@ -162,9 +190,19 @@ review_eligible =
 ```
 
 The `eligibility` subcommand applies exactly this rule (exit `0` eligible,
-`2` not eligible). Because both reports bind the exact HEAD and the plan
-binds Issue body, scope evidence and base, a new commit or any changed
-input invalidates the previous evidence and review eligibility with it.
+`2` not eligible) — but only after strictly validating both evidence
+documents at runtime, without a general JSON Schema engine: canonical
+JSON with duplicate keys rejected, closed shape with every required field
+present and no extra fields, field types, schema identifiers, verdict
+enums and per-entry failure validation. The evidence pair is then
+cross-bound: the scope report bytes must hash to the test report's
+`scope_report_sha256`, the report's `command_policy_sha256` must match
+the active policy, and both documents must bind the same issue, base and
+HEAD. Minimal, tampered, non-canonical or inconsistent documents are
+rejected with exit `3`, never treated as eligible or silently ineligible.
+Because both reports bind the exact HEAD and the plan binds Issue body,
+scope evidence and base, a new commit or any changed input invalidates
+the previous evidence and review eligibility with it.
 
 ## Usage
 
@@ -210,3 +248,7 @@ refuses anything else.
   `bwrap` cannot execute plans (every run is an `ERROR` with
   `sandbox_unavailable`); runner integration and evidence publication
   remain separate tasks.
+- Same-host compromise is out of scope by declared threat model: a local
+  administrator who can replace the bubblewrap binary, the git binary or
+  the orchestrator itself defeats any in-process guarantee; the defence
+  for that layer is host integrity, not this tool.

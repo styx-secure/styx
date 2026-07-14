@@ -25,7 +25,7 @@ from typing import Sequence
 sys.dont_write_bytecode = True
 
 from contract_inputs import load_scope_report, load_task_inputs
-from executor import execute_plan, review_eligible, validate_plan_document
+from executor import evaluate_eligibility, execute_plan, review_eligible, validate_plan_document
 from model import (
     EXIT_ERROR,
     EXIT_FAIL,
@@ -40,6 +40,7 @@ from planner import build_plan, plan_bytes
 
 __all__ = [
     "build_plan",
+    "evaluate_eligibility",
     "execute_plan",
     "load_scope_report",
     "load_task_inputs",
@@ -164,11 +165,9 @@ def _command_execute(args: argparse.Namespace) -> int:
 
 
 def _command_eligibility(args: argparse.Namespace) -> int:
-    test_report = load_strict_json(args.test_report.read_bytes(), source="test report")
-    scope_report = load_strict_json(args.scope_report.read_bytes(), source="scope report")
-    if not isinstance(test_report, dict) or not isinstance(scope_report, dict):
-        raise OrchestratorError("evidence documents must be JSON objects")
-    if review_eligible(test_report, scope_report, args.head_sha):
+    if evaluate_eligibility(
+        args.test_report.read_bytes(), args.scope_report.read_bytes(), args.head_sha
+    ):
         print("ELIGIBLE")
         return EXIT_PASS
     print("NOT_ELIGIBLE")
