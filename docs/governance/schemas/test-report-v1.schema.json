@@ -13,6 +13,7 @@
     "issue_body_sha256",
     "plan_sha256",
     "scope_report_sha256",
+    "command_policy_sha256",
     "mandatory_verdict",
     "regression_verdict",
     "generated_verdict",
@@ -48,6 +49,9 @@
       "$ref": "#/$defs/sha256"
     },
     "scope_report_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "command_policy_sha256": {
       "$ref": "#/$defs/sha256"
     },
     "mandatory_verdict": {
@@ -165,6 +169,7 @@
             "missing_tool",
             "rejected_command",
             "plan_invalidated",
+            "sandbox_unavailable",
             "internal_error"
           ]
         },

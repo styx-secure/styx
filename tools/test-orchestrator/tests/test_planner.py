@@ -135,6 +135,35 @@ class PlannerTest(OrchestratorCase):
         self.assertEqual(3, code)
         self.assertIn("different base/head", stderr)
 
+    def test_non_pass_scope_report_blocks_planning(self):
+        fixture = self.fixture()
+        original = fixture.scope_report_path.read_text(encoding="utf-8")
+        for verdict in ("FAIL", "ERROR"):
+            with self.subTest(verdict=verdict):
+                document = json.loads(original)
+                document["verdict"] = verdict
+                fixture.scope_report_path.write_bytes(support.model.canonical_json_bytes(document))
+                output = self.workdir / f"plan-scope-{verdict.lower()}.json"
+                code, stderr = self.invoke(fixture.plan_args(output))
+                self.assertEqual(3, code)
+                self.assertIn("requires PASS", stderr)
+                self.assertFalse(output.exists())
+
+    def test_plan_binds_the_active_command_policy(self):
+        fixture = self.fixture()
+        _, plan = self.build_plan(fixture)
+        self.assertEqual(support.safety.command_policy_sha256(), plan["command_policy_sha256"])
+
+    def test_traversal_proposals_are_rejected(self):
+        fixture = self.fixture()
+        proposals = [
+            {"purpose": "escape upwards", "command": ["python3", "-m", "py_compile", "../../outside.py"]},
+            {"purpose": "escape absolute", "command": ["python3", "-m", "py_compile", "/etc/passwd"]},
+        ]
+        _, plan = self.build_plan(fixture, proposals=proposals)
+        self.assertEqual([], checks_of_class(plan, "GENERATED"))
+        self.assertEqual({0, 1}, {item["index"] for item in plan["rejected_proposals"]})
+
 
 if __name__ == "__main__":
     import unittest

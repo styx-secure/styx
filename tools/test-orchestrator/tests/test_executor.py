@@ -7,7 +7,7 @@ import os
 from unittest import mock
 
 import support
-from support import FAKE_TOKEN, MiniSchemaValidator, OrchestratorCase, load_schema
+from support import FAKE_TOKEN, Fixture, MiniSchemaValidator, OrchestratorCase, load_schema
 
 
 class ExecutorPassTest(OrchestratorCase):
@@ -111,6 +111,121 @@ class ExecutorClassificationTest(OrchestratorCase):
             outcome = support.executor.run_check(check, environment)
         self.assertEqual("ERROR", outcome["verdict"])
         self.assertEqual("missing_tool", outcome["observed_class"])
+
+
+class ExecutorOutputBoundingTest(OrchestratorCase):
+    def test_unbounded_output_stream_is_killed_and_classified(self):
+        fixture = self.fixture()
+        proposals = [
+            {"purpose": "endless output must be stopped at the cap",
+             "command": ["python3", "-m", "unittest", "discover", "-s", "tools/sample/infinite",
+                          "-p", "test_*.py"],
+             "timeout_seconds": 60,
+             "max_output_bytes": 4096},
+        ]
+        plan_path, _ = self.build_plan(fixture, proposals=proposals)
+        code, report = self.execute_plan(fixture, plan_path)
+        self.assertEqual(3, code)
+        self.assertEqual("ERROR", report["generated_verdict"])
+        failures = [item for item in report["failures"] if item["category"] == "GENERATED"]
+        self.assertEqual(1, len(failures))
+        self.assertEqual("output_limit_exceeded", failures[0]["observed_class"])
+        self.assertTrue(failures[0]["output_truncated"])
+        self.assertGreater(failures[0]["stdout_bytes"], 4096)
+
+    def test_child_process_that_keeps_writing_is_killed(self):
+        fixture = self.fixture()
+        proposals = [
+            {"purpose": "a lingering child writer must be terminated with the group",
+             "command": ["python3", "-m", "unittest", "discover", "-s", "tools/sample/childwriter",
+                          "-p", "test_*.py"],
+             "timeout_seconds": 60,
+             "max_output_bytes": 4096},
+        ]
+        plan_path, _ = self.build_plan(fixture, proposals=proposals)
+        code, report = self.execute_plan(fixture, plan_path)
+        self.assertEqual(3, code)
+        failures = [item for item in report["failures"] if item["category"] == "GENERATED"]
+        self.assertEqual(1, len(failures))
+        self.assertEqual("output_limit_exceeded", failures[0]["observed_class"])
+        self.assertTrue(failures[0]["output_truncated"])
+
+
+class SandboxFailClosedTest(OrchestratorCase):
+    def assert_sandbox_blocked(self, fixture, plan_path) -> dict:
+        report_path = self.workdir / "report.json"
+        code, _ = self.invoke(fixture.execute_args(plan_path, report_path))
+        self.assertEqual(3, code)
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        self.assertEqual("ERROR", report["verdict"])
+        for name in ("mandatory", "regression", "generated", "adversarial", "static", "rollback"):
+            self.assertEqual("NOT_RUN", report[f"{name}_verdict"])
+        observed = {item["observed_class"] for item in report["failures"]}
+        self.assertEqual({"sandbox_unavailable"}, observed)
+        MiniSchemaValidator(load_schema(support.REPORT_SCHEMA)).validate(report)
+        return report
+
+    def test_missing_bwrap_runs_no_check_and_reports_error(self):
+        fixture = self.fixture()
+        plan_path, _ = self.build_plan(fixture)
+        self.use_missing_bwrap()
+        self.assert_sandbox_blocked(fixture, plan_path)
+
+    def test_broken_bwrap_runs_no_check_and_reports_error(self):
+        fixture = self.fixture()
+        plan_path, _ = self.build_plan(fixture)
+        self.use_broken_bwrap()
+        self.assert_sandbox_blocked(fixture, plan_path)
+
+    def test_run_check_never_executes_without_a_sandbox(self):
+        fixture = self.fixture()
+        self.use_missing_bwrap()
+        environment = support.executor.ExecutionEnvironment(fixture.repo.root, fixture.head_sha)
+        self.addCleanup(environment.cleanup)
+        check = {
+            "command": ["python3", "-m", "json.tool", "docs/governance/schemas/sample.schema.json"],
+            "discard_stdout": False,
+            "timeout_seconds": 5,
+            "max_output_bytes": 1024,
+            "isolation": "worktree",
+        }
+        outcome = support.executor.run_check(check, environment)
+        self.assertEqual("ERROR", outcome["verdict"])
+        self.assertEqual("sandbox_unavailable", outcome["observed_class"])
+
+
+class RuntimePathContainmentTest(OrchestratorCase):
+    def run_crafted_check(self, fixture, command: list[str]) -> dict:
+        environment = support.executor.ExecutionEnvironment(fixture.repo.root, fixture.head_sha)
+        self.addCleanup(environment.cleanup)
+        check = {
+            "command": command,
+            "discard_stdout": False,
+            "timeout_seconds": 5,
+            "max_output_bytes": 1024,
+            "isolation": "worktree",
+        }
+        return support.executor.run_check(check, environment)
+
+    def test_symlink_escape_is_rejected_before_execution(self):
+        fixture = self.fixture()
+        outside = self.workdir / "outside.py"
+        outside.write_text("VALUE = 2\n", encoding="utf-8")
+        link = fixture.repo.root / "tools" / "sample" / "escape_link.py"
+        link.symlink_to(outside)
+        outcome = self.run_crafted_check(
+            fixture, ["python3", "-m", "py_compile", "tools/sample/escape_link.py"]
+        )
+        self.assertEqual("ERROR", outcome["verdict"])
+        self.assertEqual("rejected_command", outcome["observed_class"])
+
+    def test_relative_traversal_is_rejected_before_execution(self):
+        fixture = self.fixture()
+        outcome = self.run_crafted_check(
+            fixture, ["python3", "-m", "py_compile", "../../outside.py"]
+        )
+        self.assertEqual("ERROR", outcome["verdict"])
+        self.assertEqual("rejected_command", outcome["observed_class"])
 
 
 class ExecutorPlanValidationTest(OrchestratorCase):
@@ -223,6 +338,52 @@ class ExecutorInvalidationTest(OrchestratorCase):
         document["execution_id"] = "different-execution"
         fixture.scope_report_path.write_bytes(support.model.canonical_json_bytes(document))
         self.assert_invalidated(fixture, plan_path)
+
+    def test_tampered_policy_hash_invalidates_the_plan(self):
+        fixture = self.fixture()
+        plan_path, plan = self.build_plan(fixture)
+        plan["command_policy_sha256"] = "0" * 64
+        self.rewrite_plan(plan_path, plan)
+        self.assert_invalidated(fixture, plan_path)
+
+    def test_changed_command_policy_invalidates_the_plan(self):
+        fixture = self.fixture()
+        plan_path, _ = self.build_plan(fixture)
+        with mock.patch.object(support.executor, "command_policy_sha256", return_value="f" * 64):
+            self.assert_invalidated(fixture, plan_path)
+
+    def test_non_pass_scope_report_can_never_yield_a_pass_report(self):
+        for verdict in ("FAIL", "ERROR"):
+            with self.subTest(verdict=verdict):
+                fixture = Fixture(self.workdir / f"scope-{verdict.lower()}")
+                plan_path, plan = self.build_plan(fixture)
+                document = json.loads(fixture.scope_report_path.read_text(encoding="utf-8"))
+                document["verdict"] = verdict
+                raw = support.model.canonical_json_bytes(document)
+                fixture.scope_report_path.write_bytes(raw)
+                plan["scope_report_sha256"] = support.sha256_hex(raw)
+                self.rewrite_plan(plan_path, plan)
+                report = self.assert_invalidated(fixture, plan_path)
+                self.assertNotEqual("PASS", report["verdict"])
+
+
+class FailureSanitizationTest(OrchestratorCase):
+    def test_reproduction_command_in_failure_report_is_redacted(self):
+        fixture = self.fixture()
+        secret = "hunter2-super-secret"
+        proposals = [
+            {"purpose": "failing check whose argv carries secret material",
+             "command": ["python3", "-m", "py_compile", f"token={secret}", "missing_file.py"]},
+        ]
+        plan_path, _ = self.build_plan(fixture, proposals=proposals)
+        code, report = self.execute_plan(fixture, plan_path)
+        self.assertEqual(2, code)
+        failures = [item for item in report["failures"] if item["category"] == "GENERATED"]
+        self.assertEqual(1, len(failures))
+        command = failures[0]["reproduction"]["command"]
+        self.assertIn("token=[REDACTED]", command)
+        self.assertNotIn(f"token={secret}", command)
+        self.assertNotIn(secret, json.dumps(report))
 
 
 if __name__ == "__main__":

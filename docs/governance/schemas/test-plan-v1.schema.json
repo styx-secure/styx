@@ -13,6 +13,7 @@
     "head_sha",
     "issue_body_sha256",
     "scope_report_sha256",
+    "command_policy_sha256",
     "checks",
     "rejected_proposals",
     "generation"
@@ -43,6 +44,9 @@
       "$ref": "#/$defs/sha256"
     },
     "scope_report_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "command_policy_sha256": {
       "$ref": "#/$defs/sha256"
     },
     "checks": {

@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import re
 import tempfile
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 PLAN_SCHEMA_ID = "styx.test-plan/v1"
 REPORT_SCHEMA_ID = "styx.test-report/v1"
@@ -50,6 +50,13 @@ SECRET_VALUE_RE = re.compile(
     r"(?i)(authorization:\s*(?:bearer|token)\s+)[^\s]+"
     r"|\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"
 )
+SECRET_NAME_FRAGMENT = r"(?:token|passwd|password|secret|api[_-]?key|authorization|credential|bearer)"
+SECRET_ARG_KEY_RE = re.compile(rf"(?i)^(--?[A-Za-z0-9_-]*{SECRET_NAME_FRAGMENT}|{SECRET_NAME_FRAGMENT})$")
+SECRET_ASSIGNMENT_RE = re.compile(rf"(?i)^([^=]*{SECRET_NAME_FRAGMENT}[^=]*)=(.+)$")
+CREDENTIAL_PATH_RE = re.compile(
+    r"(?i)(^|/)(\.netrc|\.git-credentials|\.npmrc|\.pypirc|\.ssh|\.aws|\.docker|\.kube)(/|$)"
+    r"|(?i:/gh/hosts\.ya?ml$)"
+)
 
 
 class OrchestratorError(Exception):
@@ -80,6 +87,10 @@ class CommandPolicyError(OrchestratorError):
 
 class RepositoryStateError(OrchestratorError):
     code = "E_REPOSITORY_STATE"
+
+
+class SandboxError(OrchestratorError):
+    code = "E_SANDBOX"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -165,6 +176,37 @@ def redact_text(value: str, env: Mapping[str, str] | None = None) -> str:
     for secret in secrets:
         text = text.replace(secret, "[REDACTED]")
     return text
+
+
+def redact_command(argv: Sequence[str], env: Mapping[str, str] | None = None) -> list[str]:
+    """Sanitize an argv vector before it enters a failure report.
+
+    The command stays useful for reproduction: only secret-looking material
+    is replaced. Redacted forms are key=value assignments with secret-like
+    keys, values following secret-like option tokens, known credential file
+    paths, and every token shape handled by ``redact_text``.
+    """
+
+    redacted: list[str] = []
+    mask_next = False
+    for token in argv:
+        if mask_next:
+            redacted.append("[REDACTED]")
+            mask_next = False
+            continue
+        assignment = SECRET_ASSIGNMENT_RE.match(token)
+        if assignment:
+            redacted.append(f"{assignment.group(1)}=[REDACTED]")
+            continue
+        if CREDENTIAL_PATH_RE.search(token):
+            redacted.append("[REDACTED]")
+            continue
+        if SECRET_ARG_KEY_RE.match(token):
+            redacted.append(token)
+            mask_next = True
+            continue
+        redacted.append(redact_text(token, env))
+    return redacted
 
 
 def atomic_write(path: Path, data: bytes) -> None:

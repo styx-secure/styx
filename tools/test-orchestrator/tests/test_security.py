@@ -66,6 +66,51 @@ class CommandPolicyTest(unittest.TestCase):
         self.assert_rejected(["git", "diff", "--git-dir=/elsewhere"])
         self.assert_rejected(["git", "diff", "--exec-path=/elsewhere"])
 
+    def test_git_diff_write_and_helper_options_are_rejected(self):
+        sha_a, sha_b = "a" * 40, "b" * 40
+        for option in (
+            "--output=/tmp/x",
+            "--output",
+            "--ext-diff",
+            "--no-ext-diff",
+            "--textconv",
+            "--no-textconv",
+            "--src-prefix=x",
+            "--dst-prefix=x",
+            "--line-prefix=x",
+            "--ita-invisible-in-index",
+            "--ita-visible-in-index",
+            "-G",
+            "-Gpattern",
+            "-S",
+            "-Ssecret",
+            "--find-object",
+            "--find-object=deadbeef",
+        ):
+            with self.subTest(option=option):
+                self.assert_rejected(["git", "diff", option, sha_a, sha_b])
+
+    def test_git_options_follow_a_positive_allowlist(self):
+        sha_a, sha_b = "a" * 40, "b" * 40
+        support.safety.validate_command(["git", "diff", "--check", sha_a, sha_b])
+        support.safety.validate_command(
+            ["git", "diff", "--quiet", sha_a, sha_b, "--", ":(glob).github/**"]
+        )
+        support.safety.validate_command(["git", "cat-file", "-e", f"{sha_a}^{{commit}}"])
+        support.safety.validate_command(["git", "merge-base", "--is-ancestor", sha_a, sha_b])
+        self.assert_rejected(["git", "diff", "--stat", sha_a, sha_b])
+        self.assert_rejected(["git", "cat-file", "--batch"])
+        self.assert_rejected(["git", "rev-parse", "--show-toplevel"])
+
+    def test_python_path_traversal_is_rejected(self):
+        self.assert_rejected(["python3", "-m", "py_compile", "../../etc/passwd"])
+        self.assert_rejected(["python3", "-m", "py_compile", "a/../../b.py"])
+        self.assert_rejected(["python3", "-m", "compileall", ".."])
+        self.assert_rejected(["python3", "-m", "unittest", "discover", "-s", "../outside"])
+        self.assert_rejected(["python3", "-m", "unittest", "discover", "--start-directory=../outside"])
+        self.assert_rejected(["python3", "-m", "py_compile", "~/x.py"])
+        self.assert_rejected(["python3", "-m", "py_compile", "/etc/passwd"])
+
     def test_only_devnull_redirection_is_supported(self):
         argv, discard = support.safety.split_shell_command("python3 -m json.tool x.json >/dev/null")
         self.assertTrue(discard)
@@ -129,6 +174,50 @@ class EnvironmentMaskingTest(OrchestratorCase):
         self.assertNotIn("ghp_" + "g" * 24, redacted)
         self.assertIn("[REDACTED]", redacted)
 
+    def test_command_redaction_masks_secret_material(self):
+        secret = "hunter2-super-secret"
+        argv = [
+            "python3", "-m", "unittest",
+            f"token={secret}",
+            f"--api-key={secret}",
+            "--password", secret,
+            f"https://user:{secret}@relay.example/path",
+            "ghp_" + "h" * 24,
+            ".ssh/id_ed25519",
+            "docs/schema.json",
+        ]
+        redacted = support.model.redact_command(argv, env={})
+        joined = json.dumps(redacted)
+        self.assertNotIn(secret, joined)
+        self.assertNotIn("ghp_" + "h" * 24, joined)
+        self.assertNotIn("id_ed25519", joined)
+        self.assertEqual("token=[REDACTED]", redacted[3])
+        self.assertEqual("--api-key=[REDACTED]", redacted[4])
+        self.assertEqual(["--password", "[REDACTED]"], redacted[5:7])
+        self.assertEqual("docs/schema.json", redacted[-1])
+        self.assertEqual(["python3", "-m", "unittest"], redacted[:3])
+
+    def test_command_redaction_keeps_ordinary_commands_intact(self):
+        argv = ["python3", "-m", "unittest", "discover", "-s", "tools/sample/tests", "-p", "test_*.py"]
+        self.assertEqual(argv, support.model.redact_command(argv, env={}))
+
+
+class CommandPolicyBindingTest(unittest.TestCase):
+    def test_policy_hash_is_a_stable_sha256(self):
+        first = support.safety.command_policy_sha256()
+        second = support.safety.command_policy_sha256()
+        self.assertRegex(first, r"^[0-9a-f]{64}$")
+        self.assertEqual(first, second)
+
+    def test_policy_hash_tracks_the_descriptor(self):
+        baseline = support.safety.command_policy_sha256()
+        descriptor = support.safety.command_policy_descriptor()
+        descriptor["python_module_allowlist"] = ["unittest"]
+        with mock.patch.object(
+            support.safety, "command_policy_descriptor", return_value=descriptor
+        ):
+            self.assertNotEqual(baseline, support.safety.command_policy_sha256())
+
 
 class SchemaShapeTest(unittest.TestCase):
     def test_published_schemas_are_closed_and_versioned(self):
@@ -153,6 +242,7 @@ class SchemaShapeTest(unittest.TestCase):
                 "issue_body_sha256",
                 "plan_sha256",
                 "scope_report_sha256",
+                "command_policy_sha256",
                 "mandatory_verdict",
                 "regression_verdict",
                 "generated_verdict",

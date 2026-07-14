@@ -10,6 +10,7 @@ on top by the executor when bubblewrap is available.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import shlex
 
@@ -19,21 +20,29 @@ from model import (
     DEFAULT_TIMEOUT_SECONDS,
     MAX_OUTPUT_BYTES,
     MAX_TIMEOUT_SECONDS,
+    canonical_json_bytes,
 )
+
+COMMAND_POLICY_VERSION = "2"
 
 ALLOWED_EXECUTABLES = ("python3", "git")
 
 PYTHON_MODULE_ALLOWLIST = ("unittest", "json.tool", "py_compile", "compileall")
 
-GIT_SUBCOMMAND_ALLOWLIST = (
-    "cat-file",
-    "diff",
-    "ls-files",
-    "ls-tree",
-    "merge-base",
-    "rev-parse",
-    "status",
-)
+# Positive per-subcommand option allowlist. Any git option token that is not
+# listed here is rejected, so write-capable or helper-executing options such
+# as --output, --ext-diff, --textconv, -G, -S, --find-object, --src-prefix,
+# --dst-prefix or --line-prefix never reach execution.
+GIT_OPTION_ALLOWLIST: dict[str, frozenset[str]] = {
+    "cat-file": frozenset({"-e"}),
+    "diff": frozenset({"--check", "--quiet"}),
+    "ls-files": frozenset({"-z", "--cached"}),
+    "ls-tree": frozenset({"-r", "--name-only", "-z"}),
+    "merge-base": frozenset({"--is-ancestor"}),
+    "rev-parse": frozenset({"--verify"}),
+    "status": frozenset({"--porcelain=v1", "-z", "--untracked-files=all"}),
+}
+GIT_SUBCOMMAND_ALLOWLIST = tuple(sorted(GIT_OPTION_ALLOWLIST))
 GIT_FORBIDDEN_ARG_RE = re.compile(
     r"^(-c|-C|--exec-path(=.*)?|--git-dir(=.*)?|--work-tree(=.*)?"
     r"|--namespace(=.*)?|--config-env(=.*)?|--upload-pack(=.*)?|--receive-pack(=.*)?)$"
@@ -103,18 +112,67 @@ def _validate_python(vector: tuple[str, ...]) -> None:
     for token in vector[3:]:
         if token == "-c":
             raise CommandPolicyError("arbitrary python code execution is not allowed")
-        if token.startswith("/") and not token.startswith("/dev/null"):
-            raise CommandPolicyError(f"absolute paths are not allowed: {token!r}")
+        validate_python_path_token(token)
+
+
+def validate_python_path_token(token: str) -> None:
+    """Reject absolute, home-relative and parent-traversing path material.
+
+    Applied to every python argument token at planning time and again by the
+    executor immediately before execution; combined ``--option=value`` tokens
+    are checked on their value part so traversal cannot hide behind an
+    option prefix.
+    """
+
+    if token.startswith("-"):
+        if "=" in token:
+            validate_python_path_token(token.split("=", 1)[1])
+        return
+    if token.startswith("/"):
+        if token.startswith("/dev/null"):
+            return
+        raise CommandPolicyError(f"absolute paths are not allowed: {token!r}")
+    if token.startswith("~"):
+        raise CommandPolicyError(f"home-relative paths are not allowed: {token!r}")
+    if any(part == ".." for part in token.split("/")):
+        raise CommandPolicyError(f"parent-directory traversal is not allowed: {token!r}")
 
 
 def _validate_git(vector: tuple[str, ...]) -> None:
     if len(vector) < 2:
         raise CommandPolicyError("git commands must name a subcommand")
-    if vector[1] not in GIT_SUBCOMMAND_ALLOWLIST:
-        raise CommandPolicyError(f"git subcommand is not allowlisted: {vector[1]!r}")
-    for token in vector[1:]:
+    subcommand = vector[1]
+    if subcommand not in GIT_OPTION_ALLOWLIST:
+        raise CommandPolicyError(f"git subcommand is not allowlisted: {subcommand!r}")
+    allowed_options = GIT_OPTION_ALLOWLIST[subcommand]
+    for token in vector[2:]:
         if GIT_FORBIDDEN_ARG_RE.match(token):
             raise CommandPolicyError(f"git argument is not allowed: {token!r}")
+        if token == "--":
+            continue
+        if token.startswith("-") and token not in allowed_options:
+            raise CommandPolicyError(f"git option is outside the read-only allowlist: {token!r}")
+
+
+def command_policy_descriptor() -> dict[str, object]:
+    """Deterministic description of the active command policy."""
+
+    return {
+        "policy_version": COMMAND_POLICY_VERSION,
+        "allowed_executables": list(ALLOWED_EXECUTABLES),
+        "python_module_allowlist": list(PYTHON_MODULE_ALLOWLIST),
+        "git_option_allowlist": {name: sorted(options) for name, options in GIT_OPTION_ALLOWLIST.items()},
+        "network_tool_tokens": sorted(NETWORK_TOOL_TOKENS),
+        "max_timeout_seconds": MAX_TIMEOUT_SECONDS,
+        "max_output_bytes": MAX_OUTPUT_BYTES,
+        "sandbox": "bwrap-unshare-net-required",
+    }
+
+
+def command_policy_sha256() -> str:
+    """Binds plans and reports to the exact policy that validated them."""
+
+    return hashlib.sha256(canonical_json_bytes(command_policy_descriptor())).hexdigest()
 
 
 def validate_resource_policy(timeout_seconds: object, max_output_bytes: object) -> tuple[int, int]:

@@ -58,22 +58,36 @@ byte-identical.
 
 Planning fails closed when the declared base drifts from the Issue
 contract, when the scope report binds a different base/head or Issue body,
-or when a required test violates the command policy.
+when the scope report verdict is not `PASS` (a non-`PASS` scope can never
+produce an executable plan), or when a required test violates the command
+policy.
 
 ## Command policy
 
 Commands are argv vectors executed without a shell. The policy allows only:
 
 - `python3 -m {unittest, json.tool, py_compile, compileall}` (never `-c`,
-  never script paths, never absolute paths);
+  never script paths). Path material is restricted: absolute paths,
+  home-relative paths and any `..` component are rejected, including
+  inside combined `--option=value` tokens, at planning time and again by
+  the executor immediately before execution;
 - read-only git subcommands (`diff`, `status`, `rev-parse`, `ls-files`,
-  `ls-tree`, `cat-file`, `merge-base`) with configuration and path
-  overrides (`-c`, `--git-dir`, `--exec-path`, …) rejected.
+  `ls-tree`, `cat-file`, `merge-base`) with a positive per-subcommand
+  option allowlist (for `diff` only `--check` and `--quiet`). Every other
+  option token is rejected, so write-capable or helper-executing options
+  (`--output`, `--ext-diff`, `--textconv`, `-G`, `-S`, `--find-object`,
+  prefix rewriting, `-c`, `--git-dir`, `--exec-path`, …) never execute.
 
 Shell control tokens, network-capable tools (`curl`, `wget`, `ssh`, `gh`,
 `pip`, `npm`, …) and any other executable are rejected. The single accepted
 redirection is a trailing `>/dev/null`, normalised into the boolean
 `discard_stdout` field.
+
+The active policy is described by a deterministic descriptor whose SHA-256
+is recorded in the plan and echoed by the report as
+`command_policy_sha256`. The executor recomputes the hash before running
+anything: a plan produced under a different policy is invalidated and can
+only yield an `ERROR` report.
 
 ## Execution
 
@@ -83,11 +97,19 @@ unknown fields rejected, identifier integrity, command policy and resource
 bounds. A structurally invalid plan produces no report and exits `3`.
 
 A structurally valid plan is then bound to reality: Issue body hash, scope
-report hash, base/head binding, exact repository HEAD and a clean worktree.
-Any drift — a new commit, a dirty worktree, a changed Issue, scope report,
-base, diff or policy — invalidates the plan: the report is written with
-verdict `ERROR`, a `PLAN`-category `styx.test-failure/v1` entry
-(`plan_invalidated`) and every class verdict `NOT_RUN`.
+report hash and `PASS` verdict, command policy hash, base/head binding,
+exact repository HEAD and a clean worktree. Any drift — a new commit, a
+dirty worktree, a changed Issue, scope report, base, diff or policy —
+invalidates the plan: the report is written with verdict `ERROR`, a
+`PLAN`-category `styx.test-failure/v1` entry (`plan_invalidated`) and
+every class verdict `NOT_RUN`.
+
+Network denial is fail-closed. Before any check runs, the executor
+requires bubblewrap and probes that it can actually establish the
+namespace; a missing binary or a failing probe stops execution before the
+first check, producing an `ERROR` report with a `sandbox_unavailable`
+entry and every class verdict `NOT_RUN`. There is no unsandboxed fallback
+path for any command.
 
 Checks run with:
 
@@ -95,28 +117,39 @@ Checks run with:
   `~/.git-credentials` and `~/.config/gh`;
 - an environment built from scratch (only `PATH` is inherited), so no
   credential variable can leak;
-- `bwrap --unshare-net` network denial with the repository mounted
-  read-only whenever bubblewrap is available; the command allowlist keeps
-  execution offline-only even without it;
-- per-check timeout and output byte limits;
+- mandatory `bwrap --unshare-net` network denial with the repository
+  mounted read-only;
+- a runtime path-containment check for python arguments: every existing
+  path is resolved (following symlinks) and must stay inside the execution
+  root, so a committed symlink cannot reach the primary worktree;
+- a per-check timeout and per-stream output caps enforced during
+  execution: stdout/stderr are read incrementally into bounded buffers and
+  never accumulate beyond `max_output_bytes` per stream. Exceeding a cap
+  or the deadline kills the whole process group (checks run in their own
+  session; bubblewrap adds `--die-with-parent` for its children);
 - for `GENERATED` checks, a pristine `git archive` copy of HEAD, so
   generated tests can never touch the primary worktree.
 
 ## Classification
 
 Per check: exit `0` is `PASS`; a non-zero exit is `FAIL`
-(`nonzero_exit`); timeout, output overflow, missing tool, rejected command
-and internal faults are `ERROR`. Per class: `ERROR` beats `FAIL` beats
-`PASS`; a class with no checks is `NOT_RUN`. Overall: any `ERROR` class
-gives `ERROR`, any `FAIL` class gives `FAIL`, and `PASS` additionally
-requires `mandatory_verdict == PASS`. `FAIL` and `ERROR` can never become
-`PASS`.
+(`nonzero_exit`); timeout, output overflow, missing tool, rejected
+command, unavailable sandbox and internal faults are `ERROR`. Per class:
+`ERROR` beats `FAIL` beats `PASS`; a class with no checks is `NOT_RUN`.
+Overall: any `ERROR` class gives `ERROR`, any `FAIL` class gives `FAIL`,
+and `PASS` additionally requires `mandatory_verdict == PASS`. `FAIL` and
+`ERROR` can never become `PASS`.
 
 Every non-`PASS` check yields a `styx.test-failure/v1` entry with the
 stable test identifier, category, expected outcome, observed class, a safe
 reproduction reference (plan hash, check identifier, argv) and bounded
-SHA-256 stdout/stderr hashes. Raw output never enters the evidence, so
-secrets cannot leak through reports.
+SHA-256 stdout/stderr hashes computed over exactly the captured — possibly
+truncated — content. The reproduction argv is sanitized before it enters
+the report: secret-like `key=value` assignments, values following
+secret-like option tokens, credential file paths, token shapes and
+credentialed URLs are replaced with `[REDACTED]` while the command stays
+reproducible. Raw output never enters the evidence, so secrets cannot leak
+through reports.
 
 ## Review eligibility
 
@@ -173,6 +206,7 @@ refuses anything else.
   through the Issue's Required tests.
 - A production model-backed planner requires a separate credential,
   privacy and deployment gate.
-- Without bubblewrap the network-denial guarantee degrades to the command
-  allowlist; runner integration and evidence publication remain separate
-  tasks.
+- Bubblewrap is a hard operational dependency: hosts without a working
+  `bwrap` cannot execute plans (every run is an `ERROR` with
+  `sandbox_unavailable`); runner integration and evidence publication
+  remain separate tasks.

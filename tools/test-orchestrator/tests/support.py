@@ -96,7 +96,74 @@ if __name__ == "__main__":
     unittest.main()
 """
 
+INFINITE_OUTPUT_TEST = """import sys
+import unittest
+
+
+class InfiniteOutputTest(unittest.TestCase):
+    def test_unbounded_output(self):
+        while True:
+            sys.stdout.write("x" * 8192)
+            sys.stdout.flush()
+
+
+if __name__ == "__main__":
+    unittest.main()
+"""
+
+CHILD_WRITER_TEST = """import subprocess
+import sys
+import unittest
+
+
+class ChildWriterTest(unittest.TestCase):
+    def test_child_keeps_writing(self):
+        writer = "import sys" + chr(10) + "while True:" + chr(10) + "    sys.stdout.write('y' * 4096)"
+        subprocess.Popen([sys.executable, "-u", "-c", writer])
+
+
+if __name__ == "__main__":
+    unittest.main()
+"""
+
 FAKE_TOKEN = "a" * 24
+
+# Deterministic stand-in for bubblewrap: it understands exactly the option
+# grammar emitted by ExecutionEnvironment.command_prefix and the sandbox
+# probe, honours --chdir, and execs the wrapped command. It provides no
+# kernel isolation; suites assert the fail-closed wiring and prefix content,
+# not namespace behaviour, so they stay reproducible on hosts without bwrap.
+FAKE_BWRAP = """#!/usr/bin/env python3
+import os
+import sys
+
+args = sys.argv[1:]
+flags = {"--die-with-parent", "--new-session", "--unshare-net"}
+one_value = {"--dev", "--proc", "--tmpfs", "--chdir"}
+two_values = {"--ro-bind", "--bind"}
+chdir = None
+index = 0
+while index < len(args):
+    argument = args[index]
+    if argument in flags:
+        index += 1
+    elif argument in one_value:
+        if argument == "--chdir":
+            chdir = args[index + 1]
+        index += 2
+    elif argument in two_values:
+        index += 3
+    else:
+        break
+command = args[index:]
+if not command:
+    sys.exit(125)
+if chdir is not None:
+    os.chdir(chdir)
+os.execvp(command[0], command)
+"""
+
+BROKEN_BWRAP = "#!/bin/sh\nexit 1\n"
 
 
 def contract_body(
@@ -228,6 +295,8 @@ class Fixture:
         self.repo.write("tools/sample/newfile.py", "VALUE = 1\n")
         self.repo.write("tools/sample/slow/test_slow.py", SLOW_TEST)
         self.repo.write("tools/sample/noisy/test_noisy.py", NOISY_TEST)
+        self.repo.write("tools/sample/infinite/test_infinite.py", INFINITE_OUTPUT_TEST)
+        self.repo.write("tools/sample/childwriter/test_childwriter.py", CHILD_WRITER_TEST)
         self.head_sha = self.repo.commit("head")
 
         self.issue_number = 54
@@ -291,8 +360,27 @@ class OrchestratorCase(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.workdir = Path(self.temp.name)
         self._original_locate_bwrap = executor.locate_bwrap
-        executor.locate_bwrap = lambda: None
+        self.fake_bwrap = self._write_sandbox_stub("bwrap", FAKE_BWRAP)
+        self.use_fake_bwrap()
         self.addCleanup(self._restore_bwrap)
+
+    def _write_sandbox_stub(self, name: str, content: str) -> Path:
+        stub_dir = self.workdir / "sandbox-stubs"
+        stub_dir.mkdir(exist_ok=True)
+        path = stub_dir / name
+        path.write_text(content, encoding="utf-8")
+        path.chmod(0o755)
+        return path
+
+    def use_fake_bwrap(self) -> None:
+        executor.locate_bwrap = lambda: str(self.fake_bwrap)
+
+    def use_missing_bwrap(self) -> None:
+        executor.locate_bwrap = lambda: None
+
+    def use_broken_bwrap(self) -> None:
+        broken = self._write_sandbox_stub("broken-bwrap", BROKEN_BWRAP)
+        executor.locate_bwrap = lambda: str(broken)
 
     def _restore_bwrap(self) -> None:
         executor.locate_bwrap = self._original_locate_bwrap

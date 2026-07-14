@@ -29,6 +29,7 @@ from model import (
 )
 from safety import (
     CommandPolicyError,
+    command_policy_sha256,
     default_resource_policy,
     split_shell_command,
     validate_command,
@@ -271,6 +272,10 @@ def build_plan(
 ) -> dict[str, Any]:
     if not SHA_RE.fullmatch(base_sha) or not SHA_RE.fullmatch(head_sha):
         raise PlanError("base and head must be full lowercase commit SHAs")
+    if scope_report.verdict != "PASS":
+        raise PlanError(
+            f"scope report verdict is {scope_report.verdict}; an executable plan requires PASS"
+        )
     if base_sha != inputs.base_sha:
         raise PlanError("declared base drifted from the Issue contract; renewed authorization is required")
     if scope_report.base_sha != base_sha or scope_report.head_sha != head_sha:
@@ -303,6 +308,7 @@ def build_plan(
         "head_sha": head_sha,
         "issue_body_sha256": inputs.body_sha256,
         "scope_report_sha256": scope_report.sha256,
+        "command_policy_sha256": command_policy_sha256(),
         "checks": [check.as_dict() for check in checks],
         "rejected_proposals": rejected,
         "generation": generation_stanza(),

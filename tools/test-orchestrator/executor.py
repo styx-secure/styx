@@ -22,10 +22,13 @@ import hashlib
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import tarfile
 import tempfile
-from typing import Any, Mapping
+import threading
+import time
+from typing import Any, Mapping, Sequence
 
 from contract_inputs import ScopeReport
 from model import (
@@ -39,13 +42,24 @@ from model import (
     RepositoryStateError,
     SHA256_RE,
     SHA_RE,
+    SandboxError,
     canonical_json_bytes,
     generation_stanza,
     load_strict_json,
+    redact_command,
 )
-from safety import CommandPolicyError, validate_command, validate_resource_policy
+from safety import (
+    CommandPolicyError,
+    command_policy_sha256,
+    validate_command,
+    validate_python_path_token,
+    validate_resource_policy,
+)
 
 GIT_TIMEOUT_SECONDS = 120
+SANDBOX_PROBE_TIMEOUT_SECONDS = 60
+STREAM_CHUNK_BYTES = 65536
+DRAIN_JOIN_SECONDS = 30
 EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 
 CHECK_FIELDS = frozenset(
@@ -74,6 +88,7 @@ PLAN_FIELDS = frozenset(
         "head_sha",
         "issue_body_sha256",
         "scope_report_sha256",
+        "command_policy_sha256",
         "checks",
         "rejected_proposals",
         "generation",
@@ -113,7 +128,7 @@ def validate_plan_document(raw_bytes: bytes) -> dict[str, Any]:
             isinstance(plan[field], str) and SHA_RE.fullmatch(plan[field]) is not None,
             f"test plan {field} must be a full lowercase commit SHA",
         )
-    for field in ("issue_body_sha256", "scope_report_sha256"):
+    for field in ("issue_body_sha256", "scope_report_sha256", "command_policy_sha256"):
         _require(
             isinstance(plan[field], str) and SHA256_RE.fullmatch(plan[field]) is not None,
             f"test plan {field} must be a sha256 digest",
@@ -208,10 +223,16 @@ def verify_binding(
 ) -> None:
     """Exact-HEAD and input binding; any drift invalidates the plan."""
 
+    if plan["command_policy_sha256"] != command_policy_sha256():
+        raise RepositoryStateError("command policy changed after planning; the plan is invalidated")
     if hashlib.sha256(issue_body_bytes).hexdigest() != plan["issue_body_sha256"]:
         raise RepositoryStateError("Issue body changed after planning; the plan is invalidated")
     if scope_report.sha256 != plan["scope_report_sha256"]:
         raise RepositoryStateError("scope report changed after planning; the plan is invalidated")
+    if scope_report.verdict != "PASS":
+        raise RepositoryStateError(
+            f"scope report verdict is {scope_report.verdict}; execution requires PASS"
+        )
     if scope_report.base_sha != plan["base_sha"] or scope_report.head_sha != plan["head_sha"]:
         raise RepositoryStateError("scope report binds a different base/head; the plan is invalidated")
     head = _run_git(repo, ["rev-parse", "HEAD"])
@@ -246,9 +267,48 @@ class ExecutionEnvironment:
         self.tmp.mkdir()
         self.bwrap = locate_bwrap()
         self._archive_dir: Path | None = None
+        self._sandbox_ok: bool | None = None
 
     def cleanup(self) -> None:
         self._temp.cleanup()
+
+    def ensure_sandbox(self) -> None:
+        """Fail closed: no check may run without network-denied isolation.
+
+        Probes bubblewrap once per environment; a missing binary or a probe
+        that cannot establish the namespace makes every execution an ERROR,
+        with no unsandboxed fallback.
+        """
+
+        if self.bwrap is None:
+            raise SandboxError("bubblewrap is required for network-denied execution and was not found")
+        if self._sandbox_ok is None:
+            probe = [
+                self.bwrap,
+                "--die-with-parent",
+                "--new-session",
+                "--unshare-net",
+                "--ro-bind", "/", "/",
+                "--dev", "/dev",
+                "--proc", "/proc",
+                "--tmpfs", "/tmp",
+                "--chdir", "/",
+                "/bin/true",
+            ]
+            try:
+                result = subprocess.run(
+                    probe,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                    timeout=SANDBOX_PROBE_TIMEOUT_SECONDS,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                self._sandbox_ok = False
+            else:
+                self._sandbox_ok = result.returncode == 0
+        if not self._sandbox_ok:
+            raise SandboxError("bubblewrap cannot establish the network-denied sandbox")
 
     def environment(self) -> dict[str, str]:
         return {
@@ -293,7 +353,7 @@ class ExecutionEnvironment:
 
     def command_prefix(self, workdir: Path) -> list[str]:
         if self.bwrap is None:
-            return []
+            raise SandboxError("bubblewrap is required for network-denied execution and was not found")
         # The repository stays read-only inside the sandbox: checks may read
         # tracked content and .git metadata but can never mutate the primary
         # worktree. Only the orchestrator scratch root is writable.
@@ -312,13 +372,46 @@ class ExecutionEnvironment:
         ]
 
 
+def _ensure_python_paths_within(command: Sequence[str], workdir: Path) -> None:
+    """Runtime containment check applied immediately before execution.
+
+    The syntactic policy already rejects absolute paths and ``..``; this
+    resolves every existing path argument (following symlinks) and rejects
+    anything whose real location escapes the execution root, so a committed
+    symlink cannot reach the primary worktree or the wider filesystem.
+    """
+
+    if command[0] != "python3":
+        return
+    root = workdir.resolve()
+    for token in command[3:]:
+        validate_python_path_token(token)
+        material = token.split("=", 1)[1] if token.startswith("-") and "=" in token else token
+        if material.startswith("-"):
+            continue
+        candidate = root / material
+        if not candidate.exists() and not candidate.is_symlink():
+            continue
+        resolved = candidate.resolve()
+        if resolved != root and not resolved.is_relative_to(root):
+            raise CommandPolicyError(f"path escapes the execution root: {token!r}")
+
+
 def run_check(check: Mapping[str, Any], environment: ExecutionEnvironment) -> dict[str, Any]:
     """Run one validated check and classify the outcome."""
+
+    if environment.bwrap is None:
+        return _outcome("ERROR", "sandbox_unavailable", b"", b"", truncated=False)
 
     if check["isolation"] == "archive":
         workdir = environment.archive_workdir()
     else:
         workdir = environment.repo
+
+    try:
+        _ensure_python_paths_within(check["command"], workdir)
+    except CommandPolicyError:
+        return _outcome("ERROR", "rejected_command", b"", b"", truncated=False)
 
     env = environment.environment()
     executable = shutil.which(check["command"][0], path=env["PATH"])
@@ -326,32 +419,139 @@ def run_check(check: Mapping[str, Any], environment: ExecutionEnvironment) -> di
         return _outcome("ERROR", "missing_tool", b"", b"", truncated=False)
 
     argv = [*environment.command_prefix(workdir), executable, *check["command"][1:]]
-    stdout_target = subprocess.DEVNULL if check["discard_stdout"] else subprocess.PIPE
+    return _run_bounded(
+        argv,
+        workdir=workdir,
+        env=env,
+        timeout_seconds=check["timeout_seconds"],
+        cap=check["max_output_bytes"],
+        discard_stdout=check["discard_stdout"],
+    )
+
+
+def _drain_stream(stream: Any, cap: int, state: dict[str, Any], limit: threading.Event) -> None:
+    """Incremental bounded reader: never accumulates more than ``cap`` bytes."""
+
+    descriptor = stream.fileno()
     try:
-        completed = subprocess.run(
+        while True:
+            try:
+                chunk = os.read(descriptor, STREAM_CHUNK_BYTES)
+            except OSError:
+                break
+            if not chunk:
+                break
+            state["observed"] += len(chunk)
+            captured: bytearray = state["captured"]
+            if len(captured) < cap:
+                captured.extend(chunk[: cap - len(captured)])
+            if state["observed"] > cap:
+                limit.set()
+    finally:
+        try:
+            stream.close()
+        except OSError:
+            pass
+
+
+def _kill_process_group(process: subprocess.Popen) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            process.kill()
+        except OSError:
+            pass
+
+
+def _run_bounded(
+    argv: list[str],
+    *,
+    workdir: Path,
+    env: dict[str, str],
+    timeout_seconds: int,
+    cap: int,
+    discard_stdout: bool,
+) -> dict[str, Any]:
+    """Run argv with streaming output caps, a deadline and group teardown.
+
+    stdout/stderr are read incrementally into per-stream buffers bounded by
+    ``cap``; exceeding either limit kills the whole process group (checks
+    run in their own session, and bubblewrap adds ``--die-with-parent`` for
+    its children), as does the deadline. Hashes cover exactly the captured,
+    possibly truncated, content.
+    """
+
+    try:
+        process = subprocess.Popen(
             argv,
             cwd=workdir,
             env=env,
-            stdout=stdout_target,
+            stdout=subprocess.DEVNULL if discard_stdout else subprocess.PIPE,
             stderr=subprocess.PIPE,
-            check=False,
-            timeout=check["timeout_seconds"],
+            start_new_session=True,
         )
-    except subprocess.TimeoutExpired as exc:
-        stdout = exc.stdout if isinstance(exc.stdout, bytes) else b""
-        stderr = exc.stderr if isinstance(exc.stderr, bytes) else b""
-        return _outcome("ERROR", "timeout", stdout, stderr, truncated=False, cap=check["max_output_bytes"])
     except OSError:
         return _outcome("ERROR", "internal_error", b"", b"", truncated=False)
 
-    stdout = completed.stdout if isinstance(completed.stdout, bytes) else b""
-    stderr = completed.stderr if isinstance(completed.stderr, bytes) else b""
-    cap = check["max_output_bytes"]
-    if len(stdout) + len(stderr) > cap:
-        return _outcome("ERROR", "output_limit_exceeded", stdout, stderr, truncated=True, cap=cap)
-    if completed.returncode != 0:
-        return _outcome("FAIL", "nonzero_exit", stdout, stderr, truncated=False, cap=cap)
-    return _outcome("PASS", None, stdout, stderr, truncated=False, cap=cap)
+    limit = threading.Event()
+    states = {
+        "stdout": {"captured": bytearray(), "observed": 0},
+        "stderr": {"captured": bytearray(), "observed": 0},
+    }
+    readers: list[threading.Thread] = []
+    for name, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
+        if stream is None:
+            continue
+        thread = threading.Thread(
+            target=_drain_stream, args=(stream, cap, states[name], limit), daemon=True
+        )
+        thread.start()
+        readers.append(thread)
+
+    observed_class: str | None = None
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        if limit.is_set():
+            observed_class = "output_limit_exceeded"
+            _kill_process_group(process)
+            break
+        if time.monotonic() >= deadline:
+            observed_class = "timeout"
+            _kill_process_group(process)
+            break
+        if process.poll() is not None and all(not thread.is_alive() for thread in readers):
+            break
+        time.sleep(0.01)
+
+    process.wait()
+    for thread in readers:
+        thread.join(timeout=DRAIN_JOIN_SECONDS)
+
+    stdout_state = states["stdout"]
+    stderr_state = states["stderr"]
+    if observed_class is None and (stdout_state["observed"] > cap or stderr_state["observed"] > cap):
+        observed_class = "output_limit_exceeded"
+    truncated = stdout_state["observed"] > cap or stderr_state["observed"] > cap
+
+    stdout = bytes(stdout_state["captured"])
+    stderr = bytes(stderr_state["captured"])
+    if observed_class in ("output_limit_exceeded", "timeout"):
+        verdict = "ERROR"
+    elif process.returncode != 0:
+        verdict, observed_class = "FAIL", "nonzero_exit"
+    else:
+        verdict, observed_class = "PASS", None
+    return _outcome(
+        verdict,
+        observed_class,
+        stdout,
+        stderr,
+        truncated=truncated,
+        cap=cap,
+        stdout_bytes=stdout_state["observed"],
+        stderr_bytes=stderr_state["observed"],
+    )
 
 
 def _outcome(
@@ -362,6 +562,8 @@ def _outcome(
     *,
     truncated: bool,
     cap: int | None = None,
+    stdout_bytes: int | None = None,
+    stderr_bytes: int | None = None,
 ) -> dict[str, Any]:
     bounded_stdout = stdout if cap is None else stdout[:cap]
     bounded_stderr = stderr if cap is None else stderr[:cap]
@@ -370,8 +572,8 @@ def _outcome(
         "observed_class": observed_class,
         "stdout_sha256": hashlib.sha256(bounded_stdout).hexdigest(),
         "stderr_sha256": hashlib.sha256(bounded_stderr).hexdigest(),
-        "stdout_bytes": len(stdout),
-        "stderr_bytes": len(stderr),
+        "stdout_bytes": len(stdout) if stdout_bytes is None else stdout_bytes,
+        "stderr_bytes": len(stderr) if stderr_bytes is None else stderr_bytes,
         "output_truncated": truncated,
     }
 
@@ -387,7 +589,7 @@ def _failure_entry(check: Mapping[str, Any], outcome: Mapping[str, Any], plan_sh
         "reproduction": {
             "plan_sha256": plan_sha256,
             "check_id": check["id"],
-            "command": list(check["command"]),
+            "command": redact_command(check["command"]),
         },
         "stdout_sha256": outcome["stdout_sha256"],
         "stderr_sha256": outcome["stderr_sha256"],
@@ -397,13 +599,13 @@ def _failure_entry(check: Mapping[str, Any], outcome: Mapping[str, Any], plan_sh
     }
 
 
-def _invalidation_failure(plan_sha256: str) -> dict[str, Any]:
+def _plan_level_failure(plan_sha256: str, observed_class: str) -> dict[str, Any]:
     return {
         "schema": FAILURE_SCHEMA_ID,
         "test_id": "plan",
         "category": "PLAN",
         "expected_outcome": "PASS",
-        "observed_class": "plan_invalidated",
+        "observed_class": observed_class,
         "verdict": "ERROR",
         "reproduction": {"plan_sha256": plan_sha256, "check_id": "plan", "command": []},
         "stdout_sha256": EMPTY_SHA256,
@@ -448,31 +650,37 @@ def execute_plan(
 
     class_outcomes: dict[str, list[str]] = {name: [] for name in EXECUTION_CLASSES}
     failures: list[dict[str, Any]] = []
-    invalidated = False
+    blocked = False
     try:
         verify_binding(plan, repo=repo, issue_body_bytes=issue_body_bytes, scope_report=scope_report)
     except RepositoryStateError:
-        invalidated = True
-        failures.append(_invalidation_failure(plan_sha256))
+        blocked = True
+        failures.append(_plan_level_failure(plan_sha256, "plan_invalidated"))
 
-    if not invalidated:
+    if not blocked:
         owned_environment = environment is None
         run_environment = environment or ExecutionEnvironment(repo, plan["head_sha"])
         try:
-            for check in plan["checks"]:
-                try:
-                    outcome = run_check(check, run_environment)
-                except RepositoryStateError:
-                    outcome = _outcome("ERROR", "internal_error", b"", b"", truncated=False)
-                class_outcomes[check["execution_class"]].append(outcome["verdict"])
-                if outcome["verdict"] != "PASS":
-                    failures.append(_failure_entry(check, outcome, plan_sha256))
+            try:
+                run_environment.ensure_sandbox()
+            except SandboxError:
+                blocked = True
+                failures.append(_plan_level_failure(plan_sha256, "sandbox_unavailable"))
+            if not blocked:
+                for check in plan["checks"]:
+                    try:
+                        outcome = run_check(check, run_environment)
+                    except (RepositoryStateError, SandboxError):
+                        outcome = _outcome("ERROR", "internal_error", b"", b"", truncated=False)
+                    class_outcomes[check["execution_class"]].append(outcome["verdict"])
+                    if outcome["verdict"] != "PASS":
+                        failures.append(_failure_entry(check, outcome, plan_sha256))
         finally:
             if owned_environment:
                 run_environment.cleanup()
 
     class_verdicts = {name: _class_verdict(class_outcomes[name]) for name in EXECUTION_CLASSES}
-    verdict = "ERROR" if invalidated else _overall_verdict(class_verdicts)
+    verdict = "ERROR" if blocked else _overall_verdict(class_verdicts)
     return {
         "schema": REPORT_SCHEMA_ID,
         "issue_number": plan["issue_number"],
@@ -482,6 +690,7 @@ def execute_plan(
         "issue_body_sha256": plan["issue_body_sha256"],
         "plan_sha256": plan_sha256,
         "scope_report_sha256": plan["scope_report_sha256"],
+        "command_policy_sha256": plan["command_policy_sha256"],
         "mandatory_verdict": class_verdicts["MANDATORY"],
         "regression_verdict": class_verdicts["REGRESSION"],
         "generated_verdict": class_verdicts["GENERATED"],

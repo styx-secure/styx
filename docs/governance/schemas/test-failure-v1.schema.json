@@ -47,6 +47,7 @@
         "missing_tool",
         "rejected_command",
         "plan_invalidated",
+        "sandbox_unavailable",
         "internal_error"
       ]
     },
