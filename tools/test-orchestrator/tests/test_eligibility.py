@@ -161,6 +161,158 @@ class EligibilityValidationTest(OrchestratorCase):
         self.assertIn("candidate head", stderr)
 
 
+class ScopeReportValidationTest(OrchestratorCase):
+    """Eligibility must validate the scope report as strictly as the
+    test report, per the frozen styx.task-scope-report/v1 interface."""
+
+    def evidence(self):
+        fixture = self.fixture()
+        plan_path, _ = self.build_plan(fixture)
+        report_path = self.workdir / "test-report.json"
+        self.invoke(fixture.execute_args(plan_path, report_path))
+        return fixture, report_path
+
+    def eligibility(self, report_path, scope_path, head_sha) -> tuple[int, str]:
+        return self.invoke(
+            ["eligibility", "--test-report", str(report_path),
+             "--scope-report", str(scope_path), "--head-sha", head_sha]
+        )
+
+    def rewrite_scope(self, fixture, mutate) -> None:
+        scope = json.loads(fixture.scope_report_path.read_text(encoding="utf-8"))
+        mutate(scope)
+        fixture.scope_report_path.write_bytes(support.model.canonical_json_bytes(scope))
+
+    def assert_scope_rejected(self, mutate, message: str) -> None:
+        fixture, report_path = self.evidence()
+        self.rewrite_scope(fixture, mutate)
+        code, stderr = self.eligibility(report_path, fixture.scope_report_path, fixture.head_sha)
+        self.assertEqual(3, code)
+        self.assertIn(message, stderr)
+
+    def test_real_scope_guard_evidence_passes_strict_validation(self):
+        fixture, report_path = self.evidence()
+        raw = fixture.scope_report_path.read_bytes()
+        scope = support.executor.validate_scope_report_document(raw)
+        self.assertEqual("PASS", scope["verdict"])
+        code, _ = self.eligibility(report_path, fixture.scope_report_path, fixture.head_sha)
+        self.assertEqual(0, code)
+
+    def test_extra_scope_field_is_rejected(self):
+        self.assert_scope_rejected(
+            lambda scope: scope.update({"note": "extra"}), "missing or unknown fields"
+        )
+
+    def test_missing_scope_field_is_rejected(self):
+        self.assert_scope_rejected(
+            lambda scope: scope.pop("diagnostics"), "missing or unknown fields"
+        )
+
+    def test_bool_is_not_an_integer_for_issue_number(self):
+        self.assert_scope_rejected(
+            lambda scope: scope.update({"issue_number": True}),
+            "issue_number must be null or a positive integer",
+        )
+
+    def test_malformed_changed_entry_is_rejected(self):
+        def mutate(scope):
+            scope["changed_entries"][0].pop("score")
+
+        self.assert_scope_rejected(mutate, "changed entry 0 has missing or unknown fields")
+
+    def test_changed_entry_without_path_evaluations_is_rejected(self):
+        def mutate(scope):
+            scope["changed_entries"][0]["paths"] = []
+
+        self.assert_scope_rejected(mutate, "paths must be a non-empty array")
+
+    def test_non_canonical_scope_report_is_rejected(self):
+        fixture, report_path = self.evidence()
+        scope = json.loads(fixture.scope_report_path.read_text(encoding="utf-8"))
+        fixture.scope_report_path.write_text(json.dumps(scope, indent=2), encoding="utf-8")
+        code, stderr = self.eligibility(report_path, fixture.scope_report_path, fixture.head_sha)
+        self.assertEqual(3, code)
+        self.assertIn("canonical", stderr)
+
+    def test_minimal_but_canonical_scope_report_is_rejected(self):
+        fixture, report_path = self.evidence()
+        minimal = {
+            "schema": "styx.task-scope-report/v1",
+            "verdict": "PASS",
+            "head_sha": fixture.head_sha,
+        }
+        fixture.scope_report_path.write_bytes(support.model.canonical_json_bytes(minimal))
+        code, stderr = self.eligibility(report_path, fixture.scope_report_path, fixture.head_sha)
+        self.assertEqual(3, code)
+        self.assertIn("missing or unknown fields", stderr)
+
+    def test_different_issue_body_hash_is_rejected(self):
+        fixture, report_path = self.evidence()
+        self.rewrite_scope(fixture, lambda scope: scope.update({"issue_body_sha256": "1" * 64}))
+        # Keep the pair hash-consistent so the Issue-body binding itself is
+        # what gets exercised, not the scope-bytes binding.
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        report["scope_report_sha256"] = support.sha256_hex(fixture.scope_report_path.read_bytes())
+        report_path.write_bytes(support.model.canonical_json_bytes(report))
+        code, stderr = self.eligibility(report_path, fixture.scope_report_path, fixture.head_sha)
+        self.assertEqual(3, code)
+        self.assertIn("different Issue bodies", stderr)
+
+
+class ClassVerdictConsistencyTest(OrchestratorCase):
+    """Frozen semantic coherence between overall and class verdicts."""
+
+    def evidence(self):
+        fixture = self.fixture()
+        plan_path, _ = self.build_plan(fixture)
+        report_path = self.workdir / "test-report.json"
+        self.invoke(fixture.execute_args(plan_path, report_path))
+        return fixture, report_path
+
+    def assert_report_rejected(self, mutate, message: str) -> None:
+        fixture, report_path = self.evidence()
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        mutate(report)
+        report_path.write_bytes(support.model.canonical_json_bytes(report))
+        code, stderr = self.invoke(
+            ["eligibility", "--test-report", str(report_path),
+             "--scope-report", str(fixture.scope_report_path), "--head-sha", fixture.head_sha]
+        )
+        self.assertNotEqual(0, code)
+        self.assertEqual(3, code)
+        self.assertIn(message, stderr)
+
+    def test_pass_with_generated_error_is_ineligible(self):
+        self.assert_report_rejected(
+            lambda report: report.update({"generated_verdict": "ERROR"}),
+            "GENERATED reports ERROR without an ERROR failure entry",
+        )
+
+    def test_pass_with_generated_fail_is_ineligible(self):
+        self.assert_report_rejected(
+            lambda report: report.update({"generated_verdict": "FAIL"}),
+            "GENERATED reports FAIL",
+        )
+
+    def test_pass_with_non_pass_mandatory_is_ineligible(self):
+        self.assert_report_rejected(
+            lambda report: report.update({"mandatory_verdict": "NOT_RUN"}),
+            "PASS report admits no failures",
+        )
+
+    def test_fail_verdict_without_failing_class_is_ineligible(self):
+        self.assert_report_rejected(
+            lambda report: report.update({"verdict": "FAIL"}),
+            "a FAIL report requires a failing class",
+        )
+
+    def test_error_verdict_without_error_evidence_is_ineligible(self):
+        self.assert_report_rejected(
+            lambda report: report.update({"verdict": "ERROR"}),
+            "an ERROR report requires",
+        )
+
+
 if __name__ == "__main__":
     import unittest
 

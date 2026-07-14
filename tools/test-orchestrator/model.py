@@ -190,25 +190,41 @@ def redact_text(value: str, env: Mapping[str, str] | None = None) -> str:
     return text
 
 
+AUTH_SCHEME_TOKEN_RE = re.compile(r"(?i)^(bearer|token|basic)$")
+AUTH_SCHEME_VALUE_RE = re.compile(r"(?i)^(bearer|token|basic)[ \t]+\S")
+
+
 def redact_command(argv: Sequence[str], env: Mapping[str, str] | None = None) -> list[str]:
     """Sanitize an argv vector before it enters a failure report.
 
     The command stays useful for reproduction: only secret-looking material
     is replaced. Redacted forms are key=value assignments with secret-like
-    keys, values following secret-like option tokens, known credential file
-    paths, and every token shape handled by ``redact_text``.
+    keys, values following secret-like option tokens (including a
+    ``Bearer``/``Token``/``Basic`` scheme word before the secret, which is
+    preserved), known credential file paths, and every token shape handled
+    by ``redact_text`` (headers such as ``Authorization: Bearer …``
+    included).
     """
 
     redacted: list[str] = []
     mask_next = False
     for token in argv:
         if mask_next:
+            if AUTH_SCHEME_TOKEN_RE.match(token):
+                # Keep the scheme word readable; the secret follows it.
+                redacted.append(token)
+                continue
             redacted.append("[REDACTED]")
             mask_next = False
             continue
         assignment = SECRET_ASSIGNMENT_RE.match(token)
         if assignment:
-            redacted.append(f"{assignment.group(1)}=[REDACTED]")
+            value = assignment.group(2)
+            scheme = AUTH_SCHEME_VALUE_RE.match(value)
+            if scheme:
+                redacted.append(f"{assignment.group(1)}={scheme.group(1)} [REDACTED]")
+            else:
+                redacted.append(f"{assignment.group(1)}=[REDACTED]")
             continue
         if CREDENTIAL_PATH_RE.search(token):
             redacted.append("[REDACTED]")

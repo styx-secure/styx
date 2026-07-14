@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import subprocess
@@ -30,7 +31,7 @@ import threading
 import time
 from typing import Any, Mapping, Sequence
 
-from contract_inputs import ScopeReport, load_scope_report
+from contract_inputs import ScopeReport
 from model import (
     EXECUTION_CLASSES,
     FAILURE_SCHEMA_ID,
@@ -154,6 +155,35 @@ CLASS_VERDICT_FIELDS = (
     "static_verdict",
     "rollback_verdict",
 )
+
+# Frozen styx.task-scope-report/v1 interface, mirrored from
+# docs/governance/schemas/task-scope-report-v1.schema.json.
+SCOPE_REPORT_FIELDS = frozenset(
+    {
+        "schema",
+        "tool_version",
+        "issue_number",
+        "execution_id",
+        "base_sha",
+        "head_sha",
+        "issue_body_sha256",
+        "contract_version",
+        "allowed_patterns",
+        "forbidden_patterns",
+        "changed_entries",
+        "diagnostics",
+        "generation",
+        "verdict",
+    }
+)
+SCOPE_CHANGED_ENTRY_FIELDS = frozenset({"status", "score", "old_path", "new_path", "paths"})
+SCOPE_PATH_EVALUATION_FIELDS = frozenset({"path", "allowed_matches", "forbidden_matches", "violations"})
+SCOPE_DIAGNOSTIC_REQUIRED_FIELDS = frozenset({"code", "message", "severity"})
+SCOPE_DIAGNOSTIC_ALL_FIELDS = frozenset({"code", "message", "severity", "path"})
+SCOPE_CHANGE_STATUSES = ("A", "M", "D", "R", "C")
+SCOPE_VIOLATIONS = ("PATH_NOT_ALLOWED", "PATH_FORBIDDEN")
+TOOL_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+DIAGNOSTIC_CODE_RE = re.compile(r"^[EP]_[A-Z0-9_]+$")
 
 
 def _require(condition: bool, message: str) -> None:
@@ -925,12 +955,207 @@ def validate_report_document(raw_bytes: bytes) -> dict[str, Any]:
     _require(isinstance(report["failures"], list), "test report failures must be an array")
     for position, entry in enumerate(report["failures"]):
         _validate_failure_entry(entry, position)
-    if report["verdict"] == "PASS":
-        _require(
-            report["failures"] == [] and report["mandatory_verdict"] == "PASS",
-            "a PASS report cannot carry failures or a non-PASS mandatory verdict",
-        )
+    _validate_report_consistency(report)
     return report
+
+
+def _validate_report_consistency(report: Mapping[str, Any]) -> None:
+    """Semantic coherence between the overall verdict, the per-class
+    verdicts and the failure entries.
+
+    The admitted combinations are frozen and exhaustive:
+
+    - ``PASS``  ⇔ no failure entries, ``mandatory_verdict == PASS`` and
+      every class verdict in {PASS, NOT_RUN};
+    - ``FAIL``  ⇔ no class verdict ERROR, at least one class verdict FAIL,
+      ``mandatory_verdict`` in {PASS, FAIL} and no plan-level entry;
+    - ``ERROR`` ⇔ at least one class verdict ERROR, or a plan-level
+      (``PLAN`` category) failure entry, or ``mandatory_verdict`` not run.
+
+    Per class: PASS/NOT_RUN admit no failure entries of that class; FAIL
+    requires at least one FAIL entry and admits only FAIL entries; ERROR
+    requires at least one ERROR entry. Plan-level entries are ERROR-only
+    and admit no executed class.
+    """
+
+    failures = report["failures"]
+    category_verdicts = {
+        "MANDATORY": report["mandatory_verdict"],
+        "REGRESSION": report["regression_verdict"],
+        "GENERATED": report["generated_verdict"],
+        "ADVERSARIAL": report["adversarial_verdict"],
+        "STATIC": report["static_verdict"],
+        "ROLLBACK": report["rollback_verdict"],
+    }
+    plan_entries = [entry for entry in failures if entry["category"] == "PLAN"]
+
+    for entry in plan_entries:
+        _require(entry["verdict"] == "ERROR", "plan-level failure entries must be ERROR")
+    if plan_entries:
+        _require(
+            all(value == "NOT_RUN" for value in category_verdicts.values()),
+            "a plan-level failure admits no executed class verdict",
+        )
+
+    for category, class_verdict in category_verdicts.items():
+        entries = [entry for entry in failures if entry["category"] == category]
+        if class_verdict in ("PASS", "NOT_RUN"):
+            _require(not entries, f"{category} reports {class_verdict} but carries failure entries")
+        elif class_verdict == "FAIL":
+            _require(
+                entries and all(entry["verdict"] == "FAIL" for entry in entries),
+                f"{category} reports FAIL and must carry only FAIL failure entries",
+            )
+        else:
+            _require(
+                any(entry["verdict"] == "ERROR" for entry in entries),
+                f"{category} reports ERROR without an ERROR failure entry",
+            )
+
+    verdict = report["verdict"]
+    class_values = set(category_verdicts.values())
+    if verdict == "PASS":
+        _require(
+            not failures
+            and report["mandatory_verdict"] == "PASS"
+            and class_values <= {"PASS", "NOT_RUN"},
+            "a PASS report admits no failures and no FAIL/ERROR class verdict",
+        )
+    elif verdict == "FAIL":
+        _require(
+            "ERROR" not in class_values
+            and "FAIL" in class_values
+            and report["mandatory_verdict"] in ("PASS", "FAIL")
+            and not plan_entries,
+            "a FAIL report requires a failing class and no ERROR anywhere",
+        )
+    else:
+        _require(
+            "ERROR" in class_values
+            or bool(plan_entries)
+            or report["mandatory_verdict"] == "NOT_RUN",
+            "an ERROR report requires an ERROR class, a plan-level failure or an unexecuted mandatory class",
+        )
+
+
+def _is_strict_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _validate_pattern_list(value: Any, where: str) -> None:
+    _require(
+        isinstance(value, list) and all(isinstance(item, str) and item != "" for item in value),
+        f"{where} must be an array of non-empty strings",
+    )
+    _require(len(value) == len(set(value)), f"{where} must not contain duplicates")
+
+
+def _validate_path_evaluation(value: Any, where: str) -> None:
+    _require(isinstance(value, dict), f"{where} must be a JSON object")
+    _require(set(value) == SCOPE_PATH_EVALUATION_FIELDS, f"{where} has missing or unknown fields")
+    _require(isinstance(value["path"], str) and value["path"] != "", f"{where} path must be a non-empty string")
+    _validate_pattern_list(value["allowed_matches"], f"{where} allowed_matches")
+    _validate_pattern_list(value["forbidden_matches"], f"{where} forbidden_matches")
+    violations = value["violations"]
+    _require(
+        isinstance(violations, list) and all(item in SCOPE_VIOLATIONS for item in violations),
+        f"{where} violations are not recognised",
+    )
+    _require(len(violations) == len(set(violations)), f"{where} violations must not contain duplicates")
+
+
+def _validate_changed_entry(entry: Any, position: int) -> None:
+    where = f"changed entry {position}"
+    _require(isinstance(entry, dict), f"{where} must be a JSON object")
+    _require(set(entry) == SCOPE_CHANGED_ENTRY_FIELDS, f"{where} has missing or unknown fields")
+    _require(entry["status"] in SCOPE_CHANGE_STATUSES, f"{where} status is not recognised")
+    score = entry["score"]
+    _require(
+        score is None or (_is_strict_int(score) and 0 <= score <= 100),
+        f"{where} score must be null or an integer within [0, 100]",
+    )
+    for field in ("old_path", "new_path"):
+        value = entry[field]
+        _require(
+            value is None or (isinstance(value, str) and value != ""),
+            f"{where} {field} must be null or a non-empty string",
+        )
+    paths = entry["paths"]
+    _require(isinstance(paths, list) and len(paths) >= 1, f"{where} paths must be a non-empty array")
+    for index, evaluation in enumerate(paths):
+        _validate_path_evaluation(evaluation, f"{where} path evaluation {index}")
+
+
+def _validate_diagnostic(entry: Any, position: int) -> None:
+    where = f"diagnostic {position}"
+    _require(isinstance(entry, dict), f"{where} must be a JSON object")
+    _require(
+        SCOPE_DIAGNOSTIC_REQUIRED_FIELDS <= set(entry) <= SCOPE_DIAGNOSTIC_ALL_FIELDS,
+        f"{where} has missing or unknown fields",
+    )
+    _require(
+        isinstance(entry["code"], str) and DIAGNOSTIC_CODE_RE.fullmatch(entry["code"]) is not None,
+        f"{where} code is malformed",
+    )
+    _require(
+        isinstance(entry["message"], str) and entry["message"] != "",
+        f"{where} message must be a non-empty string",
+    )
+    _require(entry["severity"] == "error", f"{where} severity is not recognised")
+    if "path" in entry:
+        _require(
+            isinstance(entry["path"], str) and entry["path"] != "",
+            f"{where} path must be a non-empty string",
+        )
+
+
+def validate_scope_report_document(raw_bytes: bytes) -> dict[str, Any]:
+    """Strict runtime validation of a ``styx.task-scope-report/v1``.
+
+    Mirrors the frozen published schema: closed shape, canonical JSON with
+    duplicate keys rejected, exact types (bool is never accepted for int),
+    nullable fields exactly where the schema allows null, enums and the
+    complete changed_entries / diagnostics structure.
+    """
+
+    scope = load_strict_json(raw_bytes, source="scope report")
+    _require(isinstance(scope, dict), "scope report must be a JSON object")
+    _require(canonical_json_bytes(scope) == raw_bytes, "scope report is not in canonical JSON form")
+    _require(set(scope) == SCOPE_REPORT_FIELDS, "scope report has missing or unknown fields")
+    _require(scope["schema"] == "styx.task-scope-report/v1", "scope report has an unexpected schema identifier")
+    _require(
+        isinstance(scope["tool_version"], str) and TOOL_VERSION_RE.fullmatch(scope["tool_version"]) is not None,
+        "scope report tool_version is malformed",
+    )
+    issue_number = scope["issue_number"]
+    _require(
+        issue_number is None or (_is_strict_int(issue_number) and issue_number >= 1),
+        "scope report issue_number must be null or a positive integer",
+    )
+    _require(isinstance(scope["execution_id"], str), "scope report execution_id must be a string")
+    for field in ("base_sha", "head_sha"):
+        value = scope[field]
+        _require(
+            value is None or (isinstance(value, str) and SHA_RE.fullmatch(value) is not None),
+            f"scope report {field} must be null or a full lowercase commit SHA",
+        )
+    body_hash = scope["issue_body_sha256"]
+    _require(
+        body_hash is None or (isinstance(body_hash, str) and SHA256_RE.fullmatch(body_hash) is not None),
+        "scope report issue_body_sha256 must be null or a sha256 digest",
+    )
+    _require(scope["contract_version"] in ("v1", None), "scope report contract_version is not recognised")
+    _validate_pattern_list(scope["allowed_patterns"], "scope report allowed_patterns")
+    _validate_pattern_list(scope["forbidden_patterns"], "scope report forbidden_patterns")
+    _require(isinstance(scope["changed_entries"], list), "scope report changed_entries must be an array")
+    for position, entry in enumerate(scope["changed_entries"]):
+        _validate_changed_entry(entry, position)
+    _require(isinstance(scope["diagnostics"], list), "scope report diagnostics must be an array")
+    for position, entry in enumerate(scope["diagnostics"]):
+        _validate_diagnostic(entry, position)
+    _require(scope["generation"] == generation_stanza(), "scope report generation stanza is unexpected")
+    _require(scope["verdict"] in REPORT_VERDICTS, "scope report verdict is not recognised")
+    return scope
 
 
 def evaluate_eligibility(
@@ -947,17 +1172,15 @@ def evaluate_eligibility(
     if not SHA_RE.fullmatch(candidate_head_sha or ""):
         raise PlanError("candidate head must be a full lowercase commit SHA")
     report = validate_report_document(raw_test_report)
-    scope = load_scope_report(raw_scope_report)
-    _require(
-        canonical_json_bytes(scope.document) == raw_scope_report,
-        "scope report is not in canonical JSON form",
-    )
+    scope = validate_scope_report_document(raw_scope_report)
     if hashlib.sha256(raw_scope_report).hexdigest() != report["scope_report_sha256"]:
         raise PlanError("scope report does not match the evidence bound by the test report")
     if report["command_policy_sha256"] != command_policy_sha256():
         raise PlanError("test report was produced under a different command policy")
-    if scope.document.get("issue_number") != report["issue_number"]:
+    if scope["issue_number"] != report["issue_number"]:
         raise PlanError("scope report and test report bind different issues")
-    if scope.base_sha != report["base_sha"] or scope.head_sha != report["head_sha"]:
+    if scope["base_sha"] != report["base_sha"] or scope["head_sha"] != report["head_sha"]:
         raise PlanError("scope report and test report bind different commits")
-    return review_eligible(report, scope.document, candidate_head_sha)
+    if scope["issue_body_sha256"] != report["issue_body_sha256"]:
+        raise PlanError("scope report and test report bind different Issue bodies")
+    return review_eligible(report, scope, candidate_head_sha)

@@ -162,6 +162,22 @@ Overall: any `ERROR` class gives `ERROR`, any `FAIL` class gives `FAIL`,
 and `PASS` additionally requires `mandatory_verdict == PASS`. `FAIL` and
 `ERROR` can never become `PASS`.
 
+The admitted verdict combinations are frozen and exhaustive; documents
+violating them are rejected wherever evidence is consumed:
+
+- `PASS` ⇔ no failure entries, `mandatory_verdict == PASS`, and every
+  class verdict (generated and every other optional class included) in
+  {`PASS`, `NOT_RUN`};
+- `FAIL` ⇔ at least one class verdict `FAIL`, no class verdict `ERROR`,
+  `mandatory_verdict` in {`PASS`, `FAIL`}, no plan-level entry;
+- `ERROR` ⇔ at least one class verdict `ERROR`, or a `PLAN`-category
+  failure entry, or an unexecuted mandatory class.
+
+Per class: `PASS`/`NOT_RUN` admit no failure entries of that class;
+`FAIL` requires at least one `FAIL` entry and admits only `FAIL`
+entries; `ERROR` requires at least one `ERROR` entry. Plan-level entries
+are `ERROR`-only and admit no executed class.
+
 Every non-`PASS` check yields a `styx.test-failure/v1` entry with the
 stable test identifier, category, expected outcome, observed class, a safe
 reproduction reference (plan hash, check identifier, argv) and bounded
@@ -171,7 +187,10 @@ the report with explicit, shape-specific patterns only: `key=value`
 assignments and `--name=value`/`--name value` forms whose name contains
 `token`, `password`, `passwd`, `secret`, `api_key`, `access_key`,
 `client_secret`, `private_key`, `authorization`, `credential` or
-`bearer`; `Authorization: Bearer/Token` headers; GitHub token shapes
+`bearer` (a `Bearer`/`Token`/`Basic` scheme word between the name and the
+secret is preserved while the secret itself is fully redacted, e.g.
+`--authorization Bearer [REDACTED]`); `Authorization: Bearer/Token`
+headers; GitHub token shapes
 (`ghp_…`, `github_pat_…`); AWS key IDs (`AKIA…`/`ASIA…`); Slack tokens
 (`xoxa/xoxb/xoxp/xoxs-…`); JWTs; URLs with embedded credentials; and
 known credential file paths. No generic entropy heuristic is applied, so
@@ -193,13 +212,18 @@ The `eligibility` subcommand applies exactly this rule (exit `0` eligible,
 `2` not eligible) — but only after strictly validating both evidence
 documents at runtime, without a general JSON Schema engine: canonical
 JSON with duplicate keys rejected, closed shape with every required field
-present and no extra fields, field types, schema identifiers, verdict
-enums and per-entry failure validation. The evidence pair is then
+present and no extra fields, exact field types (a boolean is never
+accepted where an integer is required), schema identifiers, verdict
+enums, per-entry failure validation and the frozen verdict-combination
+rules above. The scope report is validated against its own frozen
+interface with the same rigour, including the complete
+`changed_entries`/`diagnostics` structure. The evidence pair is then
 cross-bound: the scope report bytes must hash to the test report's
 `scope_report_sha256`, the report's `command_policy_sha256` must match
-the active policy, and both documents must bind the same issue, base and
-HEAD. Minimal, tampered, non-canonical or inconsistent documents are
-rejected with exit `3`, never treated as eligible or silently ineligible.
+the active policy, and both documents must bind the same issue, base,
+HEAD and Issue body (`issue_body_sha256` equality is mandatory).
+Minimal, tampered, non-canonical or inconsistent documents are rejected
+with exit `3`, never treated as eligible or silently ineligible.
 Because both reports bind the exact HEAD and the plan binds Issue body,
 scope evidence and base, a new commit or any changed input invalidates
 the previous evidence and review eligibility with it.

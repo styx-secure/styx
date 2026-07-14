@@ -175,9 +175,22 @@ class ExecutorOutputBoundingTest(OrchestratorCase):
 
 
 class SandboxFailClosedTest(OrchestratorCase):
+    """Unit/pipeline proof of the fail-closed behaviour without bubblewrap.
+
+    These tests demonstrate that when bwrap is missing or cannot create
+    the namespace, no check command is ever spawned and the run produces
+    an ERROR report — the guarantee that stays load-bearing on hosts
+    where RealSandboxIntegrationTest is skipped.
+    """
+
     def assert_sandbox_blocked(self, fixture, plan_path) -> dict:
         report_path = self.workdir / "report.json"
-        code, _ = self.invoke(fixture.execute_args(plan_path, report_path))
+        with mock.patch.object(
+            support.executor,
+            "_run_bounded",
+            side_effect=AssertionError("a check was executed without a working sandbox"),
+        ):
+            code, _ = self.invoke(fixture.execute_args(plan_path, report_path))
         self.assertEqual(3, code)
         report = json.loads(report_path.read_text(encoding="utf-8"))
         self.assertEqual("ERROR", report["verdict"])
@@ -329,8 +342,20 @@ class GitDiffHardeningTest(OrchestratorCase):
         self.assertFalse(marker.exists())
 
 
-@unittest.skipUnless(support.real_bwrap_usable(), "real bubblewrap is unavailable on this host")
+@unittest.skipUnless(
+    support.real_bwrap_usable(),
+    "host cannot create user/network namespaces; a skip here is NOT positive "
+    "evidence of isolation — fail-closed coverage lives in SandboxFailClosedTest",
+)
 class RealSandboxIntegrationTest(OrchestratorCase):
+    """Integration-only: exercises the actual bubblewrap binary.
+
+    Skipped on hosts without working namespaces; the skip proves nothing.
+    On such hosts the executor refuses to run any check (see
+    SandboxFailClosedTest), so a green suite never implies isolation that
+    was not actually exercised.
+    """
+
     def test_real_bwrap_denies_network_and_runs_the_pipeline(self):
         listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.addCleanup(listener.close)

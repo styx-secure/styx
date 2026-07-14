@@ -239,6 +239,26 @@ class EnvironmentMaskingTest(OrchestratorCase):
             support.model.redact_command(["--private-key", secret], env={}),
         )
 
+    def test_authorization_bearer_forms_are_fully_redacted(self):
+        secret = "sk-live-abcdef0123456789"
+        cases = (
+            (["--authorization", "Bearer", secret],
+             ["--authorization", "Bearer", "[REDACTED]"]),
+            (["--authorization", "Token", secret],
+             ["--authorization", "Token", "[REDACTED]"]),
+            (["--header", f"Authorization: Bearer {secret}"],
+             ["--header", "Authorization: Bearer [REDACTED]"]),
+            ([f"Authorization=Bearer {secret}"],
+             ["Authorization=Bearer [REDACTED]"]),
+            (["--token", secret],
+             ["--token", "[REDACTED]"]),
+        )
+        for argv, expected in cases:
+            with self.subTest(argv=argv):
+                redacted = support.model.redact_command(argv, env={})
+                self.assertEqual(expected, redacted)
+                self.assertNotIn(secret, json.dumps(redacted))
+
     def test_legitimate_identifiers_are_never_redacted(self):
         commit_sha = "48b1d6450b52c387993073977869dded42ed4588"
         digest = "a" * 64
