@@ -1,0 +1,227 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/styx-secure/styx/blob/main/docs/governance/schemas/test-report-v1.schema.json",
+  "title": "Styx automatic test report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "issue_number",
+    "execution_id",
+    "base_sha",
+    "head_sha",
+    "issue_body_sha256",
+    "plan_sha256",
+    "scope_report_sha256",
+    "command_policy_sha256",
+    "mandatory_verdict",
+    "regression_verdict",
+    "generated_verdict",
+    "adversarial_verdict",
+    "static_verdict",
+    "rollback_verdict",
+    "failures",
+    "generation",
+    "verdict"
+  ],
+  "properties": {
+    "schema": {
+      "const": "styx.test-report/v1"
+    },
+    "issue_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "execution_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_sha": {
+      "$ref": "#/$defs/commitSha"
+    },
+    "head_sha": {
+      "$ref": "#/$defs/commitSha"
+    },
+    "issue_body_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "plan_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "scope_report_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "command_policy_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "mandatory_verdict": {
+      "$ref": "#/$defs/classVerdict"
+    },
+    "regression_verdict": {
+      "$ref": "#/$defs/classVerdict"
+    },
+    "generated_verdict": {
+      "$ref": "#/$defs/classVerdict"
+    },
+    "adversarial_verdict": {
+      "$ref": "#/$defs/classVerdict"
+    },
+    "static_verdict": {
+      "$ref": "#/$defs/classVerdict"
+    },
+    "rollback_verdict": {
+      "$ref": "#/$defs/classVerdict"
+    },
+    "failures": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/failure"
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonical_json",
+        "timestamp_omitted"
+      ],
+      "properties": {
+        "canonical_json": {
+          "const": "RFC8259-sort-keys-utf8-lf"
+        },
+        "timestamp_omitted": {
+          "const": true
+        }
+      }
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "ERROR"
+      ]
+    }
+  },
+  "$defs": {
+    "commitSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "testId": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{64}|plan)$"
+    },
+    "classVerdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "ERROR",
+        "NOT_RUN"
+      ]
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "test_id",
+        "category",
+        "expected_outcome",
+        "observed_class",
+        "verdict",
+        "reproduction",
+        "stdout_sha256",
+        "stderr_sha256",
+        "stdout_bytes",
+        "stderr_bytes",
+        "output_truncated"
+      ],
+      "properties": {
+        "schema": {
+          "const": "styx.test-failure/v1"
+        },
+        "test_id": {
+          "$ref": "#/$defs/testId"
+        },
+        "category": {
+          "enum": [
+            "MANDATORY",
+            "REGRESSION",
+            "GENERATED",
+            "ADVERSARIAL",
+            "STATIC",
+            "ROLLBACK",
+            "PLAN"
+          ]
+        },
+        "expected_outcome": {
+          "const": "PASS"
+        },
+        "observed_class": {
+          "enum": [
+            "nonzero_exit",
+            "timeout",
+            "output_limit_exceeded",
+            "missing_tool",
+            "rejected_command",
+            "plan_invalidated",
+            "sandbox_unavailable",
+            "preparation_error",
+            "internal_error"
+          ]
+        },
+        "verdict": {
+          "enum": [
+            "FAIL",
+            "ERROR"
+          ]
+        },
+        "reproduction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "plan_sha256",
+            "check_id",
+            "command"
+          ],
+          "properties": {
+            "plan_sha256": {
+              "$ref": "#/$defs/sha256"
+            },
+            "check_id": {
+              "$ref": "#/$defs/testId"
+            },
+            "command": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "stdout_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "stderr_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "stdout_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stderr_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_truncated": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
