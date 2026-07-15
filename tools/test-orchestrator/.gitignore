@@ -1,0 +1,6 @@
+# Ignore interpreter bytecode caches created by direct unittest invocations
+# of tools/test-orchestrator/tests before sys.dont_write_bytecode applies.
+# Scoped to this directory tree only; exact-HEAD evidence binding requires
+# the primary worktree to stay clean during local orchestrator runs.
+__pycache__/
+*.py[co]
