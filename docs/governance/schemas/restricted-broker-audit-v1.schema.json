@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/styx-secure/styx/blob/main/docs/governance/schemas/restricted-broker-audit-v1.schema.json",
+  "title": "Styx restricted broker audit v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "sequence",
+    "audit_id",
+    "request_sha256",
+    "execution_id",
+    "issue_number",
+    "operation",
+    "idempotency_key",
+    "evidence_hashes",
+    "decision",
+    "derived",
+    "outcome"
+  ],
+  "properties": {
+    "schema": {"const": "styx.restricted-broker-audit/v1"},
+    "sequence": {"type": "integer", "minimum": 0},
+    "audit_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "request_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "execution_id": {"type": ["string", "null"]},
+    "issue_number": {"type": ["integer", "null"], "minimum": 1},
+    "operation": {"enum": ["push_task_branch", "open_draft_pr", null]},
+    "idempotency_key": {"type": ["string", "null"]},
+    "evidence_hashes": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["scope_report_sha256", "runner_status_sha256", "hook_attestation_sha256"],
+          "properties": {
+            "scope_report_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+            "runner_status_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+            "hook_attestation_sha256": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
+          }
+        }
+      ]
+    },
+    "decision": {
+      "enum": [
+        "SUCCESS",
+        "DENIED_POLICY",
+        "DENIED_EVIDENCE",
+        "CONFLICT_IDEMPOTENT",
+        "AUTH_UNAVAILABLE",
+        "REMOTE_FAILURE",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "derived": {"type": ["object", "null"]},
+    "outcome": {"type": "object"}
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/styx-secure/styx/blob/main/docs/governance/schemas/restricted-broker-request-v1.schema.json",
+  "title": "Styx restricted broker request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "operation", "issue_number", "execution_id", "idempotency_key", "evidence"],
+  "properties": {
+    "schema": {"const": "styx.restricted-broker-request/v1"},
+    "operation": {"type": "string", "enum": ["push_task_branch", "open_draft_pr"]},
+    "issue_number": {"type": "integer", "minimum": 1},
+    "execution_id": {"type": "string", "minLength": 1},
+    "idempotency_key": {"type": "string", "minLength": 1},
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope_report", "runner_status", "hook_attestation"],
+      "properties": {
+        "scope_report": {"type": "object"},
+        "runner_status": {"type": "object"},
+        "hook_attestation": {"type": "object"}
+      }
+    }
+  }
+}

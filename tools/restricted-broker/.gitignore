@@ -1,0 +1,4 @@
+# Keep test runs from dirtying the repository with Python bytecode caches.
+# Strictly scoped to tools/restricted-broker/**.
+__pycache__/
+*.pyc
