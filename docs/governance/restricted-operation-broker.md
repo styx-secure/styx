@@ -91,31 +91,49 @@ parse (reject dup keys / non-object)
 → bind request issue_number/execution_id to evidence
 → derive policy target
 → atomic idempotency begin()
-    · CONFLICT → CONFLICT_IDEMPOTENT
-    · REPLAY   → recorded outcome (no fake call), new audit record + new audit_id
+    · CONFLICT → CONFLICT_IDEMPOTENT (same key, different request)
+    · PENDING  → CONFLICT_IDEMPOTENT (same key, concurrent/incomplete reservation)
+    · REPLAY   → recorded terminal outcome (no fake call), new audit record + new audit_id
 → fresh evidence revalidation (re-parsed from canonical bytes)
 → fresh local repository-state revalidation
+    · any pre-call failure → abort() the reservation (key stays retryable)
 → fake client call (non-force publish / Draft-only PR)
-→ idempotency complete()
+→ idempotency complete() → terminal recorded outcome (success OR client failure)
 → audit append (one record per attempt) → response
 ```
 
 The revalidation before the side effect re-parses the evidence from immutable
-canonical bytes and, additionally, checks the **real** local repository state
-(repository, worktree, branch, HEAD, base ancestry, clean checkout, changed
-paths, symlink/path replacement). A historical attestation is never accepted as
-a substitute for this fresh check.
+canonical bytes and, additionally, checks the **real** local repository state:
+repository, worktree, branch, HEAD, declared **base SHA** (bound to the target
+base, not a context-free ancestry boolean), base ancestry, clean checkout,
+changed paths, and symlink/path replacement. A historical attestation is never
+accepted as a substitute for this fresh check. Evidence closed-shape validation
+covers both the document top level and the consumed runner-status sub-objects
+(`issue`, `repository`, `base`, `worktree`, `scope_guard`); unknown fields there
+fail closed.
 
 ## Injected boundaries (no persisted format decided)
 
 `AuditSink` and `IdempotencyStore` are abstract interfaces. v1 ships only
 deterministic in-memory reference implementations, which are the authoritative
-reference semantics (append-only audit, atomic `begin`/`complete`, identical
-replay, conflict on same-key/different-request). No on-disk format, directory,
-locking, fsync, retention, recovery, multi-process concurrency or production
-storage is decided here; that is a separately authorized task. The
+reference semantics. The idempotency store is an explicit state machine —
+`begin` reserves, `abort` releases a reservation whose attempt never reached the
+client call (so the key stays retryable), and `complete` records a terminal
+outcome once the client has been invoked (success or a client-produced failure
+alike). A replay of a terminal key returns the recorded outcome without
+re-invoking the client; a concurrent/incomplete reservation is denied. Append-only
+audit records are deep-copied and sanitized on ingress and handed out as
+independent copies, so they cannot be mutated retroactively. No on-disk format,
+directory, locking, fsync, retention, recovery, multi-process concurrency or
+production storage is decided here; that is a separately authorized task. The
 `RepositoryInspector` is likewise injected; a real `git`-based inspector is
 deferred to runner integration.
+
+If the primary `AuditSink` raises, a broker-owned, non-configurable in-memory
+emergency sink records an `INTERNAL_ERROR` / `audit_sink_failure` marker
+(sanitized, no raw exception) and supplies the response `audit_id`; no exception
+escapes `execute`, and because the idempotency key is already terminal on a
+success path an audit failure cannot enable a second side effect.
 
 The audit record is canonical and deterministic (no timestamp, no randomness).
 `request_sha256` is always present; identifiers not yet validated (execution id,
