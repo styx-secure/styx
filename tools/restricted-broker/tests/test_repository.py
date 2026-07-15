@@ -22,6 +22,7 @@ def _good_state():
         worktree=support.WORKTREE,
         branch=support.BRANCH,
         head_sha=support.HEAD_SHA,
+        base_sha=support.BASE_SHA,
         base_is_ancestor=True,
         clean=True,
         changed_paths=tuple(support.CHANGED),
@@ -72,6 +73,13 @@ class TestRepository(unittest.TestCase):
             repository.validate_fresh_state(
                 repository.FakeRepositoryInspector(_state_with(base_is_ancestor=False)), ev, target
             )
+
+    def test_base_sha_mismatch_fails_even_when_ancestor_true(self):
+        ev, target = _ev_target()
+        # ancestor boolean is True but the observed base differs from the declared base
+        bad = _state_with(base_sha="0" * 40, base_is_ancestor=True)
+        with self.assertRaises(EvidenceError):
+            repository.validate_fresh_state(repository.FakeRepositoryInspector(bad), ev, target)
 
     def test_changed_paths_mismatch_fails(self):
         ev, target = _ev_target()

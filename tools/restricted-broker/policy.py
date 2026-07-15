@@ -31,7 +31,9 @@ def derive(ev: ValidatedEvidence, operation: str) -> Target:
         raise PolicyError(f"operation not permitted: {operation!r}")
     if ev.repository != REPOSITORY:
         raise PolicyError("repository is not the authorized repository")
-    if not re.match(rf"^task/{ev.issue_number}-[a-z0-9-]+$", ev.branch):
+    # fullmatch (not `$`) so a trailing newline or any control character in the
+    # branch name is rejected: `$` also matches immediately before a final "\n".
+    if not re.fullmatch(rf"task/{ev.issue_number}-[a-z0-9-]+", ev.branch):
         raise PolicyError(f"branch does not match task-branch policy: {ev.branch!r}")
     pr_title = f"[task] #{ev.issue_number} restricted broker (Draft)"
     pr_body = (

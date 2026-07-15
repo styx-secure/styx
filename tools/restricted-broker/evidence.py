@@ -42,6 +42,14 @@ _ATT_KEYS = {
     "scope_report_sha256", "changed_paths",
 }
 
+# Closed key sets for the consumed runner-status sub-objects (mirrors the frozen
+# styx.agent-runner-status/v1 schema for the objects the broker binds).
+_RUNNER_ISSUE_KEYS = {"number", "body_sha256"}
+_RUNNER_BASE_KEYS = {"branch", "declared_sha", "verified_sha"}
+_RUNNER_WORKTREE_KEYS = {"path", "branch"}
+_RUNNER_REPOSITORY_KEYS = {"expected", "verified", "source_root"}
+_RUNNER_SCOPE_GUARD_KEYS = {"exit_code", "verdict", "report_path", "report_sha256"}
+
 
 @dataclasses.dataclass(frozen=True)
 class EvidenceHashes:
@@ -127,11 +135,16 @@ def validate(bundle: EvidenceBundle) -> ValidatedEvidence:
 
     # --- runner status (consumed fields) ---
     issue = _obj(runner["issue"], "runner.issue")
+    _closed(issue, _RUNNER_ISSUE_KEYS, "runner.issue")
     base = _obj(runner["base"], "runner.base")
+    _closed(base, _RUNNER_BASE_KEYS, "runner.base")
     worktree = _obj(runner["worktree"], "runner.worktree")
+    _closed(worktree, _RUNNER_WORKTREE_KEYS, "runner.worktree")
     repo = _obj(runner["repository"], "runner.repository")
+    _closed(repo, _RUNNER_REPOSITORY_KEYS, "runner.repository")
     tests = runner["tests"]
     scope_guard = _obj(runner["scope_guard"], "runner.scope_guard")
+    _closed(scope_guard, _RUNNER_SCOPE_GUARD_KEYS, "runner.scope_guard")
     runner_exec = _str(runner["execution_id"], "runner.execution_id")
     if not isinstance(tests, list) or not tests:
         _fail("runner.tests must be a non-empty array")

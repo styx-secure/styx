@@ -21,6 +21,12 @@ class RepoState:
     worktree: str
     branch: str
     head_sha: str
+    # ``base_sha`` is the concrete base the inspector observed; ``base_is_ancestor``
+    # MUST be computed as "``base_sha`` is an ancestor of ``head_sha``" so the
+    # ancestry claim is self-consistent. ``validate_fresh_state`` additionally binds
+    # ``base_sha`` to the declared target base, so a context-free boolean can never
+    # stand in for the attested base.
+    base_sha: str
     base_is_ancestor: bool
     clean: bool
     changed_paths: tuple
@@ -52,8 +58,10 @@ def validate_fresh_state(inspector: RepositoryInspector, ev: ValidatedEvidence, 
         raise EvidenceError("branch changed since validation")
     if state.head_sha != target.head_sha:
         raise EvidenceError("HEAD changed since validation")
+    if state.base_sha != target.base_sha:
+        raise EvidenceError("declared base changed since validation")
     if not state.base_is_ancestor:
-        raise EvidenceError("HEAD no longer descends from the declared base")
+        raise EvidenceError("declared base is no longer an ancestor of HEAD")
     if not state.clean:
         raise EvidenceError("worktree is not clean")
     if state.symlink_paths:
