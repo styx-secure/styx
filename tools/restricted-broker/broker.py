@@ -187,6 +187,10 @@ class RestrictedBroker:
         )
         try:
             record = self._audit_sink.append(event)  # attempted exactly once
+            if not isinstance(record, audit_mod.AuditRecord):
+                # A sink that returns None/non-record instead of raising must not
+                # let `record.audit_id` blow up outside this guard.
+                raise TypeError("audit sink did not return an AuditRecord")
             final_result, final_outcome = result, outcome
         except Exception:  # noqa: BLE001 — non-recursive emergency path
             record = self._emergency_audit(ctx, request_sha256)

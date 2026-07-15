@@ -129,11 +129,18 @@ production storage is decided here; that is a separately authorized task. The
 `RepositoryInspector` is likewise injected; a real `git`-based inspector is
 deferred to runner integration.
 
-If the primary `AuditSink` raises, a broker-owned, non-configurable in-memory
-emergency sink records an `INTERNAL_ERROR` / `audit_sink_failure` marker
-(sanitized, no raw exception) and supplies the response `audit_id`; no exception
-escapes `execute`, and because the idempotency key is already terminal on a
-success path an audit failure cannot enable a second side effect.
+If the primary `AuditSink` raises (or returns a non-record), a broker-owned,
+non-configurable in-memory emergency sink records an `INTERNAL_ERROR` /
+`audit_sink_failure` marker (sanitized, no raw exception) and supplies the
+response `audit_id`; no exception escapes `execute`, and because the idempotency
+key is already terminal on a success path an audit failure cannot enable a second
+side effect.
+
+Caller contract for at-most-once: after any `INTERNAL_ERROR` (including
+`audit_sink_failure`), a caller MUST retry only with the **identical** idempotency
+key — never a new key. A new key would bypass the terminal reservation and could
+produce a second side effect (duplicate push / duplicate Draft PR); the identical
+key returns the recorded terminal outcome without re-invoking the client.
 
 The audit record is canonical and deterministic (no timestamp, no randomness).
 `request_sha256` is always present; identifiers not yet validated (execution id,

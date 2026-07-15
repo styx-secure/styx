@@ -78,6 +78,11 @@ class _FailingAuditSink(audit.AuditSink):
         raise RuntimeError("append-only log unavailable")
 
 
+class _NoneReturningAuditSink(audit.AuditSink):
+    def append(self, event):
+        return None  # contract violation: returns instead of raising
+
+
 class _PendingStore(idempotency.IdempotencyStore):
     def begin(self, key, fingerprint):
         return idempotency.PENDING
@@ -272,6 +277,13 @@ class TestBroker(unittest.TestCase):
         resp = b.execute(_raw("push_task_branch"))
         self.assertIn("audit_id", resp)
         self.assertRegex(resp["audit_id"], r"^[0-9a-f]{64}$")
+
+    def test_audit_sink_returning_non_record_does_not_escape(self):
+        b = _broker(audit_sink=_NoneReturningAuditSink())
+        resp = b.execute(_raw("delete_branch"))  # deny path: no nested try around _deny
+        self.assertEqual(resp["result"], "INTERNAL_ERROR")
+        self.assertRegex(resp["audit_id"], r"^[0-9a-f]{64}$")
+        self.assertEqual(len(b._emergency_sink.records), 1)
 
 
 if __name__ == "__main__":
