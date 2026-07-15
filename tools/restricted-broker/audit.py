@@ -1,12 +1,18 @@
 """Canonical, append-only audit records. Deterministic (no time, no random).
 
 The sink assigns ``sequence``, finalizes the record, computes ``audit_id`` and
-returns the immutable record used by the broker for the response. Identifiers
-that are only known after validation are ``null`` in early-denial records;
-``request_sha256`` is always present. No raw secrets or unsanitized payloads.
+returns an independent copy of the immutable record used by the broker for the
+response. Identifiers that are only known after validation are ``null`` in
+early-denial records; ``request_sha256`` is always present. No raw secrets or
+unsanitized payloads.
+
+Immutability: a frozen dataclass does not freeze the dicts it holds, so the sink
+deep-copies and sanitizes every payload on ingress and hands out deep copies on
+egress. A caller can never retroactively mutate a stored record.
 """
 from __future__ import annotations
 
+import copy
 import dataclasses
 import re
 
@@ -94,18 +100,21 @@ class InMemoryAuditSink(AuditSink):
 
     @property
     def records(self):
-        return list(self._records)  # snapshot; external mutation is inert
+        # Independent deep copies; mutating the result never touches stored state.
+        return [copy.deepcopy(record) for record in self._records]
 
     def append(self, event: AuditEvent) -> AuditRecord:
         sequence = len(self._records)
-        outcome = _sanitize_json(event.outcome)
+        outcome = _sanitize_json(copy.deepcopy(event.outcome))
+        derived = _sanitize_json(copy.deepcopy(event.derived))
+        evidence_hashes = _sanitize_json(copy.deepcopy(event.evidence_hashes))
         binding = [
             sequence,
             event.request_sha256,
             event.execution_id,
             event.operation,
             event.idempotency_key,
-            event.evidence_hashes,
+            evidence_hashes,
             event.decision,
         ]
         audit_id = canonical.canonical_sha256(binding)
@@ -117,10 +126,10 @@ class InMemoryAuditSink(AuditSink):
             issue_number=event.issue_number,
             operation=event.operation,
             idempotency_key=event.idempotency_key,
-            evidence_hashes=event.evidence_hashes,
+            evidence_hashes=evidence_hashes,
             decision=event.decision,
-            derived=event.derived,
+            derived=derived,
             outcome=outcome,
         )
         self._records.append(record)
-        return record
+        return copy.deepcopy(record)

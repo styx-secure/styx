@@ -76,6 +76,31 @@ class TestAudit(unittest.TestCase):
         r = sink.append(_event(outcome={"reason": "leak ghp_abcdefghijklmnopqrstuvwx01"}))
         self.assertNotIn("ghp_", r.to_json()["outcome"]["reason"])
 
+    def test_returned_record_mutation_does_not_alter_stored_record(self):
+        import canonical
+
+        sink = audit.InMemoryAuditSink()
+        sink.append(_event())
+        before = canonical.canonical_bytes(sink.records[0].to_json())
+        leaked = sink.records[0]
+        # attempt retroactive mutation of the mutable nested dicts held by the record
+        leaked.derived["force"] = True
+        leaked.outcome["ok"] = False
+        leaked.evidence_hashes["scope_report_sha256"] = "0" * 64
+        after = canonical.canonical_bytes(sink.records[0].to_json())
+        self.assertEqual(before, after)  # stored record is byte-identical
+
+    def test_input_mutation_after_append_does_not_alter_stored_record(self):
+        import canonical
+
+        sink = audit.InMemoryAuditSink()
+        derived = {"repository": "styx-secure/styx", "force": False}
+        sink.append(_event(derived=derived))
+        before = canonical.canonical_bytes(sink.records[0].to_json())
+        derived["force"] = True  # mutate the caller's original object
+        after = canonical.canonical_bytes(sink.records[0].to_json())
+        self.assertEqual(before, after)
+
 
 if __name__ == "__main__":
     unittest.main()
