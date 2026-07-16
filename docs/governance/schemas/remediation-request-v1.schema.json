@@ -49,7 +49,8 @@
       "$ref": "#/$defs/sha256"
     },
     "diff_sha256": {
-      "$ref": "#/$defs/sha256"
+      "$ref": "#/$defs/sha256",
+      "description": "Advisory metadata only, carried over from the review report. Unauthenticated: the authoritative binding of the code state is base_sha + head_sha."
     },
     "remediation_round_id": {
       "type": "integer",
@@ -59,8 +60,7 @@
       "$ref": "#/$defs/reviewerClass"
     },
     "reviewer_execution_id": {
-      "type": "string",
-      "minLength": 1
+      "$ref": "#/$defs/canonicalId"
     },
     "items": {
       "type": "array",
@@ -81,6 +81,11 @@
     "sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "canonicalId": {
+      "description": "Canonical form of an execution or context identifier: an ASCII alphanumeric first character followed by ASCII alphanumerics and the separators '-', '_', '.', at most 128 characters. Everything else - empty, surrounding or embedded whitespace, control bytes, and all non-ASCII text including Unicode confusables - is rejected rather than normalized.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
     },
     "reviewerClass": {
       "enum": [

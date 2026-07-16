@@ -39,15 +39,20 @@ python3 tools/review-gate/review_gate.py review \
   --review-request  review-request.json \
   --scope-report    scope-report.json \
   --test-report     test-report.json \
+  --repo-root       /path/to/reviewed/checkout \
   --output          /path/outside/repo/review-report.json
-# optional: --issue-body-file issue-body.txt  --repo-root /path/to/checkout
+# optional: --issue-body-file issue-body.txt
 
 # Turn a change-requesting review report into a remediation request.
 python3 tools/review-gate/review_gate.py remediate \
   --review-report   review-report.json \
   --round           1 \
+  --repo-root       /path/to/reviewed/checkout \
   --output          /path/outside/repo/remediation-request.json
 ```
+
+`--repo-root` is **required** by both writing subcommands: see
+[Output containment](#output-containment).
 
 Exit codes: `0` accepting review (`GO`/`GO_WITH_CONDITIONS`) or successful
 remediation; `2` a review that requests changes or blocks
@@ -99,6 +104,19 @@ established from a **separate read-only checkout**. The gate itself performs no
 git operation: it binds the declared candidate to the evidence and fails closed
 on any divergence.
 
+### What the declared candidate is trusted for
+
+The review request is reviewer-authored input, so it is trusted only where it is
+checked against evidence. Three levels apply:
+
+| Field | Status | Basis |
+| --- | --- | --- |
+| `base_sha`, `head_sha` | **Authoritative** | Stated independently by the scope and test reports; must match exactly. |
+| `implementer_execution_id` | **Evidence-derived** | Must exactly restate the evidence `execution_id`; never believed on its own. |
+| `issue_number`, `issue_body_sha256` | **Authoritative** | Must match the evidence. |
+| `diff_sha256` | **Advisory** | Unauthenticated; see [Advisory fields](#advisory-fields). |
+| `implementer_context_id` | **Advisory** | Unanchored; defence in depth only. |
+
 ## Review precondition
 
 A review starts only when every one of these holds; otherwise the gate exits `3`
@@ -108,24 +126,84 @@ and writes nothing:
 - test report present, valid, `verdict == PASS`;
 - test report is cross-linked to the exact scope report
   (`test.scope_report_sha256 == sha256(scope bytes)`);
-- scope and test reports agree on Issue, base, HEAD and Issue-body hash;
+- scope and test reports agree on Issue, base, HEAD, Issue-body hash and
+  `execution_id`;
 - the declared candidate agrees with the evidence on Issue, base, HEAD and
   Issue-body hash (exact-HEAD binding);
+- the declared `implementer_execution_id` exactly restates the evidence
+  `execution_id` (see [Implementer identity binding](#implementer-identity-binding));
 - optional `--issue-body-file` hashes to the candidate `issue_body_sha256`;
 - the reviewer is independent (see below).
 
 Any missing, ambiguous, duplicated, malformed, stale or cross-linked field fails
 closed. "Stale" is any evidence whose HEAD differs from the candidate HEAD.
 
+## Implementer identity binding
+
+An independence check is only as trustworthy as the implementer identity it
+compares against, so that identity is **derived from the evidence, never from the
+review request**. Before any independence rule is applied:
+
+1. the authoritative implementer identity is the `execution_id` carried by the
+   evidence. `load_evidence` requires
+   `scope_report.execution_id == test_report.execution_id`: a pair that
+   disagrees about who produced the candidate describes no single execution and
+   yields no identity at all;
+2. `candidate.implementer_execution_id` must **exactly** equal that value. It is
+   accepted only as a restatement, never as a source;
+3. any mismatch fails closed with `E_IDENTITY` before independence is evaluated;
+4. the emitted report records the evidence-derived value.
+
+Without step 2 a self-reviewing implementer could declare a decoy
+`implementer_execution_id`, differ from it trivially, and obtain `GO` on its own
+work — the independence check would be comparing the reviewer against a value the
+reviewer itself chose. `execution_id` is consumed from the authoritative
+`styx.task-scope-report/v1` shape declared on the base; this task neither
+redefines nor extends it.
+
+### Canonical identifiers
+
+Every execution and context identifier — in the evidence, the candidate and the
+reviewer — must match:
+
+```text
+^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$
+```
+
+An ASCII alphanumeric first character, then ASCII alphanumerics and `-`, `_`,
+`.`, up to 128 characters. Anything else fails closed: empty values, leading or
+trailing whitespace, embedded whitespace, control bytes, and **all** non-ASCII
+text — which is what excludes Unicode confusables such as a Cyrillic `е`
+(U+0435) dressed as an ASCII `e`.
+
+Rejecting is deliberate, and normalization is deliberately avoided: a folding
+rule (NFKC, confusable folding) could map two genuinely different agents onto
+one identity, which is a worse failure than refusing an odd-looking one.
+Restricting the alphabet achieves the same protection without ever merging
+distinct parties.
+
+Case is handled asymmetrically, and in both directions the effect is to reject
+more rather than accept more:
+
+- **Bindings are exact.** `Issue-55-Implementer-01` does not restate evidence
+  reading `issue-55-implementer-01`; it fails closed.
+- **Distinctness checks fold ASCII case.** A reviewer cannot escape self-review
+  detection by re-typing the implementer's id in different case. Both operands
+  are pure ASCII by the rule above, so the fold is unambiguous.
+
 ## Reviewer independence
 
 Exactly two reviewer classes are supported: `HUMAN` and `DELEGATED_AGENT`. For
 both, the review fails closed unless:
 
-- `reviewer.execution_id != candidate.implementer_execution_id` (no self-review,
-  no reused implementer identity);
-- `reviewer.context_id != candidate.implementer_context_id` (no reused
-  implementer context).
+- `reviewer.execution_id` does not conflict with the **evidence-derived**
+  implementer execution id (no self-review, no reused implementer identity);
+- `reviewer.context_id` does not conflict with
+  `candidate.implementer_context_id` (no reused implementer context).
+
+The context check is defence in depth only: the frozen evidence interface
+carries no context id, so unlike the execution id it has no evidence anchor, and
+no acceptance rests on it alone. No weak substitute is invented for it.
 
 A `DELEGATED_AGENT` additionally carries an explicit `identity_ref` and can never
 waive a finding: any `WAIVED_BY_HUMAN` finding requires `reviewer_class == HUMAN`,
@@ -148,6 +226,37 @@ A severe-or-required open finding is an open finding with severity `BLOCKER` or
 
 Finding severities: `BLOCKER`, `HIGH`, `MEDIUM`, `LOW`, `INFO`. Finding lifecycle:
 `OPEN`, `ADDRESSED_PENDING_REVERIFY`, `RESOLVED`, `WAIVED_BY_HUMAN`.
+
+### Severe findings may not be self-cleared by a delegated agent
+
+A bare `RESOLVED` lifecycle is an assertion, not evidence. Because `RESOLVED`
+findings are excluded from the open/severe evaluation above, a delegated agent
+could otherwise record a `BLOCKER`, mark it `RESOLVED`, and take `GO` on the very
+same HEAD — no fix, no new evidence, no re-verification — which is the waiver
+denial defeated in all but name.
+
+Therefore, for `reviewer_class == DELEGATED_AGENT`, `GO` and `GO_WITH_CONDITIONS`
+fail closed whenever **any** finding with severity `BLOCKER` or `HIGH`, or with
+`required_fix == true`, carries lifecycle `RESOLVED`. In this version:
+
+- final resolution of a severe or required-fix finding is **reserved to a
+  `HUMAN`** reviewer;
+- `OPEN` and `ADDRESSED_PENDING_REVERIFY` continue to block acceptance for every
+  reviewer class;
+- `WAIVED_BY_HUMAN` remains impossible for a delegated agent;
+- `required_fix == true` blocks acceptance until the finding is resolved by a
+  party entitled to resolve it;
+- a delegated agent may still **record** a severe `RESOLVED` finding under a
+  non-accepting verdict (`CHANGES_REQUESTED`, `BLOCKED`): keeping history is
+  fine, accepting on it is not.
+
+This is stricter than the eventual goal, on purpose. Proving a genuine
+cross-round re-verification would require binding a resolution to a prior
+review-report hash, a strictly newer candidate HEAD and fresh evidence of the
+fix. The v1 shapes carry none of those fields, and inventing a weak binding that
+merely *looked* like proof would be worse than admitting the gap. When the
+schemas can express a verifiable re-verification, this rule can be relaxed to
+accept it; until then it fails closed.
 
 Each finding receives a **stable canonical identifier**:
 `sha256` over the canonical JSON of `{component_path, problem, required_behavior,
@@ -180,6 +289,64 @@ new candidate HEAD.
 Rounds are explicit positive integers. Re-running with a higher `--round` over
 the same review report reproduces the same finding identifiers under a new round.
 
+## Output containment
+
+The gate's only side effect is one atomic write of one canonical document. The
+"never writes inside the reviewed repository" property is contractual, so it is
+enforced fail-closed and cannot be opted out of:
+
+- `--repo-root` is **required** by every writing subcommand (`review`,
+  `remediate`). Omitting it is a usage error: parsing fails with exit `3` and
+  **nothing** is created — no output, no parent directory, no temporary file. It
+  is not optional, because a protection a caller can disable by leaving out a
+  flag is not a protection.
+- The root must be an absolute, existing directory. A non-existent root is
+  refused: believing one would let a caller re-enable the write by naming a
+  directory at random.
+- Root and output are compared **fully resolved**, so containment cannot be
+  evaded through a symlink in either direction. Output equal to the root, or
+  anywhere beneath it, is refused.
+- Relative paths and paths containing `..` are refused rather than guessed at:
+  their meaning depends on the caller's working directory.
+- A symlinked output, or any symlinked ancestor of it, is refused (checked on
+  the literal path, since resolution would follow the link silently).
+- Independently of the declared root, an output inside **any** detected git
+  working tree is refused. This closes the residual case of a caller that
+  declares one root while writing into a different checkout — a required flag
+  alone cannot stop a caller from lying about it. Detection inspects the
+  filesystem for a `.git` directory or file among the output's ancestors; the
+  gate still never runs git and never reads repository contents.
+
+A consequence worth stating: if `TMPDIR` itself lies inside a git working tree,
+the gate refuses to write there. That is the intended answer, not a defect.
+
+## Advisory fields
+
+Two fields are recorded but are **not** evidence, and no security decision may
+rest on either.
+
+`diff_sha256` is unauthenticated reviewer input. The consumed frozen evidence
+interface carries no diff digest, so there is no bound source to verify it
+against; deriving a trustworthy one would require a diff hash inside the
+evidence, which this task does not own. The authoritative binding of the code
+state is `base_sha` + `head_sha`, each stated independently by the scope and test
+reports and matched exactly against the candidate; the diff itself is derivable
+from `base..head`. Concretely, the digest:
+
+- cannot make invalid or stale evidence valid;
+- cannot substitute for, or alter the outcome of, the base/HEAD binding;
+- cannot rescue an acceptance whose HEAD has moved;
+- participates in invalidation in one direction only — a *changed* digest may
+  additionally invalidate a prior acceptance, but a matching one never validates
+  anything on its own.
+
+It may be used for correlation, or to invalidate, only when it comes from the
+same authoritative context that produced the base/HEAD binding.
+
+`implementer_context_id` is likewise unanchored: the evidence carries no context
+id. It is kept as defence in depth (a reviewer reusing the implementer's context
+id is rejected) but, unlike the execution id, nothing rests on it alone.
+
 ## Invalidation
 
 A prior acceptance still applies only if the repository, Issue, base, HEAD,
@@ -193,7 +360,14 @@ required.
 
 - JSON closed-shape with unknown-field and duplicate-key rejection.
 - Canonical serialization and deterministic hashing; timestamps omitted.
-- Atomic writes to a single caller-chosen output path outside the repository.
+- Atomic writes to a single caller-chosen output path outside the repository,
+  with a mandatory `--repo-root` and git-working-tree detection
+  ([Output containment](#output-containment)); a failed write leaves no
+  temporary or partial file behind.
+- Reviewer independence decided against an evidence-derived implementer
+  identity, over a restricted ASCII identifier alphabet
+  ([Implementer identity binding](#implementer-identity-binding)).
+- Severe findings cannot be self-cleared to `RESOLVED` by a delegated agent.
 - Symlink and path-replacement rejection on every input and on the output path.
 - Component-path normalization rejects absolute, home-relative, traversal and
   backslash paths.
@@ -202,6 +376,26 @@ required.
 - Fail-closed exception mapping; the entrypoint raises nothing uncaught.
 - No network, no credentials, no GitHub call, no test execution, and no write
   inside the reviewed repository (hence no implementation-branch modification).
+
+## Known limits
+
+Stated explicitly so they are not mistaken for guarantees:
+
+- **No cross-round re-verification.** The v1 shapes cannot express "this finding
+  was re-verified against review report X at HEAD Y with fresh evidence". Until
+  they can, a delegated agent cannot finally resolve a severe finding at all;
+  such resolutions require a `HUMAN`.
+- **Identity is asserted, not authenticated.** The gate binds the implementer
+  identity to the evidence, which prevents a reviewer from inventing one; it
+  does not prove that the party behind an `execution_id` is who it claims to be.
+  Production identity binding is separately authorized work.
+- **`diff_sha256` and `implementer_context_id` are advisory**
+  ([Advisory fields](#advisory-fields)).
+- **Reviewer quality is out of scope.** Schema validation cannot judge whether a
+  review was any good; persona and delegation controls remain necessary.
+- **Evidence trust is inherited.** The gate consumes the scope and test reports
+  as given. It re-validates their shape and cross-binding, but their integrity
+  is the producing tool's responsibility.
 
 ## Independent review and human gate
 

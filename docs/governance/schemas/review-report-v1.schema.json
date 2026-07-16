@@ -55,7 +55,8 @@
       "$ref": "#/$defs/sha256"
     },
     "diff_sha256": {
-      "$ref": "#/$defs/sha256"
+      "$ref": "#/$defs/sha256",
+      "description": "Advisory metadata only. Unauthenticated reviewer input: the consumed evidence carries no diff digest, so this value has no bound source to be verified against and no security decision may depend on it. The authoritative binding of the code state is base_sha + head_sha."
     },
     "scope_report_sha256": {
       "$ref": "#/$defs/sha256"
@@ -73,24 +74,22 @@
       "$ref": "#/$defs/reviewerClass"
     },
     "reviewer_execution_id": {
-      "type": "string",
-      "minLength": 1
+      "$ref": "#/$defs/canonicalId"
     },
     "reviewer_context_id": {
-      "type": "string",
-      "minLength": 1
+      "$ref": "#/$defs/canonicalId"
     },
     "reviewer_identity_ref": {
       "type": "string",
       "minLength": 1
     },
     "implementer_execution_id": {
-      "type": "string",
-      "minLength": 1
+      "$ref": "#/$defs/canonicalId",
+      "description": "The implementer execution id carried by the scope and test evidence, which must agree. Never the reviewer's own declaration: a declared value is accepted only as an exact restatement of the evidence's."
     },
     "implementer_context_id": {
-      "type": "string",
-      "minLength": 1
+      "$ref": "#/$defs/canonicalId",
+      "description": "Advisory: the consumed evidence interface carries no context id, so this value is not evidence-anchored and no acceptance rests on it alone."
     },
     "independent": {
       "const": true
@@ -119,6 +118,11 @@
     "sha256": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
+    },
+    "canonicalId": {
+      "description": "Canonical form of an execution or context identifier: an ASCII alphanumeric first character followed by ASCII alphanumerics and the separators '-', '_', '.', at most 128 characters. Everything else - empty, surrounding or embedded whitespace, control bytes, and all non-ASCII text including Unicode confusables - is rejected rather than normalized, so that no normalizing rule can fold two genuinely distinct identities onto one another.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
     },
     "reviewerClass": {
       "enum": [
