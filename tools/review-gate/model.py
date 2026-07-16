@@ -51,6 +51,20 @@ CLASS_VERDICTS = ("PASS", "FAIL", "ERROR", "NOT_RUN")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
+# Canonical form for every execution and context identifier.
+#
+# Deliberately narrow: an ASCII alphanumeric first character followed by ASCII
+# alphanumerics and the separators '-', '_', '.', up to 128 characters. Every
+# other input is rejected outright rather than normalized: empty values,
+# leading/trailing whitespace, embedded whitespace or control bytes, and *all*
+# non-ASCII text, which is what excludes Unicode confusables such as a Cyrillic
+# 'e' (U+0435) or a full-width 'A' (U+FF21). Rejecting is the fail-closed
+# choice: a normalizing rule (NFKC, confusable folding, case folding) would map
+# genuinely different identities onto one another and could silently merge two
+# distinct agents.
+CANONICAL_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+CANONICAL_ID_RE = re.compile(CANONICAL_ID_PATTERN)
+
 # Explicit, shape-specific secret patterns only. No generic entropy heuristics:
 # commit SHAs and SHA-256 digests must never be redacted.
 SECRET_KEY_RE = re.compile(
@@ -165,6 +179,44 @@ def redact_text(value: str, env: Mapping[str, str] | None = None) -> str:
     return text
 
 
+def validate_canonical_id(value: object, field: str, *, error: type[ReviewGateError] = IdentityError) -> str:
+    """Return ``value`` if it is a canonical identifier, else fail closed.
+
+    Applied to every execution and context identifier, wherever it enters the
+    gate, so that identity comparisons are made between well-formed values in a
+    single documented form (see ``CANONICAL_ID_PATTERN``).
+    """
+
+    require(isinstance(value, str), f"{field} must be a string", error=error)
+    text: str = value  # type: ignore[assignment]
+    require(text != "", f"{field} must be a non-empty string", error=error)
+    require(text == text.strip(), f"{field} must not have leading or trailing whitespace", error=error)
+    require(
+        CANONICAL_ID_RE.fullmatch(text) is not None,
+        f"{field} is not a canonical identifier (must match {CANONICAL_ID_PATTERN})",
+        error=error,
+    )
+    return text
+
+
+def ids_conflict(left: str, right: str) -> bool:
+    """True when two canonical identifiers must be treated as the same identity.
+
+    Used only by checks that require two identities to *differ*. The comparison
+    is ASCII-case-insensitive so that a mere case variant of an identifier can
+    never be used to slip past a distinctness check: an agent declaring
+    ``Issue-55-Implementer-01`` against evidence naming
+    ``issue-55-implementer-01`` is treated as a conflict, not as a new party.
+    Both operands are canonical (pure ASCII), so ``str.lower`` is unambiguous
+    here and none of the Unicode case-folding hazards apply.
+
+    This only ever makes the gate reject more, never accept more: identity
+    *bindings* to evidence are compared exactly, never through this helper.
+    """
+
+    return left.lower() == right.lower()
+
+
 def normalize_component_path(value: object) -> str:
     """Normalize and harden a finding's component/path.
 
@@ -209,32 +261,73 @@ def read_regular_file(path: Path, *, source: str) -> bytes:
         raise PathError(f"{source} cannot be read: {exc}") from exc
 
 
-def ensure_writable_output(output: Path, *, repo_root: Path | None = None) -> None:
-    """Validate the output target before writing.
+# Marker of a git working tree: a directory in a normal checkout, a file in a
+# linked worktree. Detected by inspecting the filesystem only; the gate never
+# runs git and never reads repository contents.
+GIT_MARKER = ".git"
+
+
+def enclosing_git_worktree(start: Path) -> Path | None:
+    """Return the nearest ancestor of ``start`` that is a git working tree."""
+
+    walk = start
+    while True:
+        try:
+            if (walk / GIT_MARKER).exists():
+                return walk
+        except OSError:
+            return None
+        if walk.parent == walk:
+            return None
+        walk = walk.parent
+
+
+def ensure_writable_output(output: Path, *, repo_root: Path) -> None:
+    """Validate the output target before anything is created.
 
     The gate never writes inside the reviewed repository (which would be a
     branch modification) and never follows a symlinked path component. This is
-    the only place the gate writes at all.
+    the only place the gate writes at all, and the guarantee is fail-closed and
+    unconditional rather than opt-in:
+
+    - ``repo_root`` is mandatory, so the protection cannot be disabled by
+      simply omitting it, and every writing subcommand requires the flag;
+    - both the root and the output are compared in fully resolved canonical
+      form, so the containment test cannot be evaded through a symlink;
+    - relative and ``..``-bearing paths are refused instead of being guessed at,
+      since their meaning depends on the caller's working directory;
+    - independently of the declared root, an output inside *any* detected git
+      working tree is refused. This closes the residual case of a caller that
+      declares one repo root while writing into a different checkout.
+
+    Nothing is created before every check has passed.
     """
 
-    resolved_parent = output.parent.resolve(strict=False)
-    if repo_root is not None:
-        root = repo_root.resolve(strict=False)
-        candidate = output.resolve(strict=False)
-        if candidate == root or candidate.is_relative_to(root):
-            raise OutputError("output must be written outside the reviewed repository")
-    # Reject a symlinked final component or symlinked parent directory.
-    if output.is_symlink():
-        raise OutputError("output path must not be a symlink")
-    walk = resolved_parent
-    seen: set[Path] = set()
-    while walk not in seen:
-        seen.add(walk)
+    require(isinstance(repo_root, Path), "a repository root is required before any output may be written", error=OutputError)
+    require(repo_root.is_absolute(), "repository root must be an absolute path", error=OutputError)
+    require(".." not in repo_root.parts, "repository root must not contain parent-directory segments", error=OutputError)
+    root = repo_root.resolve(strict=False)
+    require(root.is_dir(), "repository root must be an existing directory", error=OutputError)
+
+    require(output.is_absolute(), "output path must be absolute", error=OutputError)
+    require(".." not in output.parts, "output path must not contain parent-directory segments", error=OutputError)
+
+    resolved_output = output.resolve(strict=False)
+    if resolved_output == root or resolved_output.is_relative_to(root):
+        raise OutputError("output must be written outside the reviewed repository")
+
+    # Reject a symlinked final component or any symlinked ancestor. This walks
+    # the literal path: resolve() would have followed the links silently.
+    walk = output
+    while True:
         if walk.is_symlink():
             raise OutputError("output path must not traverse a symlink")
         if walk.parent == walk:
             break
         walk = walk.parent
+
+    if enclosing_git_worktree(resolved_output.parent) is not None:
+        raise OutputError("output must not be written inside a git working tree")
 
 
 def atomic_write(path: Path, data: bytes) -> None:

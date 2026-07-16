@@ -19,6 +19,7 @@ from model import (
     CLASS_VERDICTS,
     EVIDENCE_VERDICTS,
     EvidenceError,
+    IdentityError,
     PreconditionError,
     SCOPE_REPORT_SCHEMA_ID,
     SHA256_RE,
@@ -27,6 +28,7 @@ from model import (
     load_strict_json,
     require,
     sha256_hex,
+    validate_canonical_id,
 )
 
 # Frozen minimum test-report interface consumed by #55 (per the contract:
@@ -57,9 +59,14 @@ TEST_REPORT_REQUIRED_FIELDS = (
     "verdict",
 )
 
+# ``execution_id`` is part of the authoritative styx.task-scope-report/v1 shape
+# declared on the base; it is consumed here (never redefined) because it is the
+# only evidence-anchored statement of who produced the candidate, and the
+# reviewer independence decision is derived from it.
 SCOPE_REPORT_REQUIRED_FIELDS = (
     "schema",
     "issue_number",
+    "execution_id",
     "base_sha",
     "head_sha",
     "issue_body_sha256",
@@ -85,6 +92,18 @@ class Evidence:
         self.test_report = test_report
         self.test_report_bytes = test_report_bytes
         self.test_report_sha256 = sha256_hex(test_report_bytes)
+
+    @property
+    def execution_id(self) -> str:
+        """The authoritative implementer execution id.
+
+        Taken from the scope report and guaranteed by ``load_evidence`` to be
+        identical in the test report. This is the only implementer identity the
+        gate trusts: a value declared by the reviewer in the review request is
+        accepted solely as an exact restatement of it.
+        """
+
+        return self.scope_report["execution_id"]
 
     @property
     def issue_number(self) -> int:
@@ -134,6 +153,7 @@ def validate_scope_report(raw_bytes: bytes) -> dict[str, Any]:
         "scope report issue_number must be a positive integer",
         error=EvidenceError,
     )
+    validate_canonical_id(document["execution_id"], "scope report execution_id", error=EvidenceError)
     for field in ("base_sha", "head_sha"):
         require(_is_sha(document[field]), f"scope report {field} must be a full lowercase commit SHA", error=EvidenceError)
     require(_is_sha256(document["issue_body_sha256"]), "scope report issue_body_sha256 is malformed", error=EvidenceError)
@@ -157,11 +177,7 @@ def validate_test_report(raw_bytes: bytes) -> dict[str, Any]:
         "test report issue_number must be a positive integer",
         error=EvidenceError,
     )
-    require(
-        isinstance(document["execution_id"], str) and document["execution_id"] != "",
-        "test report execution_id must be a non-empty string",
-        error=EvidenceError,
-    )
+    validate_canonical_id(document["execution_id"], "test report execution_id", error=EvidenceError)
     for field in ("base_sha", "head_sha"):
         require(_is_sha(document[field]), f"test report {field} must be a full lowercase commit SHA", error=EvidenceError)
     for field in ("issue_body_sha256", "plan_sha256", "scope_report_sha256"):
@@ -194,6 +210,14 @@ def load_evidence(scope_report_bytes: bytes, test_report_bytes: bytes) -> Eviden
         test["scope_report_sha256"] == evidence.scope_report_sha256,
         "test report is bound to a different scope report (cross-linked evidence)",
         error=PreconditionError,
+    )
+    # The authoritative implementer identity must be stated identically by both
+    # halves of the evidence pair; a divergence means the pair does not describe
+    # one execution and no implementer identity can be derived from it.
+    require(
+        scope["execution_id"] == test["execution_id"],
+        "scope and test reports bind different implementer executions",
+        error=IdentityError,
     )
     require(scope["issue_number"] == test["issue_number"], "scope and test reports bind different issues", error=PreconditionError)
     require(scope["base_sha"] == test["base_sha"], "scope and test reports bind different base commits", error=PreconditionError)

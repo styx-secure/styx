@@ -86,6 +86,7 @@ class MalformedInputTest(unittest.TestCase):
                 "--review-request", str(request_path),
                 "--scope-report", str(scope_path),
                 "--test-report", str(test_path),
+                "--repo-root", str(support.default_repo_root(tmp)),
                 "--output", str(tmp / "out.json"),
             ])
         self.assertEqual(code, EXIT_ERROR)
@@ -107,6 +108,7 @@ class PathReplacementTest(unittest.TestCase):
                 "--review-request", str(request_path),
                 "--scope-report", str(link),
                 "--test-report", str(test_path),
+                "--repo-root", str(support.default_repo_root(tmp)),
                 "--output", str(tmp / "out.json"),
             ])
         self.assertEqual(code, EXIT_ERROR)
@@ -159,6 +161,7 @@ class AtomicWriteFailureTest(unittest.TestCase):
                 "--review-request", str(request_path),
                 "--scope-report", str(scope_path),
                 "--test-report", str(test_path),
+                "--repo-root", str(support.default_repo_root(tmp)),
                 "--output", str(blocker / "out.json"),
             ])
         self.assertEqual(code, EXIT_ERROR)

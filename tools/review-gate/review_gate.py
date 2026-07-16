@@ -11,9 +11,11 @@ Subcommands:
 The gate never executes tests, never runs git, never opens a network socket,
 never reads credentials and never writes inside the reviewed repository. Its
 only side effect is one atomic write of a canonical evidence document to a
-caller-chosen output path outside the repository. Exit codes: 0 accepting
-review / successful remediation, 2 a review that requests changes or blocks,
-3 any fail-closed error (no output is written).
+caller-chosen output path outside the repository; ``--repo-root`` is required
+by both writing subcommands so that this guarantee cannot be opted out of.
+Exit codes: 0 accepting review / successful remediation, 2 a review that
+requests changes or blocks, 3 any fail-closed error (no output is written,
+including a usage error such as a missing ``--repo-root``).
 """
 
 from __future__ import annotations
@@ -52,6 +54,11 @@ from review import (
 
 __all__ = ["main"]
 
+# Mandatory on every subcommand that writes: the "never writes inside the
+# reviewed repository" guarantee must not be something a caller can switch off
+# by omitting a flag. Parsing fails, and nothing is created, when it is absent.
+REPO_ROOT_HELP = "absolute path of the reviewed repository root; the output must live outside it (required)"
+
 
 class ReviewGateArgumentParser(argparse.ArgumentParser):
     """Exit with the documented ERROR code on usage errors, not 2."""
@@ -73,13 +80,13 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     review.add_argument("--scope-report", type=Path, required=True)
     review.add_argument("--test-report", type=Path, required=True)
     review.add_argument("--issue-body-file", type=Path, help="optional Issue body; its sha256 must match the candidate")
-    review.add_argument("--repo-root", type=Path, help="reviewed repository root; output must live outside it")
+    review.add_argument("--repo-root", type=Path, required=True, help=REPO_ROOT_HELP)
     review.add_argument("--output", type=Path, required=True)
 
     remediate = commands.add_parser("remediate", help="emit a styx.remediation-request/v1 from a review report")
     remediate.add_argument("--review-report", type=Path, required=True)
     remediate.add_argument("--round", type=int, required=True, dest="round_id")
-    remediate.add_argument("--repo-root", type=Path, help="reviewed repository root; output must live outside it")
+    remediate.add_argument("--repo-root", type=Path, required=True, help=REPO_ROOT_HELP)
     remediate.add_argument("--output", type=Path, required=True)
 
     return parser.parse_args(argv)

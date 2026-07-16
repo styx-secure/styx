@@ -42,12 +42,13 @@ REVIEWER_CONTEXT_ID = "review-context-xyz"
 
 
 def scope_report_dict(*, verdict: str = "PASS", head_sha: str = HEAD_SHA, base_sha: str = BASE_SHA,
-                      issue_number: int = ISSUE_NUMBER, issue_body_sha256: str = ISSUE_BODY_SHA256) -> dict[str, Any]:
+                      issue_number: int = ISSUE_NUMBER, issue_body_sha256: str = ISSUE_BODY_SHA256,
+                      execution_id: str = IMPLEMENTER_EXECUTION_ID) -> dict[str, Any]:
     return {
         "schema": "styx.task-scope-report/v1",
         "tool_version": "0.1.0",
         "issue_number": issue_number,
-        "execution_id": IMPLEMENTER_EXECUTION_ID,
+        "execution_id": execution_id,
         "base_sha": base_sha,
         "head_sha": head_sha,
         "issue_body_sha256": issue_body_sha256,
@@ -68,16 +69,18 @@ def scope_report_bytes(**kwargs: Any) -> bytes:
 def test_report_dict(*, verdict: str = "PASS", head_sha: str = HEAD_SHA, base_sha: str = BASE_SHA,
                      issue_number: int = ISSUE_NUMBER, issue_body_sha256: str = ISSUE_BODY_SHA256,
                      scope_report_sha256: str | None = None,
-                     mandatory_verdict: str = "PASS") -> dict[str, Any]:
+                     mandatory_verdict: str = "PASS",
+                     execution_id: str = IMPLEMENTER_EXECUTION_ID) -> dict[str, Any]:
     if scope_report_sha256 is None:
         scope_report_sha256 = sha256_hex(scope_report_bytes(
             verdict="PASS", head_sha=head_sha, base_sha=base_sha,
             issue_number=issue_number, issue_body_sha256=issue_body_sha256,
+            execution_id=execution_id,
         ))
     return {
         "schema": "styx.test-report/v1",
         "issue_number": issue_number,
-        "execution_id": IMPLEMENTER_EXECUTION_ID,
+        "execution_id": execution_id,
         "base_sha": base_sha,
         "head_sha": head_sha,
         "issue_body_sha256": issue_body_sha256,
@@ -99,15 +102,24 @@ def test_report_dict(*, verdict: str = "PASS", head_sha: str = HEAD_SHA, base_sh
 def evidence_pair(*, scope_verdict: str = "PASS", test_verdict: str = "PASS",
                   head_sha: str = HEAD_SHA, base_sha: str = BASE_SHA,
                   issue_number: int = ISSUE_NUMBER,
-                  issue_body_sha256: str = ISSUE_BODY_SHA256) -> tuple[bytes, bytes]:
-    """Return a cross-bound (scope_bytes, test_bytes) pair."""
+                  issue_body_sha256: str = ISSUE_BODY_SHA256,
+                  execution_id: str = IMPLEMENTER_EXECUTION_ID,
+                  test_execution_id: str | None = None) -> tuple[bytes, bytes]:
+    """Return a cross-bound (scope_bytes, test_bytes) pair.
+
+    ``execution_id`` sets the authoritative implementer identity carried by both
+    halves. ``test_execution_id`` overrides it in the test report only, to build
+    an evidence pair that disagrees about who produced the candidate.
+    """
 
     scope = scope_report_bytes(verdict=scope_verdict, head_sha=head_sha, base_sha=base_sha,
-                               issue_number=issue_number, issue_body_sha256=issue_body_sha256)
+                               issue_number=issue_number, issue_body_sha256=issue_body_sha256,
+                               execution_id=execution_id)
     test = canonical_json_bytes(test_report_dict(
         verdict=test_verdict, head_sha=head_sha, base_sha=base_sha,
         issue_number=issue_number, issue_body_sha256=issue_body_sha256,
         scope_report_sha256=sha256_hex(scope),
+        execution_id=execution_id if test_execution_id is None else test_execution_id,
     ))
     return scope, test
 
@@ -174,8 +186,30 @@ def write_json(path: Path, value: Any) -> Path:
     return path
 
 
+#: Sentinel meaning "create and pass a default --repo-root". Distinct from
+#: ``None``, which means "omit the flag entirely" so a test can exercise the
+#: fail-closed parse.
+DEFAULT_REPO_ROOT = object()
+
+
+def default_repo_root(tmp: Path) -> Path:
+    """An existing repository root outside which the output may be written."""
+
+    root = tmp / "repo-root"
+    root.mkdir(exist_ok=True)
+    return root
+
+
+def _repo_root_args(tmp: Path, repo_root: Any) -> list[str]:
+    if repo_root is None:
+        return []
+    resolved = default_repo_root(tmp) if repo_root is DEFAULT_REPO_ROOT else repo_root
+    return ["--repo-root", str(resolved)]
+
+
 def run_review(tmp: Path, *, request: dict[str, Any], scope_bytes: bytes, test_bytes: bytes,
-               output_name: str = "review-report.json", extra_args: list[str] | None = None) -> tuple[int, Path]:
+               output_name: str = "review-report.json", extra_args: list[str] | None = None,
+               repo_root: Any = DEFAULT_REPO_ROOT) -> tuple[int, Path]:
     import review_gate
 
     request_path = write_json(tmp / "review-request.json", request)
@@ -188,6 +222,7 @@ def run_review(tmp: Path, *, request: dict[str, Any], scope_bytes: bytes, test_b
         "--scope-report", str(scope_path),
         "--test-report", str(test_path),
         "--output", str(output_path),
+        *_repo_root_args(tmp, repo_root),
     ]
     if extra_args:
         argv.extend(extra_args)
@@ -197,7 +232,8 @@ def run_review(tmp: Path, *, request: dict[str, Any], scope_bytes: bytes, test_b
 
 
 def run_remediate(tmp: Path, *, review_report_bytes: bytes, round_id: int,
-                  output_name: str = "remediation.json") -> tuple[int, Path]:
+                  output_name: str = "remediation.json",
+                  repo_root: Any = DEFAULT_REPO_ROOT) -> tuple[int, Path]:
     import review_gate
 
     report_path = write_bytes(tmp / "review-report-in.json", review_report_bytes)
@@ -207,6 +243,7 @@ def run_remediate(tmp: Path, *, review_report_bytes: bytes, round_id: int,
         "--review-report", str(report_path),
         "--round", str(round_id),
         "--output", str(output_path),
+        *_repo_root_args(tmp, repo_root),
     ]
     with contextlib.redirect_stdout(io.StringIO()):
         code = review_gate.main(argv)
