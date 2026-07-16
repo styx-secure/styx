@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/styx-secure/styx/blob/main/docs/governance/schemas/review-report-v1.schema.json",
+  "title": "Styx review report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tool_version",
+    "repository",
+    "issue_number",
+    "base_sha",
+    "head_sha",
+    "issue_body_sha256",
+    "diff_sha256",
+    "scope_report_sha256",
+    "test_report_sha256",
+    "scope_verdict",
+    "test_verdict",
+    "reviewer_class",
+    "reviewer_execution_id",
+    "reviewer_context_id",
+    "reviewer_identity_ref",
+    "implementer_execution_id",
+    "implementer_context_id",
+    "independent",
+    "verdict",
+    "remediation_required",
+    "findings",
+    "generation"
+  ],
+  "properties": {
+    "schema": {
+      "const": "styx.review-report/v1"
+    },
+    "tool_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1
+    },
+    "issue_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "base_sha": {
+      "$ref": "#/$defs/commitSha"
+    },
+    "head_sha": {
+      "$ref": "#/$defs/commitSha"
+    },
+    "issue_body_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "diff_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "scope_report_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "test_report_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "scope_verdict": {
+      "const": "PASS"
+    },
+    "test_verdict": {
+      "const": "PASS"
+    },
+    "reviewer_class": {
+      "$ref": "#/$defs/reviewerClass"
+    },
+    "reviewer_execution_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reviewer_context_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reviewer_identity_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "implementer_execution_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "implementer_context_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "independent": {
+      "const": true
+    },
+    "verdict": {
+      "$ref": "#/$defs/verdict"
+    },
+    "remediation_required": {
+      "type": "boolean"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "generation": {
+      "$ref": "#/$defs/generation"
+    }
+  },
+  "$defs": {
+    "commitSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "reviewerClass": {
+      "enum": [
+        "HUMAN",
+        "DELEGATED_AGENT"
+      ]
+    },
+    "verdict": {
+      "enum": [
+        "GO",
+        "GO_WITH_CONDITIONS",
+        "CHANGES_REQUESTED",
+        "BLOCKED"
+      ]
+    },
+    "severity": {
+      "enum": [
+        "BLOCKER",
+        "HIGH",
+        "MEDIUM",
+        "LOW",
+        "INFO"
+      ]
+    },
+    "lifecycle": {
+      "enum": [
+        "OPEN",
+        "ADDRESSED_PENDING_REVERIFY",
+        "RESOLVED",
+        "WAIVED_BY_HUMAN"
+      ]
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonical_json",
+        "timestamp_omitted"
+      ],
+      "properties": {
+        "canonical_json": {
+          "const": "RFC8259-sort-keys-utf8-lf"
+        },
+        "timestamp_omitted": {
+          "const": true
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "severity",
+        "component_path",
+        "problem",
+        "required_behavior",
+        "required_test",
+        "acceptance_criterion",
+        "lifecycle",
+        "required_fix"
+      ],
+      "properties": {
+        "finding_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "component_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "problem": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required_behavior": {
+          "type": "string",
+          "minLength": 1
+        },
+        "required_test": {
+          "type": "string",
+          "minLength": 1
+        },
+        "acceptance_criterion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/lifecycle"
+        },
+        "required_fix": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}
