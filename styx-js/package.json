@@ -24,26 +24,26 @@
     "build:fidesvox": "rollup -c rollup.fidesvox.js"
   },
   "dependencies": {
-    "@noble/ciphers": "^1.0.0",
-    "@noble/curves": "^1.6.0",
-    "@noble/ed25519": "^2.1.0",
-    "@noble/hashes": "^1.5.0"
+    "@noble/ciphers": "^2.2.0",
+    "@noble/curves": "^2.2.0",
+    "@noble/ed25519": "^3.1.0",
+    "@noble/hashes": "^2.2.0"
   },
   "devDependencies": {
-    "@jest/globals": "^29.7.0",
-    "@playwright/test": "^1.58.2",
+    "@jest/globals": "^30.4.1",
+    "@playwright/test": "^1.61.1",
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-terser": "^1.0.0",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.8.0",
+    "better-sqlite3": "^12.11.1",
     "cookie-parser": "^1.4.7",
-    "eslint": "^9.0.0",
+    "eslint": "^10.7.0",
     "express": "^5.2.1",
-    "fast-check": "^3.22.0",
-    "jest": "^29.7.0",
+    "fast-check": "^4.9.0",
+    "jest": "^30.4.2",
     "jsonwebtoken": "^9.0.3",
-    "rollup": "^4.0.0",
-    "ws": "^8.21.0"
+    "rollup": "^4.62.2",
+    "ws": "^8.21.1"
   },
   "engines": {
     "node": ">=18.0.0"
