@@ -57,11 +57,17 @@ EXIT_FAIL = 2
 EXIT_ERROR = 3
 
 
-def line_is_allowed(line: str, previous_line: str) -> bool:
-    """Return True when the surrounding context negates or suppresses a claim."""
+def line_is_allowed(line: str, previous_line: str, match: re.Match[str]) -> bool:
+    """Return True when the surrounding context negates or suppresses a claim.
+
+    Negation cues are searched on the line with the matched claim text
+    removed: a negation word that is *part of the claim itself* ("il relay
+    non può leggere") must not count as a negation *of* the claim.
+    """
     if SUPPRESSION_MARKER in line or SUPPRESSION_MARKER in previous_line:
         return True
-    return bool(NEGATION_CUES.search(line) or NEGATION_CUES.search(previous_line))
+    context = line[: match.start()] + line[match.end() :]
+    return bool(NEGATION_CUES.search(context) or NEGATION_CUES.search(previous_line))
 
 
 def lint_text(text: str, path: str) -> list[str]:
@@ -69,7 +75,8 @@ def lint_text(text: str, path: str) -> list[str]:
     previous_non_blank = ""
     for number, line in enumerate(text.splitlines(), start=1):
         for name, pattern in FORBIDDEN_PATTERNS:
-            if pattern.search(line) and not line_is_allowed(line, previous_non_blank):
+            match = pattern.search(line)
+            if match and not line_is_allowed(line, previous_non_blank, match):
                 findings.append(
                     f"{path}:{number}: affirmative forbidden claim"
                     f" ({name}): {line.strip()[:120]}"
