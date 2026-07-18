@@ -1,6 +1,6 @@
 # Styx API Reference
 
-Complete API documentation for the Styx library — sovereign, peer-to-peer cryptographic ledgers with zero-server architecture.
+Complete API documentation for the Styx library — sovereign, peer-to-peer cryptographic ledgers designed to minimize server trust. Relays observe transport metadata; this is not a zero-metadata or "serverless" system.
 
 ---
 

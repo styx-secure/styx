@@ -1,6 +1,6 @@
 # Styx — Riferimento API
 
-Documentazione API completa per la libreria Styx — ledger crittografici sovrani, peer-to-peer, con architettura zero-server.
+Documentazione API completa per la libreria Styx — ledger crittografici sovrani, peer-to-peer, progettati per minimizzare la fiducia nei server. I relay osservano i metadati di trasporto; non è un sistema zero-metadata né "serverless".
 
 ---
 
