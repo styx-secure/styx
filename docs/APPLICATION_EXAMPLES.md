@@ -11,7 +11,7 @@ Questo documento presenta 10 esempi concreti di applicazioni reali che possono e
 **Descrizione:** Un'app di messaggistica uno-a-uno dove ogni messaggio è un evento firmato crittograficamente e sincronizzato tramite relay Nostr. Nessun server centrale conserva i messaggi: solo i due peer possiedono la cronologia. Messaggi offline vengono recapitati automaticamente al riconnessione grazie al merge deterministico.
 
 **Perché Styx:**
-- Zero server: i messaggi transitano solo sui relay Nostr come blob opachi e vivono permanentemente solo sui dispositivi dei due peer
+- Nessun server applicativo dedicato: i messaggi transitano sui relay Nostr come blob opachi (i relay osservano comunque i metadati di trasporto) e vivono permanentemente solo sui dispositivi dei due peer
 - Ogni messaggio è firmato Ed25519 — impossibile falsificare il mittente o alterare il testo
 - Il profilo privacy `paranoid` con Tor maschera completamente i pattern di comunicazione
 - La coda outbox garantisce la consegna anche con connettività intermittente

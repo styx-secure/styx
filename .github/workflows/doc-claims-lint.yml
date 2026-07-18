@@ -1,0 +1,39 @@
+name: Doc claims lint
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "specs/**"
+      - "tools/docs-claims-lint/**"
+      - ".github/workflows/doc-claims-lint.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.repository }}-doc-claims-lint-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  doc-claims-lint:
+    name: Doc claims lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Linter unit tests
+        run: |
+          python3 -m unittest discover -s tools/docs-claims-lint/tests -p 'test_*.py'
+
+      - name: Scan documentation for affirmative forbidden claims
+        run: |
+          python3 tools/docs-claims-lint/claims_lint.py \
+            --scan docs specs \
+            --exclude docs/superpowers docs/security docs/archive docs/piano-utente.md
