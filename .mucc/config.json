@@ -1,5 +1,7 @@
 {
   "coordination": {
-    "mode": "monodev"
+    "mode": "multidev",
+    "backend": "github",
+    "repo": "styx-secure/styx"
   }
 }
