@@ -16,6 +16,6 @@ dependencies:
   uuid: ^4.5.1
 
 dev_dependencies:
-  dart_code_linter: any
+  dart_code_linter: ^4.1.7
   test: any
   very_good_analysis: any
