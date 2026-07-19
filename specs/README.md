@@ -27,13 +27,18 @@ When a synthesis here and a canonical document disagree, **the canonical
 document wins** and the synthesis must be corrected. Full authority moves to
 `specs/` only when the MUCC workflow actually exercises it in real sprints.
 
-## Deliberately absent files
+## Backlog adoption (Epic #65, task 5)
 
-- **`03-user-stories.md`** and **`05-sprint-plan.md`** are deferred to the
-  backlog-adoption PR (Epic #65, task 5). `05-sprint-plan.md` is the file
-  `/dev-issue-sync` reads to export Issues: creating it before the us-id
-  labelling strategy is decided would arm the backlog-duplication trap
-  (pre-existing Issues are invisible to the sync and would be duplicated).
+- **`03-user-stories.md`** and **`05-sprint-plan.md`** exist since Task #84:
+  they adopt product Issues #24–#27 as stories `US-001…US-004`. The
+  duplication trap is disarmed by pre-labelling those four Issues with their
+  `us-id:*` key **before** the first sync, so `/dev-issue-sync` updates them
+  instead of creating parallel ones. After the sync, the files own spec
+  content and the Issue bodies are generated projections (SPEC v0.36 §5.4);
+  pre-adoption bodies remain in the GitHub Issue edit history.
+- **Permanently outside the adoption perimeter:** Issues #45, #61 and #62
+  (Styx task contracts in their bodies), Epic #65 and the migration task
+  Issues. They must never receive a `us-id:*` label.
 - Phase files `06`–`08` follow the sprints that produce them.
 
 ## Honesty constraints
