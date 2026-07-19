@@ -45,6 +45,31 @@ enforcement". This proposal closes that gap.
 Nothing else changes: squash-only, linear history, thread resolution, no
 bypass actors, and the strict up-to-date policy all stay as they are.
 
+## Choose the application profile first — solo-operator caveat
+
+GitHub never lets the author of a pull request approve it, and every task PR
+in this repository is authored under the operator's own `gh` identity (the
+executors share it — SPEC §7 threat model). Consequences:
+
+- With `required_approving_review_count: 1`, **self-authored task PRs become
+  unmergeable for a solo operator**: the author cannot approve, nobody else
+  exists, and the ruleset binds admins too (`bypass_actors` is empty).
+  Dependabot PRs stay mergeable (their author is the bot).
+- MUCC's model in `github-setup.md` §1 implicitly assumes **at least two human
+  identities**. Decide which profile applies before touching anything:
+
+**Profile A — two identities (full MUCC model).** A second account with Write
+access reviews and approves task PRs from a clean context. Apply all three
+changes. This is the only profile in which "no self-approve" is truly
+enforced.
+
+**Profile B — solo operator.** Apply **only change 3** (make the scope check
+required); leave `required_approving_review_count` at `0` and
+`require_last_push_approval` at `false`. Scope compliance becomes real
+server-side enforcement; review remains policy. Record that the review-gap
+residual risk of Epic #65 stays open until a second identity exists, and
+upgrade to Profile A then — the payload below applies unchanged.
+
 ## Application order — mandatory
 
 **Merge the Task #82 pull request first, apply this ruleset second.**
@@ -65,7 +90,10 @@ UI: *Settings → Rules → Rulesets → main branch protection*, set the three
 values above.
 
 CLI (single idempotent update; re-run `gh api repos/styx-secure/styx/rulesets/18814814`
-first and abort if the current state no longer matches the table above):
+first and abort if the current state no longer matches the table above). The
+payload below is **Profile A**; for **Profile B** keep
+`"require_last_push_approval": false` and
+`"required_approving_review_count": 0` and change only the status-check list:
 
 ```bash
 gh api --method PUT repos/styx-secure/styx/rulesets/18814814 --input - <<'EOF'
