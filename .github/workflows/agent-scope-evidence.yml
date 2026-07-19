@@ -23,6 +23,11 @@ concurrency:
 jobs:
   scope-evidence:
     name: Agent scope evidence (observation)
+    # Task-branch PRs only (MUCC github-setup.md §3 pattern). PRs from other
+    # branches (dependabot, fix/*, feat/*) carry no Styx task contract and
+    # would fail with E_CI_ISSUE_REFERENCE_MISSING; skipping lets this check
+    # become a required status check without blocking maintenance PRs.
+    if: startsWith(github.head_ref, 'task/')
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
