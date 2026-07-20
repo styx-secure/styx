@@ -608,10 +608,13 @@ export class StyxChat {
     try {
       return await restore(stateBytes);
     } catch (err) {
+      // Stable sub-code only — the runtime message never enters `details`
+      // (closed allowlist, Issue #26); the original error rides on `cause`.
       throw new MlsStateError(
         MlsStateErrorCodes.RESTORE_FAILED,
         'the MLS runtime could not restore the persisted state',
-        { causeMessage: err?.message },
+        { causeCode: err?.code ?? 'unknown' },
+        { cause: err },
       );
     }
   }
