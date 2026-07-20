@@ -22,7 +22,11 @@ import {
 export const MLS_STATE_FORMAT = 'styx-mls-state';
 export const MLS_ENVELOPE_VERSION = 1;
 export const MLS_STORAGE_SCHEMA_VERSION = 1;
-/** Decoded-payload cap: far above any real 2-peer state, below hostile-JSON territory. */
+/**
+ * Decoded-payload cap: far above any real 2-peer state, below hostile-JSON territory.
+ * Defensive parser cap only — NOT a guaranteed capacity of the storage backend
+ * (localStorage quotas are far smaller): see docs/storage-limits.md (US-004).
+ */
 export const MAX_PAYLOAD_BYTES = 16 * 1024 * 1024;
 
 export const MlsStateErrorCodes = Object.freeze({
