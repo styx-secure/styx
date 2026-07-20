@@ -10,7 +10,7 @@ Use this order: approved GitHub Issue and native dependencies; `AGENTS.md`;
 normative specs, ADRs and active plans; tool adapters such as `CLAUDE.md`; chat
 or local notes. GitHub is the operational source of truth.
 
-A task is executable only when its Issue contains:
+A **contract task** is executable only when its Issue contains:
 
 ```html
 <!-- styx-task-contract:v1 -->
@@ -19,7 +19,35 @@ A task is executable only when its Issue contains:
 and defines outcome, non-goals, allowed and forbidden paths, native dependencies,
 frozen interfaces, acceptance criteria, exact tests, rollback, residual risks,
 executor/persona, independent reviewers, human gates, base branch and base SHA.
-Missing or ambiguous data blocks execution.
+Missing or ambiguous data blocks execution. MUCC stories have their own
+executability condition, defined under "Execution lanes" below.
+
+## Execution lanes
+
+Since ADR-0006 the repository runs two execution lanes:
+
+- **Styx contract tasks** — branch `task/<issue>-<slug>`. The Issue carries the
+  v1 contract above; the `Agent scope evidence (observation)` required status
+  check enforces its allowed and forbidden paths server-side.
+- **MUCC stories** — branch `task/US-<id>`. Spec content is owned by
+  `specs/03-user-stories.md` and `specs/05-sprint-plan.md`; the story Issue
+  bodies are generated projections and are never edited by hand. A story is
+  executable when it exists in the sprint plan, is claimed through the MUCC
+  coordinator (claim = assignee) and carries its `us-id:*` label. The Styx
+  scope check intentionally skips this namespace; the gate is mandatory human
+  review of the pull request. Story commits and pull requests reference the
+  story and its Issue; story PRs report changed paths, exact tests and
+  results, and rollback.
+
+Namespace discipline is load-bearing: a contract task must never use a
+`task/US-*` branch name, or it would silently skip its scope check.
+
+Every other rule in this document — permissions, human-gate areas, isolation,
+PR lifecycle, independent review and fail-closed behaviour — applies to both
+lanes unchanged. Lane references:
+`docs/governance/adr/ADR-0006-adopt-mucc-multidev.md`,
+`docs/governance/mucc-migration/migration-plan.md`,
+`docs/governance/mucc-migration/ruleset-proposal.md`.
 
 ## Permissions
 
@@ -58,9 +86,12 @@ SHA:
 
 ```text
 task/<issue>-<slug>
+task/US-<story>
 agent/<issue>-<slug>
 review/<pr>-<persona>
 ```
+
+`task/US-<story>` is reserved for the MUCC story lane (see "Execution lanes").
 
 Do not mix cleanup or unrelated work. Commits must be small, coherent and
 reversible; messages are English and should include `Refs #<issue>`.
