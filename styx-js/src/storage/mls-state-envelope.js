@@ -41,15 +41,77 @@ export const MlsStateErrorCodes = Object.freeze({
 });
 
 /**
- * Structured, stable-coded error. `details` may carry versions, revisions, digests
- * and suggested actions — never payload bytes, keys or serialized MLS material.
+ * Closed allowlist for `details`. Every value must be a string of at most 64
+ * characters or a safe integer — enough to say WHICH version, revision, digest
+ * or step is involved and WHY (a stable sub-code), structurally too small to
+ * smuggle payload bytes, keys or runtime messages through an error path.
+ *
+ * `causeMessage` is excluded BY DESIGN (Issue #26): the underlying error's
+ * message must never auto-propagate into publishable details — keep the raw
+ * error inspectable via the standard `error.cause` instead, or map it to a
+ * stable sub-code in `causeCode`.
+ *
+ * Special case: `actions` may be an ARRAY of short strings (each at most 64
+ * characters, at most MAX_ACTIONS entries) — the suggested-actions list shown
+ * on incompatibility errors.
+ *
+ * NOTE: this intentionally duplicates the assertDetailsAllowed pattern of
+ * src/crypto/vault-errors.js — the crypto/vault area is under a separate human
+ * gate (PR #39 boundary), so consolidation is deferred.
+ */
+const DETAIL_KEYS = Object.freeze([
+  'limit', 'saved', 'supported', 'current', 'savedRevision', 'currentRevision',
+  'envelopeVersion', 'storageSchemaVersion', 'actions', 'savedArtifactSha256',
+  'currentArtifactSha256', 'step', 'causeCode',
+]);
+const MAX_DETAIL_VALUE_LENGTH = 64;
+const MAX_ACTIONS = 8;
+
+function isShortPrimitive(value) {
+  return (typeof value === 'string' && value.length <= MAX_DETAIL_VALUE_LENGTH)
+    || (typeof value === 'number' && Number.isSafeInteger(value));
+}
+
+function assertDetailsAllowed(details) {
+  if (details === null || typeof details !== 'object' || Array.isArray(details)) {
+    throw new TypeError('MlsStateError details must be a plain object');
+  }
+  const out = {};
+  for (const key of Object.keys(details)) {
+    if (!DETAIL_KEYS.includes(key)) {
+      throw new TypeError(`MlsStateError details key not allowlisted: ${key}`);
+    }
+    const value = details[key];
+    if (key === 'actions') {
+      const ok = Array.isArray(value)
+        && value.length <= MAX_ACTIONS
+        && value.every((entry) => typeof entry === 'string' && entry.length <= MAX_DETAIL_VALUE_LENGTH);
+      if (!ok) throw new TypeError('MlsStateError details "actions" must be a short array of short strings');
+      out[key] = Object.freeze([...value]);
+      continue;
+    }
+    if (!isShortPrimitive(value)) {
+      throw new TypeError(`MlsStateError details value for "${key}" is not a short primitive`);
+    }
+    out[key] = value;
+  }
+  return Object.freeze(out);
+}
+
+/**
+ * Structured, stable-coded error. `details` is a CLOSED shape (default-deny):
+ * only the allowlisted keys above are accepted, so it may carry versions,
+ * revisions, digests and suggested actions — never payload bytes, keys,
+ * serialized MLS material or forwarded runtime messages. The underlying error,
+ * when there is one, travels as the standard ES2022 `cause` (development-only
+ * inspection; it never enters `details` or its JSON serialization).
  */
 export class MlsStateError extends Error {
-  constructor(code, message, details = {}) {
-    super(`${code}: ${message}`);
+  constructor(code, message, details = {}, options = {}) {
+    super(`${code}: ${message}`, 'cause' in options ? { cause: options.cause } : undefined);
     this.name = 'MlsStateError';
     this.code = code;
-    this.details = details;
+    this.details = assertDetailsAllowed(details);
   }
 }
 

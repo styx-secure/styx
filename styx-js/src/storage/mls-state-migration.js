@@ -114,10 +114,11 @@ export async function migrateLegacyMlsState({ backend, restoreProbe, buildInfo =
     // No rollback writes here: before step 9 the legacy value is untouched; after it
     // the stored envelope has already been fully validated and probed, and the resume
     // path completes the sweep on retry. The backup stays until a migration finishes.
+    // The raw error message never enters `details` (closed allowlist, Issue #26):
+    // only a stable sub-code is published; the original error rides on `cause`.
     throw new MlsStateError(MIGRATION_FAILED, `legacy MLS state migration failed at step "${step}"`, {
       step,
-      causeCode: err instanceof MlsStateError ? err.code : undefined,
-      causeMessage: err?.message,
-    });
+      causeCode: err instanceof MlsStateError ? err.code : 'unknown',
+    }, { cause: err });
   }
 }

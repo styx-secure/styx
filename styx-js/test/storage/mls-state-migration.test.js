@@ -43,6 +43,8 @@ async function expectCodeAsync(promise, code) {
   // No MLS material in errors, ever.
   expect(caught.message).not.toContain(LEGACY);
   expect(JSON.stringify(caught.details ?? {})).not.toContain(LEGACY);
+  // causeMessage is not an allowlisted details field (Issue #26).
+  expect(Object.keys(caught.details ?? {})).not.toContain('causeMessage');
   return caught;
 }
 
@@ -76,6 +78,12 @@ describe('migrateLegacyMlsState', () => {
       MlsStateErrorCodes.MIGRATION_FAILED,
     );
     expect(err.details.step).toBe('restore-probe');
+    // The runtime message is NOT auto-propagated (Issue #26): details carry only
+    // a stable sub-code; the raw error stays inspectable via the standard cause.
+    expect(JSON.stringify(err.details)).not.toContain('runtime cannot read this');
+    expect(err.details.causeCode).toBe('unknown');
+    expect(err.cause).toBeInstanceOf(Error);
+    expect(err.cause.message).toBe('runtime cannot read this');
     // Nothing was overwritten; the interrupted attempt is visible and recoverable.
     expect(await backend.get(MLS_STATE_KEY)).toBe(LEGACY);
     expect(await backend.get(MLS_MIGRATION_BACKUP_KEY)).toBe(LEGACY);

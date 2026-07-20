@@ -36,6 +36,8 @@ function expectCode(fn, code) {
   // Structured errors must never leak the payload or MLS material.
   expect(caught.message).not.toContain(bytesToBase64(STATE));
   expect(JSON.stringify(caught.details ?? {})).not.toContain(bytesToBase64(STATE));
+  // causeMessage is not an allowlisted details field (Issue #26).
+  expect(Object.keys(caught.details ?? {})).not.toContain('causeMessage');
   return caught;
 }
 
@@ -188,6 +190,62 @@ describe('assertMlsStateCompatibility — cases A/C of the policy', () => {
       MlsStateErrorCodes.CIPHERSUITE_MISMATCH,
     );
     expect(err.details.current).toBe(MLS_BUILD_INFO.ciphersuite);
+  });
+});
+
+describe('MlsStateError.details — closed allowlist (Issue #26)', () => {
+  const { INVALID } = MlsStateErrorCodes;
+
+  test('unknown details key → TypeError at construction (default-deny)', () => {
+    expect(() => new MlsStateError(INVALID, 'x', { causeMessage: 'leaked runtime text' }))
+      .toThrow(TypeError);
+    expect(() => new MlsStateError(INVALID, 'x', { anythingElse: 1 })).toThrow(TypeError);
+  });
+
+  test('non-object details and over-long values are rejected', () => {
+    expect(() => new MlsStateError(INVALID, 'x', ['step'])).toThrow(TypeError);
+    expect(() => new MlsStateError(INVALID, 'x', { step: 'a'.repeat(65) })).toThrow(TypeError);
+    expect(() => new MlsStateError(INVALID, 'x', { limit: Number.MAX_SAFE_INTEGER + 1 })).toThrow(TypeError);
+    expect(() => new MlsStateError(INVALID, 'x', { step: { nested: true } })).toThrow(TypeError);
+  });
+
+  test('allowlisted short values pass and details is a frozen copy', () => {
+    const input = { step: 'write', causeCode: 'unknown', limit: 16, saved: 'v1' };
+    const err = new MlsStateError(INVALID, 'x', input);
+    expect(err.details).toEqual(input);
+    expect(Object.isFrozen(err.details)).toBe(true);
+    input.step = 'mutated-later'; // the copy must not observe caller mutations
+    expect(err.details.step).toBe('write');
+  });
+
+  test('actions: array of short strings accepted (frozen), abuses rejected', () => {
+    const err = new MlsStateError(INVALID, 'x', { actions: ['do this', 'or that'] });
+    expect(err.details.actions).toEqual(['do this', 'or that']);
+    expect(Object.isFrozen(err.details.actions)).toBe(true);
+    expect(() => new MlsStateError(INVALID, 'x', { actions: 'not an array' })).toThrow(TypeError);
+    expect(() => new MlsStateError(INVALID, 'x', { actions: ['a'.repeat(65)] })).toThrow(TypeError);
+    expect(() => new MlsStateError(INVALID, 'x', { actions: new Array(9).fill('a') })).toThrow(TypeError);
+  });
+
+  test('the underlying error travels as ES2022 cause, never inside details', () => {
+    const inner = new Error('raw runtime text');
+    const err = new MlsStateError(INVALID, 'x', { causeCode: 'unknown' }, { cause: inner });
+    expect(err.cause).toBe(inner);
+    expect(JSON.stringify(err.details)).not.toContain('raw runtime text');
+    // Without options, no cause is attached at all.
+    expect('cause' in new MlsStateError(INVALID, 'x')).toBe(false);
+  });
+
+  test('every details object built by this module passes its own allowlist', () => {
+    // Representative construction sites: version/schema/size/compat errors.
+    expectCode(() => parseMlsStateEnvelope(freshEnvelope({ envelopeVersion: 2 })), MlsStateErrorCodes.VERSION_UNSUPPORTED);
+    expectCode(() => parseMlsStateEnvelope(freshEnvelope({ storageSchemaVersion: 9 })), MlsStateErrorCodes.SCHEMA_UNSUPPORTED);
+    expectCode(() => encodeMlsStateEnvelope(new Uint8Array(MAX_PAYLOAD_BYTES + 1)), MlsStateErrorCodes.INVALID);
+    const err = expectCode(
+      () => assertMlsStateCompatibility(freshEnvelope({ openMlsRevision: 'a'.repeat(40) })),
+      MlsStateErrorCodes.OPENMLS_INCOMPATIBLE,
+    );
+    expect(Object.isFrozen(err.details)).toBe(true);
   });
 });
 
