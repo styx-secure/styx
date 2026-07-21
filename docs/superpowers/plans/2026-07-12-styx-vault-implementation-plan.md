@@ -69,6 +69,10 @@ codici `MLS_STATE_*` esistenti, invariati. Nessun messaggio contiene payload,
 chiavi o stato (§11 di questo piano). `WORKER_TIMEOUT` (aggiunto in PR‑3): il
 worker non ha risposto in tempo; il timeout è fatale per il processo worker
 (terminate + respawn), mai un semplice scarto della risposta tardiva.
+`VAULT_OPEN_FAILED` · `VAULT_TX_ABORTED` · `VAULT_SCHEMA_GAP` (aggiunti in
+PR‑4): fallimenti del motore IndexedDB — open non riuscita, transazione
+abortita senza commit, migratore mancante per uno step di versione; con essi
+la chiave `version` (solo safe integer) entra nell'allowlist dei `details`.
 
 ### B3.0.4 Limiti dimensionali
 
@@ -217,8 +221,12 @@ criterio di accettazione è dimostrato". Le classi di rollback sono definite in 
   `meta`, `identity`, `contacts`, `messages`, `mls`, `outbox`, `push`, `settings`,
   `migrations`, `canary` — coerente con l'elenco congelato in §B3.0.1),
   transazioni multi-store risolte su `oncomplete`, `durability:'strict'` dove
-  supportato, auto-close su `versionchange`, retry bounded su open bloccati
-  (`VAULT_BLOCKED`, backoff 50 ms), quota → `VAULT_QUOTA_EXCEEDED` fail-closed,
+  supportato, auto-close su `versionchange`, attesa bounded su open bloccati
+  (`VAULT_BLOCKED`, granularità 50 ms — *emendato in PR‑4*: attesa bounded
+  SULLA STESSA richiesta di open/delete, mai reject-and-reopen, perché il
+  finding P10 dello spike dimostra che il retry con riapertura si accoda
+  dietro la richiesta pendente e blocca il tab), quota →
+  `VAULT_QUOTA_EXCEEDED` fail-closed,
   `persist()` bounded, upgrade fail-closed con registry di migratori, destroy con
   `onblocked` gestito, accesso single-tab via Web Lock esistente.
 - **Dipendenze**: PR‑3 (vive nel worker). **Solo record sintetici/fixture.**

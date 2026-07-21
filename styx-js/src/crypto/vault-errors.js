@@ -24,7 +24,7 @@ export const VaultCryptoErrorCodes = Object.freeze({
   OPEN_FAILED: 'VAULT_OPEN_FAILED',
   TX_ABORTED: 'VAULT_TX_ABORTED',
   SCHEMA_GAP: 'VAULT_SCHEMA_GAP',
-  DELETE_FAILED: 'VAULT_DELETE_FAILED',
+  DESTROY_FAILED: 'VAULT_DESTROY_FAILED',
 });
 
 const KNOWN_CODES = new Set(Object.values(VaultCryptoErrorCodes));

@@ -9,7 +9,7 @@
 //   stored natively, never base64);
 // - single-writer discipline is OWNED BY THE CALLER through the existing Web
 //   Lock election (the app's writer lock / the worker supervisor). The engine
-//   defends itself anyway: bounded retry on blocked opens and auto-close on
+//   defends itself anyway: bounded wait on blocked opens and auto-close on
 //   `versionchange` (spike F5/F6) so a stale connection can never silently
 //   block an upgrade;
 // - all failures are structured VaultCryptoError values from the closed code
@@ -58,7 +58,14 @@ const SCHEMA_MIGRATIONS = Object.freeze({
   1: (db) => { for (const ns of VAULT_NAMESPACES) db.createObjectStore(ns); },
 });
 
-const err = (code, message, details) => new VaultCryptoError(code, message, details);
+// Detail values are clamped to the allowlist's 64-char bound: a long database
+// name must degrade the detail, never make the ERROR construction throw.
+const clamp = (v) => (typeof v === 'string' ? v.slice(0, 64) : v);
+const err = (code, message, details) => {
+  const out = details === undefined ? undefined
+    : Object.fromEntries(Object.entries(details).map(([k, v]) => [k, clamp(v)]));
+  return new VaultCryptoError(code, message, out);
+};
 
 const isQuotaError = (e) => e?.name === 'QuotaExceededError';
 
@@ -106,7 +113,12 @@ function openOnce({
         }
       } catch (e) {
         // Abort the versionchange transaction: the DB stays at ev.oldVersion.
-        upgradeError = e;
+        // A migrator's own (untyped) exception is wrapped so the caller never
+        // sees a raw error from the open path (review PR99 minor).
+        upgradeError = e instanceof VaultCryptoError ? e
+          : err(Codes.OPEN_FAILED, 'a schema migration step failed', {
+            namespace: name, reason: `migration:${e?.name ?? 'Error'}`,
+          });
         try { req.transaction.abort(); } catch { /* already aborting */ }
       }
     };
@@ -167,10 +179,26 @@ export class VaultDb {
 
   get namespaces() { return Array.from(this._db.objectStoreNames); }
 
+  // Readonly ops wrap every failure (the synchronous transaction() throw
+  // included — e.g. InvalidStateError after our own versionchange auto-close)
+  // into structured VAULT_TX_ABORTED: the module contract is "all failures
+  // are typed", and a recoverable closed-connection read must never surface
+  // as a raw DOMException (independent-review minor on PR #99).
+  async _read(namespace, run) {
+    try {
+      const tx = this._db.transaction(namespace, 'readonly');
+      return await requestToPromise(run(tx.objectStore(namespace)));
+    } catch (e) {
+      if (e instanceof VaultCryptoError) throw e;
+      throw err(Codes.TX_ABORTED, 'the read transaction failed', {
+        namespace, reason: e?.name ?? 'unknown',
+      });
+    }
+  }
+
   /** Single-record read. @returns {Promise<any>} undefined when absent */
   async get(namespace, key) {
-    const tx = this._db.transaction(namespace, 'readonly');
-    return requestToPromise(tx.objectStore(namespace).get(key));
+    return this._read(namespace, (store) => store.get(key));
   }
 
   /** Single-record durable write (its own transaction). */
@@ -185,8 +213,7 @@ export class VaultDb {
 
   /** All keys of a namespace. @returns {Promise<string[]>} */
   async list(namespace) {
-    const tx = this._db.transaction(namespace, 'readonly');
-    return requestToPromise(tx.objectStore(namespace).getAllKeys());
+    return this._read(namespace, (store) => store.getAllKeys());
   }
 
   /** Remove every record of one namespace, atomically, others untouched. */
@@ -247,6 +274,12 @@ export class VaultDb {
    * Close and DELETE the whole database (factory-reset building block), with
    * the same bounded wait on blocked deletes as the open path (spike P10:
    * never issue a second delete behind a pending one).
+   *
+   * CONTRACT on VAULT_BLOCKED (review PR99): the underlying deleteDatabase
+   * request cannot be cancelled — after the bounded rejection it stays
+   * pending in the browser and WILL complete whenever the blocking
+   * connections close. Callers must treat BLOCKED-from-destroy as "deletion
+   * still pending", never as "data retained".
    */
   async destroy() {
     const { name } = this._db;
@@ -269,7 +302,7 @@ export class VaultDb {
             'delete blocked by another open connection', { namespace: name })), blockedWaitMs);
         }
       };
-      req.onerror = () => settle(reject, err(Codes.DELETE_FAILED,
+      req.onerror = () => settle(reject, err(Codes.DESTROY_FAILED,
         'the database could not be deleted', { namespace: name, reason: req.error?.name ?? 'unknown' }));
     });
   }

@@ -216,8 +216,10 @@ IndexedDB schema v1 with the ten frozen stores (`meta`, `identity`,
 `contacts`, `messages`, `mls`, `outbox`, `push`, `settings`, `migrations`,
 `canary` — list frozen in plan §B3.0.1), multi-store transactions resolved on
 `oncomplete`, `durability: 'strict'` where supported, auto-close on
-`versionchange`, bounded retry on blocked opens (`VAULT_BLOCKED`, 50 ms
-backoff), quota mapped to `VAULT_QUOTA_EXCEEDED` fail-closed, bounded
+`versionchange`, bounded wait on blocked opens — on the SAME request, never
+reject-and-reopen (`VAULT_BLOCKED`, 50 ms granularity; plan B3.4 as amended
+in PR‑4 per spike finding P10), quota mapped to `VAULT_QUOTA_EXCEEDED`
+fail-closed, bounded
 `persist()`, fail-closed upgrades through a migrator registry, destroy with
 `onblocked` handled, single-tab access through the existing Web Lock.
 **Synthetic records and fixtures only**: every database name is prefixed

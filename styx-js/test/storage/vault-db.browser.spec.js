@@ -149,14 +149,14 @@ test.describe('vault-db production probes', () => {
       v1.close();
 
       // (a) failed upgrade: migrator throws → whole versionchange aborts, v1 intact.
-      let failedCode = null;
+      let failed = null;
       try {
         await openVaultDb({
           name: n,
           version: 2,
           migrations: { ...migrations, 2: () => { throw new Error('upgrade boom'); } },
         });
-      } catch (e) { failedCode = e.message; }
+      } catch (e) { failed = { code: e.code, reason: e.details?.reason ?? null }; }
       // The engine's own bounded blocked-retry (spike finding) absorbs the
       // transient block while the failed connection unwinds.
       const still1 = await openVaultDb({ name: n, version: 1, migrations });
@@ -178,9 +178,11 @@ test.describe('vault-db production probes', () => {
       v2.close();
       let downgrade = null;
       try { await openVaultDb({ name: n, version: 1, migrations }); } catch (e) { downgrade = e.code; }
-      return { failedCode, afterFail, afterOk, downgrade };
+      return { failed, afterFail, afterOk, downgrade };
     }, name);
-    expect(out.failedCode).toContain('upgrade boom');
+    // The migrator's untyped exception is wrapped structured (review PR99):
+    // no raw error escapes the open path.
+    expect(out.failed).toEqual({ code: 'VAULT_OPEN_FAILED', reason: 'migration:Error' });
     expect(out.afterFail).toEqual({ version: 1, data: 'v1-data' });
     expect(out.afterOk).toEqual({ version: 2, data: 'v1-data', hasNew: true });
     expect(out.downgrade).toBe('VAULT_OPEN_FAILED');
@@ -304,11 +306,14 @@ test.describe('vault-db production probes', () => {
       }, dbName(info));
       // Spike F9, third environmental variant (seen on CI runners): the CDP
       // override can be accepted by estimate() yet not enforced on writes.
-      // Without a biting quota the scenario moves to manual-plan item M3;
-      // the quota→VAULT_QUOTA_EXCEEDED mapping itself is covered
-      // deterministically by the Jest unit suite.
-      test.skip(out.quotaErr === null,
+      // Without a biting quota the scenario moves to manual-plan item M3
+      // (plan §8: binding on "Accepted; default-on"); the mapping itself is
+      // covered deterministically by the Jest unit suite. The skip is TIGHT
+      // (review PR99): only a FULLY committed oversized transaction counts
+      // as non-enforcement — a resolve-despite-abort regression fails below.
+      test.skip(out.quotaErr === null && out.bigs === 10 && out.marker === true,
         'quota override accepted but not enforced on writes here; manual-plan item M3');
+      expect(out.quotaErr).not.toBeNull();
       expect(out.quotaErr.code).toBe('VAULT_QUOTA_EXCEEDED');
       expect(out.baseline).toBe('small-committed');
       expect(out.bigs).toBe(0);

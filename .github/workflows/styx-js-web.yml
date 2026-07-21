@@ -65,7 +65,7 @@ jobs:
           fi
           # Vault engine probes (US-005) run only when the engine, its error
           # module, its suite or this workflow change — real browsers are slow.
-          if echo "$changed" | grep -qE '^styx-js/src/storage/vault-db\.js|^styx-js/src/crypto/vault-errors\.js|^styx-js/test/storage/vault-db\.|^styx-js/test/fixtures/vault-db/|^styx-js/playwright\.vault-db\.config\.js|^\.github/workflows/styx-js-web\.yml'; then
+          if echo "$changed" | grep -qE '^styx-js/src/storage/vault-db\.js|^styx-js/src/crypto/vault-errors\.js|^styx-js/test/storage/vault-db\.|^styx-js/test/fixtures/vault-db/|^styx-js/test/fixtures/mls-state-v1/|^styx-js/playwright\.vault-db\.config\.js|^styx-js/package-lock\.json|^\.github/workflows/styx-js-web\.yml'; then
             echo "vaultdb=true" >> "$GITHUB_OUTPUT"
           else
             echo "vaultdb=false" >> "$GITHUB_OUTPUT"
