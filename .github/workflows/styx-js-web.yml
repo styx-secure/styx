@@ -51,6 +51,9 @@ jobs:
           if [ -z "$base_sha" ] || ! git cat-file -e "${base_sha}^{commit}" 2>/dev/null; then
             echo "Web change base unavailable; running full suite fail-closed."
             echo "web=true" >> "$GITHUB_OUTPUT"
+            # Unknown change set ⇒ fail closed for EVERY path-aware job, the
+            # vault probes included (review PR99 finding).
+            echo "vaultdb=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           changed="$(git diff --name-only "$base_sha" HEAD)"
