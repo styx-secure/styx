@@ -118,6 +118,23 @@ jobs:
           fi
           echo "Production bundle is vault-free."
 
+      - name: Fail if the vault worker runtime leaks into the bundle
+        working-directory: styx-js/apps/chat
+        run: |
+          # TEMPORARY gate (Blocco 3, PR-3): the worker runtime lives in the
+          # source tree but is NOT imported by the app — no identifier and no
+          # worker chunk may reach dist/. Revised only by the (separately
+          # authorized) PR that wires the vault into the app.
+          if grep -rl 'vault-worker\|WORKER_TERMINATED\|WORKER_TIMEOUT\|argon2id_derive\|styx_kdf_wasm\|ad67202689c58d5e7b7a0b845d7b9d7253ecc04542f8921804c11d62942ae8f5' dist/; then
+            echo "::error::vault worker runtime code found in the production bundle"
+            exit 1
+          fi
+          if find dist -type f -name '*vault*' | grep .; then
+            echo "::error::a vault worker chunk was emitted in the production bundle"
+            exit 1
+          fi
+          echo "Production bundle is worker-runtime-free."
+
   gate:
     name: styx-js web gate
     needs: [changes, build-and-gate]

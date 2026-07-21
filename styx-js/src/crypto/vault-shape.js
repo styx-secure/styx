@@ -21,13 +21,17 @@
  * - every `allowedKeys` entry required (missing → invalid).
  *
  * @param {unknown} raw untrusted input
- * @param {readonly string[]} allowedKeys closed field list (all required)
+ * @param {readonly string[]} allowedKeys closed field list (all required
+ *   unless `requiredKeys` narrows it)
  * @param {(message: string, details?: object) => Error} invalid factory for
  *   the caller's typed error (VAULT_WRAPPER_INVALID / VAULT_RECORD_INVALID)
+ * @param {{requiredKeys?: readonly string[]}} [options] pass
+ *   `{requiredKeys: []}` for all-optional shapes (e.g. error details, review
+ *   W6) — the allowlist and descriptor discipline stay identical
  * @returns {object} fresh plain object with the values extracted from the
  *   descriptors — the caller must validate and use ONLY this snapshot
  */
-export function snapshotStrictPlainObject(raw, allowedKeys, invalid) {
+export function snapshotStrictPlainObject(raw, allowedKeys, invalid, { requiredKeys = allowedKeys } = {}) {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw invalid('value must be a plain object');
   }
@@ -54,7 +58,7 @@ export function snapshotStrictPlainObject(raw, allowedKeys, invalid) {
     }
     snapshot[key] = desc.value;
   }
-  for (const key of allowedKeys) {
+  for (const key of requiredKeys) {
     if (!Object.hasOwn(snapshot, key)) throw invalid('missing field', { field: key });
   }
   return snapshot;
