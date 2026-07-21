@@ -55,6 +55,7 @@
 .unlock .claim b { color: var(--accent-2); font-weight: 650; }
 .error-box { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-radius: 10px;
   background: var(--danger-soft); color: var(--danger); font-size: 13px; }
+.error-box .error-actions { margin: 6px 0 0; padding-left: 16px; display: grid; gap: 4px; }
 
 /* ============ ChatShell ============ */
 .shell { height: 100%; display: flex; }

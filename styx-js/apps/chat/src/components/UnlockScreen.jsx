@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { ShieldCheck, Lock, Warning } from './Icons.jsx';
 import { getStyxChat } from '../lib/styx-adapter.js';
 import { peerNamespace } from '../lib/ns.js';
+import { describeUnlockError } from '../lib/unlock-errors.js';
 
 export default function UnlockScreen({ onUnlock }) {
   const [firstRun, setFirstRun] = useState(null); // null = loading
   const [alias, setAlias] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(null); // null | { message, actions }
 
   useEffect(() => {
     let alive = true;
@@ -22,12 +23,14 @@ export default function UnlockScreen({ onUnlock }) {
   const submit = async (e) => {
     e.preventDefault();
     if (busy) return;
-    setError('');
+    setError(null);
     setBusy(true);
     try {
       await onUnlock({ password, alias, firstRun });
     } catch (err) {
-      setError(err?.message || 'Errore di sblocco');
+      // Never show err.message: map the stable code to a safe Italian message
+      // (US-001); technical details reach development logs only.
+      setError(describeUnlockError(err));
       setBusy(false);
     }
   };
@@ -66,7 +69,17 @@ export default function UnlockScreen({ onUnlock }) {
             onChange={(e) => setPassword(e.target.value)} autoFocus={!firstRun} aria-label="Password locale" />
 
           {error && (
-            <div className="error-box" role="alert"><Warning size={16} /> {error}</div>
+            <div className="error-box" role="alert">
+              <Warning size={16} />
+              <div>
+                {error.message}
+                {error.actions.length > 0 && (
+                  <ol className="error-actions">
+                    {error.actions.map((action) => <li key={action}>{action}</li>)}
+                  </ol>
+                )}
+              </div>
+            </div>
           )}
 
           <button className="btn btn-accent" type="submit" disabled={busy || !password || (firstRun && !alias.trim())}>
