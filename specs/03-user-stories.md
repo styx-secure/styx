@@ -201,3 +201,126 @@ code):
   QUANDO viene introdotto
   ALLORA la proprietà fail-closed e non distruttiva su quota è preservata e
   la documentazione resta vera.
+
+---
+
+## US-005 — Vault IndexedDB engine inside the worker
+
+**Sprint 2, from plan section B3.4 (PR‑4)** of
+`docs/superpowers/plans/2026-07-12-styx-vault-implementation-plan.md` —
+the plan remains canonical; if this story and the plan disagree, the plan
+wins and this file must be corrected.
+
+`src/storage/vault-db.js`, living inside the vault worker (PR #39 runtime):
+IndexedDB schema v1 with the ten frozen stores (`meta`, `identity`,
+`contacts`, `messages`, `mls`, `outbox`, `push`, `settings`, `migrations`,
+`canary` — list frozen in plan §B3.0.1), multi-store transactions resolved on
+`oncomplete`, `durability: 'strict'` where supported, auto-close on
+`versionchange`, bounded retry on blocked opens (`VAULT_BLOCKED`, 50 ms
+backoff), quota mapped to `VAULT_QUOTA_EXCEEDED` fail-closed, bounded
+`persist()`, fail-closed upgrades through a migrator registry, destroy with
+`onblocked` handled, single-tab access through the existing Web Lock.
+**Synthetic records and fixtures only**: every database name is prefixed
+`styx-vault-test-*`; no product data exists at this stage.
+
+### Acceptance criteria
+
+- DATO il porting a produzione delle probe P1–P12 dello spike IndexedDB
+  QUANDO la suite gira in CI su Chromium e Firefox
+  ALLORA tutte le probe sono verdi, incluse kill mid-transaction
+  (all-or-nothing), upgrade abort→retry, blocked/versionchange, quota,
+  elezione/steal multi-tab e il record binario da 8 MB.
+- DATO un crash della pagina durante una transazione multi-store
+  QUANDO il database viene riaperto
+  ALLORA lo stato è consistente: o tutti gli effetti della transazione o
+  nessuno.
+- DATO un upgrade di schema che fallisce
+  QUANDO la open successiva riparte
+  ALLORA il fallimento è fail-closed e ripetibile, senza stato intermedio
+  persistito.
+- DATO qualunque test di questa story
+  QUANDO crea o distrugge database
+  ALLORA usa solo nomi prefissati `styx-vault-test-*` e record sintetici,
+  mai dati di prodotto.
+
+---
+
+## US-006 — Lifecycle of a new empty vault
+
+**Sprint 2, from plan section B3.5 (PR‑5)** of the vault implementation
+plan (canonical, wins on disagreement). Depends on US-005.
+
+`src/storage/vault.js` inside the worker: the spec §3 state machine with
+`CREATE_VAULT / UNLOCK / LOCK / STATUS / CHANGE_PASSWORD / REWRAP /
+DESTROY`. Hard constraints: the Root Key is 32 random bytes generated in the
+worker, never derived from the password, never persisted in cleartext, never
+crossing the worker boundary; the KEK comes only from validated Argon2id;
+re-wrap follows spec §7.2 (at least one valid wrapper at every instant,
+`rewrapPending`); wrong password answers `VAULT_WRONG_PASSWORD`
+non-destructively and without any oracle beyond wrapper well-formedness
+(§16.8); LOCK is best-effort wipe, strong cancellation is terminate; **no
+migration from localStorage** in this story. Introduces
+`src/config/vault-stage.js` (the `styx.vault.stage` flag, plan §B3.0.6) and
+revises the PR‑3 anti-bundle test accordingly — the gate-revision point
+recorded in US-001/US-002.
+
+**Irreversible-contract gate (plan §16.13, decision n. 1):** from the first
+merged vault that persists them, wrapper v1 and record v1 become contracts.
+The human merge gate of this story is where that decision is taken.
+
+### Acceptance criteria
+
+- DATO l'insieme delle transizioni della state machine §3
+  QUANDO la suite le esercita tutte, valide e vietate
+  ALLORA ogni transizione valida riesce e ogni transizione vietata fallisce
+  fail-closed con l'errore tipizzato atteso.
+- DATO un crash durante il re-wrap, in OGNI punto della sequenza §7.2
+  QUANDO il vault viene riaperto
+  ALLORA esiste sempre almeno un wrapper funzionante e l'apertura riesce.
+- DATO una password errata ripetuta
+  QUANDO l'unwrap fallisce su un wrapper ben formato
+  ALLORA la risposta è sempre `VAULT_WRONG_PASSWORD`, senza side-effect e
+  senza distinzione osservabile dal caso wrapper-corrotto-ma-ben-formato;
+  `VAULT_WRAPPER_INVALID` compare solo per forma invalida PRIMA della
+  derivazione.
+- DATO il flag `styx.vault.stage` in configurazione developer-only
+  QUANDO il vault viene creato, sbloccato e distrutto
+  ALLORA il ciclo completo funziona con zero dati di prodotto e il flag off
+  riporta l'app al comportamento attuale (rollback R1).
+- DATO il bundle di produzione della chat
+  QUANDO il flag è off
+  ALLORA il test anti-bundle aggiornato dimostra che nessun modulo vault
+  raggiunge `dist/`.
+
+---
+
+## US-007 — Canary namespace end-to-end
+
+**Sprint 2, from plan section B3.6 (PR‑6)** of the vault implementation
+plan (canonical, wins on disagreement). Depends on US-006.
+
+The `canary` namespace holds synthetic records generated locally — never
+user information — and is exercised end-to-end from the app behind the
+`styx.vault.stage` flag: encryption, AAD, persistence, reopen, wrong
+password, hand-made bit-flip corruption on the database, crash, re-wrap,
+password change, reset, a trial v1→v2 schema upgrade on the canary store
+only, service-worker update while UNLOCKED (plan RK8), and simulated storage
+eviction (external destroy of the database).
+
+### Acceptance criteria
+
+- DATO la matrice §13 della spec vault
+  QUANDO la suite canary gira in CI
+  ALLORA ogni riga della matrice è coperta ed è verde sul solo namespace
+  canary.
+- DATO un record canary cifrato corrotto a mano (bit-flip)
+  QUANDO il vault lo rilegge
+  ALLORA il fallimento è tipizzato, fail-closed e non distruttivo per gli
+  altri record.
+- DATO l'upgrade di prova v1→v2
+  QUANDO viene eseguito
+  ALLORA tocca esclusivamente lo store `canary` e resta reversibile.
+- DATO qualunque record scritto da questa story
+  QUANDO se ne ispeziona il contenuto
+  ALLORA è sintetico e generato localmente, mai derivato da informazioni
+  dell'utente.
