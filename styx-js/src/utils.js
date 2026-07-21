@@ -33,7 +33,16 @@ export function hexToBytes(hex) {
  */
 export function bytesToBase64(bytes) {
   if (typeof btoa === 'function') {
-    return btoa(String.fromCharCode(...bytes));
+    // Fixed-size String.fromCharCode windows: spreading the whole buffer hits
+    // the engine's argument-count limit far below the MLS envelope's 16 MiB
+    // parser cap (US-002). 32768 is safely under every engine's limit; the
+    // single final btoa keeps the output byte-identical to the unchunked form.
+    const CHUNK = 32768;
+    const parts = [];
+    for (let i = 0; i < bytes.length; i += CHUNK) {
+      parts.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)));
+    }
+    return btoa(parts.join(''));
   }
   return Buffer.from(bytes).toString('base64');
 }
