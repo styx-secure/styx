@@ -2,7 +2,7 @@
 spec_version: "2.0"
 spec_type: "sprint-plan"
 project: "Styx"
-last_updated: "2026-07-19T00:00:00Z"
+last_updated: "2026-07-21T00:00:00Z"
 status: "planned"
 ---
 
@@ -79,3 +79,63 @@ push 16 MiB beyond typical localStorage quotas; browser quotas differ; the
 Blocco 3 IndexedDB vault replaces this limit; quota errors must remain
 fail-closed and non-destructive (legacy value + backup intact,
 `MLS_STATE_MIGRATION_FAILED` raised — tested property to preserve).
+
+## Sprint 2 — Blocco 3 vault core (engine, lifecycle, canary)
+
+Total SP: 21. All stories mirror sections B3.4–B3.6 of
+`docs/superpowers/plans/2026-07-12-styx-vault-implementation-plan.md` (the
+canonical plan, which wins on any disagreement). Sequential dependencies:
+US-006 depends on US-005, US-007 on US-006. Human gate per Epic #65: every
+PR is human-reviewed; the US-006 merge additionally takes the
+irreversible-contract decision of plan §16.13 (wrapper v1 / manifest v1 /
+record v1).
+
+### US-005 — Vault IndexedDB engine inside the worker
+
+**SP**: 8
+**Status**: todo
+
+From plan section B3.4 (PR‑4). Full story and acceptance criteria:
+`specs/03-user-stories.md` (US-005) — the file owns spec content; this Issue
+body is a generated projection. `src/storage/vault-db.js` inside the vault
+worker: schema v1 with the ten frozen stores, multi-store transactions on
+`oncomplete`, strict durability where supported, bounded blocked-open retry,
+fail-closed quota and upgrades, handled destroy, single-tab Web Lock.
+Synthetic records only (`styx-vault-test-*`). Depends on the merged PR #39
+worker runtime; rollback R0; the transactional semantics freeze at merge.
+Acceptance: spike probes P1–P12 ported and green on Chromium and Firefox
+in CI.
+
+### US-006 — Lifecycle of a new empty vault
+
+**SP**: 8
+**Status**: todo
+
+From plan section B3.5 (PR‑5). Full story and acceptance criteria:
+`specs/03-user-stories.md` (US-006) — the file owns spec content; this Issue
+body is a generated projection. `src/storage/vault.js`: spec §3 state
+machine (`CREATE_VAULT/UNLOCK/LOCK/STATUS/CHANGE_PASSWORD/REWRAP/DESTROY`);
+Root Key never derived, persisted in cleartext or exported; KEK only from
+validated Argon2id; §7.2 re-wrap with one valid wrapper at every instant;
+`VAULT_WRONG_PASSWORD` non-destructive and oracle-free (§16.8); an
+incompatible well-formed wrapper fails closed with structured recovery
+actions; no localStorage migration. First real use of wrapper v1 and
+manifest v1; rollback R1 (flag off, DESTROY for dev vaults). Introduces
+`src/config/vault-stage.js` and revises the PR‑3 anti-bundle test. Merge
+takes the §16.13 irreversible-contract decision (wrapper v1 / manifest v1 /
+record v1).
+
+### US-007 — Canary namespace end-to-end
+
+**SP**: 5
+**Status**: todo
+
+From plan section B3.6 (PR‑6). Full story and acceptance criteria:
+`specs/03-user-stories.md` (US-007) — the file owns spec content; this Issue
+body is a generated projection. The `canary` namespace, synthetic records
+only, exercised end-to-end from the app behind `styx.vault.stage`:
+encryption, AAD, persistence, reopen, wrong password, bit-flip corruption,
+crash, re-wrap, password change, reset, trial v1→v2 upgrade on canary only,
+SW update while UNLOCKED, simulated eviction. Rollback R1; gate: only after
+this story may later stories touch real product data. Acceptance: full spec
+§13 matrix on the canary in CI.
