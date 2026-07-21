@@ -198,10 +198,42 @@ export function createVaultWorkerSupervisor({
 
   /** Delegate one request to the current worker. */
   function request(type, payload, options) {
+    // Review PR39 F4: the supervisor owns the lifecycle. Letting SHUTDOWN
+    // through would close the worker underneath a supervisor still RUNNING,
+    // leaving later requests to hang until their timeout.
+    if (type === 'SHUTDOWN') {
+      return Promise.reject(wrongState('SHUTDOWN must go through supervisor.shutdown()', { reason: 'lifecycle-owner' }));
+    }
     if (state !== SUPERVISOR_STATES.RUNNING || client === null) {
       return Promise.reject(wrongState('no running worker', { reason: `state:${state}` }));
     }
     return client.request(type, payload, options);
+  }
+
+  /**
+   * Graceful stop (review PR39 F4): SHUTDOWN through the client, then the
+   * supervisor is STOPPED. If the worker does not answer, fall back to a hard
+   * terminate — either way the caller ends with a STOPPED supervisor and no
+   * pending state. Never respawns.
+   */
+  async function shutdown({ timeoutMs } = {}) {
+    if (state === SUPERVISOR_STATES.STOPPED) return { closed: true };
+    if (state !== SUPERVISOR_STATES.RUNNING || client === null) {
+      stop();
+      return { closed: true };
+    }
+    generation += 1; // late fatals from this worker are stale, not respawns
+    if (backoffTimer !== null) { clearTimeoutImpl(backoffTimer); backoffTimer = null; }
+    clearStabilityTimer();
+    const c = client;
+    client = null;
+    state = SUPERVISOR_STATES.STOPPED;
+    try {
+      return await c.shutdown({ timeoutMs });
+    } catch {
+      try { c.terminate('supervisor-stopped'); } catch { /* already gone */ }
+      return { closed: true };
+    }
   }
 
   /**
@@ -230,6 +262,7 @@ export function createVaultWorkerSupervisor({
   return Object.freeze({
     start,
     stop,
+    shutdown,
     request,
     cancelUnlock,
     getState: () => state,

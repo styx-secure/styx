@@ -243,3 +243,57 @@ describe('terminate and shutdown', () => {
     expect(await codeOf(client.request('STATUS'))).toBe(Codes.TERMINATED);
   });
 });
+
+const errOf = async (promise) => {
+  try { await promise; return 'RESOLVED'; } catch (e) {
+    expect(e).toBeInstanceOf(VaultWorkerError);
+    return e;
+  }
+};
+
+describe('outbound payload validation (review PR39 F1)', () => {
+  // The wire grammar must be enforced BEFORE the structured clone crosses the
+  // boundary, not only worker-side: a clonable exotic (SharedArrayBuffer,
+  // CryptoKey) must never reach the worker at all.
+  test.each([
+    ['a function property', { wasmUrl: '/x.wasm', cb: () => {} }],
+    ['a SharedArrayBuffer', { wasmUrl: '/x.wasm', buf: new SharedArrayBuffer(8) }],
+    ['a Map (non-plain object)', { wasmUrl: '/x.wasm', m: new Map() }],
+    ['a nested exotic', { wasmUrl: '/x.wasm', deep: { inner: new WeakMap() } }],
+  ])('%s is rejected BAD_REQUEST before postMessage', async (_label, payload) => {
+    const { worker, fatals, client } = makeClient();
+    const err = await errOf(client.request('INIT', payload));
+    expect(err.code).toBe(Codes.BAD_REQUEST);
+    expect(worker.posted.length).toBe(0); // nothing crossed the boundary
+    expect(client.pendingCount()).toBe(0);
+    expect(fatals.length).toBe(0); // a bad caller does not kill the worker
+  });
+
+  test('a valid payload still crosses unchanged', async () => {
+    const { worker, client } = makeClient();
+    client.request('INIT', { wasmUrl: '/x.wasm' });
+    expect(worker.posted.length).toBe(1);
+    expect(worker.posted[0].message.payload).toEqual({ wasmUrl: '/x.wasm' });
+  });
+});
+
+describe('terminate reason confinement (review PR39 F2)', () => {
+  test('an unknown reason is mapped to the closed set, never copied into the error', async () => {
+    const { worker, client } = makeClient();
+    const p = client.request('STATUS');
+    client.terminate('hunter2-super-secret-password');
+    const err = await errOf(p);
+    expect(err.code).toBe(Codes.TERMINATED);
+    expect(err.details.reason).toBe('terminated');
+    expect(JSON.stringify(err.details)).not.toContain('hunter2');
+    expect(worker.terminated).toBe(1);
+  });
+
+  test('the internal reasons keep working verbatim', async () => {
+    const { client } = makeClient();
+    const p = client.request('STATUS');
+    client.terminate('unlock-cancelled');
+    const err = await errOf(p);
+    expect(err.details.reason).toBe('unlock-cancelled');
+  });
+});

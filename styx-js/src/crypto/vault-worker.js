@@ -23,4 +23,11 @@ const runtime = createVaultWorkerRuntime(Object.freeze({
   // no testOverrides: the production worker has exactly INIT/STATUS/SHUTDOWN
 }));
 
-self.onmessage = (event) => { runtime.handleMessage(event); };
+self.onmessage = (event) => {
+  // Review PR39 F3 (CodeQL js/missing-origin-check): page→dedicated-worker
+  // messages always carry an empty origin; anything else is not our protocol
+  // and is dropped without a response (no error oracle for foreign senders).
+  // The runtime keeps its own origin rejection as defense in depth.
+  if (typeof event.origin === 'string' && event.origin !== '') return;
+  runtime.handleMessage(event);
+};

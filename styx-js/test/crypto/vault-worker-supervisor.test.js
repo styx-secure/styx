@@ -40,6 +40,10 @@ class FakeWorker {
       queueMicrotask(() => this.emit('message', {
         data: { id: message.id, ok: true, result: { workerState: 'READY' } },
       }));
+    } else if (message.type === 'SHUTDOWN' && this.behavior !== 'init-ok-silent') {
+      queueMicrotask(() => this.emit('message', {
+        data: { id: message.id, ok: true, result: { closed: true } },
+      }));
     } // UNLOCK & co. (and everything on 'init-ok-silent'): never answered
   }
 
@@ -133,6 +137,46 @@ describe('start / stop / delegation', () => {
     expect(workers[0].terminated).toBeGreaterThan(0);
     // nothing respawns after stop
     expect(workers.length).toBe(1);
+  });
+
+  // Review PR39 F4: the supervisor owns the lifecycle. A caller must not be
+  // able to close the worker underneath it through the request path.
+  test('request(SHUTDOWN) is refused and does not touch the worker', async () => {
+    const { supervisor, workers } = makeSupervisor(['init-ok']);
+    await supervisor.start();
+    const err = await codeOf(supervisor.request('SHUTDOWN'));
+    expect(err.code).toBe(Codes.WRONG_STATE);
+    expect(err.details.reason).toBe('lifecycle-owner');
+    expect(supervisor.getState()).toBe(SUPERVISOR_STATES.RUNNING);
+    expect(workers[0].terminated).toBe(0);
+    expect(await supervisor.request('STATUS')).toEqual({ workerState: 'READY' });
+  });
+
+  test('shutdown() stops gracefully: SHUTDOWN through the client, STOPPED, no timers left', async () => {
+    const { supervisor, workers, timers } = makeSupervisor(['init-ok']);
+    await supervisor.start();
+    const result = await supervisor.shutdown();
+    expect(result).toEqual({ closed: true });
+    expect(supervisor.getState()).toBe(SUPERVISOR_STATES.STOPPED);
+    expect(timers.armed()).toBe(0); // no stability window, no pending request timer
+    expect(workers.length).toBe(1); // no respawn after a graceful stop
+    const err = await codeOf(supervisor.request('STATUS'));
+    expect(err.code).toBe(Codes.WRONG_STATE); // no request can reach a closed worker
+  });
+
+  test('shutdown() on a worker that never answers falls back to terminate, still STOPPED', async () => {
+    const clientTimers = makeFakeTimers();
+    const { supervisor, workers } = makeSupervisor(['init-ok-silent'], {
+      clientSetTimeoutImpl: clientTimers.setTimeoutImpl,
+      clientClearTimeoutImpl: clientTimers.clearTimeoutImpl,
+    });
+    await supervisor.start();
+    const p = supervisor.shutdown();
+    await clientTimers.fireNext(); // the SHUTDOWN request times out
+    expect(await p).toEqual({ closed: true });
+    expect(supervisor.getState()).toBe(SUPERVISOR_STATES.STOPPED);
+    expect(workers[0].terminated).toBeGreaterThan(0);
+    expect(workers.length).toBe(1); // a graceful stop never triggers a respawn
   });
 });
 

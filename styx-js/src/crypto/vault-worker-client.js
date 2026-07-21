@@ -6,12 +6,25 @@
 // error event or a postMessage failure means the worker is no longer
 // trustworthy — reject everything, terminate, let the supervisor respawn.
 
-import { MESSAGE_TYPES, validateResponseEnvelope } from './vault-worker-protocol.js';
+import { MESSAGE_TYPES, validateResponseEnvelope, validateWireValue } from './vault-worker-protocol.js';
 import { VaultWorkerError, VaultWorkerErrorCodes as Codes } from './vault-worker-errors.js';
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
 export const MAX_REQUEST_TIMEOUT_MS = 600000;
 export const MAX_TRANSFER_BYTES = 32 * 1024 * 1024;
+
+/**
+ * Closed set of termination reasons (review PR39 F2). details.reason in
+ * WORKER_TERMINATED may only ever carry one of these constants: free-form
+ * caller text could smuggle secrets into errors and logs (plan §11).
+ */
+export const TERMINATE_REASONS = Object.freeze([
+  'terminated',
+  'unlock-cancelled',
+  'supervisor-stopped',
+  'stale-generation',
+  'init-failed',
+]);
 
 function assertTransferList(transfer) {
   if (transfer === undefined) return [];
@@ -125,6 +138,10 @@ export function createVaultWorkerClient(worker, {
     let transferList;
     try {
       transferList = assertTransferList(transfer);
+      // Review PR39 F1: enforce the wire grammar BEFORE the structured clone
+      // crosses the boundary — a clonable exotic (SharedArrayBuffer,
+      // CryptoKey, Map…) must never reach the worker at all.
+      validateWireValue(payload, {});
     } catch (e) {
       return Promise.reject(e);
     }
@@ -168,8 +185,12 @@ export function createVaultWorkerClient(worker, {
    * Caller-initiated: onFatal is NOT invoked.
    */
   function terminate(reason = 'terminated') {
+    // Review PR39 F2: the reason is confined to a closed set — the boundary
+    // must be secret-free by contract, not by caller discipline. Anything
+    // outside the set degrades to the generic reason.
+    const safeReason = TERMINATE_REASONS.includes(reason) ? reason : 'terminated';
     die(
-      new VaultWorkerError(Codes.TERMINATED, 'worker terminated', { reason: String(reason).slice(0, 64) }),
+      new VaultWorkerError(Codes.TERMINATED, 'worker terminated', { reason: safeReason }),
       { deliberate: true },
     );
   }

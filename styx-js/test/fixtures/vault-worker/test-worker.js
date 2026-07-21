@@ -70,4 +70,8 @@ const runtime = createVaultWorkerRuntime(Object.freeze({
   },
 }));
 
-self.onmessage = (event) => { runtime.handleMessage(event); };
+self.onmessage = (event) => {
+  // Same explicit origin guard as the production entry (review PR39 F3).
+  if (typeof event.origin === 'string' && event.origin !== '') return;
+  runtime.handleMessage(event);
+};
