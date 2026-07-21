@@ -223,6 +223,11 @@ backoff), quota mapped to `VAULT_QUOTA_EXCEEDED` fail-closed, bounded
 **Synthetic records and fixtures only**: every database name is prefixed
 `styx-vault-test-*`; no product data exists at this stage.
 
+Depends on the merged PR #39 worker runtime (plan PR‑3): the engine lives
+inside the worker. Rollback class **R0** (test-only databases, plain revert).
+Gate at merge: the transactional semantics become **frozen** (plan B3.4) —
+later stories build on them unchanged.
+
 ### Acceptance criteria
 
 - DATO il porting a produzione delle probe P1–P12 dello spike IndexedDB
@@ -258,15 +263,25 @@ crossing the worker boundary; the KEK comes only from validated Argon2id;
 re-wrap follows spec §7.2 (at least one valid wrapper at every instant,
 `rewrapPending`); wrong password answers `VAULT_WRONG_PASSWORD`
 non-destructively and without any oracle beyond wrapper well-formedness
-(§16.8); LOCK is best-effort wipe, strong cancellation is terminate; **no
-migration from localStorage** in this story. Introduces
+(§16.8); an **incompatible** wrapper (well-formed but of an unsupported
+version or parameters) fails closed with the structured recovery actions,
+still without any oracle beyond its — public — form; LOCK is best-effort
+wipe, strong cancellation is terminate; **no migration from localStorage**
+in this story. Introduces
 `src/config/vault-stage.js` (the `styx.vault.stage` flag, plan §B3.0.6) and
 revises the PR‑3 anti-bundle test accordingly — the gate-revision point
 recorded in US-001/US-002.
 
+Depends on US-005 and, through it, on the full plan chain PR‑1…PR‑4 (KDF
+artifact, crypto formats, worker runtime, IndexedDB engine). This story is
+the first **real** use of the persisted wrapper v1 **and manifest v1**
+formats. Rollback class **R1**: flag off restores current behaviour; dev
+vaults are removed with DESTROY.
+
 **Irreversible-contract gate (plan §16.13, decision n. 1):** from the first
-merged vault that persists them, wrapper v1 and record v1 become contracts.
-The human merge gate of this story is where that decision is taken.
+merged vault that persists them, wrapper v1, manifest v1 and record v1
+become contracts. The human merge gate of this story is where that decision
+is taken.
 
 ### Acceptance criteria
 
@@ -283,6 +298,12 @@ The human merge gate of this story is where that decision is taken.
   senza distinzione osservabile dal caso wrapper-corrotto-ma-ben-formato;
   `VAULT_WRAPPER_INVALID` compare solo per forma invalida PRIMA della
   derivazione.
+- DATO un wrapper ben formato ma incompatibile (versione o parametri non
+  supportati)
+  QUANDO il vault tenta l'apertura
+  ALLORA il fallimento è fail-closed, non distruttivo, e l'errore porta le
+  azioni di recupero strutturate — senza alcun oracle oltre la forma, che è
+  comunque pubblica (§16.8).
 - DATO il flag `styx.vault.stage` in configurazione developer-only
   QUANDO il vault viene creato, sbloccato e distrutto
   ALLORA il ciclo completo funziona con zero dati di prodotto e il flag off
@@ -306,6 +327,11 @@ password, hand-made bit-flip corruption on the database, crash, re-wrap,
 password change, reset, a trial v1→v2 schema upgrade on the canary store
 only, service-worker update while UNLOCKED (plan RK8), and simulated storage
 eviction (external destroy of the database).
+
+Rollback class **R1** (flag off; canary data is synthetic and disposable).
+Gate at merge (plan B3.6): **only from this point onward** may the following
+stories touch real product data — everything up to and including the canary
+runs on synthetic records exclusively.
 
 ### Acceptance criteria
 
