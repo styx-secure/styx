@@ -87,7 +87,8 @@ Total SP: 21. All stories mirror sections B3.4–B3.6 of
 canonical plan, which wins on any disagreement). Sequential dependencies:
 US-006 depends on US-005, US-007 on US-006. Human gate per Epic #65: every
 PR is human-reviewed; the US-006 merge additionally takes the
-irreversible-contract decision of plan §16.13 (wrapper v1 / record v1).
+irreversible-contract decision of plan §16.13 (wrapper v1 / manifest v1 /
+record v1).
 
 ### US-005 — Vault IndexedDB engine inside the worker
 
