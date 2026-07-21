@@ -30,13 +30,15 @@ and JSON quoting — well beyond what localStorage typically accepts for a
 single origin. A payload at the cap therefore cannot be persisted by the
 current backend even in the most generous browsers.
 
-In addition, the current base64 encoder (`bytesToBase64` in
-[`src/utils.js:34`](../src/utils.js), spread-based `String.fromCharCode`)
-throws a `RangeError` for inputs far below the cap, so the effective write
-ceiling of `_persistMls` today is the encoder, not the parser cap. This is a
-recorded, accepted residual of the Fase D security review
-(`docs/security/2026-07-12-review-mls-state-envelope.md`, residual 2) and
-goes away with the Blocco 3 vault, where base64 encoding disappears.
+The base64 encoder (`bytesToBase64` in
+[`src/utils.js`](../src/utils.js)) converts in fixed-size
+`String.fromCharCode` windows (US-002): a cap-sized payload encodes without
+`RangeError`, so the encoder is no longer the practical write ceiling of
+`_persistMls` — the binding limits are the backend quota (section 3) and the
+16 MiB parser cap. Chunking is the interim option among the three declared by
+the story; the recorded end-state remains the Blocco 3 vault, where base64
+encoding disappears from the persistence path entirely
+(`docs/security/2026-07-12-review-mls-state-envelope.md`, residual 2).
 
 ## 3. Browser quotas differ: the practical ceiling is much lower
 
