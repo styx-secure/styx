@@ -81,8 +81,9 @@ vectors, persisted formats/migrations, vault architecture, and vendored WASM.
 
 ## Isolation and commits
 
-Each execution uses one dedicated worktree and branch from the contract's base
-SHA:
+Each execution uses one dedicated worktree and branch created from a recorded
+base SHA — the contract's base SHA for contract tasks, the `main` head at
+branch creation (reported in the pull request) for MUCC stories:
 
 ```text
 task/<issue>-<slug>
