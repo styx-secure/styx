@@ -140,6 +140,56 @@ describe('bounded blocked-wait (spike P10: wait on the SAME request, never reope
   });
 });
 
+describe('quota mapping (deterministic counterpart of browser P8)', () => {
+  function makeFakeTx() {
+    const tx = {
+      oncomplete: null, onabort: null, onerror: null, error: null,
+      aborted: 0,
+      abort() { this.aborted += 1; queueMicrotask(() => this.onabort?.()); },
+      objectStore: () => ({}),
+    };
+    return tx;
+  }
+
+  test('a QuotaExceededError thrown on the write path rejects VAULT_QUOTA_EXCEEDED, aborted not committed', async () => {
+    const { VaultDb } = await import('../../src/storage/vault-db.js');
+    const tx = makeFakeTx();
+    const fakeDb = { name: 'styx-vault-test-quota', transaction: () => tx };
+    const v = new VaultDb(fakeDb, {});
+    const quotaBoom = Object.assign(new Error('quota'), { name: 'QuotaExceededError' });
+    const err = await errOf(v.transaction(['mls'], () => { throw quotaBoom; }));
+    expect(err.code).toBe(Codes.QUOTA_EXCEEDED);
+    expect(tx.aborted).toBe(1); // aborted, nothing committed
+  });
+
+  test('a tx-level QuotaExceededError on abort maps to VAULT_QUOTA_EXCEEDED too', async () => {
+    const tx = makeFakeTx();
+    const fakeDb = { name: 'styx-vault-test-quota2', transaction: () => tx };
+    const { VaultDb } = await import('../../src/storage/vault-db.js');
+    const v = new VaultDb(fakeDb, {});
+    const p = errOf(v.transaction(['mls'], () => {}));
+    tx.error = Object.assign(new Error('quota'), { name: 'QuotaExceededError' });
+    await Promise.resolve(); // let the callback settle before the abort event
+    tx.onabort();
+    const err = await p;
+    expect(err.code).toBe(Codes.QUOTA_EXCEEDED);
+    expect(err.details.reason).toBe('QuotaExceededError');
+  });
+
+  test('a non-quota abort stays VAULT_TX_ABORTED', async () => {
+    const tx = makeFakeTx();
+    const fakeDb = { name: 'styx-vault-test-abort', transaction: () => tx };
+    const { VaultDb } = await import('../../src/storage/vault-db.js');
+    const v = new VaultDb(fakeDb, {});
+    const p = errOf(v.transaction(['mls'], () => {}));
+    tx.error = Object.assign(new Error('x'), { name: 'AbortError' });
+    await Promise.resolve();
+    tx.onabort();
+    const err = await p;
+    expect(err.code).toBe(Codes.TX_ABORTED);
+  });
+});
+
 describe('probeStorage — advisory and bounded (spike F8)', () => {
   test('a persist() that never settles resolves as timeout, never hangs', async () => {
     const timers = makeFakeTimers();
