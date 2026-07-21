@@ -17,17 +17,11 @@ const MLS_CODES = [
   'MLS_STATE_RESTORE_FAILED',
 ];
 
-const VAULT_CODES = [
-  'VAULT_WRAPPER_INVALID',
-  'VAULT_WRAPPER_UNSUPPORTED',
-  'VAULT_KDF_PARAMS_INVALID',
-  'VAULT_WRONG_PASSWORD',
-  'VAULT_RECORD_INVALID',
-  'VAULT_RECORD_CORRUPTED',
-  'VAULT_KEY_VERSION_UNSUPPORTED',
-  'VAULT_NAMESPACE_UNSUPPORTED',
-  'VAULT_CRYPTO_FAILED',
-];
+// NOTE: no VAULT_* codes here on purpose. The runtime unlock path uses
+// EncryptedKeyStore (plain Errors, no code); the coded vault errors belong to
+// modules that are not runtime-integrated and whose identifiers must not
+// reach the production bundle (Blocco 3 CI gate). The map will grow vault
+// codes in the PR that wires the vault in and revises that gate.
 
 const RAW_MARKER = 'RAW_TECHNICAL_MESSAGE_MARKER';
 
@@ -41,7 +35,7 @@ function fakeError(code, details) {
 describe('describeUnlockError', () => {
   afterEach(() => jest.restoreAllMocks());
 
-  test.each([...MLS_CODES, ...VAULT_CODES])('%s maps to a fixed Italian message', (code) => {
+  test.each(MLS_CODES)('%s maps to a fixed Italian message', (code) => {
     const { message, actions } = describeUnlockError(fakeError(code));
     expect(typeof message).toBe('string');
     expect(message.length).toBeGreaterThan(0);
@@ -50,9 +44,19 @@ describe('describeUnlockError', () => {
     expect(Array.isArray(actions)).toBe(true);
   });
 
-  test('every known code has a distinct enough surface: wrong password is specific', () => {
-    const { message } = describeUnlockError(fakeError('VAULT_WRONG_PASSWORD'));
+  test('the wrong-password Error from EncryptedKeyStore gets a specific message', () => {
+    // The runtime key store throws a plain Error whose stable message is the
+    // dispatch key; only the fixed Italian text may reach the user.
+    const { message, actions } = describeUnlockError(new Error('Invalid password'));
     expect(message.toLowerCase()).toContain('password');
+    expect(message).not.toContain('Invalid password');
+    expect(actions).toHaveLength(0);
+  });
+
+  test('wrong-password dispatch is exact-match only, never substring', () => {
+    const { message } = describeUnlockError(new Error(`Invalid password ${RAW_MARKER}`));
+    expect(message).not.toContain(RAW_MARKER);
+    expect(message.toLowerCase()).not.toContain('password errata');
   });
 
   test('OPENMLS_INCOMPATIBLE exposes exactly the three foreseen actions, least destructive first', () => {
@@ -95,8 +99,18 @@ describe('describeUnlockError', () => {
     expect(actions).toHaveLength(0);
   });
 
+  test('the production bundle gate sentinels never appear in what this module can emit', () => {
+    // Blocco 3 CI gate: these identifiers must not reach dist/. The mapper is
+    // bundled, so its whole output surface must be free of them.
+    for (const sentinel of ['styx-vault-wrapper', 'VAULT_WRAPPER_INVALID', 'styx/vault/identity/v1']) {
+      for (const code of [...MLS_CODES, 'UNKNOWN', undefined]) {
+        expect(JSON.stringify(describeUnlockError(fakeError(code)))).not.toContain(sentinel);
+      }
+    }
+  });
+
   test('anti-leak: nothing from err.message or err.details reaches the described output', () => {
-    for (const code of [...MLS_CODES, ...VAULT_CODES, 'UNKNOWN_CODE']) {
+    for (const code of [...MLS_CODES, 'UNKNOWN_CODE']) {
       const out = describeUnlockError(fakeError(code, {
         limit: RAW_MARKER, saved: RAW_MARKER, causeCode: RAW_MARKER, actions: [RAW_MARKER],
       }));
