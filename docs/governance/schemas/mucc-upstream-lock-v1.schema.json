@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/styx-secure/styx/blob/main/docs/governance/schemas/mucc-upstream-lock-v1.schema.json",
+  "title": "Styx MUCC upstream lock v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "repository",
+    "commit",
+    "marketplace_version",
+    "dev_methodology_version",
+    "update_policy"
+  ],
+  "properties": {
+    "schema": {
+      "const": "styx.mucc-upstream-lock/v1"
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "marketplace_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "dev_methodology_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "update_policy": {
+      "const": "explicit-reviewed-pull-request-only"
+    }
+  }
+}

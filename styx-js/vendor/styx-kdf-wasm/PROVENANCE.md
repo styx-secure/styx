@@ -10,6 +10,13 @@ MLS state, and an OpenMLS update cannot change this artifact.
 
 - Crate source: `./Cargo.toml` + `./src/lib.rs` (this repository, no external
   clone; `build.sh` builds from a clean copy of the committed sources only).
+- License of this crate: `AGPL-3.0-or-later` (original Styx software; Issue
+  #41 — declared in `./Cargo.toml`, mapped in the root `REUSE.toml` and
+  `LICENSING.md`). The manifest license change was verified not to affect the
+  artifact: `./verify.sh` double-build byte-identical to the committed `pkg/`.
+  Dependency licenses below are unchanged and still enforced by `deny.toml`
+  (the unpublished root crate is excluded from the dependency allowlist via
+  `private = { ignore = true }`; AGPL was NOT added to the allowlist).
 - Direct dependencies (exact pins, `--locked` against `./Cargo.lock`):
   - `argon2 = 0.5.3` (RustCrypto) — sha256 of the crates.io archive recorded in
     `Cargo.lock` (`checksum` field), license MIT OR Apache-2.0

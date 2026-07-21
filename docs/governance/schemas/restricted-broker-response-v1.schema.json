@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/styx-secure/styx/blob/main/docs/governance/schemas/restricted-broker-response-v1.schema.json",
+  "title": "Styx restricted broker response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "result", "operation", "idempotency_key", "replayed", "audit_id", "outcome"],
+  "properties": {
+    "schema": {"const": "styx.restricted-broker-response/v1"},
+    "result": {
+      "enum": [
+        "SUCCESS",
+        "DENIED_POLICY",
+        "DENIED_EVIDENCE",
+        "CONFLICT_IDEMPOTENT",
+        "AUTH_UNAVAILABLE",
+        "REMOTE_FAILURE",
+        "INTERNAL_ERROR"
+      ]
+    },
+    "operation": {"enum": ["push_task_branch", "open_draft_pr", null]},
+    "idempotency_key": {"type": ["string", "null"]},
+    "replayed": {"type": "boolean"},
+    "audit_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "outcome": {"type": "object"}
+  }
+}

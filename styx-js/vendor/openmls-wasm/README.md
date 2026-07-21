@@ -14,7 +14,14 @@ hash dell'artefatto, rischi residui — sta in **[`PROVENANCE.md`](./PROVENANCE.
 - **Commit:** `09e92777dba0528d3d29e2e5e681b7e91637c7be` (2026-07-08) — discendente del tag
   `openmls-v0.8.1`, quindi **porta i fix dell'audit SRLabs** (verificato nel sorgente).
   ⚠️ È un commit di `main` **non rilasciato**: vedi i rischi residui in `PROVENANCE.md`.
-- **Licenza:** MIT
+- **Licenza upstream (OpenMLS):** MIT — Copyright (c) 2020 OpenMLS Authors. Vale per il
+  materiale upstream, derivato e generato di questa directory (artefatto `openmls_wasm_*`,
+  `package.json`, `Cargo.lock` e il derivato `patch/lib.rs`, che aggiunge le modifiche
+  Styx sotto la stessa MIT). **Non** vale per l'intera directory: `build.sh`, `verify.sh`,
+  `roundtrip.mjs`, questo `README.md` e `PROVENANCE.md` sono opere Styx sotto
+  `AGPL-3.0-or-later`. Mappa esatta: `REUSE.toml` e `LICENSING.md` alla radice del repo;
+  attribuzioni complete (incluse le crate linkate nell'artefatto) in
+  `THIRD_PARTY_NOTICES.md`.
 - **Ciphersuite:** `MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519` — X25519 HPKE,
   ChaCha20-Poly1305, SHA-256, Ed25519 (fissata in `patch/lib.rs`)
 - **Provider crypto:** `openmls_rust_crypto` (RustCrypto)

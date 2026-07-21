@@ -1,0 +1,32 @@
+{
+  "disableBypassPermissionsMode": "disable",
+  "permissions": {
+    "defaultMode": "default",
+    "deny": [
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(sftp *)",
+      "Bash(nc *)",
+      "Bash(ncat *)",
+      "Bash(socat *)",
+      "Bash(sudo *)",
+      "Bash(apt *)",
+      "Bash(apt-get *)",
+      "Bash(dpkg *)",
+      "Bash(snap *)",
+      "Bash(systemctl *)",
+      "Bash(service *)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.config/git/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.gnupg/**)",
+      "Read(~/.docker/config.json)",
+      "Read(~/.git-credentials)",
+      "Read(~/.gitconfig)",
+      "Read(~/.netrc)"
+    ]
+  }
+}

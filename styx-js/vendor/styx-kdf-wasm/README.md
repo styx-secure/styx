@@ -6,6 +6,11 @@ envelope pins that artifact's digest, so the KDF must never share its binary.
 This crate knows nothing about MLS, envelopes, ciphersuites or the wire
 protocol. Full provenance: `PROVENANCE.md`.
 
+**License:** original Styx software, `AGPL-3.0-or-later` (Issue #41; see the
+root `LICENSING.md`). The committed `pkg/` artifact statically links
+permissive third-party crates — attributions in the root
+`THIRD_PARTY_NOTICES.md`.
+
 **Not yet integrated**: nothing in the production runtime imports this
 package (verified by the web gate). Vault, Root Storage Key, wrappers and any
 persistence are later PRs of the Blocco 3 plan, each separately authorized.

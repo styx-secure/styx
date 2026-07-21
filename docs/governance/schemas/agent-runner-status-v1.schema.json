@@ -1,0 +1,357 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/styx-secure/styx/blob/main/docs/governance/schemas/agent-runner-status-v1.schema.json",
+  "title": "Styx agent runner status v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tool_version",
+    "command",
+    "execution_id",
+    "repository",
+    "issue",
+    "base",
+    "environment",
+    "worktree",
+    "contract",
+    "tests",
+    "scope_guard",
+    "phase",
+    "terminal_status",
+    "blocking",
+    "prohibited_operation_attempts"
+  ],
+  "properties": {
+    "schema": {
+      "const": "styx.agent-runner-status/v1"
+    },
+    "tool_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "command": {
+      "enum": [
+        "check",
+        "provision",
+        "verify",
+        "run"
+      ]
+    },
+    "execution_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected",
+        "verified",
+        "source_root"
+      ],
+      "properties": {
+        "expected": {
+          "const": "styx-secure/styx"
+        },
+        "verified": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_root": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "issue": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "number",
+            "body_sha256"
+          ],
+          "properties": {
+            "number": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "body_sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "base": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "branch",
+            "declared_sha",
+            "verified_sha"
+          ],
+          "properties": {
+            "branch": {
+              "type": "string",
+              "minLength": 1
+            },
+            "declared_sha": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            },
+            "verified_sha": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{40}$"
+            }
+          }
+        }
+      ]
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tools"
+      ],
+      "properties": {
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "required",
+              "disposition",
+              "path",
+              "version",
+              "minimum",
+              "detail"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "required": {
+                "type": "boolean"
+              },
+              "disposition": {
+                "enum": [
+                  "available",
+                  "administrator-required",
+                  "provisioned",
+                  "already-provisioned"
+                ]
+              },
+              "path": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "version": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "minimum": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "detail": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "worktree": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "branch"
+          ],
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "branch": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "valid"
+      ],
+      "properties": {
+        "valid": {
+          "type": "boolean"
+        }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "command",
+          "state",
+          "exit_code",
+          "stdout_sha256",
+          "stderr_sha256"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "minLength": 1
+          },
+          "state": {
+            "enum": [
+              "PASS",
+              "FAIL",
+              "ERROR",
+              "NOT_RUN"
+            ]
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "stdout_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "stderr_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "scope_guard": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "exit_code",
+            "verdict",
+            "report_path",
+            "report_sha256"
+          ],
+          "properties": {
+            "exit_code": {
+              "type": "integer"
+            },
+            "verdict": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "PASS",
+                "FAIL",
+                "ERROR",
+                null
+              ]
+            },
+            "report_path": {
+              "type": "string",
+              "minLength": 1
+            },
+            "report_sha256": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "phase": {
+      "enum": [
+        "environment",
+        "implementation",
+        "handoff",
+        "blocked",
+        "error"
+      ]
+    },
+    "terminal_status": {
+      "type": "string",
+      "minLength": 1
+    },
+    "blocking": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "code",
+            "remediation"
+          ],
+          "properties": {
+            "code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "remediation": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "prohibited_operation_attempts": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

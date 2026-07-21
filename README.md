@@ -178,12 +178,23 @@ styx/
 └── docs/                      # Specification (Italian)
 ```
 
-## Licensing status
+## License
 
-The source code is publicly visible, but the project-wide open-source license is still being
-finalized (see [`docs/architecture/decisions/ADR-0004-licensing-strategy.md`](docs/architecture/decisions/ADR-0004-licensing-strategy.md)).
-No additional permissions are granted beyond those provided by applicable law and GitHub's
-Terms of Service. External contributions are temporarily paused until the licensing and
-contributor terms are finalized.
+Styx is **open source**. The licensing model, approved in
+[ADR-0004](docs/architecture/decisions/ADR-0004-licensing-strategy.md) and mapped exactly in
+[`LICENSING.md`](LICENSING.md) and [`REUSE.toml`](REUSE.toml), is:
 
-This is a **public-source experimental project**, not (yet) a licensed open-source release.
+- **Original Styx software and documentation:** [`AGPL-3.0-or-later`](LICENSE).
+- **Six exact interoperability vector files** (five `vault-crypto-v1` known-answer vectors and
+  `kdf-kat-vectors.js`, listed exactly in `LICENSING.md`): `Apache-2.0`, so independent
+  implementations can reuse them freely.
+- **Third-party and vendored material** keeps its upstream licenses and attribution — notably the
+  OpenMLS-derived material in `styx-js/vendor/openmls-wasm/` (MIT; that directory also contains
+  Styx-authored AGPL scripts and a Styx-modified MIT derivative, classified path by path). See
+  [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+- **Trademarks are separate:** the Styx and Styx Secure names and logos are not granted by the
+  software licenses ([`TRADEMARKS.md`](TRADEMARKS.md)).
+- **External code contributions remain paused** until separate contributor terms are approved
+  ([`CONTRIBUTING.md`](CONTRIBUTING.md)); issues and feedback are welcome.
+- Separate commercial terms may be available from the copyright holder; the public AGPL edition
+  stays in place regardless.

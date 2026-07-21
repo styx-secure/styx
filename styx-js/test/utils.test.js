@@ -51,6 +51,43 @@ describe('bytesToBase64 / base64ToBytes', () => {
     const b64 = bytesToBase64(bytes);
     expect(base64ToBytes(b64)).toEqual(bytes);
   });
+
+  // US-002: the spread-based implementation hit the engine's argument-count
+  // limit far below the envelope's 16 MiB parser cap, making the encoder the
+  // practical write ceiling of _persistMls. The chunked implementation must
+  // be byte-identical and survive cap-sized inputs.
+
+  // crypto.getRandomValues caps at 65536 bytes per call, so large buffers are
+  // filled deterministically (full byte range, no repetition period near the
+  // chunk size).
+  const patternBytes = (len) => Uint8Array.from({ length: len }, (_, i) => (i * 31 + (i >> 8)) % 256);
+
+  test('output is byte-identical to the base64 reference for every padding case', () => {
+    // len % 3 = 0, 1, 2 — the three base64 padding shapes — plus window edges.
+    for (const len of [1, 2, 3, 4, 5, 32767, 32768, 32769, 65536, 100000]) {
+      const bytes = patternBytes(len);
+      expect(bytesToBase64(bytes)).toBe(Buffer.from(bytes).toString('base64'));
+    }
+    const random = randomBytes(4096);
+    expect(bytesToBase64(random)).toBe(Buffer.from(random).toString('base64'));
+  });
+
+  test('converts a buffer at the 16 MiB parser cap without RangeError and round-trips', () => {
+    const bytes = new Uint8Array(16 * 1024 * 1024);
+    for (let i = 0; i < bytes.length; i += 4096) bytes[i] = i % 251;
+    const b64 = bytesToBase64(bytes);
+    // Boolean comparisons on purpose: toBe/toEqual on 16 MiB values make
+    // Jest's diff printer allocate gigabytes when they fail — and the deep
+    // equality walk is prohibitive even when they pass.
+    expect(b64 === Buffer.from(bytes).toString('base64')).toBe(true);
+    expect(Buffer.compare(Buffer.from(base64ToBytes(b64)), Buffer.from(bytes))).toBe(0);
+  });
+
+  test('sizes above the old spread failure point convert fine', () => {
+    // The spread form died well below 1 MiB on mainstream engines.
+    const bytes = patternBytes(1024 * 1024);
+    expect(bytesToBase64(bytes) === Buffer.from(bytes).toString('base64')).toBe(true);
+  });
 });
 
 describe('concatBytes', () => {

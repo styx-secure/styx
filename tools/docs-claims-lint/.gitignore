@@ -1,0 +1,3 @@
+# docs-claims-lint: interpreter bytecode caches
+__pycache__/
+*.pyc
