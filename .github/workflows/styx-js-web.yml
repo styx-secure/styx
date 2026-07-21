@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       web: ${{ steps.f.outputs.web }}
+      vaultdb: ${{ steps.f.outputs.vaultdb }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -58,6 +59,13 @@ jobs:
             echo "web=true" >> "$GITHUB_OUTPUT"
           else
             echo "web=false" >> "$GITHUB_OUTPUT"
+          fi
+          # Vault engine probes (US-005) run only when the engine, its error
+          # module, its suite or this workflow change — real browsers are slow.
+          if echo "$changed" | grep -qE '^styx-js/src/storage/vault-db\.js|^styx-js/src/crypto/vault-errors\.js|^styx-js/test/storage/vault-db\.|^styx-js/test/fixtures/vault-db/|^styx-js/playwright\.vault-db\.config\.js|^\.github/workflows/styx-js-web\.yml'; then
+            echo "vaultdb=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "vaultdb=false" >> "$GITHUB_OUTPUT"
           fi
 
   build-and-gate:
@@ -135,9 +143,30 @@ jobs:
           fi
           echo "Production bundle is worker-runtime-free."
 
+  vault-db-probes:
+    name: Vault engine browser probes
+    needs: changes
+    if: needs.changes.outputs.vaultdb == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        working-directory: styx-js
+        run: npm ci
+      - name: Install Playwright browsers
+        working-directory: styx-js
+        run: npx playwright install --with-deps chromium firefox
+      - name: Run vault-db probes (P1–P12) on chromium and firefox
+        working-directory: styx-js
+        run: npx playwright test -c playwright.vault-db.config.js
+
   gate:
     name: styx-js web gate
-    needs: [changes, build-and-gate]
+    needs: [changes, build-and-gate, vault-db-probes]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -145,7 +174,9 @@ jobs:
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           WEB: ${{ needs.changes.outputs.web }}
+          VAULTDB: ${{ needs.changes.outputs.vaultdb }}
           BUILD: ${{ needs.build-and-gate.result }}
+          PROBES: ${{ needs.vault-db-probes.result }}
         run: |
           set -euo pipefail
           if [ "$CHANGES_RESULT" != "success" ]; then
@@ -158,4 +189,8 @@ jobs:
           fi
           echo "build-and-gate: $BUILD"
           [ "$BUILD" = "success" ] || { echo "styx-js web gate FAILED."; exit 1; }
+          if [ "$VAULTDB" = "true" ]; then
+            echo "vault-db-probes: $PROBES"
+            [ "$PROBES" = "success" ] || { echo "styx-js web gate FAILED (vault probes)."; exit 1; }
+          fi
           echo "styx-js web gate passed."
