@@ -17,6 +17,14 @@ export const VaultCryptoErrorCodes = Object.freeze({
   KEY_VERSION_UNSUPPORTED: 'VAULT_KEY_VERSION_UNSUPPORTED',
   NAMESPACE_UNSUPPORTED: 'VAULT_NAMESPACE_UNSUPPORTED',
   CRYPTO_FAILED: 'VAULT_CRYPTO_FAILED',
+  // Storage-engine codes (Blocco 3, PR-4 / US-005). Same discipline: the
+  // closed set is the contract, details stay within the allowlist below.
+  BLOCKED: 'VAULT_BLOCKED',
+  QUOTA_EXCEEDED: 'VAULT_QUOTA_EXCEEDED',
+  OPEN_FAILED: 'VAULT_OPEN_FAILED',
+  TX_ABORTED: 'VAULT_TX_ABORTED',
+  SCHEMA_GAP: 'VAULT_SCHEMA_GAP',
+  DESTROY_FAILED: 'VAULT_DESTROY_FAILED',
 });
 
 const KNOWN_CODES = new Set(Object.values(VaultCryptoErrorCodes));
@@ -27,7 +35,7 @@ const KNOWN_CODES = new Set(Object.values(VaultCryptoErrorCodes));
  * and WHY (a short slug), structurally too small to smuggle key material,
  * payloads or identifiers-with-content through an error path.
  */
-const DETAIL_KEYS = Object.freeze(['field', 'reason', 'namespace']);
+const DETAIL_KEYS = Object.freeze(['field', 'reason', 'namespace', 'version']);
 const MAX_DETAIL_VALUE_LENGTH = 64;
 
 function assertDetailsAllowed(details) {
