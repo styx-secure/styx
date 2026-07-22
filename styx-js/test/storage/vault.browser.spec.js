@@ -46,14 +46,14 @@ test.describe('vault lifecycle on real IndexedDB', () => {
     const out = await page.evaluate(async (name) => {
       const S = window.VAULT_STATES;
       const a = await window.openLifecycle(name);
-      const created = (await a.createVault('correct horse', { profile: 'mobile-low-memory' })).state;
+      const created = (await a.createVault('correct-horse1', { profile: 'mobile-low-memory' })).state;
       await a.lock();
       // Fresh vault instance + fresh engine on the SAME database = real reopen.
       const b = await window.openLifecycle(name);
       const opened = (await b.status()).state;
       // Wrong password first (still LOCKED), non-destructive, then the real one.
-      const wrongCode = await b.unlock('nope').then(() => 'RESOLVED', (e) => e.code);
-      const unlocked = (await b.unlock('correct horse')).state;
+      const wrongCode = await b.unlock('wrongpass1').then(() => 'RESOLVED', (e) => e.code);
+      const unlocked = (await b.unlock('correct-horse1')).state;
       await b.destroy();
       return { created, opened, unlocked, wrongCode, S };
     }, dbName(info));
@@ -67,11 +67,11 @@ test.describe('vault lifecycle on real IndexedDB', () => {
     await harness(page);
     const out = await page.evaluate(async (name) => {
       const a = await window.openLifecycle(name);
-      await a.createVault('old-pw', { profile: 'mobile-low-memory' });
-      await a.changePassword('new-pw', { profile: 'mobile-low-memory' });
+      await a.createVault('old-pass1', { profile: 'mobile-low-memory' });
+      await a.changePassword('new-pass1', { profile: 'mobile-low-memory' });
       const b = await window.openLifecycle(name);
-      const oldCode = await b.unlock('old-pw').then(() => 'RESOLVED', (e) => e.code);
-      const newState = (await b.unlock('new-pw')).state;
+      const oldCode = await b.unlock('old-pass1').then(() => 'RESOLVED', (e) => e.code);
+      const newState = (await b.unlock('new-pass1')).state;
       await b.destroy();
       return { oldCode, newState, unlocked: window.VAULT_STATES.UNLOCKED };
     }, dbName(info));
@@ -79,11 +79,37 @@ test.describe('vault lifecycle on real IndexedDB', () => {
     expect(out.newState).toBe(out.unlocked);
   });
 
+  test('orphan pending re-wrap is recovered across a real reopen (§7.2 RECOVERING)', async ({ page }, info) => {
+    await harness(page);
+    const out = await page.evaluate(async (name) => {
+      const S = window.VAULT_STATES;
+      const a = await window.openLifecycle(name);
+      await a.createVault('old-pass1', { profile: 'mobile-low-memory' });
+      // Simulate a crash between staging and commit by writing an orphan
+      // pending directly into the active wrapper on real IndexedDB, exactly as
+      // a crashed re-wrap would leave it (the pending is a copy of the active,
+      // which is enough to exercise the keyless RECOVERING sweep on reopen).
+      const { openVaultDb } = await import('/src/storage/vault-db.js');
+      const db = await openVaultDb({ name });
+      const active = await db.get('meta', 'wrapper');
+      await db.transaction(['meta'], (ops) => ops.put('meta', 'wrapper', { ...active, rewrapPending: { ...active, rewrapPending: null } }));
+      db.close();
+      // Reopen: loading must run RECOVERING, discard the orphan, land LOCKED.
+      const b = await window.openLifecycle(name);
+      const opened = (await b.status()).state;
+      const unlocked = (await b.unlock('old-pass1')).state;
+      await b.destroy();
+      return { opened, unlocked, locked: S.LOCKED, unlockedState: S.UNLOCKED };
+    }, dbName(info));
+    expect(out.opened).toBe(out.locked); // orphan discarded, back to LOCKED
+    expect(out.unlocked).toBe(out.unlockedState); // old password still works
+  });
+
   test('destroy leaves no database behind', async ({ page }, info) => {
     await harness(page);
     const out = await page.evaluate(async (name) => {
       const a = await window.openLifecycle(name);
-      await a.createVault('pw', { profile: 'mobile-low-memory' });
+      await a.createVault('pw-eight!!', { profile: 'mobile-low-memory' });
       await a.destroy();
       const listed = indexedDB.databases ? (await indexedDB.databases()).map((d) => d.name) : null;
       return { listed, name };

@@ -125,7 +125,7 @@ jobs:
           # source tree but are NOT runtime-integrated. While the styx.vault.stage
           # flag is off, no unequivocal identifier may reach dist/. Revised only
           # by the (separately authorized) PR that wires the vault into the app.
-          if grep -rl 'styx-vault-wrapper\|VAULT_WRAPPER_INVALID\|styx/vault/identity/v1\|VAULT_WRONG_STATE\|styx-vault-test\|VITE_VAULT_STAGE' dist/; then
+          if grep -rl 'styx-vault-wrapper\|styx-vault-manifest\|VAULT_WRAPPER_INVALID\|VAULT_MANIFEST_TAMPERED\|styx/vault/identity/v1\|VAULT_WRONG_STATE\|styx-vault-test\|VITE_VAULT_STAGE' dist/; then
             echo "::error::vault crypto-format / engine / lifecycle code found in the production bundle"
             exit 1
           fi

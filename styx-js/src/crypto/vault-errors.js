@@ -28,6 +28,10 @@ export const VaultCryptoErrorCodes = Object.freeze({
   // Lifecycle state-machine code (Blocco 3, PR-5 / US-006). Already reserved
   // in plan B3.0.3; a forbidden state transition raises it.
   WRONG_STATE: 'VAULT_WRONG_STATE',
+  // Manifest integrity (Blocco 3, PR-5 / US-006; plan B3.0.3, spec §11): the
+  // meta/manifest HMAC under K_manifest did not verify after a successful
+  // unlock — post-unlock tampering detected, fail-closed.
+  MANIFEST_TAMPERED: 'VAULT_MANIFEST_TAMPERED',
 });
 
 const KNOWN_CODES = new Set(Object.values(VaultCryptoErrorCodes));

@@ -1,8 +1,8 @@
 // vault.test.js — empty-vault lifecycle state machine (US-006). Real Argon2id
 // (WASM from disk, OWASP-floor minimum profile) + an in-memory VaultDb fake
-// with real transactional semantics (all-or-nothing, structured-clone on
+// with real transactional semantics (all-or-nothing, in-realm deep clone on
 // put/get). Real IndexedDB persistence is covered by the browser suite; here
-// the fake lets us interrupt a re-wrap deterministically at each §7.2 step.
+// the fake lets us interrupt a re-wrap deterministically at each §7.2 write.
 import {
   describe, test, expect, beforeAll,
 } from '@jest/globals';
@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import initKdf, { argon2id_derive } from '../../vendor/styx-kdf-wasm/pkg/styx_kdf_wasm.js';
 import { createVault, VAULT_STATES } from '../../src/storage/vault.js';
 import { VaultCryptoError, VaultCryptoErrorCodes as Codes } from '../../src/crypto/vault-errors.js';
+import { buildManifestCanonicalBytes } from '../../src/crypto/vault-aad.js';
 
 const wasmUrl = new URL('../../vendor/styx-kdf-wasm/pkg/styx_kdf_wasm_bg.wasm', import.meta.url);
 beforeAll(async () => { await initKdf({ module_or_path: readFileSync(wasmUrl) }); });
@@ -24,8 +25,6 @@ const realDeriveKek = async (pw, { salt, mKib, t, p, outLen }) => {
   return argon2id_derive(pw, salt, mKib, t, p, outLen);
 };
 
-// Deterministic randomness so a test can reconstruct the same Root Key/salt if
-// needed; distinct per instance via a seed offset.
 function seededBytes(seed) {
   let s = seed >>> 0;
   return (n) => {
@@ -38,8 +37,7 @@ function seededBytes(seed) {
 // In-realm structured copy. NOT `structuredClone` on purpose: under Jest's
 // --experimental-vm-modules the Node global builds objects in a different realm,
 // so their Object.prototype !== the module's, and the wrapper's strict-shape
-// guard (correctly) rejects a foreign prototype. Real IndexedDB clones in-realm,
-// so this mirrors production without the test-harness artifact.
+// guard (correctly) rejects a foreign prototype. Real IndexedDB clones in-realm.
 function deepClone(v) {
   if (v instanceof Uint8Array) return new Uint8Array(v);
   if (Array.isArray(v)) return v.map(deepClone);
@@ -54,8 +52,7 @@ function deepClone(v) {
 class FakeVaultDb {
   constructor() {
     this.stores = new Map();
-    this.putCount = 0;
-    this.failOnPut = null; // global put index to throw on (simulated crash)
+    this.failOn = null; // (ns, key, value) => boolean — simulated crash on a put
     this.destroyed = 0;
   }
 
@@ -71,8 +68,7 @@ class FakeVaultDb {
     const ops = {
       get: (ns, key) => { const v = this._store(ns).get(key); return v === undefined ? undefined : deepClone(v); },
       put: (ns, key, value) => {
-        this.putCount += 1;
-        if (this.failOnPut === this.putCount) throw new Error('injected crash');
+        if (this.failOn && this.failOn(ns, key, value)) throw new Error('injected crash');
         this._store(ns).set(key, deepClone(value));
       },
       delete: (ns, key) => this._store(ns).delete(key),
@@ -88,7 +84,15 @@ class FakeVaultDb {
   }
 
   async destroy() { this.destroyed += 1; this.stores = new Map(); }
+
+  wrapper() { return this._store('meta').get('wrapper'); }
+
+  manifest() { return this._store('meta').get('manifest'); }
 }
+
+// The two §7.2 persistence points, targeted by shape rather than by counting:
+const STAGING = (ns, key, value) => key === 'wrapper' && value?.rewrapPending != null;
+const COMMIT = (ns, key, value) => key === 'manifest' && value?.generation === 2;
 
 function makeVault(db, seed = 1) {
   return createVault({
@@ -105,12 +109,15 @@ const codeOf = async (promise) => {
 };
 
 describe('lifecycle happy path', () => {
-  test('create → status UNLOCKED → lock → unlock round-trips', async () => {
+  test('create → status UNLOCKED → lock → unlock round-trips; manifest v1 persisted', async () => {
     const db = new FakeVaultDb();
     const v = makeVault(db);
     expect((await v.status()).state).toBe(VAULT_STATES.UNINITIALIZED);
     expect((await v.createVault('correct horse', { profile: TEST_PROFILE })).state).toBe(VAULT_STATES.UNLOCKED);
-    expect((await v.status()).initialized).toBe(true);
+    // Wrapper AND manifest exist after create (spec §11).
+    expect(db.wrapper()).toBeTruthy();
+    expect(db.manifest()).toMatchObject({ format: 'styx-vault-manifest', version: 1, schemaVersion: 1, generation: 1 });
+    expect(typeof db.manifest().lastTxId).toBe('string');
     await v.lock();
     expect((await v.status()).state).toBe(VAULT_STATES.LOCKED);
     expect((await v.unlock('correct horse')).state).toBe(VAULT_STATES.UNLOCKED);
@@ -118,76 +125,145 @@ describe('lifecycle happy path', () => {
 
   test('a second vault instance on the same db opens LOCKED (persistence)', async () => {
     const db = new FakeVaultDb();
-    await makeVault(db).createVault('pw', { profile: TEST_PROFILE });
+    await makeVault(db).createVault('pw-eight!!', { profile: TEST_PROFILE });
     const reopened = makeVault(db);
     expect((await reopened.status()).state).toBe(VAULT_STATES.LOCKED);
-    expect((await reopened.unlock('pw')).state).toBe(VAULT_STATES.UNLOCKED);
+    expect((await reopened.unlock('pw-eight!!')).state).toBe(VAULT_STATES.UNLOCKED);
   });
 });
 
 describe('forbidden transitions (§3) → VAULT_WRONG_STATE', () => {
   test('unlock before create', async () => {
     const v = makeVault(new FakeVaultDb());
-    expect(await codeOf(v.unlock('pw'))).toBe(Codes.WRONG_STATE);
+    expect(await codeOf(v.unlock('pw-eight!!'))).toBe(Codes.WRONG_STATE);
   });
   test('create when one already exists', async () => {
     const v = makeVault(new FakeVaultDb());
-    await v.createVault('pw', { profile: TEST_PROFILE });
-    expect(await codeOf(v.createVault('other', { profile: TEST_PROFILE }))).toBe(Codes.WRONG_STATE);
+    await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
+    expect(await codeOf(v.createVault('another8!', { profile: TEST_PROFILE }))).toBe(Codes.WRONG_STATE);
   });
   test('lock while locked', async () => {
     const db = new FakeVaultDb();
-    await makeVault(db).createVault('pw', { profile: TEST_PROFILE });
+    await makeVault(db).createVault('pw-eight!!', { profile: TEST_PROFILE });
     const v = makeVault(db);
     expect(await codeOf(v.lock())).toBe(Codes.WRONG_STATE);
   });
   test('changePassword / rewrap while locked', async () => {
     const db = new FakeVaultDb();
-    await makeVault(db).createVault('pw', { profile: TEST_PROFILE });
+    await makeVault(db).createVault('pw-eight!!', { profile: TEST_PROFILE });
     const v = makeVault(db);
-    expect(await codeOf(v.changePassword('new', { profile: TEST_PROFILE }))).toBe(Codes.WRONG_STATE);
-    expect(await codeOf(v.rewrap('pw', { profile: TEST_PROFILE }))).toBe(Codes.WRONG_STATE);
+    expect(await codeOf(v.changePassword('newpass8!', { profile: TEST_PROFILE }))).toBe(Codes.WRONG_STATE);
+    expect(await codeOf(v.rewrap('pw-eight!!', { profile: TEST_PROFILE }))).toBe(Codes.WRONG_STATE);
   });
   test('MIGRATE trigger is out of scope, fail-closed', async () => {
     const v = makeVault(new FakeVaultDb());
-    await v.createVault('pw', { profile: TEST_PROFILE });
+    await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
     expect(await codeOf(v.migrate())).toBe(Codes.WRONG_STATE);
+  });
+});
+
+describe('password policy (§B3.0.4: 8–1024 chars)', () => {
+  test.each([
+    ['too short', 'short'],
+    ['empty', ''],
+    ['non-string', 12345678],
+  ])('createVault rejects a %s password without invoking the KDF', async (_label, bad) => {
+    const db = new FakeVaultDb();
+    const v = makeVault(db);
+    const before = deriveCalls;
+    expect(await codeOf(v.createVault(bad, { profile: TEST_PROFILE }))).toBe(Codes.KDF_PARAMS_INVALID);
+    expect(deriveCalls).toBe(before); // Argon2id never ran
+    expect((await v.status()).state).toBe(VAULT_STATES.UNINITIALIZED);
+  });
+
+  test('unlock rejects a too-short password without invoking the KDF', async () => {
+    const db = new FakeVaultDb();
+    await makeVault(db).createVault('pw-eight!!', { profile: TEST_PROFILE });
+    const v = makeVault(db);
+    const before = deriveCalls;
+    expect(await codeOf(v.unlock('x'))).toBe(Codes.KDF_PARAMS_INVALID);
+    expect(deriveCalls).toBe(before);
+  });
+
+  test('a 1024-char password is accepted; 1025 is rejected', async () => {
+    const db = new FakeVaultDb();
+    const v = makeVault(db);
+    expect((await v.createVault('a'.repeat(1024), { profile: TEST_PROFILE })).state).toBe(VAULT_STATES.UNLOCKED);
+    const v2 = makeVault(new FakeVaultDb());
+    expect(await codeOf(v2.createVault('a'.repeat(1025), { profile: TEST_PROFILE }))).toBe(Codes.KDF_PARAMS_INVALID);
   });
 });
 
 describe('no-oracle (§16.8)', () => {
   test('wrong password → VAULT_WRONG_PASSWORD, non-destructive, no persisted counter', async () => {
     const db = new FakeVaultDb();
-    await makeVault(db).createVault('right', { profile: TEST_PROFILE });
-    const before = deepClone(db._store('meta').get('wrapper'));
+    await makeVault(db).createVault('rightpass1', { profile: TEST_PROFILE });
+    const before = deepClone(db.wrapper());
     const v = makeVault(db);
-    expect(await codeOf(v.unlock('wrong'))).toBe(Codes.WRONG_PASSWORD);
-    expect(await codeOf(v.unlock('wrong'))).toBe(Codes.WRONG_PASSWORD);
-    // The stored wrapper is byte-identical after repeated failures (no counter).
-    expect(db._store('meta').get('wrapper')).toEqual(before);
-    expect((await v.status()).state).toBe(VAULT_STATES.LOCKED); // still usable
-    expect((await v.unlock('right')).state).toBe(VAULT_STATES.UNLOCKED);
+    expect(await codeOf(v.unlock('wrongpass1'))).toBe(Codes.WRONG_PASSWORD);
+    expect(await codeOf(v.unlock('wrongpass2'))).toBe(Codes.WRONG_PASSWORD);
+    expect(db.wrapper()).toEqual(before); // byte-identical, no counter
+    expect((await v.status()).state).toBe(VAULT_STATES.LOCKED);
+    expect((await v.unlock('rightpass1')).state).toBe(VAULT_STATES.UNLOCKED);
   });
 
   test('a corrupted-but-well-formed wrapper is indistinguishable from wrong password', async () => {
     const db = new FakeVaultDb();
-    await makeVault(db).createVault('right', { profile: TEST_PROFILE });
-    // Flip one byte of the ciphertext, keeping the FORM valid (48 bytes).
-    const w = db._store('meta').get('wrapper');
-    w.wrappedRootKey[0] ^= 0xff;
+    await makeVault(db).createVault('rightpass1', { profile: TEST_PROFILE });
+    db.wrapper().wrappedRootKey[0] ^= 0xff; // form stays valid (48 bytes)
     const v = makeVault(db);
-    expect(await codeOf(v.unlock('right'))).toBe(Codes.WRONG_PASSWORD);
+    expect(await codeOf(v.unlock('rightpass1'))).toBe(Codes.WRONG_PASSWORD);
   });
 
   test('a malformed FORM → VAULT_WRAPPER_INVALID before any KDF derivation', async () => {
     const db = new FakeVaultDb();
-    await makeVault(db).createVault('right', { profile: TEST_PROFILE });
-    const w = db._store('meta').get('wrapper');
-    w.wrappedRootKey = w.wrappedRootKey.slice(0, 47); // invalid length = invalid form
-    const callsBefore = deriveCalls;
+    await makeVault(db).createVault('rightpass1', { profile: TEST_PROFILE });
+    db.wrapper().wrappedRootKey = db.wrapper().wrappedRootKey.slice(0, 47); // invalid length
+    const before = deriveCalls;
     const v = makeVault(db);
-    expect(await codeOf(v.unlock('right'))).toBe(Codes.WRAPPER_INVALID);
-    expect(deriveCalls).toBe(callsBefore); // the KDF was never invoked
+    expect(await codeOf(v.unlock('rightpass1'))).toBe(Codes.WRAPPER_INVALID);
+    expect(deriveCalls).toBe(before);
+  });
+});
+
+describe('manifest v1 canonical serialization (FROZEN §16.13)', () => {
+  test('the canonical bytes are the fixed-order array, same rule as the AAD', () => {
+    const bytes = buildManifestCanonicalBytes({
+      format: 'styx-vault-manifest', version: 1, schemaVersion: 1,
+      migrationVersion: 1, generation: 7, lastTxId: 'fixed-uuid-0000',
+    });
+    expect(new TextDecoder().decode(bytes)).toBe(
+      '["styx-vault-manifest",1,1,1,7,"fixed-uuid-0000"]',
+    );
+  });
+  test('a non-primitive field is rejected before serialization', () => {
+    expect(() => buildManifestCanonicalBytes({
+      format: 'styx-vault-manifest', version: 1, schemaVersion: 1,
+      migrationVersion: 1, generation: 1.5, lastTxId: 'x',
+    })).toThrow(TypeError);
+  });
+});
+
+describe('manifest integrity (§11)', () => {
+  test('a tampered manifest with the correct password → VAULT_MANIFEST_TAMPERED (post-unlock, not an oracle)', async () => {
+    const db = new FakeVaultDb();
+    await makeVault(db).createVault('rightpass1', { profile: TEST_PROFILE });
+    db.manifest().generation = 999; // tamper: HMAC no longer matches
+    const v = makeVault(db);
+    expect(await codeOf(v.unlock('rightpass1'))).toBe(Codes.MANIFEST_TAMPERED);
+    expect((await v.status()).state).toBe(VAULT_STATES.LOCKED); // non-destructive
+  });
+
+  test('the manifest generation bumps on a re-wrap commit', async () => {
+    const db = new FakeVaultDb();
+    const v = makeVault(db);
+    await v.createVault('rightpass1', { profile: TEST_PROFILE });
+    expect(db.manifest().generation).toBe(1);
+    await v.changePassword('newpass88', { profile: TEST_PROFILE });
+    expect(db.manifest().generation).toBe(2);
+    // The bumped manifest still verifies under the (unchanged) Root Key.
+    const reopened = makeVault(db);
+    expect((await reopened.unlock('newpass88')).state).toBe(VAULT_STATES.UNLOCKED);
   });
 });
 
@@ -195,78 +271,101 @@ describe('re-wrap (§7.2)', () => {
   test('changePassword: new password unlocks, old password no longer does, Root Key unchanged', async () => {
     const db = new FakeVaultDb();
     const v = makeVault(db);
-    await v.createVault('old-pw', { profile: TEST_PROFILE });
-    await v.changePassword('new-pw', { profile: TEST_PROFILE });
-    // The active wrapper carries no pending after commit.
-    expect(db._store('meta').get('wrapper').rewrapPending).toBeNull();
+    await v.createVault('old-pass1', { profile: TEST_PROFILE });
+    await v.changePassword('new-pass1', { profile: TEST_PROFILE });
+    expect(db.wrapper().rewrapPending).toBeNull();
     const reopened = makeVault(db);
-    expect(await codeOf(reopened.unlock('old-pw'))).toBe(Codes.WRONG_PASSWORD);
-    expect((await reopened.unlock('new-pw')).state).toBe(VAULT_STATES.UNLOCKED);
+    expect(await codeOf(reopened.unlock('old-pass1'))).toBe(Codes.WRONG_PASSWORD);
+    expect((await reopened.unlock('new-pass1')).state).toBe(VAULT_STATES.UNLOCKED);
   });
 
   test('rewrap keeps the same password, re-derives with fresh salt', async () => {
     const db = new FakeVaultDb();
     const v = makeVault(db);
-    await v.createVault('pw', { profile: TEST_PROFILE });
-    const saltBefore = db._store('meta').get('wrapper').saltB64;
-    await v.rewrap('pw', { profile: TEST_PROFILE });
-    expect(db._store('meta').get('wrapper').saltB64).not.toBe(saltBefore); // new salt
+    await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
+    const saltBefore = db.wrapper().saltB64;
+    await v.rewrap('pw-eight!!', { profile: TEST_PROFILE });
+    expect(db.wrapper().saltB64).not.toBe(saltBefore);
     const reopened = makeVault(db);
-    expect((await reopened.unlock('pw')).state).toBe(VAULT_STATES.UNLOCKED);
+    expect((await reopened.unlock('pw-eight!!')).state).toBe(VAULT_STATES.UNLOCKED);
   });
 });
 
 describe('re-wrap crash recovery (§7.2 — a working wrapper at every instant)', () => {
-  // createVault issues put #1; a re-wrap issues put #2 (stage pending) and
-  // put #3 (atomic commit). Crash at each and confirm reopen recovers.
   test('crash while staging the pending: old password still works, no pending left', async () => {
     const db = new FakeVaultDb();
     const v = makeVault(db);
-    await v.createVault('old', { profile: TEST_PROFILE }); // put #1
-    db.failOnPut = 2; // the staging write
-    await expect(v.changePassword('new', { profile: TEST_PROFILE })).rejects.toThrow();
+    await v.createVault('old-pass1', { profile: TEST_PROFILE });
+    db.failOn = STAGING; // crash the staging write
+    await expect(v.changePassword('new-pass1', { profile: TEST_PROFILE })).rejects.toThrow();
     const reopened = makeVault(db);
     expect((await reopened.status()).state).toBe(VAULT_STATES.LOCKED);
-    expect(db._store('meta').get('wrapper').rewrapPending ?? null).toBeNull();
-    expect((await reopened.unlock('old')).state).toBe(VAULT_STATES.UNLOCKED);
+    expect(db.wrapper().rewrapPending ?? null).toBeNull();
+    expect((await reopened.unlock('old-pass1')).state).toBe(VAULT_STATES.UNLOCKED);
   });
 
-  test('crash after staging, before commit: RECOVERING discards the orphan pending, old password works', async () => {
+  test('crash during the commit: RECOVERING discards the orphan pending, old password works, generation not bumped', async () => {
     const db = new FakeVaultDb();
     const v = makeVault(db);
-    await v.createVault('old', { profile: TEST_PROFILE }); // put #1
-    db.failOnPut = 3; // the commit write (staging put #2 has persisted)
-    await expect(v.changePassword('new', { profile: TEST_PROFILE })).rejects.toThrow();
-    // Persisted active wrapper carries an orphan pending at this point.
-    expect(db._store('meta').get('wrapper').rewrapPending).not.toBeNull();
+    await v.createVault('old-pass1', { profile: TEST_PROFILE });
+    db.failOn = COMMIT; // staging persists; the commit write crashes
+    await expect(v.changePassword('new-pass1', { profile: TEST_PROFILE })).rejects.toThrow();
+    expect(db.wrapper().rewrapPending).not.toBeNull(); // orphan pending on disk
     const reopened = makeVault(db);
-    // Loading runs the keyless RECOVERING sweep, then LOCKED.
-    expect((await reopened.status()).state).toBe(VAULT_STATES.LOCKED);
-    expect(db._store('meta').get('wrapper').rewrapPending).toBeNull();
-    expect(await codeOf(reopened.unlock('new'))).toBe(Codes.WRONG_PASSWORD); // the change was rolled back
-    expect((await reopened.unlock('old')).state).toBe(VAULT_STATES.UNLOCKED);
+    expect((await reopened.status()).state).toBe(VAULT_STATES.LOCKED); // keyless RECOVERING ran
+    expect(db.wrapper().rewrapPending).toBeNull();
+    expect(db.manifest().generation).toBe(1); // the commit never happened
+    expect(await codeOf(reopened.unlock('new-pass1'))).toBe(Codes.WRONG_PASSWORD);
+    expect((await reopened.unlock('old-pass1')).state).toBe(VAULT_STATES.UNLOCKED);
+  });
+
+  test('a crash during a non-writing step (KDF/verify) leaves the active wrapper untouched by construction', async () => {
+    // deriveKek that throws mid-derivation — nothing has been written yet.
+    const db = new FakeVaultDb();
+    await makeVault(db).createVault('old-pass1', { profile: TEST_PROFILE });
+    const before = deepClone(db.wrapper());
+    let call = 0;
+    const flakyKek = createVault({
+      db,
+      deriveKek: async (pw, params) => { call += 1; if (call === 2) throw new Error('KDF crash'); return argon2id_derive(pw, params.salt, params.mKib, params.t, params.p, params.outLen); },
+      randomBytes: seededBytes(1),
+      todayIso: () => '2026-07-22',
+    });
+    await flakyKek.unlock('old-pass1'); // call #1 (derive KEK to unlock)
+    await expect(flakyKek.changePassword('new-pass1', { profile: TEST_PROFILE })).rejects.toThrow('KDF crash'); // call #2
+    expect(db.wrapper()).toEqual(before); // no write occurred
   });
 });
 
-describe('destroy and Root Key confinement', () => {
+describe('destroy, ERROR recovery, and Root Key confinement', () => {
   test('destroy wipes the database and returns to UNINITIALIZED', async () => {
     const db = new FakeVaultDb();
     const v = makeVault(db);
-    await v.createVault('pw', { profile: TEST_PROFILE });
+    await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
     expect((await v.destroy()).state).toBe(VAULT_STATES.UNINITIALIZED);
     expect(db.destroyed).toBe(1);
     expect((await v.status()).initialized).toBe(false);
   });
 
+  test('destroy works even when the persisted wrapper is malformed (§3 any → DESTROYING)', async () => {
+    const db = new FakeVaultDb();
+    await makeVault(db).createVault('pw-eight!!', { profile: TEST_PROFILE });
+    db.wrapper().wrappedRootKey = db.wrapper().wrappedRootKey.slice(0, 47); // corrupt the FORM
+    const v = makeVault(db);
+    // A normal op fails closed on the broken load...
+    expect(await codeOf(v.status())).toBe(Codes.WRAPPER_INVALID);
+    // ...but DESTROY still resets it.
+    expect((await v.destroy()).state).toBe(VAULT_STATES.UNINITIALIZED);
+    expect(db.destroyed).toBe(1);
+  });
+
   test('no operation ever returns or exposes the Root Key', async () => {
     const db = new FakeVaultDb();
     const v = makeVault(db);
-    const created = await v.createVault('pw', { profile: TEST_PROFILE });
+    const created = await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
     const status = await v.status();
-    const seen = JSON.stringify([created, status]);
-    // 32-byte Root Key would show up as a byte array; status carries only state.
     expect(Object.keys(created)).toEqual(['state']);
     expect(Object.keys(status).sort()).toEqual(['initialized', 'state']);
-    expect(seen).not.toMatch(/rootKey|"0":/i);
+    expect(JSON.stringify([created, status])).not.toMatch(/rootKey|"0":/i);
   });
 });

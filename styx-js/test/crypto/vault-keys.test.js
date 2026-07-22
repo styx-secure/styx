@@ -266,14 +266,14 @@ describe('VaultCryptoError discipline', () => {
     expect(() => new VaultCryptoError(Codes.RECORD_INVALID, 'x', [])).toThrow(TypeError);
   });
 
-  test('the code set is exactly the sixteen mandated codes (9 crypto PR-2 + 6 engine US-005 + 1 lifecycle US-006)', () => {
+  test('the code set is exactly the seventeen mandated codes (9 crypto PR-2 + 6 engine US-005 + 2 lifecycle US-006)', () => {
     expect(Object.values(Codes).sort()).toEqual([
       'VAULT_BLOCKED', 'VAULT_CRYPTO_FAILED', 'VAULT_DESTROY_FAILED',
       'VAULT_KDF_PARAMS_INVALID', 'VAULT_KEY_VERSION_UNSUPPORTED',
-      'VAULT_NAMESPACE_UNSUPPORTED', 'VAULT_OPEN_FAILED', 'VAULT_QUOTA_EXCEEDED',
-      'VAULT_RECORD_CORRUPTED', 'VAULT_RECORD_INVALID', 'VAULT_SCHEMA_GAP',
-      'VAULT_TX_ABORTED', 'VAULT_WRAPPER_INVALID', 'VAULT_WRAPPER_UNSUPPORTED',
-      'VAULT_WRONG_PASSWORD', 'VAULT_WRONG_STATE',
+      'VAULT_MANIFEST_TAMPERED', 'VAULT_NAMESPACE_UNSUPPORTED', 'VAULT_OPEN_FAILED',
+      'VAULT_QUOTA_EXCEEDED', 'VAULT_RECORD_CORRUPTED', 'VAULT_RECORD_INVALID',
+      'VAULT_SCHEMA_GAP', 'VAULT_TX_ABORTED', 'VAULT_WRAPPER_INVALID',
+      'VAULT_WRAPPER_UNSUPPORTED', 'VAULT_WRONG_PASSWORD', 'VAULT_WRONG_STATE',
     ]);
   });
 });

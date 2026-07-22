@@ -1,8 +1,9 @@
 // vault.js — empty-vault lifecycle state machine (Blocco 3, PR-5 / US-006).
 // Pure factory `createVault({ db, deriveKek, randomBytes, todayIso })`: it owns
 // the §3 state machine and the seven lifecycle operations, orchestrating the
-// FROZEN PR-2 wrapper module and the PR-4 IndexedDB engine. No worker-protocol
-// wiring here — that is a later PR; keeping this off the frozen PR-3 boundary.
+// FROZEN PR-2 wrapper/manifest modules and the PR-4 IndexedDB engine. No
+// worker-protocol wiring here — that is a later PR; keeping this off the frozen
+// PR-3 boundary.
 //
 // Root Storage Key confinement (spec §4): the Root Key is 32 random bytes
 // generated HERE, held in memory ONLY while UNLOCKED, wrapped/unwrapped through
@@ -13,25 +14,29 @@
 //
 // No-oracle (spec §16.8): inherited from the module. `parseVaultWrapper`
 // rejects a malformed FORM with VAULT_WRAPPER_INVALID BEFORE any derivation
-// (the form is public); `unwrapSyntheticRootKey` maps every GCM failure —
-// wrong password, tampered ciphertext/tag/AAD — to the SAME
-// VAULT_WRONG_PASSWORD. This module adds no distinguishing signal and keeps no
-// persisted attempt counter.
+// (the form is public); `unwrapSyntheticRootKey` maps every GCM failure to the
+// SAME VAULT_WRONG_PASSWORD. This module adds no distinguishing signal and
+// keeps no persisted attempt counter. Manifest verification runs only AFTER a
+// successful unwrap, so it is not a password oracle.
 //
 // Persisted layout (FROZEN by the §16.13 irreversible-contract gate at merge):
-// the `meta` store holds ONE key, `wrapper`, whose value is the active wrapper
-// v1. Its `.rewrapPending` field is `null` or the single staged pending wrapper
-// of an in-flight re-wrap (spec §7.2, depth 1). `rewrapPending` is deliberately
-// OUTSIDE the wrapper AAD, so staging/clearing it never invalidates the active
-// wrapper's own unwrap.
+// the `meta` store holds two keys — `wrapper` (the active wrapper v1, whose
+// `.rewrapPending` is null or the single depth-1 pending wrapper of an in-flight
+// re-wrap, spec §7.2; deliberately OUTSIDE the wrapper AAD) and `manifest` (the
+// integrity manifest v1, spec §11: schema/migration versions, a monotone
+// generation counter and lastTxId, HMAC-signed under K_manifest).
 
 import { VaultCryptoError, VaultCryptoErrorCodes as Codes } from '../crypto/vault-errors.js';
 import {
   wrapSyntheticRootKey, unwrapSyntheticRootKey, parseVaultWrapper,
   ROOT_KEY_BYTES, KEK_BYTES,
 } from './vault-wrapper.js';
+import {
+  deriveManifestKey, signManifestBytes, verifyManifestBytes, VAULT_KEY_VERSION,
+} from '../crypto/vault-keys.js';
+import { buildManifestCanonicalBytes, encodeBase64, decodeCanonicalBase64 } from '../crypto/vault-aad.js';
 import { KDF_PROFILES, KDF_POLICY } from '../crypto/kdf-bounds.js';
-import { constantTimeEqual } from '../utils.js';
+import { constantTimeEqual, uuidv4 } from '../utils.js';
 
 export const VAULT_STATES = Object.freeze({
   UNINITIALIZED: 'UNINITIALIZED',
@@ -49,10 +54,27 @@ export const VAULT_STATES = Object.freeze({
 
 const META_STORE = 'meta';
 const WRAPPER_KEY = 'wrapper'; // FROZEN §16.13
+const MANIFEST_KEY = 'manifest'; // FROZEN §16.13
 const SALT_BYTES = KDF_POLICY.saltLen; // 16
 export const DEFAULT_VAULT_PROFILE = 'desktop';
 
+// Manifest v1 constants (spec §11), frozen at the gate.
+const MANIFEST_FORMAT = 'styx-vault-manifest';
+const MANIFEST_VERSION = 1;
+const VAULT_SCHEMA_VERSION = 1;
+const MIGRATION_VERSION = 1; // no migration has run for a fresh vault
+
+// Password policy (plan §B3.0.4): 8–1024 characters.
+const PASSWORD_MIN = 8;
+const PASSWORD_MAX = 1024;
+
 const wrongState = (message, details) => new VaultCryptoError(Codes.WRONG_STATE, message, details);
+
+function assertPasswordPolicy(password) {
+  if (typeof password !== 'string' || password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
+    throw new VaultCryptoError(Codes.KDF_PARAMS_INVALID, 'password must be 8–1024 characters', { reason: 'password-length' });
+  }
+}
 
 /** UTC calendar date for the wrapper's `createdAt` (YYYY-MM-DD). */
 function defaultTodayIso(date) {
@@ -84,6 +106,7 @@ export function createVault({
 
   let state = null; // null until first load; then a VAULT_STATES value
   let rootKey = null; // Uint8Array(32) ONLY while UNLOCKED
+  let generation = 0; // current manifest generation while UNLOCKED
   let loadPromise = null;
   const utf8 = new TextEncoder();
 
@@ -97,6 +120,44 @@ export function createVault({
 
   const wipeRootKey = () => {
     if (rootKey !== null) { rootKey.fill(0); rootKey = null; }
+    generation = 0;
+  };
+
+  // Build a signed manifest v1 record for the given generation. K_manifest is
+  // derived from the in-memory Root Key, so this only runs while unlocked.
+  const buildManifest = async (gen) => {
+    const manifestKey = await deriveManifestKey(rootKey, VAULT_KEY_VERSION);
+    const fields = {
+      format: MANIFEST_FORMAT,
+      version: MANIFEST_VERSION,
+      schemaVersion: VAULT_SCHEMA_VERSION,
+      migrationVersion: MIGRATION_VERSION,
+      generation: gen,
+      lastTxId: uuidv4(),
+    };
+    const mac = await signManifestBytes(manifestKey, buildManifestCanonicalBytes(fields));
+    return { ...fields, hmacB64: encodeBase64(mac) };
+  };
+
+  // Verify a stored manifest against K_manifest. Runs after a successful
+  // unwrap, so it is a post-unlock integrity check, not a password oracle.
+  const verifyManifest = async (stored) => {
+    if (stored === null || typeof stored !== 'object'
+      || stored.format !== MANIFEST_FORMAT || stored.version !== MANIFEST_VERSION) {
+      return { ok: false };
+    }
+    const mac = typeof stored.hmacB64 === 'string' ? decodeCanonicalBase64(stored.hmacB64) : null;
+    if (mac === null) return { ok: false };
+    let canonical;
+    try {
+      canonical = buildManifestCanonicalBytes(stored); // throws on any bad field type
+    } catch { return { ok: false }; }
+    const manifestKey = await deriveManifestKey(rootKey, VAULT_KEY_VERSION);
+    try {
+      // verifyManifestBytes returns true or THROWS on any deviation (one code).
+      await verifyManifestBytes(manifestKey, canonical, mac);
+    } catch { return { ok: false }; }
+    return { ok: true, generation: stored.generation };
   };
 
   // Read the persisted wrapper once and settle the initial state, running the
@@ -117,7 +178,8 @@ export function createVault({
       // Keyless recovery (spec §7.2): completing the re-wrap needs the new KEK,
       // which we do not have here. The active wrapper still unlocks with the
       // old password, so DISCARD the orphan pending; the user re-runs
-      // CHANGE_PASSWORD. A single write, then LOCKED.
+      // CHANGE_PASSWORD. A single write, then LOCKED. The manifest is untouched
+      // (the re-wrap never committed, so its generation never bumped).
       state = VAULT_STATES.RECOVERING;
       const cleaned = { ...stored, rewrapPending: null };
       await db.transaction([META_STORE], (ops) => ops.put(META_STORE, WRAPPER_KEY, cleaned));
@@ -132,8 +194,10 @@ export function createVault({
 
   // Shared re-wrap orchestration (spec §7.2): the Root Key never changes and no
   // records are re-encrypted. Atomic and resumable — at every instant at least
-  // one working wrapper is persisted.
+  // one working wrapper is persisted. The commit bumps the manifest generation
+  // in the same transaction.
   const doRewrap = async (password, profileName) => {
+    assertPasswordPolicy(password);
     const params = paramsFor(profileName);
     const salt = randomBytes(SALT_BYTES);
     const pw = utf8.encode(password);
@@ -159,8 +223,15 @@ export function createVault({
         // and leave the active wrapper untouched — recovery discards the pending.
         throw new VaultCryptoError(Codes.CRYPTO_FAILED, 're-wrap verification mismatch');
       }
-      // Atomic commit: the new wrapper becomes active (pending is null). One write.
-      await db.transaction([META_STORE], (ops) => ops.put(META_STORE, WRAPPER_KEY, pending));
+      // Atomic commit: the new wrapper becomes active (pending null) and the
+      // manifest generation bumps — one transaction, one commit.
+      const nextGen = generation + 1;
+      const manifest = await buildManifest(nextGen);
+      await db.transaction([META_STORE], (ops) => {
+        ops.put(META_STORE, WRAPPER_KEY, pending);
+        ops.put(META_STORE, MANIFEST_KEY, manifest);
+      });
+      generation = nextGen;
     } finally {
       if (kek !== null) kek.fill(0);
       if (verifyKey !== null) verifyKey.fill(0);
@@ -175,6 +246,7 @@ export function createVault({
       if (state !== VAULT_STATES.UNINITIALIZED) {
         throw wrongState('a vault already exists', { reason: `state:${state}` });
       }
+      assertPasswordPolicy(password);
       const params = paramsFor(profile);
       const salt = randomBytes(SALT_BYTES);
       const newRootKey = randomBytes(ROOT_KEY_BYTES);
@@ -189,12 +261,19 @@ export function createVault({
           kek, rootKey: newRootKey, salt, mKib: params.mKib, t: params.t, p: params.p,
           profile: params.profile, createdAt: todayIso(), calibratedMs: 0,
         });
-        await db.transaction([META_STORE], (ops) => ops.put(META_STORE, WRAPPER_KEY, wrapper));
-        rootKey = newRootKey; // now owned by the vault, kept in memory
+        rootKey = newRootKey; // owned by the vault; needed to sign the manifest
+        const manifest = await buildManifest(1);
+        // Wrapper + manifest are written atomically (spec §11).
+        await db.transaction([META_STORE], (ops) => {
+          ops.put(META_STORE, WRAPPER_KEY, wrapper);
+          ops.put(META_STORE, MANIFEST_KEY, manifest);
+        });
+        generation = 1;
         state = VAULT_STATES.UNLOCKED;
         return { state };
       } catch (e) {
         newRootKey.fill(0);
+        wipeRootKey();
         state = VAULT_STATES.UNINITIALIZED;
         throw e;
       } finally {
@@ -209,6 +288,7 @@ export function createVault({
       if (state !== VAULT_STATES.LOCKED) {
         throw wrongState('the vault is not locked', { reason: `state:${state}` });
       }
+      assertPasswordPolicy(password);
       state = VAULT_STATES.UNLOCKING;
       const stored = await db.get(META_STORE, WRAPPER_KEY);
       const pw = utf8.encode(password);
@@ -224,10 +304,20 @@ export function createVault({
         unwrapped = await unwrapSyntheticRootKey(stored, kek);
         rootKey = unwrapped;
         unwrapped = null; // ownership transferred to `rootKey`
+        // Post-unlock integrity: the manifest HMAC under K_manifest. A correct
+        // password with a tampered manifest → VAULT_MANIFEST_TAMPERED (not a
+        // password oracle: the unwrap already succeeded).
+        const manifestRecord = await db.get(META_STORE, MANIFEST_KEY);
+        const verified = await verifyManifest(manifestRecord);
+        if (!verified.ok) {
+          throw new VaultCryptoError(Codes.MANIFEST_TAMPERED, 'vault manifest failed integrity verification');
+        }
+        generation = verified.generation;
         state = VAULT_STATES.UNLOCKED;
         return { state };
       } catch (e) {
         if (unwrapped !== null) unwrapped.fill(0);
+        wipeRootKey();
         state = VAULT_STATES.LOCKED; // non-destructive: a wrong password just returns here
         throw e;
       } finally {
@@ -274,9 +364,13 @@ export function createVault({
       throw wrongState('migration is not available in this build', { reason: 'migrate-out-of-scope' });
     },
 
-    /** Factory reset. From any state. */
+    /**
+     * Factory reset. From ANY state, INCLUDING a failed/ERROR load: a malformed
+     * persisted wrapper must still be resettable through the lifecycle API
+     * (§3 "any → DESTROYING"), so a failed load never blocks DESTROY.
+     */
     async destroy() {
-      await ensureLoaded();
+      try { await ensureLoaded(); } catch { state = VAULT_STATES.ERROR; }
       state = VAULT_STATES.DESTROYING;
       try {
         await db.destroy();
