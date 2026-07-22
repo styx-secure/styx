@@ -15,6 +15,7 @@ import {
   MANIFEST_MAC_BYTES, deriveNamespaceKey, deriveManifestKey,
   signManifestBytes, verifyManifestBytes,
 } from '../../src/crypto/vault-keys.js';
+import { buildManifestCanonicalBytes } from '../../src/crypto/vault-aad.js';
 import { VaultCryptoError, VaultCryptoErrorCodes as Codes } from '../../src/crypto/vault-errors.js';
 
 const { subtle } = globalThis.crypto;
@@ -170,6 +171,44 @@ describe('HKDF hierarchy against the frozen fixture', () => {
   });
 });
 
+// NOTE: `manifest-hmac-v1.json` is a TEST-ONLY vector for the HMAC PRIMITIVE
+// (arbitrary sample canonical bytes). The REAL §11 manifest v1 format and its
+// canonical serialization are frozen independently below (US-006, §16.13).
+describe('manifest v1 canonical format (FROZEN §16.13 vector)', () => {
+  // A fixed manifest under the frozen ROOT_KEY. The canonical string and MAC
+  // are literal anchors; the module (producer) and a raw-WebCrypto recompute
+  // (independent verifier) must both reproduce them — they cannot share a bug.
+  const FIXED = {
+    format: 'styx-vault-manifest', version: 1, schemaVersion: 1,
+    migrationVersion: 1, generation: 1, lastTxId: '00000000-0000-4000-8000-000000000000',
+  };
+  const CANONICAL = '["styx-vault-manifest",1,1,1,1,"00000000-0000-4000-8000-000000000000"]';
+  const MAC_HEX = 'fcd5a1f61dc3caec2003baca2133a1f3d93a2dbb026d9f584a14f86a2df1db45';
+
+  test('buildManifestCanonicalBytes emits the frozen fixed-order array', () => {
+    expect(new TextDecoder().decode(buildManifestCanonicalBytes(FIXED))).toBe(CANONICAL);
+  });
+
+  test('the module MAC matches the frozen MAC', async () => {
+    const key = await deriveManifestKey(ROOT_KEY, 1);
+    const mac = await signManifestBytes(key, buildManifestCanonicalBytes(FIXED));
+    expect(toHex(mac)).toBe(MAC_HEX);
+  });
+
+  test('an independent raw-WebCrypto HKDF+HMAC reproduces the same MAC (no shared bug)', async () => {
+    // Re-derive K_manifest and HMAC with raw WebCrypto and literal labels —
+    // never through the vault modules.
+    const salt = new Uint8Array(await subtle.digest('SHA-256', UTF8.encode('styx-vault-v1')));
+    const ikm = await subtle.importKey('raw', ROOT_KEY, 'HKDF', false, ['deriveKey']);
+    const rawKey = await subtle.deriveKey(
+      { name: 'HKDF', hash: 'SHA-256', salt, info: UTF8.encode('styx/vault/manifest/v1') },
+      ikm, { name: 'HMAC', hash: 'SHA-256', length: 256 }, false, ['sign'],
+    );
+    const rawMac = new Uint8Array(await subtle.sign('HMAC', rawKey, UTF8.encode(CANONICAL)));
+    expect(toHex(rawMac)).toBe(MAC_HEX);
+  });
+});
+
 describe('manifest HMAC primitives', () => {
   const canonical = UTF8.encode(manifestFx.canonicalUtf8);
 
@@ -266,14 +305,14 @@ describe('VaultCryptoError discipline', () => {
     expect(() => new VaultCryptoError(Codes.RECORD_INVALID, 'x', [])).toThrow(TypeError);
   });
 
-  test('the code set is exactly the fifteen mandated codes (nine crypto PR-2 + six engine US-005)', () => {
+  test('the code set is exactly the seventeen mandated codes (9 crypto PR-2 + 6 engine US-005 + 2 lifecycle US-006)', () => {
     expect(Object.values(Codes).sort()).toEqual([
       'VAULT_BLOCKED', 'VAULT_CRYPTO_FAILED', 'VAULT_DESTROY_FAILED',
       'VAULT_KDF_PARAMS_INVALID', 'VAULT_KEY_VERSION_UNSUPPORTED',
-      'VAULT_NAMESPACE_UNSUPPORTED', 'VAULT_OPEN_FAILED', 'VAULT_QUOTA_EXCEEDED',
-      'VAULT_RECORD_CORRUPTED', 'VAULT_RECORD_INVALID', 'VAULT_SCHEMA_GAP',
-      'VAULT_TX_ABORTED', 'VAULT_WRAPPER_INVALID', 'VAULT_WRAPPER_UNSUPPORTED',
-      'VAULT_WRONG_PASSWORD',
+      'VAULT_MANIFEST_TAMPERED', 'VAULT_NAMESPACE_UNSUPPORTED', 'VAULT_OPEN_FAILED',
+      'VAULT_QUOTA_EXCEEDED', 'VAULT_RECORD_CORRUPTED', 'VAULT_RECORD_INVALID',
+      'VAULT_SCHEMA_GAP', 'VAULT_TX_ABORTED', 'VAULT_WRAPPER_INVALID',
+      'VAULT_WRAPPER_UNSUPPORTED', 'VAULT_WRONG_PASSWORD', 'VAULT_WRONG_STATE',
     ]);
   });
 });

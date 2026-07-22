@@ -63,9 +63,10 @@ jobs:
           else
             echo "web=false" >> "$GITHUB_OUTPUT"
           fi
-          # Vault engine probes (US-005) run only when the engine, its error
-          # module, its suite or this workflow change — real browsers are slow.
-          if echo "$changed" | grep -qE '^styx-js/src/storage/vault-db\.js|^styx-js/src/crypto/vault-errors\.js|^styx-js/test/storage/vault-db\.|^styx-js/test/fixtures/vault-db/|^styx-js/test/fixtures/mls-state-v1/|^styx-js/playwright\.vault-db\.config\.js|^styx-js/package-lock\.json|^\.github/workflows/styx-js-web\.yml'; then
+          # Vault browser probes (US-005 engine + US-006 lifecycle) run only
+          # when the engine, the lifecycle, their errors, suites, fixtures,
+          # configs or this workflow change — real browsers are slow.
+          if echo "$changed" | grep -qE '^styx-js/src/storage/vault-db\.js|^styx-js/src/storage/vault\.js|^styx-js/src/crypto/vault-errors\.js|^styx-js/src/crypto/vault-keys\.js|^styx-js/src/storage/vault-wrapper\.js|^styx-js/src/config/vault-stage\.js|^styx-js/test/storage/vault-db\.|^styx-js/test/storage/vault\.|^styx-js/test/fixtures/vault-db/|^styx-js/test/fixtures/vault/|^styx-js/test/fixtures/mls-state-v1/|^styx-js/playwright\.vault-db\.config\.js|^styx-js/playwright\.vault-lifecycle\.config\.js|^styx-js/vendor/styx-kdf-wasm/|^styx-js/package-lock\.json|^\.github/workflows/styx-js-web\.yml'; then
             echo "vaultdb=true" >> "$GITHUB_OUTPUT"
           else
             echo "vaultdb=false" >> "$GITHUB_OUTPUT"
@@ -116,15 +117,16 @@ jobs:
           fi
           echo "Production bundle is KDF-free."
 
-      - name: Fail if the vault crypto formats leak into the bundle
+      - name: Fail if the vault crypto formats or engine leak into the bundle
         working-directory: styx-js/apps/chat
         run: |
-          # TEMPORARY gate (Blocco 3, PR-2): the vault format modules live in
-          # the source tree but are NOT runtime-integrated; unequivocal
-          # identifiers may not reach dist/. This step will be revised by the
-          # (separately authorized) PR that wires the vault into the app.
-          if grep -rl 'styx-vault-wrapper\|VAULT_WRAPPER_INVALID\|styx/vault/identity/v1' dist/; then
-            echo "::error::vault crypto-format code found in the production bundle"
+          # TEMPORARY gate (Blocco 3, PR-2/PR-4/PR-5): the vault format modules,
+          # the IndexedDB engine and the lifecycle state machine live in the
+          # source tree but are NOT runtime-integrated. While the styx.vault.stage
+          # flag is off, no unequivocal identifier may reach dist/. Revised only
+          # by the (separately authorized) PR that wires the vault into the app.
+          if grep -rl 'styx-vault-wrapper\|styx-vault-manifest\|VAULT_WRAPPER_INVALID\|VAULT_MANIFEST_TAMPERED\|styx/vault/identity/v1\|VAULT_WRONG_STATE\|styx-vault-test\|VITE_VAULT_STAGE' dist/; then
+            echo "::error::vault crypto-format / engine / lifecycle code found in the production bundle"
             exit 1
           fi
           echo "Production bundle is vault-free."
@@ -166,6 +168,9 @@ jobs:
       - name: Run vault-db probes (P1–P12) on chromium and firefox
         working-directory: styx-js
         run: npx playwright test -c playwright.vault-db.config.js
+      - name: Run vault lifecycle probes on chromium and firefox
+        working-directory: styx-js
+        run: npx playwright test -c playwright.vault-lifecycle.config.js
 
   gate:
     name: styx-js web gate

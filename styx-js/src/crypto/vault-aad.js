@@ -71,6 +71,28 @@ export function buildRecordAadBytes({ v, ns, k, rv, kv, ct }) {
   return UTF8.encode(JSON.stringify([v, ns, k, rv, kv, ct]));
 }
 
+/**
+ * Canonical bytes of the integrity manifest (spec §11): UTF-8 bytes of
+ * `JSON.stringify([format, version, schemaVersion, migrationVersion,
+ * generation, lastTxId])`, same fixed-order-array rule as the AAD above. The
+ * manifest's own `hmacB64` is the MAC OF these bytes and is therefore NOT part
+ * of them. FROZEN by the §16.13 gate: this order and field set are a contract.
+ * @returns {Uint8Array}
+ */
+export function buildManifestCanonicalBytes({
+  format, version, schemaVersion, migrationVersion, generation, lastTxId,
+}) {
+  assertPrimitiveString('format', format);
+  assertSafeInteger('version', version);
+  assertSafeInteger('schemaVersion', schemaVersion);
+  assertSafeInteger('migrationVersion', migrationVersion);
+  assertSafeInteger('generation', generation);
+  assertPrimitiveString('lastTxId', lastTxId);
+  return UTF8.encode(
+    JSON.stringify([format, version, schemaVersion, migrationVersion, generation, lastTxId]),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Canonical Base64 (standard alphabet, mandatory padding, no whitespace).
 // Hand-rolled on purpose: atob/Buffer are lenient (whitespace, missing
