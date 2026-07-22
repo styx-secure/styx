@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- harness.html — composes the PRODUCTION vault lifecycle (vault.js) over the
+     real IndexedDB engine (vault-db.js) with a real Argon2id-backed deriveKek
+     (US-006). Served by the browser suite's static server from styx-js/. -->
+<meta charset="utf-8">
+<title>vault lifecycle test harness</title>
+<script type="module">
+  import initKdf, { argon2id_derive } from '/vendor/styx-kdf-wasm/pkg/styx_kdf_wasm.js';
+  import { openVaultDb } from '/src/storage/vault-db.js';
+  import { createVault, VAULT_STATES } from '/src/storage/vault.js';
+
+  await initKdf();
+
+  const realDeriveKek = async (pw, { salt, mKib, t, p, outLen }) => argon2id_derive(pw, salt, mKib, t, p, outLen);
+
+  // Open a fresh vault (own IndexedDB, styx-vault-test-* prefixed) with the
+  // real engine + real KDF. `dbName` is unique per probe.
+  window.openLifecycle = async (dbName) => {
+    const db = await openVaultDb({ name: dbName });
+    return createVault({ db, deriveKek: realDeriveKek });
+  };
+  window.VAULT_STATES = VAULT_STATES;
+  window.__vaultLifecycleReady = true;
+</script>

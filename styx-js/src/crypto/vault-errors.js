@@ -25,6 +25,9 @@ export const VaultCryptoErrorCodes = Object.freeze({
   TX_ABORTED: 'VAULT_TX_ABORTED',
   SCHEMA_GAP: 'VAULT_SCHEMA_GAP',
   DESTROY_FAILED: 'VAULT_DESTROY_FAILED',
+  // Lifecycle state-machine code (Blocco 3, PR-5 / US-006). Already reserved
+  // in plan B3.0.3; a forbidden state transition raises it.
+  WRONG_STATE: 'VAULT_WRONG_STATE',
 });
 
 const KNOWN_CODES = new Set(Object.values(VaultCryptoErrorCodes));
