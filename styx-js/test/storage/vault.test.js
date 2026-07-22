@@ -226,16 +226,9 @@ describe('no-oracle (§16.8)', () => {
   });
 });
 
-describe('manifest v1 canonical serialization (FROZEN §16.13)', () => {
-  test('the canonical bytes are the fixed-order array, same rule as the AAD', () => {
-    const bytes = buildManifestCanonicalBytes({
-      format: 'styx-vault-manifest', version: 1, schemaVersion: 1,
-      migrationVersion: 1, generation: 7, lastTxId: 'fixed-uuid-0000',
-    });
-    expect(new TextDecoder().decode(bytes)).toBe(
-      '["styx-vault-manifest",1,1,1,7,"fixed-uuid-0000"]',
-    );
-  });
+describe('manifest v1 canonical serialization', () => {
+  // The independent FROZEN vector (canonical bytes + MAC under a known Root
+  // Key) lives in vault-keys.test.js; here we only assert the type guard.
   test('a non-primitive field is rejected before serialization', () => {
     expect(() => buildManifestCanonicalBytes({
       format: 'styx-vault-manifest', version: 1, schemaVersion: 1,
