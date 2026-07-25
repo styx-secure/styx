@@ -126,6 +126,22 @@ export function createVault({
   // single HMAC. Both are released together with the Root Key on lock/destroy.
   let manifestKeyCache = null;
   const namespaceKeys = new Map();
+  // Bumped by every wipe. A subkey derivation that was in flight across a
+  // lock/destroy must not install its result into a cache that was just
+  // cleared, so derivations check the epoch they started in.
+  let sessionEpoch = 0;
+
+  // Every MUTATING operation runs through this queue. Without it, two
+  // concurrent writes would both read the same `rv`/`generation` before their
+  // (asynchronous) encryption and then commit in either order — losing a write
+  // and breaking the monotonicity of both counters. The Web Lock elects a
+  // single writer ACROSS TABS; this serializes calls WITHIN one instance.
+  let mutationQueue = Promise.resolve();
+  const serialize = (fn) => {
+    const result = mutationQueue.then(fn);
+    mutationQueue = result.then(() => {}, () => {}); // a failure must not poison the queue
+    return result;
+  };
 
   const paramsFor = (profileName) => {
     const profile = KDF_PROFILES[profileName];
@@ -143,11 +159,21 @@ export function createVault({
     // effort available (spec §4 says as much for the Root Key itself).
     manifestKeyCache = null;
     namespaceKeys.clear();
+    sessionEpoch += 1; // invalidate derivations that are still in flight
   };
 
+  /** Install a freshly derived subkey only if this session is still the one that asked for it. */
+  const stillCurrent = (epoch) => epoch === sessionEpoch && rootKey !== null;
+
   const manifestKey = async () => {
-    if (manifestKeyCache === null) manifestKeyCache = await deriveManifestKey(rootKey, VAULT_KEY_VERSION);
-    return manifestKeyCache;
+    if (manifestKeyCache !== null) return manifestKeyCache;
+    const epoch = sessionEpoch;
+    const derived = await deriveManifestKey(rootKey, VAULT_KEY_VERSION);
+    if (!stillCurrent(epoch)) {
+      throw wrongState('the vault was locked while deriving', { reason: 'session-ended' });
+    }
+    manifestKeyCache = derived;
+    return derived;
   };
 
   const assertUnlocked = (what) => {
@@ -163,10 +189,14 @@ export function createVault({
   };
 
   const namespaceKeyFor = async (namespace) => {
-    if (!namespaceKeys.has(namespace)) {
-      namespaceKeys.set(namespace, await deriveNamespaceKey(rootKey, namespace, VAULT_KEY_VERSION));
+    if (namespaceKeys.has(namespace)) return namespaceKeys.get(namespace);
+    const epoch = sessionEpoch;
+    const derived = await deriveNamespaceKey(rootKey, namespace, VAULT_KEY_VERSION);
+    if (!stillCurrent(epoch)) {
+      throw wrongState('the vault was locked while deriving', { reason: 'session-ended' });
     }
-    return namespaceKeys.get(namespace);
+    namespaceKeys.set(namespace, derived);
+    return derived;
   };
 
   // Build a signed manifest v1 record. K_manifest comes from the in-memory
@@ -531,7 +561,16 @@ export function createVault({
     },
   };
 
-  return Object.freeze(api);
+  // Operations that read or write vault state through an await boundary must
+  // not interleave: each one reads counters (`rv`, `generation`), performs
+  // asynchronous crypto, then commits. Reads are excluded — they take no
+  // counters and IndexedDB isolates them.
+  const MUTATING = Object.freeze([
+    'createVault', 'unlock', 'lock', 'changePassword', 'rewrap', 'putRecord', 'deleteRecord', 'destroy',
+  ]);
+  return Object.freeze(Object.fromEntries(Object.entries(api).map(
+    ([name, fn]) => [name, MUTATING.includes(name) ? (...args) => serialize(() => fn(...args)) : fn],
+  )));
 }
 
 // parseVaultWrapper validates the canonical salt then zeroizes its local copy,

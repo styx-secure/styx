@@ -137,6 +137,53 @@ describe('recordVersion is monotonic per key (§6 anti-swap)', () => {
   });
 });
 
+describe('concurrent mutations are serialized (independent review, PR #104 F1)', () => {
+  // Without an internal queue, concurrent calls each read `rv` and
+  // `generation` before their asynchronous encryption, so they all compute the
+  // same next value: one write is lost and both counters stop being monotonic.
+  test('three concurrent writes to the SAME key produce rv 1→3 and lose nothing', async () => {
+    const { db, vault } = await unlockedVault();
+    const results = await Promise.all([
+      vault.putRecord('canary', 'k', { i: 1 }, { contentType: 'json' }),
+      vault.putRecord('canary', 'k', { i: 2 }, { contentType: 'json' }),
+      vault.putRecord('canary', 'k', { i: 3 }, { contentType: 'json' }),
+    ]);
+    expect(results.map((r) => r.recordVersion).sort()).toEqual([1, 2, 3]);
+    expect(db.record('canary', 'k').rv).toBe(3);
+    expect(db.manifest().generation).toBe(4); // 1 create + 3 writes, each a commit
+    expect((await vault.getRecord('canary', 'k')).recordVersion).toBe(3);
+  });
+
+  test('concurrent writes to DIFFERENT keys each take a distinct generation', async () => {
+    const { db, vault } = await unlockedVault();
+    await Promise.all([
+      vault.putRecord('canary', 'a', { i: 1 }, { contentType: 'json' }),
+      vault.putRecord('canary', 'b', { i: 2 }, { contentType: 'json' }),
+      vault.putRecord('canary', 'c', { i: 3 }, { contentType: 'json' }),
+    ]);
+    expect(db.manifest().generation).toBe(4);
+    expect((await vault.listRecords('canary')).sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  test('a concurrent write and delete leave a coherent generation', async () => {
+    const { db, vault } = await unlockedVault();
+    await vault.putRecord('canary', 'x', { i: 0 }, { contentType: 'json' });
+    await Promise.all([
+      vault.putRecord('canary', 'y', { i: 1 }, { contentType: 'json' }),
+      vault.deleteRecord('canary', 'x'),
+    ]);
+    expect(db.manifest().generation).toBe(4); // create + put + (put|delete) + (delete|put)
+    expect(await vault.listRecords('canary')).toEqual(['y']);
+  });
+
+  test('a failing mutation does not poison the queue', async () => {
+    const { db, vault } = await unlockedVault();
+    await expect(vault.putRecord('settings', 'k', { i: 1 }, { contentType: 'json' })).rejects.toThrow();
+    await vault.putRecord('canary', 'after', { i: 2 }, { contentType: 'json' });
+    expect(db.record('canary', 'after')).toBeDefined();
+  });
+});
+
 describe('AAD anti-swap and corruption (§13 rows: AAD tampering, corruption)', () => {
   test('a valid record copied to another key fails authentication', async () => {
     const { db, vault } = await unlockedVault();
@@ -145,6 +192,21 @@ describe('AAD anti-swap and corruption (§13 rows: AAD tampering, corruption)', 
     db._store('canary').set('copy', deepClone(db.record('canary', 'origin')));
     expect(await codeOf(vault.getRecord('canary', 'copy'))).toBe(Codes.RECORD_INVALID);
     // The original is still readable: the swap did not damage anything.
+    expect((await vault.getRecord('canary', 'origin')).value).toEqual({ s: 'x' });
+  });
+
+  test('a record made self-consistent under a NEW key still fails GCM: the AAD binds the REQUEST', async () => {
+    // The previous test is stopped by the ns/key guard before any decryption.
+    // Here the envelope is rewritten so `k` matches the new location, so the
+    // guard passes and the real property is exercised: the AAD is rebuilt from
+    // the REQUESTED key (§6 binding read-side rule) while the ciphertext was
+    // authenticated under the original one.
+    const { db, vault } = await unlockedVault();
+    await vault.putRecord('canary', 'origin', { s: 'x' }, { contentType: 'json' });
+    const moved = deepClone(db.record('canary', 'origin'));
+    moved.k = 'copy';
+    db._store('canary').set('copy', moved);
+    expect(await codeOf(vault.getRecord('canary', 'copy'))).toBe(Codes.RECORD_CORRUPTED);
     expect((await vault.getRecord('canary', 'origin')).value).toEqual({ s: 'x' });
   });
 
@@ -225,6 +287,23 @@ describe('factory reset follows the §12 order', () => {
     // If the cleanup failed after step 2, the leftover ciphertext would have
     // no active wrapper — that is the whole point of the ordering (§12).
     expect(order).toEqual(['overwrite-wrapper', 'delete-database']);
+  });
+
+  test('reset works from LOCKED as well (§3 "any → DESTROYING")', async () => {
+    const { db } = await unlockedVault();
+    const locked = makeVault(db); // fresh instance over the same db
+    expect((await locked.status()).state).toBe(VAULT_STATES.LOCKED);
+    expect((await locked.destroy()).state).toBe(VAULT_STATES.UNINITIALIZED);
+    expect(db.destroyed).toBe(1);
+  });
+
+  test('after a reset no key material remains usable', async () => {
+    const { db, vault } = await unlockedVault();
+    await vault.putRecord('canary', 'k', { i: 1 }, { contentType: 'json' });
+    await vault.destroy();
+    // Step 1 of §12 wiped the keys: every keyed operation is refused.
+    expect(await codeOf(vault.getRecord('canary', 'k'))).toBe(Codes.WRONG_STATE);
+    expect(await codeOf(vault.putRecord('canary', 'k', { i: 2 }, { contentType: 'json' }))).toBe(Codes.WRONG_STATE);
   });
 
   test('a reset vault reopens as UNINITIALIZED even if the deletion left the store behind', async () => {

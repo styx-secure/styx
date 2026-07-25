@@ -66,7 +66,13 @@ jobs:
           # Vault browser probes (US-005 engine + US-006 lifecycle) run only
           # when the engine, the lifecycle, their errors, suites, fixtures,
           # configs or this workflow change — real browsers are slow.
-          if echo "$changed" | grep -qE '^styx-js/src/storage/vault-db\.js|^styx-js/src/storage/vault\.js|^styx-js/src/storage/vault-record\.js|^styx-js/src/storage/vault-wrapper\.js|^styx-js/src/crypto/vault-errors\.js|^styx-js/src/crypto/vault-keys\.js|^styx-js/src/crypto/vault-aad\.js|^styx-js/src/config/vault-stage\.js|^styx-js/test/storage/vault-db\.|^styx-js/test/storage/vault\.|^styx-js/test/storage/vault-canary\.|^styx-js/test/support/|^styx-js/test/fixtures/vault-db/|^styx-js/test/fixtures/vault/|^styx-js/test/fixtures/mls-state-v1/|^styx-js/playwright\.vault-db\.config\.js|^styx-js/playwright\.vault-lifecycle\.config\.js|^styx-js/vendor/styx-kdf-wasm/|^styx-js/package-lock\.json|^\.github/workflows/styx-js-web\.yml'; then
+          # Dependency-complete on purpose (review PR104 F5): the lifecycle
+          # pulls in the whole vault crypto/storage surface plus shared
+          # helpers, so an enumerated list silently goes stale. Any change
+          # under src/crypto, src/storage, src/config, the shared utils, the
+          # vault test material, the KDF artifact or the lockfile runs the
+          # probes — the gate stays fail-closed at the cost of a few extra runs.
+          if echo "$changed" | grep -qE '^styx-js/src/crypto/|^styx-js/src/storage/|^styx-js/src/config/|^styx-js/src/utils\.js|^styx-js/test/storage/vault|^styx-js/test/support/|^styx-js/test/fixtures/vault|^styx-js/test/fixtures/mls-state-v1/|^styx-js/playwright\.vault-db\.config\.js|^styx-js/playwright\.vault-lifecycle\.config\.js|^styx-js/vendor/styx-kdf-wasm/|^styx-js/package-lock\.json|^\.github/workflows/styx-js-web\.yml'; then
             echo "vaultdb=true" >> "$GITHUB_OUTPUT"
           else
             echo "vaultdb=false" >> "$GITHUB_OUTPUT"
