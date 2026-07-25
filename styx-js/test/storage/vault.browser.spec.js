@@ -105,6 +105,125 @@ test.describe('vault lifecycle on real IndexedDB', () => {
     expect(out.unlocked).toBe(out.unlockedState); // old password still works
   });
 
+  test('canary records round-trip through a real reopen (create→put→lock→unlock→get)', async ({ page }, info) => {
+    await harness(page);
+    const out = await page.evaluate(async (name) => {
+      const a = await window.openLifecycle(name);
+      await a.createVault('canary-pass1', { profile: 'mobile-low-memory' });
+      await a.putRecord('canary', 'doc:1', { synthetic: true, n: 7 }, { contentType: 'json' });
+      await a.putRecord('canary', 'blob:1', new Uint8Array([1, 2, 3, 250]), { contentType: 'bytes' });
+      await a.lock();
+      const b = await window.openLifecycle(name);
+      await b.unlock('canary-pass1');
+      const json = (await b.getRecord('canary', 'doc:1')).value;
+      const bin = Array.from((await b.getRecord('canary', 'blob:1')).value);
+      const keys = (await b.listRecords('canary')).sort();
+      await b.destroy();
+      return { json, bin, keys };
+    }, dbName(info));
+    expect(out.json).toEqual({ synthetic: true, n: 7 });
+    expect(out.bin).toEqual([1, 2, 3, 250]);
+    expect(out.keys).toEqual(['blob:1', 'doc:1']);
+  });
+
+  test('a bit-flip in a stored record → VAULT_RECORD_CORRUPTED, the rest stays readable', async ({ page }, info) => {
+    await harness(page);
+    const out = await page.evaluate(async (name) => {
+      const a = await window.openLifecycle(name);
+      await a.createVault('canary-pass1', { profile: 'mobile-low-memory' });
+      await a.putRecord('canary', 'victim', { s: 'v' }, { contentType: 'json' });
+      await a.putRecord('canary', 'bystander', { s: 'b' }, { contentType: 'json' });
+      // Corrupt the ciphertext directly on real IndexedDB.
+      const { openVaultDb } = await import('/src/storage/vault-db.js');
+      const raw = await openVaultDb({ name });
+      const rec = await raw.get('canary', 'victim');
+      rec.data[0] ^= 0xff;
+      await raw.transaction(['canary'], (ops) => ops.put('canary', 'victim', rec));
+      raw.close();
+      const b = await window.openLifecycle(name);
+      await b.unlock('canary-pass1');
+      const victimCode = await b.getRecord('canary', 'victim').then(() => 'RESOLVED', (e) => e.code);
+      const bystander = (await b.getRecord('canary', 'bystander')).value;
+      const stillListed = await b.listRecords('canary');
+      await b.destroy();
+      return { victimCode, bystander, stillListed };
+    }, dbName(info));
+    expect(out.victimCode).toBe('VAULT_RECORD_CORRUPTED');
+    expect(out.bystander).toEqual({ s: 'b' });
+    expect(out.stillListed).toContain('victim'); // never auto-deleted (§11)
+  });
+
+  test('trial v1→v2 upgrade touches only canary and is reconciled into the signed manifest', async ({ page }, info) => {
+    await harness(page);
+    const out = await page.evaluate(async (name) => {
+      const a = await window.openLifecycle(name); // schema v1
+      await a.createVault('canary-pass1', { profile: 'mobile-low-memory' });
+      await a.putRecord('canary', 'kept', { before: 'upgrade' }, { contentType: 'json' });
+      await a.lock();
+      // Reopen at version 2 with the TRIAL migrator: the upgrade runs keyless.
+      const b = await window.openLifecycle(name, { version: 2, migrations: window.trialMigrations });
+      await b.unlock('canary-pass1'); // reconciles the high-water mark
+      const survived = (await b.getRecord('canary', 'kept')).value;
+      // Only the canary store gained the trial index.
+      const { openVaultDb } = await import('/src/storage/vault-db.js');
+      const raw = await openVaultDb({ name, version: 2, migrations: window.trialMigrations });
+      const dbVersion = raw.version;
+      const indexed = await new Promise((resolve) => {
+        const tx = raw._db.transaction(['canary', 'settings'], 'readonly');
+        resolve({
+          canary: Array.from(tx.objectStore('canary').indexNames),
+          settings: Array.from(tx.objectStore('settings').indexNames),
+        });
+      });
+      raw.close();
+      await b.destroy();
+      return { survived, dbVersion, indexed };
+    }, dbName(info));
+    expect(out.survived).toEqual({ before: 'upgrade' });
+    expect(out.dbVersion).toBe(2);
+    expect(out.indexed.canary).toEqual(['trial-by-rv']);
+    expect(out.indexed.settings).toEqual([]); // no other store touched
+  });
+
+  test('the vault works fully offline (no network dependency)', async ({ page, context }, info) => {
+    await harness(page);
+    await context.setOffline(true);
+    try {
+      const out = await page.evaluate(async (name) => {
+        const a = await window.openLifecycle(name);
+        await a.createVault('canary-pass1', { profile: 'mobile-low-memory' });
+        await a.putRecord('canary', 'offline', { works: true }, { contentType: 'json' });
+        const value = (await a.getRecord('canary', 'offline')).value;
+        await a.lock();
+        await a.unlock('canary-pass1');
+        await a.destroy();
+        return value;
+      }, dbName(info));
+      expect(out).toEqual({ works: true });
+    } finally {
+      await context.setOffline(false);
+    }
+  });
+
+  test('external eviction of the database is survivable: reopen is UNINITIALIZED', async ({ page }, info) => {
+    await harness(page);
+    const out = await page.evaluate(async (name) => {
+      const a = await window.openLifecycle(name);
+      await a.createVault('canary-pass1', { profile: 'mobile-low-memory' });
+      await a.putRecord('canary', 'doomed', { s: 1 }, { contentType: 'json' });
+      await a.lock(); // release the connection so the external delete is not blocked
+      await new Promise((resolve, reject) => {
+        const req = indexedDB.deleteDatabase(name); // storage eviction, from outside
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+        req.onblocked = () => resolve();
+      });
+      const b = await window.openLifecycle(name);
+      return { state: (await b.status()).state, uninitialized: window.VAULT_STATES.UNINITIALIZED };
+    }, dbName(info));
+    expect(out.state).toBe(out.uninitialized);
+  });
+
   test('destroy leaves no database behind', async ({ page }, info) => {
     await harness(page);
     const out = await page.evaluate(async (name) => {

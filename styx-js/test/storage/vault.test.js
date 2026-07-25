@@ -11,6 +11,7 @@ import initKdf, { argon2id_derive } from '../../vendor/styx-kdf-wasm/pkg/styx_kd
 import { createVault, VAULT_STATES } from '../../src/storage/vault.js';
 import { VaultCryptoError, VaultCryptoErrorCodes as Codes } from '../../src/crypto/vault-errors.js';
 import { buildManifestCanonicalBytes } from '../../src/crypto/vault-aad.js';
+import { FakeVaultDb, deepClone, seededBytes } from '../support/fake-vault-db.js';
 
 const wasmUrl = new URL('../../vendor/styx-kdf-wasm/pkg/styx_kdf_wasm_bg.wasm', import.meta.url);
 beforeAll(async () => { await initKdf({ module_or_path: readFileSync(wasmUrl) }); });
@@ -24,71 +25,6 @@ const realDeriveKek = async (pw, { salt, mKib, t, p, outLen }) => {
   deriveCalls += 1;
   return argon2id_derive(pw, salt, mKib, t, p, outLen);
 };
-
-function seededBytes(seed) {
-  let s = seed >>> 0;
-  return (n) => {
-    const out = new Uint8Array(n);
-    for (let i = 0; i < n; i += 1) { s = (s * 1664525 + 1013904223) >>> 0; out[i] = s & 0xff; }
-    return out;
-  };
-}
-
-// In-realm structured copy. NOT `structuredClone` on purpose: under Jest's
-// --experimental-vm-modules the Node global builds objects in a different realm,
-// so their Object.prototype !== the module's, and the wrapper's strict-shape
-// guard (correctly) rejects a foreign prototype. Real IndexedDB clones in-realm.
-function deepClone(v) {
-  if (v instanceof Uint8Array) return new Uint8Array(v);
-  if (Array.isArray(v)) return v.map(deepClone);
-  if (v !== null && typeof v === 'object') {
-    const out = {};
-    for (const k of Object.keys(v)) out[k] = deepClone(v[k]);
-    return out;
-  }
-  return v;
-}
-
-class FakeVaultDb {
-  constructor() {
-    this.stores = new Map();
-    this.failOn = null; // (ns, key, value) => boolean — simulated crash on a put
-    this.destroyed = 0;
-  }
-
-  _store(ns) { if (!this.stores.has(ns)) this.stores.set(ns, new Map()); return this.stores.get(ns); }
-
-  async get(ns, key) {
-    const v = this._store(ns).get(key);
-    return v === undefined ? undefined : deepClone(v);
-  }
-
-  async transaction(namespaces, cb) {
-    const snap = new Map(namespaces.map((ns) => [ns, new Map(this._store(ns))]));
-    const ops = {
-      get: (ns, key) => { const v = this._store(ns).get(key); return v === undefined ? undefined : deepClone(v); },
-      put: (ns, key, value) => {
-        if (this.failOn && this.failOn(ns, key, value)) throw new Error('injected crash');
-        this._store(ns).set(key, deepClone(value));
-      },
-      delete: (ns, key) => this._store(ns).delete(key),
-      clear: (ns) => this._store(ns).clear(),
-      abort: () => { throw new Error('aborted'); },
-    };
-    try {
-      return await cb(ops);
-    } catch (e) {
-      for (const [ns, m] of snap) this.stores.set(ns, m); // roll back
-      throw e;
-    }
-  }
-
-  async destroy() { this.destroyed += 1; this.stores = new Map(); }
-
-  wrapper() { return this._store('meta').get('wrapper'); }
-
-  manifest() { return this._store('meta').get('manifest'); }
-}
 
 // The two §7.2 persistence points, targeted by shape rather than by counting:
 const STAGING = (ns, key, value) => key === 'wrapper' && value?.rewrapPending != null;
