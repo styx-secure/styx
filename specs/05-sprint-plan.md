@@ -2,7 +2,7 @@
 spec_version: "2.0"
 spec_type: "sprint-plan"
 project: "Styx"
-last_updated: "2026-07-21T00:00:00Z"
+last_updated: "2026-07-25T00:00:00Z"
 status: "planned"
 ---
 
@@ -82,7 +82,7 @@ fail-closed and non-destructive (legacy value + backup intact,
 
 ## Sprint 2 — Blocco 3 vault core (engine, lifecycle, canary)
 
-Total SP: 21. All stories mirror sections B3.4–B3.6 of
+Total SP: 26. US-005…US-007 mirror sections B3.4–B3.6 of
 `docs/superpowers/plans/2026-07-12-styx-vault-implementation-plan.md` (the
 canonical plan, which wins on any disagreement). Sequential dependencies:
 US-006 depends on US-005, US-007 on US-006. Human gate per Epic #65: every
@@ -133,9 +133,28 @@ record v1).
 From plan section B3.6 (PR‑6). Full story and acceptance criteria:
 `specs/03-user-stories.md` (US-007) — the file owns spec content; this Issue
 body is a generated projection. The `canary` namespace, synthetic records
-only, exercised end-to-end from the app behind `styx.vault.stage`:
-encryption, AAD, persistence, reopen, wrong password, bit-flip corruption,
-crash, re-wrap, password change, reset, trial v1→v2 upgrade on canary only,
-SW update while UNLOCKED, simulated eviction. Rollback R1; gate: only after
-this story may later stories touch real product data. Acceptance: full spec
-§13 matrix on the canary in CI.
+only, behind `styx.vault.stage`: record CRUD restricted to `canary`,
+encryption and AAD anti-swap, persistence and reopen, bit-flip corruption,
+nonce uniqueness, re-wrap, password change, §12-ordered reset, trial v1→v2
+upgrade on canary only with the signed-schemaVersion reconciliation, offline,
+simulated eviction. Rollback R1; gate: only after this story may later
+stories touch real product data. Acceptance: every §13 row classified in
+`styx-js/docs/vault-test-matrix.md` and all covered rows green in CI (the
+cross-worker rows and the SW-update probe move to US-008; see the map).
+
+### US-008 — Wire the vault lifecycle into the crypto worker
+
+**SP**: 5
+**Status**: todo
+
+From plan sections B3.5/B3.3, added during US-007. Full story and acceptance
+criteria: `specs/03-user-stories.md` (US-008) — the file owns spec content;
+this Issue body is a generated projection. US-006 delivered the lifecycle as a
+pure factory and deferred the worker protocol wiring to keep the frozen PR‑3
+boundary out of the irreversible-contract gate; this story closes that gap by
+registering the §9 lifecycle message types in the worker runtime, served by the
+factory running inside the worker, with the Root Key never crossing the
+boundary. It owns the §13 rows that a page-side vault cannot close — listed as
+deferred in `styx-js/docs/vault-test-matrix.md`: cross-worker full cycle,
+worker killed mid-PUT/TRANSACTION, §12 step 8 of factory reset — plus the
+service-worker-update-while-UNLOCKED probe (RK8). Depends on US-007.

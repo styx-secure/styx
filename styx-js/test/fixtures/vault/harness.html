@@ -6,7 +6,7 @@
 <title>vault lifecycle test harness</title>
 <script type="module">
   import initKdf, { argon2id_derive } from '/vendor/styx-kdf-wasm/pkg/styx_kdf_wasm.js';
-  import { openVaultDb } from '/src/storage/vault-db.js';
+  import { openVaultDb, VAULT_NAMESPACES } from '/src/storage/vault-db.js';
   import { createVault, VAULT_STATES } from '/src/storage/vault.js';
 
   await initKdf();
@@ -15,9 +15,16 @@
 
   // Open a fresh vault (own IndexedDB, styx-vault-test-* prefixed) with the
   // real engine + real KDF. `dbName` is unique per probe.
-  window.openLifecycle = async (dbName) => {
-    const db = await openVaultDb({ name: dbName });
+  window.openLifecycle = async (dbName, openOptions = {}) => {
+    const db = await openVaultDb({ name: dbName, ...openOptions });
     return createVault({ db, deriveKek: realDeriveKek });
+  };
+  // Schema v1 as production defines it, plus a TRIAL v2 that touches the
+  // canary store ONLY — injected by the tests, never registered in the
+  // production migrator registry (US-007 design decision 5).
+  window.trialMigrations = {
+    1: (db) => { for (const ns of VAULT_NAMESPACES) db.createObjectStore(ns); },
+    2: (db, tx) => { tx.objectStore('canary').createIndex('trial-by-rv', 'rv', { unique: false }); },
   };
   window.VAULT_STATES = VAULT_STATES;
   window.__vaultLifecycleReady = true;

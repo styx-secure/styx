@@ -32,8 +32,9 @@ import {
   ROOT_KEY_BYTES, KEK_BYTES,
 } from './vault-wrapper.js';
 import {
-  deriveManifestKey, signManifestBytes, verifyManifestBytes, VAULT_KEY_VERSION,
+  deriveManifestKey, deriveNamespaceKey, signManifestBytes, verifyManifestBytes, VAULT_KEY_VERSION,
 } from '../crypto/vault-keys.js';
+import { encryptVaultRecord, decryptVaultRecord } from './vault-record.js';
 import { buildManifestCanonicalBytes, encodeBase64, decodeCanonicalBase64 } from '../crypto/vault-aad.js';
 import { KDF_PROFILES, KDF_POLICY } from '../crypto/kdf-bounds.js';
 import { constantTimeEqual, uuidv4 } from '../utils.js';
@@ -61,14 +62,24 @@ export const DEFAULT_VAULT_PROFILE = 'desktop';
 // Manifest v1 constants (spec §11), frozen at the gate.
 const MANIFEST_FORMAT = 'styx-vault-manifest';
 const MANIFEST_VERSION = 1;
-const VAULT_SCHEMA_VERSION = 1;
 const MIGRATION_VERSION = 1; // no migration has run for a fresh vault
+
+/**
+ * Namespaces this build may read or write (plan B3.6 gate). The canary holds
+ * synthetic records only; the product namespaces open one at a time in the
+ * later stories, so the gate is enforced here mechanically rather than by
+ * convention. `deriveNamespaceKey` knows the full list — this is deliberately
+ * narrower.
+ */
+export const ENABLED_NAMESPACES = Object.freeze(['canary']);
 
 // Password policy (plan §B3.0.4): 8–1024 characters.
 const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 1024;
 
 const wrongState = (message, details) => new VaultCryptoError(Codes.WRONG_STATE, message, details);
+
+const isSafeInt = (x) => typeof x === 'number' && Number.isSafeInteger(x);
 
 function assertPasswordPolicy(password) {
   if (typeof password !== 'string' || password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
@@ -107,8 +118,30 @@ export function createVault({
   let state = null; // null until first load; then a VAULT_STATES value
   let rootKey = null; // Uint8Array(32) ONLY while UNLOCKED
   let generation = 0; // current manifest generation while UNLOCKED
+  let schemaVersion = 0; // signed high-water mark while UNLOCKED
   let loadPromise = null;
   const utf8 = new TextEncoder();
+  // Subkeys derived from the in-memory Root Key. Caching them is no weaker
+  // than holding the Root Key they come from, and it keeps a record write to a
+  // single HMAC. Both are released together with the Root Key on lock/destroy.
+  let manifestKeyCache = null;
+  const namespaceKeys = new Map();
+  // Bumped by every wipe. A subkey derivation that was in flight across a
+  // lock/destroy must not install its result into a cache that was just
+  // cleared, so derivations check the epoch they started in.
+  let sessionEpoch = 0;
+
+  // Every MUTATING operation runs through this queue. Without it, two
+  // concurrent writes would both read the same `rv`/`generation` before their
+  // (asynchronous) encryption and then commit in either order — losing a write
+  // and breaking the monotonicity of both counters. The Web Lock elects a
+  // single writer ACROSS TABS; this serializes calls WITHIN one instance.
+  let mutationQueue = Promise.resolve();
+  const serialize = (fn) => {
+    const result = mutationQueue.then(fn);
+    mutationQueue = result.then(() => {}, () => {}); // a failure must not poison the queue
+    return result;
+  };
 
   const paramsFor = (profileName) => {
     const profile = KDF_PROFILES[profileName];
@@ -121,21 +154,63 @@ export function createVault({
   const wipeRootKey = () => {
     if (rootKey !== null) { rootKey.fill(0); rootKey = null; }
     generation = 0;
+    schemaVersion = 0;
+    // CryptoKeys cannot be zeroized; dropping the references is the best
+    // effort available (spec §4 says as much for the Root Key itself).
+    manifestKeyCache = null;
+    namespaceKeys.clear();
+    sessionEpoch += 1; // invalidate derivations that are still in flight
   };
 
-  // Build a signed manifest v1 record for the given generation. K_manifest is
-  // derived from the in-memory Root Key, so this only runs while unlocked.
-  const buildManifest = async (gen) => {
-    const manifestKey = await deriveManifestKey(rootKey, VAULT_KEY_VERSION);
+  /** Install a freshly derived subkey only if this session is still the one that asked for it. */
+  const stillCurrent = (epoch) => epoch === sessionEpoch && rootKey !== null;
+
+  const manifestKey = async () => {
+    if (manifestKeyCache !== null) return manifestKeyCache;
+    const epoch = sessionEpoch;
+    const derived = await deriveManifestKey(rootKey, VAULT_KEY_VERSION);
+    if (!stillCurrent(epoch)) {
+      throw wrongState('the vault was locked while deriving', { reason: 'session-ended' });
+    }
+    manifestKeyCache = derived;
+    return derived;
+  };
+
+  const assertUnlocked = (what) => {
+    if (state !== VAULT_STATES.UNLOCKED) {
+      throw wrongState(`the vault must be unlocked to ${what}`, { reason: `state:${state}` });
+    }
+  };
+
+  const assertEnabledNamespace = (namespace) => {
+    if (!ENABLED_NAMESPACES.includes(namespace)) {
+      throw new VaultCryptoError(Codes.NAMESPACE_UNSUPPORTED, 'namespace not enabled in this build', { namespace: typeof namespace === 'string' ? namespace : 'invalid' });
+    }
+  };
+
+  const namespaceKeyFor = async (namespace) => {
+    if (namespaceKeys.has(namespace)) return namespaceKeys.get(namespace);
+    const epoch = sessionEpoch;
+    const derived = await deriveNamespaceKey(rootKey, namespace, VAULT_KEY_VERSION);
+    if (!stillCurrent(epoch)) {
+      throw wrongState('the vault was locked while deriving', { reason: 'session-ended' });
+    }
+    namespaceKeys.set(namespace, derived);
+    return derived;
+  };
+
+  // Build a signed manifest v1 record. K_manifest comes from the in-memory
+  // Root Key, so this only runs while unlocked.
+  const buildManifest = async (gen, schema) => {
     const fields = {
       format: MANIFEST_FORMAT,
       version: MANIFEST_VERSION,
-      schemaVersion: VAULT_SCHEMA_VERSION,
+      schemaVersion: schema,
       migrationVersion: MIGRATION_VERSION,
       generation: gen,
       lastTxId: uuidv4(),
     };
-    const mac = await signManifestBytes(manifestKey, buildManifestCanonicalBytes(fields));
+    const mac = await signManifestBytes(await manifestKey(), buildManifestCanonicalBytes(fields));
     return { ...fields, hmacB64: encodeBase64(mac) };
   };
 
@@ -152,12 +227,11 @@ export function createVault({
     try {
       canonical = buildManifestCanonicalBytes(stored); // throws on any bad field type
     } catch { return { ok: false }; }
-    const manifestKey = await deriveManifestKey(rootKey, VAULT_KEY_VERSION);
     try {
       // verifyManifestBytes returns true or THROWS on any deviation (one code).
-      await verifyManifestBytes(manifestKey, canonical, mac);
+      await verifyManifestBytes(await manifestKey(), canonical, mac);
     } catch { return { ok: false }; }
-    return { ok: true, generation: stored.generation };
+    return { ok: true, generation: stored.generation, schemaVersion: stored.schemaVersion };
   };
 
   // Read the persisted wrapper once and settle the initial state, running the
@@ -226,7 +300,7 @@ export function createVault({
       // Atomic commit: the new wrapper becomes active (pending null) and the
       // manifest generation bumps — one transaction, one commit.
       const nextGen = generation + 1;
-      const manifest = await buildManifest(nextGen);
+      const manifest = await buildManifest(nextGen, schemaVersion);
       await db.transaction([META_STORE], (ops) => {
         ops.put(META_STORE, WRAPPER_KEY, pending);
         ops.put(META_STORE, MANIFEST_KEY, manifest);
@@ -262,13 +336,14 @@ export function createVault({
           profile: params.profile, createdAt: todayIso(), calibratedMs: 0,
         });
         rootKey = newRootKey; // owned by the vault; needed to sign the manifest
-        const manifest = await buildManifest(1);
+        const manifest = await buildManifest(1, db.version);
         // Wrapper + manifest are written atomically (spec §11).
         await db.transaction([META_STORE], (ops) => {
           ops.put(META_STORE, WRAPPER_KEY, wrapper);
           ops.put(META_STORE, MANIFEST_KEY, manifest);
         });
         generation = 1;
+        schemaVersion = db.version;
         state = VAULT_STATES.UNLOCKED;
         return { state };
       } catch (e) {
@@ -313,6 +388,22 @@ export function createVault({
           throw new VaultCryptoError(Codes.MANIFEST_TAMPERED, 'vault manifest failed integrity verification');
         }
         generation = verified.generation;
+        schemaVersion = verified.schemaVersion;
+        // The signed schemaVersion is a HIGH-WATER MARK. Schema upgrades run
+        // keyless in `onupgradeneeded` (vault LOCKED, no Root Key), so the
+        // database can legitimately be AHEAD of the last signature — that is
+        // reconciled here, on the first unlock that has K_manifest. The
+        // database being BEHIND the signed marker means it was rolled back
+        // under a signature we produced: fail closed.
+        if (db.version < schemaVersion) {
+          throw new VaultCryptoError(Codes.MANIFEST_TAMPERED, 'the database is older than the signed schema marker', { reason: 'schema-downgrade' });
+        }
+        if (db.version > schemaVersion) {
+          const reconciled = await buildManifest(generation + 1, db.version);
+          await db.transaction([META_STORE], (ops) => ops.put(META_STORE, MANIFEST_KEY, reconciled));
+          generation += 1;
+          schemaVersion = db.version;
+        }
         state = VAULT_STATES.UNLOCKED;
         return { state };
       } catch (e) {
@@ -358,6 +449,80 @@ export function createVault({
       return { state };
     },
 
+    /**
+     * Write one record. The namespace subkey encrypts it (the codec binds
+     * namespace, key, record version, key version and content type into the
+     * AAD, so a record cannot be replayed under another key or namespace), and
+     * the record lands together with the re-signed manifest in ONE transaction
+     * — one commit, one generation bump (spec §11).
+     *
+     * The previous `rv` is read BEFORE the transaction: the engine forbids
+     * awaiting anything but its own ops inside a transaction callback (an
+     * IndexedDB transaction auto-commits at a microtask checkpoint), and the
+     * encryption between the read and the write is asynchronous. This is safe
+     * under the vault's single-writer discipline (Web Lock election), which is
+     * the only supported configuration.
+     */
+    async putRecord(namespace, recordKey, value, { contentType = 'json' } = {}) {
+      await ensureLoaded();
+      assertUnlocked('write a record');
+      assertEnabledNamespace(namespace);
+      const namespaceKey = await namespaceKeyFor(namespace);
+      const previous = await db.get(namespace, recordKey);
+      const recordVersion = isSafeInt(previous?.rv) && previous.rv >= 1 ? previous.rv + 1 : 1;
+      const record = await encryptVaultRecord({
+        namespace, recordKey, plaintext: value, contentType, recordVersion,
+      }, namespaceKey);
+      const nextGen = generation + 1;
+      const manifest = await buildManifest(nextGen, schemaVersion);
+      await db.transaction([namespace, META_STORE], (ops) => {
+        ops.put(namespace, recordKey, record);
+        ops.put(META_STORE, MANIFEST_KEY, manifest);
+      });
+      generation = nextGen;
+      return { recordVersion };
+    },
+
+    /**
+     * Read one record. A missing key is a normal outcome (`undefined`), not an
+     * error; a present record that fails authentication is
+     * `VAULT_RECORD_CORRUPTED` and is never deleted automatically (§11).
+     */
+    async getRecord(namespace, recordKey) {
+      await ensureLoaded();
+      assertUnlocked('read a record');
+      assertEnabledNamespace(namespace);
+      const stored = await db.get(namespace, recordKey);
+      if (stored === undefined) return undefined;
+      const namespaceKey = await namespaceKeyFor(namespace);
+      // The AAD's `ns`/`k` come from THIS request, not from the stored record
+      // (codec contract, §6): a record moved to another key fails to authenticate.
+      return decryptVaultRecord(stored, { namespace, recordKey }, namespaceKey);
+    },
+
+    /** Delete one record; the deletion and its manifest bump are one commit. */
+    async deleteRecord(namespace, recordKey) {
+      await ensureLoaded();
+      assertUnlocked('delete a record');
+      assertEnabledNamespace(namespace);
+      const nextGen = generation + 1;
+      const manifest = await buildManifest(nextGen, schemaVersion);
+      await db.transaction([namespace, META_STORE], (ops) => {
+        ops.delete(namespace, recordKey);
+        ops.put(META_STORE, MANIFEST_KEY, manifest);
+      });
+      generation = nextGen;
+      return { deleted: true };
+    },
+
+    /** Keys of a namespace. A read: no commit, no generation bump. */
+    async listRecords(namespace) {
+      await ensureLoaded();
+      assertUnlocked('list records');
+      assertEnabledNamespace(namespace);
+      return db.list(namespace);
+    },
+
     /** Explicit MIGRATE trigger is out of scope for this story (fail-closed). */
     async migrate() {
       await ensureLoaded();
@@ -372,11 +537,18 @@ export function createVault({
     async destroy() {
       try { await ensureLoaded(); } catch { state = VAULT_STATES.ERROR; }
       state = VAULT_STATES.DESTROYING;
+      // §12 mandates the ORDER: keys first, then the wrapper, then the data.
+      // Step 1 — best-effort wipe of the in-memory keys.
+      wipeRootKey();
+      // Step 2 — overwrite the wrapper record BEFORE deleting the database, so
+      // that a partially failed cleanup cannot leave ciphertext behind with a
+      // still-active wrapper. Best-effort by construction: an IndexedDB put
+      // does not physically erase the previous bytes (§4/§12 say as much).
       try {
-        await db.destroy();
-      } finally {
-        wipeRootKey();
-      }
+        await db.transaction([META_STORE], (ops) => ops.put(META_STORE, WRAPPER_KEY, null));
+      } catch { /* the deletion below is the real cleanup */ }
+      // Step 3 — delete the whole database.
+      await db.destroy();
       state = VAULT_STATES.UNINITIALIZED;
       loadPromise = null; // a destroyed vault re-loads as UNINITIALIZED
       return { state };
@@ -389,7 +561,16 @@ export function createVault({
     },
   };
 
-  return Object.freeze(api);
+  // Operations that read or write vault state through an await boundary must
+  // not interleave: each one reads counters (`rv`, `generation`), performs
+  // asynchronous crypto, then commits. Reads are excluded — they take no
+  // counters and IndexedDB isolates them.
+  const MUTATING = Object.freeze([
+    'createVault', 'unlock', 'lock', 'changePassword', 'rewrap', 'putRecord', 'deleteRecord', 'destroy',
+  ]);
+  return Object.freeze(Object.fromEntries(Object.entries(api).map(
+    ([name, fn]) => [name, MUTATING.includes(name) ? (...args) => serialize(() => fn(...args)) : fn],
+  )));
 }
 
 // parseVaultWrapper validates the canonical salt then zeroizes its local copy,

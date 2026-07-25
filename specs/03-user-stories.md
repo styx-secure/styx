@@ -2,7 +2,7 @@
 spec_version: "2.0"
 spec_type: "user-stories"
 project: "Styx"
-last_updated: "2026-07-19T00:00:00Z"
+last_updated: "2026-07-25T00:00:00Z"
 status: "adopted-brownfield"
 ---
 
@@ -339,8 +339,17 @@ runs on synthetic records exclusively.
 
 - DATO la matrice §13 della spec vault
   QUANDO la suite canary gira in CI
-  ALLORA ogni riga della matrice è coperta ed è verde sul solo namespace
-  canary.
+  ALLORA ogni riga della matrice è **classificata** nella mappa di copertura
+  `styx-js/docs/vault-test-matrix.md` — coperta qui, coperta da una PR
+  precedente, differita a US-008 con motivo, oppure N/A con motivo — e tutte
+  le righe coperte sono verdi sul solo namespace canary.
+  *Emendato in US-007:* il criterio originale ("ogni riga verde") non è
+  letteralmente soddisfacibile — la riga `migration` non ha ancora soggetto
+  (nessuna migrazione da localStorage esiste in questo blocco), la riga
+  `dispositivi mobili` è manuale per costruzione, e le parti cross-worker
+  delle righe `integration` e `crash` richiedono il cablaggio nel worker,
+  che è il contenuto di US-008. La mappa rende esplicito ciò che il tick
+  verde avrebbe nascosto.
 - DATO un record canary cifrato corrotto a mano (bit-flip)
   QUANDO il vault lo rilegge
   ALLORA il fallimento è tipizzato, fail-closed e non distruttivo per gli
@@ -352,3 +361,50 @@ runs on synthetic records exclusively.
   QUANDO se ne ispeziona il contenuto
   ALLORA è sintetico e generato localmente, mai derivato da informazioni
   dell'utente.
+
+---
+
+## US-008 — Wire the vault lifecycle into the crypto worker
+
+**Sprint 2, from plan section B3.5/B3.3** — the plan places `vault.js` "nel
+worker"; US-006 deliberately delivered it as a pure factory and deferred the
+protocol wiring to keep the frozen PR‑3 worker boundary out of the
+irreversible-contract gate. This story closes that gap. Depends on US-007.
+
+The vault lifecycle and its record operations become reachable through the
+existing worker protocol: the message types of the design spec §9 table
+(`CREATE_VAULT`, `UNLOCK`, `LOCK`, `STATUS`, `GET`/`PUT`/`DELETE`, `LIST`,
+`TRANSACTION`, `DESTROY`) are registered in the worker runtime, validated by
+the existing closed-registry protocol, and served by the lifecycle factory
+running inside the worker. The Root Key never crosses the boundary; only
+typed results and allowlisted error details do.
+
+This story owns the §13 rows that a page-side vault cannot close, listed as
+deferred in `styx-js/docs/vault-test-matrix.md`: cross-worker
+`create→unlock→put/get→lock→unlock` (row 2), worker killed mid-PUT/TRANSACTION
+(row 4), and the §12 step 8 terminate/respawn of factory reset (row 14). It
+also carries the service-worker-update-while-UNLOCKED probe (plan RK8), which
+needs a real PWA context.
+
+### Acceptance criteria
+
+- DATO il protocollo worker esistente
+  QUANDO i tipi di messaggio del ciclo di vita del vault vengono registrati
+  ALLORA passano dalla stessa validazione a registry chiuso degli altri, e un
+  tipo o payload non previsto resta rifiutato fail-closed.
+- DATO un vault sbloccato dentro il worker
+  QUANDO la pagina esegue create→unlock→put/get→lock→unlock attraverso il
+  protocollo
+  ALLORA il ciclo completo riesce e la Root Key non compare mai in un
+  messaggio, in un errore o in un log.
+- DATO un worker ucciso a metà di un PUT o di una TRANSACTION
+  QUANDO il worker viene respawnato e il vault riaperto
+  ALLORA lo stato persistito è tutto-o-niente e il vault resta utilizzabile.
+- DATO l'aggiornamento del service worker mentre il vault è UNLOCKED (RK8)
+  QUANDO l'aggiornamento avviene
+  ALLORA il comportamento è quello documentato e nessuna chiave sopravvive
+  all'aggiornamento in forma non protetta.
+- DATO la mappa di copertura `styx-js/docs/vault-test-matrix.md`
+  QUANDO questa story è completa
+  ALLORA le righe marcate "differita a US-008" risultano coperte e la mappa è
+  aggiornata di conseguenza.
