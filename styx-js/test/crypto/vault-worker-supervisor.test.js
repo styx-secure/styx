@@ -27,7 +27,7 @@ class FakeWorker {
         // fatal DURING INIT: the error event kills the client AND makes the
         // in-flight INIT request reject — the review-W1 double path
         queueMicrotask(() => this.emit('error', {}));
-      } else if (this.behavior === 'init-ok' || this.behavior === 'init-ok-silent') {
+      } else if (['init-ok', 'init-ok-silent', 'init-ok-destroy-fail'].includes(this.behavior)) {
         queueMicrotask(() => this.emit('message', {
           data: { id: message.id, ok: true, result: { protocolVersion: 1, workerState: 'READY', wasmBytes: 42082, digestVerified: true, katVerified: true } },
         }));
@@ -43,6 +43,14 @@ class FakeWorker {
     } else if (message.type === 'SHUTDOWN' && this.behavior !== 'init-ok-silent') {
       queueMicrotask(() => this.emit('message', {
         data: { id: message.id, ok: true, result: { closed: true } },
+      }));
+    } else if (message.type === 'DESTROY' && this.behavior === 'init-ok-destroy-fail') {
+      queueMicrotask(() => this.emit('message', {
+        data: { id: message.id, ok: false, error: { code: 'VAULT_DESTROY_FAILED', details: { reason: 'synthetic' } } },
+      }));
+    } else if (message.type === 'DESTROY') {
+      queueMicrotask(() => this.emit('message', {
+        data: { id: message.id, ok: true, result: { state: 'UNINITIALIZED' } },
       }));
     } // UNLOCK & co. (and everything on 'init-ok-silent'): never answered
   }
@@ -177,6 +185,28 @@ describe('start / stop / delegation', () => {
     expect(supervisor.getState()).toBe(SUPERVISOR_STATES.STOPPED);
     expect(workers[0].terminated).toBeGreaterThan(0);
     expect(workers.length).toBe(1); // a graceful stop never triggers a respawn
+  });
+
+  test('DESTROY always retires the DB-owning generation and starts a fresh worker', async () => {
+    const { supervisor, workers } = makeSupervisor(['init-ok', 'init-ok']);
+    await supervisor.start();
+    expect(await supervisor.request('DESTROY', null)).toEqual({ state: 'UNINITIALIZED' });
+    expect(supervisor.getState()).toBe(SUPERVISOR_STATES.RUNNING);
+    expect(supervisor.getGeneration()).toBe(2);
+    expect(workers).toHaveLength(2);
+    expect(workers[0].terminated).toBeGreaterThan(0);
+    expect(supervisor.getAttempts()).toBe(0); // deliberate reset spends no crash budget
+  });
+
+  test('a typed DESTROY failure is returned only after a fresh generation owns storage', async () => {
+    const { supervisor, workers } = makeSupervisor(['init-ok-destroy-fail', 'init-ok']);
+    await supervisor.start();
+    const err = await codeOf(supervisor.request('DESTROY', null));
+    expect(err.code).toBe('VAULT_DESTROY_FAILED');
+    expect(err.details.reason).toBe('synthetic');
+    expect(supervisor.getState()).toBe(SUPERVISOR_STATES.RUNNING);
+    expect(supervisor.getGeneration()).toBe(2);
+    expect(workers).toHaveLength(2);
   });
 });
 

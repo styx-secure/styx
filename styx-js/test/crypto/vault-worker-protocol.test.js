@@ -6,8 +6,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   MESSAGE_TYPES, ACTIVE_TYPES, MAX_WIRE_BYTES, MAX_WIRE_DEPTH, MAX_WIRE_NODES,
-  MAX_WIRE_ARRAY_LENGTH,
-  validateWireValue, validateRequestEnvelope, validateResponseEnvelope,
+  MAX_WIRE_ARRAY_LENGTH, MAX_TRANSACTION_OPERATIONS,
+  validateWireValue, validateRequestEnvelope, validateRequestPayload, validateResponseEnvelope,
   extractEnvelopeId, buildResultResponse,
 } from '../../src/crypto/vault-worker-protocol.js';
 import {
@@ -17,6 +17,7 @@ import {
   validateKdfWasmUrl, createVaultKdfLoader, KDF_WASM_SHA256, KDF_WASM_BYTES,
 } from '../../src/crypto/vault-kdf-loader.js';
 import { createVaultWorkerRuntime, WORKER_STATES } from '../../src/crypto/vault-worker-runtime.js';
+import { VaultCryptoError, VaultCryptoErrorCodes } from '../../src/crypto/vault-errors.js';
 
 const here = (rel) => fileURLToPath(new URL(rel, import.meta.url));
 
@@ -47,8 +48,10 @@ describe('worker error discipline', () => {
     ]);
   });
 
-  test('details allowlist admits only type/phase/reason/attempt with short primitives', () => {
-    const ok = sanitizeWorkerErrorDetails({ type: 'INIT', phase: 'init', reason: 'x', attempt: 3 });
+  test('details allowlist admits worker and frozen vault keys with short primitives', () => {
+    const ok = sanitizeWorkerErrorDetails({
+      type: 'INIT', phase: 'init', reason: 'x', attempt: 3, field: 'k', namespace: 'canary', version: 1,
+    });
     expect(Object.isFrozen(ok)).toBe(true);
     expect(() => sanitizeWorkerErrorDetails({ payload: 'x' })).toThrow(TypeError);
     expect(() => sanitizeWorkerErrorDetails({ reason: 'r'.repeat(65) })).toThrow(TypeError);
@@ -62,6 +65,15 @@ describe('worker error discipline', () => {
     expect(JSON.stringify(wire)).not.toContain('S3CR3T');
     const typed = toWireError(new VaultWorkerError(Codes.TIMEOUT, 'x', { reason: 'timeout' }));
     expect(typed).toEqual({ code: Codes.TIMEOUT, details: { reason: 'timeout' } });
+    const crypto = toWireError(new VaultCryptoError(
+      VaultCryptoErrorCodes.RECORD_CORRUPTED, 'static', { field: 'data' },
+    ));
+    expect(crypto).toEqual({ code: 'VAULT_RECORD_CORRUPTED', details: { field: 'data' } });
+    const storage = toWireError(new VaultCryptoError(
+      VaultCryptoErrorCodes.OPEN_FAILED, 'static', { namespace: 'styx-vault-test-internal', version: 1 },
+    ));
+    expect(storage).toEqual({ code: 'VAULT_OPEN_FAILED', details: { version: 1 } });
+    expect(JSON.stringify(storage)).not.toContain('styx-vault-test-');
   });
 
   test('details follow the descriptor discipline: accessors never invoked (review W6)', () => {
@@ -310,10 +322,67 @@ describe('request envelope (worker side)', () => {
       'INIT', 'CREATE_VAULT', 'UNLOCK', 'LOCK', 'GET', 'PUT', 'DELETE', 'LIST',
       'TRANSACTION', 'MIGRATE', 'STATUS', 'DESTROY', 'SHUTDOWN',
     ]);
-    expect(ACTIVE_TYPES).toEqual(['INIT', 'STATUS', 'SHUTDOWN']);
+    expect(ACTIVE_TYPES).toEqual([
+      'INIT', 'CREATE_VAULT', 'UNLOCK', 'LOCK', 'GET', 'PUT', 'DELETE', 'LIST',
+      'TRANSACTION', 'STATUS', 'DESTROY', 'SHUTDOWN',
+    ]);
     for (const type of ['status', 'EVAL', '', 7, null, Symbol('x')]) {
       expectCode(() => validateRequestEnvelope(req({ type })), Codes.BAD_REQUEST);
     }
+  });
+});
+
+describe('closed active payload schemas (US-008)', () => {
+  test('lifecycle and CRUD payloads are exact and canary-only', () => {
+    expect(validateRequestPayload('CREATE_VAULT', { password: 'password8' }))
+      .toEqual({ password: 'password8' });
+    expect(validateRequestPayload('CREATE_VAULT', { password: 'password8', profile: 'desktop' }))
+      .toEqual({ password: 'password8', profile: 'desktop' });
+    expectCode(() => validateRequestPayload('CREATE_VAULT', { password: 'short' }), Codes.BAD_REQUEST, 'password-length');
+    expectCode(() => validateRequestPayload('UNLOCK', { password: 'password8', extra: 1 }), Codes.BAD_REQUEST);
+    expect(validateRequestPayload('PUT', {
+      namespace: 'canary', recordKey: 'k', value: { synthetic: true },
+    })).toEqual({ namespace: 'canary', recordKey: 'k', value: { synthetic: true }, contentType: 'json' });
+    expect(validateRequestPayload('PUT', {
+      namespace: 'canary', recordKey: 'b', value: new Uint8Array([1]), contentType: 'bytes',
+    }).contentType).toBe('bytes');
+    expectCode(() => validateRequestPayload('PUT', {
+      namespace: 'settings', recordKey: 'k', value: 1,
+    }), Codes.BAD_REQUEST, 'namespace-not-active');
+    expectCode(() => validateRequestPayload('PUT', {
+      namespace: 'canary', recordKey: 'k', value: new Uint8Array([1]), contentType: 'json',
+    }), Codes.BAD_REQUEST, 'binary-not-allowed');
+    for (const type of ['LOCK', 'STATUS', 'DESTROY', 'SHUTDOWN']) {
+      expect(validateRequestPayload(type, null)).toBeNull();
+      expectCode(() => validateRequestPayload(type, {}), Codes.BAD_REQUEST, 'unexpected-payload');
+    }
+  });
+
+  test('TRANSACTION is bounded, data-only, closed and rejects duplicate keys', () => {
+    const valid = validateRequestPayload('TRANSACTION', {
+      namespace: 'canary',
+      operations: [
+        { op: 'put', recordKey: 'a', value: { n: 1 } },
+        { op: 'delete', recordKey: 'b' },
+      ],
+    });
+    expect(valid.operations).toEqual([
+      { op: 'put', recordKey: 'a', value: { n: 1 }, contentType: 'json' },
+      { op: 'delete', recordKey: 'b' },
+    ]);
+    expect(Object.isFrozen(valid.operations)).toBe(true);
+    expectCode(() => validateRequestPayload('TRANSACTION', {
+      namespace: 'canary', operations: [{ op: 'delete', recordKey: 'a', code: () => {} }],
+    }), Codes.BAD_REQUEST);
+    expectCode(() => validateRequestPayload('TRANSACTION', {
+      namespace: 'canary', operations: [
+        { op: 'delete', recordKey: 'a' }, { op: 'put', recordKey: 'a', value: 1 },
+      ],
+    }), Codes.BAD_REQUEST, 'duplicate-transaction-key');
+    expectCode(() => validateRequestPayload('TRANSACTION', {
+      namespace: 'canary',
+      operations: Array.from({ length: MAX_TRANSACTION_OPERATIONS + 1 }, (_, i) => ({ op: 'delete', recordKey: `k${i}` })),
+    }), Codes.BAD_REQUEST, 'bad-transaction-size');
   });
 });
 
@@ -486,13 +555,20 @@ describe('worker runtime: states, active and reserved types', () => {
     isLoaded: () => state.loaded,
   });
 
-  function makeRuntime({ loader = okLoader(), testOverrides } = {}) {
+  function makeRuntime({ loader = okLoader(), testOverrides, vaultApi } = {}) {
     const posted = [];
     let closed = 0;
+    const api = vaultApi ?? Object.freeze({
+      status: async () => ({ state: 'UNINITIALIZED', initialized: false }),
+    });
     const runtime = createVaultWorkerRuntime({
       postMessage: (m, t) => posted.push({ m, t }),
       close: () => { closed += 1; },
       kdfLoader: loader,
+      vaultLifecycle: {
+        initialize: async () => api,
+        close: () => {},
+      },
       testOverrides,
     });
     return { runtime, posted, closedCount: () => closed };
@@ -512,8 +588,8 @@ describe('worker runtime: states, active and reserved types', () => {
     expect(posted[1].m.result).toEqual({
       protocolVersion: 1,
       workerState: 'READY',
-      vaultState: null,
-      capabilities: { kdf: true, storage: false, lifecycle: false, openmls: false },
+      vaultState: 'UNINITIALIZED',
+      capabilities: { kdf: true, storage: true, lifecycle: true, openmls: false },
       versions: { wrapper: 1, record: 1, key: 1 },
     });
 
@@ -564,6 +640,107 @@ describe('worker runtime: states, active and reserved types', () => {
     // size limits run BEFORE the reserved-type answer
     await runtime.handleMessage({ data: { id, type: 'PUT', payload: { big: new Uint8Array(MAX_WIRE_BYTES + 1) } } });
     expect(posted[posted.length - 1].m.error.code).toBe(Codes.BAD_REQUEST);
+  });
+
+  test('active lifecycle requests dispatch only to the injected vault API', async () => {
+    const calls = [];
+    const vaultApi = {
+      status: async () => ({ state: 'UNINITIALIZED' }),
+      createVault: async (password, options) => { calls.push(['create', password, options]); return { state: 'UNLOCKED' }; },
+      lock: async () => { calls.push(['lock']); return { state: 'LOCKED' }; },
+      putRecord: async (...args) => { calls.push(['put', ...args]); return { recordVersion: 1 }; },
+      getRecord: async () => undefined,
+      listRecords: async () => ['a'],
+      deleteRecord: async () => ({ deleted: true }),
+      transactionRecords: async (_ns, ops) => ({ applied: ops.length, puts: 1, deletes: 0 }),
+      destroy: async () => ({ state: 'UNINITIALIZED' }),
+    };
+    const { runtime, posted, closedCount } = makeRuntime({ vaultApi });
+    await runtime.handleMessage({ data: initReq() });
+    await runtime.handleMessage({ data: { id: 2, type: 'CREATE_VAULT', payload: { password: 'password8' } } });
+    await runtime.handleMessage({ data: {
+      id: 3, type: 'PUT', payload: { namespace: 'canary', recordKey: 'a', value: { n: 1 } },
+    } });
+    await runtime.handleMessage({ data: { id: 4, type: 'GET', payload: { namespace: 'canary', recordKey: 'missing' } } });
+    await runtime.handleMessage({ data: { id: 5, type: 'LIST', payload: { namespace: 'canary' } } });
+    await runtime.handleMessage({ data: {
+      id: 6, type: 'TRANSACTION', payload: {
+        namespace: 'canary', operations: [{ op: 'put', recordKey: 'b', value: 2 }],
+      },
+    } });
+    expect(posted.slice(1).map(({ m }) => m.result)).toEqual([
+      { state: 'UNLOCKED' },
+      { recordVersion: 1 },
+      { found: false },
+      { keys: ['a'] },
+      { applied: 1, puts: 1, deletes: 0 },
+    ]);
+    expect(calls[0]).toEqual(['create', 'password8', {}]);
+    expect(calls[1][0]).toBe('put');
+    expect(closedCount()).toBe(0);
+  });
+
+  test('production lifecycle requests are ordered so LOCK cannot overtake an in-flight GET', async () => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const calls = [];
+    const vaultApi = {
+      status: async () => ({ state: 'UNLOCKED' }),
+      getRecord: async () => { calls.push('get:start'); await gate; calls.push('get:end'); return { value: 1 }; },
+      lock: async () => { calls.push('lock'); return { state: 'LOCKED' }; },
+    };
+    const { runtime, posted } = makeRuntime({ vaultApi });
+    await runtime.handleMessage({ data: initReq() });
+    const get = runtime.handleMessage({ data: {
+      id: 2, type: 'GET', payload: { namespace: 'canary', recordKey: 'k' },
+    } });
+    await Promise.resolve();
+    const lock = runtime.handleMessage({ data: { id: 3, type: 'LOCK', payload: null } });
+    await Promise.resolve();
+    expect(calls).toEqual(['get:start']);
+    release();
+    await Promise.all([get, lock]);
+    expect(calls).toEqual(['get:start', 'get:end', 'lock']);
+    expect(posted.slice(1).map(({ m }) => m.id)).toEqual([2, 3]);
+  });
+
+  test('every active schema rejects before any vault handler is invoked', async () => {
+    let calls = 0;
+    const touched = async () => { calls += 1; return null; };
+    const vaultApi = {
+      status: async () => ({ state: 'UNINITIALIZED' }),
+      createVault: touched,
+      unlock: touched,
+      lock: touched,
+      getRecord: touched,
+      putRecord: touched,
+      deleteRecord: touched,
+      listRecords: touched,
+      transactionRecords: touched,
+      destroy: touched,
+    };
+    const { runtime, posted } = makeRuntime({ vaultApi });
+    await runtime.handleMessage({ data: initReq() });
+    const invalid = [
+      ['CREATE_VAULT', {}],
+      ['UNLOCK', { password: 'short' }],
+      ['LOCK', {}],
+      ['GET', { namespace: 'canary' }],
+      ['PUT', { namespace: 'canary', recordKey: 'k', value: 1, extra: true }],
+      ['DELETE', { namespace: 'canary', recordKey: 'k', extra: true }],
+      ['LIST', {}],
+      ['TRANSACTION', { namespace: 'canary', operations: [] }],
+      ['DESTROY', {}],
+    ];
+    let id = 20;
+    for (const [type, payload] of invalid) {
+      // eslint-disable-next-line no-await-in-loop
+      await runtime.handleMessage({ data: { id, type, payload } });
+      id += 1;
+    }
+    expect(calls).toBe(0);
+    expect(posted.slice(1)).toHaveLength(invalid.length);
+    expect(posted.slice(1).every(({ m }) => m.error?.code === Codes.BAD_REQUEST)).toBe(true);
   });
 
   test('bad envelopes, non-empty origins and duplicate in-flight ids are BAD_REQUEST', async () => {
@@ -661,7 +838,9 @@ describe('worker runtime: states, active and reserved types', () => {
   test('test overrides can never touch active types or unknown names', () => {
     for (const bad of [{ INIT: () => {} }, { STATUS: () => {} }, { SHUTDOWN: () => {} }, { EVAL: () => {} }]) {
       expect(() => createVaultWorkerRuntime({
-        postMessage: () => {}, close: () => {}, kdfLoader: okLoader(), testOverrides: bad,
+        postMessage: () => {}, close: () => {}, kdfLoader: okLoader(),
+        vaultLifecycle: { initialize: async () => ({ status: async () => ({ state: 'UNINITIALIZED' }) }), close: () => {} },
+        testOverrides: bad,
       })).toThrow(TypeError);
     }
   });
