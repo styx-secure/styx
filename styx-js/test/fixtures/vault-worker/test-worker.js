@@ -1,6 +1,6 @@
 // test-worker.js — TEST-ONLY entry of the vault worker (PR-3). Same runtime,
 // same loader, same STATIC glue import as the production entry
-// (src/crypto/vault-worker.js), plus handler overrides for RESERVED types so
+// (src/crypto/vault-worker.js), plus a handler override for reserved MIGRATE so
 // the browser suite can exercise behaviors the production build does not
 // activate yet: a real synchronous Argon2id run (strong-cancellation proof),
 // a transferable echo, an intentionally leaking / crashing / stalling
@@ -25,6 +25,12 @@ const runtime = createVaultWorkerRuntime(Object.freeze({
   postMessage: (message, transfer = []) => self.postMessage(message, transfer),
   close: () => self.close(),
   kdfLoader,
+  vaultLifecycle: Object.freeze({
+    initialize: async () => Object.freeze({
+      status: async () => ({ state: 'UNINITIALIZED', initialized: false }),
+    }),
+    close: () => {},
+  }),
   testOverrides: {
     // Real SYNCHRONOUS Argon2id on synthetic data: the only way to cancel it
     // is terminating the worker (mandate §15). The derived output is zeroized
@@ -63,7 +69,7 @@ const runtime = createVaultWorkerRuntime(Object.freeze({
     LIST: () => new Promise(() => {}),
     // Crashes OUTSIDE the handler: uncaught → the Worker 'error' event fires
     // on the page side (respawn proof).
-    DESTROY: async () => {
+    MIGRATE: async () => {
       setTimeout(() => { throw new Error('TEST-ONLY scheduled crash'); }, 10);
       return { result: { scheduled: true } };
     },
