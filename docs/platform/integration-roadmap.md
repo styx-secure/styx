@@ -26,48 +26,48 @@ da estendere (ADR-0003).
 
 | Capacità | Prodotto JS/MLS | Reference Dart | Evidenza e limite principale |
 |---|---|---|---|
-| Chat E2EE 1:1 | **implemented** | **implemented** per il diverso ledger | `styx-js/src/chat/styx-chat.js`, `styx-js/src/crypto/mls/`; `packages/styx/lib/src/sovereign_ledger.dart`. I due modelli non sono interoperabili. |
-| Pairing QR autenticato | **implemented** | **implemented** | `StyxChat.createQrInvite/acceptQrInvite/confirmPairing`; `packages/styx/lib/src/pairing/qr_pairing_service.dart`. Non equivale a identità civile. |
-| Safety number / verifica peer | **implemented** | **partial** | `StyxChat.safetyNumber/setVerified`; il Dart ha double-check e trust store, ma non è il prodotto. |
-| Pairing remoto nel prodotto | **missing** | **implemented** | `StyxChat.startRemotePairing()` e `joinRemotePairing()` sollevano `remote pairing not implemented yet`; reference in `remote_pairing_service.dart`. |
+| Chat E2EE 1:1 | **implemented** | **implemented** per il diverso ledger | JS: `styx-js/src/chat/styx-chat.js`, `styx-js/src/crypto/mls/mls-engine.js`. Dart: `packages/styx/lib/src/sovereign_ledger.dart`. I due modelli non sono interoperabili. |
+| Pairing QR autenticato | **implemented** | **implemented** | JS: `styx-js/src/chat/styx-chat.js`. Dart: `packages/styx/lib/src/pairing/qr_pairing_service.dart`. Non equivale a identità civile. |
+| Safety number / verifica peer | **implemented** | **partial** | JS: `styx-js/src/chat/styx-chat.js`, `styx-js/src/chat/contact-roster.js`. Dart: `packages/crypto_core/lib/src/session_verifier.dart`, `packages/styx/lib/src/trust/trust_store_manager.dart`. |
+| Pairing remoto nel prodotto | **missing** | **implemented** | JS: `styx-js/src/chat/styx-chat.js` solleva `remote pairing not implemented yet`. Dart: `packages/styx/lib/src/pairing/remote_pairing_service.dart`. |
 | Identità persistente autocustodita | **implemented** | **implemented** | `styx-js/src/crypto/identity.js`; `packages/crypto_core/lib/src/identity_manager.dart`. L'identità durevole è correlabile. |
 | Identità applicativa separata | **missing** | **missing** | Nessun contratto `application context` o derivazione per app. |
 | Identità effimera per caso | **missing** | **missing** | Nessun lifecycle per chiave monouso e nessuna garanzia cross-case. |
 | Anonymous return capability | **missing** | **missing** | Non esiste una mailbox riapribile tramite capability senza account. |
-| Gruppi di prodotto N>2 | **partial** | **separate design decision** | MLS supporta gruppi a livello di core, ma `StyxChat` modella una sessione per contatto e il prodotto non espone membership completa. Dart non va esteso come core. |
+| Gruppi di prodotto N>2 | **partial** | **separate design decision** | JS: `styx-js/src/crypto/mls/mls-engine.js` gestisce il core MLS, mentre `styx-js/src/chat/styx-chat.js` modella una sessione per contatto e non espone membership completa. Dart non va esteso come core. |
 | Ruoli, delega e revoca applicativa | **missing** | **missing** | Trust/pairing non costituiscono RBAC o capability authorization. |
-| Vault IndexedDB cifrato | **partial** | **partial** | JS: `styx-js/src/storage/vault*.js` e worker esistono, ma la matrice `styx-js/docs/vault-test-matrix.md` è canary-only e rinvia il cross-worker a US-008. Dart ha storage/reference, non il vault canonico del prodotto. |
-| Migrazione dei dati chat nel vault | **missing** | **separate design decision** | `vault-test-matrix.md` marca la migrazione `N/A`; schema, rollback e product namespace richiedono Issue dedicate. |
-| Worker con segreti confinati | **partial** | **missing** nel modello web | Runtime e supervisor: `styx-js/src/crypto/vault-worker*.js`; il lifecycle completo è oggetto di US-008. |
+| Vault IndexedDB cifrato | **partial** | **missing** | JS: `styx-js/src/storage/vault-db.js`, `styx-js/src/storage/vault-record.js`, `styx-js/docs/vault-test-matrix.md`; la matrice è canary-only e rinvia il cross-worker a US-008. Il Dart non implementa questo vault web canonico. |
+| Migrazione dei dati chat nel vault | **missing** | **separate design decision** | `styx-js/docs/vault-test-matrix.md` marca la migrazione `N/A`; schema, rollback e product namespace richiedono Issue dedicate. |
+| Worker con segreti confinati | **partial** | **missing** nel modello web | JS: `styx-js/src/crypto/vault-worker-runtime.js`, `styx-js/src/crypto/vault-worker-supervisor.js`, `styx-js/src/crypto/vault-worker-protocol.js`; il lifecycle completo è oggetto di US-008. |
 | Trasporto Nostr federato | **implemented** | **implemented** come reference | `styx-js/src/transport/nostr-chat-transport.js`; `packages/transport/lib/src/nostr/`. Il prodotto usa relay multipli ma non nasconde i metadati. |
-| Verifica firma evento in ingresso | **implemented** | **implemented** | `NostrChatTransport._verifyEvent/_onRelay`; reference Nostr Dart. |
-| Deduplicazione replay | **partial** | **partial** | JS usa `_seen` in memoria, limitato a 5000: si perde al riavvio. Il ledger/outbox Dart ha identificatori, ma non è una garanzia del prodotto. |
-| Outbox persistente del prodotto | **missing** | **implemented** come reference | `StyxChat.sendText` persiste il messaggio ma invia direttamente; `packages/transport/.../outbox_worker.dart` offre una reference. |
-| ACK reale e stati di consegna | **missing** | **partial** | `NostrChatTransport.send()` chiama `publish()` senza attesa; `sendText` marca `sent` dopo il ritorno. Read receipt applicativa esiste, ma non sostituisce publish/device ACK. |
-| Retry/backoff e dead-letter | **missing** nel percorso chat | **partial** | Primitive JS legacy in `styx-js/src/transport/failover.js`; non sono integrate in `StyxChat`. Reference Dart in `transport_failover.dart` e `outbox_worker.dart`. |
-| Idempotenza persistente | **missing** | **partial** | UUID e dedup in memoria non costituiscono riconciliazione crash-safe. |
-| Ordering e merge applicativo | **missing** nel prodotto chat | **implemented** come reference ledger | HLC/vector clock/fork merge in `packages/ledger_engine/` e port JS legacy; una policy generica richiede design per tipo di app. |
+| Verifica firma evento in ingresso | **implemented** | **missing** | JS: `styx-js/src/transport/nostr-chat-transport.js`. Dart: `packages/transport/lib/src/nostr/nostr_transport.dart` filtra e decifra ma non verifica una firma Nostr. |
+| Deduplicazione replay | **partial** | **partial** | JS: `styx-js/src/transport/nostr-chat-transport.js` usa `_seen` in memoria, limitato a 5000. Dart: `packages/transport/lib/src/nostr/nostr_transport.dart` usa una cache LRU in memoria. Entrambe si perdono al riavvio. |
+| Outbox persistente del prodotto | **missing** | **implemented** come reference | JS: `styx-js/src/chat/styx-chat.js` persiste il messaggio ma invia direttamente. Dart: `packages/transport/lib/src/failover/outbox_worker.dart`, `packages/storage/lib/src/dao/outbox_dao.dart`. |
+| ACK reale e stati di consegna | **missing** | **missing** | JS: `styx-js/src/transport/nostr-chat-transport.js` chiama `publish()` senza attesa e `styx-js/src/chat/styx-chat.js` marca `sent` dopo il ritorno. Nessuno stack dimostra publish ACK più device ACK end-to-end. |
+| Retry/backoff e dead-letter | **missing** nel percorso chat | **partial** | JS: `styx-js/src/transport/failover.js` contiene primitive legacy non integrate in `styx-js/src/chat/styx-chat.js`. Dart: `packages/transport/lib/src/failover/transport_failover.dart`, `packages/transport/lib/src/failover/outbox_worker.dart`. |
+| Idempotenza persistente | **missing** | **partial** | JS: UUID e dedup in memoria in `styx-js/src/transport/nostr-chat-transport.js` non sono crash-safe. Dart: identificatori in `packages/ledger_engine/lib/src/event_factory.dart` e persistenza outbox in `packages/storage/lib/src/dao/outbox_dao.dart` sono reference, non prova del prodotto. |
+| Ordering e merge applicativo | **missing** nel prodotto chat | **implemented** come reference ledger | Dart: `packages/ledger_engine/lib/src/hlc.dart`, `packages/ledger_engine/lib/src/vector_clock.dart`, `packages/ledger_engine/lib/src/conflict/deterministic_merge.dart`. Il port legacy `styx-js/src/ledger/` è separato da `StyxChat`; la policy resta app-specific. |
 | Pending commit / ACK-gating MLS | **missing** | **separate design decision** | Debito esplicito in `docs/security/2026-07-11-fattibilita-piano-utente.md` §3.5; richiede API Rust/WASM. |
 | Fork detection MLS | **missing** | **separate design decision** | Mancano epoch/tree hash/context esposti dal core; stesso piano §3.5. |
-| Read receipt cifrata | **implemented** | **missing** come prodotto | `StyxChat.markRead/_sendReceipt`; il relay vede comunque evento, timing e relazione. |
-| Typing cifrato nel payload | **partial** | **missing** | Il contenuto applicativo è protetto, ma tipo/timing/route restano osservabili e il traffico è distinguibile. |
-| Metadata protection esterna | **missing** | **partial** concettuale | H2 aperto: `nostr-chat-transport.js` espone `pubkey`, tag `p`, tempo e dimensione. Il Dart contiene profili/Tor, ma non prova la proprietà nel prodotto. |
-| Gift wrap / mailbox non identitaria | **missing** | **missing** | Debito esplicito nel piano §3.6. Kind `1059` corrente non è un gift wrap. Tecnica concreta: **separate design decision**. |
-| Tor/onion nel prodotto web | **missing** | **partial** | Browser: uso esterno di Tor Browser, non overlay (`styx-js/README.md`). Dart ha `TorManager`/decorator, ma il decorator delega il trasporto e non prova routing end-to-end. |
-| Push senza correlazione identitaria | **missing** | **partial** | `push_bridge/` registra endpoint rispetto a identità osservabili; handle anonimo è debito del piano. |
-| Padding, batching, cover traffic | **missing** | **partial** concettuale | Nessun percorso del prodotto. Profili dummy Dart/push sono reference e hanno costi/assunzioni non trasferibili automaticamente. |
-| Allegati sicuri | **missing** | **partial** | Nessun percorso allegati nella chat; l'email Dart estrae allegati ma non offre sanitizzazione/metadati per app sensibili. |
+| Read receipt cifrata | **implemented** | **missing** come prodotto | JS: `styx-js/src/chat/styx-chat.js` cifra `markRead/_sendReceipt` nel percorso MLS; il relay vede comunque evento, timing e relazione. |
+| Typing cifrato nel payload | **missing** | **missing** | JS: `styx-js/src/chat/styx-chat.js` invia `{t: 'typing'}` fuori da MLS; `styx-js/src/transport/nostr-chat-transport.js` applica solo Base64. Il limite M4 è aperto in `docs/security/2026-07-10-styx-chat-security-report.md`. |
+| Metadata protection esterna | **missing** | **partial** concettuale | JS: H2 è aperto in `docs/security/2026-07-10-styx-chat-security-report.md`; `styx-js/src/transport/nostr-chat-transport.js` espone `pubkey`, tag `p`, tempo e dimensione. Dart: `packages/push_bridge_client/lib/src/privacy_profile.dart` offre solo profili di riferimento. |
+| Gift wrap / mailbox non identitaria | **missing** | **missing** | Debito esplicito in `docs/security/2026-07-11-fattibilita-piano-utente.md` §3.6. Il kind `1059` corrente non è un gift wrap. Tecnica concreta: **separate design decision**. |
+| Tor/onion nel prodotto web | **missing** | **partial** | JS: `styx-js/README.md` prevede uso esterno di Tor Browser, non un overlay. Dart: `packages/transport/lib/src/tor/tor_manager.dart`, `packages/transport/lib/src/tor/tor_transport_decorator.dart`; il decorator non prova routing end-to-end. |
+| Push senza correlazione identitaria | **missing** | **partial** | JS/server: `push_bridge/src/registry.js` registra endpoint rispetto a handle osservabili. Dart: `packages/push_bridge_client/lib/src/push_bridge_client.dart`, `packages/push_bridge_client/lib/src/privacy_profile.dart`; manca un handle anonimo end-to-end. |
+| Padding, batching, cover traffic | **missing** | **partial** concettuale | Dart: `packages/push_bridge_client/lib/src/privacy_profile.dart`, `packages/push_bridge_client/lib/src/dummy_detector.dart`; sono reference e non dimostrano la proprietà nel prodotto. Nessun percorso JS attivo. |
+| Allegati sicuri | **missing** | **partial** | Dart: `packages/transport/lib/src/email/email_encoder.dart` gestisce allegati email ma non sanitizzazione e metadati per app sensibili. Nessun percorso nella chat JS. |
 | Backup identità | **missing** nel prodotto chat | **implemented** come reference | `packages/styx/lib/src/backup/shamir_backup_service.dart`; primitive Shamir JS legacy non sono integrate nel core MLS canonico. |
-| Multi-device e revoca device | **missing** | **partial** come reference | Dart: `ReKeyProtocol`, `KeyMigrationService`, `blessNewDevice`; prodotto MLS richiede epic e design separati. |
-| Retention e pruning | **missing** nel prodotto chat | **implemented** come reference | `packages/ledger_engine/.../pruning/`; port JS legacy separato da `StyxChat`. Non garantisce cancellazione dal destinatario. |
+| Multi-device e revoca device | **missing** | **partial** come reference | Dart: `packages/styx/lib/src/migration/rekey_protocol.dart`, `packages/styx/lib/src/migration/key_migration_service.dart`, `packages/styx/lib/src/sovereign_ledger.dart`. Il prodotto MLS richiede epic e design separati. |
+| Retention e pruning | **missing** nel prodotto chat | **implemented** come reference | Dart: `packages/ledger_engine/lib/src/pruning/prune_protocol.dart`, `packages/ledger_engine/lib/src/pruning/retention_manager.dart`. Il port `styx-js/src/ledger/pruning.js` è separato da `StyxChat`; nulla garantisce cancellazione dal destinatario. |
 | Export controllato / legal hold | **missing** | **missing** | Nessuna policy applicativa o separazione di ruolo. |
 | Audit amministrativo privacy-safe | **missing** | **missing** | Event history non equivale a operator audit. |
-| Build WASM riproducibile | **implemented** | **separate design decision** | `styx-js/vendor/openmls-wasm/PROVENANCE.md` e script di verifica; non autentica da sola la PWA servita. |
-| Autenticità first-load/update PWA | **partial** | **separate design decision** | CSP, service worker e supply-chain gate riducono rischio; un'origine compromessa può ancora servire client malevolo. |
-| SDK indipendente dalla chat | **missing** | **partial** come reference facade | `StyxChat` è chat-specific; `SovereignLedger` è sul core non canonico. |
+| Build WASM riproducibile | **implemented** | **separate design decision** | JS: `styx-js/vendor/openmls-wasm/PROVENANCE.md`, `styx-js/vendor/openmls-wasm/build.sh`, `styx-js/vendor/openmls-wasm/verify.sh`; non autentica da sola la PWA servita. |
+| Autenticità first-load/update PWA | **partial** | **separate design decision** | JS: service worker in `styx-js/apps/chat/src/sw.js` e header CSP in `styx-js/apps/chat/static-server.mjs` riducono alcuni rischi; un'origine compromessa può ancora servire un client malevolo. |
+| SDK indipendente dalla chat | **missing** | **partial** come reference facade | JS: `styx-js/src/chat/styx-chat.js` è chat-specific. Dart: `packages/styx/lib/src/sovereign_ledger.dart` è una facade sul core non canonico. |
 | Capability/version discovery | **missing** | **missing** | Il worker ha protocol version interno, non un contratto di piattaforma applicativa. |
-| Compliance hooks | **missing** | **partial** | Retention/pruning reference aiutano, ma mancano workflow, ruoli, legal hold e routing normativo. |
-| Assurance profiles verificabili | **missing** | **partial** concettuale | I profili privacy storici non costituiscono profili di garanzia end-to-end. |
+| Compliance hooks | **missing** | **partial** | Dart: `packages/ledger_engine/lib/src/pruning/retention_manager.dart` offre retention di riferimento; mancano workflow, ruoli, legal hold e routing normativo. |
+| Assurance profiles verificabili | **missing** | **partial** concettuale | Dart: `packages/push_bridge_client/lib/src/privacy_profile.dart` definisce profili locali, non profili di garanzia end-to-end verificati. |
 | Audit esterno del prodotto completo | **missing** | **missing** | Il README vieta uso high-risk; audit OpenMLS upstream non copre patch, PWA, protocollo e operazioni Styx. |
 
 ## 3. Cosa riutilizzare e cosa non riutilizzare
@@ -207,7 +207,7 @@ del dispositivo/app, retry, backoff, dedup persistente, scadenza e
 riconciliazione dopo crash.
 **Success criterion:** nessuno stato “sent” sulla sola chiamata a `publish()`.
 
-Le idee di `packages/transport/.../outbox_worker.dart` sono reference, non
+Le idee di `packages/transport/lib/src/failover/outbox_worker.dart` sono reference, non
 codice da collegare allo stack canonico.
 
 ### Incremento H — Synchronization and conflict policy

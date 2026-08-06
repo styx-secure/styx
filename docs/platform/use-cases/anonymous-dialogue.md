@@ -1,540 +1,522 @@
-# Anonymous bidirectional dialogue
+# Dialogo anonimo bidirezionale
 
-Status: design exploration, non-normative. This document does not define a
-production protocol, provide legal advice, or establish compliance with any
-law, standard, certification scheme, or organizational procedure.
+> **Stato:** proposta esplorativa, non normativa.
+>
+> Questo documento non definisce un protocollo di produzione, non fornisce
+> consulenza legale e non dimostra conformità a leggi, prassi, certificazioni o
+> procedure organizzative.
 
-## 1. Purpose
+## 1. Scopo
 
-This use case describes how a future application built on Styx could let a
-person submit a report and continue a private conversation without giving the
-organization an email address, telephone number, ordinary chat identity, or
-other stable contact identifier.
+Il caso d'uso descrive come una futura applicazione costruita su Styx potrebbe
+consentire a una persona di inviare una segnalazione e continuare a dialogare
+senza fornire email, numero di telefono, identità chat ordinaria o altro
+recapito stabile.
 
-The target is a **bidirectional pseudonymous case mailbox** that can offer
-anonymity relative to the receiving organization under an explicit threat
-model. It is not a promise of absolute or universal anonymity.
+L'obiettivo è una **mailbox di caso bidirezionale e pseudonima** che possa
+offrire anonimato rispetto all'organizzazione destinataria entro un modello di
+minaccia dichiarato. Non è una garanzia universale di anonimato.
 
-The same primitive could support ethics hotlines, safeguarding channels,
-source-and-journalist contact, sensitive research intake, and similar casework.
-Each application remains responsible for its own legal basis, governance,
-retention, escalation, and safeguarding procedures.
+La stessa capacità potrebbe sostenere canali etici, safeguarding, contatti fra
+fonti e giornalisti, raccolta di testimonianze sensibili e altri workflow di
+casework. Ogni applicazione resta responsabile di base giuridica, governance,
+retention, escalation e protezione delle persone.
 
-## 2. Terms and required properties
+## 2. Termini e proprietà richieste
 
-- **Confidentiality** means unauthorized parties cannot read protected content.
-- **Pseudonymity** means a case-specific identifier is used instead of a civil
-  identity.
-- **Anonymity relative to an observer** means that observer cannot reasonably
-  connect the case to a person within the stated assumptions.
-- **Return capability** is a high-entropy secret that authorizes access to one
-  case mailbox. It is not a username or a reusable identity.
+- **Riservatezza:** soggetti non autorizzati non leggono il contenuto protetto.
+- **Pseudonimato:** un identificatore specifico del caso sostituisce l'identità
+  civile, ma le azioni dello stesso caso restano collegabili.
+- **Anonimato rispetto a un osservatore:** quell'osservatore non riesce
+  ragionevolmente a collegare il caso a una persona entro le assunzioni
+  dichiarate.
+- **Unlinkability:** l'osservatore non riesce a collegare casi distinti allo
+  stesso soggetto.
+- **Return capability:** segreto ad alta entropia che autorizza l'accesso a una
+  sola mailbox. Non è uno username né un'identità riutilizzabile.
 
-A conforming design should provide:
+Un profilo conforme dovrebbe fornire:
 
-1. end-to-end confidentiality and integrity between the reporter's client and
-   authorized case handlers;
-2. a fresh, unlinkable cryptographic context for every case;
-3. asynchronous replies without collecting conventional contact details;
-4. explicit receipt and status semantics rather than assuming relay acceptance
-   means organizational receipt;
-5. minimal and documented metadata exposure;
-6. role-based organizational custody, handler rotation, and revocation;
-7. bounded retention and auditable actions without a plaintext audit trail;
-8. safe export and handover procedures where the applicable process requires
-   them.
+1. riservatezza e integrità end-to-end tra client del segnalante e operatori
+   autorizzati;
+2. contesto crittografico nuovo e non collegabile per ogni caso;
+3. risposte asincrone senza raccogliere recapiti convenzionali;
+4. ricevute esplicite, distinguendo storage del relay, ricezione crittografica,
+   presa in carico umana e lettura;
+5. esposizione dei metadati minima, dichiarata e misurabile;
+6. custodia organizzativa per ruolo, rotazione e revoca degli operatori;
+7. retention limitata e audit senza registro in chiaro;
+8. esportazione e passaggio di consegne controllati quando richiesti.
 
-## 3. Non-goals
+## 3. Non-obiettivi
 
-This capability does not by itself:
+La capacità non:
 
-- prove that a report is true or that a reporter is acting in good faith;
-- hide network origin, timing, device fingerprint, message size, writing style,
-  facts known to few people, or attachment metadata merely because content is
-  encrypted;
-- protect a person using a compromised device or a hostile browser while the
-  case is open;
-- make an employer-controlled device or network safe;
-- decide whether a report is legally protected whistleblowing;
-- replace an organization's trained handlers, investigation process, emergency
-  procedures, or data-protection duties;
-- guarantee delivery, availability, or deletion through cryptography alone.
+- prova che la segnalazione sia vera o che il segnalante agisca in buona fede;
+- nasconde automaticamente origine IP, tempi, fingerprint, dimensione,
+  stile di scrittura, fatti noti a poche persone o metadati degli allegati;
+- protegge un dispositivo, browser o operatore compromesso mentre il caso è
+  aperto;
+- rende sicuri un dispositivo o una rete controllati dal datore di lavoro;
+- decide se una segnalazione rientra nel whistleblowing tutelato;
+- sostituisce operatori formati, indagini, procedure di emergenza o obblighi di
+  protezione dei dati;
+- garantisce disponibilità, consegna o cancellazione mediante la sola
+  crittografia.
 
-The ordinary long-lived Nostr or Styx chat identity must not be reused. Doing so
-would make otherwise separate reports linkable and could expose the reporter's
-social graph.
+L'identità Nostr o Styx ordinaria e durevole della chat non deve essere
+riutilizzata. Il riuso collegherebbe casi distinti e potrebbe esporre il grafo
+sociale del segnalante.
 
-## 4. Legal-routing boundary in Italy
+## 4. Confine normativo e instradamento in Italia
 
-The application must distinguish the purpose of a reporting channel from the
-legal route assigned to an individual report.
+Il canale tecnico e la qualificazione giuridica del singolo caso sono due piani
+distinti.
 
-UNI/PdR 125:2022 is a voluntary reference practice for gender-equality
-management systems, not a national statute. Section 6.3.2.6 asks organizations
-to provide an anonymous reporting methodology for physical, verbal, or digital
-abuse and harassment. That requirement and its organizational context must not
-be presented as if every report were a whistleblowing report.
+UNI/PdR 125:2022 è una prassi di riferimento volontaria per sistemi di gestione
+della parità di genere, non una legge nazionale. Il `6.3.2.6 prevede una
+metodologia di segnalazione anonima per abusi e molestie fisiche, verbali o
+digitali. Ciò non rende ogni segnalazione un caso di whistleblowing.
 
-Legislative Decree 24/2023 governs protected whistleblowing within its defined
-subjective and objective scope. For internal channels it requires, among other
-things, confidentiality of identities, content, and documents; autonomous and
-specifically trained management; written or oral reporting; acknowledgement
-within seven days; dialogue and diligent follow-up; and feedback normally
-within three months. Its privacy, retention, and protection rules apply when
-the report is within that scope.
+Il D.Lgs. 24/2023 disciplina il whistleblowing entro il proprio ambito
+soggettivo e oggettivo. Per i canali interni prevede, fra l'altro:
 
-Not every allegation of abuse, harassment, discrimination, employment conflict,
-or individual grievance falls within Legislative Decree 24/2023. In particular,
-reports concerning only the reporter's individual employment relationship or
-relationships with hierarchical superiors may be excluded from its scope. A
-trained human or an approved organizational rule must route the report; the
-protocol must not silently make that legal determination.
+- riservatezza delle identità, del contenuto e dei documenti;
+- gestione autonoma da parte di persone o uffici specificamente formati;
+- segnalazioni scritte oppure orali;
+- avviso di ricevimento entro sette giorni;
+- mantenimento del dialogo e diligente seguito;
+- riscontro normalmente entro tre mesi.
 
-The interface should therefore:
+Non ogni abuso, molestia, discriminazione, conflitto lavorativo o vertenza
+individuale rientra nel D.Lgs. 24/2023. Le contestazioni legate esclusivamente al
+rapporto individuale di lavoro o ai rapporti con i superiori possono restarne
+escluse. La qualificazione deve essere svolta da persone competenti o da regole
+organizzative approvate, non dedotta automaticamente dal protocollo.
 
-- describe available routes in plain language without requiring the reporter to
-  classify the law correctly;
-- accept a report before requesting optional identifying information;
-- make clear which organization or independent office receives each route;
-- record the applicable policy and retention schedule selected by an authorized
-  handler;
-- support transfer only through an explicit, auditable handover that preserves
-  confidentiality and informs the reporter when permitted;
-- expose emergency and immediate-danger instructions outside the asynchronous
-  mailbox flow.
+L'interfaccia dovrebbe quindi:
 
-Legal counsel, the data-protection officer where applicable, worker
-representatives, safeguarding experts, and the responsible organizational
-functions must validate a real deployment.
+- spiegare i percorsi disponibili senza pretendere che il segnalante classifichi
+  correttamente la norma;
+- accettare la segnalazione prima di chiedere dati identificativi facoltativi;
+- mostrare quale organizzazione o ufficio indipendente riceve ogni percorso;
+- associare retention e policy solo mediante un'azione autorizzata;
+- trasferire un caso tramite handover esplicito, riservato e verificabile;
+- mostrare fuori dal flusso asincrono le istruzioni per emergenze e pericolo
+  immediato.
 
-## 5. Actors, assets, and trust boundaries
+Una distribuzione reale richiede validazione di consulenti legali, DPO quando
+applicabile, rappresentanze dei lavoratori, esperti di safeguarding e funzioni
+organizzative responsabili.
 
-### Actors
+## 5. Attori
 
-- **Reporter:** creates and later reopens a case without a normal account.
-- **Reporter client:** trusted temporarily with plaintext and case secrets.
-- **Intake service/relay:** stores and forwards opaque envelopes; it is not
-  trusted with plaintext or reporter identity.
-- **Case handler:** an authorized and trained person who reads and replies.
-- **Organization custodian:** provisions role keys, rotates handlers, and
-  administers retention without gaining unrestricted plaintext access by
-  default.
-- **Independent recipient:** an external office or professional used when the
-  organization's conflict-of-interest policy requires it.
-- **Auditor:** verifies authorized workflow events and policy conformance without
-  automatically receiving report content.
-- **Adversary:** may operate infrastructure, observe networks, submit abusive
-  traffic, compromise an endpoint, correlate timing, or collude across some of
-  these positions.
+- **Segnalante:** crea e riapre un caso senza account ordinario.
+- **Client del segnalante:** custodisce temporaneamente plaintext e segreti del
+  caso.
+- **Relay o servizio di intake:** memorizza e inoltra envelope opachi; non è
+  fidato per contenuto o identità.
+- **Operatore del caso:** persona autorizzata e formata che legge e risponde.
+- **Custode organizzativo:** gestisce chiavi di ruolo, rotazioni e retention
+  senza ottenere per default accesso illimitato al plaintext.
+- **Destinatario indipendente:** ufficio o professionista esterno usato quando
+  esiste conflitto d'interesse.
+- **Auditor:** verifica eventi di workflow e policy senza ricevere
+  automaticamente il contenuto.
+- **Avversario:** può gestire infrastruttura, osservare reti, inviare traffico
+  abusivo, compromettere endpoint o correlare più punti di osservazione.
 
-### Protected assets
+## 6. Asset e confini di fiducia
 
-- report and reply plaintext;
-- case existence and status;
-- the reporter's identity and network origin;
-- the return capability and local case keys;
-- handler identities where policy requires confidentiality;
-- attachments and their metadata;
-- routing, retention, export, and audit records.
+### Asset protetti
 
-### Trust boundaries
+- testo di segnalazioni e risposte;
+- esistenza, stato e cronologia del caso;
+- identità e origine di rete del segnalante;
+- return capability e chiavi locali;
+- identità degli operatori quando la policy lo richiede;
+- allegati e metadati;
+- informazioni di routing, retention, export e audit.
 
-1. **Reporter boundary:** device, operating system, browser, extensions,
-   clipboard, screen, and local storage.
-2. **Distribution boundary:** the code delivered to the reporter must be the
-   reviewed application, not a targeted malicious version.
-3. **Network boundary:** access provider, DNS, proxies, firewalls, Tor entry and
-   exit observations, and relay connections can expose metadata.
-4. **Infrastructure boundary:** relay and hosting administrators can inspect,
-   delay, replay, delete, or selectively serve data even when they cannot
-   decrypt it.
-5. **Organization boundary:** custodians, handlers, auditors, investigators, and
-   downstream recipients have different legitimate powers and conflicts.
-6. **Human boundary:** a recipient can copy plaintext, take screenshots, or infer
-   identity from content.
+### Confini
 
-## 6. Threat model
+1. **Endpoint del segnalante:** dispositivo, sistema operativo, browser,
+   estensioni, clipboard, schermo e storage locale.
+2. **Distribuzione:** il codice ricevuto deve corrispondere alla release
+   verificata e non a una versione malevola mirata.
+3. **Rete:** ISP, DNS, proxy, firewall e osservatori Tor possono vedere
+   metadati.
+4. **Infrastruttura:** amministratori di relay e hosting possono osservare,
+   ritardare, riprodurre, eliminare o servire selettivamente dati cifrati.
+5. **Organizzazione:** custodi, operatori, auditor e investigatori hanno poteri
+   legittimi differenti e possibili conflitti.
+6. **Persone:** un destinatario può copiare il plaintext, acquisire schermate o
+   inferire l'identità dal contenuto.
 
-The baseline attacker can operate one or more relays, observe an ordinary
-network path, enumerate public protocol events, replay valid ciphertext, and
-submit many reports. A stronger attacker may control the web origin or one
-organizational administrator, correlate multiple network vantage points, or
-compromise a reporter or handler endpoint.
+## 7. Modello di minaccia
 
-The design should tolerate a malicious relay for content confidentiality and
-integrity, and should use independent infrastructure to reduce single-provider
-availability risk. It cannot claim traffic-analysis resistance unless the
-chosen transport, padding, batching, polling, and deployment are tested against
-the stated observer. Multiple public relays can improve availability while also
-giving more parties metadata to observe.
+L'avversario di base può gestire uno o più relay, osservare una normale tratta
+di rete, enumerare eventi pubblici, riprodurre ciphertext validi e inviare
+molte segnalazioni. Un avversario più forte può controllare l'origine web o un
+amministratore organizzativo, correlare più reti oppure compromettere un
+endpoint.
 
-Endpoint compromise, targeted delivery of modified web code, coercion, and
-content-based identification remain residual risks. A higher-assurance profile
-may therefore require a signed native client, reproducible artifacts, Tor or an
-onion service, and an independently verifiable release channel. These are
-separate design and deployment decisions.
+La riservatezza e l'integrità del contenuto devono resistere a un relay
+malevolo. Infrastrutture indipendenti riducono alcuni rischi di disponibilità.
+La resistenza alla traffic analysis può essere dichiarata solo se trasporto,
+padding, batching, polling e deployment sono provati contro l'osservatore
+indicato. Più relay possono aumentare la continuità ma anche il numero di
+osservatori.
 
-## 7. Conceptual architecture
+Compromissione degli endpoint, distribuzione mirata di codice alterato,
+coercizione e identificazione dal contenuto restano rischi residui. Un profilo
+più forte può richiedere client nativo firmato, build riproducibili, Tor/onion e
+un canale indipendente di verifica della release. Sono decisioni separate.
+
+## 8. Architettura concettuale
 
 ```text
-reporter client
-  -> fresh per-case cryptographic context
-  -> encrypted case envelope
-  -> metadata-minimizing transport adapter
-  -> one or more untrusted store-and-forward services
-  -> organizational intake adapter
-  -> authorized handler workspace
+client del segnalante
+  -> nuovo contesto crittografico per caso
+  -> envelope cifrato del caso
+  -> adattatore di trasporto con minimizzazione dei metadati
+  -> uno o più servizi store-and-forward non fidati
+  -> adattatore di intake organizzativo
+  -> workspace degli operatori autorizzati
 
-authorized handler reply
-  -> encrypted case envelope
-  -> store-and-forward services
-  -> capability-based polling by the reporter client
+risposta dell'operatore
+  -> envelope cifrato del caso
+  -> servizi store-and-forward
+  -> polling capability-based del client
 ```
 
-The application profile sits above the Styx application core. It defines case
-states, receipts, routing, retention, roles, and user experience. The core
-provides versioned encrypted objects, replay protection, delivery state,
-capability handling, and transport abstraction. Nostr, HTTPS drop boxes, Tor
-onion services, or offline carriers are adapters; none should define the case
-identity or plaintext data model.
-
-The exact cipher suite, envelope format, recipient-key construction,
-multi-recipient method, padding scheme, and capability encoding require a
-separate approved cryptographic and persisted-format design. This document does
-not select them.
-
-## 8. End-to-end data flow
-
-### 8.1 Safe entry
-
-The landing page explains, before data entry, that a work device or work network
-may be monitored. A high-assurance deployment provides a separately verifiable
-client and a metadata-protecting access path. Ordinary email, SMS, analytics,
-third-party fonts, advertising scripts, remote error-reporting payloads, and
-identity-linked push notifications are excluded from the reporting flow.
-
-### 8.2 Case creation
-
-The reporter client generates a fresh case context and high-entropy return
-capability locally. No normal Styx account, Nostr public key, address-book entry,
-or pre-existing chat session is consulted. Domain separation prevents keys or
-signatures from being reused in another application or case.
-
-The client obtains an authenticated organizational intake descriptor containing
-the intended recipient role, supported protocol versions, expiry, transport
-options, and release identity. Trusting that descriptor and its distribution
-path is a deployment decision that the interface must make visible.
-
-### 8.3 Submission
-
-The client encrypts a versioned case object for the approved intake role,
-applies the selected metadata-minimization policy, and submits redundant opaque
-envelopes. Local acceptance, relay storage, cryptographic handler receipt, and
-human acknowledgement are distinct states. The interface must not label the
-case "received by the organization" after only a relay acknowledgement.
-
-### 8.4 Return capability
-
-After a durable local write, the client displays the return capability once in
-a human-manageable export such as a recovery sheet or QR representation. The
-encoding and backup method are separate design decisions, but the underlying
-secret must have sufficient entropy to resist online and offline guessing.
-
-The capability authorizes only one case. It must not be placed in a URL query,
-logs, browser history, telemetry, crash reports, referrer headers, or server-side
-account table. A weak phrase, case number, email address, or hash of guessable
-data is not an acceptable capability.
-
-The server cannot recover a lost capability without introducing an identity or
-an escrow power. The product must state this before the reporter leaves the
-creation flow.
-
-### 8.5 Dialogue
-
-The reporter returns through the safe entry point and presents the capability
-locally. The client derives or unlocks the case context, polls using an
-unlinkability-aware transport token, verifies the complete encrypted history,
-and submits replies as new case objects. Manual polling is the privacy-preserving
-default; notifications are optional only when their identity and metadata
-leakage is explained.
-
-The protocol needs idempotency, authenticated ordering, duplicate suppression,
-and explicit gap handling. A valid historical object replayed by a hostile
-service must not silently replace the current case state.
-
-### 8.6 Optional identity disclosure
-
-Identity disclosure is a separate, explicit action. The UI previews the exact
-fields and recipients, and the resulting object records consent and purpose.
-The core never treats later disclosure as permission to retroactively link
-other cases.
-
-## 9. Recovery-secret handling
-
-The reporter client should:
-
-- create the capability with a cryptographically secure random source;
-- keep it out of DOM attributes, URLs, logs, telemetry, and persistent clipboard
-  history where the platform permits;
-- store it only in the encrypted local vault when the reporter explicitly opts
-  in;
-- encourage a private offline copy and explain that screenshots or cloud-backed
-  photo libraries may leak it;
-- use rate-limited, privacy-preserving retrieval that does not turn the service
-  into a capability-guessing oracle;
-- make failed lookup responses and timing difficult to use for case enumeration;
-- support explicit local removal without claiming guaranteed physical erasure
-  from browser storage, flash memory, backups, or synchronized profiles.
-
-A split or delegated recovery design might reduce accidental loss, but it also
-creates new correlation and custody powers. It must be evaluated separately and
-must never be enabled invisibly.
-
-## 10. Operator workflow
-
-An organizational deployment needs more than a recipient key. At minimum it
-defines:
-
-1. intake ownership and conflict-of-interest routing;
-2. trained primary and backup handlers with least-privilege access;
-3. acknowledgement, follow-up, and feedback deadlines for each applicable legal
-   or organizational route;
-4. a case-state model such as submitted, technically received, acknowledged,
-   under assessment, awaiting reporter, routed, closed, and retained;
-5. controlled requests for clarification that do not pressure the reporter to
-   identify themselves;
-6. escalation for immediate danger, safeguarding, evidence preservation, and
-   mandatory external reporting;
-7. handler replacement, key rotation, absence cover, and recovery from loss of
-   organizational custody;
-8. documented export, disclosure, redaction, and deletion authorization;
-9. a way to disclose service incidents and missed deadlines to the reporter;
-10. periodic independent review of access, routing, retention, and availability.
-
-Where Legislative Decree 24/2023 applies, the workflow must be configured and
-validated for its acknowledgement and feedback obligations. Other channels may
-have different deadlines. A single generic timer is unsafe.
-
-Organizational keys should represent a role and approved policy, not an
-individual employee's normal chat identity. Access changes produce auditable
-key events and must not require re-encrypting plaintext through the relay.
-Whether decryption uses a dedicated recipient, multiple recipients, threshold
-custody, or a hardware-backed service is a separate security decision.
-
-## 11. Metadata protection
-
-Content encryption is necessary but insufficient. The profile should minimize:
-
-- source IP and network path, using a validated anonymity transport where the
-  threat model requires it;
-- stable relay account, public key, or client identifier;
-- exact submission and polling times through batching, delay, and cover traffic
-  where justified;
-- event and attachment sizes through bounded padding classes;
-- unique client fingerprints and third-party requests;
-- public recipient tags and organization-specific routing markers;
-- server-visible case existence, status, and access frequency;
-- logs linking administrator actions to a reporter network session.
-
-Padding, batching, and cover traffic consume bandwidth and can reduce usability.
-Their precise policy belongs to an assurance profile and must be measured.
-Encryption alone does not hide these properties.
-
-Employer proxies and firewalls are particularly important: even a well-designed
-platform cannot make access from a logged corporate network unobservable to
-that network. Deployment guidance must explicitly address this risk.
-
-## 12. Attachments and content safety
-
-An initial high-assurance profile should prefer structured text and disable
-attachments until a reviewed pipeline exists. Attachments can contain author
-names, device identifiers, location, timestamps, revision history, thumbnails,
-malware, active content, and visually identifying details.
-
-If enabled, attachment handling needs local metadata inspection and removal,
-safe format conversion, size padding, malware isolation, encrypted chunking,
-authenticated manifests, resumable delivery, and a warning that sanitization
-cannot remove identity clues in the visible content. Originals and sanitized
-copies require explicit retention and evidentiary rules.
-
-Free text can itself identify a reporter through facts, vocabulary, or writing
-style. The UI may warn and offer a local preview, but automatic rewriting must
-not silently alter evidence.
-
-## 13. Abuse resistance
-
-An anonymous intake channel can be spammed, flooded, probed, or used to deliver
-malware and harassment. Controls must not quietly recreate identity tracking.
-Candidate controls include:
-
-- bounded message and attachment sizes;
-- per-capability quotas and state-dependent rate limits;
-- privacy-preserving proof-of-work or anonymous rate-limit credentials;
-- coarse ingress limits applied before expensive cryptography;
-- queue isolation, backpressure, and storage budgets;
-- local and operator-side content safety measures;
-- revocable case capabilities with a documented appeal or reopening policy;
-- multi-provider failover without publishing a global blocklist of reporters.
-
-CAPTCHAs, telephone verification, stable cookies, IP reputation, and commercial
-fraud services can undermine anonymity and accessibility. Any use requires a
-specific privacy and availability assessment. Abuse controls must be tested for
-denial of service against legitimate reporters, including users of Tor and
-assistive technology.
-
-## 14. Retention, audit, and export
-
-Retention is assigned by the validated legal or organizational route and starts
-from a defined event. Encrypted storage is still personal-data processing when
-it relates to an identifiable person. The system should support automatic
-expiry, legal holds with explicit authority, reporter-visible closure where
-appropriate, and deletion of redundant transport copies without claiming
-physical erasure that the storage medium cannot prove.
-
-Audit records should demonstrate events such as descriptor publication, role
-changes, handler access, acknowledgement, routing, export, and retention-policy
-changes. They should avoid report plaintext, capability material, exact source
-metadata, and unnecessary stable identifiers. Tamper evidence can show that a
-record changed; it cannot prove that the recorded human action was proper or
-that a concealed action never occurred.
-
-Exports need an authenticated manifest, redaction workflow, recipient and
-purpose record, integrity verification, and an expiry policy. A plaintext PDF
-download is not a complete secure handover design.
-
-## 15. Availability and continuity
-
-The transport should tolerate one unavailable or censoring relay, reconcile
-duplicate envelopes, and distinguish temporary delay from confirmed handler
-receipt. The organization needs monitored backup intake, tested key recovery,
-handler absence cover, and a public incident channel that does not expose active
-reporters.
-
-Federation and multiple relays reduce some single points of failure but do not
-remove servers, operators, capacity planning, denial-of-service risk, or common
-software failures. Recovery drills must include loss of one relay, one region,
-one handler, and one organizational key custodian.
-
-## 16. Fit with the current Styx repository
-
-The current repository contains useful building blocks, but it is not yet an
-anonymous reporting product:
-
-- the active JavaScript stack provides encrypted sessions, Nostr transport, and
-  an emerging local vault;
-- the present chat flow and its long-lived identity model are intentionally
-  unsuitable for anonymous case creation;
-- relay publication is not yet an end-to-end receipt from an authorized human;
-- remote pairing, durable delivery state, application-domain separation,
-  multi-device recovery, metadata-minimizing routing, and organizational role
-  custody remain incomplete or separate design decisions;
-- the current PWA distribution and first-load trust model does not alone resist
-  a targeted malicious origin;
-- the Dart stack is a reference implementation and must not be treated as the
-  active product path.
-
-Implementation should follow the capability and integration documents in this
-directory. In particular, the vault lifecycle can be a canary for sensitive
-state handling, but completing it does not satisfy this use case on its own.
-
-## 17. Proposed staged validation
-
-### Stage A: protocol and governance design
-
-- approve the threat model and assurance profile;
-- define versioned case objects, state transitions, receipts, replay rules, and
-  domain separation;
-- complete cryptographic and persisted-format review;
-- map routing, retention, roles, incidents, and legal responsibilities with
-  qualified humans;
-- perform a data-protection impact assessment where required.
-
-### Stage B: text-only technical pilot
-
-- use a fresh case identity and return capability with no normal account;
-- support encrypted submission, acknowledgement, clarification, reply, and
-  closure;
-- implement durable outbox/inbox state, duplicate and replay handling, relay
-  failover, bounded padding, and privacy-safe logs;
-- use manual polling and exclude attachments, analytics, and third-party code;
-- provide handler rotation and an independent recipient route.
-
-### Stage C: adversarial assurance
-
-- review protocol, client, operator workspace, and deployment independently;
-- test malicious relays, replay, rollback, enumeration, spam, queue exhaustion,
-  handler revocation, and regional outage;
-- measure metadata visible to relays, hosting providers, corporate networks, and
-  colluding observers;
-- test targeted client delivery and artifact-verification controls;
-- run usability and accessibility studies covering capability backup, lost
-  access, misleading receipt states, and high-stress reporting.
-
-### Stage D: limited organizational pilot
-
-- deploy only for an explicitly bounded route and population;
-- train handlers and test deadlines, escalation, absence, and incident response;
-- publish limitations and a safe alternative channel;
-- collect aggregate operational measures that cannot identify reporters;
-- obtain a go/no-go decision from security, privacy, legal, safeguarding, and
-  organizational owners before expanding scope.
-
-## 18. Acceptance evidence for a future implementation
-
-A production claim requires evidence that:
-
-- two cases from one clean client are not linkable through protocol identifiers;
-- no ordinary chat or Nostr identity is read or emitted during case creation;
-- relay, origin, and database compromise do not reveal protected plaintext;
-- altered, reordered, duplicated, missing, and rolled-back case objects fail
-  closed or produce an explicit recovery state;
-- relay storage and human acknowledgement are never conflated;
-- loss and revocation of handler access behave according to the approved custody
-  model;
-- capability enumeration and online guessing meet defined resistance targets;
-- the declared network observer sees only the metadata allowed by the selected
-  assurance profile;
-- retention and export follow the selected route and produce privacy-minimized
-  audit evidence;
-- browser, native, mobile, offline, recovery, and accessibility behavior is
-  tested for every supported client;
-- independent reviewers reproduce the tests from clean environments.
-
-Passing these tests supports only the stated profile and deployment. It does not
-justify an unqualified claim of anonymity or legal compliance.
-
-## 19. Residual risks
-
-Even after the proposed work, the following risks remain:
-
-- compromised reporter or handler endpoints, malicious extensions, keyloggers,
-  screenshots, shoulder surfing, and coerced disclosure;
-- targeted or first-load delivery of modified web code unless a stronger
-  distribution mechanism is deployed and used correctly;
-- traffic correlation by sufficiently capable or colluding observers;
-- organization or relay denial of service, selective delay, and deletion;
-- identification through report facts, writing style, visible attachment
-  content, or a very small anonymity set;
-- reporter mistakes such as using a monitored network, reusing text, sharing the
-  capability, or storing it in a synchronized account;
-- recipient copying, unauthorized downstream disclosure, and procedural abuse;
-- inability to recover a genuinely lost non-escrowed capability;
-- incomplete physical deletion from devices, backups, IndexedDB, and relay
-  storage;
-- legal or policy changes and incorrect human routing decisions.
-
-These risks must be shown to reporters and operators in language appropriate to
-their decisions, not hidden in a technical appendix.
-
-## 20. Official references
-
-The following sources were retrieved on 2026-08-06. They are provided for
-design context; qualified professionals must verify the current text and its
-application to a real deployment.
-
-- [UNI/PdR 125:2022, Guidelines on the management system for gender equality](https://certificazione.pariopportunita.gov.it/public/dist/resources/prassi-di-riferimento-unipdr-pdr100866103.pdf), especially section 6.3.2.6.
-- [Legislative Decree 24/2023, Article 4 — internal reporting channels](https://www.gazzettaufficiale.it/atto/serie_generale/caricaArticolo?art.codiceRedazionale=23G00032&art.dataPubblicazioneGazzetta=2023-03-15&art.flagTipoArticolo=0&art.idArticolo=4&art.idGruppo=2&art.idSottoArticolo=1&art.idSottoArticolo1=10&art.progressivo=0&art.versione=1).
-- [Legislative Decree 24/2023, Article 5 — management of the internal channel](https://www.gazzettaufficiale.it/atto/serie_generale/caricaArticolo?art.codiceRedazionale=23G00032&art.dataPubblicazioneGazzetta=2023-03-15&art.flagTipoArticolo=0&art.idArticolo=5&art.idGruppo=2&art.idSottoArticolo=1&art.idSottoArticolo1=10&art.progressivo=0&art.versione=1).
-- [ANAC, Whistleblowing](https://www.anticorruzione.it/-/whistleblowing), including the current guidance and institutional materials.
-- [ANAC, reports excluded from the objective scope of Legislative Decree 24/2023](https://www.anticorruzione.it/documents/91439/146849359/7.%2BApprofondimenti%2Bambito%2Boggettivo%2B%E2%80%93%2BLe%2Bsegnalazioni%2Bescluse%2Bdall%E2%80%99applicazione%2Bdella%2Bnormativa%2B%C2%A7%2B2.1.1.pdf/8d2cdc24-20bf-1c72-c73b-e72adf5efaae?t=1689329633903).
-- [Italian Data Protection Authority, opinion on the 2025 ANAC internal-channel guidelines](https://www.garanteprivacy.it/home/docweb/-/docweb-display/docweb/10184673), including privacy by design, impact assessment, retention, encryption, email-log, and workplace-network observations.
+Il profilo applicativo definisce stati, ricevute, routing, ruoli, retention e
+UX. Il core Styx fornisce oggetti cifrati versionati, protezione da replay,
+stato di delivery, gestione capability e astrazione del trasporto. Nostr,
+dropbox HTTPS, onion service e supporti offline sono adattatori: nessuno di essi
+deve definire identità del caso o schema plaintext.
+
+Cifra, envelope, costruzione delle chiavi destinatario, multi-recipient,
+padding e codifica della capability richiedono processi crittografici e di
+formato persistente separati e approvati. Questo documento non li seleziona.
+
+## 9. Flusso end-to-end
+
+### 9.1 Accesso sicuro
+
+Prima dell'inserimento, il client avverte che dispositivi e reti di lavoro
+possono essere monitorati. Un deployment ad alta garanzia offre un client
+verificabile separatamente e un percorso di rete adatto al threat model.
+
+Email, SMS, analytics, font di terze parti, pubblicità, telemetria remota con
+payload e notifiche push legate all'identità sono esclusi dal flusso predefinito.
+
+### 9.2 Creazione
+
+Il client genera localmente:
+
+- un contesto nuovo per il caso;
+- una return capability casuale ad alta entropia;
+- il materiale necessario a proteggere il dialogo.
+
+Non consulta account Styx, chiavi Nostr, rubrica o sessioni chat precedenti. La
+domain separation impedisce il riuso di chiavi, firme e identificatori fra app
+o casi.
+
+Il client acquisisce un descrittore di intake autenticato che indica ruolo
+destinatario, versioni supportate, scadenza, trasporti e identità della release.
+La fiducia nel descrittore e nel suo canale di distribuzione deve essere
+visibile e documentata.
+
+### 9.3 Invio
+
+Il client cifra un oggetto di caso versionato per il ruolo autorizzato, applica
+la policy di minimizzazione e invia envelope opachi ridondanti.
+
+Gli stati devono restare distinti:
+
+1. salvataggio locale durevole;
+2. accettazione da parte del relay;
+3. ricezione crittografica del workspace;
+4. presa in carico umana;
+5. lettura o risposta.
+
+L'interfaccia non può mostrare “ricevuta dall'organizzazione” dopo la sola
+accettazione del relay.
+
+### 9.4 Return capability
+
+Dopo un salvataggio locale durevole, il client mostra una volta la capability
+in una forma gestibile, per esempio scheda di recupero o QR. Codifica e backup
+sono decisioni separate; il segreto sottostante deve resistere a tentativi
+online e offline.
+
+La capability:
+
+- autorizza un solo caso;
+- non compare in query URL, log, cronologia, telemetria, crash report, referrer o
+  tabella account server-side;
+- non deriva da frase debole, numero pratica, email o hash di dati indovinabili;
+- non viene correlata a un'identità durevole.
+
+Senza escrow o identificazione il server non può recuperare una capability
+persa. Il prodotto deve dirlo prima che il segnalante lasci il flusso.
+
+### 9.5 Dialogo
+
+Il segnalante torna attraverso l'accesso sicuro e presenta localmente la
+capability. Il client riapre il contesto, esegue polling tramite token di
+trasporto non collegabile, verifica la cronologia e invia nuove risposte.
+
+Il polling manuale è il default più prudente. Le notifiche sono facoltative solo
+dopo aver spiegato correlazione e metadati. Il protocollo richiede idempotenza,
+ordering autenticato, deduplica e gestione esplicita dei gap. Un vecchio oggetto
+valido riprodotto dal relay non deve sostituire silenziosamente lo stato
+corrente.
+
+### 9.6 Divulgazione facoltativa dell'identità
+
+Rivelare l'identità è un'azione distinta ed esplicita. L'UI mostra campi e
+destinatari esatti; l'oggetto risultante registra scopo e consenso. Una
+divulgazione successiva non autorizza a collegare retroattivamente altri casi.
+
+## 10. Gestione del segreto di recupero
+
+Il client dovrebbe:
+
+- generare la capability con sorgente casuale crittograficamente sicura;
+- escluderla da DOM persistente, URL, log, telemetria e clipboard dove possibile;
+- conservarla nel vault locale cifrato solo con scelta esplicita;
+- suggerire una copia offline privata, avvertendo su screenshot e cloud foto;
+- applicare rate limit e risposte che non diventino un oracolo di enumerazione;
+- ridurre differenze di contenuto e timing fra lookup validi e non validi;
+- offrire rimozione locale senza promettere cancellazione fisica da flash,
+  backup, profili sincronizzati o IndexedDB.
+
+Recovery diviso o delegato può ridurre le perdite ma crea nuovi poteri di
+correlazione e custodia. Richiede una decisione separata e non può essere
+abilitato invisibilmente.
+
+## 11. Workflow degli operatori
+
+Un deployment organizzativo definisce almeno:
+
+1. titolarità dell'intake e routing dei conflitti d'interesse;
+2. operatori principali e sostituti formati, con least privilege;
+3. scadenze di ricezione, seguito e riscontro per ogni percorso;
+4. stati quali inviato, ricevuto tecnicamente, preso in carico, in valutazione,
+   in attesa, trasferito, chiuso e conservato;
+5. richieste di chiarimento che non inducano a identificarsi;
+6. escalation per pericolo, safeguarding, conservazione delle prove e obblighi
+   esterni;
+7. sostituzione operatori, rotazione chiavi e copertura delle assenze;
+8. autorizzazione di export, redazione, disclosure e cancellazione;
+9. comunicazione al segnalante di incidenti e scadenze mancate;
+10. verifica indipendente periodica di accessi, routing, retention e continuità.
+
+Quando si applica il D.Lgs. 24/2023, il workflow deve essere configurato e
+validato per i relativi termini. Altri canali possono avere scadenze diverse:
+un unico timer generico sarebbe fuorviante.
+
+Le chiavi organizzative rappresentano un ruolo e una policy, non la normale
+identità chat del dipendente. Rotazioni e revoche producono eventi verificabili.
+Destinatario dedicato, multi-recipient, threshold custody e HSM sono alternative
+da decidere separatamente.
+
+## 12. Minimizzazione dei metadati
+
+Il profilo considera congiuntamente:
+
+- IP e percorso di rete;
+- account relay, chiave pubblica o client identifier stabile;
+- tempi di invio e polling;
+- dimensioni di eventi e allegati;
+- fingerprint e richieste di terze parti;
+- tag destinatario e marker organizzativi;
+- esistenza, stato e frequenza di accesso al caso;
+- log che colleghino amministrazione e sessione del segnalante.
+
+Tor/onion, batching, ritardi, classi di padding e cover traffic possono ridurre
+alcune esposizioni ma hanno costi e limiti. La cifratura del contenuto non le
+nasconde.
+
+Un proxy o firewall aziendale registrato può osservare l'accesso alla
+piattaforma. Nessun client rende invisibile a quella rete un accesso effettuato
+direttamente attraverso di essa.
+
+## 13. Allegati e sicurezza del contenuto
+
+Il primo profilo ad alta garanzia dovrebbe essere text-only. Gli allegati
+possono contenere autore, dispositivo, posizione, timestamp, cronologia,
+thumbnail, malware, contenuti attivi e dettagli visivi identificanti.
+
+Prima di abilitarli servono:
+
+- ispezione e rimozione locale dei metadati;
+- conversione in formati sicuri e isolamento malware;
+- chunk cifrati, manifest autenticato e ripresa degli invii;
+- padding per classi di dimensione;
+- policy separate per originale e copia sanitizzata;
+- avviso che la sanitizzazione non elimina indizi visibili.
+
+Anche il testo libero può identificare tramite fatti, lessico o stile. Il client
+può offrire avvisi e anteprima locale, ma non deve riscrivere silenziosamente
+una possibile evidenza.
+
+## 14. Resistenza agli abusi
+
+Un canale anonimo può ricevere spam, flood, sonde, malware e molestie. I
+controlli non devono ricreare tracking identitario. Candidati:
+
+- limiti di messaggi e allegati;
+- quote per capability e rate limit dipendenti dallo stato;
+- proof-of-work o credenziali anonime di rate limiting;
+- limiti grossolani prima delle operazioni crittografiche costose;
+- isolamento delle code, backpressure e budget di storage;
+- controlli di sicurezza locali e lato operatore;
+- capability revocabile con policy di riapertura;
+- failover senza blocklist globale dei segnalanti.
+
+CAPTCHA, verifica telefonica, cookie stabili, reputazione IP e servizi antifrode
+commerciali possono danneggiare anonimato e accessibilità. Ogni uso richiede
+valutazione specifica e test contro denial of service per utenti legittimi,
+inclusi Tor e tecnologie assistive.
+
+## 15. Retention, audit ed export
+
+La retention dipende dal percorso validato e parte da un evento definito. Anche
+dati cifrati riferibili a persone possono essere dati personali. Il sistema
+dovrebbe supportare scadenza automatica, legal hold autorizzato, chiusura
+visibile quando appropriato e rimozione delle repliche senza promettere
+cancellazione fisica non dimostrabile.
+
+L'audit può registrare pubblicazione del descrittore, cambi di ruolo, accessi,
+presa in carico, routing, export e variazioni della policy. Deve evitare
+plaintext, capability, metadati di origine e identificatori stabili superflui.
+La tamper evidence rileva alcune alterazioni ma non prova che l'azione umana sia
+corretta o che nessuna azione sia stata nascosta.
+
+Gli export richiedono manifest autenticato, redazione, destinatario, scopo,
+verifica d'integrità e scadenza. Un PDF plaintext non costituisce da solo un
+handover sicuro.
+
+## 16. Disponibilità e continuità
+
+Il trasporto dovrebbe tollerare un relay indisponibile o censorio, riconciliare
+duplicati e distinguere ritardo da ricezione confermata. L'organizzazione
+necessita di intake di riserva monitorato, recovery delle chiavi provato,
+copertura delle assenze e canale incidenti che non esponga casi attivi.
+
+Federazione e più relay riducono alcuni single point of failure, ma non
+eliminano server, operatori, capacity planning, denial of service o difetti
+software comuni. I drill devono includere perdita di relay, regione, operatore
+e custode delle chiavi.
+
+## 17. Relazione con il repository corrente
+
+Il repository contiene primitive utili, ma non un prodotto di segnalazione
+anonima:
+
+- lo stack JavaScript attivo fornisce sessioni cifrate, trasporto Nostr e un
+  vault locale ancora in evoluzione;
+- chat e identità durevole correnti sono inadatte alla creazione anonima;
+- pubblicazione sul relay non equivale a ricevuta end-to-end;
+- pairing remoto, outbox durevole, domain separation applicativa, multi-device,
+  routing con metadati ridotti e custodia per ruolo sono incompleti o richiedono
+  decisioni separate;
+- la fiducia first-load della PWA non resiste da sola a un'origine malevola
+  mirata;
+- lo stack Dart è reference implementation, non il percorso di prodotto.
+
+Il vault può fungere da canary per la custodia locale, ma completarlo non
+soddisfa da solo questo caso d'uso.
+
+## 18. Validazione per fasi
+
+### Fase A — Protocollo e governance
+
+- approvare threat model e assurance profile;
+- definire oggetti, stati, ricevute, replay e domain separation;
+- completare review crittografica e dei formati;
+- mappare ruoli, routing, retention, incidenti e responsabilità;
+- eseguire una DPIA quando richiesta.
+
+### Fase B — Pilota tecnico text-only
+
+- identità nuova per caso e capability senza account;
+- invio, presa in carico, chiarimento, risposta e chiusura cifrati;
+- outbox/inbox durevoli, replay, deduplica, failover e padding limitato;
+- polling manuale, senza allegati, analytics o codice di terze parti;
+- rotazione operatori e percorso verso destinatario indipendente.
+
+### Fase C — Verifica avversariale
+
+- review indipendente di protocollo, client, workspace e deployment;
+- test di relay malevolo, rollback, enumerazione, spam, esaurimento code,
+  revoca e outage regionale;
+- misura dei metadati visibili a relay, hosting, reti aziendali e osservatori
+  collusi;
+- test della distribuzione mirata e della verifica degli artefatti;
+- studi di usabilità e accessibilità sotto stress.
+
+### Fase D — Pilota organizzativo limitato
+
+- percorso e popolazione esplicitamente limitati;
+- formazione e test di scadenze, escalation, assenze e incident response;
+- pubblicazione dei limiti e di un canale alternativo sicuro;
+- sole metriche aggregate non identificanti;
+- decisione congiunta di security, privacy, legal, safeguarding e responsabili
+  organizzativi prima dell'espansione.
+
+## 19. Evidenze di accettazione future
+
+Un'implementazione dovrebbe provare che:
+
+- due casi dello stesso client pulito non condividono identificatori di
+  protocollo;
+- la creazione non legge né emette identità chat o Nostr ordinarie;
+- compromissione di relay, origine e database non rivela plaintext protetto;
+- oggetti alterati, riordinati, duplicati, mancanti o in rollback falliscono in
+  modo chiuso o producono uno stato esplicito;
+- storage relay e presa in carico umana non vengono confusi;
+- perdita e revoca degli operatori seguono il modello di custodia;
+- enumerazione e guessing della capability rispettano obiettivi misurati;
+- l'osservatore dichiarato vede soltanto i metadati consentiti dal profilo;
+- retention ed export producono audit minimizzato;
+- ogni client supportato copre offline, recovery e accessibilità;
+- revisori indipendenti riproducono i test in ambienti puliti.
+
+Il superamento vale soltanto per profilo e deployment esaminati e non autorizza
+affermazioni generiche di anonimato o conformità.
+
+## 20. Rischi residui
+
+Restano:
+
+- endpoint compromessi, estensioni malevole, keylogger, screenshot, shoulder
+  surfing e coercizione;
+- distribuzione first-load mirata di codice modificato;
+- correlazione temporale e di traffico da osservatori capaci o collusi;
+- censura, ritardo e cancellazione da parte di relay o organizzazione;
+- identificazione tramite fatti, stile, allegati o insieme anonimo ristretto;
+- uso di rete monitorata, riuso di testo, condivisione della capability o
+  salvataggio in account sincronizzato;
+- copia e disclosure non autorizzata da parte dei destinatari;
+- impossibilità di recuperare una capability non escrowed realmente persa;
+- cancellazione fisica incompleta da dispositivi, backup, IndexedDB e relay;
+- cambi normativi e decisioni umane di routing errate.
+
+Questi rischi devono essere comunicati a segnalanti e operatori nel momento
+della decisione, non nascosti in un'appendice tecnica.
+
+## 21. Fonti ufficiali
+
+Fonti consultate il **2026-08-06**. Sono riferimenti contestuali: professionisti
+qualificati devono verificarne testo corrente e applicazione al deployment.
+
+- [UNI/PdR 125:2022, Linee guida sul sistema di gestione per la parità di genere](https://certificazione.pariopportunita.gov.it/public/dist/resources/prassi-di-riferimento-unipdr-pdr100866103.pdf), in particolare `6.3.2.6.
+- [D.Lgs. 24/2023, art. 4 — canali di segnalazione interna](https://www.gazzettaufficiale.it/atto/serie_generale/caricaArticolo?art.codiceRedazionale=23G00032&art.dataPubblicazioneGazzetta=2023-03-15&art.flagTipoArticolo=0&art.idArticolo=4&art.idGruppo=2&art.idSottoArticolo=1&art.idSottoArticolo1=10&art.progressivo=0&art.versione=1).
+- [D.Lgs. 24/2023, art. 5 — gestione del canale interno](https://www.gazzettaufficiale.it/atto/serie_generale/caricaArticolo?art.codiceRedazionale=23G00032&art.dataPubblicazioneGazzetta=2023-03-15&art.flagTipoArticolo=0&art.idArticolo=5&art.idGruppo=2&art.idSottoArticolo=1&art.idSottoArticolo1=10&art.progressivo=0&art.versione=1).
+- [ANAC, Whistleblowing](https://www.anticorruzione.it/-/whistleblowing).
+- [ANAC, segnalazioni escluse dall'ambito oggettivo del D.Lgs. 24/2023](https://www.anticorruzione.it/documents/91439/146849359/7.%2BApprofondimenti%2Bambito%2Boggettivo%2B%E2%80%93%2BLe%2Bsegnalazioni%2Bescluse%2Bdall%E2%80%99applicazione%2Bdella%2Bnormativa%2B%C2%A7%2B2.1.1.pdf/8d2cdc24-20bf-1c72-c73b-e72adf5efaae?t=1689329633903).
+- [Garante per la protezione dei dati personali, parere sulle linee guida ANAC 2025](https://www.garanteprivacy.it/home/docweb/-/docweb-display/docweb/10184673), incluse osservazioni su privacy by design, DPIA, retention, cifratura, log email e rete lavorativa.
