@@ -3,7 +3,9 @@
 > **Stato:** proposta esplorativa, non normativa
 > **Snapshot del codice:** `main @ d90931a3f59ce89c1594cad64ce385d58857b305`
 > **Issue:** [#110](https://github.com/styx-secure/styx/issues/110)
-> **Lingua:** italiano; gli identificatori tecnici restano in inglese
+> **Lingue:** italiano per il modello e la roadmap; inglese per il caso d'uso
+> destinato anche a revisori internazionali. Gli identificatori tecnici restano
+> in inglese.
 
 Questa cartella descrive come Styx potrebbe evolvere da prodotto di
 messaggistica a piattaforma riutilizzabile per applicazioni che condividono tre
