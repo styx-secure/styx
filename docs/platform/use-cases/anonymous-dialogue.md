@@ -74,7 +74,7 @@ Il canale tecnico e la qualificazione giuridica del singolo caso sono due piani
 distinti.
 
 UNI/PdR 125:2022 è una prassi di riferimento volontaria per sistemi di gestione
-della parità di genere, non una legge nazionale. Il `6.3.2.6 prevede una
+della parità di genere, non una legge nazionale. Il §6.3.2.6 prevede una
 metodologia di segnalazione anonima per abusi e molestie fisiche, verbali o
 digitali. Ciò non rende ogni segnalazione un caso di whistleblowing.
 
@@ -514,7 +514,7 @@ della decisione, non nascosti in un'appendice tecnica.
 Fonti consultate il **2026-08-06**. Sono riferimenti contestuali: professionisti
 qualificati devono verificarne testo corrente e applicazione al deployment.
 
-- [UNI/PdR 125:2022, Linee guida sul sistema di gestione per la parità di genere](https://certificazione.pariopportunita.gov.it/public/dist/resources/prassi-di-riferimento-unipdr-pdr100866103.pdf), in particolare `6.3.2.6.
+- [UNI/PdR 125:2022, Linee guida sul sistema di gestione per la parità di genere](https://certificazione.pariopportunita.gov.it/public/dist/resources/prassi-di-riferimento-unipdr-pdr100866103.pdf), in particolare §6.3.2.6.
 - [D.Lgs. 24/2023, art. 4 — canali di segnalazione interna](https://www.gazzettaufficiale.it/atto/serie_generale/caricaArticolo?art.codiceRedazionale=23G00032&art.dataPubblicazioneGazzetta=2023-03-15&art.flagTipoArticolo=0&art.idArticolo=4&art.idGruppo=2&art.idSottoArticolo=1&art.idSottoArticolo1=10&art.progressivo=0&art.versione=1).
 - [D.Lgs. 24/2023, art. 5 — gestione del canale interno](https://www.gazzettaufficiale.it/atto/serie_generale/caricaArticolo?art.codiceRedazionale=23G00032&art.dataPubblicazioneGazzetta=2023-03-15&art.flagTipoArticolo=0&art.idArticolo=5&art.idGruppo=2&art.idSottoArticolo=1&art.idSottoArticolo1=10&art.progressivo=0&art.versione=1).
 - [ANAC, Whistleblowing](https://www.anticorruzione.it/-/whistleblowing).
