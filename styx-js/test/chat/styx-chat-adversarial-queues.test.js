@@ -27,6 +27,7 @@ async function harness() {
   const sessions = new Map();
   const engine = {
     session: jest.fn((from) => sessions.get(from) || null),
+    keyPackageBytes: jest.fn(() => new Uint8Array([1, 2, 3])),
   };
   const roster = new ContactRoster({ backend: memBackend() });
   await roster.load();
@@ -133,6 +134,12 @@ describe('StyxChat adversarial pre-Welcome queues', () => {
     const { chat } = await harness();
     chat._inviteNonce = new Uint8Array([1]);
     await chat._onWire('peer', appBytes('one'));
+    await chat.createQrInvite();
+    expect(chat._pendingApp.size).toBe(0);
+    expect(chat._pendingAppBytes).toBe(0);
+    expect(chat._pendingAppOrder).toBe(0);
+
+    await chat._onWire('peer', appBytes('one-new-invite'));
     await chat._retireInvite();
     expect(chat._pendingApp.size).toBe(0);
     expect(chat._pendingAppBytes).toBe(0);

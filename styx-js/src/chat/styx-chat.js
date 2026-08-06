@@ -335,6 +335,9 @@ export class StyxChat {
     // the welcome under it, proving they actually looked at this screen. The QR is
     // therefore the trust anchor, and it is single-use.
     const nonce = randomBytes(32);
+    // Replacing the single outstanding invite retires its unauthenticated receive
+    // window too. Frames admitted under the old QR must never cross into the new one.
+    this._clearPendingApp();
     this._inviteNonce = nonce;
     const payload = {
       pubkey: this._identity.pubkey,
