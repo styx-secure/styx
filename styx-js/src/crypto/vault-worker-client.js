@@ -21,6 +21,7 @@ export const MAX_TRANSFER_BYTES = 32 * 1024 * 1024;
 export const TERMINATE_REASONS = Object.freeze([
   'terminated',
   'unlock-cancelled',
+  'vault-destroyed',
   'supervisor-stopped',
   'stale-generation',
   'init-failed',

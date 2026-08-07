@@ -11,6 +11,7 @@
 // keys, KDF output or serialized state.
 
 import { snapshotStrictPlainObject } from './vault-shape.js';
+import { VaultCryptoError, VaultCryptoErrorCodes } from './vault-errors.js';
 
 export const VaultWorkerErrorCodes = Object.freeze({
   BAD_REQUEST: 'BAD_REQUEST',
@@ -20,9 +21,21 @@ export const VaultWorkerErrorCodes = Object.freeze({
   TIMEOUT: 'WORKER_TIMEOUT',
 });
 
-const KNOWN_CODES = new Set(Object.values(VaultWorkerErrorCodes));
+const KNOWN_CODES = new Set([
+  ...Object.values(VaultWorkerErrorCodes),
+  ...Object.values(VaultCryptoErrorCodes),
+]);
 
-const DETAIL_KEYS = Object.freeze(['type', 'phase', 'reason', 'attempt']);
+/** True for the five worker-process codes or an existing frozen vault code. */
+export const isKnownVaultWireErrorCode = (code) => KNOWN_CODES.has(code);
+
+const DETAIL_KEYS = Object.freeze([
+  'type', 'phase', 'reason', 'attempt',
+  // Existing vault-crypto detail keys. The worker boundary does not invent
+  // new crypto errors: it carries the frozen vault codes through verbatim,
+  // after re-validating the same short primitive detail grammar.
+  'field', 'namespace', 'version',
+]);
 const MAX_DETAIL_VALUE_LENGTH = 64;
 
 /**
@@ -50,6 +63,9 @@ export function sanitizeWorkerErrorDetails(details) {
     const ok = (typeof value === 'string' && value.length <= MAX_DETAIL_VALUE_LENGTH)
       || (typeof value === 'number' && Number.isSafeInteger(value));
     if (!ok) throw new TypeError(`VaultWorkerError details value for "${key}" is not a short primitive`);
+    if (key === 'namespace' && value !== 'canary') {
+      throw new TypeError('VaultWorkerError namespace detail is not public at this boundary');
+    }
     out[key] = value;
   }
   return Object.freeze(out);
@@ -79,12 +95,38 @@ export class VaultWorkerError extends Error {
  * boundary).
  */
 export function toWireError(err) {
-  if (err instanceof VaultWorkerError && KNOWN_CODES.has(err.code)) {
+  if (err instanceof VaultWorkerError || err instanceof VaultCryptoError) {
     // Re-sanitize on the way out (review W6): the constructor already
     // validated, but a mutated `details`/`code` on a recognized instance must
     // not reach the wire either — fall through to the bare crash instead.
     try {
-      return { code: err.code, details: sanitizeWorkerErrorDetails(err.details) ?? Object.freeze({}) };
+      const codeDesc = Object.getOwnPropertyDescriptor(err, 'code');
+      const detailsDesc = Object.getOwnPropertyDescriptor(err, 'details');
+      const code = codeDesc && Object.hasOwn(codeDesc, 'value') ? codeDesc.value : undefined;
+      const details = detailsDesc && Object.hasOwn(detailsDesc, 'value') ? detailsDesc.value : undefined;
+      if (KNOWN_CODES.has(code)) {
+        if (err instanceof VaultCryptoError) {
+          // Storage errors use the crypto layer's `namespace` field for the
+          // physical IndexedDB name. Product/test DB identifiers are internal
+          // dependencies and must never cross postMessage. Only the public
+          // canary namespace is meaningful at this boundary.
+          const cryptoDetails = details === undefined ? Object.freeze({})
+            : snapshotStrictPlainObject(
+              details,
+              ['field', 'reason', 'namespace', 'version'],
+              (message) => new TypeError(`invalid vault error details: ${message}`),
+              { requiredKeys: [] },
+            );
+          const projected = {};
+          for (const key of ['field', 'reason', 'version']) {
+            if (Object.hasOwn(cryptoDetails, key)) projected[key] = cryptoDetails[key];
+          }
+          if (cryptoDetails.namespace === 'canary') projected.namespace = 'canary';
+          return { code, details: sanitizeWorkerErrorDetails(projected) ?? Object.freeze({}) };
+        }
+        const sanitized = sanitizeWorkerErrorDetails(details) ?? Object.freeze({});
+        return { code, details: sanitized };
+      }
     } catch { /* hostile or corrupted details: treat as unrecognized */ }
   }
   return { code: VaultWorkerErrorCodes.CRASHED, details: Object.freeze({ reason: 'unhandled-exception' }) };
