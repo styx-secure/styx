@@ -1,0 +1,23 @@
+{
+  "schema": "styx.docs.translation-pairs",
+  "version": 1,
+  "hash": "sha256",
+  "pairs": [
+    {
+      "canonical": "docs/platform/README.md",
+      "mirror": "docs/platform/README_IT.md"
+    },
+    {
+      "canonical": "docs/platform/application-capability-model.md",
+      "mirror": "docs/platform/application-capability-model_IT.md"
+    },
+    {
+      "canonical": "docs/platform/integration-roadmap.md",
+      "mirror": "docs/platform/integration-roadmap_IT.md"
+    },
+    {
+      "canonical": "docs/platform/use-cases/anonymous-dialogue.md",
+      "mirror": "docs/platform/use-cases/anonymous-dialogue_IT.md"
+    }
+  ]
+}

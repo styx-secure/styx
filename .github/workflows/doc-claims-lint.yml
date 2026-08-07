@@ -6,6 +6,7 @@ on:
       - "docs/**"
       - "specs/**"
       - "tools/docs-claims-lint/**"
+      - "tools/docs-translation-sync/**"
       - ".github/workflows/doc-claims-lint.yml"
   workflow_dispatch:
 
@@ -32,8 +33,33 @@ jobs:
         run: |
           python3 -m unittest discover -s tools/docs-claims-lint/tests -p 'test_*.py'
 
+      - name: Translation sync unit tests
+        run: |
+          python3 - <<'PY'
+          import sys
+          import unittest
+
+          suite = unittest.TestLoader().discover(
+              "tools/docs-translation-sync/tests",
+              pattern="test_*.py",
+          )
+          count = suite.countTestCases()
+          if count == 0:
+              print("translation-sync-tests: error: no tests collected", file=sys.stderr)
+              raise SystemExit(3)
+
+          print(f"translation-sync-tests: collected {count} test(s)")
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          raise SystemExit(0 if result.wasSuccessful() else 2)
+          PY
+
       - name: Scan documentation for affirmative forbidden claims
         run: |
           python3 tools/docs-claims-lint/claims_lint.py \
             --scan docs specs \
             --exclude docs/superpowers docs/security docs/archive docs/piano-utente.md
+
+      - name: Verify maintained translation pairs
+        run: |
+          python3 tools/docs-translation-sync/check.py \
+            --manifest docs/platform/translation-pairs.json

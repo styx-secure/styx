@@ -1,0 +1,5 @@
+# Translation-sync tests run through Python unittest.
+# Bytecode must remain local and must not dirty task worktrees.
+# Keep the two rules below aligned with sibling Python tools.
+__pycache__/
+*.pyc
