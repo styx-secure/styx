@@ -41,6 +41,11 @@ import { buildManifestCanonicalBytes, encodeBase64, decodeCanonicalBase64 } from
 import { KDF_PROFILES, KDF_POLICY } from '../crypto/kdf-bounds.js';
 import { constantTimeEqual, uuidv4 } from '../utils.js';
 import { snapshotStrictPlainObject } from '../crypto/vault-shape.js';
+import {
+  SETTINGS_NAMESPACE, SETTINGS_RECORD_KEY, SETTINGS_MARKER_KEY, SETTINGS_CONTENT_TYPE,
+  SettingsMigrationError, validateSettingsPreferences, validateSettingsMarker,
+  buildSettingsMarker, canonicalSettingsBytes, settingsEqual,
+} from './vault-migration.js';
 
 export const VAULT_STATES = Object.freeze({
   UNINITIALIZED: 'UNINITIALIZED',
@@ -51,8 +56,7 @@ export const VAULT_STATES = Object.freeze({
   RECOVERING: 'RECOVERING',
   DESTROYING: 'DESTROYING',
   ERROR: 'ERROR',
-  // Enum-only in this story: the MIGRATE trigger is out of scope (no
-  // localStorage migration), rejected fail-closed by the state machine.
+  // Transient state while the settings migration commits and verifies.
   MIGRATING: 'MIGRATING',
 });
 
@@ -74,7 +78,7 @@ const MIGRATION_VERSION = 1; // no migration has run for a fresh vault
  * convention. `deriveNamespaceKey` knows the full list — this is deliberately
  * narrower.
  */
-export const ENABLED_NAMESPACES = Object.freeze(['canary']);
+export const ENABLED_NAMESPACES = Object.freeze(['canary', SETTINGS_NAMESPACE]);
 
 // Password policy (plan §B3.0.4): 8–1024 characters.
 const PASSWORD_MIN = 8;
@@ -187,10 +191,16 @@ export function createVault({
     }
   };
 
-  const assertEnabledNamespace = (namespace) => {
-    if (!ENABLED_NAMESPACES.includes(namespace)) {
+  const assertCanaryNamespace = (namespace) => {
+    if (namespace !== 'canary') {
       throw new VaultCryptoError(Codes.NAMESPACE_UNSUPPORTED, 'namespace not enabled in this build', { namespace: typeof namespace === 'string' ? namespace : 'invalid' });
     }
+  };
+
+  const assertReadableRecord = (namespace, recordKey) => {
+    if (namespace === 'canary') return;
+    if (namespace === SETTINGS_NAMESPACE && recordKey === SETTINGS_RECORD_KEY) return;
+    throw new VaultCryptoError(Codes.NAMESPACE_UNSUPPORTED, 'record is not readable in this build', { namespace: typeof namespace === 'string' ? namespace : 'invalid' });
   };
 
   const assertTransactionRecordKey = (recordKey) => {
@@ -228,6 +238,27 @@ export function createVault({
     };
     const mac = await signManifestBytes(await manifestKey(), buildManifestCanonicalBytes(fields));
     return { ...fields, hmacB64: encodeBase64(mac) };
+  };
+
+  // Settings have only six possible values, so an unkeyed SHA-256 marker
+  // would disclose them by enumeration. Reuse the existing K_manifest HMAC
+  // primitive: no new key, label or format, and the marker remains bounded.
+  const settingsMarkerDigest = async (value) => {
+    const payload = canonicalSettingsBytes(value);
+    const domain = new TextEncoder().encode('styx/settings-marker/v1\0');
+    const bytes = new Uint8Array(domain.length + payload.length);
+    bytes.set(domain);
+    bytes.set(payload, domain.length);
+    payload.fill(0);
+    domain.fill(0);
+    let mac;
+    try {
+      mac = await signManifestBytes(await manifestKey(), bytes);
+      return [...mac].map((b) => b.toString(16).padStart(2, '0')).join('');
+    } finally {
+      bytes.fill(0);
+      mac?.fill(0);
+    }
   };
 
   // Verify a stored manifest against K_manifest. Runs after a successful
@@ -482,7 +513,7 @@ export function createVault({
     async putRecord(namespace, recordKey, value, { contentType = 'json' } = {}) {
       await ensureLoaded();
       assertUnlocked('write a record');
-      assertEnabledNamespace(namespace);
+      assertCanaryNamespace(namespace);
       const namespaceKey = await namespaceKeyFor(namespace);
       const previous = await db.get(namespace, recordKey);
       const recordVersion = isSafeInt(previous?.rv) && previous.rv >= 1 ? previous.rv + 1 : 1;
@@ -507,7 +538,7 @@ export function createVault({
     async getRecord(namespace, recordKey) {
       await ensureLoaded();
       assertUnlocked('read a record');
-      assertEnabledNamespace(namespace);
+      assertReadableRecord(namespace, recordKey);
       const stored = await db.get(namespace, recordKey);
       if (stored === undefined) return undefined;
       const namespaceKey = await namespaceKeyFor(namespace);
@@ -520,7 +551,7 @@ export function createVault({
     async deleteRecord(namespace, recordKey) {
       await ensureLoaded();
       assertUnlocked('delete a record');
-      assertEnabledNamespace(namespace);
+      assertCanaryNamespace(namespace);
       const nextGen = generation + 1;
       const manifest = await buildManifest(nextGen, schemaVersion);
       await db.transaction([namespace, META_STORE], (ops) => {
@@ -541,7 +572,7 @@ export function createVault({
     async transactionRecords(namespace, operations) {
       await ensureLoaded();
       assertUnlocked('apply a record transaction');
-      assertEnabledNamespace(namespace);
+      assertCanaryNamespace(namespace);
       if (!Array.isArray(operations)
         || operations.length < 1
         || operations.length > MAX_TRANSACTION_OPERATIONS) {
@@ -620,14 +651,169 @@ export function createVault({
     async listRecords(namespace) {
       await ensureLoaded();
       assertUnlocked('list records');
-      assertEnabledNamespace(namespace);
+      assertCanaryNamespace(namespace);
       return db.list(namespace);
     },
 
-    /** Explicit MIGRATE trigger is out of scope for this story (fail-closed). */
-    async migrate() {
+    /**
+     * Migrate the single frozen settings record. localStorage stays page-side;
+     * this worker-owned operation receives only the already-normalized, bounded
+     * preference object and commits encrypted data, marker and manifest.
+     */
+    async migrate(namespace, preferences) {
       await ensureLoaded();
-      throw wrongState('migration is not available in this build', { reason: 'migrate-out-of-scope' });
+      assertUnlocked('migrate settings');
+      if (namespace !== SETTINGS_NAMESPACE) {
+        throw new VaultCryptoError(Codes.NAMESPACE_UNSUPPORTED, 'migration namespace is not enabled', { reason: 'migration-namespace' });
+      }
+
+      let normalized;
+      try {
+        normalized = validateSettingsPreferences(preferences);
+      } catch (error) {
+        if (error instanceof SettingsMigrationError) {
+          throw new VaultCryptoError(Codes.RECORD_INVALID, 'settings migration payload is invalid', { reason: 'settings-payload-invalid' });
+        }
+        throw error;
+      }
+
+      state = VAULT_STATES.MIGRATING;
+      try {
+        const digest = await settingsMarkerDigest(normalized);
+        const existingMarkerRaw = await db.get('migrations', SETTINGS_MARKER_KEY);
+        let existingMarker;
+        let repairRequired = false;
+        if (existingMarkerRaw !== undefined) {
+          try {
+            existingMarker = validateSettingsMarker(existingMarkerRaw);
+          } catch (error) {
+            if (error instanceof SettingsMigrationError) {
+              // The legacy copy remains authoritative. Treat an invalid marker
+              // as an interrupted migration and rebuild it from that source.
+              repairRequired = true;
+            }
+            else throw error;
+          }
+        }
+
+        const previous = await db.get(SETTINGS_NAMESPACE, SETTINGS_RECORD_KEY);
+        let previousPlain;
+        if (previous !== undefined) {
+          const key = await namespaceKeyFor(SETTINGS_NAMESPACE);
+          try {
+            previousPlain = await decryptVaultRecord(
+              previous,
+              { namespace: SETTINGS_NAMESPACE, recordKey: SETTINGS_RECORD_KEY },
+              key,
+            );
+          } catch (error) {
+            if (error?.code === Codes.RECORD_CORRUPTED || error?.code === Codes.RECORD_INVALID) {
+              repairRequired = true;
+              previousPlain = undefined;
+            } else throw error;
+          }
+          try {
+            if (previousPlain !== undefined) {
+              previousPlain = { ...previousPlain, value: validateSettingsPreferences(previousPlain.value) };
+            }
+          } catch (error) {
+            if (error instanceof SettingsMigrationError) {
+              repairRequired = true;
+              previousPlain = undefined;
+            }
+            else throw error;
+          }
+        }
+
+        const markerMatches = existingMarker?.digests.source === digest;
+        const recordMatches = previousPlain !== undefined
+          && settingsEqual(previousPlain.value, normalized);
+
+        if (existingMarker?.state === 'verified' && markerMatches) {
+          if (!recordMatches) {
+            repairRequired = true;
+          }
+          if (!repairRequired) return Object.freeze({ state: 'verified', matched: true, digest,
+            recordVersion: previousPlain.recordVersion });
+        }
+        if (existingMarker?.state === 'written' && markerMatches && !recordMatches) {
+          repairRequired = true;
+        }
+
+        // Phase 1: a signed generation records that migration has started.
+        let nextGen;
+        let manifest;
+        if (repairRequired
+          || (!(existingMarker?.state === 'pending' && markerMatches)
+            && !(existingMarker?.state === 'written' && markerMatches))) {
+          const pending = buildSettingsMarker('pending', digest);
+          nextGen = generation + 1;
+          manifest = await buildManifest(nextGen, schemaVersion);
+          await db.transaction(['migrations', META_STORE], (ops) => {
+            ops.put('migrations', SETTINGS_MARKER_KEY, pending);
+            ops.put(META_STORE, MANIFEST_KEY, manifest);
+          });
+          generation = nextGen;
+        }
+
+        // Phase 2: encrypted settings + written marker + manifest are one
+        // IndexedDB transaction. Crypto is complete before the transaction.
+        const namespaceKey = await namespaceKeyFor(SETTINGS_NAMESPACE);
+        let recordVersion = previousPlain?.recordVersion;
+        if (repairRequired || !(existingMarker?.state === 'written' && markerMatches)) {
+          recordVersion = isSafeInt(previous?.rv) && previous.rv >= 1 ? previous.rv + 1 : 1;
+          const record = await encryptVaultRecord({
+            namespace: SETTINGS_NAMESPACE,
+            recordKey: SETTINGS_RECORD_KEY,
+            plaintext: normalized,
+            contentType: SETTINGS_CONTENT_TYPE,
+            recordVersion,
+          }, namespaceKey);
+          const written = buildSettingsMarker('written', digest);
+          nextGen = generation + 1;
+          manifest = await buildManifest(nextGen, schemaVersion);
+          await db.transaction([SETTINGS_NAMESPACE, 'migrations', META_STORE], (ops) => {
+            ops.put(SETTINGS_NAMESPACE, SETTINGS_RECORD_KEY, record);
+            ops.put('migrations', SETTINGS_MARKER_KEY, written);
+            ops.put(META_STORE, MANIFEST_KEY, manifest);
+          });
+          generation = nextGen;
+        }
+
+        // Phase 3: verify the committed bytes through the normal authenticated
+        // read path before marking them authoritative.
+        const committed = await db.get(SETTINGS_NAMESPACE, SETTINGS_RECORD_KEY);
+        const verifiedRecord = await decryptVaultRecord(
+          committed,
+          { namespace: SETTINGS_NAMESPACE, recordKey: SETTINGS_RECORD_KEY },
+          namespaceKey,
+        );
+        let committedValue;
+        try {
+          committedValue = validateSettingsPreferences(verifiedRecord.value);
+        } catch (error) {
+          if (error instanceof SettingsMigrationError) {
+            throw new VaultCryptoError(Codes.RECORD_INVALID, 'committed settings payload is invalid', { reason: 'settings-verify-invalid' });
+          }
+          throw error;
+        }
+        if (!settingsEqual(committedValue, normalized)
+          || await settingsMarkerDigest(committedValue) !== digest) {
+          throw new VaultCryptoError(Codes.RECORD_INVALID, 'settings verification diverged', { reason: 'settings-divergence' });
+        }
+
+        const verified = buildSettingsMarker('verified', digest);
+        nextGen = generation + 1;
+        manifest = await buildManifest(nextGen, schemaVersion);
+        await db.transaction(['migrations', META_STORE], (ops) => {
+          ops.put('migrations', SETTINGS_MARKER_KEY, verified);
+          ops.put(META_STORE, MANIFEST_KEY, manifest);
+        });
+        generation = nextGen;
+        return Object.freeze({ state: 'verified', matched: true, digest, recordVersion });
+      } finally {
+        if (state === VAULT_STATES.MIGRATING) state = VAULT_STATES.UNLOCKED;
+      }
     },
 
     /**
@@ -668,7 +854,7 @@ export function createVault({
   // counters and IndexedDB isolates them.
   const MUTATING = Object.freeze([
     'createVault', 'unlock', 'lock', 'changePassword', 'rewrap', 'putRecord', 'deleteRecord',
-    'transactionRecords', 'destroy',
+    'transactionRecords', 'migrate', 'destroy',
   ]);
   return Object.freeze(Object.fromEntries(Object.entries(api).map(
     ([name, fn]) => [name, MUTATING.includes(name) ? (...args) => serialize(() => fn(...args)) : fn],

@@ -1,7 +1,7 @@
 // Module-internal production assembly of IndexedDB + bounded Argon2id.
 import { describe, test, expect } from '@jest/globals';
 import {
-  createVaultWorkerLifecycle, VAULT_WORKER_CANARY_DB_NAME,
+  createVaultWorkerLifecycle, VAULT_WORKER_CANARY_DB_NAME, VAULT_WORKER_PRODUCT_DB_NAME,
 } from '../../src/crypto/vault-worker-lifecycle.js';
 
 describe('vault worker lifecycle assembly', () => {
@@ -34,7 +34,15 @@ describe('vault worker lifecycle assembly', () => {
     expect(closes).toBe(1);
   });
 
-  test('rejects any product-style database name at construction', () => {
+  test('allows only the fixed product database or the test prefix', async () => {
+    const openedNames = [];
+    const owner = createVaultWorkerLifecycle({
+      deriveImpl: () => new Uint8Array(32), dbName: VAULT_WORKER_PRODUCT_DB_NAME,
+      openDb: async ({ name }) => { openedNames.push(name); return { close() {} }; },
+      createLifecycle: () => ({ status: async () => ({ state: 'LOCKED' }) }),
+    });
+    await owner.initialize();
+    expect(openedNames).toEqual(['styx-vault-default']);
     expect(() => createVaultWorkerLifecycle({
       deriveImpl: () => new Uint8Array(32), dbName: 'styx-vault-user-alice',
     })).toThrow(TypeError);

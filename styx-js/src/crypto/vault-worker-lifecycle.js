@@ -1,14 +1,14 @@
-// vault-worker-lifecycle.js — production-only assembly of the canary vault
-// inside the dedicated crypto worker. The page can select no database name,
+// vault-worker-lifecycle.js — production assembly of one worker-owned vault.
+// The page can select no database name,
 // storage implementation, KDF function or lifecycle factory through the wire.
 
 import { openVaultDb } from '../storage/vault-db.js';
 import { createVault } from '../storage/vault.js';
 import { deriveWithBounds, KDF_POLICY, KDF_PROFILES } from './kdf-bounds.js';
 
-// US-008 is deliberately canary-only. Product/user database naming remains
-// out of scope and no identifier crosses the worker protocol.
+// US-009 adds one fixed product name; no identifier crosses the worker protocol.
 export const VAULT_WORKER_CANARY_DB_NAME = 'styx-vault-test-worker-canary-v1';
+export const VAULT_WORKER_PRODUCT_DB_NAME = 'styx-vault-default';
 
 function profileFor({ mKib, t, p }) {
   return Object.entries(KDF_PROFILES).find(([, candidate]) => (
@@ -32,8 +32,9 @@ export function createVaultWorkerLifecycle({
   if (typeof openDb !== 'function' || typeof createLifecycle !== 'function') {
     throw new TypeError('vault lifecycle factories must be functions');
   }
-  if (typeof dbName !== 'string' || !dbName.startsWith('styx-vault-test-')) {
-    throw new TypeError('US-008 accepts test-profile database names only');
+  if (typeof dbName !== 'string'
+    || (dbName !== VAULT_WORKER_PRODUCT_DB_NAME && !dbName.startsWith('styx-vault-test-'))) {
+    throw new TypeError('vault database name is not an approved internal name');
   }
 
   let db = null;

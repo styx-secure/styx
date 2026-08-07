@@ -37,6 +37,7 @@ export class FakeVaultDb {
     this.stores = new Map();
     this.version = version; // schema version, as the real engine reports it
     this.failOn = null; // (ns, key, value) => boolean — simulated crash on a put
+    this.failGetOn = null; // (ns, key, value) => boolean — simulated crash on a read
     this.destroyed = 0;
   }
 
@@ -44,6 +45,7 @@ export class FakeVaultDb {
 
   async get(ns, key) {
     const v = this._store(ns).get(key);
+    if (this.failGetOn && this.failGetOn(ns, key, v)) throw new Error('injected read crash');
     return v === undefined ? undefined : deepClone(v);
   }
 

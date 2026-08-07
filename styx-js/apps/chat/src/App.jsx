@@ -34,11 +34,21 @@ export default function App() {
     else document.documentElement.removeAttribute('data-theme');
   }, [theme]);
 
-  const toggleTheme = () => {
+  useEffect(() => {
+    if (!chat.vaultPreferences) return;
+    setTheme(chat.vaultPreferences.theme === 'system' ? '' : chat.vaultPreferences.theme);
+  }, [chat.vaultPreferences]);
+
+  const toggleTheme = async () => {
     const current = theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     const next = current === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-    localStorage.setItem('styx-theme', next);
+    try {
+      const result = await chat.setThemePreference(next);
+      if (result === null || result === undefined) localStorage.setItem('styx-theme', next);
+      setTheme(next);
+    } catch {
+      showToast('Impossibile salvare il tema. Riprova.');
+    }
   };
 
   const showToast = useCallback((t) => {
@@ -69,7 +79,15 @@ export default function App() {
       'Reset totale: identità, messaggi, contatti e chiavi verranno eliminati da questo '
       + 'dispositivo. Operazione irreversibile. Procedere?',
     )) return;
-    await factoryReset({ chat: chat.chatRef.current });
+    try {
+      await factoryReset({
+        chat: chat.chatRef.current,
+        destroyVault: chat.destroyVaultSettings,
+        stopVault: chat.stopVaultSettings,
+      });
+    } catch {
+      showToast('Reset non completato: il vault è ancora in uso. Riprova.');
+    }
     // factoryReset reloads the page; nothing runs after it.
   };
 
@@ -177,7 +195,10 @@ export default function App() {
 
       {toast && <div className="toast sx-badge">{toast}</div>}
 
-      <InstallHint />
+      <InstallHint
+        dismissed={chat.vaultPreferences?.installHintDismissed}
+        onDismiss={chat.dismissInstallHint}
+      />
     </>
   );
 }

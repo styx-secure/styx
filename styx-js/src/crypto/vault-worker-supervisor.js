@@ -32,6 +32,7 @@ export const DEFAULT_BACKOFF = Object.freeze({
  * respawn forever at the first backoff step, never reaching FAILED.
  */
 export const STABILITY_RESET_MS = 30000;
+export const PRODUCT_KDF_WASM_PATH = '/vendor/styx-kdf-wasm/pkg/styx_kdf_wasm_bg.wasm';
 
 const wrongState = (message, details) => new VaultWorkerError(Codes.WRONG_STATE, message, details);
 
@@ -320,5 +321,20 @@ export function createVaultWorkerSupervisor({
     getState: () => state,
     getGeneration: () => generation,
     getAttempts: () => failureStreak,
+  });
+}
+
+/**
+ * Stage-enabled production assembly. Worker entry, database selection and KDF
+ * artifact path are all module-internal constants; the page receives only the
+ * ordinary supervisor API and cannot inject a worker or storage dependency.
+ */
+export function createProductVaultWorkerSupervisor() {
+  if (typeof globalThis.Worker !== 'function' || typeof globalThis.location?.origin !== 'string') {
+    throw new TypeError('the product vault requires a browser worker context');
+  }
+  return createVaultWorkerSupervisor({
+    createWorker: () => new Worker(new URL('./vault-worker-product.js', import.meta.url), { type: 'module' }),
+    wasmUrl: new URL(PRODUCT_KDF_WASM_PATH, globalThis.location.origin).href,
   });
 }

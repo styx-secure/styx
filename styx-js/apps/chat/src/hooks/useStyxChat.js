@@ -8,6 +8,7 @@ import { acquireWriterLock } from '../lib/writer-lock.js';
 import { peerNamespace } from '../lib/ns.js';
 import { getRelays, getBridgeUrl, transportOptions } from '../lib/config.js';
 import { browserNotifier } from '../lib/notify.js';
+import { openVaultSettings } from '../lib/vault-settings.js';
 import { PushRegistrar } from 'styx-js';
 
 const PAGE = 20;
@@ -23,6 +24,7 @@ export function useStyxChat() {
   const lockReleaseRef = useRef(null);
   const typingTimers = useRef({});
   const notifierRef = useRef(null);
+  const vaultSettingsRef = useRef(null);
   if (!notifierRef.current) notifierRef.current = browserNotifier();
 
   const [ready, setReady] = useState(false);
@@ -34,6 +36,7 @@ export function useStyxChat() {
   const [typingByContact, setTypingByContact] = useState({});
   const [noMore, setNoMore] = useState({});
   const [pendingPairings, setPendingPairings] = useState([]);
+  const [vaultPreferences, setVaultPreferences] = useState(null);
 
   // --- append/patch helpers (functional, closure-safe) ---
   const upsertMessage = useCallback((msg) => {
@@ -121,6 +124,20 @@ export function useStyxChat() {
     if (firstRun && alias && alias.trim() && chat.me?.alias !== alias.trim()) {
       await chat.setAlias(alias.trim());
     }
+
+    try {
+      const settingsSession = await openVaultSettings({ password, peerProfile: ns });
+      vaultSettingsRef.current = settingsSession;
+      if (settingsSession?.initial?.preferences) {
+        setVaultPreferences(settingsSession.initial.preferences);
+      }
+    } catch (e) {
+      // Settings migration is an optional, developer/test-only enhancement.
+      // A vault failure must never deny access to the legacy chat path.
+      vaultSettingsRef.current = null;
+      setVaultPreferences(null);
+      console.debug('settings vault unavailable; continuing with legacy preferences', e?.code);
+    }
     chatRef.current = chat;
 
     const refreshContacts = async (list) => {
@@ -165,6 +182,18 @@ export function useStyxChat() {
     return chat.me || identity;
   }, [upsertMessage, patchMessageState]);
 
+  const stopVaultSettings = useCallback(async () => {
+    let stop;
+    try { stop = vaultSettingsRef.current?.stop; } catch { stop = null; }
+    vaultSettingsRef.current = null;
+    setVaultPreferences(null);
+    try { await stop?.(); } catch { /* bounded worker teardown */ }
+  }, []);
+
+  const destroyVaultSettings = useCallback(async () => {
+    await vaultSettingsRef.current?.destroy?.();
+  }, []);
+
   const lock = useCallback(() => {
     subsRef.current.forEach((off) => {
       try { off(); } catch { /* ignore */ }
@@ -172,6 +201,7 @@ export function useStyxChat() {
     subsRef.current = [];
     try { chatRef.current?.destroy?.(); } catch { /* ignore */ }
     chatRef.current = null;
+    void stopVaultSettings();
     try { lockReleaseRef.current?.(); } catch { /* ignore */ }
     lockReleaseRef.current = null;
     setReady(false);
@@ -181,7 +211,8 @@ export function useStyxChat() {
     setTypingByContact({});
     setNoMore({});
     setPendingPairings([]);
-  }, []);
+    setVaultPreferences(null);
+  }, [stopVaultSettings]);
 
   useEffect(() => () => lock(), [lock]); // teardown on unmount
 
@@ -260,6 +291,22 @@ export function useStyxChat() {
     return updated;
   }, []);
 
+  const setThemePreference = useCallback(async (theme) => {
+    const session = vaultSettingsRef.current;
+    if (!session) return null;
+    const result = await session.setTheme(theme);
+    if (result.preferences) setVaultPreferences(result.preferences);
+    return result;
+  }, []);
+
+  const dismissInstallHint = useCallback(async () => {
+    const session = vaultSettingsRef.current;
+    if (!session) return null;
+    const result = await session.dismissInstallHint();
+    if (result.preferences) setVaultPreferences(result.preferences);
+    return result;
+  }, []);
+
   // pairing passthroughs
   const pairing = {
     createQrInvite: (...a) => chatRef.current.createQrInvite(...a),
@@ -274,6 +321,7 @@ export function useStyxChat() {
     ready, fatalError, secondaryTab, me, contacts, messagesByContact, typingByContact, noMore, pendingPairings,
     unlock, lock, openConversation, loadOlder, sendText, markRead, setTyping,
     setAlias, enablePush, acceptPending, dismissPending, safetyNumber, setVerified,
+    vaultPreferences, setThemePreference, dismissInstallHint, stopVaultSettings, destroyVaultSettings,
     chatRef,
     ...pairing,
   };

@@ -10,10 +10,11 @@
 // absent (jest) without hiding the token from Vite.
 //
 // Stages (plan §B3.0.6, ordered): off → developer-only → test-profile →
-// opt-in → limited-alpha → … Only `developer-only` is honored by this story;
-// anything else is treated as off.
+// opt-in → limited-alpha → … US-009 honors only `developer-only` and
+// `test-profile`; anything else is treated as off.
 
 export const VAULT_STAGE_DEVELOPER_ONLY = 'developer-only';
+export const VAULT_STAGE_TEST_PROFILE = 'test-profile';
 
 /**
  * True only when the build was produced with VITE_VAULT_STAGE=developer-only.
@@ -21,7 +22,15 @@ export const VAULT_STAGE_DEVELOPER_ONLY = 'developer-only';
  * bundler can fold it — do not read it through a variable.
  */
 export function vaultStageEnabled() {
-  return Boolean(import.meta.env) && import.meta.env.VITE_VAULT_STAGE === VAULT_STAGE_DEVELOPER_ONLY;
+  return Boolean(import.meta.env) && (
+    import.meta.env.VITE_VAULT_STAGE === VAULT_STAGE_DEVELOPER_ONLY
+    || import.meta.env.VITE_VAULT_STAGE === VAULT_STAGE_TEST_PROFILE
+  );
+}
+
+export function vaultTestProfileEnabled() {
+  return Boolean(import.meta.env)
+    && import.meta.env.VITE_VAULT_STAGE === VAULT_STAGE_TEST_PROFILE;
 }
 
 /**
