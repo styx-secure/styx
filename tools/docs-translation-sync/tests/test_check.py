@@ -3,9 +3,14 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+
+# Discovery imports this module before writing its bytecode cache. Set the flag
+# here so the contract's exact unittest command cannot dirty the worktree.
+sys.dont_write_bytecode = True
 
 MODULE_PATH = Path(__file__).parents[1] / "check.py"
 SPEC = importlib.util.spec_from_file_location("docs_translation_sync", MODULE_PATH)
@@ -140,6 +145,16 @@ class TranslationSyncTest(unittest.TestCase):
         self.mirror.write_text(text + "\nVedi `docs/example.md`.\n", encoding="utf-8")
         self.assertTrue(any("divergent repository paths" in item for item in self.findings()))
 
+    def test_checks_status_and_paths_inside_fenced_blocks(self) -> None:
+        self.canonical.write_text(
+            self.canonical.read_text()
+            + "\n```text\n**missing** at `docs/fenced-example.md`.\n```\n",
+            encoding="utf-8",
+        )
+        findings = self.findings()
+        self.assertTrue(any("divergent status labels" in item for item in findings))
+        self.assertTrue(any("divergent repository paths" in item for item in findings))
+
     def test_rejects_incompatible_structure(self) -> None:
         self.mirror.write_text(self.mirror.read_text().replace("## 1. Stato", "### 2. Stato"))
         self.assertTrue(any("incompatible heading structure" in item for item in self.findings()))
@@ -170,6 +185,28 @@ class TranslationSyncTest(unittest.TestCase):
         except OSError as exc:
             self.skipTest(f"symlinks unavailable: {exc}")
         self.assertTrue(any("symlinked Markdown" in item for item in self.findings()))
+
+    def test_requires_pair_to_share_a_directory(self) -> None:
+        nested = self.platform / "nested"
+        nested.mkdir()
+        moved = nested / self.mirror.name
+        self.mirror.rename(moved)
+        self.canonical.write_text(
+            self.canonical.read_text().replace(
+                'mirror="docs/platform/guide_IT.md"',
+                'mirror="docs/platform/nested/guide_IT.md"',
+            ),
+            encoding="utf-8",
+        )
+        self.write_manifest(
+            [
+                {
+                    "canonical": "docs/platform/guide.md",
+                    "mirror": "docs/platform/nested/guide_IT.md",
+                }
+            ]
+        )
+        self.assertTrue(any("must share a directory" in item for item in self.findings()))
 
     def test_rejects_closed_schema_extension(self) -> None:
         value = json.loads(self.manifest.read_text())

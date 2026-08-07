@@ -148,13 +148,13 @@ def status_signature(text: str) -> list[str]:
     pattern = re.compile(
         rf"\*\*(?P<label>{'|'.join(re.escape(label) for label in STATUS_LABELS)})\*\*"
     )
-    return [match.group("label") for match in pattern.finditer(without_fenced_blocks(text))]
+    return [match.group("label") for match in pattern.finditer(text)]
 
 
 def repository_path_signature(text: str) -> list[str]:
     return [
         token
-        for token in INLINE_CODE.findall(without_fenced_blocks(text))
+        for token in INLINE_CODE.findall(text)
         if REPOSITORY_PATH.match(token)
     ]
 
@@ -202,6 +202,8 @@ def validate_pair(
     expected_mirror = f"{PurePosixPath(str(canonical_raw)).stem}_IT.md"
     if PurePosixPath(str(mirror_raw)).name != expected_mirror:
         findings.append(f"{prefix}.mirror must be named {expected_mirror}")
+    if PurePosixPath(str(canonical_raw)).parent != PurePosixPath(str(mirror_raw)).parent:
+        findings.append(f"{prefix}.canonical and mirror must share a directory")
 
     canonical_text = canonical.read_text(encoding="utf-8")
     mirror_text = mirror.read_text(encoding="utf-8")
