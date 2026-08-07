@@ -190,7 +190,11 @@ describe('start / stop / delegation', () => {
   test('DESTROY always retires the DB-owning generation and starts a fresh worker', async () => {
     const { supervisor, workers } = makeSupervisor(['init-ok', 'init-ok']);
     await supervisor.start();
+    const pending = supervisor.request('UNLOCK', { password: 'STYX-TEST-ONLY' });
     expect(await supervisor.request('DESTROY', null)).toEqual({ state: 'UNINITIALIZED' });
+    const pendingErr = await codeOf(pending);
+    expect(pendingErr.code).toBe(Codes.TERMINATED);
+    expect(pendingErr.details.reason).toBe('vault-destroyed');
     expect(supervisor.getState()).toBe(SUPERVISOR_STATES.RUNNING);
     expect(supervisor.getGeneration()).toBe(2);
     expect(workers).toHaveLength(2);
