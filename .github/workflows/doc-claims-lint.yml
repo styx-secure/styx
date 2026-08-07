@@ -6,6 +6,7 @@ on:
       - "docs/**"
       - "specs/**"
       - "tools/docs-claims-lint/**"
+      - "tools/docs-translation-sync/**"
       - ".github/workflows/doc-claims-lint.yml"
   workflow_dispatch:
 
@@ -32,8 +33,17 @@ jobs:
         run: |
           python3 -m unittest discover -s tools/docs-claims-lint/tests -p 'test_*.py'
 
+      - name: Translation sync unit tests
+        run: |
+          python3 -m unittest discover -s tools/docs-translation-sync/tests -p 'test_*.py'
+
       - name: Scan documentation for affirmative forbidden claims
         run: |
           python3 tools/docs-claims-lint/claims_lint.py \
             --scan docs specs \
             --exclude docs/superpowers docs/security docs/archive docs/piano-utente.md
+
+      - name: Verify maintained translation pairs
+        run: |
+          python3 tools/docs-translation-sync/check.py \
+            --manifest docs/platform/translation-pairs.json
