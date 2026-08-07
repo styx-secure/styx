@@ -84,6 +84,7 @@ export function createVaultWorkerSupervisor({
   let stabilityTimer = null; // review W7: armed on INIT, cleared on any fatal
   let spawning = null; // in-flight spawn promise: never two workers at once
   let respawnScheduledFor = 0; // review W1: one respawn per generation
+  let destroying = false; // serializes factory reset + mandatory fresh worker
 
   function backoffDelay() {
     const raw = backoff.baseMs * 2 ** Math.max(0, failureStreak - 1);
@@ -157,6 +158,9 @@ export function createVaultWorkerSupervisor({
     if (gen !== generation) return; // events from old generations are ignored
     if (state === SUPERVISOR_STATES.STOPPED || state === SUPERVISOR_STATES.FAILED) return;
     client = null;
+    // destroyVault owns this retirement and will start exactly one fresh
+    // generation after the request settles; do not race it with backoff.
+    if (destroying) return;
     scheduleRespawn(error);
   }
 
@@ -193,7 +197,51 @@ export function createVaultWorkerSupervisor({
     if (backoffTimer !== null) { clearTimeoutImpl(backoffTimer); backoffTimer = null; }
     clearStabilityTimer(); // review W7: no late streak reset after stop()
     if (client !== null) { client.terminate('supervisor-stopped'); client = null; }
+    destroying = false;
     state = SUPERVISOR_STATES.STOPPED;
+  }
+
+  /**
+   * A successful or failed factory reset retires the worker generation. The
+   * vault DB connection has been deleted, closed, or left with a bounded
+   * deletion pending; reusing that process would make later state ambiguous.
+   */
+  async function destroyVault(payload, options) {
+    if (destroying) throw wrongState('vault destruction is already in progress', { reason: 'destroy-in-progress' });
+    if (state !== SUPERVISOR_STATES.RUNNING || client === null) {
+      throw wrongState('no running worker', { reason: `state:${state}` });
+    }
+    destroying = true;
+    const c = client;
+    const gen = generation;
+    let result;
+    let requestError = null;
+    try {
+      result = await c.request('DESTROY', payload, options);
+    } catch (error) {
+      requestError = error;
+    }
+
+    // stop() or another lifecycle owner superseded this operation.
+    if (generation !== gen || state === SUPERVISOR_STATES.STOPPED) {
+      destroying = false;
+      if (requestError !== null) throw requestError;
+      throw wrongState('destroyed worker generation was superseded', { reason: 'stale-generation' });
+    }
+
+    clearStabilityTimer();
+    if (client === c) client = null;
+    try { c.terminate('vault-destroyed'); } catch { /* worker may have self-closed */ }
+    // Deliberate reset: no backoff attempt is spent and the previous failure
+    // streak is neither incremented nor reset.
+    startGeneration();
+    await spawning;
+    destroying = false;
+    if (requestError !== null) throw requestError;
+    if (state !== SUPERVISOR_STATES.RUNNING) {
+      throw wrongState('worker did not come back after vault destruction', { reason: 'respawn-failed' });
+    }
+    return result;
   }
 
   /** Delegate one request to the current worker. */
@@ -203,6 +251,10 @@ export function createVaultWorkerSupervisor({
     // leaving later requests to hang until their timeout.
     if (type === 'SHUTDOWN') {
       return Promise.reject(wrongState('SHUTDOWN must go through supervisor.shutdown()', { reason: 'lifecycle-owner' }));
+    }
+    if (type === 'DESTROY') return destroyVault(payload, options);
+    if (destroying) {
+      return Promise.reject(wrongState('vault destruction is in progress', { reason: 'destroy-in-progress' }));
     }
     if (state !== SUPERVISOR_STATES.RUNNING || client === null) {
       return Promise.reject(wrongState('no running worker', { reason: `state:${state}` }));

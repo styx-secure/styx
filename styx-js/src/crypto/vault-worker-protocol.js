@@ -12,6 +12,7 @@
 import { snapshotStrictPlainObject } from './vault-shape.js';
 import {
   VaultWorkerError, VaultWorkerErrorCodes as Codes, sanitizeWorkerErrorDetails,
+  isKnownVaultWireErrorCode,
 } from './vault-worker-errors.js';
 
 export const VAULT_WORKER_PROTOCOL_VERSION = 1;
@@ -25,8 +26,11 @@ export const MESSAGE_TYPES = Object.freeze([
   'TRANSACTION', 'MIGRATE', 'STATUS', 'DESTROY', 'SHUTDOWN',
 ]);
 
-/** Functionally active in PR-3; every other name is RESERVED and answers VAULT_WRONG_STATE. */
-export const ACTIVE_TYPES = Object.freeze(['INIT', 'STATUS', 'SHUTDOWN']);
+/** Functionally active in US-008. MIGRATE remains the sole reserved v1 name. */
+export const ACTIVE_TYPES = Object.freeze([
+  'INIT', 'CREATE_VAULT', 'UNLOCK', 'LOCK', 'GET', 'PUT', 'DELETE', 'LIST',
+  'TRANSACTION', 'STATUS', 'DESTROY', 'SHUTDOWN',
+]);
 
 // --- wire limits (fail-closed; validated BEFORE any handler runs) -----------
 export const MAX_WIRE_BYTES = 32 * 1024 * 1024; // whole-payload budget
@@ -34,20 +38,26 @@ export const MAX_WIRE_DEPTH = 16;
 export const MAX_WIRE_NODES = 65536;
 export const MAX_WIRE_ARRAY_LENGTH = 16384;
 export const MAX_WIRE_STRING_CHARS = 1048576;
+export const MAX_TRANSACTION_OPERATIONS = 128;
+
+const PASSWORD_MIN_CHARS = 8;
+const PASSWORD_MAX_CHARS = 1024;
+const MAX_RECORD_KEY_CHARS = 256;
+const ENABLED_NAMESPACE = 'canary';
+const CONTENT_TYPES = Object.freeze(['json', 'bytes']);
+const KDF_PROFILES = Object.freeze(['desktop', 'mobile-balanced', 'mobile-low-memory']);
 
 const REQUEST_KEYS = Object.freeze(['id', 'type', 'payload']);
 const RESULT_KEYS = Object.freeze(['id', 'ok', 'result']);
 const ERROR_KEYS = Object.freeze(['id', 'ok', 'error']);
 const WIRE_ERROR_KEYS = Object.freeze(['code', 'details']);
 
-const KNOWN_CODES = new Set(Object.values(Codes));
-
 const badRequest = (message, details) => new VaultWorkerError(Codes.BAD_REQUEST, message, details);
 
 /**
  * Adapt an error factory for snapshotStrictPlainObject: the shape helper
- * reports `{field}`, but the worker error allowlist only admits
- * type/phase/reason/attempt — fold the field name into `reason`.
+ * reports `{field}`; fold it into a bounded reason so shape failures have one
+ * stable representation independent of the affected payload field.
  */
 const asShapeFactory = (make) => (message, details) => make(
   message,
@@ -238,6 +248,135 @@ export function validateRequestEnvelope(raw) {
   return s;
 }
 
+const payloadShape = (raw, keys, requiredKeys = keys) => snapshotStrictPlainObject(
+  raw,
+  keys,
+  asShapeFactory(badRequest),
+  { requiredKeys },
+);
+
+function assertPassword(password) {
+  if (typeof password !== 'string'
+    || password.length < PASSWORD_MIN_CHARS
+    || password.length > PASSWORD_MAX_CHARS) {
+    throw badRequest('password violates the vault policy', { reason: 'password-length' });
+  }
+}
+
+function assertNamespace(namespace) {
+  if (namespace !== ENABLED_NAMESPACE) {
+    throw badRequest('namespace is not active in this build', { reason: 'namespace-not-active' });
+  }
+}
+
+function assertRecordKey(recordKey) {
+  const ok = typeof recordKey === 'string'
+    && recordKey.length >= 1
+    && recordKey.length <= MAX_RECORD_KEY_CHARS
+    && recordKey.isWellFormed()
+    && !/[\u0000-\u001F\u007F]/.test(recordKey);
+  if (!ok) throw badRequest('record key is invalid', { reason: 'bad-record-key' });
+}
+
+function normalizePut(raw, { operation = false } = {}) {
+  const keys = operation
+    ? ['op', 'recordKey', 'value', 'contentType']
+    : ['namespace', 'recordKey', 'value', 'contentType'];
+  const required = operation ? ['op', 'recordKey', 'value'] : ['namespace', 'recordKey', 'value'];
+  const p = payloadShape(raw, keys, required);
+  if (operation && p.op !== 'put') {
+    throw badRequest('transaction operation is invalid', { reason: 'bad-transaction-op' });
+  }
+  if (!operation) assertNamespace(p.namespace);
+  assertRecordKey(p.recordKey);
+  const contentType = p.contentType ?? 'json';
+  if (!CONTENT_TYPES.includes(contentType)) {
+    throw badRequest('content type is invalid', { reason: 'bad-content-type' });
+  }
+  if (contentType === 'bytes' && !(p.value instanceof Uint8Array)) {
+    throw badRequest('bytes content requires Uint8Array', { reason: 'bad-bytes-value' });
+  }
+  validateWireValue(p.value, { allowBinary: contentType === 'bytes' });
+  return operation
+    ? Object.freeze({ op: 'put', recordKey: p.recordKey, value: p.value, contentType })
+    : Object.freeze({ namespace: p.namespace, recordKey: p.recordKey, value: p.value, contentType });
+}
+
+/**
+ * Closed payload table for every active v1 message. It runs after the generic
+ * wire grammar and before lifecycle/state handling. The returned snapshots
+ * contain only descriptor-read fields; unknown or accessor-backed fields are
+ * rejected without invocation.
+ */
+export function validateRequestPayload(type, raw) {
+  if (!ACTIVE_TYPES.includes(type)) return raw; // MIGRATE stays reserved
+  if (type === 'INIT') return raw; // exact INIT schema is owned by the runtime
+  if (['LOCK', 'STATUS', 'DESTROY', 'SHUTDOWN'].includes(type)) {
+    if (raw !== null) throw badRequest('this message type takes no payload', { type, reason: 'unexpected-payload' });
+    return null;
+  }
+  if (type === 'CREATE_VAULT') {
+    const p = payloadShape(raw, ['password', 'profile'], ['password']);
+    assertPassword(p.password);
+    if (p.profile !== undefined && !KDF_PROFILES.includes(p.profile)) {
+      throw badRequest('kdf profile is invalid', { reason: 'bad-profile' });
+    }
+    return Object.freeze({
+      password: p.password,
+      ...(p.profile === undefined ? {} : { profile: p.profile }),
+    });
+  }
+  if (type === 'UNLOCK') {
+    const p = payloadShape(raw, ['password']);
+    assertPassword(p.password);
+    return Object.freeze({ password: p.password });
+  }
+  if (type === 'PUT') return normalizePut(raw);
+  if (type === 'GET' || type === 'DELETE') {
+    const p = payloadShape(raw, ['namespace', 'recordKey']);
+    assertNamespace(p.namespace);
+    assertRecordKey(p.recordKey);
+    return Object.freeze({ namespace: p.namespace, recordKey: p.recordKey });
+  }
+  if (type === 'LIST') {
+    const p = payloadShape(raw, ['namespace']);
+    assertNamespace(p.namespace);
+    return Object.freeze({ namespace: p.namespace });
+  }
+  if (type === 'TRANSACTION') {
+    const p = payloadShape(raw, ['namespace', 'operations']);
+    assertNamespace(p.namespace);
+    if (!Array.isArray(p.operations)
+      || p.operations.length < 1
+      || p.operations.length > MAX_TRANSACTION_OPERATIONS) {
+      throw badRequest('transaction operation count is invalid', { reason: 'bad-transaction-size' });
+    }
+    const seen = new Set();
+    const operations = p.operations.map((rawOp) => {
+      const opDesc = rawOp !== null && typeof rawOp === 'object'
+        ? Object.getOwnPropertyDescriptor(rawOp, 'op') : undefined;
+      const op = opDesc && Object.hasOwn(opDesc, 'value') ? opDesc.value : undefined;
+      let normalized;
+      if (op === 'put') {
+        normalized = normalizePut(rawOp, { operation: true });
+      } else if (op === 'delete') {
+        const d = payloadShape(rawOp, ['op', 'recordKey']);
+        assertRecordKey(d.recordKey);
+        normalized = Object.freeze({ op: 'delete', recordKey: d.recordKey });
+      } else {
+        throw badRequest('transaction operation is invalid', { reason: 'bad-transaction-op' });
+      }
+      if (seen.has(normalized.recordKey)) {
+        throw badRequest('transaction record keys must be unique', { reason: 'duplicate-transaction-key' });
+      }
+      seen.add(normalized.recordKey);
+      return normalized;
+    });
+    return Object.freeze({ namespace: p.namespace, operations: Object.freeze(operations) });
+  }
+  throw badRequest('active request type has no payload schema', { type, reason: 'missing-schema' });
+}
+
 /**
  * Client-side validation of a response envelope: exactly {id, ok, result} or
  * {id, ok, error} — never both; `ok` strictly boolean and coherent; the error
@@ -266,7 +405,7 @@ export function validateResponseEnvelope(raw) {
     return s;
   }
   const e = snapshotStrictPlainObject(s.error, WIRE_ERROR_KEYS, asShapeFactory(violation));
-  if (typeof e.code !== 'string' || !KNOWN_CODES.has(e.code)) {
+  if (typeof e.code !== 'string' || !isKnownVaultWireErrorCode(e.code)) {
     throw violation('response error code is not part of the protocol', { reason: 'unknown-error-code' });
   }
   let details;

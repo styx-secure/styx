@@ -1,9 +1,9 @@
-// vault.js — empty-vault lifecycle state machine (Blocco 3, PR-5 / US-006).
+// vault.js — vault lifecycle state machine (Blocco 3, PR-5 / US-006, US-008).
 // Pure factory `createVault({ db, deriveKek, randomBytes, todayIso })`: it owns
 // the §3 state machine and the seven lifecycle operations, orchestrating the
-// FROZEN PR-2 wrapper/manifest modules and the PR-4 IndexedDB engine. No
-// worker-protocol wiring here — that is a later PR; keeping this off the frozen
-// PR-3 boundary.
+// FROZEN PR-2 wrapper/manifest modules and the PR-4 IndexedDB engine. US-008
+// assembles this factory inside the dedicated worker without changing those
+// frozen persisted interfaces.
 //
 // Root Storage Key confinement (spec §4): the Root Key is 32 random bytes
 // generated HERE, held in memory ONLY while UNLOCKED, wrapped/unwrapped through
@@ -34,10 +34,13 @@ import {
 import {
   deriveManifestKey, deriveNamespaceKey, signManifestBytes, verifyManifestBytes, VAULT_KEY_VERSION,
 } from '../crypto/vault-keys.js';
-import { encryptVaultRecord, decryptVaultRecord } from './vault-record.js';
+import {
+  encryptVaultRecord, decryptVaultRecord, CONTENT_TYPES, MAX_RECORD_KEY_CHARS,
+} from './vault-record.js';
 import { buildManifestCanonicalBytes, encodeBase64, decodeCanonicalBase64 } from '../crypto/vault-aad.js';
 import { KDF_PROFILES, KDF_POLICY } from '../crypto/kdf-bounds.js';
 import { constantTimeEqual, uuidv4 } from '../utils.js';
+import { snapshotStrictPlainObject } from '../crypto/vault-shape.js';
 
 export const VAULT_STATES = Object.freeze({
   UNINITIALIZED: 'UNINITIALIZED',
@@ -76,6 +79,8 @@ export const ENABLED_NAMESPACES = Object.freeze(['canary']);
 // Password policy (plan §B3.0.4): 8–1024 characters.
 const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 1024;
+const MAX_TRANSACTION_OPERATIONS = 128;
+const RECORD_KEY_CONTROL_CHARS = /[\u0000-\u001F\u007F]/;
 
 const wrongState = (message, details) => new VaultCryptoError(Codes.WRONG_STATE, message, details);
 
@@ -185,6 +190,17 @@ export function createVault({
   const assertEnabledNamespace = (namespace) => {
     if (!ENABLED_NAMESPACES.includes(namespace)) {
       throw new VaultCryptoError(Codes.NAMESPACE_UNSUPPORTED, 'namespace not enabled in this build', { namespace: typeof namespace === 'string' ? namespace : 'invalid' });
+    }
+  };
+
+  const assertTransactionRecordKey = (recordKey) => {
+    const valid = typeof recordKey === 'string'
+      && recordKey.length >= 1
+      && recordKey.length <= MAX_RECORD_KEY_CHARS
+      && recordKey.isWellFormed()
+      && !RECORD_KEY_CONTROL_CHARS.test(recordKey);
+    if (!valid) {
+      throw new VaultCryptoError(Codes.RECORD_INVALID, 'transaction record key is invalid', { field: 'recordKey' });
     }
   };
 
@@ -515,6 +531,91 @@ export function createVault({
       return { deleted: true };
     },
 
+    /**
+     * Apply a bounded, data-only batch in one durable IndexedDB transaction.
+     * Crypto and record-version reads finish before the transaction starts;
+     * then every record mutation and exactly one manifest bump commit or roll
+     * back together. Duplicate keys are rejected so record-version semantics
+     * stay unambiguous inside the batch.
+     */
+    async transactionRecords(namespace, operations) {
+      await ensureLoaded();
+      assertUnlocked('apply a record transaction');
+      assertEnabledNamespace(namespace);
+      if (!Array.isArray(operations)
+        || operations.length < 1
+        || operations.length > MAX_TRANSACTION_OPERATIONS) {
+        throw new VaultCryptoError(Codes.RECORD_INVALID, 'transaction operation count is invalid', { reason: 'bad-transaction-size' });
+      }
+
+      const invalidOperation = (message, details) => new VaultCryptoError(
+        Codes.RECORD_INVALID,
+        message,
+        { field: String(details?.field ?? 'operation').slice(0, 64) },
+      );
+      const seen = new Set();
+      const normalized = operations.map((raw) => {
+        const opDesc = raw !== null && typeof raw === 'object'
+          ? Object.getOwnPropertyDescriptor(raw, 'op') : undefined;
+        const op = opDesc && Object.hasOwn(opDesc, 'value') ? opDesc.value : undefined;
+        const keys = op === 'put'
+          ? ['op', 'recordKey', 'value', 'contentType']
+          : ['op', 'recordKey'];
+        const requiredKeys = op === 'put' ? ['op', 'recordKey', 'value'] : keys;
+        if (op !== 'put' && op !== 'delete') {
+          throw new VaultCryptoError(Codes.RECORD_INVALID, 'transaction operation is invalid', { reason: 'bad-transaction-op' });
+        }
+        const item = snapshotStrictPlainObject(raw, keys, invalidOperation, { requiredKeys });
+        assertTransactionRecordKey(item.recordKey);
+        if (op === 'put' && item.contentType !== undefined && !CONTENT_TYPES.includes(item.contentType)) {
+          throw new VaultCryptoError(Codes.RECORD_INVALID, 'transaction content type is invalid', { field: 'contentType' });
+        }
+        if (seen.has(item.recordKey)) {
+          throw new VaultCryptoError(Codes.RECORD_INVALID, 'transaction record keys must be unique', { reason: 'duplicate-transaction-key' });
+        }
+        seen.add(item.recordKey);
+        return op === 'put'
+          ? { op, recordKey: item.recordKey, value: item.value, contentType: item.contentType ?? 'json' }
+          : { op, recordKey: item.recordKey };
+      });
+
+      const hasPuts = normalized.some((op) => op.op === 'put');
+      const namespaceKey = hasPuts ? await namespaceKeyFor(namespace) : null;
+      const prepared = [];
+      let putCount = 0;
+      let deleteCount = 0;
+      for (const op of normalized) {
+        if (op.op === 'delete') {
+          prepared.push(op);
+          deleteCount += 1;
+          continue;
+        }
+        const previous = await db.get(namespace, op.recordKey);
+        const recordVersion = isSafeInt(previous?.rv) && previous.rv >= 1 ? previous.rv + 1 : 1;
+        const record = await encryptVaultRecord({
+          namespace,
+          recordKey: op.recordKey,
+          plaintext: op.value,
+          contentType: op.contentType,
+          recordVersion,
+        }, namespaceKey);
+        prepared.push({ op: 'put', recordKey: op.recordKey, record });
+        putCount += 1;
+      }
+
+      const nextGen = generation + 1;
+      const manifest = await buildManifest(nextGen, schemaVersion);
+      await db.transaction([namespace, META_STORE], (ops) => {
+        for (const op of prepared) {
+          if (op.op === 'put') ops.put(namespace, op.recordKey, op.record);
+          else ops.delete(namespace, op.recordKey);
+        }
+        ops.put(META_STORE, MANIFEST_KEY, manifest);
+      });
+      generation = nextGen;
+      return { applied: prepared.length, puts: putCount, deletes: deleteCount };
+    },
+
     /** Keys of a namespace. A read: no commit, no generation bump. */
     async listRecords(namespace) {
       await ensureLoaded();
@@ -566,7 +667,8 @@ export function createVault({
   // asynchronous crypto, then commits. Reads are excluded — they take no
   // counters and IndexedDB isolates them.
   const MUTATING = Object.freeze([
-    'createVault', 'unlock', 'lock', 'changePassword', 'rewrap', 'putRecord', 'deleteRecord', 'destroy',
+    'createVault', 'unlock', 'lock', 'changePassword', 'rewrap', 'putRecord', 'deleteRecord',
+    'transactionRecords', 'destroy',
   ]);
   return Object.freeze(Object.fromEntries(Object.entries(api).map(
     ([name, fn]) => [name, MUTATING.includes(name) ? (...args) => serialize(() => fn(...args)) : fn],

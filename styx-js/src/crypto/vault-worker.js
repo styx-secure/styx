@@ -8,6 +8,7 @@
 /* eslint-disable no-restricted-globals */
 import { initSync, argon2id_derive } from '../../vendor/styx-kdf-wasm/pkg/styx_kdf_wasm.js';
 import { createVaultKdfLoader } from './vault-kdf-loader.js';
+import { createVaultWorkerLifecycle } from './vault-worker-lifecycle.js';
 import { createVaultWorkerRuntime } from './vault-worker-runtime.js';
 
 const runtime = createVaultWorkerRuntime(Object.freeze({
@@ -20,7 +21,10 @@ const runtime = createVaultWorkerRuntime(Object.freeze({
     initSyncImpl: initSync,
     deriveImpl: argon2id_derive,
   })),
-  // no testOverrides: the production worker has exactly INIT/STATUS/SHUTDOWN
+  vaultLifecycle: createVaultWorkerLifecycle(Object.freeze({
+    deriveImpl: argon2id_derive,
+  })),
+  // no testOverrides: production uses only the closed lifecycle table
 }));
 
 self.onmessage = (event) => {
