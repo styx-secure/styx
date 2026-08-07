@@ -71,7 +71,7 @@ jobs:
           # under src/crypto, src/storage, src/config, the shared utils, the
           # vault test material, the KDF artifact or the lockfile runs the
           # probes — the gate stays fail-closed at the cost of a few extra runs.
-          if echo "$changed" | grep -qE '^styx-js/src/crypto/|^styx-js/src/storage/|^styx-js/src/config/|^styx-js/src/utils\.js|^styx-js/test/crypto/vault|^styx-js/test/storage/vault|^styx-js/test/support/|^styx-js/test/fixtures/vault|^styx-js/test/fixtures/mls-state-v1/|^styx-js/playwright\.vault[^/]*\.config\.js|^styx-js/vendor/styx-kdf-wasm/|^styx-js/package-lock\.json|^\.github/workflows/styx-js-web\.yml'; then
+          if echo "$changed" | grep -qE '^styx-js/src/crypto/|^styx-js/src/storage/|^styx-js/src/config/|^styx-js/src/utils\.js|^styx-js/test/crypto/vault|^styx-js/test/storage/vault|^styx-js/test/support/|^styx-js/test/fixtures/vault|^styx-js/test/fixtures/mls-state-v1/|^styx-js/playwright\.vault[^/]*\.config\.js|^styx-js/apps/chat/src/(App\.jsx|components/InstallHint\.jsx|hooks/useStyxChat\.js|lib/(settings|vault)[^/]*\.js)|^styx-js/apps/chat/(e2e/vault-settings\.spec\.js|playwright\.vault-settings\.config\.js|vite\.config\.js)|^styx-js/vendor/styx-kdf-wasm/|^styx-js/package-lock\.json|^\.github/workflows/styx-js-web\.yml'; then
             echo "vaultdb=true" >> "$GITHUB_OUTPUT"
           else
             echo "vaultdb=false" >> "$GITHUB_OUTPUT"
@@ -152,6 +152,17 @@ jobs:
             exit 1
           fi
           echo "Production bundle is worker-runtime-free."
+      - name: Build and verify the stage-enabled vault integration
+        working-directory: styx-js/apps/chat
+        run: |
+          set -euo pipefail
+          VITE_VAULT_STAGE=developer-only npm run build -- --outDir dist-vault-test
+          canonical="dist-vault-test/vendor/styx-kdf-wasm/pkg/styx_kdf_wasm_bg.wasm"
+          test -f "$canonical"
+          echo "ad67202689c58d5e7b7a0b845d7b9d7253ecc04542f8921804c11d62942ae8f5  $canonical" | sha256sum --check --strict
+          cmp "$canonical" ../../vendor/styx-kdf-wasm/pkg/styx_kdf_wasm_bg.wasm
+          find dist-vault-test/assets -type f -name 'vault-worker-product-*.js' | grep -q .
+          rm -rf dist-vault-test
 
   vault-db-probes:
     name: Vault browser probes
@@ -182,6 +193,14 @@ jobs:
       - name: Run vault worker/lifecycle boundary probes on chromium and firefox
         working-directory: styx-js
         run: npx playwright test -c playwright.vault-worker.config.js
+      - name: Run settings migration probes on chromium and firefox
+        working-directory: styx-js
+        run: npx playwright test -c playwright.vault-settings.config.js
+      - name: Run the stage-enabled PWA settings integration
+        working-directory: styx-js/apps/chat
+        run: |
+          npm ci
+          npx playwright test -c playwright.vault-settings.config.js
 
   gate:
     name: styx-js web gate
