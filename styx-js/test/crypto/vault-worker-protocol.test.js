@@ -324,7 +324,7 @@ describe('request envelope (worker side)', () => {
     ]);
     expect(ACTIVE_TYPES).toEqual([
       'INIT', 'CREATE_VAULT', 'UNLOCK', 'LOCK', 'GET', 'PUT', 'DELETE', 'LIST',
-      'TRANSACTION', 'STATUS', 'DESTROY', 'SHUTDOWN',
+      'TRANSACTION', 'MIGRATE', 'STATUS', 'DESTROY', 'SHUTDOWN',
     ]);
     for (const type of ['status', 'EVAL', '', 7, null, Symbol('x')]) {
       expectCode(() => validateRequestEnvelope(req({ type })), Codes.BAD_REQUEST);
@@ -349,6 +349,31 @@ describe('closed active payload schemas (US-008)', () => {
     expectCode(() => validateRequestPayload('PUT', {
       namespace: 'settings', recordKey: 'k', value: 1,
     }), Codes.BAD_REQUEST, 'namespace-not-active');
+    expect(validateRequestPayload('MIGRATE', {
+      namespace: 'settings',
+      preferences: { v: 1, theme: 'system', installHintDismissed: false },
+    })).toEqual({
+      namespace: 'settings',
+      preferences: { v: 1, theme: 'system', installHintDismissed: false },
+    });
+    expectCode(() => validateRequestPayload('MIGRATE', {
+      namespace: 'canary',
+      preferences: { v: 1, theme: 'system', installHintDismissed: false },
+    }), Codes.BAD_REQUEST, 'migration-namespace');
+    expectCode(() => validateRequestPayload('MIGRATE', {
+      namespace: 'settings',
+      preferences: { v: 1, theme: 'system', installHintDismissed: false, extra: true },
+    }), Codes.BAD_REQUEST);
+    let getterCalls = 0;
+    const hostile = { v: 1, installHintDismissed: false };
+    Object.defineProperty(hostile, 'theme', {
+      enumerable: true,
+      get() { getterCalls += 1; return 'dark'; },
+    });
+    expectCode(() => validateRequestPayload('MIGRATE', {
+      namespace: 'settings', preferences: hostile,
+    }), Codes.BAD_REQUEST);
+    expect(getterCalls).toBe(0);
     expectCode(() => validateRequestPayload('PUT', {
       namespace: 'canary', recordKey: 'k', value: new Uint8Array([1]), contentType: 'json',
     }), Codes.BAD_REQUEST, 'binary-not-allowed');
@@ -624,21 +649,12 @@ describe('worker runtime: states, active and reserved types', () => {
     expect(runtime.getState()).toBe(WORKER_STATES.FAILED);
   });
 
-  test('every reserved type answers VAULT_WRONG_STATE after generic validation', async () => {
+  test('all registered v1 types are active; size limits still precede dispatch', async () => {
     const { runtime, posted } = makeRuntime();
     await runtime.handleMessage({ data: initReq() });
     const reserved = MESSAGE_TYPES.filter((t) => !ACTIVE_TYPES.includes(t));
-    let id = 10;
-    for (const type of reserved) {
-      await runtime.handleMessage({ data: { id, type, payload: {} } });
-      const last = posted[posted.length - 1].m;
-      expect(last.ok).toBe(false);
-      expect(last.error.code).toBe(Codes.WRONG_STATE);
-      expect(last.error.details).toEqual({ type, reason: 'reserved-type' });
-      id += 1;
-    }
-    // size limits run BEFORE the reserved-type answer
-    await runtime.handleMessage({ data: { id, type: 'PUT', payload: { big: new Uint8Array(MAX_WIRE_BYTES + 1) } } });
+    expect(reserved).toEqual([]);
+    await runtime.handleMessage({ data: { id: 10, type: 'PUT', payload: { big: new Uint8Array(MAX_WIRE_BYTES + 1) } } });
     expect(posted[posted.length - 1].m.error.code).toBe(Codes.BAD_REQUEST);
   });
 
@@ -653,6 +669,10 @@ describe('worker runtime: states, active and reserved types', () => {
       listRecords: async () => ['a'],
       deleteRecord: async () => ({ deleted: true }),
       transactionRecords: async (_ns, ops) => ({ applied: ops.length, puts: 1, deletes: 0 }),
+      migrate: async (namespace, preferences) => {
+        calls.push(['migrate', namespace, preferences]);
+        return { state: 'verified', matched: true, digest: 'a'.repeat(64), recordVersion: 1 };
+      },
       destroy: async () => ({ state: 'UNINITIALIZED' }),
     };
     const { runtime, posted, closedCount } = makeRuntime({ vaultApi });
@@ -668,12 +688,18 @@ describe('worker runtime: states, active and reserved types', () => {
         namespace: 'canary', operations: [{ op: 'put', recordKey: 'b', value: 2 }],
       },
     } });
+    await runtime.handleMessage({ data: {
+      id: 7, type: 'MIGRATE', payload: {
+        namespace: 'settings', preferences: { v: 1, theme: 'dark', installHintDismissed: true },
+      },
+    } });
     expect(posted.slice(1).map(({ m }) => m.result)).toEqual([
       { state: 'UNLOCKED' },
       { recordVersion: 1 },
       { found: false },
       { keys: ['a'] },
       { applied: 1, puts: 1, deletes: 0 },
+      { state: 'verified', matched: true, digest: 'a'.repeat(64), recordVersion: 1 },
     ]);
     expect(calls[0]).toEqual(['create', 'password8', {}]);
     expect(calls[1][0]).toBe('put');
@@ -717,6 +743,7 @@ describe('worker runtime: states, active and reserved types', () => {
       deleteRecord: touched,
       listRecords: touched,
       transactionRecords: touched,
+      migrate: touched,
       destroy: touched,
     };
     const { runtime, posted } = makeRuntime({ vaultApi });
@@ -730,6 +757,7 @@ describe('worker runtime: states, active and reserved types', () => {
       ['DELETE', { namespace: 'canary', recordKey: 'k', extra: true }],
       ['LIST', {}],
       ['TRANSACTION', { namespace: 'canary', operations: [] }],
+      ['MIGRATE', { namespace: 'settings', preferences: { v: 1, theme: 'sepia', installHintDismissed: false } }],
       ['DESTROY', {}],
     ];
     let id = 20;

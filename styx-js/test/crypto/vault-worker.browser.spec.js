@@ -90,8 +90,11 @@ test('production worker: verified INIT and full canary lifecycle stay behind the
       .then(() => 'resolved', (e) => ({ code: e.code, details: e.details }));
     r.unlock = await client.request('UNLOCK', { password });
     r.getUpdated = await client.request('GET', { namespace: 'canary', recordKey: 'a' });
-    r.reserved = await client.request('MIGRATE', {})
-      .then(() => 'resolved', (e) => ({ code: e.code, details: e.details }));
+    r.migrate = await client.request('MIGRATE', {
+      namespace: 'settings',
+      preferences: { v: 1, theme: 'dark', installHintDismissed: true },
+    });
+    r.getSettings = await client.request('GET', { namespace: 'settings', recordKey: 'preferences' });
     r.badInit = await client.request('INIT', { wasmUrl: '/elsewhere/styx_kdf_wasm_bg.wasm' })
       .then(() => 'resolved', (e) => ({ code: e.code }));
     r.destroy = await client.request('DESTROY');
@@ -120,7 +123,11 @@ test('production worker: verified INIT and full canary lifecycle stay behind the
   expect(out.wrongPassword).toEqual({ code: 'VAULT_WRONG_PASSWORD', details: {} });
   expect(out.unlock).toEqual({ state: 'UNLOCKED' });
   expect(out.getUpdated).toMatchObject({ found: true, record: { value: { synthetic: 2 }, recordVersion: 2 } });
-  expect(out.reserved).toEqual({ code: 'VAULT_WRONG_STATE', details: { type: 'MIGRATE', reason: 'reserved-type' } });
+  expect(out.migrate).toMatchObject({ state: 'verified', matched: true, recordVersion: 1 });
+  expect(out.getSettings).toMatchObject({
+    found: true,
+    record: { value: { v: 1, theme: 'dark', installHintDismissed: true }, recordVersion: 1 },
+  });
   expect(out.badInit.code).toBe('VAULT_WRONG_STATE');
   expect(out.destroy).toEqual({ state: 'UNINITIALIZED' });
   expect(out.serialized).not.toContain('STYX-TEST-ONLY-worker-password');

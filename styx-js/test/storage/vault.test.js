@@ -91,10 +91,90 @@ describe('forbidden transitions (§3) → VAULT_WRONG_STATE', () => {
     expect(await codeOf(v.changePassword('newpass8!', { profile: TEST_PROFILE }))).toBe(Codes.WRONG_STATE);
     expect(await codeOf(v.rewrap('pw-eight!!', { profile: TEST_PROFILE }))).toBe(Codes.WRONG_STATE);
   });
-  test('MIGRATE trigger is out of scope, fail-closed', async () => {
+  test('MIGRATE rejects a missing namespace and payload fail-closed', async () => {
     const v = makeVault(new FakeVaultDb());
     await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
-    expect(await codeOf(v.migrate())).toBe(Codes.WRONG_STATE);
+    expect(await codeOf(v.migrate())).toBe(Codes.NAMESPACE_UNSUPPORTED);
+  });
+});
+
+describe('settings migration (US-009)', () => {
+  const light = Object.freeze({ v: 1, theme: 'light', installHintDismissed: false });
+  const dark = Object.freeze({ v: 1, theme: 'dark', installHintDismissed: true });
+
+  test('writes one authenticated JSON record, verifies it, and is idempotent', async () => {
+    const db = new FakeVaultDb();
+    const v = makeVault(db);
+    await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
+
+    const first = await v.migrate('settings', light);
+    expect(first).toMatchObject({ state: 'verified', matched: true, recordVersion: 1 });
+    expect(db.record('settings', 'preferences')).toMatchObject({ ct: 'json', rv: 1 });
+    expect(db.record('migrations', 'settings')).toMatchObject({
+      version: 1, namespace: 'settings', state: 'verified',
+      counts: { source: 1, written: 1 },
+    });
+    expect((await v.getRecord('settings', 'preferences')).value).toEqual(light);
+
+    const generation = db.manifest().generation;
+    expect(await v.migrate('settings', light)).toEqual(first);
+    expect(db.manifest().generation).toBe(generation);
+    expect(db.record('settings', 'preferences').rv).toBe(1);
+
+    expect(await v.migrate('settings', dark)).toMatchObject({ recordVersion: 2 });
+    expect((await v.getRecord('settings', 'preferences')).value).toEqual(dark);
+  });
+
+  test.each([
+    ['phase-2 record commit', (_ns, key) => key === 'preferences'],
+    ['phase-3 verified marker', (_ns, key, value) => key === 'settings' && value?.state === 'verified'],
+  ])('a crash at %s resumes safely without duplicating the record version', async (_label, failOn) => {
+    const db = new FakeVaultDb();
+    const v = makeVault(db);
+    await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
+    db.failOn = failOn;
+    await expect(v.migrate('settings', light)).rejects.toThrow('injected crash');
+    db.failOn = null;
+
+    expect(await v.migrate('settings', light)).toMatchObject({ state: 'verified', recordVersion: 1 });
+    expect(db.record('settings', 'preferences').rv).toBe(1);
+    expect(db.record('migrations', 'settings').state).toBe('verified');
+  });
+
+  test('a crash after the IDB commit but before verification resumes from written without a rewrite', async () => {
+    const db = new FakeVaultDb();
+    const v = makeVault(db);
+    await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
+    let reads = 0;
+    db.failGetOn = (namespace, key, value) => {
+      if (namespace !== 'settings' || key !== 'preferences' || value === undefined) return false;
+      reads += 1;
+      return reads === 1;
+    };
+    await expect(v.migrate('settings', light)).rejects.toThrow('injected read crash');
+    expect(db.record('migrations', 'settings').state).toBe('written');
+    expect(db.record('settings', 'preferences').rv).toBe(1);
+    db.failGetOn = null;
+    expect(await v.migrate('settings', light)).toMatchObject({ state: 'verified', recordVersion: 1 });
+    expect(db.record('settings', 'preferences').rv).toBe(1);
+  });
+
+  test('tampered markers and verified divergence fail closed', async () => {
+    const db = new FakeVaultDb();
+    const v = makeVault(db);
+    await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
+    await v.migrate('settings', light);
+    const firstDigest = db.record('migrations', 'settings').digests.source;
+    db.record('migrations', 'settings').counts.written = 0;
+    expect(await codeOf(v.migrate('settings', light))).toBe(Codes.RECORD_INVALID);
+
+    const db2 = new FakeVaultDb();
+    const v2 = makeVault(db2, 2);
+    await v2.createVault('pw-eight!!', { profile: TEST_PROFILE });
+    await v2.migrate('settings', light);
+    expect(db2.record('migrations', 'settings').digests.source).not.toBe(firstDigest);
+    db2.record('settings', 'preferences').data[0] ^= 0xff;
+    expect(await codeOf(v2.migrate('settings', light))).toBe(Codes.RECORD_CORRUPTED);
   });
 });
 

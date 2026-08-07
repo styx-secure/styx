@@ -5,12 +5,14 @@
 // is proven separately by the anti-bundle CI step.
 import { describe, test, expect } from '@jest/globals';
 import {
-  vaultStageEnabled, loadVaultLifecycle, VAULT_STAGE_DEVELOPER_ONLY,
+  vaultStageEnabled, loadVaultLifecycle,
+  VAULT_STAGE_DEVELOPER_ONLY, VAULT_STAGE_TEST_PROFILE,
 } from '../../src/config/vault-stage.js';
 
 describe('vault-stage flag', () => {
   test('the canonical developer stage value is "developer-only" (plan B3.0.6)', () => {
     expect(VAULT_STAGE_DEVELOPER_ONLY).toBe('developer-only');
+    expect(VAULT_STAGE_TEST_PROFILE).toBe('test-profile');
   });
 
   test('with the flag off (default), the guard denies and loads nothing', async () => {

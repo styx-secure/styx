@@ -26,10 +26,10 @@ export const MESSAGE_TYPES = Object.freeze([
   'TRANSACTION', 'MIGRATE', 'STATUS', 'DESTROY', 'SHUTDOWN',
 ]);
 
-/** Functionally active in US-008. MIGRATE remains the sole reserved v1 name. */
+/** Functionally active through US-009. */
 export const ACTIVE_TYPES = Object.freeze([
   'INIT', 'CREATE_VAULT', 'UNLOCK', 'LOCK', 'GET', 'PUT', 'DELETE', 'LIST',
-  'TRANSACTION', 'STATUS', 'DESTROY', 'SHUTDOWN',
+  'TRANSACTION', 'MIGRATE', 'STATUS', 'DESTROY', 'SHUTDOWN',
 ]);
 
 // --- wire limits (fail-closed; validated BEFORE any handler runs) -----------
@@ -43,7 +43,9 @@ export const MAX_TRANSACTION_OPERATIONS = 128;
 const PASSWORD_MIN_CHARS = 8;
 const PASSWORD_MAX_CHARS = 1024;
 const MAX_RECORD_KEY_CHARS = 256;
-const ENABLED_NAMESPACE = 'canary';
+const CANARY_NAMESPACE = 'canary';
+const SETTINGS_NAMESPACE = 'settings';
+const SETTINGS_RECORD_KEY = 'preferences';
 const CONTENT_TYPES = Object.freeze(['json', 'bytes']);
 const KDF_PROFILES = Object.freeze(['desktop', 'mobile-balanced', 'mobile-low-memory']);
 
@@ -264,9 +266,22 @@ function assertPassword(password) {
 }
 
 function assertNamespace(namespace) {
-  if (namespace !== ENABLED_NAMESPACE) {
+  if (namespace !== CANARY_NAMESPACE) {
     throw badRequest('namespace is not active in this build', { reason: 'namespace-not-active' });
   }
+}
+
+function normalizeSettingsPreferences(raw) {
+  const p = payloadShape(raw, ['v', 'theme', 'installHintDismissed']);
+  if (p.v !== 1 || !['system', 'light', 'dark'].includes(p.theme)
+    || typeof p.installHintDismissed !== 'boolean') {
+    throw badRequest('settings preferences are invalid', { reason: 'bad-settings-payload' });
+  }
+  return Object.freeze({
+    v: 1,
+    theme: p.theme,
+    installHintDismissed: p.installHintDismissed,
+  });
 }
 
 function assertRecordKey(recordKey) {
@@ -309,7 +324,7 @@ function normalizePut(raw, { operation = false } = {}) {
  * rejected without invocation.
  */
 export function validateRequestPayload(type, raw) {
-  if (!ACTIVE_TYPES.includes(type)) return raw; // MIGRATE stays reserved
+  if (!ACTIVE_TYPES.includes(type)) return raw;
   if (type === 'INIT') return raw; // exact INIT schema is owned by the runtime
   if (['LOCK', 'STATUS', 'DESTROY', 'SHUTDOWN'].includes(type)) {
     if (raw !== null) throw badRequest('this message type takes no payload', { type, reason: 'unexpected-payload' });
@@ -334,8 +349,11 @@ export function validateRequestPayload(type, raw) {
   if (type === 'PUT') return normalizePut(raw);
   if (type === 'GET' || type === 'DELETE') {
     const p = payloadShape(raw, ['namespace', 'recordKey']);
-    assertNamespace(p.namespace);
     assertRecordKey(p.recordKey);
+    if (type === 'GET' && p.namespace === SETTINGS_NAMESPACE && p.recordKey === SETTINGS_RECORD_KEY) {
+      return Object.freeze({ namespace: p.namespace, recordKey: p.recordKey });
+    }
+    assertNamespace(p.namespace);
     return Object.freeze({ namespace: p.namespace, recordKey: p.recordKey });
   }
   if (type === 'LIST') {
@@ -373,6 +391,16 @@ export function validateRequestPayload(type, raw) {
       return normalized;
     });
     return Object.freeze({ namespace: p.namespace, operations: Object.freeze(operations) });
+  }
+  if (type === 'MIGRATE') {
+    const p = payloadShape(raw, ['namespace', 'preferences']);
+    if (p.namespace !== SETTINGS_NAMESPACE) {
+      throw badRequest('migration namespace is not active', { reason: 'migration-namespace' });
+    }
+    return Object.freeze({
+      namespace: SETTINGS_NAMESPACE,
+      preferences: normalizeSettingsPreferences(p.preferences),
+    });
   }
   throw badRequest('active request type has no payload schema', { type, reason: 'missing-schema' });
 }
