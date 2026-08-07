@@ -244,7 +244,13 @@ export function createVault({
   // would disclose them by enumeration. Reuse the existing K_manifest HMAC
   // primitive: no new key, label or format, and the marker remains bounded.
   const settingsMarkerDigest = async (value) => {
-    const bytes = canonicalSettingsBytes(value);
+    const payload = canonicalSettingsBytes(value);
+    const domain = new TextEncoder().encode('styx/settings-marker/v1\0');
+    const bytes = new Uint8Array(domain.length + payload.length);
+    bytes.set(domain);
+    bytes.set(payload, domain.length);
+    payload.fill(0);
+    domain.fill(0);
     let mac;
     try {
       mac = await signManifestBytes(await manifestKey(), bytes);
@@ -676,14 +682,17 @@ export function createVault({
         const digest = await settingsMarkerDigest(normalized);
         const existingMarkerRaw = await db.get('migrations', SETTINGS_MARKER_KEY);
         let existingMarker;
+        let repairRequired = false;
         if (existingMarkerRaw !== undefined) {
           try {
             existingMarker = validateSettingsMarker(existingMarkerRaw);
           } catch (error) {
             if (error instanceof SettingsMigrationError) {
-              throw new VaultCryptoError(Codes.RECORD_INVALID, 'settings migration marker is invalid', { reason: 'settings-marker-invalid' });
+              // The legacy copy remains authoritative. Treat an invalid marker
+              // as an interrupted migration and rebuild it from that source.
+              repairRequired = true;
             }
-            throw error;
+            else throw error;
           }
         }
 
@@ -691,18 +700,28 @@ export function createVault({
         let previousPlain;
         if (previous !== undefined) {
           const key = await namespaceKeyFor(SETTINGS_NAMESPACE);
-          previousPlain = await decryptVaultRecord(
-            previous,
-            { namespace: SETTINGS_NAMESPACE, recordKey: SETTINGS_RECORD_KEY },
-            key,
-          );
           try {
-            previousPlain = { ...previousPlain, value: validateSettingsPreferences(previousPlain.value) };
+            previousPlain = await decryptVaultRecord(
+              previous,
+              { namespace: SETTINGS_NAMESPACE, recordKey: SETTINGS_RECORD_KEY },
+              key,
+            );
+          } catch (error) {
+            if (error?.code === Codes.RECORD_CORRUPTED || error?.code === Codes.RECORD_INVALID) {
+              repairRequired = true;
+              previousPlain = undefined;
+            } else throw error;
+          }
+          try {
+            if (previousPlain !== undefined) {
+              previousPlain = { ...previousPlain, value: validateSettingsPreferences(previousPlain.value) };
+            }
           } catch (error) {
             if (error instanceof SettingsMigrationError) {
-              throw new VaultCryptoError(Codes.RECORD_INVALID, 'stored settings payload is invalid', { reason: 'settings-record-invalid' });
+              repairRequired = true;
+              previousPlain = undefined;
             }
-            throw error;
+            else throw error;
           }
         }
 
@@ -712,19 +731,20 @@ export function createVault({
 
         if (existingMarker?.state === 'verified' && markerMatches) {
           if (!recordMatches) {
-            throw new VaultCryptoError(Codes.RECORD_INVALID, 'verified settings diverged', { reason: 'settings-divergence' });
+            repairRequired = true;
           }
-          return Object.freeze({ state: 'verified', matched: true, digest,
+          if (!repairRequired) return Object.freeze({ state: 'verified', matched: true, digest,
             recordVersion: previousPlain.recordVersion });
         }
         if (existingMarker?.state === 'written' && markerMatches && !recordMatches) {
-          throw new VaultCryptoError(Codes.RECORD_INVALID, 'written settings diverged', { reason: 'settings-divergence' });
+          repairRequired = true;
         }
 
         // Phase 1: a signed generation records that migration has started.
         let nextGen;
         let manifest;
-        if (!(existingMarker?.state === 'pending' && markerMatches)
+        if (repairRequired
+          || !(existingMarker?.state === 'pending' && markerMatches)
           && !(existingMarker?.state === 'written' && markerMatches)) {
           const pending = buildSettingsMarker('pending', digest);
           nextGen = generation + 1;
@@ -740,7 +760,7 @@ export function createVault({
         // IndexedDB transaction. Crypto is complete before the transaction.
         const namespaceKey = await namespaceKeyFor(SETTINGS_NAMESPACE);
         let recordVersion = previousPlain?.recordVersion;
-        if (!(existingMarker?.state === 'written' && markerMatches)) {
+        if (repairRequired || !(existingMarker?.state === 'written' && markerMatches)) {
           recordVersion = isSafeInt(previous?.rv) && previous.rv >= 1 ? previous.rv + 1 : 1;
           const record = await encryptVaultRecord({
             namespace: SETTINGS_NAMESPACE,

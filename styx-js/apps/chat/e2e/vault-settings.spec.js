@@ -61,3 +61,24 @@ test('a non-empty peer profile remains legacy-only and never opens the product d
   const names = await page.evaluate(async () => (await indexedDB.databases()).map(({ name }) => name));
   expect(names).not.toContain('styx-vault-default');
 });
+
+test('real worker dual-writes theme and install-hint dismissal after unlock', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+    });
+  });
+  await page.goto('/');
+  await page.getByLabel('Alias pubblico').fill('vault-settings-actions');
+  await page.getByLabel('Password locale').fill(PASSWORD);
+  await page.getByRole('button', { name: 'Crea identità' }).click();
+  await expect(page.getByLabel('Password locale')).toBeHidden({ timeout: 90_000 });
+
+  await page.getByRole('button', { name: 'Cambia tema' }).click();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('styx-theme')))
+    .toBe('dark');
+  await page.getByRole('button', { name: 'Chiudi' }).last().click();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('styx-install-dismissed')))
+    .toBe('1');
+});

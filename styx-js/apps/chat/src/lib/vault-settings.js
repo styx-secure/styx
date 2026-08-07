@@ -6,6 +6,7 @@ import {
   SettingsMigrationError, readLegacySettings, normalizeLegacySettings,
   settingsEqual,
 } from '../../../../src/storage/vault-migration.js';
+import { loadVaultLifecycle } from '../../../../src/config/vault-stage.js';
 
 const safeDiagnostic = (raw = {}) => Object.freeze({
   code: typeof raw.code === 'string' ? raw.code.slice(0, 64) : 'SETTINGS_SYNC_FAILED',
@@ -67,11 +68,10 @@ export function createVaultSettingsCoordinator({
         mismatch: !matched,
         sourceCount: 1,
         writtenCount: matched ? 1 : 0,
-        digest: migration?.digest,
       });
       if (!matched) return Object.freeze({ synchronized: false, preferences });
-      current = preferences;
-      return Object.freeze({ synchronized: true, preferences });
+      current = read.record.value;
+      return Object.freeze({ synchronized: true, preferences: current });
     } catch (error) {
       emit({ code: errorCode(error), phase: 'migrate', markerState: 'unknown' });
       current = preferences; // legacy remains authoritative
@@ -113,18 +113,13 @@ export async function openVaultSettings({
   onDiagnostic = defaultDiagnostic,
 } = {}) {
   if (peerProfile !== '') return null;
-  // Keep this exact build-time expression adjacent to the import. Vite folds
-  // the branch to `return null` in ordinary builds, so Rollup never emits the
-  // worker graph. Tests exercise the coordinator export and do not call this
-  // browser-only opener.
-  if (import.meta.env.VITE_VAULT_STAGE !== 'developer-only'
-    && import.meta.env.VITE_VAULT_STAGE !== 'test-profile') return null;
-  const workerModule = await import('../../../../src/crypto/vault-worker-supervisor.js');
+  const workerModule = await loadVaultLifecycle();
+  if (!workerModule) return null;
 
   const supervisor = workerModule.createProductVaultWorkerSupervisor();
-  await supervisor.start();
 
   try {
+    await supervisor.start();
     const status = await supervisor.request('STATUS');
     if (status.vaultState === 'UNINITIALIZED') {
       await supervisor.request('CREATE_VAULT', {

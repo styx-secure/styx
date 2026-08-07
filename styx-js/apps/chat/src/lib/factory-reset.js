@@ -3,9 +3,28 @@
 // After this the origin holds nothing recoverable about the identity. Order: destroy
 // the identity and revoke push FIRST (via the lib and the push subscription), then wipe
 // the physical surfaces, so an interrupted reset cannot leave a working key behind a
-// half-cleared cache. Every step is best-effort: a missing API or an already-gone
-// surface must not stop the rest.
+// half-cleared cache. Product-vault deletion is fail-closed; optional browser
+// surfaces remain best-effort because they may already be absent.
 import { getBridgeUrl } from './config.js';
+
+const PRODUCT_VAULT_DB = 'styx-vault-default';
+
+function deleteDatabase(name) {
+  if (typeof indexedDB === 'undefined') return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const request = indexedDB.deleteDatabase(name);
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      if (error) reject(error);
+      else resolve();
+    };
+    request.onsuccess = () => finish();
+    request.onerror = () => finish(request.error || new Error('database deletion failed'));
+    request.onblocked = () => finish(new Error('database deletion blocked'));
+  });
+}
 
 async function revokePush(chat) {
   if (typeof navigator === 'undefined' || !navigator.serviceWorker) return;
@@ -34,9 +53,14 @@ async function revokePush(chat) {
  * Wipe everything this origin stores for the current identity, then reload.
  * @param {object} opts
  * @param {object} opts.chat the live StyxChat instance (for wipe + signed push unregister)
+ * @param {Function} opts.stopVault terminates the product worker before deletion
  * @param {boolean} [opts.reload=true] reload the page afterwards (false in tests)
  */
-export async function factoryReset({ chat, reload = true } = {}) {
+export async function factoryReset({ chat, stopVault = () => {}, reload = true } = {}) {
+  // The product vault is the only reset step that must be deterministic. If
+  // it cannot be removed, abort before touching identity or legacy settings.
+  try { stopVault(); } catch { /* the deletion still provides the final guard */ }
+  await deleteDatabase(PRODUCT_VAULT_DB);
   await revokePush(chat);
   try { await chat?.wipe?.(); } catch { /* best effort */ }
 
@@ -53,7 +77,7 @@ export async function factoryReset({ chat, reload = true } = {}) {
   } catch { /* ignore */ }
 
   // Defensive: the ledger DB the chat never writes, in case a prior build did.
-  try { indexedDB.deleteDatabase('styx-ledger'); } catch { /* ignore */ }
+  try { await deleteDatabase('styx-ledger'); } catch { /* best effort */ }
 
   // Legacy / app-level unprefixed keys the lib does not own.
   try {

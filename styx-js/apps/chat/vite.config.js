@@ -2,8 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { fileURLToPath } from 'node:url';
-import { readFileSync, readdirSync, unlinkSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
 import { manifest } from './pwa.config.js';
 
 // Resolve `styx-js` to the library source in the parent package, so the app
@@ -13,10 +12,8 @@ const styxJsRoot = fileURLToPath(new URL('../../', import.meta.url));
 const vaultKdfSource = fileURLToPath(new URL(
   '../../vendor/styx-kdf-wasm/pkg/styx_kdf_wasm_bg.wasm', import.meta.url,
 ));
-const vaultWorkerSource = fileURLToPath(new URL(
-  '../../src/crypto/vault-worker-product.js', import.meta.url,
-));
 const vaultKdfOutput = 'vendor/styx-kdf-wasm/pkg/styx_kdf_wasm_bg.wasm';
+const disabledVaultSupervisorId = '\0styx-vault-supervisor-disabled';
 
 // The frozen loader accepts only this canonical path. Emit the already-pinned
 // bytes for explicitly enabled developer/test builds; ordinary builds contain
@@ -24,12 +21,25 @@ const vaultKdfOutput = 'vendor/styx-kdf-wasm/pkg/styx_kdf_wasm_bg.wasm';
 function vaultKdfAssetPlugin() {
   const stage = process.env.VITE_VAULT_STAGE;
   const enabled = stage === 'developer-only' || stage === 'test-profile';
-  let outputAssets;
   return {
     name: 'styx-vault-kdf-asset',
+    enforce: 'pre',
     apply: 'build',
-    configResolved(config) {
-      outputAssets = resolve(config.root, config.build.outDir, 'assets');
+    resolveId(source, importer) {
+      // Replace the only vault lifecycle edge with a virtual off-stage module.
+      // This prevents Vite's worker scanner from ever entering the product
+      // worker graph in ordinary builds; no post-build deletion is needed.
+      if (!enabled && source.endsWith('/crypto/vault-worker-supervisor.js')
+        && importer?.includes('/src/config/vault-stage.js')) {
+        return disabledVaultSupervisorId;
+      }
+      return null;
+    },
+    load(id) {
+      if (id === disabledVaultSupervisorId) {
+        return 'export const createProductVaultWorkerSupervisor = undefined;';
+      }
+      return null;
     },
     buildStart() {
       if (!enabled) return;
@@ -37,27 +47,12 @@ function vaultKdfAssetPlugin() {
     },
     generateBundle(_options, bundle) {
       if (enabled) return;
-      // Vite discovers `new Worker(new URL(...))` before Rollup removes the
-      // disabled dynamic-import branch. Remove only those two now-unreachable
-      // artifacts from the final off bundle; no application chunk references
-      // them after tree-shaking.
       for (const [fileName, output] of Object.entries(bundle)) {
-        const isWorker = output.type === 'chunk'
-          && (output.facadeModuleId === vaultWorkerSource
-            || /^assets\/vault-worker-product-[A-Za-z0-9_-]+\.js$/.test(fileName));
-        const isWorkerKdf = output.type === 'asset'
-          && /^assets\/styx_kdf_wasm_bg-[A-Za-z0-9_-]+\.wasm$/.test(fileName);
-        if (isWorker || isWorkerKdf) delete bundle[fileName];
-      }
-    },
-    closeBundle() {
-      if (enabled || outputAssets === undefined) return;
-      // Worker sub-builds are written independently of the main Rollup
-      // bundle, so remove their exact unreachable outputs after that sub-build.
-      for (const name of readdirSync(outputAssets, { withFileTypes: true })) {
-        if (!name.isFile()) continue;
-        if (/^(vault-worker-product-|styx_kdf_wasm_bg-)[A-Za-z0-9_-]+\.(js|wasm)$/.test(name.name)) {
-          unlinkSync(resolve(outputAssets, name.name));
+        if (/vault-worker-product|styx_kdf_wasm_bg/.test(fileName)) {
+          this.error(`stage-off bundle contains forbidden vault artifact: ${fileName}`);
+        }
+        if (output.type === 'chunk' && /vault-worker-product|styx_kdf_wasm_bg/.test(output.code)) {
+          this.error(`stage-off bundle references forbidden vault artifact from ${fileName}`);
         }
       }
     },

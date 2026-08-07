@@ -75,7 +75,11 @@ export default function App() {
       'Reset totale: identità, messaggi, contatti e chiavi verranno eliminati da questo '
       + 'dispositivo. Operazione irreversibile. Procedere?',
     )) return;
-    await factoryReset({ chat: chat.chatRef.current });
+    try {
+      await factoryReset({ chat: chat.chatRef.current, stopVault: chat.stopVaultSettings });
+    } catch {
+      showToast('Reset non completato: il vault è ancora in uso. Riprova.');
+    }
     // factoryReset reloads the page; nothing runs after it.
   };
 

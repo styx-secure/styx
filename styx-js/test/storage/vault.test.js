@@ -159,14 +159,15 @@ describe('settings migration (US-009)', () => {
     expect(db.record('settings', 'preferences').rv).toBe(1);
   });
 
-  test('tampered markers and verified divergence fail closed', async () => {
+  test('tampered markers and verified divergence repair from legacy', async () => {
     const db = new FakeVaultDb();
     const v = makeVault(db);
     await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
     await v.migrate('settings', light);
     const firstDigest = db.record('migrations', 'settings').digests.source;
     db.record('migrations', 'settings').counts.written = 0;
-    expect(await codeOf(v.migrate('settings', light))).toBe(Codes.RECORD_INVALID);
+    expect(await v.migrate('settings', light)).toMatchObject({ state: 'verified', matched: true });
+    expect(db.record('migrations', 'settings').counts.written).toBe(1);
 
     const db2 = new FakeVaultDb();
     const v2 = makeVault(db2, 2);
@@ -174,7 +175,7 @@ describe('settings migration (US-009)', () => {
     await v2.migrate('settings', light);
     expect(db2.record('migrations', 'settings').digests.source).not.toBe(firstDigest);
     db2.record('settings', 'preferences').data[0] ^= 0xff;
-    expect(await codeOf(v2.migrate('settings', light))).toBe(Codes.RECORD_CORRUPTED);
+    expect(await v2.migrate('settings', light)).toMatchObject({ state: 'verified', matched: true });
   });
 });
 

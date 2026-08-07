@@ -132,10 +132,11 @@ export function useStyxChat() {
         setVaultPreferences(settingsSession.initial.preferences);
       }
     } catch (e) {
-      try { chat.destroy?.(); } catch { /* fail-closed teardown */ }
-      release();
-      lockReleaseRef.current = null;
-      throw e;
+      // Settings migration is an optional, developer/test-only enhancement.
+      // A vault failure must never deny access to the legacy chat path.
+      vaultSettingsRef.current = null;
+      setVaultPreferences(null);
+      console.debug('settings vault unavailable; continuing with legacy preferences', e?.code);
     }
     chatRef.current = chat;
 
@@ -181,6 +182,12 @@ export function useStyxChat() {
     return chat.me || identity;
   }, [upsertMessage, patchMessageState]);
 
+  const stopVaultSettings = useCallback(() => {
+    try { vaultSettingsRef.current?.stop?.(); } catch { /* bounded worker teardown */ }
+    vaultSettingsRef.current = null;
+    setVaultPreferences(null);
+  }, []);
+
   const lock = useCallback(() => {
     subsRef.current.forEach((off) => {
       try { off(); } catch { /* ignore */ }
@@ -188,8 +195,7 @@ export function useStyxChat() {
     subsRef.current = [];
     try { chatRef.current?.destroy?.(); } catch { /* ignore */ }
     chatRef.current = null;
-    try { vaultSettingsRef.current?.stop?.(); } catch { /* ignore */ }
-    vaultSettingsRef.current = null;
+    stopVaultSettings();
     try { lockReleaseRef.current?.(); } catch { /* ignore */ }
     lockReleaseRef.current = null;
     setReady(false);
@@ -200,7 +206,7 @@ export function useStyxChat() {
     setNoMore({});
     setPendingPairings([]);
     setVaultPreferences(null);
-  }, []);
+  }, [stopVaultSettings]);
 
   useEffect(() => () => lock(), [lock]); // teardown on unmount
 
@@ -309,7 +315,7 @@ export function useStyxChat() {
     ready, fatalError, secondaryTab, me, contacts, messagesByContact, typingByContact, noMore, pendingPairings,
     unlock, lock, openConversation, loadOlder, sendText, markRead, setTyping,
     setAlias, enablePush, acceptPending, dismissPending, safetyNumber, setVerified,
-    vaultPreferences, setThemePreference, dismissInstallHint,
+    vaultPreferences, setThemePreference, dismissInstallHint, stopVaultSettings,
     chatRef,
     ...pairing,
   };
