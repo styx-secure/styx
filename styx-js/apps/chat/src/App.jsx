@@ -34,11 +34,17 @@ export default function App() {
     else document.documentElement.removeAttribute('data-theme');
   }, [theme]);
 
-  const toggleTheme = () => {
+  useEffect(() => {
+    if (!chat.vaultPreferences) return;
+    setTheme(chat.vaultPreferences.theme === 'system' ? '' : chat.vaultPreferences.theme);
+  }, [chat.vaultPreferences]);
+
+  const toggleTheme = async () => {
     const current = theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     const next = current === 'dark' ? 'light' : 'dark';
+    const result = await chat.setThemePreference(next);
+    if (result === null) localStorage.setItem('styx-theme', next);
     setTheme(next);
-    localStorage.setItem('styx-theme', next);
   };
 
   const showToast = useCallback((t) => {
@@ -177,7 +183,10 @@ export default function App() {
 
       {toast && <div className="toast sx-badge">{toast}</div>}
 
-      <InstallHint />
+      <InstallHint
+        dismissed={chat.vaultPreferences?.installHintDismissed}
+        onDismiss={chat.dismissInstallHint}
+      />
     </>
   );
 }
