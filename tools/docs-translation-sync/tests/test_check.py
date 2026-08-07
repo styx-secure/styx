@@ -8,8 +8,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-# Discovery imports this module before writing its bytecode cache. Set the flag
-# here so the contract's exact unittest command cannot dirty the worktree.
+# Discovery may cache this module before its body runs. This flag protects the
+# later check.py import; the local .gitignore keeps all test bytecode from Git.
 sys.dont_write_bytecode = True
 
 MODULE_PATH = Path(__file__).parents[1] / "check.py"
