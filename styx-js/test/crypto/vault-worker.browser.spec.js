@@ -53,8 +53,10 @@ test.afterAll(async () => {
 
 const PROD_WORKER = '/src/crypto/vault-worker.js';
 const TEST_WORKER = '/test/fixtures/vault-worker/test-worker.js';
+const ATOMIC_WORKER = '/test/fixtures/vault-worker/atomic-worker.js';
 
-test('production worker: verified INIT, STATUS, reserved types, idempotence, SHUTDOWN', async ({ page }, info) => {
+test('production worker: verified INIT and full canary lifecycle stay behind the boundary', async ({ page }, info) => {
+  test.setTimeout(120000);
   await page.goto(`${base}/harness`);
   const out = await page.evaluate(async ({ workerPath, wasmUrl }) => {
     const { createVaultWorkerClient } = await import('/src/crypto/vault-worker-client.js');
@@ -64,10 +66,36 @@ test('production worker: verified INIT, STATUS, reserved types, idempotence, SHU
     r.init = await client.request('INIT', { wasmUrl });
     r.initAgain = await client.request('INIT', { wasmUrl }); // idempotent, same config
     r.status = await client.request('STATUS');
-    r.reserved = await client.request('UNLOCK', {}).then(() => 'resolved', (e) => ({ code: e.code, details: e.details }));
+    const password = 'STYX-TEST-ONLY-worker-password';
+    r.create = await client.request('CREATE_VAULT', { password, profile: 'mobile-low-memory' });
+    r.putA = await client.request('PUT', {
+      namespace: 'canary', recordKey: 'a', value: { synthetic: 1 }, contentType: 'json',
+    });
+    await client.request('PUT', {
+      namespace: 'canary', recordKey: 'b', value: new Uint8Array([1, 2, 3]), contentType: 'bytes',
+    });
+    r.getA = await client.request('GET', { namespace: 'canary', recordKey: 'a' });
+    r.tx = await client.request('TRANSACTION', {
+      namespace: 'canary',
+      operations: [
+        { op: 'put', recordKey: 'a', value: { synthetic: 2 }, contentType: 'json' },
+        { op: 'delete', recordKey: 'b' },
+      ],
+    });
+    r.list = await client.request('LIST', { namespace: 'canary' });
+    r.lock = await client.request('LOCK');
+    r.lockedRead = await client.request('GET', { namespace: 'canary', recordKey: 'a' })
+      .then(() => 'resolved', (e) => ({ code: e.code, details: e.details }));
+    r.wrongPassword = await client.request('UNLOCK', { password: 'STYX-TEST-ONLY-wrong-password' })
+      .then(() => 'resolved', (e) => ({ code: e.code, details: e.details }));
+    r.unlock = await client.request('UNLOCK', { password });
+    r.getUpdated = await client.request('GET', { namespace: 'canary', recordKey: 'a' });
+    r.reserved = await client.request('MIGRATE', {})
+      .then(() => 'resolved', (e) => ({ code: e.code, details: e.details }));
     r.badInit = await client.request('INIT', { wasmUrl: '/elsewhere/styx_kdf_wasm_bg.wasm' })
       .then(() => 'resolved', (e) => ({ code: e.code }));
-    r.shutdown = await client.request('SHUTDOWN');
+    r.destroy = await client.request('DESTROY');
+    r.serialized = JSON.stringify(r);
     return r;
   }, { workerPath: PROD_WORKER, wasmUrl: WASM_URL });
 
@@ -78,16 +106,26 @@ test('production worker: verified INIT, STATUS, reserved types, idempotence, SHU
   expect(out.status).toEqual({
     protocolVersion: 1,
     workerState: 'READY',
-    vaultState: null,
-    capabilities: { kdf: true, storage: false, lifecycle: false, openmls: false },
+    vaultState: 'UNINITIALIZED',
+    capabilities: { kdf: true, storage: true, lifecycle: true, openmls: false },
     versions: { wrapper: 1, record: 1, key: 1 },
   });
-  // production build has NO handler for reserved names — and a different
-  // config after INIT is refused
-  expect(out.reserved).toEqual({ code: 'VAULT_WRONG_STATE', details: { type: 'UNLOCK', reason: 'reserved-type' } });
+  expect(out.create).toEqual({ state: 'UNLOCKED' });
+  expect(out.putA).toEqual({ recordVersion: 1 });
+  expect(out.getA).toMatchObject({ found: true, record: { value: { synthetic: 1 }, recordVersion: 1 } });
+  expect(out.tx).toEqual({ applied: 2, puts: 1, deletes: 1 });
+  expect(out.list).toEqual({ keys: ['a'] });
+  expect(out.lock).toEqual({ state: 'LOCKED' });
+  expect(out.lockedRead.code).toBe('VAULT_WRONG_STATE');
+  expect(out.wrongPassword).toEqual({ code: 'VAULT_WRONG_PASSWORD', details: {} });
+  expect(out.unlock).toEqual({ state: 'UNLOCKED' });
+  expect(out.getUpdated).toMatchObject({ found: true, record: { value: { synthetic: 2 }, recordVersion: 2 } });
+  expect(out.reserved).toEqual({ code: 'VAULT_WRONG_STATE', details: { type: 'MIGRATE', reason: 'reserved-type' } });
   expect(out.badInit.code).toBe('VAULT_WRONG_STATE');
-  expect(out.shutdown).toEqual({ closed: true });
-  console.log(`[vault-worker:${info.project.name}] production worker verified (digest+KAT) and closed cleanly`);
+  expect(out.destroy).toEqual({ state: 'UNINITIALIZED' });
+  expect(out.serialized).not.toContain('STYX-TEST-ONLY-worker-password');
+  expect(out.serialized).not.toContain('styx-vault-test-'); // DB naming never crosses the protocol
+  console.log(`[vault-worker:${info.project.name}] production worker verified full canary lifecycle and factory reset`);
 });
 
 test('a tampered artifact path fails INIT closed (no READY, worker FAILED)', async ({ page }) => {
@@ -127,8 +165,8 @@ test('supervisor: fatal timeout terminates and respawns; crash respawns; STATUS 
     r.afterTimeout = { state: supervisor.getState(), gen: supervisor.getGeneration() };
     r.statusAfterTimeout = await supervisor.request('STATUS');
 
-    // crash: DESTROY schedules an uncaught throw inside the worker
-    await supervisor.request('DESTROY');
+    // crash: test-only MIGRATE override schedules an uncaught throw
+    await supervisor.request('MIGRATE', {});
     for (let i = 0; i < 50 && !(supervisor.getState() === 'RUNNING' && supervisor.getGeneration() > r.afterTimeout.gen); i += 1) {
       await new Promise((resolve) => { setTimeout(resolve, 100); });
     }
@@ -161,13 +199,13 @@ test('circuit breaker: repeated post-READY crashes reach FAILED, never respawn f
       backoff: { baseMs: 25, maxDelayMs: 400, maxAttempts: 5 }, // faster ladder, same 5-attempt bound
     });
     await supervisor.start();
-    // every worker that reaches READY gets crashed (DESTROY schedules an
+    // every worker that reaches READY gets crashed (test-only MIGRATE schedules an
     // uncaught throw): without the W7 breaker this would respawn forever,
     // because each generation completes a fully verified INIT
     const deadline = Date.now() + 90000;
     while (supervisor.getState() !== 'FAILED' && Date.now() < deadline) {
       if (supervisor.getState() === 'RUNNING') {
-        await supervisor.request('DESTROY').catch(() => {});
+        await supervisor.request('MIGRATE', {}).catch(() => {});
       }
       await new Promise((resolve) => { setTimeout(resolve, 50); });
     }
@@ -229,6 +267,151 @@ test('strong cancellation: terminate DURING a real synchronous Argon2id run', as
   expect(out.status.workerState).toBe('READY');
   expect(out.gen).toBe(2);
   console.log(`[vault-worker:${info.project.name}] baseline ${Math.round(out.baselineMs)}ms, cancelled+respawned in ${Math.round(out.cancelMs)}ms`);
+});
+
+test('worker killed after PUT/TRANSACTION commit reopens a complete, valid manifest state', async ({ page }, info) => {
+  test.setTimeout(120000);
+  await page.goto(`${base}/harness`);
+  const out = await page.evaluate(async ({ workerPath, wasmUrl }) => {
+    const { createVaultWorkerSupervisor } = await import('/src/crypto/vault-worker-supervisor.js');
+    const supervisor = createVaultWorkerSupervisor({
+      createWorker: () => new Worker(workerPath, { type: 'module' }),
+      wasmUrl,
+      requestTimeoutMs: 10000,
+    });
+    const password = 'STYX-TEST-ONLY-atomic-password';
+    const waitForFreshWorker = async (oldGeneration) => {
+      for (let i = 0; i < 100; i += 1) {
+        if (supervisor.getState() === 'RUNNING' && supervisor.getGeneration() > oldGeneration) return;
+        await new Promise((resolve) => { setTimeout(resolve, 50); });
+      }
+      throw new Error('fresh worker did not reach RUNNING');
+    };
+
+    await supervisor.start();
+    await supervisor.request('CREATE_VAULT', { password, profile: 'mobile-low-memory' });
+
+    await supervisor.request('MIGRATE', { stallAfterCommit: true });
+    const putGeneration = supervisor.getGeneration();
+    const putTimeout = await supervisor.request('PUT', {
+      namespace: 'canary', recordKey: 'put-committed', value: { phase: 'put' }, contentType: 'json',
+    }, { timeoutMs: 1000 }).then(() => null, (e) => ({ code: e.code, reason: e.details?.reason }));
+    await waitForFreshWorker(putGeneration);
+    const afterPutStatus = await supervisor.request('STATUS');
+    await supervisor.request('UNLOCK', { password });
+    const putRecord = await supervisor.request('GET', { namespace: 'canary', recordKey: 'put-committed' });
+
+    await supervisor.request('MIGRATE', { stallAfterCommit: true });
+    const txGeneration = supervisor.getGeneration();
+    const txTimeout = await supervisor.request('TRANSACTION', {
+      namespace: 'canary',
+      operations: [
+        { op: 'put', recordKey: 'tx-a', value: { phase: 'transaction', n: 1 } },
+        { op: 'put', recordKey: 'tx-b', value: { phase: 'transaction', n: 2 } },
+        { op: 'delete', recordKey: 'put-committed' },
+      ],
+    }, { timeoutMs: 1000 }).then(() => null, (e) => ({ code: e.code, reason: e.details?.reason }));
+    await waitForFreshWorker(txGeneration);
+    const afterTxStatus = await supervisor.request('STATUS');
+    await supervisor.request('UNLOCK', { password }); // verifies the signed manifest
+    const list = await supervisor.request('LIST', { namespace: 'canary' });
+    const txA = await supervisor.request('GET', { namespace: 'canary', recordKey: 'tx-a' });
+    const txB = await supervisor.request('GET', { namespace: 'canary', recordKey: 'tx-b' });
+    const deleted = await supervisor.request('GET', { namespace: 'canary', recordKey: 'put-committed' });
+    await supervisor.request('DESTROY', null);
+    const afterDestroy = await supervisor.request('STATUS');
+    supervisor.stop();
+    return {
+      putTimeout, txTimeout, afterPutStatus, putRecord, afterTxStatus,
+      list, txA, txB, deleted, afterDestroy,
+    };
+  }, { workerPath: ATOMIC_WORKER, wasmUrl: WASM_URL });
+
+  expect(out.putTimeout).toEqual({ code: 'WORKER_TIMEOUT', reason: 'timeout' });
+  expect(out.afterPutStatus.vaultState).toBe('LOCKED');
+  expect(out.putRecord).toMatchObject({ found: true, record: { value: { phase: 'put' } } });
+  expect(out.txTimeout).toEqual({ code: 'WORKER_TIMEOUT', reason: 'timeout' });
+  expect(out.afterTxStatus.vaultState).toBe('LOCKED');
+  expect(out.list.keys.sort()).toEqual(['tx-a', 'tx-b']);
+  expect(out.txA).toMatchObject({ found: true, record: { value: { phase: 'transaction', n: 1 } } });
+  expect(out.txB).toMatchObject({ found: true, record: { value: { phase: 'transaction', n: 2 } } });
+  expect(out.deleted).toEqual({ found: false });
+  expect(out.afterDestroy.vaultState).toBe('UNINITIALIZED');
+  console.log(`[vault-worker:${info.project.name}] commit-before-ack PUT/TRANSACTION recovered atomically`);
+});
+
+test('RK8: service-worker update while UNLOCKED does not expose keys or disrupt the vault worker', async ({ page }, info) => {
+  test.setTimeout(120000);
+  await page.goto(`${base}/test/fixtures/vault-worker/rk8.html`);
+  const beforeReload = await page.evaluate(async ({ workerPath, wasmUrl }) => {
+    const scope = '/test/fixtures/vault-worker/';
+    const v1 = await navigator.serviceWorker.register(`${scope}rk8-sw-v1.js`, { scope });
+    await navigator.serviceWorker.ready;
+    if (!navigator.serviceWorker.controller) {
+      await new Promise((resolve) => navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true }));
+    }
+
+    const { createVaultWorkerClient } = await import('/src/crypto/vault-worker-client.js');
+    const client = createVaultWorkerClient(new Worker(workerPath, { type: 'module' }));
+    const password = 'STYX-TEST-ONLY-rk8-password';
+    await client.request('INIT', { wasmUrl });
+    await client.request('CREATE_VAULT', { password, profile: 'mobile-low-memory' });
+    await client.request('PUT', {
+      namespace: 'canary', recordKey: 'rk8', value: { survives: 'service-worker-update' }, contentType: 'json',
+    });
+    const before = await client.request('STATUS');
+
+    const controllerChanged = new Promise((resolve) => {
+      navigator.serviceWorker.addEventListener('controllerchange', resolve, { once: true });
+    });
+    const v2 = await navigator.serviceWorker.register(`${scope}rk8-sw-v2.js`, { scope });
+    const candidate = v2.installing ?? v2.waiting;
+    if (candidate && candidate.state !== 'activated') {
+      await new Promise((resolve) => candidate.addEventListener('statechange', () => {
+        if (candidate.state === 'activated') resolve();
+      }));
+    }
+    if (!navigator.serviceWorker.controller?.scriptURL.endsWith('rk8-sw-v2.js')) await controllerChanged;
+
+    const after = await client.request('STATUS');
+    const record = await client.request('GET', { namespace: 'canary', recordKey: 'rk8' });
+    return {
+      before, after, record,
+      controller: navigator.serviceWorker.controller?.scriptURL,
+      sameRegistration: v1.scope === v2.scope,
+    };
+  }, { workerPath: PROD_WORKER, wasmUrl: WASM_URL });
+
+  expect(beforeReload.before.vaultState).toBe('UNLOCKED');
+  expect(beforeReload.after.vaultState).toBe('UNLOCKED');
+  expect(beforeReload.record).toMatchObject({
+    found: true, record: { value: { survives: 'service-worker-update' } },
+  });
+  expect(beforeReload.controller).toContain('rk8-sw-v2.js');
+  expect(beforeReload.sameRegistration).toBe(true);
+
+  // A document reload retires its dedicated worker. Reopening yields LOCKED,
+  // not a transferred key. This is a process-boundary property, not a claim
+  // of guaranteed physical erasure from JavaScript memory.
+  await page.reload();
+  const afterReload = await page.evaluate(async ({ workerPath, wasmUrl }) => {
+    const { createVaultWorkerClient } = await import('/src/crypto/vault-worker-client.js');
+    const client = createVaultWorkerClient(new Worker(workerPath, { type: 'module' }));
+    const password = 'STYX-TEST-ONLY-rk8-password';
+    await client.request('INIT', { wasmUrl });
+    const status = await client.request('STATUS');
+    await client.request('UNLOCK', { password });
+    const record = await client.request('GET', { namespace: 'canary', recordKey: 'rk8' });
+    await client.request('DESTROY');
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
+    return { status, record };
+  }, { workerPath: PROD_WORKER, wasmUrl: WASM_URL });
+  expect(afterReload.status.vaultState).toBe('LOCKED');
+  expect(afterReload.record).toMatchObject({
+    found: true, record: { value: { survives: 'service-worker-update' } },
+  });
+  console.log(`[vault-worker:${info.project.name}] RK8 update preserved worker confinement; reload reopened LOCKED`);
 });
 
 test('transferables: 8 MiB moves both ways without copies; the 32 MiB cap holds', async ({ page }, info) => {

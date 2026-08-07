@@ -29,10 +29,12 @@ export function vaultStageEnabled() {
  * (production default) this returns null AND the guarded `import()` folds out,
  * so no vault module reaches the bundle — the anti-bundle CI step proves the
  * flag-off exclusion, and this function proves the flag actually gates access.
- * When the flag is on, it loads the lifecycle module dynamically.
- * @returns {Promise<null | typeof import('../storage/vault.js')>}
+ * When the flag is on, it loads the worker supervisor dynamically. The page
+ * never imports the in-process vault lifecycle: passwords and plaintext enter
+ * the closed worker protocol instead.
+ * @returns {Promise<null | typeof import('../crypto/vault-worker-supervisor.js')>}
  */
 export async function loadVaultLifecycle() {
   if (!vaultStageEnabled()) return null;
-  return import('../storage/vault.js');
+  return import('../crypto/vault-worker-supervisor.js');
 }

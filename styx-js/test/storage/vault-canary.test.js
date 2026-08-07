@@ -184,6 +184,61 @@ describe('concurrent mutations are serialized (independent review, PR #104 F1)',
   });
 });
 
+describe('bounded atomic record transactions (US-008)', () => {
+  test('mixed puts/deletes commit together and bump the manifest exactly once', async () => {
+    const { db, vault } = await unlockedVault();
+    await vault.putRecord('canary', 'delete-me', { old: true }, { contentType: 'json' });
+    await vault.putRecord('canary', 'update-me', { version: 1 }, { contentType: 'json' });
+    const genBefore = db.manifest().generation;
+
+    const result = await vault.transactionRecords('canary', [
+      { op: 'put', recordKey: 'new', value: { synthetic: true }, contentType: 'json' },
+      { op: 'put', recordKey: 'update-me', value: { version: 2 }, contentType: 'json' },
+      { op: 'delete', recordKey: 'delete-me' },
+    ]);
+
+    expect(result).toEqual({ applied: 3, puts: 2, deletes: 1 });
+    expect(db.manifest().generation).toBe(genBefore + 1);
+    expect((await vault.getRecord('canary', 'new')).value).toEqual({ synthetic: true });
+    expect((await vault.getRecord('canary', 'update-me')).recordVersion).toBe(2);
+    expect(await vault.getRecord('canary', 'delete-me')).toBeUndefined();
+  });
+
+  test('a failure at any write rolls back every record and the manifest bump', async () => {
+    const { db, vault } = await unlockedVault();
+    const genBefore = db.manifest().generation;
+    db.failOn = (ns, key) => ns === 'canary' && key === 'second';
+    await expect(vault.transactionRecords('canary', [
+      { op: 'put', recordKey: 'first', value: 1 },
+      { op: 'put', recordKey: 'second', value: 2 },
+      { op: 'put', recordKey: 'third', value: 3 },
+    ])).rejects.toThrow();
+    expect(await vault.listRecords('canary')).toEqual([]);
+    expect(db.manifest().generation).toBe(genBefore);
+  });
+
+  test('empty, oversized, duplicate-key and product-namespace batches fail closed', async () => {
+    const { vault } = await unlockedVault();
+    expect(await codeOf(vault.transactionRecords('canary', []))).toBe(Codes.RECORD_INVALID);
+    expect(await codeOf(vault.transactionRecords('canary', [
+      { op: 'delete', recordKey: 'same' },
+      { op: 'put', recordKey: 'same', value: 1 },
+    ]))).toBe(Codes.RECORD_INVALID);
+    expect(await codeOf(vault.transactionRecords('canary', [
+      { op: 'delete', recordKey: '' },
+    ]))).toBe(Codes.RECORD_INVALID);
+    expect(await codeOf(vault.transactionRecords('canary', [
+      { op: 'put', recordKey: 'k', value: 1, contentType: 'xml' },
+    ]))).toBe(Codes.RECORD_INVALID);
+    expect(await codeOf(vault.transactionRecords(
+      'canary', Array.from({ length: 129 }, (_, i) => ({ op: 'delete', recordKey: `k${i}` })),
+    ))).toBe(Codes.RECORD_INVALID);
+    expect(await codeOf(vault.transactionRecords('settings', [
+      { op: 'put', recordKey: 'k', value: 1 },
+    ]))).toBe(Codes.NAMESPACE_UNSUPPORTED);
+  });
+});
+
 describe('AAD anti-swap and corruption (§13 rows: AAD tampering, corruption)', () => {
   test('a valid record copied to another key fails authentication', async () => {
     const { db, vault } = await unlockedVault();
