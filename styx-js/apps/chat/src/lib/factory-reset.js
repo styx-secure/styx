@@ -11,16 +11,21 @@ function deleteDatabase(name) {
   if (typeof indexedDB === 'undefined') return Promise.resolve();
   return new Promise((resolve, reject) => {
     let settled = false;
+    let timeout;
     const request = indexedDB.deleteDatabase(name);
     const finish = (error) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timeout);
       if (error) reject(error);
       else resolve();
     };
+    timeout = setTimeout(() => finish(new Error('database deletion timed out')), 5000);
     request.onsuccess = () => finish();
     request.onerror = () => finish(request.error || new Error('database deletion failed'));
-    request.onblocked = () => finish(new Error('database deletion blocked'));
+    // BLOCKED means deletion is pending; allow connections to close before
+    // the bounded timeout decides that the reset cannot complete.
+    request.onblocked = () => {};
   });
 }
 
@@ -54,10 +59,11 @@ async function revokePush(chat) {
  * @param {Function} opts.stopVault terminates the product worker before deletion
  * @param {boolean} [opts.reload=true] reload the page afterwards (false in tests)
  */
-export async function factoryReset({ chat, stopVault = () => {}, reload = true } = {}) {
+export async function factoryReset({ chat, destroyVault = () => {}, stopVault = () => {}, reload = true } = {}) {
   // The product vault is the only reset step that must be deterministic. If
   // it cannot be removed, abort before touching identity or legacy settings.
-  try { stopVault(); } catch { /* the deletion still provides the final guard */ }
+  try { await destroyVault(); }
+  finally { await stopVault(); }
   await deleteDatabase(PRODUCT_VAULT_DB);
   await revokePush(chat);
   await chat?.wipe?.();

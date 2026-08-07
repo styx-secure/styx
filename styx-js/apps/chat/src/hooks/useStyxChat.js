@@ -190,6 +190,10 @@ export function useStyxChat() {
     try { await stop?.(); } catch { /* bounded worker teardown */ }
   }, []);
 
+  const destroyVaultSettings = useCallback(async () => {
+    await vaultSettingsRef.current?.destroy?.();
+  }, []);
+
   const lock = useCallback(() => {
     subsRef.current.forEach((off) => {
       try { off(); } catch { /* ignore */ }
@@ -317,7 +321,7 @@ export function useStyxChat() {
     ready, fatalError, secondaryTab, me, contacts, messagesByContact, typingByContact, noMore, pendingPairings,
     unlock, lock, openConversation, loadOlder, sendText, markRead, setTyping,
     setAlias, enablePush, acceptPending, dismissPending, safetyNumber, setVerified,
-    vaultPreferences, setThemePreference, dismissInstallHint, stopVaultSettings,
+    vaultPreferences, setThemePreference, dismissInstallHint, stopVaultSettings, destroyVaultSettings,
     chatRef,
     ...pairing,
   };

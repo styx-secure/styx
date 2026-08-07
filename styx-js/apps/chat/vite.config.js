@@ -19,12 +19,15 @@ const disabledVaultSupervisorId = '\0styx-vault-supervisor-disabled';
 // bytes for explicitly enabled developer/test builds; ordinary builds contain
 // neither this asset nor a vault worker chunk.
 function vaultKdfAssetPlugin() {
-  const stage = process.env.VITE_VAULT_STAGE;
-  const enabled = stage === 'developer-only' || stage === 'test-profile';
+  let enabled = false;
   return {
     name: 'styx-vault-kdf-asset',
     enforce: 'pre',
     apply: 'build',
+    configResolved(config) {
+      const stage = config.env.VITE_VAULT_STAGE;
+      enabled = stage === 'developer-only' || stage === 'test-profile';
+    },
     resolveId(source, importer) {
       // Replace the only vault lifecycle edge with a virtual off-stage module.
       // This prevents Vite's worker scanner from ever entering the product

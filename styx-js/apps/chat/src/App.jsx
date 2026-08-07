@@ -80,7 +80,11 @@ export default function App() {
       + 'dispositivo. Operazione irreversibile. Procedere?',
     )) return;
     try {
-      await factoryReset({ chat: chat.chatRef.current, stopVault: chat.stopVaultSettings });
+      await factoryReset({
+        chat: chat.chatRef.current,
+        destroyVault: chat.destroyVaultSettings,
+        stopVault: chat.stopVaultSettings,
+      });
     } catch {
       showToast('Reset non completato: il vault è ancora in uso. Riprova.');
     }

@@ -98,6 +98,7 @@ export function createVaultSettingsCoordinator({
       return writeLegacyThenSync(LEGACY_THEME_KEY, theme);
     },
     dismissInstallHint: () => writeLegacyThenSync(LEGACY_INSTALL_DISMISSED_KEY, '1'),
+    destroy: () => request('DESTROY'),
     stop,
   });
 }

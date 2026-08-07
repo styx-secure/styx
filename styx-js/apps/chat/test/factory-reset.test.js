@@ -33,7 +33,10 @@ function installGlobals({ blockedProduct = false } = {}) {
       state.events.push(`delete:${name}`);
       const request = {};
       queueMicrotask(() => {
-        if (name === 'styx-vault-default' && blockedProduct) request.onblocked?.();
+        if (name === 'styx-vault-default' && blockedProduct) {
+          request.onblocked?.();
+          request.onerror?.();
+        }
         else request.onsuccess?.();
       });
       return request;
@@ -55,8 +58,15 @@ describe('factoryReset — app-layer total wipe', () => {
 
   test('stops the product worker before deleting its fixed database', async () => {
     const chat = { wipe: jest.fn(async () => state.events.push('wipe')), me: { pubkey: 'a' }, signBridgeRegistration: jest.fn() };
-    await factoryReset({ chat, stopVault: () => state.events.push('stop-vault'), reload: false });
-    expect(state.events.slice(0, 3)).toEqual(['stop-vault', 'delete:styx-vault-default', 'wipe']);
+    await factoryReset({
+      chat,
+      destroyVault: async () => state.events.push('destroy-vault'),
+      stopVault: async () => state.events.push('stop-vault'),
+      reload: false,
+    });
+    expect(state.events.slice(0, 4)).toEqual([
+      'destroy-vault', 'stop-vault', 'delete:styx-vault-default', 'wipe',
+    ]);
     expect(state.idbDeleted).toContain('styx-ledger');
     expect(chat.wipe).toHaveBeenCalledTimes(1);
     expect(state.caches.size).toBe(0);
@@ -80,9 +90,14 @@ describe('factoryReset — app-layer total wipe', () => {
     for (const k of ['caches', 'navigator', 'indexedDB', 'localStorage', 'location']) delete globalThis[k];
     state = installGlobals({ blockedProduct: true });
     const chat = { wipe: jest.fn(async () => state.events.push('wipe')) };
-    await expect(factoryReset({ chat, stopVault: () => state.events.push('stop-vault'), reload: false }))
-      .rejects.toThrow('database deletion blocked');
-    expect(state.events).toEqual(['stop-vault', 'delete:styx-vault-default']);
+    await expect(factoryReset({
+      chat,
+      destroyVault: async () => state.events.push('destroy-vault'),
+      stopVault: async () => state.events.push('stop-vault'),
+      reload: false,
+    }))
+      .rejects.toThrow('database deletion failed');
+    expect(state.events).toEqual(['destroy-vault', 'stop-vault', 'delete:styx-vault-default']);
     expect(chat.wipe).not.toHaveBeenCalled();
     expect(state.localStore.has('styx-theme')).toBe(true);
   });
