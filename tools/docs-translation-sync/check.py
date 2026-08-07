@@ -11,9 +11,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
-from collections import Counter
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -33,17 +33,20 @@ STATUS_LABELS = (
 )
 
 TRANSLATION_METADATA = re.compile(
-    r'^<!-- styx-translation:v1 canonical="(?P<canonical>[^"]+)" '
+    r'\A<!-- styx-translation:v1 canonical="(?P<canonical>[^"]+)" '
     r'sha256="(?P<digest>[0-9a-f]{64})" -->$',
     re.MULTILINE,
 )
 CANONICAL_METADATA = re.compile(
-    r'^<!-- styx-canonical:v1 mirror="(?P<mirror>[^"]+)" -->$',
+    r'\A<!-- styx-canonical:v1 mirror="(?P<mirror>[^"]+)" -->$',
     re.MULTILINE,
 )
+TRANSLATION_MARKER = re.compile(r"<!--\s*styx-translation:v1\b")
+CANONICAL_MARKER = re.compile(r"<!--\s*styx-canonical:v1\b")
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
 SECTION_NUMBER = re.compile(r"^(?P<number>\d+(?:\.\d+)*)\.?(?:\s+|$)")
 INLINE_CODE = re.compile(r"`([^`\n]+)`")
+FENCE = re.compile(r"^[ \t]{0,3}(?P<marker>`{3,}|~{3,})")
 REPOSITORY_PATH = re.compile(
     r"^(?:\.github/|docs/|specs/|styx-js/|packages/|push_bridge(?:_server)?/|"
     r"tools/|AGENTS\.md$|CLAUDE\.md$|CODEOWNERS$)"
@@ -106,29 +109,54 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def without_fenced_blocks(text: str) -> str:
+    """Blank fenced blocks while preserving line boundaries."""
+    visible: list[str] = []
+    fence_char: str | None = None
+    fence_length = 0
+    for line in text.splitlines(keepends=True):
+        match = FENCE.match(line)
+        if fence_char is None and match:
+            marker = match.group("marker")
+            fence_char = marker[0]
+            fence_length = len(marker)
+            visible.append("\n" if line.endswith("\n") else "")
+            continue
+        if fence_char is not None:
+            stripped = line.lstrip(" \t")
+            if stripped.startswith(fence_char * fence_length):
+                trailing = stripped[fence_length:].strip()
+                if not trailing or set(trailing) == {fence_char}:
+                    fence_char = None
+                    fence_length = 0
+            visible.append("\n" if line.endswith("\n") else "")
+            continue
+        visible.append(line)
+    return "".join(visible)
+
+
 def heading_signature(text: str) -> list[tuple[int, str | None]]:
     signature: list[tuple[int, str | None]] = []
-    for match in HEADING.finditer(text):
+    for match in HEADING.finditer(without_fenced_blocks(text)):
         title = match.group(2).strip()
         number = SECTION_NUMBER.match(title)
         signature.append((len(match.group(1)), number.group("number") if number else None))
     return signature
 
 
-def status_signature(text: str) -> Counter[str]:
-    return Counter(
-        label
-        for label in STATUS_LABELS
-        for _ in re.finditer(rf"\*\*{re.escape(label)}\*\*", text)
+def status_signature(text: str) -> list[str]:
+    pattern = re.compile(
+        rf"\*\*(?P<label>{'|'.join(re.escape(label) for label in STATUS_LABELS)})\*\*"
     )
+    return [match.group("label") for match in pattern.finditer(without_fenced_blocks(text))]
 
 
-def repository_path_signature(text: str) -> Counter[str]:
-    return Counter(
+def repository_path_signature(text: str) -> list[str]:
+    return [
         token
-        for token in INLINE_CODE.findall(text)
+        for token in INLINE_CODE.findall(without_fenced_blocks(text))
         if REPOSITORY_PATH.match(token)
-    )
+    ]
 
 
 def has_peer_link(text: str, peer: str) -> bool:
@@ -178,12 +206,20 @@ def validate_pair(
     canonical_text = canonical.read_text(encoding="utf-8")
     mirror_text = mirror.read_text(encoding="utf-8")
 
-    canonical_meta = CANONICAL_METADATA.search(canonical_text)
-    if not canonical_meta or canonical_meta.group("mirror") != mirror_raw:
+    canonical_meta = CANONICAL_METADATA.match(canonical_text)
+    if (
+        len(CANONICAL_MARKER.findall(canonical_text)) != 1
+        or not canonical_meta
+        or canonical_meta.group("mirror") != mirror_raw
+    ):
         findings.append(f"{prefix}.canonical has missing or incorrect mirror metadata")
 
-    mirror_meta = TRANSLATION_METADATA.search(mirror_text)
-    if not mirror_meta or mirror_meta.group("canonical") != canonical_raw:
+    mirror_meta = TRANSLATION_METADATA.match(mirror_text)
+    if (
+        len(TRANSLATION_MARKER.findall(mirror_text)) != 1
+        or not mirror_meta
+        or mirror_meta.group("canonical") != canonical_raw
+    ):
         findings.append(f"{prefix}.mirror has missing or incorrect canonical metadata")
     elif mirror_meta.group("digest") != sha256(canonical):
         findings.append(f"{prefix}.mirror has a stale canonical SHA-256")
@@ -228,11 +264,26 @@ def validate_manifest(path: Path) -> list[str]:
         findings.extend(validate_pair(root, index, pair, seen))
 
     platform_root = root / "docs" / "platform"
-    markdown_paths = {
-        document.relative_to(root).as_posix()
-        for document in platform_root.rglob("*.md")
-        if document.is_file() and not document.is_symlink()
-    }
+    markdown_paths: set[str] = set()
+    for current, directories, files in os.walk(platform_root, followlinks=False):
+        current_path = Path(current)
+        for directory in sorted(tuple(directories)):
+            candidate = current_path / directory
+            if candidate.is_symlink():
+                findings.append(
+                    "symlinked path under docs/platform: "
+                    f"{candidate.relative_to(root).as_posix()}"
+                )
+                directories.remove(directory)
+        for filename in sorted(files):
+            if not filename.endswith(".md"):
+                continue
+            document = current_path / filename
+            relative = document.relative_to(root).as_posix()
+            if document.is_symlink():
+                findings.append(f"symlinked Markdown file under docs/platform: {relative}")
+            elif document.is_file():
+                markdown_paths.add(relative)
     for unpaired in sorted(markdown_paths - seen):
         findings.append(f"Markdown file is missing from the manifest: {unpaired}")
     for undeclared in sorted(seen - markdown_paths):

@@ -35,7 +35,7 @@ jobs:
 
       - name: Translation sync unit tests
         run: |
-          python3 -m unittest discover -s tools/docs-translation-sync/tests -p 'test_*.py'
+          python3 tools/docs-translation-sync/run_tests.py
 
       - name: Scan documentation for affirmative forbidden claims
         run: |
