@@ -35,7 +35,23 @@ jobs:
 
       - name: Translation sync unit tests
         run: |
-          python3 tools/docs-translation-sync/run_tests.py
+          python3 - <<'PY'
+          import sys
+          import unittest
+
+          suite = unittest.TestLoader().discover(
+              "tools/docs-translation-sync/tests",
+              pattern="test_*.py",
+          )
+          count = suite.countTestCases()
+          if count == 0:
+              print("translation-sync-tests: error: no tests collected", file=sys.stderr)
+              raise SystemExit(3)
+
+          print(f"translation-sync-tests: collected {count} test(s)")
+          result = unittest.TextTestRunner(verbosity=2).run(suite)
+          raise SystemExit(0 if result.wasSuccessful() else 2)
+          PY
 
       - name: Scan documentation for affirmative forbidden claims
         run: |

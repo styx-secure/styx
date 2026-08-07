@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
-import io
 import json
 import tempfile
 import unittest
-from contextlib import redirect_stderr
 from pathlib import Path
 
 MODULE_PATH = Path(__file__).parents[1] / "check.py"
@@ -14,12 +12,6 @@ SPEC = importlib.util.spec_from_file_location("docs_translation_sync", MODULE_PA
 assert SPEC and SPEC.loader
 CHECK = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CHECK)
-
-RUNNER_PATH = Path(__file__).parents[1] / "run_tests.py"
-RUNNER_SPEC = importlib.util.spec_from_file_location("docs_translation_sync_runner", RUNNER_PATH)
-assert RUNNER_SPEC and RUNNER_SPEC.loader
-RUNNER = importlib.util.module_from_spec(RUNNER_SPEC)
-RUNNER_SPEC.loader.exec_module(RUNNER)
 
 
 class TranslationSyncTest(unittest.TestCase):
@@ -184,13 +176,6 @@ class TranslationSyncTest(unittest.TestCase):
         value["extra"] = True
         self.manifest.write_text(json.dumps(value), encoding="utf-8")
         self.assertTrue(any("exactly" in item for item in self.findings()))
-
-    def test_runner_fails_closed_when_no_tests_are_collected(self) -> None:
-        empty = self.root / "empty-tests"
-        empty.mkdir()
-        with redirect_stderr(io.StringIO()):
-            self.assertEqual(RUNNER.EXIT_NO_TESTS, RUNNER.run(empty))
-
 
 if __name__ == "__main__":
     unittest.main()
