@@ -1,10 +1,8 @@
 // factory-reset.js — a real, total device reset.
 //
-// After this the origin holds nothing recoverable about the identity. Order: destroy
-// the identity and revoke push FIRST (via the lib and the push subscription), then wipe
-// the physical surfaces, so an interrupted reset cannot leave a working key behind a
-// half-cleared cache. Product-vault deletion is fail-closed; optional browser
-// surfaces remain best-effort because they may already be absent.
+// After this the origin holds nothing recoverable about the identity. The active
+// vault worker is shut down before its database is deleted; the chat wipe is
+// fail-closed, while optional browser surfaces remain best-effort.
 import { getBridgeUrl } from './config.js';
 
 const PRODUCT_VAULT_DB = 'styx-vault-default';
@@ -62,7 +60,7 @@ export async function factoryReset({ chat, stopVault = () => {}, reload = true }
   try { stopVault(); } catch { /* the deletion still provides the final guard */ }
   await deleteDatabase(PRODUCT_VAULT_DB);
   await revokePush(chat);
-  try { await chat?.wipe?.(); } catch { /* best effort */ }
+  await chat?.wipe?.();
 
   // Cache Storage (Workbox precache: app shell + WASM).
   try {

@@ -744,8 +744,8 @@ export function createVault({
         let nextGen;
         let manifest;
         if (repairRequired
-          || !(existingMarker?.state === 'pending' && markerMatches)
-          && !(existingMarker?.state === 'written' && markerMatches)) {
+          || (!(existingMarker?.state === 'pending' && markerMatches)
+            && !(existingMarker?.state === 'written' && markerMatches))) {
           const pending = buildSettingsMarker('pending', digest);
           nextGen = generation + 1;
           manifest = await buildManifest(nextGen, schemaVersion);

@@ -139,7 +139,7 @@ export async function openVaultSettings({
   const coordinator = createVaultSettingsCoordinator({
     storage,
     request: (type, payload) => supervisor.request(type, payload),
-    stop: () => supervisor.stop(),
+    stop: () => supervisor.shutdown(),
     onDiagnostic,
   });
   const initial = await coordinator.synchronize();

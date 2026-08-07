@@ -42,9 +42,13 @@ export default function App() {
   const toggleTheme = async () => {
     const current = theme || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     const next = current === 'dark' ? 'light' : 'dark';
-    const result = await chat.setThemePreference(next);
-    if (result === null) localStorage.setItem('styx-theme', next);
-    setTheme(next);
+    try {
+      const result = await chat.setThemePreference(next);
+      if (result === null || result === undefined) localStorage.setItem('styx-theme', next);
+      setTheme(next);
+    } catch {
+      showToast('Impossibile salvare il tema. Riprova.');
+    }
   };
 
   const showToast = useCallback((t) => {

@@ -68,12 +68,12 @@ describe('factoryReset — app-layer total wipe', () => {
     expect(state.localStore.has('keep')).toBe(true);
   });
 
-  test('a failure in one optional surface does not stop the others', async () => {
+  test('a failed chat wipe does not report a successful reset', async () => {
     const chat = { wipe: jest.fn(async () => { throw new Error('boom'); }), me: {} };
-    await factoryReset({ chat, reload: false });
-    expect(state.caches.size).toBe(0);
-    expect(state.unregistered).toBe(1);
-    expect(state.idbDeleted).toContain('styx-ledger');
+    await expect(factoryReset({ chat, reload: false })).rejects.toThrow('boom');
+    expect(state.caches.size).toBe(2);
+    expect(state.unregistered).toBe(0);
+    expect(state.localStore.has('styx-theme')).toBe(true);
   });
 
   test('blocked product-vault deletion fails closed before wiping legacy state', async () => {

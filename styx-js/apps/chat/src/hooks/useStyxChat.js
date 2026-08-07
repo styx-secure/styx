@@ -182,10 +182,12 @@ export function useStyxChat() {
     return chat.me || identity;
   }, [upsertMessage, patchMessageState]);
 
-  const stopVaultSettings = useCallback(() => {
-    try { vaultSettingsRef.current?.stop?.(); } catch { /* bounded worker teardown */ }
+  const stopVaultSettings = useCallback(async () => {
+    let stop;
+    try { stop = vaultSettingsRef.current?.stop; } catch { stop = null; }
     vaultSettingsRef.current = null;
     setVaultPreferences(null);
+    try { await stop?.(); } catch { /* bounded worker teardown */ }
   }, []);
 
   const lock = useCallback(() => {
@@ -195,7 +197,7 @@ export function useStyxChat() {
     subsRef.current = [];
     try { chatRef.current?.destroy?.(); } catch { /* ignore */ }
     chatRef.current = null;
-    stopVaultSettings();
+    void stopVaultSettings();
     try { lockReleaseRef.current?.(); } catch { /* ignore */ }
     lockReleaseRef.current = null;
     setReady(false);
