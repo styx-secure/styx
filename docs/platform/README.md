@@ -1,150 +1,151 @@
-# Styx come piattaforma applicativa
+<!-- styx-canonical:v1 mirror="docs/platform/README_IT.md" -->
+# Styx as an application platform
 
-> **Stato:** proposta esplorativa, non normativa
-> **Snapshot del codice:** `main @ d90931a3f59ce89c1594cad64ce385d58857b305`
+[Italian mirror](README_IT.md)
+
+> **Status:** exploratory, non-normative proposal
+> **Code snapshot:** `main @ d90931a3f59ce89c1594cad64ce385d58857b305`
 > **Issue:** [#110](https://github.com/styx-secure/styx/issues/110)
-> **Lingua:** italiano; gli identificatori tecnici restano in inglese.
+> **Language:** English; technical identifiers remain in English.
 
-Questa cartella descrive come Styx potrebbe evolvere da prodotto di
-messaggistica a piattaforma riutilizzabile per applicazioni che condividono tre
-esigenze:
+This directory describes how Styx could evolve from a messaging product into a
+reusable application platform for use cases that share three needs:
 
-1. dati leggibili soltanto dagli endpoint autorizzati;
-2. funzionamento locale e asincrono, senza dipendere da un unico gestore;
-3. proprietà di sicurezza dichiarate rispetto a un modello di minaccia, senza
-   promesse assolute.
+1. data readable only by authorized endpoints;
+2. local and asynchronous operation without depending on a single operator;
+3. security properties stated against a threat model, without absolute
+   promises.
 
-I documenti non autorizzano modifiche al codice e non sostituiscono specifiche,
-ADR, Issue contrattuali, audit o consulenze legali. In caso di conflitto
-prevalgono `AGENTS.md`, le Issue approvate e le fonti normative del repository.
+These documents do not authorize code changes and do not replace specifications,
+ADRs, contractual Issues, audits, or legal advice. In case of conflict,
+`AGENTS.md`, approved Issues, and the repository's normative sources prevail.
 
-## Documenti
+## Documents
 
-| Documento | Scopo |
+| Document | Purpose |
 |---|---|
-| [Modello delle capacità](application-capability-model.md) | Definisce le capacità applicative generali, i confini di fiducia, i profili di identità e i livelli di garanzia. |
-| [Roadmap di integrazione](integration-roadmap.md) | Confronta i requisiti con lo stack JavaScript attivo e lo stack Dart di riferimento, indicando lacune e possibili incrementi. |
-| [Dialogo anonimo bidirezionale](use-cases/anonymous-dialogue.md) | Applica il modello a segnalazioni che devono ricevere risposte senza richiedere recapiti personali. |
+| [Application capability model](application-capability-model.md) | Defines general application capabilities, trust boundaries, identity profiles, and assurance levels. |
+| [Integration roadmap](integration-roadmap.md) | Compares requirements with the active JavaScript stack and the Dart reference stack, identifying gaps and possible increments. |
+| [Anonymous bidirectional dialogue](use-cases/anonymous-dialogue.md) | Applies the model to reports that must receive replies without requiring personal contact details. |
 
-## Idea architetturale
+## Architectural idea
 
-La direzione proposta non è aggiungere tutte le funzioni alla chat. È separare
-quattro livelli:
+The proposed direction is not to add every function to the chat. It is to
+separate four layers:
 
 ```text
-Applicazioni
-  chat | contabilità condivisa | segnalazioni | casework | sondaggi
+Applications
+  chat | shared accounting | reporting | casework | surveys
        │
-Profili e policy applicative
-  identità | ruoli | retention | schema dati | threat model
+Application profiles and policies
+  identities | roles | retention | data schema | threat model
        │
 Styx Application Core
-  oggetti E2EE | sessioni | sync | affidabilità | vault | recovery
+  E2EE objects | sessions | sync | reliability | vault | recovery
        │
-Adattatori infrastrutturali
-  relay Nostr | onion service | push | storage locale | client nativo
+Infrastructure adapters
+  Nostr relays | onion service | push | local storage | native client
 ```
 
-L'applicazione decide il significato dei dati. Il core fornisce primitive
-verificabili. Gli adattatori trasportano blob e segnali senza diventare
-autorità sull'identità o sul contenuto. Un profilo di sicurezza combina le
-primitive, ma non può promettere più di quanto provino implementazione, test e
-operatività.
+The application decides what the data means. The core provides verifiable
+primitives. Adapters carry blobs and signals without becoming authorities over
+identity or content. A security profile combines primitives, but cannot promise
+more than implementation, tests, and operations can demonstrate.
 
-## Famiglie di applicazioni candidate
+## Candidate application families
 
-### Comunicazione privata
+### Private communication
 
-Chat individuali o di piccoli gruppi, coordinamento di associazioni e scambio
-di documenti. È il caso più vicino al prodotto JavaScript attuale, ma richiede
-ancora la chiusura dei blocker di storage e metadati prima di un uso sensibile.
+Individual or small-group chats, association coordination, and document
+exchange. This is the use case closest to the current JavaScript product, but
+storage and metadata blockers still need to be closed before sensitive use.
 
-### Registri condivisi senza gestore centrale
+### Shared records without a central operator
 
-Contabilità familiare, cassa di un gruppo di amici, inventari, turni, decisioni
-e spese comuni. Gli eventi devono essere autenticati, sincronizzati offline,
-idempotenti e risolti secondo regole applicative esplicite. Una catena
-tamper-evident può aiutare a rilevare modifiche, ma non rende vero un dato
-falso inserito da un partecipante.
+Household accounting, a group of friends' common fund, inventories, shifts,
+decisions, and shared expenses. Events must be authenticated, synchronized
+offline, idempotent, and resolved according to explicit application rules. A
+tamper-evident chain can help detect changes, but does not make false data
+entered by a participant true.
 
-### Dialogo anonimo o pseudonimo
+### Anonymous or pseudonymous dialogue
 
-Segnalazioni di abusi, whistleblowing quando applicabile, sportelli di ascolto,
-fonti giornalistiche e richieste di aiuto. Richiede identità monouso per caso,
-nessun account obbligatorio, capacità di ritorno, protezione della rete e una
-procedura organizzativa competente. La cifratura del contenuto, da sola, non
-fornisce anonimato.
+Abuse reports, whistleblowing where applicable, listening services,
+journalistic sources, and requests for help. This requires one-time per-case
+identities, no mandatory account, a return capability, network protection, and
+a competent organizational procedure. Content encryption alone does not
+provide anonymity.
 
-### Casework riservato
+### Confidential casework
 
-Relazione tra assistito e ONG, avvocato, sindacato o operatore. Può richiedere
-assegnazione dei casi, separazione dei ruoli, escalation, custodia condivisa
-delle chiavi, esportazioni controllate e conservazione limitata.
+Relationships between a client and an NGO, lawyer, trade union, or caseworker.
+This may require case assignment, role separation, escalation, shared key
+custody, controlled exports, and limited retention.
 
-### Raccolta dati e sondaggi
+### Data collection and surveys
 
-Questionari privati, rilevazioni sul campo e consultazioni. Occorre distinguere
-segretezza della risposta, autenticazione dell'avente diritto, unicità del voto
-e anonimato: proprietà diverse che possono essere in tensione. Styx non deve
-presentarsi come sistema di voto verificabile senza un processo dedicato.
+Private questionnaires, field surveys, and consultations. Response secrecy,
+voter eligibility authentication, vote uniqueness, and anonymity must be kept
+distinct: they are different properties that may conflict. Styx must not be
+presented as a verifiable voting system without a dedicated process.
 
-### Evidenze e attestazioni
+### Evidence and attestations
 
-Raccolta di dichiarazioni, fotografie o documenti con provenienza e cronologia
-verificabili. Firma e hash possono provare l'integrità di byte osservati, non
-l'autenticità materiale dell'evento rappresentato né una catena di custodia
-legale completa.
+Collection of statements, photographs, or documents with verifiable provenance
+and chronology. Signatures and hashes can prove the integrity of observed
+bytes, not the material authenticity of the represented event or a complete
+legal chain of custody.
 
-## Regole per le affermazioni di sicurezza
+## Rules for security claims
 
-Questa area adotta alcune regole lessicali:
+This area adopts the following terminology rules:
 
-- **E2EE** significa che il contenuto è cifrato tra endpoint autorizzati; non
-  implica anonimato, disponibilità o sicurezza dell'endpoint.
-- **Riservato** non significa **anonimo**.
-- **Pseudonimo** non significa **non identificabile**.
-- **Tamper-evident** non significa immutabile, vero o giuridicamente
-  non ripudiabile.
-- **Federato** non significa privo di server.
-- **Tor-capable** non significa che tutto il traffico sia passato attraverso
-  Tor o che la correlazione globale sia impossibile.
-- **Cancellato logicamente** non significa fisicamente irrecuperabile da ogni
-  supporto, replica o backup.
-- Nessuna configurazione va descritta come universalmente anonima, priva di
-  metadati, incapace di apprendere qualsiasi informazione o pronta per la
-  produzione senza un'evidenza specifica e corrente.
+- **E2EE** means that content is encrypted between authorized endpoints; it
+  does not imply anonymity, availability, or endpoint security.
+- **Confidential** does not mean **anonymous**.
+- **Pseudonymous** does not mean **unidentifiable**.
+- **Tamper-evident** does not mean immutable, true, or legally
+  non-repudiable.
+- **Federated** does not mean free of servers.
+- **Tor-capable** does not mean that all traffic has passed through Tor or that
+  global correlation is impossible.
+- **Logically deleted** does not mean physically unrecoverable from every
+  medium, replica, or backup.
+- No configuration may be described as universally anonymous, free of
+  metadata, unable to learn any information, or production-ready without
+  specific and current evidence.
 
-## Come usare questa documentazione
+## How to use this documentation
 
-Una nuova applicazione dovrebbe:
+A new application should:
 
-1. selezionare gli asset e gli avversari rilevanti;
-2. scegliere un profilo di identità e un profilo di garanzia;
-3. dichiarare quali metadati restano visibili a relay, operatori e peer;
-4. mappare ogni requisito sulle capacità del core;
-5. trattare le capacità mancanti come dipendenze bloccanti;
-6. aprire Issue separate per decisioni crittografiche, formati persistenti,
-   migrazioni e cambiamenti al vault;
-7. eseguire test e review indipendenti sul prodotto completo, non soltanto
-   sulle primitive.
+1. select the relevant assets and adversaries;
+2. choose an identity profile and an assurance profile;
+3. state which metadata remains visible to relays, operators, and peers;
+4. map every requirement to core capabilities;
+5. treat missing capabilities as blocking dependencies;
+6. open separate Issues for cryptographic decisions, persisted formats,
+   migrations, and vault changes;
+7. run independent tests and reviews on the complete product, not only on its
+   primitives.
 
-## Stato rispetto al prodotto corrente
+## Status relative to the current product
 
-Lo stack canonico resta Rust/OpenMLS attraverso WASM, con PWA JavaScript,
-secondo `docs/architecture/decisions/ADR-0001-canonical-product-stack.md`. Lo
-stack Dart resta una reference implementation secondo ADR-0003 e non diventa
-un secondo core di prodotto. Le idee presenti nel Dart possono diventare
-requisiti e test, non essere importate implicitamente nel prodotto attivo.
+The canonical stack remains Rust/OpenMLS through WASM, with a JavaScript PWA,
+as established by `docs/architecture/decisions/ADR-0001-canonical-product-stack.md`.
+The Dart stack remains a reference implementation under ADR-0003 and does not
+become a second product core. Ideas present in Dart may become requirements and
+tests; they must not be imported implicitly into the active product.
 
-Al presente snapshot:
+At the current snapshot:
 
-- la chat 1:1 MLS e il trasporto Nostr forniscono primitive utili;
-- il vault IndexedDB è ancora canary-only e non contiene dati di prodotto;
-- il trasporto della chat non attende un ACK di consegna reale;
-- le identità di trasporto sono durevoli e correlabili;
-- relay e osservatori vedono metadati strutturali e di rete;
-- pairing remoto, gruppi di prodotto e multi-device non sono completati;
-- manca un contratto SDK applicativo indipendente dalla chat.
+- the 1:1 MLS chat and Nostr transport provide useful primitives;
+- the IndexedDB vault is still canary-only and contains no product data;
+- the chat transport does not wait for a real delivery ACK;
+- transport identities are durable and correlatable;
+- relays and observers see structural and network metadata;
+- remote pairing, product groups, and multi-device support are incomplete;
+- an application SDK contract independent of the chat is missing.
 
-La [roadmap](integration-roadmap.md) trasforma queste differenze in possibili
-incrementi senza anticiparne le decisioni sensibili.
+The [roadmap](integration-roadmap.md) turns these differences into possible
+increments without pre-empting sensitive decisions.

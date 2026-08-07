@@ -1,570 +1,572 @@
-# Modello delle capacità applicative di Styx
+<!-- styx-canonical:v1 mirror="docs/platform/application-capability-model_IT.md" -->
+# Styx application capability model
 
-> **Stato:** proposta esplorativa, non normativa
+[Italian mirror](application-capability-model_IT.md)
+
+> **Status:** exploratory, non-normative proposal
 > **Snapshot:** `main @ d90931a3f59ce89c1594cad64ce385d58857b305`
-> Gli esempi di componenti o API sono illustrativi e non congelano interfacce,
-> primitive crittografiche o formati persistenti.
+> Component and API examples are illustrative and do not freeze interfaces,
+> cryptographic primitives, or persisted formats.
 
-## 1. Obiettivo
+## 1. Objective
 
-Il modello stabilisce quali proprietà Styx dovrebbe poter offrire affinché
-applicazioni diverse possano condividere un'infrastruttura sicura senza
-condividere necessariamente identità, schemi dati o politiche.
+This model establishes which properties Styx should be able to offer so that
+different applications can share secure infrastructure without necessarily
+sharing identities, data schemas, or policies.
 
-Il criterio guida è la composizione: un'applicazione seleziona capacità e
-policy; non eredita automaticamente tutte le promesse della chat. Ogni capacità
-deve avere:
+Composition is the guiding principle: an application selects capabilities and
+policies; it does not automatically inherit every promise made by the chat.
+Every capability must have:
 
-- un contratto osservabile;
-- un modello di minaccia;
-- una rappresentazione versionata quando attraversa rete o storage;
-- errori fail-closed;
-- test positivi, negativi, di crash e interoperabilità dove applicabili;
-- una dichiarazione dei rischi residui.
+- an observable contract;
+- a threat model;
+- a versioned representation when it crosses network or storage boundaries;
+- fail-closed errors;
+- positive, negative, crash, and interoperability tests where applicable;
+- a statement of residual risks.
 
-## 2. Vocabolario
+## 2. Vocabulary
 
-| Termine | Significato nel modello |
+| Term | Meaning in this model |
 |---|---|
-| **Identità civile** | Informazioni che collegano una persona a nome, recapito o ruolo nel mondo reale. Non deve essere confusa con una chiave. |
-| **Identità crittografica** | Chiave o insieme di credenziali usato per autenticare azioni. Può essere persistente, di dispositivo, applicativa o effimera. |
-| **Anonimato** | L'avversario definito non riesce a collegare un'azione a una persona reale entro il modello dichiarato. Non è una proprietà assoluta. |
-| **Riservatezza** | Soggetti non autorizzati non leggono il contenuto. Il gestore potrebbe comunque conoscere l'identità. |
-| **Pseudonimato** | Le azioni sono collegate a uno pseudonimo stabile, non necessariamente a un'identità civile. |
-| **Unlinkability** | L'avversario non riesce a stabilire che due azioni, casi o identità appartengano allo stesso soggetto. |
-| **Capability** | Segreto o token non falsificabile il cui possesso autorizza un'operazione, per esempio riaprire un caso anonimo. |
-| **Application context** | Dominio logico che separa chiavi, identificatori, dati e policy di un'applicazione dalle altre. |
-| **Case context** | Sottodominio monouso o limitato a una pratica, conversazione o gruppo. |
-| **E2EE object** | Oggetto cifrato e autenticato per destinatari espliciti, con schema e versione applicativi. |
-| **Tamper-evident** | Una modifica successiva può essere rilevata secondo determinati invarianti. Non prova che il dato originario fosse vero. |
-| **Assurance profile** | Insieme verificabile di capacità, configurazione, client e requisiti operativi. |
+| **Civil identity** | Information connecting a person to a real-world name, contact detail, or role. It must not be confused with a key. |
+| **Cryptographic identity** | A key or credential set used to authenticate actions. It may be persistent, device-bound, application-specific, or ephemeral. |
+| **Anonymity** | The defined adversary cannot link an action to a real person within the stated model. It is not an absolute property. |
+| **Confidentiality** | Unauthorized parties cannot read content. The operator may still know the identity. |
+| **Pseudonymity** | Actions are linked to a stable pseudonym, not necessarily to a civil identity. |
+| **Unlinkability** | The adversary cannot establish that two actions, cases, or identities belong to the same subject. |
+| **Capability** | An unforgeable secret or token whose possession authorizes an operation, such as reopening an anonymous case. |
+| **Application context** | A logical domain separating one application's keys, identifiers, data, and policies from others. |
+| **Case context** | A one-time subdomain, or one limited to a case, conversation, or group. |
+| **E2EE object** | An encrypted and authenticated object for explicit recipients, with an application schema and version. |
+| **Tamper-evident** | A later modification can be detected under stated invariants. It does not prove the original data was true. |
+| **Assurance profile** | A verifiable set of capabilities, configuration, clients, and operational requirements. |
 
-## 3. Attori e confini di fiducia
+## 3. Actors and trust boundaries
 
-Il modello non assume un “server cattivo” unico. Separa almeno:
+The model does not assume a single “bad server.” It separates at least:
 
-- **utente e dispositivo**: generano input, custodiscono chiavi e mostrano
-  plaintext;
-- **applicazione**: interpreta schemi, ruoli e workflow;
-- **Styx core**: cifra, autentica, persiste e sincronizza;
-- **relay o store-and-forward provider**: osserva connessioni e conserva blob;
-- **push provider**: osserva endpoint, tempi e wake-up;
-- **publisher del client**: distribuisce HTML, JavaScript, WASM o binari;
-- **operatore organizzativo**: gestisce casi, gruppi, ruoli o infrastruttura;
-- **peer autorizzato**: legge dati ma può copiarli o divulgarli;
-- **osservatore di rete**: vede origini, destinazioni, tempi e volumi;
-- **amministratore del dispositivo**: può controllare browser, estensioni,
-  input, schermo e memoria;
-- **fornitore di backup o sistema operativo**: può conservare repliche non
-  visibili all'applicazione.
+- **user and device**: generate input, hold keys, and display plaintext;
+- **application**: interprets schemas, roles, and workflows;
+- **Styx core**: encrypts, authenticates, persists, and synchronizes;
+- **relay or store-and-forward provider**: observes connections and stores blobs;
+- **push provider**: observes endpoints, timing, and wake-ups;
+- **client publisher**: distributes HTML, JavaScript, WASM, or binaries;
+- **organizational operator**: manages cases, groups, roles, or infrastructure;
+- **authorized peer**: reads data but may copy or disclose it;
+- **network observer**: sees origins, destinations, timing, and volumes;
+- **device administrator**: may control the browser, extensions, input, screen,
+  and memory;
+- **backup or operating-system provider**: may retain replicas invisible to the
+  application.
 
-Una proprietà deve indicare rispetto a quali attori vale. “Il relay non legge
-il messaggio” è compatibile con “il relay vede l'indirizzo IP e il tag di
-instradamento”.
+A property must identify the actors against which it holds. “The relay does
+not read the message” is compatible with “the relay sees the IP address and
+routing tag.”
 
-## 4. Architettura logica proposta
+## 4. Proposed logical architecture
 
 ### 4.1 Application layer
 
-Contiene UI, workflow, schema semantico, validazioni di dominio e regole
-organizzative. Non riceve chiavi grezze quando può richiedere operazioni al
-core. Non decide primitive crittografiche.
+Contains UI, workflow, semantic schema, domain validation, and organizational
+rules. It does not receive raw keys when it can request operations from the
+core, and it does not select cryptographic primitives.
 
 ### 4.2 Policy and capability layer
 
-Traduce il threat model in policy: tipo di identità, destinatari, retention,
-recovery, numero di relay, routing, notifiche, allegati e livello di audit.
-Rifiuta combinazioni che non raggiungono il profilo richiesto.
+Translates the threat model into policy: identity type, recipients, retention,
+recovery, relay count, routing, notifications, attachments, and audit level. It
+rejects combinations that do not meet the required profile.
 
 ### 4.3 Secure object and session layer
 
-Gestisce sessioni E2EE, oggetti applicativi versionati, membership, rotazione,
-autenticazione, sequenze e stato crittografico. MLS è il core canonico per il
-prodotto, ma non tutte le applicazioni sono automaticamente modellabili come
-messaggi di chat.
+Manages E2EE sessions, versioned application objects, membership, rotation,
+authentication, sequences, and cryptographic state. MLS is the canonical
+product core, but not every application can automatically be modeled as chat
+messages.
 
 ### 4.4 Reliability and synchronization layer
 
-Gestisce outbox persistente, retry, ACK, deduplicazione, idempotenza, ordering,
-replay e politiche di conflitto. Distingue “pubblicato su un relay”,
-“ricevuto da un dispositivo” e “letto da una persona”.
+Manages a persistent outbox, retry, ACK, deduplication, idempotency, ordering,
+replay, and conflict policies. It distinguishes “published to a relay,”
+“received by a device,” and “read by a person.”
 
 ### 4.5 Privacy transport layer
 
-Seleziona relay, route, onion endpoint, mailbox key, padding, batching e
-notifiche. La cifratura del contenuto non sostituisce questo livello.
+Selects relays, routes, onion endpoints, mailbox keys, padding, batching, and
+notifications. Content encryption does not replace this layer.
 
 ### 4.6 Local custody layer
 
-Il vault confina chiavi e plaintext, applica lock/unlock, transazioni, reset,
-migrazioni e recovery. La pagina consuma un protocollo dati chiuso; non riceve
-Root Key, KEK, `CryptoKey` o handle WASM.
+The vault confines keys and plaintext and applies lock/unlock, transactions,
+reset, migrations, and recovery. The page consumes a closed data protocol; it
+does not receive the Root Key, KEK, `CryptoKey`, or WASM handles.
 
 ### 4.7 Distribution and operations layer
 
-Rende verificabili build, aggiornamenti, configurazioni e continuità operativa.
-Comprende separazione dei ruoli, audit amministrativo, backup infrastrutturale
-e osservabilità senza dati sensibili.
+Makes builds, updates, configuration, and operational continuity verifiable.
+It includes separation of duties, administrative audit, infrastructure backup,
+and observability without sensitive data.
 
-## 5. Capacità richieste
+## 5. Required capabilities
 
-### 5.1 Application context e domain separation
+### 5.1 Application context and domain separation
 
-Ogni applicazione deve avere un identificatore di contesto non ambiguo usato
-nella derivazione delle chiavi, nell'AAD, negli schemi e nelle policy. Due app
-installate sullo stesso dispositivo non devono riutilizzare automaticamente:
+Every application needs an unambiguous context identifier used in key
+derivation, AAD, schemas, and policies. Two applications on the same device
+must not automatically reuse:
 
-- chiavi di identità o mailbox;
-- namespace del vault;
-- group identifier;
-- contatori, nonce o sequenze;
-- endpoint push;
-- alias e contact graph;
-- recovery secret.
+- identity or mailbox keys;
+- vault namespaces;
+- group identifiers;
+- counters, nonces, or sequences;
+- push endpoints;
+- aliases and contact graphs;
+- recovery secrets.
 
-Il `case context` deve poter aggiungere separazione ulteriore. Una segnalazione
-anonima e una seconda segnalazione dello stesso browser non devono essere
-collegabili attraverso un identificatore persistente del protocollo.
+A `case context` must provide further separation. An anonymous report and a
+second report from the same browser must not be linkable through a persistent
+protocol identifier.
 
-**Evidenza minima:** test cross-context che provano chiavi/AAD diversi e
-rifiuto di ciphertext spostato fra contesti.
+**Minimum evidence:** cross-context tests proving different keys/AAD and
+rejection of ciphertext moved between contexts.
 
-### 5.2 Profili di identità
+### 5.2 Identity profiles
 
-Il core dovrebbe supportare profili distinti, senza simularli con un unico
-account durevole:
+The core should support distinct profiles rather than simulate them with one
+durable account:
 
-| Profilo | Durata e uso |
+| Profile | Lifetime and use |
 |---|---|
-| `persistent-personal` | Identità autocustodita e verificabile per relazioni durevoli. |
-| `device` | Credenziale revocabile di un singolo dispositivo, subordinata a una relazione o account. |
-| `application` | Identità separata per un'applicazione; non riutilizzata altrove. |
-| `case-ephemeral` | Identità casuale per un singolo caso o gruppo, senza riuso. |
-| `anonymous-capability` | Nessun account; una capability ad alta entropia permette il ritorno al caso. |
-| `organization-role` | Credenziale associata a un ruolo operativo e ruotabile senza confonderla con la persona. |
+| `persistent-personal` | Self-custodied, verifiable identity for durable relationships. |
+| `device` | Revocable credential for one device, subordinate to a relationship or account. |
+| `application` | Identity separated for one application and not reused elsewhere. |
+| `case-ephemeral` | Random identity for one case or group, without reuse. |
+| `anonymous-capability` | No account; a high-entropy capability allows return to the case. |
+| `organization-role` | Credential bound to an operational role and rotatable independently of the person. |
 
-Generazione, rotazione, revoca, scadenza ed esportazione devono essere
-esplicite. Una chiave pubblica non deve essere descritta come anonima soltanto
-perché non contiene un nome.
+Generation, rotation, revocation, expiry, and export must be explicit. A public
+key must not be described as anonymous merely because it contains no name.
 
 ### 5.3 Unlinkability
 
-La separazione crittografica non basta se rete, push e storage usano handle
-stabili. Il profilo deve esaminare congiuntamente:
+Cryptographic separation is insufficient if network, push, and storage use
+stable handles. The profile must jointly assess:
 
-- chiave esterna degli eventi;
-- tag e mailbox di instradamento;
-- set di relay;
-- endpoint push;
-- tempistica e dimensione;
-- fingerprint del client;
-- recovery e backup;
-- nomi delle chiavi e namespace locali.
+- external event keys;
+- routing tags and mailboxes;
+- relay sets;
+- push endpoints;
+- timing and size;
+- client fingerprints;
+- recovery and backup;
+- key names and local namespaces.
 
-L'unlinkability va testata come proprietà negativa: nessun campo comune e
-nessun mapping accessibile all'avversario dichiarato. Contro un osservatore
-globale restano possibili correlazioni statistiche e temporali.
+Unlinkability must be tested as a negative property: no common field and no
+mapping accessible to the declared adversary. Statistical and timing
+correlation remain possible against a global observer.
 
-### 5.4 E2EE objects e schema applicativo
+### 5.4 E2EE objects and application schema
 
-Le applicazioni devono poter definire oggetti cifrati diversi dai messaggi di
-testo: operazioni contabili, assegnazioni, moduli, ricevute, commenti, stati di
-workflow. Ogni oggetto richiede almeno:
+Applications must be able to define encrypted objects other than text messages:
+accounting operations, assignments, forms, receipts, comments, and workflow
+states. Every object requires at least:
 
-- `application context` e versione dello schema;
-- identificatore casuale e chiave di idempotenza;
-- autore crittografico e destinatari o gruppo;
-- tipo e versione della policy;
-- timestamp logico e, se necessario, dipendenze causali;
-- payload con limiti di dimensione e grammatica chiusa;
-- regole di evoluzione e gestione delle versioni sconosciute.
+- `application context` and schema version;
+- a random identifier and idempotency key;
+- cryptographic author and recipients or group;
+- policy type and version;
+- logical timestamp and, where needed, causal dependencies;
+- a bounded payload with a closed grammar;
+- evolution rules and handling of unknown versions.
 
-Il formato concreto è una decisione separata. Il core non deve deserializzare
-oggetti applicativi in forme eseguibili, accettare callback o consentire accessi
-dinamici non validati.
+The concrete format is a separate decision. The core must not deserialize
+application objects into executable forms, accept callbacks, or permit
+unvalidated dynamic access.
 
-### 5.5 Conversazioni, gruppi e membership
+### 5.5 Conversations, groups, and membership
 
-Servono primitive per:
+Primitives are needed for:
 
-- sessioni 1:1;
-- gruppi con membri e dispositivi distinti;
-- invito e verifica out-of-band;
-- aggiunta, rimozione e sospensione;
-- rotazione dopo compromissione;
-- autorizzazione delle modifiche alla membership;
-- gestione di commit pendenti, ACK e fork;
-- esportazione minima dello stato per debug senza segreti.
+- 1:1 sessions;
+- groups with distinct members and devices;
+- out-of-band invitation and verification;
+- addition, removal, and suspension;
+- rotation after compromise;
+- authorization of membership changes;
+- pending commits, ACKs, and forks;
+- minimally sensitive state export for debugging.
 
-MLS offre primitive utili, ma il prodotto deve definire Authentication Service,
-Delivery Service, policy di membership e recovery. Forward secrecy e
-post-compromise security dipendono anche da rotazioni e cancellazione di
-materiale, non soltanto dalla scelta di MLS.
+MLS provides useful primitives, but the product must define the Authentication
+Service, Delivery Service, membership policy, and recovery. Forward secrecy and
+post-compromise security also depend on rotation and material deletion, not
+only on selecting MLS.
 
-### 5.6 Autorizzazione, ruoli e delega
+### 5.6 Authorization, roles, and delegation
 
-Una chiave che può decifrare non dovrebbe automaticamente poter amministrare.
-Il modello deve distinguere:
+A key able to decrypt should not automatically be able to administer. The
+model must distinguish:
 
-- lettura, scrittura e commento;
-- invito o rimozione di membri;
-- assegnazione di casi;
-- esportazione e cancellazione;
-- modifica di retention e policy;
-- accesso ai log amministrativi;
-- rotazione e recovery.
+- reading, writing, and commenting;
+- inviting or removing members;
+- case assignment;
+- export and deletion;
+- retention and policy changes;
+- administrative log access;
+- rotation and recovery.
 
-Ruoli, deleghe e revoche devono essere autenticati, versionati e valutati
-localmente. Le operazioni ad alto impatto possono richiedere autorizzazione
-multi-persona o threshold, ma la tecnica concreta richiede design separato.
+Roles, delegations, and revocations must be authenticated, versioned, and
+evaluated locally. High-impact operations may require multi-person or threshold
+authorization, but the concrete technique requires a separate design.
 
-### 5.7 Vault locale e confinamento dei segreti
+### 5.7 Local vault and secret confinement
 
-Il vault applicativo deve:
+The application vault must:
 
-- cifrare record e manifest prima della persistenza;
-- derivare e separare chiavi per namespace e scopo;
-- eseguire KDF, unwrap e operazioni sensibili in un worker dedicato;
-- esporre un protocollo chiuso con payload limitati;
-- serializzare mutazioni e usare transazioni atomiche;
-- chiudersi in modo deterministico su lock, timeout, reset e crash;
-- impedire la restituzione di chiavi, plaintext e stack sensibili;
-- distinguere cancellazione logica da erasure fisica non dimostrabile;
-- gestire migrazioni senza distruggere i dati originali prima della verifica.
+- encrypt records and manifests before persistence;
+- derive and separate keys by namespace and purpose;
+- perform KDF, unwrap, and sensitive operations in a dedicated worker;
+- expose a closed protocol with bounded payloads;
+- serialize mutations and use atomic transactions;
+- close deterministically on lock, timeout, reset, and crash;
+- prevent return of keys, plaintext, and sensitive stacks;
+- distinguish logical deletion from unprovable physical erasure;
+- handle migrations without destroying original data before verification.
 
-La password resta una stringa JavaScript non azzerabile con certezza. Browser o
-sistema compromessi mentre il vault è sbloccato restano fuori dalla protezione
-del solo vault.
+The password remains a JavaScript string that cannot be reliably zeroed. A
+compromised browser or operating system while the vault is unlocked remains
+outside the protection offered by the vault alone.
 
-### 5.8 Trasporti e relay federation
+### 5.8 Transports and relay federation
 
-Il core dovrebbe dipendere da un contratto di trasporto, non da un relay
-specifico. Un adattatore dichiara:
+The core should depend on a transport contract, not a specific relay. An
+adapter declares:
 
-- semantica di pubblicazione e conferma;
-- persistenza o effimerità;
-- limiti e quote;
-- informazioni visibili all'operatore;
-- autenticazione e protezione replay;
-- comportamento su duplicazione, riordine e perdita;
-- capacità di cancellazione, se presente;
-- modalità diretta, federata o onion.
+- publication and confirmation semantics;
+- persistence or ephemerality;
+- limits and quotas;
+- information visible to the operator;
+- authentication and replay protection;
+- behavior under duplication, reordering, and loss;
+- deletion capability, if any;
+- direct, federated, or onion mode.
 
-Relay multipli aumentano disponibilità ma possono aumentare superficie di
-osservazione. La replica non va confusa con consenso: l'applicazione deve sapere
-se basta una pubblicazione, un quorum di relay o l'ACK del destinatario.
+Multiple relays improve availability but may increase the observation surface.
+Replication must not be confused with consensus: the application must know
+whether one publication, a relay quorum, or a recipient ACK is sufficient.
 
-### 5.9 Affidabilità e store-and-forward
+### 5.9 Reliability and store-and-forward
 
-Ogni mutazione in uscita attraversa una outbox persistente prima dell'invio. Il
-modello distingue stati come:
+Every outgoing mutation passes through a persistent outbox before sending. The
+model distinguishes states such as:
 
 ```text
 queued → published → device-acknowledged → application-acknowledged
                          ↘ expired / rejected / conflicted
 ```
 
-I nomi sono illustrativi. Requisiti essenziali:
+The names are illustrative. Essential requirements are:
 
-- retry con backoff e jitter;
-- idempotency key stabile per l'operazione;
-- deduplicazione persistente, non soltanto in memoria;
-- ACK autenticato e cifrato;
-- riconciliazione dopo crash fra commit locale e risposta;
-- limiti di tentativi, scadenza e dead-letter state;
-- semantica chiara per messaggi effimeri;
-- nessun “sent” derivato dalla sola chiamata `publish()`.
+- retry with backoff and jitter;
+- a stable idempotency key for the operation;
+- persistent deduplication, not only in memory;
+- authenticated and encrypted ACKs;
+- post-crash reconciliation between local commit and response;
+- attempt limits, expiry, and a dead-letter state;
+- clear semantics for ephemeral messages;
+- no “sent” state derived only from calling `publish()`.
 
-### 5.10 Ordering, sincronizzazione e conflitti
+### 5.10 Ordering, synchronization, and conflicts
 
-La chat può tollerare un ordinamento diverso da una contabilità. Il core deve
-offrire primitive, mentre l'app dichiara la policy:
+Chat can tolerate ordering different from accounting. The core supplies
+primitives while the application declares its policy:
 
-- sequenza per autore o dispositivo;
-- dipendenze causali;
-- rilevamento di gap, replay e fork;
-- merge commutativo quando semanticamente valido;
-- rifiuto o revisione umana per conflitti non componibili;
-- snapshot e compattazione verificabili;
-- rollback detection entro limiti dichiarati.
+- per-author or per-device sequence;
+- causal dependencies;
+- gap, replay, and fork detection;
+- commutative merge where semantically valid;
+- rejection or human review for non-composable conflicts;
+- verifiable snapshots and compaction;
+- rollback detection within declared limits.
 
-Non esiste un merge universale. Sommare due spese può essere corretto; accettare
-due assegnazioni incompatibili dello stesso caso può non esserlo.
+There is no universal merge. Adding two expenses may be correct; accepting two
+incompatible assignments of the same case may not be.
 
-### 5.11 Protezione dei metadati
+### 5.11 Metadata protection
 
-Un profilo metadata-minimizing deve considerare almeno:
+A metadata-minimizing profile must consider at least:
 
-- chiave esterna effimera o non identitaria;
-- mailbox key ruotabile e distinta dall'identità;
-- cifratura dell'envelope esterno;
-- timestamp offuscato;
-- padding a bucket con floor minimo;
-- batching o ritardi opzionali;
-- scelta e rotazione dei relay;
+- an ephemeral or non-identifying external key;
+- a rotatable mailbox key distinct from identity;
+- outer-envelope encryption;
+- obscured timestamps;
+- bucket padding with a minimum floor;
+- optional batching or delays;
+- relay choice and rotation;
 - Tor/onion routing;
-- disattivazione di typing, presence e read receipt;
-- notifiche senza mapping identitario diretto;
-- policy per traffico dummy, costo, batteria e latenza.
+- disabling typing, presence, and read receipts;
+- notifications without a direct identity mapping;
+- dummy-traffic policy, cost, battery, and latency.
 
-NIP-59/NIP-44 sono opzioni da valutare, non decisioni assunte da questo
-documento. Anche un gift wrap può lasciare visibile un destinatario o un handle
-stabile; il threat model deve verificare la variante concreta.
+NIP-59/NIP-44 are options to evaluate, not decisions made by this document.
+Even a gift wrap may expose a recipient or stable handle; the threat model must
+verify the concrete variant.
 
-### 5.12 Allegati e contenuti complessi
+### 5.12 Attachments and complex content
 
-Gli allegati aggiungono rischi indipendenti dalla cifratura:
+Attachments add risks independent of encryption:
 
-- EXIF, autore, percorso, cronologia e metadati del documento;
-- watermark, canary e identificatori invisibili;
-- malware e parser vulnerabili sul dispositivo ricevente;
-- dimensione e firma statistica;
-- anteprime o scansioni affidate a terzi;
-- persistenza in cache e applicazioni esterne;
-- deduplicazione per hash che collega casi diversi.
+- EXIF, author, path, history, and document metadata;
+- watermarks, canaries, and invisible identifiers;
+- malware and vulnerable parsers on the receiving device;
+- size and statistical signature;
+- previews or scans entrusted to third parties;
+- persistence in caches and external applications;
+- hash deduplication linking different cases.
 
-Il core dovrebbe fornire streaming cifrato, chunk autenticati, limiti, padding e
-integrità. Sanitizzazione, conversione e avvisi appartengono a un servizio
-isolato o all'app. Un profilo anonimo può iniziare `text-only` e vietare gli
-allegati finché il percorso non è verificato.
+The core should provide encrypted streaming, authenticated chunks, limits,
+padding, and integrity. Sanitization, conversion, and warnings belong in an
+isolated service or the application. An anonymous profile may start `text-only`
+and prohibit attachments until the path is verified.
 
-### 5.13 Multi-device, rotazione e compromise response
+### 5.13 Multi-device, rotation, and compromise response
 
-Ogni dispositivo richiede credenziale distinta, stato e revoca. Il modello
-deve coprire:
+Every device needs a distinct credential, state, and revocation. The model
+must cover:
 
-- aggiunta verificata di un dispositivo;
-- elenco dispositivi comprensibile all'utente;
-- revoca con rotazione del gruppo;
-- perdita, furto e compromissione;
-- sincronizzazione selettiva della cronologia;
-- recupero senza clonare indefinitamente una chiave personale;
-- epoch/generation monotona e rilevamento di rollback;
-- procedura di emergenza che non nasconda la compromissione.
+- verified addition of a device;
+- a user-comprehensible device list;
+- revocation with group rotation;
+- loss, theft, and compromise;
+- selective history synchronization;
+- recovery without indefinitely cloning a personal key;
+- monotonic epoch/generation and rollback detection;
+- an emergency procedure that does not conceal compromise.
 
-Backup di una chiave e multi-device non sono la stessa cosa. Ripristinare una
-chiave durevole può conservare l'identità, ma non risolve revoca e stato MLS.
+Backing up a key and supporting multiple devices are not the same. Restoring a
+durable key may preserve identity, but does not solve revocation and MLS state.
 
-### 5.14 Recovery e capability custody
+### 5.14 Recovery and capability custody
 
-Il recovery deve dichiarare cosa recupera: identità, accesso a un caso, dati o
-membership. Possibili modelli includono segreto singolo, più share, altro
-dispositivo o custodia organizzativa; la scelta richiede analisi separata.
+Recovery must state what it recovers: identity, case access, data, or
+membership. Possible models include a single secret, multiple shares, another
+device, or organizational custody; the choice requires separate analysis.
 
-Una `anonymous capability` deve avere entropia sufficiente, essere generata
-localmente e non essere derivata da dati personali. L'interfaccia può
-rappresentarla come QR o parole, ma deve proteggere contro:
+An `anonymous capability` must have sufficient entropy, be generated locally,
+and not be derived from personal data. The interface may represent it as a QR
+code or words, but must protect against:
 
-- screenshot e cloud backup automatici;
-- furto fisico;
-- phishing e brute force online;
-- perdita definitiva;
-- riuso fra casi;
-- supporto tecnico che chieda il segreto.
+- screenshots and automatic cloud backup;
+- physical theft;
+- phishing and online brute force;
+- permanent loss;
+- reuse across cases;
+- technical support asking for the secret.
 
-Il server non deve poter rigenerare la capability. La perdita può comportare
-l'impossibilità intenzionale di riaprire il caso.
+The server must not be able to regenerate the capability. Loss may
+intentionally make the case impossible to reopen.
 
-### 5.15 Retention, redazione, cancellazione ed export
+### 5.15 Retention, redaction, deletion, and export
 
-Ogni classe di dato necessita policy indipendente:
+Every data class needs an independent policy:
 
-- durata operativa;
-- base e motivo della conservazione;
-- scadenza e legal hold;
-- cancellazione locale e richiesta ai peer;
-- redazione del payload mantenendo o meno una prova di sequenza;
-- eliminazione di indici, cache, notifiche e backup;
-- export cifrato o in chiaro con consenso e audit;
-- comportamento offline e su dispositivi non più raggiungibili.
+- operational duration;
+- basis and reason for retention;
+- expiry and legal hold;
+- local deletion and requests to peers;
+- payload redaction, with or without sequence evidence;
+- removal of indexes, caches, notifications, and backups;
+- encrypted or cleartext export with consent and audit;
+- behavior offline and on devices no longer reachable.
 
-Una hash chain può conservare impronte di dati cancellati. Il design deve
-valutare se l'impronta stessa sia personale o correlabile. Styx non può
-garantire che un destinatario cancelli una copia o uno screenshot.
+A hash chain may preserve fingerprints of deleted data. The design must assess
+whether the fingerprint is itself personal or correlatable. Styx cannot ensure
+that a recipient deletes a copy or screenshot.
 
-### 5.16 Audit, ricevute ed evidenza
+### 5.16 Audit, receipts, and evidence
 
-Servono registri distinti:
+Distinct records are needed:
 
-- **security audit log** locale: accessi e operazioni sensibili;
-- **shared event history**: eventi applicativi autenticati;
-- **operator audit**: assegnazioni, export, retention e amministrazione;
-- **delivery evidence**: publish e ACK autenticati.
+- local **security audit log**: access and sensitive operations;
+- **shared event history**: authenticated application events;
+- **operator audit**: assignment, export, retention, and administration;
+- **delivery evidence**: publication and authenticated ACKs.
 
-I log devono minimizzare contenuto e identificatori, avere accesso separato e
-non diventare un nuovo grafo sociale. Firma, timestamp locale e hash chain non
-forniscono automaticamente timestamp qualificato, identità civile, verità del
-contenuto o ammissibilità giuridica. Tali proprietà richiedono processi e
-servizi separati.
+Logs must minimize content and identifiers, have separate access, and not
+become a new social graph. A signature, local timestamp, and hash chain do not
+automatically provide a qualified timestamp, civil identity, truthful content,
+or legal admissibility. Those properties require separate processes and
+services.
 
-### 5.17 SDK applicativo e capability discovery
+### 5.17 Application SDK and capability discovery
 
-Lo SDK dovrebbe esporre concetti applicativi stabili senza consegnare segreti:
+The SDK should expose stable application concepts without handing out secrets:
 
-- apertura di un `application context`;
-- creazione o importazione di un profilo di identità;
-- gestione di sessioni e oggetti cifrati;
-- query di capability e versione;
-- subscribe a eventi tipizzati e limitati;
-- operazioni transazionali dati-only;
-- gestione esplicita di stati offline, lock e recovery;
-- adattatori di trasporto e storage registrati staticamente;
-- errori tipizzati senza payload o stack sensibili.
+- opening an `application context`;
+- creating or importing an identity profile;
+- managing sessions and encrypted objects;
+- querying capabilities and versions;
+- subscribing to typed, bounded events;
+- data-only transactional operations;
+- explicit handling of offline, lock, and recovery states;
+- statically registered transport and storage adapters;
+- typed errors without sensitive payloads or stacks.
 
-Version negotiation deve fallire chiuso su formati incompatibili. Feature flag
-e capability discovery non devono permettere downgrade silenziosi.
+Version negotiation must fail closed on incompatible formats. Feature flags
+and capability discovery must not permit silent downgrade.
 
-### 5.18 Distribuzione autentica e aggiornamenti
+### 5.18 Authentic distribution and updates
 
-Una PWA cifrata non è sicura se la prima risposta può consegnare JavaScript
-malevolo che esfiltra plaintext prima della cifratura. Servono livelli
-complementari:
+An encrypted PWA is not secure if the first response can deliver malicious
+JavaScript that exfiltrates plaintext before encryption. Complementary layers
+are required:
 
-- build riproducibile e artefatti verificabili;
-- provenienza e pin delle dipendenze;
-- CSP e assenza di risorse terze;
-- service worker con policy di update e rollback;
-- firma o trasparenza degli artefatti dove supportata;
-- distribuzione da origini indipendenti o client installati;
-- canale di verifica esterno al server compromettibile;
-- client nativo firmato per profili di garanzia più alti.
+- reproducible builds and verifiable artifacts;
+- dependency provenance and pinning;
+- CSP and absence of third-party resources;
+- a service worker with update and rollback policy;
+- artifact signatures or transparency where supported;
+- distribution from independent origins or installed clients;
+- a verification channel external to the compromisable server;
+- a signed native client for higher-assurance profiles.
 
-Un hash comunicato dallo stesso server non autentica il server. La verifica tra
-client può aiutare soltanto se ha una radice di fiducia e resiste a Sybil,
-rollback ed eclissi; il protocollo concreto è una decisione separata.
+A hash communicated by the same server does not authenticate that server.
+Cross-client verification can help only if it has a trust root and resists
+Sybil, rollback, and eclipse attacks; the concrete protocol is a separate
+decision.
 
-### 5.19 Osservabilità privacy-safe e continuità
+### 5.19 Privacy-safe observability and continuity
 
-L'operatore necessita indicatori senza registrare utenti o contenuti:
+The operator needs indicators without recording users or content:
 
-- disponibilità e latenza dei relay;
-- errori aggregati con cardinalità limitata;
-- versioni client e compatibilità in forma minimizzata;
-- saturazione di quote e code senza record key;
-- audit dell'amministrazione separato dalla telemetria;
-- log opt-in, locali e redatti per diagnosi;
-- runbook per perdita di relay, chiavi e fornitori.
+- relay availability and latency;
+- aggregated errors with bounded cardinality;
+- minimized client-version and compatibility data;
+- quota and queue saturation without record keys;
+- administrative audit separated from telemetry;
+- opt-in, local, redacted diagnostic logs;
+- runbooks for loss of relays, keys, and providers.
 
-Analytics, crash reporter, CDN, font e script terzi devono essere vietati nei
-profili sensibili o valutati esplicitamente. La ridondanza geografica migliora
-continuità, ma richiede gestione delle chiavi, patching, monitoraggio e test di
-restore.
+Analytics, crash reporters, CDNs, fonts, and third-party scripts must be
+forbidden in sensitive profiles or explicitly evaluated. Geographic redundancy
+improves continuity but requires key management, patching, monitoring, and
+restore tests.
 
-### 5.20 Custodia organizzativa e separazione dei compiti
+### 5.20 Organizational custody and separation of duties
 
-Applicazioni gestite da organizzazioni richiedono:
+Applications managed by organizations require:
 
-- chiavi del ruolo separate dalle identità personali;
-- assegnazione e riassegnazione dei casi;
-- principio del minimo privilegio;
-- revoca immediata di operatori;
-- doppia autorizzazione per export, distruzione o cambio policy;
-- continuità quando una persona lascia il ruolo;
-- accesso di emergenza dichiarato e auditato;
-- nessuna chiave universale silenziosa.
+- role keys separated from personal identities;
+- case assignment and reassignment;
+- least privilege;
+- immediate operator revocation;
+- dual authorization for export, destruction, or policy changes;
+- continuity when a person leaves a role;
+- declared and audited emergency access;
+- no silent universal key.
 
-Una chiave master dell'organizzazione semplifica il recupero ma aumenta
-drasticamente l'impatto di compromissione e abuso interno. Threshold,
-multi-recipient encryption o escrow sono alternative da sottoporre a design e
-review, non scelte di questo modello.
+An organizational master key simplifies recovery but dramatically increases
+the impact of compromise and insider abuse. Threshold schemes, multi-recipient
+encryption, or escrow are alternatives for separate design and review, not
+choices made by this model.
 
 ### 5.21 Compliance hooks
 
-Il core può facilitare un processo regolato con:
+The core can facilitate a regulated process through:
 
-- retention configurabile;
+- configurable retention;
 - data minimization;
-- ruoli e audit;
-- export e legal hold;
-- informative versionate e consenso dove pertinente;
-- scadenze, reminder e stati di workflow;
-- registrazione della base/policy applicata;
-- separazione fra canali con regimi diversi.
+- roles and audit;
+- export and legal hold;
+- versioned notices and consent where relevant;
+- deadlines, reminders, and workflow states;
+- recording the applicable basis/policy;
+- separation between channels governed by different regimes.
 
-Non può determinare autonomamente la legge applicabile, qualificare una
-segnalazione, assicurare indipendenza del gestore, impedire ritorsioni o
-conferire certificazioni. DPIA, procedure, formazione e controllo umano restano
-responsabilità dell'organizzazione.
+It cannot autonomously determine applicable law, classify a report, ensure the
+handler's independence, prevent retaliation, or confer certifications. DPIAs,
+procedures, training, and human oversight remain the organization's
+responsibility.
 
-### 5.22 Abuse resistance e safety
+### 5.22 Abuse resistance and safety
 
-L'anonimato può essere usato per spam, minacce e materiale illecito. Senza
-identificare il segnalante, un'app deve poter applicare:
+Anonymity can be used for spam, threats, and illegal material. Without
+identifying the reporter, an application must be able to apply:
 
-- limiti per capability, finestra e costo;
-- proof-of-work o challenge accessibili, dopo analisi del rischio;
-- code di quarantena e scansione locale isolata;
-- blocco di un caso senza bloccare tutti gli utenti;
-- separazione tra abuso del canale e merito della segnalazione;
-- escalation per pericolo immediato;
-- protezione degli operatori da contenuti traumatici;
-- preservazione controllata dell'evidenza quando obbligatoria.
+- limits per capability, time window, and cost;
+- accessible proof-of-work or challenges after risk analysis;
+- quarantine queues and isolated local scanning;
+- blocking one case without blocking all users;
+- separation between channel abuse and the merits of a report;
+- escalation for immediate danger;
+- protection of operators from traumatic content;
+- controlled preservation of evidence where required.
 
-Rate limit per IP può danneggiare utenti dietro Tor o NAT e creare log
-identificativi. Ogni mitigazione deve essere valutata nel threat model.
+Per-IP rate limits can harm users behind Tor or NAT and create identifying
+logs. Every mitigation must be assessed in the threat model.
 
-## 6. Profili di garanzia
+## 6. Assurance profiles
 
-I nomi seguenti descrivono obiettivi, non certificazioni.
+The following names describe objectives, not certifications.
 
 ### `content-confidential`
 
-E2EE, verifica del peer, storage protetto e relay non fidato. Lascia visibili
-metadati di trasporto e non protegge un endpoint compromesso.
+E2EE, peer verification, protected storage, and an untrusted relay. Transport
+metadata remains visible and a compromised endpoint remains unprotected.
 
 ### `resilient-collaboration`
 
-Aggiunge outbox persistente, ACK, idempotenza, relay multipli, recovery e
-politiche di conflitto. Mira a continuità e coerenza, non anonimato.
+Adds a persistent outbox, ACKs, idempotency, multiple relays, recovery, and
+conflict policies. It targets continuity and consistency, not anonymity.
 
 ### `metadata-minimizing`
 
-Aggiunge identità applicative, mailbox ruotabili, envelope esterno protetto,
-padding, policy notifiche e opzioni Tor/onion. Riduce osservabilità ma non
-elimina correlazione globale.
+Adds application identities, rotatable mailboxes, a protected outer envelope,
+padding, notification policies, and Tor/onion options. It reduces observability
+but does not eliminate global correlation.
 
 ### `anonymous-dialogue`
 
-Aggiunge identità per caso, capability di ritorno, nessun recapito obbligatorio,
-no cross-case linking e workflow operatore. L'anonimato vale soltanto rispetto
-agli avversari e alle condizioni dichiarate.
+Adds per-case identity, a return capability, no mandatory contact detail,
+no cross-case linking, and an operator workflow. Anonymity holds only against
+the declared adversaries and under the stated conditions.
 
 ### `native-high-assurance`
 
-Richiede client nativo firmato, secure hardware quando disponibile, update
-verificabili, threat model specifico e audit separato. Non deriva
-automaticamente dalla PWA.
+Requires a signed native client, secure hardware where available, verifiable
+updates, a specific threat model, and a separate audit. It does not follow
+automatically from the PWA.
 
-## 7. Invarianti trasversali
+## 7. Cross-cutting invariants
 
-Ogni futura implementazione dovrebbe preservare:
+Every future implementation should preserve:
 
-1. nessun segreto attraversa confini non necessari;
-2. nessun input di rete decide codice o accesso dinamico;
-3. namespace, schema e versione sono autenticati;
-4. un errore di persistenza non viene presentato come successo;
-5. una pubblicazione non equivale a consegna;
-6. una chiave non equivale a identità civile;
-7. un relay multiplo non equivale a anonimato;
-8. una cancellazione non promette erasure fisica;
-9. una recovery path non aggira revoca e audit;
-10. una feature non è disponibile finché test, CI e documentazione non la
-    coprono nel prodotto che la usa.
+1. no secret crosses unnecessary boundaries;
+2. no network input selects code or dynamic access;
+3. namespace, schema, and version are authenticated;
+4. a persistence error is not presented as success;
+5. publication does not equal delivery;
+6. a key does not equal a civil identity;
+7. multiple relays do not equal anonymity;
+8. deletion does not promise physical erasure;
+9. a recovery path does not bypass revocation and audit;
+10. a feature is unavailable until tests, CI, and documentation cover it in
+    the product that uses it.
 
-## 8. Criterio di prontezza per una nuova applicazione
+## 8. Readiness criterion for a new application
 
-Prima di un pilot, l'applicazione deve produrre:
+Before a pilot, the application must produce:
 
-- threat model con attori, asset e assunzioni;
-- data-flow diagram con metadati visibili;
-- matrice delle capacità e dipendenze;
-- schema/version policy approvati;
-- piano di perdita, crash, rollback e recovery;
-- politica allegati, retention ed export;
-- test end-to-end su client e infrastruttura reali;
-- review indipendente e lista dei rischi residui;
-- copy UI che non superi le garanzie provate;
-- procedura organizzativa e contatti di emergenza, se applicabili.
+- a threat model with actors, assets, and assumptions;
+- a data-flow diagram showing visible metadata;
+- a capability and dependency matrix;
+- approved schema/version policy;
+- a plan for loss, crash, rollback, and recovery;
+- attachment, retention, and export policy;
+- end-to-end tests on real clients and infrastructure;
+- an independent review and residual-risk list;
+- UI copy that does not exceed demonstrated guarantees;
+- an organizational procedure and emergency contacts, where applicable.
 
-La presenza delle primitive nel repository non è sufficiente: la proprietà deve
-essere dimostrata sul percorso completo dell'applicazione.
+The presence of primitives in the repository is insufficient: the property
+must be demonstrated across the application's complete path.
