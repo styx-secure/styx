@@ -45,6 +45,36 @@ import { NostrChatTransport } from '../transport/nostr-chat-transport.js';
 /** Where the outstanding QR invite's nonce is kept, so it survives a reload. */
 const INVITE_NONCE_KEY = 'invite:nonce';
 
+// The pre-Welcome buffer is deliberately small and short-lived. It exists only
+// to tolerate relay reordering while a QR invite is outstanding; it is not an
+// unauthenticated inbox.
+const PENDING_APP_TTL_MS = 120_000;
+const PENDING_APP_MAX_PER_SENDER = 16;
+const PENDING_APP_MAX_TOTAL = 64;
+const PENDING_APP_MAX_ENVELOPE_BYTES = 256 * 1024;
+const PENDING_APP_MAX_BYTES_PER_SENDER = 1024 * 1024;
+const PENDING_APP_MAX_BYTES_TOTAL = 4 * 1024 * 1024;
+const SEEN_INCOMING_MAX = 5000;
+
+/** Return an own data property without invoking an attacker-controlled getter. */
+function dataProperty(value, key) {
+  try {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) return undefined;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    return descriptor && Object.hasOwn(descriptor, 'value') ? descriptor.value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function appCiphertext(env) {
+  if (dataProperty(env, 't') !== 'app') return null;
+  const ct = dataProperty(env, 'ct');
+  return typeof ct === 'string' ? ct : null;
+}
+
 function defaultBackend(ns) {
   if (typeof localStorage !== 'undefined') {
     return new LocalStorageBackend(`styxchat:${ns ? `${ns}:` : ''}`);
@@ -130,7 +160,9 @@ export class StyxChat {
     this._assembled = false;
     this._store = deps.store || new MemoryMessageStore();
     this._groups = {}; // contactPubkey -> MLS groupId (persisted in app mode)
-    this._pendingApp = {}; // from -> [envelopes] not yet decryptable (arrived before Welcome)
+    this._pendingApp = new Map(); // from -> [{ env, receivedAt, byteLength, order }]
+    this._pendingAppBytes = 0;
+    this._pendingAppOrder = 0;
     this._seenIncoming = new Set(); // inbound message ids already surfaced (dedup relay replay)
     this._readSent = new Set(); // inbound message ids we've already sent a 'read' receipt for
     this._inviteNonce = null; // nonce of the outstanding QR invite, if any (single-use)
@@ -303,6 +335,9 @@ export class StyxChat {
     // the welcome under it, proving they actually looked at this screen. The QR is
     // therefore the trust anchor, and it is single-use.
     const nonce = randomBytes(32);
+    // Replacing the single outstanding invite retires its unauthenticated receive
+    // window too. Frames admitted under the old QR must never cross into the new one.
+    this._clearPendingApp();
     this._inviteNonce = nonce;
     const payload = {
       pubkey: this._identity.pubkey,
@@ -482,6 +517,7 @@ export class StyxChat {
   }
 
   destroy() {
+    this._clearPendingApp();
     this._offTransport?.();
     this._unsubs.forEach((u) => u());
     this._unsubs = [];
@@ -534,7 +570,99 @@ export class StyxChat {
    */
   async _retireInvite() {
     this._inviteNonce = null;
+    this._clearPendingApp();
     await this._backend?.delete(INVITE_NONCE_KEY);
+  }
+
+  _clearPendingApp() {
+    this._pendingApp.clear();
+    this._pendingAppBytes = 0;
+    this._pendingAppOrder = 0;
+  }
+
+  _prunePendingApp(now = Date.now()) {
+    const expiresAt = now - PENDING_APP_TTL_MS;
+    for (const [from, queue] of this._pendingApp) {
+      let firstLive = 0;
+      while (firstLive < queue.length && queue[firstLive].receivedAt <= expiresAt) {
+        this._pendingAppBytes -= queue[firstLive].byteLength;
+        firstLive += 1;
+      }
+      if (firstLive === 0) continue;
+      if (firstLive === queue.length) this._pendingApp.delete(from);
+      else this._pendingApp.set(from, queue.slice(firstLive));
+    }
+    if (this._pendingAppBytes < 0) this._pendingAppBytes = 0;
+  }
+
+  _dropPendingHead(from) {
+    const queue = this._pendingApp.get(from);
+    if (!queue?.length) return false;
+    const [entry] = queue.splice(0, 1);
+    this._pendingAppBytes -= entry.byteLength;
+    if (!queue.length) this._pendingApp.delete(from);
+    return true;
+  }
+
+  _pendingAppCount() {
+    let count = 0;
+    for (const queue of this._pendingApp.values()) count += queue.length;
+    return count;
+  }
+
+  _evictOldestPending() {
+    let oldestFrom = null;
+    let oldestOrder = Infinity;
+    for (const [from, queue] of this._pendingApp) {
+      if (queue[0]?.order < oldestOrder) {
+        oldestOrder = queue[0].order;
+        oldestFrom = from;
+      }
+    }
+    return oldestFrom === null ? false : this._dropPendingHead(oldestFrom);
+  }
+
+  _enqueuePendingApp(from, env, byteLength, now = Date.now()) {
+    if (!this._inviteNonce || appCiphertext(env) === null) return false;
+    if (!Number.isSafeInteger(byteLength) || byteLength < 0
+      || byteLength > PENDING_APP_MAX_ENVELOPE_BYTES) return false;
+
+    this._prunePendingApp(now);
+    const queue = this._pendingApp.get(from) || [];
+    queue.push({ env, receivedAt: now, byteLength, order: this._pendingAppOrder++ });
+    this._pendingApp.set(from, queue);
+    this._pendingAppBytes += byteLength;
+
+    let senderBytes = queue.reduce((sum, entry) => sum + entry.byteLength, 0);
+    while (queue.length > PENDING_APP_MAX_PER_SENDER
+      || senderBytes > PENDING_APP_MAX_BYTES_PER_SENDER) {
+      senderBytes -= queue[0].byteLength;
+      this._dropPendingHead(from);
+    }
+
+    while (this._pendingAppCount() > PENDING_APP_MAX_TOTAL
+      || this._pendingAppBytes > PENDING_APP_MAX_BYTES_TOTAL) {
+      if (!this._evictOldestPending()) break;
+    }
+    return this._pendingApp.get(from)?.some((entry) => entry.env === env) ?? false;
+  }
+
+  _takePendingApp(from, now = Date.now()) {
+    this._prunePendingApp(now);
+    const queue = this._pendingApp.get(from) || [];
+    this._pendingApp.delete(from);
+    for (const entry of queue) this._pendingAppBytes -= entry.byteLength;
+    if (this._pendingAppBytes < 0) this._pendingAppBytes = 0;
+    return queue;
+  }
+
+  _rememberIncoming(id) {
+    if (this._seenIncoming.has(id)) return false;
+    this._seenIncoming.add(id);
+    while (this._seenIncoming.size > SEEN_INCOMING_MAX) {
+      this._seenIncoming.delete(this._seenIncoming.values().next().value);
+    }
+    return true;
   }
 
   _setState(msg, state) {
@@ -633,22 +761,37 @@ export class StyxChat {
   }
 
   async _onWire(from, bytes) {
+    if (typeof from !== 'string' || !from.length || from.length > 256) return;
     let env;
-    try { env = JSON.parse(utf8Decode(bytes)); } catch { return; }
+    let byteLength;
+    try {
+      byteLength = bytes.byteLength;
+      env = JSON.parse(utf8Decode(bytes));
+    } catch { return; }
+    const type = dataProperty(env, 't');
 
-    if (env.t === 'welcome') {
+    if (type === 'welcome') {
       // A welcome must never replace an established session (silent-MITM vector).
       if (this._groups[from] || this._engine.session(from)) return;
       // It must also prove the sender saw our QR: no pending invite, or a MAC that
       // does not verify under its nonce, means we are being injected into.
-      if (!this._inviteNonce || !env.hmac) return;
-      const welcomeBytes = base64ToBytes(env.welcome);
-      const treeBytes = base64ToBytes(env.tree);
-      const expected = this._welcomeMac(this._inviteNonce, welcomeBytes, treeBytes, env.groupId);
-      if (!constantTimeEqual(expected, base64ToBytes(env.hmac))) return;
-      // Join first: if the welcome bytes are malformed and joinSession throws, the
-      // nonce must survive so the legitimate joiner (who saw the QR) can retry.
-      this._engine.joinSession(from, welcomeBytes, treeBytes);
+      const welcome = dataProperty(env, 'welcome');
+      const tree = dataProperty(env, 'tree');
+      const groupId = dataProperty(env, 'groupId');
+      const welcomeHmac = dataProperty(env, 'hmac');
+      if (!this._inviteNonce || typeof welcome !== 'string' || typeof tree !== 'string'
+        || typeof groupId !== 'string' || typeof welcomeHmac !== 'string') return;
+      let welcomeBytes;
+      let treeBytes;
+      try {
+        welcomeBytes = base64ToBytes(welcome);
+        treeBytes = base64ToBytes(tree);
+        const expected = this._welcomeMac(this._inviteNonce, welcomeBytes, treeBytes, groupId);
+        if (!constantTimeEqual(expected, base64ToBytes(welcomeHmac))) return;
+        // Join first: if the welcome bytes are malformed and joinSession throws, the
+        // nonce must survive so the legitimate joiner (who saw the QR) can retry.
+        this._engine.joinSession(from, welcomeBytes, treeBytes);
+      } catch { return; }
       // N2: the MLS credential in the group we just joined must be the peer who sent
       // it. A valid MAC only proves the sender saw our QR — it does not prove the
       // group is theirs. Somebody who photographed the QR can relay a group built by
@@ -666,8 +809,9 @@ export class StyxChat {
         this._emitter.emit('invite-rejected', { from, reason: 'identity-mismatch' });
         return;
       }
+      const queued = this._takePendingApp(from);
       await this._retireInvite(); // single-use: a photographed QR cannot be replayed
-      if (env.groupId) this._groups[from] = env.groupId;
+      if (groupId) this._groups[from] = groupId;
       await this._persistMls();
       // A welcome buys a pending pairing, not a contact: the user decides. Our
       // alias travels back encrypted (an intro), never in the cleartext envelope.
@@ -676,25 +820,34 @@ export class StyxChat {
         this._emitter.emit('pairing', { pubkey: from });
       }
       await this._sendIntro(from);
-      await this._drainPending(from); // messages that arrived before this Welcome
+      await this._drainPending(from, queued); // messages that arrived before this Welcome
       return;
     }
-    if (env.t === 'app') {
-      const handled = await this._processApp(from, env);
-      if (!handled) (this._pendingApp[from] ||= []).push(env); // wait for the Welcome
+    if (type === 'app') {
+      if (appCiphertext(env) === null) return;
+      if (this._engine.session(from)) {
+        await this._processApp(from, env); // authenticated failures are dropped, never queued
+      } else if (this._inviteNonce) {
+        this._enqueuePendingApp(from, env, byteLength);
+      }
       return;
     }
-    if (env.t === 'typing') {
-      this._emitter.emit('typing', from, !!env.on);
+    if (type === 'typing') {
+      const on = dataProperty(env, 'on');
+      if (typeof on === 'boolean' && this._engine.session(from)) {
+        this._emitter.emit('typing', from, on);
+      }
     }
   }
 
   /** Decrypt + surface one app envelope. @returns {Promise<boolean>} handled (false = no session / not yet decryptable). */
   async _processApp(from, env) {
+    const ciphertext = appCiphertext(env);
+    if (ciphertext === null) return false;
     const session = this._engine.session(from);
     if (!session) return false;
     let res;
-    try { res = session.decrypt(base64ToBytes(env.ct)); } catch { return false; }
+    try { res = session.decrypt(base64ToBytes(ciphertext)); } catch { return false; }
     await this._persistMls(); // ratchet advanced on decrypt
     if (res.kind !== 'application') return true;
 
@@ -725,8 +878,7 @@ export class StyxChat {
     }
 
     // A chat message. Use the sender's id + send time; dedup relay replay.
-    if (this._seenIncoming.has(payload.id)) return true;
-    this._seenIncoming.add(payload.id);
+    if (!this._rememberIncoming(payload.id)) return true;
     const msg = {
       id: payload.id, contactPubkey: from, direction: 'in',
       text: String(payload.text ?? ''), ts: payload.ts || Date.now(), state: 'delivered',
@@ -741,14 +893,12 @@ export class StyxChat {
   }
 
   /** Re-process queued app messages once a session exists (e.g. after the Welcome). */
-  async _drainPending(from) {
-    const queue = this._pendingApp[from];
+  async _drainPending(from, queue = this._takePendingApp(from)) {
     if (!queue || !queue.length) return;
-    this._pendingApp[from] = [];
-    for (const env of queue) {
+    for (const entry of queue) {
+      if (entry.receivedAt <= Date.now() - PENDING_APP_TTL_MS) continue;
       // eslint-disable-next-line no-await-in-loop
-      const handled = await this._processApp(from, env);
-      if (!handled) (this._pendingApp[from] ||= []).push(env);
+      await this._processApp(from, entry.env);
     }
   }
 }
