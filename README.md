@@ -8,21 +8,41 @@
 > the [approved vision](specs/01-vision.md) and the
 > [Phase A capability report](docs/architecture/spikes/2026-08-08-marmot-openmls-phase-a.md).
 
-Styx is a platform-neutral secure application substrate for software that needs self-custodied
-identity, end-to-end-encrypted collaboration, verifiable state transitions, offline operation, and
-delivery through infrastructure that is not trusted with plaintext. It is not a general-purpose
-messenger.
+## Mission
 
-The first product vertical is **Themis**, an anonymous case-management system with durable,
-two-way asynchronous dialogue. The browser code in `styx-js/` is the active JavaScript
-implementation and first secure-runtime profile. Its chat is a minimal reference application,
-interoperability harness, and diagnostic surface—not the product roadmap. The independently
-developed Dart ledger in `packages/` is retained as a reference and regression oracle; it is not a
-parallel feature-development target.
+Styx is an open-source, platform-neutral secure application substrate for sensitive workflows over
+infrastructure that must not be trusted with plaintext. It combines self-custodied identity,
+end-to-end-encrypted collaboration, verifiable state transitions, offline operation, and redundant
+delivery. It is not a general-purpose messenger or a replacement for Signal.
 
-Relays cannot read E2EE message content, but current transports expose some routing and timing
-metadata. E2EE also does not protect a compromised endpoint, a malicious recipient, or a browser
-build supplied by an origin controlled by the adversary.
+The first product vertical is **Themis**: a planned case-management application intended to let a
+person open and continue a confidential case without providing an email address, phone number, or
+ordinary account. This can support abuse, harassment, discrimination, whistleblowing, safeguarding,
+and other sensitive casework, but the software cannot replace trained handlers, legal and privacy
+review, safeguarding procedures, or emergency channels.
+
+## Where the project stands
+
+- **Built and tested foundations:** an independent Dart ledger and an active JavaScript browser
+  stack with a reference MLS chat, Nostr transport, encrypted IndexedDB vault, crypto-worker
+  lifecycle, pinned WASM artifacts, and fail-closed storage work.
+- **Not yet a complete product:** the language-neutral application protocol, interoperability
+  proof, reliable delivery SDK, metadata-minimizing case routing, anonymous return capability,
+  organizational workflow, distribution assurance, complete-product audit, and controlled pilot
+  remain to be completed.
+- **Current technical direction:** Marmot is the preferred compatibility target for the
+  MLS-over-Nostr session profile, but current Styx builds are not Marmot-compatible. The chat is a
+  minimal reference application and interoperability harness, not the product roadmap.
+
+The proposed funded programme takes these tested foundations through a conformance-backed Styx
+protocol, a bounded secure-session interoperability decision, a reusable SDK and reliable delivery,
+a text-first Themis alpha, stronger distribution assurance, independent audit and remediation, and
+a controlled organizational pilot. See the [project brief](docs/PROJECT_BRIEF.md) for the mission,
+evidence, milestones, measurable outcomes, and explicit non-claims.
+
+Current transports expose routing, timing, size, and relationship metadata. E2EE also does not
+protect a compromised endpoint, a malicious recipient, or a browser build supplied by an origin
+controlled by the adversary. No current build offers a universal anonymity guarantee.
 
 > *In Greek mythology, the River Styx was the boundary between the mortal world and the underworld. The gods swore their most sacred oaths upon its waters — oaths that could never be broken. Styx brings that same inviolable trust to digital agreements.*
 

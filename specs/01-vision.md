@@ -3,10 +3,13 @@ spec_version: "3.0"
 spec_type: "vision"
 project: "Styx"
 last_updated: "2026-08-08T00:00:00Z"
-status: "draft"
+status: "approved-direction"
 ---
 
 # Styx — Vision
+
+> **Status:** approved product direction. This status does not imply protocol
+> conformance, security audit, production readiness, or approval for a pilot.
 
 ## Vision statement
 
