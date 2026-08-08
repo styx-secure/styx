@@ -1,96 +1,118 @@
 ---
-spec_version: "2.0"
+spec_version: "3.0"
 spec_type: "prd"
 project: "Styx"
-last_updated: "2026-07-18T00:00:00Z"
+last_updated: "2026-08-08T00:00:00Z"
 status: "draft"
 ---
 
 # Styx — Product Requirements (synthesis)
 
-## Sintesi (IT)
+## Authority and scope
 
-PRD di sintesi del prodotto esistente, organizzato per epic. Ogni epic rimanda
-al documento canonico che ne è la fonte normativa: questo file è la mappa,
-non il territorio. Le user story con contract block arriveranno con la PR di
-adozione del backlog (vedi `specs/README.md`).
+This is a product map, not the language-neutral application protocol. The
+canonical application authority will be the versioned event formats,
+state-transition rules, adversarial scenarios, wire formats, and conformance
+vectors. Implementations and product verticals must conform to that authority.
 
-> **Authority note.** Each epic links its canonical design document. Where
-> this synthesis and the canonical document disagree, the canonical document
-> wins (`specs/README.md`).
+Current builds remain experimental and unsuitable for sensitive, high-risk, or
+life-critical use.
 
-## E1 — MLS group messaging
+## E1 — Styx application protocol and conformance
 
-E2EE 1:1 and small-group chat built on MLS (RFC 9420) through the vendored
-`openmls-wasm` artifact. Self-custodied identity, no central accounts.
-- **Canonical**: `docs/superpowers/specs/2026-07-09-styx-chat-mls-design.md`
-- **Status**: active development; experimental while H1/H2 are open.
-- **Note**: the design document predates the claim cleanup and uses early
-  wording for the transport model; the honest framing in `01-vision.md`
-  prevails.
+Define durable application objects and transitions independently of runtime and
+transport: canonical event encoding, signatures and hash links, causal clocks,
+deterministic conflict behavior, retention and pruning, error semantics, and
+adversarial conformance scenarios.
 
-## E2 — MLS state envelope and persistence
+- **Active browser implementation:** `styx-js/src/ledger/**` and
+  `styx-js/src/facade/**`.
+- **Independent reference:** `packages/` Dart, used to extract missing vectors
+  before being frozen.
+- **Requirement:** neither implementation is normative.
 
-Versioned, fail-closed envelope for persisted MLS state: format detection,
-compatibility cases, structured errors, no silent data loss.
-- **Canonical**: `docs/superpowers/specs/2026-07-12-mls-state-envelope.md`
-- **Status**: designed; storage-path issues #24–#27 track hardening.
+## E2 — Themis vertical
 
-## E3 — Styx Vault
+Themis is the first supported product: anonymous case management with durable
+case state, asynchronous two-way dialogue, controlled disclosure, notification
+support, evidence integrity, recovery, retention, and safe operational UX.
 
-Encrypted local vault for keys and state: IndexedDB persistence, Argon2id
-KDF (dedicated `styx-kdf-wasm` artifact), crypto isolated in a worker.
-- **Canonical**: `docs/superpowers/specs/2026-07-12-styx-vault-design.md`,
-  plan `docs/superpowers/plans/2026-07-12-styx-vault-implementation-plan.md`,
-  spikes `2026-07-12-argon2id.md`, `2026-07-12-crypto-worker.md`,
-  `2026-07-12-indexeddb-vault.md`.
-- **Status**: design approved; implementation staged. PR #39 (isolated vault
-  worker runtime) belongs to this epic and is untouched by the workflow
-  migration.
+- **Requirement:** a reporter must not need an email address, phone number, or
+  central account to continue the dialogue.
+- **Requirement:** application semantics must survive changes in runtime and
+  secure-session transport profile.
 
-## E4 — Push notifications
+## E3 — Secure-session compatibility profile
 
-Delivery of encrypted-payload notifications to the PWA through the push
-bridge (`push_bridge/` Node + `push_bridge_server/` Go, APNs/FCM). The
-bridge is a deliberate, stateless exception in the trust model and is
-documented as such.
-- **Canonical**: `docs/superpowers/specs/2026-07-10-pwa-push-notifications-design.md`,
-  plan `docs/superpowers/plans/2026-07-10-pwa-phase2-push-bridge.md`
+Provide MLS membership, epochs, continuous group key agreement, convergence,
+and redundant delivery as a replaceable profile below the application protocol.
+Marmot is the preferred compatibility target, subject to a successful bounded
+capability and interoperability process.
 
-## E5 — Read receipts
+- **Current implementation evidence:** vendored OpenMLS WASM and the existing
+  Nostr chat path.
+- **Constraint:** current Styx wire behavior is not Marmot-compatible merely
+  because it uses MLS, Nostr, or a Marmot-associated event kind.
+- **Gate:** no Phase B implementation starts without explicit licensing,
+  crypto/WASM, persisted-state, migration, and transport approval.
 
-Read receipts inside the MLS channel, without leaking metadata to relays
-beyond what transport already exposes.
-- **Canonical**: `docs/superpowers/specs/2026-07-10-read-receipts-design.md`
+## E4 — Runtime profiles
 
-## E6 — Channel authentication (Phase A)
+Runtime profiles implement local key custody, durable storage, background
+delivery, notifications, and UI integration for a platform.
 
-Authenticated pairing/channel establishment.
-- **Canonical**: `docs/superpowers/plans/2026-07-10-phase-a-channel-authentication.md`
+### Browser PWA profile
 
-## E7 — WASM hardening and risk reduction
+The existing vault, crypto worker, IndexedDB persistence, service worker, push
+bridge, and React shell form the first runtime profile. Its security statement
+must include the weaker guarantee against an adversary controlling the origin.
 
-Supply-chain integrity for the vendored crypto artifacts: pinned commits,
-reproducible rebuilds, KATs, CI integrity gates; claim cleanup and risk
-reduction (Blocco 2).
-- **Canonical**: `docs/superpowers/plans/2026-07-11-blocco1-wasm-hardening.md`,
-  `docs/superpowers/plans/2026-07-11-blocco2-risk-reduction.md`
-- **Hard constraint**: the `openmls-wasm` pin descends from `openmls-v0.8.1`
-  and carries fixes absent from that tag — moving back to the tag would be a
-  downgrade **and** a persisted-format break. Never "bump to the release tag"
-  without reading `vendor/openmls-wasm/PROVENANCE.md` first.
+### Future signed native profiles
+
+Desktop or native profiles may provide stronger code-provenance and endpoint
+guarantees while implementing the same application protocol and compatible
+secure-session profile.
+
+## E5 — Minimal reference chat
+
+Retain only the chat behavior needed to demonstrate pairing, secure-session
+round trips, persistence, notification behavior, interoperability, and failure
+diagnostics. Consumer-messenger feature parity is not a product requirement.
+
+## E6 — Vault and local-state protection
+
+Protect local secrets and state with versioned, fail-closed persistence,
+memory-hard password derivation, isolated cryptographic execution, explicit
+recovery behavior, and atomic security-state transitions.
+
+- **Existing design evidence:**
+  `docs/superpowers/specs/2026-07-12-styx-vault-design.md` and
+  `docs/superpowers/specs/2026-07-12-mls-state-envelope.md`.
+- **Constraint:** vault protection does not remove the browser-origin or
+  compromised-endpoint limitations.
+
+## E7 — Delivery and notifications
+
+Support asynchronous application workflows through redundant delivery and
+privacy-minimizing notifications. Push infrastructure is a deliberate trust and
+metadata boundary and must never receive application plaintext.
+
+## E8 — Supply-chain and security assurance
+
+Keep cryptographic dependencies pinned, reproducibly built, integrity checked,
+and reviewed independently. Treat cryptographic code, vendored WASM, persisted
+formats, migrations, licensing classifications, and security claims as
+human-gated changes.
 
 ## Cross-cutting requirements
 
-- **Honest claims** (all epics): never use affirmative "serverless" / "zero-knowledge" / zero-metadata wording; relays observe transport
-  metadata. Enforced by the `Doc claims lint` CI check.
-- **Fail-closed persistence**: storage-format changes require explicit
-  migration paths (E2) and are a mandatory human-gate area (`AGENTS.md`).
-- **Crypto changes** are human-gated: no agent may alter crypto code, test
-  vectors or persisted formats without an explicitly approved Issue.
-
-## Deferred
-
-User stories with contract blocks (`03-user-stories.md`) and the sprint plan
-(`05-sprint-plan.md`) arrive with the backlog-adoption PR — see
-`specs/README.md` for the reason.
+- English is the canonical documentation language; translations are optional
+  and must not become the only source of a requirement.
+- Security claims must identify the runtime and threat model to which they
+  apply.
+- Relay-observable metadata must be documented until a specific profile and
+  evidence demonstrate its protection.
+- Persisted-state changes require explicit migration and rollback behavior.
+- Compatibility claims require wire-level conformance evidence against an
+  independent implementation.
+- The Dart and JavaScript ledgers must not receive parallel feature work.
