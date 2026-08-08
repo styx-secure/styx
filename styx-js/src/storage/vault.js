@@ -385,6 +385,10 @@ export function createVault({
     }
 
     const previous = await db.get(namespace, recordKey);
+    // A record without its migration marker cannot be a legitimate crash
+    // state: phase 2 commits both atomically. Treat it as shadow corruption so
+    // repair advances rv instead of silently reusing the old version.
+    if (existingMarkerRaw === undefined && previous !== undefined) repairRequired = true;
     let previousPlain;
     if (previous !== undefined) {
       const key = await namespaceKeyFor(namespace);

@@ -122,7 +122,14 @@ export function useStyxChat() {
       throw e;
     }
     if (firstRun && alias && alias.trim() && chat.me?.alias !== alias.trim()) {
-      await chat.setAlias(alias.trim());
+      try {
+        await chat.setAlias(alias.trim());
+      } catch (e) {
+        try { chat.destroy(); } catch { /* best-effort pre-network teardown */ }
+        release();
+        lockReleaseRef.current = null;
+        throw e;
+      }
     }
 
     try {

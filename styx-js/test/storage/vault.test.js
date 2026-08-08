@@ -273,6 +273,18 @@ describe('identity shadow migration (US-010)', () => {
       .toMatchObject({ state: 'verified', matched: true, recordVersion: 3 });
   });
 
+  test('a missing marker beside an existing record is repaired with a monotone record version', async () => {
+    const db = new FakeVaultDb();
+    const v = makeVault(db);
+    await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
+    await v.migrate('identity', identity, { pairingActive: false });
+    db.stores.get('migrations').delete('identity');
+
+    expect(await v.migrate('identity', identity, { pairingActive: false }))
+      .toMatchObject({ state: 'verified', matched: true, recordVersion: 2 });
+    expect(db.record('identity', 'self').rv).toBe(2);
+  });
+
   test('rejects an invalid legacy envelope without migration writes', async () => {
     const db = new FakeVaultDb();
     const v = makeVault(db);
