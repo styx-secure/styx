@@ -144,7 +144,12 @@ export function createVaultWorkerRuntime({
       return { result: await vault.transactionRecords(payload.namespace, payload.operations) };
     }
     if (type === 'MIGRATE') {
-      return { result: await vault.migrate(payload.namespace, payload.preferences) };
+      const source = payload.namespace === 'settings' ? payload.preferences : payload.identity;
+      return { result: await vault.migrate(
+        payload.namespace,
+        source,
+        payload.namespace === 'identity' ? { pairingActive: payload.pairingActive } : {},
+      ) };
     }
     if (type === 'DESTROY') return { result: await vault.destroy(), shutdown: true };
     throw wrongState('message type is reserved and not active in this build', { type, reason: 'reserved-type' });

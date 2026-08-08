@@ -14,6 +14,9 @@ import {
   VaultWorkerError, VaultWorkerErrorCodes as Codes, sanitizeWorkerErrorDetails,
   isKnownVaultWireErrorCode,
 } from './vault-worker-errors.js';
+import {
+  IDENTITY_NAMESPACE, IDENTITY_RECORD_KEY, validateIdentityEnvelope,
+} from '../storage/vault-migration.js';
 
 export const VAULT_WORKER_PROTOCOL_VERSION = 1;
 
@@ -284,6 +287,12 @@ function normalizeSettingsPreferences(raw) {
   });
 }
 
+function normalizeIdentityEnvelope(raw) {
+  try { return validateIdentityEnvelope(raw); } catch {
+    throw badRequest('identity envelope is invalid', { reason: 'bad-identity-payload' });
+  }
+}
+
 function assertRecordKey(recordKey) {
   const ok = typeof recordKey === 'string'
     && recordKey.length >= 1
@@ -350,7 +359,9 @@ export function validateRequestPayload(type, raw) {
   if (type === 'GET' || type === 'DELETE') {
     const p = payloadShape(raw, ['namespace', 'recordKey']);
     assertRecordKey(p.recordKey);
-    if (type === 'GET' && p.namespace === SETTINGS_NAMESPACE && p.recordKey === SETTINGS_RECORD_KEY) {
+    if (type === 'GET'
+      && ((p.namespace === SETTINGS_NAMESPACE && p.recordKey === SETTINGS_RECORD_KEY)
+        || (p.namespace === IDENTITY_NAMESPACE && p.recordKey === IDENTITY_RECORD_KEY))) {
       return Object.freeze({ namespace: p.namespace, recordKey: p.recordKey });
     }
     assertNamespace(p.namespace);
@@ -393,14 +404,31 @@ export function validateRequestPayload(type, raw) {
     return Object.freeze({ namespace: p.namespace, operations: Object.freeze(operations) });
   }
   if (type === 'MIGRATE') {
-    const p = payloadShape(raw, ['namespace', 'preferences']);
-    if (p.namespace !== SETTINGS_NAMESPACE) {
-      throw badRequest('migration namespace is not active', { reason: 'migration-namespace' });
+    const namespaceDescriptor = raw !== null && typeof raw === 'object'
+      ? Object.getOwnPropertyDescriptor(raw, 'namespace') : undefined;
+    const namespace = namespaceDescriptor && Object.hasOwn(namespaceDescriptor, 'value')
+      ? namespaceDescriptor.value : undefined;
+    if (namespace === SETTINGS_NAMESPACE) {
+      const p = payloadShape(raw, ['namespace', 'preferences']);
+      return Object.freeze({
+        namespace: SETTINGS_NAMESPACE,
+        preferences: normalizeSettingsPreferences(p.preferences),
+      });
     }
-    return Object.freeze({
-      namespace: SETTINGS_NAMESPACE,
-      preferences: normalizeSettingsPreferences(p.preferences),
-    });
+    if (namespace === IDENTITY_NAMESPACE) {
+      const p = payloadShape(raw, ['namespace', 'identity', 'pairingActive']);
+      if (p.pairingActive !== false) {
+        throw new VaultWorkerError(Codes.WRONG_STATE, 'identity migration requires an idle pairing state', {
+          reason: 'pairing-active',
+        });
+      }
+      return Object.freeze({
+        namespace: IDENTITY_NAMESPACE,
+        identity: normalizeIdentityEnvelope(p.identity),
+        pairingActive: false,
+      });
+    }
+    throw badRequest('migration namespace is not active', { reason: 'migration-namespace' });
   }
   throw badRequest('active request type has no payload schema', { type, reason: 'missing-schema' });
 }

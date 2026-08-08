@@ -8,6 +8,11 @@ import {
 } from '../../../../src/storage/vault-migration.js';
 import { loadVaultLifecycle } from '../../../../src/config/vault-stage.js';
 
+const PRODUCT_VAULT_STAGE_ENABLED = Boolean(import.meta.env) && (
+  import.meta.env.VITE_VAULT_STAGE === 'developer-only'
+  || import.meta.env.VITE_VAULT_STAGE === 'test-profile'
+);
+
 const safeDiagnostic = (raw = {}) => Object.freeze({
   code: typeof raw.code === 'string' ? raw.code.slice(0, 64) : 'SETTINGS_SYNC_FAILED',
   phase: typeof raw.phase === 'string' ? raw.phase.slice(0, 64) : 'settings',
@@ -107,15 +112,19 @@ export function createVaultSettingsCoordinator({
  * Open the fixed product vault for the default profile only. Returns null when
  * the build flag is off or a non-default peer test namespace is active.
  */
-export async function openVaultSettings({
+async function openVaultSettingsEnabled({
   password,
   peerProfile = '',
   storage = globalThis.localStorage,
   onDiagnostic = defaultDiagnostic,
+  pairingActive,
 } = {}) {
   if (peerProfile !== '') return null;
   const workerModule = await loadVaultLifecycle();
   if (!workerModule) return null;
+  // Keep the identity migration bridge out of stage-off product bundles, just
+  // like the worker/KDF lifecycle it coordinates.
+  const { createVaultIdentityCoordinator } = await import('./vault-identity.js');
 
   const supervisor = workerModule.createProductVaultWorkerSupervisor();
 
@@ -137,12 +146,30 @@ export async function openVaultSettings({
     throw error;
   }
 
-  const coordinator = createVaultSettingsCoordinator({
-    storage,
-    request: (type, payload) => supervisor.request(type, payload),
-    stop: () => supervisor.shutdown(),
-    onDiagnostic,
-  });
-  const initial = await coordinator.synchronize();
-  return Object.freeze({ ...coordinator, initial });
+  const request = (type, payload) => supervisor.request(type, payload);
+  try {
+    const identityCoordinator = createVaultIdentityCoordinator({
+      storage, request, onDiagnostic,
+    });
+    const identityInitial = await identityCoordinator.synchronize({ pairingActive });
+
+    const coordinator = createVaultSettingsCoordinator({
+      storage,
+      request,
+      stop: () => supervisor.shutdown(),
+      onDiagnostic,
+    });
+    const initial = await coordinator.synchronize();
+    return Object.freeze({ ...coordinator, initial, identityInitial });
+  } catch (error) {
+    try { await supervisor.shutdown(); } catch { supervisor.stop(); }
+    throw error;
+  }
 }
+
+// The conditional export is intentionally compile-time foldable. In stage-off
+// builds Rollup removes the enabled implementation and its identity/worker
+// dynamic imports instead of emitting unreachable security artifacts.
+export const openVaultSettings = PRODUCT_VAULT_STAGE_ENABLED
+  ? openVaultSettingsEnabled
+  : async function openVaultSettingsDisabled() { return null; };

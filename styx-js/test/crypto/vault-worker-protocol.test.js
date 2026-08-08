@@ -333,6 +333,14 @@ describe('request envelope (worker side)', () => {
 });
 
 describe('closed active payload schemas (US-008)', () => {
+  const identity = Object.freeze({
+    v: 1,
+    iterations: 210000,
+    salt: btoa('s'.repeat(16)),
+    iv: btoa('i'.repeat(12)),
+    ct: btoa('c'.repeat(48)),
+  });
+
   test('lifecycle and CRUD payloads are exact and canary-only', () => {
     expect(validateRequestPayload('CREATE_VAULT', { password: 'password8' }))
       .toEqual({ password: 'password8' });
@@ -374,6 +382,23 @@ describe('closed active payload schemas (US-008)', () => {
       namespace: 'settings', preferences: hostile,
     }), Codes.BAD_REQUEST);
     expect(getterCalls).toBe(0);
+    expect(validateRequestPayload('MIGRATE', {
+      namespace: 'identity', identity, pairingActive: false,
+    })).toEqual({ namespace: 'identity', identity, pairingActive: false });
+    expect(validateRequestPayload('GET', { namespace: 'identity', recordKey: 'self' }))
+      .toEqual({ namespace: 'identity', recordKey: 'self' });
+    expectCode(() => validateRequestPayload('GET', {
+      namespace: 'identity', recordKey: 'other',
+    }), Codes.BAD_REQUEST, 'namespace-not-active');
+    expectCode(() => validateRequestPayload('MIGRATE', {
+      namespace: 'identity', identity, pairingActive: true,
+    }), Codes.WRONG_STATE, 'pairing-active');
+    expectCode(() => validateRequestPayload('MIGRATE', {
+      namespace: 'identity', identity: { ...identity, ct: 'bad' }, pairingActive: false,
+    }), Codes.BAD_REQUEST, 'bad-identity-payload');
+    expectCode(() => validateRequestPayload('MIGRATE', {
+      namespace: 'identity', identity, pairingActive: false, preferences: {},
+    }), Codes.BAD_REQUEST);
     expectCode(() => validateRequestPayload('PUT', {
       namespace: 'canary', recordKey: 'k', value: new Uint8Array([1]), contentType: 'json',
     }), Codes.BAD_REQUEST, 'binary-not-allowed');
@@ -669,8 +694,8 @@ describe('worker runtime: states, active and reserved types', () => {
       listRecords: async () => ['a'],
       deleteRecord: async () => ({ deleted: true }),
       transactionRecords: async (_ns, ops) => ({ applied: ops.length, puts: 1, deletes: 0 }),
-      migrate: async (namespace, preferences) => {
-        calls.push(['migrate', namespace, preferences]);
+      migrate: async (namespace, source, options) => {
+        calls.push(['migrate', namespace, source, options]);
         return { state: 'verified', matched: true, digest: 'a'.repeat(64), recordVersion: 1 };
       },
       destroy: async () => ({ state: 'UNINITIALIZED' }),
@@ -693,6 +718,14 @@ describe('worker runtime: states, active and reserved types', () => {
         namespace: 'settings', preferences: { v: 1, theme: 'dark', installHintDismissed: true },
       },
     } });
+    await runtime.handleMessage({ data: {
+      id: 8, type: 'MIGRATE', payload: {
+        namespace: 'identity', identity: {
+          v: 1, iterations: 210000,
+          salt: btoa('s'.repeat(16)), iv: btoa('i'.repeat(12)), ct: btoa('c'.repeat(48)),
+        }, pairingActive: false,
+      },
+    } });
     expect(posted.slice(1).map(({ m }) => m.result)).toEqual([
       { state: 'UNLOCKED' },
       { recordVersion: 1 },
@@ -700,9 +733,13 @@ describe('worker runtime: states, active and reserved types', () => {
       { keys: ['a'] },
       { applied: 1, puts: 1, deletes: 0 },
       { state: 'verified', matched: true, digest: 'a'.repeat(64), recordVersion: 1 },
+      { state: 'verified', matched: true, digest: 'a'.repeat(64), recordVersion: 1 },
     ]);
     expect(calls[0]).toEqual(['create', 'password8', {}]);
     expect(calls[1][0]).toBe('put');
+    expect(calls.at(-1)[0]).toBe('migrate');
+    expect(calls.at(-1)[1]).toBe('identity');
+    expect(calls.at(-1)[3]).toEqual({ pairingActive: false });
     expect(closedCount()).toBe(0);
   });
 

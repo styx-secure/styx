@@ -55,6 +55,60 @@ async function makePeer(bus, pubkey, alias) {
 describe('StyxChat orchestrator (in-memory transport, real MLS)', () => {
   beforeAll(async () => { await MlsEngine.initWasm({ wasmBytes }); });
 
+  test('init can assemble without transport activity and preserves auto-start by default', async () => {
+    const makeDeferred = async () => {
+      const engine = await MlsEngine.create({ name: 'deferred_pk' });
+      const roster = new ContactRoster({ backend: memBackend() });
+      await roster.load();
+      const calls = { listen: 0, connect: 0 };
+      const transport = {
+        onMessage() { calls.listen += 1; return () => {}; },
+        async connect() { calls.connect += 1; },
+      };
+      return {
+        chat: new StyxChat({
+          identity: { pubkey: 'deferred_pk', alias: 'Deferred' },
+          engine, roster, transport,
+        }),
+        calls,
+      };
+    };
+
+    const deferred = await makeDeferred();
+    await deferred.chat.init({ autoStart: false });
+    expect(deferred.calls).toEqual({ listen: 0, connect: 0 });
+    await deferred.chat.start();
+    expect(deferred.calls).toEqual({ listen: 1, connect: 1 });
+
+    const automatic = await makeDeferred();
+    await automatic.chat.init();
+    expect(automatic.calls).toEqual({ listen: 1, connect: 1 });
+    await expect(automatic.chat.init({ autoStart: 'yes' })).rejects.toThrow(/autoStart must be boolean/);
+  });
+
+  test('pairing activity includes outstanding invites, pending peers, and unconfirmed restored groups', async () => {
+    const engine = await MlsEngine.create({ name: 'pairing_state_pk' });
+    const roster = new ContactRoster({ backend: memBackend() });
+    await roster.load();
+    const chat = new StyxChat({
+      identity: { pubkey: 'pairing_state_pk', alias: 'Pairing state' },
+      engine, roster,
+      transport: { onMessage() { return () => {}; }, async send() {} },
+    });
+
+    expect(await chat.hasActivePairing()).toBe(false);
+    chat._inviteNonce = new Uint8Array(32);
+    expect(await chat.hasActivePairing()).toBe(true);
+    chat._inviteNonce = null;
+    chat._pending.set('pending_pk', { pubkey: 'pending_pk' });
+    expect(await chat.hasActivePairing()).toBe(true);
+    chat._pending.clear();
+    chat._groups.restored_pk = 'group-1';
+    expect(await chat.hasActivePairing()).toBe(true);
+    await roster.add({ pubkey: 'restored_pk', alias: 'Established' });
+    expect(await chat.hasActivePairing()).toBe(false);
+  });
+
   test('two peers pair via QR invite and exchange an encrypted message', async () => {
     const bus = makeBus();
     const alice = await makePeer(bus, 'alice_pk', 'Alice');

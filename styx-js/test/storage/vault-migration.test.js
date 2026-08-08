@@ -4,6 +4,9 @@ import {
   readLegacySettings, normalizeLegacySettings, validateSettingsPreferences,
   canonicalSettingsJson, buildSettingsMarker, validateSettingsMarker,
   SettingsMigrationError,
+  LEGACY_IDENTITY_KEY, readLegacyIdentity, validateIdentityEnvelope,
+  canonicalIdentityJson, identityEqual, buildIdentityMarker, validateIdentityMarker,
+  IdentityMigrationError,
 } from '../../src/storage/vault-migration.js';
 
 describe('settings migration data boundary', () => {
@@ -58,5 +61,70 @@ describe('settings migration data boundary', () => {
     expect(() => validateSettingsMarker({
       ...buildSettingsMarker('verified', digest), state: 'unknown',
     })).toThrow(SettingsMigrationError);
+  });
+});
+
+describe('identity migration data boundary', () => {
+  const valid = Object.freeze({
+    v: 1,
+    iterations: 210000,
+    salt: btoa('s'.repeat(16)),
+    iv: btoa('i'.repeat(12)),
+    ct: btoa('c'.repeat(48)),
+  });
+
+  test('reads only the fixed default-profile key and preserves missing as a no-op', () => {
+    const calls = [];
+    const storage = new Proxy({
+      getItem(key) { calls.push(key); return JSON.stringify(valid); },
+    }, { ownKeys() { throw new Error('enumeration forbidden'); } });
+    expect(readLegacyIdentity(storage)).toEqual(valid);
+    expect(calls).toEqual([LEGACY_IDENTITY_KEY]);
+    expect(readLegacyIdentity({ getItem: () => null })).toBeNull();
+  });
+
+  test('accepts only the frozen canonical envelope and JSON order', () => {
+    const value = validateIdentityEnvelope(valid);
+    expect(Object.isFrozen(value)).toBe(true);
+    expect(canonicalIdentityJson(value)).toBe(JSON.stringify(valid));
+    expect(identityEqual(value, { ...valid })).toBe(true);
+    for (const bad of [
+      { ...valid, v: 2 },
+      { ...valid, iterations: 1 },
+      { ...valid, salt: btoa('short') },
+      { ...valid, iv: `${valid.iv}=`, },
+      { ...valid, ct: btoa('c'.repeat(47)) },
+      { ...valid, extra: true },
+      Object.create(valid),
+    ]) expect(() => validateIdentityEnvelope(bad)).toThrow(IdentityMigrationError);
+  });
+
+  test('never invokes identity-envelope accessors', () => {
+    let calls = 0;
+    const hostile = { ...valid };
+    Object.defineProperty(hostile, 'ct', {
+      enumerable: true,
+      get() { calls += 1; return valid.ct; },
+    });
+    expect(() => validateIdentityEnvelope(hostile)).toThrow(IdentityMigrationError);
+    expect(calls).toBe(0);
+  });
+
+  test('rejects malformed legacy JSON without returning a replacement identity', () => {
+    expect(() => readLegacyIdentity({ getItem: () => '{' })).toThrow(IdentityMigrationError);
+    expect(() => readLegacyIdentity({ getItem: () => JSON.stringify({ ...valid, ct: 'bad' }) }))
+      .toThrow(IdentityMigrationError);
+  });
+
+  test('identity marker is closed, consistent, and namespace-bound', () => {
+    const digest = 'b'.repeat(64);
+    expect(validateIdentityMarker(buildIdentityMarker('pending', digest))).toEqual({
+      version: 1, namespace: 'identity', state: 'pending',
+      counts: { source: 1, written: 0 }, digests: { source: digest, vault: null },
+    });
+    expect(validateIdentityMarker(buildIdentityMarker('verified', digest)).state).toBe('verified');
+    expect(() => validateIdentityMarker({
+      ...buildIdentityMarker('verified', digest), namespace: 'settings',
+    })).toThrow(IdentityMigrationError);
   });
 });
