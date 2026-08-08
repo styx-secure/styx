@@ -1,90 +1,122 @@
 ---
-spec_version: "2.0"
+spec_version: "3.0"
 spec_type: "tech-spec"
 project: "Styx"
-last_updated: "2026-07-18T00:00:00Z"
+last_updated: "2026-08-08T00:00:00Z"
 status: "draft"
 ---
 
 # Styx — Technical Specification (synthesis)
 
-## Sintesi (IT)
+## Architecture
 
-Sintesi dell'architettura esistente: due stack paralleli con lo stesso taglio
-a cinque livelli (crypto → storage → ledger → transport → facade), crypto WASM
-vendored e pinnata come confine di sicurezza, trasporto su relay Nostr, bridge
-push separato. Il dettaglio normativo vive nei documenti canonici linkati;
-in caso di divergenza vincono quelli.
+Styx is organized by protocol authority and runtime responsibility, not by the
+current monorepo directory layout.
 
-## Architecture — two stacks, one layering
-
-| Layer | `styx-js/` (active product) | `packages/` (Dart reference) |
+| Layer | Responsibility | Current realization |
 |---|---|---|
-| crypto | vendored `openmls-wasm`, `styx-kdf-wasm` | `crypto_core` |
-| storage | IndexedDB vault, MLS state envelope | `storage` |
-| ledger | signed-event ledger | `ledger_engine` |
-| transport | Nostr relays (WebRTC experimental) | `transport` |
-| facade | `StyxChat` / library API | `styx` |
+| Product vertical | Workflows, policy, roles, UX | Themis first; reference chat minimal |
+| Styx application protocol | Events, state transitions, causality, evidence, pruning, conformance | JS active browser implementation; Dart independent reference |
+| Secure-session profile | Membership, epochs, CGKA, convergence, confidential delivery | Existing OpenMLS/Nostr path; Marmot preferred compatibility target |
+| Runtime profile | Key custody, storage, workers, notifications, platform integration | Browser PWA first; signed native profiles future |
 
-The two stacks implement the same conceptual split and are **not
-cryptographically interoperable** (`CLAUDE.md`); the Dart stack is the
-reference implementation (ADR-0003). Feature parity is tracked with
-Dart-generated interop vectors on the non-crypto surfaces.
+No implementation is the canonical application authority. The canonical
+contract is the language-neutral specification plus conformance corpus.
 
-## Security boundaries
+## Application implementation roles
 
-1. **Vendored WASM artifacts are the crypto boundary.**
-   - `vendor/openmls-wasm` — pinned commit descending from `openmls-v0.8.1`
-     (ahead of the tag; includes the S3-7 MAC-truncation fix and persisted
-     storage-format changes). **Do not downgrade to the release tag**; see
-     `vendor/openmls-wasm/PROVENANCE.md`.
-   - `vendor/styx-kdf-wasm` — deliberately a separate artifact, because the
-     MLS state envelope pins the digest of `openmls-wasm` and the KDF must
-     evolve independently.
-   - CI: `WASM integrity gate` (artifact checks, reproducible rebuild, KATs).
-2. **Persisted formats are fail-closed.** The MLS state envelope
-   (`docs/superpowers/specs/2026-07-12-mls-state-envelope.md`) versions all
-   persisted state; unknown formats produce structured errors, never silent
-   loss. Format changes are a mandatory human gate (`AGENTS.md`).
-3. **Trust model, stated honestly.** Relays transport opaque ciphertext but
-   observe transport metadata; the push bridge is a stateless, documented
-   exception. The system is not a zero-metadata or "serverless" design and
-   documentation must not claim otherwise (CI-enforced).
+- `styx-js/src/ledger/**` and `styx-js/src/facade/**` are the supported browser
+  implementation of the application protocol.
+- `packages/` Dart is an independently developed reference. Its behavioral
+  edge cases must be captured as conformance vectors before the implementation
+  is frozen.
+- Parallel feature development across the two implementations is forbidden by
+  product direction; divergence is resolved in the specification and vectors,
+  not by declaring either implementation authoritative.
 
-## Services
+## Secure-session boundary
 
-- **PWA chat** — `styx-js/apps/chat`: React PWA, strict CSP
-  (`wasm-unsafe-eval` required by OpenMLS; documented `style-src` exception),
-  production builds hard-fail without the real crypto module.
-- **Push bridge** — `push_bridge/` (Node) and `push_bridge_server/` (Go,
-  APNs/FCM): delivery only, no message plaintext.
+The secure-session layer is replaceable below the application protocol. The
+current JavaScript path uses vendored OpenMLS WASM and Nostr transport. Marmot
+is the preferred target for MLS-over-Nostr compatibility, but current Styx is
+not conformant until independent wire-level evidence proves it.
 
-## CI reality (unchanged by this spec)
+Marmot compatibility requires, at minimum, its mandatory ciphersuite, current
+account-to-leaf identity proof, capability negotiation, compliant KeyPackages,
+staged Commit policy, publish-before-apply, convergence, and transport envelope
+rules. Reusing kind `445`, an ephemeral key, or an `h` tag in isolation is not
+an acceptable partial implementation.
 
-Required gates on `main`: `Dart reference stack gate`, `styx-js web gate`,
-`WASM integrity gate`, `Analyze (javascript-typescript)` (CodeQL). Advisory:
-`Agent scope evidence`, `Doc claims lint`. Path detectors may green-skip
-irrelevant heavy jobs; detector failure is never a green skip.
+## Runtime profiles
 
-## Key decisions (normative elsewhere)
+### Browser PWA
 
-| Decision | Where |
+The browser profile includes:
+
+- the encrypted vault and versioned local-state envelopes;
+- the crypto worker and vendored WASM boundaries;
+- IndexedDB adapters and browser concurrency controls;
+- service-worker and push-notification integration;
+- the reusable React application shell.
+
+This profile cannot make an adversary-controlled origin trustworthy. CSP,
+Trusted Types, reproducible builds, integrity checks, and code transparency can
+raise the cost and improve detection, but do not give a web load the same
+code-provenance property as an independently installed, signed native build.
+
+### Signed native profiles
+
+A future desktop or native profile may strengthen code provenance and local
+secret handling while preserving the same application and secure-session wire
+contracts. Browser-specific APIs must not leak into those contracts.
+
+## Security and persistence boundaries
+
+1. **Vendored cryptographic artifacts are pinned boundaries.** Changes to
+   `openmls-wasm` or `styx-kdf-wasm`, their features, wrapper, build inputs, or
+   artifacts require reproducible rebuilds and explicit human review.
+2. **Persisted security state is fail-closed.** Unknown formats, failed writes,
+   or partially applied epoch transitions must block affected operations rather
+   than continue with ambiguous state.
+3. **Commit policy precedes merge.** Any future secure-session implementation
+   must allow inbound Commit inspection before merge and local
+   publish-before-apply with explicit confirm/discard behavior.
+4. **Transport is not identity.** Application identity, MLS leaf signing keys,
+   and delivery addresses have separate roles and require explicit bindings.
+5. **Audits do not transfer.** An audit of OpenMLS, MDK, Marmot, or another
+   client is evidence for test design, not an audit of Styx or its browser
+   profile.
+
+## Services and applications
+
+- `styx-js/apps/chat/` is the reusable PWA shell plus a minimal reference chat;
+  it is not the product authority.
+- `push_bridge/` and `push_bridge_server/` are notification delivery
+  components and deliberate metadata boundaries.
+- Themis is the first product vertical and must consume the application
+  protocol through explicit interfaces rather than importing chat semantics.
+
+## Governance constraints
+
+- Crypto, WASM, persisted formats, migrations, runtime manifests, licensing,
+  workflows, and governance remain human-gated.
+- A Marmot Phase A result is only a source-capability decision. Phase B needs a
+  new approved contract, exact licensing classifications, adversarial tests,
+  and independent interoperability evidence.
+- The existing OpenMLS pin must not be moved backward to a release tag that
+  predates its security and storage changes.
+- Current builds remain experimental and unsuitable for sensitive use.
+
+## Normative references
+
+| Subject | Authority |
 |---|---|
-| Canonical product stack | `docs/architecture/decisions/ADR-0001` |
-| Monorepo strategy | ADR-0002 |
-| Dart stack = reference implementation | ADR-0003 |
-| Licensing (AGPL model) | ADR-0004 + `LICENSING.md` |
-| Mobile client strategy | ADR-0005 |
-| MLS design, envelope, vault, push | `docs/superpowers/specs/**` |
-| Workflow governance (MUCC adoption) | `docs/governance/adr/ADR-0006` |
+| Product direction | `specs/01-vision.md` |
+| Licensing | `LICENSING.md`, `REUSE.toml` |
+| Repository governance | `AGENTS.md` |
+| Existing vault and MLS-state constraints | `docs/superpowers/specs/**` |
+| Current security findings | `docs/security/2026-07-10-styx-chat-security-report.md` |
 
-## Constraints for implementers
-
-- No root `package.json`/lockfile: JS workspace lives under `styx-js/`,
-  Dart uses melos; `packages/themis_survey` is Flutter and CI-excluded
-  (needs the Flutter SDK).
-- Crypto code, test vectors, vendored WASM and persisted formats are
-  human-gate areas: agent tasks must not touch them without an explicitly
-  approved Issue.
-- Design docs are primarily Italian; `specs/` is English-first with an
-  Italian synthesis per file (maintainer decision, 2026-07-18).
+The existing ADRs record historical decisions. Any ADR that treats the chat as
+the canonical product must be reconciled by a separate, human-approved task;
+this synthesis does not silently amend it.
