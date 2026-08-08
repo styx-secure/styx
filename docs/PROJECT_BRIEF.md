@@ -7,6 +7,11 @@
 > separates implemented evidence from proposed work. It is not a protocol
 > specification, legal opinion, compliance statement, or security guarantee.
 
+Public naming, message hierarchy, and claim boundaries are defined in the
+[Styx public identity guide](BRAND_IDENTITY.md). The corresponding
+[dependency-free landing-page source](../website/README.md) is a review
+artifact, not a deployed service.
+
 ## Mission
 
 Styx is an open-source secure application substrate for sensitive workflows
@@ -123,10 +128,11 @@ product:
    and federated relay transport. Current envelopes expose routing, timing,
    size, and relationship metadata
    ([integration assessment](platform/integration-roadmap.md#2-summary-status)).
-3. **Local custody.** Merged work provides the production IndexedDB vault
-   engine, empty-vault lifecycle, canary records, crypto-worker lifecycle,
-   vault settings, and identity shadow migration. Product data migration and
-   the complete application namespace remain separate gated work
+3. **Local custody.** Merged work provides a tested IndexedDB vault component,
+   empty-vault lifecycle, canary records, crypto-worker lifecycle, vault
+   settings, and identity shadow migration. This is component-level evidence,
+   not a production-readiness claim. Product data migration and the complete
+   application namespace remain separate gated work
    ([PR #99](https://github.com/styx-secure/styx/pull/99),
    [#101](https://github.com/styx-secure/styx/pull/101),
    [#104](https://github.com/styx-secure/styx/pull/104),
