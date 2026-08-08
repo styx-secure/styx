@@ -57,6 +57,15 @@ The adapter invokes the trusted-base CLI with the event's full base and head
 SHAs, the exact Issue body file, a deterministic execution ID, and an output
 under `RUNNER_TEMP`.
 
+Task-contract v1 may include the optional `Allowed binary artifacts` section
+documented in `task-contract-v1.md`. The trusted-base guard accepts only an A/M
+regular blob whose candidate-HEAD bytes match the declared SHA-256 and byte
+length exactly and whose path independently passes ordinary allowed/forbidden
+scope evaluation. The authorization is read from the exact Issue body already
+bound by `issue_body_sha256`; no extra report field or workflow-side exception
+exists. Unlisted or mismatched binaries and every binary delete, rename, copy,
+symlink, gitlink or unsupported mode remain fail-closed.
+
 The scope guard supports an optional `--worktree-sha` argument. Its default
 remains `--head-sha`, preserving local behavior. Observation CI passes the
 trusted base SHA so the worktree can remain on trusted code while the head is

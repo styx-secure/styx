@@ -7,7 +7,14 @@ from pathlib import PurePosixPath
 import re
 from typing import Iterable
 
-from model import CONTRACT_MARKER, Contract, ContractError, GitInputError, PathEvaluation
+from model import (
+    CONTRACT_MARKER,
+    BinaryArtifactAuthorization,
+    Contract,
+    ContractError,
+    GitInputError,
+    PathEvaluation,
+)
 
 HEADING_RE = re.compile(r"^##[ \t]+(.+?)[ \t]*$")
 BACKTICK_FENCE_OPEN_RE = re.compile(r"^ {0,3}(`{3,})[ \t]*[^`]*$")
@@ -15,6 +22,11 @@ TILDE_FENCE_OPEN_RE = re.compile(r"^ {0,3}(~{3,}).*$")
 INDENTED_CODE_RE = re.compile(r"^(?: {4}|\t)")
 
 MAX_PATH_SEGMENTS = 255
+MAX_BINARY_ARTIFACTS = 32
+MAX_BINARY_ARTIFACT_SIZE = 1024 * 1024 * 1024
+BINARY_ARTIFACT_HEADING = "Allowed binary artifacts"
+BINARY_ARTIFACT_RE = re.compile(r"^([0-9a-f]{64}) +([1-9][0-9]*) +(.+)$")
+BINARY_PATH_WILDCARDS = frozenset("*?[]{}")
 
 REQUIRED_HEADINGS = (
     "Observable outcome",
@@ -105,10 +117,16 @@ def _section_map(body: str) -> tuple[dict[str, str], list[tuple[str, int]], list
     if len(occurrences[chosen]) != 1:
         raise ContractError(f"duplicate required heading: {chosen}")
 
+    if len(occurrences.get(BINARY_ARTIFACT_HEADING, [])) > 1:
+        raise ContractError(f"duplicate optional heading: {BINARY_ARTIFACT_HEADING}")
+
     sections: dict[str, str] = {}
     for name in (*REQUIRED_HEADINGS, chosen):
         section_start, section_end = occurrences[name][0]
         sections[name] = body[section_start:section_end]
+    if BINARY_ARTIFACT_HEADING in occurrences:
+        section_start, section_end = occurrences[BINARY_ARTIFACT_HEADING][0]
+        sections[BINARY_ARTIFACT_HEADING] = body[section_start:section_end]
     return sections, [(name, line) for name, _, line in headings], markers
 
 
@@ -170,6 +188,53 @@ def validate_pattern(pattern: str) -> str:
     return pattern
 
 
+def validate_binary_artifact_path(path: str) -> str:
+    if path != path.strip(" "):
+        raise ContractError(f"binary artifact path has surrounding spaces: {path!r}")
+    if any(char in BINARY_PATH_WILDCARDS for char in path):
+        raise ContractError(f"binary artifact path must be literal: {path!r}")
+    try:
+        return validate_repo_path(path)
+    except GitInputError as exc:
+        raise ContractError(exc.message) from exc
+
+
+def parse_binary_artifacts(section: str | None) -> tuple[BinaryArtifactAuthorization, ...]:
+    if section is None:
+        return ()
+
+    lines = _extract_single_fenced_block(section, BINARY_ARTIFACT_HEADING)
+    declarations: list[BinaryArtifactAuthorization] = []
+    for line in lines:
+        if line == "":
+            continue
+        match = BINARY_ARTIFACT_RE.fullmatch(line)
+        if match is None:
+            raise ContractError(
+                "malformed binary artifact declaration; expected "
+                "'<lowercase-sha256> <positive-byte-length> <literal-repository-path>'"
+            )
+        sha256, raw_length, raw_path = match.groups()
+        if len(raw_length) > 10:
+            raise ContractError("binary artifact declaration exceeds the 1 GiB size limit")
+        byte_length = int(raw_length)
+        if byte_length > MAX_BINARY_ARTIFACT_SIZE:
+            raise ContractError("binary artifact declaration exceeds the 1 GiB size limit")
+        path = validate_binary_artifact_path(raw_path)
+        declarations.append(BinaryArtifactAuthorization(sha256, byte_length, path))
+        if len(declarations) > MAX_BINARY_ARTIFACTS:
+            raise ContractError(f"more than {MAX_BINARY_ARTIFACTS} binary artifacts declared")
+
+    if not declarations:
+        raise ContractError(f"'{BINARY_ARTIFACT_HEADING}' must contain at least one declaration")
+    duplicate_paths = sorted(
+        {item.path for item in declarations if sum(other.path == item.path for other in declarations) > 1}
+    )
+    if duplicate_paths:
+        raise ContractError("duplicate binary artifact path(s): " + ", ".join(duplicate_paths))
+    return tuple(declarations)
+
+
 def parse_contract(body_bytes: bytes) -> Contract:
     try:
         body = body_bytes.decode("utf-8", "strict")
@@ -205,6 +270,7 @@ def parse_contract(body_bytes: bytes) -> Contract:
             _extract_single_fenced_block(sections["Forbidden paths"], "Forbidden paths"),
             "Forbidden paths",
         ),
+        allowed_binary_artifacts=parse_binary_artifacts(sections.get(BINARY_ARTIFACT_HEADING)),
     )
 
 

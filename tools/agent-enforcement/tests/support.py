@@ -35,7 +35,17 @@ def contract_body(
     forbidden: tuple[str, ...] = (".github/**",),
     marker: str = "<!-- styx-task-contract:v1 -->",
     test_heading: str = "Required tests",
+    binary_artifacts: tuple[str, ...] | None = None,
 ) -> str:
+    binary_section = ""
+    if binary_artifacts is not None:
+        binary_section = f"""
+## Allowed binary artifacts
+
+```text
+{chr(10).join(binary_artifacts)}
+```
+"""
     return f"""{marker}
 
 ## Observable outcome
@@ -57,6 +67,7 @@ None.
 ```text
 {chr(10).join(forbidden)}
 ```
+{binary_section}
 
 ## Native dependencies
 
