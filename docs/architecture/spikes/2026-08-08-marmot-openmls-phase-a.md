@@ -1,8 +1,8 @@
 # Marmot / OpenMLS Phase A capability probe
 
-**Issue:** [#124](https://github.com/styx-secure/styx/issues/124)  
-**Date:** 2026-08-08  
-**Result:** **GO**, subject to the Phase B entry gates in this report  
+**Issue:** [#124](https://github.com/styx-secure/styx/issues/124)
+**Date:** 2026-08-08
+**Result:** **GO**, subject to the Phase B entry gates in this report
 **Scope:** source capability and documentation only; no interoperability claim
 
 ## Executive conclusion
