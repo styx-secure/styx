@@ -11,7 +11,8 @@ whole: upstream, derived and generated OpenMLS material (`openmls_wasm_bg.wasm`,
 `openmls_wasm.js`, `.d.ts` files, `package.json`, `Cargo.lock`) is MIT — Copyright (c)
 2020 OpenMLS Authors; `patch/lib.rs` is a Styx-modified MIT derivative (OpenMLS Authors +
 Maurizio Verde, modifications); the Styx-authored scripts and docs (`build.sh`,
-`verify.sh`, `roundtrip.mjs`, `README.md`, this file) are `AGPL-3.0-or-later`. The
+`verify.sh`, `test.sh`, `roundtrip.mjs`, `README.md`, this file) are
+`AGPL-3.0-or-later`. The
 committed artifact also statically links third-party crates (e.g. BSD-3-Clause `subtle`);
 see the root `THIRD_PARTY_NOTICES.md`.
 
@@ -51,10 +52,10 @@ MLS state already written to disk by this artifact.
   those commits carry.
   - *Follow-up:* move the pin to the first upstream tag that is a descendant of this commit,
     once OpenMLS publishes one.
-- **The local patch is not audited.** `patch/lib.rs` is Styx code compiled into the crate — it
-  adds `Provider.serialize_state`/`restore_state`, `Group.load`, `Identity.public_key`/`load`,
-  `Group.member_identities`, and replaces panics on wire input with `Result`s. It is outside
-  the scope of any upstream audit; review it separately.
+- **The local patch is not audited.** `patch/lib.rs` is Styx code compiled into the crate. In
+  addition to persistence, reload, member inspection and wire-error hardening, it now contains
+  the isolated Phase B1 dual-profile and explicit staged/pending Commit API. It is outside the
+  scope of every upstream OpenMLS or Marmot-family audit; review it separately.
 - ~~`Provider::restore_state` `u64 as usize` length arithmetic wraps on wasm32.~~ **Fixed
   2026-07-11** (code review): all offsets use checked arithmetic and oversized lengths are
   rejected, so a crafted `mls:state` blob returns an error instead of trapping. Regression
@@ -65,10 +66,17 @@ MLS state already written to disk by this artifact.
 
 ## Build configuration
 
-- **Ciphersuite (fixed):** `MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519`
-  (`patch/lib.rs`). X25519 HPKE, ChaCha20-Poly1305 AEAD, SHA-256, Ed25519.
+- **Upstream feature:** `extensions-draft` is enabled explicitly and reproducibly. It is needed
+  for the isolated application-component probe and expands the parser surface even when the
+  shipping product remains on the legacy path.
+- **Legacy ciphersuite (shipping):**
+  `MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519` (`patch/lib.rs`).
+- **Phase B1 ciphersuite (non-product probe):**
+  `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` (`0x0001`).
 - **Crypto provider:** `openmls_rust_crypto` (RustCrypto), not libcrux.
 - **Rebuild:** `./build.sh` — Docker, no host Rust toolchain needed.
+- **Native tests:** `./test.sh` — exact pin, lockfile and `extensions-draft` feature in the
+  pinned Rust container.
 - **Verify:** `./verify.sh` — two builds must be byte-identical to each other and to the
   committed artifact.
 
@@ -84,15 +92,15 @@ image: a tag can be re-pushed, a digest cannot.
 | Dependency graph | `./Cargo.lock` (workspace lockfile; builds run `-- --locked`, and `build.sh` aborts on drift) |
 | OpenMLS source | commit `09e9277…` (above) |
 
-**Artifact (rebuilt 2026-07-11 after the `restore_state` hardening, from the pins above):**
+**Artifact (rebuilt 2026-08-08 for Phase B1, from the unchanged source pin and pins above):**
 
 | File | sha256 |
 |---|---|
-| `openmls_wasm_bg.wasm` | `b56e3ea095c3be3dc9a589e27ad2092bcc6de663cc788db30853e89c02ff386a` |
-| `openmls_wasm.js` | `2126829daa2886cb818683b2def23af999ed801e2d731fda6c16e0dea41a59a8` |
+| `openmls_wasm_bg.wasm` | `61cce676c81366fc9c62752a09ea1547a4998ede7f144013ac5ade088e70a863` |
+| `openmls_wasm.js` | `fab287f525a83fe8e0f2196d38efba7cf20e4b50e9fe91e062e235e78659f151` |
 
-**Reproducibility: verified 2026-07-11.** `./verify.sh` built twice from these pins; both
-builds were byte-identical to each other *and* to the committed artifact above.
+**Reproducibility: verified 2026-08-08 for Phase B1.** `./verify.sh` built twice from these
+pins; both builds were byte-identical to each other *and* to the committed artifact above.
 
 Two build inputs remain pinned only indirectly, and are listed here rather than hidden:
 `wasm-bindgen-cli` is fetched by wasm-pack at the version the lockfile dictates, but the

@@ -1,69 +1,93 @@
-# OpenMLS-WASM (vendored)
+# Vendored OpenMLS-WASM
 
-Motore crittografico **MLS (RFC 9420)** per Styx Chat: [OpenMLS](https://github.com/openmls/openmls)
-compilato in WebAssembly. È l'**unica libreria MLS con audit indipendente** (SRLabs) e in
-produzione (XMTP). Fornisce forward secrecy e post-compromise security per il caso 1:1
-(gruppo a 2 membri).
+This directory contains the pinned OpenMLS WebAssembly engine used by the
+legacy Styx chat and by an isolated Phase B1 capability probe. The complete pin,
+toolchain, licensing classification, hashes, and residual risks are recorded in
+[`PROVENANCE.md`](./PROVENANCE.md).
 
-## Provenienza (riproducibile)
+## Build and verification
 
-Il dettaglio completo — posizione del pin rispetto alle release, verifica dei fix dell'audit,
-hash dell'artefatto, rischi residui — sta in **[`PROVENANCE.md`](./PROVENANCE.md)**. In sintesi:
+- Upstream: `github.com/openmls/openmls`, crate `openmls-wasm`
+- Commit: `09e92777dba0528d3d29e2e5e681b7e91637c7be`
+- Rust image: `rust:1.96.1`, pinned by manifest digest
+- wasm-pack: `0.15.0`, release archive verified by SHA-256
+- Dependencies: committed workspace `Cargo.lock`, always built with `--locked`
+- Enabled upstream feature: `extensions-draft`
 
-- **Sorgente:** `github.com/openmls/openmls`, crate `openmls-wasm`
-- **Commit:** `09e92777dba0528d3d29e2e5e681b7e91637c7be` (2026-07-08) — discendente del tag
-  `openmls-v0.8.1`, quindi **porta i fix dell'audit SRLabs** (verificato nel sorgente).
-  ⚠️ È un commit di `main` **non rilasciato**: vedi i rischi residui in `PROVENANCE.md`.
-- **Licenza upstream (OpenMLS):** MIT — Copyright (c) 2020 OpenMLS Authors. Vale per il
-  materiale upstream, derivato e generato di questa directory (artefatto `openmls_wasm_*`,
-  `package.json`, `Cargo.lock` e il derivato `patch/lib.rs`, che aggiunge le modifiche
-  Styx sotto la stessa MIT). **Non** vale per l'intera directory: `build.sh`, `verify.sh`,
-  `roundtrip.mjs`, questo `README.md` e `PROVENANCE.md` sono opere Styx sotto
-  `AGPL-3.0-or-later`. Mappa esatta: `REUSE.toml` e `LICENSING.md` alla radice del repo;
-  attribuzioni complete (incluse le crate linkate nell'artefatto) in
-  `THIRD_PARTY_NOTICES.md`.
-- **Ciphersuite:** `MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519` — X25519 HPKE,
-  ChaCha20-Poly1305, SHA-256, Ed25519 (fissata in `patch/lib.rs`)
-- **Provider crypto:** `openmls_rust_crypto` (RustCrypto)
-- **Toolchain:** `rust:1.96.1` pinnata **per digest** + `wasm-pack` 0.15.0 con **sha256
-  verificato**, `Cargo.lock` vendorizzato e build `-- --locked`
-- **Dimensione:** `openmls_wasm_bg.wasm` = 1 813 110 byte raw / **≈ 644 KiB gzip** (ok per PWA/Capacitor)
+The source revision has not changed. The draft feature is enabled because the
+non-product Phase B1 probe needs the upstream application-data dictionary and
+staged-commit APIs. The feature expands the compiled parser surface for both
+profiles; it does not make the shipping product select the probe profile.
 
-Rigenera con `./build.sh` (richiede Docker). Verifica la riproducibilità con `./verify.sh`: due
-build dai medesimi pin devono essere byte-identiche tra loro e uguali all'artefatto committato.
-L'artefatto è vendorizzato deliberatamente perché OpenMLS non pubblica un pacchetto npm.
+Run from this directory:
 
-**Patch Styx** (`patch/lib.rs`, applicata da `build.sh` — *non* coperta dall'audit upstream):
+```bash
+./build.sh       # one clean, pinned rebuild
+./test.sh        # native wrapper tests on the exact pin and feature set
+./verify.sh      # two clean rebuilds; compare both with the committed artifact
+```
 
-- **persistenza:** `Provider.serialize_state()/restore_state()`, `Group.load(provider, groupId)`,
-  `Identity.public_key()/load(...)` — servono a salvare lo stato MLS e ricaricare le sessioni
-  dopo un refresh della pagina;
-- **binding d'identità:** `Group.member_identities()` — espone le credenziali dei membri, così
-  l'app può rifiutare un gruppo il cui peer non è chi lo ha inviato;
-- **niente panic da rete:** `process_message` restituisce errori invece di trappare il WASM su
-  input malformato. Un trap avvelenerebbe l'istanza, che è condivisa da tutte le sessioni.
+Docker is required. No host Rust toolchain is used. The committed WASM is
+1,962,774 bytes raw and approximately 696 KiB gzip.
 
-## API esposta (vedi `openmls_wasm.d.ts`)
+## Profiles
 
-`Provider` (crypto+storage per-peer) · `Identity(provider, name)` + `key_package()` ·
-`Group.create_new` · `Group.join(provider, welcome, ratchetTree)` · `propose_and_commit_add` →
-`{ proposal, commit, welcome }` · `merge_pending_commit` · `create_message` / `process_message`
-· `export_ratchet_tree` · `export_key` · `member_identities` ·
-`KeyPackage`/`RatchetTree` `to_bytes`/`from_bytes`.
+The legacy API remains the shipping path:
 
-Verificato con un round-trip 1:1 in Node: KeyPackage → gruppo 2-membri → Welcome → join →
-messaggi applicativi bidirezionali decifrati (vedi `roundtrip.mjs`).
+- ciphersuite:
+  `MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519`;
+- `BasicCredential.identity`: existing UTF-8 hexadecimal Nostr public-key text;
+- bare KeyPackage serialization;
+- existing `Identity`, `Group`, `KeyPackage`, `RatchetTree`, and automatic
+  inbound merge semantics are unchanged.
 
-## Limiti noti
+The separate `PhaseB1*` exports are capability-probe types only:
 
-- **Persistenza whole-storage.** Lo stato è serializzato per intero dopo *ogni* operazione
-  (`serialize_state`), con riscritture O(stato totale) per messaggio. Verificato da
-  `test/chat/styx-chat-assembly.test.js` («a peer survives a reload…»). Il passo successivo è
-  uno `StorageProvider` granulare su IndexedDB, che abilita anche la cancellazione delle chiavi
-  per epoca.
-- **Commit non subordinati agli ACK.** `merge_pending_commit` è esposto, `clear_pending_commit`
-  no, e `process_message` fonde i commit in ingresso dentro il WASM: non c'è modo di annullare
-  un commit non confermato. Irrilevante oggi (in 1:1 i commit non attraversano il filo), da
-  risolvere prima del multi-device.
-- **Nessuna fork detection.** Epoch, tree hash e group context non sono esposti; l'unico valore
-  confrontabile tra i peer è il secret esportato usato per il safety number.
+- ciphersuite:
+  `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` (`0x0001`);
+- exactly 32 raw x-only Nostr account-key bytes in `BasicCredential.identity`,
+  distinct from the Ed25519 MLS leaf signing key;
+- application component `0x8009` with one exact 104-byte account-identity-proof
+  v2 entry and an explicit component capability list;
+- non-last-resort, bounded-lifetime KeyPackages inside MLSMessage framing;
+- WASM-owned, single-use staged Commit handles bound to a provider instance,
+  provider-restore generation, group instance, group ID, and prior epoch;
+- explicit merge/discard for inbound staged Commits and explicit
+  confirm/discard for local pending Add Commits.
+
+No product source imports the probe. It demonstrates local mechanics only: it
+is not a Marmot interoperability, security-audit, or production-readiness claim.
+
+## Styx patch
+
+`patch/lib.rs` is applied over the pinned upstream `openmls-wasm/src/lib.rs`.
+It adds:
+
+- whole-provider persistence and strict hostile-input restoration;
+- legacy identity/group reload and member-identity inspection;
+- returned errors rather than WASM traps on hostile wire bodies;
+- the isolated Phase B1 profile, framed KeyPackage inspection, and explicit
+  pending/staged Commit lifecycles described above.
+
+The patch and its probe API are outside the scope of upstream OpenMLS audits.
+`roundtrip.mjs` proves the unchanged legacy 1:1 path; the Phase B1 evidence is
+in `../../spikes/marmot-phase-b1/probe.mjs` and the corresponding tests.
+
+## Licensing
+
+This is a mixed directory. The OpenMLS derivative, generated bindings,
+metadata, lockfile, and compiled artifact retain their existing upstream and
+aggregate classifications. Styx-authored scripts and documents, including the
+new `test.sh`, remain under the repository's AGPL-3.0-or-later default. See the
+root `REUSE.toml`, `LICENSING.md`, and `THIRD_PARTY_NOTICES.md`; this change does
+not introduce Marmot, MDK, Darkmatter, or Least Authority code or fixtures.
+
+## Remaining limitations
+
+- Provider persistence rewrites the complete in-memory store.
+- The legacy API still auto-merges inbound Commits by design; only the isolated
+  Phase B1 API exposes explicit staging.
+- Phase B1 does not implement durable publish-before-apply, crash recovery,
+  authorization policy, fork resolution, or concurrent Commit convergence.
+- Browser-origin control, compromised devices/extensions, metadata exposure,
+  malicious recipients, and rollback/physical-erasure limits remain.

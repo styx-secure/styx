@@ -348,6 +348,695 @@ export class NoWelcomeError {
 }
 if (Symbol.dispose) NoWelcomeError.prototype[Symbol.dispose] = NoWelcomeError.prototype.free;
 
+/**
+ * Closed, non-secret projection of a staged Commit. It deliberately exposes
+ * only bounded proposal counts and public member metadata.
+ */
+export class PhaseB1CommitProjection {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB1CommitProjection.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB1CommitProjectionFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB1CommitProjectionFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb1commitprojection_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    add_count() {
+        const ret = wasm.phaseb1commitprojection_add_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} index
+     * @returns {Uint16Array}
+     */
+    added_component_ids(index) {
+        const ret = wasm.phaseb1commitprojection_added_component_ids(this.__wbg_ptr, index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @param {number} index
+     * @returns {Uint8Array}
+     */
+    added_credential_identity(index) {
+        const ret = wasm.phaseb1commitprojection_added_credential_identity(this.__wbg_ptr, index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {number} index
+     * @returns {Uint8Array}
+     */
+    added_leaf_signature_key(index) {
+        const ret = wasm.phaseb1commitprojection_added_leaf_signature_key(this.__wbg_ptr, index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    added_member_count() {
+        const ret = wasm.phaseb1commitprojection_added_member_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} index
+     * @returns {Uint16Array}
+     */
+    added_supported_component_ids(index) {
+        const ret = wasm.phaseb1commitprojection_added_supported_component_ids(this.__wbg_ptr, index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    app_data_update_count() {
+        const ret = wasm.phaseb1commitprojection_app_data_update_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    app_ephemeral_count() {
+        const ret = wasm.phaseb1commitprojection_app_ephemeral_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    external_init_count() {
+        const ret = wasm.phaseb1commitprojection_external_init_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    group_context_extensions_count() {
+        const ret = wasm.phaseb1commitprojection_group_context_extensions_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {bigint}
+     */
+    next_epoch() {
+        const ret = wasm.phaseb1commitprojection_next_epoch(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * @returns {bigint}
+     */
+    prior_epoch() {
+        const ret = wasm.phaseb1commitprojection_prior_epoch(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * @returns {number}
+     */
+    psk_count() {
+        const ret = wasm.phaseb1commitprojection_psk_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    reinit_count() {
+        const ret = wasm.phaseb1commitprojection_reinit_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    remove_count() {
+        const ret = wasm.phaseb1commitprojection_remove_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    self_remove_count() {
+        const ret = wasm.phaseb1commitprojection_self_remove_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {number}
+     */
+    update_count() {
+        const ret = wasm.phaseb1commitprojection_update_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+}
+if (Symbol.dispose) PhaseB1CommitProjection.prototype[Symbol.dispose] = PhaseB1CommitProjection.prototype.free;
+
+/**
+ * Isolated Phase B1 group wrapper. No method on this type silently merges a
+ * locally pending or remotely staged Commit.
+ */
+export class PhaseB1Group {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB1Group.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB1GroupFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB1GroupFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb1group_free(ptr, 0);
+    }
+    /**
+     * @param {Provider} provider
+     * @param {PhaseB1PendingAdd} pending
+     */
+    confirm_pending_add(provider, pending) {
+        _assertClass(provider, Provider);
+        _assertClass(pending, PhaseB1PendingAdd);
+        const ret = wasm.phaseb1group_confirm_pending_add(this.__wbg_ptr, provider.__wbg_ptr, pending.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {Provider} provider
+     * @param {PhaseB1Identity} sender
+     * @param {Uint8Array} plaintext
+     * @returns {Uint8Array}
+     */
+    create_application_message(provider, sender, plaintext) {
+        _assertClass(provider, Provider);
+        _assertClass(sender, PhaseB1Identity);
+        const ptr0 = passArray8ToWasm0(plaintext, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb1group_create_application_message(this.__wbg_ptr, provider.__wbg_ptr, sender.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+    /**
+     * @param {Provider} provider
+     * @param {PhaseB1Identity} founder
+     * @param {Uint8Array} group_id
+     * @param {Uint8Array} founder_proof
+     * @returns {PhaseB1Group}
+     */
+    static create_new(provider, founder, group_id, founder_proof) {
+        _assertClass(provider, Provider);
+        _assertClass(founder, PhaseB1Identity);
+        const ptr0 = passArray8ToWasm0(group_id, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(founder_proof, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb1group_create_new(provider.__wbg_ptr, founder.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB1Group.__wrap(ret[0]);
+    }
+    /**
+     * @param {Provider} provider
+     * @param {PhaseB1PendingAdd} pending
+     */
+    discard_pending_add(provider, pending) {
+        _assertClass(provider, Provider);
+        _assertClass(pending, PhaseB1PendingAdd);
+        const ret = wasm.phaseb1group_discard_pending_add(this.__wbg_ptr, provider.__wbg_ptr, pending.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {Provider} provider
+     * @param {PhaseB1StagedCommit} staged
+     */
+    discard_staged_commit(provider, staged) {
+        _assertClass(provider, Provider);
+        _assertClass(staged, PhaseB1StagedCommit);
+        const ret = wasm.phaseb1group_discard_staged_commit(this.__wbg_ptr, provider.__wbg_ptr, staged.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @returns {bigint}
+     */
+    epoch() {
+        const ret = wasm.phaseb1group_epoch(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * @returns {PhaseB1RatchetTree}
+     */
+    export_ratchet_tree() {
+        const ret = wasm.phaseb1group_export_ratchet_tree(this.__wbg_ptr);
+        return PhaseB1RatchetTree.__wrap(ret);
+    }
+    /**
+     * @param {Provider} provider
+     * @param {Uint8Array} welcome_bytes
+     * @param {PhaseB1RatchetTree} ratchet_tree
+     * @returns {PhaseB1Group}
+     */
+    static join(provider, welcome_bytes, ratchet_tree) {
+        _assertClass(provider, Provider);
+        const ptr0 = passArray8ToWasm0(welcome_bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        _assertClass(ratchet_tree, PhaseB1RatchetTree);
+        var ptr1 = ratchet_tree.__destroy_into_raw();
+        const ret = wasm.phaseb1group_join(provider.__wbg_ptr, ptr0, len0, ptr1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB1Group.__wrap(ret[0]);
+    }
+    /**
+     * @returns {number}
+     */
+    member_count() {
+        const ret = wasm.phaseb1group_member_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} index
+     * @returns {Uint8Array}
+     */
+    member_identity(index) {
+        const ret = wasm.phaseb1group_member_identity(this.__wbg_ptr, index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {Provider} provider
+     * @param {PhaseB1StagedCommit} staged
+     */
+    merge_staged_commit(provider, staged) {
+        _assertClass(provider, Provider);
+        _assertClass(staged, PhaseB1StagedCommit);
+        const ret = wasm.phaseb1group_merge_staged_commit(this.__wbg_ptr, provider.__wbg_ptr, staged.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {Provider} provider
+     * @param {Uint8Array} bytes
+     * @returns {Uint8Array}
+     */
+    process_application_message(provider, bytes) {
+        _assertClass(provider, Provider);
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb1group_process_application_message(this.__wbg_ptr, provider.__wbg_ptr, ptr0, len0);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v2;
+    }
+    /**
+     * @param {Provider} provider
+     * @param {PhaseB1Identity} sender
+     * @param {PhaseB1KeyPackage} new_member
+     * @returns {PhaseB1PendingAdd}
+     */
+    propose_and_commit_add(provider, sender, new_member) {
+        _assertClass(provider, Provider);
+        _assertClass(sender, PhaseB1Identity);
+        _assertClass(new_member, PhaseB1KeyPackage);
+        const ret = wasm.phaseb1group_propose_and_commit_add(this.__wbg_ptr, provider.__wbg_ptr, sender.__wbg_ptr, new_member.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB1PendingAdd.__wrap(ret[0]);
+    }
+    /**
+     * @param {Provider} provider
+     * @param {Uint8Array} bytes
+     * @returns {PhaseB1StagedCommit}
+     */
+    stage_inbound_commit(provider, bytes) {
+        _assertClass(provider, Provider);
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb1group_stage_inbound_commit(this.__wbg_ptr, provider.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB1StagedCommit.__wrap(ret[0]);
+    }
+}
+if (Symbol.dispose) PhaseB1Group.prototype[Symbol.dispose] = PhaseB1Group.prototype.free;
+
+/**
+ * A non-product Phase B1 identity. Its 32-byte Nostr account identity is a
+ * BasicCredential value; its Ed25519 MLS signing key remains independent.
+ */
+export class PhaseB1Identity {
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB1IdentityFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb1identity_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    account_public_key() {
+        const ret = wasm.phaseb1identity_account_public_key(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {Provider} provider
+     * @param {Uint8Array} proof
+     * @returns {PhaseB1KeyPackage}
+     */
+    key_package(provider, proof) {
+        _assertClass(provider, Provider);
+        const ptr0 = passArray8ToWasm0(proof, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb1identity_key_package(this.__wbg_ptr, provider.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB1KeyPackage.__wrap(ret[0]);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    leaf_signature_key() {
+        const ret = wasm.phaseb1identity_leaf_signature_key(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {Provider} provider
+     * @param {Uint8Array} account_public_key
+     */
+    constructor(provider, account_public_key) {
+        _assertClass(provider, Provider);
+        const ptr0 = passArray8ToWasm0(account_public_key, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb1identity_new(provider.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0];
+        PhaseB1IdentityFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+}
+if (Symbol.dispose) PhaseB1Identity.prototype[Symbol.dispose] = PhaseB1Identity.prototype.free;
+
+/**
+ * A strictly validated, non-last-resort Phase B1 KeyPackage.
+ */
+export class PhaseB1KeyPackage {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB1KeyPackage.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB1KeyPackageFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB1KeyPackageFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb1keypackage_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    ciphersuite_id() {
+        const ret = wasm.phaseb1keypackage_ciphersuite_id(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    component_ids() {
+        const ret = wasm.phaseb1keypackage_component_ids(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    credential_identity() {
+        const ret = wasm.phaseb1keypackage_credential_identity(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {Uint8Array} bytes
+     * @returns {PhaseB1KeyPackage}
+     */
+    static from_framed_bytes(bytes) {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb1keypackage_from_framed_bytes(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB1KeyPackage.__wrap(ret[0]);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    identity_proof() {
+        const ret = wasm.phaseb1keypackage_identity_proof(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {boolean}
+     */
+    is_last_resort() {
+        const ret = wasm.phaseb1keypackage_is_last_resort(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    leaf_signature_key() {
+        const ret = wasm.phaseb1keypackage_leaf_signature_key(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {bigint}
+     */
+    lifetime_seconds() {
+        const ret = wasm.phaseb1keypackage_lifetime_seconds(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    supported_component_ids() {
+        const ret = wasm.phaseb1keypackage_supported_component_ids(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    to_framed_bytes() {
+        const ret = wasm.phaseb1keypackage_to_framed_bytes(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) PhaseB1KeyPackage.prototype[Symbol.dispose] = PhaseB1KeyPackage.prototype.free;
+
+/**
+ * Local Add output and single-use token for the still-pending local Commit.
+ */
+export class PhaseB1PendingAdd {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB1PendingAdd.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB1PendingAddFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB1PendingAddFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb1pendingadd_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    commit() {
+        const ret = wasm.phaseb1pendingadd_commit(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {boolean}
+     */
+    is_consumed() {
+        const ret = wasm.phaseb1pendingadd_is_consumed(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    welcome() {
+        const ret = wasm.phaseb1pendingadd_welcome(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) PhaseB1PendingAdd.prototype[Symbol.dispose] = PhaseB1PendingAdd.prototype.free;
+
+export class PhaseB1RatchetTree {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB1RatchetTree.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB1RatchetTreeFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB1RatchetTreeFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb1ratchettree_free(ptr, 0);
+    }
+    /**
+     * @param {Uint8Array} bytes
+     * @returns {PhaseB1RatchetTree}
+     */
+    static from_bytes(bytes) {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb1ratchettree_from_bytes(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB1RatchetTree.__wrap(ret[0]);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    to_bytes() {
+        const ret = wasm.phaseb1ratchettree_to_bytes(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) PhaseB1RatchetTree.prototype[Symbol.dispose] = PhaseB1RatchetTree.prototype.free;
+
+/**
+ * WASM-owned, opaque and single-use inbound staged Commit handle.
+ */
+export class PhaseB1StagedCommit {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB1StagedCommit.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB1StagedCommitFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB1StagedCommitFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb1stagedcommit_free(ptr, 0);
+    }
+    /**
+     * @returns {boolean}
+     */
+    is_consumed() {
+        const ret = wasm.phaseb1stagedcommit_is_consumed(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {PhaseB1CommitProjection}
+     */
+    projection() {
+        const ret = wasm.phaseb1stagedcommit_projection(this.__wbg_ptr);
+        return PhaseB1CommitProjection.__wrap(ret);
+    }
+}
+if (Symbol.dispose) PhaseB1StagedCommit.prototype[Symbol.dispose] = PhaseB1StagedCommit.prototype.free;
+
 export class Provider {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -590,6 +1279,27 @@ const KeyPackageFinalization = (typeof FinalizationRegistry === 'undefined')
 const NoWelcomeErrorFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_nowelcomeerror_free(ptr, 1));
+const PhaseB1CommitProjectionFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb1commitprojection_free(ptr, 1));
+const PhaseB1GroupFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb1group_free(ptr, 1));
+const PhaseB1IdentityFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb1identity_free(ptr, 1));
+const PhaseB1KeyPackageFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb1keypackage_free(ptr, 1));
+const PhaseB1PendingAddFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb1pendingadd_free(ptr, 1));
+const PhaseB1RatchetTreeFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb1ratchettree_free(ptr, 1));
+const PhaseB1StagedCommitFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb1stagedcommit_free(ptr, 1));
 const ProviderFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_provider_free(ptr, 1));
@@ -620,6 +1330,11 @@ function getArrayJsValueFromWasm0(ptr, len) {
     return result;
 }
 
+function getArrayU16FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getUint16ArrayMemory0().subarray(ptr / 2, ptr / 2 + len);
+}
+
 function getArrayU8FromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     return getUint8ArrayMemory0().subarray(ptr / 1, ptr / 1 + len);
@@ -635,6 +1350,14 @@ function getDataViewMemory0() {
 
 function getStringFromWasm0(ptr, len) {
     return decodeText(ptr >>> 0, len);
+}
+
+let cachedUint16ArrayMemory0 = null;
+function getUint16ArrayMemory0() {
+    if (cachedUint16ArrayMemory0 === null || cachedUint16ArrayMemory0.byteLength === 0) {
+        cachedUint16ArrayMemory0 = new Uint16Array(wasm.memory.buffer);
+    }
+    return cachedUint16ArrayMemory0;
 }
 
 let cachedUint8ArrayMemory0 = null;
@@ -743,6 +1466,7 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedDataViewMemory0 = null;
+    cachedUint16ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;

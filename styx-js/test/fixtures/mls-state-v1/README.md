@@ -14,6 +14,16 @@ extracted from a browser or a real conversation.
   - ciphersuite: `MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519`
 - Envelope version: 1 · storage schema version: 1
 
+## Phase B1 compatibility status
+
+Phase B1 deliberately leaves `envelope.json`, `context.json`, and `generate.js`
+unchanged. The fixture retains the exact pre-B1 metadata tuple above. Restore accepts
+that tuple and the exact Phase B1 tuple, but rejects unknown tuples and cross-products
+of their revision, artifact hash, and ciphersuite fields. The restore regression also
+decrypts the committed post-snapshot reference ciphertext and creates a non-empty reply
+ciphertext from the restored ratchet. The legacy `vendor/openmls-wasm/roundtrip.mjs`
+probe supplies the complementary live peer-decryption evidence in both directions.
+
 ## Synthetic contents (no real data, no reusable secrets)
 
 Two test-only identities with credential labels `11…11` and `22…22` (64-hex, never

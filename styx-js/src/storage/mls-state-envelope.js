@@ -16,7 +16,7 @@ import { sha256 } from '@noble/hashes/sha256';
 import { bytesToBase64, base64ToBytes, bytesToHex } from '../utils.js';
 import {
   MLS_BUILD_INFO,
-  COMPATIBLE_OPENMLS_REVISIONS,
+  COMPATIBLE_MLS_STATE_TUPLES,
 } from '../crypto/mls/mls-build-info.js';
 
 export const MLS_STATE_FORMAT = 'styx-mls-state';
@@ -272,7 +272,7 @@ export function parseMlsStateEnvelope(value, { maxPayloadBytes = MAX_PAYLOAD_BYT
 export function assertMlsStateCompatibility(
   envelope,
   buildInfo = MLS_BUILD_INFO,
-  compatibleRevisions = COMPATIBLE_OPENMLS_REVISIONS,
+  compatibleTuples = COMPATIBLE_MLS_STATE_TUPLES,
 ) {
   const { OPENMLS_INCOMPATIBLE, CIPHERSUITE_MISMATCH } = MlsStateErrorCodes;
   if (envelope.ciphersuite !== buildInfo.ciphersuite) {
@@ -292,20 +292,16 @@ export function assertMlsStateCompatibility(
       'explicit factory reset (destroys the session) as a last resort',
     ],
   };
-  if (!compatibleRevisions.includes(envelope.openMlsRevision)) {
-    throw new MlsStateError(OPENMLS_INCOMPATIBLE, 'state was written by an unvalidated OpenMLS revision', incompatibleDetails);
-  }
-  // Same revision but a different artifact means a different toolchain or patch —
-  // the build is byte-reproducible, so this is NOT the runtime that wrote the state.
-  if (
-    envelope.openMlsRevision === buildInfo.openMlsRevision
-    && envelope.wasmArtifactSha256 !== buildInfo.wasmArtifactSha256
-  ) {
-    throw new MlsStateError(OPENMLS_INCOMPATIBLE, 'state was written by a different WASM artifact of the same revision', {
+  const exactTupleAccepted = compatibleTuples.some((candidate) => (
+    candidate.openMlsRevision === envelope.openMlsRevision
+    && candidate.wasmArtifactSha256 === envelope.wasmArtifactSha256
+    && candidate.ciphersuite === envelope.ciphersuite
+  ));
+  if (!exactTupleAccepted) {
+    throw new MlsStateError(OPENMLS_INCOMPATIBLE, 'state writer identity is not an exact validated tuple', {
       ...incompatibleDetails,
       savedArtifactSha256: envelope.wasmArtifactSha256,
       currentArtifactSha256: buildInfo.wasmArtifactSha256,
     });
   }
 }
-
