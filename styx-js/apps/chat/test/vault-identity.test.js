@@ -9,12 +9,15 @@ const identity = Object.freeze({
   ct: Buffer.alloc(48, 3).toString('base64'),
 });
 
-function harness({ stored = JSON.stringify(identity), failRequest = false, divergent = false } = {}) {
+function harness({
+  stored = JSON.stringify(identity), storageError = null, failRequest = false, divergent = false,
+} = {}) {
   const calls = [];
   const events = [];
   const storage = {
     getItem(key) {
       calls.push(['get', key]);
+      if (storageError) throw storageError;
       return stored;
     },
   };
@@ -81,6 +84,17 @@ describe('vault identity coordinator', () => {
       code: 'IDENTITY_LEGACY_INVALID', phase: 'legacy-read', markerState: 'unknown',
     });
     expect(JSON.stringify(events)).not.toContain(secretText);
+  });
+
+  test('an unavailable storage surface reports identity presence as unknown', async () => {
+    const storageError = new Error('browser denied storage access');
+    const { coordinator, calls, events } = harness({ storageError });
+    expect(await coordinator.synchronize({ pairingActive: false })).toEqual({
+      synchronized: false, present: null,
+    });
+    expect(calls).toEqual([['get', 'styxchat:styx:identity']]);
+    expect(events[0]).toMatchObject({ code: 'IDENTITY_SYNC_FAILED', phase: 'legacy-read' });
+    expect(JSON.stringify(events)).not.toContain('denied storage');
   });
 
   test('worker refusal preserves legacy fallback and does not issue GET', async () => {

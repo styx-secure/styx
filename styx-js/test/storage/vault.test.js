@@ -126,6 +126,7 @@ describe('settings migration (US-009)', () => {
   });
 
   test.each([
+    ['phase-1 pending marker', (_ns, key, value) => key === 'settings' && value?.state === 'pending'],
     ['phase-2 record commit', (_ns, key) => key === 'preferences'],
     ['phase-3 verified marker', (_ns, key, value) => key === 'settings' && value?.state === 'verified'],
   ])('a crash at %s resumes safely without duplicating the record version', async (_label, failOn) => {
@@ -222,6 +223,7 @@ describe('identity shadow migration (US-010)', () => {
   );
 
   test.each([
+    ['phase-1 pending marker', (_ns, key, value) => key === 'identity' && value?.state === 'pending'],
     ['phase-2 record commit', (_ns, key) => key === 'self'],
     ['phase-3 verified marker', (_ns, key, value) => key === 'identity' && value?.state === 'verified'],
   ])('a crash at %s resumes without duplicating record versions', async (_label, failOn) => {

@@ -803,7 +803,8 @@ export class StyxChat {
       const groupId = dataProperty(env, 'groupId');
       const welcomeHmac = dataProperty(env, 'hmac');
       if (!this._inviteNonce || typeof welcome !== 'string' || typeof tree !== 'string'
-        || typeof groupId !== 'string' || typeof welcomeHmac !== 'string') return;
+        || typeof groupId !== 'string' || groupId.length === 0
+        || typeof welcomeHmac !== 'string') return;
       let welcomeBytes;
       let treeBytes;
       try {

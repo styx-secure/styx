@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { StyxChat } from '../../src/chat/styx-chat.js';
 import { MlsEngine } from '../../src/crypto/mls/mls-engine.js';
 import { ContactRoster } from '../../src/chat/contact-roster.js';
-import { base64ToBytes, utf8Decode } from '../../src/utils.js';
+import { bytesToBase64, base64ToBytes, utf8Decode } from '../../src/utils.js';
 
 const wasmBytes = readFileSync(
   fileURLToPath(new URL('../../vendor/openmls-wasm/openmls_wasm_bg.wasm', import.meta.url)),
@@ -102,6 +102,22 @@ describe('StyxChat A2 invite nonce binding', () => {
     await alice.acceptQrInvite(qr);
     await flush();
     expect(bob._engine.session('alice_n3')).toBeFalsy();
+  });
+
+  test('a welcome with an empty group id is rejected even when its HMAC is valid', async () => {
+    const bus = makeBus();
+    const bob = await peer(bus, 'bob_empty_group', 'Bob');
+    const alice = await peer(bus, 'alice_empty_group', 'Alice');
+    const { qr } = await bob.createQrInvite();
+    tamperWelcome(bus, 'bob_empty_group', (env) => {
+      const welcome = base64ToBytes(env.welcome);
+      const tree = base64ToBytes(env.tree);
+      env.groupId = '';
+      env.hmac = bytesToBase64(bob._welcomeMac(bob._inviteNonce, welcome, tree, ''));
+    });
+    await alice.acceptQrInvite(qr);
+    await flush();
+    expect(bob._engine.session('alice_empty_group')).toBeFalsy();
   });
 
   test('an attacker who never saw the QR cannot pair (no nonce → no valid HMAC)', async () => {

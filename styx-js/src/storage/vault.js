@@ -59,7 +59,7 @@ export const VAULT_STATES = Object.freeze({
   RECOVERING: 'RECOVERING',
   DESTROYING: 'DESTROYING',
   ERROR: 'ERROR',
-  // Transient state while the settings migration commits and verifies.
+  // Transient state while a stage-enabled product migration commits and verifies.
   MIGRATING: 'MIGRATING',
 });
 
@@ -369,10 +369,9 @@ export function createVault({
   };
 
   const migrateSingleRecord = async ({
-    namespace, recordKey, markerKey, contentType, source, validate, ErrorType,
+    namespace, recordKey, markerKey, contentType, normalized, validate, ErrorType,
     validateMarker, buildMarker, digestValue, equal, reasonPrefix, includeDigest,
   }) => {
-    const normalized = validate(source);
     const digest = await digestValue(normalized);
     const existingMarkerRaw = await db.get('migrations', markerKey);
     let existingMarker;
@@ -805,18 +804,19 @@ export function createVault({
       try {
         const config = namespace === SETTINGS_NAMESPACE ? {
           namespace, recordKey: SETTINGS_RECORD_KEY, markerKey: SETTINGS_MARKER_KEY,
-          contentType: SETTINGS_CONTENT_TYPE, source, validate: validateSettingsPreferences,
+          contentType: SETTINGS_CONTENT_TYPE, validate: validateSettingsPreferences,
           ErrorType: SettingsMigrationError, validateMarker: validateSettingsMarker,
           buildMarker: buildSettingsMarker, digestValue: settingsMarkerDigest,
           equal: settingsEqual, reasonPrefix: 'settings', includeDigest: true,
         } : {
           namespace, recordKey: IDENTITY_RECORD_KEY, markerKey: IDENTITY_MARKER_KEY,
-          contentType: IDENTITY_CONTENT_TYPE, source, validate: validateIdentityEnvelope,
+          contentType: IDENTITY_CONTENT_TYPE, validate: validateIdentityEnvelope,
           ErrorType: IdentityMigrationError, validateMarker: validateIdentityMarker,
           buildMarker: buildIdentityMarker, digestValue: identityMarkerDigest,
           equal: identityEqual, reasonPrefix: 'identity', includeDigest: false,
         };
-        try { return await migrateSingleRecord(config); } catch (error) {
+        let normalized;
+        try { normalized = config.validate(source); } catch (error) {
           if (error instanceof config.ErrorType) {
             throw new VaultCryptoError(Codes.RECORD_INVALID, 'migration payload is invalid', {
               reason: `${config.reasonPrefix}-payload-invalid`,
@@ -824,6 +824,7 @@ export function createVault({
           }
           throw error;
         }
+        return await migrateSingleRecord({ ...config, normalized });
       } finally {
         if (state === VAULT_STATES.MIGRATING) state = VAULT_STATES.UNLOCKED;
       }

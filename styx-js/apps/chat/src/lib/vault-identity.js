@@ -46,7 +46,8 @@ export function createVaultIdentityCoordinator({
       identity = readLegacyIdentity(storage);
     } catch (error) {
       emit({ code: errorCode(error), phase: 'legacy-read', markerState: 'unknown' });
-      return Object.freeze({ synchronized: false, present: true });
+      const present = error?.code === 'IDENTITY_LEGACY_INVALID' ? true : null;
+      return Object.freeze({ synchronized: false, present });
     }
 
     if (identity === null) {
