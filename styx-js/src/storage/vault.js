@@ -45,6 +45,9 @@ import {
   SETTINGS_NAMESPACE, SETTINGS_RECORD_KEY, SETTINGS_MARKER_KEY, SETTINGS_CONTENT_TYPE,
   SettingsMigrationError, validateSettingsPreferences, validateSettingsMarker,
   buildSettingsMarker, canonicalSettingsBytes, settingsEqual,
+  IDENTITY_NAMESPACE, IDENTITY_RECORD_KEY, IDENTITY_MARKER_KEY, IDENTITY_CONTENT_TYPE,
+  IdentityMigrationError, validateIdentityEnvelope, validateIdentityMarker,
+  buildIdentityMarker, canonicalIdentityBytes, identityEqual,
 } from './vault-migration.js';
 
 export const VAULT_STATES = Object.freeze({
@@ -78,7 +81,7 @@ const MIGRATION_VERSION = 1; // no migration has run for a fresh vault
  * convention. `deriveNamespaceKey` knows the full list — this is deliberately
  * narrower.
  */
-export const ENABLED_NAMESPACES = Object.freeze(['canary', SETTINGS_NAMESPACE]);
+export const ENABLED_NAMESPACES = Object.freeze(['canary', SETTINGS_NAMESPACE, IDENTITY_NAMESPACE]);
 
 // Password policy (plan §B3.0.4): 8–1024 characters.
 const PASSWORD_MIN = 8;
@@ -200,6 +203,7 @@ export function createVault({
   const assertReadableRecord = (namespace, recordKey) => {
     if (namespace === 'canary') return;
     if (namespace === SETTINGS_NAMESPACE && recordKey === SETTINGS_RECORD_KEY) return;
+    if (namespace === IDENTITY_NAMESPACE && recordKey === IDENTITY_RECORD_KEY) return;
     throw new VaultCryptoError(Codes.NAMESPACE_UNSUPPORTED, 'record is not readable in this build', { namespace: typeof namespace === 'string' ? namespace : 'invalid' });
   };
 
@@ -240,12 +244,10 @@ export function createVault({
     return { ...fields, hmacB64: encodeBase64(mac) };
   };
 
-  // Settings have only six possible values, so an unkeyed SHA-256 marker
-  // would disclose them by enumeration. Reuse the existing K_manifest HMAC
-  // primitive: no new key, label or format, and the marker remains bounded.
-  const settingsMarkerDigest = async (value) => {
-    const payload = canonicalSettingsBytes(value);
-    const domain = new TextEncoder().encode('styx/settings-marker/v1\0');
+  // Product migration markers use a namespace-specific domain and the existing
+  // K_manifest HMAC. No source digest is exposed as an unkeyed fingerprint.
+  const migrationMarkerDigest = async (domainLabel, payload) => {
+    const domain = new TextEncoder().encode(domainLabel);
     const bytes = new Uint8Array(domain.length + payload.length);
     bytes.set(domain);
     bytes.set(payload, domain.length);
@@ -260,6 +262,12 @@ export function createVault({
       mac?.fill(0);
     }
   };
+  const settingsMarkerDigest = (value) => migrationMarkerDigest(
+    'styx/settings-marker/v1\0', canonicalSettingsBytes(value),
+  );
+  const identityMarkerDigest = (value) => migrationMarkerDigest(
+    'styx/identity-marker/v1\0', canonicalIdentityBytes(value),
+  );
 
   // Verify a stored manifest against K_manifest. Runs after a successful
   // unwrap, so it is a post-unlock integrity check, not a password oracle.
@@ -358,6 +366,129 @@ export function createVault({
       if (verifyKey !== null) verifyKey.fill(0);
       pw.fill(0);
     }
+  };
+
+  const migrateSingleRecord = async ({
+    namespace, recordKey, markerKey, contentType, source, validate, ErrorType,
+    validateMarker, buildMarker, digestValue, equal, reasonPrefix, includeDigest,
+  }) => {
+    const normalized = validate(source);
+    const digest = await digestValue(normalized);
+    const existingMarkerRaw = await db.get('migrations', markerKey);
+    let existingMarker;
+    let repairRequired = false;
+    if (existingMarkerRaw !== undefined) {
+      try { existingMarker = validateMarker(existingMarkerRaw); } catch (error) {
+        if (error instanceof ErrorType) repairRequired = true;
+        else throw error;
+      }
+    }
+
+    const previous = await db.get(namespace, recordKey);
+    let previousPlain;
+    if (previous !== undefined) {
+      const key = await namespaceKeyFor(namespace);
+      try {
+        previousPlain = await decryptVaultRecord(previous, { namespace, recordKey }, key);
+      } catch (error) {
+        if (error?.code === Codes.RECORD_CORRUPTED || error?.code === Codes.RECORD_INVALID) {
+          repairRequired = true;
+          previousPlain = undefined;
+        } else throw error;
+      }
+      try {
+        if (previousPlain !== undefined) {
+          previousPlain = { ...previousPlain, value: validate(previousPlain.value) };
+        }
+      } catch (error) {
+        if (error instanceof ErrorType) {
+          repairRequired = true;
+          previousPlain = undefined;
+        } else throw error;
+      }
+    }
+
+    const markerMatches = existingMarker?.digests.source === digest;
+    const recordMatches = previousPlain !== undefined && equal(previousPlain.value, normalized);
+    if (existingMarker?.state === 'verified' && markerMatches) {
+      if (!recordMatches) repairRequired = true;
+      if (!repairRequired) {
+        return Object.freeze({
+          state: 'verified', matched: true,
+          ...(includeDigest ? { digest } : {}),
+          recordVersion: previousPlain.recordVersion,
+        });
+      }
+    }
+    if (existingMarker?.state === 'written' && markerMatches && !recordMatches) {
+      repairRequired = true;
+    }
+
+    let nextGen;
+    let manifest;
+    if (repairRequired
+      || (!(existingMarker?.state === 'pending' && markerMatches)
+        && !(existingMarker?.state === 'written' && markerMatches))) {
+      const pending = buildMarker('pending', digest);
+      nextGen = generation + 1;
+      manifest = await buildManifest(nextGen, schemaVersion);
+      await db.transaction(['migrations', META_STORE], (ops) => {
+        ops.put('migrations', markerKey, pending);
+        ops.put(META_STORE, MANIFEST_KEY, manifest);
+      });
+      generation = nextGen;
+    }
+
+    const namespaceKey = await namespaceKeyFor(namespace);
+    let recordVersion = previousPlain?.recordVersion;
+    if (repairRequired || !(existingMarker?.state === 'written' && markerMatches)) {
+      recordVersion = isSafeInt(previous?.rv) && previous.rv >= 1 ? previous.rv + 1 : 1;
+      const record = await encryptVaultRecord({
+        namespace, recordKey, plaintext: normalized, contentType, recordVersion,
+      }, namespaceKey);
+      const written = buildMarker('written', digest);
+      nextGen = generation + 1;
+      manifest = await buildManifest(nextGen, schemaVersion);
+      await db.transaction([namespace, 'migrations', META_STORE], (ops) => {
+        ops.put(namespace, recordKey, record);
+        ops.put('migrations', markerKey, written);
+        ops.put(META_STORE, MANIFEST_KEY, manifest);
+      });
+      generation = nextGen;
+    }
+
+    const committed = await db.get(namespace, recordKey);
+    const verifiedRecord = await decryptVaultRecord(
+      committed, { namespace, recordKey }, namespaceKey,
+    );
+    let committedValue;
+    try { committedValue = validate(verifiedRecord.value); } catch (error) {
+      if (error instanceof ErrorType) {
+        throw new VaultCryptoError(Codes.RECORD_INVALID, 'committed migration payload is invalid', {
+          reason: `${reasonPrefix}-verify-invalid`,
+        });
+      }
+      throw error;
+    }
+    if (!equal(committedValue, normalized) || await digestValue(committedValue) !== digest) {
+      throw new VaultCryptoError(Codes.RECORD_INVALID, 'migration verification diverged', {
+        reason: `${reasonPrefix}-divergence`,
+      });
+    }
+
+    const verified = buildMarker('verified', digest);
+    nextGen = generation + 1;
+    manifest = await buildManifest(nextGen, schemaVersion);
+    await db.transaction(['migrations', META_STORE], (ops) => {
+      ops.put('migrations', markerKey, verified);
+      ops.put(META_STORE, MANIFEST_KEY, manifest);
+    });
+    generation = nextGen;
+    return Object.freeze({
+      state: 'verified', matched: true,
+      ...(includeDigest ? { digest } : {}),
+      recordVersion,
+    });
   };
 
   const api = {
@@ -655,162 +786,40 @@ export function createVault({
       return db.list(namespace);
     },
 
-    /**
-     * Migrate the single frozen settings record. localStorage stays page-side;
-     * this worker-owned operation receives only the already-normalized, bounded
-     * preference object and commits encrypted data, marker and manifest.
-     */
-    async migrate(namespace, preferences) {
+    /** Migrate one stage-enabled product shadow record; legacy stays page-side. */
+    async migrate(namespace, source, { pairingActive } = {}) {
       await ensureLoaded();
-      assertUnlocked('migrate settings');
-      if (namespace !== SETTINGS_NAMESPACE) {
+      assertUnlocked('migrate product data');
+      if (namespace !== SETTINGS_NAMESPACE && namespace !== IDENTITY_NAMESPACE) {
         throw new VaultCryptoError(Codes.NAMESPACE_UNSUPPORTED, 'migration namespace is not enabled', { reason: 'migration-namespace' });
       }
-
-      let normalized;
-      try {
-        normalized = validateSettingsPreferences(preferences);
-      } catch (error) {
-        if (error instanceof SettingsMigrationError) {
-          throw new VaultCryptoError(Codes.RECORD_INVALID, 'settings migration payload is invalid', { reason: 'settings-payload-invalid' });
-        }
-        throw error;
+      if (namespace === IDENTITY_NAMESPACE && pairingActive !== false) {
+        throw wrongState('identity migration requires an idle pairing state', { reason: 'pairing-active' });
       }
 
       state = VAULT_STATES.MIGRATING;
       try {
-        const digest = await settingsMarkerDigest(normalized);
-        const existingMarkerRaw = await db.get('migrations', SETTINGS_MARKER_KEY);
-        let existingMarker;
-        let repairRequired = false;
-        if (existingMarkerRaw !== undefined) {
-          try {
-            existingMarker = validateSettingsMarker(existingMarkerRaw);
-          } catch (error) {
-            if (error instanceof SettingsMigrationError) {
-              // The legacy copy remains authoritative. Treat an invalid marker
-              // as an interrupted migration and rebuild it from that source.
-              repairRequired = true;
-            }
-            else throw error;
-          }
-        }
-
-        const previous = await db.get(SETTINGS_NAMESPACE, SETTINGS_RECORD_KEY);
-        let previousPlain;
-        if (previous !== undefined) {
-          const key = await namespaceKeyFor(SETTINGS_NAMESPACE);
-          try {
-            previousPlain = await decryptVaultRecord(
-              previous,
-              { namespace: SETTINGS_NAMESPACE, recordKey: SETTINGS_RECORD_KEY },
-              key,
-            );
-          } catch (error) {
-            if (error?.code === Codes.RECORD_CORRUPTED || error?.code === Codes.RECORD_INVALID) {
-              repairRequired = true;
-              previousPlain = undefined;
-            } else throw error;
-          }
-          try {
-            if (previousPlain !== undefined) {
-              previousPlain = { ...previousPlain, value: validateSettingsPreferences(previousPlain.value) };
-            }
-          } catch (error) {
-            if (error instanceof SettingsMigrationError) {
-              repairRequired = true;
-              previousPlain = undefined;
-            }
-            else throw error;
-          }
-        }
-
-        const markerMatches = existingMarker?.digests.source === digest;
-        const recordMatches = previousPlain !== undefined
-          && settingsEqual(previousPlain.value, normalized);
-
-        if (existingMarker?.state === 'verified' && markerMatches) {
-          if (!recordMatches) {
-            repairRequired = true;
-          }
-          if (!repairRequired) return Object.freeze({ state: 'verified', matched: true, digest,
-            recordVersion: previousPlain.recordVersion });
-        }
-        if (existingMarker?.state === 'written' && markerMatches && !recordMatches) {
-          repairRequired = true;
-        }
-
-        // Phase 1: a signed generation records that migration has started.
-        let nextGen;
-        let manifest;
-        if (repairRequired
-          || (!(existingMarker?.state === 'pending' && markerMatches)
-            && !(existingMarker?.state === 'written' && markerMatches))) {
-          const pending = buildSettingsMarker('pending', digest);
-          nextGen = generation + 1;
-          manifest = await buildManifest(nextGen, schemaVersion);
-          await db.transaction(['migrations', META_STORE], (ops) => {
-            ops.put('migrations', SETTINGS_MARKER_KEY, pending);
-            ops.put(META_STORE, MANIFEST_KEY, manifest);
-          });
-          generation = nextGen;
-        }
-
-        // Phase 2: encrypted settings + written marker + manifest are one
-        // IndexedDB transaction. Crypto is complete before the transaction.
-        const namespaceKey = await namespaceKeyFor(SETTINGS_NAMESPACE);
-        let recordVersion = previousPlain?.recordVersion;
-        if (repairRequired || !(existingMarker?.state === 'written' && markerMatches)) {
-          recordVersion = isSafeInt(previous?.rv) && previous.rv >= 1 ? previous.rv + 1 : 1;
-          const record = await encryptVaultRecord({
-            namespace: SETTINGS_NAMESPACE,
-            recordKey: SETTINGS_RECORD_KEY,
-            plaintext: normalized,
-            contentType: SETTINGS_CONTENT_TYPE,
-            recordVersion,
-          }, namespaceKey);
-          const written = buildSettingsMarker('written', digest);
-          nextGen = generation + 1;
-          manifest = await buildManifest(nextGen, schemaVersion);
-          await db.transaction([SETTINGS_NAMESPACE, 'migrations', META_STORE], (ops) => {
-            ops.put(SETTINGS_NAMESPACE, SETTINGS_RECORD_KEY, record);
-            ops.put('migrations', SETTINGS_MARKER_KEY, written);
-            ops.put(META_STORE, MANIFEST_KEY, manifest);
-          });
-          generation = nextGen;
-        }
-
-        // Phase 3: verify the committed bytes through the normal authenticated
-        // read path before marking them authoritative.
-        const committed = await db.get(SETTINGS_NAMESPACE, SETTINGS_RECORD_KEY);
-        const verifiedRecord = await decryptVaultRecord(
-          committed,
-          { namespace: SETTINGS_NAMESPACE, recordKey: SETTINGS_RECORD_KEY },
-          namespaceKey,
-        );
-        let committedValue;
-        try {
-          committedValue = validateSettingsPreferences(verifiedRecord.value);
-        } catch (error) {
-          if (error instanceof SettingsMigrationError) {
-            throw new VaultCryptoError(Codes.RECORD_INVALID, 'committed settings payload is invalid', { reason: 'settings-verify-invalid' });
+        const config = namespace === SETTINGS_NAMESPACE ? {
+          namespace, recordKey: SETTINGS_RECORD_KEY, markerKey: SETTINGS_MARKER_KEY,
+          contentType: SETTINGS_CONTENT_TYPE, source, validate: validateSettingsPreferences,
+          ErrorType: SettingsMigrationError, validateMarker: validateSettingsMarker,
+          buildMarker: buildSettingsMarker, digestValue: settingsMarkerDigest,
+          equal: settingsEqual, reasonPrefix: 'settings', includeDigest: true,
+        } : {
+          namespace, recordKey: IDENTITY_RECORD_KEY, markerKey: IDENTITY_MARKER_KEY,
+          contentType: IDENTITY_CONTENT_TYPE, source, validate: validateIdentityEnvelope,
+          ErrorType: IdentityMigrationError, validateMarker: validateIdentityMarker,
+          buildMarker: buildIdentityMarker, digestValue: identityMarkerDigest,
+          equal: identityEqual, reasonPrefix: 'identity', includeDigest: false,
+        };
+        try { return await migrateSingleRecord(config); } catch (error) {
+          if (error instanceof config.ErrorType) {
+            throw new VaultCryptoError(Codes.RECORD_INVALID, 'migration payload is invalid', {
+              reason: `${config.reasonPrefix}-payload-invalid`,
+            });
           }
           throw error;
         }
-        if (!settingsEqual(committedValue, normalized)
-          || await settingsMarkerDigest(committedValue) !== digest) {
-          throw new VaultCryptoError(Codes.RECORD_INVALID, 'settings verification diverged', { reason: 'settings-divergence' });
-        }
-
-        const verified = buildSettingsMarker('verified', digest);
-        nextGen = generation + 1;
-        manifest = await buildManifest(nextGen, schemaVersion);
-        await db.transaction(['migrations', META_STORE], (ops) => {
-          ops.put('migrations', SETTINGS_MARKER_KEY, verified);
-          ops.put(META_STORE, MANIFEST_KEY, manifest);
-        });
-        generation = nextGen;
-        return Object.freeze({ state: 'verified', matched: true, digest, recordVersion });
       } finally {
         if (state === VAULT_STATES.MIGRATING) state = VAULT_STATES.UNLOCKED;
       }

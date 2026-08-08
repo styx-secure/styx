@@ -11,6 +11,14 @@ export const SETTINGS_MARKER_KEY = 'settings';
 export const SETTINGS_PAYLOAD_VERSION = 1;
 export const SETTINGS_CONTENT_TYPE = 'json';
 
+export const IDENTITY_NAMESPACE = 'identity';
+export const IDENTITY_RECORD_KEY = 'self';
+export const IDENTITY_MARKER_KEY = 'identity';
+export const IDENTITY_CONTENT_TYPE = 'json';
+export const LEGACY_IDENTITY_KEY = 'styxchat:styx:identity';
+export const IDENTITY_PAYLOAD_VERSION = 1;
+export const IDENTITY_PBKDF2_ITERATIONS = 210000;
+
 export const LEGACY_THEME_KEY = 'styx-theme';
 export const LEGACY_INSTALL_DISMISSED_KEY = 'styx-install-dismissed';
 export const LEGACY_SETTINGS_KEYS = Object.freeze([
@@ -23,6 +31,7 @@ export const SETTINGS_MIGRATION_STATES = Object.freeze([
 ]);
 
 const SETTINGS_KEYS = Object.freeze(['v', 'theme', 'installHintDismissed']);
+const IDENTITY_KEYS = Object.freeze(['v', 'iterations', 'salt', 'iv', 'ct']);
 const LEGACY_INPUT_KEYS = Object.freeze(['theme', 'installHintDismissed']);
 const MARKER_KEYS = Object.freeze(['version', 'namespace', 'state', 'counts', 'digests']);
 const COUNT_KEYS = Object.freeze(['source', 'written']);
@@ -37,7 +46,16 @@ export class SettingsMigrationError extends Error {
   }
 }
 
+export class IdentityMigrationError extends Error {
+  constructor(code, message) {
+    super(`${code}: ${message}`);
+    this.name = 'IdentityMigrationError';
+    this.code = code;
+  }
+}
+
 const invalid = (code, message) => new SettingsMigrationError(code, message);
+const invalidIdentity = (code, message) => new IdentityMigrationError(code, message);
 const strict = (raw, keys, code, requiredKeys = keys) => snapshotStrictPlainObject(
   raw,
   keys,
@@ -137,4 +155,112 @@ export function validateSettingsMarker(raw) {
     throw invalid('SETTINGS_MARKER_INVALID', 'marker state is inconsistent');
   }
   return buildSettingsMarker(s.state, digests.source);
+}
+
+function canonicalBase64(raw, expectedBytes) {
+  if (typeof raw !== 'string' || raw.length === 0
+    || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(raw)) {
+    throw invalidIdentity('IDENTITY_PAYLOAD_INVALID', 'identity field is not canonical base64');
+  }
+  let binary;
+  try { binary = atob(raw); } catch {
+    throw invalidIdentity('IDENTITY_PAYLOAD_INVALID', 'identity field is not canonical base64');
+  }
+  if (binary.length !== expectedBytes || btoa(binary) !== raw) {
+    throw invalidIdentity('IDENTITY_PAYLOAD_INVALID', 'identity field has an invalid decoded length');
+  }
+  return raw;
+}
+
+/** Read exactly the default-profile encrypted identity envelope. */
+export function readLegacyIdentity(storage) {
+  if (storage === null || typeof storage !== 'object' || typeof storage.getItem !== 'function') {
+    throw invalidIdentity('IDENTITY_STORAGE_UNAVAILABLE', 'a storage reader is required');
+  }
+  const raw = storage.getItem(LEGACY_IDENTITY_KEY);
+  if (raw === null) return null;
+  if (typeof raw !== 'string') {
+    throw invalidIdentity('IDENTITY_LEGACY_INVALID', 'legacy identity must be serialized JSON');
+  }
+  let parsed;
+  try { parsed = JSON.parse(raw); } catch {
+    throw invalidIdentity('IDENTITY_LEGACY_INVALID', 'legacy identity is not valid JSON');
+  }
+  try { return validateIdentityEnvelope(parsed); } catch (error) {
+    if (error instanceof IdentityMigrationError) {
+      throw invalidIdentity('IDENTITY_LEGACY_INVALID', 'legacy identity envelope is invalid');
+    }
+    throw error;
+  }
+}
+
+/** Strict legacy-envelope snapshot, repeated at the worker lifecycle boundary. */
+export function validateIdentityEnvelope(raw) {
+  const s = snapshotStrictPlainObject(
+    raw,
+    IDENTITY_KEYS,
+    () => invalidIdentity('IDENTITY_PAYLOAD_INVALID', 'identity envelope has an invalid shape'),
+  );
+  if (s.v !== IDENTITY_PAYLOAD_VERSION || s.iterations !== IDENTITY_PBKDF2_ITERATIONS) {
+    throw invalidIdentity('IDENTITY_PAYLOAD_INVALID', 'identity envelope version is unsupported');
+  }
+  return Object.freeze({
+    v: IDENTITY_PAYLOAD_VERSION,
+    iterations: IDENTITY_PBKDF2_ITERATIONS,
+    salt: canonicalBase64(s.salt, 16),
+    iv: canonicalBase64(s.iv, 12),
+    ct: canonicalBase64(s.ct, 48),
+  });
+}
+
+export function canonicalIdentityJson(raw) {
+  return JSON.stringify(validateIdentityEnvelope(raw));
+}
+
+export function canonicalIdentityBytes(raw) {
+  return new TextEncoder().encode(canonicalIdentityJson(raw));
+}
+
+export function identityEqual(a, b) {
+  return canonicalIdentityJson(a) === canonicalIdentityJson(b);
+}
+
+export function buildIdentityMarker(state, digest) {
+  if (!SETTINGS_MIGRATION_STATES.includes(state) || !SHA256_HEX.test(digest)) {
+    throw invalidIdentity('IDENTITY_MARKER_INVALID', 'marker inputs are invalid');
+  }
+  const written = state === 'pending' ? 0 : 1;
+  return Object.freeze({
+    version: 1,
+    namespace: IDENTITY_NAMESPACE,
+    state,
+    counts: Object.freeze({ source: 1, written }),
+    digests: Object.freeze({ source: digest, vault: written === 1 ? digest : null }),
+  });
+}
+
+export function validateIdentityMarker(raw) {
+  const strictIdentity = (value, keys) => snapshotStrictPlainObject(
+    value,
+    keys,
+    () => invalidIdentity('IDENTITY_MARKER_INVALID', 'marker has an invalid shape'),
+  );
+  const s = strictIdentity(raw, MARKER_KEYS);
+  const counts = strictIdentity(s.counts, COUNT_KEYS);
+  const digests = strictIdentity(s.digests, DIGEST_KEYS);
+  if (s.version !== 1 || s.namespace !== IDENTITY_NAMESPACE
+    || !SETTINGS_MIGRATION_STATES.includes(s.state)
+    || counts.source !== 1
+    || !Number.isSafeInteger(counts.written)
+    || !SHA256_HEX.test(digests.source)
+    || (digests.vault !== null && !SHA256_HEX.test(digests.vault))) {
+    throw invalidIdentity('IDENTITY_MARKER_INVALID', 'marker fields are invalid');
+  }
+  const expectedWritten = s.state === 'pending' ? 0 : 1;
+  if (counts.written !== expectedWritten
+    || (expectedWritten === 0 && digests.vault !== null)
+    || (expectedWritten === 1 && digests.vault !== digests.source)) {
+    throw invalidIdentity('IDENTITY_MARKER_INVALID', 'marker state is inconsistent');
+  }
+  return buildIdentityMarker(s.state, digests.source);
 }

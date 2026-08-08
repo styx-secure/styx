@@ -189,13 +189,19 @@ export class StyxChat {
 
   /**
    * Assemble real dependencies (first run creates an Ed25519 identity, else
-   * unlocks it) and start. On the app path pass only { password }; tests may
+   * unlocks it) and, by default, start. On the app path pass only { password }; tests may
    * override { backend, channelName, alias }.
    * @param {boolean} [opts.allowInsecureTransport=false] permit the unauthenticated
    *   BroadcastChannel fallback when no relays are given (development only).
+   * @param {boolean} [opts.autoStart=true] defer all transport activity until
+   *   an explicit start(), so pre-network migration gates can run safely.
    * @returns {Promise<{pubkey:string, alias:string}>}
    */
-  async init({ password, backend, channelName, alias, ns, relays, allowInsecureTransport = false } = {}) {
+  async init({
+    password, backend, channelName, alias, ns, relays,
+    allowInsecureTransport = false, autoStart = true,
+  } = {}) {
+    if (typeof autoStart !== 'boolean') throw new TypeError('StyxChat: autoStart must be boolean');
     if (!this._assembled) {
       const be = backend || defaultBackend(ns);
       const keyStore = new EncryptedKeyStore({ backend: be });
@@ -257,7 +263,7 @@ export class StyxChat {
       this._wireRoster();
       this._assembled = true;
     }
-    await this.start();
+    if (autoStart) await this.start();
     return this.me;
   }
 
@@ -283,6 +289,23 @@ export class StyxChat {
       window.addEventListener('online', this._onWake);
     }
     this._started = true;
+  }
+
+  /**
+   * True when any in-memory or restored state represents an unfinished pairing.
+   * This is intentionally evaluated before transport start: identity migration
+   * must fail closed rather than race an inbound Welcome.
+   */
+  async hasActivePairing() {
+    if (!this._assembled) throw new Error('StyxChat: call init() before checking pairing state');
+    if (this._inviteNonce !== null || this._pending.size > 0) return true;
+    for (const contactPubkey of Object.keys(this._groups)) {
+      // A persisted MLS group without a roster entry is a scanner-side pairing
+      // awaiting explicit confirmation. Established contacts are not active pairings.
+      // eslint-disable-next-line no-await-in-loop
+      if (await this._roster.get(contactPubkey) === null) return true;
+    }
+    return false;
   }
 
   /** @private */

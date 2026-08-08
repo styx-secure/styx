@@ -179,6 +179,113 @@ describe('settings migration (US-009)', () => {
   });
 });
 
+describe('identity shadow migration (US-010)', () => {
+  const identity = Object.freeze({
+    v: 1,
+    iterations: 210000,
+    salt: btoa('s'.repeat(16)),
+    iv: btoa('i'.repeat(12)),
+    ct: btoa('c'.repeat(48)),
+  });
+
+  test('writes, reads, verifies, and idempotently preserves one encrypted identity record', async () => {
+    const db = new FakeVaultDb();
+    const v = makeVault(db);
+    await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
+
+    const first = await v.migrate('identity', identity, { pairingActive: false });
+    expect(first).toMatchObject({ state: 'verified', matched: true, recordVersion: 1 });
+    expect(first).not.toHaveProperty('digest');
+    expect(db.record('identity', 'self')).toMatchObject({ ct: 'json', rv: 1 });
+    expect(db.record('migrations', 'identity')).toMatchObject({
+      version: 1, namespace: 'identity', state: 'verified',
+      counts: { source: 1, written: 1 },
+    });
+    expect((await v.getRecord('identity', 'self')).value).toEqual(identity);
+
+    const generation = db.manifest().generation;
+    expect(await v.migrate('identity', identity, { pairingActive: false })).toEqual(first);
+    expect(db.manifest().generation).toBe(generation);
+    expect(db.record('identity', 'self').rv).toBe(1);
+  });
+
+  test.each([undefined, true])(
+    'requires pairingActive:false before any identity or marker write (%s)',
+    async (pairingActive) => {
+      const db = new FakeVaultDb();
+      const v = makeVault(db);
+      await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
+      expect(await codeOf(v.migrate('identity', identity, { pairingActive }))).toBe(Codes.WRONG_STATE);
+      expect(db.record('identity', 'self')).toBeUndefined();
+      expect(db.record('migrations', 'identity')).toBeUndefined();
+    },
+  );
+
+  test.each([
+    ['phase-2 record commit', (_ns, key) => key === 'self'],
+    ['phase-3 verified marker', (_ns, key, value) => key === 'identity' && value?.state === 'verified'],
+  ])('a crash at %s resumes without duplicating record versions', async (_label, failOn) => {
+    const db = new FakeVaultDb();
+    const v = makeVault(db);
+    await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
+    db.failOn = failOn;
+    await expect(v.migrate('identity', identity, { pairingActive: false })).rejects.toThrow('injected crash');
+    db.failOn = null;
+
+    expect(await v.migrate('identity', identity, { pairingActive: false }))
+      .toMatchObject({ state: 'verified', recordVersion: 1 });
+    expect(db.record('identity', 'self').rv).toBe(1);
+    expect(db.record('migrations', 'identity').state).toBe('verified');
+  });
+
+  test('resumes a written identity after a committed-read crash without rewriting it', async () => {
+    const db = new FakeVaultDb();
+    const v = makeVault(db);
+    await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
+    let reads = 0;
+    db.failGetOn = (namespace, key, value) => {
+      if (namespace !== 'identity' || key !== 'self' || value === undefined) return false;
+      reads += 1;
+      return reads === 1;
+    };
+    await expect(v.migrate('identity', identity, { pairingActive: false }))
+      .rejects.toThrow('injected read crash');
+    expect(db.record('migrations', 'identity').state).toBe('written');
+    expect(db.record('identity', 'self').rv).toBe(1);
+    db.failGetOn = null;
+
+    expect(await v.migrate('identity', identity, { pairingActive: false }))
+      .toMatchObject({ state: 'verified', recordVersion: 1 });
+    expect(db.record('identity', 'self').rv).toBe(1);
+  });
+
+  test('repairs a malformed marker and encrypted-record divergence from the legacy source', async () => {
+    const db = new FakeVaultDb();
+    const v = makeVault(db);
+    await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
+    await v.migrate('identity', identity, { pairingActive: false });
+    db.record('migrations', 'identity').counts.written = 0;
+    expect(await v.migrate('identity', identity, { pairingActive: false }))
+      .toMatchObject({ state: 'verified', matched: true, recordVersion: 2 });
+
+    db.record('identity', 'self').data[0] ^= 0xff;
+    expect(await v.migrate('identity', identity, { pairingActive: false }))
+      .toMatchObject({ state: 'verified', matched: true, recordVersion: 3 });
+  });
+
+  test('rejects an invalid legacy envelope without migration writes', async () => {
+    const db = new FakeVaultDb();
+    const v = makeVault(db);
+    await v.createVault('pw-eight!!', { profile: TEST_PROFILE });
+    const invalid = { ...identity, iterations: 1 };
+
+    expect(await codeOf(v.migrate('identity', invalid, { pairingActive: false })))
+      .toBe(Codes.RECORD_INVALID);
+    expect(db.record('identity', 'self')).toBeUndefined();
+    expect(db.record('migrations', 'identity')).toBeUndefined();
+  });
+});
+
 describe('password policy (§B3.0.4: 8–1024 chars)', () => {
   test.each([
     ['too short', 'short'],

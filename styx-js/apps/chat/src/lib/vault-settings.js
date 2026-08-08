@@ -7,6 +7,7 @@ import {
   settingsEqual,
 } from '../../../../src/storage/vault-migration.js';
 import { loadVaultLifecycle } from '../../../../src/config/vault-stage.js';
+import { createVaultIdentityCoordinator } from './vault-identity.js';
 
 const safeDiagnostic = (raw = {}) => Object.freeze({
   code: typeof raw.code === 'string' ? raw.code.slice(0, 64) : 'SETTINGS_SYNC_FAILED',
@@ -112,6 +113,7 @@ export async function openVaultSettings({
   peerProfile = '',
   storage = globalThis.localStorage,
   onDiagnostic = defaultDiagnostic,
+  pairingActive,
 } = {}) {
   if (peerProfile !== '') return null;
   const workerModule = await loadVaultLifecycle();
@@ -137,12 +139,18 @@ export async function openVaultSettings({
     throw error;
   }
 
+  const request = (type, payload) => supervisor.request(type, payload);
+  const identityCoordinator = createVaultIdentityCoordinator({
+    storage, request, onDiagnostic,
+  });
+  const identityInitial = await identityCoordinator.synchronize({ pairingActive });
+
   const coordinator = createVaultSettingsCoordinator({
     storage,
-    request: (type, payload) => supervisor.request(type, payload),
+    request,
     stop: () => supervisor.shutdown(),
     onDiagnostic,
   });
   const initial = await coordinator.synchronize();
-  return Object.freeze({ ...coordinator, initial });
+  return Object.freeze({ ...coordinator, initial, identityInitial });
 }

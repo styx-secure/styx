@@ -112,7 +112,7 @@ export function useStyxChat() {
     let identity;
     try {
       identity = await chat.init({
-        password, alias: alias?.trim(), ns, ...transportOptions(getRelays()),
+        password, alias: alias?.trim(), ns, ...transportOptions(getRelays()), autoStart: false,
       }); // throws on wrong password or unloadable MLS state (fail-closed)
     } catch (e) {
       // Web Locks are not reentrant: without releasing here, the retry after a
@@ -126,17 +126,35 @@ export function useStyxChat() {
     }
 
     try {
-      const settingsSession = await openVaultSettings({ password, peerProfile: ns });
+      const pairingActive = await chat.hasActivePairing();
+      const settingsSession = await openVaultSettings({
+        password, peerProfile: ns, pairingActive,
+      });
       vaultSettingsRef.current = settingsSession;
       if (settingsSession?.initial?.preferences) {
         setVaultPreferences(settingsSession.initial.preferences);
       }
     } catch (e) {
-      // Settings migration is an optional, developer/test-only enhancement.
-      // A vault failure must never deny access to the legacy chat path.
+      // Shadow migration is stage-gated. A vault failure must never deny access
+      // to the unchanged legacy identity/settings path.
       vaultSettingsRef.current = null;
       setVaultPreferences(null);
-      console.debug('settings vault unavailable; continuing with legacy preferences', e?.code);
+      console.debug('vault unavailable; continuing with legacy product data', e?.code);
+    }
+
+    try {
+      // This is the first operation permitted to touch the network. Identity
+      // migration has either verified its vault readback or selected fallback.
+      await chat.start();
+    } catch (e) {
+      let stop;
+      try { stop = vaultSettingsRef.current?.stop; } catch { stop = null; }
+      vaultSettingsRef.current = null;
+      try { await stop?.(); } catch { /* bounded worker teardown */ }
+      try { chat.destroy(); } catch { /* best-effort transport teardown */ }
+      release();
+      lockReleaseRef.current = null;
+      throw e;
     }
     chatRef.current = chat;
 
