@@ -1,14 +1,28 @@
-# Styx — Panoramica architetturale del progetto
+# Styx — Panoramica architetturale storica del progetto
+
+> **AVVISO DI AUTORITÀ E SUPERAMENTO — documento storico in italiano.** Questa fotografia è stata
+> redatta il 2026-07-11 e conserva il significato della review a quella data. Non descrive la
+> direzione di prodotto o lo stato corrente. Dal 2026-08-08 la fonte canonica in inglese è
+> [`specs/01-vision.md`](../specs/01-vision.md), insieme a
+> [`specs/02-prd.md`](../specs/02-prd.md), [`specs/04-tech-spec.md`](../specs/04-tech-spec.md) e al
+> [rapporto Phase A Marmot/OpenMLS](architecture/spikes/2026-08-08-marmot-openmls-phase-a.md).
+> Styx è ora definito come substrato applicativo sicuro; Themis è il primo verticale e la chat è
+> un'applicazione di riferimento. Per licenza e contributi fanno fede
+> [`LICENSE`](../LICENSE), [`LICENSING.md`](../LICENSING.md), [`REUSE.toml`](../REUSE.toml) e
+> [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 **Snapshot:** 2026-07-11 · **Branch:** `feature/pwa-push-bridge` · **Autore del documento:** review architetturale trasversale su repo, storia git e codice.
 
-Questo documento è la fotografia completa del progetto: cos'è, com'è strutturato, cosa funziona, cosa manca, e una valutazione architetturale d'insieme. È **descrittivo e non normativo** — per la direzione di lavoro vedi `docs/security/2026-07-11-fattibilita-piano-utente.md` (roadmap) e i piani in `docs/superpowers/plans/`.
+Questo documento era la fotografia completa del progetto alla data dello snapshot: cos'era, com'era
+strutturato, cosa funzionava, cosa mancava e la valutazione architetturale di allora. È
+**descrittivo, storico e non normativo**. I riferimenti a roadmap, linea attiva e priorità nelle
+sezioni seguenti vanno letti nel contesto del 2026-07-11, non come istruzioni correnti.
 
 ---
 
 ## 0. In una frase
 
-Styx è **due implementazioni parallele e volutamente non interoperabili** di una piattaforma di comunicazione sovrana peer-to-peer: (1) una libreria **Dart** completa per ledger crittografici a catena di eventi, e (2) una **chat E2EE su MLS** in JavaScript con PWA, che è la linea di sviluppo attiva. Condividono la filosofia (nessun server centrale di fiducia, crittografia lato client) ma non il codice né il modello crittografico.
+Alla data dello snapshot, Styx era descritto come **due implementazioni parallele e volutamente non interoperabili** di una piattaforma di comunicazione sovrana peer-to-peer: (1) una libreria **Dart** completa per ledger crittografici a catena di eventi, e (2) una **chat E2EE su MLS** in JavaScript con PWA, allora considerata la linea di sviluppo attiva. Questa impostazione è stata superata dalla visione canonica del 2026-08-08 indicata nell'avviso iniziale.
 
 ---
 
@@ -23,7 +37,7 @@ Styx è **due implementazioni parallele e volutamente non interoperabili** di un
 | Arco temporale | 2026-02-23 → 2026-07-12 (~4,5 mesi) |
 | Autore | maverde73 &lt;cirrosi@gmail.com&gt; (unico) |
 | Dimensione tracciata | ~6,1 MB (di cui 1,8 MB è l'artefatto WASM vendorizzato) |
-| Licenza | vendored OpenMLS: MIT; licenza di progetto **non ancora applicata** (ADR-0004 *Proposta*). Repo "public-source experimental"; contributi esterni sospesi |
+| Licenza corrente | codice e documentazione originali Styx: **AGPL-3.0-or-later**; materiale vendorizzato mantiene le licenze upstream; vettori esatti elencati in `LICENSING.md` sono Apache-2.0; termini commerciali separati possono essere disponibili; contributi di codice esterni sospesi |
 | Blocchi | 1 (WASM hardening) ✅ · 2 (riduzione rischio) ✅ · review Blocco 2 **GO** · Fase D envelope MLS ✅ (PR #23, squash `b4f00ac`) |
 | CI | `styx-js web` ✅ verde · Dart reference stack ✅ verde (dopo fix baseline) · WASM integrity ✅ · CodeQL (JS/TS) ✅ |
 | Sicurezza GitHub | secret scanning + push protection, Dependabot, PVR, CodeQL, ruleset su `main`, SHA-pinning, token read-only (vedi `docs/security/2026-07-12-github-security-baseline.md`) |
@@ -199,7 +213,10 @@ Un solo autore, storia lineare e leggibile, `docs/` riordinata (gli storici in `
 
 ## 8. Indice dei documenti chiave
 
-- **Roadmap normativa:** `docs/security/2026-07-11-fattibilita-piano-utente.md` (5 blocchi, criteri di uscita, review Blocco 1 in §7.7)
+- **Visione canonica corrente (inglese):** `specs/01-vision.md`
+- **PRD e specifica tecnica correnti (inglese):** `specs/02-prd.md`, `specs/04-tech-spec.md`
+- **Decisione Phase A Marmot/OpenMLS:** `docs/architecture/spikes/2026-08-08-marmot-openmls-phase-a.md`
+- **Roadmap storica al momento dello snapshot:** `docs/security/2026-07-11-fattibilita-piano-utente.md` (5 blocchi, criteri di uscita, review Blocco 1 in §7.7)
 - **Audit di sicurezza:** `docs/security/2026-07-10-styx-chat-security-report.md` (C1-C3, H1-H3, M1-M6, N1-N4; stato di attuazione aggiornato)
 - **Piani attivi:** `docs/superpowers/plans/2026-07-11-blocco1-wasm-hardening.md`, `…-blocco2-risk-reduction.md`
 - **Design spec:** `docs/superpowers/specs/2026-07-09-styx-chat-mls-design.md` e affini

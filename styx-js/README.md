@@ -1,8 +1,26 @@
-# Styx.js — Sovereign P2P Cryptographic Ledger for the Browser
+# Styx.js — Browser implementation and reference application
 
-JavaScript port of the Styx Dart/Flutter library. Two peers maintain a shared, tamper-evident event chain with E2E encryption — no central server stores any data.
+> ⚠️ **EXPERIMENTAL SOFTWARE** — This browser implementation has not completed an independent
+> Styx security audit and is unsuitable for sensitive, high-risk, or life-critical use. A web
+> origin controlled by an adversary can replace the delivered application code. Relays cannot read
+> E2EE content, but they can observe transport metadata.
 
-**Fully tested:** 431 Jest tests + 17 Playwright browser tests + 22 cross-platform interop tests against Dart.
+`styx-js` contains the active browser implementation of the Styx application protocol, reusable
+browser-runtime components, and a minimal chat reference application. It is an implementation—not
+the normative protocol and not a general-purpose messenger. The chat exists as an interoperability
+harness and diagnostic surface for future product verticals such as Themis.
+
+The JavaScript ledger shares selected application-level formats and conformance vectors with the
+Dart reference implementation. The JavaScript MLS chat and Dart ledger are separate cryptographic
+systems and are intentionally not end-to-end interoperable.
+
+The current compatibility direction prefers Marmot for a future MLS-over-Nostr profile, but this
+repository does **not** currently claim Marmot wire compatibility. See the
+[canonical vision](../specs/01-vision.md) and
+[Phase A report](../docs/architecture/spikes/2026-08-08-marmot-openmls-phase-a.md).
+
+The repository includes Jest, Playwright, and Dart/JavaScript conformance-vector suites. Passing
+tests provide regression evidence; they are not a security audit.
 
 ## Architecture
 
@@ -105,7 +123,7 @@ ledger.eventStream.onRemoteEvents((event) => {
 | **WebRTC direct** | Yes | N/A | N/A |
 | **WebRTC via TURN** | No | TURN sees IP | No |
 
-Styx uses **Nostr as the primary transport** — messages are encrypted with ChaCha20-Poly1305 before leaving the browser. The relay sees only ciphertext. Peers never see each other's IP address.
+Styx uses **Nostr as the primary transport** — messages are encrypted with ChaCha20-Poly1305 before leaving the browser. A relay cannot read the message plaintext, but it can observe connection, sender/recipient-routing, timing, frequency, and ciphertext-size metadata exposed by the current transport. Peers do not receive each other's IP address through the relay path.
 
 WebRTC is an optional low-latency channel where both peers accept the IP visibility tradeoff.
 
@@ -118,14 +136,16 @@ WebRTC is an optional low-latency channel where both peers accept the IP visibil
 
 ## Transport Hierarchy
 
-1. **Nostr relays** — Primary channel, E2E encrypted, no IP leak to peer
+1. **Nostr relays** — Primary channel, E2E encrypted, with no direct peer IP disclosure through the relay path
 2. **WebRTC DataChannel** — Optional direct P2P for low-latency use cases
 
 Events are signed with NIP-01 schnorr/secp256k1 for relay acceptance. Content is encrypted with ChaCha20-Poly1305 (12-byte nonce, compatible with Dart implementation).
 
-## Dart ↔ JS Interoperability
+## Dart ↔ JS ledger-vector interoperability
 
-Styx.js is **cross-platform compatible** with the Dart implementation. Verified with 22 test vectors:
+The JavaScript ledger shares selected application-level formats with the Dart reference
+implementation, verified by 22 test vectors. This does not make the JavaScript MLS chat
+cryptographically interoperable with the Dart ledger.
 
 | Area | Compatible |
 |------|:----------:|
@@ -202,11 +222,14 @@ Interactive demos for browser-to-browser testing:
 |-----|-------------|
 | `http://localhost:3456` | WebRTC with WebSocket signaling server |
 | `http://localhost:3456/nostr` | WebRTC with Nostr relay signaling (strfry Docker) |
-| `http://localhost:3456/chat` | E2E encrypted chat via Nostr relay (no WebRTC, no IP leak) |
+| `http://localhost:3456/chat` | Experimental E2E chat via Nostr relay (no direct WebRTC peer connection) |
 
 Start the test server: `npm run test:webrtc:manual`
 
-The `/chat` page demonstrates the production privacy model: messages encrypted with ChaCha20-Poly1305, signed with schnorr/secp256k1, relayed via Nostr. The relay sees only ciphertext.
+The `/chat` page is an experimental reference demo: messages are encrypted with
+ChaCha20-Poly1305, signed with Schnorr/secp256k1, and relayed via Nostr. The relay cannot read
+message plaintext but still observes the transport metadata described above. This demo is not a
+production-security or metadata-anonymity claim.
 
 A WebSocket sniffer is included to inspect traffic:
 ```bash
@@ -246,7 +269,8 @@ node test/webrtc/manual/sniffer.js    # Proxy on :17888, forwards to relay
 - `@noble/hashes` — SHA-256, SHA-512, HKDF, HMAC, PBKDF2
 - `@noble/ciphers` — ChaCha20-Poly1305
 
-All `@noble` libraries are audited, zero-dependency, and pure JS.
+These are separately maintained third-party components. Any review or audit of an upstream
+dependency does not constitute a security audit of Styx.
 
 ## Project Structure
 
@@ -323,4 +347,10 @@ styx-js/
 
 ## License
 
-MIT
+Styx-authored software and documentation in this subtree are licensed
+[`AGPL-3.0-or-later`](../LICENSE) by default. Separately licensed vendored and third-party material
+retains its upstream terms; consult [`LICENSING.md`](../LICENSING.md),
+[`REUSE.toml`](../REUSE.toml), and
+[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) for the authoritative path-by-path mapping.
+Separate commercial terms may be available from the copyright holder. External code
+contributions remain paused under [`CONTRIBUTING.md`](../CONTRIBUTING.md).
