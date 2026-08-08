@@ -1,49 +1,51 @@
-# specs/ — MUCC operational entry point
+# specs/ — product direction and MUCC planning
 
-## Sintesi (IT)
-
-Questa directory è l'**ingresso operativo** del workflow MUCC (governance
-ADR-0006). Le spec qui dentro sono *sintesi*: il dettaglio tecnico normativo
-resta nei documenti canonici sotto `docs/superpowers/**` e
-`docs/architecture/decisions/**`, che questa directory **non** sostituisce.
-`03-user-stories.md` e `05-sprint-plan.md` sono volutamente assenti — arrivano
-con la PR di adozione del backlog. L'inglese è la lingua primaria; ogni file
-apre con una sintesi italiana come questa.
+This directory is the English-canonical operational entry point for Styx
+product direction and the MUCC planning workflow adopted in governance
+[ADR-0006](../docs/governance/adr/ADR-0006-adopt-mucc-multidev.md). Translations
+are optional aids; they do not replace the English requirement.
 
 ## Authority model — read this first
 
-This directory is the **operational entry point** for the MUCC workflow adopted
-by governance [ADR-0006](../docs/governance/adr/ADR-0006-adopt-mucc-multidev.md).
-Authority transfers **gradually**:
+Repository work follows the authority order in [`AGENTS.md`](../AGENTS.md): an
+approved GitHub Issue and its native dependencies; `AGENTS.md`; normative
+specifications, ADRs, and active plans; then tool adapters and local notes.
+GitHub remains the operational source of truth for task status and approval.
 
-| Content | Authoritative source |
+Within that hierarchy, the files here have different maturity:
+
+| File | Role and current status |
 |---|---|
-| Vision, PRD, tech-spec *synthesis* | `specs/` (this directory) |
-| Normative technical detail (MLS design, vault, envelope, push, plans, spikes) | `docs/superpowers/**` — canonical, untouched |
-| Product architecture decisions | `docs/architecture/decisions/` (ADR-0001…0005) |
-| Governance and workflow decisions | `docs/governance/adr/` |
+| [`01-vision.md`](01-vision.md) | Approved product direction from #124/#125. It does not claim production readiness. |
+| [`02-prd.md`](02-prd.md) | Draft product-requirement synthesis; the future language-neutral protocol and conformance corpus will be the application authority. |
+| [`03-user-stories.md`](03-user-stories.md) | Adopted brownfield MUCC story source for its declared adoption perimeter. |
+| [`04-tech-spec.md`](04-tech-spec.md) | Draft architectural synthesis and map to detailed technical evidence. |
+| [`05-sprint-plan.md`](05-sprint-plan.md) | MUCC planning projection. Its story status can lag merged GitHub work and must not be used as the live delivery dashboard. |
 
-When a synthesis here and a canonical document disagree, **the canonical
-document wins** and the synthesis must be corrected. Full authority moves to
-`specs/` only when the MUCC workflow actually exercises it in real sprints.
+Detailed vault, MLS, transport, security, governance, and historical decisions
+remain in their named documents under `docs/`. They are authoritative only for
+the scope and maturity each document declares. When two sources conflict, do
+not silently choose one: apply the repository authority order and correct the
+lower-authority or stale synthesis through an approved task.
 
-## Backlog adoption (Epic #65, task 5)
+## Backlog adoption boundary
 
-- **`03-user-stories.md`** and **`05-sprint-plan.md`** exist since Task #84:
-  they adopt product Issues #24–#27 as stories `US-001…US-004`. The
-  duplication trap is disarmed by pre-labelling those four Issues with their
-  `us-id:*` key **before** the first sync, so `/dev-issue-sync` updates them
-  instead of creating parallel ones. After the sync, the files own spec
-  content and the Issue bodies are generated projections (SPEC v0.36 §5.4);
-  pre-adoption bodies remain in the GitHub Issue edit history.
-- **Permanently outside the adoption perimeter:** Issues #45, #61 and #62
-  (Styx task contracts in their bodies), Epic #65 and the migration task
-  Issues. They must never receive a `us-id:*` label.
-- Phase files `06`–`08` follow the sprints that produce them.
+`03-user-stories.md` and `05-sprint-plan.md` were added in Task #84. Their
+declared adopted stories use `us-id:*` labels so `/dev-issue-sync` updates the
+existing GitHub Issues instead of creating duplicates. Issue bodies generated
+from an adopted story are projections; the pre-adoption bodies remain in
+GitHub history.
 
-## Honesty constraints
+Issues #45, #61, and #62, Epic #65, and migration/governance task Issues are
+outside that adoption perimeter and must not receive `us-id:*` labels. New
+strategic work such as the Styx application protocol, Marmot evaluation, and
+Themis requires its own approved contractual Issues rather than being inserted
+silently into the historical sprint plan.
 
-Every document in this directory is subject to the claim policy of
-`CLAUDE.md` and to the `Doc claims lint` CI check: the product must **not** be
-described with "serverless", "zero-knowledge" or equivalent affirmative claims
-while H1/H2 remain open. Relays observe transport metadata — say so.
+## Documentation and claims
+
+English is canonical. Security and maturity claims must link evidence and name
+the applicable runtime and threat model. Current builds are experimental;
+relays and push infrastructure can observe metadata; upstream audits do not
+audit Styx. The `Doc claims lint` CI check rejects prohibited affirmative
+claims, but passing that linter is not a security review.
