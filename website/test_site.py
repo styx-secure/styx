@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import unittest
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
@@ -97,6 +96,13 @@ class LandingPageTests(unittest.TestCase):
         ]
         self.assertEqual(len(descriptions), 1)
         self.assertGreaterEqual(len(descriptions[0]), 80)
+
+        color_schemes = [
+            tag.get("content", "")
+            for tag in self.tags_named("meta")
+            if tag.get("name") == "color-scheme"
+        ]
+        self.assertEqual(color_schemes, ["light"])
 
     def test_semantic_outline_and_required_sections(self) -> None:
         self.assertEqual(self.parser.h1_count, 1)
@@ -203,6 +209,8 @@ class LandingPageTests(unittest.TestCase):
         self.assertRegex(self.css, r":focus-visible")
         self.assertIn(".skip-link", self.css)
         self.assertIn("overflow: hidden", self.css)
+        self.assertIn("outline: 3px solid var(--foam)", self.css)
+        self.assertIn("box-shadow: 0 0 0 7px var(--obsidian)", self.css)
 
 
 if __name__ == "__main__":

@@ -51,7 +51,7 @@ Current transports expose routing, timing, size, and relationship metadata. E2EE
 protect a compromised endpoint, a malicious recipient, or a browser build supplied by an origin
 controlled by the adversary. No current build offers a universal anonymity guarantee.
 
-> *In Greek mythology, the River Styx was the boundary between the mortal world and the underworld. The gods swore their most sacred oaths upon its waters — oaths that could never be broken. Styx brings that same inviolable trust to digital agreements.*
+> *In Greek mythology, the River Styx marked a boundary and the gods swore solemn oaths upon its waters. The project uses that image to represent explicit trust boundaries in digital systems—not a promise of invulnerability.*
 
 ## Dart reference quick start
 

@@ -42,9 +42,10 @@ a {
 }
 
 a:focus-visible {
-  outline: 3px solid var(--ember);
+  outline: 3px solid var(--foam);
   outline-offset: 4px;
   border-radius: 2px;
+  box-shadow: 0 0 0 7px var(--obsidian);
 }
 
 .skip-link {
@@ -726,7 +727,7 @@ h1 em {
 }
 
 .roadmap-list span {
-  color: var(--ember);
+  color: var(--river-dark);
   font-family: var(--mono);
   font-size: .67rem;
 }
