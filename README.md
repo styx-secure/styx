@@ -4,16 +4,33 @@
 
 > ⚠️ **EXPERIMENTAL SOFTWARE** — Styx is under active development and has **not** completed an
 > independent security audit. Do not use current builds for sensitive, high-risk, or life-critical
-> communications. See `docs/PANORAMICA-PROGETTO.md` for the real project state.
+> use. The browser profile is also weaker against an adversary that controls the web origin. See
+> the [approved vision](specs/01-vision.md) and the
+> [Phase A capability report](docs/architecture/spikes/2026-08-08-marmot-openmls-phase-a.md).
 
-Styx is a project for sovereign, end-to-end encrypted, metadata-minimizing communication. It contains
-two codebases: a mature **Dart** ledger library (`packages/`) and the active **JavaScript/MLS chat**
-(`styx-js/`, an E2EE PWA over federated Nostr relays). Messages are end-to-end encrypted; relays route
-them but cannot read the content, though they observe some transport metadata.
+Styx is a platform-neutral secure application substrate for software that needs self-custodied
+identity, end-to-end-encrypted collaboration, verifiable state transitions, offline operation, and
+delivery through infrastructure that is not trusted with plaintext. It is not a general-purpose
+messenger.
+
+The first product vertical is **Themis**, an anonymous case-management system with durable,
+two-way asynchronous dialogue. The browser code in `styx-js/` is the active JavaScript
+implementation and first secure-runtime profile. Its chat is a minimal reference application,
+interoperability harness, and diagnostic surface—not the product roadmap. The independently
+developed Dart ledger in `packages/` is retained as a reference and regression oracle; it is not a
+parallel feature-development target.
+
+Relays cannot read E2EE message content, but current transports expose some routing and timing
+metadata. E2EE also does not protect a compromised endpoint, a malicious recipient, or a browser
+build supplied by an origin controlled by the adversary.
 
 > *In Greek mythology, the River Styx was the boundary between the mortal world and the underworld. The gods swore their most sacred oaths upon its waters — oaths that could never be broken. Styx brings that same inviolable trust to digital agreements.*
 
-## Quick Start
+## Dart reference quick start
+
+The following example exercises the Dart reference implementation. New application-layer work
+targets the language-neutral protocol and conformance corpus before either implementation is
+extended.
 
 ```dart
 import 'dart:convert';
@@ -63,7 +80,7 @@ final shares = styx.createIdentityBackup();
 await styx.shutdown();
 ```
 
-## Architecture
+## Dart reference architecture
 
 Styx is structured as a monorepo of composable packages, layered bottom-up:
 
@@ -96,7 +113,7 @@ Styx is structured as a monorepo of composable packages, layered bottom-up:
 
 **389 tests** across 6 Dart packages.
 
-## Features
+## Dart reference capabilities
 
 ### Pairing
 - **QR Pairing** — Direct public key exchange with anti-replay nonces
@@ -128,7 +145,7 @@ Styx is structured as a monorepo of composable packages, layered bottom-up:
   E2E-encrypted and routed by federated relays that cannot read content but do observe some
   transport metadata (not a zero-metadata or "serverless" system)
 - **Cryptographic Trust** — Every event is signed, hashed, and chained
-- **Sovereign Identity** — Keys generated locally, stored in hardware enclaves
+- **Sovereign Identity** — Keys are generated locally; storage protections depend on the selected runtime profile
 - **GDPR by Design** — Bilateral pruning with hash persistence
 - **Offline-First** — Full operation without connectivity, deterministic sync on reconnect
 
@@ -175,7 +192,7 @@ styx/
 │   └── styx/                  # Public façade (SovereignLedger)
 ├── push_bridge_server/        # Go microservice for push bridging
 ├── test_integration/          # Cross-package integration tests
-└── docs/                      # Specification (Italian)
+└── docs/                      # Architecture, security, API, and historical records
 ```
 
 ## License
