@@ -44,16 +44,6 @@ export class LedgerService {
   }
 
   /**
-   * Receive and store a remote event
-   */
-  async receiveRemoteEvent(event) {
-    await this._store.appendEvent(event);
-    this._emitter.emit('remoteEvent', event);
-    this._emitter.emit('newEvent', event);
-    return event;
-  }
-
-  /**
    * Returns all events ordered by HLC
    * @returns {Promise<import('./event.js').LedgerEvent[]>}
    */

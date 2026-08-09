@@ -14,4 +14,9 @@ export {
   V1_PRUNING_DISABLED_MESSAGE,
   V1_PRUNING_DISABLED_RESULT,
 } from './pruning.js';
+export {
+  V1_REMOTE_ADMISSION_DISABLED_CODE,
+  V1_REMOTE_ADMISSION_DISABLED_MESSAGE,
+  V1_REMOTE_ADMISSION_DISABLED_RESULT,
+} from './remote-admission.js';
 export { LedgerService } from './ledger-service.js';

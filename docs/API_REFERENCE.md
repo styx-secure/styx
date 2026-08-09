@@ -11,6 +11,16 @@ Complete API documentation for the Styx library — sovereign, peer-to-peer cryp
 > its legacy pruning API is not evidence of a safe or interoperable deletion
 > protocol and must not be used to claim verifiable pruning or GDPR compliance.
 
+> **JavaScript v1 remote-admission security containment:** recognized inbound
+> ledger events other than the pruning controls above are rejected with
+> `STYX_V1_REMOTE_ADMISSION_DISABLED` before model construction, persistence,
+> fork/merge handling, outbox changes, or application event emission. Local
+> event creation and outbox enqueue remain available, but v1 cross-peer ledger
+> synchronization is intentionally disabled until separately approved atomic
+> admission and bootstrap/backfill work is complete. This containment makes no
+> claim of remote-event authenticity, replay resistance, causal ordering, or
+> convergence.
+
 ---
 
 ## Table of Contents
