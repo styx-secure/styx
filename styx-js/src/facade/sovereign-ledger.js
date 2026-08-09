@@ -16,17 +16,17 @@ import { MnemonicGenerator, DoubleCheckVerifier } from '../crypto/mnemonic.js';
 import { KeyBackup, ShamirShare } from '../crypto/shamir.js';
 
 import { EventType } from '../ledger/event.js';
-import { VectorClock } from '../ledger/vector-clock.js';
 import { EventFactory } from '../ledger/event-factory.js';
 import { ChainValidator } from '../ledger/chain-validator.js';
 import { LedgerService } from '../ledger/ledger-service.js';
-import { ForkDetector, DeterministicMerge, MergeEventFactory } from '../ledger/fork-merge.js';
+import { ForkDetector, DeterministicMerge } from '../ledger/fork-merge.js';
 import {
   PruneProtocol,
   RetentionManager,
   V1PruningDisabledError,
   V1_PRUNING_DISABLED_RESULT,
 } from '../ledger/pruning.js';
+import { V1_REMOTE_ADMISSION_DISABLED_RESULT } from '../ledger/remote-admission.js';
 
 import { TransportState } from '../transport/transport-interface.js';
 import { WebRTCTransport } from '../transport/webrtc-transport.js';
@@ -38,6 +38,8 @@ import {
   QrPairingService,
   RemotePairingService,
 } from '../pairing/trust-store.js';
+
+const RECOGNIZED_EVENT_TYPES = new Set(Object.values(EventType));
 
 /** @enum {string} */
 export const StyxState = {
@@ -511,52 +513,23 @@ export class SovereignLedger {
   async _handleIncomingMessage(msg) {
     try {
       const json = JSON.parse(new TextDecoder().decode(msg.payload));
+      const isObjectEnvelope =
+        json !== null && typeof json === 'object' && !Array.isArray(json);
 
       // Classify legacy pruning controls from the raw envelope so even an
       // incomplete or otherwise malformed prune event cannot reach model
       // construction, fork handling, persistence, or application listeners.
       if (
-        json !== null &&
-        typeof json === 'object' &&
+        isObjectEnvelope &&
         (json.eventType === EventType.PRUNE_REQUEST ||
           json.eventType === EventType.PRUNE_ACK)
       ) {
         return this._reportV1PruningDisabled();
       }
 
-      const { LedgerEvent } = await import('../ledger/event.js');
-      const { HybridLogicalClock } = await import('../ledger/hlc.js');
-
-      const event = LedgerEvent.fromJSON(json, HybridLogicalClock, VectorClock);
-
-      // Detect forks
-      const localHead = await this._ledgerStore.getLatestEvent();
-      if (localHead) {
-        const fork = this._forkDetector.detectForkOnReceive(event, localHead);
-
-        if (fork) {
-          const mergeResult = this._merge.merge(fork, this._peerRole);
-          if (mergeResult.mergeEventNeeded) {
-            const mergeFactory = new MergeEventFactory(this._eventFactory);
-            const mergeVC = localHead.vectorClock.merge(event.vectorClock);
-            const mergeEvent = await mergeFactory.createMergeEvent({
-              branchAHeadHash: localHead.eventHash,
-              branchBHeadHash: event.eventHash,
-              ancestorHash: fork.commonAncestorHash,
-              newPreviousEvent: event,
-              privateKey: this._keyPair.privateKey,
-              publicKey: this._keyPair.publicKey,
-              mergedVectorClock: mergeVC,
-              localPeerRole: this._peerRole,
-            });
-            await this._ledgerService.receiveRemoteEvent(event);
-            await this._ledgerStore.appendEvent(mergeEvent);
-            return;
-          }
-        }
+      if (isObjectEnvelope && RECOGNIZED_EVENT_TYPES.has(json.eventType)) {
+        return this._reportV1RemoteAdmissionDisabled();
       }
-
-      await this._ledgerService.receiveRemoteEvent(event);
     } catch (e) {
       this._log('error', 'Failed to process incoming message:', e);
     }
@@ -590,6 +563,21 @@ export class SovereignLedger {
       // A failing telemetry consumer cannot change the rejection decision.
     }
     return V1_PRUNING_DISABLED_RESULT;
+  }
+
+  _reportV1RemoteAdmissionDisabled() {
+    // Observability must never become a path back into remote admission.
+    try {
+      this._log('warning', V1_REMOTE_ADMISSION_DISABLED_RESULT.message);
+    } catch {
+      // Deliberately fail closed even if an injected logger fails.
+    }
+    try {
+      this._emitter.emit('securityEvent', V1_REMOTE_ADMISSION_DISABLED_RESULT);
+    } catch {
+      // A failing telemetry consumer cannot change the rejection decision.
+    }
+    return V1_REMOTE_ADMISSION_DISABLED_RESULT;
   }
 
   _log(level, ...args) {

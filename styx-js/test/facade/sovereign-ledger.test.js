@@ -13,6 +13,10 @@ import {
   V1_PRUNING_DISABLED_CODE,
   V1_PRUNING_DISABLED_RESULT,
 } from '../../src/ledger/pruning.js';
+import {
+  V1_REMOTE_ADMISSION_DISABLED_CODE,
+  V1_REMOTE_ADMISSION_DISABLED_RESULT,
+} from '../../src/ledger/remote-admission.js';
 import { loadTestWordlist, createTestEvent, createTestKeyPair } from '../setup.js';
 
 beforeAll(() => {
@@ -379,7 +383,6 @@ describe('SovereignLedger', () => {
         const beforeOutboxCount = await outboxStore.pendingCount();
         const appendSpy = jest.spyOn(ledgerStore, 'appendEvent');
         const pruneSpy = jest.spyOn(ledgerStore, 'pruneEvent');
-        const receiveSpy = jest.spyOn(ledger._ledgerService, 'receiveRemoteEvent');
         const outboxSpy = jest.spyOn(outboxStore, 'addEntry');
         const transportSpy = jest.spyOn(ledger._transport, 'send');
         const applicationEvents = [];
@@ -395,7 +398,7 @@ describe('SovereignLedger', () => {
 
         expect(appendSpy).not.toHaveBeenCalled();
         expect(pruneSpy).not.toHaveBeenCalled();
-        expect(receiveSpy).not.toHaveBeenCalled();
+        expect(ledger._ledgerService.receiveRemoteEvent).toBeUndefined();
         expect(await ledgerStore.getEventsByType(EventType.PRUNE_ACK)).toEqual([]);
         expect(outboxSpy).not.toHaveBeenCalled();
         expect(transportSpy).not.toHaveBeenCalled();
@@ -453,7 +456,6 @@ describe('SovereignLedger', () => {
       const beforeOutboxCount = await outboxStore.pendingCount();
       const appendSpy = jest.spyOn(ledgerStore, 'appendEvent');
       const pruneSpy = jest.spyOn(ledgerStore, 'pruneEvent');
-      const receiveSpy = jest.spyOn(ledger._ledgerService, 'receiveRemoteEvent');
       const applicationEvents = [];
       const securityEvents = [];
       ledger.eventStream.onAllEvents((event) => applicationEvents.push(event));
@@ -463,7 +465,7 @@ describe('SovereignLedger', () => {
 
       expect(appendSpy).not.toHaveBeenCalled();
       expect(pruneSpy).not.toHaveBeenCalled();
-      expect(receiveSpy).not.toHaveBeenCalled();
+      expect(ledger._ledgerService.receiveRemoteEvent).toBeUndefined();
       expect(applicationEvents).toEqual([]);
       expect(securityEvents).toEqual([]);
       expect((await ledgerStore.getAllEvents()).map((event) => event.toJSON())).toEqual(
@@ -472,7 +474,29 @@ describe('SovereignLedger', () => {
       expect(await outboxStore.pendingCount()).toBe(beforeOutboxCount);
     });
 
-    test('keeps ordinary inbound message behavior unchanged as a positive control', async () => {
+    test.each([
+      EventType.TRANSACTION,
+      EventType.MESSAGE,
+      EventType.SOS,
+      EventType.CONFIG,
+      EventType.REKEY,
+      EventType.MERGE,
+    ])('rejects a recognized incomplete %s envelope before model construction', async (type) => {
+      const securityEvents = [];
+      const appendSpy = jest.spyOn(ledgerStore, 'appendEvent');
+      ledger.onSecurityEvent((event) => securityEvents.push(event));
+
+      await expect(
+        ledger._handleIncomingMessage({
+          payload: new TextEncoder().encode(JSON.stringify({ eventType: type })),
+        })
+      ).resolves.toBe(V1_REMOTE_ADMISSION_DISABLED_RESULT);
+
+      expect(appendSpy).not.toHaveBeenCalled();
+      expect(securityEvents).toEqual([V1_REMOTE_ADMISSION_DISABLED_RESULT]);
+    });
+
+    test('rejects an ordinary inbound event with zero state or stream effects', async () => {
       const localHead = await ledgerStore.getLatestEvent();
       const inbound = await createTestEvent({
         keyPair: peerKp,
@@ -485,16 +509,158 @@ describe('SovereignLedger', () => {
       const message = {
         payload: new TextEncoder().encode(JSON.stringify(inbound.toJSON())),
       };
+      const beforeEvents = (await ledgerStore.getAllEvents()).map((event) =>
+        event.toJSON()
+      );
+      const beforeHeadId = localHead.eventId;
+      const beforeClock = (await ledgerStore.getCurrentVectorClock()).toJSON();
+      const beforeOutboxCount = await outboxStore.pendingCount();
+      const getLatestSpy = jest.spyOn(ledgerStore, 'getLatestEvent');
+      const getClockSpy = jest.spyOn(ledgerStore, 'getCurrentVectorClock');
+      const appendSpy = jest.spyOn(ledgerStore, 'appendEvent');
+      const pruneSpy = jest.spyOn(ledgerStore, 'pruneEvent');
+      const outboxSpy = jest.spyOn(outboxStore, 'addEntry');
+      const transportSpy = jest.spyOn(ledger._transport, 'send');
+      const forkSpy = jest.spyOn(ledger._forkDetector, 'detectForkOnReceive');
+      const mergeSpy = jest.spyOn(ledger._merge, 'merge');
       const allEvents = [];
       const remoteEvents = [];
+      const securityEvents = [];
       ledger.eventStream.onAllEvents((event) => allEvents.push(event));
       ledger.eventStream.onRemoteEvents((event) => remoteEvents.push(event));
+      ledger.onSecurityEvent((event) => securityEvents.push(event));
 
-      await ledger._handleIncomingMessage(message);
+      await expect(ledger._handleIncomingMessage(message)).resolves.toBe(
+        V1_REMOTE_ADMISSION_DISABLED_RESULT
+      );
 
-      expect(await ledgerStore.getEventById(inbound.eventId)).not.toBeNull();
-      expect(allEvents).toEqual([inbound]);
-      expect(remoteEvents).toEqual([inbound]);
+      expect(getLatestSpy).not.toHaveBeenCalled();
+      expect(getClockSpy).not.toHaveBeenCalled();
+      expect(appendSpy).not.toHaveBeenCalled();
+      expect(pruneSpy).not.toHaveBeenCalled();
+      expect(outboxSpy).not.toHaveBeenCalled();
+      expect(transportSpy).not.toHaveBeenCalled();
+      expect(forkSpy).not.toHaveBeenCalled();
+      expect(mergeSpy).not.toHaveBeenCalled();
+      expect(ledger._ledgerService.receiveRemoteEvent).toBeUndefined();
+      expect(allEvents).toEqual([]);
+      expect(remoteEvents).toEqual([]);
+      expect(securityEvents).toEqual([V1_REMOTE_ADMISSION_DISABLED_RESULT]);
+
+      getLatestSpy.mockRestore();
+      getClockSpy.mockRestore();
+      appendSpy.mockRestore();
+      expect((await ledgerStore.getAllEvents()).map((event) => event.toJSON())).toEqual(
+        beforeEvents
+      );
+      expect((await ledgerStore.getLatestEvent()).eventId).toBe(beforeHeadId);
+      expect((await ledgerStore.getCurrentVectorClock()).toJSON()).toEqual(beforeClock);
+      expect(await outboxStore.pendingCount()).toBe(beforeOutboxCount);
+    });
+
+    test('rejects the normal dual-genesis first event with an unknown predecessor', async () => {
+      const localHead = await ledgerStore.getLatestEvent();
+      const peerGenesis = await createTestEvent({ keyPair: peerKp });
+      const inbound = await createTestEvent({
+        keyPair: peerKp,
+        previousEvent: peerGenesis,
+        peerRole: ledger.identity.peerRole === 'A' ? 'B' : 'A',
+        type: EventType.MESSAGE,
+        payload: new TextEncoder().encode('first peer event'),
+      });
+      expect(inbound.previousHash).toBe(peerGenesis.eventHash);
+      expect(inbound.previousHash).not.toBe(localHead.eventHash);
+      const beforeEvents = (await ledgerStore.getAllEvents()).map((event) =>
+        event.toJSON()
+      );
+
+      await expect(
+        ledger._handleIncomingMessage({
+          payload: new TextEncoder().encode(JSON.stringify(inbound.toJSON())),
+        })
+      ).resolves.toBe(V1_REMOTE_ADMISSION_DISABLED_RESULT);
+
+      expect((await ledgerStore.getAllEvents()).map((event) => event.toJSON())).toEqual(
+        beforeEvents
+      );
+    });
+
+    test('rejects a legitimate concurrent sibling without invoking fork or merge', async () => {
+      const commonParent = await ledgerStore.getLatestEvent();
+      const inbound = await createTestEvent({
+        keyPair: peerKp,
+        previousEvent: commonParent,
+        vectorClock: await ledgerStore.getCurrentVectorClock(),
+        peerRole: ledger.identity.peerRole === 'A' ? 'B' : 'A',
+        type: EventType.MESSAGE,
+        payload: new TextEncoder().encode('remote sibling'),
+      });
+      const localSibling = await ledger._ledgerService.appendEvent({
+        type: EventType.MESSAGE,
+        payload: new TextEncoder().encode('local sibling'),
+        privateKey: ledger._keyPair.privateKey,
+        publicKey: ledger._keyPair.publicKey,
+      });
+      expect(inbound.previousHash).toBe(commonParent.eventHash);
+      expect(localSibling.previousHash).toBe(commonParent.eventHash);
+      const beforeEvents = (await ledgerStore.getAllEvents()).map((event) =>
+        event.toJSON()
+      );
+      const forkSpy = jest.spyOn(ledger._forkDetector, 'detectForkOnReceive');
+      const mergeSpy = jest.spyOn(ledger._merge, 'merge');
+
+      await expect(
+        ledger._handleIncomingMessage({
+          payload: new TextEncoder().encode(JSON.stringify(inbound.toJSON())),
+        })
+      ).resolves.toBe(V1_REMOTE_ADMISSION_DISABLED_RESULT);
+
+      expect(forkSpy).not.toHaveBeenCalled();
+      expect(mergeSpy).not.toHaveBeenCalled();
+      expect((await ledgerStore.getAllEvents()).map((event) => event.toJSON())).toEqual(
+        beforeEvents
+      );
+    });
+
+    test('rejects 100 replayed copies deterministically without state changes', async () => {
+      const message = {
+        payload: new TextEncoder().encode(
+          JSON.stringify({ eventType: EventType.MESSAGE })
+        ),
+      };
+      const beforeEvents = (await ledgerStore.getAllEvents()).map((event) =>
+        event.toJSON()
+      );
+      const securityEvents = [];
+      ledger.onSecurityEvent((event) => securityEvents.push(event));
+
+      for (let i = 0; i < 100; i++) {
+        await expect(ledger._handleIncomingMessage(message)).resolves.toBe(
+          V1_REMOTE_ADMISSION_DISABLED_RESULT
+        );
+      }
+
+      expect(securityEvents).toHaveLength(100);
+      expect(
+        securityEvents.every((event) => event === V1_REMOTE_ADMISSION_DISABLED_RESULT)
+      ).toBe(true);
+      expect((await ledgerStore.getAllEvents()).map((event) => event.toJSON())).toEqual(
+        beforeEvents
+      );
+    });
+
+    test('keeps local sendMessage persistence, enqueue, and emission functional', async () => {
+      const allEvents = [];
+      const outboxSpy = jest.spyOn(outboxStore, 'addEntry');
+      ledger.eventStream.onAllEvents((event) => allEvents.push(event));
+
+      const event = await ledger.sendMessage({
+        payload: new TextEncoder().encode('local positive control'),
+      });
+
+      expect(await ledgerStore.getEventById(event.eventId)).toBe(event);
+      expect(outboxSpy).toHaveBeenCalledWith(event.eventId);
+      expect(allEvents).toEqual([event]);
     });
 
     test('logger and telemetry failures cannot turn rejection into acceptance', async () => {
@@ -509,7 +675,6 @@ describe('SovereignLedger', () => {
       const message = {
         payload: new TextEncoder().encode(JSON.stringify(inbound.toJSON())),
       };
-      const receiveSpy = jest.spyOn(ledger._ledgerService, 'receiveRemoteEvent');
       const pruneSpy = jest.spyOn(ledgerStore, 'pruneEvent');
       ledger._log = () => {
         throw new Error('injected logger failure');
@@ -522,8 +687,30 @@ describe('SovereignLedger', () => {
         accepted: false,
         code: V1_PRUNING_DISABLED_CODE,
       });
-      expect(receiveSpy).not.toHaveBeenCalled();
+      expect(ledger._ledgerService.receiveRemoteEvent).toBeUndefined();
       expect(pruneSpy).not.toHaveBeenCalled();
+    });
+
+    test('remote rejection survives hostile logger and telemetry consumers', async () => {
+      const appendSpy = jest.spyOn(ledgerStore, 'appendEvent');
+      ledger._log = () => {
+        throw new Error('injected logger failure');
+      };
+      ledger.onSecurityEvent(() => {
+        throw new Error('injected telemetry failure');
+      });
+
+      await expect(
+        ledger._handleIncomingMessage({
+          payload: new TextEncoder().encode(
+            JSON.stringify({ eventType: EventType.MESSAGE })
+          ),
+        })
+      ).resolves.toMatchObject({
+        accepted: false,
+        code: V1_REMOTE_ADMISSION_DISABLED_CODE,
+      });
+      expect(appendSpy).not.toHaveBeenCalled();
     });
 
     test('local rejection survives hostile logger and telemetry consumers', async () => {

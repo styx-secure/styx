@@ -7,7 +7,7 @@ import { EventType } from '../../src/ledger/event.js';
 import { Signer, Verifier } from '../../src/crypto/signer.js';
 import { Hasher } from '../../src/crypto/hasher.js';
 import { MemoryLedgerStore } from '../../src/storage/memory-store.js';
-import { createTestKeyPair, createTestEvent } from '../setup.js';
+import { createTestKeyPair } from '../setup.js';
 import { utf8Encode } from '../../src/utils.js';
 
 describe('LedgerService', () => {
@@ -59,27 +59,9 @@ describe('LedgerService', () => {
     });
   });
 
-  describe('receiveRemoteEvent()', () => {
-    test('stores the event', async () => {
-      const remoteEvent = await createTestEvent();
-      await service.receiveRemoteEvent(remoteEvent);
-
-      const events = await store.getAllEvents();
-      expect(events).toHaveLength(1);
-      expect(events[0].eventId).toBe(remoteEvent.eventId);
-    });
-
-    test('emits remoteEvent and newEvent', async () => {
-      const remoteReceived = [];
-      const newReceived = [];
-      service.onRemoteEvent((e) => remoteReceived.push(e));
-      service.onNewEvent((e) => newReceived.push(e));
-
-      const remoteEvent = await createTestEvent();
-      await service.receiveRemoteEvent(remoteEvent);
-
-      expect(remoteReceived).toHaveLength(1);
-      expect(newReceived).toHaveLength(1);
+  describe('remote ingress', () => {
+    test('does not expose an unvalidated receive method', () => {
+      expect(service.receiveRemoteEvent).toBeUndefined();
     });
   });
 

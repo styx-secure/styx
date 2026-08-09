@@ -12,6 +12,17 @@ Documentazione API completa per la libreria Styx — ledger crittografici sovran
 > protocollo di cancellazione sicuro o interoperabile e non autorizza affermazioni
 > di pruning verificabile o conformità GDPR.
 
+> **Contenimento di sicurezza dell'ammissione remota v1 JavaScript:** gli eventi
+> ledger riconosciuti in ingresso, esclusi i controlli di pruning descritti
+> sopra, vengono rifiutati con `STYX_V1_REMOTE_ADMISSION_DISABLED` prima della
+> costruzione del modello, della persistenza, della gestione fork/merge, delle
+> modifiche all'outbox o dell'emissione di eventi applicativi. La creazione
+> locale e l'inserimento nell'outbox restano disponibili, ma la sincronizzazione
+> v1 del ledger tra peer è intenzionalmente disabilitata finché non saranno
+> completati lavori separatamente approvati per ammissione atomica e
+> bootstrap/backfill. Questo contenimento non garantisce autenticità degli
+> eventi remoti, resistenza ai replay, ordinamento causale o convergenza.
+
 ---
 
 ## Indice
