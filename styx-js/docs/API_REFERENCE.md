@@ -2975,7 +2975,8 @@ await ledgerService.getLatestEvent(): Promise<LedgerEvent|null>
 
 ##### `onNewEvent(callback)`
 
-> Subscribe to all new events (local and remote).
+> Subscribe to newly emitted events. In v1 this means local events only because contained remote
+> ledger events are rejected before application event emission.
 
 ```js
 const unsubscribe = ledgerService.onNewEvent(callback): () => void
