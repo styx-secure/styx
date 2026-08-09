@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 
 SCHEMA_ID = "styx.task-scope-report/v1"
-TOOL_VERSION = "0.1.0"
+TOOL_VERSION = "0.2.0"
 CONTRACT_MARKER = "<!-- styx-task-contract:v1 -->"
 
 EXIT_PASS = 0
@@ -55,10 +55,18 @@ class Diagnostic:
 
 
 @dataclasses.dataclass(frozen=True)
+class BinaryArtifactAuthorization:
+    sha256: str
+    byte_length: int
+    path: str
+
+
+@dataclasses.dataclass(frozen=True)
 class Contract:
     version: str
     allowed_patterns: tuple[str, ...]
     forbidden_patterns: tuple[str, ...]
+    allowed_binary_artifacts: tuple[BinaryArtifactAuthorization, ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)

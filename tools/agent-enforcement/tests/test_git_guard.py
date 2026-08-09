@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -10,9 +11,14 @@ from unittest import mock
 from support import GuardIntegrationCase, Repo, TOOL, contract_body, run, scope_guard
 
 import git_inventory
+from model import BinaryArtifactAuthorization, ChangedEntry, TreeObject
 
 
 class GitGuardTests(GuardIntegrationCase):
+    @staticmethod
+    def binary_declaration(path: str, data: bytes, *, length: int | None = None) -> str:
+        return f"{hashlib.sha256(data).hexdigest()} {len(data) if length is None else length} {path}"
+
     def test_valid_in_scope_text_change_passes(self) -> None:
         base, head = self.simple_history()
         result, report, _ = self.invoke(base, head)
@@ -79,7 +85,13 @@ class GitGuardTests(GuardIntegrationCase):
         base = self.repo.commit("base")
         (self.repo.root / "tools" / "agent-enforcement" / "link.txt").symlink_to("target.txt")
         head = self.repo.commit("symlink")
-        result, report, _ = self.invoke(base, head)
+        symlink_path = "tools/agent-enforcement/link.txt"
+        symlink_blob = b"target.txt"
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(binary_artifacts=(self.binary_declaration(symlink_path, symlink_blob),)),
+        )
         self.assert_verdict(result, report, "FAIL", 2)
         self.assertIn("P_SYMLINK", {item["code"] for item in report["diagnostics"]})
 
@@ -111,9 +123,207 @@ class GitGuardTests(GuardIntegrationCase):
         )
         run(["git", "commit", "-qm", "gitlink"], self.repo.root)
         head = run(["git", "rev-parse", "HEAD"], self.repo.root).stdout.strip()
-        result, report, _ = self.invoke(base, head, output=self.root / "gitlink.json")
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(
+                binary_artifacts=(
+                    f"{'1' * 64} 1 tools/agent-enforcement/submodule",
+                )
+            ),
+            output=self.root / "gitlink.json",
+        )
         self.assert_verdict(result, report, "FAIL", 2)
         self.assertIn("P_GITLINK", {item["code"] for item in report["diagnostics"]})
+
+    def test_exact_binary_add_and_modify_pass(self) -> None:
+        path = "tools/agent-enforcement/blob.wasm"
+        self.repo.write("tools/agent-enforcement/base.txt", "base\n")
+        base = self.repo.commit("base")
+        added = b"wasm\x00authorized-add"
+        self.repo.write(path, added)
+        head = self.repo.commit("add binary")
+        body = contract_body(binary_artifacts=(self.binary_declaration(path, added),))
+        result, report, _ = self.invoke(base, head, body=body)
+        self.assert_verdict(result, report, "PASS", 0)
+        self.assertEqual([], report["diagnostics"])
+
+        modified = b"wasm\x00authorized-modification"
+        previous = head
+        self.repo.write(path, modified)
+        head = self.repo.commit("modify binary")
+        body = contract_body(binary_artifacts=(self.binary_declaration(path, modified),))
+        result, report, _ = self.invoke(
+            previous,
+            head,
+            body=body,
+            output=self.root / "modified.json",
+        )
+        self.assert_verdict(result, report, "PASS", 0)
+        self.assertEqual([], report["diagnostics"])
+
+    def test_binary_digest_is_read_from_candidate_head_object_not_worktree(self) -> None:
+        path = "tools/agent-enforcement/blob.bin"
+        data = b"head-only\x00artifact"
+        self.repo.write("tools/agent-enforcement/base.txt", "base\n")
+        base = self.repo.commit("base")
+        self.repo.write(path, data)
+        head = self.repo.commit("head")
+        run(["git", "checkout", "-q", base], self.repo.root)
+
+        body = contract_body(binary_artifacts=(self.binary_declaration(path, data),))
+        self.issue.write_text(body, encoding="utf-8")
+        result = subprocess.run(
+            [
+                "python3",
+                str(TOOL),
+                "--issue-number",
+                "131",
+                "--issue-body-file",
+                str(self.issue),
+                "--base-sha",
+                base,
+                "--head-sha",
+                head,
+                "--worktree-sha",
+                base,
+                "--execution-id",
+                "trusted-head-binary",
+                "--output",
+                str(self.output),
+                "--repo",
+                str(self.repo.root),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        report = json.loads(self.output.read_text(encoding="utf-8"))
+        self.assert_verdict(result, report, "PASS", 0)
+        self.assertFalse((self.repo.root / path).exists())
+
+    def test_binary_authorization_hash_length_path_and_scope_mismatches_fail(self) -> None:
+        path = "tools/agent-enforcement/blob.wasm"
+        actual = b"abc\x00def"
+        same_length_other_blob = b"abc\x00deg"
+        self.repo.write("tools/agent-enforcement/base.txt", "base\n")
+        base = self.repo.commit("base")
+        self.repo.write(path, actual)
+        head = self.repo.commit("binary")
+
+        cases = {
+            "hash": (
+                contract_body(
+                    binary_artifacts=(self.binary_declaration(path, same_length_other_blob),)
+                ),
+                "P_BINARY_AUTH_HASH_MISMATCH",
+            ),
+            "length": (
+                contract_body(
+                    binary_artifacts=(
+                        self.binary_declaration(path, actual, length=len(actual) + 1),
+                    )
+                ),
+                "P_BINARY_AUTH_LENGTH_MISMATCH",
+            ),
+            "path": (
+                contract_body(
+                    binary_artifacts=(
+                        self.binary_declaration("tools/agent-enforcement/other.wasm", actual),
+                    )
+                ),
+                "P_BINARY_GIT",
+            ),
+            "extension-only": (contract_body(), "P_BINARY_GIT"),
+            "forbidden": (
+                contract_body(
+                    forbidden=(path,),
+                    binary_artifacts=(self.binary_declaration(path, actual),),
+                ),
+                "P_PATH_FORBIDDEN",
+            ),
+        }
+        for index, (name, (body, expected_code)) in enumerate(cases.items()):
+            with self.subTest(name=name):
+                result, report, _ = self.invoke(
+                    base,
+                    head,
+                    body=body,
+                    output=self.root / f"mismatch-{index}.json",
+                )
+                self.assert_verdict(result, report, "FAIL", 2)
+                codes = {item["code"] for item in report["diagnostics"]}
+                self.assertIn(expected_code, codes)
+                if name == "hash":
+                    self.assertNotIn("P_BINARY_AUTH_LENGTH_MISMATCH", codes)
+
+    def test_binary_delete_rename_and_copy_remain_forbidden_when_declared(self) -> None:
+        path = "tools/agent-enforcement/blob.bin"
+        data = (b"binary\x00payload" * 32)
+
+        self.repo.write(path, data)
+        base = self.repo.commit("base")
+        self.repo.remove(path)
+        head = self.repo.commit("delete binary")
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(binary_artifacts=(self.binary_declaration(path, data),)),
+        )
+        self.assert_verdict(result, report, "FAIL", 2)
+        self.assertIn("P_BINARY_AUTH_STATUS", {item["code"] for item in report["diagnostics"]})
+
+        self.repo = Repo(self.root / "binary-rename-repo")
+        old_path = "tools/agent-enforcement/old.bin"
+        new_path = "tools/agent-enforcement/new.bin"
+        self.repo.write(old_path, data)
+        base = self.repo.commit("base")
+        (self.repo.root / old_path).rename(self.repo.root / new_path)
+        head = self.repo.commit("rename binary")
+        declarations = (
+            self.binary_declaration(old_path, data),
+            self.binary_declaration(new_path, data),
+        )
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(binary_artifacts=declarations),
+            output=self.root / "binary-rename.json",
+        )
+        self.assert_verdict(result, report, "FAIL", 2)
+        self.assertIn("P_BINARY_AUTH_STATUS", {item["code"] for item in report["diagnostics"]})
+
+        self.repo = Repo(self.root / "binary-copy-repo")
+        self.repo.write(old_path, data)
+        base = self.repo.commit("base")
+        shutil.copy2(self.repo.root / old_path, self.repo.root / new_path)
+        head = self.repo.commit("copy binary")
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(binary_artifacts=(self.binary_declaration(new_path, data),)),
+            output=self.root / "binary-copy.json",
+        )
+        self.assert_verdict(result, report, "FAIL", 2)
+        self.assertIn("P_BINARY_AUTH_STATUS", {item["code"] for item in report["diagnostics"]})
+
+    @mock.patch.object(git_inventory, "_entry_is_binary", return_value=False)
+    @mock.patch.object(
+        git_inventory,
+        "tree_object",
+        return_value=TreeObject("040000", "tree", "1" * 40, "tools/tree"),
+    )
+    def test_declared_unsupported_object_mode_remains_forbidden(self, _tree, _binary) -> None:
+        entry = ChangedEntry("A", None, None, "tools/tree")
+        authorization = BinaryArtifactAuthorization("1" * 64, 1, "tools/tree")
+        diagnostics = git_inventory.content_diagnostics(
+            Path("."),
+            "1" * 40,
+            "2" * 40,
+            (entry,),
+            (authorization,),
+        )
+        self.assertIn("P_UNSUPPORTED_OBJECT", {item.code for item in diagnostics})
 
     def test_invalid_sha_mismatch_dirty_and_output_inside_repo_error(self) -> None:
         base, head = self.simple_history()

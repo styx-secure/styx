@@ -9,6 +9,8 @@ import contract as contract_module
 
 
 class ContractParserTests(unittest.TestCase):
+    SHA256 = "1" * 64
+
     def test_marker_and_heading_fail_closed(self) -> None:
         cases = {
             "missing marker": contract_body(marker=""),
@@ -104,6 +106,93 @@ class ContractParserTests(unittest.TestCase):
             scope_guard.parse_contract(
                 contract_body(allowed=("tools/**", "tools/**")).encode("utf-8")
             )
+
+    def test_binary_artifact_section_is_optional_and_strict(self) -> None:
+        legacy = scope_guard.parse_contract(contract_body().encode("utf-8"))
+        self.assertEqual((), legacy.allowed_binary_artifacts)
+
+        declaration = f"{self.SHA256} 7 artifacts/blob with spaces.bin"
+        parsed = scope_guard.parse_contract(
+            contract_body(binary_artifacts=(declaration,)).encode("utf-8")
+        )
+        self.assertEqual(1, len(parsed.allowed_binary_artifacts))
+        artifact = parsed.allowed_binary_artifacts[0]
+        self.assertEqual(self.SHA256, artifact.sha256)
+        self.assertEqual(7, artifact.byte_length)
+        self.assertEqual("artifacts/blob with spaces.bin", artifact.path)
+
+    def test_binary_artifact_declaration_rejects_malformed_values(self) -> None:
+        good_path = "artifacts/blob.bin"
+        cases = {
+            "uppercase hash": f"{'A' * 64} 1 {good_path}",
+            "short hash": f"{'1' * 63} 1 {good_path}",
+            "non-hex hash": f"{'z' * 64} 1 {good_path}",
+            "signed length": f"{self.SHA256} +1 {good_path}",
+            "fractional length": f"{self.SHA256} 1.0 {good_path}",
+            "zero length": f"{self.SHA256} 0 {good_path}",
+            "leading-zero length": f"{self.SHA256} 01 {good_path}",
+            "oversized length": f"{self.SHA256} 1073741825 {good_path}",
+            "unbounded integer": f"{self.SHA256} {'9' * 5000} {good_path}",
+            "missing path": f"{self.SHA256} 1",
+            "tab separators": f"{self.SHA256}\t1\t{good_path}",
+            "absolute path": f"{self.SHA256} 1 /artifact.bin",
+            "dot path": f"{self.SHA256} 1 artifacts/../artifact.bin",
+            "repeated slash": f"{self.SHA256} 1 artifacts//artifact.bin",
+            "wildcard star": f"{self.SHA256} 1 artifacts/*.bin",
+            "wildcard question": f"{self.SHA256} 1 artifacts/blob?.bin",
+            "wildcard class": f"{self.SHA256} 1 artifacts/blob[0].bin",
+            "control character": f"{self.SHA256} 1 artifacts/blob\x01.bin",
+            "trailing space": f"{self.SHA256} 1 {good_path} ",
+        }
+        for name, declaration in cases.items():
+            with self.subTest(name=name), self.assertRaises(scope_guard.ContractError):
+                scope_guard.parse_contract(
+                    contract_body(binary_artifacts=(declaration,)).encode("utf-8")
+                )
+
+    def test_binary_artifact_section_rejects_duplicates_limits_and_bad_fences(self) -> None:
+        duplicate_path = contract_body(
+            binary_artifacts=(
+                f"{self.SHA256} 1 artifacts/blob.bin",
+                f"{'2' * 64} 2 artifacts/blob.bin",
+            )
+        )
+        too_many = tuple(
+            f"{self.SHA256} 1 artifacts/blob-{index}.bin" for index in range(33)
+        )
+        empty = contract_body(binary_artifacts=())
+        duplicate_heading = contract_body(
+            binary_artifacts=(f"{self.SHA256} 1 artifacts/blob.bin",)
+        ) + "\n## Allowed binary artifacts\n\n```text\nignored\n```\n"
+        multiple_fences = contract_body(
+            binary_artifacts=(f"{self.SHA256} 1 artifacts/blob.bin",)
+        ).replace(
+            "## Native dependencies",
+            "```text\nsecond\n```\n\n## Native dependencies",
+            1,
+        )
+        declaration = f"{self.SHA256} 1 artifacts/blob.bin"
+        unterminated = contract_body(binary_artifacts=(declaration,)).replace(
+            f"{declaration}\n```\n", f"{declaration}\n", 1
+        )
+        for name, body in {
+            "duplicate path": duplicate_path,
+            "too many": contract_body(binary_artifacts=too_many),
+            "empty": empty,
+            "duplicate heading": duplicate_heading,
+            "multiple fences": multiple_fences,
+            "unterminated fence": unterminated,
+        }.items():
+            with self.subTest(name=name), self.assertRaises(scope_guard.ContractError):
+                scope_guard.parse_contract(body.encode("utf-8"))
+
+    def test_binary_heading_inside_a_fence_is_not_structural(self) -> None:
+        body = contract_body().replace(
+            "Test contract.",
+            "Test contract.\n\n```text\n## Allowed binary artifacts\ninvalid\n```",
+        )
+        parsed = scope_guard.parse_contract(body.encode("utf-8"))
+        self.assertEqual((), parsed.allowed_binary_artifacts)
 
     def test_adversarial_deep_paths_are_deterministic_errors(self) -> None:
         deep_pattern = "/".join(["a"] * (contract_module.MAX_PATH_SEGMENTS + 1))

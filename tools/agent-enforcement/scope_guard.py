@@ -145,7 +145,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 diagnostics.append(
                     Diagnostic("P_PATH_FORBIDDEN", "forbidden patterns override allowed patterns", "error", evaluation.path)
                 )
-        diagnostics.extend(content_diagnostics(repo, args.base_sha, args.head_sha, entries))
+        eligible_binary_artifacts = tuple(
+            item
+            for item in contract.allowed_binary_artifacts
+            if item.path in evaluations and not evaluations[item.path].violations
+        )
+        diagnostics.extend(
+            content_diagnostics(
+                repo,
+                args.base_sha,
+                args.head_sha,
+                entries,
+                eligible_binary_artifacts,
+            )
+        )
 
         final_head = run_git(repo, ["rev-parse", "HEAD"], text=True).stdout.strip()
         final_status = run_git(

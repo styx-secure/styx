@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -9,7 +10,14 @@ import subprocess
 from typing import Sequence
 
 from contract import validate_repo_path
-from model import ChangedEntry, Diagnostic, GitInputError, RepositoryStateError, TreeObject
+from model import (
+    BinaryArtifactAuthorization,
+    ChangedEntry,
+    Diagnostic,
+    GitInputError,
+    RepositoryStateError,
+    TreeObject,
+)
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SUPPORTED_STATUSES = {"A", "M", "D", "R", "C"}
@@ -263,12 +271,65 @@ def _entry_is_binary(repo: Path, base_sha: str, head_sha: str, entry: ChangedEnt
 
 
 def content_diagnostics(
-    repo: Path, base_sha: str, head_sha: str, entries: Sequence[ChangedEntry]
+    repo: Path,
+    base_sha: str,
+    head_sha: str,
+    entries: Sequence[ChangedEntry],
+    allowed_binary_artifacts: Sequence[BinaryArtifactAuthorization] = (),
 ) -> list[Diagnostic]:
     diagnostics: list[Diagnostic] = []
     checked_blobs: set[str] = set()
+    authorizations = {item.path: item for item in allowed_binary_artifacts}
     for entry in entries:
-        if _entry_is_binary(repo, base_sha, head_sha, entry):
+        declared_paths = tuple(path for path in entry.checked_paths() if path in authorizations)
+        authorization = authorizations.get(entry.new_path or "") if entry.status in {"A", "M"} else None
+        exact_authorized_final_blob = False
+        final_object: TreeObject | None = None
+        final_bytes: bytes | None = None
+
+        if declared_paths and entry.status not in {"A", "M"}:
+            diagnostics.append(
+                Diagnostic(
+                    "P_BINARY_AUTH_STATUS",
+                    "binary artifact authorization supports only add or modify entries",
+                    "error",
+                    entry.new_path or entry.old_path,
+                )
+            )
+        if authorization is not None:
+            assert entry.new_path is not None
+            final_object = tree_object(repo, head_sha, entry.new_path)
+            if (
+                final_object is not None
+                and final_object.object_type == "blob"
+                and final_object.mode.startswith("100")
+            ):
+                final_bytes = run_git(repo, ["cat-file", "blob", final_object.object_sha]).stdout
+                actual_length = len(final_bytes)
+                actual_sha256 = hashlib.sha256(final_bytes).hexdigest()
+                if actual_length != authorization.byte_length:
+                    diagnostics.append(
+                        Diagnostic(
+                            "P_BINARY_AUTH_LENGTH_MISMATCH",
+                            "final HEAD blob length does not match the binary artifact declaration",
+                            "error",
+                            entry.new_path,
+                        )
+                    )
+                if actual_sha256 != authorization.sha256:
+                    diagnostics.append(
+                        Diagnostic(
+                            "P_BINARY_AUTH_HASH_MISMATCH",
+                            "final HEAD blob SHA-256 does not match the binary artifact declaration",
+                            "error",
+                            entry.new_path,
+                        )
+                    )
+                exact_authorized_final_blob = (
+                    actual_length == authorization.byte_length and actual_sha256 == authorization.sha256
+                )
+
+        if _entry_is_binary(repo, base_sha, head_sha, entry) and not exact_authorized_final_blob:
             diagnostics.append(
                 Diagnostic(
                     "P_BINARY_GIT",
@@ -283,7 +344,11 @@ def content_diagnostics(
         if entry.new_path is not None:
             candidates.append((head_sha, entry.new_path))
         for commit_sha, path in candidates:
-            obj = tree_object(repo, commit_sha, path)
+            obj = (
+                final_object
+                if final_object is not None and commit_sha == head_sha and path == entry.new_path
+                else tree_object(repo, commit_sha, path)
+            )
             if obj is None:
                 diagnostics.append(
                     Diagnostic("E_TREE_OBJECT_MISSING", "changed path is missing from expected tree", "error", path)
@@ -307,9 +372,19 @@ def content_diagnostics(
                     )
                 )
                 continue
+            if exact_authorized_final_blob:
+                # Authorization is tied to the independently read final HEAD
+                # blob. The base-side bytes of a modification are not a changed
+                # artifact and must not prevent an exact authorized replacement.
+                continue
             if obj.object_sha not in checked_blobs:
                 checked_blobs.add(obj.object_sha)
-                if b"\x00" in run_git(repo, ["cat-file", "blob", obj.object_sha]).stdout:
+                blob_bytes = (
+                    final_bytes
+                    if final_bytes is not None and final_object is not None and obj.object_sha == final_object.object_sha
+                    else run_git(repo, ["cat-file", "blob", obj.object_sha]).stdout
+                )
+                if b"\x00" in blob_bytes:
                     diagnostics.append(
                         Diagnostic("P_BINARY_NUL", "blob contains NUL bytes and is treated as binary", "error", path)
                     )

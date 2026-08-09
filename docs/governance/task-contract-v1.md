@@ -51,6 +51,15 @@ Required verification
 
 Additional headings are permitted. They cannot replace or duplicate required headings.
 
+One optional heading has defined v1 semantics:
+
+```text
+Allowed binary artifacts
+```
+
+When present, it must occur exactly once and satisfy the exact-artifact syntax
+below. Contracts that omit it retain the original fail-closed binary behavior.
+
 ## Code blocks and structural text
 
 Markers and headings are structural only outside code blocks. The parser
@@ -93,6 +102,54 @@ iterative, so adversarially deep paths cannot exhaust the interpreter stack.
 
 Every changed path must match at least one allowed pattern and no forbidden pattern. **Forbidden patterns always override allowed patterns.**
 
+## Exact binary-artifact declarations
+
+`Allowed binary artifacts` contains exactly one fenced code block and at least
+one declaration. Each non-empty line has this form:
+
+```text
+<lowercase-sha256> <positive-decimal-byte-length> <literal-repository-path>
+```
+
+For example:
+
+```text
+61cce676c81366fc9c62752a09ea1547a4998ede7f144013ac5ade088e70a863 1962774 styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm
+```
+
+Fields are separated by one or more ASCII spaces. The SHA-256 is exactly 64
+lowercase hexadecimal characters. The length is canonical decimal without a
+sign, fraction, zero or leading zero. Paths are literal, POSIX-relative and
+normalized: glob metacharacters, control characters, absolute paths, dot or
+empty segments, repeated separators, backslashes, and surrounding spaces are
+rejected. Internal spaces in a path are permitted. A path can be declared only
+once.
+
+A contract can declare at most 32 artifacts, each no larger than 1 GiB. An
+empty section, duplicate heading, malformed declaration, duplicate path,
+multiple/unterminated fence or exceeded limit makes the contract invalid and
+produces `ERROR`; it never falls back to a path-only permission.
+
+The declaration is an additional constraint, not a replacement for ordinary
+scope. The artifact path must still match `Allowed paths` and must not match
+`Forbidden paths`. Only an added or modified regular Git blob can use the
+exception. Deletes, renames, copies, symlinks, gitlinks/submodules and
+unsupported object modes remain forbidden even when their paths and bytes are
+declared.
+
+For an eligible add or modification, the guard reads the final blob from the
+exact candidate HEAD with `git cat-file`, independently calculates SHA-256 and
+byte length, and compares both with the Issue declaration. It does not trust
+worktree bytes, an extension, MIME metadata, textconv, a generated manifest or
+Git's object identifier. Only an exact match suppresses Git-binary and NUL-byte
+diagnostics for that changed artifact. A hash/length mismatch or unlisted
+binary retains the normal failure diagnostics. This also means two blobs of
+the same length are never interchangeable.
+
+SHA-256 and length prove byte identity only. They do not establish source
+provenance, reproducibility, safety, licensing or cryptographic correctness;
+task-specific tests and human review remain mandatory.
+
 ## Git inventory semantics
 
 The CLI accepts only lowercase full 40-hex commit SHAs. Symbolic refs such as `main`, `HEAD` or tags are rejected.
@@ -130,14 +187,17 @@ definition: there are no changed entries to evaluate, and the verdict is
 (clean worktree, matching `HEAD`, non-shallow repository, valid inputs)
 also succeeds. Any of those failures still produces `ERROR`.
 
-For every relevant tree object, v1 rejects:
+For every relevant tree object, v1 rejects unconditionally:
 
 - symlinks (`120000`);
 - gitlinks/submodules (`160000` or tree type `commit`);
-- unsupported non-blob modes;
-- blobs containing NUL bytes, treated conservatively as binary.
+- unsupported non-blob modes.
 
-The binary rule is intentionally conservative but not a complete media-type detector. A later schema version may define stronger content classification; uncertainty must never silently become `PASS`.
+Regular blobs containing NUL bytes are treated conservatively as binary. NUL
+bytes and Git binary classification are rejected unless the changed A/M blob
+has the same exact-blob authorization. The binary rule is intentionally
+conservative but not a complete media-type detector. Uncertainty never silently
+becomes `PASS`.
 
 ## CLI
 
@@ -199,6 +259,13 @@ The report records:
 - stable diagnostics;
 - final `PASS`, `FAIL` or `ERROR` verdict.
 
+The closed v1 report shape does not repeat binary declarations. The existing
+`issue_body_sha256` covers the exact UTF-8 Issue-body bytes, including the full
+optional section, and therefore binds declarations to the evidence without a
+schema or consumer change. Tool version `0.2.0` identifies this
+backward-compatible semantic extension; the contract and report schema remain
+v1.
+
 Canonical encoding is UTF-8 JSON with recursively sorted keys, compact separators and one trailing LF. Wall-clock timestamps are omitted. Equivalent inputs with the same execution ID produce byte-identical report bytes.
 
 Diagnostics are stable machine-readable codes:
@@ -223,6 +290,10 @@ The test suite creates isolated temporary Git repositories and does not need net
 - Markdown parsing is intentionally strict and line-oriented.
 - Rename/copy classification follows the exact Git invocation above and therefore Git's similarity scoring.
 - NUL-byte inspection is a conservative binary heuristic.
+- Exact-digest authorization identifies bytes but cannot determine whether
+  those bytes are trustworthy or reproducibly built.
+- Inspecting a very large blob consumes memory; the 1 GiB declaration ceiling
+  bounds authorization but is not a general repository-size policy.
 - Report-only execution does not publish checks and does not block a merge.
 - GitHub Actions integration, required-check registration, broker operations, persona isolation and Passaggio B are separate human-authorized tasks.
 

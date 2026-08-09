@@ -1,10 +1,19 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import unittest
 
-from support import GuardIntegrationCase, MiniSchemaValidator, ROOT, SCHEMA, TOOL, scope_guard
+from support import (
+    GuardIntegrationCase,
+    MiniSchemaValidator,
+    ROOT,
+    SCHEMA,
+    TOOL,
+    contract_body,
+    scope_guard,
+)
 
 
 class ReportTests(GuardIntegrationCase):
@@ -97,6 +106,33 @@ class ReportTests(GuardIntegrationCase):
                 report = json.loads(raw.decode("utf-8"))
                 validator.validate(report)
                 self.assertEqual(scope_guard.canonical_json_bytes(report), raw)
+
+    def test_binary_declarations_are_bound_only_by_existing_issue_hash(self) -> None:
+        path = "tools/agent-enforcement/blob.bin"
+        data = b"exact\x00artifact"
+        self.repo.write("tools/agent-enforcement/base.txt", "base\n")
+        base = self.repo.commit("base")
+        self.repo.write(path, data)
+        head = self.repo.commit("head")
+        body = contract_body(
+            binary_artifacts=(
+                f"{hashlib.sha256(data).hexdigest()} {len(data)} {path}",
+            )
+        )
+        result, report, _ = self.invoke(base, head, body=body)
+        self.assert_verdict(result, report, "PASS", 0)
+
+        golden_keys = set(
+            json.loads(
+                (ROOT / "tools/agent-enforcement/tests/fixtures/golden-pass.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        )
+        self.assertEqual(golden_keys, set(report))
+        self.assertNotIn("allowed_binary_artifacts", report)
+        self.assertEqual(hashlib.sha256(body.encode("utf-8")).hexdigest(), report["issue_body_sha256"])
+        self.assertEqual("0.2.0", report["tool_version"])
 
 
 if __name__ == "__main__":
