@@ -1,6 +1,6 @@
 # 🏛️ Styx
 
-**Oaths sealed in code. Trust forged in math.**
+**Secure infrastructure for sensitive work.**
 
 > ⚠️ **EXPERIMENTAL SOFTWARE** — Styx is under active development and has **not** completed an
 > independent security audit. Do not use current builds for sensitive, high-risk, or life-critical
@@ -14,6 +14,10 @@ Styx is an open-source, platform-neutral secure application substrate for sensit
 infrastructure that must not be trusted with plaintext. It combines self-custodied identity,
 end-to-end-encrypted collaboration, verifiable state transitions, offline operation, and redundant
 delivery. It is not a general-purpose messenger or a replacement for Signal.
+
+It is intended for human-rights and civil-society teams, journalists, safeguarding organizations,
+trusted intermediaries, and developers building casework, evidence, coordination, or other
+sensitive applications.
 
 The first product vertical is **Themis**: a planned case-management application intended to let a
 person open and continue a confidential case without providing an email address, phone number, or
@@ -38,13 +42,16 @@ The proposed funded programme takes these tested foundations through a conforman
 protocol, a bounded secure-session interoperability decision, a reusable SDK and reliable delivery,
 a text-first Themis alpha, stronger distribution assurance, independent audit and remediation, and
 a controlled organizational pilot. See the [project brief](docs/PROJECT_BRIEF.md) for the mission,
-evidence, milestones, measurable outcomes, and explicit non-claims.
+evidence, milestones, measurable outcomes, and explicit non-claims. The
+[public identity guide](docs/BRAND_IDENTITY.md) defines naming and claim boundaries; the
+[dependency-free landing-page source](website/README.md) turns that identity into a reviewable
+public surface without deploying it.
 
 Current transports expose routing, timing, size, and relationship metadata. E2EE also does not
 protect a compromised endpoint, a malicious recipient, or a browser build supplied by an origin
 controlled by the adversary. No current build offers a universal anonymity guarantee.
 
-> *In Greek mythology, the River Styx was the boundary between the mortal world and the underworld. The gods swore their most sacred oaths upon its waters — oaths that could never be broken. Styx brings that same inviolable trust to digital agreements.*
+> *In Greek mythology, the River Styx marked a boundary and the gods swore solemn oaths upon its waters. The project uses that image to represent explicit trust boundaries in digital systems—not a promise of invulnerability.*
 
 ## Dart reference quick start
 

@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Styx is open-source secure infrastructure for sensitive work. Explore its experimental foundations, planned Themis case-management vertical, and evidence-led roadmap.">
+  <meta name="color-scheme" content="light">
+  <title>Styx — Secure infrastructure for sensitive work</title>
+  <link rel="icon" href="assets/styx-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="Styx home">
+      <img src="assets/styx-mark.svg" alt="" width="42" height="42">
+      <span>Styx</span>
+    </a>
+    <nav aria-label="Primary navigation">
+      <a href="#architecture">Architecture</a>
+      <a href="#themis">Themis</a>
+      <a href="#evidence">Evidence</a>
+      <a href="#roadmap">Roadmap</a>
+    </nav>
+    <a class="header-cta" href="#contribute">Explore the work</a>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top" aria-labelledby="hero-title">
+      <div class="hero-current" aria-hidden="true">
+        <span></span><span></span><span></span>
+      </div>
+      <div class="hero-copy">
+        <p class="eyebrow">Open-source application infrastructure
+          <span class="mobile-status">Experimental · Themis casework is planned, not live</span>
+        </p>
+        <h1 id="hero-title">Secure infrastructure<br>for <em>sensitive work.</em></h1>
+        <p class="hero-lede">Build confidential, resilient applications over
+          infrastructure that must not be trusted with plaintext.</p>
+        <p class="hero-audience">For human-rights and civil-society teams,
+          journalists, safeguarding organizations, trusted intermediaries, and
+          the developers who support them.</p>
+        <div class="hero-actions">
+          <a class="button button-primary" href="#mission">Understand Styx</a>
+          <a class="button button-secondary" href="https://github.com/styx-secure/styx" target="_blank" rel="noopener noreferrer">Inspect the repository <span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+
+      <aside class="hero-card" aria-label="Project status">
+        <div class="status-line">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span>Experimental foundation</span>
+        </div>
+        <h2>Themis by Styx</h2>
+        <p>The planned first vertical: confidential case intake and ongoing
+          dialogue without requiring an email address, phone number, or
+          ordinary account.</p>
+        <p class="status-warning"><strong>Not ready for live reporting.</strong>
+          Styx has not completed an independent security audit. Current builds
+          must not be used for sensitive, high-risk, or life-critical work.</p>
+        <a href="#themis">See what is planned <span aria-hidden="true">↓</span></a>
+      </aside>
+    </section>
+
+    <section class="boundary-note" aria-label="Trust boundary">
+      <p><span>01 / Boundary</span> Delivery systems move encrypted state. They
+        are not entrusted with application plaintext.</p>
+      <p><span>02 / Continuity</span> Sensitive work extends beyond one message:
+        state, evidence, roles, recovery, and follow-up matter.</p>
+      <p><span>03 / Evidence</span> Every security and maturity claim is bounded
+        by what the repository can demonstrate today.</p>
+    </section>
+
+    <section class="section mission" id="mission" aria-labelledby="mission-title">
+      <div class="section-label">The mission</div>
+      <div class="section-intro">
+        <p class="kicker">Confidentiality is a boundary.<br>Trust is a system.</p>
+        <h2 id="mission-title">Sensitive relationships need more than an
+          encrypted message.</h2>
+      </div>
+      <div class="mission-grid">
+        <p class="large-copy">Styx is a platform-neutral secure application
+          substrate. It is being designed to combine self-custodied identity,
+          end-to-end-encrypted collaboration, verifiable state transitions,
+          offline operation, and redundant delivery.</p>
+        <div class="mission-detail">
+          <p>Reporting, safeguarding, source protection, and protected
+            coordination need clarification, assignment, receipts, evidence
+            history, retention, recovery, and asynchronous replies. Conventional
+            systems often bind that continuity to identifiers or a central
+            plaintext authority.</p>
+          <p>Styx separates product policy from application state, secure
+            sessions, and runtime custody. It is infrastructure for applications,
+            not a general-purpose messenger.</p>
+          <a class="text-link" href="https://github.com/styx-secure/styx/blob/main/docs/PROJECT_BRIEF.md" target="_blank" rel="noopener noreferrer">Read the public project brief <span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section problem" id="problem" aria-labelledby="problem-title">
+      <div class="section-label">The problem</div>
+      <div class="problem-heading">
+        <h2 id="problem-title">A secure channel is not yet a safe workflow.</h2>
+        <p>End-to-end encryption protects content within a defined threat model.
+          It does not automatically solve identity exposure, durable state,
+          delivery truth, endpoint compromise, metadata, or organizational
+          procedure.</p>
+      </div>
+      <div class="problem-grid">
+        <article><span>01</span><h3>Continuity without contact data</h3><p>A person should be able to return, receive questions, and answer without first surrendering a conventional identifier.</p></article>
+        <article><span>02</span><h3>State beyond chat</h3><p>Cases need verifiable transitions, roles, receipts, deadlines, retention, and recovery—not an ambiguous stream of messages.</p></article>
+        <article><span>03</span><h3>Infrastructure with limits</h3><p>Relays can carry encrypted material while still observing metadata. Browsers, endpoints, recipients, and operators remain in the threat model.</p></article>
+      </div>
+    </section>
+
+    <section class="section audiences" id="audiences" aria-labelledby="audiences-title">
+      <div class="section-label">Who it is for</div>
+      <div class="audience-layout">
+        <h2 id="audiences-title">Built around the people who carry sensitive responsibility.</h2>
+        <ul>
+          <li><span>01</span>People reporting abuse, harassment, discrimination, wrongdoing, or safeguarding concerns</li>
+          <li><span>02</span>Human-rights defenders, journalists, civil-society teams, and trusted intermediaries</li>
+          <li><span>03</span>Organizations managing confidential cases with least-privilege roles and continuity</li>
+          <li><span>04</span>Developers building casework, evidence, coordination, or other sensitive applications</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="section architecture" id="architecture" aria-labelledby="architecture-title">
+      <div class="section-label">Four-layer architecture</div>
+      <div class="architecture-heading">
+        <h2 id="architecture-title">Product meaning stays separate from cryptographic transport.</h2>
+        <p>No current implementation is intended to be the normative protocol.
+          The language-neutral application protocol and conformance corpus are
+          planned as the authority.</p>
+      </div>
+      <ol class="layer-list">
+        <li class="layer layer-product"><span class="layer-number">04</span><div><p class="layer-state planned">Planned first vertical</p><h3>Themis product experience</h3><p>Workflow, roles, policy, safety language, and accessible reporter and operator interfaces.</p></div><span class="layer-side">Human purpose</span></li>
+        <li class="layer"><span class="layer-number">03</span><div><p class="layer-state planned">Protocol work planned</p><h3>Styx application protocol</h3><p>Versioned objects, state transitions, causality, evidence, retention, pruning, and conformance.</p></div><span class="layer-side">Durable meaning</span></li>
+        <li class="layer"><span class="layer-number">02</span><div><p class="layer-state evidence">Foundations exist</p><h3>Secure-session profiles</h3><p>Membership, epochs, continuous group key agreement, convergence, and confidential delivery. Marmot is a preferred compatibility target, not a current claim.</p></div><span class="layer-side">Protected exchange</span></li>
+        <li class="layer"><span class="layer-number">01</span><div><p class="layer-state evidence">Browser foundation exists</p><h3>Runtime profiles</h3><p>Key custody, encrypted storage, workers, notifications, distribution, and platform integration. A future signed native profile could offer stronger origin assurance.</p></div><span class="layer-side">Local custody</span></li>
+      </ol>
+      <a class="text-link on-dark" href="https://github.com/styx-secure/styx/blob/main/specs/01-vision.md" target="_blank" rel="noopener noreferrer">Read the approved product vision <span aria-hidden="true">↗</span></a>
+    </section>
+
+    <section class="section themis" id="themis" aria-labelledby="themis-title">
+      <div class="section-label">The first vertical</div>
+      <div class="themis-grid">
+        <div>
+          <p class="eyebrow dark">Planned · not yet available</p>
+          <h2 id="themis-title">Themis by Styx</h2>
+          <p class="themis-lede">Confidential case intake with a path back to conversation.</p>
+        </div>
+        <div class="themis-copy">
+          <p>A reporter would create a fresh case context and high-entropy return
+            capability locally, submit an encrypted case object, and use that
+            capability later to receive questions and send answers—without an
+            ordinary account.</p>
+          <p>Organizations would need role-based intake, assignment, rotation,
+            revocation, retention, controlled export, continuity, and minimized
+            administrative audit. Safe deployment also depends on trained
+            handlers, independent escalation routes, legal and privacy review,
+            incident procedures, and tested backups.</p>
+          <p class="callout">Themis targets anonymity or pseudonymity only
+            against declared observers under tested conditions. Network,
+            device, timing, content, and human factors may still identify a
+            reporter.</p>
+          <a class="text-link" href="https://github.com/styx-secure/styx/blob/main/docs/platform/use-cases/anonymous-dialogue.md" target="_blank" rel="noopener noreferrer">Explore the anonymous-dialogue use case <span aria-hidden="true">↗</span></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="section evidence-section" id="evidence" aria-labelledby="evidence-title">
+      <div class="section-label">Evidence today</div>
+      <div class="evidence-heading">
+        <h2 id="evidence-title">Foundations to build on.<br>Not a finished product.</h2>
+        <p>Implemented evidence is deliberately separated from Draft and planned work.</p>
+      </div>
+      <div class="evidence-grid">
+        <article>
+          <p class="evidence-tag">Reference evidence</p>
+          <h3>Application-state experience</h3>
+          <p>A tested Dart reference ledger covers signed event chains, causal clocks, deterministic merge, offline outbox, retention and recovery. It is not normative or interoperable with the browser stack.</p>
+          <a data-status="implemented" href="https://github.com/styx-secure/styx#dart-reference-architecture" target="_blank" rel="noopener noreferrer">Inspect the reference evidence <span aria-hidden="true">↗</span></a>
+        </article>
+        <article>
+          <p class="evidence-tag">Browser foundation</p>
+          <h3>Encrypted session path</h3>
+          <p>The JavaScript stack contains a 1:1 MLS reference chat, authenticated QR pairing, Nostr validation, encrypted local custody, and pinned WASM boundaries. Current envelopes still expose metadata.</p>
+          <a data-status="implemented" href="https://github.com/styx-secure/styx/blob/main/docs/platform/integration-roadmap.md#2-summary-status" target="_blank" rel="noopener noreferrer">Review the capability assessment <span aria-hidden="true">↗</span></a>
+        </article>
+        <article>
+          <p class="evidence-tag">Bounded result</p>
+          <h3>Compatibility capability probe</h3>
+          <p>Phase A found that the pinned OpenMLS revision can support a gated Marmot compatibility proof. The current wrapper and wire behavior are not compatible.</p>
+          <a data-status="implemented" href="https://github.com/styx-secure/styx/blob/main/docs/architecture/spikes/2026-08-08-marmot-openmls-phase-a.md" target="_blank" rel="noopener noreferrer">Read the Phase A report <span aria-hidden="true">↗</span></a>
+        </article>
+      </div>
+    </section>
+
+    <section class="section roadmap" id="roadmap" aria-labelledby="roadmap-title">
+      <div class="section-label">Proposed funded roadmap</div>
+      <div class="roadmap-heading">
+        <h2 id="roadmap-title">From tested foundations to a controlled pilot.</h2>
+        <p>These are proposed engineering outputs, not delivery promises. Each
+          security-sensitive change remains subject to a bounded contract,
+          independent review, exact tests, and human approval.</p>
+      </div>
+      <ol class="roadmap-list">
+        <li><span>01</span><div><h3>Protocol and conformance</h3><p>Define language-neutral objects, transitions, adversarial scenarios, and reusable vectors.</p></div></li>
+        <li><span>02</span><div><h3>Secure-session decision</h3><p>Complete staged-commit safety, hostile tests, and a real independent round trip—or document a NO-GO.</p></div></li>
+        <li><span>03</span><div><h3>SDK and reliable delivery</h3><p>Separate application semantics from chat and make offline, retry, acknowledgement, and recovery states truthful.</p></div></li>
+        <li><span>04</span><div><h3>Themis alpha</h3><p>Build text-first accountless case intake, return dialogue, operator roles, revocation, retention, and safety UX.</p></div></li>
+        <li><span>05</span><div><h3>Distribution assurance</h3><p>Strengthen browser release controls and decide a future signed native profile with reproducible operations.</p></div></li>
+        <li><span>06</span><div><h3>Audit and controlled pilot</h3><p>Commission independent review, remediate findings, test procedures, and pilot only within an approved scope.</p></div></li>
+      </ol>
+      <a class="button button-dark" href="https://github.com/styx-secure/styx/blob/main/docs/PROJECT_BRIEF.md#proposed-funded-milestones" target="_blank" rel="noopener noreferrer">Review milestones and measures <span aria-hidden="true">↗</span></a>
+    </section>
+
+    <section class="section boundaries" id="boundaries" aria-labelledby="boundaries-title">
+      <div class="section-label">Security boundaries</div>
+      <div class="boundaries-layout">
+        <div>
+          <p class="boundary-kicker">No absolute claims.</p>
+          <h2 id="boundaries-title">Security is a set of declared conditions, not a badge.</h2>
+        </div>
+        <div class="boundary-list">
+          <article><span>Origin</span><p>The browser profile is weaker against an adversary controlling the web origin. Reproducible WASM does not authenticate every script delivered to a user.</p></article>
+          <article><span>Metadata</span><p>Current delivery exposes routing, timing, size, and relationship information. Additional relays can improve availability while increasing the observer set.</p></article>
+          <article><span>Endpoints</span><p>End-to-end encryption does not protect a compromised device, keylogger, screen capture, or content copied by an authorized recipient.</p></article>
+          <article><span>Anonymity</span><p>IP addresses, browser fingerprints, writing style, attachments, monitored networks, and colluding infrastructure may identify a person.</p></article>
+          <article><span>Deletion</span><p>Pruning cannot guarantee physical erasure from flash storage, backups, screenshots, or third-party replicas.</p></article>
+          <article><span>Assurance</span><p>Styx has not completed an independent complete-product audit. Upstream review does not transfer to Styx integrations or operations.</p></article>
+        </div>
+      </div>
+      <a class="text-link on-dark" href="https://github.com/styx-secure/styx/blob/main/docs/PROJECT_BRIEF.md#risks-and-explicit-non-claims" target="_blank" rel="noopener noreferrer">Read all explicit non-claims <span aria-hidden="true">↗</span></a>
+    </section>
+
+    <section class="section open-source" id="open-source" aria-labelledby="open-source-title">
+      <div class="section-label">Open-source strategy</div>
+      <div class="open-layout">
+        <h2 id="open-source-title">Inspectable by design.<br>Specific about the terms.</h2>
+        <div>
+          <p>Original Styx software and documentation are licensed under
+            AGPL-3.0-or-later. Six exactly enumerated interoperability vector
+            files use Apache-2.0 so independent implementations can reuse that
+            evidence. Third-party components retain their upstream terms.</p>
+          <p>External code contributions are temporarily paused while
+            contributor terms are defined. Issues, reproducible feedback, and
+            private vulnerability reports remain welcome. Project names and
+            official visual identity are governed separately from source-code
+            permissions.</p>
+          <div class="inline-links">
+            <a href="https://github.com/styx-secure/styx/blob/main/LICENSING.md" target="_blank" rel="noopener noreferrer">Licensing <span aria-hidden="true">↗</span></a>
+            <a href="https://github.com/styx-secure/styx/blob/main/CONTRIBUTING.md" target="_blank" rel="noopener noreferrer">Contributing <span aria-hidden="true">↗</span></a>
+            <a href="https://github.com/styx-secure/styx/blob/main/TRADEMARKS.md" target="_blank" rel="noopener noreferrer">Trademarks <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section contribute" id="contribute" aria-labelledby="contribute-title">
+      <div class="contribute-current" aria-hidden="true"></div>
+      <p class="eyebrow">Evidence before promises</p>
+      <h2 id="contribute-title">Help make sensitive software worthy of trust.</h2>
+      <p>Inspect the architecture, challenge the threat model, reproduce the
+        evidence, or bring a bounded use case. Never include sensitive
+        information in a public Issue.</p>
+      <div class="hero-actions centered">
+        <a class="button button-light" href="https://github.com/styx-secure/styx" target="_blank" rel="noopener noreferrer">Explore the repository <span aria-hidden="true">↗</span></a>
+        <a class="button button-outline" href="https://github.com/styx-secure/styx/issues" target="_blank" rel="noopener noreferrer">Discuss a use case <span aria-hidden="true">↗</span></a>
+        <a class="button button-outline" href="https://github.com/styx-secure/styx/security/advisories/new" target="_blank" rel="noopener noreferrer">Report a vulnerability privately <span aria-hidden="true">↗</span></a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <a class="brand footer-brand" href="#top">
+      <img src="assets/styx-mark.svg" alt="" width="36" height="36">
+      <span>Styx</span>
+    </a>
+    <p>Secure infrastructure for sensitive work.</p>
+    <p class="footer-status">Experimental · unaudited · not for live sensitive use</p>
+    <div>
+      <a href="https://github.com/styx-secure/styx/blob/main/docs/BRAND_IDENTITY.md" target="_blank" rel="noopener noreferrer">Brand guide</a>
+      <a href="https://github.com/styx-secure/styx/blob/main/CONTRIBUTING.md#security-vulnerabilities" target="_blank" rel="noopener noreferrer">Security reporting</a>
+      <a href="https://github.com/styx-secure/styx" target="_blank" rel="noopener noreferrer">GitHub</a>
+    </div>
+  </footer>
+</body>
+</html>
