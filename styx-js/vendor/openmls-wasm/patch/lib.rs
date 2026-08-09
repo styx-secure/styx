@@ -1641,4 +1641,876 @@ mod tests {
         assert_eq!(alice_group.member_count(), 3);
         assert!(staged.is_consumed());
     }
+
+    #[cfg(feature = "extensions-draft")]
+    mod phase_b2_restore_probes {
+        use super::*;
+        use openmls::{
+            component::ComponentData,
+            extensions::RequiredCapabilitiesExtension,
+            group::{
+                GroupContext, MlsGroupJoinConfig, StagedCommit,
+                PURE_PLAINTEXT_WIRE_FORMAT_POLICY,
+            },
+            prelude::LeafNodeParameters,
+        };
+        use openmls_traits::crypto::OpenMlsCrypto;
+        use std::collections::BTreeMap;
+
+        const ADMIN_POLICY_V1_COMPONENT_ID: ComponentId = 0x8003;
+        const GROUP_LIFECYCLE_V1_COMPONENT_ID: ComponentId = 0x800c;
+        const CURRENT_COMPONENTS: [ComponentId; 3] = [
+            ADMIN_POLICY_V1_COMPONENT_ID,
+            ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID,
+            GROUP_LIFECYCLE_V1_COMPONENT_ID,
+        ];
+
+        fn unwrap_js<T>(result: Result<T, JsError>) -> T {
+            result.map_err(js_error_to_string).unwrap()
+        }
+
+        fn synthetic_proof(account: &[u8]) -> Vec<u8> {
+            assert_eq!(account.len(), 32);
+            let mut proof = vec![0u8; ACCOUNT_IDENTITY_PROOF_V2_LENGTH];
+            proof[..32].copy_from_slice(account);
+            proof
+        }
+
+        fn current_capabilities() -> Capabilities {
+            Capabilities::builder()
+                .ciphersuites(vec![PROBE_CIPHERSUITE])
+                .extensions(vec![ExtensionType::AppDataDictionary])
+                .proposals(vec![ProposalType::AppDataUpdate])
+                .build()
+        }
+
+        fn current_leaf_extensions(account: &[u8]) -> Extensions<LeafNode> {
+            let supported = CURRENT_COMPONENTS
+                .to_vec()
+                .tls_serialize_detached()
+                .unwrap();
+            let mut dictionary = AppDataDictionary::new();
+            dictionary.insert(1, supported);
+            dictionary.insert(
+                ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID,
+                synthetic_proof(account),
+            );
+            Extensions::single(Extension::AppDataDictionary(
+                AppDataDictionaryExtension::new(dictionary),
+            ))
+            .unwrap()
+        }
+
+        fn current_group_context_extensions(
+            founder_account: &[u8],
+            require_app_data_update: bool,
+        ) -> Extensions<GroupContext> {
+            assert_eq!(founder_account.len(), 32);
+            let mut dictionary = AppDataDictionary::new();
+            dictionary.insert(
+                1,
+                CURRENT_COMPONENTS
+                    .to_vec()
+                    .tls_serialize_detached()
+                    .unwrap(),
+            );
+
+            // Marmot's one-admin initial state is a QUIC-varint byte length
+            // followed by one fixed-width 32-byte account key. 32 has the
+            // canonical one-byte QUIC prefix 0x20.
+            let mut admin_policy = vec![0x20];
+            admin_policy.extend_from_slice(founder_account);
+            dictionary.insert(ADMIN_POLICY_V1_COMPONENT_ID, admin_policy);
+            dictionary.insert(GROUP_LIFECYCLE_V1_COMPONENT_ID, vec![0x00]);
+
+            let proposal_types = if require_app_data_update {
+                vec![ProposalType::AppDataUpdate]
+            } else {
+                vec![]
+            };
+            Extensions::from_vec(vec![
+                Extension::RequiredCapabilities(RequiredCapabilitiesExtension::new(
+                    &[ExtensionType::AppDataDictionary],
+                    &proposal_types,
+                    &[],
+                )),
+                Extension::AppDataDictionary(AppDataDictionaryExtension::new(dictionary)),
+            ])
+            .unwrap()
+        }
+
+        fn new_identity(provider: &Provider, account_byte: u8) -> PhaseB1Identity {
+            unwrap_js(PhaseB1Identity::new(provider, &[account_byte; 32]))
+        }
+
+        fn reload_identity(
+            provider: &Provider,
+            account: &[u8],
+            signature_public_key: &[u8],
+        ) -> PhaseB1Identity {
+            let keypair = SignatureKeyPair::read(
+                provider.inner.storage(),
+                signature_public_key,
+                SignatureScheme::ED25519,
+            )
+            .expect("restored provider must contain the exact MLS signing key");
+            let credential = BasicCredential::new(account.to_vec());
+            PhaseB1Identity {
+                account_public_key: account.to_vec(),
+                credential_with_key: CredentialWithKey {
+                    credential: credential.into(),
+                    signature_key: keypair.public().into(),
+                },
+                keypair,
+            }
+        }
+
+        fn current_key_package(
+            provider: &Provider,
+            identity: &PhaseB1Identity,
+        ) -> OpenMlsKeyPackage {
+            OpenMlsKeyPackage::builder()
+                .key_package_lifetime(Lifetime::new(PROBE_KEY_PACKAGE_LIFETIME_SECONDS))
+                .leaf_node_capabilities(current_capabilities())
+                .leaf_node_extensions(current_leaf_extensions(&identity.account_public_key))
+                .build(
+                    PROBE_CIPHERSUITE,
+                    provider.as_ref(),
+                    &identity.keypair,
+                    identity.credential_with_key.clone(),
+                )
+                .unwrap()
+                .key_package()
+                .clone()
+        }
+
+        fn create_current_group(
+            provider: &Provider,
+            founder: &PhaseB1Identity,
+            group_id: &[u8],
+        ) -> MlsGroup {
+            MlsGroup::builder()
+                .ciphersuite(PROBE_CIPHERSUITE)
+                .with_group_id(GroupId::from_slice(group_id))
+                .with_wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+                .with_group_context_extensions(current_group_context_extensions(
+                    &founder.account_public_key,
+                    true,
+                ))
+                .with_capabilities(current_capabilities())
+                .with_leaf_node_extensions(current_leaf_extensions(
+                    &founder.account_public_key,
+                ))
+                .unwrap()
+                .build(
+                    provider.as_ref(),
+                    &founder.keypair,
+                    founder.credential_with_key.clone(),
+                )
+                .unwrap()
+        }
+
+        fn join_current_group(
+            provider: &Provider,
+            welcome_bytes: &[u8],
+            tree: RatchetTreeIn,
+        ) -> MlsGroup {
+            let message = MlsMessageIn::tls_deserialize_exact(welcome_bytes).unwrap();
+            let welcome = match message.extract() {
+                MlsMessageBodyIn::Welcome(welcome) => welcome,
+                _ => panic!("expected Welcome"),
+            };
+            let config = MlsGroupJoinConfig::builder()
+                .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+                .build();
+            StagedWelcome::new_from_welcome(provider.as_ref(), &config, welcome, Some(tree))
+                .unwrap()
+                .into_group(provider.as_ref())
+                .unwrap()
+        }
+
+        fn restore_provider(snapshot: &[u8]) -> Provider {
+            let provider = Provider::new();
+            unwrap_js(provider.restore_state(snapshot));
+            provider
+        }
+
+        fn load_group(provider: &Provider, group_id: &[u8]) -> MlsGroup {
+            MlsGroup::load(
+                provider.inner.storage(),
+                &GroupId::from_slice(group_id),
+            )
+            .unwrap()
+            .expect("restored provider must contain the exact MLS group")
+        }
+
+        fn snapshot_map(snapshot: &[u8]) -> BTreeMap<Vec<u8>, Vec<u8>> {
+            fn read_u64(snapshot: &[u8], offset: &mut usize) -> u64 {
+                let end = offset.checked_add(8).unwrap();
+                assert!(end <= snapshot.len());
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(&snapshot[*offset..end]);
+                *offset = end;
+                u64::from_be_bytes(bytes)
+            }
+
+            let mut offset = 0usize;
+            let count = usize::try_from(read_u64(snapshot, &mut offset)).unwrap();
+            let mut map = BTreeMap::new();
+            for _ in 0..count {
+                let key_len = usize::try_from(read_u64(snapshot, &mut offset)).unwrap();
+                let value_len = usize::try_from(read_u64(snapshot, &mut offset)).unwrap();
+                let key_end = offset.checked_add(key_len).unwrap();
+                assert!(key_end <= snapshot.len());
+                let key = snapshot[offset..key_end].to_vec();
+                offset = key_end;
+                let value_end = offset.checked_add(value_len).unwrap();
+                assert!(value_end <= snapshot.len());
+                let value = snapshot[offset..value_end].to_vec();
+                offset = value_end;
+                assert!(map.insert(key, value).is_none(), "duplicate provider key");
+            }
+            assert_eq!(offset, snapshot.len(), "trailing provider snapshot bytes");
+            map
+        }
+
+        fn snapshot_sha256(provider: &Provider, snapshot: &[u8]) -> String {
+            provider
+                .as_ref()
+                .crypto()
+                .hash(PROBE_CIPHERSUITE.hash_algorithm(), snapshot)
+                .unwrap()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect()
+        }
+
+        fn stage_public_commit(
+            group: &mut MlsGroup,
+            provider: &Provider,
+            commit_bytes: &[u8],
+        ) -> StagedCommit {
+            let message = MlsMessageIn::tls_deserialize_exact(commit_bytes).unwrap();
+            let protocol: ProtocolMessage = match message.extract() {
+                MlsMessageBodyIn::PublicMessage(message) => message.into(),
+                _ => panic!("B2 inbound probe requires PublicMessage Commit framing"),
+            };
+            let processed = group.process_message(provider.as_ref(), protocol).unwrap();
+            match processed.into_content() {
+                openmls::framing::ProcessedMessageContent::StagedCommitMessage(commit) => *commit,
+                _ => panic!("expected staged Commit"),
+            }
+        }
+
+        fn assert_public_commit(commit_bytes: &[u8]) {
+            let message = MlsMessageIn::tls_deserialize_exact(commit_bytes).unwrap();
+            assert!(matches!(
+                message.extract(),
+                MlsMessageBodyIn::PublicMessage(_)
+            ));
+        }
+
+        fn process_application(
+            group: &mut MlsGroup,
+            provider: &Provider,
+            message_bytes: &[u8],
+        ) -> Vec<u8> {
+            let message = MlsMessageIn::tls_deserialize_exact(message_bytes).unwrap();
+            let protocol: ProtocolMessage = match message.extract() {
+                MlsMessageBodyIn::PublicMessage(message) => message.into(),
+                MlsMessageBodyIn::PrivateMessage(message) => message.into(),
+                _ => panic!("expected MLS application message"),
+            };
+            match group
+                .process_message(provider.as_ref(), protocol)
+                .unwrap()
+                .into_content()
+            {
+                openmls::framing::ProcessedMessageContent::ApplicationMessage(message) => {
+                    message.into_bytes()
+                }
+                _ => panic!("expected application data"),
+            }
+        }
+
+        fn assert_bidirectional_liveness(
+            left_group: &mut MlsGroup,
+            left_provider: &Provider,
+            left_identity: &PhaseB1Identity,
+            right_group: &mut MlsGroup,
+            right_provider: &Provider,
+            right_identity: &PhaseB1Identity,
+        ) {
+            let left_plaintext = b"phase-b2-left-to-right";
+            let left_message = left_group
+                .create_message(
+                    left_provider.as_ref(),
+                    &left_identity.keypair,
+                    left_plaintext,
+                )
+                .unwrap()
+                .tls_serialize_detached()
+                .unwrap();
+            assert_eq!(
+                process_application(right_group, right_provider, &left_message),
+                left_plaintext
+            );
+
+            let right_plaintext = b"phase-b2-right-to-left";
+            let right_message = right_group
+                .create_message(
+                    right_provider.as_ref(),
+                    &right_identity.keypair,
+                    right_plaintext,
+                )
+                .unwrap()
+                .tls_serialize_detached()
+                .unwrap();
+            assert_eq!(
+                process_application(left_group, left_provider, &right_message),
+                right_plaintext
+            );
+        }
+
+        fn assert_current_group_context(
+            extensions: &Extensions<GroupContext>,
+            founder_account: &[u8],
+        ) -> Result<(), String> {
+            let required = extensions
+                .required_capabilities()
+                .ok_or("required_capabilities missing")?;
+            if !required
+                .extension_types()
+                .contains(&ExtensionType::AppDataDictionary)
+            {
+                return Err("app_data_dictionary extension capability missing".into());
+            }
+            if !required
+                .proposal_types()
+                .contains(&ProposalType::AppDataUpdate)
+            {
+                return Err("test-only exact profile decoder: app_data_update missing".into());
+            }
+            let dictionary = extensions
+                .app_data_dictionary()
+                .ok_or("GroupContext app_data_dictionary missing")?
+                .dictionary();
+            let component_ids: Vec<_> = dictionary.entries().map(|entry| entry.id()).collect();
+            if component_ids != [1, ADMIN_POLICY_V1_COMPONENT_ID, GROUP_LIFECYCLE_V1_COMPONENT_ID]
+            {
+                return Err("unexpected GroupContext component locations".into());
+            }
+            let required_components = Vec::<u16>::tls_deserialize_exact(
+                dictionary.get(&1).ok_or("app_components missing")?,
+            )
+            .map_err(|_| "app_components malformed")?;
+            if required_components != CURRENT_COMPONENTS {
+                return Err("required component set mismatch".into());
+            }
+            let admin_policy = dictionary
+                .get(&ADMIN_POLICY_V1_COMPONENT_ID)
+                .ok_or("admin policy missing")?;
+            if admin_policy.len() != 33
+                || admin_policy[0] != 0x20
+                || &admin_policy[1..] != founder_account
+            {
+                return Err("initial founder admin policy malformed".into());
+            }
+            if dictionary
+                .get(&GROUP_LIFECYCLE_V1_COMPONENT_ID)
+                .ok_or("lifecycle missing")?
+                != [0x00]
+            {
+                return Err("initial lifecycle is not active".into());
+            }
+            Ok(())
+        }
+
+        fn assert_current_profile(group: &MlsGroup, founder_account: &[u8]) -> Result<(), String> {
+            if group.ciphersuite() != PROBE_CIPHERSUITE {
+                return Err("unexpected ciphersuite".into());
+            }
+            assert_current_group_context(group.extensions(), founder_account)?;
+
+            for member in group.members() {
+                let leaf = group
+                    .public_group()
+                    .leaf(member.index)
+                    .ok_or("member leaf missing")?;
+                if !leaf
+                    .capabilities()
+                    .proposals()
+                    .contains(&ProposalType::AppDataUpdate)
+                {
+                    return Err("member proposal capability missing".into());
+                }
+                let leaf_dictionary = leaf
+                    .extensions()
+                    .app_data_dictionary()
+                    .ok_or("member app_data_dictionary missing")?
+                    .dictionary();
+                let leaf_ids: Vec<_> = leaf_dictionary.entries().map(|entry| entry.id()).collect();
+                if leaf_ids != [1, ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID] {
+                    return Err("member component placement mismatch".into());
+                }
+                let supported = Vec::<u16>::tls_deserialize_exact(
+                    leaf_dictionary.get(&1).ok_or("member app_components missing")?,
+                )
+                .map_err(|_| "member app_components malformed")?;
+                if supported != CURRENT_COMPONENTS {
+                    return Err("member component support mismatch".into());
+                }
+                let proof = leaf_dictionary
+                    .get(&ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID)
+                    .ok_or("member account proof missing")?;
+                if proof.len() != ACCOUNT_IDENTITY_PROOF_V2_LENGTH
+                    || proof[..32] != *member.credential.serialized_content()
+                {
+                    return Err("member account proof structurally invalid".into());
+                }
+            }
+            Ok(())
+        }
+
+        fn setup_stable_pair(
+            group_id: &[u8],
+        ) -> (
+            Provider,
+            PhaseB1Identity,
+            MlsGroup,
+            Provider,
+            PhaseB1Identity,
+            MlsGroup,
+        ) {
+            let mut alice_provider = Provider::new();
+            let bob_provider = Provider::new();
+            let alice = new_identity(&alice_provider, 0x11);
+            let bob = new_identity(&bob_provider, 0x22);
+            let bob_key_package = current_key_package(&bob_provider, &bob);
+            let mut alice_group = create_current_group(&alice_provider, &alice, group_id);
+            let (_commit, welcome, _) = alice_group
+                .add_members(
+                    alice_provider.as_ref(),
+                    &alice.keypair,
+                    &[bob_key_package],
+                )
+                .unwrap();
+            alice_group
+                .merge_pending_commit(alice_provider.as_mut())
+                .unwrap();
+            let bob_group = join_current_group(
+                &bob_provider,
+                &welcome.tls_serialize_detached().unwrap(),
+                alice_group.export_ratchet_tree().into(),
+            );
+            (
+                alice_provider,
+                alice,
+                alice_group,
+                bob_provider,
+                bob,
+                bob_group,
+            )
+        }
+
+        #[test]
+        fn local_pending_commits_survive_restore_for_merge_and_clear() {
+            let group_id = b"phase-b2-local-add";
+            let alice_provider = Provider::new();
+            let bob_seed_provider = Provider::new();
+            let alice = new_identity(&alice_provider, 0x31);
+            let bob_seed = new_identity(&bob_seed_provider, 0x32);
+            let alice_signature_key = alice.leaf_signature_key();
+            let bob_signature_key = bob_seed.leaf_signature_key();
+            let bob_account = bob_seed.account_public_key.clone();
+            let bob_key_package = current_key_package(&bob_seed_provider, &bob_seed);
+            let bob_seed_snapshot = bob_seed_provider.serialize_state();
+            let mut alice_group = create_current_group(&alice_provider, &alice, group_id);
+            let (commit, welcome, _) = alice_group
+                .add_members(
+                    alice_provider.as_ref(),
+                    &alice.keypair,
+                    &[bob_key_package.clone()],
+                )
+                .unwrap();
+            let commit_bytes = commit.tls_serialize_detached().unwrap();
+            assert_public_commit(&commit_bytes);
+            assert_eq!(alice_group.epoch().as_u64(), 0);
+            assert!(alice_group.pending_commit().is_some());
+            let add_snapshot = alice_provider.serialize_state();
+            println!(
+                "B2 local founding Add snapshot: bytes={} sha256={}",
+                add_snapshot.len(),
+                snapshot_sha256(&alice_provider, &add_snapshot)
+            );
+
+            let mut merge_provider = restore_provider(&add_snapshot);
+            let merge_identity = reload_identity(
+                &merge_provider,
+                &alice.account_public_key,
+                &alice_signature_key,
+            );
+            let mut merge_group = load_group(&merge_provider, group_id);
+            assert!(merge_group.pending_commit().is_some());
+            merge_group
+                .merge_pending_commit(merge_provider.as_mut())
+                .unwrap();
+            assert_eq!(merge_group.epoch().as_u64(), 1);
+            assert_eq!(merge_group.members().count(), 2);
+            let epoch_after_first_merge = merge_group.epoch();
+            let members_after_first_merge = merge_group.members().count();
+            let second_merge = merge_group.merge_pending_commit(merge_provider.as_mut());
+            println!(
+                "B2 local founding Add second merge outcome: {}",
+                if second_merge.is_ok() { "no-op success" } else { "error" }
+            );
+            assert_eq!(merge_group.epoch(), epoch_after_first_merge);
+            assert_eq!(merge_group.members().count(), members_after_first_merge);
+            let bob_merge_provider = restore_provider(&bob_seed_snapshot);
+            let bob_merge_identity = reload_identity(
+                &bob_merge_provider,
+                &bob_account,
+                &bob_signature_key,
+            );
+            let mut bob_merge_group = join_current_group(
+                &bob_merge_provider,
+                &welcome.tls_serialize_detached().unwrap(),
+                merge_group.export_ratchet_tree().into(),
+            );
+            assert_current_profile(&merge_group, &alice.account_public_key).unwrap();
+            assert_current_profile(&bob_merge_group, &alice.account_public_key).unwrap();
+            assert_bidirectional_liveness(
+                &mut merge_group,
+                &merge_provider,
+                &merge_identity,
+                &mut bob_merge_group,
+                &bob_merge_provider,
+                &bob_merge_identity,
+            );
+
+            let clear_provider = restore_provider(&add_snapshot);
+            let clear_identity = reload_identity(
+                &clear_provider,
+                &alice.account_public_key,
+                &alice_signature_key,
+            );
+            let mut clear_group = load_group(&clear_provider, group_id);
+            assert!(clear_group.pending_commit().is_some());
+            clear_group
+                .clear_pending_commit(clear_provider.inner.storage())
+                .unwrap();
+            assert_eq!(clear_group.epoch().as_u64(), 0);
+            assert_eq!(clear_group.members().count(), 1);
+            assert!(clear_group.pending_commit().is_none());
+            let cleared_snapshot = clear_provider.serialize_state();
+            let mut recovered_provider = restore_provider(&cleared_snapshot);
+            let recovered_identity = reload_identity(
+                &recovered_provider,
+                &clear_identity.account_public_key,
+                &alice_signature_key,
+            );
+            let mut recovered_group = load_group(&recovered_provider, group_id);
+            assert!(recovered_group.pending_commit().is_none());
+            assert_eq!(recovered_group.epoch().as_u64(), 0);
+            let (_fresh_commit, fresh_welcome, _) = recovered_group
+                .add_members(
+                    recovered_provider.as_ref(),
+                    &recovered_identity.keypair,
+                    &[bob_key_package],
+                )
+                .unwrap();
+            recovered_group
+                .merge_pending_commit(recovered_provider.as_mut())
+                .unwrap();
+            assert_eq!(recovered_group.epoch().as_u64(), 1);
+            let bob_clear_provider = restore_provider(&bob_seed_snapshot);
+            let bob_clear_identity = reload_identity(
+                &bob_clear_provider,
+                &bob_account,
+                &bob_signature_key,
+            );
+            let mut bob_clear_group = join_current_group(
+                &bob_clear_provider,
+                &fresh_welcome.tls_serialize_detached().unwrap(),
+                recovered_group.export_ratchet_tree().into(),
+            );
+            assert_bidirectional_liveness(
+                &mut recovered_group,
+                &recovered_provider,
+                &recovered_identity,
+                &mut bob_clear_group,
+                &bob_clear_provider,
+                &bob_clear_identity,
+            );
+
+            let self_update_group_id = b"phase-b2-local-self-update";
+            let (
+                alice_provider,
+                alice,
+                mut alice_group,
+                bob_provider,
+                bob,
+                bob_group,
+            ) = setup_stable_pair(self_update_group_id);
+            assert_eq!(alice_group.epoch().as_u64(), 1);
+            let alice_signature_key = alice.leaf_signature_key();
+            let bob_signature_key = bob.leaf_signature_key();
+            let bob_snapshot = bob_provider.serialize_state();
+            let self_update = alice_group
+                .self_update(
+                    alice_provider.as_ref(),
+                    &alice.keypair,
+                    LeafNodeParameters::default(),
+                )
+                .unwrap();
+            let self_update_commit = self_update.commit().tls_serialize_detached().unwrap();
+            assert_public_commit(&self_update_commit);
+            assert!(alice_group.pending_commit().is_some());
+            let self_update_snapshot = alice_provider.serialize_state();
+            println!(
+                "B2 local epoch-1 self-update snapshot: bytes={} sha256={}",
+                self_update_snapshot.len(),
+                snapshot_sha256(&alice_provider, &self_update_snapshot)
+            );
+
+            let mut update_merge_provider = restore_provider(&self_update_snapshot);
+            let update_merge_identity = reload_identity(
+                &update_merge_provider,
+                &alice.account_public_key,
+                &alice_signature_key,
+            );
+            let mut update_merge_group = load_group(&update_merge_provider, self_update_group_id);
+            update_merge_group
+                .merge_pending_commit(update_merge_provider.as_mut())
+                .unwrap();
+            assert_eq!(update_merge_group.epoch().as_u64(), 2);
+            assert_eq!(update_merge_group.members().count(), 2);
+            let epoch_after_update_merge = update_merge_group.epoch();
+            let members_after_update_merge = update_merge_group.members().count();
+            let second_update_merge =
+                update_merge_group.merge_pending_commit(update_merge_provider.as_mut());
+            println!(
+                "B2 local epoch-1 self-update second merge outcome: {}",
+                if second_update_merge.is_ok() {
+                    "no-op success"
+                } else {
+                    "error"
+                }
+            );
+            assert_eq!(update_merge_group.epoch(), epoch_after_update_merge);
+            assert_eq!(
+                update_merge_group.members().count(),
+                members_after_update_merge
+            );
+            let mut bob_merge_provider = restore_provider(&bob_snapshot);
+            let bob_merge_identity = reload_identity(
+                &bob_merge_provider,
+                &bob.account_public_key,
+                &bob_signature_key,
+            );
+            let mut bob_merge_group = load_group(&bob_merge_provider, self_update_group_id);
+            let staged = stage_public_commit(
+                &mut bob_merge_group,
+                &bob_merge_provider,
+                &self_update_commit,
+            );
+            bob_merge_group
+                .merge_staged_commit(bob_merge_provider.as_mut(), staged)
+                .unwrap();
+            assert_bidirectional_liveness(
+                &mut update_merge_group,
+                &update_merge_provider,
+                &update_merge_identity,
+                &mut bob_merge_group,
+                &bob_merge_provider,
+                &bob_merge_identity,
+            );
+
+            let clear_update_provider = restore_provider(&self_update_snapshot);
+            let clear_update_identity = reload_identity(
+                &clear_update_provider,
+                &alice.account_public_key,
+                &alice_signature_key,
+            );
+            let mut clear_update_group =
+                load_group(&clear_update_provider, self_update_group_id);
+            clear_update_group
+                .clear_pending_commit(clear_update_provider.inner.storage())
+                .unwrap();
+            let clear_update_snapshot = clear_update_provider.serialize_state();
+            let mut recovered_update_provider = restore_provider(&clear_update_snapshot);
+            let recovered_update_identity = reload_identity(
+                &recovered_update_provider,
+                &clear_update_identity.account_public_key,
+                &alice_signature_key,
+            );
+            let mut recovered_update_group =
+                load_group(&recovered_update_provider, self_update_group_id);
+            assert!(recovered_update_group.pending_commit().is_none());
+            assert_eq!(recovered_update_group.epoch().as_u64(), 1);
+            let fresh_update = recovered_update_group
+                .self_update(
+                    recovered_update_provider.as_ref(),
+                    &recovered_update_identity.keypair,
+                    LeafNodeParameters::default(),
+                )
+                .unwrap();
+            let fresh_update_commit = fresh_update.commit().tls_serialize_detached().unwrap();
+            recovered_update_group
+                .merge_pending_commit(recovered_update_provider.as_mut())
+                .unwrap();
+            let mut bob_clear_provider = restore_provider(&bob_snapshot);
+            let bob_clear_identity = reload_identity(
+                &bob_clear_provider,
+                &bob.account_public_key,
+                &bob_signature_key,
+            );
+            let mut bob_clear_group = load_group(&bob_clear_provider, self_update_group_id);
+            let staged = stage_public_commit(
+                &mut bob_clear_group,
+                &bob_clear_provider,
+                &fresh_update_commit,
+            );
+            bob_clear_group
+                .merge_staged_commit(bob_clear_provider.as_mut(), staged)
+                .unwrap();
+            assert_bidirectional_liveness(
+                &mut recovered_update_group,
+                &recovered_update_provider,
+                &recovered_update_identity,
+                &mut bob_clear_group,
+                &bob_clear_provider,
+                &bob_clear_identity,
+            );
+
+            // The original in-memory Bob group is deliberately unused after its
+            // durable snapshot is taken: recovery must use a fresh provider.
+            drop(bob_group);
+        }
+
+        #[test]
+        fn inbound_public_commit_can_be_restaged_after_restore() {
+            let group_id = b"phase-b2-inbound-restage";
+            let (
+                alice_provider,
+                alice,
+                mut alice_group,
+                mut bob_provider,
+                bob,
+                mut bob_group,
+            ) = setup_stable_pair(group_id);
+            let charlie_provider = Provider::new();
+            let charlie = new_identity(&charlie_provider, 0x43);
+            let charlie_key_package = current_key_package(&charlie_provider, &charlie);
+
+            let (commit, _welcome, _) = bob_group
+                .add_members(
+                    bob_provider.as_ref(),
+                    &bob.keypair,
+                    &[charlie_key_package],
+                )
+                .unwrap();
+            let commit_bytes = commit.tls_serialize_detached().unwrap();
+            assert_public_commit(&commit_bytes);
+            println!("B2 inbound explicit PublicMessage policy required: true");
+
+            let alice_signature_key = alice.leaf_signature_key();
+            let pre_stage = alice_provider.serialize_state();
+            let staged_once = stage_public_commit(&mut alice_group, &alice_provider, &commit_bytes);
+            let post_stage = alice_provider.serialize_state();
+            let raw_equal = pre_stage == post_stage;
+            let decoded_equal = snapshot_map(&pre_stage) == snapshot_map(&post_stage);
+            println!(
+                "B2 inbound staging: pre_bytes={} pre_sha256={} post_bytes={} post_sha256={} raw_equal={} decoded_maps_equal={}",
+                pre_stage.len(),
+                snapshot_sha256(&alice_provider, &pre_stage),
+                post_stage.len(),
+                snapshot_sha256(&alice_provider, &post_stage),
+                raw_equal,
+                decoded_equal
+            );
+            assert!(decoded_equal, "staging unexpectedly mutated provider storage");
+            drop(staged_once);
+            drop(alice_group);
+
+            let mut restored_provider = restore_provider(&pre_stage);
+            let restored_identity = reload_identity(
+                &restored_provider,
+                &alice.account_public_key,
+                &alice_signature_key,
+            );
+            let mut restored_group = load_group(&restored_provider, group_id);
+            let staged = stage_public_commit(&mut restored_group, &restored_provider, &commit_bytes);
+            restored_group
+                .merge_staged_commit(restored_provider.as_mut(), staged)
+                .unwrap();
+            bob_group
+                .merge_pending_commit(bob_provider.as_mut())
+                .unwrap();
+            assert_eq!(restored_group.epoch().as_u64(), 2);
+            assert_eq!(restored_group.members().count(), 3);
+            assert_eq!(bob_group.epoch().as_u64(), 2);
+            assert_eq!(bob_group.members().count(), 3);
+
+            let replay_message = MlsMessageIn::tls_deserialize_exact(&commit_bytes).unwrap();
+            let replay_protocol: ProtocolMessage = match replay_message.extract() {
+                MlsMessageBodyIn::PublicMessage(message) => message.into(),
+                _ => panic!("expected PublicMessage replay"),
+            };
+            let epoch_before_replay = restored_group.epoch();
+            assert!(restored_group
+                .process_message(restored_provider.as_ref(), replay_protocol)
+                .is_err());
+            assert_eq!(restored_group.epoch(), epoch_before_replay);
+            assert_bidirectional_liveness(
+                &mut restored_group,
+                &restored_provider,
+                &restored_identity,
+                &mut bob_group,
+                &bob_provider,
+                &bob,
+            );
+        }
+
+        #[test]
+        fn current_profile_structure_and_exact_negative_decoders() {
+            let provider = Provider::new();
+            let founder = new_identity(&provider, 0x51);
+            let group = create_current_group(&provider, &founder, b"phase-b2-profile");
+            assert_current_profile(&group, &founder.account_public_key).unwrap();
+
+            let missing_proposal =
+                current_group_context_extensions(&founder.account_public_key, false);
+            let missing_result =
+                assert_current_group_context(&missing_proposal, &founder.account_public_key);
+            assert_eq!(
+                missing_result.unwrap_err(),
+                "test-only exact profile decoder: app_data_update missing"
+            );
+
+            let duplicate_entries = vec![
+                ComponentData::from_parts(ADMIN_POLICY_V1_COMPONENT_ID, vec![0].into()),
+                ComponentData::from_parts(ADMIN_POLICY_V1_COMPONENT_ID, vec![1].into()),
+            ]
+            .tls_serialize_detached()
+            .unwrap();
+            assert!(AppDataDictionary::tls_deserialize_exact(&duplicate_entries).is_err());
+
+            let valid_dictionary = current_group_context_extensions(
+                &founder.account_public_key,
+                true,
+            )
+            .app_data_dictionary()
+            .unwrap()
+            .dictionary()
+            .tls_serialize_detached()
+            .unwrap();
+            let mut malformed = valid_dictionary.clone();
+            malformed.pop();
+            assert!(AppDataDictionary::tls_deserialize_exact(&malformed).is_err());
+            let mut trailing = valid_dictionary;
+            trailing.push(0);
+            assert!(AppDataDictionary::tls_deserialize_exact(&trailing).is_err());
+        }
+    }
 }
