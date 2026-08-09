@@ -1,6 +1,14 @@
 # Styx.js API Reference
 
-Complete API documentation for the Styx.js library -- sovereign, peer-to-peer cryptographic ledgers for the browser. JavaScript port of the Dart Styx library with full cross-platform interoperability.
+API documentation for the Styx.js browser implementation and its legacy ledger modules. Selected
+application-level formats have conformance vectors, but current JavaScript and Dart builds do not
+provide full cryptographic or cross-peer interoperability.
+
+> **V1 remote-ledger containment:** recognized inbound ledger events are rejected with
+> `STYX_V1_REMOTE_ADMISSION_DISABLED` before model construction, persistence, fork/merge handling,
+> outbox mutation, or application event emission. Local event creation and outbox enqueue remain
+> available. `onRemoteEvent` and `eventStream.onRemoteEvents` are retained compatibility surfaces
+> with no producer in v1; they must not be treated as working synchronization APIs.
 
 ---
 
@@ -24,7 +32,11 @@ Complete API documentation for the Styx.js library -- sovereign, peer-to-peer cr
 
 ### What is Styx.js
 
-Styx.js is a browser-native JavaScript library for building sovereign, peer-to-peer cryptographic ledgers. Two peers -- called **Affidante** and **Custode** -- maintain a shared, tamper-evident event chain without any central server. Every event is signed with Ed25519, hash-chained with SHA-256, and causally ordered via 2-element vector clocks. All communication is end-to-end encrypted with ChaCha20-Poly1305.
+Styx.js is a browser-native JavaScript implementation of local cryptographic-ledger and secure
+transport components. Ledger events are signed with Ed25519, hash-chained with SHA-256, and carry
+2-element vector clocks. The current v1 facade can create local events, but it intentionally does
+not admit remote ledger events; a shared peer ledger is therefore not operational in current
+builds.
 
 Styx.js is a faithful port of the Dart/Flutter Styx library, designed to run in modern browsers (Chrome, Firefox, Safari, Edge). It uses the `@noble` family of cryptographic libraries and supports two transport backends: **Nostr relays** (WebSocket-based) and **WebRTC DataChannels** (direct peer-to-peer).
 
@@ -59,8 +71,9 @@ Styx.js is a faithful port of the Dart/Flutter Styx library, designed to run in 
 
 1. **Generate identity** -- Ed25519 keypair via `IdentityManager`.
 2. **Pair** -- Exchange public keys via QR code (local) or BIP-39 mnemonic (remote).
-3. **Exchange events** -- Append signed events to the hash chain, sync via Nostr relays or WebRTC.
-4. **Resolve forks** -- Deterministic merge when peers produce concurrent events.
+3. **Create local events** -- Append signed events locally and enqueue them for transport.
+4. **Remote admission is disabled** -- Updated v1 peers reject recognized inbound ledger events;
+   fork/merge modules remain present but are not reachable from that contained facade path.
 5. **Prune** -- disabled in v1; see [3.5 Legacy v1 Pruning Containment](#35-legacy-v1-pruning-containment).
 
 ---
@@ -189,9 +202,10 @@ await ledger.confirmPairing({
 - The Double Check code is derived from the SPAKE2 session key via SHA-256 truncation to 6 decimal digits.
 - States flow: `idle -> mnemonicGenerated -> waitingForPeer -> spake2InProgress -> doubleCheckPending -> completed`.
 
-### 3.3 Sending and Receiving Events
+### 3.3 Local Event Creation (Remote Admission Disabled)
 
-**Scenario:** Two paired peers exchange signed events over the shared ledger.
+**Scenario:** A paired client creates signed local events. This does not currently establish a
+shared peer ledger because recognized inbound v1 ledger events are rejected fail-closed.
 
 **Prerequisites:** Both devices are paired (`state === 'ready'`).
 
@@ -214,11 +228,6 @@ await ledger.sendConfig({
   payload: encoder.encode(JSON.stringify({ theme: 'dark' })),
 });
 
-// Listen for incoming events
-ledger.eventStream.onRemoteEvents((event) => {
-  console.log(`Received ${event.eventType} from peer`);
-});
-
 // Filter by type
 import { EventType } from 'styx-js';
 
@@ -230,7 +239,10 @@ ledger.eventStream.onEventsByType(EventType.TRANSACTION, (event) => {
 
 **Notes:**
 - Each event includes: previous hash, vector clock, HLC timestamp, payload, sender pubkey, and Ed25519 signature.
-- Events are delivered in causal order via the outbox queue.
+- Local events may be queued for outbound transport, but updated peers do not admit them into the
+  remote ledger in v1.
+- `eventStream.onRemoteEvents` is retained for compatibility and is intentionally inert while
+  `STYX_V1_REMOTE_ADMISSION_DISABLED` containment is active.
 
 ### 3.4 SOS Handling
 
@@ -507,7 +519,7 @@ new SovereignLedger({ config, ledgerStore, peerStore, keyStore, outboxStore })
 |------|------|-------------|
 | state | `string` | Current `StyxState` value |
 | identity | `object\|null` | Local identity `{ publicKey, nodeId, peerRole }` after initialization |
-| eventStream | `object` | Reactive stream interface with `onAllEvents`, `onRemoteEvents`, `onEventsByType` |
+| eventStream | `object` | Reactive stream interface with `onAllEvents`, `onEventsByType`, and the retained-but-inert v1 compatibility method `onRemoteEvents` |
 
 #### Methods
 
@@ -2924,18 +2936,6 @@ await ledgerService.appendEvent({ type, payload, privateKey, publicKey }): Promi
 | privateKey | `StyxPrivateKey` | Yes | Signing key |
 | publicKey | `StyxPublicKey` | Yes | Sender's public key |
 
-##### `receiveRemoteEvent(event)`
-
-> Receive and store a remote event. Emits both `remoteEvent` and `newEvent` events.
-
-```js
-await ledgerService.receiveRemoteEvent(event): Promise<LedgerEvent>
-```
-
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| event | `LedgerEvent` | Yes | Remote event to store |
-
 ##### `getHistory()`
 
 > Returns all events ordered by HLC.
@@ -2975,7 +2975,8 @@ await ledgerService.getLatestEvent(): Promise<LedgerEvent|null>
 
 ##### `onNewEvent(callback)`
 
-> Subscribe to all new events (local and remote).
+> Subscribe to newly emitted events. In v1 this means local events only because contained remote
+> ledger events are rejected before application event emission.
 
 ```js
 const unsubscribe = ledgerService.onNewEvent(callback): () => void
@@ -2989,7 +2990,8 @@ const unsubscribe = ledgerService.onNewEvent(callback): () => void
 
 ##### `onRemoteEvent(callback)`
 
-> Subscribe to remote events only.
+> Retained compatibility surface. No production v1 path emits `remoteEvent` while remote ledger
+> admission is contained, so the callback is not invoked for peer ledger events.
 
 ```js
 const unsubscribe = ledgerService.onRemoteEvent(callback): () => void
@@ -2997,9 +2999,9 @@ const unsubscribe = ledgerService.onRemoteEvent(callback): () => void
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| callback | `function(LedgerEvent): void` | Yes | Called for each remote event |
+| callback | `function(LedgerEvent): void` | Yes | Registered but not called by the contained v1 peer-ingestion path |
 
-**Returns:** Unsubscribe function.
+**Returns:** Unsubscribe function. Registration does not re-enable remote admission.
 
 ---
 

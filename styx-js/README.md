@@ -2,8 +2,9 @@
 
 > ⚠️ **EXPERIMENTAL SOFTWARE** — This browser implementation has not completed an independent
 > Styx security audit and is unsuitable for sensitive, high-risk, or life-critical use. A web
-> origin controlled by an adversary can replace the delivered application code. Relays cannot read
-> E2EE content, but they can observe transport metadata.
+> origin controlled by an adversary can replace the delivered application code. E2EE is intended
+> to keep message plaintext from relays when endpoints and delivered code are trustworthy, but
+> relays can still observe transport metadata.
 
 `styx-js` contains the active browser implementation of the Styx application protocol, reusable
 browser-runtime components, and a minimal chat reference application. It is an implementation—not
@@ -21,6 +22,12 @@ repository does **not** currently claim Marmot wire compatibility. See the
 
 The repository includes Jest, Playwright, and Dart/JavaScript conformance-vector suites. Passing
 tests provide regression evidence; they are not a security audit.
+
+> **V1 remote-ledger containment:** recognized inbound ledger events are rejected with
+> `STYX_V1_REMOTE_ADMISSION_DISABLED` before model construction or persistence. Local event
+> creation and outbox enqueue remain available, but that does not provide working cross-peer
+> ledger synchronization. The retained remote-event subscription methods are compatibility
+> surfaces with no producer in v1.
 
 ## Architecture
 
@@ -99,7 +106,7 @@ await ledger.confirmPairing({ peerPublicKey: peerHex, peerAlias: 'Bob' });
 // State: 'ready'
 ```
 
-## Sending & Receiving Events
+## Local Event Creation (Remote Admission Disabled)
 
 ```js
 await ledger.sendMessage({
@@ -107,12 +114,13 @@ await ledger.sendMessage({
     type: 'text', text: 'Hello from Styx!',
   })),
 });
-
-ledger.eventStream.onRemoteEvents((event) => {
-  const data = JSON.parse(new TextDecoder().decode(event.payload));
-  console.log('Received:', data);
-});
 ```
+
+The call above creates, persists, emits, and may enqueue a **local** event. Updated v1 peers reject
+recognized inbound ledger events, so this is not a working send/receive example. Do not use
+`eventStream.onRemoteEvents` for peer synchronization: it is retained for API compatibility but is
+intentionally inert until separately approved authenticated admission and bootstrap/backfill work
+lands.
 
 ## Privacy Model
 
@@ -140,6 +148,9 @@ WebRTC is an optional low-latency channel where both peers accept the IP visibil
 2. **WebRTC DataChannel** — Optional direct P2P for low-latency use cases
 
 Events are signed with NIP-01 schnorr/secp256k1 for relay acceptance. Content is encrypted with ChaCha20-Poly1305 (12-byte nonce, compatible with Dart implementation).
+
+These transport capabilities do not override the v1 ledger containment above: transport delivery
+can occur while the receiving facade still rejects the event before ledger admission.
 
 ## Dart ↔ JS ledger-vector interoperability
 
@@ -227,9 +238,10 @@ Interactive demos for browser-to-browser testing:
 Start the test server: `npm run test:webrtc:manual`
 
 The `/chat` page is an experimental reference demo: messages are encrypted with
-ChaCha20-Poly1305, signed with Schnorr/secp256k1, and relayed via Nostr. The relay cannot read
-message plaintext but still observes the transport metadata described above. This demo is not a
-production-security or metadata-anonymity claim.
+ChaCha20-Poly1305, signed with Schnorr/secp256k1, and relayed via Nostr. This is intended to keep
+message plaintext from the relay when endpoints, keys, and delivered code are trustworthy; the
+relay still observes the transport metadata described above. This demo is not a production-security
+or metadata-anonymity claim.
 
 A WebSocket sniffer is included to inspect traffic:
 ```bash

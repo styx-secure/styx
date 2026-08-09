@@ -1,16 +1,13 @@
 // styx-js/examples/secure-chat.js
-// Example: Secure P2P Chat built with Styx.js
+// Legacy local-only chat shell built with Styx.js.
 //
-// Usage scenario:
-// 1. User A opens the app → gets a room code (mnemonic)
-// 2. User A shares the code with User B (voice, SMS, etc.)
-// 3. User B enters the code → SPAKE2 handshake + Double Check
-// 4. Both users chat with E2E encryption over WebRTC (Nostr fallback)
+// IMPORTANT: v1 remote ledger admission is intentionally disabled. This
+// example can demonstrate local creation and pairing surfaces, but it is not a
+// functioning P2P chat until separately approved admission work lands.
 
 import {
   SovereignLedger,
   LedgerConfig,
-  StyxState,
   EventType,
   MemoryLedgerStore,
   MemoryPeerStore,
@@ -18,6 +15,9 @@ import {
   MemoryOutboxStore,
   setBip39Wordlist,
 } from '../src/index.js';
+
+const REMOTE_MESSAGES_DISABLED_MESSAGE =
+  'STYX_V1_REMOTE_ADMISSION_DISABLED: incoming peer messages are unavailable in the v1 ledger';
 
 // In a real app, import the full BIP-39 wordlist
 // import { wordlist } from './bip39-english.js';
@@ -29,7 +29,6 @@ import {
 class SecureChat {
   constructor() {
     this._ledger = null;
-    this._onMessage = null;
     this._onStateChange = null;
   }
 
@@ -122,23 +121,12 @@ class SecureChat {
   }
 
   /**
-   * Listen for incoming messages.
-   * @param {function(object): void} callback
+   * Remote message subscription is intentionally unavailable in v1.
+   * @param {function(object): void} _callback
+   * @throws {Error} Always, while remote admission containment is active.
    */
-  onMessage(callback) {
-    this._onMessage = callback;
-    if (this._ledger?.state === StyxState.READY) {
-      this._ledger.eventStream.onRemoteEvents((event) => {
-        if (event.eventType === EventType.MESSAGE && !event.isPruned) {
-          const data = JSON.parse(new TextDecoder().decode(event.payload));
-          callback({
-            ...data,
-            sender: event.senderPubkey,
-            eventId: event.eventId,
-          });
-        }
-      });
-    }
+  onMessage(_callback) {
+    throw new Error(REMOTE_MESSAGES_DISABLED_MESSAGE);
   }
 
   /**
@@ -239,6 +227,6 @@ export { SecureChat };
 // // After verification
 // await chat.confirmConnection(peerPubkeyHex, 'Alice');
 //
-// // Chat!
-// chat.onMessage((msg) => console.log(`${msg.sender}: ${msg.text}`));
+// // Local creation only. Calling chat.onMessage(...) fails closed with
+// // STYX_V1_REMOTE_ADMISSION_DISABLED; no working peer receive path is claimed.
 // await chat.sendText('Hello from Styx!');
