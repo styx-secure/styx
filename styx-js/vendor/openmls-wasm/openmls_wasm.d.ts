@@ -74,6 +74,120 @@ export class NoWelcomeError {
     [Symbol.dispose](): void;
 }
 
+/**
+ * Closed, non-secret projection of a staged Commit. It deliberately exposes
+ * only bounded proposal counts and public member metadata.
+ */
+export class PhaseB1CommitProjection {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    add_count(): number;
+    added_component_ids(index: number): Uint16Array;
+    added_credential_identity(index: number): Uint8Array;
+    added_leaf_signature_key(index: number): Uint8Array;
+    added_member_count(): number;
+    added_supported_component_ids(index: number): Uint16Array;
+    app_data_update_count(): number;
+    app_ephemeral_count(): number;
+    external_init_count(): number;
+    group_context_extensions_count(): number;
+    next_epoch(): bigint;
+    prior_epoch(): bigint;
+    psk_count(): number;
+    reinit_count(): number;
+    remove_count(): number;
+    self_remove_count(): number;
+    update_count(): number;
+}
+
+/**
+ * Isolated Phase B1 group wrapper. No method on this type silently merges a
+ * locally pending or remotely staged Commit.
+ */
+export class PhaseB1Group {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    confirm_pending_add(provider: Provider, pending: PhaseB1PendingAdd): void;
+    create_application_message(provider: Provider, sender: PhaseB1Identity, plaintext: Uint8Array): Uint8Array;
+    static create_new(provider: Provider, founder: PhaseB1Identity, group_id: Uint8Array, founder_proof: Uint8Array): PhaseB1Group;
+    discard_pending_add(provider: Provider, pending: PhaseB1PendingAdd): void;
+    discard_staged_commit(provider: Provider, staged: PhaseB1StagedCommit): void;
+    epoch(): bigint;
+    export_ratchet_tree(): PhaseB1RatchetTree;
+    static join(provider: Provider, welcome_bytes: Uint8Array, ratchet_tree: PhaseB1RatchetTree): PhaseB1Group;
+    member_count(): number;
+    member_identity(index: number): Uint8Array;
+    merge_staged_commit(provider: Provider, staged: PhaseB1StagedCommit): void;
+    process_application_message(provider: Provider, bytes: Uint8Array): Uint8Array;
+    propose_and_commit_add(provider: Provider, sender: PhaseB1Identity, new_member: PhaseB1KeyPackage): PhaseB1PendingAdd;
+    stage_inbound_commit(provider: Provider, bytes: Uint8Array): PhaseB1StagedCommit;
+}
+
+/**
+ * A non-product Phase B1 identity. Its 32-byte Nostr account identity is a
+ * BasicCredential value; its Ed25519 MLS signing key remains independent.
+ */
+export class PhaseB1Identity {
+    free(): void;
+    [Symbol.dispose](): void;
+    account_public_key(): Uint8Array;
+    key_package(provider: Provider, proof: Uint8Array): PhaseB1KeyPackage;
+    leaf_signature_key(): Uint8Array;
+    constructor(provider: Provider, account_public_key: Uint8Array);
+}
+
+/**
+ * A strictly validated, non-last-resort Phase B1 KeyPackage.
+ */
+export class PhaseB1KeyPackage {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    ciphersuite_id(): number;
+    component_ids(): Uint16Array;
+    credential_identity(): Uint8Array;
+    static from_framed_bytes(bytes: Uint8Array): PhaseB1KeyPackage;
+    identity_proof(): Uint8Array;
+    is_last_resort(): boolean;
+    leaf_signature_key(): Uint8Array;
+    lifetime_seconds(): bigint;
+    supported_component_ids(): Uint16Array;
+    to_framed_bytes(): Uint8Array;
+}
+
+/**
+ * Local Add output and single-use token for the still-pending local Commit.
+ */
+export class PhaseB1PendingAdd {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    commit(): Uint8Array;
+    is_consumed(): boolean;
+    welcome(): Uint8Array;
+}
+
+export class PhaseB1RatchetTree {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    static from_bytes(bytes: Uint8Array): PhaseB1RatchetTree;
+    to_bytes(): Uint8Array;
+}
+
+/**
+ * WASM-owned, opaque and single-use inbound staged Commit handle.
+ */
+export class PhaseB1StagedCommit {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    is_consumed(): boolean;
+    projection(): PhaseB1CommitProjection;
+}
+
 export class Provider {
     free(): void;
     [Symbol.dispose](): void;
@@ -122,6 +236,13 @@ export interface InitOutput {
     readonly __wbg_identity_free: (a: number, b: number) => void;
     readonly __wbg_keypackage_free: (a: number, b: number) => void;
     readonly __wbg_nowelcomeerror_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb1commitprojection_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb1group_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb1identity_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb1keypackage_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb1pendingadd_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb1ratchettree_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb1stagedcommit_free: (a: number, b: number) => void;
     readonly __wbg_provider_free: (a: number, b: number) => void;
     readonly __wbg_ratchettree_free: (a: number, b: number) => void;
     readonly addmessages_commit: (a: number) => any;
@@ -143,11 +264,63 @@ export interface InitOutput {
     readonly identity_public_key: (a: number) => [number, number];
     readonly keypackage_from_bytes: (a: number, b: number) => [number, number, number];
     readonly keypackage_to_bytes: (a: number) => [number, number];
+    readonly phaseb1commitprojection_add_count: (a: number) => number;
+    readonly phaseb1commitprojection_added_component_ids: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb1commitprojection_added_credential_identity: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb1commitprojection_added_leaf_signature_key: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb1commitprojection_added_member_count: (a: number) => number;
+    readonly phaseb1commitprojection_added_supported_component_ids: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb1commitprojection_app_data_update_count: (a: number) => number;
+    readonly phaseb1commitprojection_app_ephemeral_count: (a: number) => number;
+    readonly phaseb1commitprojection_external_init_count: (a: number) => number;
+    readonly phaseb1commitprojection_group_context_extensions_count: (a: number) => number;
+    readonly phaseb1commitprojection_next_epoch: (a: number) => bigint;
+    readonly phaseb1commitprojection_prior_epoch: (a: number) => bigint;
+    readonly phaseb1commitprojection_psk_count: (a: number) => number;
+    readonly phaseb1commitprojection_reinit_count: (a: number) => number;
+    readonly phaseb1commitprojection_remove_count: (a: number) => number;
+    readonly phaseb1commitprojection_self_remove_count: (a: number) => number;
+    readonly phaseb1commitprojection_update_count: (a: number) => number;
+    readonly phaseb1group_confirm_pending_add: (a: number, b: number, c: number) => [number, number];
+    readonly phaseb1group_create_application_message: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly phaseb1group_create_new: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly phaseb1group_discard_pending_add: (a: number, b: number, c: number) => [number, number];
+    readonly phaseb1group_discard_staged_commit: (a: number, b: number, c: number) => [number, number];
+    readonly phaseb1group_export_ratchet_tree: (a: number) => number;
+    readonly phaseb1group_join: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly phaseb1group_member_count: (a: number) => number;
+    readonly phaseb1group_member_identity: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb1group_merge_staged_commit: (a: number, b: number, c: number) => [number, number];
+    readonly phaseb1group_process_application_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly phaseb1group_propose_and_commit_add: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly phaseb1group_stage_inbound_commit: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly phaseb1identity_account_public_key: (a: number) => [number, number];
+    readonly phaseb1identity_key_package: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly phaseb1identity_leaf_signature_key: (a: number) => [number, number];
+    readonly phaseb1identity_new: (a: number, b: number, c: number) => [number, number, number];
+    readonly phaseb1keypackage_ciphersuite_id: (a: number) => number;
+    readonly phaseb1keypackage_component_ids: (a: number) => [number, number];
+    readonly phaseb1keypackage_credential_identity: (a: number) => [number, number];
+    readonly phaseb1keypackage_from_framed_bytes: (a: number, b: number) => [number, number, number];
+    readonly phaseb1keypackage_identity_proof: (a: number) => [number, number];
+    readonly phaseb1keypackage_is_last_resort: (a: number) => number;
+    readonly phaseb1keypackage_leaf_signature_key: (a: number) => [number, number];
+    readonly phaseb1keypackage_lifetime_seconds: (a: number) => bigint;
+    readonly phaseb1keypackage_supported_component_ids: (a: number) => [number, number];
+    readonly phaseb1keypackage_to_framed_bytes: (a: number) => [number, number, number, number];
+    readonly phaseb1pendingadd_commit: (a: number) => [number, number];
+    readonly phaseb1pendingadd_is_consumed: (a: number) => number;
+    readonly phaseb1pendingadd_welcome: (a: number) => [number, number];
+    readonly phaseb1ratchettree_from_bytes: (a: number, b: number) => [number, number, number];
+    readonly phaseb1ratchettree_to_bytes: (a: number) => [number, number, number, number];
+    readonly phaseb1stagedcommit_is_consumed: (a: number) => number;
+    readonly phaseb1stagedcommit_projection: (a: number) => number;
     readonly provider_new: () => number;
     readonly provider_restore_state: (a: number, b: number, c: number) => [number, number];
     readonly provider_serialize_state: (a: number) => [number, number];
     readonly ratchettree_from_bytes: (a: number, b: number) => [number, number, number];
     readonly ratchettree_to_bytes: (a: number) => [number, number];
+    readonly phaseb1group_epoch: (a: number) => bigint;
     readonly greet: () => void;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;

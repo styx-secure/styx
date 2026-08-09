@@ -12,7 +12,7 @@ import {
   parseMlsStateEnvelope,
   assertMlsStateCompatibility,
 } from '../../src/storage/mls-state-envelope.js';
-import { base64ToBytes, bytesToBase64, utf8Decode } from '../../src/utils.js';
+import { base64ToBytes, bytesToBase64, utf8Decode, utf8Encode } from '../../src/utils.js';
 
 const fixtureDir = fileURLToPath(new URL('../fixtures/mls-state-v1/', import.meta.url));
 const wasmBytes = readFileSync(
@@ -49,6 +49,12 @@ describe('mls-state-v1 fixture restore (real WASM)', () => {
     const out = session.decrypt(base64ToBytes(CTX.refCiphertext));
     expect(out.kind).toBe('application');
     expect(utf8Decode(out.plaintext)).toBe(CTX.refPlaintext);
+    // Exercise the opposite ratchet direction from the exact same restored
+    // provider state. The live bidirectional peer-decrypt round trip remains
+    // covered by vendor/openmls-wasm/roundtrip.mjs.
+    const response = session.encrypt(utf8Encode('legacy fixture restored response'));
+    expect(response).toBeInstanceOf(Uint8Array);
+    expect(response.length).toBeGreaterThan(0);
   });
 
   test('repeated restore from the same fixture works (read-only source)', async () => {

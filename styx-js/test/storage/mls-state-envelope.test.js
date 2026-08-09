@@ -17,6 +17,8 @@ import {
 } from '../../src/storage/mls-state-envelope.js';
 import {
   MLS_BUILD_INFO,
+  PRE_B1_MLS_BUILD_INFO,
+  COMPATIBLE_MLS_STATE_TUPLES,
   COMPATIBLE_OPENMLS_REVISIONS,
 } from '../../src/crypto/mls/mls-build-info.js';
 import { bytesToBase64 } from '../../src/utils.js';
@@ -184,6 +186,27 @@ describe('assertMlsStateCompatibility — cases A/C of the policy', () => {
     );
   });
 
+  test('the exact pre-B1 artifact tuple remains accepted', () => {
+    expect(() => assertMlsStateCompatibility(freshEnvelope(PRE_B1_MLS_BUILD_INFO))).not.toThrow();
+  });
+
+  test('tuple fields cannot be accepted as independent or cross-product allowlists', () => {
+    expectCode(
+      () => assertMlsStateCompatibility(freshEnvelope({
+        ...PRE_B1_MLS_BUILD_INFO,
+        wasmArtifactSha256: 'e'.repeat(64),
+      })),
+      MlsStateErrorCodes.OPENMLS_INCOMPATIBLE,
+    );
+    expectCode(
+      () => assertMlsStateCompatibility(freshEnvelope({
+        ...PRE_B1_MLS_BUILD_INFO,
+        openMlsRevision: 'b'.repeat(40),
+      })),
+      MlsStateErrorCodes.OPENMLS_INCOMPATIBLE,
+    );
+  });
+
   test('different ciphersuite → CIPHERSUITE_MISMATCH', () => {
     const err = expectCode(
       () => assertMlsStateCompatibility(freshEnvelope({ ciphersuite: 'MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519' })),
@@ -269,5 +292,12 @@ describe('build-info anti-drift — constants match the vendored artifact', () =
 
   test('the compatible-revisions table contains exactly the pinned revision', () => {
     expect(COMPATIBLE_OPENMLS_REVISIONS).toEqual([MLS_BUILD_INFO.openMlsRevision]);
+  });
+
+  test('state compatibility is an exact old/current tuple set', () => {
+    expect(COMPATIBLE_MLS_STATE_TUPLES).toEqual([
+      PRE_B1_MLS_BUILD_INFO,
+      MLS_BUILD_INFO,
+    ]);
   });
 });

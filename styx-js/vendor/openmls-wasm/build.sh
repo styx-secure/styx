@@ -32,8 +32,8 @@ git clone --quiet https://github.com/openmls/openmls.git "$WORK/openmls"
 git -C "$WORK/openmls" checkout --quiet "$OPENMLS_COMMIT"
 
 # Apply our patch: adds Provider.serialize_state/restore_state, Group.load,
-# Identity.public_key/load, Group.member_identities, and returns errors instead of
-# panicking on wire input.
+# Identity.public_key/load, Group.member_identities, the isolated Phase B1 probe,
+# and returned errors instead of panics on wire input.
 echo "Applying Styx patch (patch/lib.rs) ..."
 cp "$HERE/patch/lib.rs" "$WORK/openmls/openmls-wasm/src/lib.rs"
 
@@ -69,9 +69,9 @@ docker run --rm -v "$WORK:/work" -w /work \
     install "/tmp/${wp}/wasm-pack" /usr/local/bin/wasm-pack
     cd /work/openmls/openmls-wasm
     if [[ "$LOCKED" == "yes" ]]; then
-      wasm-pack build --target web -- --locked
+      wasm-pack build --target web -- --locked --features extensions-draft
     else
-      wasm-pack build --target web
+      wasm-pack build --target web -- --features extensions-draft
     fi
   '
 
