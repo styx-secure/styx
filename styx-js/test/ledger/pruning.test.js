@@ -1,119 +1,111 @@
 // test/ledger/pruning.test.js
-import { describe, test, expect, beforeAll, beforeEach } from '@jest/globals';
-import { PruneProtocol, RetentionManager } from '../../src/ledger/pruning.js';
-import { EventFactory } from '../../src/ledger/event-factory.js';
-import { EventType, PruneReason, LedgerEvent } from '../../src/ledger/event.js';
-import { VectorClock } from '../../src/ledger/vector-clock.js';
-import { Signer } from '../../src/crypto/signer.js';
-import { Hasher } from '../../src/crypto/hasher.js';
+import { describe, test, expect, beforeEach, jest } from '@jest/globals';
+import {
+  PruneProtocol,
+  RetentionManager,
+  V1PruningDisabledError,
+  V1_PRUNING_DISABLED_CODE,
+  V1_PRUNING_DISABLED_MESSAGE,
+  V1_PRUNING_DISABLED_RESULT,
+} from '../../src/ledger/pruning.js';
+import { EventType, LedgerEvent } from '../../src/ledger/event.js';
 import { MemoryLedgerStore } from '../../src/storage/memory-store.js';
-import { createTestEvent, createTestKeyPair } from '../setup.js';
+import { createTestEvent } from '../setup.js';
 
 describe('PruneProtocol', () => {
   let protocol;
-  let keyPair;
-  let genesis;
+  let eventFactory;
 
-  beforeAll(async () => {
-    const signer = new Signer();
-    const hasher = new Hasher();
-    const eventFactory = new EventFactory(signer, hasher);
+  beforeEach(() => {
+    eventFactory = { createEvent: jest.fn() };
     protocol = new PruneProtocol(eventFactory);
-    keyPair = await createTestKeyPair();
-    genesis = await createTestEvent({ keyPair });
   });
 
-  describe('requestPrune()', () => {
-    test('creates event with type PRUNE_REQUEST', async () => {
-      const request = await protocol.requestPrune({
-        targetEventId: genesis.eventId,
-        targetEventHash: genesis.eventHash,
-        reason: PruneReason.USER_REQUEST,
-        privateKey: keyPair.privateKey,
-        publicKey: keyPair.publicKey,
-        previousEvent: genesis,
-        currentVectorClock: VectorClock.zero(),
-        localPeerRole: 'A',
-      });
-
-      expect(request.eventType).toBe(EventType.PRUNE_REQUEST);
+  test('exports one stable, immutable rejection contract', () => {
+    const error = new V1PruningDisabledError();
+    expect(error).toBeInstanceOf(Error);
+    expect(error.code).toBe(V1_PRUNING_DISABLED_CODE);
+    expect(error.message).toBe(V1_PRUNING_DISABLED_MESSAGE);
+    expect(typeof error.stack).toBe('string');
+    expect(error.stack.length).toBeGreaterThan(0);
+    expect(error.stack).toContain(V1_PRUNING_DISABLED_MESSAGE);
+    expect(Object.isFrozen(error)).toBe(true);
+    expect(V1_PRUNING_DISABLED_RESULT).toEqual({
+      accepted: false,
+      code: V1_PRUNING_DISABLED_CODE,
+      message: V1_PRUNING_DISABLED_MESSAGE,
     });
-
-    test('payload contains targetEventId', async () => {
-      const request = await protocol.requestPrune({
-        targetEventId: genesis.eventId,
-        targetEventHash: genesis.eventHash,
-        reason: PruneReason.GDPR_ARTICLE_17,
-        privateKey: keyPair.privateKey,
-        publicKey: keyPair.publicKey,
-        previousEvent: genesis,
-        currentVectorClock: VectorClock.zero(),
-        localPeerRole: 'A',
-      });
-
-      const data = JSON.parse(new TextDecoder().decode(request.payload));
-      expect(data.targetEventId).toBe(genesis.eventId);
-      expect(data.targetEventHash).toBe(genesis.eventHash);
-      expect(data.reason).toBe(PruneReason.GDPR_ARTICLE_17);
-    });
+    expect(Object.isFrozen(V1_PRUNING_DISABLED_RESULT)).toBe(true);
   });
 
-  describe('acknowledgePrune()', () => {
-    test('creates PRUNE_ACK event', async () => {
-      const request = await protocol.requestPrune({
-        targetEventId: genesis.eventId,
-        targetEventHash: genesis.eventHash,
-        reason: PruneReason.USER_REQUEST,
-        privateKey: keyPair.privateKey,
-        publicKey: keyPair.publicKey,
-        previousEvent: genesis,
-        currentVectorClock: VectorClock.zero(),
-        localPeerRole: 'A',
-      });
+  test('publishes the same containment contract from both public entry points', async () => {
+    const ledgerApi = await import('../../src/ledger/index.js');
+    const rootApi = await import('../../src/index.js');
 
-      const ack = await protocol.acknowledgePrune({
-        pruneRequest: request,
-        privateKey: keyPair.privateKey,
-        publicKey: keyPair.publicKey,
-        previousEvent: request,
-        currentVectorClock: request.vectorClock,
-        localPeerRole: 'A',
-      });
-
-      expect(ack.eventType).toBe(EventType.PRUNE_ACK);
-
-      const data = JSON.parse(new TextDecoder().decode(ack.payload));
-      expect(data.targetEventId).toBe(genesis.eventId);
-      expect(data.requestEventId).toBe(request.eventId);
-    });
+    for (const api of [ledgerApi, rootApi]) {
+      expect(api.V1PruningDisabledError).toBe(V1PruningDisabledError);
+      expect(api.V1_PRUNING_DISABLED_CODE).toBe(V1_PRUNING_DISABLED_CODE);
+      expect(api.V1_PRUNING_DISABLED_MESSAGE).toBe(V1_PRUNING_DISABLED_MESSAGE);
+      expect(api.V1_PRUNING_DISABLED_RESULT).toBe(V1_PRUNING_DISABLED_RESULT);
+    }
   });
 
-  describe('executeBilateralPrune()', () => {
-    test('calls store.pruneEvent', async () => {
-      const store = new MemoryLedgerStore();
-      const event = await createTestEvent();
-      await store.appendEvent(event);
+  test.each(['requestPrune', 'acknowledgePrune'])(
+    '%s rejects before event creation or payload access',
+    async (method) => {
+      const hostileInput = {};
+      Object.defineProperty(hostileInput, 'payload', {
+        get: () => {
+          throw new Error('payload must not be read');
+        },
+      });
 
-      await protocol.executeBilateralPrune(event.eventId, store);
+      await expect(protocol[method]({ pruneRequest: hostileInput })).rejects.toMatchObject({
+        name: 'V1PruningDisabledError',
+        code: V1_PRUNING_DISABLED_CODE,
+        message: V1_PRUNING_DISABLED_MESSAGE,
+      });
+      expect(eventFactory.createEvent).not.toHaveBeenCalled();
+    }
+  );
 
-      const pruned = await store.getEventById(event.eventId);
-      expect(pruned.isPruned).toBe(true);
-      expect(pruned.payload).toBeNull();
+  test.each(['executeBilateralPrune', 'executeUnilateralPrune'])(
+    '%s rejects before accessing the store',
+    async (method) => {
+      const store = { pruneEvent: jest.fn() };
+
+      await expect(protocol[method]('target', store)).rejects.toBeInstanceOf(
+        V1PruningDisabledError
+      );
+      expect(store.pruneEvent).not.toHaveBeenCalled();
+    }
+  );
+
+  test.each([
+    'requestPrune',
+    'acknowledgePrune',
+    'executeBilateralPrune',
+    'executeUnilateralPrune',
+  ])('%s rejects with the same contract when called without arguments', async (method) => {
+    await expect(protocol[method]()).rejects.toMatchObject({
+      name: 'V1PruningDisabledError',
+      code: V1_PRUNING_DISABLED_CODE,
+      message: V1_PRUNING_DISABLED_MESSAGE,
     });
+    expect(eventFactory.createEvent).not.toHaveBeenCalled();
   });
 
-  describe('executeUnilateralPrune()', () => {
-    test('calls store.pruneEvent', async () => {
-      const store = new MemoryLedgerStore();
-      const event = await createTestEvent();
-      await store.appendEvent(event);
+  test('keeps an already-pruned v1 record readable without rewriting it', async () => {
+    const store = new MemoryLedgerStore();
+    const event = await createTestEvent();
+    const existing = event.toPruned();
+    await store.appendEvent(existing);
 
-      await protocol.executeUnilateralPrune(event.eventId, store);
-
-      const pruned = await store.getEventById(event.eventId);
-      expect(pruned.isPruned).toBe(true);
-      expect(pruned.payload).toBeNull();
-    });
+    const readBack = await store.getEventById(existing.eventId);
+    expect(readBack).toBe(existing);
+    expect(readBack.isPruned).toBe(true);
+    expect(readBack.payload).toBeNull();
+    expect(readBack.eventHash).toBe(event.eventHash);
   });
 });
 

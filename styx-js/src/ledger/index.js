@@ -5,5 +5,13 @@ export { HybridLogicalClock } from './hlc.js';
 export { EventFactory } from './event-factory.js';
 export { ChainValidator } from './chain-validator.js';
 export { Fork, ForkDetector, MergeResult, DeterministicMerge, MergeEventFactory } from './fork-merge.js';
-export { PruneProtocol, PruneState, RetentionManager } from './pruning.js';
+export {
+  PruneProtocol,
+  PruneState,
+  RetentionManager,
+  V1PruningDisabledError,
+  V1_PRUNING_DISABLED_CODE,
+  V1_PRUNING_DISABLED_MESSAGE,
+  V1_PRUNING_DISABLED_RESULT,
+} from './pruning.js';
 export { LedgerService } from './ledger-service.js';

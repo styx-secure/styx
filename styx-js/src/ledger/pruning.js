@@ -1,7 +1,29 @@
 // styx-js/src/ledger/pruning.js
-// GDPR-compliant pruning protocol and retention management
+// Pruning containment and retention management
 
-import { EventType, PruneReason } from './event.js';
+/** Stable public code for the fail-closed v1 pruning containment. */
+export const V1_PRUNING_DISABLED_CODE = 'STYX_V1_PRUNING_DISABLED';
+
+/** Stable, non-secret message for errors and security telemetry. */
+export const V1_PRUNING_DISABLED_MESSAGE =
+  'Styx v1 pruning is disabled because it cannot preserve verifiable chain integrity.';
+
+/** Immutable rejection receipt emitted for inbound v1 pruning control events. */
+export const V1_PRUNING_DISABLED_RESULT = Object.freeze({
+  accepted: false,
+  code: V1_PRUNING_DISABLED_CODE,
+  message: V1_PRUNING_DISABLED_MESSAGE,
+});
+
+/** Typed error raised before any local v1 pruning side effect. */
+export class V1PruningDisabledError extends Error {
+  constructor() {
+    super(V1_PRUNING_DISABLED_MESSAGE);
+    this.name = 'V1PruningDisabledError';
+    this.code = V1_PRUNING_DISABLED_CODE;
+    Object.freeze(this);
+  }
+}
 
 /** @enum {string} */
 export const PruneState = {
@@ -13,97 +35,39 @@ export const PruneState = {
 };
 
 /**
- * Bilateral pruning protocol for GDPR compliance.
+ * Legacy v1 pruning API retained only to fail closed.
+ *
+ * Creating, acknowledging, or executing v1 prune operations is disabled because
+ * replacing an event payload without recomputing its committed hash breaks full
+ * chain verification. Existing persisted v1 records remain readable.
  */
 export class PruneProtocol {
   /**
-   * @param {import('./event-factory.js').EventFactory} eventFactory
+   * Reject creation of a v1 PRUNE_REQUEST before serializing any payload.
    */
-  constructor(eventFactory) {
-    this._eventFactory = eventFactory;
+  async requestPrune() {
+    throw new V1PruningDisabledError();
   }
 
   /**
-   * Create a PRUNE_REQUEST event
+   * Reject creation of a v1 PRUNE_ACK before reading the request payload.
    */
-  async requestPrune({
-    targetEventId,
-    targetEventHash,
-    reason,
-    privateKey,
-    publicKey,
-    previousEvent,
-    currentVectorClock,
-    localPeerRole,
-  }) {
-    const payload = new TextEncoder().encode(
-      JSON.stringify({
-        type: 'prune_request',
-        targetEventId,
-        targetEventHash,
-        reason,
-      })
-    );
-
-    return this._eventFactory.createEvent({
-      type: EventType.PRUNE_REQUEST,
-      payload,
-      privateKey,
-      publicKey,
-      previousEvent,
-      currentVectorClock,
-      localPeerRole,
-    });
+  async acknowledgePrune() {
+    throw new V1PruningDisabledError();
   }
 
   /**
-   * Create a PRUNE_ACK event in response to a request
+   * Reject bilateral v1 payload replacement before accessing the store.
    */
-  async acknowledgePrune({
-    pruneRequest,
-    privateKey,
-    publicKey,
-    previousEvent,
-    currentVectorClock,
-    localPeerRole,
-  }) {
-    const requestData = JSON.parse(new TextDecoder().decode(pruneRequest.payload));
-
-    const payload = new TextEncoder().encode(
-      JSON.stringify({
-        type: 'prune_ack',
-        targetEventId: requestData.targetEventId,
-        requestEventId: pruneRequest.eventId,
-      })
-    );
-
-    return this._eventFactory.createEvent({
-      type: EventType.PRUNE_ACK,
-      payload,
-      privateKey,
-      publicKey,
-      previousEvent,
-      currentVectorClock,
-      localPeerRole,
-    });
+  async executeBilateralPrune() {
+    throw new V1PruningDisabledError();
   }
 
   /**
-   * Nullify payload after both REQUEST and ACK (bilateral prune).
-   * @param {string} targetEventId
-   * @param {import('../storage/store-interface.js').LedgerStore} store
+   * Reject unilateral v1 payload replacement before accessing the store.
    */
-  async executeBilateralPrune(targetEventId, store) {
-    await store.pruneEvent(targetEventId);
-  }
-
-  /**
-   * Immediately nullify payload — GDPR Art. 17, no ACK needed.
-   * @param {string} targetEventId
-   * @param {import('../storage/store-interface.js').LedgerStore} store
-   */
-  async executeUnilateralPrune(targetEventId, store) {
-    await store.pruneEvent(targetEventId);
+  async executeUnilateralPrune() {
+    throw new V1PruningDisabledError();
   }
 }
 

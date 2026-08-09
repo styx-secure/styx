@@ -39,6 +39,8 @@ export {
   ChainValidator,
   Fork, ForkDetector, MergeResult, DeterministicMerge, MergeEventFactory,
   PruneProtocol, PruneState, RetentionManager,
+  V1PruningDisabledError, V1_PRUNING_DISABLED_CODE,
+  V1_PRUNING_DISABLED_MESSAGE, V1_PRUNING_DISABLED_RESULT,
   LedgerService,
 } from './ledger/index.js';
 

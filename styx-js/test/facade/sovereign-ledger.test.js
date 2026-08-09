@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach, beforeAll } from '@jest/globals';
+import { describe, test, expect, beforeEach, beforeAll, jest } from '@jest/globals';
 import { SovereignLedger, StyxState, LedgerConfig, LogLevel } from '../../src/facade/sovereign-ledger.js';
 import {
   MemoryLedgerStore,
@@ -7,7 +7,13 @@ import {
   MemoryOutboxStore,
 } from '../../src/storage/memory-store.js';
 import { StyxPublicKey } from '../../src/crypto/identity.js';
-import { loadTestWordlist, createTestKeyPair } from '../setup.js';
+import { EventType } from '../../src/ledger/event.js';
+import {
+  V1PruningDisabledError,
+  V1_PRUNING_DISABLED_CODE,
+  V1_PRUNING_DISABLED_RESULT,
+} from '../../src/ledger/pruning.js';
+import { loadTestWordlist, createTestEvent, createTestKeyPair } from '../setup.js';
 
 beforeAll(() => {
   loadTestWordlist();
@@ -251,11 +257,16 @@ describe('SovereignLedger', () => {
 
   describe('Pruning', () => {
     let ledger;
+    let ledgerStore;
+    let outboxStore;
+    let peerKp;
 
     beforeEach(async () => {
-      ledger = createLedger();
+      ledgerStore = new MemoryLedgerStore();
+      outboxStore = new MemoryOutboxStore();
+      ledger = createLedger({ ledgerStore, outboxStore });
       await ledger.initialize();
-      const peerKp = await createTestKeyPair();
+      peerKp = await createTestKeyPair();
       await ledger.confirmPairing({
         peerPublicKey: peerKp.publicKey,
         peerAlias: 'Peer',
@@ -265,6 +276,284 @@ describe('SovereignLedger', () => {
     test('getExpiredEvents returns empty with no retention policy', async () => {
       const expired = await ledger.getExpiredEvents();
       expect(expired).toEqual([]);
+    });
+
+    test.each([
+      'userRequest',
+      'retentionExpired',
+      'gdprArticle17',
+      'unknownReason',
+      null,
+      undefined,
+    ])(
+      'requestPrune(%s) fails closed before every local side effect',
+      async (reason) => {
+        const target = await createTestEvent({
+          previousEvent: await ledgerStore.getLatestEvent(),
+          vectorClock: await ledgerStore.getCurrentVectorClock(),
+          peerRole: ledger.identity.peerRole,
+          type: EventType.MESSAGE,
+          payload: new TextEncoder().encode('must remain readable'),
+        });
+        await ledgerStore.appendEvent(target);
+        const appendSpy = jest.spyOn(ledgerStore, 'appendEvent');
+        const pruneSpy = jest.spyOn(ledgerStore, 'pruneEvent');
+        const outboxSpy = jest.spyOn(outboxStore, 'addEntry');
+        const transportSpy = jest.spyOn(ledger._transport, 'send');
+        const beforeEvents = (await ledgerStore.getAllEvents()).map((event) =>
+          event.toJSON()
+        );
+        const beforeHeadId = (await ledgerStore.getLatestEvent()).eventId;
+        const beforeClock = (await ledgerStore.getCurrentVectorClock()).toJSON();
+        const beforeOutboxCount = await outboxStore.pendingCount();
+        const applicationEvents = [];
+        const securityEvents = [];
+        ledger.eventStream.onAllEvents((event) => applicationEvents.push(event));
+        ledger.onSecurityEvent((event) => securityEvents.push(event));
+
+        await expect(
+          ledger.requestPrune({ targetEventId: target.eventId, reason })
+        ).rejects.toBeInstanceOf(V1PruningDisabledError);
+
+        expect(appendSpy).not.toHaveBeenCalled();
+        expect(pruneSpy).not.toHaveBeenCalled();
+        expect(outboxSpy).not.toHaveBeenCalled();
+        expect(transportSpy).not.toHaveBeenCalled();
+        expect((await ledgerStore.getEventById(target.eventId)).payload).toEqual(
+          target.payload
+        );
+        expect((await ledgerStore.getAllEvents()).map((event) => event.toJSON())).toEqual(
+          beforeEvents
+        );
+        expect((await ledgerStore.getLatestEvent()).eventId).toBe(beforeHeadId);
+        expect((await ledgerStore.getCurrentVectorClock()).toJSON()).toEqual(beforeClock);
+        expect(await outboxStore.pendingCount()).toBe(beforeOutboxCount);
+        expect(applicationEvents).toEqual([]);
+        expect(securityEvents).toEqual([V1_PRUNING_DISABLED_RESULT]);
+      }
+    );
+
+    test('requestPrune rejects with the containment error before state validation', async () => {
+      const unpaired = createLedger();
+      await unpaired.initialize();
+
+      await expect(unpaired.requestPrune()).rejects.toMatchObject({
+        name: 'V1PruningDisabledError',
+        code: V1_PRUNING_DISABLED_CODE,
+      });
+      expect(unpaired.state).toBe(StyxState.UNPAIRED);
+    });
+
+    test.each([
+      ['well-formed request with false hash targeting genesis', EventType.PRUNE_REQUEST, true],
+      ['malformed request payload', EventType.PRUNE_REQUEST, false],
+      ['well-formed acknowledgement', EventType.PRUNE_ACK, true],
+    ])(
+      'rejects inbound %s before fork detection, persistence, or application emission',
+      async (_label, eventType, wellFormed) => {
+        const localHead = await ledgerStore.getLatestEvent();
+        const controlPayload = wellFormed
+          ? JSON.stringify({
+              type: eventType === EventType.PRUNE_REQUEST ? 'prune_request' : 'prune_ack',
+              targetEventId: localHead.eventId,
+              targetEventHash: '00'.repeat(32),
+              reason: 'userRequest',
+            })
+          : '{ malformed v1 control payload';
+        const inbound = await createTestEvent({
+          keyPair: peerKp,
+          previousEvent: localHead,
+          vectorClock: await ledgerStore.getCurrentVectorClock(),
+          peerRole: ledger.identity.peerRole === 'A' ? 'B' : 'A',
+          type: eventType,
+          payload: new TextEncoder().encode(controlPayload),
+        });
+        const message = {
+          payload: new TextEncoder().encode(JSON.stringify(inbound.toJSON())),
+        };
+        const beforeEvents = (await ledgerStore.getAllEvents()).map((event) =>
+          event.toJSON()
+        );
+        const beforeHeadId = (await ledgerStore.getLatestEvent()).eventId;
+        const beforeClock = (await ledgerStore.getCurrentVectorClock()).toJSON();
+        const beforeOutboxCount = await outboxStore.pendingCount();
+        const appendSpy = jest.spyOn(ledgerStore, 'appendEvent');
+        const pruneSpy = jest.spyOn(ledgerStore, 'pruneEvent');
+        const receiveSpy = jest.spyOn(ledger._ledgerService, 'receiveRemoteEvent');
+        const outboxSpy = jest.spyOn(outboxStore, 'addEntry');
+        const transportSpy = jest.spyOn(ledger._transport, 'send');
+        const applicationEvents = [];
+        const securityEvents = [];
+        ledger.eventStream.onAllEvents((event) => applicationEvents.push(event));
+        ledger.onSecurityEvent((event) => securityEvents.push(event));
+
+        for (let i = 0; i < 100; i++) {
+          await expect(ledger._handleIncomingMessage(message)).resolves.toBe(
+            V1_PRUNING_DISABLED_RESULT
+          );
+        }
+
+        expect(appendSpy).not.toHaveBeenCalled();
+        expect(pruneSpy).not.toHaveBeenCalled();
+        expect(receiveSpy).not.toHaveBeenCalled();
+        expect(await ledgerStore.getEventsByType(EventType.PRUNE_ACK)).toEqual([]);
+        expect(outboxSpy).not.toHaveBeenCalled();
+        expect(transportSpy).not.toHaveBeenCalled();
+        expect(applicationEvents).toEqual([]);
+        expect(securityEvents).toHaveLength(100);
+        expect(securityEvents.every((event) => event.accepted === false)).toBe(true);
+        expect(await ledgerStore.getAllEvents()).toEqual(
+          expect.arrayContaining(
+            beforeEvents.map((json) => expect.objectContaining({ eventId: json.eventId }))
+          )
+        );
+        expect((await ledgerStore.getAllEvents()).map((event) => event.toJSON())).toEqual(
+          beforeEvents
+        );
+        expect(await ledgerStore.count()).toBe(beforeEvents.length);
+        expect((await ledgerStore.getLatestEvent()).eventId).toBe(beforeHeadId);
+        expect((await ledgerStore.getCurrentVectorClock()).toJSON()).toEqual(beforeClock);
+        expect(await outboxStore.pendingCount()).toBe(beforeOutboxCount);
+      }
+    );
+
+    test('drops an incomplete raw prune envelope before LedgerEvent construction', async () => {
+      const beforeEvents = (await ledgerStore.getAllEvents()).map((event) =>
+        event.toJSON()
+      );
+      const securityEvents = [];
+      ledger.onSecurityEvent((event) => securityEvents.push(event));
+      const message = {
+        payload: new TextEncoder().encode(
+          JSON.stringify({ eventType: EventType.PRUNE_REQUEST })
+        ),
+      };
+
+      await expect(ledger._handleIncomingMessage(message)).resolves.toBe(
+        V1_PRUNING_DISABLED_RESULT
+      );
+      expect((await ledgerStore.getAllEvents()).map((event) => event.toJSON())).toEqual(
+        beforeEvents
+      );
+      expect(securityEvents).toEqual([V1_PRUNING_DISABLED_RESULT]);
+    });
+
+    test.each([
+      ['missing payload', {}],
+      ['empty payload', { payload: new Uint8Array() }],
+      ['non-JSON bytes', { payload: new TextEncoder().encode('not JSON') }],
+      ['JSON null', { payload: new TextEncoder().encode('null') }],
+      ['JSON array', { payload: new TextEncoder().encode('[]') }],
+      ['JSON string', { payload: new TextEncoder().encode('"pruneRequest"') }],
+      ['JSON number', { payload: new TextEncoder().encode('3') }],
+    ])('leaves a malformed non-prune envelope inert: %s', async (_label, message) => {
+      const beforeEvents = (await ledgerStore.getAllEvents()).map((event) =>
+        event.toJSON()
+      );
+      const beforeOutboxCount = await outboxStore.pendingCount();
+      const appendSpy = jest.spyOn(ledgerStore, 'appendEvent');
+      const pruneSpy = jest.spyOn(ledgerStore, 'pruneEvent');
+      const receiveSpy = jest.spyOn(ledger._ledgerService, 'receiveRemoteEvent');
+      const applicationEvents = [];
+      const securityEvents = [];
+      ledger.eventStream.onAllEvents((event) => applicationEvents.push(event));
+      ledger.onSecurityEvent((event) => securityEvents.push(event));
+
+      await expect(ledger._handleIncomingMessage(message)).resolves.toBeUndefined();
+
+      expect(appendSpy).not.toHaveBeenCalled();
+      expect(pruneSpy).not.toHaveBeenCalled();
+      expect(receiveSpy).not.toHaveBeenCalled();
+      expect(applicationEvents).toEqual([]);
+      expect(securityEvents).toEqual([]);
+      expect((await ledgerStore.getAllEvents()).map((event) => event.toJSON())).toEqual(
+        beforeEvents
+      );
+      expect(await outboxStore.pendingCount()).toBe(beforeOutboxCount);
+    });
+
+    test('keeps ordinary inbound message behavior unchanged as a positive control', async () => {
+      const localHead = await ledgerStore.getLatestEvent();
+      const inbound = await createTestEvent({
+        keyPair: peerKp,
+        previousEvent: localHead,
+        vectorClock: await ledgerStore.getCurrentVectorClock(),
+        peerRole: ledger.identity.peerRole === 'A' ? 'B' : 'A',
+        type: EventType.MESSAGE,
+        payload: new TextEncoder().encode('ordinary remote event'),
+      });
+      const message = {
+        payload: new TextEncoder().encode(JSON.stringify(inbound.toJSON())),
+      };
+      const allEvents = [];
+      const remoteEvents = [];
+      ledger.eventStream.onAllEvents((event) => allEvents.push(event));
+      ledger.eventStream.onRemoteEvents((event) => remoteEvents.push(event));
+
+      await ledger._handleIncomingMessage(message);
+
+      expect(await ledgerStore.getEventById(inbound.eventId)).not.toBeNull();
+      expect(allEvents).toEqual([inbound]);
+      expect(remoteEvents).toEqual([inbound]);
+    });
+
+    test('logger and telemetry failures cannot turn rejection into acceptance', async () => {
+      const localHead = await ledgerStore.getLatestEvent();
+      const inbound = await createTestEvent({
+        keyPair: peerKp,
+        previousEvent: localHead,
+        vectorClock: await ledgerStore.getCurrentVectorClock(),
+        peerRole: ledger.identity.peerRole === 'A' ? 'B' : 'A',
+        type: EventType.PRUNE_REQUEST,
+      });
+      const message = {
+        payload: new TextEncoder().encode(JSON.stringify(inbound.toJSON())),
+      };
+      const receiveSpy = jest.spyOn(ledger._ledgerService, 'receiveRemoteEvent');
+      const pruneSpy = jest.spyOn(ledgerStore, 'pruneEvent');
+      ledger._log = () => {
+        throw new Error('injected logger failure');
+      };
+      ledger.onSecurityEvent(() => {
+        throw new Error('injected telemetry failure');
+      });
+
+      await expect(ledger._handleIncomingMessage(message)).resolves.toMatchObject({
+        accepted: false,
+        code: V1_PRUNING_DISABLED_CODE,
+      });
+      expect(receiveSpy).not.toHaveBeenCalled();
+      expect(pruneSpy).not.toHaveBeenCalled();
+    });
+
+    test('local rejection survives hostile logger and telemetry consumers', async () => {
+      const appendSpy = jest.spyOn(ledgerStore, 'appendEvent');
+      const pruneSpy = jest.spyOn(ledgerStore, 'pruneEvent');
+      const outboxSpy = jest.spyOn(outboxStore, 'addEntry');
+      ledger._log = () => {
+        throw new Error('injected logger failure');
+      };
+      ledger.onSecurityEvent(() => {
+        throw new Error('injected telemetry failure');
+      });
+
+      await expect(
+        ledger.requestPrune({ targetEventId: 'irrelevant', reason: 'userRequest' })
+      ).rejects.toBeInstanceOf(V1PruningDisabledError);
+
+      expect(appendSpy).not.toHaveBeenCalled();
+      expect(pruneSpy).not.toHaveBeenCalled();
+      expect(outboxSpy).not.toHaveBeenCalled();
+    });
+
+    test('requestPrune rejects before initialize()', async () => {
+      const fresh = createLedger();
+      expect(fresh.state).toBe(StyxState.UNINITIALIZED);
+
+      await expect(fresh.requestPrune()).rejects.toBeInstanceOf(
+        V1PruningDisabledError
+      );
+      expect(fresh.state).toBe(StyxState.UNINITIALIZED);
     });
   });
 

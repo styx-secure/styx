@@ -2,6 +2,15 @@
 
 Complete API documentation for the Styx library — sovereign, peer-to-peer cryptographic ledgers designed to minimize server trust. Relays observe transport metadata; this is not a zero-metadata or "serverless" system.
 
+> **JavaScript v1 pruning security containment:** the JavaScript implementation
+> rejects all new v1 prune creation, acknowledgement, execution, and inbound
+> pruning controls with `STYX_V1_PRUNING_DISABLED`. Existing records remain
+> readable and are not rewritten. Already-pruned v1 records cannot be fully
+> verified because the payload committed by the retained hash is unavailable.
+> The Dart reference API documented below is a separate, experimental stack;
+> its legacy pruning API is not evidence of a safe or interoperable deletion
+> protocol and must not be used to claim verifiable pruning or GDPR compliance.
+
 ---
 
 ## Table of Contents

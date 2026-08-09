@@ -61,7 +61,7 @@ Styx.js is a faithful port of the Dart/Flutter Styx library, designed to run in 
 2. **Pair** -- Exchange public keys via QR code (local) or BIP-39 mnemonic (remote).
 3. **Exchange events** -- Append signed events to the hash chain, sync via Nostr relays or WebRTC.
 4. **Resolve forks** -- Deterministic merge when peers produce concurrent events.
-5. **Prune** -- GDPR-compliant bilateral or unilateral payload deletion.
+5. **Prune** -- disabled in v1; see [3.5 Legacy v1 Pruning Containment](#35-legacy-v1-pruning-containment).
 
 ---
 
@@ -258,36 +258,45 @@ ledger.eventStream.onEventsByType(EventType.SOS, (event) => {
 });
 ```
 
-### 3.5 GDPR Pruning (Bilateral and Unilateral)
+### 3.5 Legacy v1 Pruning Containment
 
-**Scenario:** A user wants to delete a specific event's payload from the ledger while preserving the hash chain integrity.
+New JavaScript v1 prune operations are disabled. Replacing a committed event's
+payload while retaining its original hash makes the resulting record impossible
+to verify fully. The public facade and `PruneProtocol` therefore reject creation,
+acknowledgement, and execution before any event, outbox, transport, or storage
+side effect. Inbound `PRUNE_REQUEST` and `PRUNE_ACK` controls are also rejected
+before fork processing or ledger admission.
 
 ```js
-import { PruneReason } from 'styx-js';
+import {
+  V1PruningDisabledError,
+  V1_PRUNING_DISABLED_CODE,
+} from 'styx-js';
 
-// Get event history
-const events = await ledger.getHistory();
-const targetEvent = events[0];
-
-// Request bilateral prune (asks peer to also delete)
-await ledger.requestPrune({
-  targetEventId: targetEvent.eventId,
-  reason: PruneReason.USER_REQUEST,
+ledger.onSecurityEvent(({ code, accepted }) => {
+  // code === 'STYX_V1_PRUNING_DISABLED'; accepted === false
 });
-// Flow: PRUNE_REQUEST -> peer sends PRUNE_ACK -> payload nullified on both sides
 
-// GDPR Article 17 -- unilateral prune (no peer ACK needed)
-await ledger.requestPrune({
-  targetEventId: targetEvent.eventId,
-  reason: PruneReason.GDPR_ARTICLE_17,
-});
-// Payload is immediately nullified locally. The hash chain remains intact.
+try {
+  await ledger.requestPrune({ targetEventId, reason });
+} catch (error) {
+  if (
+    error instanceof V1PruningDisabledError &&
+    error.code === V1_PRUNING_DISABLED_CODE
+  ) {
+    // Present a deletion-unavailable state; do not retry v1 pruning.
+  }
+}
 ```
 
-**Notes:**
-- Pruning nullifies the `payload` field but preserves the event hash, maintaining chain integrity.
-- Bilateral pruning requires both `PRUNE_REQUEST` and `PRUNE_ACK` events before execution.
-- Unilateral pruning (GDPR Art. 17) executes immediately without peer acknowledgment.
+Existing persisted v1 records, including already-pruned records, remain readable
+and are not rewritten. An already-pruned v1 record cannot be proven to contain
+the payload originally committed by its retained hash, and `validateChain()` may
+report a hash mismatch when such a legacy record is present. The exported
+low-level storage `pruneEvent()` primitive also remains reachable outside the
+facade and must not be used; storage interfaces are outside this containment
+change. This containment is not a complete deletion protocol or a claim of GDPR
+compliance; a separately reviewed v2 design is required.
 
 ### 3.6 Retention Policies
 
@@ -309,19 +318,15 @@ const ledger = new SovereignLedger({
 
 await ledger.initialize();
 
-// Identify expired events
+// Identify expired events for policy reporting. V1 deletion is disabled.
 const expired = await ledger.getExpiredEvents();
-for (const event of expired) {
-  await ledger.requestPrune({
-    targetEventId: event.eventId,
-    reason: PruneReason.RETENTION_EXPIRED,
-  });
-}
+reportExpiredEvents(expired);
 ```
 
 **Notes:**
 - Only events of types listed in `retentionTypes` are evaluated.
 - Already-pruned events are excluded from the results.
+- Results are advisory only while v1 deletion is disabled.
 
 ### 3.7 Re-Keying (Device Change)
 
@@ -684,18 +689,20 @@ await ledger.validateChain(): Promise<ChainValidationError|null>
 
 ##### `requestPrune({ targetEventId, reason })`
 
-> Requests pruning of a specific event. Bilateral for `userRequest`/`retentionExpired`, unilateral for `gdprArticle17`.
+> Rejects every new v1 prune operation before any side effect.
 
 ```js
-await ledger.requestPrune({ targetEventId, reason }): Promise<void>
+await ledger.requestPrune({ targetEventId, reason }): Promise<never>
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| targetEventId | `string` | Yes | UUID of the event to prune |
-| reason | `string` | Yes | `PruneReason` value |
+| targetEventId | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| reason | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
 
-**Throws:** `Error` if state is not `ready` or `degraded`.
+**Throws:** `V1PruningDisabledError` with stable code
+`STYX_V1_PRUNING_DISABLED` in every state. No event is created or admitted, no
+outbox or transport entry is produced, and no stored payload is replaced.
 
 ##### `setRetentionPolicy({ periodMs, types })`
 
@@ -772,6 +779,18 @@ const unsubscribe = ledger.onStateChange(callback): () => void
 | callback | `function(string): void` | Yes | Called with the new `StyxState` value |
 
 **Returns:** Unsubscribe function.
+
+##### `onSecurityEvent(callback)`
+
+> Subscribes to stable, non-secret security decisions. Rejected inbound v1
+> pruning controls emit the frozen result `{ accepted: false, code, message }`.
+
+```js
+const unsubscribe = ledger.onSecurityEvent(callback): () => void
+```
+
+Telemetry contains no target identifier, event hash, payload, or peer identity.
+Listener or logger failures cannot change the rejection decision.
 
 ---
 
@@ -2731,7 +2750,8 @@ await mergeEventFactory.createMergeEvent({
 
 ### `PruneState`
 
-> Enum of pruning states.
+> Legacy enum retained for source compatibility. No new v1 operation transitions
+> through these states while containment is active.
 
 | Value | Description |
 |-------|-------------|
@@ -2745,7 +2765,8 @@ await mergeEventFactory.createMergeEvent({
 
 ### `PruneProtocol`
 
-> Bilateral pruning protocol for GDPR compliance.
+> Legacy v1 surface retained only for fail-closed compatibility. Every mutating
+> method rejects with `V1PruningDisabledError` before reading inputs or stores.
 
 #### Constructor
 
@@ -2755,13 +2776,13 @@ new PruneProtocol(eventFactory)
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| eventFactory | `EventFactory` | Yes | Factory for creating signed events |
+| eventFactory | `EventFactory` | No | Legacy argument; ignored while v1 pruning is disabled |
 
 #### Methods
 
 ##### `requestPrune({ targetEventId, targetEventHash, reason, privateKey, publicKey, previousEvent, currentVectorClock, localPeerRole })`
 
-> Create a PRUNE_REQUEST event.
+> Disabled. Rejects before serializing a payload or creating an event.
 
 ```js
 await pruneProtocol.requestPrune({
@@ -2773,23 +2794,23 @@ await pruneProtocol.requestPrune({
   previousEvent,
   currentVectorClock,
   localPeerRole,
-}): Promise<LedgerEvent>
+}): Promise<never>
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| targetEventId | `string` | Yes | UUID of the event to prune |
-| targetEventHash | `string` | Yes | Hash of the event to prune |
-| reason | `string` | Yes | `PruneReason` value |
-| privateKey | `StyxPrivateKey` | Yes | Signing key |
-| publicKey | `StyxPublicKey` | Yes | Sender's public key |
-| previousEvent | `LedgerEvent` | Yes | Last event in the chain |
-| currentVectorClock | `VectorClock` | Yes | Current vector clock |
-| localPeerRole | `string` | Yes | `'A'` or `'B'` |
+| targetEventId | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| targetEventHash | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| reason | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| privateKey | `StyxPrivateKey` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| publicKey | `StyxPublicKey` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| previousEvent | `LedgerEvent` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| currentVectorClock | `VectorClock` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| localPeerRole | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
 
 ##### `acknowledgePrune({ pruneRequest, privateKey, publicKey, previousEvent, currentVectorClock, localPeerRole })`
 
-> Create a PRUNE_ACK event in response to a request.
+> Disabled. Rejects before reading the request payload or creating an ACK.
 
 ```js
 await pruneProtocol.acknowledgePrune({
@@ -2799,43 +2820,43 @@ await pruneProtocol.acknowledgePrune({
   previousEvent,
   currentVectorClock,
   localPeerRole,
-}): Promise<LedgerEvent>
+}): Promise<never>
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| pruneRequest | `LedgerEvent` | Yes | The received PRUNE_REQUEST event |
-| privateKey | `StyxPrivateKey` | Yes | Signing key |
-| publicKey | `StyxPublicKey` | Yes | Sender's public key |
-| previousEvent | `LedgerEvent` | Yes | Last event in the chain |
-| currentVectorClock | `VectorClock` | Yes | Current vector clock |
-| localPeerRole | `string` | Yes | `'A'` or `'B'` |
+| pruneRequest | `LedgerEvent` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| privateKey | `StyxPrivateKey` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| publicKey | `StyxPublicKey` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| previousEvent | `LedgerEvent` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| currentVectorClock | `VectorClock` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| localPeerRole | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
 
 ##### `executeBilateralPrune(targetEventId, store)`
 
-> Nullify payload after both REQUEST and ACK.
+> Disabled. Rejects before accessing the store.
 
 ```js
-await pruneProtocol.executeBilateralPrune(targetEventId, store): Promise<void>
+await pruneProtocol.executeBilateralPrune(targetEventId, store): Promise<never>
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| targetEventId | `string` | Yes | UUID of the event to prune |
-| store | `LedgerStore` | Yes | Store to perform pruning on |
+| targetEventId | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| store | `LedgerStore` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
 
 ##### `executeUnilateralPrune(targetEventId, store)`
 
-> Immediately nullify payload -- GDPR Art. 17, no ACK needed.
+> Disabled. Rejects before accessing the store.
 
 ```js
-await pruneProtocol.executeUnilateralPrune(targetEventId, store): Promise<void>
+await pruneProtocol.executeUnilateralPrune(targetEventId, store): Promise<never>
 ```
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| targetEventId | `string` | Yes | UUID of the event to prune |
-| store | `LedgerStore` | Yes | Store to perform pruning on |
+| targetEventId | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| store | `LedgerStore` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
 
 ---
 
@@ -4226,7 +4247,7 @@ console.log('Shares:', shares.map(s => s.serialize()));
 | **Nostr** | "Notes and Other Stuff Transmitted by Relays." A decentralized relay-based protocol. Styx uses Nostr relays as a transport layer with kind 30078 events. |
 | **P-256** | NIST P-256 elliptic curve (also called secp256r1 or prime256v1). Used for SPAKE2 in Styx. |
 | **Peer Role** | `A` or `B`, determined by lexicographic ordering of Ed25519 public keys. The peer with the smaller key is `A`. Affects vector clock increment and directional key assignment. |
-| **Pruning** | GDPR-compliant deletion of event payloads. Bilateral (requires peer ACK) or unilateral (GDPR Art. 17, immediate). Preserves hash chain integrity. |
+| **Pruning** | JavaScript v1 pruning is disabled fail-closed because payload replacement cannot preserve full verifiability. Existing v1 records remain readable but already-pruned payloads cannot be reconstructed or fully verified. |
 | **REKEY** | The process of migrating identity to a new device. The old device signs a "blessing" event containing the new public key. |
 | **schnorr** | Schnorr signature scheme over secp256k1. Used for NIP-01 Nostr event signing (distinct from Ed25519 used for Styx events). |
 | **secp256k1** | The elliptic curve used by Bitcoin and Nostr. Styx derives a secp256k1 keypair from Ed25519 keys via HKDF for Nostr compatibility. |
