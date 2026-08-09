@@ -2,6 +2,16 @@
 
 Documentazione API completa per la libreria Styx — ledger crittografici sovrani, peer-to-peer, progettati per minimizzare la fiducia nei server. I relay osservano i metadati di trasporto; non è un sistema zero-metadata né "serverless".
 
+> **Contenimento di sicurezza del pruning v1 JavaScript:** l'implementazione
+> JavaScript rifiuta creazione, conferma, esecuzione e controlli in ingresso di
+> ogni nuovo pruning v1 con `STYX_V1_PRUNING_DISABLED`. I record esistenti restano
+> leggibili e non vengono riscritti. I record v1 già sottoposti a pruning non sono
+> pienamente verificabili perché il payload impegnato dall'hash conservato non è
+> più disponibile. L'API Dart documentata sotto è uno stack di riferimento
+> separato e sperimentale: il suo pruning legacy non dimostra l'esistenza di un
+> protocollo di cancellazione sicuro o interoperabile e non autorizza affermazioni
+> di pruning verificabile o conformità GDPR.
+
 ---
 
 ## Indice
