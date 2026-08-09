@@ -26,6 +26,9 @@ describe('PruneProtocol', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.code).toBe(V1_PRUNING_DISABLED_CODE);
     expect(error.message).toBe(V1_PRUNING_DISABLED_MESSAGE);
+    expect(typeof error.stack).toBe('string');
+    expect(error.stack.length).toBeGreaterThan(0);
+    expect(error.stack).toContain(V1_PRUNING_DISABLED_MESSAGE);
     expect(Object.isFrozen(error)).toBe(true);
     expect(V1_PRUNING_DISABLED_RESULT).toEqual({
       accepted: false,
@@ -77,6 +80,20 @@ describe('PruneProtocol', () => {
       expect(store.pruneEvent).not.toHaveBeenCalled();
     }
   );
+
+  test.each([
+    'requestPrune',
+    'acknowledgePrune',
+    'executeBilateralPrune',
+    'executeUnilateralPrune',
+  ])('%s rejects with the same contract when called without arguments', async (method) => {
+    await expect(protocol[method]()).rejects.toMatchObject({
+      name: 'V1PruningDisabledError',
+      code: V1_PRUNING_DISABLED_CODE,
+      message: V1_PRUNING_DISABLED_MESSAGE,
+    });
+    expect(eventFactory.createEvent).not.toHaveBeenCalled();
+  });
 
   test('keeps an already-pruned v1 record readable without rewriting it', async () => {
     const store = new MemoryLedgerStore();

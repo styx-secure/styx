@@ -61,7 +61,7 @@ Styx.js is a faithful port of the Dart/Flutter Styx library, designed to run in 
 2. **Pair** -- Exchange public keys via QR code (local) or BIP-39 mnemonic (remote).
 3. **Exchange events** -- Append signed events to the hash chain, sync via Nostr relays or WebRTC.
 4. **Resolve forks** -- Deterministic merge when peers produce concurrent events.
-5. **Prune** -- GDPR-compliant bilateral or unilateral payload deletion.
+5. **Prune** -- disabled in v1; see [3.5 Legacy v1 Pruning Containment](#35-legacy-v1-pruning-containment).
 
 ---
 
@@ -697,8 +697,8 @@ await ledger.requestPrune({ targetEventId, reason }): Promise<never>
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| targetEventId | `string` | Yes | UUID of the event to prune |
-| reason | `string` | Yes | `PruneReason` value |
+| targetEventId | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| reason | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
 
 **Throws:** `V1PruningDisabledError` with stable code
 `STYX_V1_PRUNING_DISABLED` in every state. No event is created or admitted, no
@@ -2799,14 +2799,14 @@ await pruneProtocol.requestPrune({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| targetEventId | `string` | Yes | UUID of the event to prune |
-| targetEventHash | `string` | Yes | Hash of the event to prune |
-| reason | `string` | Yes | `PruneReason` value |
-| privateKey | `StyxPrivateKey` | Yes | Signing key |
-| publicKey | `StyxPublicKey` | Yes | Sender's public key |
-| previousEvent | `LedgerEvent` | Yes | Last event in the chain |
-| currentVectorClock | `VectorClock` | Yes | Current vector clock |
-| localPeerRole | `string` | Yes | `'A'` or `'B'` |
+| targetEventId | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| targetEventHash | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| reason | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| privateKey | `StyxPrivateKey` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| publicKey | `StyxPublicKey` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| previousEvent | `LedgerEvent` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| currentVectorClock | `VectorClock` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| localPeerRole | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
 
 ##### `acknowledgePrune({ pruneRequest, privateKey, publicKey, previousEvent, currentVectorClock, localPeerRole })`
 
@@ -2825,12 +2825,12 @@ await pruneProtocol.acknowledgePrune({
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| pruneRequest | `LedgerEvent` | Yes | The received PRUNE_REQUEST event |
-| privateKey | `StyxPrivateKey` | Yes | Signing key |
-| publicKey | `StyxPublicKey` | Yes | Sender's public key |
-| previousEvent | `LedgerEvent` | Yes | Last event in the chain |
-| currentVectorClock | `VectorClock` | Yes | Current vector clock |
-| localPeerRole | `string` | Yes | `'A'` or `'B'` |
+| pruneRequest | `LedgerEvent` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| privateKey | `StyxPrivateKey` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| publicKey | `StyxPublicKey` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| previousEvent | `LedgerEvent` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| currentVectorClock | `VectorClock` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| localPeerRole | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
 
 ##### `executeBilateralPrune(targetEventId, store)`
 
@@ -2842,8 +2842,8 @@ await pruneProtocol.executeBilateralPrune(targetEventId, store): Promise<never>
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| targetEventId | `string` | Yes | UUID of the event to prune |
-| store | `LedgerStore` | Yes | Store to perform pruning on |
+| targetEventId | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| store | `LedgerStore` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
 
 ##### `executeUnilateralPrune(targetEventId, store)`
 
@@ -2855,8 +2855,8 @@ await pruneProtocol.executeUnilateralPrune(targetEventId, store): Promise<never>
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| targetEventId | `string` | Yes | UUID of the event to prune |
-| store | `LedgerStore` | Yes | Store to perform pruning on |
+| targetEventId | `string` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
+| store | `LedgerStore` | No | Legacy argument; accepted and ignored while v1 pruning is disabled |
 
 ---
 

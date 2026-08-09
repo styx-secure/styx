@@ -288,9 +288,14 @@ describe('SovereignLedger', () => {
     ])(
       'requestPrune(%s) fails closed before every local side effect',
       async (reason) => {
-        const target = await ledger.sendMessage({
+        const target = await createTestEvent({
+          previousEvent: await ledgerStore.getLatestEvent(),
+          vectorClock: await ledgerStore.getCurrentVectorClock(),
+          peerRole: ledger.identity.peerRole,
+          type: EventType.MESSAGE,
           payload: new TextEncoder().encode('must remain readable'),
         });
+        await ledgerStore.appendEvent(target);
         const appendSpy = jest.spyOn(ledgerStore, 'appendEvent');
         const pruneSpy = jest.spyOn(ledgerStore, 'pruneEvent');
         const outboxSpy = jest.spyOn(outboxStore, 'addEntry');
@@ -433,6 +438,40 @@ describe('SovereignLedger', () => {
       expect(securityEvents).toEqual([V1_PRUNING_DISABLED_RESULT]);
     });
 
+    test.each([
+      ['missing payload', {}],
+      ['empty payload', { payload: new Uint8Array() }],
+      ['non-JSON bytes', { payload: new TextEncoder().encode('not JSON') }],
+      ['JSON null', { payload: new TextEncoder().encode('null') }],
+      ['JSON array', { payload: new TextEncoder().encode('[]') }],
+      ['JSON string', { payload: new TextEncoder().encode('"pruneRequest"') }],
+      ['JSON number', { payload: new TextEncoder().encode('3') }],
+    ])('leaves a malformed non-prune envelope inert: %s', async (_label, message) => {
+      const beforeEvents = (await ledgerStore.getAllEvents()).map((event) =>
+        event.toJSON()
+      );
+      const beforeOutboxCount = await outboxStore.pendingCount();
+      const appendSpy = jest.spyOn(ledgerStore, 'appendEvent');
+      const pruneSpy = jest.spyOn(ledgerStore, 'pruneEvent');
+      const receiveSpy = jest.spyOn(ledger._ledgerService, 'receiveRemoteEvent');
+      const applicationEvents = [];
+      const securityEvents = [];
+      ledger.eventStream.onAllEvents((event) => applicationEvents.push(event));
+      ledger.onSecurityEvent((event) => securityEvents.push(event));
+
+      await expect(ledger._handleIncomingMessage(message)).resolves.toBeUndefined();
+
+      expect(appendSpy).not.toHaveBeenCalled();
+      expect(pruneSpy).not.toHaveBeenCalled();
+      expect(receiveSpy).not.toHaveBeenCalled();
+      expect(applicationEvents).toEqual([]);
+      expect(securityEvents).toEqual([]);
+      expect((await ledgerStore.getAllEvents()).map((event) => event.toJSON())).toEqual(
+        beforeEvents
+      );
+      expect(await outboxStore.pendingCount()).toBe(beforeOutboxCount);
+    });
+
     test('keeps ordinary inbound message behavior unchanged as a positive control', async () => {
       const localHead = await ledgerStore.getLatestEvent();
       const inbound = await createTestEvent({
@@ -485,6 +524,36 @@ describe('SovereignLedger', () => {
       });
       expect(receiveSpy).not.toHaveBeenCalled();
       expect(pruneSpy).not.toHaveBeenCalled();
+    });
+
+    test('local rejection survives hostile logger and telemetry consumers', async () => {
+      const appendSpy = jest.spyOn(ledgerStore, 'appendEvent');
+      const pruneSpy = jest.spyOn(ledgerStore, 'pruneEvent');
+      const outboxSpy = jest.spyOn(outboxStore, 'addEntry');
+      ledger._log = () => {
+        throw new Error('injected logger failure');
+      };
+      ledger.onSecurityEvent(() => {
+        throw new Error('injected telemetry failure');
+      });
+
+      await expect(
+        ledger.requestPrune({ targetEventId: 'irrelevant', reason: 'userRequest' })
+      ).rejects.toBeInstanceOf(V1PruningDisabledError);
+
+      expect(appendSpy).not.toHaveBeenCalled();
+      expect(pruneSpy).not.toHaveBeenCalled();
+      expect(outboxSpy).not.toHaveBeenCalled();
+    });
+
+    test('requestPrune rejects before initialize()', async () => {
+      const fresh = createLedger();
+      expect(fresh.state).toBe(StyxState.UNINITIALIZED);
+
+      await expect(fresh.requestPrune()).rejects.toBeInstanceOf(
+        V1PruningDisabledError
+      );
+      expect(fresh.state).toBe(StyxState.UNINITIALIZED);
     });
   });
 
