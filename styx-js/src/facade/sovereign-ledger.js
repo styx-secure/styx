@@ -15,13 +15,18 @@ import { Spake2Protocol } from '../crypto/spake2.js';
 import { MnemonicGenerator, DoubleCheckVerifier } from '../crypto/mnemonic.js';
 import { KeyBackup, ShamirShare } from '../crypto/shamir.js';
 
-import { EventType, PruneReason } from '../ledger/event.js';
+import { EventType } from '../ledger/event.js';
 import { VectorClock } from '../ledger/vector-clock.js';
 import { EventFactory } from '../ledger/event-factory.js';
 import { ChainValidator } from '../ledger/chain-validator.js';
 import { LedgerService } from '../ledger/ledger-service.js';
 import { ForkDetector, DeterministicMerge, MergeEventFactory } from '../ledger/fork-merge.js';
-import { PruneProtocol, RetentionManager } from '../ledger/pruning.js';
+import {
+  PruneProtocol,
+  RetentionManager,
+  V1PruningDisabledError,
+  V1_PRUNING_DISABLED_RESULT,
+} from '../ledger/pruning.js';
 
 import { TransportState } from '../transport/transport-interface.js';
 import { WebRTCTransport } from '../transport/webrtc-transport.js';
@@ -315,29 +320,9 @@ export class SovereignLedger {
 
   // --- Pruning ---
 
-  async requestPrune({ targetEventId, reason }) {
-    this._assertState(StyxState.READY, StyxState.DEGRADED);
-
-    if (reason === PruneReason.GDPR_ARTICLE_17) {
-      await this._pruneProtocol.executeUnilateralPrune(targetEventId, this._ledgerStore);
-    } else {
-      const target = await this._ledgerStore.getEventById(targetEventId);
-      if (!target) throw new Error(`Event not found: ${targetEventId}`);
-
-      const event = await this._pruneProtocol.requestPrune({
-        targetEventId,
-        targetEventHash: target.eventHash,
-        reason,
-        privateKey: this._keyPair.privateKey,
-        publicKey: this._keyPair.publicKey,
-        previousEvent: await this._ledgerStore.getLatestEvent(),
-        currentVectorClock: await this._ledgerStore.getCurrentVectorClock(),
-        localPeerRole: this._peerRole,
-      });
-
-      await this._ledgerStore.appendEvent(event);
-      await this._outboxStore.addEntry(event.eventId);
-    }
+  async requestPrune() {
+    this._reportV1PruningDisabled();
+    throw new V1PruningDisabledError();
   }
 
   async setRetentionPolicy({ periodMs, types }) {
@@ -398,6 +383,11 @@ export class SovereignLedger {
 
   onStateChange(callback) {
     return this._emitter.on('stateChange', callback);
+  }
+
+  /** Subscribe to stable, non-secret security telemetry. */
+  onSecurityEvent(callback) {
+    return this._emitter.on('securityEvent', callback);
   }
 
   // --- Private ---
@@ -521,6 +511,19 @@ export class SovereignLedger {
   async _handleIncomingMessage(msg) {
     try {
       const json = JSON.parse(new TextDecoder().decode(msg.payload));
+
+      // Classify legacy pruning controls from the raw envelope so even an
+      // incomplete or otherwise malformed prune event cannot reach model
+      // construction, fork handling, persistence, or application listeners.
+      if (
+        json !== null &&
+        typeof json === 'object' &&
+        (json.eventType === EventType.PRUNE_REQUEST ||
+          json.eventType === EventType.PRUNE_ACK)
+      ) {
+        return this._reportV1PruningDisabled();
+      }
+
       const { LedgerEvent } = await import('../ledger/event.js');
       const { HybridLogicalClock } = await import('../ledger/hlc.js');
 
@@ -553,27 +556,6 @@ export class SovereignLedger {
         }
       }
 
-      // Handle prune requests
-      if (event.eventType === EventType.PRUNE_REQUEST) {
-        const data = JSON.parse(new TextDecoder().decode(event.payload));
-        // Auto-acknowledge non-GDPR prune requests
-        if (data.reason !== PruneReason.GDPR_ARTICLE_17) {
-          const ack = await this._pruneProtocol.acknowledgePrune({
-            pruneRequest: event,
-            privateKey: this._keyPair.privateKey,
-            publicKey: this._keyPair.publicKey,
-            previousEvent: event,
-            currentVectorClock: event.vectorClock,
-            localPeerRole: this._peerRole,
-          });
-          await this._ledgerStore.appendEvent(ack);
-          await this._pruneProtocol.executeBilateralPrune(
-            data.targetEventId,
-            this._ledgerStore
-          );
-        }
-      }
-
       await this._ledgerService.receiveRemoteEvent(event);
     } catch (e) {
       this._log('error', 'Failed to process incoming message:', e);
@@ -593,6 +575,21 @@ export class SovereignLedger {
         `Invalid state: ${this._state}. Expected one of: ${validStates.join(', ')}`
       );
     }
+  }
+
+  _reportV1PruningDisabled() {
+    // Observability must never become a path back into acceptance or pruning.
+    try {
+      this._log('warning', V1_PRUNING_DISABLED_RESULT.message);
+    } catch {
+      // Deliberately fail closed even if an injected logger fails.
+    }
+    try {
+      this._emitter.emit('securityEvent', V1_PRUNING_DISABLED_RESULT);
+    } catch {
+      // A failing telemetry consumer cannot change the rejection decision.
+    }
+    return V1_PRUNING_DISABLED_RESULT;
   }
 
   _log(level, ...args) {
