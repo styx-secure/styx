@@ -41,7 +41,7 @@ Marmot interoperability, or establish production readiness.
 - Rust build image:
   `rust:1.96.1@sha256:1f0dbad1df66647807e6952d1db85d0b2bda7606cb2139d82517e4f009967376`.
 
-The only source changes at the evaluated head are the authorized wrapper patch
+The only source changes at the engine source head are the authorized wrapper patch
 and two new independently written probes. The review corrections add test-only
 Rust code after the production module and generated-JavaScript probe assertions.
 Two fresh builds prove that those corrections leave all five candidate
