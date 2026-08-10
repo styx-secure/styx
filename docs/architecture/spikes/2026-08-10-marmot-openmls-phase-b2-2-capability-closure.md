@@ -216,11 +216,14 @@ a relay skip. This isolates the cause as under-specified repository
 configuration interacting with changed upstream defaults, not an engine or
 transport regression.
 
-The prospective correction is retained outside the repository and has SHA-256
+The external two-file diagnostic patch is retained outside the repository and
+has SHA-256
 `437aa384755d32ad92bc1f8c99a5131b9b022e16d5cfe8ddaee7f42321edfb7b`.
-The current Issue forbids the compose, relay-config and integration-test paths,
-so this diagnostic success cannot satisfy the exact repository command or be
-called Stage-1 GO.
+It proves the configuration root cause but is not a complete correction: the
+three integration suites must also fail closed when a relay is contractually
+required. The current Issue forbids the compose, relay-config and
+integration-test paths, so this diagnostic success cannot satisfy the exact
+repository command or be called Stage-1 GO.
 
 One final disposable build attempt failed during bootstrap with a temporary DNS
 error resolving crates.io/GitLab. The attempt was discarded and the complete
