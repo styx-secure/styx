@@ -77,7 +77,9 @@ Before confirm or merge, WASM independently recomputes the exact
 `STYX-B2-VERIFIED-LEAVES-v1` digest over all candidate leaves. The JavaScript
 probe independently reconstructs the bounded preimage and obtains the same
 SHA-256. This is a state-binding check, not BIP-340 verification; that remains
-B2.4 work.
+B2.4 work. It does not bind the group id, epoch or any GroupContext field and
+must not be persisted or reused as a standalone authorization token; the Stage
+2 lifecycle must bind each policy decision to that complete transition context.
 
 ## Bounds and stable failures
 
