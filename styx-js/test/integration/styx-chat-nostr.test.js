@@ -13,6 +13,7 @@ import { StyxChat } from '../../src/chat/styx-chat.js';
 import { MlsEngine } from '../../src/crypto/mls/mls-engine.js';
 
 const RELAY = process.env.NOSTR_RELAY || 'ws://localhost:17777';
+const REQUIRE_RELAY = process.env.REQUIRE_RELAY === '1';
 const wasmBytes = readFileSync(
   fileURLToPath(new URL('../../vendor/openmls-wasm/openmls_wasm_bg.wasm', import.meta.url)),
 );
@@ -28,6 +29,9 @@ beforeAll(async () => {
     ws.on('error', () => { clearTimeout(t); resolve(false); });
   });
   if (!relayAvailable) {
+    if (REQUIRE_RELAY) {
+      throw new Error('required relay unavailable: ' + RELAY);
+    }
     console.warn('\n⚠ Nostr relay not available at ' + RELAY + ' — skipping relay integration tests.\n');
   }
 }, 10000);

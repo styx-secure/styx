@@ -10,6 +10,7 @@ import { NostrChatTransport } from '../../src/transport/nostr-chat-transport.js'
 import { bytesToHex } from '../../src/utils.js';
 
 const RELAY = process.env.NOSTR_RELAY || 'ws://localhost:17777';
+const REQUIRE_RELAY = process.env.REQUIRE_RELAY === '1';
 
 // These tests need a live relay. Where none is reachable (e.g. CI without strfry) they
 // skip gracefully instead of failing — same pattern as nostr-relay.test.js.
@@ -23,6 +24,9 @@ beforeAll(async () => {
     ws.on('error', () => { clearTimeout(t); resolve(false); });
   });
   if (!relayAvailable) {
+    if (REQUIRE_RELAY) {
+      throw new Error('required relay unavailable: ' + RELAY);
+    }
     console.warn('\n⚠ Nostr relay not available at ' + RELAY + ' — skipping relay integration tests.\n');
   }
 }, 10000);

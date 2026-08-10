@@ -30,6 +30,7 @@ import { loadTestWordlist } from '../setup.js';
 import { randomBytes, bytesToHex } from '../../src/utils.js';
 
 const RELAY_URL = process.env.NOSTR_RELAY || 'ws://localhost:17777';
+const REQUIRE_RELAY = process.env.REQUIRE_RELAY === '1';
 
 // Polyfill WebSocket for Node.js
 globalThis.WebSocket = WebSocket;
@@ -49,6 +50,9 @@ beforeAll(async () => {
     ws.on('error', () => { clearTimeout(timeout); resolve(false); });
   });
   if (!relayAvailable) {
+    if (REQUIRE_RELAY) {
+      throw new Error('required relay unavailable: ' + RELAY_URL);
+    }
     console.warn(
       '\n⚠ Nostr relay not available at ' + RELAY_URL +
       '\n  Run: cd styx-js && docker compose -f docker-compose.test.yml up -d\n' +

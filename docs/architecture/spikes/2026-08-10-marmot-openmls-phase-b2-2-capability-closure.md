@@ -1,13 +1,14 @@
 # Phase B2.2 OpenMLS capability-closure evidence
 
-Status: **NO-GO pending relay-infrastructure amendment**
+Status: **GO for the separately approved Stage-2 amendment gate**
 
-This report evaluates the source-only Stage 1 authorized by Issue #149. The
-OpenMLS capability itself passed its native, generated-JavaScript,
-reproducibility and retained-surface checks. Stage 1 is nevertheless not called
-GO because the exact moving relay image required by the contract changed and
-the mandatory full relay run is not green. That failure is recorded rather
-than waived.
+This report evaluates Stage 1 and the separately approved relay-harness
+amendment authorized by Issue #149. The OpenMLS capability passed its native,
+generated-JavaScript, reproducibility and retained-surface checks. The pinned,
+explicitly configured relay harness also passed the mandatory full live run and
+all three required-mode negative runs. Stage 1 is therefore GO for drafting and
+reviewing the exact Stage-2 amendment; Stage 2 remains blocked until that exact
+amendment is independently reviewed and approved by the product owner.
 
 Passing results in this report are capability evidence only. They do not
 activate Phase B2 in a product, verify the BIP-340 account-identity proof, prove
@@ -16,7 +17,9 @@ Marmot interoperability, or establish production readiness.
 ## Frozen inputs
 
 - Contract: Issue #149, Stage 1, approved body SHA-256
-  `10ad40928019b5f9c2793d0c760b25209a96e3fa8bacc1541a5da5d723b64ae3`.
+  `10ad40928019b5f9c2793d0c760b25209a96e3fa8bacc1541a5da5d723b64ae3`;
+  relay amendment REST body SHA-256
+  `3bed770030150caed56a6a969f41aa26b52cb4926eec521fee2625af45a9be10`.
 - Base: `0bcd19f114ad1dd9cc419a8c53f0d53d33428ac0` on `main`.
 - Stage-1 source head evaluated by this report:
   `e08c226aa9bfc7dce7640624e4771f7a3061c1df`.
@@ -191,19 +194,33 @@ generated files has entered the Stage-1 branch.
 - Agent-enforcement: 54 tests passed.
 - Claims-lint: 10 tests passed; repository scan reported zero findings.
 - Translation-sync: 20 tests passed; repository check reported zero findings.
-- Full Jest with a disposable corrected relay configuration: 85/85 suites and
-  1,151/1,151 tests passed with no relay skip. The configuration was external
-  evidence only and did not modify a repository path.
+- Full Jest with the approved repository relay harness and
+  `REQUIRE_RELAY=1 NOSTR_RELAY=ws://127.0.0.1:17777`: 85/85 suites and
+  1,151/1,151 tests passed with no relay skip. The complete log SHA-256 is
+  `bf71b85afe706bc4abdb96d9a03825d2bef7173b9e018090feb3d0009885096b`.
+- With the relay stopped, each of
+  `nostr-relay.test.js`, `nostr-chat-transport.test.js` and
+  `styx-chat-nostr.test.js` failed nonzero in required mode and emitted the
+  stable `required relay unavailable` diagnostic. Their respective log
+  SHA-256 values are
+  `65ceb5fefa3fb7b0bfeca2f9705142ffd103672146057b456d7afdba8bf3358c`,
+  `57cd7ac3e75dcc9d9a6836131ae02bba4c5e91a1d7d92800e4e2bb0e9e0d289e`
+  and
+  `453bebd4ab55837229db4087b0e3d21bb09960e141b0cce0582f0931489377b0`.
+- With required mode unset and the relay stopped, the same three suites
+  retained their developer-friendly behavior: 3/3 suites and 19/19 tests
+  passed after the existing skip warning. The log SHA-256 is
+  `1835dc52e6b193677e1279f3dda75a103eb43f47a30584dd6b3e20f76edc3ceb`.
 
-### Mandatory relay finding
+### Mandatory relay resolution
 
 The contract resolves `ghcr.io/hoytech/strfry:latest` at execution time. It now
 resolves to
 `ghcr.io/hoytech/strfry@sha256:d6b31e8ab32e159f98d250b90aa6a62b9b47c468efdd311341597f60198861e1`,
 reporting `strfry 1.1.1-119-g9acdaeb`.
 
-The repository configuration exposes two independent upstream-default
-dependencies:
+The pre-amendment repository configuration exposed two independent
+upstream-default dependencies:
 
 1. the image runs as uid/gid 1000 while the compose file creates
    `/app/strfry-db` as a root-owned tmpfs, producing
@@ -213,23 +230,23 @@ dependencies:
    but do not negotiate NIP-42 authentication, so writes are logged while reads
    time out.
 
-A disposable external-only experiment set the tmpfs to
-`uid=1000,gid=1000,mode=0700` and made the auth policy explicit:
-`enabled=true`, empty `serviceUrl`, empty `restrictedReadKinds`, and
-`restrictReadToInvolvedPubkey=true`. With the exact image digest above, the
-complete relay-backed Jest run passed 85/85 suites and 1,151/1,151 tests without
-a relay skip. This isolates the cause as under-specified repository
-configuration interacting with changed upstream defaults, not an engine or
-transport regression.
+The approved amendment resolves both dependencies. Compose now uses the exact
+image digest, binds only `127.0.0.1:17777`, and creates a fresh named local
+tmpfs volume with exactly `uid=1000,gid=1000,mode=0700`. Runtime inspection
+confirmed the relay process is uid/gid 1000 and `/app/strfry-db` is a
+1000:1000 mode-0700 directory. The host-port and mount inspection log SHA-256
+is `84aa0e58ea7038c8b8194e56bd87164eae05ee08da50b6a90417e4883a1f3536`;
+the runtime identity/filesystem log SHA-256 is
+`cc664247caf814c9d8a9f34b0c895f57b0622776523272afb29cd16918884f1f`.
 
-The external two-file diagnostic patch is retained outside the repository and
-has SHA-256
-`437aa384755d32ad92bc1f8c99a5131b9b022e16d5cfe8ddaee7f42321edfb7b`.
-It proves the configuration root cause but is not a complete correction: the
-three integration suites must also fail closed when a relay is contractually
-required. The current Issue forbids the compose, relay-config and
-integration-test paths, so this diagnostic success cannot satisfy the exact
-repository command or be called Stage-1 GO.
+`relay.auth` now explicitly sets `enabled=true`, empty `serviceUrl`, empty
+`restrictedReadKinds`, and `restrictReadToInvolvedPubkey=true`, so the policy
+preflight completes a real kind-1059 publish/read round trip. The three
+integration suites additionally fail closed when `REQUIRE_RELAY=1`, while
+their prior optional developer behavior remains unchanged when it is unset.
+This proves the earlier failure was under-specified test infrastructure
+interacting with changed upstream defaults, not an engine or transport
+regression.
 
 One final disposable build attempt failed during bootstrap with a temporary DNS
 error resolving crates.io/GitLab. The attempt was discarded and the complete
@@ -238,18 +255,15 @@ evidence.
 
 ## Verdict and required resolution
 
-**NO-GO for the Stage-2 artifact amendment under the currently approved test
-contract.** The Phase-B2.2 engine capability, reproducible bytes and retained
-surfaces passed. The only unresolved condition is the mandatory moving relay
-image and its real-time kind-1059 behavior, but Issue #149 explicitly forbids
-treating that condition as a green skip or silently substituting another image.
+**GO to prepare the exact Stage-2 artifact amendment.** The Phase-B2.2 engine
+capability, reproducible bytes, retained surfaces, pinned relay configuration,
+real kind-1059 policy round trip and required-mode failure behavior all passed.
+No relay failure or skip has been waived or relabelled green.
 
-The safe next action is an independently reviewed Issue amendment that replaces
-the moving relay dependency with a reproducible digest/configuration, makes all
-three real-relay suites fail closed in required mode, and proves a kind-1059
-policy round trip. A compose-only correction is explicitly insufficient. Only
-after the amended exact command passes may this report be changed to GO and the
-Stage-2 generated-artifact gate be requested.
+This GO authorizes only preparation, independent review and product-owner
+consideration of the exact Stage-2 amendment. It does not authorize any
+generated artifact, provenance, runtime tuple, fixture, product path or other
+Stage-2 repository change before that separately hashed amendment is approved.
 
 No product activation, generated artifact installation or security claim is
 authorized by this report.
