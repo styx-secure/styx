@@ -23,21 +23,40 @@ await wasm.default({
   module_or_path: readFileSync(join(buildDirectory, 'openmls_wasm_bg.wasm')),
 });
 
-function check(condition, message) {
+const evidenceManifest = new Map();
+
+function recordEvidence(marker, message) {
+  const evidence = evidenceManifest.get(marker) ?? [];
+  evidence.push(message);
+  evidenceManifest.set(marker, evidence);
+}
+
+function check(condition, message, markers = []) {
   if (!condition) throw new Error(`Phase B2.2 capability probe failed: ${message}`);
+  for (const marker of markers) recordEvidence(marker, message);
   console.log(`PASS ${message}`);
+}
+
+function evidenceMarker(name, minimumCount) {
+  const evidence = evidenceManifest.get(name) ?? [];
+  if (evidence.length < minimumCount) {
+    throw new Error(
+      `Phase B2.2 capability probe failed: ${name} has ${evidence.length}/${minimumCount} evidence assertions`,
+    );
+  }
+  console.log(`PASS ${name}`);
 }
 
 function bytesEqual(left, right) {
   return left.length === right.length && left.every((byte, index) => byte === right[index]);
 }
 
-function expectFailure(operation, fragment, message) {
+function expectFailure(operation, fragment, message, markers = []) {
   try {
     operation();
   } catch (error) {
-    check(String(error).includes(fragment), `${message} (${fragment})`);
-    return;
+    check(String(error).includes(fragment), `${message} (${fragment})`, markers);
+    return true;
   }
   throw new Error(`Phase B2.2 capability probe failed: ${message} did not fail`);
 }
@@ -141,6 +160,7 @@ function inspectCandidate(projection, identities, label) {
   check(
     bytesEqual(projection.verified_leaf_digest(), independentVerifiedLeafDigest(projection)),
     `${label} verified-leaf digest matches an independent JavaScript recomputation`,
+    ['PHASE_B2_VERIFIED_LEAF_BINDING'],
   );
   check(projection.candidate_group_context_sha256().length === 32, `${label} exposes a 32-byte GroupContext hash`);
   check(
@@ -189,28 +209,63 @@ function b2CurrentProfileLifecycle() {
   const addBob = aliceGroup.prepare_add(aliceProvider, alice.identity, bob.keyPackage);
   const addBobProjection = addBob.projection();
   inspectCandidate(addBobProjection, [alice.publicKey, bob.publicKey], 'founding Add');
-  check(addBobProjection.proposal_kind(0) === 'add', 'founding Add projection records inline Add');
-  check(addBobProjection.proposal_source(0) === 'inline', 'founding Add source is inline');
+  check(
+    addBobProjection.proposal_kind(0) === 'add',
+    'founding Add projection records inline Add',
+    ['PHASE_B2_POLICY_PROJECTION'],
+  );
+  check(
+    addBobProjection.proposal_source(0) === 'inline',
+    'founding Add source is inline',
+    ['PHASE_B2_POLICY_PROJECTION'],
+  );
   check(addBobProjection.proposal_sender_source(0) === 'member', 'founding Add sender is authenticated');
   const wrongDigest = new Uint8Array(32);
   expectFailure(
     () => aliceGroup.confirm_pending(aliceProvider, addBob, wrongDigest),
     'digest mismatch',
     'wrong pending digest fails closed',
+    ['PHASE_B2_VERIFIED_LEAF_BINDING'],
   );
-  check(!addBob.is_consumed() && aliceGroup.epoch() === 0n, 'wrong digest consumes no handle or epoch');
+  check(
+    !addBob.is_consumed() && aliceGroup.epoch() === 0n,
+    'wrong digest consumes no handle or epoch',
+    ['PHASE_B2_VERIFIED_LEAF_BINDING'],
+  );
   aliceGroup.confirm_pending(aliceProvider, addBob, addBobProjection.verified_leaf_digest());
-  check(addBob.is_consumed() && aliceGroup.epoch() === 1n, 'correct digest confirms exactly once');
+  check(
+    addBob.is_consumed() && aliceGroup.epoch() === 1n,
+    'correct digest confirms exactly once',
+    ['PHASE_B2_VERIFIED_LEAF_BINDING'],
+  );
   expectFailure(
     () => aliceGroup.confirm_pending(aliceProvider, addBob, addBobProjection.verified_leaf_digest()),
     'already consumed',
     'pending handle replay is rejected',
+    ['PHASE_B2_VERIFIED_LEAF_BINDING'],
   );
 
   const bobGroup = wasm.PhaseB2Group.join(
     bobProvider,
     addBob.welcome(),
     wasm.PhaseB2RatchetTree.from_bytes(aliceGroup.export_ratchet_tree().to_bytes()),
+  );
+  const privateApplication = aliceGroup.create_application_message(
+    aliceProvider,
+    alice.identity,
+    encoder.encode('private-message-is-not-an-inbound-commit'),
+  );
+  const bobBeforePrivateRejection = bobProvider.serialize_state();
+  expectFailure(
+    () => bobGroup.stage_inbound_commit(bobProvider, privateApplication),
+    'PrivateMessage Commit rejected',
+    'PrivateMessage input is rejected before inbound Commit staging',
+    ['PHASE_B2_PUBLIC_COMMIT_FRAMING'],
+  );
+  check(
+    bytesEqual(bobBeforePrivateRejection, bobProvider.serialize_state()),
+    'rejected PrivateMessage writes no provider state',
+    ['PHASE_B2_PUBLIC_COMMIT_FRAMING'],
   );
   assertB2Liveness(
     { group: aliceGroup, peer: alice, provider: aliceProvider },
@@ -220,8 +275,16 @@ function b2CurrentProfileLifecycle() {
 
   const selfUpdate = aliceGroup.prepare_self_update(aliceProvider, alice.identity);
   const selfProjection = selfUpdate.projection();
-  check(selfProjection.proposal_count() === 0, 'self-update has no Proposal::Update');
-  check(selfProjection.has_update_path(), 'self-update exposes the replacement update-path leaf');
+  check(
+    selfProjection.proposal_count() === 0,
+    'self-update has no Proposal::Update',
+    ['PHASE_B2_POLICY_PROJECTION'],
+  );
+  check(
+    selfProjection.has_update_path(),
+    'self-update exposes the replacement update-path leaf',
+    ['PHASE_B2_POLICY_PROJECTION'],
+  );
   const stagedUpdate = bobGroup.stage_inbound_commit(bobProvider, selfUpdate.commit());
   const stagedUpdateProjection = stagedUpdate.projection();
   bobGroup.discard_staged_commit(bobProvider, stagedUpdate);
@@ -249,7 +312,11 @@ function b2CurrentProfileLifecycle() {
 
   const removeCharlie = bobGroup.prepare_remove(bobProvider, bob.identity, charlieLeaf);
   const removeProjection = removeCharlie.projection();
-  check(removeProjection.proposal_kind(0) === 'remove', 'Remove projection records inline Remove');
+  check(
+    removeProjection.proposal_kind(0) === 'remove',
+    'Remove projection records inline Remove',
+    ['PHASE_B2_POLICY_PROJECTION'],
+  );
   check(removeProjection.proposal_removed_parent_leaf_index(0) === charlieLeaf, 'Remove projection binds the exact parent leaf');
   const aliceStagedRemove = aliceGroup.stage_inbound_commit(aliceProvider, removeCharlie.commit());
   aliceGroup.merge_staged_commit(
@@ -273,6 +340,61 @@ function b2CurrentProfileLifecycle() {
   check(recoveredGroup.has_pending_commit(recoveredProvider), 'durable recovery reports the pending Commit');
   const recoveredProjection = recoveredGroup.pending_projection(recoveredProvider);
   check(recoveredProjection !== undefined, 'durable recovery exposes the candidate projection');
+  const recoveredEpochBeforeRejections = recoveredGroup.epoch();
+  const recoveredBeforeRejections = recoveredProvider.serialize_state();
+  expectFailure(
+    () => recoveredGroup.confirm_pending_commit(
+      recoveredProvider,
+      recoveredGroup.epoch() + 1n,
+      recoveredAlice.publicKey,
+      recoveredAlice.signatureKey,
+      recoveredProjection.verified_leaf_digest(),
+    ),
+    'stale epoch or wrong identity',
+    'durable confirmation rejects a stale expected epoch',
+  );
+  expectFailure(
+    () => recoveredGroup.confirm_pending_commit(
+      recoveredProvider,
+      recoveredGroup.epoch(),
+      new Uint8Array(32).fill(0x91),
+      recoveredAlice.signatureKey,
+      recoveredProjection.verified_leaf_digest(),
+    ),
+    'stale epoch or wrong identity',
+    'durable confirmation rejects the wrong account identity',
+  );
+  expectFailure(
+    () => recoveredGroup.confirm_pending_commit(
+      recoveredProvider,
+      recoveredGroup.epoch(),
+      recoveredAlice.publicKey,
+      new Uint8Array(32).fill(0x92),
+      recoveredProjection.verified_leaf_digest(),
+    ),
+    'stale epoch or wrong identity',
+    'durable confirmation rejects the wrong leaf signature key',
+  );
+  expectFailure(
+    () => recoveredGroup.confirm_pending_commit(
+      recoveredProvider,
+      recoveredGroup.epoch(),
+      recoveredAlice.publicKey.subarray(0, 31),
+      recoveredAlice.signatureKey,
+      recoveredProjection.verified_leaf_digest(),
+    ),
+    'identity inputs must be exactly 32 bytes',
+    'durable confirmation rejects malformed identity length',
+  );
+  check(recoveredGroup.has_pending_commit(recoveredProvider), 'rejected durable confirmations retain pending state');
+  check(
+    recoveredGroup.epoch() === recoveredEpochBeforeRejections,
+    'rejected durable confirmations retain the prior epoch',
+  );
+  check(
+    bytesEqual(recoveredBeforeRejections, recoveredProvider.serialize_state()),
+    'rejected durable confirmations write no provider state',
+  );
   recoveredGroup.confirm_pending_commit(
     recoveredProvider,
     recoveredGroup.epoch(),
@@ -285,6 +407,57 @@ function b2CurrentProfileLifecycle() {
   const clearProvider = restoredProvider(pendingSnapshot);
   const clearAlice = reloadB2Peer(clearProvider, alice);
   const clearGroup = loadB2Group(clearProvider, groupId, clearAlice);
+  const clearEpochBeforeRejections = clearGroup.epoch();
+  const clearBeforeRejections = clearProvider.serialize_state();
+  expectFailure(
+    () => clearGroup.clear_pending_commit(
+      clearProvider,
+      clearGroup.epoch() + 1n,
+      clearAlice.publicKey,
+      clearAlice.signatureKey,
+    ),
+    'stale epoch or wrong identity',
+    'durable clear rejects a stale expected epoch',
+  );
+  expectFailure(
+    () => clearGroup.clear_pending_commit(
+      clearProvider,
+      clearGroup.epoch(),
+      new Uint8Array(32).fill(0x93),
+      clearAlice.signatureKey,
+    ),
+    'stale epoch or wrong identity',
+    'durable clear rejects the wrong account identity',
+  );
+  expectFailure(
+    () => clearGroup.clear_pending_commit(
+      clearProvider,
+      clearGroup.epoch(),
+      clearAlice.publicKey,
+      new Uint8Array(32).fill(0x94),
+    ),
+    'stale epoch or wrong identity',
+    'durable clear rejects the wrong leaf signature key',
+  );
+  expectFailure(
+    () => clearGroup.clear_pending_commit(
+      clearProvider,
+      clearGroup.epoch(),
+      clearAlice.publicKey,
+      clearAlice.signatureKey.subarray(0, 31),
+    ),
+    'identity inputs must be exactly 32 bytes',
+    'durable clear rejects malformed signature-key length',
+  );
+  check(clearGroup.has_pending_commit(clearProvider), 'rejected durable clears retain pending state');
+  check(
+    clearGroup.epoch() === clearEpochBeforeRejections,
+    'rejected durable clears retain the prior epoch',
+  );
+  check(
+    bytesEqual(clearBeforeRejections, clearProvider.serialize_state()),
+    'rejected durable clears write no provider state',
+  );
   clearGroup.clear_pending_commit(
     clearProvider,
     clearGroup.epoch(),
@@ -294,16 +467,34 @@ function b2CurrentProfileLifecycle() {
   const clearedProvider = restoredProvider(clearProvider.serialize_state());
   const clearedGroup = loadB2Group(clearedProvider, groupId, clearAlice);
   check(!clearedGroup.has_pending_commit(clearedProvider), 'durable clear survives a second restore');
+  expectFailure(
+    () => clearedGroup.clear_pending_commit(
+      clearedProvider,
+      clearedGroup.epoch(),
+      clearAlice.publicKey,
+      clearAlice.signatureKey,
+    ),
+    'pending state is absent',
+    'durable clear rejects replay after pending state is absent',
+  );
 
   expectFailure(
     () => bobGroup.stage_inbound_commit(bobProvider, addBob.welcome()),
     'unsupported MLSMessage body',
     'non-Commit MLSMessage is rejected by the inbound staging path',
+    ['PHASE_B2_PUBLIC_COMMIT_FRAMING'],
   );
   expectFailure(
     () => wasm.PhaseB2KeyPackage.from_framed_bytes(new Uint8Array([1, 2, 3])),
     'malformed MLSMessage framing',
     'malformed KeyPackage framing is rejected',
+  );
+  const legacyProvider = new wasm.Provider();
+  const legacyPeer = createB1Peer(legacyProvider);
+  expectFailure(
+    () => wasm.PhaseB2KeyPackage.from_framed_bytes(legacyPeer.keyPackage.to_framed_bytes()),
+    'unexpected supported components',
+    'a genuine B1-profile KeyPackage is rejected at the generated B2 boundary',
   );
   check(!pendingRecovery.is_consumed(), 'a pending handle in the pre-restore instance remains local and unmerged');
   console.log('PASS B2_CURRENT_PROFILE_COMPLETE');
@@ -390,10 +581,36 @@ function b1RecoveryMatrix() {
 
 b2CurrentProfileLifecycle();
 b1RecoveryMatrix();
-await runCompositionProbe(committedDirectory, buildDirectory);
-console.log('PASS PHASE_B2_EXPORTED_COMPOSITION');
-console.log('PASS PHASE_B2_PUBLIC_COMMIT_FRAMING');
-console.log('PASS PHASE_B2_POLICY_PROJECTION');
-console.log('PASS PHASE_B2_VERIFIED_LEAF_BINDING');
-console.log('PASS PHASE_B2_SURFACE_DELTA_EXACT');
+const compositionEvidence = await runCompositionProbe(committedDirectory, buildDirectory);
+check(
+  compositionEvidence.addedNamedExports.length === 7
+    && compositionEvidence.addedRuntimeClasses.PhaseB2Group !== undefined,
+  'composition contains the exact seven Phase B2 runtime classes',
+  ['PHASE_B2_EXPORTED_COMPOSITION'],
+);
+check(
+  compositionEvidence.addedInitOutputMembers.length > 0
+    && compositionEvidence.retainedNamedExportCount === 17,
+  'composition preserves retained exports and adds only documented InitOutput members',
+  ['PHASE_B2_EXPORTED_COMPOSITION', 'PHASE_B2_SURFACE_DELTA_EXACT'],
+);
+check(
+  compositionEvidence.addedNamedExports.length === 7
+    && compositionEvidence.addedInitOutputMembers.length > 0
+    && compositionEvidence.retainedNamedExportCount === 17,
+  'surface delta is the exact bounded Phase B2 addition',
+  ['PHASE_B2_SURFACE_DELTA_EXACT'],
+);
+const evidenceSnapshot = Object.fromEntries(
+  [...evidenceManifest.entries()].sort(([left], [right]) => left.localeCompare(right)),
+);
+const evidenceManifestSha256 = createHash('sha256')
+  .update(JSON.stringify(evidenceSnapshot))
+  .digest('hex');
+console.log(JSON.stringify({ evidenceManifest: evidenceSnapshot, evidenceManifestSha256 }, null, 2));
+evidenceMarker('PHASE_B2_EXPORTED_COMPOSITION', 2);
+evidenceMarker('PHASE_B2_PUBLIC_COMMIT_FRAMING', 3);
+evidenceMarker('PHASE_B2_POLICY_PROJECTION', 5);
+evidenceMarker('PHASE_B2_VERIFIED_LEAF_BINDING', 5);
+evidenceMarker('PHASE_B2_SURFACE_DELTA_EXACT', 2);
 console.log('Phase B2.2 capability probe completed; this is isolated capability evidence, not a product migration.');

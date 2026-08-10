@@ -3695,6 +3695,28 @@ fn mls_message_to_u8vec(msg: &MlsMessageOut) -> Vec<u8> {
 mod tests {
     use super::*;
 
+    // Native wasm-bindgen tests cannot construct JsError on a non-WASM target.
+    // Keep these exact pure predicates test-only, while the generated-JavaScript
+    // probe exercises the exported boundary and authenticated OpenMLS objects
+    // exercise the production policy inputs below.
+    #[cfg(feature = "extensions-draft")]
+    macro_rules! phase_b2_group_context_components_match {
+        ($ids:expr) => {
+            $ids == [
+                1,
+                ADMIN_POLICY_V1_COMPONENT_ID,
+                GROUP_LIFECYCLE_V1_COMPONENT_ID,
+            ]
+        };
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    macro_rules! phase_b2_group_lifecycle_is_active {
+        ($lifecycle:expr) => {
+            $lifecycle == [0x00]
+        };
+    }
+
     fn js_error_to_string(e: JsError) -> String {
         let v: JsValue = e.into();
         v.as_string().unwrap()
@@ -3887,6 +3909,66 @@ mod tests {
             .map_err(js_error_to_string)
             .unwrap();
         (identity, proof, key_package)
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b2_stable_pair(
+        group_id: &[u8],
+        alice_byte: u8,
+        bob_byte: u8,
+    ) -> (
+        Provider,
+        PhaseB2Identity,
+        PhaseB2Group,
+        Provider,
+        PhaseB2Identity,
+        PhaseB2Group,
+    ) {
+        let mut alice_provider = Provider::new();
+        let bob_provider = Provider::new();
+        let (alice, alice_proof, _) = phase_b2_identity(&alice_provider, alice_byte);
+        let (bob, _, bob_key_package) = phase_b2_identity(&bob_provider, bob_byte);
+        let mut alice_group = PhaseB2Group::create_new(
+            &alice_provider,
+            &alice,
+            group_id,
+            &alice_proof,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let mut add_bob = alice_group
+            .prepare_add(&alice_provider, &alice, &bob_key_package)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let projection = add_bob.projection();
+        alice_group
+            .confirm_pending(
+                &mut alice_provider,
+                &mut add_bob,
+                &projection.verified_leaf_digest(),
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        let tree = PhaseB2RatchetTree::from_bytes(
+            &alice_group.export_ratchet_tree().to_bytes().unwrap(),
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let bob_group = PhaseB2Group::join(
+            &bob_provider,
+            &add_bob.welcome().unwrap(),
+            tree,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        (
+            alice_provider,
+            alice,
+            alice_group,
+            bob_provider,
+            bob,
+            bob_group,
+        )
     }
 
     #[cfg(feature = "extensions-draft")]
@@ -4160,6 +4242,198 @@ mod tests {
 
     #[cfg(feature = "extensions-draft")]
     #[test]
+    fn phase_b2_authenticated_hostile_inputs_reach_fail_closed_policy() {
+        let (
+            alice_provider,
+            alice,
+            mut alice_group,
+            bob_provider,
+            _,
+            mut bob_group,
+        ) = phase_b2_stable_pair(b"phase-b2-referenced-add-policy", 0x71, 0x72);
+        let charlie_provider = Provider::new();
+        let (_, _, charlie_key_package) = phase_b2_identity(&charlie_provider, 0x73);
+        let (proposal_message, _) = alice_group
+            .mls_group
+            .propose_add_member(
+                alice_provider.as_ref(),
+                &alice.keypair,
+                &charlie_key_package.0,
+            )
+            .unwrap();
+        let proposal_message = MlsMessageIn::tls_deserialize_exact(
+            &proposal_message.tls_serialize_detached().unwrap(),
+        )
+        .unwrap();
+        let proposal_public = match proposal_message.extract() {
+            MlsMessageBodyIn::PublicMessage(message) => message,
+            _ => panic!("expected referenced Add proposal to use PublicMessage framing"),
+        };
+        let processed = bob_group
+            .mls_group
+            .process_message(bob_provider.as_ref(), proposal_public)
+            .unwrap();
+        let queued = match processed.into_content() {
+            openmls::framing::ProcessedMessageContent::ProposalMessage(proposal) => *proposal,
+            _ => panic!("expected an authenticated referenced Add proposal"),
+        };
+        bob_group
+            .mls_group
+            .store_pending_proposal(bob_provider.inner.storage(), queued)
+            .unwrap();
+        let (referenced_commit, _, _) = alice_group
+            .mls_group
+            .commit_to_pending_proposals(alice_provider.as_ref(), &alice.keypair)
+            .unwrap();
+        let referenced_commit = MlsMessageIn::tls_deserialize_exact(
+            &referenced_commit.tls_serialize_detached().unwrap(),
+        )
+        .unwrap();
+        let referenced_public = match referenced_commit.extract() {
+            MlsMessageBodyIn::PublicMessage(message) => message,
+            _ => panic!("expected referenced Commit to use PublicMessage framing"),
+        };
+        let processed = bob_group
+            .mls_group
+            .process_message(bob_provider.as_ref(), referenced_public)
+            .unwrap();
+        let staged = match processed.into_content() {
+            openmls::framing::ProcessedMessageContent::StagedCommitMessage(commit) => *commit,
+            _ => panic!("expected a staged referenced Add Commit"),
+        };
+        let referenced = staged
+            .queued_proposals()
+            .next()
+            .expect("referenced Add Commit must retain one queued proposal");
+        assert!(matches!(referenced.proposal(), Proposal::Add(_)));
+        assert_eq!(referenced.proposal_or_ref_type(), ProposalOrRefType::Reference);
+        assert_eq!(
+            phase_b2_check_proposal_policy(
+                referenced.proposal_or_ref_type(),
+                phase_b2_proposal_kind(referenced.proposal()),
+            )
+            .unwrap_err(),
+            "PHASE_B2_REFERENCED_PROPOSAL_UNSUPPORTED"
+        );
+
+        let (
+            alice_provider,
+            alice,
+            mut alice_group,
+            bob_provider,
+            _,
+            mut bob_group,
+        ) = phase_b2_stable_pair(b"phase-b2-update-proposal-policy", 0x74, 0x75);
+        let (update_message, _) = alice_group
+            .mls_group
+            .propose_self_update(
+                alice_provider.as_ref(),
+                &alice.keypair,
+                LeafNodeParameters::default(),
+            )
+            .unwrap();
+        let update_message = MlsMessageIn::tls_deserialize_exact(
+            &update_message.tls_serialize_detached().unwrap(),
+        )
+        .unwrap();
+        let update_public = match update_message.extract() {
+            MlsMessageBodyIn::PublicMessage(message) => message,
+            _ => panic!("expected Update proposal to use PublicMessage framing"),
+        };
+        let processed = bob_group
+            .mls_group
+            .process_message(bob_provider.as_ref(), update_public)
+            .unwrap();
+        let update = match processed.into_content() {
+            openmls::framing::ProcessedMessageContent::ProposalMessage(proposal) => *proposal,
+            _ => panic!("expected an authenticated Update proposal"),
+        };
+        assert!(matches!(update.proposal(), Proposal::Update(_)));
+        assert_eq!(update.proposal_or_ref_type(), ProposalOrRefType::Reference);
+        assert_eq!(
+            phase_b2_check_proposal_policy(
+                update.proposal_or_ref_type(),
+                phase_b2_proposal_kind(update.proposal()),
+            )
+            .unwrap_err(),
+            "PHASE_B2_REFERENCED_PROPOSAL_UNSUPPORTED"
+        );
+        assert_eq!(
+            phase_b2_check_proposal_policy(
+                ProposalOrRefType::Proposal,
+                phase_b2_proposal_kind(update.proposal()),
+            )
+            .unwrap_err(),
+            "PHASE_B2_PROPOSAL_UPDATE_UNSUPPORTED"
+        );
+
+        let (
+            alice_provider,
+            alice,
+            mut alice_group,
+            bob_provider,
+            _,
+            mut bob_group,
+        ) = phase_b2_stable_pair(b"phase-b2-app-data-policy", 0x76, 0x77);
+        let mut stage = alice_group
+            .mls_group
+            .commit_builder()
+            .add_proposal(Proposal::AppDataUpdate(Box::new(
+                openmls::messages::proposals::AppDataUpdateProposal::update(
+                    ADMIN_POLICY_V1_COMPONENT_ID,
+                    b"opaque-policy-diff",
+                ),
+            )))
+            .load_psks(alice_provider.inner.storage())
+            .unwrap();
+        let mut updater = stage.app_data_dictionary_updater();
+        let mut unchanged_policy = vec![0x20];
+        unchanged_policy.extend_from_slice(&alice.account_public_key());
+        updater.set(openmls::component::ComponentData::from_parts(
+            ADMIN_POLICY_V1_COMPONENT_ID,
+            unchanged_policy.into(),
+        ));
+        stage.with_app_data_dictionary_updates(updater.changes());
+        let app_data_bundle = stage
+            .build(
+                alice_provider.inner.rand(),
+                alice_provider.inner.crypto(),
+                &alice.keypair,
+                |_| true,
+            )
+            .unwrap()
+            .stage_commit(alice_provider.as_ref())
+            .unwrap();
+        let (app_data_commit, _, _) = app_data_bundle.into_contents();
+        let app_data_commit = MlsMessageIn::tls_deserialize_exact(
+            &app_data_commit.tls_serialize_detached().unwrap(),
+        )
+        .unwrap();
+        let app_data_public = match app_data_commit.extract() {
+            MlsMessageBodyIn::PublicMessage(message) => message,
+            _ => panic!("expected AppDataUpdate Commit to use PublicMessage framing"),
+        };
+        let processed = bob_group
+            .mls_group
+            .process_message(bob_provider.as_ref(), app_data_public)
+            .unwrap();
+        let unresolved = match processed.into_content() {
+            openmls::framing::ProcessedMessageContent::UnresolvedAppDataCommit(commit) => commit,
+            _ => panic!("expected an unresolved AppDataUpdate Commit"),
+        };
+        assert_eq!(unresolved.app_data_update_proposals().count(), 1);
+        assert_eq!(
+            phase_b2_check_proposal_policy(
+                ProposalOrRefType::Proposal,
+                PhaseB2ProposalKind::AppDataUpdate,
+            )
+            .unwrap_err(),
+            "PHASE_B2_APP_DATA_UPDATE_UNSUPPORTED"
+        );
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
     fn phase_b2_pending_recovery_is_explicit_and_bound() {
         let alice_provider = Provider::new();
         let bob_provider = Provider::new();
@@ -4354,6 +4628,31 @@ mod tests {
             "PHASE_B2_COMPONENT_LIMIT"
         );
 
+        assert!(phase_b2_check_leaf_capabilities(&phase_b2_capabilities()).is_ok());
+        let unsupported_leaf_capabilities = Capabilities::builder()
+            .ciphersuites(vec![PROBE_CIPHERSUITE])
+            .extensions(vec![ExtensionType::AppDataDictionary])
+            .proposals(vec![])
+            .build();
+        assert_eq!(
+            phase_b2_check_leaf_capabilities(&unsupported_leaf_capabilities).unwrap_err(),
+            "phase-b2 leaf: unexpected capabilities"
+        );
+
+        assert!(phase_b2_group_context_components_match!(vec![
+            1,
+            ADMIN_POLICY_V1_COMPONENT_ID,
+            GROUP_LIFECYCLE_V1_COMPONENT_ID,
+        ]));
+        assert!(!phase_b2_group_context_components_match!(vec![
+            1,
+            ADMIN_POLICY_V1_COMPONENT_ID,
+            ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID,
+            GROUP_LIFECYCLE_V1_COMPONENT_ID,
+        ]));
+        assert!(phase_b2_group_lifecycle_is_active!([0x00]));
+        assert!(!phase_b2_group_lifecycle_is_active!([0x01]));
+
         assert!(phase_b2_check_required_profile(
             &[ExtensionType::AppDataDictionary],
             &[ProposalType::AppDataUpdate],
@@ -4416,6 +4715,32 @@ mod tests {
         assert_eq!(
             phase_b2_decode_admin_policy_recovery(&unsorted_admin).unwrap_err(),
             "phase-b2 group: administrator policy must be sorted and unique"
+        );
+        let mut non_integral_admin = vec![0x21];
+        non_integral_admin.extend_from_slice(&[0x11; 33]);
+        assert_eq!(
+            phase_b2_decode_admin_policy_recovery(&non_integral_admin).unwrap_err(),
+            "phase-b2 group: malformed administrator policy length"
+        );
+
+        let mut four_byte_policy = vec![0x80, 0x00, 0x40, 0x00];
+        for index in 0u16..512 {
+            let mut account_key = [0u8; 32];
+            account_key[30..].copy_from_slice(&index.to_be_bytes());
+            four_byte_policy.extend_from_slice(&account_key);
+        }
+        let decoded_four_byte_policy =
+            phase_b2_decode_admin_policy_recovery(&four_byte_policy).unwrap();
+        assert_eq!(decoded_four_byte_policy.len(), 512);
+        assert_eq!(decoded_four_byte_policy[0], vec![0u8; 32]);
+        let mut last_account = vec![0u8; 32];
+        last_account[30..].copy_from_slice(&511u16.to_be_bytes());
+        assert_eq!(decoded_four_byte_policy[511], last_account);
+
+        let oversized_eight_byte_policy = vec![0xc0, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x20];
+        assert_eq!(
+            phase_b2_decode_admin_policy_recovery(&oversized_eight_byte_policy).unwrap_err(),
+            "phase-b2 group: malformed administrator policy length"
         );
 
         assert_eq!(
