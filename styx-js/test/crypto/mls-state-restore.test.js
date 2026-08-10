@@ -14,30 +14,41 @@ import {
 } from '../../src/storage/mls-state-envelope.js';
 import { base64ToBytes, bytesToBase64, utf8Decode, utf8Encode } from '../../src/utils.js';
 
-const fixtureDir = fileURLToPath(new URL('../fixtures/mls-state-v1/', import.meta.url));
 const wasmBytes = readFileSync(
   fileURLToPath(new URL('../../vendor/openmls-wasm/openmls_wasm_bg.wasm', import.meta.url)),
 );
-const FIXTURE_ENVELOPE = JSON.parse(readFileSync(`${fixtureDir}envelope.json`, 'utf8'));
-const CTX = JSON.parse(readFileSync(`${fixtureDir}context.json`, 'utf8'));
 
-async function restoreFromFixture() {
-  const { envelope, stateBytes } = parseMlsStateEnvelope(FIXTURE_ENVELOPE);
+function loadFixture(relativeUrl) {
+  const fixtureDir = fileURLToPath(new URL(relativeUrl, import.meta.url));
+  return Object.freeze({
+    envelope: JSON.parse(readFileSync(`${fixtureDir}envelope.json`, 'utf8')),
+    context: JSON.parse(readFileSync(`${fixtureDir}context.json`, 'utf8')),
+  });
+}
+
+const PRE_B1_FIXTURE = loadFixture('../fixtures/mls-state-v1/');
+const B1_FIXTURE = loadFixture('../fixtures/mls-state-b1/');
+const FIXTURE_ENVELOPE = PRE_B1_FIXTURE.envelope;
+const CTX = PRE_B1_FIXTURE.context;
+
+async function restoreFromFixture(fixture = PRE_B1_FIXTURE) {
+  const { context, envelope: fixtureEnvelope } = fixture;
+  const { envelope, stateBytes } = parseMlsStateEnvelope(fixtureEnvelope);
   assertMlsStateCompatibility(envelope);
   const engine = await MlsEngine.restore({
-    name: CTX.name,
+    name: context.name,
     stateBytes,
-    identityPubKey: base64ToBytes(CTX.idpk),
+    identityPubKey: base64ToBytes(context.idpk),
   });
-  for (const [contact, groupId] of Object.entries(CTX.groups)) {
+  for (const [contact, groupId] of Object.entries(context.groups)) {
     engine.loadSession(contact, groupId);
   }
   return engine;
 }
 
-describe('mls-state-v1 fixture restore (real WASM)', () => {
-  beforeAll(async () => { await MlsEngine.initWasm({ wasmBytes }); });
+beforeAll(async () => { await MlsEngine.initWasm({ wasmBytes }); });
 
+describe('mls-state-v1 fixture restore (real WASM)', () => {
   test('restores identity, group and membership, and decrypts the reference message', async () => {
     const engine = await restoreFromFixture();
     expect(bytesToBase64(engine.identityPublicKey())).toBe(CTX.idpk);
@@ -108,5 +119,24 @@ describe('mls-state-v1 fixture restore (real WASM)', () => {
     // And the engine is still usable afterwards: no poisoned global state.
     const engine = await restoreFromFixture();
     expect(engine.peerIdentity(CTX.peer)).toBe(CTX.peer);
+  });
+});
+
+describe('mls-state-b1 fixture restore under the B2.1 runtime', () => {
+  test('preserves identity, group, membership, ratchet decryption and reply liveness', async () => {
+    const engine = await restoreFromFixture(B1_FIXTURE);
+    const context = B1_FIXTURE.context;
+    expect(bytesToBase64(engine.identityPublicKey())).toBe(context.idpk);
+    const session = engine.session(context.peer);
+    expect(session).toBeTruthy();
+    expect(context.groups[context.peer]).toBe(context.groupId);
+    expect(session.memberIdentities().sort()).toEqual([context.name, context.peer].sort());
+    expect(engine.peerIdentity(context.peer)).toBe(context.peer);
+    const out = session.decrypt(base64ToBytes(context.refCiphertext));
+    expect(out.kind).toBe('application');
+    expect(utf8Decode(out.plaintext)).toBe(context.refPlaintext);
+    const response = session.encrypt(utf8Encode('B1 fixture restored response'));
+    expect(response).toBeInstanceOf(Uint8Array);
+    expect(response.length).toBeGreaterThan(0);
   });
 });

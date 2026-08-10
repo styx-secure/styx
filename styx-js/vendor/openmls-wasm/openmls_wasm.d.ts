@@ -109,14 +109,20 @@ export class PhaseB1Group {
     private constructor();
     free(): void;
     [Symbol.dispose](): void;
+    clear_pending_commit(provider: Provider, expected_prior_epoch: bigint): void;
     confirm_pending_add(provider: Provider, pending: PhaseB1PendingAdd): void;
+    confirm_pending_commit(provider: Provider, expected_prior_epoch: bigint): void;
     create_application_message(provider: Provider, sender: PhaseB1Identity, plaintext: Uint8Array): Uint8Array;
     static create_new(provider: Provider, founder: PhaseB1Identity, group_id: Uint8Array, founder_proof: Uint8Array): PhaseB1Group;
     discard_pending_add(provider: Provider, pending: PhaseB1PendingAdd): void;
     discard_staged_commit(provider: Provider, staged: PhaseB1StagedCommit): void;
     epoch(): bigint;
     export_ratchet_tree(): PhaseB1RatchetTree;
+    group_id(): Uint8Array;
+    has_pending_commit(provider: Provider): boolean;
     static join(provider: Provider, welcome_bytes: Uint8Array, ratchet_tree: PhaseB1RatchetTree): PhaseB1Group;
+    static load(provider: Provider, group_id: Uint8Array): PhaseB1Group | undefined;
+    matches_own_identity(account_public_key: Uint8Array, leaf_signature_key: Uint8Array): boolean;
     member_count(): number;
     member_identity(index: number): Uint8Array;
     merge_staged_commit(provider: Provider, staged: PhaseB1StagedCommit): void;
@@ -135,6 +141,7 @@ export class PhaseB1Identity {
     account_public_key(): Uint8Array;
     key_package(provider: Provider, proof: Uint8Array): PhaseB1KeyPackage;
     leaf_signature_key(): Uint8Array;
+    static load(provider: Provider, account_public_key: Uint8Array, leaf_signature_key: Uint8Array): PhaseB1Identity | undefined;
     constructor(provider: Provider, account_public_key: Uint8Array);
 }
 
@@ -281,13 +288,19 @@ export interface InitOutput {
     readonly phaseb1commitprojection_remove_count: (a: number) => number;
     readonly phaseb1commitprojection_self_remove_count: (a: number) => number;
     readonly phaseb1commitprojection_update_count: (a: number) => number;
+    readonly phaseb1group_clear_pending_commit: (a: number, b: number, c: bigint) => [number, number];
     readonly phaseb1group_confirm_pending_add: (a: number, b: number, c: number) => [number, number];
+    readonly phaseb1group_confirm_pending_commit: (a: number, b: number, c: bigint) => [number, number];
     readonly phaseb1group_create_application_message: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly phaseb1group_create_new: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
     readonly phaseb1group_discard_pending_add: (a: number, b: number, c: number) => [number, number];
     readonly phaseb1group_discard_staged_commit: (a: number, b: number, c: number) => [number, number];
     readonly phaseb1group_export_ratchet_tree: (a: number) => number;
+    readonly phaseb1group_group_id: (a: number) => [number, number];
+    readonly phaseb1group_has_pending_commit: (a: number, b: number) => [number, number, number];
     readonly phaseb1group_join: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly phaseb1group_load: (a: number, b: number, c: number) => [number, number, number];
+    readonly phaseb1group_matches_own_identity: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly phaseb1group_member_count: (a: number) => number;
     readonly phaseb1group_member_identity: (a: number, b: number) => [number, number, number, number];
     readonly phaseb1group_merge_staged_commit: (a: number, b: number, c: number) => [number, number];
@@ -297,6 +310,7 @@ export interface InitOutput {
     readonly phaseb1identity_account_public_key: (a: number) => [number, number];
     readonly phaseb1identity_key_package: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly phaseb1identity_leaf_signature_key: (a: number) => [number, number];
+    readonly phaseb1identity_load: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly phaseb1identity_new: (a: number, b: number, c: number) => [number, number, number];
     readonly phaseb1keypackage_ciphersuite_id: (a: number) => number;
     readonly phaseb1keypackage_component_ids: (a: number) => [number, number];

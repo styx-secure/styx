@@ -92,15 +92,27 @@ image: a tag can be re-pushed, a digest cannot.
 | Dependency graph | `./Cargo.lock` (workspace lockfile; builds run `-- --locked`, and `build.sh` aborts on drift) |
 | OpenMLS source | commit `09e9277…` (above) |
 
-**Artifact (rebuilt 2026-08-08 for Phase B1, from the unchanged source pin and pins above):**
+**Artifact (rebuilt 2026-08-10 for the B2.1 recovery boundary, from the unchanged
+source pin and pins above):**
 
 | File | sha256 |
 |---|---|
-| `openmls_wasm_bg.wasm` | `61cce676c81366fc9c62752a09ea1547a4998ede7f144013ac5ade088e70a863` |
-| `openmls_wasm.js` | `fab287f525a83fe8e0f2196d38efba7cf20e4b50e9fe91e062e235e78659f151` |
+| `openmls_wasm_bg.wasm` | `d0399fddc2ed5f030927f9786d295c394bcdfa133a1c69feeb9514edf2cd6f01` |
+| `openmls_wasm.js` | `5eaa635bd68ca1ee476c6757bf2e690cea8f024dad69dffc0af5007a93491a16` |
+| `openmls_wasm.d.ts` | `54c3c959699c5b265ba376eb55a85d7d9abdacbbb6089ea0d6cfe720cffa262d` |
+| `openmls_wasm_bg.wasm.d.ts` | `e0bcf9651c7a06f6033ed83f390a94697d6fb29a2b1b2ee9c94c806e59ced20c` |
+| `package.json` | `88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85` |
 
-**Reproducibility: verified 2026-08-08 for Phase B1.** `./verify.sh` built twice from these
-pins; both builds were byte-identical to each other *and* to the committed artifact above.
+**Reproducibility: verified 2026-08-10 for B2.1.** Two complete disposable builds
+from these pins were byte-identical to each other and to the committed output
+set; `./verify.sh` independently repeats the same comparison.
+
+The immediately preceding Phase B1 artifact digest
+`61cce676c81366fc9c62752a09ea1547a4998ede7f144013ac5ade088e70a863`
+remains an exact state-writer compatibility tuple. Its fixed synthetic fixture
+under `test/fixtures/mls-state-b1/` is restored by the B2.1 artifact in the test
+suite. This is bounded compatibility evidence, not a general migration or
+interoperability claim.
 
 Two build inputs remain pinned only indirectly, and are listed here rather than hidden:
 `wasm-bindgen-cli` is fetched by wasm-pack at the version the lockfile dictates, but the
