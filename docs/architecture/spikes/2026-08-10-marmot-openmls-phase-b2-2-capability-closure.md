@@ -16,15 +16,22 @@ Marmot interoperability, or establish production readiness.
 
 ## Frozen inputs
 
-- Contract: Issue #149, Stage 1, approved body SHA-256
-  `10ad40928019b5f9c2793d0c760b25209a96e3fa8bacc1541a5da5d723b64ae3`;
-  relay amendment REST body SHA-256
+- Contract: Issue #149. The original Stage-1 approval at body SHA-256
+  `10ad40928019b5f9c2793d0c760b25209a96e3fa8bacc1541a5da5d723b64ae3`
+  was superseded by the relay amendment. The operative approved contract body
+  has REST SHA-256
   `3bed770030150caed56a6a969f41aa26b52cb4926eec521fee2625af45a9be10`.
 - Base: `0bcd19f114ad1dd9cc419a8c53f0d53d33428ac0` on `main`.
-- Stage-1 source head evaluated by this report:
+- Engine source head evaluated by the capability and composition probes:
   `e08c226aa9bfc7dce7640624e4771f7a3061c1df`.
-- SHA-256 of the binary-safe `base..source-head` diff:
+- SHA-256 of the binary-safe `base..engine-source-head` diff:
   `5d8b40fdae78549897882b4a6c37ca4fcd9288b746fa51a5ee984627e62d0b8f`.
+- Final executable Stage-1 source head after the approved relay amendment:
+  `d878ed75c11d5459c4361b425c5b48724ca91406`.
+- SHA-256 of the complete binary-safe `base..final-executable-head` diff:
+  `553943ab3766e86e198e4d9ed8f030c716358d743b25dc7980e044dcea84094a`.
+- SHA-256 of the complete binary-safe `patch/lib.rs` diff over that range:
+  `798f02e93249ab6b30f6df76828129382631222248390f93f79248252dfd1e77`.
 - OpenMLS: `09e92777dba0528d3d29e2e5e681b7e91637c7be`, with the existing
   `extensions-draft` feature.
 - Marmot specification evidence:
@@ -197,16 +204,16 @@ generated files has entered the Stage-1 branch.
 - Full Jest with the approved repository relay harness and
   `REQUIRE_RELAY=1 NOSTR_RELAY=ws://127.0.0.1:17777`: 85/85 suites and
   1,151/1,151 tests passed with no relay skip. The complete log SHA-256 is
-  `bf71b85afe706bc4abdb96d9a03825d2bef7173b9e018090feb3d0009885096b`.
+  `577101ff73812d4ffc9eb6954f64f419aab8af9c7b8820a2e8e4519233694f40`.
 - With the relay stopped, each of
   `nostr-relay.test.js`, `nostr-chat-transport.test.js` and
   `styx-chat-nostr.test.js` failed nonzero in required mode and emitted the
   stable `required relay unavailable` diagnostic. Their respective log
   SHA-256 values are
-  `65ceb5fefa3fb7b0bfeca2f9705142ffd103672146057b456d7afdba8bf3358c`,
-  `57cd7ac3e75dcc9d9a6836131ae02bba4c5e91a1d7d92800e4e2bb0e9e0d289e`
+  `14e5d0db6999f1e395e78ee89c5cd2d5d94005eb138282bbac201b6478911fde`,
+  `9124d540f896e54827566a832713639cba5dcb1785405a4614794a2437fe8285`
   and
-  `453bebd4ab55837229db4087b0e3d21bb09960e141b0cce0582f0931489377b0`.
+  `b3f81d4eb6733c1e472093d5276c1abb2883002d6d1d05b1b6b369c4d8068ac2`.
 - With required mode unset and the relay stopped, the same three suites
   retained their developer-friendly behavior: 3/3 suites and 19/19 tests
   passed after the existing skip warning. The log SHA-256 is
@@ -267,3 +274,13 @@ Stage-2 repository change before that separately hashed amendment is approved.
 
 No product activation, generated artifact installation or security claim is
 authorized by this report.
+
+## Residual relay-gate limitation
+
+The relay suites fail closed only when `REQUIRE_RELAY=1`. The approved Stage-1
+contract invokes that mode explicitly, but the ordinary repository workflow
+does not currently set it; routine CI can therefore retain the optional local
+developer skip behavior when no relay is available. Wiring the required relay
+mode into `.github/**` needs a separate contract and human gate because workflow
+files are outside this Issue's scope. Until then, the evidence in this report
+proves the mandatory contract run, not an always-on repository CI guarantee.
