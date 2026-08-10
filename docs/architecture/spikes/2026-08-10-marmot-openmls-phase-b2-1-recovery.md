@@ -6,7 +6,8 @@ claim.
 Issue #147 adds the smallest recovery surface needed to evaluate later Marmot
 convergence work without activating Marmot or changing the shipping MLS
 ciphersuite. The implementation remains pinned to OpenMLS commit
-`09e92777dba0528d3d29e2e5e681b7e91637c7be`.
+`09e92777dba0528d3d29e2e5e681b7e91637c7be`; its reviewed Stage-1 Styx source
+head is `57bc9d4d17b7eb1ad380fb10c501efbacd3f3f42`.
 
 ## Result
 
@@ -56,13 +57,15 @@ digest and ciphersuite; fields are never accepted as independent allowlists.
 
 ## Security boundary
 
-This work prevents several object-confusion and stale-state paths from becoming
-silent success. A wrong provider, provider restore after object acquisition,
-missing durable group, stale duplicate group, epoch disagreement, pending-state
-disagreement or malformed identity input returns an error before a storage
-write. A persistence or product lifecycle layer must still journal Commit bytes
-and publication state; provider serialization alone cannot reconstruct those
-events.
+The three recovery operations `has_pending_commit`, `confirm_pending_commit`
+and `clear_pending_commit` prevent several object-confusion and stale-state
+paths from becoming silent success. For those operations, a wrong provider,
+provider restore after object acquisition, missing durable group, stale
+duplicate group, epoch disagreement or pending-state disagreement returns an
+error before a storage write. Malformed identity input also fails closed in the
+identity-verification operation. A persistence or product lifecycle layer must
+still journal Commit bytes and publication state; provider serialization alone
+cannot reconstruct those events.
 
 The capability does not provide:
 
@@ -76,6 +79,27 @@ The wrapper changes and fixtures are Styx-authored and are outside upstream
 OpenMLS, Marmot and Least Authority audit scope. Green reproducibility and
 recovery tests are evidence for this bounded result, not a production-readiness
 or security-certification claim.
+
+## Residual risks
+
+`PhaseB1Group.load` makes it possible to hold multiple live wrapper objects for
+one durable group. The frozen handle-based and messaging methods validate the
+provider instance and restore generation but do not perform the additional
+durable-state comparison used by the three recovery operations. A stale
+duplicate can therefore still write divergent state through those non-recovery
+paths. This remains a bounded capability probe: it does not prove browser
+storage durability, multi-tab exclusion, origin safety, fork convergence or
+independent-peer interoperability.
+
+## Rollback
+
+Before merge, rollback is deletion of the task branch and closure of the Draft
+PR. After merge, rollback requires a reviewed revert of the complete atomic PR;
+the previous binary must never be restored alone while bindings, build identity,
+tuple allowlist, provenance or tests remain at another artifact identity. Every
+artifact that may have written live state — `b56e3ea0…`, `61cce676…` and
+`d0399fdd…` — must retain its exact compatibility tuple throughout any rollback
+or roll-forward.
 
 ## Follow-up
 
