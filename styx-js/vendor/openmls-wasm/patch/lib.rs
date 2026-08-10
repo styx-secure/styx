@@ -4285,8 +4285,26 @@ mod tests {
             .mls_group
             .commit_to_pending_proposals(alice_provider.as_ref(), &alice.keypair)
             .unwrap();
+        let referenced_commit_bytes = referenced_commit.tls_serialize_detached().unwrap();
+        let bob_before_referenced_rejection =
+            phase_b2_provider_entries(&bob_provider.serialize_state());
+        // JsError construction itself panics on a native non-WASM target. Catch
+        // that test-environment boundary after driving the real exported method;
+        // the exact stable policy code is asserted from the authenticated staged
+        // proposal immediately below.
+        let referenced_boundary_rejection = std::panic::catch_unwind(
+            std::panic::AssertUnwindSafe(|| {
+                bob_group.stage_inbound_commit(&bob_provider, &referenced_commit_bytes)
+            }),
+        );
+        assert!(referenced_boundary_rejection.is_err());
+        assert_eq!(
+            phase_b2_provider_entries(&bob_provider.serialize_state()),
+            bob_before_referenced_rejection,
+            "exported referenced-proposal rejection must not write provider state"
+        );
         let referenced_commit = MlsMessageIn::tls_deserialize_exact(
-            &referenced_commit.tls_serialize_detached().unwrap(),
+            &referenced_commit_bytes,
         )
         .unwrap();
         let referenced_public = match referenced_commit.extract() {
@@ -4405,8 +4423,22 @@ mod tests {
             .stage_commit(alice_provider.as_ref())
             .unwrap();
         let (app_data_commit, _, _) = app_data_bundle.into_contents();
+        let app_data_commit_bytes = app_data_commit.tls_serialize_detached().unwrap();
+        let bob_before_app_data_rejection =
+            phase_b2_provider_entries(&bob_provider.serialize_state());
+        let app_data_boundary_rejection = std::panic::catch_unwind(
+            std::panic::AssertUnwindSafe(|| {
+                bob_group.stage_inbound_commit(&bob_provider, &app_data_commit_bytes)
+            }),
+        );
+        assert!(app_data_boundary_rejection.is_err());
+        assert_eq!(
+            phase_b2_provider_entries(&bob_provider.serialize_state()),
+            bob_before_app_data_rejection,
+            "exported AppDataUpdate rejection must not write provider state"
+        );
         let app_data_commit = MlsMessageIn::tls_deserialize_exact(
-            &app_data_commit.tls_serialize_detached().unwrap(),
+            &app_data_commit_bytes,
         )
         .unwrap();
         let app_data_public = match app_data_commit.extract() {
@@ -4737,10 +4769,35 @@ mod tests {
         last_account[30..].copy_from_slice(&511u16.to_be_bytes());
         assert_eq!(decoded_four_byte_policy[511], last_account);
 
-        let oversized_eight_byte_policy = vec![0xc0, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x20];
+        // An eight-byte QUIC prefix for a value below 2^30 is non-canonical.
+        // The usize conversion overflow branch is target-width dependent and is
+        // therefore not claimed by this native x86_64 test.
+        let noncanonical_eight_byte_policy =
+            vec![0xc0, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x20];
         assert_eq!(
-            phase_b2_decode_admin_policy_recovery(&oversized_eight_byte_policy).unwrap_err(),
+            phase_b2_decode_admin_policy_recovery(&noncanonical_eight_byte_policy).unwrap_err(),
             "phase-b2 group: malformed administrator policy length"
+        );
+
+        let admin_provider = Provider::new();
+        let (admin_identity, admin_proof, _) = phase_b2_identity(&admin_provider, 0x62);
+        let admin_group = PhaseB2Group::create_new(
+            &admin_provider,
+            &admin_identity,
+            b"phase-b2-admin-membership-policy",
+            &admin_proof,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let admin_membership_rejection = std::panic::catch_unwind(|| {
+            phase_b2_validate_group_context(
+                admin_group.mls_group.public_group().group_context(),
+                &[vec![0x63; 32]],
+            )
+        });
+        assert!(
+            admin_membership_rejection.is_err(),
+            "a non-member administrator must fail the production validator"
         );
 
         assert_eq!(
