@@ -19,9 +19,9 @@ Marmot interoperability, or establish production readiness.
   `10ad40928019b5f9c2793d0c760b25209a96e3fa8bacc1541a5da5d723b64ae3`.
 - Base: `0bcd19f114ad1dd9cc419a8c53f0d53d33428ac0` on `main`.
 - Stage-1 source head evaluated by this report:
-  `571b031d9da6bba2528c5789a4609d86a3749d25`.
+  `e08c226aa9bfc7dce7640624e4771f7a3061c1df`.
 - SHA-256 of the binary-safe `base..source-head` diff:
-  `b43609f7fb3bb17a3c7cf4ee5b9b44b31efeb40001fc014ae522a0c02593ac0c`.
+  `5d8b40fdae78549897882b4a6c37ca4fcd9288b746fa51a5ee984627e62d0b8f`.
 - OpenMLS: `09e92777dba0528d3d29e2e5e681b7e91637c7be`, with the existing
   `extensions-draft` feature.
 - Marmot specification evidence:
@@ -65,12 +65,13 @@ or cleared only after strict provider, epoch and own-identity checks.
 The projection captures the authenticated OpenMLS sender before consuming the
 processed message, every admitted inline proposal, the update-path replacement
 leaf, the complete ordered candidate member set, and the complete candidate
-GroupContext. Referenced proposals and unresolved AppDataUpdate Commits fail at
-the exported staging boundary with their stable errors. The pure policy
-predicate also assigns distinct stable errors to inline Update, Custom and
-other proposal kinds, but those shapes are rejected or normalized by the
-pinned OpenMLS API before they can reach this boundary and are recorded only as
-defence-in-depth coverage.
+GroupContext. Referenced proposals and unresolved AppDataUpdate Commits fail
+closed at the exported staging boundary; the exact stable classification is
+asserted from the same authenticated staged object. The pure policy predicate
+also assigns distinct stable errors to inline Update, Custom and other proposal
+kinds, but those shapes are rejected or normalized by the pinned OpenMLS API
+before they can reach this boundary and are recorded only as defence-in-depth
+coverage.
 
 Before confirm or merge, WASM independently recomputes the exact
 `STYX-B2-VERIFIED-LEAVES-v1` digest over all candidate leaves. The JavaScript
@@ -108,7 +109,7 @@ candidate and records:
 - exact equality of all 17 retained named exports and their class surfaces.
 
 The complete textual snapshot emitted at source head
-`571b031d9da6bba2528c5789a4609d86a3749d25` is 24,183 bytes and has SHA-256
+`e08c226aa9bfc7dce7640624e4771f7a3061c1df` is 24,183 bytes and has SHA-256
 `6090ac29fcc257e54d58251f63853990f65e0fb8cc2bd83156f2ee524b9fc3a8`.
 Its final marker is `PASS PHASE_B2_2_COMPOSITION_EXACT`. The generated
 declaration digest below is the independent artifact identity that will freeze
@@ -116,8 +117,8 @@ the exact public types in a Stage-2 amendment.
 
 ## Reproducible disposable artifacts
 
-Builds `issue149-opus-close.9lvBRH` and
-`issue149-opus-close-b.trZvYz` were produced independently from the exact final
+Builds `issue149-final-a.ZH3XbJ` and
+`issue149-final-b.9BMfqe` were produced independently from the exact final
 source patch. `cmp` succeeded for all
 five files. Their complete generated-surface snapshots are also byte-identical:
 15,839 bytes with SHA-256
@@ -152,18 +153,21 @@ generated files has entered the Stage-1 branch.
 - Native hostile-input evidence constructs and authenticates a standalone Add
   proposal, a referenced Commit, a standalone Update proposal, and an
   AppDataUpdate Commit with the pinned OpenMLS API. It observes the real
-  `Reference` and `UnresolvedAppDataCommit` shapes and drives both authenticated
-  Commit byte strings through the exported `stage_inbound_commit` method. On a
-  native non-WASM target, construction of the returned `JsError` deliberately
-  traps at the wasm-bindgen boundary; the tests catch that target limitation and
-  prove provider-state equality before/after, while the exact stable error is
-  asserted from the same authenticated staged proposal or unresolved Commit.
+  `Reference` and `UnresolvedAppDataCommit` shapes, first proves that an admitted
+  inline self-update succeeds at the exported `stage_inbound_commit` method,
+  and then drives both authenticated hostile Commit byte strings through that
+  same method. On a native non-WASM target, construction of the returned
+  `JsError` deliberately traps at the wasm-bindgen boundary; the tests catch
+  that target limitation only as the final use of each victim group and prove
+  provider-state equality before/after, while the exact stable error is asserted
+  from the same authenticated staged proposal or unresolved Commit.
   Generated WASM additionally exercises exact exported-wrapper errors where
   those inputs are constructible (PrivateMessage, non-Commit, B1 KeyPackage and
   durable recovery). Non-constructible inline Update/Custom/Other cases retain
   exact typed unit coverage and are not represented as end-to-end evidence.
 - Native negative coverage also exercises the production GroupContext validator
-  with an administrator absent from the supplied candidate-member set. The
+  first with the actual administrator present and then with that administrator
+  absent from the supplied candidate-member set. The
   eight-byte administrator-policy case is explicitly a non-canonical prefix
   rejection; target-width `usize` overflow remains reasoned rather than claimed
   as an x86_64 test result.
