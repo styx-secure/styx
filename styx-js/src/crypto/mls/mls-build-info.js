@@ -11,6 +11,12 @@
 
 export const MLS_BUILD_INFO = Object.freeze({
   openMlsRevision: '09e92777dba0528d3d29e2e5e681b7e91637c7be',
+  wasmArtifactSha256: 'd0399fddc2ed5f030927f9786d295c394bcdfa133a1c69feeb9514edf2cd6f01',
+  ciphersuite: 'MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519',
+});
+
+export const B1_MLS_BUILD_INFO = Object.freeze({
+  openMlsRevision: '09e92777dba0528d3d29e2e5e681b7e91637c7be',
   wasmArtifactSha256: '61cce676c81366fc9c62752a09ea1547a4998ede7f144013ac5ade088e70a863',
   ciphersuite: 'MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519',
 });
@@ -25,6 +31,7 @@ export const PRE_B1_MLS_BUILD_INFO = Object.freeze({
 // independent allowlists so hashes, revisions and suites cannot be mixed.
 export const COMPATIBLE_MLS_STATE_TUPLES = Object.freeze([
   PRE_B1_MLS_BUILD_INFO,
+  B1_MLS_BUILD_INFO,
   MLS_BUILD_INFO,
 ]);
 

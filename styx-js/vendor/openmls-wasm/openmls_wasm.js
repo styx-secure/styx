@@ -538,12 +538,34 @@ export class PhaseB1Group {
     }
     /**
      * @param {Provider} provider
+     * @param {bigint} expected_prior_epoch
+     */
+    clear_pending_commit(provider, expected_prior_epoch) {
+        _assertClass(provider, Provider);
+        const ret = wasm.phaseb1group_clear_pending_commit(this.__wbg_ptr, provider.__wbg_ptr, expected_prior_epoch);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {Provider} provider
      * @param {PhaseB1PendingAdd} pending
      */
     confirm_pending_add(provider, pending) {
         _assertClass(provider, Provider);
         _assertClass(pending, PhaseB1PendingAdd);
         const ret = wasm.phaseb1group_confirm_pending_add(this.__wbg_ptr, provider.__wbg_ptr, pending.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @param {Provider} provider
+     * @param {bigint} expected_prior_epoch
+     */
+    confirm_pending_commit(provider, expected_prior_epoch) {
+        _assertClass(provider, Provider);
+        const ret = wasm.phaseb1group_confirm_pending_commit(this.__wbg_ptr, provider.__wbg_ptr, expected_prior_epoch);
         if (ret[1]) {
             throw takeFromExternrefTable0(ret[0]);
         }
@@ -626,6 +648,27 @@ export class PhaseB1Group {
         return PhaseB1RatchetTree.__wrap(ret);
     }
     /**
+     * @returns {Uint8Array}
+     */
+    group_id() {
+        const ret = wasm.phaseb1group_group_id(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {Provider} provider
+     * @returns {boolean}
+     */
+    has_pending_commit(provider) {
+        _assertClass(provider, Provider);
+        const ret = wasm.phaseb1group_has_pending_commit(this.__wbg_ptr, provider.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
      * @param {Provider} provider
      * @param {Uint8Array} welcome_bytes
      * @param {PhaseB1RatchetTree} ratchet_tree
@@ -642,6 +685,37 @@ export class PhaseB1Group {
             throw takeFromExternrefTable0(ret[1]);
         }
         return PhaseB1Group.__wrap(ret[0]);
+    }
+    /**
+     * @param {Provider} provider
+     * @param {Uint8Array} group_id
+     * @returns {PhaseB1Group | undefined}
+     */
+    static load(provider, group_id) {
+        _assertClass(provider, Provider);
+        const ptr0 = passArray8ToWasm0(group_id, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb1group_load(provider.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] === 0 ? undefined : PhaseB1Group.__wrap(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} account_public_key
+     * @param {Uint8Array} leaf_signature_key
+     * @returns {boolean}
+     */
+    matches_own_identity(account_public_key, leaf_signature_key) {
+        const ptr0 = passArray8ToWasm0(account_public_key, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(leaf_signature_key, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb1group_matches_own_identity(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
     }
     /**
      * @returns {number}
@@ -731,6 +805,12 @@ if (Symbol.dispose) PhaseB1Group.prototype[Symbol.dispose] = PhaseB1Group.protot
  * BasicCredential value; its Ed25519 MLS signing key remains independent.
  */
 export class PhaseB1Identity {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB1Identity.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB1IdentityFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
         this.__wbg_ptr = 0;
@@ -773,6 +853,24 @@ export class PhaseB1Identity {
         var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v1;
+    }
+    /**
+     * @param {Provider} provider
+     * @param {Uint8Array} account_public_key
+     * @param {Uint8Array} leaf_signature_key
+     * @returns {PhaseB1Identity | undefined}
+     */
+    static load(provider, account_public_key, leaf_signature_key) {
+        _assertClass(provider, Provider);
+        const ptr0 = passArray8ToWasm0(account_public_key, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(leaf_signature_key, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb1identity_load(provider.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] === 0 ? undefined : PhaseB1Identity.__wrap(ret[0]);
     }
     /**
      * @param {Provider} provider
