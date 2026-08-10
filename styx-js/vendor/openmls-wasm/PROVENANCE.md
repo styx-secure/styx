@@ -54,7 +54,7 @@ MLS state already written to disk by this artifact.
     once OpenMLS publishes one.
 - **The local patch is not audited.** `patch/lib.rs` is Styx code compiled into the crate. In
   addition to persistence, reload, member inspection and wire-error hardening, it now contains
-  the isolated Phase B1 dual-profile and explicit staged/pending Commit API. It is outside the
+  the isolated Phase B1/Phase B2 dual-profile and explicit staged/pending Commit APIs. It is outside the
   scope of every upstream OpenMLS or Marmot-family audit; review it separately.
 - ~~`Provider::restore_state` `u64 as usize` length arithmetic wraps on wasm32.~~ **Fixed
   2026-07-11** (code review): all offsets use checked arithmetic and oversized lengths are
@@ -71,7 +71,7 @@ MLS state already written to disk by this artifact.
   shipping product remains on the legacy path.
 - **Legacy ciphersuite (shipping):**
   `MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519` (`patch/lib.rs`).
-- **Phase B1 ciphersuite (non-product probe):**
+- **Phase B1 and Phase B2 ciphersuite (non-product probes):**
   `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` (`0x0001`).
 - **Crypto provider:** `openmls_rust_crypto` (RustCrypto), not libcrux.
 - **Rebuild:** `./build.sh` — Docker, no host Rust toolchain needed.
@@ -92,27 +92,35 @@ image: a tag can be re-pushed, a digest cannot.
 | Dependency graph | `./Cargo.lock` (workspace lockfile; builds run `-- --locked`, and `build.sh` aborts on drift) |
 | OpenMLS source | commit `09e9277…` (above) |
 
-**Artifact (rebuilt 2026-08-10 for the B2.1 recovery boundary, from the unchanged
+**Artifact (rebuilt 2026-08-10 for the B2.2 capability boundary, from the unchanged
 source pin and pins above):**
 
 | File | sha256 |
 |---|---|
-| `openmls_wasm_bg.wasm` | `d0399fddc2ed5f030927f9786d295c394bcdfa133a1c69feeb9514edf2cd6f01` |
-| `openmls_wasm.js` | `5eaa635bd68ca1ee476c6757bf2e690cea8f024dad69dffc0af5007a93491a16` |
-| `openmls_wasm.d.ts` | `54c3c959699c5b265ba376eb55a85d7d9abdacbbb6089ea0d6cfe720cffa262d` |
-| `openmls_wasm_bg.wasm.d.ts` | `e0bcf9651c7a06f6033ed83f390a94697d6fb29a2b1b2ee9c94c806e59ced20c` |
+| `openmls_wasm_bg.wasm` | `60dbbc1127fbfb0e7e479cf7e2f7e6e20183c60d0559268f039d8db58bf60a3a` |
+| `openmls_wasm.js` | `50599ddc433619fd617d8071990f1edb94866388028c6875a493c7ac7ec1de7d` |
+| `openmls_wasm.d.ts` | `17daa548987cdde22b9704921264ce85ec8ad70411eee255f544de70cd8e5d30` |
+| `openmls_wasm_bg.wasm.d.ts` | `dc6ae4ce69782b70c483caf06f0bc2b8691ed99b4540239352df408609c89473` |
 | `package.json` | `88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85` |
 
-**Reproducibility: verified 2026-08-10 for B2.1.** Two complete disposable builds
+**Reproducibility: verified 2026-08-10 for B2.2.** Two complete disposable builds
 from these pins were byte-identical to each other and to the committed output
 set; `./verify.sh` independently repeats the same comparison.
 
-The immediately preceding Phase B1 artifact digest
+The immediately preceding B2.1 artifact digest
+`d0399fddc2ed5f030927f9786d295c394bcdfa133a1c69feeb9514edf2cd6f01`
+remains an exact state-writer compatibility tuple. Its fixed synthetic fixture
+under `test/fixtures/mls-state-b2-1/` is restored by this artifact. The earlier
+Phase B1 artifact digest
 `61cce676c81366fc9c62752a09ea1547a4998ede7f144013ac5ade088e70a863`
 remains an exact state-writer compatibility tuple. Its fixed synthetic fixture
-under `test/fixtures/mls-state-b1/` is restored by the B2.1 artifact in the test
+under `test/fixtures/mls-state-b1/` is also restored by this artifact in the test
 suite. This is bounded compatibility evidence, not a general migration or
 interoperability claim.
+
+The complete generated public surface is discovered structurally and frozen at
+54,941 canonical JSON bytes with SHA-256
+`1eb94ae14138918fb4ad0d8b91bb5560fa0898a23d7272542aa4b36fed342cc6`.
 
 Two build inputs remain pinned only indirectly, and are listed here rather than hidden:
 `wasm-bindgen-cli` is fetched by wasm-pack at the version the lockfile dictates, but the

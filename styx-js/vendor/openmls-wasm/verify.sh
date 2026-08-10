@@ -25,7 +25,15 @@ OUT_DIR="$TMP/b" "$HERE/build.sh"
 echo
 echo "=== results ==="
 status=0
-for f in openmls_wasm_bg.wasm openmls_wasm.js; do
+GENERATED_FILES=(
+  openmls_wasm.js
+  openmls_wasm.d.ts
+  openmls_wasm_bg.wasm
+  openmls_wasm_bg.wasm.d.ts
+  package.json
+)
+
+for f in "${GENERATED_FILES[@]}"; do
   if cmp -s "$TMP/a/$f" "$TMP/b/$f"; then
     echo "REPRODUCIBLE:  $f  $(sha256sum "$TMP/a/$f" | cut -d' ' -f1)"
   else

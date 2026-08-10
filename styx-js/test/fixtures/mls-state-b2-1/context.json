@@ -1,0 +1,11 @@
+{
+  "name": "5555555555555555555555555555555555555555555555555555555555555555",
+  "peer": "6666666666666666666666666666666666666666666666666666666666666666",
+  "groupId": "styx:e389cfa4-a323-41b4-bba6-f6e6c99abab4",
+  "idpk": "gLljwj7m50fcEu+oMlfdf++cYXqsB7Tzssg7U8XMOPQ=",
+  "groups": {
+    "6666666666666666666666666666666666666666666666666666666666666666": "styx:e389cfa4-a323-41b4-bba6-f6e6c99abab4"
+  },
+  "refCiphertext": "AAEAAilzdHl4OmUzODljZmE0LWEzMjMtNDFiNC1iYmE2LWY2ZTZjOTlhYmFiNAAAAAAAAAABAQAczhqUFGzbCiSb8Xai7N8iOod6xgrqh8d45igDXkCpJmHYcgUAX/P0IuKYsjzm+LQ4fiUo4XvbUNnObr1KKnSBY+N5/MOJC+PqbF9vqMALmIR/IHaypHyQ+yD1c2QdqlL4RXy3lTAuExZ02xn5uSl8zLdo0f3fIop43fikhcojKesGFSkhq4Z6p3dvqh/NoLWANGpa1JloRIpHLZb0Gro9xv7/8VXf9uTk3tPtfuIOK5ddVsiZ1oqsVylj8hNY5iUiUd+KgBbQlQ==",
+  "refPlaintext": "mls-state-b2-1 reference message — only a compatible restored session decrypts this"
+}
