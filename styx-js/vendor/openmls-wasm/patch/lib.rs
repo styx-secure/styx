@@ -24,7 +24,10 @@ use openmls::{
 };
 use openmls_basic_credential::SignatureKeyPair;
 use openmls_rust_crypto::OpenMlsRustCrypto;
-use openmls_traits::{types::Ciphersuite, OpenMlsProvider};
+use openmls_traits::{
+    types::{Ciphersuite, VerifiableCiphersuite},
+    OpenMlsProvider,
+};
 use tls_codec::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
@@ -417,6 +420,42 @@ pub struct PhaseB1Identity {
 }
 
 #[cfg(feature = "extensions-draft")]
+impl PhaseB1Identity {
+    fn load_recovery(
+        provider: &Provider,
+        account_public_key: &[u8],
+        leaf_signature_key: &[u8],
+    ) -> Result<Option<PhaseB1Identity>, &'static str> {
+        if account_public_key.len() != 32 {
+            return Err("phase-b1 identity: account public key must be exactly 32 bytes");
+        }
+        if leaf_signature_key.len() != 32 {
+            return Err("phase-b1 identity: leaf signature key must be exactly 32 bytes");
+        }
+        let Some(keypair) = SignatureKeyPair::read(
+            provider.inner.storage(),
+            leaf_signature_key,
+            SignatureScheme::ED25519,
+        ) else {
+            return Ok(None);
+        };
+        if keypair.public() != leaf_signature_key {
+            return Err("phase-b1 identity: loaded signing key does not match");
+        }
+        let credential = BasicCredential::new(account_public_key.to_vec());
+        let credential_with_key = CredentialWithKey {
+            credential: credential.into(),
+            signature_key: keypair.public().into(),
+        };
+        Ok(Some(Self {
+            account_public_key: account_public_key.to_vec(),
+            credential_with_key,
+            keypair,
+        }))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
 #[wasm_bindgen]
 impl PhaseB1Identity {
     #[wasm_bindgen(constructor)]
@@ -438,6 +477,15 @@ impl PhaseB1Identity {
             credential_with_key,
             keypair,
         })
+    }
+
+    pub fn load(
+        provider: &Provider,
+        account_public_key: &[u8],
+        leaf_signature_key: &[u8],
+    ) -> Result<Option<PhaseB1Identity>, JsError> {
+        Self::load_recovery(provider, account_public_key, leaf_signature_key)
+            .map_err(JsError::new)
     }
 
     pub fn account_public_key(&self) -> Vec<u8> {
@@ -796,7 +844,7 @@ impl Group {
 }
 
 #[cfg(feature = "extensions-draft")]
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 struct ProjectedMember {
     credential_identity: Vec<u8>,
     leaf_signature_key: Vec<u8>,
@@ -832,7 +880,7 @@ fn project_probe_member(key_package: &OpenMlsKeyPackage) -> Result<ProjectedMemb
 /// only bounded proposal counts and public member metadata.
 #[cfg(feature = "extensions-draft")]
 #[wasm_bindgen]
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct PhaseB1CommitProjection {
     prior_epoch: u64,
     next_epoch: u64,
@@ -1055,10 +1103,39 @@ impl PhaseB1RatchetTree {
 pub struct PhaseB1Group {
     mls_group: MlsGroup,
     instance_id: u32,
+    provider_instance_id: u32,
+    provider_restore_generation: u32,
 }
 
 #[cfg(feature = "extensions-draft")]
 impl PhaseB1Group {
+    fn from_bound_group(provider: &Provider, mls_group: MlsGroup) -> Self {
+        Self {
+            mls_group,
+            instance_id: next_group_instance_id(),
+            provider_instance_id: provider.instance_id,
+            provider_restore_generation: provider.restore_generation.get(),
+        }
+    }
+
+    fn validate_provider_binding_recovery(
+        &self,
+        provider: &Provider,
+    ) -> Result<(), &'static str> {
+        if self.provider_instance_id != provider.instance_id {
+            return Err("phase-b1 handle: wrong provider");
+        }
+        if self.provider_restore_generation != provider.restore_generation.get() {
+            return Err("phase-b1 handle: invalidated by provider restore");
+        }
+        Ok(())
+    }
+
+    fn validate_provider_binding(&self, provider: &Provider) -> Result<(), JsError> {
+        self.validate_provider_binding_recovery(provider)
+            .map_err(JsError::new)
+    }
+
     fn handle_binding(&self, provider: &Provider) -> HandleBinding {
         HandleBinding {
             provider_instance_id: provider.instance_id,
@@ -1068,11 +1145,195 @@ impl PhaseB1Group {
             prior_epoch: self.mls_group.epoch().as_u64(),
         }
     }
+
+    fn validate_durable_recovery_state_recovery(
+        &self,
+        provider: &Provider,
+    ) -> Result<(), &'static str> {
+        self.validate_provider_binding_recovery(provider)?;
+        validate_phase_b1_group_profile_recovery(&self.mls_group)?;
+        let durable_group = MlsGroup::load(provider.inner.storage(), self.mls_group.group_id())
+            .map_err(|_| "phase-b1 recovery: durable group load failed")?
+            .ok_or("phase-b1 recovery: durable group is absent")?;
+        validate_phase_b1_group_profile_recovery(&durable_group)?;
+
+        let current_pending = phase_b1_pending_projection(&self.mls_group)
+            .map_err(|_| "phase-b1 recovery: pending projection failed")?;
+        let durable_pending = phase_b1_pending_projection(&durable_group)
+            .map_err(|_| "phase-b1 recovery: pending projection failed")?;
+        if self.mls_group.group_id() != durable_group.group_id()
+            || self.mls_group.ciphersuite() != durable_group.ciphersuite()
+            || self.mls_group.epoch() != durable_group.epoch()
+            || phase_b1_member_bindings(&self.mls_group)
+                != phase_b1_member_bindings(&durable_group)
+            || current_pending != durable_pending
+        {
+            return Err("phase-b1 recovery: durable group disagrees with memory");
+        }
+        Ok(())
+    }
+
+    fn validate_durable_recovery_state(&self, provider: &Provider) -> Result<(), JsError> {
+        self.validate_durable_recovery_state_recovery(provider)
+            .map_err(JsError::new)
+    }
+
+    fn validate_pending_recovery(
+        &self,
+        provider: &Provider,
+        expected_prior_epoch: u64,
+    ) -> Result<(), &'static str> {
+        self.validate_durable_recovery_state_recovery(provider)?;
+        if self.mls_group.epoch().as_u64() != expected_prior_epoch {
+            return Err("phase-b1 recovery: stale epoch");
+        }
+        if self.mls_group.pending_commit().is_none() {
+            return Err("phase-b1 recovery: pending state is absent");
+        }
+        Ok(())
+    }
+
+    fn load_recovery(
+        provider: &Provider,
+        group_id: &[u8],
+    ) -> Result<Option<PhaseB1Group>, &'static str> {
+        if group_id.is_empty() || group_id.len() > 64 {
+            return Err("phase-b1 group: group id must contain 1..64 bytes");
+        }
+        let requested_group_id = GroupId::from_slice(group_id);
+        let Some(mls_group) = MlsGroup::load(provider.inner.storage(), &requested_group_id)
+            .map_err(|_| "phase-b1 recovery: durable group load failed")?
+        else {
+            return Ok(None);
+        };
+        if mls_group.group_id() != &requested_group_id {
+            return Err("phase-b1 group: unexpected profile");
+        }
+        validate_phase_b1_group_profile_recovery(&mls_group)?;
+        Ok(Some(Self::from_bound_group(provider, mls_group)))
+    }
+
+    fn matches_own_identity_recovery(
+        &self,
+        account_public_key: &[u8],
+        leaf_signature_key: &[u8],
+    ) -> Result<bool, &'static str> {
+        if account_public_key.len() != 32 || leaf_signature_key.len() != 32 {
+            return Err("phase-b1 recovery: identity inputs must be exactly 32 bytes");
+        }
+        let own_leaf = self
+            .mls_group
+            .own_leaf_node()
+            .ok_or("phase-b1 recovery: own leaf is absent")?;
+        Ok(own_leaf.credential().serialized_content() == account_public_key
+            && own_leaf.signature_key().as_slice() == leaf_signature_key)
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b1_member_bindings(group: &MlsGroup) -> Vec<(u32, Vec<u8>, Vec<u8>, Vec<u8>)> {
+    group
+        .members()
+        .map(|member| {
+            (
+                member.index.u32(),
+                member.credential.serialized_content().to_vec(),
+                member.signature_key,
+                member.encryption_key,
+            )
+        })
+        .collect()
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b1_pending_projection(
+    group: &MlsGroup,
+) -> Result<Option<PhaseB1CommitProjection>, JsError> {
+    group
+        .pending_commit()
+        .map(|pending| PhaseB1CommitProjection::from_staged(group.epoch().as_u64(), pending))
+        .transpose()
+}
+
+#[cfg(feature = "extensions-draft")]
+fn validate_phase_b1_group_profile_recovery(group: &MlsGroup) -> Result<(), &'static str> {
+    if group.ciphersuite() != PROBE_CIPHERSUITE {
+        return Err("phase-b1 group: unexpected ciphersuite");
+    }
+    if group.group_id().as_slice().is_empty() || group.group_id().as_slice().len() > 64 {
+        return Err("phase-b1 group: unexpected profile");
+    }
+    if !group.is_active() || group.own_leaf_node().is_none() {
+        return Err("phase-b1 group: unexpected profile");
+    }
+
+    let mut member_count = 0usize;
+    for member in group.members() {
+        member_count += 1;
+        if member.credential.serialized_content().len() != 32 || member.signature_key.len() != 32 {
+            return Err("phase-b1 group: unexpected profile");
+        }
+        let leaf = group
+            .public_group()
+            .leaf(member.index)
+            .ok_or("phase-b1 group: unexpected profile")?;
+        if !leaf
+            .capabilities()
+            .ciphersuites()
+            .contains(&VerifiableCiphersuite::from(PROBE_CIPHERSUITE))
+            || !leaf
+                .capabilities()
+                .extensions()
+                .contains(&ExtensionType::AppDataDictionary)
+            || !leaf
+                .capabilities()
+                .proposals()
+                .contains(&ProposalType::AppDataUpdate)
+        {
+            return Err("phase-b1 group: unexpected profile");
+        }
+        let dictionary = leaf
+            .extensions()
+            .app_data_dictionary()
+            .ok_or("phase-b1 group: unexpected profile")?
+            .dictionary();
+        let component_ids: Vec<_> = dictionary.entries().map(|entry| entry.id()).collect();
+        if component_ids != [1, ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID] {
+            return Err("phase-b1 group: unexpected profile");
+        }
+        let supported = Vec::<u16>::tls_deserialize_exact(
+            dictionary
+                .get(&1)
+                .ok_or("phase-b1 group: unexpected profile")?,
+        )
+        .map_err(|_| "phase-b1 group: unexpected profile")?;
+        if supported != [ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID] {
+            return Err("phase-b1 group: unexpected profile");
+        }
+        let proof = dictionary
+            .get(&ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID)
+            .ok_or("phase-b1 group: unexpected profile")?;
+        validate_probe_identity_and_proof(member.credential.serialized_content(), proof)
+            .map_err(|_| "phase-b1 group: unexpected profile")?;
+    }
+    if member_count == 0 {
+        return Err("phase-b1 group: unexpected profile");
+    }
+    Ok(())
+}
+
+#[cfg(feature = "extensions-draft")]
+fn validate_phase_b1_group_profile(group: &MlsGroup) -> Result<(), JsError> {
+    validate_phase_b1_group_profile_recovery(group).map_err(JsError::new)
 }
 
 #[cfg(feature = "extensions-draft")]
 #[wasm_bindgen]
 impl PhaseB1Group {
+    pub fn load(provider: &Provider, group_id: &[u8]) -> Result<Option<PhaseB1Group>, JsError> {
+        Self::load_recovery(provider, group_id).map_err(JsError::new)
+    }
+
     pub fn create_new(
         provider: &Provider,
         founder: &PhaseB1Identity,
@@ -1095,10 +1356,7 @@ impl PhaseB1Group {
             &founder.keypair,
             founder.credential_with_key.clone(),
         )?;
-        Ok(Self {
-            mls_group,
-            instance_id: next_group_instance_id(),
-        })
+        Ok(Self::from_bound_group(provider, mls_group))
     }
 
     pub fn join(
@@ -1123,10 +1381,12 @@ impl PhaseB1Group {
         if mls_group.ciphersuite() != PROBE_CIPHERSUITE {
             return Err(JsError::new("phase-b1 group: unexpected ciphersuite"));
         }
-        Ok(Self {
-            mls_group,
-            instance_id: next_group_instance_id(),
-        })
+        validate_phase_b1_group_profile(&mls_group)?;
+        Ok(Self::from_bound_group(provider, mls_group))
+    }
+
+    pub fn group_id(&self) -> Vec<u8> {
+        self.mls_group.group_id().to_vec()
     }
 
     pub fn export_ratchet_tree(&self) -> PhaseB1RatchetTree {
@@ -1149,12 +1409,50 @@ impl PhaseB1Group {
             .ok_or_else(|| JsError::new("phase-b1 group: member index out of range"))
     }
 
+    pub fn matches_own_identity(
+        &self,
+        account_public_key: &[u8],
+        leaf_signature_key: &[u8],
+    ) -> Result<bool, JsError> {
+        self.matches_own_identity_recovery(account_public_key, leaf_signature_key)
+            .map_err(JsError::new)
+    }
+
+    pub fn has_pending_commit(&self, provider: &Provider) -> Result<bool, JsError> {
+        self.validate_durable_recovery_state(provider)?;
+        Ok(self.mls_group.pending_commit().is_some())
+    }
+
+    pub fn confirm_pending_commit(
+        &mut self,
+        provider: &mut Provider,
+        expected_prior_epoch: u64,
+    ) -> Result<(), JsError> {
+        self.validate_pending_recovery(provider, expected_prior_epoch)
+            .map_err(JsError::new)?;
+        self.mls_group.merge_pending_commit(provider.as_mut())?;
+        Ok(())
+    }
+
+    pub fn clear_pending_commit(
+        &mut self,
+        provider: &Provider,
+        expected_prior_epoch: u64,
+    ) -> Result<(), JsError> {
+        self.validate_pending_recovery(provider, expected_prior_epoch)
+            .map_err(JsError::new)?;
+        self.mls_group
+            .clear_pending_commit(provider.inner.storage())?;
+        Ok(())
+    }
+
     pub fn propose_and_commit_add(
         &mut self,
         provider: &Provider,
         sender: &PhaseB1Identity,
         new_member: &PhaseB1KeyPackage,
     ) -> Result<PhaseB1PendingAdd, JsError> {
+        self.validate_provider_binding(provider)?;
         inspect_probe_key_package(&new_member.0)?;
         if self.mls_group.pending_commit().is_some() {
             return Err(JsError::new(
@@ -1181,6 +1479,7 @@ impl PhaseB1Group {
         provider: &mut Provider,
         pending: &mut PhaseB1PendingAdd,
     ) -> Result<(), JsError> {
+        self.validate_provider_binding(provider)?;
         let binding = pending
             .binding
             .as_ref()
@@ -1199,6 +1498,7 @@ impl PhaseB1Group {
         provider: &Provider,
         pending: &mut PhaseB1PendingAdd,
     ) -> Result<(), JsError> {
+        self.validate_provider_binding(provider)?;
         let binding = pending
             .binding
             .as_ref()
@@ -1217,6 +1517,7 @@ impl PhaseB1Group {
         provider: &Provider,
         bytes: &[u8],
     ) -> Result<PhaseB1StagedCommit, JsError> {
+        self.validate_provider_binding(provider)?;
         let message = MlsMessageIn::tls_deserialize_exact(bytes)
             .map_err(|_| JsError::new("phase-b1 staged commit: malformed MLSMessage"))?;
         let protocol_message: ProtocolMessage = match message.extract() {
@@ -1253,6 +1554,7 @@ impl PhaseB1Group {
         provider: &mut Provider,
         staged: &mut PhaseB1StagedCommit,
     ) -> Result<(), JsError> {
+        self.validate_provider_binding(provider)?;
         let binding = staged
             .binding
             .as_ref()
@@ -1272,6 +1574,7 @@ impl PhaseB1Group {
         provider: &Provider,
         staged: &mut PhaseB1StagedCommit,
     ) -> Result<(), JsError> {
+        self.validate_provider_binding(provider)?;
         let binding = staged
             .binding
             .as_ref()
@@ -1291,6 +1594,7 @@ impl PhaseB1Group {
         sender: &PhaseB1Identity,
         plaintext: &[u8],
     ) -> Result<Vec<u8>, JsError> {
+        self.validate_provider_binding(provider)?;
         if plaintext.is_empty() {
             return Err(JsError::new("phase-b1 application: plaintext must not be empty"));
         }
@@ -1305,6 +1609,7 @@ impl PhaseB1Group {
         provider: &Provider,
         bytes: &[u8],
     ) -> Result<Vec<u8>, JsError> {
+        self.validate_provider_binding(provider)?;
         let message = MlsMessageIn::tls_deserialize_exact(bytes)
             .map_err(|_| JsError::new("phase-b1 application: malformed MLSMessage"))?;
         let protocol_message: ProtocolMessage = match message.extract() {
@@ -2470,6 +2775,432 @@ mod tests {
                 &bob_provider,
                 &bob,
             );
+        }
+
+        fn load_phase_b1_identity(
+            provider: &Provider,
+            account_public_key: &[u8],
+            leaf_signature_key: &[u8],
+        ) -> PhaseB1Identity {
+            unwrap_js(PhaseB1Identity::load(
+                provider,
+                account_public_key,
+                leaf_signature_key,
+            ))
+            .expect("restored provider must contain the exact Phase B1 signing key")
+        }
+
+        fn load_phase_b1_group(provider: &Provider, group_id: &[u8]) -> PhaseB1Group {
+            unwrap_js(PhaseB1Group::load(provider, group_id))
+                .expect("restored provider must contain the exact Phase B1 group")
+        }
+
+        fn phase_b1_error<T>(result: Result<T, &'static str>) -> &'static str {
+            match result {
+                Ok(_) => panic!("expected Phase B1 operation to fail"),
+                Err(error) => error,
+            }
+        }
+
+        fn assert_phase_b1_liveness(
+            left_group: &mut PhaseB1Group,
+            left_provider: &Provider,
+            left_identity: &PhaseB1Identity,
+            right_group: &mut PhaseB1Group,
+            right_provider: &Provider,
+            right_identity: &PhaseB1Identity,
+        ) {
+            let left_plaintext = b"phase-b2-1-left-to-right";
+            let left_message = unwrap_js(left_group.create_application_message(
+                left_provider,
+                left_identity,
+                left_plaintext,
+            ));
+            assert_eq!(
+                unwrap_js(right_group.process_application_message(right_provider, &left_message)),
+                left_plaintext
+            );
+
+            let right_plaintext = b"phase-b2-1-right-to-left";
+            let right_message = unwrap_js(right_group.create_application_message(
+                right_provider,
+                right_identity,
+                right_plaintext,
+            ));
+            assert_eq!(
+                unwrap_js(left_group.process_application_message(left_provider, &right_message)),
+                right_plaintext
+            );
+        }
+
+        #[test]
+        fn phase_b1_recovery_loads_identity_and_group() {
+            let provider = Provider::new();
+            let (alice, alice_proof, _) = probe_identity(&provider, 0x61);
+            let account_public_key = alice.account_public_key();
+            let leaf_signature_key = alice.leaf_signature_key();
+            let group_id = b"phase-b2-1-load";
+            let group = unwrap_js(PhaseB1Group::create_new(
+                &provider,
+                &alice,
+                group_id,
+                &alice_proof,
+            ));
+            assert_eq!(group.group_id(), group_id);
+            let snapshot = provider.serialize_state();
+
+            let restored_provider = restore_provider(&snapshot);
+            let loaded_identity = load_phase_b1_identity(
+                &restored_provider,
+                &account_public_key,
+                &leaf_signature_key,
+            );
+            assert_eq!(loaded_identity.account_public_key(), account_public_key);
+            assert_eq!(loaded_identity.leaf_signature_key(), leaf_signature_key);
+            let loaded_group = load_phase_b1_group(&restored_provider, group_id);
+            assert_eq!(loaded_group.group_id(), group_id);
+            assert_eq!(loaded_group.epoch(), 0);
+            assert_eq!(loaded_group.member_count(), 1);
+            assert!(unwrap_js(loaded_group.matches_own_identity(
+                &account_public_key,
+                &leaf_signature_key,
+            )));
+            assert!(!unwrap_js(loaded_group.has_pending_commit(&restored_provider)));
+
+            assert!(unwrap_js(PhaseB1Identity::load(
+                &restored_provider,
+                &account_public_key,
+                &[0xff; 32],
+            ))
+            .is_none());
+            assert!(unwrap_js(PhaseB1Group::load(
+                &restored_provider,
+                b"phase-b2-1-missing",
+            ))
+            .is_none());
+            assert!(PhaseB1Identity::load_recovery(
+                &restored_provider,
+                &[0; 31],
+                &[0; 32],
+            )
+            .is_err());
+            assert!(PhaseB1Identity::load_recovery(
+                &restored_provider,
+                &[0; 32],
+                &[0; 31],
+            )
+            .is_err());
+            assert!(PhaseB1Group::load_recovery(&restored_provider, b"").is_err());
+            assert!(PhaseB1Group::load_recovery(&restored_provider, &[0; 65]).is_err());
+        }
+
+        #[test]
+        fn phase_b1_recovery_confirms_pending_commit_after_restore() {
+            let alice_provider = Provider::new();
+            let bob_provider = Provider::new();
+            let (alice, alice_proof, _) = probe_identity(&alice_provider, 0x62);
+            let (bob, _, bob_key_package) = probe_identity(&bob_provider, 0x63);
+            let alice_account = alice.account_public_key();
+            let alice_leaf = alice.leaf_signature_key();
+            let group_id = b"phase-b2-1-confirm";
+            let mut alice_group = unwrap_js(PhaseB1Group::create_new(
+                &alice_provider,
+                &alice,
+                group_id,
+                &alice_proof,
+            ));
+            let pending = unwrap_js(alice_group.propose_and_commit_add(
+                &alice_provider,
+                &alice,
+                &bob_key_package,
+            ));
+            let welcome = pending.welcome();
+            let pending_snapshot = alice_provider.serialize_state();
+
+            let mut restored_provider = restore_provider(&pending_snapshot);
+            let restored_identity =
+                load_phase_b1_identity(&restored_provider, &alice_account, &alice_leaf);
+            let mut restored_group = load_phase_b1_group(&restored_provider, group_id);
+            assert!(unwrap_js(
+                restored_group.has_pending_commit(&restored_provider)
+            ));
+            unwrap_js(restored_group.confirm_pending_commit(&mut restored_provider, 0));
+            assert_eq!(restored_group.epoch(), 1);
+            assert_eq!(restored_group.member_count(), 2);
+            assert!(!unwrap_js(
+                restored_group.has_pending_commit(&restored_provider)
+            ));
+            let stable_before_repeat = snapshot_map(&restored_provider.serialize_state());
+            let repeat_error = phase_b1_error(
+                restored_group.validate_pending_recovery(&restored_provider, 1),
+            );
+            assert!(repeat_error.contains("pending state is absent"));
+            assert_eq!(
+                snapshot_map(&restored_provider.serialize_state()),
+                stable_before_repeat
+            );
+
+            let tree = unwrap_js(PhaseB1RatchetTree::from_bytes(
+                &restored_group.export_ratchet_tree().to_bytes().unwrap(),
+            ));
+            let mut bob_group = unwrap_js(PhaseB1Group::join(&bob_provider, &welcome, tree));
+            assert_phase_b1_liveness(
+                &mut restored_group,
+                &restored_provider,
+                &restored_identity,
+                &mut bob_group,
+                &bob_provider,
+                &bob,
+            );
+        }
+
+        #[test]
+        fn phase_b1_recovery_clears_pending_commit_after_restore() {
+            let alice_provider = Provider::new();
+            let bob_provider = Provider::new();
+            let (alice, alice_proof, _) = probe_identity(&alice_provider, 0x64);
+            let (bob, _, bob_key_package) = probe_identity(&bob_provider, 0x65);
+            let alice_account = alice.account_public_key();
+            let alice_leaf = alice.leaf_signature_key();
+            let group_id = b"phase-b2-1-clear";
+            let mut alice_group = unwrap_js(PhaseB1Group::create_new(
+                &alice_provider,
+                &alice,
+                group_id,
+                &alice_proof,
+            ));
+            let _pending = unwrap_js(alice_group.propose_and_commit_add(
+                &alice_provider,
+                &alice,
+                &bob_key_package,
+            ));
+            let pending_snapshot = alice_provider.serialize_state();
+
+            let clear_provider = restore_provider(&pending_snapshot);
+            let mut clear_group = load_phase_b1_group(&clear_provider, group_id);
+            assert!(unwrap_js(clear_group.has_pending_commit(&clear_provider)));
+            unwrap_js(clear_group.clear_pending_commit(&clear_provider, 0));
+            assert_eq!(clear_group.epoch(), 0);
+            assert_eq!(clear_group.member_count(), 1);
+            assert!(!unwrap_js(clear_group.has_pending_commit(&clear_provider)));
+
+            let cleared_snapshot = clear_provider.serialize_state();
+            let mut recovered_provider = restore_provider(&cleared_snapshot);
+            let recovered_identity =
+                load_phase_b1_identity(&recovered_provider, &alice_account, &alice_leaf);
+            let mut recovered_group = load_phase_b1_group(&recovered_provider, group_id);
+            assert!(!unwrap_js(
+                recovered_group.has_pending_commit(&recovered_provider)
+            ));
+            let mut fresh_pending = unwrap_js(recovered_group.propose_and_commit_add(
+                &recovered_provider,
+                &recovered_identity,
+                &bob_key_package,
+            ));
+            let fresh_welcome = fresh_pending.welcome();
+            unwrap_js(recovered_group.confirm_pending_add(
+                &mut recovered_provider,
+                &mut fresh_pending,
+            ));
+            assert_eq!(recovered_group.epoch(), 1);
+            let tree = unwrap_js(PhaseB1RatchetTree::from_bytes(
+                &recovered_group.export_ratchet_tree().to_bytes().unwrap(),
+            ));
+            let mut bob_group = unwrap_js(PhaseB1Group::join(
+                &bob_provider,
+                &fresh_welcome,
+                tree,
+            ));
+            assert_phase_b1_liveness(
+                &mut recovered_group,
+                &recovered_provider,
+                &recovered_identity,
+                &mut bob_group,
+                &bob_provider,
+                &bob,
+            );
+        }
+
+        #[test]
+        fn phase_b1_recovery_rejects_provider_and_generation_confusion() {
+            let provider = Provider::new();
+            let (alice, alice_proof, _) = probe_identity(&provider, 0x66);
+            let group_id = b"phase-b2-1-binding";
+            let group = unwrap_js(PhaseB1Group::create_new(
+                &provider,
+                &alice,
+                group_id,
+                &alice_proof,
+            ));
+            let wrong_provider = Provider::new();
+            let provider_before = snapshot_map(&provider.serialize_state());
+            let wrong_before = snapshot_map(&wrong_provider.serialize_state());
+            let wrong_error = phase_b1_error(
+                group.validate_durable_recovery_state_recovery(&wrong_provider),
+            );
+            assert!(wrong_error.contains("wrong provider"));
+            assert_eq!(snapshot_map(&provider.serialize_state()), provider_before);
+            assert_eq!(snapshot_map(&wrong_provider.serialize_state()), wrong_before);
+
+            let snapshot = provider.serialize_state();
+            unwrap_js(provider.restore_state(&snapshot));
+            let restored_before = snapshot_map(&provider.serialize_state());
+            let generation_error =
+                phase_b1_error(group.validate_durable_recovery_state_recovery(&provider));
+            assert!(generation_error.contains("invalidated by provider restore"));
+            assert_eq!(snapshot_map(&provider.serialize_state()), restored_before);
+            let loaded_group = load_phase_b1_group(&provider, group_id);
+            assert!(!unwrap_js(loaded_group.has_pending_commit(&provider)));
+
+            let legacy_provider = Provider::new();
+            let legacy_identity = unwrap_js(Identity::new(&legacy_provider, "legacy"));
+            let _legacy_group = Group::create_new(
+                &legacy_provider,
+                &legacy_identity,
+                "phase-b2-1-legacy",
+            );
+            let legacy_before = snapshot_map(&legacy_provider.serialize_state());
+            let legacy_error = phase_b1_error(PhaseB1Group::load_recovery(
+                &legacy_provider,
+                b"phase-b2-1-legacy",
+            ));
+            assert!(legacy_error.contains("unexpected ciphersuite"));
+            assert_eq!(
+                snapshot_map(&legacy_provider.serialize_state()),
+                legacy_before
+            );
+        }
+
+        #[test]
+        fn phase_b1_recovery_rejects_stale_duplicate_group_and_epoch() {
+            let alice_provider = Provider::new();
+            let bob_provider = Provider::new();
+            let (alice, alice_proof, _) = probe_identity(&alice_provider, 0x67);
+            let (_, _, bob_key_package) = probe_identity(&bob_provider, 0x68);
+            let group_id = b"phase-b2-1-stale";
+            let mut alice_group = unwrap_js(PhaseB1Group::create_new(
+                &alice_provider,
+                &alice,
+                group_id,
+                &alice_proof,
+            ));
+            let _pending = unwrap_js(alice_group.propose_and_commit_add(
+                &alice_provider,
+                &alice,
+                &bob_key_package,
+            ));
+            let pending_snapshot = alice_provider.serialize_state();
+
+            let mut shared_provider = restore_provider(&pending_snapshot);
+            let mut current_group = load_phase_b1_group(&shared_provider, group_id);
+            let stale_group = load_phase_b1_group(&shared_provider, group_id);
+            unwrap_js(current_group.confirm_pending_commit(&mut shared_provider, 0));
+            let stable_after_merge = snapshot_map(&shared_provider.serialize_state());
+            let stale_error = phase_b1_error(
+                stale_group.validate_durable_recovery_state_recovery(&shared_provider),
+            );
+            assert!(stale_error.contains("durable group disagrees with memory"));
+            assert_eq!(
+                snapshot_map(&shared_provider.serialize_state()),
+                stable_after_merge
+            );
+
+            let mut wrong_epoch_provider = restore_provider(&pending_snapshot);
+            let mut wrong_epoch_group = load_phase_b1_group(&wrong_epoch_provider, group_id);
+            let pending_before_wrong_epoch =
+                snapshot_map(&wrong_epoch_provider.serialize_state());
+            let epoch_error = phase_b1_error(
+                wrong_epoch_group.validate_pending_recovery(&wrong_epoch_provider, 1),
+            );
+            assert!(epoch_error.contains("stale epoch"));
+            assert_eq!(
+                snapshot_map(&wrong_epoch_provider.serialize_state()),
+                pending_before_wrong_epoch
+            );
+            unwrap_js(wrong_epoch_group.confirm_pending_commit(&mut wrong_epoch_provider, 0));
+            assert_eq!(wrong_epoch_group.epoch(), 1);
+            assert_eq!(wrong_epoch_group.member_count(), 2);
+            let stable_before_missing = snapshot_map(&wrong_epoch_provider.serialize_state());
+            let missing_error = phase_b1_error(
+                wrong_epoch_group.validate_pending_recovery(&wrong_epoch_provider, 1),
+            );
+            assert!(missing_error.contains("pending state is absent"));
+            assert_eq!(
+                snapshot_map(&wrong_epoch_provider.serialize_state()),
+                stable_before_missing
+            );
+        }
+
+        #[test]
+        fn phase_b1_recovery_matches_own_identity_strictly() {
+            let mut alice_provider = Provider::new();
+            let bob_provider = Provider::new();
+            let (alice, alice_proof, _) = probe_identity(&alice_provider, 0x69);
+            let (bob, _, bob_key_package) = probe_identity(&bob_provider, 0x6a);
+            let alice_account = alice.account_public_key();
+            let alice_leaf = alice.leaf_signature_key();
+            let unrelated = unwrap_js(PhaseB1Identity::new(&alice_provider, &[0x6b; 32]));
+            let group_id = b"phase-b2-1-own-identity";
+            let mut group = unwrap_js(PhaseB1Group::create_new(
+                &alice_provider,
+                &alice,
+                group_id,
+                &alice_proof,
+            ));
+            let mut pending = unwrap_js(group.propose_and_commit_add(
+                &alice_provider,
+                &alice,
+                &bob_key_package,
+            ));
+            unwrap_js(group.confirm_pending_add(&mut alice_provider, &mut pending));
+            assert!(unwrap_js(
+                group.matches_own_identity(&alice_account, &alice_leaf)
+            ));
+            assert!(!unwrap_js(group.matches_own_identity(
+                &bob.account_public_key(),
+                &bob.leaf_signature_key(),
+            )));
+            assert!(!unwrap_js(group.matches_own_identity(
+                &unrelated.account_public_key(),
+                &unrelated.leaf_signature_key(),
+            )));
+            assert!(group
+                .matches_own_identity_recovery(&[0; 31], &[0; 32])
+                .is_err());
+            assert!(group
+                .matches_own_identity_recovery(&[0; 32], &[0; 31])
+                .is_err());
+
+            let snapshot = alice_provider.serialize_state();
+            let restored_provider = restore_provider(&snapshot);
+            let restored_group = load_phase_b1_group(&restored_provider, group_id);
+            assert!(unwrap_js(restored_group.matches_own_identity(
+                &alice_account,
+                &alice_leaf,
+            )));
+            assert!(unwrap_js(PhaseB1Identity::load(
+                &restored_provider,
+                &alice_account,
+                &alice_leaf,
+            ))
+            .is_some());
+            SignatureKeyPair::delete(
+                restored_provider.inner.storage(),
+                &alice_leaf,
+                SignatureScheme::ED25519,
+            )
+            .unwrap();
+            assert!(unwrap_js(PhaseB1Identity::load(
+                &restored_provider,
+                &alice_account,
+                &alice_leaf,
+            ))
+            .is_none());
+            let group_without_signer = load_phase_b1_group(&restored_provider, group_id);
+            assert!(unwrap_js(group_without_signer.matches_own_identity(
+                &alice_account,
+                &alice_leaf,
+            )));
         }
 
         #[test]
