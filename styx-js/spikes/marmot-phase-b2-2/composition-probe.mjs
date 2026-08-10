@@ -164,14 +164,28 @@ assert(
   'generated JavaScript has one PhaseB2Identity.__wrap call site',
 );
 
-console.log(JSON.stringify({
+const surfaceSnapshot = {
   addedInitOutputMembers: addedInit,
   addedNamedExports: addedExports,
-  addedRuntimeClasses: expectedClasses,
+  addedRuntimeClasses: Object.fromEntries(
+    expectedClasses.map((className) => [className, afterClasses[className]]),
+  ),
+  addedTypeScriptDeclarations: Object.fromEntries(
+    expectedClasses.map((className) => [className, [...candidateDeclarations.get(className)].sort()]),
+  ),
+  generatedHelperDelta: {
+    'PhaseB2Identity.__wrap': {
+      declarationPresent: candidateDts.includes('PhaseB2Identity.__wrap'),
+      descriptor: descriptor(identityWrap.value),
+      enumerable: identityWrap.enumerable,
+      javascriptCallSites: candidateJs.split('PhaseB2Identity.__wrap(').length - 1,
+    },
+  },
   retainedNamedExportCount: committedExports.size,
-}, null, 2));
+};
+console.log(JSON.stringify(surfaceSnapshot, null, 2));
 console.log('PASS PHASE_B2_2_COMPOSITION_EXACT');
-  return { addedInit, addedExports, expectedClasses };
+  return surfaceSnapshot;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
