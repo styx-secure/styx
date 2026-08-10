@@ -3972,6 +3972,41 @@ mod tests {
     }
 
     #[cfg(feature = "extensions-draft")]
+    fn phase_b2_assert_exported_inline_self_update_accepts(
+        group_id: &[u8],
+        alice_byte: u8,
+        bob_byte: u8,
+    ) {
+        let (
+            alice_provider,
+            alice,
+            mut alice_group,
+            bob_provider,
+            _,
+            mut bob_group,
+        ) = phase_b2_stable_pair(group_id, alice_byte, bob_byte);
+        let self_update = alice_group
+            .prepare_self_update(&alice_provider, &alice)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let accepted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            bob_group.stage_inbound_commit(&bob_provider, &self_update.commit())
+        }));
+        assert!(
+            accepted.is_ok(),
+            "an admitted inline self-update must not trap at the exported staging boundary"
+        );
+        let mut staged = accepted
+            .unwrap()
+            .map_err(js_error_to_string)
+            .unwrap();
+        bob_group
+            .discard_staged_commit(&bob_provider, &mut staged)
+            .map_err(js_error_to_string)
+            .unwrap();
+    }
+
+    #[cfg(feature = "extensions-draft")]
     fn phase_b2_provider_entries(snapshot: &[u8]) -> std::collections::BTreeMap<Vec<u8>, Vec<u8>> {
         fn read_u64(snapshot: &[u8], offset: &mut usize) -> u64 {
             let end = offset.checked_add(8).unwrap();
@@ -4243,6 +4278,11 @@ mod tests {
     #[cfg(feature = "extensions-draft")]
     #[test]
     fn phase_b2_authenticated_hostile_inputs_reach_fail_closed_policy() {
+        phase_b2_assert_exported_inline_self_update_accepts(
+            b"phase-b2-referenced-add-positive-control",
+            0x6d,
+            0x6e,
+        );
         let (
             alice_provider,
             alice,
@@ -4286,23 +4326,6 @@ mod tests {
             .commit_to_pending_proposals(alice_provider.as_ref(), &alice.keypair)
             .unwrap();
         let referenced_commit_bytes = referenced_commit.tls_serialize_detached().unwrap();
-        let bob_before_referenced_rejection =
-            phase_b2_provider_entries(&bob_provider.serialize_state());
-        // JsError construction itself panics on a native non-WASM target. Catch
-        // that test-environment boundary after driving the real exported method;
-        // the exact stable policy code is asserted from the authenticated staged
-        // proposal immediately below.
-        let referenced_boundary_rejection = std::panic::catch_unwind(
-            std::panic::AssertUnwindSafe(|| {
-                bob_group.stage_inbound_commit(&bob_provider, &referenced_commit_bytes)
-            }),
-        );
-        assert!(referenced_boundary_rejection.is_err());
-        assert_eq!(
-            phase_b2_provider_entries(&bob_provider.serialize_state()),
-            bob_before_referenced_rejection,
-            "exported referenced-proposal rejection must not write provider state"
-        );
         let referenced_commit = MlsMessageIn::tls_deserialize_exact(
             &referenced_commit_bytes,
         )
@@ -4332,6 +4355,23 @@ mod tests {
             )
             .unwrap_err(),
             "PHASE_B2_REFERENCED_PROPOSAL_UNSUPPORTED"
+        );
+        let bob_before_referenced_rejection =
+            phase_b2_provider_entries(&bob_provider.serialize_state());
+        // JsError construction itself panics on a native non-WASM target. Catch
+        // that test-environment boundary only after all other uses of this group;
+        // the exact stable policy code was asserted from the same authenticated
+        // staged proposal immediately above.
+        let referenced_boundary_rejection = std::panic::catch_unwind(
+            std::panic::AssertUnwindSafe(|| {
+                bob_group.stage_inbound_commit(&bob_provider, &referenced_commit_bytes)
+            }),
+        );
+        assert!(referenced_boundary_rejection.is_err());
+        assert_eq!(
+            phase_b2_provider_entries(&bob_provider.serialize_state()),
+            bob_before_referenced_rejection,
+            "exported referenced-proposal rejection must not write provider state"
         );
 
         let (
@@ -4385,6 +4425,11 @@ mod tests {
             "PHASE_B2_PROPOSAL_UPDATE_UNSUPPORTED"
         );
 
+        phase_b2_assert_exported_inline_self_update_accepts(
+            b"phase-b2-app-data-positive-control",
+            0x6f,
+            0x70,
+        );
         let (
             alice_provider,
             alice,
@@ -4424,19 +4469,6 @@ mod tests {
             .unwrap();
         let (app_data_commit, _, _) = app_data_bundle.into_contents();
         let app_data_commit_bytes = app_data_commit.tls_serialize_detached().unwrap();
-        let bob_before_app_data_rejection =
-            phase_b2_provider_entries(&bob_provider.serialize_state());
-        let app_data_boundary_rejection = std::panic::catch_unwind(
-            std::panic::AssertUnwindSafe(|| {
-                bob_group.stage_inbound_commit(&bob_provider, &app_data_commit_bytes)
-            }),
-        );
-        assert!(app_data_boundary_rejection.is_err());
-        assert_eq!(
-            phase_b2_provider_entries(&bob_provider.serialize_state()),
-            bob_before_app_data_rejection,
-            "exported AppDataUpdate rejection must not write provider state"
-        );
         let app_data_commit = MlsMessageIn::tls_deserialize_exact(
             &app_data_commit_bytes,
         )
@@ -4461,6 +4493,19 @@ mod tests {
             )
             .unwrap_err(),
             "PHASE_B2_APP_DATA_UPDATE_UNSUPPORTED"
+        );
+        let bob_before_app_data_rejection =
+            phase_b2_provider_entries(&bob_provider.serialize_state());
+        let app_data_boundary_rejection = std::panic::catch_unwind(
+            std::panic::AssertUnwindSafe(|| {
+                bob_group.stage_inbound_commit(&bob_provider, &app_data_commit_bytes)
+            }),
+        );
+        assert!(app_data_boundary_rejection.is_err());
+        assert_eq!(
+            phase_b2_provider_entries(&bob_provider.serialize_state()),
+            bob_before_app_data_rejection,
+            "exported AppDataUpdate rejection must not write provider state"
         );
     }
 
@@ -4786,6 +4831,12 @@ mod tests {
             &admin_identity,
             b"phase-b2-admin-membership-policy",
             &admin_proof,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        phase_b2_validate_group_context(
+            admin_group.mls_group.public_group().group_context(),
+            &[vec![0x62; 32]],
         )
         .map_err(js_error_to_string)
         .unwrap();
