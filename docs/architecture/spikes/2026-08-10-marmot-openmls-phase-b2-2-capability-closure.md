@@ -19,9 +19,9 @@ Marmot interoperability, or establish production readiness.
   `10ad40928019b5f9c2793d0c760b25209a96e3fa8bacc1541a5da5d723b64ae3`.
 - Base: `0bcd19f114ad1dd9cc419a8c53f0d53d33428ac0` on `main`.
 - Stage-1 source head evaluated by this report:
-  `61458ff999eb345705dea5bf8a924ec113f3e2db`.
+  `571b031d9da6bba2528c5789a4609d86a3749d25`.
 - SHA-256 of the binary-safe `base..source-head` diff:
-  `4e4dcfac96c1e9cef9f7894389237a18be95a663f1e86bcbddbcbd4ec9c16979`.
+  `b43609f7fb3bb17a3c7cf4ee5b9b44b31efeb40001fc014ae522a0c02593ac0c`.
 - OpenMLS: `09e92777dba0528d3d29e2e5e681b7e91637c7be`, with the existing
   `extensions-draft` feature.
 - Marmot specification evidence:
@@ -65,8 +65,12 @@ or cleared only after strict provider, epoch and own-identity checks.
 The projection captures the authenticated OpenMLS sender before consuming the
 processed message, every admitted inline proposal, the update-path replacement
 leaf, the complete ordered candidate member set, and the complete candidate
-GroupContext. Standalone/referenced, Update, AppDataUpdate, Custom and all other
-unsupported proposal shapes fail closed with distinct stable errors.
+GroupContext. Referenced proposals and unresolved AppDataUpdate Commits fail at
+the exported staging boundary with their stable errors. The pure policy
+predicate also assigns distinct stable errors to inline Update, Custom and
+other proposal kinds, but those shapes are rejected or normalized by the
+pinned OpenMLS API before they can reach this boundary and are recorded only as
+defence-in-depth coverage.
 
 Before confirm or merge, WASM independently recomputes the exact
 `STYX-B2-VERIFIED-LEAVES-v1` digest over all candidate leaves. The JavaScript
@@ -104,7 +108,7 @@ candidate and records:
 - exact equality of all 17 retained named exports and their class surfaces.
 
 The complete textual snapshot emitted at source head
-`61458ff999eb345705dea5bf8a924ec113f3e2db` is 24,183 bytes and has SHA-256
+`571b031d9da6bba2528c5789a4609d86a3749d25` is 24,183 bytes and has SHA-256
 `6090ac29fcc257e54d58251f63853990f65e0fb8cc2bd83156f2ee524b9fc3a8`.
 Its final marker is `PASS PHASE_B2_2_COMPOSITION_EXACT`. The generated
 declaration digest below is the independent artifact identity that will freeze
@@ -112,8 +116,9 @@ the exact public types in a Stage-2 amendment.
 
 ## Reproducible disposable artifacts
 
-Builds `issue149-build-k.42O2Xp` and `issue149-build-l.NiIkeD` were
-produced independently from the final source patch. `cmp` succeeded for all
+Builds `issue149-opus-close.9lvBRH` and
+`issue149-opus-close-b.trZvYz` were produced independently from the exact final
+source patch. `cmp` succeeded for all
 five files. Their complete generated-surface snapshots are also byte-identical:
 15,839 bytes with SHA-256
 `0a49c88bb7e465ec058c08acf6df69b750b35ec90f9e3ea5be101c8777f1de66`.
@@ -147,13 +152,21 @@ generated files has entered the Stage-1 branch.
 - Native hostile-input evidence constructs and authenticates a standalone Add
   proposal, a referenced Commit, a standalone Update proposal, and an
   AppDataUpdate Commit with the pinned OpenMLS API. It observes the real
-  `Reference` and `UnresolvedAppDataCommit` shapes and passes those
-  authenticated values through the same production policy functions used by
-  staging. wasm-bindgen cannot construct `JsError` on the native target, so
-  the exact exported-wrapper rejection itself is exercised in generated WASM
-  where constructible (PrivateMessage, non-Commit, B1 KeyPackage and durable
-  recovery); non-constructible inline Update/Custom/Other cases retain exact
-  typed unit coverage and are not represented as end-to-end evidence.
+  `Reference` and `UnresolvedAppDataCommit` shapes and drives both authenticated
+  Commit byte strings through the exported `stage_inbound_commit` method. On a
+  native non-WASM target, construction of the returned `JsError` deliberately
+  traps at the wasm-bindgen boundary; the tests catch that target limitation and
+  prove provider-state equality before/after, while the exact stable error is
+  asserted from the same authenticated staged proposal or unresolved Commit.
+  Generated WASM additionally exercises exact exported-wrapper errors where
+  those inputs are constructible (PrivateMessage, non-Commit, B1 KeyPackage and
+  durable recovery). Non-constructible inline Update/Custom/Other cases retain
+  exact typed unit coverage and are not represented as end-to-end evidence.
+- Native negative coverage also exercises the production GroupContext validator
+  with an administrator absent from the supplied candidate-member set. The
+  eight-byte administrator-policy case is explicitly a non-canonical prefix
+  rejection; target-width `usize` overflow remains reasoned rather than claimed
+  as an x86_64 test result.
 - The same candidate probe repeated the retained B2.1 founding/non-founding
   confirm/clear matrix and exact inbound re-stage merge/discard behavior.
 - Each required marker is emitted only after its minimum evidence count passes:
@@ -161,6 +174,9 @@ generated files has entered the Stage-1 branch.
   verified-leaf binding 5, and exact surface delta 2. The canonical evidence
   manifest SHA-256 is
   `13abc21785fb3d81450fde207bdd1548e98e2182913a9df2c0b8d1612eccb608`.
+  `PHASE_B2_POLICY_PROJECTION` attests the five admitted positive projection
+  shapes only; fail-closed proposal-policy rejection is separately evidenced by
+  the native authenticated-hostile-input test above.
 - `node vendor/openmls-wasm/roundtrip.mjs`: passed.
 - `node spikes/marmot-phase-b1/probe.mjs`: passed.
 - Reference chat `npm ci && npm run build`: passed. Existing npm audit output
@@ -220,12 +236,11 @@ image and its real-time kind-1059 behavior, but Issue #149 explicitly forbids
 treating that condition as a green skip or silently substituting another image.
 
 The safe next action is an independently reviewed Issue amendment that replaces
-the moving relay dependency with a reproducible digest/configuration and states
-how the three real relay suites must run. It may also authorize the minimal
-compose correction if that correction belongs in this PR; otherwise the relay
-repair must be a closed native dependency. Only after the amended exact command
-passes may this report be changed to GO and the Stage-2 generated-artifact gate
-be requested.
+the moving relay dependency with a reproducible digest/configuration, makes all
+three real-relay suites fail closed in required mode, and proves a kind-1059
+policy round trip. A compose-only correction is explicitly insufficient. Only
+after the amended exact command passes may this report be changed to GO and the
+Stage-2 generated-artifact gate be requested.
 
 No product activation, generated artifact installation or security claim is
 authorized by this report.
