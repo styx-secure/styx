@@ -19,9 +19,9 @@ Marmot interoperability, or establish production readiness.
   `10ad40928019b5f9c2793d0c760b25209a96e3fa8bacc1541a5da5d723b64ae3`.
 - Base: `0bcd19f114ad1dd9cc419a8c53f0d53d33428ac0` on `main`.
 - Stage-1 source head evaluated by this report:
-  `9a4cc801139afca241cdc030b9d9f153929fa254`.
+  `61458ff999eb345705dea5bf8a924ec113f3e2db`.
 - SHA-256 of the binary-safe `base..source-head` diff:
-  `0e0db336cf687d02da7bf5126387334c537b2b65af1700e60b4440a407aa5c03`.
+  `4e4dcfac96c1e9cef9f7894389237a18be95a663f1e86bcbddbcbd4ec9c16979`.
 - OpenMLS: `09e92777dba0528d3d29e2e5e681b7e91637c7be`, with the existing
   `extensions-draft` feature.
 - Marmot specification evidence:
@@ -32,8 +32,12 @@ Marmot interoperability, or establish production readiness.
   `rust:1.96.1@sha256:1f0dbad1df66647807e6952d1db85d0b2bda7606cb2139d82517e4f009967376`.
 
 The only source changes at the evaluated head are the authorized wrapper patch
-and two new independently written probes. No generated binding, binary,
-manifest, lockfile or product path differs in Stage 1.
+and two new independently written probes. The review corrections add test-only
+Rust code after the production module and generated-JavaScript probe assertions.
+Two fresh builds prove that those corrections leave all five candidate
+artifacts byte-identical to the previously recorded Stage-1 candidate. No
+generated binding, binary, manifest, lockfile or product path differs in Stage
+1.
 
 ## Implemented boundary
 
@@ -100,7 +104,7 @@ candidate and records:
 - exact equality of all 17 retained named exports and their class surfaces.
 
 The complete textual snapshot emitted at source head
-`9a4cc801139afca241cdc030b9d9f153929fa254` is 24,183 bytes and has SHA-256
+`61458ff999eb345705dea5bf8a924ec113f3e2db` is 24,183 bytes and has SHA-256
 `6090ac29fcc257e54d58251f63853990f65e0fb8cc2bd83156f2ee524b9fc3a8`.
 Its final marker is `PASS PHASE_B2_2_COMPOSITION_EXACT`. The generated
 declaration digest below is the independent artifact identity that will freeze
@@ -108,8 +112,11 @@ the exact public types in a Stage-2 amendment.
 
 ## Reproducible disposable artifacts
 
-Builds `issue149-stage1-build-c` and `issue149-stage1-build-d` were produced
-independently from the same patch. `cmp` succeeded for all five files.
+Builds `issue149-build-k.42O2Xp` and `issue149-build-l.NiIkeD` were
+produced independently from the final source patch. `cmp` succeeded for all
+five files. Their complete generated-surface snapshots are also byte-identical:
+15,839 bytes with SHA-256
+`0a49c88bb7e465ec058c08acf6df69b750b35ec90f9e3ea5be101c8777f1de66`.
 
 | File | Bytes | SHA-256 |
 | --- | ---: | --- |
@@ -126,20 +133,34 @@ generated files has entered the Stage-1 branch.
 
 ### Green capability and regression evidence
 
-- `styx-js/vendor/openmls-wasm/test.sh`: 15 passed, 0 failed. This includes all
-  12 pre-existing tests and three B2.2-owned tests.
+- `styx-js/vendor/openmls-wasm/test.sh`: 16 passed, 0 failed. This includes all
+  12 pre-existing tests and four B2.2-owned tests.
 - The generated-JavaScript capability probe passed against both disposable
   builds. It exercised current-profile creation, KeyPackage inspection,
   Add/join, independent candidate-digest recomputation, wrong-digest rejection,
   self-update, inbound discard and exact re-stage, merge, Remove, bidirectional
   liveness, serialization, fresh-provider restore, durable pending confirm and
-  clear, and malformed framing rejection.
+  clear, wrong epoch/account/signature-key/length rejection with provider-state
+  equality, replay-after-clear rejection, PrivateMessage and non-Commit
+  rejection, malformed framing rejection, and rejection of a genuine B1
+  KeyPackage at the generated B2 boundary.
+- Native hostile-input evidence constructs and authenticates a standalone Add
+  proposal, a referenced Commit, a standalone Update proposal, and an
+  AppDataUpdate Commit with the pinned OpenMLS API. It observes the real
+  `Reference` and `UnresolvedAppDataCommit` shapes and passes those
+  authenticated values through the same production policy functions used by
+  staging. wasm-bindgen cannot construct `JsError` on the native target, so
+  the exact exported-wrapper rejection itself is exercised in generated WASM
+  where constructible (PrivateMessage, non-Commit, B1 KeyPackage and durable
+  recovery); non-constructible inline Update/Custom/Other cases retain exact
+  typed unit coverage and are not represented as end-to-end evidence.
 - The same candidate probe repeated the retained B2.1 founding/non-founding
   confirm/clear matrix and exact inbound re-stage merge/discard behavior.
-- All five required probe markers were present:
-  `PHASE_B2_EXPORTED_COMPOSITION`, `PHASE_B2_PUBLIC_COMMIT_FRAMING`,
-  `PHASE_B2_POLICY_PROJECTION`, `PHASE_B2_VERIFIED_LEAF_BINDING` and
-  `PHASE_B2_SURFACE_DELTA_EXACT`.
+- Each required marker is emitted only after its minimum evidence count passes:
+  exported composition 2, public Commit framing 3, policy projection 5,
+  verified-leaf binding 5, and exact surface delta 2. The canonical evidence
+  manifest SHA-256 is
+  `13abc21785fb3d81450fde207bdd1548e98e2182913a9df2c0b8d1612eccb608`.
 - `node vendor/openmls-wasm/roundtrip.mjs`: passed.
 - `node spikes/marmot-phase-b1/probe.mjs`: passed.
 - Reference chat `npm ci && npm run build`: passed. Existing npm audit output
@@ -148,8 +169,9 @@ generated files has entered the Stage-1 branch.
 - Agent-enforcement: 54 tests passed.
 - Claims-lint: 10 tests passed; repository scan reported zero findings.
 - Translation-sync: 20 tests passed; repository check reported zero findings.
-- Full Jest without a relay: 85 suites and 1,151 tests passed; the relay suites
-  reported their pre-existing environment skip.
+- Full Jest with a disposable corrected relay configuration: 85/85 suites and
+  1,151/1,151 tests passed with no relay skip. The configuration was external
+  evidence only and did not modify a repository path.
 
 ### Mandatory relay finding
 
@@ -158,36 +180,36 @@ resolves to
 `ghcr.io/hoytech/strfry@sha256:d6b31e8ab32e159f98d250b90aa6a62b9b47c468efdd311341597f60198861e1`,
 reporting `strfry 1.1.1-119-g9acdaeb`.
 
-The exact compose command fails before tests: the new image runs as uid/gid
-1000 while the repository compose creates `/app/strfry-db` as a root-owned
-tmpfs. The relay exits with `mdb_env_open: Permission denied`.
+The repository configuration exposes two independent upstream-default
+dependencies:
 
-A disposable external compose override assigning the tmpfs to uid/gid 1000
-allowed that exact image to start. This override was outside the repository and
-is diagnostic evidence only. With the relay reachable, the full Jest run
-executed rather than skipped, but three assertions in two pre-existing suites
-failed:
+1. the image runs as uid/gid 1000 while the compose file creates
+   `/app/strfry-db` as a root-owned tmpfs, producing
+   `mdb_env_open: Permission denied`; and
+2. when the repository configuration omits `relay.auth`, this image defaults
+   `restrictedReadKinds` to `4, 1059`. The real-time tests publish kind 1059
+   but do not negotiate NIP-42 authentication, so writes are logged while reads
+   time out.
 
-- `test/integration/nostr-chat-transport.test.js`: live addressed delivery and
-  reconnect delivery timed out;
-- `test/integration/styx-chat-nostr.test.js`: live pairing timed out.
+A disposable external-only experiment set the tmpfs to
+`uid=1000,gid=1000,mode=0700` and made the auth policy explicit:
+`enabled=true`, empty `serviceUrl`, empty `restrictedReadKinds`, and
+`restrictReadToInvolvedPubkey=true`. With the exact image digest above, the
+complete relay-backed Jest run passed 85/85 suites and 1,151/1,151 tests without
+a relay skip. This isolates the cause as under-specified repository
+configuration interacting with changed upstream defaults, not an engine or
+transport regression.
 
-Offline replay scenarios and `test/integration/nostr-relay.test.js` passed.
-Relay logs showed the events being inserted. The B2.2 diff does not touch the
-relay, transport, tests or product artifact.
+The prospective correction is retained outside the repository and has SHA-256
+`437aa384755d32ad92bc1f8c99a5131b9b022e16d5cfe8ddaee7f42321edfb7b`.
+The current Issue forbids the compose, relay-config and integration-test paths,
+so this diagnostic success cannot satisfy the exact repository command or be
+called Stage-1 GO.
 
-For isolation, the locally retained preceding image
-`strfry 1.1.0-98-gb80cda3` (local image id
-`sha256:c52807349888ef8a9f8720f3e51ee81af7e20114bad105915febb78f9c604cb1`)
-was run without a repository change. Both previously failing suites then passed
-(5/5 tests), and the complete relay-backed Jest run passed all 85 suites and
-1,151 tests with no relay skip. This comparison identifies an upstream relay
-image/configuration compatibility regression; it does not satisfy the Issue's
-exact moving-image requirement and is not used to claim Stage-1 GO.
-
-One earlier disposable build attempt also failed during bootstrap with a
-temporary DNS error resolving `github.com`. The attempt was discarded and the
-complete build was rerun successfully. It contributes no artifact evidence.
+One final disposable build attempt failed during bootstrap with a temporary DNS
+error resolving crates.io/GitLab. The attempt was discarded and the complete
+build was rerun successfully from the same source. It contributes no artifact
+evidence.
 
 ## Verdict and required resolution
 
