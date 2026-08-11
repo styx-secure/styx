@@ -19,6 +19,7 @@ import {
   digestHex,
   fail,
   hexToBytes,
+  isPlainDataObject,
   parseEpochDecimal,
   snapshotClosedObject,
 } from './b2-3-canonical.mjs';
@@ -54,6 +55,26 @@ const TRANSITION_KINDS = Object.freeze([
   'initialize', 'prepare', 'publish-intent', 'publication-evidence',
   'confirm', 'discard', 'inbound-accept',
 ]);
+
+function snapshotBuilderInput(value, allowedFields, label) {
+  if (!isPlainDataObject(value)) fail(B23_ERROR.INVALID, `${label} must be a plain object`);
+  const keys = Reflect.ownKeys(value);
+  if (keys.some((key) => typeof key !== 'string')) {
+    fail(B23_ERROR.INVALID, `${label} contains a symbol field`);
+  }
+  const out = {};
+  for (const key of keys) {
+    if (!allowedFields.includes(key)) {
+      fail(B23_ERROR.INVALID, `${label} contains an unexpected field`);
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !Object.hasOwn(descriptor, 'value')) {
+      fail(B23_ERROR.INVALID, `${label} contains an accessor field`);
+    }
+    out[key] = descriptor.value;
+  }
+  return out;
+}
 
 function nullableHex64(name, value) {
   if (value !== null) assertHex64(name, value);
@@ -147,8 +168,9 @@ export function headCanonicalBytes(head) {
 }
 
 export function buildHead(fields) {
+  const safeFields = snapshotBuilderInput(fields, HEAD_FIELDS, 'head fields');
   const draft = { format: `${B23_FORMAT}-head`, version: B23_VERSION, profile: B23_PROFILE,
-    ...B23_RUNTIME, ...fields, headDigestHex: '0'.repeat(64) };
+    ...B23_RUNTIME, ...safeFields, headDigestHex: '0'.repeat(64) };
   const validated = assertHeadShape(snapshotClosedObject(draft, HEAD_FIELDS, 'head'));
   validated.headDigestHex = digestHex(headCanonicalBytes(validated));
   return Object.freeze(validated);
@@ -495,11 +517,12 @@ export function transitionCanonicalBytes(record) {
 }
 
 export function buildTransition(fields) {
+  const safeFields = snapshotBuilderInput(fields, TRANSITION_FIELDS, 'transition fields');
   const draft = {
-    format: `${B23_FORMAT}-transition`, version: B23_VERSION, ...fields,
-    commitBytes: copyBytes(fields.commitBytes),
-    welcomeBytes: copyBytes(fields.welcomeBytes),
-    artifactBytes: copyBytes(fields.artifactBytes),
+    format: `${B23_FORMAT}-transition`, version: B23_VERSION, ...safeFields,
+    commitBytes: copyBytes(safeFields.commitBytes),
+    welcomeBytes: copyBytes(safeFields.welcomeBytes),
+    artifactBytes: copyBytes(safeFields.artifactBytes),
     transitionDigestHex: '0'.repeat(64),
   };
   const validated = assertTransitionShape(snapshotClosedObject(draft, TRANSITION_FIELDS, 'transition'));
@@ -522,8 +545,9 @@ export function evidenceCanonicalBytes(record) {
 }
 
 export function buildEvidence(fields) {
+  const safeFields = snapshotBuilderInput(fields, EVIDENCE_FIELDS, 'evidence fields');
   const draft = { format: `${B23_FORMAT}-evidence`, version: B23_VERSION,
-    ...fields, payload: copyBytes(fields.payload), evidenceDigestHex: '0'.repeat(64) };
+    ...safeFields, payload: copyBytes(safeFields.payload), evidenceDigestHex: '0'.repeat(64) };
   const record = snapshotClosedObject(draft, EVIDENCE_FIELDS, 'evidence');
   if (record.format !== `${B23_FORMAT}-evidence` || record.version !== B23_VERSION) {
     fail(B23_ERROR.INVALID, 'evidence magic or version is invalid');

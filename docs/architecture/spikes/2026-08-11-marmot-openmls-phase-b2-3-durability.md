@@ -249,8 +249,8 @@ deletion or general production-capacity claim.
 
 ## Exact local test evidence
 
-- Targeted Jest: 1 suite, 19 tests passed. Log SHA-256
-  `7906049e4054c7579e4aa94443d0e574496e940c2ae39b009ef1ab53f3a55240`.
+- Targeted Jest: 1 suite, 20 tests passed. Jest JSON-result SHA-256
+  `64c5624fffbc33bd773c13b3799ee47edd9c072eef9a2a699bfdd515fe37a835`.
 - Playwright: Chromium and Firefox, 6 tests passed; each browser completed 100
   two-connection races without skip. Log SHA-256
   `e5e7f0a54799065a7ece8f977deae2c9cb3d3b8db47bbb0d9975c5c4a54d67b5`.
@@ -264,8 +264,8 @@ HEAD identity are produced after this report enters the candidate commit.
 
 The pre-commit regression run additionally recorded:
 
-- complete Jest: 87 suites and 1,174 tests passed; log SHA-256
-  `f5803b7e560e215d554550fb77ee2aeb05686366a86c6f6fe95c94a4ea8f891d`;
+- complete Jest: 87 suites and 1,175 tests passed; Jest JSON-result SHA-256
+  `3e193ee89496dec4013fe612996b627bbf2e48b0692cc2f81bbd8d656c4162d6`;
 - B2.2 capability probe against the exact B2.1 parent artifact extracted from
   `0bcd19f114ad1dd9cc419a8c53f0d53d33428ac0` and the current pinned vendor:
   passed; log SHA-256
@@ -309,6 +309,20 @@ product path changed. Independent design follow-ups were produced by Opus 5
 `008463344368771406ef3cab94c59b666531e30f660e36f40af2603a69cef8f0`)
 and DeepSeek V4 Pro (SHA-256
 `8f969cb8800c04ba888cae8674dfe67dc1877db3ac282572be00377405e74714`).
+
+A later supplemental exact-candidate review found that the three record
+builders spread or read their caller-owned inputs before applying the strict
+closed-object snapshot. That could execute an accessor before rejection and
+contradicted this report's codec claim. The remediation snapshots only allowed
+own data properties before any spread, byte copy or direct field access and
+adds direct getter/`toJSON` regressions for `buildHead`, `buildTransition` and
+`buildEvidence`. Targeted Jest passed 20/20, complete Jest passed 1,175/1,175,
+Playwright passed 6/6 without skip, the chat build and 54 agent-enforcement
+tests passed, both B2.2 probes passed and the vendor hashes remained exact. No
+canonical field, field order, encoding, digest, schema, cap, runtime tuple,
+recovery decision or product path changed. The historical GPT-5.6 Luna Pro
+finding report SHA-256 is
+`4c033fd7c2590c076f134e4f66e4fa4514b7b35790b1f14b42f7185eba3f9c5f`.
 
 ## Rejected alternatives
 

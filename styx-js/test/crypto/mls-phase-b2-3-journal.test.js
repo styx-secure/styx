@@ -19,7 +19,9 @@ import {
 import {
   HEAD_PREPARED,
   HEAD_STABLE,
+  buildEvidence,
   buildHead,
+  buildTransition,
   canonicalProjectionBytes,
   parseHead,
   parseTransition,
@@ -219,6 +221,28 @@ describe('Phase B2.3 strict record', () => {
     Object.defineProperty(hostile, 'groupIdHex', { get: getter, enumerable: true, configurable: true });
     expect(() => parseHead(hostile)).toThrow(expect.objectContaining({ code: B23_ERROR.INVALID }));
     expect(getter).not.toHaveBeenCalled();
+  });
+
+  test('record builders reject accessors and toJSON hooks without executing them', () => {
+    for (const [builder, field] of [
+      [buildHead, 'groupIdHex'],
+      [buildTransition, 'commitBytes'],
+      [buildEvidence, 'payload'],
+    ]) {
+      const accessor = jest.fn(() => Uint8Array.of(1));
+      const hostile = {};
+      Object.defineProperty(hostile, field, { get: accessor, enumerable: true });
+      expect(() => builder(hostile)).toThrow(
+        expect.objectContaining({ code: B23_ERROR.INVALID }),
+      );
+      expect(accessor).not.toHaveBeenCalled();
+
+      const toJSON = jest.fn(() => ({ substituted: true }));
+      expect(() => builder({ toJSON })).toThrow(
+        expect.objectContaining({ code: B23_ERROR.INVALID }),
+      );
+      expect(toJSON).not.toHaveBeenCalled();
+    }
   });
 
   test('projection accessors and toJSON hooks fail without executing', () => {
