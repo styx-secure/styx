@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { schnorr } from '@noble/curves/secp256k1';
 
 import {
+  B23_DB_PREFIX,
   B23_ERROR,
   B23_STORES,
   bytesToHex,
@@ -16,6 +17,10 @@ import {
   createAccountIdentityProofV2,
 } from '../../spikes/marmot-phase-b1/identity-proof-v2.js';
 import { B23EngineAdapter } from '../../spikes/marmot-phase-b2-3/b2-3-engine-adapter.mjs';
+import {
+  B23Journal,
+  createB23JournalForDb,
+} from '../../spikes/marmot-phase-b2-3/b2-3-journal.mjs';
 import {
   B24_DB_PREFIX,
   B24_ERROR,
@@ -306,6 +311,12 @@ describe('Phase B2.4 canonical authorization policy', () => {
     expect(evaluate(parent(), external)).toMatchObject({
       allowed: false, reason: B24_REASON.COMMITTER,
     });
+    const partialPath = candidate();
+    partialPath.updatePath.componentIds = null;
+    partialPath.updatePath.supportedComponentIds = null;
+    expect(evaluate(parent(), partialPath)).toMatchObject({
+      allowed: false, reason: B24_REASON.COMMITTER,
+    });
     const nonMemberSender = addProposal(ALICE, CHARLIE);
     nonMemberSender.senderLeafIndex = 99;
     expect(evaluate(parent(), candidate({
@@ -406,15 +417,38 @@ function deterministicRandom(start = 1) {
   return (target) => { target.fill(value); value += 1; return target; };
 }
 
+function b24Db() {
+  const db = new FakeVaultDb();
+  Object.defineProperty(db, 'name', { value: `${B24_DB_PREFIX}test` });
+  return db;
+}
+
 describe('Phase B2.4 namespace and public boundary', () => {
   test('the wrapper is distinct, keeps the permissive journal private and freezes v1 naming', () => {
-    const wrapped = createB24JournalForDb(new FakeVaultDb(), {
+    const db = b24Db();
+    const wrapped = createB24JournalForDb(db, {
       randomBytes: deterministicRandom(),
     });
     expect(wrapped).toBeInstanceOf(B24Journal);
     expect(Object.keys(wrapped)).toEqual([]);
     expect(B24_DB_PREFIX).toBe('styx-b2-4-poc-v1-');
     expect(B24EngineAdapter.prototype.acceptInbound.length).toBe(2);
+    expect(() => createB23JournalForDb(db, {
+      randomBytes: deterministicRandom(),
+    })).toThrow(expect.objectContaining({ code: B23_ERROR.INVALID }));
+    const rawPermissive = new B23Journal(db, { randomBytes: deterministicRandom() });
+    expect(() => new B23EngineAdapter({
+      wasm: { Provider: class {}, PhaseB2Group: class {}, PhaseB2Identity: class {} },
+      journal: rawPermissive,
+    })).toThrow(expect.objectContaining({ code: B23_ERROR.INVALID }));
+    const b23Db = new FakeVaultDb();
+    Object.defineProperty(b23Db, 'name', { value: `${B23_DB_PREFIX}test` });
+    expect(() => createB24JournalForDb(b23Db)).toThrow(
+      expect.objectContaining({ code: B24_ERROR.INVALID }),
+    );
+    expect(() => new B24Journal(wrapped)).toThrow(
+      expect.objectContaining({ code: B24_ERROR.INVALID }),
+    );
     expect(() => new B23EngineAdapter({
       wasm: { Provider: class {}, PhaseB2Group: class {}, PhaseB2Identity: class {} },
       journal: wrapped,
@@ -500,8 +534,8 @@ describe('Phase B2.4 mandatory-policy OpenMLS lifecycle', () => {
     const aliceSnapshot = aliceProvider.serialize_state();
     const bobSnapshot = bobProvider.serialize_state();
 
-    const aliceDb = new FakeVaultDb();
-    const bobDb = new FakeVaultDb();
+    const aliceDb = b24Db();
+    const bobDb = b24Db();
     const aliceJournal = createB24JournalForDb(aliceDb, { randomBytes: deterministicRandom(1) });
     const bobJournal = createB24JournalForDb(bobDb, { randomBytes: deterministicRandom(80) });
     const aliceAdapter = new B24EngineAdapter({ wasm, journal: aliceJournal });
@@ -582,10 +616,10 @@ describe('Phase B2.4 mandatory-policy OpenMLS lifecycle', () => {
     const bobGroup = wasm.PhaseB2Group.join(
       bobProvider, founding.welcome(), parsedFoundingTree,
     );
-    const aliceJournal = createB24JournalForDb(new FakeVaultDb(), {
+    const aliceJournal = createB24JournalForDb(b24Db(), {
       randomBytes: deterministicRandom(1),
     });
-    const bobJournal = createB24JournalForDb(new FakeVaultDb(), {
+    const bobJournal = createB24JournalForDb(b24Db(), {
       randomBytes: deterministicRandom(100),
     });
     const aliceAdapter = new B24EngineAdapter({ wasm, journal: aliceJournal });
@@ -670,7 +704,7 @@ describe('Phase B2.4 mandatory-policy OpenMLS lifecycle', () => {
     const tree = aliceGroup.export_ratchet_tree();
     const parsedTree = wasm.PhaseB2RatchetTree.from_bytes(tree.to_bytes());
     const bobGroup = wasm.PhaseB2Group.join(bobProvider, founding.welcome(), parsedTree);
-    const journal = createB24JournalForDb(new FakeVaultDb(), { randomBytes: deterministicRandom() });
+    const journal = createB24JournalForDb(b24Db(), { randomBytes: deterministicRandom() });
     const adapter = new B24EngineAdapter({ wasm, journal });
     const groupIdHex = bytesToHex(groupId);
     try {
@@ -697,7 +731,7 @@ describe('Phase B2.4 mandatory-policy OpenMLS lifecycle', () => {
       const nonAdminPending = bobGroup.prepare_add(
         bobProvider, bob.identity, charlie.keyPackage,
       );
-      const aliceInboundJournal = createB24JournalForDb(new FakeVaultDb(), {
+      const aliceInboundJournal = createB24JournalForDb(b24Db(), {
         randomBytes: deterministicRandom(60),
       });
       const aliceInboundAdapter = new B24EngineAdapter({
@@ -725,7 +759,7 @@ describe('Phase B2.4 mandatory-policy OpenMLS lifecycle', () => {
       const invalidFramed = invalidPackageHandle.to_framed_bytes();
       free(invalidPackageHandle);
 
-      const aliceJournal = createB24JournalForDb(new FakeVaultDb(), {
+      const aliceJournal = createB24JournalForDb(b24Db(), {
         randomBytes: deterministicRandom(100),
       });
       const aliceAdapter = new B24EngineAdapter({ wasm, journal: aliceJournal });

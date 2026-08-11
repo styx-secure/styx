@@ -23,9 +23,11 @@ transition shapes and no product integration.
 
 ## Trust boundary and algorithm
 
-The pinned WASM remains trusted to stage the exact Commit and expose an
-authenticated complete candidate projection. JavaScript does not duplicate
-MLS validation, but it independently performs all policy-sensitive work:
+The pinned WASM remains trusted to stage the exact Commit, reject unsupported
+sender/proposal encodings and expose an authenticated complete candidate
+projection. JavaScript does not duplicate MLS validation. It evaluates the
+projected source classifications again and independently performs the
+application-policy work:
 
 1. restore the exact Provider snapshot selected by the B2.3 CAS head;
 2. cross-check own identity, group id, epoch and GroupContext digest;
@@ -119,9 +121,12 @@ If persistence fails after in-memory preparation, merge or confirmation, the
 Provider is discarded and the durable predecessor remains authoritative. A
 retry starts from that predecessor.
 
-The permissive B2.3 test adapter now requires an actual `B23Journal`; a
-`B24Journal` cannot be passed to it. Extra caller booleans passed to B2.4
-`acceptInbound(groupId, commitBytes)` are ignored by the JavaScript call
+The B2.3 factory and permissive adapter require an actual `B23Journal` backed
+by a database whose name has the frozen B2.3 prefix. The B2.4 factory requires
+the distinct frozen B2.4 prefix and is the only holder of its wrapper
+construction token. Neither the wrapper nor its underlying B2.4 database can
+be passed through the permissive B2.3 adapter. Extra caller booleans passed to
+B2.4 `acceptInbound(groupId, commitBytes)` are ignored by the JavaScript call
 signature and never consulted.
 
 ## B2.3 byte-preserving hardening
@@ -163,8 +168,9 @@ The Styx-authored tests cover:
   verified-leaf digest;
 - local and inbound CAS loss after authorization, zero-write rejection,
   duplicate suppression and recovered pending confirmation;
-- attempted caller booleans and attempted use of the B2.3 permissive adapter
-  with the B2.4 wrapper; and
+- attempted caller booleans, cross-prefix journal factories, direct wrapper
+  construction and attempted use of a raw B2.3 journal/adapter over a B2.4
+  database; and
 - B2.3 shadow fields, getters, missing values, counter overflow, stale CAS and
   epoch regression.
 
@@ -191,13 +197,13 @@ The exact implementation hashes before the evidence-only report commit are:
 - `b2-4-canonical.mjs`:
   `128155f57ad492cb9f85d04bddd07057e5d47c9d4bc88a801b8999de66f63c06`;
 - `b2-4-policy.mjs`:
-  `ce06e63119d7b4910e7773654fd531cfbabbf98b3c366d25f46e907ecbe835a2`;
+  `3b15c38a96a72fc57b18a4a495212413e941f13d3601f492a652e30a6de68e82`;
 - `b2-4-journal.mjs`:
-  `2c9cfad6e633e2294da48b8d9204514c49c9020ffc9d2069f5276716cfae9829`;
+  `d30ceb89dc57e683c7035cab9303b8235e988f54bf62b50c6e7be6d5e2ffa90c`;
 - `b2-4-engine-adapter.mjs`:
-  `65d254fd514cde83276600a35f46b65436539a20b8eab167be02074a914d034b`;
+  `cb2fb9be6788bff98c24dc46fb813dbab8cb099236bcff9fc4d2ae91fe256f77`;
 - `mls-phase-b2-4-policy.test.js`:
-  `331cb829af50e06d6d6689f1f67b8a34f2916a06682ef52a8e962b1e68516a5c`.
+  `81fadc8e4cb4dd2e861e97af40410d09e58207e5c2566b789f83c04496bab052`.
 
 The PR evidence comment binds these outputs and the two independent reviews to
 the exact final Git HEAD; embedding a commit's own hash in this tracked file

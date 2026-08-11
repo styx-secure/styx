@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { schnorr } from '@noble/curves/secp256k1';
 
 import {
+  B23_DB_PREFIX,
   B23_ERROR,
   B23_LIMITS,
   B23_RUNTIME,
@@ -104,6 +105,9 @@ function duplicateProviderKeySnapshot() {
 }
 
 function journal(db = new FakeVaultDb(), randomStart = 1) {
+  if (typeof db.name !== 'string') {
+    Object.defineProperty(db, 'name', { value: `${B23_DB_PREFIX}test` });
+  }
   return { db, value: createB23JournalForDb(db, { randomBytes: deterministicRandom(randomStart) }) };
 }
 
@@ -957,7 +961,7 @@ function makeRejectingIdb(storeNames, shouldFail) {
   }
   return {
     stores,
-    name: 'b2-3-request-failure',
+    name: `${B23_DB_PREFIX}request-failure`,
     version: 1,
     objectStoreNames: storeNames,
     transaction: (names) => new Transaction(Array.isArray(names) ? names : [names]),

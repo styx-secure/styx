@@ -4,9 +4,15 @@ import {
   B23_STORE_NAMES,
   assertString,
 } from '../marmot-phase-b2-3/b2-3-canonical.mjs';
-import { createB23JournalForDb } from '../marmot-phase-b2-3/b2-3-journal.mjs';
+import { B23Journal } from '../marmot-phase-b2-3/b2-3-journal.mjs';
 import { openVaultDb } from '../../src/storage/vault-db.js';
-import { B24_DB_PREFIX } from './b2-4-canonical.mjs';
+import {
+  B24_DB_PREFIX,
+  B24_ERROR,
+  failB24,
+} from './b2-4-canonical.mjs';
+
+const B24_JOURNAL_TOKEN = Symbol('B24_JOURNAL_TOKEN');
 
 function migrationV1(db) {
   for (const name of B23_STORE_NAMES) db.createObjectStore(name);
@@ -16,7 +22,10 @@ function migrationV1(db) {
 export class B24Journal {
   #inner;
 
-  constructor(inner) {
+  constructor(inner, token) {
+    if (token !== B24_JOURNAL_TOKEN) {
+      failB24(B24_ERROR.INVALID, 'B2.4 journals must be created by the namespace factory');
+    }
     this.#inner = inner;
     Object.freeze(this);
   }
@@ -41,7 +50,10 @@ export class B24Journal {
 }
 
 export function createB24JournalForDb(db, options = {}) {
-  return new B24Journal(createB23JournalForDb(db, options));
+  if (typeof db?.name !== 'string' || !db.name.startsWith(B24_DB_PREFIX)) {
+    failB24(B24_ERROR.INVALID, 'the database is outside the B2.4 namespace');
+  }
+  return new B24Journal(new B23Journal(db, options), B24_JOURNAL_TOKEN);
 }
 
 export async function openB24Journal({

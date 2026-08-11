@@ -33,8 +33,11 @@ one operation, not a bearer capability.
 - `b2-4-engine-adapter.mjs` makes the policy mandatory before local CAS,
   inbound merge/CAS and recovered pending confirmation.
 
-The permissive B2.3 adapter now accepts only an actual `B23Journal`, so it
-cannot be pointed at the B2.4 wrapper to reintroduce a caller-selected boolean.
+The B2.3 factory and adapter require both an actual `B23Journal` and the B2.3
+database prefix. The B2.4 factory separately requires the frozen B2.4 prefix,
+and its wrapper has a private construction token. A permissive B2.3 adapter
+therefore cannot be pointed at the B2.4 store to reintroduce a caller-selected
+boolean.
 
 ## Recovery rule
 

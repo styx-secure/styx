@@ -414,6 +414,9 @@ export async function openB23Journal({
 }
 
 export function createB23JournalForDb(db, options) {
+  if (typeof db?.name !== 'string' || !db.name.startsWith(B23_DB_PREFIX)) {
+    fail(B23_ERROR.INVALID, 'the database is outside the B2.3 namespace');
+  }
   return new B23Journal(db, options);
 }
 

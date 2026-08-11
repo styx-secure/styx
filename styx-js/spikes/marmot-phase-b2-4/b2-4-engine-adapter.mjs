@@ -91,6 +91,7 @@ export class B24EngineAdapter {
     }
     this.#wasm = wasm;
     this.#journal = journal;
+    Object.freeze(this);
   }
 
   #restoreBundle(bundle) {
@@ -194,14 +195,15 @@ export class B24EngineAdapter {
       fail(B23_ERROR.STATE_CONFLICT, 'prepare requires a stable head');
     }
     const session = this.#restoreBundle(bundle);
-    const parent = projectB24Parent({
-      provider: session.provider, group: session.group, head: bundle.head,
-    });
-    validateB24Parent(parent);
+    let parent;
     let keyPackage;
     let pending;
     let projectionHandle;
     try {
+      parent = projectB24Parent({
+        provider: session.provider, group: session.group, head: bundle.head,
+      });
+      validateB24Parent(parent);
       if (operation?.kind === 'self-update') {
         pending = session.group.prepare_self_update(session.provider, session.identity);
       } else if (operation?.kind === 'add') {
@@ -409,13 +411,15 @@ export class B24EngineAdapter {
       fail(B23_ERROR.STATE_CONFLICT, 'inbound Commit requires a stable head');
     }
     const session = this.#restoreBundle(bundle);
-    const parent = projectB24Parent({
-      provider: session.provider, group: session.group, head: bundle.head,
-    });
-    validateB24Parent(parent);
+    let parent;
     let staged;
+    let stagedFinalized = false;
     let projectionHandle;
     try {
+      parent = projectB24Parent({
+        provider: session.provider, group: session.group, head: bundle.head,
+      });
+      validateB24Parent(parent);
       const preStageSnapshot = copyBytes(session.provider.serialize_state());
       staged = session.group.stage_inbound_commit(session.provider, exactCommit);
       projectionHandle = staged.projection();
@@ -429,10 +433,12 @@ export class B24EngineAdapter {
       verifyB24DecisionBinding(policyDecision, inputs);
       if (!policyDecision.allowed) {
         session.group.discard_staged_commit(session.provider, staged);
+        stagedFinalized = true;
         return Object.freeze({
           status: 'rejected', head: bundle.head, projection, authorization: policyDecision,
         });
       }
+      stagedFinalized = true;
       session.group.merge_staged_commit(
         session.provider, staged,
         hexToBytes('verifiedLeafDigestHex', projection.verifiedLeafDigestHex),
@@ -472,6 +478,9 @@ export class B24EngineAdapter {
         status: 'accepted', head: result.head, projection, authorization: policyDecision,
       });
     } catch (error) {
+      if (staged !== undefined && !stagedFinalized) {
+        try { session.group.discard_staged_commit(session.provider, staged); } catch { /* dispose below */ }
+      }
       if (error?.code) throw error;
       failB24(B24_ERROR.ENGINE_REJECTED, 'B2.4 inbound staging or merge failed', {}, error);
     } finally {

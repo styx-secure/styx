@@ -212,6 +212,8 @@ function pathMatchesMember(path, member) {
     && path.identityHex === member.identityHex
     && path.signatureKeyHex === member.signatureKeyHex
     && path.identityProofHex === member.identityProofHex
+    && Array.isArray(path.componentIds)
+    && Array.isArray(path.supportedComponentIds)
     && equalArray(path.componentIds, member.componentIds)
     && equalArray(path.supportedComponentIds, member.supportedComponentIds);
 }
