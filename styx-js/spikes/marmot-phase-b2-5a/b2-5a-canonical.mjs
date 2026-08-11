@@ -286,7 +286,8 @@ export function canonicalProviderEntries(snapshotBytes) {
       valueHex: bytesToHex(semanticProviderValue(key, value)),
     }));
   }
-  entries.sort((left, right) => left.keyHex.localeCompare(right.keyHex));
+  entries.sort((left, right) => (left.keyHex < right.keyHex
+    ? -1 : left.keyHex > right.keyHex ? 1 : 0));
   return Object.freeze(entries);
 }
 

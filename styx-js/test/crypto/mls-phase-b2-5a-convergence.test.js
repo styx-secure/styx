@@ -33,6 +33,8 @@ import {
 } from '../../spikes/marmot-phase-b2-5a/b2-5a-journal.mjs';
 import {
   buildCandidateEvidence,
+  buildInput,
+  buildRetainedState,
   parseBatch,
   parseHead,
   parseInput,
@@ -207,7 +209,7 @@ function confirmPrepared(value) {
 async function createAdapter(wasm, peer, groupId, tag, beforeCandidate) {
   const db = b25Db(tag);
   const journal = createB25JournalForDb(db);
-  const adapter = new B25EngineAdapter({ wasm, journal, beforeCandidate });
+  const adapter = journal.createEngineAdapter({ wasm, beforeCandidate });
   await adapter.initializeStable({
     snapshotBytes: peer.snapshotBytes,
     groupId,
@@ -293,6 +295,14 @@ describe('Phase B2.5a closed ordering and namespace', () => {
       expect.objectContaining({ code: B25_ERROR.INVALID }),
     );
     expect(() => new B25Journal(db)).toThrow(expect.objectContaining({ code: B25_ERROR.INVALID }));
+    expect(() => new B25EngineAdapter({})).toThrow(
+      expect.objectContaining({ code: B25_ERROR.INVALID }),
+    );
+    const isolated = createB25JournalForDb(db);
+    expect({ initialize: isolated.initialize, commitResolution: isolated.commitResolution }).toEqual({
+      initialize: undefined,
+      commitResolution: undefined,
+    });
     expect(B25_STORE_NAMES).toHaveLength(6);
   });
 });
@@ -379,11 +389,27 @@ describe('Phase B2.5a real OpenMLS same-parent convergence', () => {
       wasm, fixture.peers.alice, fixture.groupId, 'remove', fixture.peers.diana.leafIndex,
     );
     const update = prepareFromParent(wasm, fixture.peers.bob, fixture.groupId, 'self-update');
-    const client = await createAdapter(wasm, fixture.peers.charlie, fixture.groupId, 'remove-priority');
+    const clients = await Promise.all([
+      createAdapter(wasm, fixture.peers.charlie, fixture.groupId, 'remove-priority-a'),
+      createAdapter(wasm, fixture.peers.charlie, fixture.groupId, 'remove-priority-b'),
+    ]);
     try {
-      const batch = await collectFreeze(client.adapter, bytesToHex(fixture.groupId),
-        [update.commitBytes, remove.commitBytes]);
-      const resolved = await client.adapter.resolve(batch.protocolBatchDigestHex);
+      const results = [];
+      for (let index = 0; index < clients.length; index += 1) {
+        const order = index === 0
+          ? [update.commitBytes, remove.commitBytes] : [remove.commitBytes, update.commitBytes];
+        const batch = await collectFreeze(
+          clients[index].adapter, bytesToHex(fixture.groupId), order,
+        );
+        results.push(await clients[index].adapter.resolve(batch.protocolBatchDigestHex));
+      }
+      const [resolved] = results;
+      expect(results.map((item) => item.batch.protocolBatchDigestHex))
+        .toEqual([resolved.batch.protocolBatchDigestHex, resolved.batch.protocolBatchDigestHex]);
+      expect(results.map((item) => item.batch.winnerCommitDigestHex))
+        .toEqual([digestHex(remove.commitBytes), digestHex(remove.commitBytes)]);
+      expect(results.map((item) => item.head.groupContextDigestHex))
+        .toEqual([resolved.head.groupContextDigestHex, resolved.head.groupContextDigestHex]);
       expect(resolved.batch.winnerCommitDigestHex).toBe(digestHex(remove.commitBytes));
       expect(resolved.candidates.find((item) =>
         item.commitDigestHex === digestHex(remove.commitBytes)).priority).toBe(0);
@@ -402,7 +428,9 @@ describe('Phase B2.5a real OpenMLS same-parent convergence', () => {
         free(canonical.group); free(canonical.identity); free(canonical.provider);
       }
     } finally {
-      cleanupPrepared(remove); cleanupPrepared(update); client.journal.close(); fixture.cleanup();
+      cleanupPrepared(remove); cleanupPrepared(update);
+      for (const client of clients) client.journal.close();
+      fixture.cleanup();
     }
   }, 30000);
 
@@ -411,16 +439,35 @@ describe('Phase B2.5a real OpenMLS same-parent convergence', () => {
     const fixture = await setupGroup(wasm);
     const alice = prepareFromParent(wasm, fixture.peers.alice, fixture.groupId, 'self-update');
     const bob = prepareFromParent(wasm, fixture.peers.bob, fixture.groupId, 'self-update');
-    const client = await createAdapter(wasm, fixture.peers.charlie, fixture.groupId, 'identity-order');
+    const clients = await Promise.all([
+      createAdapter(wasm, fixture.peers.charlie, fixture.groupId, 'identity-order-a'),
+      createAdapter(wasm, fixture.peers.charlie, fixture.groupId, 'identity-order-b'),
+    ]);
     try {
-      const batch = await collectFreeze(client.adapter, bytesToHex(fixture.groupId),
-        [bob.commitBytes, alice.commitBytes]);
-      const resolved = await client.adapter.resolve(batch.protocolBatchDigestHex);
       const expected = bytesToHex(fixture.peers.alice.publicKey) < bytesToHex(fixture.peers.bob.publicKey)
         ? digestHex(alice.commitBytes) : digestHex(bob.commitBytes);
-      expect(resolved.batch.winnerCommitDigestHex).toBe(expected);
+      const winners = [];
+      for (let index = 0; index < clients.length; index += 1) {
+        const order = index === 0
+          ? [bob.commitBytes, alice.commitBytes] : [alice.commitBytes, bob.commitBytes];
+        const batch = await collectFreeze(
+          clients[index].adapter, bytesToHex(fixture.groupId), order,
+        );
+        const resolved = await clients[index].adapter.resolve(batch.protocolBatchDigestHex);
+        winners.push({
+          batch: resolved.batch.protocolBatchDigestHex,
+          commit: resolved.batch.winnerCommitDigestHex,
+          context: resolved.head.groupContextDigestHex,
+        });
+      }
+      expect(winners).toEqual([
+        { batch: winners[0].batch, commit: expected, context: winners[0].context },
+        { batch: winners[0].batch, commit: expected, context: winners[0].context },
+      ]);
     } finally {
-      cleanupPrepared(alice); cleanupPrepared(bob); client.journal.close(); fixture.cleanup();
+      cleanupPrepared(alice); cleanupPrepared(bob);
+      for (const client of clients) client.journal.close();
+      fixture.cleanup();
     }
   }, 30000);
 
@@ -591,7 +638,7 @@ describe('Phase B2.5a real OpenMLS same-parent convergence', () => {
   }, 30000);
 
   test('strict records reject unknown fields, counter overflow and impossible disposition state', () => {
-    const head = {
+    const baseHead = {
       format: 'styx-marmot-b2-5a-head', version: 1,
       profile: 'same-parent-one-commit-branch-selection-poc', runtime: {
         openMlsRevision: '09e92777dba0528d3d29e2e5e681b7e91637c7be',
@@ -600,12 +647,15 @@ describe('Phase B2.5a real OpenMLS same-parent convergence', () => {
         marmotRevision: '4ad4ae21479c3f3fa9950c6fc4556a76941a62e1',
       },
       groupIdHex: 'aa', accountKeyHex: 'bb'.repeat(32), signatureKeyHex: 'cc'.repeat(32),
-      seq: Number.MAX_SAFE_INTEGER + 1, state: 'STABLE', epochDec: '0',
+      seq: 1, state: 'STABLE', epochDec: '0',
       groupContextDigestHex: 'dd'.repeat(32), snapshotDigestHex: 'ee'.repeat(32),
       priorHeadDigestHex: null, transitionDigestHex: 'ff'.repeat(32),
-      selectedCommitDigestHex: null, headDigestHex: '11'.repeat(32), extra: true,
+      selectedCommitDigestHex: null, headDigestHex: '11'.repeat(32),
     };
-    expect(() => parseHead(head)).toThrow(expect.objectContaining({ code: B25_ERROR.INVALID }));
+    expect(() => parseHead({ ...baseHead, extra: true }))
+      .toThrow(expect.objectContaining({ code: B25_ERROR.INVALID }));
+    expect(() => parseHead({ ...baseHead, seq: Number.MAX_SAFE_INTEGER + 1 }))
+      .toThrow(expect.objectContaining({ code: 'B23_INVALID' }));
     const input = {
       format: 'styx-marmot-b2-5a-input', version: 1, groupIdHex: 'aa',
       batchDigestHex: null, commitDigestHex: digestHex(Uint8Array.of(1)),
@@ -614,6 +664,25 @@ describe('Phase B2.5a real OpenMLS same-parent convergence', () => {
     };
     expect(() => parseInput(input)).toThrow(expect.objectContaining({ code: B25_ERROR.INVALID }));
   });
+
+  test('a coherent record stored under a conflicting Commit digest fails closed', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm);
+    const client = await createAdapter(wasm, fixture.peers.charlie, fixture.groupId, 'digest-collision');
+    const groupIdHex = bytesToHex(fixture.groupId);
+    const proposed = Uint8Array.of(9, 8, 7);
+    const foreign = buildInput({ groupIdHex, commitBytes: Uint8Array.of(1, 2, 3) });
+    const proposedKey = `${groupIdHex}:${digestHex(proposed)}`;
+    try {
+      client.db._store(B25_STORES.input).set(proposedKey, foreign);
+      await expect(client.adapter.retainCommit(groupIdHex, proposed)).rejects.toMatchObject({
+        code: B25_ERROR.CORRUPT,
+      });
+      expect(client.db.record(B25_STORES.input, proposedKey)).toEqual(foreign);
+    } finally {
+      client.journal.close(); fixture.cleanup();
+    }
+  }, 30000);
 
   test('empty, oversized and over-cap collection fail closed', async () => {
     const wasm = await loadWasm();
@@ -637,7 +706,7 @@ describe('Phase B2.5a real OpenMLS same-parent convergence', () => {
     }
   }, 30000);
 
-  test('the journal rejects caller-forged final evidence before ordering', async () => {
+  test('the public journal exposes no authority-bearing finalization API', async () => {
     const wasm = await loadWasm();
     const fixture = await setupGroup(wasm);
     const client = await createAdapter(wasm, fixture.peers.charlie, fixture.groupId, 'forged-evidence');
@@ -649,7 +718,7 @@ describe('Phase B2.5a real OpenMLS same-parent convergence', () => {
       const digest = batch.commitDigests[0];
       const committer = '44'.repeat(32);
       const forged = buildCandidateEvidence({
-        groupIdHex: 'ff'.repeat(32), batchDigestHex: batch.protocolBatchDigestHex,
+        groupIdHex, batchDigestHex: batch.protocolBatchDigestHex,
         commitDigestHex: digest, state: B25_CANDIDATE_STATE.AUTHORIZED,
         reason: 'B24_ALLOW_SELF_UPDATE', parentEpochDec: batch.baseEpochDec,
         parentGroupContextDigestHex: batch.baseGroupContextDigestHex,
@@ -663,11 +732,21 @@ describe('Phase B2.5a real OpenMLS same-parent convergence', () => {
           priority: 1, committerIdentityHex: committer, commitDigestHex: digest,
         }),
       });
-      await expect(client.journal.commitResolution({
+      const forgedSuccessor = buildRetainedState({
+        groupIdHex,
+        accountKeyHex: bundle.head.accountKeyHex,
+        signatureKeyHex: bundle.head.signatureKeyHex,
+        epochDec: forged.candidateEpochDec,
+        groupContextDigestHex: forged.candidateGroupContextDigestHex,
+        snapshotBytes: new Uint8Array(8),
+      });
+      const forgedResolution = {
         expectedHead: bundle.head, frozenBatch: bundle.batch,
         expectedInputs: bundle.inputs, expectedCandidates: bundle.candidates,
-        candidates: [forged], successorRetained: null,
-      })).rejects.toMatchObject({ code: B25_ERROR.INVALID });
+        candidates: [forged], successorRetained: forgedSuccessor,
+      };
+      expect(client.journal.commitResolution).toBeUndefined();
+      expect(() => client.journal.commitResolution(forgedResolution)).toThrow(TypeError);
       expect((await client.journal.readFrozen(batch.protocolBatchDigestHex)).head)
         .toEqual(bundle.head);
     } finally {

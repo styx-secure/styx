@@ -42,6 +42,9 @@ vault, or a product runtime.
    merge only that Commit.
 9. Re-read the complete six-store decision set inside one read-write
    transaction and publish the result using compare-and-swap on the base head.
+   Initialization and resolution are private journal capabilities captured only
+   by the adapter; the public journal API cannot accept candidate authority,
+   ordering fields, parent metadata, or a successor snapshot from its caller.
 
 An all-invalid frozen batch resolves terminally with a null winner and leaves
 the canonical head byte-identical. A missing retained parent moves the local
@@ -54,7 +57,8 @@ snapshot reference, and all MLS bytes.
   batch identity, ordering tuple, and provider-map semantic comparison.
 - `b2-5a-record.mjs`: closed codecs and domain-separated digests for all
   durable records.
-- `b2-5a-journal.mjs`: isolated six-store atomic journal, freeze, CAS resolve,
+- `b2-5a-journal.mjs`: isolated six-store atomic journal, public collection and
+  read API, private adapter-bound initialization/CAS resolution capabilities,
   terminal null-winner and unrecoverable recovery paths.
 - `b2-5a-convergence.mjs`: pure priority derivation and total-order selection.
 - `b2-5a-engine-adapter.mjs`: fresh-restore OpenMLS replay and B2.4 policy

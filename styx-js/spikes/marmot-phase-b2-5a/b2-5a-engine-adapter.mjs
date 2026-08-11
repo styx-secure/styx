@@ -25,12 +25,13 @@ import {
   failB25,
 } from './b2-5a-canonical.mjs';
 import { priorityForAuthorization, selectSameParentCandidate } from './b2-5a-convergence.mjs';
-import { B25Journal } from './b2-5a-journal.mjs';
 import {
   buildCandidateEvidence,
   buildRetainedState,
   projectionDigestHex,
 } from './b2-5a-record.mjs';
+
+const ADAPTER_TOKEN = Symbol('B25_ENGINE_ADAPTER_TOKEN');
 
 function safeFree(value) {
   if (value && typeof value.free === 'function') {
@@ -108,11 +109,20 @@ function evidenceFromDecision(bundle, input, projection, decision) {
 export class B25EngineAdapter {
   #wasm;
   #journal;
+  #initializeJournal;
+  #commitResolution;
   #beforeCandidate;
 
-  constructor({ wasm, journal, beforeCandidate = async () => {} }) {
-    if (!(journal instanceof B25Journal)) {
-      failB25(B25_ERROR.INVALID, 'the isolated B2.5a journal is required');
+  constructor({ wasm, journal, initializeJournal, commitResolution,
+    beforeCandidate = async () => {} }, token) {
+    if (token !== ADAPTER_TOKEN || typeof initializeJournal !== 'function'
+      || typeof commitResolution !== 'function') {
+      failB25(B25_ERROR.INVALID, 'B2.5a adapters must be bound by their journal');
+    }
+    if (!journal || typeof journal.readFrozen !== 'function'
+      || typeof journal.readResolved !== 'function'
+      || typeof journal.retainCommit !== 'function' || typeof journal.freeze !== 'function') {
+      failB25(B25_ERROR.INVALID, 'the isolated B2.5a journal API is required');
     }
     if (!wasm?.Provider || !wasm?.PhaseB2Group || !wasm?.PhaseB2Identity) {
       failB25(B25_ERROR.INVALID, 'the exact initialized Phase B2 WASM module is required');
@@ -122,6 +132,8 @@ export class B25EngineAdapter {
     }
     this.#wasm = wasm;
     this.#journal = journal;
+    this.#initializeJournal = initializeJournal;
+    this.#commitResolution = commitResolution;
     this.#beforeCandidate = beforeCandidate;
     Object.freeze(this);
   }
@@ -182,7 +194,7 @@ export class B25EngineAdapter {
         provider, group, head: { groupIdHex: bytesToHex(groupId), epochDec,
           epochDigestHex: groupContextDigestHex },
       }));
-      return await this.#journal.initialize({
+      return await this.#initializeJournal({
         groupIdHex: bytesToHex(groupId), accountKeyHex: bytesToHex(accountKey),
         signatureKeyHex: bytesToHex(signatureKey), epochDec,
         groupContextDigestHex, snapshotBytes: exactSnapshot,
@@ -226,7 +238,7 @@ export class B25EngineAdapter {
       if (staged !== undefined && !finalized) {
         try { session.group.discard_staged_commit(session.provider, staged); } catch { /* disposable */ }
       }
-      if (error?.code === B25_ERROR.CORRUPT || error?.code === B25_ERROR.INCOMPATIBLE) throw error;
+      if (error?.code) throw error;
       return notCandidateEvidence(bundle, input);
     } finally {
       safeFree(projectionHandle);
@@ -297,7 +309,7 @@ export class B25EngineAdapter {
     const candidates = await Promise.all(bundle.inputs.map((input) => this.#evaluate(bundle, input)));
     const winner = selectSameParentCandidate(candidates);
     const successorRetained = winner === null ? null : this.#mergeWinner(bundle, winner);
-    const result = await this.#journal.commitResolution({
+    const result = await this.#commitResolution({
       expectedHead: bundle.head,
       frozenBatch: bundle.batch,
       expectedInputs: bundle.inputs,
@@ -307,4 +319,11 @@ export class B25EngineAdapter {
     });
     return Object.freeze({ status: 'resolved', ...result });
   }
+}
+
+// This factory is intentionally useful only to B25Journal: callers can create
+// an adapter around their own closures, but the real journal never exposes its
+// private initialization or resolution capabilities.
+export function createBoundB25EngineAdapter(options) {
+  return new B25EngineAdapter(options, ADAPTER_TOKEN);
 }

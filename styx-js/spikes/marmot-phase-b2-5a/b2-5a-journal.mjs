@@ -38,6 +38,7 @@ import {
   parseRetainedState,
   parseTransition,
 } from './b2-5a-record.mjs';
+import { createBoundB25EngineAdapter } from './b2-5a-engine-adapter.mjs';
 
 const JOURNAL_TOKEN = Symbol('B25_JOURNAL_TOKEN');
 
@@ -127,7 +128,7 @@ export class B25Journal {
     Object.freeze(this);
   }
 
-  async initialize({ groupIdHex, accountKeyHex, signatureKeyHex, epochDec,
+  async #initialize({ groupIdHex, accountKeyHex, signatureKeyHex, epochDec,
     groupContextDigestHex, snapshotBytes }) {
     const retained = buildRetainedState({
       groupIdHex, accountKeyHex, signatureKeyHex, epochDec,
@@ -231,7 +232,8 @@ export class B25Journal {
       }
       const collected = (await listGroupInputs(ops, groupIdHex))
         .filter((item) => item.batchDigestHex === null)
-        .sort((left, right) => left.commitDigestHex.localeCompare(right.commitDigestHex));
+        .sort((left, right) => (left.commitDigestHex < right.commitDigestHex
+          ? -1 : left.commitDigestHex > right.commitDigestHex ? 1 : 0));
       if (collected.length === 0) failB25(B25_ERROR.STATE_CONFLICT, 'cannot freeze an empty batch');
       const batch = buildBatch({
         groupIdHex, baseEpochDec: head.epochDec,
@@ -325,7 +327,7 @@ export class B25Journal {
     return result;
   }
 
-  async commitResolution({ expectedHead, frozenBatch, expectedInputs,
+  async #commitResolution({ expectedHead, frozenBatch, expectedInputs,
     expectedCandidates, candidates, successorRetained }) {
     const head = parseHead(expectedHead);
     const batch = parseBatch(frozenBatch);
@@ -340,7 +342,8 @@ export class B25Journal {
     const safeInputs = expectedInputs.map(parseInput);
     const safePending = expectedCandidates.map(parseCandidateEvidence);
     const safeCandidates = candidates.map(parseCandidateEvidence)
-      .sort((left, right) => left.commitDigestHex.localeCompare(right.commitDigestHex));
+      .sort((left, right) => (left.commitDigestHex < right.commitDigestHex
+        ? -1 : left.commitDigestHex > right.commitDigestHex ? 1 : 0));
     for (let index = 0; index < batch.commitDigests.length; index += 1) {
       const digest = batch.commitDigests[index];
       const input = safeInputs[index];
@@ -430,6 +433,16 @@ export class B25Journal {
         ops, B25_STORES.head, head.groupIdHex, 'canonical head',
       ));
       if (!sameHead(currentHead, head)) failB25(B25_ERROR.CAS_CONFLICT, 'canonical head changed');
+      const currentTransition = parseTransition(await getRequired(
+        ops, B25_STORES.transition, currentHead.transitionDigestHex, 'canonical transition',
+      ));
+      if (currentTransition.groupIdHex !== currentHead.groupIdHex
+        || currentTransition.seq !== currentHead.seq
+        || currentTransition.snapshotDigestHex !== currentHead.snapshotDigestHex
+        || currentTransition.epochDec !== currentHead.epochDec
+        || currentTransition.groupContextDigestHex !== currentHead.groupContextDigestHex) {
+        failB25(B25_ERROR.CORRUPT, 'canonical transition changed before resolution');
+      }
       const currentBatch = parseBatch(await getRequired(
         ops, B25_STORES.batch, batch.protocolBatchDigestHex, 'frozen batch',
       ));
@@ -437,7 +450,7 @@ export class B25Journal {
         failB25(B25_ERROR.CAS_CONFLICT, 'frozen batch changed before resolution');
       }
       const parent = parseRetainedState(await getRequired(
-        ops, B25_STORES.retained, head.snapshotDigestHex, 'retained parent',
+        ops, B25_STORES.retained, currentHead.snapshotDigestHex, 'retained parent',
       ));
       const currentInputs = [];
       const currentCandidates = [];
@@ -524,6 +537,16 @@ export class B25Journal {
         ops, B25_STORES.retained, head.snapshotDigestHex, 'successor retained state',
       ));
       return Object.freeze({ head, batch, transition, retained, candidates });
+    });
+  }
+
+  createEngineAdapter({ wasm, beforeCandidate = async () => {} } = {}) {
+    return createBoundB25EngineAdapter({
+      wasm,
+      journal: this,
+      initializeJournal: this.#initialize.bind(this),
+      commitResolution: this.#commitResolution.bind(this),
+      beforeCandidate,
     });
   }
 

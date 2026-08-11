@@ -41,7 +41,8 @@ export function selectSameParentCandidate(candidateRecords) {
 
 export function buildResolutionOutcomes(candidateRecords, winner) {
   const records = candidateRecords.map(parseCandidateEvidence)
-    .sort((left, right) => left.commitDigestHex.localeCompare(right.commitDigestHex));
+    .sort((left, right) => (left.commitDigestHex < right.commitDigestHex
+      ? -1 : left.commitDigestHex > right.commitDigestHex ? 1 : 0));
   return Object.freeze(records.map((record) => {
     let disposition;
     if (record.state === B25_CANDIDATE_STATE.AUTHORIZED) {

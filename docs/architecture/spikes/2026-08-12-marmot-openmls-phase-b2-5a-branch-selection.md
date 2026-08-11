@@ -81,6 +81,14 @@ that B2.4 rejects produces `REJECTED`. Neither state creates an edge or merges
 anything. The resolver sorts only complete `AUTHORIZED` evidence and rejects
 equal total-order identities as corruption.
 
+The public journal exposes collection, freeze and read operations only. Its
+initialization and final-resolution functions are private methods supplied as
+opaque closures to an adapter created by that journal. Consequently no public
+journal call accepts caller-provided candidate evidence, priority, committer,
+authorization digest, parent metadata, or successor snapshot. Engine and policy
+invariant errors with a typed code propagate; only closed OpenMLS staging/decode
+outcomes become `NOT_CANDIDATE`.
+
 The selected input is restored, staged, projected, authorized, and checked a
 second time. Its evidence digest must match the first pass before merge. The
 successor epoch and GroupContext must equal the projected candidate.
@@ -137,7 +145,9 @@ dispositions, successor state, transition and head atomically.
 
 The base parent and selected successor remain retained. B2.5a performs no
 pruning. This makes recovery evidence simple but retains historical private MLS
-material longer and makes no forward-secrecy material-release claim.
+material longer and makes no forward-secrecy material-release claim. Resolution
+also revalidates the current head's transition record, so all six stores are in
+the decision read-set even for a null winner.
 
 ## 7. Cross-client identity and provider-state finding
 
@@ -175,7 +185,8 @@ The focused real-WASM suite exercises:
 - own freshly prepared Commit staging (`OwnCommit`) as a closed non-candidate;
 - null-winner terminal resolution and idempotent restart behavior;
 - losing-branch non-application and winner bidirectional message liveness;
-- changed stored bytes, missing retained parent and forged final evidence;
+- changed stored bytes, missing retained parent, a storage-key/content collision,
+  and fully bound forged final evidence blocked by the absent public finalizer;
 - empty, oversized and over-cap input sets;
 - abort at writes to each of the six stores, exact rollback and retry; and
 - strict unknown-field, disposition, digest and safe-counter rejection.
@@ -209,6 +220,12 @@ WASM handle, so it remains neutral to that future admission mechanism.
 | Retained-history horizon | `protocol-core/retained-history.md` | parent/successor retained; rewind/pruning deferred |
 | Publish before local apply | `protocol-core/publish-lifecycle.md` | existing B2.4 behavior; conflict integration deferred |
 
+Within this one-pass kernel, `LOSING` and `NOT_CANDIDATE` are terminal for the
+exact frozen input and exact Commit bytes are deduplicated thereafter. Pinned
+Marmot instead defers losing branches and missing anchors for later eligibility.
+That multi-pass behavior is deliberately not claimed here and must replace, not
+silently inherit, these terminal probe outcomes in the retained-history phase.
+
 ## 11. Rejected alternatives
 
 - **Apply on arrival:** rejected because transport order becomes consensus.
@@ -225,7 +242,7 @@ WASM handle, so it remains neutral to that future admission mechanism.
 
 ## 12. Evidence and limitations
 
-Focused evidence at the working candidate currently passes 14/14 tests. Exact
+Focused evidence at the working candidate currently passes 15/15 tests. Exact
 full-suite, browser, build, enforcement, artifact-integrity, independent-agent,
 CI and human evidence is recorded on the candidate PR rather than claimed by
 this pre-merge report.
@@ -242,6 +259,10 @@ This proof does not provide:
 - malicious-origin, compromised browser/OS, metadata-privacy or anonymity
   protection; or
 - audit coverage or readiness for real sensitive data.
+
+Strict container/unknown-field failures use the B2.5a error namespace. Some
+primitive field bounds reused from B2.3, including safe-counter overflow, retain
+their stable `B23_*` typed error codes; neither category authorizes mutation.
 
 Passing the synthetic and real-WASM probes is executable evidence for this
 bounded branch-selection property only.
