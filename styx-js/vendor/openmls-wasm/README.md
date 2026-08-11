@@ -1,7 +1,7 @@
 # Vendored OpenMLS-WASM
 
 This directory contains the pinned OpenMLS WebAssembly engine used by the
-legacy Styx chat and by an isolated Phase B1 capability probe. The complete pin,
+legacy Styx chat and by isolated Phase B1/Phase B2 capability probes. The complete pin,
 toolchain, licensing classification, hashes, and residual risks are recorded in
 [`PROVENANCE.md`](./PROVENANCE.md).
 
@@ -15,7 +15,7 @@ toolchain, licensing classification, hashes, and residual risks are recorded in
 - Enabled upstream feature: `extensions-draft`
 
 The source revision has not changed. The draft feature is enabled because the
-non-product Phase B1 probe needs the upstream application-data dictionary and
+non-product Phase B1/Phase B2 probes need the upstream application-data dictionary and
 staged-commit APIs. The feature expands the compiled parser surface for both
 profiles; it does not make the shipping product select the probe profile.
 
@@ -28,7 +28,7 @@ Run from this directory:
 ```
 
 Docker is required. No host Rust toolchain is used. The committed WASM is
-1,962,774 bytes raw and approximately 696 KiB gzip.
+2,074,265 bytes raw and 747,555 bytes gzip.
 
 ## Profiles
 
@@ -41,7 +41,8 @@ The legacy API remains the shipping path:
 - existing `Identity`, `Group`, `KeyPackage`, `RatchetTree`, and automatic
   inbound merge semantics are unchanged.
 
-The separate `PhaseB1*` exports are capability-probe types only:
+The separate `PhaseB1*` and `PhaseB2*` exports are capability-probe types only.
+Both use:
 
 - ciphersuite:
   `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` (`0x0001`);
@@ -53,7 +54,12 @@ The separate `PhaseB1*` exports are capability-probe types only:
 - WASM-owned, single-use staged Commit handles bound to a provider instance,
   provider-restore generation, group instance, group ID, and prior epoch;
 - explicit merge/discard for inbound staged Commits and explicit
-  confirm/discard for local pending Add Commits.
+  confirm/discard for local pending Commits.
+
+`PhaseB2*` additionally exposes bounded Add, Remove and self-update preparation,
+authenticated inbound Commit staging, complete candidate-state projection, and
+a WASM-recomputed digest over the candidate leaves. It does not verify the
+BIP-340 account-identity proof; that remains a later policy-layer requirement.
 
 No product source imports the probe. It demonstrates local mechanics only: it
 is not a Marmot interoperability, security-audit, or production-readiness claim.
@@ -66,12 +72,14 @@ It adds:
 - whole-provider persistence and strict hostile-input restoration;
 - legacy identity/group reload and member-identity inspection;
 - returned errors rather than WASM traps on hostile wire bodies;
-- the isolated Phase B1 profile, framed KeyPackage inspection, and explicit
-  pending/staged Commit lifecycles described above.
+- the isolated Phase B1 and Phase B2 profiles, framed KeyPackage inspection,
+  explicit pending/staged Commit lifecycles, and bounded candidate projection
+  described above.
 
 The patch and its probe API are outside the scope of upstream OpenMLS audits.
-`roundtrip.mjs` proves the unchanged legacy 1:1 path; the Phase B1 evidence is
-in `../../spikes/marmot-phase-b1/probe.mjs` and the corresponding tests.
+`roundtrip.mjs` proves the unchanged legacy 1:1 path; the capability evidence is
+in `../../spikes/marmot-phase-b1/`, `../../spikes/marmot-phase-b2-2/`, and the
+corresponding native and generated-surface tests.
 
 ## Licensing
 
@@ -86,8 +94,8 @@ not introduce Marmot, MDK, Darkmatter, or Least Authority code or fixtures.
 
 - Provider persistence rewrites the complete in-memory store.
 - The legacy API still auto-merges inbound Commits by design; only the isolated
-  Phase B1 API exposes explicit staging.
-- Phase B1 does not implement durable publish-before-apply, crash recovery,
+  Phase B1/Phase B2 APIs expose explicit staging.
+- The capability APIs do not implement durable publish-before-apply, crash recovery,
   authorization policy, fork resolution, or concurrent Commit convergence.
 - Browser-origin control, compromised devices/extensions, metadata exposure,
   malicious recipients, and rollback/physical-erasure limits remain.

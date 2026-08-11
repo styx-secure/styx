@@ -17,6 +17,7 @@ import {
 } from '../../src/storage/mls-state-envelope.js';
 import {
   MLS_BUILD_INFO,
+  B2_1_MLS_BUILD_INFO,
   B1_MLS_BUILD_INFO,
   PRE_B1_MLS_BUILD_INFO,
   COMPATIBLE_MLS_STATE_TUPLES,
@@ -195,6 +196,10 @@ describe('assertMlsStateCompatibility — cases A/C of the policy', () => {
     expect(() => assertMlsStateCompatibility(freshEnvelope(B1_MLS_BUILD_INFO))).not.toThrow();
   });
 
+  test('the exact B2.1 artifact tuple remains accepted after the B2.2 rebuild', () => {
+    expect(() => assertMlsStateCompatibility(freshEnvelope(B2_1_MLS_BUILD_INFO))).not.toThrow();
+  });
+
   test('tuple fields cannot be accepted as independent or cross-product allowlists', () => {
     expectCode(
       () => assertMlsStateCompatibility(freshEnvelope({
@@ -299,10 +304,11 @@ describe('build-info anti-drift — constants match the vendored artifact', () =
     expect(COMPATIBLE_OPENMLS_REVISIONS).toEqual([MLS_BUILD_INFO.openMlsRevision]);
   });
 
-  test('state compatibility is exactly the pre-B1, B1 and current tuple set', () => {
+  test('state compatibility is exactly the ordered pre-B1, B1, B2.1 and current tuple set', () => {
     expect(COMPATIBLE_MLS_STATE_TUPLES).toEqual([
       PRE_B1_MLS_BUILD_INFO,
       B1_MLS_BUILD_INFO,
+      B2_1_MLS_BUILD_INFO,
       MLS_BUILD_INFO,
     ]);
   });

@@ -28,6 +28,7 @@ function loadFixture(relativeUrl) {
 
 const PRE_B1_FIXTURE = loadFixture('../fixtures/mls-state-v1/');
 const B1_FIXTURE = loadFixture('../fixtures/mls-state-b1/');
+const B2_1_FIXTURE = loadFixture('../fixtures/mls-state-b2-1/');
 const FIXTURE_ENVELOPE = PRE_B1_FIXTURE.envelope;
 const CTX = PRE_B1_FIXTURE.context;
 
@@ -136,6 +137,25 @@ describe('mls-state-b1 fixture restore under the B2.1 runtime', () => {
     expect(out.kind).toBe('application');
     expect(utf8Decode(out.plaintext)).toBe(context.refPlaintext);
     const response = session.encrypt(utf8Encode('B1 fixture restored response'));
+    expect(response).toBeInstanceOf(Uint8Array);
+    expect(response.length).toBeGreaterThan(0);
+  });
+});
+
+describe('mls-state-b2-1 fixture restore under the B2.2 runtime', () => {
+  test('preserves identity, group, membership, ratchet decryption and reply liveness', async () => {
+    const engine = await restoreFromFixture(B2_1_FIXTURE);
+    const context = B2_1_FIXTURE.context;
+    expect(bytesToBase64(engine.identityPublicKey())).toBe(context.idpk);
+    const session = engine.session(context.peer);
+    expect(session).toBeTruthy();
+    expect(context.groups[context.peer]).toBe(context.groupId);
+    expect(session.memberIdentities().sort()).toEqual([context.name, context.peer].sort());
+    expect(engine.peerIdentity(context.peer)).toBe(context.peer);
+    const out = session.decrypt(base64ToBytes(context.refCiphertext));
+    expect(out.kind).toBe('application');
+    expect(utf8Decode(out.plaintext)).toBe(context.refPlaintext);
+    const response = session.encrypt(utf8Encode('B2.1 fixture restored response'));
     expect(response).toBeInstanceOf(Uint8Array);
     expect(response.length).toBeGreaterThan(0);
   });

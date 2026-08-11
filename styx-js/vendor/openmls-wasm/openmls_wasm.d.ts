@@ -195,6 +195,144 @@ export class PhaseB1StagedCommit {
     projection(): PhaseB1CommitProjection;
 }
 
+export class PhaseB2CommitProjection {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    administrator_policy(): Uint8Array;
+    candidate_component_ids(index: number): Uint16Array;
+    candidate_epoch(): bigint;
+    candidate_group_context_sha256(): Uint8Array;
+    candidate_group_context_tls(): Uint8Array;
+    candidate_identity(index: number): Uint8Array;
+    candidate_identity_proof(index: number): Uint8Array;
+    candidate_leaf_index(index: number): number;
+    candidate_member_count(): number;
+    candidate_signature_key(index: number): Uint8Array;
+    candidate_supported_component_ids(index: number): Uint16Array;
+    committer_identity(): Uint8Array;
+    committer_leaf_index(): number;
+    committer_signature_key(): Uint8Array;
+    committer_source(): string;
+    has_update_path(): boolean;
+    lifecycle(): Uint8Array;
+    prior_epoch(): bigint;
+    proposal_added_component_ids(index: number): Uint16Array | undefined;
+    proposal_added_identity(index: number): Uint8Array | undefined;
+    proposal_added_identity_proof(index: number): Uint8Array | undefined;
+    proposal_added_leaf_index(index: number): number | undefined;
+    proposal_added_signature_key(index: number): Uint8Array | undefined;
+    proposal_added_supported_component_ids(index: number): Uint16Array | undefined;
+    proposal_count(): number;
+    proposal_kind(index: number): string;
+    proposal_removed_identity(index: number): Uint8Array | undefined;
+    proposal_removed_identity_proof(index: number): Uint8Array | undefined;
+    proposal_removed_parent_leaf_index(index: number): number | undefined;
+    proposal_removed_signature_key(index: number): Uint8Array | undefined;
+    proposal_sender_leaf_index(index: number): number;
+    proposal_sender_source(index: number): string;
+    proposal_source(index: number): string;
+    required_component_ids(): Uint16Array;
+    update_path_component_ids(): Uint16Array | undefined;
+    update_path_identity(): Uint8Array | undefined;
+    update_path_identity_proof(): Uint8Array | undefined;
+    update_path_leaf_index(): number | undefined;
+    update_path_signature_key(): Uint8Array | undefined;
+    update_path_supported_component_ids(): Uint16Array | undefined;
+    verified_leaf_digest(): Uint8Array;
+}
+
+export class PhaseB2Group {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    administrator_policy(): Uint8Array;
+    clear_pending_commit(provider: Provider, expected_prior_epoch: bigint, account_public_key: Uint8Array, leaf_signature_key: Uint8Array): void;
+    confirm_pending(provider: Provider, pending: PhaseB2PendingCommit, verified_leaf_digest: Uint8Array): void;
+    confirm_pending_commit(provider: Provider, expected_prior_epoch: bigint, account_public_key: Uint8Array, leaf_signature_key: Uint8Array, verified_leaf_digest: Uint8Array): void;
+    create_application_message(provider: Provider, sender: PhaseB2Identity, plaintext: Uint8Array): Uint8Array;
+    static create_new(provider: Provider, founder: PhaseB2Identity, group_id: Uint8Array, founder_proof: Uint8Array): PhaseB2Group;
+    discard_pending(provider: Provider, pending: PhaseB2PendingCommit): void;
+    discard_staged_commit(provider: Provider, staged: PhaseB2StagedCommit): void;
+    epoch(): bigint;
+    export_ratchet_tree(): PhaseB2RatchetTree;
+    group_context_sha256(provider: Provider): Uint8Array;
+    group_context_tls(): Uint8Array;
+    group_id(): Uint8Array;
+    has_pending_commit(provider: Provider): boolean;
+    static join(provider: Provider, welcome_bytes: Uint8Array, ratchet_tree: PhaseB2RatchetTree): PhaseB2Group;
+    lifecycle(): Uint8Array;
+    static load(provider: Provider, group_id: Uint8Array): PhaseB2Group | undefined;
+    matches_own_identity(account_public_key: Uint8Array, leaf_signature_key: Uint8Array): boolean;
+    member_count(): number;
+    member_identity(index: number): Uint8Array;
+    member_identity_proof(index: number): Uint8Array;
+    member_leaf_index(index: number): number;
+    member_signature_key(index: number): Uint8Array;
+    merge_staged_commit(provider: Provider, staged: PhaseB2StagedCommit, verified_leaf_digest: Uint8Array): void;
+    pending_projection(provider: Provider): PhaseB2CommitProjection | undefined;
+    prepare_add(provider: Provider, sender: PhaseB2Identity, new_member: PhaseB2KeyPackage): PhaseB2PendingCommit;
+    prepare_remove(provider: Provider, sender: PhaseB2Identity, removed_leaf_index: number): PhaseB2PendingCommit;
+    prepare_self_update(provider: Provider, sender: PhaseB2Identity): PhaseB2PendingCommit;
+    process_application_message(provider: Provider, bytes: Uint8Array): Uint8Array;
+    required_component_ids(): Uint16Array;
+    stage_inbound_commit(provider: Provider, bytes: Uint8Array): PhaseB2StagedCommit;
+}
+
+/**
+ * Current-profile identity with an independent Ed25519 MLS signing key.
+ */
+export class PhaseB2Identity {
+    free(): void;
+    [Symbol.dispose](): void;
+    account_public_key(): Uint8Array;
+    key_package(provider: Provider, proof: Uint8Array): PhaseB2KeyPackage;
+    leaf_signature_key(): Uint8Array;
+    static load(provider: Provider, account_public_key: Uint8Array, leaf_signature_key: Uint8Array): PhaseB2Identity | undefined;
+    constructor(provider: Provider, account_public_key: Uint8Array);
+}
+
+export class PhaseB2KeyPackage {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    ciphersuite_id(): number;
+    component_ids(): Uint16Array;
+    credential_identity(): Uint8Array;
+    static from_framed_bytes(bytes: Uint8Array): PhaseB2KeyPackage;
+    identity_proof(): Uint8Array;
+    is_last_resort(): boolean;
+    leaf_signature_key(): Uint8Array;
+    supported_component_ids(): Uint16Array;
+    to_framed_bytes(): Uint8Array;
+}
+
+export class PhaseB2PendingCommit {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    commit(): Uint8Array;
+    is_consumed(): boolean;
+    projection(): PhaseB2CommitProjection;
+    welcome(): Uint8Array | undefined;
+}
+
+export class PhaseB2RatchetTree {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    static from_bytes(bytes: Uint8Array): PhaseB2RatchetTree;
+    to_bytes(): Uint8Array;
+}
+
+export class PhaseB2StagedCommit {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    is_consumed(): boolean;
+    projection(): PhaseB2CommitProjection;
+}
+
 export class Provider {
     free(): void;
     [Symbol.dispose](): void;
@@ -250,6 +388,13 @@ export interface InitOutput {
     readonly __wbg_phaseb1pendingadd_free: (a: number, b: number) => void;
     readonly __wbg_phaseb1ratchettree_free: (a: number, b: number) => void;
     readonly __wbg_phaseb1stagedcommit_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb2commitprojection_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb2group_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb2identity_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb2keypackage_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb2pendingcommit_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb2ratchettree_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb2stagedcommit_free: (a: number, b: number) => void;
     readonly __wbg_provider_free: (a: number, b: number) => void;
     readonly __wbg_ratchettree_free: (a: number, b: number) => void;
     readonly addmessages_commit: (a: number) => any;
@@ -329,12 +474,106 @@ export interface InitOutput {
     readonly phaseb1ratchettree_to_bytes: (a: number) => [number, number, number, number];
     readonly phaseb1stagedcommit_is_consumed: (a: number) => number;
     readonly phaseb1stagedcommit_projection: (a: number) => number;
+    readonly phaseb2commitprojection_administrator_policy: (a: number) => [number, number];
+    readonly phaseb2commitprojection_candidate_component_ids: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_candidate_epoch: (a: number) => bigint;
+    readonly phaseb2commitprojection_candidate_group_context_sha256: (a: number) => [number, number];
+    readonly phaseb2commitprojection_candidate_group_context_tls: (a: number) => [number, number];
+    readonly phaseb2commitprojection_candidate_identity: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_candidate_identity_proof: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_candidate_leaf_index: (a: number, b: number) => [number, number, number];
+    readonly phaseb2commitprojection_candidate_member_count: (a: number) => number;
+    readonly phaseb2commitprojection_candidate_signature_key: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_candidate_supported_component_ids: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_committer_identity: (a: number) => [number, number];
+    readonly phaseb2commitprojection_committer_leaf_index: (a: number) => number;
+    readonly phaseb2commitprojection_committer_signature_key: (a: number) => [number, number];
+    readonly phaseb2commitprojection_committer_source: (a: number) => [number, number];
+    readonly phaseb2commitprojection_has_update_path: (a: number) => number;
+    readonly phaseb2commitprojection_lifecycle: (a: number) => [number, number];
+    readonly phaseb2commitprojection_prior_epoch: (a: number) => bigint;
+    readonly phaseb2commitprojection_proposal_added_component_ids: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_proposal_added_identity: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_proposal_added_identity_proof: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_proposal_added_leaf_index: (a: number, b: number) => [number, number, number];
+    readonly phaseb2commitprojection_proposal_added_signature_key: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_proposal_added_supported_component_ids: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_proposal_count: (a: number) => number;
+    readonly phaseb2commitprojection_proposal_kind: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_proposal_removed_identity: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_proposal_removed_identity_proof: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_proposal_removed_parent_leaf_index: (a: number, b: number) => [number, number, number];
+    readonly phaseb2commitprojection_proposal_removed_signature_key: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_proposal_sender_leaf_index: (a: number, b: number) => [number, number, number];
+    readonly phaseb2commitprojection_proposal_sender_source: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_proposal_source: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2commitprojection_required_component_ids: (a: number) => [number, number];
+    readonly phaseb2commitprojection_update_path_component_ids: (a: number) => [number, number];
+    readonly phaseb2commitprojection_update_path_identity: (a: number) => [number, number];
+    readonly phaseb2commitprojection_update_path_identity_proof: (a: number) => [number, number];
+    readonly phaseb2commitprojection_update_path_leaf_index: (a: number) => number;
+    readonly phaseb2commitprojection_update_path_signature_key: (a: number) => [number, number];
+    readonly phaseb2commitprojection_update_path_supported_component_ids: (a: number) => [number, number];
+    readonly phaseb2commitprojection_verified_leaf_digest: (a: number) => [number, number];
+    readonly phaseb2group_administrator_policy: (a: number) => [number, number, number, number];
+    readonly phaseb2group_clear_pending_commit: (a: number, b: number, c: bigint, d: number, e: number, f: number, g: number) => [number, number];
+    readonly phaseb2group_confirm_pending: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly phaseb2group_confirm_pending_commit: (a: number, b: number, c: bigint, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number];
+    readonly phaseb2group_create_application_message: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly phaseb2group_create_new: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number];
+    readonly phaseb2group_discard_pending: (a: number, b: number, c: number) => [number, number];
+    readonly phaseb2group_discard_staged_commit: (a: number, b: number, c: number) => [number, number];
+    readonly phaseb2group_export_ratchet_tree: (a: number) => number;
+    readonly phaseb2group_group_context_sha256: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2group_group_context_tls: (a: number) => [number, number, number, number];
+    readonly phaseb2group_group_id: (a: number) => [number, number];
+    readonly phaseb2group_has_pending_commit: (a: number, b: number) => [number, number, number];
+    readonly phaseb2group_join: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly phaseb2group_lifecycle: (a: number) => [number, number, number, number];
+    readonly phaseb2group_load: (a: number, b: number, c: number) => [number, number, number];
+    readonly phaseb2group_matches_own_identity: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly phaseb2group_member_count: (a: number) => number;
+    readonly phaseb2group_member_identity: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2group_member_identity_proof: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2group_member_leaf_index: (a: number, b: number) => [number, number, number];
+    readonly phaseb2group_member_signature_key: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb2group_merge_staged_commit: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+    readonly phaseb2group_pending_projection: (a: number, b: number) => [number, number, number];
+    readonly phaseb2group_prepare_add: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly phaseb2group_prepare_remove: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly phaseb2group_prepare_self_update: (a: number, b: number, c: number) => [number, number, number];
+    readonly phaseb2group_process_application_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly phaseb2group_required_component_ids: (a: number) => [number, number, number, number];
+    readonly phaseb2group_stage_inbound_commit: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly phaseb2identity_account_public_key: (a: number) => [number, number];
+    readonly phaseb2identity_key_package: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly phaseb2identity_leaf_signature_key: (a: number) => [number, number];
+    readonly phaseb2identity_load: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly phaseb2identity_new: (a: number, b: number, c: number) => [number, number, number];
+    readonly phaseb2keypackage_component_ids: (a: number) => [number, number];
+    readonly phaseb2keypackage_credential_identity: (a: number) => [number, number];
+    readonly phaseb2keypackage_from_framed_bytes: (a: number, b: number) => [number, number, number];
+    readonly phaseb2keypackage_identity_proof: (a: number) => [number, number];
+    readonly phaseb2keypackage_is_last_resort: (a: number) => number;
+    readonly phaseb2keypackage_leaf_signature_key: (a: number) => [number, number];
+    readonly phaseb2keypackage_supported_component_ids: (a: number) => [number, number];
+    readonly phaseb2keypackage_to_framed_bytes: (a: number) => [number, number, number, number];
+    readonly phaseb2pendingcommit_commit: (a: number) => [number, number];
+    readonly phaseb2pendingcommit_is_consumed: (a: number) => number;
+    readonly phaseb2pendingcommit_projection: (a: number) => number;
+    readonly phaseb2pendingcommit_welcome: (a: number) => [number, number];
+    readonly phaseb2ratchettree_from_bytes: (a: number, b: number) => [number, number, number];
+    readonly phaseb2ratchettree_to_bytes: (a: number) => [number, number, number, number];
+    readonly phaseb2stagedcommit_projection: (a: number) => number;
     readonly provider_new: () => number;
     readonly provider_restore_state: (a: number, b: number, c: number) => [number, number];
     readonly provider_serialize_state: (a: number) => [number, number];
     readonly ratchettree_from_bytes: (a: number, b: number) => [number, number, number];
     readonly ratchettree_to_bytes: (a: number) => [number, number];
     readonly phaseb1group_epoch: (a: number) => bigint;
+    readonly phaseb2group_epoch: (a: number) => bigint;
+    readonly phaseb2stagedcommit_is_consumed: (a: number) => number;
+    readonly phaseb2keypackage_ciphersuite_id: (a: number) => number;
     readonly greet: () => void;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;

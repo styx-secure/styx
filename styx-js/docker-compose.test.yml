@@ -1,10 +1,17 @@
 services:
   strfry:
-    image: ghcr.io/hoytech/strfry:latest
+    image: ghcr.io/hoytech/strfry@sha256:d6b31e8ab32e159f98d250b90aa6a62b9b47c468efdd311341597f60198861e1
     ports:
-      - "17777:7777"
+      - "127.0.0.1:17777:7777"
     volumes:
       - ./strfry.conf:/app/strfry.conf:z
+      - strfry-db:/app/strfry-db
     command: ["--config", "/app/strfry.conf", "relay"]
-    tmpfs:
-      - /app/strfry-db
+
+volumes:
+  strfry-db:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "uid=1000,gid=1000,mode=0700"
