@@ -253,7 +253,7 @@ deletion or general production-capacity claim.
   `7906049e4054c7579e4aa94443d0e574496e940c2ae39b009ef1ab53f3a55240`.
 - Playwright: Chromium and Firefox, 6 tests passed; each browser completed 100
   two-connection races without skip. Log SHA-256
-  `9893cea5bd9207946046ddb61d39c13fe79b4b2d0ec9cedf95b83f3dc06bd10c`.
+  `e5e7f0a54799065a7ece8f977deae2c9cb3d3b8db47bbb0d9975c5c4a54d67b5`.
 - Pre-contract E-1 (`get` then `put` in one `VaultDb.transaction`) passed 2/2;
   evidence SHA-256
   `2332ecdda45718adc9e2971cc666ecee9b95f91387e431fc8cad99768565c59e`.
@@ -288,6 +288,14 @@ in `issuecomment-5251678319`: one self-contained repository-root command now
 extracts the frozen B2.1 parent artifact outside the working tree and supplies
 both exact directories. The successful evidence above uses those inputs. No
 other contract term, scope boundary, test or gate changed.
+
+The first exact-HEAD scope observation classified the spike-local Playwright
+configuration as a 66% copy of an unchanged product probe configuration. The
+configuration was independently structured around this spike's executable
+lookup and project list without changing its two browsers, serial execution,
+timeouts, server, test match or test results. Git's CI-equivalent
+copy/rename-detection invocation now reports all ten contract paths as additions
+and no predecessor path.
 
 The first exact-candidate reviews found two local robustness defects and one
 test-model gap: historical evidence enumeration could mislabel a valid journal

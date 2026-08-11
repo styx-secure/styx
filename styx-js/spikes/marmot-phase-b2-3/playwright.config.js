@@ -1,15 +1,46 @@
-import { existsSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { accessSync, constants } from 'node:fs';
+import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
 
-const cachedChromium = `${homedir()}/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome`;
-const chromiumLaunch = existsSync(cachedChromium)
-  ? { launchOptions: { executablePath: cachedChromium } } : {};
+function localChromiumOverride() {
+  const executablePath = join(
+    process.env.HOME ?? '',
+    '.cache',
+    'ms-playwright',
+    'chromium-1228',
+    'chrome-linux64',
+    'chrome',
+  );
+  try {
+    accessSync(executablePath, constants.X_OK);
+    return { launchOptions: { executablePath } };
+  } catch {
+    return {};
+  }
+}
+
+const spikeProjects = [
+  {
+    name: 'chromium',
+    use: {
+      browserName: 'chromium',
+      headless: true,
+      ...localChromiumOverride(),
+    },
+  },
+  {
+    name: 'firefox',
+    use: {
+      browserName: 'firefox',
+      headless: true,
+    },
+  },
+];
 
 export default defineConfig({
   testDir: '.',
   testMatch: 'journal.browser.spec.js',
-  timeout: 300000,
+  timeout: 300_000,
   fullyParallel: false,
   workers: 1,
   webServer: {
@@ -17,10 +48,7 @@ export default defineConfig({
     cwd: '../..',
     url: 'http://127.0.0.1:18764/spikes/marmot-phase-b2-3/harness.html',
     reuseExistingServer: false,
-    timeout: 30000,
+    timeout: 30_000,
   },
-  projects: [
-    { name: 'chromium', use: { browserName: 'chromium', headless: true, ...chromiumLaunch } },
-    { name: 'firefox', use: { browserName: 'firefox', headless: true } },
-  ],
+  projects: spikeProjects,
 });
