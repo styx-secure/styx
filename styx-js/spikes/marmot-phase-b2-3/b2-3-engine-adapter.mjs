@@ -15,6 +15,7 @@ import {
   validateProviderSnapshot,
 } from './b2-3-canonical.mjs';
 import { HEAD_PREPARED, HEAD_STABLE, canonicalProjectionBytes } from './b2-3-record.mjs';
+import { B23Journal } from './b2-3-journal.mjs';
 
 function safeFree(value) {
   if (value && typeof value.free === 'function') {
@@ -159,6 +160,9 @@ export class B23EngineAdapter {
   constructor({ wasm, journal }) {
     if (!wasm?.Provider || !wasm?.PhaseB2Group || !wasm?.PhaseB2Identity) {
       fail(B23_ERROR.INVALID, 'the exact initialized B2.2 WASM module is required');
+    }
+    if (!(journal instanceof B23Journal)) {
+      fail(B23_ERROR.INVALID, 'the exact B2.3 journal type is required');
     }
     this.wasm = wasm;
     this.journal = journal;
