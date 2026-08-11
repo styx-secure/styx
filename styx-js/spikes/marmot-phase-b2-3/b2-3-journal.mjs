@@ -27,7 +27,6 @@ import {
   buildHead,
   buildTransition,
   canonicalProjectionBytes,
-  parseEvidence,
   parseHead,
   parseTransition,
 } from './b2-3-record.mjs';
@@ -180,9 +179,11 @@ export class B23Journal {
       if (await ops.get(B23_STORES.transition, transitionIdHex) !== undefined) {
         fail(B23_ERROR.CAS_CONFLICT, 'transition identifier already exists');
       }
-      ops.put(B23_STORES.snapshot, snapshotKeyHex, snapshot);
-      ops.put(B23_STORES.transition, transitionIdHex, transition);
-      ops.put(B23_STORES.head, safeBindings.groupIdHex, head);
+      await Promise.all([
+        ops.put(B23_STORES.snapshot, snapshotKeyHex, snapshot),
+        ops.put(B23_STORES.transition, transitionIdHex, transition),
+        ops.put(B23_STORES.head, safeBindings.groupIdHex, head),
+      ]);
     });
     return head;
   }
@@ -266,13 +267,15 @@ export class B23Journal {
           fail(B23_ERROR.CAS_CONFLICT, 'evidence identifier collision');
         }
       }
-      if (existingSnapshot === undefined) ops.put(B23_STORES.snapshot, snapshotKeyHex, snapshot);
-      ops.put(B23_STORES.transition, transitionIdHex, transition);
-      for (const record of evidenceRecords) ops.put(B23_STORES.evidence, record.idHex, record);
-      ops.put(B23_STORES.head, expected.groupIdHex, nextHead);
+      const writes = [];
+      if (existingSnapshot === undefined) writes.push(ops.put(B23_STORES.snapshot, snapshotKeyHex, snapshot));
+      writes.push(ops.put(B23_STORES.transition, transitionIdHex, transition));
+      for (const record of evidenceRecords) writes.push(ops.put(B23_STORES.evidence, record.idHex, record));
+      writes.push(ops.put(B23_STORES.head, expected.groupIdHex, nextHead));
       if (expected.snapshotKeyHex !== snapshotKeyHex) {
-        ops.delete(B23_STORES.snapshot, expected.snapshotKeyHex);
+        writes.push(ops.delete(B23_STORES.snapshot, expected.snapshotKeyHex));
       }
+      await Promise.all(writes);
     });
     return { head: nextHead, transition, snapshotBytes: snapshot, evidence: evidenceRecords };
   }
@@ -342,22 +345,6 @@ export class B23Journal {
         lastAppliedCommitDigestHex: head.lastAppliedCommitDigestHex,
       },
       evidence: [copyBytes(payloadBytes)],
-    });
-  }
-
-  async evidenceFor(groupIdHex) {
-    assertGroupIdHex(groupIdHex);
-    return this.db.transaction([B23_STORES.evidence], async (ops) => {
-      const keys = await ops.list(B23_STORES.evidence);
-      const found = [];
-      for (const key of keys) {
-        const record = parseEvidence(await ops.get(B23_STORES.evidence, key));
-        if (record.groupIdHex === groupIdHex) found.push(record);
-      }
-      if (found.length > B23_LIMITS.maxEvidence) {
-        fail(B23_ERROR.CORRUPT, 'stored evidence exceeds the bounded count');
-      }
-      return found;
     });
   }
 

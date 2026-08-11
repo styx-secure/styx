@@ -29,6 +29,7 @@ import {
 } from '../../spikes/marmot-phase-b2-3/b2-3-journal.mjs';
 import { B23EngineAdapter } from '../../spikes/marmot-phase-b2-3/b2-3-engine-adapter.mjs';
 import { createAccountIdentityProofV2 } from '../../spikes/marmot-phase-b1/identity-proof-v2.js';
+import { VaultDb } from '../../src/storage/vault-db.js';
 import { FakeVaultDb } from '../support/fake-vault-db.js';
 
 const GROUP = 'ab'.repeat(32);
@@ -381,10 +382,39 @@ describe('Phase B2.3 CAS journal', () => {
     });
     const appended = await instance.value.appendPublicationEvidence(GROUP, Uint8Array.of(8, 9));
     expect(appended.head.evidenceCount).toBe(1);
-    const evidence = await instance.value.evidenceFor(GROUP);
-    expect(evidence).toHaveLength(1);
-    expect(evidence[0].payload).toEqual(Uint8Array.of(8, 9));
-    expect(evidence[0].artifactDigestHex).toBe(appended.head.artifactDigestHex);
+    expect(appended.evidence).toHaveLength(1);
+    const evidence = await instance.db.get(B23_STORES.evidence, appended.evidence[0].idHex);
+    expect(evidence.payload).toEqual(Uint8Array.of(8, 9));
+    expect(evidence.artifactDigestHex).toBe(appended.head.artifactDigestHex);
+  });
+
+  test('historical evidence may exceed the per-prepared cap without corrupting the head', async () => {
+    const instance = await initialized();
+    let current = instance.head;
+    let evidenceRecords = 0;
+    for (let cycle = 0; cycle < 9; cycle += 1) {
+      instance.head = current;
+      const prepared = await prepare(instance);
+      await instance.value.recordPublishIntent(GROUP, {
+        id: `opaque:history:${cycle}`, bytes: Uint8Array.of(cycle + 1),
+      });
+      const inCycle = cycle === 8 ? 1 : 8;
+      let attempted = await instance.value.read(GROUP);
+      for (let index = 0; index < inCycle; index += 1) {
+        const appended = await instance.value.appendPublicationEvidence(
+          GROUP, Uint8Array.of(cycle, index),
+        );
+        attempted = { head: appended.head, snapshotBytes: appended.snapshotBytes };
+        evidenceRecords += 1;
+      }
+      const stable = await instance.value.cas(stableNoopCas(
+        attempted.head, attempted.snapshotBytes,
+      ));
+      current = stable.head;
+    }
+    expect(evidenceRecords).toBe(B23_LIMITS.maxEvidence + 1);
+    expect(await instance.db.list(B23_STORES.evidence)).toHaveLength(evidenceRecords);
+    await expect(instance.value.read(GROUP)).resolves.toMatchObject({ head: current });
   });
 });
 
@@ -742,4 +772,104 @@ describe('Phase B2.3 disposable OpenMLS composition', () => {
       free(group); free(founder.keyPackage); free(founder.identity); free(provider);
     }
   }, 30_000);
+});
+
+// The shared FakeVaultDb throws writes synchronously. This deterministic IDB
+// double instead drives the real VaultDb request-rejection and abort mapping.
+function makeRejectingIdb(storeNames, shouldFail) {
+  const stores = new Map(storeNames.map((name) => [name, new Map()]));
+  class Transaction {
+    constructor(names) {
+      this.oncomplete = null;
+      this.onabort = null;
+      this.onerror = null;
+      this.error = null;
+      this.pending = 0;
+      this.done = false;
+      this.started = false;
+      this.staged = new Map(names.map((name) => [name, new Map(stores.get(name))]));
+      queueMicrotask(() => { this.started = true; this.settle(); });
+    }
+
+    objectStore(name) {
+      const staged = this.staged.get(name);
+      const request = (operation, kind) => {
+        const result = { onsuccess: null, onerror: null, result: undefined, error: null };
+        this.pending += 1;
+        queueMicrotask(() => {
+          try {
+            const failure = shouldFail(name, kind);
+            if (failure) throw failure;
+            result.result = operation();
+            result.onsuccess?.();
+          } catch (error) {
+            result.error = error;
+            result.onerror?.();
+            this.abortWith(error);
+          } finally {
+            this.pending -= 1;
+            this.settle();
+          }
+        });
+        return result;
+      };
+      return {
+        get: (key) => request(() => staged.get(key), 'read'),
+        put: (value, key) => request(() => { staged.set(key, value); }, 'write'),
+        delete: (key) => request(() => { staged.delete(key); }, 'write'),
+        getAllKeys: () => request(() => [...staged.keys()], 'read'),
+        clear: () => request(() => staged.clear(), 'write'),
+      };
+    }
+
+    abortWith(error) {
+      if (this.done) return;
+      this.error = error;
+      this.done = true;
+      queueMicrotask(() => this.onabort?.());
+    }
+
+    abort() { this.abortWith(this.error ?? { name: 'AbortError' }); }
+
+    settle() {
+      if (this.done || !this.started || this.pending > 0) return;
+      queueMicrotask(() => {
+        if (this.done || this.pending > 0) return;
+        this.done = true;
+        for (const [name, records] of this.staged) stores.set(name, records);
+        this.oncomplete?.();
+      });
+    }
+  }
+  return {
+    stores,
+    name: 'b2-3-request-failure',
+    version: 1,
+    objectStoreNames: storeNames,
+    transaction: (names) => new Transaction(Array.isArray(names) ? names : [names]),
+    close() {},
+  };
+}
+
+test('a request-level write rejection rolls every store back and is never unhandled', async () => {
+  const seen = [];
+  const capture = (reason) => seen.push(reason?.name ?? String(reason));
+  process.on('unhandledRejection', capture);
+  try {
+    const idb = makeRejectingIdb(B23_STORE_NAMES, (name, kind) => (
+      name === B23_STORES.head && kind === 'write'
+        ? Object.assign(new Error('quota'), { name: 'QuotaExceededError' })
+        : null));
+    const db = new VaultDb(idb, {});
+    const value = createB23JournalForDb(db, { randomBytes: deterministicRandom(1) });
+    await expect(value.initialize({
+      bindings: { groupIdHex: GROUP, accountKeyHex: ACCOUNT, signatureKeyHex: SIGNATURE },
+      snapshotBytes: Uint8Array.of(9, 8, 7), epochDec: '0', epochDigestHex: EPOCH_0,
+    })).rejects.toMatchObject({ code: 'VAULT_QUOTA_EXCEEDED' });
+    for (const name of B23_STORE_NAMES) expect([...idb.stores.get(name).keys()]).toEqual([]);
+    await new Promise((resolve) => { setTimeout(resolve, 20); });
+    expect(seen).toEqual([]);
+  } finally {
+    process.off('unhandledRejection', capture);
+  }
 });
