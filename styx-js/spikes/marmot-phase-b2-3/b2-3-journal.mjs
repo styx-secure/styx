@@ -17,6 +17,7 @@ import {
   copyBytes,
   digestHex,
   fail,
+  parseEpochDecimal,
   randomHex256,
   snapshotClosedObject,
 } from './b2-3-canonical.mjs';
@@ -33,6 +34,36 @@ import {
 
 function migrationV1(db) {
   for (const name of B23_STORE_NAMES) db.createObjectStore(name);
+}
+
+const ADAPTER_TRANSITION_FIELDS = Object.freeze([
+  'kind', 'state', 'epochDec', 'epochDigestHex', 'commitBytes', 'welcomeBytes',
+  'projection', 'projectionDigestHex', 'candidateEpochDec',
+  'candidateEpochDigestHex', 'verifiedLeafDigestHex', 'artifactId',
+  'artifactBytes', 'artifactDigestHex', 'publishAttempts', 'evidenceCount',
+  'appliedCommitDigestHex',
+]);
+
+const ADAPTER_HEAD_FIELDS = Object.freeze([
+  'state', 'epochDec', 'epochDigestHex', 'pendingCommitDigestHex',
+  'pendingWelcomeDigestHex', 'candidateEpochDec', 'candidateEpochDigestHex',
+  'verifiedLeafDigestHex', 'artifactId', 'artifactDigestHex', 'publishAttempts',
+  'evidenceCount', 'lastAppliedCommitDigestHex',
+]);
+
+function assertSuccessorEpoch(expected, transition, nextHead) {
+  const parentEpoch = parseEpochDecimal(expected.epochDec, 'expectedHead.epochDec');
+  const successorEpoch = parseEpochDecimal(nextHead.epochDec, 'nextHead.epochDec');
+  if (transition.epochDec !== nextHead.epochDec) {
+    fail(B23_ERROR.INVALID, 'head and transition successor epochs differ');
+  }
+  const advances = transition.kind === 'confirm' || transition.kind === 'inbound-accept';
+  const expectedSuccessor = advances ? parentEpoch + 1n : parentEpoch;
+  if (successorEpoch !== expectedSuccessor) {
+    fail(B23_ERROR.INVALID, advances
+      ? 'durable successor must advance exactly one epoch'
+      : 'durable successor must retain the parent epoch');
+  }
 }
 
 function assertBindings(bindings) {
@@ -211,6 +242,12 @@ export class B23Journal {
 
   async cas({ expectedHead, snapshotBytes, transitionFields, headFields, evidence = [] }) {
     const expected = parseHead(expectedHead);
+    const safeTransitionFields = snapshotClosedObject(
+      transitionFields, ADAPTER_TRANSITION_FIELDS, 'adapter transition fields',
+    );
+    const safeHeadFields = snapshotClosedObject(
+      headFields, ADAPTER_HEAD_FIELDS, 'adapter head fields',
+    );
     assertBytes('snapshotBytes', snapshotBytes, { min: 1, max: B23_LIMITS.maxSnapshotBytes });
     if (!Array.isArray(evidence) || evidence.length > B23_LIMITS.maxEvidence) {
       fail(B23_ERROR.INVALID, 'evidence batch is invalid');
@@ -221,14 +258,15 @@ export class B23Journal {
     assertSafeInteger('next seq', seq, 2);
     const transitionIdHex = randomHex256(this.randomBytes);
     const transition = buildTransition({
+      ...safeTransitionFields,
       idHex: transitionIdHex,
       groupIdHex: expected.groupIdHex,
       seq,
       priorHeadDigestHex: expected.headDigestHex,
       snapshotKeyHex,
-      ...transitionFields,
     });
     const nextHead = buildHead({
+      ...safeHeadFields,
       groupIdHex: expected.groupIdHex,
       accountKeyHex: expected.accountKeyHex,
       signatureKeyHex: expected.signatureKeyHex,
@@ -237,8 +275,8 @@ export class B23Journal {
       snapshotBytes: snapshot.length,
       transitionIdHex,
       priorHeadDigestHex: expected.headDigestHex,
-      ...headFields,
     });
+    assertSuccessorEpoch(expected, transition, nextHead);
     const evidenceRecords = evidence.map((item) => buildEvidence({
       idHex: randomHex256(this.randomBytes),
       groupIdHex: expected.groupIdHex,
@@ -295,6 +333,9 @@ export class B23Journal {
       fail(B23_ERROR.STATE_CONFLICT, 'a retry must use the exact frozen artifact');
     }
     const nextAttempts = head.publishAttempts + 1;
+    if (nextAttempts > B23_LIMITS.maxPublishAttempts) {
+      fail(B23_ERROR.RESOURCE_LIMIT, 'publication attempt count is exhausted');
+    }
     const payload = transitionPayloadFrom(transition);
     payload.artifactId = safeArtifact.id;
     payload.artifactBytes = artifactBytes;
