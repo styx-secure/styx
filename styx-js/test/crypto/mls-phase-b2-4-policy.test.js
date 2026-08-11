@@ -410,6 +410,29 @@ describe('Phase B2.4 canonical authorization policy', () => {
       parent: parentState, candidate: changedVerifiedDigest, commitBytes: COMMIT,
     })).toThrow(expect.objectContaining({ code: B24_ERROR.BINDING_MISMATCH }));
   });
+
+  test('authorization evaluates the same closed candidate snapshot that it binds', () => {
+    const shown = candidate();
+    const applied = candidate({
+      members: [ALICE, BOB, CHARLIE],
+      proposals: [addProposal(ALICE, CHARLIE)],
+    });
+    const splitView = new Proxy(shown, {
+      getOwnPropertyDescriptor: (_target, key) => Object.getOwnPropertyDescriptor(shown, key),
+      get: (_target, key) => Reflect.get(applied, key, applied),
+      ownKeys: () => Reflect.ownKeys(shown),
+      getPrototypeOf: () => Object.prototype,
+    });
+    const decision = evaluate(parent(), splitView);
+    expect(decision).toMatchObject({
+      allowed: true,
+      reason: B24_REASON.ALLOW_SELF_UPDATE,
+      operationKind: 'self-update',
+    });
+    expect(verifyB24DecisionBinding(decision, {
+      parent: parent(), candidate: splitView, commitBytes: COMMIT,
+    })).toEqual(decision);
+  });
 });
 
 function deterministicRandom(start = 1) {

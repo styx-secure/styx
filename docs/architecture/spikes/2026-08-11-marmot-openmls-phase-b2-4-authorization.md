@@ -166,6 +166,8 @@ The Styx-authored tests cover:
   mismatch;
 - result replay across Commit, group, parent context, candidate context and
   verified-leaf digest;
+- a hostile split-view `Proxy`, proving authorization and decision binding use
+  the same normalized, closed candidate snapshot;
 - local and inbound CAS loss after authorization, zero-write rejection,
   duplicate suppression and recovered pending confirmation;
 - attempted caller booleans, cross-prefix journal factories, direct wrapper
@@ -178,8 +180,8 @@ The Styx-authored tests cover:
 
 The exact candidate evidence is:
 
-- focused B2.3+B2.4 Jest evidence: 46 passed, zero skipped;
-- complete root Jest evidence: 88 suites and 1,201 tests passed, zero Jest-marked
+- focused B2.3+B2.4 Jest evidence: 47 passed, zero skipped;
+- complete root Jest evidence: 88 suites and 1,202 tests passed, zero Jest-marked
   skips;
 - B2.2 capability probe: passed with evidence-manifest SHA-256
   `13abc21785fb3d81450fde207bdd1548e98e2182913a9df2c0b8d1612eccb608`;
@@ -194,16 +196,18 @@ The exact candidate evidence is:
 
 The exact implementation hashes before the evidence-only report commit are:
 
+- `b2-3-record.mjs`:
+  `67ca92f4b71e6cef4db47a768379a173eb2aaf7175a94d3dc42024b3650ef3ae`;
 - `b2-4-canonical.mjs`:
   `128155f57ad492cb9f85d04bddd07057e5d47c9d4bc88a801b8999de66f63c06`;
 - `b2-4-policy.mjs`:
-  `3b15c38a96a72fc57b18a4a495212413e941f13d3601f492a652e30a6de68e82`;
+  `b9af577cbc30af997c9af79cee9ee47400819d08f013790e0847f4074ef3a880`;
 - `b2-4-journal.mjs`:
   `d30ceb89dc57e683c7035cab9303b8235e988f54bf62b50c6e7be6d5e2ffa90c`;
 - `b2-4-engine-adapter.mjs`:
   `cb2fb9be6788bff98c24dc46fb813dbab8cb099236bcff9fc4d2ae91fe256f77`;
 - `mls-phase-b2-4-policy.test.js`:
-  `81fadc8e4cb4dd2e861e97af40410d09e58207e5c2566b789f83c04496bab052`.
+  `fa8b22deacf22f60582116ce38dd54fbdc880f2f3e517bb367ca9398a344186c`.
 
 The PR evidence comment binds these outputs and the two independent reviews to
 the exact final Git HEAD; embedding a commit's own hash in this tracked file

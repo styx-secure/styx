@@ -14,7 +14,10 @@ import {
   hexToBytes,
   parseEpochDecimal,
 } from '../marmot-phase-b2-3/b2-3-canonical.mjs';
-import { canonicalProjectionBytes } from '../marmot-phase-b2-3/b2-3-record.mjs';
+import {
+  canonicalProjectionBytes,
+  normalizeB23Projection,
+} from '../marmot-phase-b2-3/b2-3-record.mjs';
 import {
   B24_ACTIVE_LIFECYCLE_HEX,
   B24_CONTEXT_DOMAIN,
@@ -347,8 +350,8 @@ export function projectB24Parent({ provider, group, head }) {
 
 export function evaluateB24Authorization({ parent, candidate, commitBytes }) {
   const safeParent = normalizeParent(parent);
-  // This validates the complete strict B2.3 projection before any policy access.
-  canonicalProjectionBytes(candidate);
+  // Evaluate and bind the same closed snapshot even for a hostile direct caller.
+  candidate = normalizeB23Projection(candidate);
   const operationKind = classifyOperation(candidate);
   const context = buildContext(safeParent, candidate, commitBytes, operationKind);
   const parentByLeaf = memberMap(safeParent.members);

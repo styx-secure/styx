@@ -511,8 +511,12 @@ function assertTransitionShape(record) {
   return record;
 }
 
+export function normalizeB23Projection(projection) {
+  return validateProjection(projection);
+}
+
 export function canonicalProjectionBytes(projection) {
-  const safeProjection = validateProjection(projection);
+  const safeProjection = normalizeB23Projection(projection);
   // Engine projection builders create this object with a frozen field order and
   // primitive/array leaves. Parser tests reject accessors and extra fields at
   // the projection-builder boundary; this digest is never an authorization token.
