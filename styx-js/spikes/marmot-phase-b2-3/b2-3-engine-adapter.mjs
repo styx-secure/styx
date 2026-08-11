@@ -1,6 +1,7 @@
 // STYX_SPIKE_PROTOTYPE — disposable OpenMLS composition for Phase B2.3.
 
 import {
+  B23_DB_PREFIX,
   B23_ERROR,
   B23_LIMITS,
   assertBytes,
@@ -15,6 +16,7 @@ import {
   validateProviderSnapshot,
 } from './b2-3-canonical.mjs';
 import { HEAD_PREPARED, HEAD_STABLE, canonicalProjectionBytes } from './b2-3-record.mjs';
+import { B23Journal } from './b2-3-journal.mjs';
 
 function safeFree(value) {
   if (value && typeof value.free === 'function') {
@@ -159,6 +161,11 @@ export class B23EngineAdapter {
   constructor({ wasm, journal }) {
     if (!wasm?.Provider || !wasm?.PhaseB2Group || !wasm?.PhaseB2Identity) {
       fail(B23_ERROR.INVALID, 'the exact initialized B2.2 WASM module is required');
+    }
+    if (!(journal instanceof B23Journal)
+      || typeof journal.db?.name !== 'string'
+      || !journal.db.name.startsWith(B23_DB_PREFIX)) {
+      fail(B23_ERROR.INVALID, 'the exact B2.3 journal and namespace are required');
     }
     this.wasm = wasm;
     this.journal = journal;

@@ -76,6 +76,15 @@ function snapshotBuilderInput(value, allowedFields, label) {
   return out;
 }
 
+function requireBuilderFields(fields, requiredFields, label) {
+  for (const field of requiredFields) {
+    if (!Object.hasOwn(fields, field)) {
+      fail(B23_ERROR.INVALID, `${label} contains a missing field`);
+    }
+  }
+  return fields;
+}
+
 function nullableHex64(name, value) {
   if (value !== null) assertHex64(name, value);
   return value;
@@ -168,9 +177,16 @@ export function headCanonicalBytes(head) {
 }
 
 export function buildHead(fields) {
-  const safeFields = snapshotBuilderInput(fields, HEAD_FIELDS, 'head fields');
-  const draft = { format: `${B23_FORMAT}-head`, version: B23_VERSION, profile: B23_PROFILE,
-    ...B23_RUNTIME, ...safeFields, headDigestHex: '0'.repeat(64) };
+  const safeFields = requireBuilderFields(
+    snapshotBuilderInput(fields, HEAD_FIELDS, 'head fields'),
+    HEAD_FIELDS.filter((field) => ![
+      'format', 'version', 'profile', 'openMlsRevision', 'wasmArtifactSha256',
+      'ciphersuite', 'headDigestHex',
+    ].includes(field)),
+    'head fields',
+  );
+  const draft = { ...safeFields, format: `${B23_FORMAT}-head`, version: B23_VERSION,
+    profile: B23_PROFILE, ...B23_RUNTIME, headDigestHex: '0'.repeat(64) };
   const validated = assertHeadShape(snapshotClosedObject(draft, HEAD_FIELDS, 'head'));
   validated.headDigestHex = digestHex(headCanonicalBytes(validated));
   return Object.freeze(validated);
@@ -495,8 +511,12 @@ function assertTransitionShape(record) {
   return record;
 }
 
+export function normalizeB23Projection(projection) {
+  return validateProjection(projection);
+}
+
 export function canonicalProjectionBytes(projection) {
-  const safeProjection = validateProjection(projection);
+  const safeProjection = normalizeB23Projection(projection);
   // Engine projection builders create this object with a frozen field order and
   // primitive/array leaves. Parser tests reject accessors and extra fields at
   // the projection-builder boundary; this digest is never an authorization token.
@@ -517,9 +537,15 @@ export function transitionCanonicalBytes(record) {
 }
 
 export function buildTransition(fields) {
-  const safeFields = snapshotBuilderInput(fields, TRANSITION_FIELDS, 'transition fields');
+  const safeFields = requireBuilderFields(
+    snapshotBuilderInput(fields, TRANSITION_FIELDS, 'transition fields'),
+    TRANSITION_FIELDS.filter((field) => ![
+      'format', 'version', 'transitionDigestHex',
+    ].includes(field)),
+    'transition fields',
+  );
   const draft = {
-    format: `${B23_FORMAT}-transition`, version: B23_VERSION, ...safeFields,
+    ...safeFields, format: `${B23_FORMAT}-transition`, version: B23_VERSION,
     commitBytes: copyBytes(safeFields.commitBytes),
     welcomeBytes: copyBytes(safeFields.welcomeBytes),
     artifactBytes: copyBytes(safeFields.artifactBytes),
@@ -545,9 +571,15 @@ export function evidenceCanonicalBytes(record) {
 }
 
 export function buildEvidence(fields) {
-  const safeFields = snapshotBuilderInput(fields, EVIDENCE_FIELDS, 'evidence fields');
-  const draft = { format: `${B23_FORMAT}-evidence`, version: B23_VERSION,
-    ...safeFields, payload: copyBytes(safeFields.payload), evidenceDigestHex: '0'.repeat(64) };
+  const safeFields = requireBuilderFields(
+    snapshotBuilderInput(fields, EVIDENCE_FIELDS, 'evidence fields'),
+    EVIDENCE_FIELDS.filter((field) => ![
+      'format', 'version', 'evidenceDigestHex',
+    ].includes(field)),
+    'evidence fields',
+  );
+  const draft = { ...safeFields, format: `${B23_FORMAT}-evidence`, version: B23_VERSION,
+    payload: copyBytes(safeFields.payload), evidenceDigestHex: '0'.repeat(64) };
   const record = snapshotClosedObject(draft, EVIDENCE_FIELDS, 'evidence');
   if (record.format !== `${B23_FORMAT}-evidence` || record.version !== B23_VERSION) {
     fail(B23_ERROR.INVALID, 'evidence magic or version is invalid');

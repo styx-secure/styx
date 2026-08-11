@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { schnorr } from '@noble/curves/secp256k1';
 
 import {
+  B23_DB_PREFIX,
   B23_ERROR,
   B23_LIMITS,
   B23_RUNTIME,
@@ -23,8 +24,10 @@ import {
   buildHead,
   buildTransition,
   canonicalProjectionBytes,
+  headCanonicalBytes,
   parseHead,
   parseTransition,
+  transitionCanonicalBytes,
 } from '../../spikes/marmot-phase-b2-3/b2-3-record.mjs';
 import {
   createB23JournalForDb,
@@ -102,6 +105,9 @@ function duplicateProviderKeySnapshot() {
 }
 
 function journal(db = new FakeVaultDb(), randomStart = 1) {
+  if (typeof db.name !== 'string') {
+    Object.defineProperty(db, 'name', { value: `${B23_DB_PREFIX}test` });
+  }
   return { db, value: createB23JournalForDb(db, { randomBytes: deterministicRandom(randomStart) }) };
 }
 
@@ -202,6 +208,36 @@ describe('Phase B2.3 strict record', () => {
     expect(buildHead({ ...head }).headDigestHex).toBe(head.headDigestHex);
     expect(buildHead({ ...head, transitionIdHex: '99'.repeat(32) }).headDigestHex)
       .not.toBe(head.headDigestHex);
+  });
+
+  test('the approved B2.3 canonical fixture digests remain byte-identical', () => {
+    const head = buildHead({
+      groupIdHex: GROUP, accountKeyHex: ACCOUNT, signatureKeyHex: SIGNATURE,
+      ...B23_RUNTIME,
+      seq: 1, state: HEAD_STABLE, epochDec: '18446744073709551615', epochDigestHex: EPOCH_0,
+      snapshotKeyHex: '66'.repeat(32), snapshotBytes: 42, transitionIdHex: '77'.repeat(32),
+      priorHeadDigestHex: null, pendingCommitDigestHex: null, pendingWelcomeDigestHex: null,
+      candidateEpochDec: null, candidateEpochDigestHex: null, verifiedLeafDigestHex: null,
+      artifactId: null, artifactDigestHex: null, publishAttempts: 0, evidenceCount: 0,
+      lastAppliedCommitDigestHex: null,
+    });
+    const transition = buildTransition({
+      idHex: '88'.repeat(32), kind: 'prepare', groupIdHex: GROUP, seq: 2,
+      priorHeadDigestHex: head.headDigestHex, state: HEAD_PREPARED,
+      epochDec: '0', epochDigestHex: EPOCH_0, snapshotKeyHex: '99'.repeat(32),
+      commitBytes: COMMIT, welcomeBytes: null, projection: PROJECTION,
+      projectionDigestHex: digestHex(canonicalProjectionBytes(PROJECTION)),
+      candidateEpochDec: '1', candidateEpochDigestHex: EPOCH_1,
+      verifiedLeafDigestHex: VERIFIED,
+      artifactId: null, artifactBytes: null, artifactDigestHex: null,
+      publishAttempts: 0, evidenceCount: 0, appliedCommitDigestHex: null,
+    });
+    expect(digestHex(headCanonicalBytes(head)))
+      .toBe('246eedf94299e6d4d67499795788946dc49fc51b151bf72264213ad852944733');
+    expect(digestHex(canonicalProjectionBytes(PROJECTION)))
+      .toBe('bebcd2346a3365863368e08c1b582de79acc2d519160c2818faa1c09960f6a13');
+    expect(digestHex(transitionCanonicalBytes(transition)))
+      .toBe('6e43d2c51c21589d88ec5685eeae2ce2e58ee03e5fcbbc9dc3db0ba43a9fddd8');
   });
 
   test('accessor fields fail before their getter can run', () => {
@@ -322,6 +358,40 @@ describe('Phase B2.3 CAS journal', () => {
     await expect(prepare(instance)).rejects.toMatchObject({ code: B23_ERROR.CAS_CONFLICT });
   });
 
+  test('CAS snapshots exact adapter bags and rejects journal-owned shadow fields before writes', async () => {
+    const instance = await initialized();
+    const before = await instance.value.read(GROUP);
+    const request = stableNoopCas(instance.head, instance.snapshotBytes);
+    const getter = jest.fn(() => 'attacker-controlled');
+    Object.defineProperty(request.transitionFields, 'groupIdHex', {
+      get: getter, enumerable: true,
+    });
+    await expect(instance.value.cas(request)).rejects.toMatchObject({ code: B23_ERROR.INVALID });
+    expect(getter).not.toHaveBeenCalled();
+    expect(await instance.value.read(GROUP)).toEqual(before);
+
+    const missing = stableNoopCas(instance.head, instance.snapshotBytes);
+    delete missing.headFields.epochDigestHex;
+    await expect(instance.value.cas(missing)).rejects.toMatchObject({ code: B23_ERROR.INVALID });
+    expect(await instance.value.read(GROUP)).toEqual(before);
+  });
+
+  test('CAS enforces exact BigInt predecessor/successor epoch relations', async () => {
+    const instance = journal();
+    const snapshotBytes = Uint8Array.of(9, 8, 7);
+    const head = await instance.value.initialize({
+      bindings: { groupIdHex: GROUP, accountKeyHex: ACCOUNT, signatureKeyHex: SIGNATURE },
+      snapshotBytes, epochDec: '1', epochDigestHex: EPOCH_0,
+    });
+    for (const successor of ['0', '2']) {
+      const request = stableNoopCas(head, snapshotBytes);
+      request.transitionFields.epochDec = successor;
+      request.headFields.epochDec = successor;
+      await expect(instance.value.cas(request)).rejects.toMatchObject({ code: B23_ERROR.INVALID });
+      expect((await instance.value.read(GROUP)).head).toEqual(head);
+    }
+  });
+
   test('an injected write crash rolls back snapshot, transition and head together', async () => {
     const instance = await initialized();
     const before = await instance.value.read(GROUP);
@@ -382,6 +452,30 @@ describe('Phase B2.3 CAS journal', () => {
     const durable = await instance.value.read(GROUP);
     expect(durable.head).toEqual(second.head);
     expect(durable.head.pendingCommitDigestHex).toBe(prepared.head.pendingCommitDigestHex);
+  });
+
+  test('publication and evidence counters fail closed at their exact caps', async () => {
+    const publication = await initialized();
+    await prepare(publication);
+    const artifact = { id: 'opaque:cap:1', bytes: Uint8Array.of(7) };
+    for (let index = 0; index < B23_LIMITS.maxPublishAttempts; index += 1) {
+      await publication.value.recordPublishIntent(GROUP, artifact);
+    }
+    const beforeOverflow = await publication.value.read(GROUP);
+    await expect(publication.value.recordPublishIntent(GROUP, artifact))
+      .rejects.toMatchObject({ code: B23_ERROR.RESOURCE_LIMIT });
+    expect(await publication.value.read(GROUP)).toEqual(beforeOverflow);
+
+    const evidence = await initialized();
+    await prepare(evidence);
+    await evidence.value.recordPublishIntent(GROUP, artifact);
+    for (let index = 0; index < B23_LIMITS.maxEvidence; index += 1) {
+      await evidence.value.appendPublicationEvidence(GROUP, Uint8Array.of(index));
+    }
+    const beforeEvidenceOverflow = await evidence.value.read(GROUP);
+    await expect(evidence.value.appendPublicationEvidence(GROUP, Uint8Array.of(0xff)))
+      .rejects.toMatchObject({ code: B23_ERROR.RESOURCE_LIMIT });
+    expect(await evidence.value.read(GROUP)).toEqual(beforeEvidenceOverflow);
   });
 
   test('a failed publication-intent CAS preserves the discardable prepared head', async () => {
@@ -867,7 +961,7 @@ function makeRejectingIdb(storeNames, shouldFail) {
   }
   return {
     stores,
-    name: 'b2-3-request-failure',
+    name: `${B23_DB_PREFIX}request-failure`,
     version: 1,
     objectStoreNames: storeNames,
     transaction: (names) => new Transaction(Array.isArray(names) ? names : [names]),
