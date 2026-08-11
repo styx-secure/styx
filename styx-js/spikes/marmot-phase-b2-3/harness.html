@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <link rel="icon" href="data:,">
+    <title>Styx B2.3 isolated browser harness</title>
+    <script type="importmap">
+      {"imports":{
+        "@noble/hashes/sha256":"/node_modules/@noble/hashes/esm/sha256.js",
+        "@noble/hashes/crypto":"/node_modules/@noble/hashes/esm/crypto.js"
+      }}
+    </script>
+  </head>
+  <body>
+    <p id="status">STYX_SPIKE_PROTOTYPE — not a product path</p>
+    <script type="module">
+      import { digestHex } from './b2-3-canonical.mjs';
+      import { HEAD_PREPARED, HEAD_STABLE, canonicalProjectionBytes } from './b2-3-record.mjs';
+      import { openB23Journal } from './b2-3-journal.mjs';
+
+      const journals = new Map();
+      const GROUP = 'ab'.repeat(32);
+      const ACCOUNT = '11'.repeat(32);
+      const SIGNATURE = '22'.repeat(32);
+      const EPOCH_0 = '33'.repeat(32);
+      const EPOCH_1 = digestHex(Uint8Array.of(0x66));
+      const VERIFIED = '55'.repeat(32);
+      const COMMIT = Uint8Array.of(1, 2, 3, 4);
+      const PROJECTION = Object.freeze({
+        format: 'styx-b2-3-projection', version: 1, priorEpochDec: '0', candidateEpochDec: '1',
+        committerSource: 'member', committerLeafIndex: 0,
+        committerIdentityHex: ACCOUNT, committerSignatureKeyHex: SIGNATURE,
+        administratorPolicyHex: `20${ACCOUNT}`, lifecycleHex: '00',
+        requiredComponentIds: Object.freeze([32771, 32777, 32780]),
+        candidateGroupContextTlsHex: '66', candidateGroupContextDigestHex: EPOCH_1,
+        verifiedLeafDigestHex: VERIFIED,
+        candidateMembers: Object.freeze([Object.freeze({
+          leafIndex: 0, identityHex: ACCOUNT, signatureKeyHex: SIGNATURE,
+          identityProofHex: '77'.repeat(104), componentIds: Object.freeze([1, 32777]),
+          supportedComponentIds: Object.freeze([32771, 32777, 32780]),
+        })]),
+        proposals: Object.freeze([]), updatePath: null,
+      });
+
+      function stableHeadFields(head) {
+        return {
+          state: HEAD_STABLE,
+          epochDec: head.epochDec,
+          epochDigestHex: head.epochDigestHex,
+          pendingCommitDigestHex: null,
+          pendingWelcomeDigestHex: null,
+          candidateEpochDec: null,
+          candidateEpochDigestHex: null,
+          verifiedLeafDigestHex: null,
+          artifactId: null,
+          artifactDigestHex: null,
+          publishAttempts: 0,
+          evidenceCount: 0,
+          lastAppliedCommitDigestHex: head.lastAppliedCommitDigestHex,
+        };
+      }
+
+      window.B23Harness = Object.freeze({
+        groupId: GROUP,
+        async open(actor, tag) {
+          journals.set(actor, await openB23Journal({ databaseTag: tag }));
+        },
+        async initialize(actor) {
+          return journals.get(actor).initialize({
+            bindings: { groupIdHex: GROUP, accountKeyHex: ACCOUNT, signatureKeyHex: SIGNATURE },
+            snapshotBytes: Uint8Array.of(9, 8, 7), epochDec: '0', epochDigestHex: EPOCH_0,
+          });
+        },
+        async read(actor) { return journals.get(actor).read(GROUP); },
+        async advanceStable(actor, expectedHead, byte) {
+          const journal = journals.get(actor);
+          const projectionDigestHex = digestHex(canonicalProjectionBytes(PROJECTION));
+          return journal.cas({
+            expectedHead,
+            snapshotBytes: Uint8Array.of(byte, expectedHead.seq & 0xff),
+            transitionFields: {
+              kind: 'discard', state: HEAD_STABLE,
+              epochDec: expectedHead.epochDec, epochDigestHex: expectedHead.epochDigestHex,
+              commitBytes: COMMIT, welcomeBytes: null, projection: PROJECTION, projectionDigestHex,
+              candidateEpochDec: PROJECTION.candidateEpochDec,
+              candidateEpochDigestHex: PROJECTION.candidateGroupContextDigestHex,
+              verifiedLeafDigestHex: PROJECTION.verifiedLeafDigestHex,
+              artifactId: null, artifactBytes: null, artifactDigestHex: null,
+              publishAttempts: 0, evidenceCount: 0, appliedCommitDigestHex: null,
+            },
+            headFields: stableHeadFields(expectedHead),
+          });
+        },
+        async prepare(actor, expectedHead) {
+          const projectionDigestHex = digestHex(canonicalProjectionBytes(PROJECTION));
+          return journals.get(actor).cas({
+            expectedHead,
+            snapshotBytes: Uint8Array.of(9, 8, 7, 6),
+            transitionFields: {
+              kind: 'prepare', state: HEAD_PREPARED,
+              epochDec: '0', epochDigestHex: EPOCH_0,
+              commitBytes: COMMIT, welcomeBytes: null, projection: PROJECTION, projectionDigestHex,
+              candidateEpochDec: '1', candidateEpochDigestHex: EPOCH_1,
+              verifiedLeafDigestHex: VERIFIED,
+              artifactId: null, artifactBytes: null, artifactDigestHex: null,
+              publishAttempts: 0, evidenceCount: 0, appliedCommitDigestHex: null,
+            },
+            headFields: {
+              state: HEAD_PREPARED,
+              epochDec: '0', epochDigestHex: EPOCH_0,
+              pendingCommitDigestHex: digestHex(COMMIT), pendingWelcomeDigestHex: null,
+              candidateEpochDec: '1', candidateEpochDigestHex: EPOCH_1,
+              verifiedLeafDigestHex: VERIFIED,
+              artifactId: null, artifactDigestHex: null,
+              publishAttempts: 0, evidenceCount: 0, lastAppliedCommitDigestHex: null,
+            },
+          });
+        },
+        async acceptInbound(actor, expectedHead) {
+          const projectionDigestHex = digestHex(canonicalProjectionBytes(PROJECTION));
+          return journals.get(actor).cas({
+            expectedHead,
+            snapshotBytes: Uint8Array.of(4, 3, 2, 1),
+            transitionFields: {
+              kind: 'inbound-accept', state: HEAD_STABLE,
+              epochDec: '1', epochDigestHex: EPOCH_1,
+              commitBytes: COMMIT, welcomeBytes: null, projection: PROJECTION, projectionDigestHex,
+              candidateEpochDec: '1', candidateEpochDigestHex: EPOCH_1,
+              verifiedLeafDigestHex: VERIFIED,
+              artifactId: null, artifactBytes: null, artifactDigestHex: null,
+              publishAttempts: 0, evidenceCount: 0, appliedCommitDigestHex: digestHex(COMMIT),
+            },
+            headFields: {
+              state: HEAD_STABLE, epochDec: '1', epochDigestHex: EPOCH_1,
+              pendingCommitDigestHex: null, pendingWelcomeDigestHex: null,
+              candidateEpochDec: null, candidateEpochDigestHex: null, verifiedLeafDigestHex: null,
+              artifactId: null, artifactDigestHex: null, publishAttempts: 0, evidenceCount: 0,
+              lastAppliedCommitDigestHex: digestHex(COMMIT),
+            },
+          });
+        },
+        async publishIntent(actor) {
+          return journals.get(actor).recordPublishIntent(GROUP, {
+            id: 'opaque:browser:1', bytes: COMMIT,
+          });
+        },
+        async abortProbe(actor) {
+          const journal = journals.get(actor);
+          const before = await journal.db.list('snapshot');
+          try {
+            await journal.db.transaction(['snapshot', 'head'], async (ops) => {
+              await ops.put('snapshot', 'ff'.repeat(32), Uint8Array.of(1));
+              throw new Error('injected browser abort');
+            });
+          } catch (error) {
+            if (!String(error).includes('injected browser abort')) throw error;
+          }
+          const after = await journal.db.list('snapshot');
+          return { before, after };
+        },
+        async snapshotKeys(actor) { return journals.get(actor).db.list('snapshot'); },
+        close(actor) { journals.get(actor)?.close(); journals.delete(actor); },
+        async destroy(actor) { await journals.get(actor)?.destroy(); journals.delete(actor); },
+      });
+    </script>
+  </body>
+</html>
