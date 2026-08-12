@@ -484,6 +484,11 @@ export class B25BEngineAdapter {
       && item.artifactDigestHex === local.commitDigestHex);
     if (duplicate !== undefined) return Object.freeze({ status: 'duplicate', evidence: duplicate,
       local });
+    if (requestedKind === B25B_PUBLICATION_KIND.FAILURE
+      && evidenceSet.length >= B25B_LIMITS.maxPublicationRecords - 1) {
+      failB25B(B25B_ERROR.RESOURCE_LIMIT,
+        'failure evidence cannot consume the final acknowledgement slot');
+    }
     const evidence = buildPublication({
       groupIdHex, sequence: evidenceSet.length + 1, kind, attemptOrdinal,
       artifactDigestHex: local.commitDigestHex, artifactBytes: local.commitBytes,

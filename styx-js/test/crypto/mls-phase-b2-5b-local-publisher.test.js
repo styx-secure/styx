@@ -893,6 +893,52 @@ describe('Phase B2.5b real OpenMLS local-publisher arbitration', () => {
     }
   });
 
+  test('reserves the final publication slot for acknowledgement over failure', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm, 139);
+    const groupIdHex = bytesToHex(fixture.groupId);
+    const client = await createClient(wasm, fixture.peers.bob, fixture.groupId,
+      'publication-ack-cap');
+    try {
+      await client.coordinator.queueSelfUpdate(groupIdHex);
+      await client.coordinator.runQueuedOpportunity(groupIdHex);
+      const prepared = await client.journal.readLocal(groupIdHex);
+      await client.db.transaction([B25B_STORES.publication], async (ops) => {
+        for (let sequence = 1; sequence < B25B_LIMITS.maxPublicationRecords - 1;
+          sequence += 1) {
+          const historicalArtifact = Uint8Array.of(sequence);
+          const evidence = buildPublication({
+            groupIdHex,
+            sequence,
+            kind: B25B_PUBLICATION_KIND.ATTEMPT,
+            attemptOrdinal: sequence,
+            artifactDigestHex: digestHex(historicalArtifact),
+            artifactBytes: historicalArtifact,
+            recipientScopeDigestHex: prepared.recipientScopeDigestHex,
+            recipientIdentityHex: null,
+            payloadBytes: new Uint8Array(),
+          });
+          await ops.put(B25B_STORES.publication, publicationKey(groupIdHex, sequence), evidence);
+        }
+      });
+      await client.coordinator.recordAttempt(groupIdHex);
+      const publishing = await client.journal.readLocal(groupIdHex);
+      await expect(client.coordinator.recordFailure(
+        groupIdHex, 1, publishing.recipientScope[0], UTF8.encode('ambiguous'),
+      )).rejects.toMatchObject({ code: B25B_ERROR.RESOURCE_LIMIT });
+      expect(await client.journal.readLocal(groupIdHex)).toEqual(publishing);
+      await client.coordinator.recordAcknowledgement(
+        groupIdHex, 1, publishing.recipientScope[0], UTF8.encode('accepted'),
+      );
+      expect((await client.journal.readLocal(groupIdHex)).state)
+        .toBe(B25B_LOCAL_STATE.ACKNOWLEDGED);
+      expect(await client.journal.readPublication(groupIdHex))
+        .toHaveLength(B25B_LIMITS.maxPublicationRecords);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   test('strictly parses every durable record and rejects incoherent frozen bindings', async () => {
     const wasm = await loadWasm();
     const fixture = await setupGroup(wasm, 136);
@@ -1138,6 +1184,51 @@ describe('Phase B2.5b real OpenMLS local-publisher arbitration', () => {
       expect(deferredB.head.groupContextDigestHex).toBe(resultB.head.groupContextDigestHex);
     } finally {
       cleanupPrepared(branchA); cleanupPrepared(branchB); fixture.cleanup();
+    }
+  });
+
+  test('retries when a local pending record appears during inbound-only resolution', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm, 171);
+    const groupIdHex = bytesToHex(fixture.groupId);
+    const inbound = prepareFromParent(
+      wasm, fixture.peers.alice, fixture.groupId, 'self-update',
+    );
+    let enteredResolve;
+    const resolveEntered = new Promise((resolve) => { enteredResolve = resolve; });
+    let releaseResolve;
+    const mayResolve = new Promise((resolve) => { releaseResolve = resolve; });
+    let held = false;
+    const client = await createClient(
+      wasm, fixture.peers.bob, fixture.groupId, 'local-absence-cas', async () => {
+        if (held) return;
+        held = true;
+        enteredResolve();
+        await mayResolve;
+      },
+    );
+    try {
+      const baseHead = (await client.journal.readHead(groupIdHex)).head;
+      await client.coordinator.retainCommit(groupIdHex, inbound.commitBytes);
+      const frozen = await client.coordinator.freeze(groupIdHex);
+      const resolving = client.coordinator.resolve(frozen.protocolBatchDigestHex);
+      await resolveEntered;
+      await client.coordinator.queueSelfUpdate(groupIdHex);
+      const prepared = await client.coordinator.runQueuedOpportunity(groupIdHex);
+      expect(prepared.state).toBe(B25B_LOCAL_STATE.PREPARED);
+      releaseResolve();
+      await expect(resolving).rejects.toMatchObject({ code: B25B_ERROR.CAS_CONFLICT });
+      expect((await client.journal.readHead(groupIdHex)).head).toEqual(baseHead);
+      expect((await client.journal.readLocal(groupIdHex)).state).toBe(B25B_LOCAL_STATE.PREPARED);
+
+      const retried = await client.coordinator.resolve(frozen.protocolBatchDigestHex);
+      expect(retried.batch.winnerCommitDigestHex).toBe(digestHex(inbound.commitBytes));
+      expect((await client.journal.readLocal(groupIdHex)).state)
+        .toBe(B25B_LOCAL_STATE.CLEARED_LOST);
+    } finally {
+      releaseResolve?.();
+      cleanupPrepared(inbound);
+      fixture.cleanup();
     }
   });
 });

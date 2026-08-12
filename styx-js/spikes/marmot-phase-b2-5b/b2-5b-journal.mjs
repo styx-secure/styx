@@ -776,6 +776,9 @@ export class B25BJournal {
         if (localDigest !== null && !acknowledged) {
           failB25B(B25B_ERROR.CORRUPT, 'frozen local candidate lacks durable acknowledgement');
         }
+      } else if (await ops.get(B25B_STORES.local, localKey(head.groupIdHex)) !== undefined) {
+        failB25B(B25B_ERROR.CAS_CONFLICT,
+          'local pending appeared after the frozen decision read-set');
       }
       const currentInputs = [];
       const currentCandidates = [];

@@ -50,7 +50,9 @@ scoped by the exact Commit digest, so attempt ordinals may restart safely for a
 later local generation without binding to historical publication evidence.
 The artifact codec rechecks the digest-to-byte binding, and the coordinator
 refuses a new attempt before the bounded evidence store would lack room for at
-least one outcome; that refusal leaves the prepared record cancellable.
+least one outcome, and refuses failure evidence that would consume the final
+slot reserved for an acknowledgement; either refusal leaves local authority
+unchanged.
 Retry emits only the exact stored Commit bytes; no public method accepts
 replacement artifact bytes or a success boolean.
 

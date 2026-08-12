@@ -146,7 +146,8 @@ and byte lengths, closed terminal-disposition/counter bindings,
 domain-separated canonical encoding and SHA-256 digests. Publication records
 recheck their artifact digest against their exact bytes, and a new attempt is
 rejected before the 64-record evidence cap would strand it without outcome
-capacity. The
+capacity. Failure evidence cannot consume the final slot reserved for a later
+acknowledgement. The
 cross-member protocol-batch and comparison-tuple identities deliberately retain
 the frozen B2.5a domains. Unknown fields/states, duplicate sorted identities,
 unsafe counters, corrupt digests and incoherent nullable bindings fail closed.
@@ -154,6 +155,8 @@ unsafe counters, corrupt digests and incoherent nullable bindings fail closed.
 Engine work occurs on disposable providers outside the transaction. The final
 transaction re-reads the full head, transition, retained parent, local pending,
 publication evidence, batch, every input and every candidate placeholder. It
+also treats the observed absence of local pending state as part of the CAS
+read-set, so a concurrently appearing local operation forces a retry. It
 then atomically writes candidate outcomes, input dispositions, local terminal
 state, selected retained state, transition and head. Injected failure at every
 logical store written by preparation, freeze, publication and finalization
@@ -182,6 +185,10 @@ The focused Jest suite covers:
   record families, plus negative cross-record binding evidence;
 - rollback during preparation, freeze, publication and every logical-store
   final write;
+- an inbound-only resolution racing a newly prepared local operation, proving
+  that local absence is CAS-protected and the retry closes the loser safely;
+- the 64-record boundary, including outcome capacity before an attempt and a
+  final acknowledgement slot that failure evidence cannot consume;
 - idempotent historical resolution and no double application;
 - a sequential pass against the selected head, terminal closure of failed
   preparation, and reservation of one local slot within the 16-candidate cap;
