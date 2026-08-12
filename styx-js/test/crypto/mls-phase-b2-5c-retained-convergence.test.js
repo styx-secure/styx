@@ -219,6 +219,42 @@ describe('Phase B2.5c retained-history convergence', () => {
       } finally { fixture.cleanup(); }
     }, 20000);
 
+  test('concurrent local and inbound self-updates converge without replaying pending snapshots',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        const bob = clientFor(wasm, fixture.peers.bob, fixture.groupId, 'mixed-bob');
+        const charlie = clientFor(wasm, fixture.peers.charlie, fixture.groupId,
+          'mixed-charlie');
+        await bob.initialize();
+        await charlie.initialize();
+        const groupIdHex = bytesToHex(fixture.groupId);
+        const acknowledger = bytesToHex(fixture.peers.alice.publicKey);
+        const bobGeneration = await bob.coordinator.prepareSelfUpdate(groupIdHex);
+        const aliceInbound = selfUpdateFrom(
+          wasm, fixture.peers.alice, fixture.groupId, fixture.peers.alice.snapshotBytes);
+        await bob.coordinator.recordAttempt(groupIdHex);
+        await bob.coordinator.recordAcknowledgement(
+          groupIdHex, 1, acknowledger, UTF8.encode('bob-ack'));
+        expect((await bob.coordinator.admitCommit(
+          groupIdHex, aliceInbound.commitBytes)).status).toBe('retained');
+        expect((await charlie.coordinator.admitCommit(
+          groupIdHex, bobGeneration.commitBytes)).status).toBe('retained');
+        expect((await charlie.coordinator.admitCommit(
+          groupIdHex, aliceInbound.commitBytes)).status).toBe('retained');
+        await Promise.all([
+          bob.coordinator.settlePass(groupIdHex),
+          charlie.coordinator.settlePass(groupIdHex),
+        ]);
+        const bobHead = (await bob.journal.readHead(groupIdHex)).head;
+        const charlieHead = (await charlie.journal.readHead(groupIdHex)).head;
+        expect(bobHead.canonicalPath).toHaveLength(1);
+        expect(charlieHead.canonicalPath).toEqual(bobHead.canonicalPath);
+        expect(charlieHead.groupContextDigestHex).toBe(bobHead.groupContextDigestHex);
+      } finally { fixture.cleanup(); }
+    }, 20000);
+
   test('write-ahead probe is one-use across restart and remains selection-inert', async () => {
     const wasm = await loadWasm();
     const fixture = await setupGroup(wasm);
@@ -354,6 +390,9 @@ describe('Phase B2.5c retained-history convergence', () => {
         expect(terminal.anchorSnapshotDigestHex).toBe(before.anchorSnapshotDigestHex);
         expect(terminal.canonicalPath).toEqual(before.canonicalPath);
         expect(terminal.epochDec).toBe(before.epochDec);
+        await expect(client.coordinator.prepareSelfUpdate(groupIdHex)).rejects.toMatchObject({
+          code: B25C_ERROR.STATE_CONFLICT,
+        });
       } finally { fixture.cleanup(); }
     }, 20000);
 

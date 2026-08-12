@@ -441,6 +441,11 @@ export class B25CEngineAdapter {
     const terminal = new Map();
     const attemptedParents = new Map();
     const successfulParents = new Map();
+    const candidateStates = () => [...stateByDigest.values()]
+      .filter((state) => !pendingStateDigests.has(state.snapshotDigestHex))
+      .filter((state) => BigInt(state.epochDec) - BigInt(anchor.epochDec)
+        <= BigInt(B25C_LIMITS.rewindCommits + 1))
+      .sort((left, right) => left.snapshotDigestHex < right.snapshotDigestHex ? -1 : 1);
     let rounds = 0;
     let changed = true;
     while (changed) {
@@ -449,17 +454,12 @@ export class B25CEngineAdapter {
       if (rounds > B25C_LIMITS.maxEdges + 1) {
         failB25C(B25C_ERROR.RESOURCE_LIMIT, 'fixed-point round bound exceeded');
       }
-      const candidateStates = [...stateByDigest.values()]
-        .filter((state) => !pendingStateDigests.has(state.snapshotDigestHex))
-        .filter((state) => BigInt(state.epochDec) - BigInt(anchor.epochDec)
-          <= BigInt(B25C_LIMITS.rewindCommits + 1))
-        .sort((left, right) => left.snapshotDigestHex < right.snapshotDigestHex ? -1 : 1);
       for (const source of sources) {
         if (terminal.has(source.digest)) continue;
         const attempted = attemptedParents.get(source.digest) ?? new Set();
         const matches = successfulParents.get(source.digest) ?? [];
         let closedFailure = false;
-        for (const parent of candidateStates) {
+        for (const parent of candidateStates()) {
           if (attempted.has(parent.snapshotDigestHex)) continue;
           attempted.add(parent.snapshotDigestHex);
           const pendingRetained = source.generation === null ? null
@@ -544,7 +544,7 @@ export class B25CEngineAdapter {
       const expected = discovered.get(source.digest);
       if (expected === undefined) continue;
       let count = 0;
-      for (const parent of stateByDigest.values()) {
+      for (const parent of candidateStates()) {
         const pendingRetained = source.generation === null ? null
           : stateByDigest.get(source.generation.pendingSnapshotDigestHex)
             ?? bundle.retained.find((item) =>
@@ -705,6 +705,9 @@ export class B25CEngineAdapter {
     assertBytes('operationPayloadBytes', operationPayloadBytes,
       { min: 0, max: B25C_LIMITS.maxCommitBytes });
     const bundle = await this.#journal.snapshot(groupIdHex);
+    if (bundle.head.state !== B25C_HEAD_STATE.STABLE) {
+      failB25C(B25C_ERROR.STATE_CONFLICT, 'local preparation requires stable group');
+    }
     if (bundle.activeLocal?.generationDigestHex !== null) {
       failB25C(B25C_ERROR.STATE_CONFLICT, 'one local generation is already active');
     }
@@ -772,6 +775,9 @@ export class B25CEngineAdapter {
 
   async #activeGeneration(groupIdHex) {
     const view = await this.#journal.snapshot(groupIdHex);
+    if (view.head.state !== B25C_HEAD_STATE.STABLE) {
+      failB25C(B25C_ERROR.STATE_CONFLICT, 'local publication requires stable group');
+    }
     const digest = view.activeLocal?.generationDigestHex;
     if (digest === null || digest === undefined) {
       failB25C(B25C_ERROR.STATE_CONFLICT, 'active local generation is absent');
