@@ -152,6 +152,15 @@ material longer and makes no forward-secrecy material-release claim. Resolution
 also revalidates the current head's transition record, so all six stores are in
 the decision read-set even for a null winner.
 
+Historical batch reads scan the complete transition store because this bounded
+probe has no pruning or secondary index; their cost grows with retained history
+and is not a production storage policy. Reconstructed historical heads reuse
+the current account and signature identity fields. That is sound only under
+B2.5a's explicit exclusion of key rotation and multi-device identity changes.
+A later retained-history phase must index the lookup and authenticate identity
+evolution rather than inherit either assumption. A null-winner read rejects any
+transition bound to that batch, preserving the required no-successor invariant.
+
 ## 7. Cross-client identity and provider-state finding
 
 The shared convergence identity is:

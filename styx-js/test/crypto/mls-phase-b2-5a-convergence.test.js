@@ -35,6 +35,7 @@ import {
   buildCandidateEvidence,
   buildInput,
   buildRetainedState,
+  buildTransition,
   parseBatch,
   parseHead,
   parseInput,
@@ -664,12 +665,30 @@ describe('Phase B2.5a real OpenMLS same-parent convergence', () => {
       const thirdBatch = await collectFreeze(
         client.adapter, bytesToHex(fixture.groupId), [third.commitBytes],
       );
-      await client.adapter.resolve(thirdBatch.protocolBatchDigestHex);
+      const thirdResult = await client.adapter.resolve(thirdBatch.protocolBatchDigestHex);
 
       const nullReplay = await client.adapter.resolve(nullBatch.protocolBatchDigestHex);
       expect(nullReplay.head).toEqual(secondResult.head);
       expect(nullReplay.transition).toBeNull();
       expect(nullReplay.retained).toBeNull();
+
+      const spurious = buildTransition({
+        groupIdHex: nullResult.head.groupIdHex,
+        seq: thirdResult.head.seq + 1,
+        kind: 'RESOLVE',
+        priorHeadDigestHex: nullResult.head.headDigestHex,
+        batchDigestHex: nullBatch.protocolBatchDigestHex,
+        winnerCommitDigestHex: digestHex(third.commitBytes),
+        snapshotDigestHex: thirdResult.head.snapshotDigestHex,
+        epochDec: thirdResult.head.epochDec,
+        groupContextDigestHex: thirdResult.head.groupContextDigestHex,
+        outcomesDigestHex: '77'.repeat(32),
+      });
+      await client.db.transaction(B25_STORE_NAMES, (ops) =>
+        ops.put(B25_STORES.transition, spurious.transitionDigestHex, spurious));
+      await expect(client.adapter.resolve(nullBatch.protocolBatchDigestHex)).rejects.toMatchObject({
+        code: B25_ERROR.CORRUPT,
+      });
     } finally {
       cleanupPrepared(first);
       if (second !== undefined) cleanupPrepared(second);

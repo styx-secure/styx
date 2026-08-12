@@ -564,12 +564,16 @@ export class B25Journal {
         ops, B25_STORES.head, batch.groupIdHex, 'canonical head',
       ));
       if (batch.winnerCommitDigestHex === null) {
+        const history = await readGroupTransitionHistory(ops, currentHead);
+        if (history.some((item) =>
+          item.transition.batchDigestHex === batch.protocolBatchDigestHex)) {
+          failB25(B25_ERROR.CORRUPT, 'null-winner batch has a successor transition');
+        }
         if (currentHead.headDigestHex === batch.localBaseHeadDigestHex) {
           return Object.freeze({
             head: currentHead, batch, transition: null, retained: null, candidates,
           });
         }
-        const history = await readGroupTransitionHistory(ops, currentHead);
         const matches = history.filter((item) =>
           item.head.headDigestHex === batch.localBaseHeadDigestHex);
         if (matches.length !== 1) {

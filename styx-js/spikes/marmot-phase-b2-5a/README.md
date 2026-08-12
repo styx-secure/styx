@@ -53,7 +53,10 @@ the canonical head byte-identical. A missing retained parent moves the local
 head to typed `UNRECOVERABLE` while preserving the last epoch, GroupContext,
 snapshot reference, and all MLS bytes. Resolved winner and null-winner batches
 remain readable after later canonical advances by validating their immutable
-transition history rather than requiring them to define the current head.
+transition history rather than requiring them to define the current head. A
+null-winner read also rejects any transition bound to that batch. This bounded
+lookup scans all retained transitions and assumes account/signature identity is
+unchanged; later indexed history and identity rotation are outside B2.5a.
 
 ## Files
 
