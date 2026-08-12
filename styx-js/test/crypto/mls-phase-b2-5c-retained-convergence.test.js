@@ -332,6 +332,14 @@ describe('Phase B2.5c retained-history convergence', () => {
           groupIdHex, generation.commitDigestHex, 1, peerIdentityHex,
           UTF8.encode('contradictory-late-ack'));
         expect(contradiction.evidence.kind).toBe('CONTRADICTION');
+        for (let index = 0; index < B25C_LIMITS.maxGenerations; index += 1) {
+          await client.coordinator.prepareSelfUpdate(groupIdHex);
+          await client.coordinator.cancelBeforeAttempt(groupIdHex);
+        }
+        const bounded = await client.journal.snapshot(groupIdHex);
+        expect(bounded.generations).toHaveLength(B25C_LIMITS.maxGenerations);
+        expect(bounded.generations.some((item) =>
+          item.commitDigestHex === generation.commitDigestHex && item.contradiction)).toBe(true);
         const inbound = selfUpdateFrom(
           wasm, fixture.peers.alice, fixture.groupId, fixture.peers.alice.snapshotBytes);
         await client.coordinator.admitCommit(groupIdHex, inbound.commitBytes);

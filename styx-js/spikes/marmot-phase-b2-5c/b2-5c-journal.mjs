@@ -536,6 +536,7 @@ export class B25CJournal {
         const evicted = [...view.generations]
           .sort((left, right) => left.generation - right.generation)
           .find((candidate) => evictableStates.has(candidate.state)
+            && !candidate.contradiction
             && !view.edges.some((edge) => edge.localGenerationDigestHex
               === generationAuthorityDigest(candidate)));
         if (evicted === undefined) {
