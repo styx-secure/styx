@@ -202,21 +202,26 @@ export class B26EngineAdapter {
   #appendPublication;
   #commitOutbound;
   #commitInbound;
+  #commitDeferredInbound;
   #appendAppPublication;
+  #replaceOutbox;
   #beforeReplay;
   #afterProbeReservation;
   #beforeOutboundCommit;
   #beforeInboundCommit;
 
   constructor({ wasm, journal, initializeJournal, commitSettlement, markUnrecoverable, commitPrepared,
-    replaceGeneration, appendPublication, commitOutbound, commitInbound, appendAppPublication,
+    replaceGeneration, appendPublication, commitOutbound, commitInbound,
+    commitDeferredInbound, appendAppPublication, replaceOutbox,
     beforeReplay, afterProbeReservation, beforeOutboundCommit, beforeInboundCommit }, token) {
     if (token !== ADAPTER_TOKEN || typeof initializeJournal !== 'function'
       || typeof commitSettlement !== 'function' || typeof markUnrecoverable !== 'function'
       || typeof commitPrepared !== 'function'
       || typeof replaceGeneration !== 'function' || typeof appendPublication !== 'function'
       || typeof commitOutbound !== 'function' || typeof commitInbound !== 'function'
-      || typeof appendAppPublication !== 'function') {
+      || typeof commitDeferredInbound !== 'function'
+      || typeof appendAppPublication !== 'function'
+      || typeof replaceOutbox !== 'function') {
       failB26(B26_ERROR.INVALID, 'B2.6 adapter requires journal-private capabilities');
     }
     if (!wasm?.Provider || !wasm?.PhaseB2Group || !wasm?.PhaseB2Identity
@@ -239,7 +244,9 @@ export class B26EngineAdapter {
     this.#appendPublication = appendPublication;
     this.#commitOutbound = commitOutbound;
     this.#commitInbound = commitInbound;
+    this.#commitDeferredInbound = commitDeferredInbound;
     this.#appendAppPublication = appendAppPublication;
+    this.#replaceOutbox = replaceOutbox;
     this.#beforeReplay = beforeReplay;
     this.#afterProbeReservation = afterProbeReservation;
     this.#beforeOutboundCommit = beforeOutboundCommit;
@@ -992,9 +999,10 @@ export class B26EngineAdapter {
       groupIdHex: context.head.groupIdHex,
       instanceKeyHex: context.instanceKeyHex,
       baseHeadDigestHex: prior?.baseHeadDigestHex ?? context.head.headDigestHex,
-      tipCommitDigestHex: context.head.selectedCommitDigestHex,
-      epochDec: context.head.epochDec,
-      groupContextDigestHex: context.head.groupContextDigestHex,
+      tipCommitDigestHex: prior?.tipCommitDigestHex ?? context.tipCommitDigestHex,
+      epochDec: prior?.epochDec ?? context.retained.epochDec,
+      groupContextDigestHex:
+        prior?.groupContextDigestHex ?? context.retained.groupContextDigestHex,
       localMemberIdentityHex: context.head.accountKeyHex,
       baseRetainedSnapshotDigestHex:
         prior?.baseRetainedSnapshotDigestHex ?? context.retained.snapshotDigestHex,
@@ -1035,8 +1043,8 @@ export class B26EngineAdapter {
       const snapshot = buildMessageSnapshot({
         groupIdHex,
         instanceKeyHex: context.instanceKeyHex,
-        epochDec: context.head.epochDec,
-        groupContextDigestHex: context.head.groupContextDigestHex,
+        epochDec: context.retained.epochDec,
+        groupContextDigestHex: context.retained.groupContextDigestHex,
         snapshotBytes: copyBytes(session.provider.serialize_state()),
       });
       const state = this.#nextMessageState(context, snapshot,
@@ -1080,7 +1088,7 @@ export class B26EngineAdapter {
     assertHex64('instanceKeyHex', instanceKeyHex);
     assertSafeInteger('outbox ordinal', ordinal, 1, Number.MAX_SAFE_INTEGER);
     const durable = await this.#journal.readOutbox(instanceKeyHex, ordinal);
-    if ([B26_OUTBOX_STATE.SUSPENDED, B26_OUTBOX_STATE.INVALIDATED]
+    if (![B26_OUTBOX_STATE.DURABLE, B26_OUTBOX_STATE.ATTEMPTED]
       .includes(durable.state)) {
       failB26(durable.state === B26_OUTBOX_STATE.SUSPENDED
         ? B26_ERROR.OUTBOX_SUSPENDED : B26_ERROR.OUTBOX_TERMINAL,
@@ -1155,10 +1163,6 @@ export class B26EngineAdapter {
     assertBytes('application evidence payload', payloadBytes,
       { min: 0, max: B26_LIMITS.maxPublicationPayloadBytes });
     const prior = await this.#journal.readOutbox(instanceKeyHex, ordinal);
-    if ([B26_OUTBOX_STATE.INVALIDATED, B26_OUTBOX_STATE.FAILED_DISCARDED]
-      .includes(prior.state)) {
-      failB26(B26_ERROR.OUTBOX_TERMINAL, 'terminal outbox rejects new evidence');
-    }
     if (!prior.recipientScope.includes(recipientIdentityHex)) {
       failB26(B26_ERROR.INVALID, 'outcome recipient is outside the immutable scope');
     }
@@ -1169,8 +1173,21 @@ export class B26EngineAdapter {
       && item.recipientIdentityHex === recipientIdentityHex);
     if (attempt === undefined) failB26(B26_ERROR.INVALID,
       'application outcome lacks its exact durable attempt');
+    const terminal = [B26_OUTBOX_STATE.ACKNOWLEDGED,
+      B26_OUTBOX_STATE.INVALIDATED, B26_OUTBOX_STATE.FAILED_DISCARDED]
+      .includes(prior.state);
+    const effectiveKind = kind === B26_APP_PUBLICATION_KIND.ACK && terminal
+      ? B26_APP_PUBLICATION_KIND.LATE_ACK : kind;
     const payloadDigestHex = digestHex(payloadBytes);
-    const duplicate = records.find((item) => item.kind === kind
+    const requestedDuplicate = records.find((item) => item.kind === kind
+      && item.attemptOrdinal === attemptOrdinal
+      && item.recipientIdentityHex === recipientIdentityHex
+      && item.payloadDigestHex === payloadDigestHex);
+    if (requestedDuplicate !== undefined) {
+      return Object.freeze({ status: 'duplicate', outbox: prior,
+        evidence: requestedDuplicate });
+    }
+    const duplicate = records.find((item) => item.kind === effectiveKind
       && item.attemptOrdinal === attemptOrdinal
       && item.recipientIdentityHex === recipientIdentityHex
       && item.payloadDigestHex === payloadDigestHex);
@@ -1180,13 +1197,18 @@ export class B26EngineAdapter {
     if (records.length >= B26_LIMITS.maxMessagePublicationRecords) {
       failB26(B26_ERROR.RESOURCE_LIMIT, 'application evidence bound is exhausted');
     }
+    if (kind === B26_APP_PUBLICATION_KIND.FAILURE
+      && records.length >= B26_LIMITS.maxMessagePublicationRecords - 1) {
+      failB26(B26_ERROR.RESOURCE_LIMIT,
+        'failure evidence cannot consume the final acknowledgement slot');
+    }
     const acknowledgedRecipients = new Set(records
       .filter((item) => item.kind === B26_APP_PUBLICATION_KIND.ACK)
       .map((item) => item.recipientIdentityHex));
-    if (kind === B26_APP_PUBLICATION_KIND.ACK) {
+    if (!terminal && kind === B26_APP_PUBLICATION_KIND.ACK) {
       acknowledgedRecipients.add(recipientIdentityHex);
     }
-    const next = rebuildOutbox(prior, {
+    const next = terminal ? prior : rebuildOutbox(prior, {
       state: acknowledgedRecipients.size === prior.recipientScope.length
         ? B26_OUTBOX_STATE.ACKNOWLEDGED : prior.state,
       ackCount: prior.ackCount + (kind === B26_APP_PUBLICATION_KIND.ACK ? 1 : 0),
@@ -1198,7 +1220,7 @@ export class B26EngineAdapter {
       instanceKeyHex,
       ordinal,
       sequence: records.length + 1,
-      kind,
+      kind: effectiveKind,
       attemptOrdinal,
       recipientIdentityHex,
       payloadBytes,
@@ -1210,23 +1232,66 @@ export class B26EngineAdapter {
       outbox: appended.outbox, evidence: appended.evidence });
   }
 
-  async processApplicationMessage(groupIdHex, ciphertextBytes) {
+  async discardApplicationAfterFailure(instanceKeyHex, ordinal) {
+    assertHex64('instanceKeyHex', instanceKeyHex);
+    assertSafeInteger('outbox ordinal', ordinal, 1, Number.MAX_SAFE_INTEGER);
+    const prior = await this.#journal.readOutbox(instanceKeyHex, ordinal);
+    if (prior.state !== B26_OUTBOX_STATE.ATTEMPTED
+      || prior.failureCount < 1 || prior.ackCount !== 0) {
+      failB26(B26_ERROR.STATE_CONFLICT,
+        'discard requires failure evidence and no acknowledgement');
+    }
+    return this.#replaceOutbox({
+      expectedOutbox: prior,
+      nextOutbox: rebuildOutbox(prior, {
+        state: B26_OUTBOX_STATE.FAILED_DISCARDED,
+      }),
+    });
+  }
+
+  async processApplicationMessage(groupIdHex, ciphertextBytes,
+    retainedSnapshotDigestHex = null) {
     assertGroupIdHex(groupIdHex);
     assertBytes('application ciphertext', ciphertextBytes,
       { min: 1, max: B26_LIMITS.maxApplicationCiphertextBytes });
-    const context = await this.#journal.readMessageContext(groupIdHex);
+    if (retainedSnapshotDigestHex !== null) {
+      assertHex64('retainedSnapshotDigestHex', retainedSnapshotDigestHex);
+    }
+    const context = retainedSnapshotDigestHex === null
+      ? await this.#journal.readMessageContext(groupIdHex)
+      : await this.#journal.readRetainedMessageContext(
+          groupIdHex, retainedSnapshotDigestHex);
     const ciphertextDigestHex = digestHex(ciphertextBytes);
     const existing = await this.#journal.readInbound(
       context.instanceKeyHex, ciphertextDigestHex);
     if (existing !== null) {
-      if (existing.disposition !== B26_INBOUND_STATE.ACCEPTED) {
+      if (existing.disposition === B26_INBOUND_STATE.ACCEPTED) {
+        return Object.freeze({ status: 'duplicate',
+          instanceKeyHex: existing.instanceKeyHex,
+          receivedOrdinal: existing.receivedOrdinal,
+          plaintextBytes: copyBytes(existing.plaintextBytes) });
+      }
+      if (!context.canonical || existing.disposition !== B26_INBOUND_STATE.DEFERRED) {
         failB26(B26_ERROR.STATE_CONFLICT,
           'duplicate ciphertext has no accepted durable delivery');
       }
-      return Object.freeze({ status: 'duplicate',
-        instanceKeyHex: existing.instanceKeyHex,
-        receivedOrdinal: existing.receivedOrdinal,
-        plaintextBytes: copyBytes(existing.plaintextBytes) });
+    }
+    if (context.canonical === false) {
+      const deferred = buildInbound({
+        groupIdHex,
+        instanceKeyHex: context.instanceKeyHex,
+        ciphertextBytes,
+        ciphertextDigestHex,
+        disposition: B26_INBOUND_STATE.DEFERRED,
+        receivedOrdinal: 0,
+        plaintextBytes: new Uint8Array(),
+        plaintextDigestHex: null,
+      });
+      const committed = await this.#commitDeferredInbound({
+        expectedHead: context.head, inbound: deferred });
+      return Object.freeze({ status: committed.status,
+        instanceKeyHex: context.instanceKeyHex,
+        ciphertextDigestHex });
     }
     const session = this.#restoreMessageContext(context);
     try {
@@ -1235,8 +1300,8 @@ export class B26EngineAdapter {
       const snapshot = buildMessageSnapshot({
         groupIdHex,
         instanceKeyHex: context.instanceKeyHex,
-        epochDec: context.head.epochDec,
-        groupContextDigestHex: context.head.groupContextDigestHex,
+        epochDec: context.retained.epochDec,
+        groupContextDigestHex: context.retained.groupContextDigestHex,
         snapshotBytes: copyBytes(session.provider.serialize_state()),
       });
       const state = this.#nextMessageState(context, snapshot,

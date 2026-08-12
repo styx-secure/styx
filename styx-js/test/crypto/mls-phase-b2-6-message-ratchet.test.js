@@ -19,9 +19,9 @@ import { createB26JournalForDb }
   from '../../spikes/marmot-phase-b2-6/b2-6-journal.mjs';
 import { createB26Coordinator }
   from '../../spikes/marmot-phase-b2-6/b2-6-coordinator.mjs';
-import { buildInput, buildRetainedState, parseInput }
+import { buildInbound, buildInput, buildRetainedState, parseInput }
   from '../../spikes/marmot-phase-b2-6/b2-6-record.mjs';
-import { FakeVaultDb } from '../support/fake-vault-db.js';
+import { deepClone, FakeVaultDb } from '../support/fake-vault-db.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VENDOR = join(HERE, '../../vendor/openmls-wasm');
@@ -189,6 +189,38 @@ class SerialFakeVaultDb extends FakeVaultDb {
   }
 }
 
+class PostWriteFailVaultDb extends FakeVaultDb {
+  constructor(options) {
+    super(options);
+    this.failAfterStore = null;
+  }
+
+  async transaction(namespaces, callback) {
+    const snapshot = new Map(namespaces.map((namespace) =>
+      [namespace, new Map(this._store(namespace))]));
+    const operations = {
+      get: (namespace, key) => {
+        const value = this._store(namespace).get(key);
+        return value === undefined ? undefined : deepClone(value);
+      },
+      put: (namespace, key, value) => {
+        this._store(namespace).set(key, deepClone(value));
+        if (namespace === this.failAfterStore) throw new Error('injected post-write crash');
+      },
+      delete: (namespace, key) => this._store(namespace).delete(key),
+      list: (namespace) => [...this._store(namespace).keys()],
+      clear: (namespace) => this._store(namespace).clear(),
+      abort: () => { throw new Error('aborted'); },
+    };
+    try {
+      return await callback(operations);
+    } catch (error) {
+      for (const [namespace, values] of snapshot) this.stores.set(namespace, values);
+      throw error;
+    }
+  }
+}
+
 async function settleInputs(client, groupId, commits) {
   for (const commit of commits) await client.coordinator.admitCommit(bytesToHex(groupId), commit);
   return client.coordinator.settlePass(bytesToHex(groupId));
@@ -289,6 +321,83 @@ describe('Phase B2.6 retained-history convergence', () => {
     } finally { fixture.cleanup(); }
   }, 20000);
 
+  test.each([
+    ['before', B26_STORES.messageSnapshot],
+    ['before', B26_STORES.messageState],
+    ['before', B26_STORES.appOutbox],
+    ['after', B26_STORES.messageSnapshot],
+    ['after', B26_STORES.messageState],
+    ['after', B26_STORES.appOutbox],
+  ])('outbound %s-%s failure restores the exact predecessor', async (phase, store) => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm);
+    try {
+      const db = phase === 'after' ? new PostWriteFailVaultDb() : new FakeVaultDb();
+      const client = clientFor(wasm, fixture.peers.alice, fixture.groupId,
+        `outbound-${phase}-${store}`, { db });
+      await client.initialize();
+      const groupIdHex = bytesToHex(fixture.groupId);
+      if (phase === 'after') db.failAfterStore = store;
+      else db.failOn = (namespace) => namespace === store;
+      await expect(client.coordinator.queueApplicationMessage(
+        groupIdHex, 'atomic-outbound', UTF8.encode('atomic-outbound')))
+        .rejects.toThrow(/injected/);
+      expect(await db.transaction([B26_STORES.messageState],
+        (ops) => ops.list(B26_STORES.messageState))).toEqual([]);
+      expect(await db.transaction([B26_STORES.messageSnapshot],
+        (ops) => ops.list(B26_STORES.messageSnapshot))).toEqual([]);
+      expect(await db.transaction([B26_STORES.appOutbox],
+        (ops) => ops.list(B26_STORES.appOutbox))).toEqual([]);
+      db.failOn = null;
+      db.failAfterStore = null;
+      const committed = await client.coordinator.queueApplicationMessage(
+        groupIdHex, 'atomic-outbound', UTF8.encode('atomic-outbound'));
+      expect(committed).toEqual(expect.objectContaining({ status: 'committed', ordinal: 1 }));
+      await expect(client.coordinator.readQueuedApplicationMessage(
+        committed.instanceKeyHex, committed.ordinal)).resolves.toEqual(
+        expect.objectContaining({ ciphertextBytes: expect.any(Uint8Array) }));
+    } finally { fixture.cleanup(); }
+  }, 20000);
+
+  test.each([
+    ['before', B26_STORES.messageSnapshot],
+    ['before', B26_STORES.messageState],
+    ['before', B26_STORES.appInbound],
+    ['after', B26_STORES.messageSnapshot],
+    ['after', B26_STORES.messageState],
+    ['after', B26_STORES.appInbound],
+  ])('inbound %s-%s failure exposes no plaintext and restores the predecessor',
+    async (phase, store) => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        const db = phase === 'after' ? new PostWriteFailVaultDb() : new FakeVaultDb();
+        const client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+          `inbound-${phase}-${store}`, { db });
+        await client.initialize();
+        const sender = restoreSource(
+          wasm, fixture.peers.alice, fixture.groupId, fixture.peers.alice.snapshotBytes);
+        const ciphertext = copyBytes(sender.group.create_application_message(
+          sender.provider, sender.identity, UTF8.encode('atomic-inbound')));
+        free(sender.group); free(sender.identity); free(sender.provider);
+        if (phase === 'after') db.failAfterStore = store;
+        else db.failOn = (namespace) => namespace === store;
+        await expect(client.coordinator.processApplicationMessage(
+          bytesToHex(fixture.groupId), ciphertext)).rejects.toThrow(/injected/);
+        expect(await db.transaction([B26_STORES.messageState],
+          (ops) => ops.list(B26_STORES.messageState))).toEqual([]);
+        expect(await db.transaction([B26_STORES.messageSnapshot],
+          (ops) => ops.list(B26_STORES.messageSnapshot))).toEqual([]);
+        expect(await db.transaction([B26_STORES.appInbound],
+          (ops) => ops.list(B26_STORES.appInbound))).toEqual([]);
+        db.failOn = null;
+        db.failAfterStore = null;
+        const accepted = await client.coordinator.processApplicationMessage(
+          bytesToHex(fixture.groupId), ciphertext);
+        expect(new TextDecoder().decode(accepted.plaintextBytes)).toBe('atomic-inbound');
+      } finally { fixture.cleanup(); }
+    }, 20000);
+
   test('concurrent senders have one message-position CAS winner', async () => {
     const wasm = await loadWasm();
     const fixture = await setupGroup(wasm);
@@ -315,6 +424,189 @@ describe('Phase B2.6 retained-history convergence', () => {
       expect(outboxKeys).toHaveLength(1);
     } finally { fixture.cleanup(); }
   }, 20000);
+
+  test('concurrent inbound plaintext computations have one durable CAS winner', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm);
+    let entered = 0;
+    let release;
+    const barrier = new Promise((resolve) => { release = resolve; });
+    try {
+      const client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+        'inbound-message-cas', {
+          db: new SerialFakeVaultDb(),
+          beforeInboundCommit: async () => {
+            entered += 1;
+            if (entered === 2) release();
+            await barrier;
+          },
+        });
+      await client.initialize();
+      const sender = restoreSource(
+        wasm, fixture.peers.alice, fixture.groupId, fixture.peers.alice.snapshotBytes);
+      const ciphertexts = [0, 1].map((index) => copyBytes(
+        sender.group.create_application_message(
+          sender.provider, sender.identity, UTF8.encode('inbound-race-' + index))));
+      free(sender.group); free(sender.identity); free(sender.provider);
+      const groupIdHex = bytesToHex(fixture.groupId);
+      const outcomes = await Promise.allSettled(ciphertexts.map((ciphertext) =>
+        client.coordinator.processApplicationMessage(groupIdHex, ciphertext)));
+      expect(outcomes.filter((item) => item.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.filter((item) => item.status === 'rejected')).toEqual([
+        expect.objectContaining({ reason: expect.objectContaining({
+          code: B26_ERROR.CAS_CONFLICT,
+        }) }),
+      ]);
+      expect(await client.db.transaction([B26_STORES.appInbound],
+        (ops) => ops.list(B26_STORES.appInbound))).toHaveLength(1);
+      expect((await client.journal.readMessageContext(groupIdHex)).state.receivedCount).toBe(1);
+    } finally { release?.(); fixture.cleanup(); }
+  }, 20000);
+
+  test('publication retries expose exact durable bytes and evidence is idempotent',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        let alice = clientFor(wasm, fixture.peers.alice, fixture.groupId, 'message-retry');
+        await alice.initialize();
+        const groupIdHex = bytesToHex(fixture.groupId);
+        const queued = await alice.coordinator.queueApplicationMessage(
+          groupIdHex, 'retry-request', UTF8.encode('exact-byte-retry'));
+        const first = await alice.coordinator.readQueuedApplicationMessage(
+          queued.instanceKeyHex, queued.ordinal);
+        const attempts = [];
+        for (const recipientIdentityHex of first.recipientScope) {
+          attempts.push(await alice.coordinator.recordApplicationAttempt(
+            queued.instanceKeyHex, queued.ordinal, recipientIdentityHex));
+        }
+        alice = restartClient(wasm, alice);
+        const retried = await alice.coordinator.readQueuedApplicationMessage(
+          queued.instanceKeyHex, queued.ordinal);
+        expect(bytesToHex(retried.ciphertextBytes)).toBe(bytesToHex(first.ciphertextBytes));
+        let acknowledged;
+        for (let index = 0; index < first.recipientScope.length; index += 1) {
+          acknowledged = await alice.coordinator.recordApplicationAcknowledgement(
+            queued.instanceKeyHex, queued.ordinal, attempts[index].attemptOrdinal,
+            first.recipientScope[index], UTF8.encode('ack'));
+        }
+        expect(acknowledged.outbox.state).toBe('ACKNOWLEDGED');
+        const duplicate = await alice.coordinator.recordApplicationAcknowledgement(
+          queued.instanceKeyHex, queued.ordinal, attempts[0].attemptOrdinal,
+          first.recipientScope[0], UTF8.encode('ack'));
+        expect(duplicate.status).toBe('duplicate');
+        expect(duplicate.outbox.ackCount).toBe(first.recipientScope.length);
+        const late = await alice.coordinator.recordApplicationAcknowledgement(
+          queued.instanceKeyHex, queued.ordinal, attempts[0].attemptOrdinal,
+          first.recipientScope[0], UTF8.encode('late-ack'));
+        expect(late.evidence.kind).toBe('LATE_ACK');
+        expect(late.outbox.state).toBe('ACKNOWLEDGED');
+        expect(late.outbox.ackCount).toBe(first.recipientScope.length);
+        await expect(alice.coordinator.readQueuedApplicationMessage(
+          queued.instanceKeyHex, queued.ordinal)).rejects.toMatchObject({
+          code: B26_ERROR.OUTBOX_TERMINAL,
+        });
+        const failedQueued = await alice.coordinator.queueApplicationMessage(
+          groupIdHex, 'failed-request', UTF8.encode('failed-message'));
+        const failedDurable = await alice.coordinator.readQueuedApplicationMessage(
+          failedQueued.instanceKeyHex, failedQueued.ordinal);
+        const failedAttempt = await alice.coordinator.recordApplicationAttempt(
+          failedQueued.instanceKeyHex, failedQueued.ordinal,
+          failedDurable.recipientScope[0]);
+        await alice.coordinator.recordApplicationFailure(
+          failedQueued.instanceKeyHex, failedQueued.ordinal,
+          failedAttempt.attemptOrdinal, failedDurable.recipientScope[0],
+          UTF8.encode('publication-failed'));
+        const discarded = await alice.coordinator.discardApplicationAfterFailure(
+          failedQueued.instanceKeyHex, failedQueued.ordinal);
+        expect(discarded.state).toBe('FAILED_DISCARDED');
+        const lateAfterFailure = await alice.coordinator.recordApplicationAcknowledgement(
+          failedQueued.instanceKeyHex, failedQueued.ordinal,
+          failedAttempt.attemptOrdinal, failedDurable.recipientScope[0],
+          UTF8.encode('late-after-failure'));
+        expect(lateAfterFailure.evidence.kind).toBe('LATE_ACK');
+        expect(lateAfterFailure.outbox.state).toBe('FAILED_DISCARDED');
+        await expect(alice.coordinator.readQueuedApplicationMessage(
+          failedQueued.instanceKeyHex, failedQueued.ordinal)).rejects.toMatchObject({
+          code: B26_ERROR.OUTBOX_TERMINAL,
+        });
+      } finally { fixture.cleanup(); }
+    }, 20000);
+
+  test('message codecs reject sender attribution and bounds fail before mutation', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm);
+    try {
+      const client = clientFor(wasm, fixture.peers.alice, fixture.groupId, 'message-bounds');
+      await client.initialize();
+      const groupIdHex = bytesToHex(fixture.groupId);
+      expect(() => buildInbound({
+        groupIdHex,
+        instanceKeyHex: '11'.repeat(32),
+        ciphertextBytes: Uint8Array.of(1),
+        ciphertextDigestHex: digestHex(Uint8Array.of(1)),
+        disposition: 'DEFERRED',
+        receivedOrdinal: 0,
+        plaintextBytes: new Uint8Array(),
+        plaintextDigestHex: null,
+        senderIdentityHex: '22'.repeat(32),
+      })).toThrow(/non-canonical field set/);
+      await expect(client.coordinator.queueApplicationMessage(
+        groupIdHex, 'x'.repeat(B26_LIMITS.maxRequestIdBytes + 1), UTF8.encode('x')))
+        .rejects.toMatchObject({ code: expect.stringMatching(/_INVALID$/) });
+      await expect(client.coordinator.queueApplicationMessage(
+        groupIdHex, 'oversized', new Uint8Array(B26_LIMITS.maxApplicationPayloadBytes + 1)))
+        .rejects.toBeDefined();
+      expect(await client.db.transaction([B26_STORES.messageState],
+        (ops) => ops.list(B26_STORES.messageState))).toEqual([]);
+      for (let index = 0; index < B26_LIMITS.maxOutboxPerInstance; index += 1) {
+        await client.coordinator.queueApplicationMessage(
+          groupIdHex, `bounded-${index}`, UTF8.encode(`bounded-${index}`));
+      }
+      const before = await client.journal.readMessageContext(groupIdHex);
+      await expect(client.coordinator.queueApplicationMessage(
+        groupIdHex, 'bounded-overflow', UTF8.encode('bounded-overflow')))
+        .rejects.toMatchObject({ code: B26_ERROR.RESOURCE_LIMIT });
+      const after = await client.journal.readMessageContext(groupIdHex);
+      expect(after.state.stateDigestHex).toBe(before.state.stateDigestHex);
+      expect(await client.db.transaction([B26_STORES.appOutbox],
+        (ops) => ops.list(B26_STORES.appOutbox)))
+        .toHaveLength(B26_LIMITS.maxOutboxPerInstance);
+    } finally { fixture.cleanup(); }
+  }, 20000);
+
+  test('terminal inbound history truncates oldest-first with a digest-linked marker',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        const bob = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+          'inbound-truncation');
+        await bob.initialize();
+        const sender = restoreSource(
+          wasm, fixture.peers.alice, fixture.groupId, fixture.peers.alice.snapshotBytes);
+        const ciphertexts = [];
+        for (let index = 0; index <= B26_LIMITS.maxInboundPerInstance; index += 1) {
+          ciphertexts.push(copyBytes(sender.group.create_application_message(
+            sender.provider, sender.identity, UTF8.encode('inbound-' + index))));
+        }
+        free(sender.group); free(sender.identity); free(sender.provider);
+        const groupIdHex = bytesToHex(fixture.groupId);
+        for (const ciphertext of ciphertexts) {
+          await bob.coordinator.processApplicationMessage(groupIdHex, ciphertext);
+        }
+        const context = await bob.journal.readMessageContext(groupIdHex);
+        const inboundKeys = await bob.db.transaction([B26_STORES.appInbound],
+          (ops) => ops.list(B26_STORES.appInbound));
+        expect(inboundKeys).toHaveLength(B26_LIMITS.maxInboundPerInstance);
+        const marker = await bob.db.transaction([B26_STORES.inboundTruncation],
+          (ops) => ops.get(B26_STORES.inboundTruncation, context.instanceKeyHex));
+        expect(marker).toEqual(expect.objectContaining({
+          throughReceivedOrdinal: 1,
+          evictedCiphertextDigestHex: digestHex(ciphertexts[0]),
+        }));
+      } finally { fixture.cleanup(); }
+    }, 20000);
 
   test('child-before-parent and different cutoff partitions converge by depth then B2.5a tip',
     async () => {
@@ -425,6 +717,49 @@ describe('Phase B2.6 retained-history convergence', () => {
       expect(head.canonicalPath).toEqual([generation.commitDigestHex]);
     } finally { fixture.cleanup(); }
   }, 20000);
+
+  test('pinned out-of-order window accepts skipped messages and rejects excessive gaps',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        const bob = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+          'out-of-order-bob');
+        const charlie = clientFor(wasm, fixture.peers.charlie, fixture.groupId,
+          'out-of-order-charlie');
+        await bob.initialize();
+        await charlie.initialize();
+        const sender = restoreSource(
+          wasm, fixture.peers.alice, fixture.groupId, fixture.peers.alice.snapshotBytes);
+        const early = [];
+        let excessiveGap;
+        for (let index = 0; index <= 1001; index += 1) {
+          const ciphertext = copyBytes(sender.group.create_application_message(
+            sender.provider, sender.identity, UTF8.encode('window-' + index)));
+          if (index < 3) early.push(ciphertext);
+          if (index === 1001) excessiveGap = ciphertext;
+        }
+        free(sender.group); free(sender.identity); free(sender.provider);
+        const groupIdHex = bytesToHex(fixture.groupId);
+        for (const index of [2, 0, 1]) {
+          const delivered = await bob.coordinator.processApplicationMessage(
+            groupIdHex, early[index]);
+          expect(new TextDecoder().decode(delivered.plaintextBytes)).toBe('window-' + index);
+        }
+        const bobBefore = await bob.journal.readMessageContext(groupIdHex);
+        await expect(bob.coordinator.processApplicationMessage(
+          groupIdHex, Uint8Array.of(0xde, 0xad, 0xbe, 0xef)))
+          .rejects.toBeDefined();
+        const bobAfter = await bob.journal.readMessageContext(groupIdHex);
+        expect(bobAfter.state.stateDigestHex).toBe(bobBefore.state.stateDigestHex);
+        await expect(charlie.coordinator.processApplicationMessage(
+          groupIdHex, excessiveGap)).rejects.toBeDefined();
+        const charlieAfter = await charlie.journal.readMessageContext(groupIdHex);
+        expect(charlieAfter.state).toBeNull();
+        expect(await charlie.db.transaction([B26_STORES.appInbound],
+          (ops) => ops.list(B26_STORES.appInbound))).toEqual([]);
+      } finally { fixture.cleanup(); }
+    }, 20000);
 
   test('write-ahead probe is one-use across restart and remains selection-inert', async () => {
     const wasm = await loadWasm();
@@ -658,10 +993,19 @@ describe('Phase B2.6 retained-history convergence', () => {
         await client.initialize();
         const groupIdHex = bytesToHex(fixture.groupId);
         const initial = (await client.journal.readHead(groupIdHex)).retained;
+        const queued = await client.coordinator.queueApplicationMessage(
+          groupIdHex, 'release-bound-outbox', UTF8.encode('release-bound-outbox'));
+        const durable = await client.coordinator.readQueuedApplicationMessage(
+          queued.instanceKeyHex, queued.ordinal);
+        const attempt = await client.coordinator.recordApplicationAttempt(
+          queued.instanceKeyHex, queued.ordinal, durable.recipientScope[0]);
         const settled = await settleInputs(client, fixture.groupId, chain.reverse());
         expect(settled.head.canonicalPath).toHaveLength(5);
         expect(settled.head.epochDec).toBe('9');
         await expect(client.journal.readRetained(initial.snapshotDigestHex)).rejects
+          .toMatchObject({ code: B26_ERROR.RELEASED });
+        await expect(client.journal.readRetainedMessageContext(
+          groupIdHex, initial.snapshotDigestHex)).rejects
           .toMatchObject({ code: B26_ERROR.RELEASED });
         const snapshot = await client.journal.snapshot(groupIdHex);
         expect(snapshot.edges.length).toBeLessThanOrEqual(B26_LIMITS.maxEdges);
@@ -671,6 +1015,22 @@ describe('Phase B2.6 retained-history convergence', () => {
         expect(snapshot.released).toEqual([
           expect.objectContaining({ snapshotDigestHex: initial.snapshotDigestHex }),
         ]);
+        await expect(client.coordinator.readQueuedApplicationMessage(
+          queued.instanceKeyHex, queued.ordinal)).rejects.toMatchObject({
+          code: B26_ERROR.OUTBOX_TERMINAL,
+        });
+        await expect(client.journal.readMessageContext(groupIdHex)).resolves
+          .toEqual(expect.objectContaining({ instanceKeyHex: expect.any(String) }));
+        expect(await client.journal.readOutbox(
+          queued.instanceKeyHex, queued.ordinal)).toEqual(expect.objectContaining({
+          state: 'INVALIDATED',
+        }));
+        const late = await client.coordinator.recordApplicationAcknowledgement(
+          queued.instanceKeyHex, queued.ordinal, attempt.attemptOrdinal,
+          durable.recipientScope[0], UTF8.encode('late-after-release'));
+        expect(late.evidence.kind).toBe('LATE_ACK');
+        expect(late.outbox.state).toBe('INVALIDATED');
+        expect(client.db.stores.get(B26_STORES.messageRelease)?.size).toBe(1);
       } finally { fixture.cleanup(); }
     }, 20000);
 
@@ -756,6 +1116,60 @@ describe('Phase B2.6 retained-history convergence', () => {
     } finally { fixture.cleanup(); }
   }, 20000);
 
+  test('historical canonical input is accepted while sibling input waits for re-adoption',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        const base = fixture.peers.alice.snapshotBytes;
+        const siblings = [
+          selfUpdateFrom(wasm, fixture.peers.alice, fixture.groupId, base),
+          selfUpdateFrom(wasm, fixture.peers.alice, fixture.groupId, base),
+        ].sort((left, right) =>
+          digestHex(left.commitBytes) < digestHex(right.commitBytes) ? -1 : 1);
+        const selected = siblings[0];
+        const displaced = siblings[1];
+        const client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+          'historical-message');
+        await client.initialize();
+        const groupIdHex = bytesToHex(fixture.groupId);
+        const initialRetained = (await client.journal.readHead(groupIdHex)).retained;
+        const initialSender = restoreSource(
+          wasm, fixture.peers.alice, fixture.groupId, base);
+        const historicalCiphertext = copyBytes(
+          initialSender.group.create_application_message(
+            initialSender.provider, initialSender.identity, UTF8.encode('historical')));
+        free(initialSender.group); free(initialSender.identity); free(initialSender.provider);
+        await settleInputs(client, fixture.groupId,
+          [displaced.commitBytes, selected.commitBytes]);
+        const historical = await client.coordinator.processApplicationMessage(
+          groupIdHex, historicalCiphertext, initialRetained.snapshotDigestHex);
+        expect(new TextDecoder().decode(historical.plaintextBytes)).toBe('historical');
+
+        const displacedSender = restoreSource(
+          wasm, fixture.peers.alice, fixture.groupId, displaced.successorSnapshotBytes);
+        const displacedCiphertext = copyBytes(
+          displacedSender.group.create_application_message(
+            displacedSender.provider, displacedSender.identity, UTF8.encode('deferred')));
+        free(displacedSender.group); free(displacedSender.identity); free(displacedSender.provider);
+        const view = await client.journal.snapshot(groupIdHex);
+        const displacedEdge = view.edges.find((edge) =>
+          edge.commitDigestHex === digestHex(displaced.commitBytes));
+        const deferred = await client.coordinator.processApplicationMessage(
+          groupIdHex, displacedCiphertext, displacedEdge.successorSnapshotDigestHex);
+        expect(deferred.status).toBe('deferred');
+        expect(deferred.plaintextBytes).toBeUndefined();
+
+        const child = selfUpdateFrom(
+          wasm, fixture.peers.alice, fixture.groupId, displaced.successorSnapshotBytes);
+        await settleInputs(client, fixture.groupId, [child.commitBytes]);
+        const accepted = await client.coordinator.processApplicationMessage(
+          groupIdHex, displacedCiphertext, displacedEdge.successorSnapshotDigestHex);
+        expect(accepted.status).toBe('accepted');
+        expect(new TextDecoder().decode(accepted.plaintextBytes)).toBe('deferred');
+      } finally { fixture.cleanup(); }
+    }, 20000);
+
   test('bounded generation history evicts terminal evidence with a durable marker',
     async () => {
       const wasm = await loadWasm();
@@ -811,6 +1225,44 @@ describe('Phase B2.6 retained-history convergence', () => {
         .toEqual(before.inputs.map((item) => item.inputDigestHex));
     } finally { fixture.cleanup(); }
   }, 20000);
+
+  test('a displaced instance suspends exact-byte publication and resumes after re-adoption',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        const base = fixture.peers.alice.snapshotBytes;
+        const siblings = [
+          selfUpdateFrom(wasm, fixture.peers.alice, fixture.groupId, base),
+          selfUpdateFrom(wasm, fixture.peers.alice, fixture.groupId, base),
+        ].sort((left, right) =>
+          digestHex(left.commitBytes) < digestHex(right.commitBytes) ? -1 : 1);
+        const selected = siblings[0];
+        const displaced = siblings[1];
+        const displacedChild = selfUpdateFrom(
+          wasm, fixture.peers.alice, fixture.groupId, displaced.successorSnapshotBytes);
+        let client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+          'message-readoption');
+        await client.initialize();
+        const groupIdHex = bytesToHex(fixture.groupId);
+        await settleInputs(client, fixture.groupId, [displaced.commitBytes]);
+        const queued = await client.coordinator.queueApplicationMessage(
+          groupIdHex, 'readopted-request', UTF8.encode('readopted-message'));
+        const original = await client.coordinator.readQueuedApplicationMessage(
+          queued.instanceKeyHex, queued.ordinal);
+        await settleInputs(client, fixture.groupId, [selected.commitBytes]);
+        await expect(client.coordinator.readQueuedApplicationMessage(
+          queued.instanceKeyHex, queued.ordinal)).rejects.toMatchObject({
+          code: B26_ERROR.OUTBOX_SUSPENDED,
+        });
+        await settleInputs(client, fixture.groupId, [displacedChild.commitBytes]);
+        client = restartClient(wasm, client);
+        const resumed = await client.coordinator.readQueuedApplicationMessage(
+          queued.instanceKeyHex, queued.ordinal);
+        expect(bytesToHex(resumed.ciphertextBytes)).toBe(bytesToHex(original.ciphertextBytes));
+        expect(resumed.state).toBe('DURABLE');
+      } finally { fixture.cleanup(); }
+    }, 20000);
 
   test('journal factory rejects databases outside the isolated B2.6 namespace', () => {
     const db = new FakeVaultDb();

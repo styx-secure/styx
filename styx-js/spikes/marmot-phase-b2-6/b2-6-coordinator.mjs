@@ -100,8 +100,14 @@ export class B26Coordinator {
       instanceKeyHex, ordinal, attemptOrdinal, recipientIdentityHex, payloadBytes);
   }
 
-  processApplicationMessage(groupIdHex, ciphertextBytes) {
-    return this.#adapter.processApplicationMessage(groupIdHex, ciphertextBytes);
+  discardApplicationAfterFailure(instanceKeyHex, ordinal) {
+    return this.#adapter.discardApplicationAfterFailure(instanceKeyHex, ordinal);
+  }
+
+  processApplicationMessage(groupIdHex, ciphertextBytes,
+    retainedSnapshotDigestHex = null) {
+    return this.#adapter.processApplicationMessage(
+      groupIdHex, ciphertextBytes, retainedSnapshotDigestHex);
   }
 
   createLivenessProbe(groupIdHex, plaintextBytes) {

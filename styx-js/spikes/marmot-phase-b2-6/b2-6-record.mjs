@@ -952,6 +952,46 @@ export function parseInbound(raw) {
     plaintextBytes: copyBytes(value.plaintextBytes) });
 }
 
+export const INBOUND_TRUNCATION_FIELDS = Object.freeze([
+  'format', 'version', 'groupIdHex', 'instanceKeyHex', 'throughReceivedOrdinal',
+  'evictedCiphertextDigestHex', 'evictedInboundDigestHex', 'priorMarkerDigestHex',
+  'markerDigestHex',
+]);
+
+function inboundTruncationValues(value) {
+  return INBOUND_TRUNCATION_FIELDS.slice(0, -1).map((field) => value[field]);
+}
+
+export function buildInboundTruncation(fields) {
+  const safe = assertB26DirectObject(
+    fields, INBOUND_TRUNCATION_FIELDS.slice(2, -1), 'inbound truncation fields');
+  const draft = { format: magic('inbound-truncation'), version: B26_VERSION,
+    ...safe, markerDigestHex: '0'.repeat(64) };
+  parseInboundTruncationShape(draft);
+  draft.markerDigestHex = digestRecord(
+    'INBOUND-TRUNCATION', inboundTruncationValues(draft));
+  return parseInboundTruncation(draft);
+}
+
+function parseInboundTruncationShape(value) {
+  assertGroupIdHex(value.groupIdHex);
+  assertHex64('instanceKeyHex', value.instanceKeyHex);
+  assertSafeInteger('throughReceivedOrdinal', value.throughReceivedOrdinal,
+    0, Number.MAX_SAFE_INTEGER);
+  assertHex64('evictedCiphertextDigestHex', value.evictedCiphertextDigestHex);
+  assertHex64('evictedInboundDigestHex', value.evictedInboundDigestHex);
+  assertNullableHex64('priorMarkerDigestHex', value.priorMarkerDigestHex);
+  return value;
+}
+
+export function parseInboundTruncation(raw) {
+  const value = parseInboundTruncationShape(exact(
+    raw, INBOUND_TRUNCATION_FIELDS, 'inbound-truncation'));
+  verifyDigest(value, 'markerDigestHex',
+    'INBOUND-TRUNCATION', inboundTruncationValues(value));
+  return Object.freeze({ ...value });
+}
+
 export const MESSAGE_RELEASE_FIELDS = Object.freeze([
   'format', 'version', 'groupIdHex', 'instanceKeyHex', 'stateDigestHex',
   'snapshotDigestHex', 'releaseAuthorityDigestHex', 'releaseDigestHex',

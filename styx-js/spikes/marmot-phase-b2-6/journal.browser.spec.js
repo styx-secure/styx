@@ -122,3 +122,28 @@ test('two connections produce one durable message successor in 100 races',
       expectNoPageErrors(pageA, pageB);
     } finally { await cleanup(pages); }
   });
+
+test('message commit and settlement serialize without selection starvation',
+  async ({ browser, browserName }) => {
+    const pages = await twoConnections(browser, 'send-settle-' + browserName + '-' + Date.now());
+    const { pageA, pageB } = pages;
+    try {
+      await pageA.evaluate(() => B26Harness.prepare('a'));
+      const pass = await pageA.evaluate(() => B26Harness.freeze('a'));
+      await pageA.evaluate(() => B26Harness.arm('a'));
+      await pageA.evaluate((digest) =>
+        B26Harness.startSettle('a', digest), pass.passDigestHex);
+      await pageA.waitForFunction(() => B26Harness.entered('a'));
+      const queued = await pageB.evaluate(() =>
+        B26Harness.queue('b', 'before-settlement', 'durable-before-settlement'));
+      expect(queued.ok).toBe(true);
+      await pageA.evaluate(() => B26Harness.release('a'));
+      expect(await pageA.evaluate(() => B26Harness.result('a')))
+        .toEqual(expect.objectContaining({ ok: true }));
+      const outbox = await pageB.evaluate(({ instanceKeyHex, ordinal }) =>
+        B26Harness.queueState('b', instanceKeyHex, ordinal), queued.value);
+      expect(outbox.state).toBe('DURABLE');
+      expect((await pageA.evaluate(() => B26Harness.read('a'))).head.epochDec).toBe('2');
+      expectNoPageErrors(pageA, pageB);
+    } finally { await cleanup(pages); }
+  });

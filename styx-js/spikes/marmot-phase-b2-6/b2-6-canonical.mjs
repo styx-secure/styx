@@ -48,6 +48,7 @@ export const B26_LIMITS = Object.freeze({
   maxProbePayloadBytes: 4096,
   maxMessageStates: 17,
   maxOutboxPerInstance: 16,
+  maxOutboxRecordsPerInstance: 128,
   maxInboundPerInstance: 64,
   maxMessagePublicationRecords: 64,
   maxRequestIdBytes: 128,

@@ -76,6 +76,7 @@ read set.
 
 - retained epoch instances and message states: 17;
 - non-terminal outbox obligations per instance: 16, with no eviction;
+- total outbox history per instance: 128, fail-closed with no eviction;
 - inbound records per instance: 64;
 - publication evidence records per outbox: 64;
 - opaque request id: 128 UTF-8 bytes;

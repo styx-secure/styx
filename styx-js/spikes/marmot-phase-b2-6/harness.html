@@ -204,6 +204,8 @@
       enteredMessage: (name) => actor(name).messageBlocker.entered,
       releaseMessage: (name) => actor(name).releaseMessageBarrier(),
       queueResult: (name) => actor(name).pendingQueue,
+      queueState: (name, instanceKeyHex, ordinal) =>
+        actor(name).journal.readOutbox(instanceKeyHex, ordinal),
       async finishQueued(name, instanceKeyHex, ordinal) {
         const owner = actor(name);
         const outbox = await owner.coordinator.readQueuedApplicationMessage(
