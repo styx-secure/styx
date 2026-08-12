@@ -45,8 +45,11 @@ ACK dominates failure. Every terminal state is immutable: a later ACK is
 preserved as `LATE_ACK`, a later failure is evidence-only, and neither can
 resurrect the pending state or change its counters or disposition. Duplicate
 outcomes are idempotent by attempt, recipient and semantic kind even if a caller
-changes untrusted payload bytes. Retry emits only the exact stored Commit bytes;
-no public method accepts replacement artifact bytes or a success boolean.
+changes untrusted payload bytes. Attempt and outcome lookup is additionally
+scoped by the exact Commit digest, so attempt ordinals may restart safely for a
+later local generation without binding to historical publication evidence.
+Retry emits only the exact stored Commit bytes; no public method accepts
+replacement artifact bytes or a success boolean.
 
 ## Arbitration
 

@@ -172,6 +172,8 @@ The focused Jest suite covers:
   attempt/recipient and ACK-before-attempt;
 - byte-identical retry and restart from queued, prepared, ambiguous
   publication, acknowledged and frozen states;
+- two successive attempted and acknowledged local generations with outcome
+  lookup bound to each generation's exact Commit digest;
 - freeze-time ACK eligibility and post-cutoff durable input;
 - strict codec corruption/unknown/overflow/duplicate rejection for all eight
   record families, plus negative cross-record binding evidence;

@@ -989,6 +989,32 @@ describe('Phase B2.5b real OpenMLS local-publisher arbitration', () => {
     }
   });
 
+  test('binds publication outcomes to the active local generation', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm, 19);
+    const groupIdHex = bytesToHex(fixture.groupId);
+    const client = await createClient(wasm, fixture.peers.bob, fixture.groupId, 'generations');
+    try {
+      for (const generation of [1, 2]) {
+        await client.coordinator.queueSelfUpdate(groupIdHex);
+        await client.coordinator.runQueuedOpportunity(groupIdHex);
+        await client.coordinator.recordAttempt(groupIdHex);
+        const publishing = await client.journal.readLocal(groupIdHex);
+        expect(publishing.publishAttempts).toBe(1);
+        await client.coordinator.recordAcknowledgement(
+          groupIdHex, 1, publishing.recipientScope[0],
+          UTF8.encode(`generation-${generation}-ack`),
+        );
+        const result = await client.coordinator.settlePass(groupIdHex);
+        expect(result.batch.winnerCommitDigestHex).toBe(publishing.commitDigestHex);
+        expect((await client.journal.readLocal(groupIdHex)).state)
+          .toBe(B25B_LOCAL_STATE.CONFIRMED);
+      }
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   test('gives a queued local intent the next bounded opportunity against the selected head',
     async () => {
       const wasm = await loadWasm();

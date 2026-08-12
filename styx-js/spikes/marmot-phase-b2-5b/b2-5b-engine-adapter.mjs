@@ -460,8 +460,9 @@ export class B25BEngineAdapter {
     }
     const evidenceSet = await this.#journal.readPublication(groupIdHex);
     const attempt = evidenceSet.find((item) => item.kind === B25B_PUBLICATION_KIND.ATTEMPT
-      && item.attemptOrdinal === attemptOrdinal);
-    if (attempt === undefined || attempt.artifactDigestHex !== local.commitDigestHex) {
+      && item.attemptOrdinal === attemptOrdinal
+      && item.artifactDigestHex === local.commitDigestHex);
+    if (attempt === undefined) {
       failB25B(B25B_ERROR.INVALID, 'publication outcome lacks its exact durable attempt');
     }
     if (!local.recipientScope.includes(recipientIdentityHex)) {
@@ -472,7 +473,8 @@ export class B25BEngineAdapter {
       ? B25B_PUBLICATION_KIND.LATE_ACK : requestedKind;
     const duplicate = evidenceSet.find((item) => item.kind === kind
       && item.attemptOrdinal === attemptOrdinal
-      && item.recipientIdentityHex === recipientIdentityHex);
+      && item.recipientIdentityHex === recipientIdentityHex
+      && item.artifactDigestHex === local.commitDigestHex);
     if (duplicate !== undefined) return Object.freeze({ status: 'duplicate', evidence: duplicate,
       local });
     const evidence = buildPublication({
