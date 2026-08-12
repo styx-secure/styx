@@ -161,6 +161,8 @@ The real-WASM Jest suite proves:
   advancement compacts its producing edge, including branch-changing adoption
   where the new anchor was never head and re-adoption after it was previously
   head, plus replay refusal in the already-consumed namespace;
+- replay-authorized anchor advancement over a freshly discovered local
+  generation edge, with the prior anchor released under the same transaction;
 - non-destructive upgrade of an existing deferred ciphertext when its bounded
   inbound history is already at the cap;
 - refusal of an eighteenth message state before disposable-provider or journal
@@ -169,7 +171,7 @@ The real-WASM Jest suite proves:
 - durable continuation from bidirectional liveness probes into ordinary
   traffic, plus a probe-versus-message same-predecessor CAS race.
 
-The focused suite currently contains 59 passing tests against the pinned real
+The focused suite currently contains 60 passing tests against the pinned real
 WASM artifact.
 
 The Playwright suite uses two real IndexedDB connections and no Web Locks. In

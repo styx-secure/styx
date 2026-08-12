@@ -709,7 +709,8 @@ export class B26Journal {
               || (input.state === B26_INPUT_STATE.EDGE
                 && input.edgeDigestHex === anchorAdvanceEdge?.edgeDigestHex)))
           || generations.some((generation) =>
-            generation.generationDigestHex === anchorAdvanceEdge?.localGenerationDigestHex
+            generationAuthorityDigest(generation)
+              === anchorAdvanceEdge?.localGenerationDigestHex
             && generation.commitDigestHex === anchorAdvanceEdge?.commitDigestHex);
         if (anchorAdvanceEdge === null
           || nextHead.anchorTipCommitDigestHex === null

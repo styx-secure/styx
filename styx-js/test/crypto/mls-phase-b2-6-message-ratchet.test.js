@@ -1185,6 +1185,48 @@ describe('Phase B2.6 retained-history convergence', () => {
       } finally { fixture.cleanup(); }
     }, 20000);
 
+  test('local generation can provide the replay-authorized anchor-advance edge', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm);
+    try {
+      const client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+        'local-anchor-authority');
+      await client.initialize();
+      const groupIdHex = bytesToHex(fixture.groupId);
+      const initial = (await client.journal.readHead(groupIdHex)).retained;
+      const generation = await client.coordinator.prepareSelfUpdate(groupIdHex);
+      await client.coordinator.recordAttempt(groupIdHex);
+      await client.coordinator.recordAcknowledgement(
+        groupIdHex, 1, bytesToHex(fixture.peers.alice.publicKey),
+        UTF8.encode('local-anchor-authority-ack'));
+
+      const localSuccessor = inboundSuccessorFrom(
+        wasm, fixture.peers.alice, fixture.groupId,
+        fixture.peers.alice.snapshotBytes, generation.commitBytes).snapshotBytes;
+
+      const chain = selfUpdateChainFrom(
+        wasm, fixture.peers.alice, fixture.groupId, localSuccessor,
+        B26_LIMITS.rewindCommits);
+      const settled = await settleInputs(client, fixture.groupId,
+        chain.map((item) => item.commitBytes).reverse());
+
+      expect(settled.head.canonicalPath).toHaveLength(B26_LIMITS.rewindCommits);
+      expect(settled.head.anchorSnapshotDigestHex).not.toBe(initial.snapshotDigestHex);
+      expect(settled.head.anchorTipCommitDigestHex).toBe(generation.commitDigestHex);
+      expect(settled.transition.anchorTipCommitDigestHex)
+        .toBe(generation.commitDigestHex);
+      await expect(client.journal.readRetained(settled.head.anchorSnapshotDigestHex))
+        .resolves.toEqual(expect.objectContaining({
+          snapshotDigestHex: settled.head.anchorSnapshotDigestHex,
+        }));
+      await expect(client.journal.readRetained(initial.snapshotDigestHex)).rejects
+        .toMatchObject({ code: B26_ERROR.RELEASED });
+      expect((await client.journal.snapshot(groupIdHex)).released).toEqual(expect.arrayContaining([
+        expect.objectContaining({ snapshotDigestHex: initial.snapshotDigestHex }),
+      ]));
+    } finally { fixture.cleanup(); }
+  }, 20000);
+
   test('anchor advancement preserves a historical instance ratchet and replay namespace',
     async () => {
       const wasm = await loadWasm();
