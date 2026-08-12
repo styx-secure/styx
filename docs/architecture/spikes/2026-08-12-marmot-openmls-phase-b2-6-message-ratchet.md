@@ -37,6 +37,14 @@ epoch, GroupContext digest and authenticated local account member. Re-adopting
 the same retained instance therefore addresses the same durable ratchet rather
 than its original post-Commit snapshot.
 
+Settlement may later advance the canonical anchor and compact the original
+producing edge. The journal therefore resolves the same tip Commit from
+mutually consistent durable edge, transition and local-generation evidence,
+including the first transition that adopts the snapshot as its anchor.
+Conflicting candidates fail closed. This is an identity-preservation rule, not
+a new persisted schema or a substitution of storage ids for the frozen
+transcript-derived tuple.
+
 Inspection of the pinned wrapper established a narrower inbound claim.
 PhaseB2Group.process_application_message authenticates and processes MLS but
 returns plaintext only; the ProcessedMessage sender and credential are not
@@ -81,7 +89,12 @@ Message records are deliberately excluded from the convergence selection read
 digest, so continuous messaging cannot invalidate a decision snapshot. The
 settlement transaction may suspend outbox release on a displaced retained
 instance, reactivate it after re-adoption, or terminally invalidate and
-tombstone it when its base state leaves the retained horizon.
+tombstone it when its base state leaves the retained horizon. The same release
+path invalidates deferred-only sibling input even if the instance never gained
+a primary message-state record, and it applies atomically to local-generation
+replacement and eviction. Every message commit revalidates its exact retained
+base inside the same transaction; canonical-head equality alone is therefore
+not treated as release authority for local pending generations.
 
 Publication evidence is attested liveness metadata. It can close an obligation
 but never advances or rolls back the MLS ratchet.
@@ -95,7 +108,8 @@ racing an ordinary send has exactly one message-position CAS winner.
 
 ## Bounds
 
-- message states: at most 17 retained epoch instances;
+- message states: at most 17 retained epoch instances, enforced before the
+  first state mutation;
 - live outbox obligations: 16 per instance, never evicted;
 - total outbox history: 128 records per instance, fail-closed without eviction;
 - inbound history: 64 per instance;
@@ -132,12 +146,19 @@ The real-WASM Jest suite proves:
 - oldest-first inbound truncation with a digest-linked marker and bounded
   outbox refusal before mutation;
 - displaced-instance suspension, exact-byte re-adoption and atomic retained
-  horizon release/invalidation;
+  horizon release/invalidation, including deferred-only siblings and local
+  generation replacement/eviction, plus a release-versus-deferred-commit race
+  in which release wins without relying on canonical-head movement;
+- preservation of the original transcript-derived instance key after anchor
+  advancement compacts its producing edge, including replay refusal in the
+  already-consumed namespace;
+- refusal of an eighteenth message state before disposable-provider or journal
+  mutation;
 - unchanged B2.5c convergence and local-generation behavior; and
 - durable continuation from bidirectional liveness probes into ordinary
   traffic, plus a probe-versus-message same-predecessor CAS race.
 
-The focused suite currently contains 47 passing tests against the pinned real
+The focused suite currently contains 51 passing tests against the pinned real
 WASM artifact.
 
 The Playwright suite uses two real IndexedDB connections and no Web Locks. In

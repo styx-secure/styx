@@ -92,6 +92,7 @@ const SNAPSHOT_STORES = Object.freeze([
 ]);
 const MESSAGE_TRANSACTION_STORES = Object.freeze([
   B26_STORES.head, B26_STORES.retained, B26_STORES.released,
+  B26_STORES.edge, B26_STORES.transition, B26_STORES.generation,
   B26_STORES.messageState, B26_STORES.messageSnapshot, B26_STORES.appOutbox,
   B26_STORES.appInbound, B26_STORES.appPublication, B26_STORES.messageRelease,
   B26_STORES.inboundTruncation,
@@ -107,6 +108,143 @@ async function required(ops, store, key, label) {
   const value = await ops.get(store, key);
   if (value === undefined) failB26(B26_ERROR.CORRUPT, `${label} is missing`);
   return value;
+}
+
+async function groupRecords(ops, store, parser, groupIdHex, label) {
+  const records = [];
+  for (const key of await ops.list(store)) {
+    if (typeof key !== 'string') continue;
+    const record = parser(await required(ops, store, key, label));
+    if (record.groupIdHex === groupIdHex) records.push(record);
+  }
+  return records;
+}
+
+function resolveTipCommitDigestHex({
+  snapshotDigestHex, head, edges, transitions, generations,
+}) {
+  const candidates = new Set();
+  const add = (candidate) => {
+    if (candidate !== null && candidate !== undefined) candidates.add(candidate);
+  };
+  for (const edge of edges) {
+    if (edge.successorSnapshotDigestHex === snapshotDigestHex) add(edge.commitDigestHex);
+  }
+  for (const transition of transitions) {
+    if (transition.successorSnapshotDigestHex === snapshotDigestHex) {
+      add(transition.selectedPath.at(-1) ?? null);
+    }
+  }
+  const firstAnchorTransition = transitions
+    .filter((transition) => transition.anchorSnapshotDigestHex === snapshotDigestHex)
+    .sort((left, right) => left.seq - right.seq)[0];
+  add(firstAnchorTransition?.displacedPath[0] ?? null);
+  for (const generation of generations) {
+    if (generation.pendingSnapshotDigestHex === snapshotDigestHex) {
+      add(generation.commitDigestHex);
+    }
+  }
+  if (head.snapshotDigestHex === snapshotDigestHex) add(head.selectedCommitDigestHex);
+  if (candidates.size > 1) {
+    failB26(B26_ERROR.CORRUPT,
+      'retained state has conflicting transcript-derived tip Commits');
+  }
+  return candidates.values().next().value ?? null;
+}
+
+async function readTipCommitDigestHex(ops, groupIdHex, snapshotDigestHex, head) {
+  const [edges, transitions, generations] = await Promise.all([
+    groupRecords(ops, B26_STORES.edge, parseEdge, groupIdHex, 'replay edge'),
+    groupRecords(ops, B26_STORES.transition, parseTransition, groupIdHex,
+      'transition record'),
+    groupRecords(ops, B26_STORES.generation, parseGeneration, groupIdHex,
+      'local generation'),
+  ]);
+  return resolveTipCommitDigestHex({
+    snapshotDigestHex, head, edges, transitions, generations,
+  });
+}
+
+async function enforceMessageStateCapacity(ops, groupIdHex, instanceKeyHex) {
+  let count = 0;
+  for (const key of await ops.list(B26_STORES.messageState)) {
+    if (typeof key !== 'string') continue;
+    const state = parseMessageState(await required(
+      ops, B26_STORES.messageState, key, 'message-state record'));
+    if (state.groupIdHex !== groupIdHex) continue;
+    if (state.instanceKeyHex === instanceKeyHex) return;
+    count += 1;
+  }
+  if (count >= B26_LIMITS.maxMessageStates) {
+    failB26(B26_ERROR.RESOURCE_LIMIT, 'message-state instance cap is exhausted');
+  }
+}
+
+async function requireLiveRetainedState(ops, expectedRetained) {
+  const expected = parseRetainedState(expectedRetained);
+  const raw = await ops.get(B26_STORES.retained, expected.snapshotDigestHex);
+  if (raw === undefined) {
+    const releasedRaw = await ops.get(B26_STORES.released, expected.snapshotDigestHex);
+    if (releasedRaw !== undefined) {
+      parseRelease(releasedRaw);
+      failB26(B26_ERROR.RELEASED,
+        'message base left the retained horizon before commit');
+    }
+    failB26(B26_ERROR.CORRUPT,
+      'message base disappeared without durable release evidence');
+  }
+  const current = parseRetainedState(raw);
+  if (current.retainedDigestHex !== expected.retainedDigestHex) {
+    failB26(B26_ERROR.CORRUPT,
+      'message base changed under its content-addressed key');
+  }
+  return current;
+}
+
+async function releaseMessageInstanceRecords(ops, {
+  groupIdHex, instanceKeyHex, releaseAuthorityDigestHex,
+}) {
+  const writes = [];
+  const key = messageStateKey(groupIdHex, instanceKeyHex);
+  const stateRaw = await ops.get(B26_STORES.messageState, key);
+  if (stateRaw !== undefined) {
+    const state = parseMessageState(stateRaw);
+    const marker = buildMessageRelease({
+      groupIdHex, instanceKeyHex, stateDigestHex: state.stateDigestHex,
+      snapshotDigestHex: state.snapshotDigestHex, releaseAuthorityDigestHex,
+    });
+    writes.push(
+      ops.put(B26_STORES.messageRelease, key, marker),
+      ops.delete(B26_STORES.messageState, key),
+      ops.delete(B26_STORES.messageSnapshot,
+        messageSnapshotKey(instanceKeyHex, state.snapshotDigestHex)),
+    );
+  }
+  for (const outboxKeyValue of await ops.list(B26_STORES.appOutbox)) {
+    if (typeof outboxKeyValue !== 'string'
+      || !outboxKeyValue.startsWith(instanceKeyHex + ':')) continue;
+    const outbox = parseOutbox(await required(
+      ops, B26_STORES.appOutbox, outboxKeyValue, 'outbox record'));
+    if ([B26_OUTBOX_STATE.ACKNOWLEDGED, B26_OUTBOX_STATE.FAILED_DISCARDED,
+      B26_OUTBOX_STATE.INVALIDATED].includes(outbox.state)) continue;
+    writes.push(ops.put(B26_STORES.appOutbox, outboxKeyValue,
+      rebuildOutbox(outbox, { state: B26_OUTBOX_STATE.INVALIDATED })));
+  }
+  for (const inboundKeyValue of await ops.list(B26_STORES.appInbound)) {
+    if (typeof inboundKeyValue !== 'string'
+      || !inboundKeyValue.startsWith(instanceKeyHex + ':')) continue;
+    const inbound = parseInbound(await required(
+      ops, B26_STORES.appInbound, inboundKeyValue, 'inbound record'));
+    if (inbound.disposition !== B26_INBOUND_STATE.DEFERRED) continue;
+    writes.push(ops.put(B26_STORES.appInbound, inboundKeyValue,
+      rebuildInbound(inbound, {
+        disposition: B26_INBOUND_STATE.INVALIDATED,
+        receivedOrdinal: 0,
+        plaintextBytes: new Uint8Array(),
+        plaintextDigestHex: null,
+      })));
+  }
+  return writes;
 }
 
 function recordDigest(store, record) {
@@ -488,21 +626,37 @@ export class B26Journal {
           messageStateEntries.push({ key, state });
         }
       }
+      for (const release of releases) {
+        const retained = current.retained.find((state) =>
+          state.snapshotDigestHex === release.snapshotDigestHex);
+        if (retained === undefined) {
+          failB26(B26_ERROR.CAS_CONFLICT,
+            'released message instance lost its retained state');
+        }
+        const tipCommitDigestHex = resolveTipCommitDigestHex({
+          snapshotDigestHex: retained.snapshotDigestHex,
+          head: current.head,
+          edges: current.edges,
+          transitions: current.transitions,
+          generations: current.generations,
+        });
+        const instanceKeyHex = messageInstanceKey({
+          groupIdHex: retained.groupIdHex,
+          tipCommitDigestHex,
+          epochDec: retained.epochDec,
+          groupContextDigestHex: retained.groupContextDigestHex,
+          localMemberIdentityHex: current.head.accountKeyHex,
+        });
+        writes.push(...await releaseMessageInstanceRecords(ops, {
+          groupIdHex: retained.groupIdHex,
+          instanceKeyHex,
+          releaseAuthorityDigestHex: transition.transitionDigestHex,
+        }));
+      }
       for (const { key, state } of messageStateEntries) {
         const mustRelease = releasedSnapshots.has(state.baseRetainedSnapshotDigestHex);
-        if (mustRelease) {
-          const marker = buildMessageRelease({
-            groupIdHex: state.groupIdHex,
-            instanceKeyHex: state.instanceKeyHex,
-            stateDigestHex: state.stateDigestHex,
-            snapshotDigestHex: state.snapshotDigestHex,
-            releaseAuthorityDigestHex: transition.transitionDigestHex,
-          });
-          writes.push(ops.put(B26_STORES.messageRelease, key, marker));
-          writes.push(ops.delete(B26_STORES.messageState, key));
-          writes.push(ops.delete(B26_STORES.messageSnapshot,
-            messageSnapshotKey(state.instanceKeyHex, state.snapshotDigestHex)));
-        } else if (canonicalSnapshots.has(state.baseRetainedSnapshotDigestHex)
+        if (mustRelease) continue;
+        if (canonicalSnapshots.has(state.baseRetainedSnapshotDigestHex)
           && state.state === B26_MESSAGE_STATE.SUSPENDED) {
           writes.push(ops.put(B26_STORES.messageState, key,
             rebuildMessageState(state, { state: B26_MESSAGE_STATE.ACTIVE })));
@@ -511,7 +665,7 @@ export class B26Journal {
           writes.push(ops.put(B26_STORES.messageState, key,
             rebuildMessageState(state, { state: B26_MESSAGE_STATE.SUSPENDED })));
         }
-        if (mustRelease || state.state !== (canonicalSnapshots
+        if (state.state !== (canonicalSnapshots
           .has(state.baseRetainedSnapshotDigestHex)
           ? B26_MESSAGE_STATE.ACTIVE : B26_MESSAGE_STATE.SUSPENDED)) {
           for (const outboxKeyValue of await ops.list(B26_STORES.appOutbox)) {
@@ -522,8 +676,7 @@ export class B26Journal {
             if ([B26_OUTBOX_STATE.ACKNOWLEDGED, B26_OUTBOX_STATE.FAILED_DISCARDED,
               B26_OUTBOX_STATE.INVALIDATED].includes(outbox.state)) continue;
             let outboxState = outbox.state;
-            if (mustRelease) outboxState = B26_OUTBOX_STATE.INVALIDATED;
-            else if (!canonicalSnapshots.has(state.baseRetainedSnapshotDigestHex)) {
+            if (!canonicalSnapshots.has(state.baseRetainedSnapshotDigestHex)) {
               outboxState = B26_OUTBOX_STATE.SUSPENDED;
             } else if (outbox.state === B26_OUTBOX_STATE.SUSPENDED) {
               outboxState = outbox.attemptCount === 0
@@ -532,23 +685,6 @@ export class B26Journal {
             if (outboxState !== outbox.state) {
               writes.push(ops.put(B26_STORES.appOutbox, outboxKeyValue,
                 rebuildOutbox(outbox, { state: outboxState })));
-            }
-          }
-        }
-        if (mustRelease) {
-          for (const inboundKeyValue of await ops.list(B26_STORES.appInbound)) {
-            if (typeof inboundKeyValue !== 'string'
-              || !inboundKeyValue.startsWith(state.instanceKeyHex + ':')) continue;
-            const inbound = parseInbound(await required(
-              ops, B26_STORES.appInbound, inboundKeyValue, 'inbound record'));
-            if (inbound.disposition === B26_INBOUND_STATE.DEFERRED) {
-              writes.push(ops.put(B26_STORES.appInbound, inboundKeyValue,
-                rebuildInbound(inbound, {
-                  disposition: B26_INBOUND_STATE.INVALIDATED,
-                  receivedOrdinal: 0,
-                  plaintextBytes: new Uint8Array(),
-                  plaintextDigestHex: null,
-                })));
             }
           }
         }
@@ -673,7 +809,7 @@ export class B26Journal {
       || next.pendingSnapshotDigestHex !== retained.snapshotDigestHex) {
       failB26(B26_ERROR.INVALID, 'local generation does not bind its parent');
     }
-    return this.#db.transaction(SNAPSHOT_STORES, async (ops) => {
+    return this.#db.transaction(SETTLEMENT_TRANSACTION_STORES, async (ops) => {
       const view = await readSnapshotFromOps(ops, head.groupIdHex);
       if (view.head.headDigestHex !== head.headDigestHex
         || view.activeLocal?.generationDigestHex !== null) {
@@ -740,7 +876,35 @@ export class B26Journal {
           }
         }
         if (!pendingRequired) {
-          writes.push(ops.delete(B26_STORES.retained, evicted.pendingSnapshotDigestHex));
+          const retainedRaw = await ops.get(
+            B26_STORES.retained, evicted.pendingSnapshotDigestHex);
+          if (retainedRaw !== undefined) {
+            const evictedRetained = parseRetainedState(retainedRaw);
+            const release = buildRelease({
+              groupIdHex: evictedRetained.groupIdHex,
+              snapshotDigestHex: evictedRetained.snapshotDigestHex,
+              epochDec: evictedRetained.epochDec,
+              groupContextDigestHex: evictedRetained.groupContextDigestHex,
+              retainedDigestHex: evictedRetained.retainedDigestHex,
+              releaseAuthorityDigestHex: marker.markerDigestHex,
+            });
+            const instanceKeyHex = messageInstanceKey({
+              groupIdHex: evictedRetained.groupIdHex,
+              tipCommitDigestHex: evicted.commitDigestHex,
+              epochDec: evictedRetained.epochDec,
+              groupContextDigestHex: evictedRetained.groupContextDigestHex,
+              localMemberIdentityHex: view.head.accountKeyHex,
+            });
+            writes.push(...await releaseMessageInstanceRecords(ops, {
+              groupIdHex: evictedRetained.groupIdHex,
+              instanceKeyHex,
+              releaseAuthorityDigestHex: marker.markerDigestHex,
+            }));
+            writes.push(
+              ops.put(B26_STORES.released, release.snapshotDigestHex, release),
+              ops.delete(B26_STORES.retained, release.snapshotDigestHex),
+            );
+          }
         }
       }
       await Promise.all(writes);
@@ -754,7 +918,7 @@ export class B26Journal {
     if (prior.groupIdHex !== next.groupIdHex || prior.commitDigestHex !== next.commitDigestHex) {
       failB26(B26_ERROR.INVALID, 'generation replacement changes identity');
     }
-    return this.#db.transaction(SNAPSHOT_STORES, async (ops) => {
+    return this.#db.transaction(SETTLEMENT_TRANSACTION_STORES, async (ops) => {
       const raw = await required(ops, B26_STORES.generation,
         generationKey(prior.groupIdHex, prior.commitDigestHex), 'local generation');
       if (parseGeneration(raw).generationDigestHex !== prior.generationDigestHex) {
@@ -776,6 +940,8 @@ export class B26Journal {
             B26_STORES.retained, next.pendingSnapshotDigestHex);
           if (retainedRaw !== undefined) {
             const retained = parseRetainedState(retainedRaw);
+            const currentHead = parseHead(await required(ops, B26_STORES.head,
+              retained.groupIdHex, 'canonical head'));
             const release = buildRelease({
               groupIdHex: retained.groupIdHex,
               snapshotDigestHex: retained.snapshotDigestHex,
@@ -784,7 +950,20 @@ export class B26Journal {
               retainedDigestHex: retained.retainedDigestHex,
               releaseAuthorityDigestHex: next.generationDigestHex,
             });
+            const instanceKeyHex = messageInstanceKey({
+              groupIdHex: retained.groupIdHex,
+              tipCommitDigestHex: next.commitDigestHex,
+              epochDec: retained.epochDec,
+              groupContextDigestHex: retained.groupContextDigestHex,
+              localMemberIdentityHex: currentHead.accountKeyHex,
+            });
+            const messageWrites = await releaseMessageInstanceRecords(ops, {
+              groupIdHex: retained.groupIdHex,
+              instanceKeyHex,
+              releaseAuthorityDigestHex: next.generationDigestHex,
+            });
             await Promise.all([
+              ...messageWrites,
               ops.put(B26_STORES.released, release.snapshotDigestHex, release),
               ops.delete(B26_STORES.retained, release.snapshotDigestHex),
             ]);
@@ -928,8 +1107,10 @@ export class B26Journal {
       }
       const retained = parseRetainedState(await required(ops, B26_STORES.retained,
         head.snapshotDigestHex, 'canonical retained state'));
+      const tipCommitDigestHex = await readTipCommitDigestHex(
+        ops, groupIdHex, retained.snapshotDigestHex, head);
       const instanceKeyHex = messageInstanceKey({ groupIdHex,
-        tipCommitDigestHex: head.selectedCommitDigestHex, epochDec: head.epochDec,
+        tipCommitDigestHex, epochDec: head.epochDec,
         groupContextDigestHex: head.groupContextDigestHex,
         localMemberIdentityHex: head.accountKeyHex });
       const key = messageStateKey(groupIdHex, instanceKeyHex);
@@ -941,8 +1122,7 @@ export class B26Journal {
       const stateRaw = await ops.get(B26_STORES.messageState, key);
       if (stateRaw === undefined) {
         return Object.freeze({ head, retained, instanceKeyHex,
-          tipCommitDigestHex: head.selectedCommitDigestHex,
-          state: null, snapshot: null });
+          tipCommitDigestHex, state: null, snapshot: null, canonical: true });
       }
       const state = parseMessageState(stateRaw);
       if (state.instanceKeyHex !== instanceKeyHex
@@ -959,7 +1139,7 @@ export class B26Journal {
         failB26(B26_ERROR.CORRUPT, 'message snapshot lacks current-state authority');
       }
       return Object.freeze({ head, retained, instanceKeyHex,
-        tipCommitDigestHex: head.selectedCommitDigestHex, state, snapshot });
+        tipCommitDigestHex, state, snapshot, canonical: true });
     });
   }
 
@@ -993,20 +1173,26 @@ export class B26Journal {
         if (edge.groupIdHex === groupIdHex) edges.push(edge);
       }
       const canonicalSnapshots = new Set([head.anchorSnapshotDigestHex]);
-      let tipCommitDigestHex = null;
       for (const commitDigestHex of head.canonicalPath) {
         const edge = edges.find((candidate) =>
           candidate.commitDigestHex === commitDigestHex);
         if (edge === undefined) failB26(B26_ERROR.CORRUPT,
           'canonical path lacks its retained replay edge');
         canonicalSnapshots.add(edge.successorSnapshotDigestHex);
-        if (edge.successorSnapshotDigestHex === retainedSnapshotDigestHex) {
-          tipCommitDigestHex = edge.commitDigestHex;
-        }
       }
-      if (retainedSnapshotDigestHex === head.snapshotDigestHex) {
-        tipCommitDigestHex = head.selectedCommitDigestHex;
-      }
+      const [transitions, generations] = await Promise.all([
+        groupRecords(ops, B26_STORES.transition, parseTransition, groupIdHex,
+          'transition record'),
+        groupRecords(ops, B26_STORES.generation, parseGeneration, groupIdHex,
+          'local generation'),
+      ]);
+      const tipCommitDigestHex = resolveTipCommitDigestHex({
+        snapshotDigestHex: retainedSnapshotDigestHex,
+        head,
+        edges,
+        transitions,
+        generations,
+      });
       const instanceKeyHex = messageInstanceKey({
         groupIdHex,
         tipCommitDigestHex,
@@ -1075,9 +1261,10 @@ export class B26Journal {
     });
   }
 
-  async #commitOutbound({ expectedHead, expectedMessageState, nextMessageState,
-    nextSnapshot, outbox }) {
+  async #commitOutbound({ expectedHead, expectedRetained, expectedMessageState,
+    nextMessageState, nextSnapshot, outbox }) {
     const head = parseHead(expectedHead);
+    const retained = parseRetainedState(expectedRetained);
     const prior = expectedMessageState === null ? null : parseMessageState(expectedMessageState);
     const next = parseMessageState(nextMessageState);
     const snapshot = parseMessageSnapshot(nextSnapshot);
@@ -1086,6 +1273,9 @@ export class B26Journal {
       || next.instanceKeyHex !== queued.instanceKeyHex
       || snapshot.instanceKeyHex !== next.instanceKeyHex
       || snapshot.snapshotDigestHex !== next.snapshotDigestHex
+      || next.baseRetainedSnapshotDigestHex !== retained.snapshotDigestHex
+      || next.epochDec !== retained.epochDec
+      || next.groupContextDigestHex !== retained.groupContextDigestHex
       || next.priorStateDigestHex !== (prior?.stateDigestHex ?? null)
       || next.sequence !== (prior?.sequence ?? 0) + 1
       || next.sentCount !== (prior?.sentCount ?? 0) + 1
@@ -1099,6 +1289,7 @@ export class B26Journal {
       if (currentHead.headDigestHex !== head.headDigestHex) {
         failB26(B26_ERROR.CAS_CONFLICT, 'canonical head changed before outbound commit');
       }
+      await requireLiveRetainedState(ops, retained);
       const stateKey = messageStateKey(head.groupIdHex, next.instanceKeyHex);
       if (await ops.get(B26_STORES.messageRelease, stateKey) !== undefined) {
         failB26(B26_ERROR.RELEASED, 'message instance was released before outbound commit');
@@ -1107,6 +1298,9 @@ export class B26Journal {
       const current = currentRaw === undefined ? null : parseMessageState(currentRaw);
       if ((current?.stateDigestHex ?? null) !== (prior?.stateDigestHex ?? null)) {
         failB26(B26_ERROR.CAS_CONFLICT, 'message position changed before outbound commit');
+      }
+      if (current === null) {
+        await enforceMessageStateCapacity(ops, head.groupIdHex, next.instanceKeyHex);
       }
       for (const key of await ops.list(B26_STORES.appOutbox)) {
         if (typeof key !== 'string' || !key.startsWith(`${next.instanceKeyHex}:`)) continue;
@@ -1151,9 +1345,10 @@ export class B26Journal {
     });
   }
 
-  async #commitInbound({ expectedHead, expectedMessageState, nextMessageState,
-    nextSnapshot, inbound }) {
+  async #commitInbound({ expectedHead, expectedRetained, expectedMessageState,
+    nextMessageState, nextSnapshot, inbound }) {
     const head = parseHead(expectedHead);
+    const retained = parseRetainedState(expectedRetained);
     const prior = expectedMessageState === null ? null : parseMessageState(expectedMessageState);
     const next = parseMessageState(nextMessageState);
     const snapshot = parseMessageSnapshot(nextSnapshot);
@@ -1163,6 +1358,9 @@ export class B26Journal {
       || next.instanceKeyHex !== delivery.instanceKeyHex
       || snapshot.instanceKeyHex !== next.instanceKeyHex
       || snapshot.snapshotDigestHex !== next.snapshotDigestHex
+      || next.baseRetainedSnapshotDigestHex !== retained.snapshotDigestHex
+      || next.epochDec !== retained.epochDec
+      || next.groupContextDigestHex !== retained.groupContextDigestHex
       || next.priorStateDigestHex !== (prior?.stateDigestHex ?? null)
       || next.sequence !== (prior?.sequence ?? 0) + 1
       || next.sentCount !== (prior?.sentCount ?? 0)
@@ -1176,7 +1374,11 @@ export class B26Journal {
       if (currentHead.headDigestHex !== head.headDigestHex) {
         failB26(B26_ERROR.CAS_CONFLICT, 'canonical head changed before inbound commit');
       }
+      await requireLiveRetainedState(ops, retained);
       const stateKey = messageStateKey(head.groupIdHex, next.instanceKeyHex);
+      if (await ops.get(B26_STORES.messageRelease, stateKey) !== undefined) {
+        failB26(B26_ERROR.RELEASED, 'message instance was released before inbound commit');
+      }
       const existingInbound = await ops.get(B26_STORES.appInbound,
         inboundKey(next.instanceKeyHex, delivery.ciphertextDigestHex));
       if (existingInbound !== undefined) {
@@ -1193,6 +1395,9 @@ export class B26Journal {
       const current = currentRaw === undefined ? null : parseMessageState(currentRaw);
       if ((current?.stateDigestHex ?? null) !== (prior?.stateDigestHex ?? null)) {
         failB26(B26_ERROR.CAS_CONFLICT, 'message position changed before inbound commit');
+      }
+      if (current === null) {
+        await enforceMessageStateCapacity(ops, head.groupIdHex, next.instanceKeyHex);
       }
       const inboundRecords = [];
       for (const key of await ops.list(B26_STORES.appInbound)) {
@@ -1250,11 +1455,21 @@ export class B26Journal {
     });
   }
 
-  async #commitDeferredInbound({ expectedHead, inbound }) {
+  async #commitDeferredInbound({ expectedHead, expectedRetained,
+    tipCommitDigestHex, inbound }) {
     const head = parseHead(expectedHead);
+    const retained = parseRetainedState(expectedRetained);
     const deferred = parseInbound(inbound);
     if (deferred.disposition !== B26_INBOUND_STATE.DEFERRED
-      || deferred.groupIdHex !== head.groupIdHex) {
+      || deferred.groupIdHex !== head.groupIdHex
+      || retained.groupIdHex !== head.groupIdHex
+      || deferred.instanceKeyHex !== messageInstanceKey({
+        groupIdHex: retained.groupIdHex,
+        tipCommitDigestHex,
+        epochDec: retained.epochDec,
+        groupContextDigestHex: retained.groupContextDigestHex,
+        localMemberIdentityHex: head.accountKeyHex,
+      })) {
       failB26(B26_ERROR.INVALID, 'deferred inbound binding is incoherent');
     }
     return this.#db.transaction(MESSAGE_TRANSACTION_STORES, async (ops) => {
@@ -1263,6 +1478,12 @@ export class B26Journal {
       if (currentHead.headDigestHex !== head.headDigestHex) {
         failB26(B26_ERROR.CAS_CONFLICT,
           'canonical head changed before deferred inbound commit');
+      }
+      await requireLiveRetainedState(ops, retained);
+      const stateKey = messageStateKey(head.groupIdHex, deferred.instanceKeyHex);
+      if (await ops.get(B26_STORES.messageRelease, stateKey) !== undefined) {
+        failB26(B26_ERROR.RELEASED,
+          'message instance was released before deferred inbound commit');
       }
       const key = inboundKey(deferred.instanceKeyHex, deferred.ciphertextDigestHex);
       const existingRaw = await ops.get(B26_STORES.appInbound, key);

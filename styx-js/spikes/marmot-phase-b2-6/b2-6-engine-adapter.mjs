@@ -1086,6 +1086,7 @@ export class B26EngineAdapter {
       }));
       const committed = await this.#commitOutbound({
         expectedHead: context.head,
+        expectedRetained: context.retained,
         expectedMessageState: context.state,
         nextMessageState: state,
         nextSnapshot: snapshot,
@@ -1286,7 +1287,8 @@ export class B26EngineAdapter {
           receivedOrdinal: existing.receivedOrdinal,
           plaintextBytes: copyBytes(existing.plaintextBytes) });
       }
-      if (!context.canonical || existing.disposition !== B26_INBOUND_STATE.DEFERRED) {
+      if (context.canonical !== true
+        || existing.disposition !== B26_INBOUND_STATE.DEFERRED) {
         failB26(B26_ERROR.STATE_CONFLICT,
           'duplicate ciphertext has no accepted durable delivery');
       }
@@ -1302,8 +1304,17 @@ export class B26EngineAdapter {
         plaintextBytes: new Uint8Array(),
         plaintextDigestHex: null,
       });
+      await this.#beforeInboundCommit(Object.freeze({
+        instanceKeyHex: context.instanceKeyHex,
+        ciphertextDigestHex,
+        disposition: B26_INBOUND_STATE.DEFERRED,
+      }));
       const committed = await this.#commitDeferredInbound({
-        expectedHead: context.head, inbound: deferred });
+        expectedHead: context.head,
+        expectedRetained: context.retained,
+        tipCommitDigestHex: context.tipCommitDigestHex,
+        inbound: deferred,
+      });
       return Object.freeze({ status: committed.status,
         instanceKeyHex: context.instanceKeyHex,
         ciphertextDigestHex });
@@ -1339,6 +1350,7 @@ export class B26EngineAdapter {
       }));
       const committed = await this.#commitInbound({
         expectedHead: context.head,
+        expectedRetained: context.retained,
         expectedMessageState: context.state,
         nextMessageState: state,
         nextSnapshot: snapshot,

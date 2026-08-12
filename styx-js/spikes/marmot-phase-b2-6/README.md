@@ -43,6 +43,13 @@ Each transcript-derived epoch instance owns one monotonic message state and one
 current provider snapshot. The instance identity binds group id, canonical tip
 Commit, epoch, GroupContext and authenticated local member.
 
+The producing tip Commit remains stable when settlement later advances the
+canonical anchor. The journal resolves it from mutually consistent durable
+edge, transition and local-generation evidence, including the first transition
+that adopts a snapshot as its anchor. Conflicting evidence fails closed. This
+preserves the frozen transcript-derived identity instead of replacing it with a
+storage id or snapshot digest.
+
 Outbound ordering is:
 
     restore durable state
@@ -78,11 +85,16 @@ The B2.5c settlement transaction shares the message stores for serialization.
 It may suspend displaced-instance outboxes, re-enable a retained instance after
 re-adoption, or terminally invalidate and tombstone an instance that leaves the
 retained horizon. Message activity is excluded from the convergence selection
-read set.
+read set. Release also invalidates bounded deferred-only input when no primary
+message-state record was ever created, and local-generation replacement or
+eviction uses the same atomic release path. Every message commit revalidates
+its retained base inside that transaction, so a local-generation release that
+does not change the canonical head still wins fail-closed.
 
 ## Bounds
 
-- retained epoch instances and message states: 17;
+- retained epoch instances and message states: 17, enforced before the first
+  message-state mutation;
 - non-terminal outbox obligations per instance: 16, with no eviction;
 - total outbox history per instance: 128, fail-closed with no eviction;
 - inbound records per instance: 64;

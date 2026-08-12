@@ -14,12 +14,14 @@ import {
   bytesToHex,
   copyBytes,
   digestHex,
+  messageInstanceKey,
+  messageStateKey,
 } from '../../spikes/marmot-phase-b2-6/b2-6-canonical.mjs';
 import { createB26JournalForDb }
   from '../../spikes/marmot-phase-b2-6/b2-6-journal.mjs';
 import { createB26Coordinator }
   from '../../spikes/marmot-phase-b2-6/b2-6-coordinator.mjs';
-import { buildInbound, buildInput, buildRetainedState, parseInput }
+import { buildInbound, buildInput, buildMessageState, buildRetainedState, parseInput }
   from '../../spikes/marmot-phase-b2-6/b2-6-record.mjs';
 import { deepClone, FakeVaultDb } from '../support/fake-vault-db.js';
 
@@ -1087,6 +1089,52 @@ describe('Phase B2.6 retained-history convergence', () => {
       } finally { fixture.cleanup(); }
     }, 20000);
 
+  test('anchor advancement preserves a historical instance ratchet and replay namespace',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        let sourceSnapshot = fixture.peers.alice.snapshotBytes;
+        const chain = [];
+        for (let index = 0; index < 6; index += 1) {
+          const update = selfUpdateFrom(
+            wasm, fixture.peers.alice, fixture.groupId, sourceSnapshot);
+          chain.push(update);
+          sourceSnapshot = update.successorSnapshotBytes;
+        }
+        const sender = restoreSource(wasm, fixture.peers.alice, fixture.groupId,
+          chain[0].successorSnapshotBytes);
+        const ciphertext = copyBytes(sender.group.create_application_message(
+          sender.provider, sender.identity, UTF8.encode('anchor-history')));
+        free(sender.group); free(sender.identity); free(sender.provider);
+
+        const client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+          'anchor-message-identity');
+        await client.initialize();
+        const groupIdHex = bytesToHex(fixture.groupId);
+        await settleInputs(client, fixture.groupId,
+          chain.slice(0, 5).map((item) => item.commitBytes).reverse());
+        const beforeAdvance = await client.journal.snapshot(groupIdHex);
+        const firstEdge = beforeAdvance.edges.find((edge) =>
+          edge.commitDigestHex === digestHex(chain[0].commitBytes));
+        const first = await client.coordinator.processApplicationMessage(
+          groupIdHex, ciphertext, firstEdge.successorSnapshotDigestHex);
+        expect(first.status).toBe('accepted');
+
+        await settleInputs(client, fixture.groupId, [chain[5].commitBytes]);
+        const afterAdvance = await client.journal.readRetainedMessageContext(
+          groupIdHex, firstEdge.successorSnapshotDigestHex);
+        expect(afterAdvance.instanceKeyHex).toBe(first.instanceKeyHex);
+        const replay = await client.coordinator.processApplicationMessage(
+          groupIdHex, ciphertext, firstEdge.successorSnapshotDigestHex);
+        expect(replay).toEqual(expect.objectContaining({
+          status: 'duplicate',
+          instanceKeyHex: first.instanceKeyHex,
+          receivedOrdinal: first.receivedOrdinal,
+        }));
+      } finally { fixture.cleanup(); }
+    }, 20000);
+
   test('single and split cutoffs converge when anchor advancement also discards a new sibling',
     async () => {
       const wasm = await loadWasm();
@@ -1222,6 +1270,140 @@ describe('Phase B2.6 retained-history convergence', () => {
         expect(new TextDecoder().decode(accepted.plaintextBytes)).toBe('deferred');
       } finally { fixture.cleanup(); }
     }, 20000);
+
+  test('deferred sibling input is invalidated when its retained instance is released',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        const base = fixture.peers.alice.snapshotBytes;
+        const siblings = [
+          selfUpdateFrom(wasm, fixture.peers.alice, fixture.groupId, base),
+          selfUpdateFrom(wasm, fixture.peers.alice, fixture.groupId, base),
+        ].sort((left, right) =>
+          digestHex(left.commitBytes) < digestHex(right.commitBytes) ? -1 : 1);
+        const [selected, displaced] = siblings;
+        const client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+          'deferred-release');
+        await client.initialize();
+        const groupIdHex = bytesToHex(fixture.groupId);
+        await settleInputs(client, fixture.groupId,
+          [displaced.commitBytes, selected.commitBytes]);
+        const displacedEdge = (await client.journal.snapshot(groupIdHex)).edges.find(
+          (edge) => edge.commitDigestHex === digestHex(displaced.commitBytes));
+        const sender = restoreSource(wasm, fixture.peers.alice, fixture.groupId,
+          displaced.successorSnapshotBytes);
+        const ciphertext = copyBytes(sender.group.create_application_message(
+          sender.provider, sender.identity, UTF8.encode('release-deferred')));
+        free(sender.group); free(sender.identity); free(sender.provider);
+        const deferred = await client.coordinator.processApplicationMessage(
+          groupIdHex, ciphertext, displacedEdge.successorSnapshotDigestHex);
+        expect(deferred.status).toBe('deferred');
+
+        let selectedSnapshot = selected.successorSnapshotBytes;
+        const descendants = [];
+        for (let index = 0; index < 5; index += 1) {
+          const update = selfUpdateFrom(
+            wasm, fixture.peers.alice, fixture.groupId, selectedSnapshot);
+          descendants.push(update);
+          selectedSnapshot = update.successorSnapshotBytes;
+        }
+        await settleInputs(client, fixture.groupId,
+          descendants.map((item) => item.commitBytes).reverse());
+        await expect(client.journal.readRetained(
+          displacedEdge.successorSnapshotDigestHex)).rejects.toMatchObject({
+          code: B26_ERROR.RELEASED,
+        });
+        expect(await client.journal.readInbound(
+          deferred.instanceKeyHex, deferred.ciphertextDigestHex)).toEqual(
+          expect.objectContaining({ disposition: 'INVALIDATED' }));
+      } finally { fixture.cleanup(); }
+    }, 20000);
+
+  test('local-generation release wins atomically over a deferred inbound commit',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        const groupIdHex = bytesToHex(fixture.groupId);
+        let client;
+        let releaseArmed = true;
+        client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+          'deferred-generation-release', {
+            beforeInboundCommit: async ({ disposition }) => {
+              if (releaseArmed && disposition === 'DEFERRED') {
+                releaseArmed = false;
+                await client.coordinator.cancelBeforeAttempt(groupIdHex);
+              }
+            },
+          });
+        await client.initialize();
+        const generation = await client.coordinator.prepareSelfUpdate(groupIdHex);
+        const aliceSuccessor = inboundSuccessorFrom(
+          wasm, fixture.peers.alice, fixture.groupId,
+          fixture.peers.alice.snapshotBytes, generation.commitBytes);
+        const sender = restoreSource(wasm, fixture.peers.alice, fixture.groupId,
+          aliceSuccessor.snapshotBytes);
+        const ciphertext = copyBytes(sender.group.create_application_message(
+          sender.provider, sender.identity, UTF8.encode('release-race')));
+        free(sender.group); free(sender.identity); free(sender.provider);
+
+        await expect(client.coordinator.processApplicationMessage(
+          groupIdHex, ciphertext, generation.pendingSnapshotDigestHex))
+          .rejects.toMatchObject({ code: B26_ERROR.RELEASED });
+        expect(client.db.stores.get(B26_STORES.appInbound)?.size ?? 0).toBe(0);
+        expect(client.db.stores.get(B26_STORES.retained)
+          .has(generation.pendingSnapshotDigestHex)).toBe(false);
+        expect(client.db.stores.get(B26_STORES.released)
+          .has(generation.pendingSnapshotDigestHex)).toBe(true);
+      } finally { fixture.cleanup(); }
+    }, 20000);
+
+  test('message-state instance cap fails before ratchet mutation', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm);
+    try {
+      const client = clientFor(wasm, fixture.peers.alice, fixture.groupId,
+        'message-state-cap');
+      await client.initialize();
+      const groupIdHex = bytesToHex(fixture.groupId);
+      const context = await client.journal.readMessageContext(groupIdHex);
+      const store = client.db.stores.get(B26_STORES.messageState);
+      for (let index = 0; index < B26_LIMITS.maxMessageStates; index += 1) {
+        const tipCommitDigestHex = (index + 1).toString(16).padStart(64, '0');
+        const instanceKeyHex = messageInstanceKey({
+          groupIdHex,
+          tipCommitDigestHex,
+          epochDec: context.head.epochDec,
+          groupContextDigestHex: context.head.groupContextDigestHex,
+          localMemberIdentityHex: context.head.accountKeyHex,
+        });
+        const state = buildMessageState({
+          groupIdHex,
+          instanceKeyHex,
+          baseHeadDigestHex: context.head.headDigestHex,
+          tipCommitDigestHex,
+          epochDec: context.head.epochDec,
+          groupContextDigestHex: context.head.groupContextDigestHex,
+          localMemberIdentityHex: context.head.accountKeyHex,
+          baseRetainedSnapshotDigestHex: context.retained.snapshotDigestHex,
+          sequence: 0,
+          sentCount: 0,
+          receivedCount: 0,
+          snapshotDigestHex: (index + 100).toString(16).padStart(64, '0'),
+          priorStateDigestHex: null,
+          state: 'ACTIVE',
+        });
+        store.set(messageStateKey(groupIdHex, instanceKeyHex), state);
+      }
+      const before = store.size;
+      await expect(client.coordinator.queueApplicationMessage(
+        groupIdHex, 'over-message-state-cap', UTF8.encode('bounded')))
+        .rejects.toMatchObject({ code: B26_ERROR.RESOURCE_LIMIT });
+      expect(store.size).toBe(before);
+      expect(client.db.stores.get(B26_STORES.appOutbox).size).toBe(0);
+    } finally { fixture.cleanup(); }
+  }, 20000);
 
   test('bounded generation history evicts terminal evidence with a durable marker',
     async () => {
