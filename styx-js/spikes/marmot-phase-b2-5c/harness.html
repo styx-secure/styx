@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <link rel="icon" href="data:,">
+    <title>Styx B2.5c isolated browser harness</title>
+    <script type="importmap">
+      {"imports":{
+        "@noble/hashes/sha256":"/node_modules/@noble/hashes/esm/sha256.js",
+        "@noble/hashes/crypto":"/node_modules/@noble/hashes/esm/crypto.js",
+        "@noble/hashes/utils":"/node_modules/@noble/hashes/esm/utils.js",
+        "@noble/curves/secp256k1":"/node_modules/@noble/curves/esm/secp256k1.js",
+        "@noble/hashes/":"/node_modules/@noble/hashes/esm/",
+        "@noble/curves/":"/node_modules/@noble/curves/esm/"
+      }}
+    </script>
+  </head>
+  <body>
+    <p>STYX_SPIKE_PROTOTYPE — not a product path</p>
+    <script type="module">
+      import { schnorr } from '@noble/curves/secp256k1.js';
+      import initOpenMls, * as wasm from '../../vendor/openmls-wasm/openmls_wasm.js';
+      import { bytesToHex, copyBytes, digestHex }
+        from './b2-5c-canonical.mjs';
+      import { openB25CJournal } from './b2-5c-journal.mjs';
+      import { createB25CCoordinator } from './b2-5c-coordinator.mjs';
+
+      await initOpenMls({ module_or_path: new URL(
+        '../../vendor/openmls-wasm/openmls_wasm_bg.wasm', import.meta.url,
+      ) });
+
+      const UTF8 = new TextEncoder();
+      const GROUP = Uint8Array.from({ length: 32 }, (_, index) => index + 11);
+      const GROUP_HEX = bytesToHex(GROUP);
+      const actors = new Map();
+
+      function free(value) { try { value?.free?.(); } catch { /* probe cleanup */ } }
+
+      function proof(privateKey, signatureKey, createdAt) {
+        const account = Uint8Array.from(schnorr.getPublicKey(privateKey));
+        const event = [0, bytesToHex(account), createdAt, 450, [
+          ['d', 'marmot.account-identity-proof.v2'], ['component', '0x8009'],
+          ['ciphersuite', '0x0001'], ['signature_scheme', '0x0807'],
+          ['mls_signature_key', bytesToHex(signatureKey)],
+        ], 'Authorize this MLS leaf key for my Marmot account'];
+        const signature = Uint8Array.from(schnorr.sign(
+          Uint8Array.from(digestHex(UTF8.encode(JSON.stringify(event)))
+            .match(/../g).map((byte) => Number.parseInt(byte, 16))), privateKey));
+        const bytes = new Uint8Array(104);
+        bytes.set(account, 0);
+        new DataView(bytes.buffer).setBigUint64(32, BigInt(createdAt));
+        bytes.set(signature, 40);
+        return { account, bytes };
+      }
+
+      function peer(provider, seed) {
+        const privateKey = new Uint8Array(32);
+        privateKey[31] = seed;
+        const account = Uint8Array.from(schnorr.getPublicKey(privateKey));
+        const identity = new wasm.PhaseB2Identity(provider, account);
+        const signatureKey = copyBytes(identity.leaf_signature_key());
+        const identityProof = proof(privateKey, signatureKey, 1_786_435_200 + seed).bytes;
+        const generated = identity.key_package(provider, identityProof);
+        const framed = copyBytes(generated.to_framed_bytes());
+        free(generated);
+        return { account, identity, signatureKey, identityProof,
+          keyPackage: wasm.PhaseB2KeyPackage.from_framed_bytes(framed) };
+      }
+
+      async function initialize(actor) {
+        const entry = actors.get(actor);
+        const aliceProvider = new wasm.Provider();
+        const bobProvider = new wasm.Provider();
+        const alice = peer(aliceProvider, 1);
+        const bob = peer(bobProvider, 2);
+        const group = wasm.PhaseB2Group.create_new(
+          aliceProvider, alice.identity, GROUP, alice.identityProof);
+        const pending = group.prepare_add(aliceProvider, alice.identity, bob.keyPackage);
+        const projection = pending.projection();
+        try {
+          group.confirm_pending(aliceProvider, pending, projection.verified_leaf_digest());
+          entry.peerIdentityHex = bytesToHex(bob.account);
+          await entry.coordinator.initializeStable({
+            snapshotBytes: copyBytes(aliceProvider.serialize_state()), groupId: GROUP,
+            accountKey: alice.account, signatureKey: alice.signatureKey,
+          });
+        } finally {
+          for (const value of [projection, pending, group, alice.keyPackage, alice.identity,
+            bob.keyPackage, bob.identity, aliceProvider, bobProvider]) free(value);
+        }
+      }
+
+      function outcome(promise) {
+        return promise.then((value) => ({ ok: true, value }))
+          .catch((error) => ({ ok: false, code: error?.code, message: String(error) }));
+      }
+
+      globalThis.B25CHarness = Object.freeze({
+        async open(actor, tag) {
+          const journal = await openB25CJournal({ databaseTag: tag });
+          const gate = { armed: false, entered: false, release: null, promise: null };
+          const coordinator = createB25CCoordinator({ journal, wasm, beforeReplay: async () => {
+            if (!gate.armed) return;
+            gate.entered = true;
+            await gate.promise;
+          } });
+          actors.set(actor, { journal, coordinator, gate, pending: null,
+            peerIdentityHex: null });
+        },
+        initialize,
+        async prepare(actor) {
+          const entry = actors.get(actor);
+          const generation = await entry.coordinator.prepareSelfUpdate(GROUP_HEX);
+          await entry.coordinator.recordAttempt(GROUP_HEX);
+          return entry.coordinator.recordAcknowledgement(
+            GROUP_HEX, 1, entry.peerIdentityHex, UTF8.encode('browser-ack'));
+        },
+        freeze(actor) { return actors.get(actor).coordinator.freeze(GROUP_HEX); },
+        arm(actor) {
+          const gate = actors.get(actor).gate;
+          gate.armed = true;
+          gate.entered = false;
+          gate.promise = new Promise((resolve) => { gate.release = resolve; });
+        },
+        startSettle(actor, digest) {
+          const entry = actors.get(actor);
+          entry.pending = outcome(entry.coordinator.settle(digest));
+        },
+        entered(actor) { return actors.get(actor).gate.entered; },
+        release(actor) { actors.get(actor).gate.release?.(); },
+        result(actor) { return actors.get(actor).pending; },
+        probe(actor) {
+          return outcome(actors.get(actor).coordinator.createLivenessProbe(
+            GROUP_HEX, UTF8.encode('browser-one-use-probe')));
+        },
+        async read(actor) {
+          const entry = actors.get(actor);
+          const bundle = await entry.journal.readHead(GROUP_HEX);
+          return { head: bundle.head };
+        },
+        close(actor) { actors.get(actor)?.journal.close(); actors.delete(actor); },
+        async destroy(actor) { await actors.get(actor)?.journal.destroy(); actors.delete(actor); },
+      });
+    </script>
+  </body>
+</html>
