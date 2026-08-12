@@ -53,7 +53,7 @@ canonical path.
 
 The anchor advances only when a sixth edge is selected. States and edges no
 longer reachable from the new anchor are logically released or removed;
-selection-relevant alternative branches and eligible local pending states stay
+selection-relevant alternative branches and active or eligible local pending states stay
 retained. Historical state reads distinguish a release tombstone from absent
 or corrupt storage.
 
@@ -63,8 +63,10 @@ Local Commit evidence is generation-scoped. A stable generation-authority
 digest binds immutable preparation fields even while the mutable generation
 record moves through publication and selection states. At the 16-generation
 limit, only a safely terminal, non-edge generation may be evicted; its evidence
-and private pending state are removed together and a chained truncation marker
-is written. Historical operations then return typed `UNKNOWN_GENERATION`.
+and private pending state are removed together. The latest truncation marker
+digest-links its predecessor and preserves the evicted authority digest; older
+marker records are not retained by this bounded PoC. Historical operations then
+return typed `UNKNOWN_GENERATION`.
 
 The liveness probe is an intentionally narrow write-ahead ledger:
 

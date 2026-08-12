@@ -108,15 +108,17 @@ epoch and GroupContext.
 When the selected path reaches six edges, the first edge becomes the new anchor
 and the canonical suffix remains exactly five edges. The transaction retains
 all states and edges reachable from that anchor, including alternate branches,
-plus pending snapshots required by eligible local generations. Unreachable
-states receive content-bound release tombstones; unreachable edges are deleted;
-their inputs become `STALE`. Released private bytes are no longer returned, but
+plus pending snapshots required by active or eligible local generations. Only
+unreachable snapshots that were already durable at the start of settlement
+receive content-bound release tombstones; newly replayed but unselected
+successors are simply not persisted. Unreachable edges are deleted and their
+inputs become `STALE`. Released private bytes are no longer returned, but
 this logical deletion is not claimed to be physical secure erasure or an
 independently measured forward-secrecy improvement.
 
 A state required by the canonical suffix, a deferred reachable branch, an
-eligible local generation or recovery is never silently evicted. Missing
-required state produces an atomic `MARK_UNRECOVERABLE` head transition. The
+active or eligible local generation or recovery is never silently evicted.
+Missing required state produces an atomic `MARK_UNRECOVERABLE` head transition. The
 transition changes only terminal status and sequence; canonical MLS state does
 not move.
 
@@ -137,9 +139,10 @@ appended.
 History holds at most 16 live generation records. When full, preparation may
 evict only the oldest `CANCELLED`, `DISCARDED` or `REJECTED` generation that is
 not referenced by an eligible replay edge. Its publication evidence and
-unneeded pending private state are removed atomically. A chained, bounded
-truncation marker records the evicted generation authority and final digest;
-later historical requests fail as `UNKNOWN_GENERATION` and expose the current
+unneeded pending private state are removed atomically. The latest bounded
+truncation marker records the evicted generation authority and final digest and
+digest-links its predecessor; older marker records are not retained by this PoC.
+Later historical requests fail as `UNKNOWN_GENERATION` and expose the current
 marker as diagnostic evidence. If no safe terminal record exists, preparation
 fails before mutation with `RESOURCE_LIMIT`.
 
@@ -180,7 +183,7 @@ The isolated database contains:
 | `canonical-transition` | predecessor/successor, path and release authority |
 | `invalidation-evidence` | displaced and selected branch binding |
 | `local-generation` | exact local preparation and lifecycle |
-| `generation-truncation` | bounded chained history truncation marker |
+| `generation-truncation` | bounded latest marker with predecessor-digest linkage |
 | `active-local` | single active generation pointer |
 | `publication-evidence` | exact generation-scoped facts |
 | `probe-reservation` | one-use emitted-epoch reservation |

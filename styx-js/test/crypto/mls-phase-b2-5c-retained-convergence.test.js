@@ -255,6 +255,36 @@ describe('Phase B2.5c retained-history convergence', () => {
       } finally { fixture.cleanup(); }
     }, 20000);
 
+  test.each([
+    ['PREPARED', false],
+    ['PUBLISHING', true],
+  ])('settlement retains an active %s local pending snapshot', async (_state, attempted) => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm);
+    try {
+      const client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+        `active-${_state.toLowerCase()}`);
+      await client.initialize();
+      const groupIdHex = bytesToHex(fixture.groupId);
+      const generation = await client.coordinator.prepareSelfUpdate(groupIdHex);
+      if (attempted) await client.coordinator.recordAttempt(groupIdHex);
+      await client.coordinator.admitCommit(groupIdHex, Uint8Array.of(1, 2, 3, 4));
+      await client.coordinator.settlePass(groupIdHex);
+      await expect(client.journal.readRetained(generation.pendingSnapshotDigestHex))
+        .resolves.toEqual(expect.objectContaining({
+          snapshotDigestHex: generation.pendingSnapshotDigestHex,
+        }));
+      if (!attempted) await client.coordinator.recordAttempt(groupIdHex);
+      await client.coordinator.recordAcknowledgement(
+        groupIdHex, 1, bytesToHex(fixture.peers.alice.publicKey), UTF8.encode('late-ack'));
+      await client.coordinator.settlePass(groupIdHex);
+      const head = (await client.journal.readHead(groupIdHex)).head;
+      expect(head.state).toBe(B25C_HEAD_STATE.STABLE);
+      expect(head.epochDec).toBe('4');
+      expect(head.canonicalPath).toEqual([generation.commitDigestHex]);
+    } finally { fixture.cleanup(); }
+  }, 20000);
+
   test('write-ahead probe is one-use across restart and remains selection-inert', async () => {
     const wasm = await loadWasm();
     const fixture = await setupGroup(wasm);
@@ -346,6 +376,8 @@ describe('Phase B2.5c retained-history convergence', () => {
         groupIdHex, first.commitDigestHex, 1, peerIdentityHex, UTF8.encode('late-ack'));
       expect(late.evidence.kind).toBe('LATE_ACK');
       expect(late.generation.state).toBe('SELECTED');
+      expect(late.generation.ackCount).toBe(first.ackCount);
+      expect(late.generation.failureCount).toBe(first.failureCount);
       expect((await client.journal.readHead(groupIdHex)).head.canonicalPath).toHaveLength(3);
     } finally { fixture.cleanup(); }
   }, 20000);
@@ -368,6 +400,8 @@ describe('Phase B2.5c retained-history convergence', () => {
           groupIdHex, generation.commitDigestHex, 1, peerIdentityHex,
           UTF8.encode('contradictory-late-ack'));
         expect(contradiction.evidence.kind).toBe('CONTRADICTION');
+        expect(contradiction.generation.ackCount).toBe(0);
+        expect(contradiction.generation.failureCount).toBe(1);
         for (let index = 0; index < B25C_LIMITS.maxGenerations; index += 1) {
           await client.coordinator.prepareSelfUpdate(groupIdHex);
           await client.coordinator.cancelBeforeAttempt(groupIdHex);
@@ -499,6 +533,41 @@ describe('Phase B2.5c retained-history convergence', () => {
       } finally { fixture.cleanup(); }
     }, 20000);
 
+  test('single and split cutoffs converge when anchor advancement also discards a new sibling',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        const base = fixture.peers.alice.snapshotBytes;
+        let sourceSnapshot = base;
+        const chain = [];
+        for (let index = 0; index < 6; index += 1) {
+          const update = selfUpdateFrom(
+            wasm, fixture.peers.alice, fixture.groupId, sourceSnapshot);
+          chain.push(update.commitBytes);
+          sourceSnapshot = update.successorSnapshotBytes;
+        }
+        const sibling = selfUpdateFrom(
+          wasm, fixture.peers.alice, fixture.groupId, base);
+        const single = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+          'sibling-single');
+        const split = clientFor(wasm, fixture.peers.charlie, fixture.groupId,
+          'sibling-split');
+        await single.initialize();
+        await split.initialize();
+        await settleInputs(single, fixture.groupId,
+          [sibling.commitBytes, ...chain.slice().reverse()]);
+        await settleInputs(split, fixture.groupId, [sibling.commitBytes]);
+        await settleInputs(split, fixture.groupId, chain.slice().reverse());
+        const singleHead = (await single.journal.readHead(bytesToHex(fixture.groupId))).head;
+        const splitHead = (await split.journal.readHead(bytesToHex(fixture.groupId))).head;
+        expect(singleHead.canonicalPath).toHaveLength(B25C_LIMITS.rewindCommits);
+        expect(splitHead.canonicalPath).toEqual(singleHead.canonicalPath);
+        expect(splitHead.epochDec).toBe(singleHead.epochDec);
+        expect(splitHead.groupContextDigestHex).toBe(singleHead.groupContextDigestHex);
+      } finally { fixture.cleanup(); }
+    }, 20000);
+
   test('a superseded probed branch can return only through a deeper fresh tip', async () => {
     const wasm = await loadWasm();
     const fixture = await setupGroup(wasm);
@@ -601,6 +670,12 @@ describe('Phase B2.5c retained-history convergence', () => {
         .toEqual(before.inputs.map((item) => item.inputDigestHex));
     } finally { fixture.cleanup(); }
   }, 20000);
+
+  test('journal factory rejects databases outside the isolated B2.5c namespace', () => {
+    const db = new FakeVaultDb();
+    Object.defineProperty(db, 'name', { value: 'styx-unscoped-database' });
+    expect(() => createB25CJournalForDb(db)).toThrow(/outside the B2\.5c namespace/);
+  });
 
   test('two retained parents that accept one exact Commit fail closed as ambiguous',
     async () => {

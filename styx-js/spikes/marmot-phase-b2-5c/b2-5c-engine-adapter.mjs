@@ -61,6 +61,12 @@ const ELIGIBLE_GENERATION_STATES = new Set([
   B25C_GENERATION_STATE.SELECTED,
   B25C_GENERATION_STATE.LOSING,
 ]);
+
+const RETENTION_REQUIRED_GENERATION_STATES = new Set([
+  B25C_GENERATION_STATE.PREPARED,
+  B25C_GENERATION_STATE.PUBLISHING,
+  ...ELIGIBLE_GENERATION_STATES,
+]);
 const TERMINAL_GENERATION_STATES = new Set([
   B25C_GENERATION_STATE.CANCELLED,
   B25C_GENERATION_STATE.DISCARDED,
@@ -646,13 +652,15 @@ export class B25CEngineAdapter {
       return rebuildGeneration(generation, { state: B25C_GENERATION_STATE.REJECTED });
     });
     for (const generation of generations) {
-      if ([B25C_GENERATION_STATE.ACKNOWLEDGED, B25C_GENERATION_STATE.SELECTED,
-        B25C_GENERATION_STATE.LOSING].includes(generation.state)) {
+      if (RETENTION_REQUIRED_GENERATION_STATES.has(generation.state)) {
         reachableStates.add(generation.pendingSnapshotDigestHex);
       }
     }
+    const durableStateDigests = new Set(bundle.retained.map((state) =>
+      state.snapshotDigestHex));
     for (const state of graph.states) {
-      if (!reachableStates.has(state.snapshotDigestHex)
+      if (durableStateDigests.has(state.snapshotDigestHex)
+        && !reachableStates.has(state.snapshotDigestHex)
         && !releaseCandidates.some((item) =>
           item.snapshotDigestHex === state.snapshotDigestHex)) {
         releaseCandidates.push(state);
@@ -882,9 +890,10 @@ export class B25CEngineAdapter {
     const next = rebuildGeneration(generation, {
       state: !terminal && requestedKind === B25C_PUBLICATION_KIND.ACK
         ? B25C_GENERATION_STATE.ACKNOWLEDGED : generation.state,
-      ackCount: generation.ackCount + (requestedKind === B25C_PUBLICATION_KIND.ACK ? 1 : 0),
+      ackCount: generation.ackCount
+        + (!terminal && requestedKind === B25C_PUBLICATION_KIND.ACK ? 1 : 0),
       failureCount: generation.failureCount
-        + (requestedKind === B25C_PUBLICATION_KIND.FAILURE ? 1 : 0),
+        + (!terminal && requestedKind === B25C_PUBLICATION_KIND.FAILURE ? 1 : 0),
       contradiction: generation.contradiction || kind === B25C_PUBLICATION_KIND.CONTRADICTION,
     });
     const evidence = buildPublication({ groupIdHex: generation.groupIdHex,
