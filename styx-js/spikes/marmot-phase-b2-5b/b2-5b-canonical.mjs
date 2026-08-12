@@ -39,6 +39,9 @@ export const B25B_LIMITS = Object.freeze({
   maxMembers: B23_LIMITS.maxMembers,
   maxCommitBytes: B23_LIMITS.maxCommitBytes,
   maxSnapshotBytes: B23_LIMITS.maxSnapshotBytes,
+  maxPublicationAttempts: 64,
+  maxPublicationPayloadBytes: 4096,
+  maxPublicationRecords: 64,
 });
 
 export const B25B_STORES = Object.freeze({
@@ -181,7 +184,7 @@ export function localKey(groupIdHex) {
 
 export function publicationKey(groupIdHex, sequence) {
   assertGroupIdHex(groupIdHex);
-  assertSafeInteger('publication sequence', sequence, 1, 64);
+  assertSafeInteger('publication sequence', sequence, 1, B25B_LIMITS.maxPublicationRecords);
   return `${groupIdHex}:${String(sequence).padStart(2, '0')}`;
 }
 

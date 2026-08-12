@@ -143,7 +143,10 @@ The database has exactly eight stores:
 
 B2.5b-local records use closed direct objects, exact field sets, bounded counts
 and byte lengths, closed terminal-disposition/counter bindings,
-domain-separated canonical encoding and SHA-256 digests. The
+domain-separated canonical encoding and SHA-256 digests. Publication records
+recheck their artifact digest against their exact bytes, and a new attempt is
+rejected before the 64-record evidence cap would strand it without outcome
+capacity. The
 cross-member protocol-batch and comparison-tuple identities deliberately retain
 the frozen B2.5a domains. Unknown fields/states, duplicate sorted identities,
 unsafe counters, corrupt digests and incoherent nullable bindings fail closed.

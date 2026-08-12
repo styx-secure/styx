@@ -580,9 +580,10 @@ function assertLocal(record) {
     }
     prior = identity;
   }
-  assertSafeInteger('publishAttempts', record.publishAttempts, 0, 64);
-  assertSafeInteger('ackCount', record.ackCount, 0, 64);
-  assertSafeInteger('failureCount', record.failureCount, 0, 64);
+  assertSafeInteger('publishAttempts', record.publishAttempts,
+    0, B25B_LIMITS.maxPublicationAttempts);
+  assertSafeInteger('ackCount', record.ackCount, 0, B25B_LIMITS.maxPublicationRecords);
+  assertSafeInteger('failureCount', record.failureCount, 0, B25B_LIMITS.maxPublicationRecords);
   assertNullableString('terminalDisposition', record.terminalDisposition, { max: 64 });
   if (record.terminalDisposition !== null
     && !TERMINAL_DISPOSITIONS.has(record.terminalDisposition)) {
@@ -700,16 +701,22 @@ export function parseLocal(raw) {
 function assertPublication(record) {
   assertMagic(record, 'publication-evidence');
   assertGroupIdHex(record.groupIdHex);
-  assertSafeInteger('publication sequence', record.sequence, 1, 64);
+  assertSafeInteger('publication sequence', record.sequence,
+    1, B25B_LIMITS.maxPublicationRecords);
   if (!PUBLICATION_KINDS.has(record.kind)) {
     failB25B(B25B_ERROR.INVALID, 'publication evidence kind is invalid');
   }
-  assertSafeInteger('attemptOrdinal', record.attemptOrdinal, 1, 64);
+  assertSafeInteger('attemptOrdinal', record.attemptOrdinal,
+    1, B25B_LIMITS.maxPublicationAttempts);
   assertHex64('artifactDigestHex', record.artifactDigestHex);
   assertBytes('artifactBytes', record.artifactBytes, { min: 1, max: B25B_LIMITS.maxCommitBytes });
+  if (digestHex(record.artifactBytes) !== record.artifactDigestHex) {
+    failB25B(B25B_ERROR.CORRUPT, 'publication artifact binding mismatch');
+  }
   assertHex64('recipientScopeDigestHex', record.recipientScopeDigestHex);
   assertNullableHex64('recipientIdentityHex', record.recipientIdentityHex);
-  assertBytes('payloadBytes', record.payloadBytes, { min: 0, max: 4096 });
+  assertBytes('payloadBytes', record.payloadBytes,
+    { min: 0, max: B25B_LIMITS.maxPublicationPayloadBytes });
   assertHex64('evidenceDigestHex', record.evidenceDigestHex);
   if (record.kind === B25B_PUBLICATION_KIND.ATTEMPT && record.recipientIdentityHex !== null) {
     failB25B(B25B_ERROR.INVALID, 'attempt evidence cannot claim a recipient');

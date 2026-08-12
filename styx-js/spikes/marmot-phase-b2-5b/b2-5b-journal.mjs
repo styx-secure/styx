@@ -770,7 +770,8 @@ export class B25BJournal {
           const evidence = parsePublication(await getRequired(ops, B25B_STORES.publication,
             key, 'publication evidence'));
           if (evidence.kind === B25B_PUBLICATION_KIND.ACK
-            && evidence.artifactDigestHex === safeLocal.commitDigestHex) acknowledged = true;
+            && evidence.artifactDigestHex === safeLocal.commitDigestHex
+            && bytesEqual(evidence.artifactBytes, safeLocal.commitBytes)) acknowledged = true;
         }
         if (localDigest !== null && !acknowledged) {
           failB25B(B25B_ERROR.CORRUPT, 'frozen local candidate lacks durable acknowledgement');

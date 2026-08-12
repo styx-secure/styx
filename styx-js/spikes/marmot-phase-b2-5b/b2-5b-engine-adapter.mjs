@@ -24,6 +24,7 @@ import {
 import {
   B25B_CANDIDATE_STATE,
   B25B_ERROR,
+  B25B_LIMITS,
   B25B_LOCAL_STATE,
   B25B_PUBLICATION_KIND,
   B25B_REASON,
@@ -426,6 +427,10 @@ export class B25BEngineAdapter {
       failB25B(B25B_ERROR.STATE_CONFLICT, 'publication attempt requires prepared state');
     }
     const existing = await this.#journal.readPublication(groupIdHex);
+    if (existing.length >= B25B_LIMITS.maxPublicationRecords - 1) {
+      failB25B(B25B_ERROR.RESOURCE_LIMIT,
+        'publication evidence capacity cannot reserve an outcome');
+    }
     const ordinal = local.publishAttempts + 1;
     const evidence = buildPublication({
       groupIdHex, sequence: existing.length + 1, kind: B25B_PUBLICATION_KIND.ATTEMPT,
@@ -452,8 +457,10 @@ export class B25BEngineAdapter {
 
   async #recordOutcome(groupIdHex, requestedKind, attemptOrdinal, recipientIdentityHex,
     payloadBytes) {
-    assertSafeInteger('attemptOrdinal', attemptOrdinal, 1, 64);
-    assertBytes('payloadBytes', payloadBytes, { min: 0, max: 4096 });
+    assertSafeInteger('attemptOrdinal', attemptOrdinal,
+      1, B25B_LIMITS.maxPublicationAttempts);
+    assertBytes('payloadBytes', payloadBytes,
+      { min: 0, max: B25B_LIMITS.maxPublicationPayloadBytes });
     const local = await this.#journal.readLocal(groupIdHex);
     if (local === null || local.commitDigestHex === null) {
       failB25B(B25B_ERROR.STATE_CONFLICT, 'publication outcome lacks pending state');

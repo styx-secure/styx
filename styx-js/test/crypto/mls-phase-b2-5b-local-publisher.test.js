@@ -24,6 +24,7 @@ import {
   comparisonTupleDigest,
   copyBytes,
   digestHex,
+  publicationKey,
 } from '../../spikes/marmot-phase-b2-5b/b2-5b-canonical.mjs';
 import {
   priorityForAuthorization,
@@ -39,6 +40,7 @@ import { createB25BCoordinator }
 import {
   buildCandidateEvidence,
   buildInput,
+  buildPublication,
   buildRetainedState,
   buildTransition,
   parseBatch,
@@ -838,10 +840,58 @@ describe('Phase B2.5b real OpenMLS local-publisher arbitration', () => {
         expect(() => parsePublication(corrupt)).toThrow(
           expect.objectContaining({ code: B25B_ERROR.CORRUPT }),
         );
+        expect(() => buildPublication({
+          groupIdHex: publication.groupIdHex,
+          sequence: publication.sequence,
+          kind: publication.kind,
+          attemptOrdinal: publication.attemptOrdinal,
+          artifactDigestHex: publication.artifactDigestHex,
+          artifactBytes: corrupt.artifactBytes,
+          recipientScopeDigestHex: publication.recipientScopeDigestHex,
+          recipientIdentityHex: publication.recipientIdentityHex,
+          payloadBytes: publication.payloadBytes,
+        })).toThrow(expect.objectContaining({ code: B25B_ERROR.CORRUPT }));
       } finally {
         fixture.cleanup();
       }
     });
+
+  test('reserves publication capacity for an outcome before mutating local state', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm, 137);
+    const groupIdHex = bytesToHex(fixture.groupId);
+    const client = await createClient(wasm, fixture.peers.bob, fixture.groupId, 'publication-cap');
+    try {
+      await client.coordinator.queueSelfUpdate(groupIdHex);
+      await client.coordinator.runQueuedOpportunity(groupIdHex);
+      const before = await client.journal.readLocal(groupIdHex);
+      await client.db.transaction([B25B_STORES.publication], async (ops) => {
+        for (let sequence = 1; sequence < B25B_LIMITS.maxPublicationRecords; sequence += 1) {
+          const historicalArtifact = Uint8Array.of(sequence);
+          const evidence = buildPublication({
+            groupIdHex,
+            sequence,
+            kind: B25B_PUBLICATION_KIND.ATTEMPT,
+            attemptOrdinal: sequence,
+            artifactDigestHex: digestHex(historicalArtifact),
+            artifactBytes: historicalArtifact,
+            recipientScopeDigestHex: before.recipientScopeDigestHex,
+            recipientIdentityHex: null,
+            payloadBytes: new Uint8Array(),
+          });
+          await ops.put(B25B_STORES.publication, publicationKey(groupIdHex, sequence), evidence);
+        }
+      });
+      await expect(client.coordinator.recordAttempt(groupIdHex)).rejects.toMatchObject({
+        code: B25B_ERROR.RESOURCE_LIMIT,
+      });
+      expect(await client.journal.readLocal(groupIdHex)).toEqual(before);
+      await client.coordinator.cancelBeforeAttempt(groupIdHex);
+      expect((await client.journal.readLocal(groupIdHex)).state).toBe(B25B_LOCAL_STATE.CANCELLED);
+    } finally {
+      fixture.cleanup();
+    }
+  });
 
   test('strictly parses every durable record and rejects incoherent frozen bindings', async () => {
     const wasm = await loadWasm();
