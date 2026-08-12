@@ -174,6 +174,41 @@ async function setupGroup(wasm, groupSeed = 1) {
   } };
 }
 
+function extendGroupWithoutJoining(wasm, fixture, observerName, count, firstSeed) {
+  const newcomers = [];
+  const alice = fixture.peers.alice;
+  const observer = fixture.peers[observerName];
+  for (let index = 0; index < count; index += 1) {
+    const provider = new wasm.Provider();
+    const newcomer = createPeer(wasm, provider, firstSeed + index);
+    newcomers.push({ ...newcomer, provider });
+    const pending = alice.group.prepare_add(
+      alice.provider, alice.identity, newcomer.keyPackage,
+    );
+    const projection = pending.projection();
+    try {
+      mergeInbound(observer.group, observer.provider, copyBytes(pending.commit()));
+      alice.group.confirm_pending(
+        alice.provider, pending, projection.verified_leaf_digest(),
+      );
+    } finally {
+      free(projection);
+      free(pending);
+    }
+  }
+  alice.snapshotBytes = copyBytes(alice.provider.serialize_state());
+  observer.snapshotBytes = copyBytes(observer.provider.serialize_state());
+  return newcomers;
+}
+
+function cleanupUnjoined(peers) {
+  for (const peer of peers) {
+    free(peer.keyPackage);
+    free(peer.identity);
+    free(peer.provider);
+  }
+}
+
 function prepareFromParent(wasm, peer, groupId, operation, argument = null) {
   const restored = restorePeer(wasm, peer, groupId);
   let pending;
@@ -511,6 +546,49 @@ describe('Phase B2.5a real OpenMLS same-parent convergence', () => {
     }
   }, 30000);
 
+  test('an over-profile branch is terminally ineligible without blocking a valid sibling', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm);
+    const newcomers = extendGroupWithoutJoining(
+      wasm, fixture, 'charlie', B25_LIMITS.maxMembers - 4, 20,
+    );
+    const extraProvider = new wasm.Provider();
+    const extra = createPeer(wasm, extraProvider, 40);
+    const overProfile = prepareFromParent(
+      wasm, fixture.peers.alice, fixture.groupId, 'add', extra,
+    );
+    const valid = prepareFromParent(
+      wasm, fixture.peers.alice, fixture.groupId, 'self-update',
+    );
+    const client = await createAdapter(
+      wasm, fixture.peers.charlie, fixture.groupId, 'over-profile-sibling',
+    );
+    try {
+      expect(fixture.peers.alice.group.member_count()).toBe(B25_LIMITS.maxMembers);
+      const batch = await collectFreeze(client.adapter, bytesToHex(fixture.groupId), [
+        overProfile.commitBytes, valid.commitBytes,
+      ]);
+      const resolved = await client.adapter.resolve(batch.protocolBatchDigestHex);
+      expect(resolved.batch.state).toBe(B25_BATCH_STATE.RESOLVED);
+      expect(resolved.batch.winnerCommitDigestHex).toBe(digestHex(valid.commitBytes));
+      expect(resolved.candidates.find((candidate) =>
+        candidate.commitDigestHex === digestHex(overProfile.commitBytes)).state)
+        .toBe(B25_CANDIDATE_STATE.NOT_CANDIDATE);
+      expect(resolved.candidates.find((candidate) =>
+        candidate.commitDigestHex === digestHex(valid.commitBytes)).state)
+        .toBe(B25_CANDIDATE_STATE.AUTHORIZED);
+    } finally {
+      cleanupPrepared(overProfile);
+      cleanupPrepared(valid);
+      client.journal.close();
+      cleanupUnjoined(newcomers);
+      free(extra.keyPackage);
+      free(extra.identity);
+      free(extraProvider);
+      fixture.cleanup();
+    }
+  }, 30000);
+
   test('post-freeze bytes are deferred and cannot change the frozen winner', async () => {
     const wasm = await loadWasm();
     const fixture = await setupGroup(wasm);
@@ -531,6 +609,73 @@ describe('Phase B2.5a real OpenMLS same-parent convergence', () => {
       expect(laterResult.batch.winnerCommitDigestHex).toBeNull();
     } finally {
       cleanupPrepared(first); cleanupPrepared(deferred); client.journal.close(); fixture.cleanup();
+    }
+  }, 30000);
+
+  test('a resolved batch remains readable after a later canonical advance', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm);
+    const first = prepareFromParent(
+      wasm, fixture.peers.alice, fixture.groupId, 'self-update',
+    );
+    const client = await createAdapter(
+      wasm, fixture.peers.charlie, fixture.groupId, 'historical-resolution',
+    );
+    let second;
+    let third;
+    try {
+      const firstBatch = await collectFreeze(
+        client.adapter, bytesToHex(fixture.groupId), [first.commitBytes],
+      );
+      const firstResult = await client.adapter.resolve(firstBatch.protocolBatchDigestHex);
+      confirmPrepared(first);
+      first.snapshotBytes = copyBytes(first.provider.serialize_state());
+      first.publicKey = fixture.peers.alice.publicKey;
+      first.signatureKey = fixture.peers.alice.signatureKey;
+      second = prepareFromParent(
+        wasm, first, fixture.groupId, 'self-update',
+      );
+      const secondBatch = await collectFreeze(
+        client.adapter, bytesToHex(fixture.groupId), [second.commitBytes],
+      );
+      const secondResult = await client.adapter.resolve(secondBatch.protocolBatchDigestHex);
+      expect(secondResult.head.headDigestHex).not.toBe(firstResult.head.headDigestHex);
+
+      const replay = await client.adapter.resolve(firstBatch.protocolBatchDigestHex);
+      expect(replay.head).toEqual(firstResult.head);
+      expect(replay.transition).toEqual(firstResult.transition);
+      expect(replay.retained).toEqual(firstResult.retained);
+      expect(replay.batch).toEqual(firstResult.batch);
+
+      const nullBatch = await collectFreeze(
+        client.adapter, bytesToHex(fixture.groupId), [Uint8Array.of(1, 2, 3, 4)],
+      );
+      const nullResult = await client.adapter.resolve(nullBatch.protocolBatchDigestHex);
+      expect(nullResult.batch.winnerCommitDigestHex).toBeNull();
+      expect(nullResult.head).toEqual(secondResult.head);
+
+      confirmPrepared(second);
+      second.snapshotBytes = copyBytes(second.provider.serialize_state());
+      second.publicKey = fixture.peers.alice.publicKey;
+      second.signatureKey = fixture.peers.alice.signatureKey;
+      third = prepareFromParent(
+        wasm, second, fixture.groupId, 'self-update',
+      );
+      const thirdBatch = await collectFreeze(
+        client.adapter, bytesToHex(fixture.groupId), [third.commitBytes],
+      );
+      await client.adapter.resolve(thirdBatch.protocolBatchDigestHex);
+
+      const nullReplay = await client.adapter.resolve(nullBatch.protocolBatchDigestHex);
+      expect(nullReplay.head).toEqual(secondResult.head);
+      expect(nullReplay.transition).toBeNull();
+      expect(nullReplay.retained).toBeNull();
+    } finally {
+      cleanupPrepared(first);
+      if (second !== undefined) cleanupPrepared(second);
+      if (third !== undefined) cleanupPrepared(third);
+      client.journal.close();
+      fixture.cleanup();
     }
   }, 30000);
 

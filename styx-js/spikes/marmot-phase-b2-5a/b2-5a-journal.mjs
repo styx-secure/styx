@@ -117,6 +117,47 @@ function validateFrozenBundle({ head, batch, retained, inputs, candidates }) {
   return { head, batch, retained, inputs, candidates };
 }
 
+function headProducedByTransition(identityHead, transition) {
+  if (transition.groupIdHex !== identityHead.groupIdHex) {
+    failB25(B25_ERROR.CORRUPT, 'historical transition belongs to another group');
+  }
+  return buildHead({
+    groupIdHex: transition.groupIdHex,
+    accountKeyHex: identityHead.accountKeyHex,
+    signatureKeyHex: identityHead.signatureKeyHex,
+    seq: transition.seq,
+    state: transition.kind === 'UNRECOVERABLE'
+      ? B25_HEAD_STATE.UNRECOVERABLE : B25_HEAD_STATE.STABLE,
+    epochDec: transition.epochDec,
+    groupContextDigestHex: transition.groupContextDigestHex,
+    snapshotDigestHex: transition.snapshotDigestHex,
+    priorHeadDigestHex: transition.priorHeadDigestHex,
+    transitionDigestHex: transition.transitionDigestHex,
+    selectedCommitDigestHex: transition.winnerCommitDigestHex,
+  });
+}
+
+async function readGroupTransitionHistory(ops, identityHead) {
+  const records = [];
+  const keys = (await ops.list(B25_STORES.transition))
+    .filter((key) => typeof key === 'string').sort();
+  for (const key of keys) {
+    const transition = parseTransition(await getRequired(
+      ops, B25_STORES.transition, key, 'historical transition',
+    ));
+    if (transition.transitionDigestHex !== key) {
+      failB25(B25_ERROR.CORRUPT, 'transition storage key does not bind its content');
+    }
+    if (transition.groupIdHex === identityHead.groupIdHex) {
+      records.push(Object.freeze({
+        transition,
+        head: headProducedByTransition(identityHead, transition),
+      }));
+    }
+  }
+  return records;
+}
+
 export class B25Journal {
   #db;
 
@@ -519,20 +560,51 @@ export class B25Journal {
         await getRequired(ops, B25_STORES.candidate, candidateKey(batchDigestHex, digest),
           'resolved candidate'),
       ));
-      const head = parseHead(await getRequired(ops, B25_STORES.head, batch.groupIdHex, 'canonical head'));
-      if (batch.winnerCommitDigestHex === null) {
-        if (head.headDigestHex !== batch.localBaseHeadDigestHex) {
-          failB25(B25_ERROR.CORRUPT, 'null-winner batch changed the canonical head');
-        }
-        return Object.freeze({ head, batch, transition: null, retained: null, candidates });
-      }
-      if (head.selectedCommitDigestHex !== batch.winnerCommitDigestHex
-        || head.priorHeadDigestHex !== batch.localBaseHeadDigestHex) {
-        failB25(B25_ERROR.CORRUPT, 'resolved winner does not bind the canonical head');
-      }
-      const transition = parseTransition(await getRequired(
-        ops, B25_STORES.transition, head.transitionDigestHex, 'resolution transition',
+      const currentHead = parseHead(await getRequired(
+        ops, B25_STORES.head, batch.groupIdHex, 'canonical head',
       ));
+      if (batch.winnerCommitDigestHex === null) {
+        if (currentHead.headDigestHex === batch.localBaseHeadDigestHex) {
+          return Object.freeze({
+            head: currentHead, batch, transition: null, retained: null, candidates,
+          });
+        }
+        const history = await readGroupTransitionHistory(ops, currentHead);
+        const matches = history.filter((item) =>
+          item.head.headDigestHex === batch.localBaseHeadDigestHex);
+        if (matches.length !== 1) {
+          failB25(B25_ERROR.CORRUPT, 'null-winner base head is absent or ambiguous');
+        }
+        return Object.freeze({
+          head: matches[0].head, batch, transition: null, retained: null, candidates,
+        });
+      }
+      let head = currentHead;
+      let transition;
+      if (head.selectedCommitDigestHex === batch.winnerCommitDigestHex
+        && head.priorHeadDigestHex === batch.localBaseHeadDigestHex) {
+        transition = parseTransition(await getRequired(
+          ops, B25_STORES.transition, head.transitionDigestHex, 'resolution transition',
+        ));
+      } else {
+        const history = await readGroupTransitionHistory(ops, currentHead);
+        const matches = history.filter((item) => item.transition.kind === 'RESOLVE'
+          && item.transition.batchDigestHex === batch.protocolBatchDigestHex
+          && item.transition.winnerCommitDigestHex === batch.winnerCommitDigestHex
+          && item.transition.priorHeadDigestHex === batch.localBaseHeadDigestHex);
+        if (matches.length !== 1) {
+          failB25(B25_ERROR.CORRUPT, 'resolved winner transition is absent or ambiguous');
+        }
+        ({ head, transition } = matches[0]);
+      }
+      if (transition.kind !== 'RESOLVE'
+        || transition.batchDigestHex !== batch.protocolBatchDigestHex
+        || transition.winnerCommitDigestHex !== batch.winnerCommitDigestHex
+        || transition.priorHeadDigestHex !== batch.localBaseHeadDigestHex
+        || transition.outcomesDigestHex !== outcomesDigest(batch.outcomes)
+        || head.transitionDigestHex !== transition.transitionDigestHex) {
+        failB25(B25_ERROR.CORRUPT, 'resolved winner does not bind its historical head');
+      }
       const retained = parseRetainedState(await getRequired(
         ops, B25_STORES.retained, head.snapshotDigestHex, 'successor retained state',
       ));

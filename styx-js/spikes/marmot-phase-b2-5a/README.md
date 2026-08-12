@@ -27,8 +27,10 @@ vault, or a product runtime.
 1. Retain and digest exact MLS Commit bytes before evaluation.
 2. Freeze the sorted unique digest set against the current stable parent.
 3. Restore the exact retained provider snapshot independently for every input.
-4. Stage the Commit through the pinned OpenMLS engine. Failure becomes
-   `NOT_CANDIDATE`, not a policy rejection.
+4. Stage and decode the Commit through the pinned OpenMLS engine. A closed
+   staging or bounded-projection failure becomes `NOT_CANDIDATE`, not a policy
+   rejection. Later invariant, policy-binding, or evidence failures propagate
+   and leave the frozen batch available for deterministic recovery.
 5. Reproduce and bind the complete B2.4 authorization decision.
 6. Admit only authorized direct children of the retained parent.
 7. Select the lexicographically minimum tuple:
@@ -49,7 +51,9 @@ vault, or a product runtime.
 An all-invalid frozen batch resolves terminally with a null winner and leaves
 the canonical head byte-identical. A missing retained parent moves the local
 head to typed `UNRECOVERABLE` while preserving the last epoch, GroupContext,
-snapshot reference, and all MLS bytes.
+snapshot reference, and all MLS bytes. Resolved winner and null-winner batches
+remain readable after later canonical advances by validating their immutable
+transition history rather than requiring them to define the current head.
 
 ## Files
 

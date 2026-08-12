@@ -76,18 +76,21 @@ For each frozen Commit:
 9. Persist immutable evidence. Only `AUTHORIZED` evidence receives ordering
    authority.
 
-Engine/decode/parent failure produces `NOT_CANDIDATE`; an authenticated Commit
-that B2.4 rejects produces `REJECTED`. Neither state creates an edge or merges
-anything. The resolver sorts only complete `AUTHORIZED` evidence and rejects
-equal total-order identities as corruption.
+Closed OpenMLS staging or bounded projection/decode failure produces
+`NOT_CANDIDATE`; an authenticated Commit that B2.4 rejects produces `REJECTED`.
+Neither state creates an edge or merges anything. Retained-parent restore,
+post-projection invariant, policy-binding, and evidence failures propagate and
+leave the frozen batch unchanged. The resolver sorts only complete `AUTHORIZED`
+evidence and rejects equal total-order identities as corruption.
 
 The public journal exposes collection, freeze and read operations only. Its
 initialization and final-resolution functions are private methods supplied as
 opaque closures to an adapter created by that journal. Consequently no public
 journal call accepts caller-provided candidate evidence, priority, committer,
-authorization digest, parent metadata, or successor snapshot. Engine and policy
-invariant errors with a typed code propagate; only closed OpenMLS staging/decode
-outcomes become `NOT_CANDIDATE`.
+authorization digest, parent metadata, or successor snapshot. This boundary
+assumes that the injected initialized WASM module is the pinned trusted engine;
+the non-product constructor injection required by B2.4/B2.5a is not a defense
+against a caller deliberately substituting a behaviorally hostile engine.
 
 The selected input is restored, staged, projected, authorized, and checked a
 second time. Its evidence digest must match the first pass before merge. The
@@ -183,7 +186,10 @@ The focused real-WASM suite exercises:
 - wrong group, wrong parent epoch, malformed bytes and non-admin operation;
 - frozen-set immutability and post-freeze deferral to a later batch;
 - own freshly prepared Commit staging (`OwnCommit`) as a closed non-candidate;
+- a real Add above the 16-member profile bound as a closed non-candidate while
+  a valid same-parent self-update resolves the frozen batch;
 - null-winner terminal resolution and idempotent restart behavior;
+- historical winner and null-winner reads after later canonical advances;
 - losing-branch non-application and winner bidirectional message liveness;
 - changed stored bytes, missing retained parent, a storage-key/content collision,
   and fully bound forged final evidence blocked by the absent public finalizer;
@@ -242,7 +248,7 @@ silently inherit, these terminal probe outcomes in the retained-history phase.
 
 ## 12. Evidence and limitations
 
-Focused evidence at the working candidate currently passes 15/15 tests. Exact
+Focused evidence at the working candidate currently passes 17/17 tests. Exact
 full-suite, browser, build, enforcement, artifact-integrity, independent-agent,
 CI and human evidence is recorded on the candidate PR rather than claimed by
 this pre-merge report.
@@ -257,7 +263,9 @@ This proof does not provide:
 - keyed journal authenticity, external monotonic anchoring, or rollback defense;
 - browser storage persistence, eviction/quota guarantees, secure erasure;
 - malicious-origin, compromised browser/OS, metadata-privacy or anonymity
-  protection; or
+  protection;
+- defense against a caller substituting a behaviorally hostile object for the
+  pinned initialized WASM engine injected into this isolated probe; or
 - audit coverage or readiness for real sensitive data.
 
 Strict container/unknown-field failures use the B2.5a error namespace. Some

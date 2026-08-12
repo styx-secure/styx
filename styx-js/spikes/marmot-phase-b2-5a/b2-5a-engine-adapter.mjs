@@ -1,6 +1,7 @@
 // STYX_SPIKE_PROTOTYPE — OpenMLS adapter for the Phase B2.5a branch kernel.
 
 import {
+  B23_ERROR,
   B23_LIMITS,
   assertBytes,
   bytesEqual,
@@ -32,6 +33,15 @@ import {
 } from './b2-5a-record.mjs';
 
 const ADAPTER_TOKEN = Symbol('B25_ENGINE_ADAPTER_TOKEN');
+const CANDIDATE_DECODE_ERRORS = new Set([
+  B23_ERROR.INVALID,
+  B23_ERROR.ENGINE_REJECTED,
+  B23_ERROR.RESOURCE_LIMIT,
+]);
+
+function isClosedCandidateFailure(error) {
+  return error?.code === undefined || CANDIDATE_DECODE_ERRORS.has(error.code);
+}
 
 function safeFree(value) {
   if (value && typeof value.free === 'function') {
@@ -221,9 +231,19 @@ export class B25EngineAdapter {
     let finalized = false;
     try {
       const before = copyBytes(session.provider.serialize_state());
-      staged = session.group.stage_inbound_commit(session.provider, input.commitBytes);
-      projectionHandle = staged.projection();
-      const projection = projectB2Commit(projectionHandle);
+      let projection;
+      try {
+        staged = session.group.stage_inbound_commit(session.provider, input.commitBytes);
+        projectionHandle = staged.projection();
+        projection = projectB2Commit(projectionHandle);
+      } catch (error) {
+        if (!isClosedCandidateFailure(error)) throw error;
+        if (staged !== undefined) {
+          try { session.group.discard_staged_commit(session.provider, staged); } catch { /* disposable */ }
+          finalized = true;
+        }
+        return notCandidateEvidence(bundle, input);
+      }
       if (!bytesEqual(before, session.provider.serialize_state())) {
         failB25(B25_ERROR.ENGINE_REJECTED, 'candidate staging mutated its retained parent');
       }
@@ -238,8 +258,7 @@ export class B25EngineAdapter {
       if (staged !== undefined && !finalized) {
         try { session.group.discard_staged_commit(session.provider, staged); } catch { /* disposable */ }
       }
-      if (error?.code) throw error;
-      return notCandidateEvidence(bundle, input);
+      throw error;
     } finally {
       safeFree(projectionHandle);
       safeFree(staged);
