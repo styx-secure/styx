@@ -77,7 +77,8 @@ function verifyDigest(record, field, domain, values) {
 export const HEAD_FIELDS = Object.freeze([
   'format', 'version', 'profile', 'runtime', 'groupIdHex', 'accountKeyHex',
   'signatureKeyHex', 'seq', 'state', 'epochDec', 'groupContextDigestHex',
-  'snapshotDigestHex', 'anchorSnapshotDigestHex', 'canonicalPath',
+  'snapshotDigestHex', 'anchorSnapshotDigestHex', 'anchorTipCommitDigestHex',
+  'canonicalPath',
   'priorHeadDigestHex', 'transitionDigestHex', 'selectedCommitDigestHex', 'headDigestHex',
 ]);
 
@@ -85,7 +86,8 @@ function headValues(value) {
   return [value.format, value.version, value.profile, value.runtime, value.groupIdHex,
     value.accountKeyHex, value.signatureKeyHex, value.seq, value.state, value.epochDec,
     value.groupContextDigestHex, value.snapshotDigestHex, value.anchorSnapshotDigestHex,
-    value.canonicalPath, value.priorHeadDigestHex, value.transitionDigestHex,
+    value.anchorTipCommitDigestHex, value.canonicalPath, value.priorHeadDigestHex,
+    value.transitionDigestHex,
     value.selectedCommitDigestHex];
 }
 
@@ -93,6 +95,7 @@ export function buildHead(fields) {
   const safe = assertB26DirectObject(fields, [
     'groupIdHex', 'accountKeyHex', 'signatureKeyHex', 'seq', 'state', 'epochDec',
     'groupContextDigestHex', 'snapshotDigestHex', 'anchorSnapshotDigestHex',
+    'anchorTipCommitDigestHex',
     'canonicalPath', 'priorHeadDigestHex', 'transitionDigestHex', 'selectedCommitDigestHex',
   ], 'head fields');
   const draft = { format: magic('head'), version: B26_VERSION, profile: B26_PROFILE,
@@ -114,6 +117,7 @@ function parseHeadShape(value) {
   assertHex64('groupContextDigestHex', value.groupContextDigestHex);
   assertHex64('snapshotDigestHex', value.snapshotDigestHex);
   assertHex64('anchorSnapshotDigestHex', value.anchorSnapshotDigestHex);
+  assertNullableHex64('anchorTipCommitDigestHex', value.anchorTipCommitDigestHex);
   assertDigestPath('canonicalPath', value.canonicalPath);
   assertNullableHex64('priorHeadDigestHex', value.priorHeadDigestHex);
   assertHex64('transitionDigestHex', value.transitionDigestHex);
@@ -367,7 +371,8 @@ export function parseInvalidation(raw) {
 
 export const TRANSITION_FIELDS = Object.freeze([
   'format', 'version', 'groupIdHex', 'seq', 'kind', 'predecessorHeadDigestHex',
-  'successorSnapshotDigestHex', 'anchorSnapshotDigestHex', 'selectedPath',
+  'successorSnapshotDigestHex', 'anchorSnapshotDigestHex', 'anchorTipCommitDigestHex',
+  'selectedPath',
   'displacedPath', 'passDigestHex', 'invalidationDigestHex', 'releasedStateDigests',
   'epochDec', 'groupContextDigestHex', 'transitionDigestHex',
 ]);
@@ -389,7 +394,8 @@ function parseTransitionShape(value) {
   assertSafeInteger('transition seq', value.seq, 1, B26_LIMITS.maxTransitions);
   assertString('transition kind', value.kind, { min: 1, max: 32 });
   assertNullableHex64('predecessorHeadDigestHex', value.predecessorHeadDigestHex);
-  ['successorSnapshotDigestHex', 'anchorSnapshotDigestHex', 'passDigestHex',
+  ['successorSnapshotDigestHex', 'anchorSnapshotDigestHex', 'anchorTipCommitDigestHex',
+    'passDigestHex',
     'invalidationDigestHex', 'groupContextDigestHex']
     .forEach((field) => assertNullableHex64(field, value[field]));
   assertDigestPath('selectedPath', value.selectedPath);
@@ -901,7 +907,8 @@ export function parseAppPublication(raw) {
 }
 
 export const INBOUND_FIELDS = Object.freeze([
-  'format', 'version', 'groupIdHex', 'instanceKeyHex', 'ciphertextBytes',
+  'format', 'version', 'groupIdHex', 'instanceKeyHex',
+  'baseRetainedSnapshotDigestHex', 'ciphertextBytes',
   'ciphertextDigestHex', 'disposition', 'receivedOrdinal', 'plaintextBytes',
   'plaintextDigestHex', 'inboundDigestHex',
 ]);
@@ -922,6 +929,7 @@ export function buildInbound(fields) {
 function parseInboundShape(value) {
   assertGroupIdHex(value.groupIdHex);
   assertHex64('instanceKeyHex', value.instanceKeyHex);
+  assertHex64('baseRetainedSnapshotDigestHex', value.baseRetainedSnapshotDigestHex);
   assertBytes('inbound ciphertext', value.ciphertextBytes,
     { min: 1, max: B26_LIMITS.maxApplicationCiphertextBytes });
   assertHex64('ciphertextDigestHex', value.ciphertextDigestHex);

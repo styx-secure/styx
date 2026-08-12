@@ -21,9 +21,9 @@ import {
 } from '../marmot-phase-b2-3/b2-3-canonical.mjs';
 
 export const B26_FORMAT = 'styx-marmot-b2-6';
-export const B26_VERSION = 1;
+export const B26_VERSION = 2;
 export const B26_PROFILE = 'crash-safe-message-ratchet-poc';
-export const B26_DB_PREFIX = 'styx-b2-6-poc-v1-';
+export const B26_DB_PREFIX = 'styx-b2-6-poc-v2-';
 export const B26_MARMOT_REVISION = '4ad4ae21479c3f3fa9950c6fc4556a76941a62e1';
 export const B26_RUNTIME = Object.freeze({
   ...B23_RUNTIME,
@@ -124,7 +124,7 @@ export const B26_PUBLICATION_KIND = Object.freeze({
 });
 export const B26_PROBE_STATE = Object.freeze({ RESERVED: 'RESERVED', COMPLETED: 'COMPLETED' });
 export const B26_MESSAGE_STATE = Object.freeze({
-  ACTIVE: 'ACTIVE', SUSPENDED: 'SUSPENDED', RELEASED: 'RELEASED',
+  ACTIVE: 'ACTIVE', SUSPENDED: 'SUSPENDED',
 });
 export const B26_OUTBOX_STATE = Object.freeze({
   DURABLE: 'DURABLE', ATTEMPTED: 'ATTEMPTED', ACKNOWLEDGED: 'ACKNOWLEDGED',

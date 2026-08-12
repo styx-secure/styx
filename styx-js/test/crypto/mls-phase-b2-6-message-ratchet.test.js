@@ -21,7 +21,8 @@ import { createB26JournalForDb }
   from '../../spikes/marmot-phase-b2-6/b2-6-journal.mjs';
 import { createB26Coordinator }
   from '../../spikes/marmot-phase-b2-6/b2-6-coordinator.mjs';
-import { buildInbound, buildInput, buildMessageState, buildRetainedState, parseInput }
+import { buildEdge, buildInbound, buildInput, buildMessageState, buildRetainedState,
+  parseInput }
   from '../../spikes/marmot-phase-b2-6/b2-6-record.mjs';
 import { deepClone, FakeVaultDb } from '../support/fake-vault-db.js';
 
@@ -148,6 +149,17 @@ function selfUpdateFrom(wasm, source, groupId, snapshotBytes) {
   return { commitBytes, successorSnapshotBytes };
 }
 
+function selfUpdateChainFrom(wasm, source, groupId, snapshotBytes, length) {
+  const chain = [];
+  let currentSnapshotBytes = snapshotBytes;
+  for (let index = 0; index < length; index += 1) {
+    const update = selfUpdateFrom(wasm, source, groupId, currentSnapshotBytes);
+    chain.push(update);
+    currentSnapshotBytes = update.successorSnapshotBytes;
+  }
+  return chain;
+}
+
 function inboundSuccessorFrom(wasm, source, groupId, snapshotBytes, commitBytes) {
   const restored = restoreSource(wasm, source, groupId, snapshotBytes);
   mergeInbound(restored.group, restored.provider, commitBytes);
@@ -228,7 +240,40 @@ async function settleInputs(client, groupId, commits) {
   return client.coordinator.settlePass(bytesToHex(groupId));
 }
 
+function durableImage(db) {
+  return deepClone([...db.stores.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([store, records]) => [store, [...records.entries()]
+      .sort(([left], [right]) => String(left).localeCompare(String(right)))]));
+}
+
 describe('Phase B2.6 retained-history convergence', () => {
+  test('message-state codec rejects the unreachable RELEASED disposition', () => {
+    const binding = {
+      groupIdHex: '11'.repeat(32),
+      tipCommitDigestHex: '22'.repeat(32),
+      epochDec: '7',
+      groupContextDigestHex: '33'.repeat(32),
+      localMemberIdentityHex: '44'.repeat(32),
+    };
+    expect(() => buildMessageState({
+      groupIdHex: binding.groupIdHex,
+      instanceKeyHex: messageInstanceKey(binding),
+      baseHeadDigestHex: '55'.repeat(32),
+      tipCommitDigestHex: binding.tipCommitDigestHex,
+      epochDec: binding.epochDec,
+      groupContextDigestHex: binding.groupContextDigestHex,
+      localMemberIdentityHex: binding.localMemberIdentityHex,
+      baseRetainedSnapshotDigestHex: '66'.repeat(32),
+      sequence: 0,
+      sentCount: 0,
+      receivedCount: 0,
+      snapshotDigestHex: '77'.repeat(32),
+      priorStateDigestHex: null,
+      state: 'RELEASED',
+    })).toThrow(expect.objectContaining({ code: B26_ERROR.INVALID }));
+  });
+
   test('six outbound messages survive restart and are delivered exactly once', async () => {
     const wasm = await loadWasm();
     const fixture = await setupGroup(wasm);
@@ -581,6 +626,7 @@ describe('Phase B2.6 retained-history convergence', () => {
       expect(() => buildInbound({
         groupIdHex,
         instanceKeyHex: '11'.repeat(32),
+        baseRetainedSnapshotDigestHex: '33'.repeat(32),
         ciphertextBytes: Uint8Array.of(1),
         ciphertextDigestHex: digestHex(Uint8Array.of(1)),
         disposition: 'DEFERRED',
@@ -646,6 +692,53 @@ describe('Phase B2.6 retained-history convergence', () => {
           throughReceivedOrdinal: 1,
           evictedCiphertextDigestHex: digestHex(ciphertexts[0]),
         }));
+      } finally { fixture.cleanup(); }
+    }, 20000);
+
+  test('accepting an existing deferred ciphertext at the cap does not truncate history',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        const base = fixture.peers.alice.snapshotBytes;
+        const siblings = [
+          selfUpdateFrom(wasm, fixture.peers.alice, fixture.groupId, base),
+          selfUpdateFrom(wasm, fixture.peers.alice, fixture.groupId, base),
+        ].sort((left, right) =>
+          digestHex(left.commitBytes) < digestHex(right.commitBytes) ? -1 : 1);
+        const [selected, displaced] = siblings;
+        const client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+          'deferred-cap-upgrade');
+        await client.initialize();
+        const groupIdHex = bytesToHex(fixture.groupId);
+        await settleInputs(client, fixture.groupId,
+          [displaced.commitBytes, selected.commitBytes]);
+        const displacedEdge = (await client.journal.snapshot(groupIdHex)).edges.find(
+          (edge) => edge.commitDigestHex === digestHex(displaced.commitBytes));
+        const sender = restoreSource(wasm, fixture.peers.alice, fixture.groupId,
+          displaced.successorSnapshotBytes);
+        const ciphertexts = [];
+        for (let index = 0; index < B26_LIMITS.maxInboundPerInstance; index += 1) {
+          ciphertexts.push(copyBytes(sender.group.create_application_message(
+            sender.provider, sender.identity, UTF8.encode('deferred-cap-' + index))));
+        }
+        free(sender.group); free(sender.identity); free(sender.provider);
+        for (const ciphertext of ciphertexts) {
+          const deferred = await client.coordinator.processApplicationMessage(
+            groupIdHex, ciphertext, displacedEdge.successorSnapshotDigestHex);
+          expect(deferred.status).toBe('deferred');
+        }
+
+        const child = selfUpdateFrom(
+          wasm, fixture.peers.alice, fixture.groupId, displaced.successorSnapshotBytes);
+        await settleInputs(client, fixture.groupId, [child.commitBytes]);
+        const accepted = await client.coordinator.processApplicationMessage(
+          groupIdHex, ciphertexts[0], displacedEdge.successorSnapshotDigestHex);
+        expect(accepted.status).toBe('accepted');
+        const inboundKeys = await client.db.transaction([B26_STORES.appInbound],
+          (ops) => ops.list(B26_STORES.appInbound));
+        expect(inboundKeys).toHaveLength(B26_LIMITS.maxInboundPerInstance);
+        expect(client.db.stores.get(B26_STORES.inboundTruncation)?.size ?? 0).toBe(0);
       } finally { fixture.cleanup(); }
     }, 20000);
 
@@ -1057,6 +1150,9 @@ describe('Phase B2.6 retained-history convergence', () => {
         const settled = await settleInputs(client, fixture.groupId, chain.reverse());
         expect(settled.head.canonicalPath).toHaveLength(5);
         expect(settled.head.epochDec).toBe('9');
+        expect(settled.head.anchorTipCommitDigestHex).toBe(digestHex(chain.at(-1)));
+        expect(settled.transition.anchorTipCommitDigestHex)
+          .toBe(settled.head.anchorTipCommitDigestHex);
         await expect(client.journal.readRetained(initial.snapshotDigestHex)).rejects
           .toMatchObject({ code: B26_ERROR.RELEASED });
         await expect(client.journal.readRetainedMessageContext(
@@ -1132,6 +1228,182 @@ describe('Phase B2.6 retained-history convergence', () => {
           instanceKeyHex: first.instanceKeyHex,
           receivedOrdinal: first.receivedOrdinal,
         }));
+      } finally { fixture.cleanup(); }
+    }, 20000);
+
+  test('contradictory adopted-anchor binding evidence fails closed without mutation',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        const chain = selfUpdateChainFrom(
+          wasm, fixture.peers.alice, fixture.groupId, fixture.peers.alice.snapshotBytes, 6);
+        const client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+          'contradictory-anchor-binding');
+        await client.initialize();
+        const groupIdHex = bytesToHex(fixture.groupId);
+        await settleInputs(client, fixture.groupId,
+          chain.slice(0, 5).map((item) => item.commitBytes).reverse());
+        const firstCommitDigestHex = digestHex(chain[0].commitBytes);
+        const firstEdge = (await client.journal.snapshot(groupIdHex)).edges.find(
+          (edge) => edge.commitDigestHex === firstCommitDigestHex);
+        await settleInputs(client, fixture.groupId, [chain[5].commitBytes]);
+        const adoptedHead = (await client.journal.readHead(groupIdHex)).head;
+        expect(adoptedHead.anchorTipCommitDigestHex).toBe(firstCommitDigestHex);
+        const { format, version, edgeDigestHex, ...edgeFields } = firstEdge;
+        const contradictory = buildEdge({
+          ...edgeFields,
+          commitDigestHex: 'fe'.repeat(32),
+        });
+        client.db.stores.get(B26_STORES.edge)
+          .set(`contradictory:${contradictory.edgeDigestHex}`, contradictory);
+        const before = durableImage(client.db);
+        await expect(client.journal.readRetainedMessageContext(
+          groupIdHex, adoptedHead.anchorSnapshotDigestHex)).rejects.toMatchObject({
+          code: B26_ERROR.CORRUPT,
+        });
+        expect(durableImage(client.db)).toEqual(before);
+      } finally { fixture.cleanup(); }
+    }, 20000);
+
+  test('record-first release rejects a stored instance-key contradiction without mutation',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        const chain = selfUpdateChainFrom(
+          wasm, fixture.peers.alice, fixture.groupId, fixture.peers.alice.snapshotBytes, 6);
+        const client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+          'record-first-release');
+        await client.initialize();
+        const groupIdHex = bytesToHex(fixture.groupId);
+        const queued = await client.coordinator.queueApplicationMessage(
+          groupIdHex, 'record-first', UTF8.encode('record-first'));
+        const stateKey = messageStateKey(groupIdHex, queued.instanceKeyHex);
+        const original = client.db.stores.get(B26_STORES.messageState).get(stateKey);
+        const { format, version, profile, runtime, stateDigestHex, ...stateFields } = original;
+        const contradictoryTipCommitDigestHex = 'fc'.repeat(32);
+        const contradictory = buildMessageState({
+          ...stateFields,
+          tipCommitDigestHex: contradictoryTipCommitDigestHex,
+          instanceKeyHex: messageInstanceKey({
+            groupIdHex,
+            tipCommitDigestHex: contradictoryTipCommitDigestHex,
+            epochDec: original.epochDec,
+            groupContextDigestHex: original.groupContextDigestHex,
+            localMemberIdentityHex: original.localMemberIdentityHex,
+          }),
+        });
+        client.db.stores.get(B26_STORES.messageState).delete(stateKey);
+        client.db.stores.get(B26_STORES.messageState).set(
+          messageStateKey(groupIdHex, contradictory.instanceKeyHex), contradictory);
+        for (const update of [...chain].reverse()) {
+          await client.coordinator.admitCommit(groupIdHex, update.commitBytes);
+        }
+        const pass = await client.coordinator.freeze(groupIdHex);
+        const before = durableImage(client.db);
+        await expect(client.coordinator.settle(pass.passDigestHex)).rejects.toMatchObject({
+          code: B26_ERROR.CORRUPT,
+        });
+        expect(durableImage(client.db)).toEqual(before);
+      } finally { fixture.cleanup(); }
+    }, 20000);
+
+  test('branch-changing anchor adoption preserves a never-head deferred instance identity',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        const base = fixture.peers.alice.snapshotBytes;
+        const branchC = selfUpdateChainFrom(
+          wasm, fixture.peers.alice, fixture.groupId, base, 7);
+        const branchD = selfUpdateChainFrom(
+          wasm, fixture.peers.alice, fixture.groupId, base, 2);
+        const client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+          'branch-anchor-never-head');
+        await client.initialize();
+        const groupIdHex = bytesToHex(fixture.groupId);
+
+        await settleInputs(client, fixture.groupId,
+          branchD.map((item) => item.commitBytes).reverse());
+        await settleInputs(client, fixture.groupId, [branchC[0].commitBytes]);
+        const c1DigestHex = digestHex(branchC[0].commitBytes);
+        expect((await client.journal.readHead(groupIdHex)).head.canonicalPath)
+          .toEqual(branchD.map((item) => digestHex(item.commitBytes)));
+        const c1Edge = (await client.journal.snapshot(groupIdHex)).edges.find((edge) =>
+          edge.commitDigestHex === c1DigestHex);
+        const sender = restoreSource(wasm, fixture.peers.alice, fixture.groupId,
+          branchC[0].successorSnapshotBytes);
+        const ciphertext = copyBytes(sender.group.create_application_message(
+          sender.provider, sender.identity, UTF8.encode('never-head-deferred')));
+        free(sender.group); free(sender.identity); free(sender.provider);
+        const deferred = await client.coordinator.processApplicationMessage(
+          groupIdHex, ciphertext, c1Edge.successorSnapshotDigestHex);
+        expect(deferred.status).toBe('deferred');
+
+        const adoption = await settleInputs(client, fixture.groupId,
+          branchC.slice(1, 6).map((item) => item.commitBytes).reverse());
+        const adopted = await client.journal.readRetainedMessageContext(
+          groupIdHex, c1Edge.successorSnapshotDigestHex);
+        const adoptedHead = (await client.journal.readHead(groupIdHex)).head;
+        expect(adoptedHead.anchorSnapshotDigestHex).toBe(c1Edge.successorSnapshotDigestHex);
+        expect(adoptedHead.anchorTipCommitDigestHex).toBe(c1DigestHex);
+        expect(adoption.transition.anchorTipCommitDigestHex).toBe(c1DigestHex);
+        expect(adopted.instanceKeyHex).toBe(deferred.instanceKeyHex);
+        expect(adopted.canonical).toBe(true);
+
+        await settleInputs(client, fixture.groupId, [branchC[6].commitBytes]);
+        expect(await client.journal.readInbound(
+          deferred.instanceKeyHex, deferred.ciphertextDigestHex)).toEqual(
+          expect.objectContaining({ disposition: 'INVALIDATED' }));
+      } finally { fixture.cleanup(); }
+    }, 20000);
+
+  test('branch-changing anchor re-adoption preserves a prior-head durable ratchet',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      try {
+        const base = fixture.peers.alice.snapshotBytes;
+        const branchC = selfUpdateChainFrom(
+          wasm, fixture.peers.alice, fixture.groupId, base, 7);
+        const branchD = selfUpdateChainFrom(
+          wasm, fixture.peers.alice, fixture.groupId, base, 2);
+        const client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+          'branch-anchor-prior-head');
+        await client.initialize();
+        const groupIdHex = bytesToHex(fixture.groupId);
+        const c1DigestHex = digestHex(branchC[0].commitBytes);
+
+        await settleInputs(client, fixture.groupId, [branchC[0].commitBytes]);
+        const queued = await client.coordinator.queueApplicationMessage(
+          groupIdHex, 'prior-head-message', UTF8.encode('prior-head-message'));
+        await settleInputs(client, fixture.groupId,
+          branchD.map((item) => item.commitBytes).reverse());
+        expect((await client.journal.readHead(groupIdHex)).head.canonicalPath)
+          .toEqual(branchD.map((item) => digestHex(item.commitBytes)));
+
+        const adoption = await settleInputs(client, fixture.groupId,
+          branchC.slice(1, 6).map((item) => item.commitBytes).reverse());
+        const adoptedHead = (await client.journal.readHead(groupIdHex)).head;
+        expect(adoptedHead.anchorTipCommitDigestHex).toBe(c1DigestHex);
+        expect(adoption.transition.anchorTipCommitDigestHex).toBe(c1DigestHex);
+        const adopted = await client.journal.readRetainedMessageContext(
+          groupIdHex, adoptedHead.anchorSnapshotDigestHex);
+        expect(adopted.instanceKeyHex).toBe(queued.instanceKeyHex);
+        expect(adopted.state).toEqual(expect.objectContaining({
+          instanceKeyHex: queued.instanceKeyHex,
+          state: 'ACTIVE',
+          sentCount: 1,
+        }));
+
+        await settleInputs(client, fixture.groupId, [branchC[6].commitBytes]);
+        await expect(client.coordinator.readQueuedApplicationMessage(
+          queued.instanceKeyHex, queued.ordinal)).rejects.toMatchObject({
+          code: B26_ERROR.OUTBOX_TERMINAL,
+        });
+        expect(client.db.stores.get(B26_STORES.messageRelease)
+          .has(messageStateKey(groupIdHex, queued.instanceKeyHex))).toBe(true);
       } finally { fixture.cleanup(); }
     }, 20000);
 
@@ -1299,6 +1571,14 @@ describe('Phase B2.6 retained-history convergence', () => {
         const deferred = await client.coordinator.processApplicationMessage(
           groupIdHex, ciphertext, displacedEdge.successorSnapshotDigestHex);
         expect(deferred.status).toBe('deferred');
+        expect(client.db.stores.get(B26_STORES.messageState)
+          ?.has(messageStateKey(groupIdHex, deferred.instanceKeyHex)) ?? false).toBe(false);
+        expect(await client.journal.readInbound(
+          deferred.instanceKeyHex, deferred.ciphertextDigestHex)).toEqual(
+          expect.objectContaining({
+            disposition: 'DEFERRED',
+            baseRetainedSnapshotDigestHex: displacedEdge.successorSnapshotDigestHex,
+          }));
 
         let selectedSnapshot = selected.successorSnapshotBytes;
         const descendants = [];
@@ -1316,7 +1596,10 @@ describe('Phase B2.6 retained-history convergence', () => {
         });
         expect(await client.journal.readInbound(
           deferred.instanceKeyHex, deferred.ciphertextDigestHex)).toEqual(
-          expect.objectContaining({ disposition: 'INVALIDATED' }));
+          expect.objectContaining({
+            disposition: 'INVALIDATED',
+            baseRetainedSnapshotDigestHex: displacedEdge.successorSnapshotDigestHex,
+          }));
       } finally { fixture.cleanup(); }
     }, 20000);
 
@@ -1503,9 +1786,56 @@ describe('Phase B2.6 retained-history convergence', () => {
     const db = new FakeVaultDb();
     Object.defineProperty(db, 'name', { value: 'styx-unscoped-database' });
     expect(() => createB26JournalForDb(db)).toThrow(/outside the B2\.6 namespace/);
+    const v1 = new FakeVaultDb();
+    Object.defineProperty(v1, 'name', { value: 'styx-b2-6-poc-v1-retired' });
+    expect(() => createB26JournalForDb(v1)).toThrow(/outside the B2\.6 namespace/);
   });
 
-  test('two retained parents that accept one exact Commit fail closed as ambiguous',
+  test('head reads reject a missing transition audit record without mutation', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm);
+    try {
+      const client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+        'missing-transition-audit');
+      await client.initialize();
+      const groupIdHex = bytesToHex(fixture.groupId);
+      const head = (await client.journal.readHead(groupIdHex)).head;
+      client.db.stores.get(B26_STORES.transition).delete(head.transitionDigestHex);
+      const before = durableImage(client.db);
+      await expect(client.journal.readHead(groupIdHex)).rejects.toMatchObject({
+        code: B26_ERROR.CORRUPT,
+      });
+      expect(durableImage(client.db)).toEqual(before);
+    } finally { fixture.cleanup(); }
+  }, 20000);
+
+  test('message readers reject a state bound to a different retained base', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm);
+    try {
+      const client = clientFor(wasm, fixture.peers.bob, fixture.groupId,
+        'misbound-message-base');
+      await client.initialize();
+      const groupIdHex = bytesToHex(fixture.groupId);
+      const queued = await client.coordinator.queueApplicationMessage(
+        groupIdHex, 'misbound-base', UTF8.encode('misbound-base'));
+      const key = messageStateKey(groupIdHex, queued.instanceKeyHex);
+      const original = client.db.stores.get(B26_STORES.messageState).get(key);
+      const { format, version, profile, runtime, stateDigestHex, ...stateFields } = original;
+      const contradictory = buildMessageState({
+        ...stateFields,
+        baseRetainedSnapshotDigestHex: 'fd'.repeat(32),
+      });
+      client.db.stores.get(B26_STORES.messageState).set(key, contradictory);
+      const before = durableImage(client.db);
+      await expect(client.journal.readMessageContext(groupIdHex)).rejects.toMatchObject({
+        code: B26_ERROR.CORRUPT,
+      });
+      expect(durableImage(client.db)).toEqual(before);
+    } finally { fixture.cleanup(); }
+  }, 20000);
+
+  test('non-genesis retained states without identity evidence fail closed without mutation',
     async () => {
       const wasm = await loadWasm();
       const fixture = await setupGroup(wasm);
@@ -1538,11 +1868,14 @@ describe('Phase B2.6 retained-history convergence', () => {
         }
         const before = (await client.journal.readHead(groupIdHex)).head;
         await client.coordinator.admitCommit(groupIdHex, childCommit.commitBytes);
-        await client.coordinator.settlePass(groupIdHex);
-        const snapshot = await client.journal.snapshot(groupIdHex);
-        expect(snapshot.head.snapshotDigestHex).toBe(before.snapshotDigestHex);
-        expect(snapshot.inputs.find((item) =>
-          item.commitDigestHex === digestHex(childCommit.commitBytes)).state).toBe('AMBIGUOUS');
+        const pass = await client.coordinator.freeze(groupIdHex);
+        const durableBefore = durableImage(client.db);
+        await expect(client.coordinator.settle(pass.passDigestHex)).rejects.toMatchObject({
+          code: B26_ERROR.CORRUPT,
+        });
+        expect(durableImage(client.db)).toEqual(durableBefore);
+        expect((await client.journal.readHead(groupIdHex)).head.snapshotDigestHex)
+          .toBe(before.snapshotDigestHex);
       } finally { fixture.cleanup(); }
     }, 20000);
 

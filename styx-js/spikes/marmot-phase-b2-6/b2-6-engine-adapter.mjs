@@ -646,6 +646,8 @@ export class B26EngineAdapter {
       item.snapshotDigestHex === winner.snapshotDigestHex);
     if (winnerState === undefined) failB26(B26_ERROR.CORRUPT, 'winner state is absent');
     let anchor = graph.anchor;
+    let anchorTipCommitDigestHex = bundle.head.anchorTipCommitDigestHex;
+    let anchorAdvanceEdge = null;
     let selectedPath = [...winner.path];
     const releaseCandidates = [];
     if (selectedPath.length > B26_LIMITS.rewindCommits) {
@@ -656,6 +658,8 @@ export class B26EngineAdapter {
       releaseCandidates.push(anchor);
       anchor = graph.states.find((item) =>
         item.snapshotDigestHex === firstEdge.successorSnapshotDigestHex);
+      anchorAdvanceEdge = firstEdge;
+      anchorTipCommitDigestHex = firstEdge.commitDigestHex;
       selectedPath = selectedPath.slice(1);
     }
     if (BigInt(winnerState.epochDec) < BigInt(bundle.head.epochDec)) {
@@ -721,6 +725,7 @@ export class B26EngineAdapter {
       predecessorHeadDigestHex: bundle.head.headDigestHex,
       successorSnapshotDigestHex: winnerState.snapshotDigestHex,
       anchorSnapshotDigestHex: anchor.snapshotDigestHex,
+      anchorTipCommitDigestHex,
       selectedPath, displacedPath, passDigestHex: bundle.pass.passDigestHex,
       invalidationDigestHex: invalidation.invalidationDigestHex,
       releasedStateDigests: releaseCandidates.map((item) => item.snapshotDigestHex).sort(),
@@ -732,7 +737,8 @@ export class B26EngineAdapter {
       epochDec: winnerState.epochDec,
       groupContextDigestHex: winnerState.groupContextDigestHex,
       snapshotDigestHex: winnerState.snapshotDigestHex,
-      anchorSnapshotDigestHex: anchor.snapshotDigestHex, canonicalPath: selectedPath,
+      anchorSnapshotDigestHex: anchor.snapshotDigestHex,
+      anchorTipCommitDigestHex, canonicalPath: selectedPath,
       priorHeadDigestHex: bundle.head.headDigestHex,
       transitionDigestHex: transition.transitionDigestHex,
       selectedCommitDigestHex: selectedPath.at(-1) ?? null });
@@ -748,7 +754,7 @@ export class B26EngineAdapter {
     return this.#commitSettlement({ expectedHead: bundle.head,
       expectedReadSetDigestHex: bundle.readSetDigestHex, settledPass, nextHead,
       transition, invalidation, states: retainedStates, edges: retainedEdges,
-      inputs: normalizedInputs, releases, generations });
+      inputs: normalizedInputs, releases, generations, anchorAdvanceEdge });
   }
 
   async prepareLocal(groupIdHex, operationKind, operationPayloadBytes = new Uint8Array()) {
@@ -1297,6 +1303,7 @@ export class B26EngineAdapter {
       const deferred = buildInbound({
         groupIdHex,
         instanceKeyHex: context.instanceKeyHex,
+        baseRetainedSnapshotDigestHex: context.retained.snapshotDigestHex,
         ciphertextBytes,
         ciphertextDigestHex,
         disposition: B26_INBOUND_STATE.DEFERRED,
@@ -1335,6 +1342,7 @@ export class B26EngineAdapter {
       const inbound = buildInbound({
         groupIdHex,
         instanceKeyHex: context.instanceKeyHex,
+        baseRetainedSnapshotDigestHex: context.retained.snapshotDigestHex,
         ciphertextBytes,
         ciphertextDigestHex,
         disposition: B26_INBOUND_STATE.ACCEPTED,

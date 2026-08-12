@@ -67,6 +67,54 @@ test('two connections CAS one complete settlement successor', async ({ browser, 
   } finally { await cleanup(pages); }
 });
 
+test('two connections CAS one branch-changing anchor and preserve its exact Commit binding',
+  async ({ browser, browserName }) => {
+    const pages = await twoConnections(browser, `branch-${browserName}-${Date.now()}`);
+    const { pageA, pageB } = pages;
+    try {
+      const cDigests = await pageA.evaluate(() => B26Harness.prepareBranch('a', 'c', 7));
+      await pageA.evaluate(() => B26Harness.prepareBranch('a', 'd', 2));
+      await pageA.evaluate(() => B26Harness.settleBranch('a', 'd', [1, 0]));
+      await pageA.evaluate(() => B26Harness.settleBranch('a', 'c', [0]));
+      await pageA.evaluate(() => B26Harness.admitBranch('a', 'c', [5, 4, 3, 2, 1]));
+      const pass = await pageA.evaluate(() => B26Harness.freeze('a'));
+      await Promise.all([
+        pageA.evaluate(() => B26Harness.arm('a')),
+        pageB.evaluate(() => B26Harness.arm('b')),
+      ]);
+      await Promise.all([
+        pageA.evaluate((digest) => B26Harness.startSettle('a', digest), pass.passDigestHex),
+        pageB.evaluate((digest) => B26Harness.startSettle('b', digest), pass.passDigestHex),
+      ]);
+      await Promise.all([
+        pageA.waitForFunction(() => B26Harness.entered('a')),
+        pageB.waitForFunction(() => B26Harness.entered('b')),
+      ]);
+      await Promise.all([
+        pageA.evaluate(() => B26Harness.release('a')),
+        pageB.evaluate(() => B26Harness.release('b')),
+      ]);
+      const outcomes = await Promise.all([
+        pageA.evaluate(() => B26Harness.result('a')),
+        pageB.evaluate(() => B26Harness.result('b')),
+      ]);
+      expect(outcomes.filter((item) => item.ok)).toHaveLength(1);
+      expect(outcomes.filter((item) => !item.ok)).toEqual([
+        expect.objectContaining({ code: 'B26_CAS_CONFLICT' }),
+      ]);
+      const [headA, headB] = await Promise.all([
+        pageA.evaluate(() => B26Harness.read('a')),
+        pageB.evaluate(() => B26Harness.read('b')),
+      ]);
+      expect(headA.head.headDigestHex).toBe(headB.head.headDigestHex);
+      expect(headA.head).toEqual(expect.objectContaining({
+        epochDec: '7',
+        anchorTipCommitDigestHex: cDigests[0],
+      }));
+      expectNoPageErrors(pageA, pageB);
+    } finally { await cleanup(pages); }
+  });
+
 test('two connections create exactly one durable probe reservation', async ({ browser, browserName }) => {
   const pages = await twoConnections(browser, `probe-${browserName}-${Date.now()}`);
   const { pageA, pageB } = pages;

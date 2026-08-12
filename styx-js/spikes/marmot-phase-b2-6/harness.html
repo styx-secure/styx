@@ -94,6 +94,8 @@
         this.messageBlocker = { armed: false, entered: false, release: null, wait: null };
         this.pendingQueue = null;
         this.peerIdentityHex = null;
+        this.source = null;
+        this.branches = new Map();
         this.coordinator = createB26Coordinator({ journal, wasm,
           beforeReplay: async () => {
             if (!this.blocker.armed) return;
@@ -116,11 +118,23 @@
           creatorProvider, creator.identity, groupId, creator.proofBytes);
         const pending = group.prepare_add(
           creatorProvider, creator.identity, joiner.keyPackage);
+        const welcomeBytes = copyBytes(pending.welcome());
         const projection = pending.projection();
+        let joinedGroup;
+        let ratchetTree;
+        let parsedTree;
         try {
           group.confirm_pending(
             creatorProvider, pending, projection.verified_leaf_digest());
+          ratchetTree = group.export_ratchet_tree();
+          parsedTree = wasm.PhaseB2RatchetTree.from_bytes(ratchetTree.to_bytes());
+          joinedGroup = wasm.PhaseB2Group.join(joinerProvider, welcomeBytes, parsedTree);
           this.peerIdentityHex = bytesToHex(joiner.accountKey);
+          this.source = Object.freeze({
+            accountKey: copyBytes(joiner.accountKey),
+            signatureKey: copyBytes(joiner.signatureKey),
+            snapshotBytes: copyBytes(joinerProvider.serialize_state()),
+          });
           await this.coordinator.initializeStable({
             snapshotBytes: copyBytes(creatorProvider.serialize_state()),
             groupId,
@@ -128,7 +142,8 @@
             signatureKey: creator.signatureKey,
           });
         } finally {
-          releaseWasm(projection, pending, group, creator.keyPackage, creator.identity,
+          releaseWasm(joinedGroup, parsedTree, ratchetTree, projection, pending, group,
+            creator.keyPackage, creator.identity,
             joiner.keyPackage, joiner.identity, creatorProvider, joinerProvider);
         }
       }
@@ -138,6 +153,47 @@
         await this.coordinator.recordAttempt(groupIdHex);
         return this.coordinator.recordAcknowledgement(
           groupIdHex, 1, this.peerIdentityHex, textEncoder.encode('browser-ack'));
+      }
+
+      prepareBranch(label, length) {
+        if (this.source === null || !Number.isSafeInteger(length) || length < 1) {
+          throw new Error('browser branch source is unavailable');
+        }
+        const commits = [];
+        let snapshotBytes = this.source.snapshotBytes;
+        for (let index = 0; index < length; index += 1) {
+          const provider = new wasm.Provider();
+          provider.restore_state(snapshotBytes);
+          const identity = wasm.PhaseB2Identity.load(
+            provider, this.source.accountKey, this.source.signatureKey);
+          const group = wasm.PhaseB2Group.load(provider, groupId);
+          if (identity === undefined || group === undefined) {
+            releaseWasm(group, identity, provider);
+            throw new Error('browser branch restore failed');
+          }
+          const pending = group.prepare_self_update(provider, identity);
+          const projection = pending.projection();
+          const commitBytes = copyBytes(pending.commit());
+          group.confirm_pending(provider, pending, projection.verified_leaf_digest());
+          snapshotBytes = copyBytes(provider.serialize_state());
+          commits.push(commitBytes);
+          releaseWasm(projection, pending, group, identity, provider);
+        }
+        this.branches.set(label, commits);
+        return commits.map((commitBytes) => digestHex(commitBytes));
+      }
+
+      async admitBranch(label, indexes) {
+        const commits = this.branches.get(label);
+        if (commits === undefined) throw new Error('unknown browser branch');
+        for (const index of indexes) {
+          await this.coordinator.admitCommit(groupIdHex, commits[index]);
+        }
+      }
+
+      async settleBranch(label, indexes) {
+        await this.admitBranch(label, indexes);
+        return this.coordinator.settlePass(groupIdHex);
       }
 
       armReplayBarrier() {
@@ -187,6 +243,9 @@
       },
       initialize: (name) => actor(name).initialize(),
       prepare: (name) => actor(name).prepareAcknowledgedUpdate(),
+      prepareBranch: (name, label, length) => actor(name).prepareBranch(label, length),
+      admitBranch: (name, label, indexes) => actor(name).admitBranch(label, indexes),
+      settleBranch: (name, label, indexes) => actor(name).settleBranch(label, indexes),
       freeze: (name) => actor(name).coordinator.freeze(groupIdHex),
       arm: (name) => actor(name).armReplayBarrier(),
       startSettle: (name, passDigestHex) => actor(name).startSettlement(passDigestHex),

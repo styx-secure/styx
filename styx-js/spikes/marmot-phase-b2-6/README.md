@@ -35,7 +35,7 @@ external rollback anchoring or audit coverage.
 - WASM SHA-256:
   60dbbc1127fbfb0e7e479cf7e2f7e6e20183c60d0559268f039d8db58bf60a3a
 - Ciphersuite: MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
-- Database prefix: styx-b2-6-poc-v1-
+- Database prefix: styx-b2-6-poc-v2-
 
 ## Durable boundary
 
@@ -44,11 +44,17 @@ current provider snapshot. The instance identity binds group id, canonical tip
 Commit, epoch, GroupContext and authenticated local member.
 
 The producing tip Commit remains stable when settlement later advances the
-canonical anchor. The journal resolves it from mutually consistent durable
-edge, transition and local-generation evidence, including the first transition
-that adopts a snapshot as its anchor. Conflicting evidence fails closed. This
-preserves the frozen transcript-derived identity instead of replacing it with a
-storage id or snapshot digest.
+canonical anchor and prunes its incoming replay edge. B2.6 therefore freezes an
+explicit `anchorTipCommitDigestHex` in the content-bound head. Anchor advance
+commits it only together with the exact replay-authorized edge that maps the
+prior anchor to the successor anchor and is bound by the transaction's prior
+edge, normalized input or local-generation replay evidence; an unchanged anchor
+cannot change this binding. Retained incoming-edge, live local-generation and
+explicit head evidence must agree or parsing fails closed. Every transition
+separately freezes the successor head's `anchorTipCommitDigestHex`, so its audit
+record cannot describe a different anchor identity. This preserves the
+transcript-derived identity instead of guessing it from a historical
+transition, displaced branch, storage id or snapshot digest.
 
 Outbound ordering is:
 
@@ -85,9 +91,12 @@ The B2.5c settlement transaction shares the message stores for serialization.
 It may suspend displaced-instance outboxes, re-enable a retained instance after
 re-adoption, or terminally invalidate and tombstone an instance that leaves the
 retained horizon. Message activity is excluded from the convergence selection
-read set. Release also invalidates bounded deferred-only input when no primary
-message-state record was ever created, and local-generation replacement or
-eviction uses the same atomic release path. Every message commit revalidates
+read set. Release uses each durable message-state's recorded instance key as
+primary authority, cross-checks it against the unique pre-settlement transcript
+evidence, and invalidates deferred-only input directly through the immutable
+retained-base digest frozen in each inbound record. It never reconstructs a
+release identity from post-settlement state. Local-generation replacement
+or eviction uses the same atomic release path. Every message commit revalidates
 its retained base inside that transaction, so a local-generation release that
 does not change the canonical head still wins fail-closed.
 
@@ -103,6 +112,10 @@ does not change the canonical head still wins fail-closed.
 - plaintext: 4 KiB;
 - ciphertext: 8 KiB;
 - provider snapshot: 8 MiB.
+
+These are operational per-instance limits, not a global lifetime-retention
+policy. Released instance evidence may grow with repeated branch churn; this
+PoC deliberately provides no silent compaction or history eviction.
 
 ## Files
 
