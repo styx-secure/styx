@@ -43,6 +43,8 @@ import {
   parseBatch,
   parseHead,
   parseInput,
+  parseLocal,
+  parsePublication,
 } from '../../spikes/marmot-phase-b2-5b/b2-5b-record.mjs';
 import { FakeVaultDb, deepClone } from '../support/fake-vault-db.js';
 
@@ -278,6 +280,28 @@ function assertBidirectional(left, right) {
   }
 }
 
+async function queueOperation(client, groupIdHex, operation, argument = null) {
+  if (operation === 'self-update') return client.coordinator.queueSelfUpdate(groupIdHex);
+  if (operation === 'add') return client.coordinator.queueAdd(groupIdHex, argument.framed);
+  if (operation === 'remove') return client.coordinator.queueRemove(groupIdHex, argument);
+  throw new Error(`unsupported queued operation: ${operation}`);
+}
+
+async function acknowledgeFirstRecipient(client, groupIdHex, payload = 'accepted') {
+  const local = await client.journal.readLocal(groupIdHex);
+  await client.coordinator.recordAcknowledgement(
+    groupIdHex, local.publishAttempts, local.recipientScope[0], UTF8.encode(payload),
+  );
+  return client.journal.readLocal(groupIdHex);
+}
+
+function durableImage(db) {
+  return B25B_STORE_NAMES.map((store) => [store,
+    [...db.stores.get(store)?.entries() ?? []]
+      .sort(([left], [right]) => String(left).localeCompare(String(right)))
+      .map(([key, value]) => [key, deepClone(value)])]);
+}
+
 describe('Phase B2.5b authority boundary', () => {
   test('uses exactly eight isolated stores and exposes no authority finalizer', () => {
     const db = b25bDb('boundary');
@@ -352,6 +376,11 @@ describe('Phase B2.5b real OpenMLS local-publisher arbitration', () => {
           .toBe(inboundResult.candidates[0].evidenceDigestHex);
         expect((await publisher.journal.readLocal(groupIdHex)).state)
           .toBe(B25B_LOCAL_STATE.CONFIRMED);
+        const terminalEcho = await publisher.coordinator.retainCommit(
+          groupIdHex, pending.commitBytes,
+        );
+        expect(terminalEcho.status).toBe('own_echo');
+        expect(await publisher.db.list(B25B_STORES.input)).toHaveLength(0);
         left = restoredFromRetained(wasm, localResult.retained);
         right = restoredFromRetained(wasm, inboundResult.retained);
         assertBidirectional(left, right);
@@ -422,4 +451,318 @@ describe('Phase B2.5b real OpenMLS local-publisher arbitration', () => {
         fixture.cleanup();
       }
     });
+
+  test.each(['add', 'remove'])('authorizes and confirms an acknowledged local %s',
+    async (operation) => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm, operation === 'add' ? 61 : 71);
+      const groupIdHex = bytesToHex(fixture.groupId);
+      const newcomerProvider = new wasm.Provider();
+      const newcomer = createPeer(wasm, newcomerProvider, operation === 'add' ? 13 : 14);
+      const client = await createClient(wasm, fixture.peers.alice, fixture.groupId,
+        `local-${operation}`);
+      try {
+        const before = (await client.journal.readHead(groupIdHex)).head;
+        await queueOperation(client, groupIdHex, operation,
+          operation === 'add' ? newcomer : fixture.peers.charlie.leafIndex);
+        await client.coordinator.runQueuedOpportunity(groupIdHex);
+        const prepared = await client.journal.readLocal(groupIdHex);
+        expect(prepared.operationKind).toBe(operation);
+        expect((await client.journal.readHead(groupIdHex)).head.headDigestHex)
+          .toBe(before.headDigestHex);
+        await client.coordinator.recordAttempt(groupIdHex);
+        await acknowledgeFirstRecipient(client, groupIdHex);
+        const result = await client.coordinator.settlePass(groupIdHex);
+        expect(result.batch.winnerCommitDigestHex).toBe(prepared.commitDigestHex);
+        expect((await client.journal.readLocal(groupIdHex)).state)
+          .toBe(B25B_LOCAL_STATE.CONFIRMED);
+        expect(result.head.epochDec).toBe('4');
+        if (operation === 'add') expect(prepared.welcomeBytes.length).toBeGreaterThan(0);
+      } finally {
+        free(newcomer.keyPackage); free(newcomer.identity); free(newcomer.provider);
+        fixture.cleanup();
+      }
+    });
+
+  test('binds attempts and outcomes, retries exact bytes, and makes acknowledgement dominant',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm, 101);
+      const groupIdHex = bytesToHex(fixture.groupId);
+      const client = await createClient(wasm, fixture.peers.bob, fixture.groupId, 'evidence');
+      try {
+        await client.coordinator.queueSelfUpdate(groupIdHex);
+        await client.coordinator.runQueuedOpportunity(groupIdHex);
+        let local = await client.journal.readLocal(groupIdHex);
+        await expect(client.coordinator.recordAcknowledgement(
+          groupIdHex, 1, local.recipientScope[0], UTF8.encode('early'),
+        )).rejects.toMatchObject({ code: B25B_ERROR.INVALID });
+        await client.coordinator.recordAttempt(groupIdHex);
+        await expect(client.coordinator.recordAcknowledgement(
+          groupIdHex, 2, local.recipientScope[0], UTF8.encode('wrong-attempt'),
+        )).rejects.toMatchObject({ code: B25B_ERROR.INVALID });
+        await expect(client.coordinator.recordAcknowledgement(
+          groupIdHex, 1, 'ff'.repeat(32), UTF8.encode('wrong-recipient'),
+        )).rejects.toMatchObject({ code: B25B_ERROR.INVALID });
+        await client.coordinator.recordAttempt(groupIdHex);
+        let evidence = await client.journal.readPublication(groupIdHex);
+        expect(evidence.filter((item) => item.kind === B25B_PUBLICATION_KIND.ATTEMPT))
+          .toHaveLength(2);
+        expect(evidence[0].artifactBytes).toEqual(evidence[1].artifactBytes);
+        expect(evidence[0].artifactDigestHex).toBe(evidence[1].artifactDigestHex);
+        local = await client.journal.readLocal(groupIdHex);
+        await client.coordinator.recordFailure(
+          groupIdHex, 2, local.recipientScope[0], UTF8.encode('ambiguous'),
+        );
+        expect((await client.journal.readHead(groupIdHex)).head.epochDec).toBe('3');
+        await client.coordinator.recordAcknowledgement(
+          groupIdHex, 1, local.recipientScope[0], UTF8.encode('accepted'),
+        );
+        const duplicate = await client.coordinator.recordAcknowledgement(
+          groupIdHex, 1, local.recipientScope[0], UTF8.encode('accepted'),
+        );
+        expect(duplicate.status).toBe('duplicate');
+        await client.coordinator.recordFailure(
+          groupIdHex, 1, local.recipientScope[0], UTF8.encode('late-failure'),
+        );
+        expect((await client.journal.readLocal(groupIdHex)).state)
+          .toBe(B25B_LOCAL_STATE.ACKNOWLEDGED);
+        await expect(client.coordinator.discardAfterFailure(groupIdHex)).rejects.toMatchObject({
+          code: B25B_ERROR.STATE_CONFLICT,
+        });
+        evidence = await client.journal.readPublication(groupIdHex);
+        expect(evidence.every((item) => item.artifactDigestHex === local.commitDigestHex)).toBe(true);
+      } finally {
+        fixture.cleanup();
+      }
+    });
+
+  test('cancels only before an attempt and recovers ambiguous publication without applying it',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm, 111);
+      const groupIdHex = bytesToHex(fixture.groupId);
+      const cancelled = await createClient(wasm, fixture.peers.bob, fixture.groupId, 'cancel');
+      const ambiguous = await createClient(wasm, fixture.peers.charlie, fixture.groupId, 'ambiguous');
+      try {
+        await cancelled.coordinator.queueSelfUpdate(groupIdHex);
+        await cancelled.coordinator.runQueuedOpportunity(groupIdHex);
+        await cancelled.coordinator.cancelBeforeAttempt(groupIdHex);
+        expect((await cancelled.journal.readLocal(groupIdHex)).state)
+          .toBe(B25B_LOCAL_STATE.CANCELLED);
+
+        await ambiguous.coordinator.queueSelfUpdate(groupIdHex);
+        await ambiguous.coordinator.runQueuedOpportunity(groupIdHex);
+        await ambiguous.coordinator.recordAttempt(groupIdHex);
+        const before = (await ambiguous.journal.readHead(groupIdHex)).head;
+        const restarted = createB25BCoordinator({
+          journal: createB25BJournalForDb(ambiguous.db), wasm,
+        });
+        const recovered = await ambiguous.journal.readLocal(groupIdHex);
+        expect(recovered.state).toBe(B25B_LOCAL_STATE.PUBLISHING);
+        await expect(restarted.freeze(groupIdHex)).rejects.toMatchObject({
+          code: B25B_ERROR.STATE_CONFLICT,
+        });
+        await restarted.recordAttempt(groupIdHex);
+        expect((await ambiguous.journal.readHead(groupIdHex)).head).toEqual(before);
+        const attempts = (await ambiguous.journal.readPublication(groupIdHex))
+          .filter((item) => item.kind === B25B_PUBLICATION_KIND.ATTEMPT);
+        expect(attempts).toHaveLength(2);
+        expect(attempts[0].artifactBytes).toEqual(attempts[1].artifactBytes);
+      } finally {
+        fixture.cleanup();
+      }
+    });
+
+  test('freezes eligibility at cutoff and retains post-cutoff input for later work', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm, 121);
+    const groupIdHex = bytesToHex(fixture.groupId);
+    const first = prepareFromParent(wasm, fixture.peers.alice, fixture.groupId, 'self-update');
+    const second = prepareFromParent(wasm, fixture.peers.charlie, fixture.groupId, 'self-update');
+    const client = await createClient(wasm, fixture.peers.bob, fixture.groupId, 'cutoff');
+    try {
+      await client.coordinator.queueSelfUpdate(groupIdHex);
+      await client.coordinator.runQueuedOpportunity(groupIdHex);
+      await client.coordinator.recordAttempt(groupIdHex);
+      const local = await client.journal.readLocal(groupIdHex);
+      await client.coordinator.retainCommit(groupIdHex, first.commitBytes);
+      const frozen = await client.coordinator.freeze(groupIdHex);
+      expect(frozen.commitDigests).not.toContain(local.commitDigestHex);
+      await client.coordinator.recordAcknowledgement(
+        groupIdHex, 1, local.recipientScope[0], UTF8.encode('after-cutoff'),
+      );
+      await client.coordinator.retainCommit(groupIdHex, second.commitBytes);
+      const result = await client.coordinator.resolve(frozen.protocolBatchDigestHex);
+      expect(result.batch.commitDigests).toEqual([digestHex(first.commitBytes)]);
+      expect(result.batch.winnerCommitDigestHex).toBe(digestHex(first.commitBytes));
+      expect((await client.journal.readLocal(groupIdHex)).state)
+        .toBe(B25B_LOCAL_STATE.CLEARED_LOST);
+      const lateInput = parseInput(client.db.record(
+        B25B_STORES.input, `${groupIdHex}:${digestHex(second.commitBytes)}`,
+      ));
+      expect(lateInput.disposition).toBe(B25B_DISPOSITION.COLLECTED);
+    } finally {
+      cleanupPrepared(first); cleanupPrepared(second); fixture.cleanup();
+    }
+  });
+
+  test('strict local and publication codecs reject unknown, corrupt, and over-limit records',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm, 131);
+      const groupIdHex = bytesToHex(fixture.groupId);
+      const client = await createClient(wasm, fixture.peers.bob, fixture.groupId, 'codec');
+      try {
+        await client.coordinator.queueSelfUpdate(groupIdHex);
+        await client.coordinator.runQueuedOpportunity(groupIdHex);
+        await client.coordinator.recordAttempt(groupIdHex);
+        const local = deepClone(await client.journal.readLocal(groupIdHex));
+        expect(() => parseLocal({ ...local, injected: true })).toThrow(
+          expect.objectContaining({ code: B25B_ERROR.INVALID }),
+        );
+        expect(() => parseLocal({ ...local, state: 'MAGIC' })).toThrow(
+          expect.objectContaining({ code: B25B_ERROR.INVALID }),
+        );
+        expect(() => parseLocal({ ...local, publishAttempts: 65 })).toThrow();
+        expect(() => parseLocal({ ...local, recipientScope: [
+          local.recipientScope[0], local.recipientScope[0],
+        ] })).toThrow(expect.objectContaining({ code: B25B_ERROR.INVALID }));
+        const publication = deepClone((await client.journal.readPublication(groupIdHex))[0]);
+        expect(() => parsePublication({ ...publication, injected: true })).toThrow(
+          expect.objectContaining({ code: B25B_ERROR.INVALID }),
+        );
+        expect(() => parsePublication({ ...publication, kind: 'SUCCESS' })).toThrow(
+          expect.objectContaining({ code: B25B_ERROR.INVALID }),
+        );
+        const corrupt = deepClone(publication);
+        corrupt.artifactBytes[0] ^= 1;
+        expect(() => parsePublication(corrupt)).toThrow(
+          expect.objectContaining({ code: B25B_ERROR.CORRUPT }),
+        );
+      } finally {
+        fixture.cleanup();
+      }
+    });
+
+  test('rolls back every final logical-store write and retries deterministically', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm, 141);
+    const groupIdHex = bytesToHex(fixture.groupId);
+    const inbound = prepareFromParent(wasm, fixture.peers.alice, fixture.groupId, 'self-update');
+    const client = await createClient(wasm, fixture.peers.bob, fixture.groupId, 'rollback');
+    try {
+      await client.coordinator.queueSelfUpdate(groupIdHex);
+      await client.coordinator.runQueuedOpportunity(groupIdHex);
+      const preAttempt = durableImage(client.db);
+      client.db.failOn = (store) => store === B25B_STORES.publication;
+      await expect(client.coordinator.recordAttempt(groupIdHex)).rejects.toThrow('injected crash');
+      client.db.failOn = null;
+      expect(durableImage(client.db)).toEqual(preAttempt);
+      await client.coordinator.recordAttempt(groupIdHex);
+      await acknowledgeFirstRecipient(client, groupIdHex);
+      await client.coordinator.retainCommit(groupIdHex, inbound.commitBytes);
+      const batch = await client.coordinator.freeze(groupIdHex);
+      const frozenLocal = await client.journal.readLocal(groupIdHex);
+      for (const store of B25B_STORE_NAMES.filter((name) => name !== B25B_STORES.publication)) {
+        const before = durableImage(client.db);
+        let injected = false;
+        client.db.failOn = (candidateStore) => {
+          if (!injected && candidateStore === store) { injected = true; return true; }
+          return false;
+        };
+        await expect(client.coordinator.resolve(batch.protocolBatchDigestHex))
+          .rejects.toThrow('injected crash');
+        client.db.failOn = null;
+        expect(injected).toBe(true);
+        expect(durableImage(client.db)).toEqual(before);
+        expect((await client.journal.readHead(groupIdHex)).head.epochDec).toBe('3');
+        expect((await client.journal.readLocal(groupIdHex)).localPendingDigestHex)
+          .toBe(frozenLocal.localPendingDigestHex);
+      }
+      const result = await client.coordinator.resolve(batch.protocolBatchDigestHex);
+      expect(result.batch.state).toBe(B25B_BATCH_STATE.RESOLVED);
+      const replay = await client.coordinator.resolve(batch.protocolBatchDigestHex);
+      expect(replay.head).toEqual(result.head);
+      expect(replay.batch).toEqual(result.batch);
+    } finally {
+      cleanupPrepared(inbound); fixture.cleanup();
+    }
+  });
+
+  test('gives a queued local intent the next bounded opportunity against the selected head',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm, 151);
+      const groupIdHex = bytesToHex(fixture.groupId);
+      const firstInbound = prepareFromParent(
+        wasm, fixture.peers.alice, fixture.groupId, 'self-update',
+      );
+      const client = await createClient(wasm, fixture.peers.bob, fixture.groupId, 'sequential');
+      try {
+        await client.coordinator.retainCommit(groupIdHex, firstInbound.commitBytes);
+        const first = await client.coordinator.settlePass(groupIdHex);
+        expect(first.head.epochDec).toBe('4');
+        await client.coordinator.queueSelfUpdate(groupIdHex);
+        const opportunity = await client.coordinator.runQueuedOpportunity(groupIdHex);
+        expect(opportunity.state).toBe(B25B_LOCAL_STATE.PREPARED);
+        expect(opportunity.parentHeadDigestHex).toBe(first.head.headDigestHex);
+        expect((await client.journal.readHead(groupIdHex)).head).toEqual(first.head);
+        await client.coordinator.recordAttempt(groupIdHex);
+        await acknowledgeFirstRecipient(client, groupIdHex, 'sequential-ack');
+        const second = await client.coordinator.settlePass(groupIdHex);
+        expect(second.head.epochDec).toBe('5');
+        expect(second.head.priorHeadDigestHex).toBe(first.head.headDigestHex);
+      } finally {
+        cleanupPrepared(firstInbound); fixture.cleanup();
+      }
+    });
+
+  test('makes the cross-cutoff partition divergence boundary executable', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm, 161);
+    const groupIdHex = bytesToHex(fixture.groupId);
+    const branchA = prepareFromParent(wasm, fixture.peers.alice, fixture.groupId, 'self-update');
+    const branchB = prepareFromParent(wasm, fixture.peers.charlie, fixture.groupId, 'self-update');
+    const clientA = await createClient(wasm, fixture.peers.bob, fixture.groupId, 'partition-a');
+    const clientB = await createClient(wasm, fixture.peers.diana, fixture.groupId, 'partition-b');
+    try {
+      const baseA = (await clientA.journal.readHead(groupIdHex)).head;
+      const baseB = (await clientB.journal.readHead(groupIdHex)).head;
+      expect(baseA.epochDec).toBe(baseB.epochDec);
+      expect(baseA.groupContextDigestHex).toBe(baseB.groupContextDigestHex);
+      expect((await clientA.coordinator.retainCommit(groupIdHex, branchA.commitBytes)).status)
+        .toBe('retained');
+      expect((await clientA.coordinator.retainCommit(groupIdHex, branchA.commitBytes)).status)
+        .toBe('duplicate');
+      await clientB.coordinator.retainCommit(groupIdHex, branchB.commitBytes);
+      const [resultA, resultB] = await Promise.all([
+        clientA.coordinator.settlePass(groupIdHex),
+        clientB.coordinator.settlePass(groupIdHex),
+      ]);
+      expect(resultA.batch.winnerCommitDigestHex).toBe(digestHex(branchA.commitBytes));
+      expect(resultB.batch.winnerCommitDigestHex).toBe(digestHex(branchB.commitBytes));
+      expect(resultA.head.groupContextDigestHex).not.toBe(resultB.head.groupContextDigestHex);
+      expect(resultA.head.priorHeadDigestHex).toBe(baseA.headDigestHex);
+      expect(resultB.head.priorHeadDigestHex).toBe(baseB.headDigestHex);
+      // B2.5b deliberately has no retained-history rewind: exchanging the
+      // late sibling now can only defer it and cannot revise either result.
+      const lateA = await clientA.coordinator.retainCommit(groupIdHex, branchB.commitBytes);
+      const lateB = await clientB.coordinator.retainCommit(groupIdHex, branchA.commitBytes);
+      expect(lateA.status).toBe('retained');
+      expect(lateB.status).toBe('retained');
+      const [deferredA, deferredB] = await Promise.all([
+        clientA.coordinator.settlePass(groupIdHex),
+        clientB.coordinator.settlePass(groupIdHex),
+      ]);
+      expect(deferredA.batch.winnerCommitDigestHex).toBeNull();
+      expect(deferredB.batch.winnerCommitDigestHex).toBeNull();
+      expect(deferredA.candidates[0].state).toBe(B25B_CANDIDATE_STATE.NOT_CANDIDATE);
+      expect(deferredB.candidates[0].state).toBe(B25B_CANDIDATE_STATE.NOT_CANDIDATE);
+      expect(deferredA.head.groupContextDigestHex).toBe(resultA.head.groupContextDigestHex);
+      expect(deferredB.head.groupContextDigestHex).toBe(resultB.head.groupContextDigestHex);
+    } finally {
+      cleanupPrepared(branchA); cleanupPrepared(branchB); fixture.cleanup();
+    }
+  });
 });
