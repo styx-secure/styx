@@ -17,6 +17,7 @@ import {
   B25B_PUBLICATION_KIND,
   B25B_STORES,
   B25B_STORE_NAMES,
+  B25B_TERMINAL_DISPOSITION,
   bytesToHex,
   canonicalProviderEntries,
   compareCandidates,
@@ -41,10 +42,13 @@ import {
   buildRetainedState,
   buildTransition,
   parseBatch,
+  parseCandidateEvidence,
   parseHead,
   parseInput,
   parseLocal,
   parsePublication,
+  parseRetainedState,
+  parseTransition,
 } from '../../spikes/marmot-phase-b2-5b/b2-5b-record.mjs';
 import { FakeVaultDb, deepClone } from '../support/fake-vault-db.js';
 
@@ -374,13 +378,27 @@ describe('Phase B2.5b real OpenMLS local-publisher arbitration', () => {
           .toBe(inboundResult.head.groupContextDigestHex);
         expect(localResult.candidates[0].evidenceDigestHex)
           .toBe(inboundResult.candidates[0].evidenceDigestHex);
-        expect((await publisher.journal.readLocal(groupIdHex)).state)
-          .toBe(B25B_LOCAL_STATE.CONFIRMED);
+        const confirmed = await publisher.journal.readLocal(groupIdHex);
+        expect(confirmed.state).toBe(B25B_LOCAL_STATE.CONFIRMED);
+        await publisher.coordinator.recordAcknowledgement(
+          groupIdHex, 1, confirmed.recipientScope[1], UTF8.encode('post-confirmation'),
+        );
+        await publisher.coordinator.recordFailure(
+          groupIdHex, 1, confirmed.recipientScope[1], UTF8.encode('post-confirmation-failure'),
+        );
+        const stillConfirmed = await publisher.journal.readLocal(groupIdHex);
+        expect(stillConfirmed).toEqual(confirmed);
+        const terminalEvidence = await publisher.journal.readPublication(groupIdHex);
+        expect(terminalEvidence.at(-2).kind).toBe(B25B_PUBLICATION_KIND.LATE_ACK);
+        expect(terminalEvidence.at(-1).kind).toBe(B25B_PUBLICATION_KIND.FAILURE);
         const terminalEcho = await publisher.coordinator.retainCommit(
           groupIdHex, pending.commitBytes,
         );
         expect(terminalEcho.status).toBe('own_echo');
         expect(await publisher.db.list(B25B_STORES.input)).toHaveLength(0);
+        await publisher.coordinator.queueSelfUpdate(groupIdHex);
+        expect((await publisher.journal.readLocal(groupIdHex)).state)
+          .toBe(B25B_LOCAL_STATE.QUEUED);
         left = restoredFromRetained(wasm, localResult.retained);
         right = restoredFromRetained(wasm, inboundResult.retained);
         assertBidirectional(left, right);
@@ -442,8 +460,15 @@ describe('Phase B2.5b real OpenMLS local-publisher arbitration', () => {
         const batch = await client.coordinator.freeze(groupIdHex);
         const result = await client.coordinator.resolve(batch.protocolBatchDigestHex);
         expect(result.batch.winnerCommitDigestHex).toBe(digestHex(inboundAdd.commitBytes));
-        expect((await client.journal.readLocal(groupIdHex)).state)
-          .toBe(B25B_LOCAL_STATE.CLEARED_LOST);
+        const cleared = await client.journal.readLocal(groupIdHex);
+        expect(cleared.state).toBe(B25B_LOCAL_STATE.CLEARED_LOST);
+        await client.coordinator.recordAcknowledgement(
+          groupIdHex, 1, cleared.recipientScope[1], UTF8.encode('post-loss'),
+        );
+        await client.coordinator.recordFailure(
+          groupIdHex, 1, cleared.recipientScope[1], UTF8.encode('post-loss-failure'),
+        );
+        expect(await client.journal.readLocal(groupIdHex)).toEqual(cleared);
         expect(result.retained.snapshotDigestHex).not.toBe(local.pendingSnapshotDigestHex);
       } finally {
         cleanupPrepared(inboundAdd);
@@ -484,6 +509,73 @@ describe('Phase B2.5b real OpenMLS local-publisher arbitration', () => {
       }
     });
 
+  test.each(['add', 'remove'])('selects a contested local %s over an inbound self-update',
+    async (operation) => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm, operation === 'add' ? 81 : 91);
+      const groupIdHex = bytesToHex(fixture.groupId);
+      const newcomerProvider = new wasm.Provider();
+      const newcomer = createPeer(wasm, newcomerProvider, operation === 'add' ? 15 : 16);
+      const inbound = prepareFromParent(
+        wasm, fixture.peers.bob, fixture.groupId, 'self-update',
+      );
+      const client = await createClient(
+        wasm, fixture.peers.alice, fixture.groupId, `contested-local-${operation}`,
+      );
+      try {
+        await queueOperation(client, groupIdHex, operation,
+          operation === 'add' ? newcomer : fixture.peers.charlie.leafIndex);
+        await client.coordinator.runQueuedOpportunity(groupIdHex);
+        await client.coordinator.recordAttempt(groupIdHex);
+        const local = await acknowledgeFirstRecipient(client, groupIdHex, 'contested');
+        await client.coordinator.retainCommit(groupIdHex, inbound.commitBytes);
+        const result = await client.coordinator.settlePass(groupIdHex);
+        expect(local.priority).toBe(0);
+        expect(result.batch.winnerCommitDigestHex).toBe(local.commitDigestHex);
+        expect(result.candidates.find((item) =>
+          item.commitDigestHex === digestHex(inbound.commitBytes)).priority).toBe(1);
+        expect((await client.journal.readLocal(groupIdHex)).state)
+          .toBe(B25B_LOCAL_STATE.CONFIRMED);
+      } finally {
+        cleanupPrepared(inbound);
+        free(newcomer.keyPackage); free(newcomer.identity); free(newcomer.provider);
+        fixture.cleanup();
+      }
+    });
+
+  test.each([
+    ['wins', 0, 3, B25B_LOCAL_STATE.CONFIRMED],
+    ['loses', 3, 0, B25B_LOCAL_STATE.CLEARED_LOST],
+  ])('makes a contested local self-update %s by authenticated identity order',
+    async (_outcome, localRank, inboundRank, expectedState) => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm, localRank === 0 ? 96 : 97);
+      const groupIdHex = bytesToHex(fixture.groupId);
+      const ordered = Object.values(fixture.peers)
+        .sort((left, right) => bytesToHex(left.publicKey).localeCompare(bytesToHex(right.publicKey)));
+      const localPeer = ordered[localRank];
+      const inboundPeer = ordered[inboundRank];
+      const inbound = prepareFromParent(wasm, inboundPeer, fixture.groupId, 'self-update');
+      const client = await createClient(
+        wasm, localPeer, fixture.groupId, `self-update-${_outcome}`,
+      );
+      try {
+        await client.coordinator.queueSelfUpdate(groupIdHex);
+        await client.coordinator.runQueuedOpportunity(groupIdHex);
+        await client.coordinator.recordAttempt(groupIdHex);
+        const local = await acknowledgeFirstRecipient(client, groupIdHex, _outcome);
+        await client.coordinator.retainCommit(groupIdHex, inbound.commitBytes);
+        const result = await client.coordinator.settlePass(groupIdHex);
+        const expectedWinner = localRank < inboundRank
+          ? local.commitDigestHex : digestHex(inbound.commitBytes);
+        expect(result.batch.winnerCommitDigestHex).toBe(expectedWinner);
+        expect((await client.journal.readLocal(groupIdHex)).state).toBe(expectedState);
+      } finally {
+        cleanupPrepared(inbound);
+        fixture.cleanup();
+      }
+    });
+
   test('binds attempts and outcomes, retries exact bytes, and makes acknowledgement dominant',
     async () => {
       const wasm = await loadWasm();
@@ -519,7 +611,7 @@ describe('Phase B2.5b real OpenMLS local-publisher arbitration', () => {
           groupIdHex, 1, local.recipientScope[0], UTF8.encode('accepted'),
         );
         const duplicate = await client.coordinator.recordAcknowledgement(
-          groupIdHex, 1, local.recipientScope[0], UTF8.encode('accepted'),
+          groupIdHex, 1, local.recipientScope[0], UTF8.encode('caller-payload-changed'),
         );
         expect(duplicate.status).toBe('duplicate');
         await client.coordinator.recordFailure(
@@ -574,6 +666,69 @@ describe('Phase B2.5b real OpenMLS local-publisher arbitration', () => {
       }
     });
 
+  test('terminally closes a failed queued preparation opportunity', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm, 116);
+    const groupIdHex = bytesToHex(fixture.groupId);
+    const client = await createClient(wasm, fixture.peers.bob, fixture.groupId, 'prepare-fails');
+    try {
+      await client.coordinator.queueRemove(groupIdHex, fixture.peers.bob.leafIndex);
+      await expect(client.coordinator.runQueuedOpportunity(groupIdHex)).rejects.toMatchObject({
+        code: B25B_ERROR.INVALID,
+      });
+      const failed = await client.journal.readLocal(groupIdHex);
+      expect(failed).toMatchObject({
+        state: B25B_LOCAL_STATE.CANCELLED,
+        terminalDisposition: B25B_TERMINAL_DISPOSITION.PREPARATION_FAILED,
+        commitDigestHex: null,
+        publishAttempts: 0,
+      });
+      await client.coordinator.queueSelfUpdate(groupIdHex);
+      expect((await client.journal.readLocal(groupIdHex)).state)
+        .toBe(B25B_LOCAL_STATE.QUEUED);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  test('restarts cleanly through queued, prepared, acknowledged, and frozen states', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm, 118);
+    const groupIdHex = bytesToHex(fixture.groupId);
+    const client = await createClient(wasm, fixture.peers.bob, fixture.groupId, 'restart-matrix');
+    try {
+      await client.coordinator.queueSelfUpdate(groupIdHex);
+      let restarted = createB25BCoordinator({
+        journal: createB25BJournalForDb(client.db), wasm,
+      });
+      expect((await client.journal.readLocal(groupIdHex)).state).toBe(B25B_LOCAL_STATE.QUEUED);
+      await restarted.runQueuedOpportunity(groupIdHex);
+
+      restarted = createB25BCoordinator({ journal: createB25BJournalForDb(client.db), wasm });
+      expect((await client.journal.readLocal(groupIdHex)).state).toBe(B25B_LOCAL_STATE.PREPARED);
+      await restarted.recordAttempt(groupIdHex);
+      const publishing = await client.journal.readLocal(groupIdHex);
+      await restarted.recordAcknowledgement(
+        groupIdHex, 1, publishing.recipientScope[0], UTF8.encode('restart-ack'),
+      );
+
+      restarted = createB25BCoordinator({ journal: createB25BJournalForDb(client.db), wasm });
+      expect((await client.journal.readLocal(groupIdHex)).state)
+        .toBe(B25B_LOCAL_STATE.ACKNOWLEDGED);
+      const batch = await restarted.freeze(groupIdHex);
+
+      restarted = createB25BCoordinator({ journal: createB25BJournalForDb(client.db), wasm });
+      expect((await client.journal.readFrozen(batch.protocolBatchDigestHex)).batch.state)
+        .toBe(B25B_BATCH_STATE.FROZEN);
+      const result = await restarted.resolve(batch.protocolBatchDigestHex);
+      expect(result.batch.state).toBe(B25B_BATCH_STATE.RESOLVED);
+      expect((await client.journal.readLocal(groupIdHex)).state)
+        .toBe(B25B_LOCAL_STATE.CONFIRMED);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   test('freezes eligibility at cutoff and retains post-cutoff input for later work', async () => {
     const wasm = await loadWasm();
     const fixture = await setupGroup(wasm, 121);
@@ -604,6 +759,49 @@ describe('Phase B2.5b real OpenMLS local-publisher arbitration', () => {
       expect(lateInput.disposition).toBe(B25B_DISPOSITION.COLLECTED);
     } finally {
       cleanupPrepared(first); cleanupPrepared(second); fixture.cleanup();
+    }
+  });
+
+  test('reserves the sixteenth candidate slot for an active local opportunity', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm, 126);
+    const groupIdHex = bytesToHex(fixture.groupId);
+    const prepared = [];
+    const unique = new Set();
+    const reserved = await createClient(wasm, fixture.peers.bob, fixture.groupId, 'cap-reserved');
+    const inboundOnly = await createClient(wasm, fixture.peers.charlie, fixture.groupId, 'cap-full');
+    try {
+      for (let attempt = 0; unique.size < B25B_LIMITS.maxBatchCommits && attempt < 64;
+        attempt += 1) {
+        const sibling = prepareFromParent(
+          wasm, fixture.peers.alice, fixture.groupId, 'self-update',
+        );
+        const digest = digestHex(sibling.commitBytes);
+        if (unique.has(digest)) cleanupPrepared(sibling);
+        else {
+          unique.add(digest);
+          prepared.push(sibling);
+        }
+      }
+      expect(prepared).toHaveLength(B25B_LIMITS.maxBatchCommits);
+
+      await reserved.coordinator.queueSelfUpdate(groupIdHex);
+      for (const sibling of prepared.slice(0, B25B_LIMITS.maxBatchCommits - 1)) {
+        await reserved.coordinator.retainCommit(groupIdHex, sibling.commitBytes);
+      }
+      await expect(reserved.coordinator.retainCommit(
+        groupIdHex, prepared.at(-1).commitBytes,
+      )).rejects.toMatchObject({ code: B25B_ERROR.RESOURCE_LIMIT });
+
+      for (const sibling of prepared) {
+        await inboundOnly.coordinator.retainCommit(groupIdHex, sibling.commitBytes);
+      }
+      await expect(inboundOnly.coordinator.queueSelfUpdate(groupIdHex)).rejects.toMatchObject({
+        code: B25B_ERROR.RESOURCE_LIMIT,
+      });
+    } finally {
+      prepared.forEach(cleanupPrepared);
+      fixture.cleanup();
     }
   });
 
@@ -644,6 +842,107 @@ describe('Phase B2.5b real OpenMLS local-publisher arbitration', () => {
         fixture.cleanup();
       }
     });
+
+  test('strictly parses every durable record and rejects incoherent frozen bindings', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm, 136);
+    const groupIdHex = bytesToHex(fixture.groupId);
+    const inbound = prepareFromParent(wasm, fixture.peers.alice, fixture.groupId, 'self-update');
+    const client = await createClient(wasm, fixture.peers.bob, fixture.groupId, 'all-codecs');
+    try {
+      await client.coordinator.retainCommit(groupIdHex, inbound.commitBytes);
+      const batch = await client.coordinator.freeze(groupIdHex);
+      const digest = digestHex(inbound.commitBytes);
+      const inputKeyValue = `${groupIdHex}:${digest}`;
+      const candidateKeyValue = `${batch.protocolBatchDigestHex}:${digest}`;
+      const head = deepClone(client.db.record(B25B_STORES.head, groupIdHex));
+      const retained = deepClone(client.db.record(B25B_STORES.retained, head.snapshotDigestHex));
+      const input = deepClone(client.db.record(B25B_STORES.input, inputKeyValue));
+      const frozen = deepClone(client.db.record(
+        B25B_STORES.batch, batch.protocolBatchDigestHex,
+      ));
+      const candidate = deepClone(client.db.record(B25B_STORES.candidate, candidateKeyValue));
+      const transition = deepClone(client.db.record(
+        B25B_STORES.transition, head.transitionDigestHex,
+      ));
+      for (const [parser, record] of [
+        [parseHead, head],
+        [parseRetainedState, retained],
+        [parseInput, input],
+        [parseBatch, frozen],
+        [parseCandidateEvidence, candidate],
+        [parseTransition, transition],
+      ]) {
+        expect(() => parser({ ...record, injected: true })).toThrow(
+          expect.objectContaining({ code: B25B_ERROR.INVALID }),
+        );
+      }
+
+      const wrongGroupInput = buildInput({
+        groupIdHex: 'ff'.repeat(32),
+        batchDigestHex: batch.protocolBatchDigestHex,
+        commitBytes: input.commitBytes,
+        disposition: B25B_DISPOSITION.FROZEN,
+      });
+      client.db.stores.get(B25B_STORES.input).set(inputKeyValue, wrongGroupInput);
+      await expect(client.journal.readFrozen(batch.protocolBatchDigestHex)).rejects.toMatchObject({
+        code: B25B_ERROR.CORRUPT,
+      });
+      client.db.stores.get(B25B_STORES.input).set(inputKeyValue, input);
+      expect((await client.journal.readFrozen(batch.protocolBatchDigestHex)).batch)
+        .toEqual(batch);
+    } finally {
+      cleanupPrepared(inbound);
+      fixture.cleanup();
+    }
+  });
+
+  test('rolls back preparation and freeze transactions at each written store', async () => {
+    const wasm = await loadWasm();
+    const fixture = await setupGroup(wasm, 138);
+    const groupIdHex = bytesToHex(fixture.groupId);
+    const inbound = prepareFromParent(wasm, fixture.peers.alice, fixture.groupId, 'self-update');
+    const client = await createClient(wasm, fixture.peers.bob, fixture.groupId, 'early-rollback');
+    try {
+      await client.coordinator.queueSelfUpdate(groupIdHex);
+      for (const store of [B25B_STORES.retained, B25B_STORES.local]) {
+        const before = durableImage(client.db);
+        let injected = false;
+        client.db.failOn = (candidateStore) => {
+          if (!injected && candidateStore === store) { injected = true; return true; }
+          return false;
+        };
+        await expect(client.coordinator.runQueuedOpportunity(groupIdHex))
+          .rejects.toThrow('injected crash');
+        client.db.failOn = null;
+        expect(injected).toBe(true);
+        expect(durableImage(client.db)).toEqual(before);
+        expect((await client.journal.readLocal(groupIdHex)).state).toBe(B25B_LOCAL_STATE.QUEUED);
+      }
+      await client.coordinator.runQueuedOpportunity(groupIdHex);
+      await client.coordinator.recordAttempt(groupIdHex);
+      await acknowledgeFirstRecipient(client, groupIdHex, 'freeze-rollback');
+      await client.coordinator.retainCommit(groupIdHex, inbound.commitBytes);
+      for (const store of [
+        B25B_STORES.batch, B25B_STORES.input, B25B_STORES.candidate, B25B_STORES.local,
+      ]) {
+        const before = durableImage(client.db);
+        let injected = false;
+        client.db.failOn = (candidateStore) => {
+          if (!injected && candidateStore === store) { injected = true; return true; }
+          return false;
+        };
+        await expect(client.coordinator.freeze(groupIdHex)).rejects.toThrow('injected crash');
+        client.db.failOn = null;
+        expect(injected).toBe(true);
+        expect(durableImage(client.db)).toEqual(before);
+      }
+      expect((await client.coordinator.freeze(groupIdHex)).state).toBe(B25B_BATCH_STATE.FROZEN);
+    } finally {
+      cleanupPrepared(inbound);
+      fixture.cleanup();
+    }
+  });
 
   test('rolls back every final logical-store write and retries deterministically', async () => {
     const wasm = await loadWasm();

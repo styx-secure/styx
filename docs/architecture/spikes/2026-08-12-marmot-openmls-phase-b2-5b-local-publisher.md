@@ -4,7 +4,8 @@ Date: 2026-08-12
 
 Status: experimental, isolated, non-product proof
 
-Authority: Issue #157; Phase B Epic #128  
+Authority: Issue #157 and its approved narrow security/evidence amendment;
+Phase B Epic #128
 Base: `44f953e79e8f61632b528a0a2b1ffbe5fe965cb7`
 
 ## 1. Result
@@ -78,15 +79,21 @@ separate record:
 
 Preparation persists both an exact clean-parent retained state and an exact
 pending provider snapshot. Publication attempts always read the stored Commit;
-there is no API for replacement bytes. Duplicate identical outcomes are
-idempotent. ACK dominates all failure evidence and permanently disables
-discard. A remote ACK that is never recorded locally is deliberately modeled as
-ambiguous: restart keeps the head unchanged and permits only exact retry.
+there is no API for replacement bytes. Duplicate outcomes are idempotent by
+attempt, recipient and semantic kind even if caller payload bytes differ. Every
+terminal local state is immutable: later ACK/failure evidence cannot change its
+state, disposition or counters. ACK dominates all failure evidence and
+permanently disables discard. A remote ACK that is never recorded locally is
+deliberately modeled as ambiguous: restart keeps the head unchanged and permits
+only exact retry.
 
 Freeze-time eligibility is immutable. An ACK arriving after cutoff does not
-enter that batch. If an already-frozen inbound branch advances the head, the
-late-acknowledged pending state is terminalized as losing outside the batch;
-it is never silently applied.
+enter that batch. An inbound-only batch may freeze while the same-parent local
+record is `PREPARED` or `PUBLISHING`; if that batch advances the head, the
+excluded local record is atomically terminalized as
+`CLEARED_LOST / LOSING_OUTSIDE_BATCH`. A later ACK is retained as
+`LATE_ACK`, never silently applied. An ACK already durable at cutoff always
+admits the local Commit to that same batch.
 
 ## 5. Candidate derivation and application
 
@@ -112,10 +119,12 @@ parent restore. Clearing pending is never used to reconstruct that parent.
 
 The pinned group constructor establishes one founder administrator and exposes
 no administrator-policy mutation surface. Real-WASM evidence therefore proves
-local Add and Remove as authorized winners and proves the losing-local path with
-an authorized self-update against a lower-priority administrator Add. It cannot
-construct two distinct authorized priority-0 administrators without changing
-the frozen wrapper or policy, and it does not fake that unsupported topology.
+contested local Add and Remove wins over authorized inbound self-updates, plus
+both winning and losing contested local self-updates under authenticated
+identity order. It also proves the losing-local path with an authorized
+self-update against a lower-priority administrator Add. It cannot construct two
+distinct authorized priority-0 administrators, so it makes no general
+Add/Remove-loss claim and does not fake that unsupported topology.
 
 ## 6. Durable schema and atomicity
 
@@ -133,7 +142,8 @@ The database has exactly eight stores:
 | `publication-evidence` | exact attempt/ACK/failure/late-ACK facts |
 
 B2.5b-local records use closed direct objects, exact field sets, bounded counts
-and byte lengths, domain-separated canonical encoding and SHA-256 digests. The
+and byte lengths, closed terminal-disposition/counter bindings,
+domain-separated canonical encoding and SHA-256 digests. The
 cross-member protocol-batch and comparison-tuple identities deliberately retain
 the frozen B2.5a domains. Unknown fields/states, duplicate sorted identities,
 unsafe counters, corrupt digests and incoherent nullable bindings fail closed.
@@ -143,8 +153,8 @@ transaction re-reads the full head, transition, retained parent, local pending,
 publication evidence, batch, every input and every candidate placeholder. It
 then atomically writes candidate outcomes, input dispositions, local terminal
 state, selected retained state, transition and head. Injected failure at every
-logical store written by publication/finalization leaves the exact durable
-predecessor and permits deterministic retry.
+logical store written by preparation, freeze, publication and finalization
+leaves the exact durable predecessor and permits deterministic retry.
 
 ## 7. Executable evidence
 
@@ -152,18 +162,24 @@ The focused Jest suite covers:
 
 - exact eight-store/namespace and absent public finalizer boundaries;
 - non-canonical local preparation, attempt and ambiguous retry;
-- real authorized local self-update, Add and Remove;
+- real authorized local self-update, Add and Remove, including contested
+  Add/Remove wins and self-update win/loss;
 - local winner, inbound winner and clean-parent losing-pending path;
 - exact local/inbound cross-admission equivalence and bidirectional liveness;
 - active and terminal `own_echo` before input creation;
-- success, failure, two-step discard, duplicate ACK, ACK dominance, late ACK,
-  wrong attempt/recipient and ACK-before-attempt;
-- byte-identical retry and restart from ambiguous publication;
+- success, failure, two-step discard, payload-independent duplicate ACK, ACK
+  dominance, immutable post-terminal ACK/failure evidence, wrong
+  attempt/recipient and ACK-before-attempt;
+- byte-identical retry and restart from queued, prepared, ambiguous
+  publication, acknowledged and frozen states;
 - freeze-time ACK eligibility and post-cutoff durable input;
-- strict codec corruption/unknown/overflow/duplicate rejection;
-- rollback at publication and every other logical-store final write;
+- strict codec corruption/unknown/overflow/duplicate rejection for all eight
+  record families, plus negative cross-record binding evidence;
+- rollback during preparation, freeze, publication and every logical-store
+  final write;
 - idempotent historical resolution and no double application;
-- a sequential pass against the selected head and bounded local opportunity;
+- a sequential pass against the selected head, terminal closure of failed
+  preparation, and reservation of one local slot within the 16-candidate cap;
   and
 - explicit cross-partition divergence plus no-rewind `NOT_CANDIDATE` closure.
 

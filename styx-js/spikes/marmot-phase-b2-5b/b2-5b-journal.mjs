@@ -13,6 +13,7 @@ import {
   B25B_PUBLICATION_KIND,
   B25B_STORES,
   B25B_STORE_NAMES,
+  B25B_TERMINAL_DISPOSITION,
   assertBytes,
   assertGroupIdHex,
   assertHex64,
@@ -293,6 +294,12 @@ export class B25BJournal {
           failB25B(B25B_ERROR.STATE_CONFLICT, 'one local intent is already active');
         }
       }
+      const collected = (await listGroupInputs(ops, groupIdHex))
+        .filter((item) => item.batchDigestHex === null);
+      if (collected.length >= B25B_LIMITS.maxBatchCommits) {
+        failB25B(B25B_ERROR.RESOURCE_LIMIT,
+          'local intent cannot reserve a bounded arbitration slot');
+      }
       await ops.put(B25B_STORES.local, localKey(groupIdHex), queued);
       return queued;
     });
@@ -435,7 +442,12 @@ export class B25BJournal {
       }
       const collected = (await listGroupInputs(ops, groupIdHex))
         .filter((item) => item.batchDigestHex === null);
-      if (collected.length >= B25B_LIMITS.maxBatchCommits) {
+      const activeLocal = localRaw === undefined ? null : parseLocal(localRaw);
+      const reservedLocalSlot = activeLocal !== null && [
+        B25B_LOCAL_STATE.QUEUED, B25B_LOCAL_STATE.PREPARED,
+        B25B_LOCAL_STATE.PUBLISHING, B25B_LOCAL_STATE.ACKNOWLEDGED,
+      ].includes(activeLocal.state) ? 1 : 0;
+      if (collected.length >= B25B_LIMITS.maxBatchCommits - reservedLocalSlot) {
         failB25B(B25B_ERROR.RESOURCE_LIMIT, 'unfrozen Commit input cap is exhausted');
       }
       await ops.put(B25B_STORES.input, key, proposed);
@@ -674,13 +686,13 @@ export class B25BJournal {
     if (localDigest !== null) {
       const localCandidate = safeCandidates.find((item) => item.commitDigestHex === localDigest);
       let state = B25B_LOCAL_STATE.CLEARED_REJECTED;
-      let terminalDisposition = 'REJECTED';
+      let terminalDisposition = B25B_TERMINAL_DISPOSITION.REJECTED;
       if (selectedDigest === localDigest) {
         state = B25B_LOCAL_STATE.CONFIRMED;
-        terminalDisposition = 'SELECTED';
+        terminalDisposition = B25B_TERMINAL_DISPOSITION.SELECTED;
       } else if (localCandidate.state === B25B_CANDIDATE_STATE.AUTHORIZED) {
         state = B25B_LOCAL_STATE.CLEARED_LOST;
-        terminalDisposition = 'LOSING';
+        terminalDisposition = B25B_TERMINAL_DISPOSITION.LOSING;
       }
       terminalLocal = mutateLocal(safeLocal, { state, activeBatchDigestHex: null,
         terminalDisposition });
@@ -690,7 +702,8 @@ export class B25BJournal {
       && [B25B_LOCAL_STATE.PREPARED, B25B_LOCAL_STATE.PUBLISHING,
         B25B_LOCAL_STATE.ACKNOWLEDGED].includes(safeLocal.state)) {
       terminalLocal = mutateLocal(safeLocal, { state: B25B_LOCAL_STATE.CLEARED_LOST,
-        activeBatchDigestHex: null, terminalDisposition: 'LOSING_OUTSIDE_BATCH' });
+        activeBatchDigestHex: null,
+        terminalDisposition: B25B_TERMINAL_DISPOSITION.LOSING_OUTSIDE_BATCH });
       localTerminalChanged = true;
     }
     let transition = null;

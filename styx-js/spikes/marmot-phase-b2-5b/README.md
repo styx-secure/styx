@@ -41,9 +41,12 @@ QUEUED -> PREPARED -> PUBLISHING -> ACKNOWLEDGED
 
 `FAILURE` is evidence, not permission to guess that publication did not happen.
 Discard is a separate action, allowed only after a failure and before any ACK.
-ACK dominates failure. An ACK after discard is preserved as `LATE_ACK` and
-cannot resurrect the pending state. Retry emits only the exact stored Commit
-bytes; no public method accepts replacement artifact bytes or a success boolean.
+ACK dominates failure. Every terminal state is immutable: a later ACK is
+preserved as `LATE_ACK`, a later failure is evidence-only, and neither can
+resurrect the pending state or change its counters or disposition. Duplicate
+outcomes are idempotent by attempt, recipient and semantic kind even if a caller
+changes untrusted payload bytes. Retry emits only the exact stored Commit bytes;
+no public method accepts replacement artifact bytes or a success boolean.
 
 ## Arbitration
 
@@ -61,6 +64,13 @@ it never stages the member's own Commit inbound. A local winner confirms that
 exact pending handle. An inbound winner is independently restored and merged
 from the retained clean parent, while the losing pending annex and any Welcome
 are tombstoned atomically.
+
+An inbound-only batch may freeze while a same-parent local record is merely
+`PREPARED` or `PUBLISHING`. If that batch advances the head, the excluded
+local record becomes terminal `CLEARED_LOST / LOSING_OUTSIDE_BATCH`; a later
+ACK is contradiction evidence only. The journal reserves one of the 16 bounded
+candidate slots whenever a local opportunity is active, so later
+acknowledgement cannot make the next cutoff unrepresentable.
 
 An inbound echo of active or terminal local Commit bytes is classified as
 `own_echo` before input creation. A post-cutoff input cannot affect the frozen

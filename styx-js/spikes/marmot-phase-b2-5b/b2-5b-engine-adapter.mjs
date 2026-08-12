@@ -27,6 +27,7 @@ import {
   B25B_LOCAL_STATE,
   B25B_PUBLICATION_KIND,
   B25B_REASON,
+  B25B_TERMINAL_DISPOSITION,
   comparisonTupleDigest,
   compareCandidates,
   digestB25B,
@@ -146,6 +147,12 @@ function selectCandidate(records) {
   }
   return authorized[0] ?? null;
 }
+
+const TERMINAL_LOCAL_STATES = new Set([
+  B25B_LOCAL_STATE.CANCELLED, B25B_LOCAL_STATE.DISCARDED,
+  B25B_LOCAL_STATE.CONFIRMED, B25B_LOCAL_STATE.CLEARED_LOST,
+  B25B_LOCAL_STATE.CLEARED_REJECTED,
+]);
 
 export class B25BEngineAdapter {
   #wasm;
@@ -314,11 +321,13 @@ export class B25BEngineAdapter {
     if (intent?.state !== B25B_LOCAL_STATE.QUEUED) {
       failB25B(B25B_ERROR.STATE_CONFLICT, 'preparation requires one queued local intent');
     }
-    const session = this.#restore(bundle.retained);
+    let session;
     let pending;
     let keyPackage;
     let projectionHandle;
+    let commitStarted = false;
     try {
+      session = this.#restore(bundle.retained);
       if (intent.operationKind === 'self-update') {
         if (intent.operationPayloadBytes.length !== 0) {
           failB25B(B25B_ERROR.INVALID, 'self-update payload must be empty');
@@ -389,9 +398,18 @@ export class B25BEngineAdapter {
         publishAttempts: 0, ackCount: 0, failureCount: 0,
         activeBatchDigestHex: null, terminalDisposition: null,
       });
+      commitStarted = true;
       return await this.#commitPrepared({ expectedHead: bundle.head,
         expectedIntent: intent, pending: local, pendingRetained });
     } catch (error) {
+      if (!commitStarted && error?.code !== B25B_ERROR.CAS_CONFLICT) {
+        const failed = mutateLocal(intent, {
+          state: B25B_LOCAL_STATE.CANCELLED,
+          terminalDisposition: B25B_TERMINAL_DISPOSITION.PREPARATION_FAILED,
+        });
+        await this.#replaceLocal(intent, failed);
+      }
+      if (commitStarted) throw error;
       if (error?.code) throw error;
       failB25B(B25B_ERROR.ENGINE_REJECTED, 'local preparation failed closed', {}, error);
     } finally {
@@ -449,16 +467,14 @@ export class B25BEngineAdapter {
     if (!local.recipientScope.includes(recipientIdentityHex)) {
       failB25B(B25B_ERROR.INVALID, 'publication recipient is outside the frozen scope');
     }
-    const duplicate = evidenceSet.find((item) => item.kind === requestedKind
+    const terminal = TERMINAL_LOCAL_STATES.has(local.state);
+    const kind = requestedKind === B25B_PUBLICATION_KIND.ACK && terminal
+      ? B25B_PUBLICATION_KIND.LATE_ACK : requestedKind;
+    const duplicate = evidenceSet.find((item) => item.kind === kind
       && item.attemptOrdinal === attemptOrdinal
-      && item.recipientIdentityHex === recipientIdentityHex
-      && bytesEqual(item.payloadBytes, payloadBytes));
+      && item.recipientIdentityHex === recipientIdentityHex);
     if (duplicate !== undefined) return Object.freeze({ status: 'duplicate', evidence: duplicate,
       local });
-    const terminalDiscard = [B25B_LOCAL_STATE.CANCELLED, B25B_LOCAL_STATE.DISCARDED]
-      .includes(local.state);
-    const kind = requestedKind === B25B_PUBLICATION_KIND.ACK && terminalDiscard
-      ? B25B_PUBLICATION_KIND.LATE_ACK : requestedKind;
     const evidence = buildPublication({
       groupIdHex, sequence: evidenceSet.length + 1, kind, attemptOrdinal,
       artifactDigestHex: local.commitDigestHex, artifactBytes: local.commitBytes,
@@ -466,10 +482,10 @@ export class B25BEngineAdapter {
       payloadBytes,
     });
     let next = local;
-    if (!terminalDiscard && requestedKind === B25B_PUBLICATION_KIND.ACK) {
+    if (!terminal && requestedKind === B25B_PUBLICATION_KIND.ACK) {
       next = mutateLocal(local, { state: B25B_LOCAL_STATE.ACKNOWLEDGED,
         ackCount: local.ackCount + 1 });
-    } else if (!terminalDiscard && requestedKind === B25B_PUBLICATION_KIND.FAILURE) {
+    } else if (!terminal && requestedKind === B25B_PUBLICATION_KIND.FAILURE) {
       next = mutateLocal(local, { failureCount: local.failureCount + 1 });
     }
     return this.#appendPublication({ expectedLocal: local, evidence, nextLocal: next });
@@ -480,7 +496,8 @@ export class B25BEngineAdapter {
     if (local?.state !== B25B_LOCAL_STATE.PREPARED || local.publishAttempts !== 0) {
       failB25B(B25B_ERROR.STATE_CONFLICT, 'cancel requires pre-attempt prepared state');
     }
-    return this.#clearPending(local, B25B_LOCAL_STATE.CANCELLED, 'CANCELLED');
+    return this.#clearPending(local, B25B_LOCAL_STATE.CANCELLED,
+      B25B_TERMINAL_DISPOSITION.CANCELLED);
   }
 
   async discardAfterFailure(groupIdHex) {
@@ -489,7 +506,8 @@ export class B25BEngineAdapter {
       || local.ackCount !== 0) {
       failB25B(B25B_ERROR.STATE_CONFLICT, 'discard requires failure and no acknowledgement');
     }
-    return this.#clearPending(local, B25B_LOCAL_STATE.DISCARDED, 'DISCARDED');
+    return this.#clearPending(local, B25B_LOCAL_STATE.DISCARDED,
+      B25B_TERMINAL_DISPOSITION.DISCARDED_AFTER_FAILURE);
   }
 
   async #clearPending(local, state, terminalDisposition) {

@@ -14,6 +14,7 @@ import {
   B25B_PUBLICATION_KIND,
   B25B_REASON,
   B25B_RUNTIME,
+  B25B_TERMINAL_DISPOSITION,
   B25B_VERSION,
   assertB25BDirectObject,
   assertB25BRuntime,
@@ -95,6 +96,12 @@ const CANDIDATE_STATES = new Set(Object.values(B25B_CANDIDATE_STATE));
 const DISPOSITIONS = new Set(Object.values(B25B_DISPOSITION));
 const LOCAL_STATES = new Set(Object.values(B25B_LOCAL_STATE));
 const PUBLICATION_KINDS = new Set(Object.values(B25B_PUBLICATION_KIND));
+const TERMINAL_DISPOSITIONS = new Set(Object.values(B25B_TERMINAL_DISPOSITION));
+const TERMINAL_LOCAL_STATES = new Set([
+  B25B_LOCAL_STATE.CANCELLED, B25B_LOCAL_STATE.DISCARDED,
+  B25B_LOCAL_STATE.CONFIRMED, B25B_LOCAL_STATE.CLEARED_LOST,
+  B25B_LOCAL_STATE.CLEARED_REJECTED,
+]);
 
 function magic(kind) { return `${B25B_FORMAT}-${kind}`; }
 
@@ -577,8 +584,14 @@ function assertLocal(record) {
   assertSafeInteger('ackCount', record.ackCount, 0, 64);
   assertSafeInteger('failureCount', record.failureCount, 0, 64);
   assertNullableString('terminalDisposition', record.terminalDisposition, { max: 64 });
+  if (record.terminalDisposition !== null
+    && !TERMINAL_DISPOSITIONS.has(record.terminalDisposition)) {
+    failB25B(B25B_ERROR.INVALID, 'terminal disposition is invalid');
+  }
   assertHex64('localPendingDigestHex', record.localPendingDigestHex);
   const queued = record.state === B25B_LOCAL_STATE.QUEUED;
+  const failedBeforePreparation = record.state === B25B_LOCAL_STATE.CANCELLED
+    && record.terminalDisposition === B25B_TERMINAL_DISPOSITION.PREPARATION_FAILED;
   const bound = [record.parentHeadDigestHex, record.parentEpochDec,
     record.parentGroupContextDigestHex, record.cleanSnapshotDigestHex,
     record.pendingSnapshotDigestHex, record.commitDigestHex,
@@ -592,12 +605,72 @@ function assertLocal(record) {
     || record.activeBatchDigestHex !== null || record.terminalDisposition !== null)) {
     failB25B(B25B_ERROR.INVALID, 'queued intent contains pending authority');
   }
-  if (!queued && (bound.some((value) => value === null) || record.commitBytes.length === 0
-    || record.recipientScope.length === 0)) {
+  if (!queued && !failedBeforePreparation
+    && (bound.some((value) => value === null) || record.commitBytes.length === 0
+      || record.recipientScope.length === 0)) {
     failB25B(B25B_ERROR.INVALID, 'prepared local record lacks authority binding');
+  }
+  if (failedBeforePreparation && (bound.some((value) => value !== null)
+    || record.commitBytes.length !== 0 || record.welcomeBytes.length !== 0
+    || record.recipientScope.length !== 0 || record.publishAttempts !== 0
+    || record.ackCount !== 0 || record.failureCount !== 0
+    || record.activeBatchDigestHex !== null)) {
+    failB25B(B25B_ERROR.INVALID, 'failed queued opportunity contains pending authority');
+  }
+  if (TERMINAL_LOCAL_STATES.has(record.state) !== (record.terminalDisposition !== null)) {
+    failB25B(B25B_ERROR.INVALID, 'local terminal state/disposition binding is invalid');
+  }
+  const allowedTerminal = {
+    [B25B_LOCAL_STATE.CANCELLED]: new Set([
+      B25B_TERMINAL_DISPOSITION.CANCELLED,
+      B25B_TERMINAL_DISPOSITION.PREPARATION_FAILED,
+    ]),
+    [B25B_LOCAL_STATE.DISCARDED]: new Set([
+      B25B_TERMINAL_DISPOSITION.DISCARDED_AFTER_FAILURE,
+    ]),
+    [B25B_LOCAL_STATE.CONFIRMED]: new Set([B25B_TERMINAL_DISPOSITION.SELECTED]),
+    [B25B_LOCAL_STATE.CLEARED_LOST]: new Set([
+      B25B_TERMINAL_DISPOSITION.LOSING,
+      B25B_TERMINAL_DISPOSITION.LOSING_OUTSIDE_BATCH,
+    ]),
+    [B25B_LOCAL_STATE.CLEARED_REJECTED]: new Set([B25B_TERMINAL_DISPOSITION.REJECTED]),
+  };
+  if (TERMINAL_LOCAL_STATES.has(record.state)
+    && !allowedTerminal[record.state].has(record.terminalDisposition)) {
+    failB25B(B25B_ERROR.INVALID, 'local state has an incoherent terminal disposition');
+  }
+  if (record.activeBatchDigestHex !== null && record.state !== B25B_LOCAL_STATE.ACKNOWLEDGED) {
+    failB25B(B25B_ERROR.INVALID, 'only acknowledged local state may bind an active batch');
   }
   if (record.state === B25B_LOCAL_STATE.ACKNOWLEDGED && record.ackCount === 0) {
     failB25B(B25B_ERROR.INVALID, 'acknowledged local record lacks acknowledgement');
+  }
+  const acknowledgedTerminal = record.state === B25B_LOCAL_STATE.CONFIRMED
+    || record.state === B25B_LOCAL_STATE.CLEARED_REJECTED
+    || (record.state === B25B_LOCAL_STATE.CLEARED_LOST
+      && record.terminalDisposition === B25B_TERMINAL_DISPOSITION.LOSING);
+  if (acknowledgedTerminal && (record.publishAttempts === 0 || record.ackCount === 0)) {
+    failB25B(B25B_ERROR.INVALID, 'arbitrated local terminal lacks acknowledgement');
+  }
+  if (record.state === B25B_LOCAL_STATE.PREPARED
+    && (record.publishAttempts !== 0 || record.ackCount !== 0 || record.failureCount !== 0)) {
+    failB25B(B25B_ERROR.INVALID, 'prepared local record contains publication outcomes');
+  }
+  if ([B25B_LOCAL_STATE.PUBLISHING, B25B_LOCAL_STATE.ACKNOWLEDGED].includes(record.state)
+    && record.publishAttempts === 0) {
+    failB25B(B25B_ERROR.INVALID, 'publishing local record lacks a durable attempt');
+  }
+  if (record.ackCount > record.publishAttempts * record.recipientScope.length
+    || record.failureCount > record.publishAttempts * record.recipientScope.length) {
+    failB25B(B25B_ERROR.INVALID, 'publication outcome counters exceed their bounded scope');
+  }
+  if ([B25B_LOCAL_STATE.CANCELLED, B25B_LOCAL_STATE.DISCARDED].includes(record.state)
+    && record.ackCount !== 0) {
+    failB25B(B25B_ERROR.INVALID, 'cancelled or discarded local state cannot be acknowledged');
+  }
+  if (record.state === B25B_LOCAL_STATE.DISCARDED
+    && (record.publishAttempts === 0 || record.failureCount === 0)) {
+    failB25B(B25B_ERROR.INVALID, 'discarded local state lacks failure evidence');
   }
   return record;
 }
