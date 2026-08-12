@@ -86,6 +86,13 @@ tombstone it when its base state leaves the retained horizon.
 Publication evidence is attested liveness metadata. It can close an obligation
 but never advances or rolls back the MLS ratchet.
 
+The inherited one-use liveness probe reserves its transcript-derived instance
+before encryption and then uses the same durable outbound and inbound message
+ratchet as ordinary application traffic. The reservation ledger remains
+selection-inert evidence; it is not sender or receiver state. The internal
+probe request namespace is unavailable to application callers, and a probe
+racing an ordinary send has exactly one message-position CAS winner.
+
 ## Bounds
 
 - message states: at most 17 retained epoch instances;
@@ -125,10 +132,12 @@ The real-WASM Jest suite proves:
 - oldest-first inbound truncation with a digest-linked marker and bounded
   outbox refusal before mutation;
 - displaced-instance suspension, exact-byte re-adoption and atomic retained
-  horizon release/invalidation; and
-- unchanged B2.5c convergence and local-generation behavior.
+  horizon release/invalidation;
+- unchanged B2.5c convergence and local-generation behavior; and
+- durable continuation from bidirectional liveness probes into ordinary
+  traffic, plus a probe-versus-message same-predecessor CAS race.
 
-The focused suite currently contains 46 passing tests against the pinned real
+The focused suite currently contains 47 passing tests against the pinned real
 WASM artifact.
 
 The Playwright suite uses two real IndexedDB connections and no Web Locks. In

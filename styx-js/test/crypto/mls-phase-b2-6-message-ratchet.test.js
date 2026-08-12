@@ -425,6 +425,42 @@ describe('Phase B2.6 retained-history convergence', () => {
     } finally { fixture.cleanup(); }
   }, 20000);
 
+  test('a liveness probe and ordinary send cannot release the same message position',
+    async () => {
+      const wasm = await loadWasm();
+      const fixture = await setupGroup(wasm);
+      let entered = 0;
+      let release;
+      const barrier = new Promise((resolve) => { release = resolve; });
+      try {
+        const client = clientFor(wasm, fixture.peers.alice, fixture.groupId,
+          'probe-message-cas', {
+            db: new SerialFakeVaultDb(),
+            beforeOutboundCommit: async () => {
+              entered += 1;
+              if (entered === 2) release();
+              await barrier;
+            },
+          });
+        await client.initialize();
+        const groupIdHex = bytesToHex(fixture.groupId);
+        const outcomes = await Promise.allSettled([
+          client.coordinator.createLivenessProbe(
+            groupIdHex, UTF8.encode('probe-race')),
+          client.coordinator.queueApplicationMessage(
+            groupIdHex, 'ordinary-race', UTF8.encode('ordinary-race')),
+        ]);
+        expect(outcomes.filter((item) => item.status === 'fulfilled')).toHaveLength(1);
+        expect(outcomes.filter((item) => item.status === 'rejected')).toHaveLength(1);
+        expect(outcomes.find((item) => item.status === 'rejected').reason)
+          .toMatchObject({ code: B26_ERROR.CAS_CONFLICT });
+        const context = await client.journal.readMessageContext(groupIdHex);
+        expect(context.state.sentCount).toBe(1);
+        expect(await client.db.transaction([B26_STORES.appOutbox],
+          (ops) => ops.list(B26_STORES.appOutbox))).toHaveLength(1);
+      } finally { fixture.cleanup(); }
+    }, 20000);
+
   test('concurrent inbound plaintext computations have one durable CAS winner', async () => {
     const wasm = await loadWasm();
     const fixture = await setupGroup(wasm);
@@ -554,6 +590,9 @@ describe('Phase B2.6 retained-history convergence', () => {
       await expect(client.coordinator.queueApplicationMessage(
         groupIdHex, 'x'.repeat(B26_LIMITS.maxRequestIdBytes + 1), UTF8.encode('x')))
         .rejects.toMatchObject({ code: expect.stringMatching(/_INVALID$/) });
+      await expect(client.coordinator.queueApplicationMessage(
+        groupIdHex, `styx-probe:${'11'.repeat(32)}`, UTF8.encode('x')))
+        .rejects.toMatchObject({ code: B26_ERROR.INVALID });
       await expect(client.coordinator.queueApplicationMessage(
         groupIdHex, 'oversized', new Uint8Array(B26_LIMITS.maxApplicationPayloadBytes + 1)))
         .rejects.toBeDefined();
@@ -787,6 +826,17 @@ describe('Phase B2.6 retained-history convergence', () => {
       expect(reverseReceived).toEqual(UTF8.encode('b2.5c reverse liveness'));
       await charlie.coordinator.completeLivenessProbe(reverseProbe,
         bytesToHex(fixture.peers.bob.publicKey));
+      const afterProbe = await bob.coordinator.queueApplicationMessage(
+        bytesToHex(fixture.groupId), 'after-probe-forward',
+        UTF8.encode('ordinary message after probe'));
+      const afterProbeDurable = await bob.coordinator.readQueuedApplicationMessage(
+        afterProbe.instanceKeyHex, afterProbe.ordinal);
+      const afterProbeReceived = await charlie.coordinator.processApplicationMessage(
+        bytesToHex(fixture.groupId), afterProbeDurable.ciphertextBytes);
+      expect(afterProbeReceived.plaintextBytes)
+        .toEqual(UTF8.encode('ordinary message after probe'));
+      expect(afterProbe.ordinal).toBe(2);
+      expect(afterProbeReceived.receivedOrdinal).toBe(2);
       await expect(bob.coordinator.createLivenessProbe(
         bytesToHex(fixture.groupId), plaintext)).rejects.toMatchObject({
         code: B26_ERROR.PROBE_ALREADY_RESERVED,
@@ -816,6 +866,9 @@ describe('Phase B2.6 retained-history convergence', () => {
       const reservations = client.db.stores.get('probe-reservation');
       expect(reservations.size).toBe(1);
       expect(client.db.stores.get('probe-completion')?.size ?? 0).toBe(0);
+      expect(client.db.stores.get(B26_STORES.messageState)?.size ?? 0).toBe(0);
+      expect(client.db.stores.get(B26_STORES.messageSnapshot)?.size ?? 0).toBe(0);
+      expect(client.db.stores.get(B26_STORES.appOutbox)?.size ?? 0).toBe(0);
       expect((await client.journal.readHead(bytesToHex(fixture.groupId))).head.headDigestHex)
         .toBe(headBefore.headDigestHex);
       const restarted = createB26Coordinator({ journal: client.journal, wasm });

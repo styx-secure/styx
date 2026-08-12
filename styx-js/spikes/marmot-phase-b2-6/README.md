@@ -57,6 +57,14 @@ digest and immutable recipient scope recovers the existing ordinal; conflicting
 reuse fails closed. Publication attempts and outcomes are bounded attestations
 and never ratchet authority.
 
+The inherited B2.5c liveness probe keeps its one-use write-ahead reservation,
+but its MLS application ciphertext now advances through this same durable
+message-state transaction. Its internal request namespace is reserved from
+application callers. A probe and an ordinary send from one predecessor can
+therefore produce only one committed, releasable ciphertext; inbound probe
+processing likewise persists the receiver successor before returning
+plaintext. The probe ledger remains evidence, not a second ratchet authority.
+
 Inbound ordering is:
 
     deduplicate exact ciphertext

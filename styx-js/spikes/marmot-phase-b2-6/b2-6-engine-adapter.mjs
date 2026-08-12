@@ -68,6 +68,7 @@ import {
 } from './b2-6-record.mjs';
 
 const ADAPTER_TOKEN = Symbol('B26_ENGINE_ADAPTER_TOKEN');
+const PROBE_REQUEST_PREFIX = 'styx-probe:';
 const ELIGIBLE_GENERATION_STATES = new Set([
   B26_GENERATION_STATE.ACKNOWLEDGED,
   B26_GENERATION_STATE.SELECTED,
@@ -1019,9 +1020,23 @@ export class B26EngineAdapter {
     assertGroupIdHex(groupIdHex);
     assertString('requestId', requestId,
       { min: 1, max: B26_LIMITS.maxRequestIdBytes, pattern: /^[\x21-\x7e]+$/ });
+    if (requestId.startsWith(PROBE_REQUEST_PREFIX)) {
+      failB26(B26_ERROR.INVALID, 'request id uses the reserved liveness-probe namespace');
+    }
     assertBytes('application plaintext', plaintextBytes,
       { min: 1, max: B26_LIMITS.maxApplicationPayloadBytes });
+    return this.#queueApplicationMessage(
+      groupIdHex, requestId, plaintextBytes, null);
+  }
+
+  async #queueApplicationMessage(groupIdHex, requestId, plaintextBytes,
+    expectedInstanceKeyHex) {
     const context = await this.#journal.readMessageContext(groupIdHex);
+    if (expectedInstanceKeyHex !== null
+      && context.instanceKeyHex !== expectedInstanceKeyHex) {
+      failB26(B26_ERROR.CAS_CONFLICT,
+        'canonical message instance changed after probe reservation');
+    }
     const session = this.#restoreMessageContext(context);
     try {
       const recipientScope = this.#messageScope(session, context.head.accountKeyHex);
@@ -1349,32 +1364,26 @@ export class B26EngineAdapter {
       { min: 1, max: B26_LIMITS.maxProbePayloadBytes });
     const reserved = await this.#journal.reserveProbe(groupIdHex);
     await this.#afterProbeReservation(reserved.reservation.probeKeyHex);
-    const session = this.#restore(reserved.retained);
-    try {
-      const ciphertextBytes = copyBytes(session.group.create_application_message(
-        session.provider, session.identity, plaintextBytes));
-      return Object.freeze({ probeKeyHex: reserved.reservation.probeKeyHex,
-        reservationDigestHex: reserved.reservation.reservationDigestHex,
-        senderIdentityHex: reserved.reservation.localMemberIdentityHex,
-        plaintextDigestHex: digestHex(plaintextBytes),
-        ciphertextDigestHex: digestHex(ciphertextBytes), ciphertextBytes });
-    } finally {
-      // The post-send provider is deliberately neither serialized nor returned.
-      dispose(session);
-    }
+    const queued = await this.#queueApplicationMessage(
+      groupIdHex,
+      PROBE_REQUEST_PREFIX + reserved.reservation.probeKeyHex,
+      plaintextBytes,
+      reserved.reservation.probeKeyHex);
+    const durable = await this.readQueuedApplicationMessage(
+      queued.instanceKeyHex, queued.ordinal);
+    return Object.freeze({ probeKeyHex: reserved.reservation.probeKeyHex,
+      reservationDigestHex: reserved.reservation.reservationDigestHex,
+      senderIdentityHex: reserved.reservation.localMemberIdentityHex,
+      plaintextDigestHex: digestHex(plaintextBytes),
+      ciphertextDigestHex: durable.ciphertextDigestHex,
+      ciphertextBytes: copyBytes(durable.ciphertextBytes) });
   }
 
   async processLivenessProbe(groupIdHex, ciphertextBytes) {
     assertBytes('probe ciphertext', ciphertextBytes,
       { min: 1, max: B26_LIMITS.maxProbePayloadBytes * 2 });
-    const bundle = await this.#journal.readHead(groupIdHex);
-    if (bundle.retained === null) failB26(B26_ERROR.UNRECOVERABLE, 'probe state absent');
-    const session = this.#restore(bundle.retained);
-    try {
-      return copyBytes(session.group.process_application_message(session.provider, ciphertextBytes));
-    } finally {
-      dispose(session);
-    }
+    const delivered = await this.processApplicationMessage(groupIdHex, ciphertextBytes);
+    return copyBytes(delivered.plaintextBytes);
   }
 
   completeLivenessProbe(probe, peerIdentityHex) {
