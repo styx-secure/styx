@@ -2,31 +2,43 @@ import { accessSync, constants } from 'node:fs';
 import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
 
-function localChromiumOverride() {
-  const executablePath = join(process.env.HOME ?? '', '.cache', 'ms-playwright',
+const HTTP_PORT = 18766;
+const HARNESS_PATH = '/spikes/marmot-phase-b2-5c/harness.html';
+
+function chromiumProject() {
+  const candidate = join(process.env.HOME ?? '', '.cache', 'ms-playwright',
     'chromium-1228', 'chrome-linux64', 'chrome');
+  let launchOptions;
   try {
-    accessSync(executablePath, constants.X_OK);
-    return { launchOptions: { executablePath } };
-  } catch { return {}; }
+    accessSync(candidate, constants.X_OK);
+    launchOptions = { executablePath: candidate };
+  } catch {
+    launchOptions = undefined;
+  }
+  return { name: 'chromium', use: { browserName: 'chromium', launchOptions } };
 }
+
+const browserProjects = Object.freeze([
+  chromiumProject(),
+  { name: 'firefox', use: { browserName: 'firefox' } },
+]);
 
 export default defineConfig({
   testDir: '.',
-  testMatch: 'journal.browser.spec.js',
-  timeout: 300_000,
+  testMatch: /journal\.browser\.spec\.js$/,
+  forbidOnly: true,
   fullyParallel: false,
+  retries: 0,
   workers: 1,
+  timeout: 300_000,
+  use: { headless: true, trace: 'retain-on-failure' },
+  outputDir: 'test-results',
   webServer: {
-    command: 'python3 -m http.server 18766 --bind 127.0.0.1',
+    command: `python3 -m http.server ${HTTP_PORT} --bind 127.0.0.1`,
     cwd: '../..',
-    url: 'http://127.0.0.1:18766/spikes/marmot-phase-b2-5c/harness.html',
+    url: `http://127.0.0.1:${HTTP_PORT}${HARNESS_PATH}`,
     reuseExistingServer: false,
     timeout: 30_000,
   },
-  projects: [
-    { name: 'chromium', use: { browserName: 'chromium', headless: true,
-      ...localChromiumOverride() } },
-    { name: 'firefox', use: { browserName: 'firefox', headless: true } },
-  ],
+  projects: browserProjects,
 });
