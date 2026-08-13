@@ -138,7 +138,7 @@ The following completed successfully on the source candidate:
 - chat PWA production build: pass;
 - agent-enforcement: 54 tests passed;
 - docs-claims-lint tests: 10 passed;
-- docs/spec claims scan: 56 files, 0 findings; and
+- docs/spec claims scan: 57 files, 0 findings; and
 - JavaScript syntax checks and `git diff --check`: pass.
 
 The root Jest invocation reported its pre-existing documented relay integration
@@ -148,8 +148,12 @@ The chat install also reported the existing dependency audit inventory and
 bundle-size warnings. Neither warning was changed or treated as security
 evidence by this Stage 1.
 
-Exact-HEAD GitHub CI and exact-source independent review remain required before
-Stage 1 evidence is complete.
+Exact-HEAD CI currently exposes the contract's deliberate two-stage tension:
+the hermetic rebuild and integrity jobs reproduce the candidate hashes above
+and then fail because Stage 1 forbids committing those outputs. That is useful
+reproducibility evidence, but it cannot satisfy an acceptance criterion that
+requires every check to be green. The product owner must explicitly amend the
+contract before Stage 2; agent review cannot waive the inconsistency.
 
 ## Independent-review basis
 
@@ -167,9 +171,31 @@ Stage 1 incorporates its required findings as follows:
 - F7: the legacy method is unchanged and marked sender-discarding; Stage 2 must
   structurally prevent its use by the durable adapter.
 
-The contract also requires Fable 5 to review the exact Stage 1 source head in a
-fresh read-only checkout. That review is pending at the time of this candidate
-report and must be appended as evidence; Claude Opus must not review this task.
+Fable 5 reviewed exact head
+`5c679f8d5e218b5c6c8b953d70ba069fe017d430` and exact code-source commit
+`ea6fd5b23b6ba7c9f9f07da7084db53fb1f8f87e` in a fresh clean read-only
+checkout. The report SHA-256 is
+`d199a1bd7856ac64a0e72ce06adf0ec8edaa2c23cf3a677979eeec1df5a13003`;
+session `a0f1209b-b634-4165-946b-0f9c0abae3ea`; verdict `CHANGES REQUIRED —
+process/evidence level only`. The reviewer independently ran the pinned native
+tests, rebuilt the external candidate, restored/decrypted/replied from the
+current-writer fixture, ran the source probe and inspected the pinned OpenMLS
+source. It found no blocking source defect and directed that the Rust boundary,
+probe, fixture and generator remain unchanged.
+
+The required process actions are: add the exact `Styx-Task: #163` PR metadata
+and obtain a successful scope report; explicitly amend the impossible
+Stage-1-green requirement for the two intentionally mismatched WASM gates; and
+human-triage two CodeQL `js/file-system-race` findings. The latter flag the
+generator's friendly `existsSync` precheck, while each actual write already
+uses atomic exclusive-create `flag: 'wx'`. Editing the now-frozen generator
+would invalidate its recorded provenance and is not the remediation.
+
+The review also verified that the authenticated group-id postcheck is not
+load-bearing at this pin because OpenMLS constructs `ProcessedMessage` with the
+receiver group id. Group binding comes from the framing precheck, OpenMLS
+ValSem002, AEAD and signature validation. This distinction must carry into
+Stage 2 documentation. Claude Opus did not review this task.
 
 ## Planned Stage 2 amendment
 
@@ -186,6 +212,11 @@ source, exact builds, CI and reviews pass, Issue #163 must be amended with:
   verified-roster digest, ciphertext, plaintext, sender leaf, account identity,
   MLS signature key and the BIP-340-verified 104-byte proof; and
 - exact Jest, browser, reproducible-build, migration and human-review gates.
+
+The amendment must also record that receiver-generation consumption can result
+from an insider's forged sender-data signature failure as well as an outsider's
+ciphertext alteration. Both remain bounded liveness/DoS outcomes: neither
+releases plaintext nor creates authenticated attribution.
 
 DEFERRED records will carry no sender. Duplicate delivery will return stored
 attribution rather than recomputing it. No Stage 2 work starts without renewed
