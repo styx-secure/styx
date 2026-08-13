@@ -59,11 +59,38 @@ const ADMIN_POLICY_V1_COMPONENT_ID: ComponentId = 0x8003;
 #[cfg(feature = "extensions-draft")]
 const GROUP_LIFECYCLE_V1_COMPONENT_ID: ComponentId = 0x800c;
 #[cfg(feature = "extensions-draft")]
+const GROUP_PROFILE_V1_COMPONENT_ID: ComponentId = 0x8001;
+#[cfg(feature = "extensions-draft")]
 const PHASE_B2_COMPONENTS: [ComponentId; 3] = [
     ADMIN_POLICY_V1_COMPONENT_ID,
     ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID,
     GROUP_LIFECYCLE_V1_COMPONENT_ID,
 ];
+#[cfg(feature = "extensions-draft")]
+const PHASE_B31_SUPPORTED_COMPONENTS: [ComponentId; 4] = [
+    GROUP_PROFILE_V1_COMPONENT_ID,
+    ADMIN_POLICY_V1_COMPONENT_ID,
+    ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID,
+    GROUP_LIFECYCLE_V1_COMPONENT_ID,
+];
+#[cfg(feature = "extensions-draft")]
+const PHASE_B31_REQUIRED_COMPONENTS: [ComponentId; 4] = [
+    GROUP_PROFILE_V1_COMPONENT_ID,
+    ADMIN_POLICY_V1_COMPONENT_ID,
+    ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID,
+    GROUP_LIFECYCLE_V1_COMPONENT_ID,
+];
+#[cfg(feature = "extensions-draft")]
+const _: () = {
+    assert!(PHASE_B31_REQUIRED_COMPONENTS[0] == PHASE_B31_SUPPORTED_COMPONENTS[0]);
+    assert!(PHASE_B31_REQUIRED_COMPONENTS[1] == PHASE_B31_SUPPORTED_COMPONENTS[1]);
+    assert!(PHASE_B31_REQUIRED_COMPONENTS[2] == PHASE_B31_SUPPORTED_COMPONENTS[2]);
+    assert!(PHASE_B31_REQUIRED_COMPONENTS[3] == PHASE_B31_SUPPORTED_COMPONENTS[3]);
+};
+#[cfg(feature = "extensions-draft")]
+const PHASE_B31_GROUP_PROFILE_NAME_MAX_BYTES: usize = 256;
+#[cfg(feature = "extensions-draft")]
+const PHASE_B31_GROUP_PROFILE_DESCRIPTION_MAX_BYTES: usize = 4096;
 #[cfg(feature = "extensions-draft")]
 const PHASE_B2_MAX_PROPOSALS: usize = 32;
 #[cfg(feature = "extensions-draft")]
@@ -894,6 +921,172 @@ fn phase_b2_capabilities() -> Capabilities {
 }
 
 #[cfg(feature = "extensions-draft")]
+fn phase_b31_read_canonical_quic_varint(
+    bytes: &[u8],
+    offset: &mut usize,
+) -> Result<usize, &'static str> {
+    let first = *bytes
+        .get(*offset)
+        .ok_or("phase-b3.1 codec: truncated QUIC varint")?;
+    let width = match first >> 6 {
+        0 => 1usize,
+        1 => 2,
+        2 => 4,
+        3 => 8,
+        _ => unreachable!(),
+    };
+    let end = offset
+        .checked_add(width)
+        .ok_or("phase-b3.1 codec: QUIC varint offset overflow")?;
+    if end > bytes.len() {
+        return Err("phase-b3.1 codec: truncated QUIC varint");
+    }
+    let mut value = u64::from(first & 0x3f);
+    for byte in &bytes[*offset + 1..end] {
+        value = (value << 8) | u64::from(*byte);
+    }
+    let canonical = match width {
+        1 => true,
+        2 => value >= (1 << 6),
+        4 => value >= (1 << 14),
+        8 => value >= (1 << 30),
+        _ => false,
+    };
+    if !canonical {
+        return Err("phase-b3.1 codec: non-canonical QUIC varint");
+    }
+    let value = usize::try_from(value)
+        .map_err(|_| "phase-b3.1 codec: QUIC varint exceeds platform size")?;
+    *offset = end;
+    Ok(value)
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b31_write_canonical_quic_varint(
+    value: usize,
+    output: &mut Vec<u8>,
+) -> Result<(), &'static str> {
+    let value = u64::try_from(value)
+        .map_err(|_| "phase-b3.1 codec: length exceeds QUIC varint range")?;
+    if value < (1 << 6) {
+        output.push(value as u8);
+    } else if value < (1 << 14) {
+        output.extend_from_slice(&((value as u16) | 0x4000).to_be_bytes());
+    } else if value < (1 << 30) {
+        output.extend_from_slice(&((value as u32) | 0x8000_0000).to_be_bytes());
+    } else if value < (1u64 << 62) {
+        output.extend_from_slice(&(value | 0xc000_0000_0000_0000).to_be_bytes());
+    } else {
+        return Err("phase-b3.1 codec: length exceeds QUIC varint range");
+    }
+    Ok(())
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b31_decode_component_ids(bytes: &[u8]) -> Result<Vec<ComponentId>, &'static str> {
+    let mut offset = 0usize;
+    let declared_bytes = phase_b31_read_canonical_quic_varint(bytes, &mut offset)?;
+    if declared_bytes > PHASE_B2_MAX_COMPONENTS * 2 {
+        return Err("PHASE_B31_COMPONENT_LIMIT");
+    }
+    if declared_bytes % 2 != 0 {
+        return Err("phase-b3.1 components: odd byte length");
+    }
+    let end = offset
+        .checked_add(declared_bytes)
+        .ok_or("PHASE_B31_COMPONENT_LIMIT")?;
+    if end > bytes.len() {
+        return Err("phase-b3.1 components: truncated list");
+    }
+    if end != bytes.len() {
+        return Err("phase-b3.1 components: trailing bytes");
+    }
+    let component_ids: Vec<ComponentId> = bytes[offset..end]
+        .chunks_exact(2)
+        .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+        .collect();
+    if component_ids.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err("phase-b3.1 components: list must be sorted and unique");
+    }
+    Ok(component_ids)
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b31_validate_utf8_field(
+    bytes: &[u8],
+    maximum: usize,
+) -> Result<(), &'static str> {
+    if bytes.len() > maximum {
+        return Err("PHASE_B31_GROUP_PROFILE_LIMIT");
+    }
+    std::str::from_utf8(bytes).map_err(|_| "phase-b3.1 group profile: invalid UTF-8")?;
+    Ok(())
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b31_encode_group_profile(
+    name: &[u8],
+    description: &[u8],
+) -> Result<Vec<u8>, &'static str> {
+    phase_b31_validate_utf8_field(name, PHASE_B31_GROUP_PROFILE_NAME_MAX_BYTES)?;
+    phase_b31_validate_utf8_field(
+        description,
+        PHASE_B31_GROUP_PROFILE_DESCRIPTION_MAX_BYTES,
+    )?;
+    let capacity = 4usize
+        .checked_add(name.len())
+        .and_then(|size| size.checked_add(description.len()))
+        .ok_or("PHASE_B31_GROUP_PROFILE_LIMIT")?;
+    let mut output = Vec::with_capacity(capacity);
+    phase_b31_write_canonical_quic_varint(name.len(), &mut output)?;
+    output.extend_from_slice(name);
+    phase_b31_write_canonical_quic_varint(description.len(), &mut output)?;
+    output.extend_from_slice(description);
+    Ok(output)
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b31_decode_group_profile(bytes: &[u8]) -> Result<PhaseB31GroupProfile, &'static str> {
+    let mut offset = 0usize;
+    let name_len = phase_b31_read_canonical_quic_varint(bytes, &mut offset)?;
+    if name_len > PHASE_B31_GROUP_PROFILE_NAME_MAX_BYTES {
+        return Err("PHASE_B31_GROUP_PROFILE_LIMIT");
+    }
+    let name_end = offset
+        .checked_add(name_len)
+        .ok_or("PHASE_B31_GROUP_PROFILE_LIMIT")?;
+    if name_end > bytes.len() {
+        return Err("phase-b3.1 group profile: truncated name");
+    }
+    let name = &bytes[offset..name_end];
+    phase_b31_validate_utf8_field(name, PHASE_B31_GROUP_PROFILE_NAME_MAX_BYTES)?;
+    offset = name_end;
+
+    let description_len = phase_b31_read_canonical_quic_varint(bytes, &mut offset)?;
+    if description_len > PHASE_B31_GROUP_PROFILE_DESCRIPTION_MAX_BYTES {
+        return Err("PHASE_B31_GROUP_PROFILE_LIMIT");
+    }
+    let description_end = offset
+        .checked_add(description_len)
+        .ok_or("PHASE_B31_GROUP_PROFILE_LIMIT")?;
+    if description_end > bytes.len() {
+        return Err("phase-b3.1 group profile: truncated description");
+    }
+    if description_end != bytes.len() {
+        return Err("phase-b3.1 group profile: trailing bytes");
+    }
+    let description = &bytes[offset..description_end];
+    phase_b31_validate_utf8_field(
+        description,
+        PHASE_B31_GROUP_PROFILE_DESCRIPTION_MAX_BYTES,
+    )?;
+    Ok(PhaseB31GroupProfile {
+        name: name.to_vec(),
+        description: description.to_vec(),
+    })
+}
+
+#[cfg(feature = "extensions-draft")]
 fn phase_b2_check_identity_proof(
     account_public_key: &[u8],
     proof: &[u8],
@@ -996,6 +1189,97 @@ fn phase_b2_leaf_extensions(proof: &[u8]) -> Result<Extensions<LeafNode>, JsErro
 }
 
 #[cfg(feature = "extensions-draft")]
+fn phase_b31_leaf_extensions(proof: &[u8]) -> Result<Extensions<LeafNode>, JsError> {
+    if proof.len() != ACCOUNT_IDENTITY_PROOF_V2_LENGTH {
+        return Err(JsError::new(
+            "phase-b3.1 identity: proof must be exactly 104 bytes",
+        ));
+    }
+    let supported = PHASE_B31_SUPPORTED_COMPONENTS
+        .to_vec()
+        .tls_serialize_detached()
+        .map_err(|_| JsError::new("phase-b3.1 identity: component encoding failed"))?;
+    let decoded = phase_b31_decode_component_ids(&supported).map_err(JsError::new)?;
+    if decoded != PHASE_B31_SUPPORTED_COMPONENTS {
+        return Err(JsError::new(
+            "phase-b3.1 identity: encoded component list is not canonical",
+        ));
+    }
+    let mut dictionary = AppDataDictionary::new();
+    dictionary.insert(1, supported);
+    dictionary.insert(ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID, proof.to_vec());
+    Extensions::single(Extension::AppDataDictionary(
+        AppDataDictionaryExtension::new(dictionary),
+    ))
+    .map_err(|_| JsError::new("phase-b3.1 identity: leaf extension construction failed"))
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b31_check_component_profile(
+    component_ids: &[ComponentId],
+    supported_component_ids: &[ComponentId],
+) -> Result<(), &'static str> {
+    if component_ids != [1, ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID] {
+        return Err("phase-b3.1 leaf: unexpected component locations");
+    }
+    if supported_component_ids != PHASE_B31_SUPPORTED_COMPONENTS {
+        return Err("phase-b3.1 leaf: unexpected supported components");
+    }
+    Ok(())
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b31_validate_leaf(leaf: &LeafNode) -> Result<Vec<ComponentId>, JsError> {
+    let identity = leaf.credential().serialized_content();
+    if identity.len() != 32 || leaf.signature_key().as_slice().len() != 32 {
+        return Err(JsError::new(
+            "phase-b3.1 leaf: identity and signature key must be exactly 32 bytes",
+        ));
+    }
+    phase_b2_check_leaf_capabilities(leaf.capabilities())
+        .map_err(|_| JsError::new("phase-b3.1 leaf: unexpected capabilities"))?;
+    let dictionary = leaf
+        .extensions()
+        .app_data_dictionary()
+        .ok_or_else(|| JsError::new("phase-b3.1 leaf: app-data dictionary missing"))?
+        .dictionary();
+    if dictionary.len() != 2 {
+        return Err(JsError::new(
+            "phase-b3.1 leaf: app-data dictionary must have exactly two entries",
+        ));
+    }
+    let component_ids: Vec<ComponentId> =
+        dictionary.entries().map(|entry| entry.id()).collect();
+    let supported = phase_b31_decode_component_ids(
+        dictionary
+            .get(&1)
+            .ok_or_else(|| JsError::new("phase-b3.1 leaf: supported components missing"))?,
+    )
+    .map_err(JsError::new)?;
+    phase_b31_check_component_profile(&component_ids, &supported).map_err(JsError::new)?;
+    let proof = dictionary
+        .get(&ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID)
+        .ok_or_else(|| JsError::new("phase-b3.1 leaf: identity proof missing"))?;
+    phase_b2_check_identity_proof(identity, proof)
+        .map_err(|_| JsError::new("phase-b3.1 leaf: invalid identity proof"))?;
+    Ok(supported)
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b31_inspect_key_package(key_package: &OpenMlsKeyPackage) -> Result<(), JsError> {
+    let lifetime = key_package.life_time();
+    phase_b2_check_key_package_metadata(
+        key_package.ciphersuite(),
+        key_package.last_resort(),
+        lifetime.has_acceptable_range(),
+        lifetime.not_after().saturating_sub(lifetime.not_before()),
+    )
+    .map_err(|_| JsError::new("phase-b3.1 key package: unexpected metadata"))?;
+    phase_b31_validate_leaf(key_package.leaf_node())?;
+    Ok(())
+}
+
+#[cfg(feature = "extensions-draft")]
 fn phase_b2_group_context_extensions(
     founder_account: &[u8],
 ) -> Result<Extensions<GroupContext>, JsError> {
@@ -1025,6 +1309,128 @@ fn phase_b2_group_context_extensions(
         Extension::AppDataDictionary(AppDataDictionaryExtension::new(dictionary)),
     ])
     .map_err(|_| JsError::new("phase-b2 group: GroupContext extension construction failed"))
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b31_group_context_extensions(
+    founder_account: &[u8],
+    name: &[u8],
+    description: &[u8],
+) -> Result<Extensions<GroupContext>, JsError> {
+    if founder_account.len() != 32 {
+        return Err(JsError::new(
+            "phase-b3.1 group: founder account key must be exactly 32 bytes",
+        ));
+    }
+    let required = PHASE_B31_REQUIRED_COMPONENTS
+        .to_vec()
+        .tls_serialize_detached()
+        .map_err(|_| JsError::new("phase-b3.1 group: component encoding failed"))?;
+    if phase_b31_decode_component_ids(&required).map_err(JsError::new)?
+        != PHASE_B31_REQUIRED_COMPONENTS
+    {
+        return Err(JsError::new(
+            "phase-b3.1 group: encoded component list is not canonical",
+        ));
+    }
+    let mut dictionary = AppDataDictionary::new();
+    dictionary.insert(1, required);
+    dictionary.insert(
+        GROUP_PROFILE_V1_COMPONENT_ID,
+        phase_b31_encode_group_profile(name, description).map_err(JsError::new)?,
+    );
+    let mut admin_policy = vec![0x20];
+    admin_policy.extend_from_slice(founder_account);
+    dictionary.insert(ADMIN_POLICY_V1_COMPONENT_ID, admin_policy);
+    dictionary.insert(GROUP_LIFECYCLE_V1_COMPONENT_ID, vec![0x00]);
+    Extensions::from_vec(vec![
+        Extension::RequiredCapabilities(RequiredCapabilitiesExtension::new(
+            &[ExtensionType::AppDataDictionary],
+            &[ProposalType::AppDataUpdate],
+            &[],
+        )),
+        Extension::AppDataDictionary(AppDataDictionaryExtension::new(dictionary)),
+    ])
+    .map_err(|_| JsError::new("phase-b3.1 group: GroupContext extension construction failed"))
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b31_validate_group_context_extensions(
+    extensions: &Extensions<GroupContext>,
+    member_identities: &[Vec<u8>],
+) -> Result<PhaseB31GroupContext, JsError> {
+    let required = extensions
+        .required_capabilities()
+        .ok_or_else(|| JsError::new("phase-b3.1 group: required capabilities missing"))?;
+    if required.extension_types() != [ExtensionType::AppDataDictionary]
+        || required.proposal_types() != [ProposalType::AppDataUpdate]
+        || !required.credential_types().is_empty()
+    {
+        return Err(JsError::new(
+            "phase-b3.1 group: unexpected required capabilities",
+        ));
+    }
+    let dictionary = extensions
+        .app_data_dictionary()
+        .ok_or_else(|| JsError::new("phase-b3.1 group: app-data dictionary missing"))?
+        .dictionary();
+    let ids: Vec<ComponentId> = dictionary.entries().map(|entry| entry.id()).collect();
+    if ids
+        != [
+            1,
+            GROUP_PROFILE_V1_COMPONENT_ID,
+            ADMIN_POLICY_V1_COMPONENT_ID,
+            GROUP_LIFECYCLE_V1_COMPONENT_ID,
+        ]
+    {
+        return Err(JsError::new(
+            "phase-b3.1 group: unexpected GroupContext components",
+        ));
+    }
+    let required_components = phase_b31_decode_component_ids(
+        dictionary
+            .get(&1)
+            .ok_or_else(|| JsError::new("phase-b3.1 group: required components missing"))?,
+    )
+    .map_err(JsError::new)?;
+    if required_components != PHASE_B31_REQUIRED_COMPONENTS {
+        return Err(JsError::new(
+            "phase-b3.1 group: unexpected required components",
+        ));
+    }
+    let group_profile = phase_b31_decode_group_profile(
+        dictionary
+            .get(&GROUP_PROFILE_V1_COMPONENT_ID)
+            .ok_or_else(|| JsError::new("phase-b3.1 group: group profile missing"))?,
+    )
+    .map_err(JsError::new)?;
+    let administrator_policy = dictionary
+        .get(&ADMIN_POLICY_V1_COMPONENT_ID)
+        .ok_or_else(|| JsError::new("phase-b3.1 group: administrator policy missing"))?
+        .to_vec();
+    let admins =
+        phase_b2_decode_admin_policy_recovery(&administrator_policy).map_err(JsError::new)?;
+    if admins
+        .iter()
+        .any(|admin| !member_identities.iter().any(|member| member == admin))
+    {
+        return Err(JsError::new(
+            "phase-b3.1 group: administrator is not a candidate member",
+        ));
+    }
+    let lifecycle = dictionary
+        .get(&GROUP_LIFECYCLE_V1_COMPONENT_ID)
+        .ok_or_else(|| JsError::new("phase-b3.1 group: lifecycle missing"))?
+        .to_vec();
+    if lifecycle != [0x00] {
+        return Err(JsError::new("phase-b3.1 group: lifecycle is not active"));
+    }
+    Ok(PhaseB31GroupContext {
+        required_components,
+        administrator_policy,
+        group_profile,
+        lifecycle,
+    })
 }
 
 #[cfg(feature = "extensions-draft")]
@@ -1281,6 +1687,52 @@ impl PhaseB2Identity {
         phase_b2_inspect_key_package(&key_package)?;
         Ok(PhaseB2KeyPackage(key_package))
     }
+
+    pub fn b3_1_key_package(
+        &self,
+        provider: &Provider,
+        proof: &[u8],
+    ) -> Result<PhaseB31KeyPackage, JsError> {
+        phase_b2_check_identity_proof(&self.account_public_key, proof)
+            .map_err(|_| JsError::new("phase-b3.1 identity: invalid identity proof"))?;
+        // Advertising 0x8001 is permitted only when this release artifact can
+        // construct and strictly re-validate the canonical present-empty
+        // GroupContext state. This keeps the codec reachable in release WASM
+        // without exposing a product getter or mutation API.
+        let profile_context = phase_b31_group_context_extensions(
+            &self.account_public_key,
+            b"",
+            b"",
+        )?;
+        let profile_projection = phase_b31_validate_group_context_extensions(
+            &profile_context,
+            std::slice::from_ref(&self.account_public_key),
+        )?;
+        if profile_projection.required_components != PHASE_B31_REQUIRED_COMPONENTS
+            || profile_projection.group_profile.name != b""
+            || profile_projection.group_profile.description != b""
+            || profile_projection.lifecycle != [0x00]
+            || profile_projection.administrator_policy.len() != 33
+        {
+            return Err(JsError::new(
+                "phase-b3.1 identity: internal group-profile self-check failed",
+            ));
+        }
+        let key_package = OpenMlsKeyPackage::builder()
+            .key_package_lifetime(Lifetime::new(PROBE_KEY_PACKAGE_LIFETIME_SECONDS))
+            .leaf_node_capabilities(phase_b2_capabilities())
+            .leaf_node_extensions(phase_b31_leaf_extensions(proof)?)
+            .build(
+                PROBE_CIPHERSUITE,
+                &provider.inner,
+                &self.keypair,
+                self.credential_with_key.clone(),
+            )?
+            .key_package()
+            .clone();
+        phase_b31_inspect_key_package(&key_package)?;
+        Ok(PhaseB31KeyPackage(key_package))
+    }
 }
 
 #[cfg(feature = "extensions-draft")]
@@ -1379,6 +1831,100 @@ impl PhaseB2KeyPackage {
     }
 }
 
+/// Isolated B3.1 proof wrapper. Product code must not reference this surface.
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB31KeyPackage(OpenMlsKeyPackage);
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB31KeyPackage {
+    pub fn to_framed_bytes(&self) -> Result<Vec<u8>, JsError> {
+        MlsMessageOut::from(self.0.clone())
+            .tls_serialize_detached()
+            .map_err(|_| JsError::new("phase-b3.1 key package: framing failed"))
+    }
+
+    pub fn from_framed_bytes(bytes: &[u8]) -> Result<PhaseB31KeyPackage, JsError> {
+        let message = MlsMessageIn::tls_deserialize_exact(bytes)
+            .map_err(|_| JsError::new("phase-b3.1 key package: malformed MLSMessage framing"))?;
+        let input = match message.extract() {
+            MlsMessageBodyIn::KeyPackage(key_package) => key_package,
+            _ => {
+                return Err(JsError::new(
+                    "phase-b3.1 key package: MLSMessage does not contain a KeyPackage",
+                ));
+            }
+        };
+        let key_package = input
+            .validate(
+                &openmls_rust_crypto::RustCrypto::default(),
+                openmls::prelude::ProtocolVersion::Mls10,
+            )
+            .map_err(|_| JsError::new("phase-b3.1 key package: validation failed"))?;
+        phase_b31_inspect_key_package(&key_package)?;
+        Ok(Self(key_package))
+    }
+
+    pub fn ciphersuite_id(&self) -> u16 {
+        self.0.ciphersuite().into()
+    }
+
+    pub fn credential_identity(&self) -> Vec<u8> {
+        self.0
+            .leaf_node()
+            .credential()
+            .serialized_content()
+            .to_vec()
+    }
+
+    pub fn leaf_signature_key(&self) -> Vec<u8> {
+        self.0.leaf_node().signature_key().as_slice().to_vec()
+    }
+
+    pub fn identity_proof(&self) -> Vec<u8> {
+        self.0
+            .leaf_node()
+            .extensions()
+            .app_data_dictionary()
+            .expect("validated Phase B3.1 KeyPackage")
+            .dictionary()
+            .get(&ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID)
+            .expect("validated Phase B3.1 KeyPackage")
+            .to_vec()
+    }
+
+    pub fn component_ids(&self) -> Vec<u16> {
+        self.0
+            .leaf_node()
+            .extensions()
+            .app_data_dictionary()
+            .expect("validated Phase B3.1 KeyPackage")
+            .dictionary()
+            .entries()
+            .map(|entry| entry.id())
+            .collect()
+    }
+
+    pub fn supported_component_ids(&self) -> Result<Vec<u16>, JsError> {
+        phase_b31_decode_component_ids(
+            self.0
+                .leaf_node()
+                .extensions()
+                .app_data_dictionary()
+                .ok_or_else(|| JsError::new("phase-b3.1 leaf: app-data dictionary missing"))?
+                .dictionary()
+                .get(&1)
+                .ok_or_else(|| JsError::new("phase-b3.1 leaf: supported components missing"))?,
+        )
+        .map_err(JsError::new)
+    }
+
+    pub fn is_last_resort(&self) -> bool {
+        self.0.last_resort()
+    }
+}
+
 #[cfg(feature = "extensions-draft")]
 #[wasm_bindgen]
 pub struct PhaseB2RatchetTree(RatchetTreeIn);
@@ -1408,6 +1954,22 @@ struct PhaseB2Member {
     identity_proof: Vec<u8>,
     component_ids: Vec<u16>,
     supported_component_ids: Vec<u16>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct PhaseB31GroupProfile {
+    name: Vec<u8>,
+    description: Vec<u8>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[derive(Clone, PartialEq, Eq)]
+struct PhaseB31GroupContext {
+    required_components: Vec<u16>,
+    administrator_policy: Vec<u8>,
+    group_profile: PhaseB31GroupProfile,
+    lifecycle: Vec<u8>,
 }
 
 #[cfg(feature = "extensions-draft")]
@@ -4093,6 +4655,284 @@ mod tests {
             bob,
             bob_group,
         )
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b31_canonical_varints_and_group_profile_codec_are_strict() {
+        for (value, width) in [
+            (0usize, 1usize),
+            (63, 1),
+            (64, 2),
+            (16_383, 2),
+            (16_384, 4),
+            ((1usize << 30) - 1, 4),
+            (1usize << 30, 8),
+        ] {
+            let mut encoded = Vec::new();
+            phase_b31_write_canonical_quic_varint(value, &mut encoded).unwrap();
+            assert_eq!(encoded.len(), width);
+            let mut offset = 0usize;
+            assert_eq!(
+                phase_b31_read_canonical_quic_varint(&encoded, &mut offset).unwrap(),
+                value
+            );
+            assert_eq!(offset, encoded.len());
+        }
+
+        for noncanonical in [
+            vec![0x40, 0x00],
+            vec![0x80, 0x00, 0x00, 0x00],
+            vec![0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
+        ] {
+            assert_eq!(
+                phase_b31_read_canonical_quic_varint(&noncanonical, &mut 0usize).unwrap_err(),
+                "phase-b3.1 codec: non-canonical QUIC varint"
+            );
+        }
+        for truncated in [vec![], vec![0x40], vec![0x80, 0, 0], vec![0xc0, 0, 0, 0, 0, 0, 0]] {
+            assert_eq!(
+                phase_b31_read_canonical_quic_varint(&truncated, &mut 0usize).unwrap_err(),
+                "phase-b3.1 codec: truncated QUIC varint"
+            );
+        }
+
+        let empty = phase_b31_encode_group_profile(b"", b"").unwrap();
+        assert_eq!(empty, vec![0x00, 0x00]);
+        assert_eq!(
+            phase_b31_decode_group_profile(&empty).unwrap(),
+            PhaseB31GroupProfile {
+                name: vec![],
+                description: vec![],
+            }
+        );
+        assert!(phase_b31_decode_group_profile(&[]).is_err());
+        assert!(phase_b31_decode_group_profile(&[0x00]).is_err());
+
+        let composed = phase_b31_encode_group_profile("é".as_bytes(), b"profile").unwrap();
+        let decomposed = phase_b31_encode_group_profile("e\u{301}".as_bytes(), b"profile").unwrap();
+        assert_ne!(composed, decomposed);
+        assert_eq!(
+            phase_b31_decode_group_profile(&composed).unwrap().name,
+            "é".as_bytes()
+        );
+        assert_eq!(
+            phase_b31_decode_group_profile(&decomposed).unwrap().name,
+            "e\u{301}".as_bytes()
+        );
+
+        assert!(phase_b31_encode_group_profile(&vec![b'a'; 256], &vec![b'b'; 4096]).is_ok());
+        assert_eq!(
+            phase_b31_encode_group_profile(&vec![b'a'; 257], b"").unwrap_err(),
+            "PHASE_B31_GROUP_PROFILE_LIMIT"
+        );
+        assert_eq!(
+            phase_b31_encode_group_profile(b"", &vec![b'b'; 4097]).unwrap_err(),
+            "PHASE_B31_GROUP_PROFILE_LIMIT"
+        );
+
+        for invalid in [
+            vec![0xc0, 0x80],
+            vec![0xed, 0xa0, 0x80],
+            vec![0xf4, 0x90, 0x80, 0x80],
+            vec![0xe2, 0x82],
+            vec![0x80],
+        ] {
+            let mut payload = vec![invalid.len() as u8];
+            payload.extend_from_slice(&invalid);
+            payload.push(0);
+            assert_eq!(
+                phase_b31_decode_group_profile(&payload).unwrap_err(),
+                "phase-b3.1 group profile: invalid UTF-8"
+            );
+        }
+
+        let mut trailing = empty.clone();
+        trailing.push(0);
+        assert_eq!(
+            phase_b31_decode_group_profile(&trailing).unwrap_err(),
+            "phase-b3.1 group profile: trailing bytes"
+        );
+        let over_limit_name = vec![0x41, 0x01];
+        assert_eq!(
+            phase_b31_decode_group_profile(&over_limit_name).unwrap_err(),
+            "PHASE_B31_GROUP_PROFILE_LIMIT"
+        );
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b31_component_list_decoder_and_cross_profile_checks_fail_closed() {
+        let canonical = PHASE_B31_SUPPORTED_COMPONENTS
+            .to_vec()
+            .tls_serialize_detached()
+            .unwrap();
+        assert_eq!(
+            phase_b31_decode_component_ids(&canonical).unwrap(),
+            PHASE_B31_SUPPORTED_COMPONENTS
+        );
+        assert!(phase_b31_check_component_profile(
+            &[1, ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID],
+            &PHASE_B31_SUPPORTED_COMPONENTS,
+        )
+        .is_ok());
+        assert_eq!(
+            phase_b2_check_component_profile(
+                &[1, ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID],
+                &PHASE_B31_SUPPORTED_COMPONENTS,
+            )
+            .unwrap_err(),
+            "phase-b2 leaf: unexpected supported components"
+        );
+        assert_eq!(
+            phase_b31_check_component_profile(
+                &[1, ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID],
+                &PHASE_B2_COMPONENTS,
+            )
+            .unwrap_err(),
+            "phase-b3.1 leaf: unexpected supported components"
+        );
+
+        let mut overlong = vec![0x40, canonical[0]];
+        overlong.extend_from_slice(&canonical[1..]);
+        assert_eq!(
+            phase_b31_decode_component_ids(&overlong).unwrap_err(),
+            "phase-b3.1 codec: non-canonical QUIC varint"
+        );
+        let mut truncated = canonical.clone();
+        truncated.pop();
+        assert_eq!(
+            phase_b31_decode_component_ids(&truncated).unwrap_err(),
+            "phase-b3.1 components: truncated list"
+        );
+        let mut trailing = canonical.clone();
+        trailing.push(0);
+        assert_eq!(
+            phase_b31_decode_component_ids(&trailing).unwrap_err(),
+            "phase-b3.1 components: trailing bytes"
+        );
+        assert_eq!(
+            phase_b31_decode_component_ids(&[0x01, 0x00]).unwrap_err(),
+            "phase-b3.1 components: odd byte length"
+        );
+        assert_eq!(
+            phase_b31_decode_component_ids(&[0x04, 0x80, 0x03, 0x80, 0x03]).unwrap_err(),
+            "phase-b3.1 components: list must be sorted and unique"
+        );
+        assert_eq!(
+            phase_b31_decode_component_ids(&[0x04, 0x80, 0x09, 0x80, 0x03]).unwrap_err(),
+            "phase-b3.1 components: list must be sorted and unique"
+        );
+        let unknown = phase_b31_decode_component_ids(&[
+            0x08, 0x80, 0x01, 0x80, 0x03, 0x80, 0x09, 0x80, 0x0d,
+        ])
+        .unwrap();
+        assert_eq!(
+            phase_b31_check_component_profile(
+                &[1, ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID],
+                &unknown,
+            )
+            .unwrap_err(),
+            "phase-b3.1 leaf: unexpected supported components"
+        );
+        assert_eq!(
+            phase_b31_decode_component_ids(&[0x40, 0x82]).unwrap_err(),
+            "PHASE_B31_COMPONENT_LIMIT"
+        );
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b31_key_package_and_group_context_are_isolated_from_phase_b2() {
+        let founder_provider = Provider::new();
+        let bob_provider = Provider::new();
+        let (founder, founder_proof, _) = phase_b2_identity(&founder_provider, 0x71);
+        let (bob, bob_proof, bob_b2) = phase_b2_identity(&bob_provider, 0x72);
+        let bob_b31 = bob
+            .b3_1_key_package(&bob_provider, &bob_proof)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let b31_framed = bob_b31.to_framed_bytes().unwrap();
+        let parsed_b31 = PhaseB31KeyPackage::from_framed_bytes(&b31_framed)
+            .map_err(js_error_to_string)
+            .unwrap();
+        assert_eq!(parsed_b31.ciphersuite_id(), 0x0001);
+        assert_eq!(parsed_b31.component_ids(), vec![1, 0x8009]);
+        assert_eq!(
+            parsed_b31.supported_component_ids().unwrap(),
+            PHASE_B31_SUPPORTED_COMPONENTS
+        );
+        assert!(!parsed_b31.is_last_resort());
+
+        let b2_reads_b31 = std::panic::catch_unwind(|| {
+            PhaseB2KeyPackage::from_framed_bytes(&b31_framed)
+        });
+        assert!(
+            b2_reads_b31.is_err() || b2_reads_b31.unwrap().is_err(),
+            "the Phase B2 reader must reject exact B3.1 bytes"
+        );
+        let b2_framed = bob_b2.to_framed_bytes().unwrap();
+        let b31_reads_b2 = std::panic::catch_unwind(|| {
+            PhaseB31KeyPackage::from_framed_bytes(&b2_framed)
+        });
+        assert!(
+            b31_reads_b2.is_err() || b31_reads_b2.unwrap().is_err(),
+            "the Phase B3.1 reader must reject exact B2 bytes"
+        );
+
+        let mut b2_group = PhaseB2Group::create_new(
+            &founder_provider,
+            &founder,
+            b"phase-b31-cross-profile-add",
+            &founder_proof,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let b31_as_b2 = PhaseB2KeyPackage(bob_b31.0.clone());
+        let add_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            b2_group.prepare_add(&founder_provider, &founder, &b31_as_b2)
+        }));
+        assert!(
+            add_result.is_err() || add_result.unwrap().is_err(),
+            "the Phase B2 add path must reject a B3.1 package"
+        );
+
+        let profile_name = "Styx B3.1 synthetic interop".as_bytes();
+        let profile_description = "Exact-pin direct-MLS evidence only".as_bytes();
+        let extensions = phase_b31_group_context_extensions(
+            &founder.account_public_key,
+            profile_name,
+            profile_description,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let projected = phase_b31_validate_group_context_extensions(
+            &extensions,
+            &[founder.account_public_key.clone()],
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        assert_eq!(projected.required_components, PHASE_B31_REQUIRED_COMPONENTS);
+        assert_eq!(projected.group_profile.name, profile_name);
+        assert_eq!(projected.group_profile.description, profile_description);
+        assert_eq!(projected.lifecycle, vec![0x00]);
+        assert_eq!(projected.administrator_policy.len(), 33);
+        let dictionary = extensions
+            .app_data_dictionary()
+            .unwrap()
+            .dictionary();
+        assert_eq!(
+            dictionary.entries().map(|entry| entry.id()).collect::<Vec<_>>(),
+            vec![1, 0x8001, 0x8003, 0x800c]
+        );
+        assert_eq!(dictionary.get(&0x8001).unwrap(), [
+            profile_name.len() as u8,
+        ]
+        .into_iter()
+        .chain(profile_name.iter().copied())
+        .chain([profile_description.len() as u8])
+        .chain(profile_description.iter().copied())
+        .collect::<Vec<_>>());
     }
 
     #[cfg(feature = "extensions-draft")]

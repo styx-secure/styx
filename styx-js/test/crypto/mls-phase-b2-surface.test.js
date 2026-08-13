@@ -82,9 +82,9 @@ describe('generated OpenMLS Phase B2 surface', () => {
     expect(createHash('sha256').update(canonical).digest('hex')).toBe(EXPECTED_CANONICAL_SHA256);
   });
 
-  test('product source does not import or reference the isolated PhaseB2 surface', () => {
+  test('product source does not reference an isolated PhaseB2 or PhaseB31 surface', () => {
     const offenders = javascriptFiles(PRODUCT_SRC)
-      .filter((path) => /\bPhaseB2/.test(readFileSync(path, 'utf8')))
+      .filter((path) => /\b(?:PhaseB2|PhaseB31)/.test(readFileSync(path, 'utf8')))
       .map((path) => path.slice(PRODUCT_SRC.length + 1));
     expect(offenders).toEqual([]);
   });
