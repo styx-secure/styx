@@ -1,4 +1,4 @@
-// Frozen, automatically discovered public surface of the generated B2.2 artifact.
+// Frozen, automatically discovered public surface of the generated B2.7 artifact.
 // This intentionally snapshots every export, descriptor, declaration member and
 // raw InitOutput member so a future generated addition cannot evade a narrow list.
 import { createHash } from 'node:crypto';
@@ -9,8 +9,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VENDOR = join(HERE, '../../vendor/openmls-wasm');
 const PRODUCT_SRC = join(HERE, '../../src');
-const EXPECTED_CANONICAL_BYTES = 54941;
-const EXPECTED_CANONICAL_SHA256 = '1eb94ae14138918fb4ad0d8b91bb5560fa0898a23d7272542aa4b36fed342cc6';
+const EXPECTED_CANONICAL_BYTES = 57363;
+const EXPECTED_CANONICAL_SHA256 = '84fc77b3394fff5d48027dce3fe55c29aa339507bf9bd140f9c9966a60ba4061';
 
 function valueShape(value) {
   if (typeof value === 'function') return `function:${value.length}`;

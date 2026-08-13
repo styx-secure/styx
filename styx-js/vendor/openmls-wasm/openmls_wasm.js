@@ -2050,6 +2050,9 @@ export class PhaseB2Group {
         return PhaseB2PendingCommit.__wrap(ret[0]);
     }
     /**
+     * Legacy sender-discarding receive API. B2.7 and later must use
+     * `receive_application_message` so authenticated sender evidence is not
+     * lost before the durable boundary.
      * @param {Provider} provider
      * @param {Uint8Array} bytes
      * @returns {Uint8Array}
@@ -2065,6 +2068,21 @@ export class PhaseB2Group {
         var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
         wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
         return v2;
+    }
+    /**
+     * @param {Provider} provider
+     * @param {Uint8Array} bytes
+     * @returns {PhaseB2ReceivedApplicationMessage}
+     */
+    receive_application_message(provider, bytes) {
+        _assertClass(provider, Provider);
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb2group_receive_application_message(this.__wbg_ptr, provider.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB2ReceivedApplicationMessage.__wrap(ret[0]);
     }
     /**
      * @returns {Uint16Array}
@@ -2390,6 +2408,83 @@ export class PhaseB2RatchetTree {
 }
 if (Symbol.dispose) PhaseB2RatchetTree.prototype[Symbol.dispose] = PhaseB2RatchetTree.prototype.free;
 
+/**
+ * Closed result of the Phase B2 current-epoch application receive boundary.
+ *
+ * The sender fields come from the authenticated OpenMLS `ProcessedMessage`
+ * and the profile-valid leaf in the same loaded group instance. They are not
+ * inferred from application payload bytes.
+ */
+export class PhaseB2ReceivedApplicationMessage {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB2ReceivedApplicationMessage.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB2ReceivedApplicationMessageFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB2ReceivedApplicationMessageFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb2receivedapplicationmessage_free(ptr, 0);
+    }
+    /**
+     * @returns {bigint}
+     */
+    epoch() {
+        const ret = wasm.phaseb2receivedapplicationmessage_epoch(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    group_id() {
+        const ret = wasm.phaseb2receivedapplicationmessage_group_id(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    plaintext() {
+        const ret = wasm.phaseb2receivedapplicationmessage_plaintext(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    sender_credential_identity() {
+        const ret = wasm.phaseb2receivedapplicationmessage_sender_credential_identity(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    sender_leaf_index() {
+        const ret = wasm.phaseb2receivedapplicationmessage_sender_leaf_index(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    sender_signature_key() {
+        const ret = wasm.phaseb2receivedapplicationmessage_sender_signature_key(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) PhaseB2ReceivedApplicationMessage.prototype[Symbol.dispose] = PhaseB2ReceivedApplicationMessage.prototype.free;
+
 export class PhaseB2StagedCommit {
     static __wrap(ptr) {
         const obj = Object.create(PhaseB2StagedCommit.prototype);
@@ -2705,6 +2800,9 @@ const PhaseB2PendingCommitFinalization = (typeof FinalizationRegistry === 'undef
 const PhaseB2RatchetTreeFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_phaseb2ratchettree_free(ptr, 1));
+const PhaseB2ReceivedApplicationMessageFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb2receivedapplicationmessage_free(ptr, 1));
 const PhaseB2StagedCommitFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_phaseb2stagedcommit_free(ptr, 1));

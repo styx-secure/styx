@@ -92,22 +92,27 @@ image: a tag can be re-pushed, a digest cannot.
 | Dependency graph | `./Cargo.lock` (workspace lockfile; builds run `-- --locked`, and `build.sh` aborts on drift) |
 | OpenMLS source | commit `09e9277…` (above) |
 
-**Artifact (rebuilt 2026-08-10 for the B2.2 capability boundary, from the unchanged
-source pin and pins above):**
+**Artifact (rebuilt 2026-08-13 for the B2.7 sender-attribution boundary, from the
+unchanged source pin and pins above):**
 
 | File | sha256 |
 |---|---|
-| `openmls_wasm_bg.wasm` | `60dbbc1127fbfb0e7e479cf7e2f7e6e20183c60d0559268f039d8db58bf60a3a` |
-| `openmls_wasm.js` | `50599ddc433619fd617d8071990f1edb94866388028c6875a493c7ac7ec1de7d` |
-| `openmls_wasm.d.ts` | `17daa548987cdde22b9704921264ce85ec8ad70411eee255f544de70cd8e5d30` |
-| `openmls_wasm_bg.wasm.d.ts` | `dc6ae4ce69782b70c483caf06f0bc2b8691ed99b4540239352df408609c89473` |
+| `openmls_wasm_bg.wasm` | `ed5e740d9c93aa46aa1afb7b6065e4b5b92be972a8a080ddd0a35091260691bb` |
+| `openmls_wasm.js` | `3ae01d30c30d2fdb7bcd48d8406d485a875f5c0a8ad25e726cb6ed7b820c6083` |
+| `openmls_wasm.d.ts` | `890693bda50ca202181f1988078b43d6dfa81e5468a2b7034f5fedbd71fe37d6` |
+| `openmls_wasm_bg.wasm.d.ts` | `d9eb6767743ef6436580e16f78bb8c549764fd3cedea8977f73640d720b74b4d` |
 | `package.json` | `88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85` |
 
-**Reproducibility: verified 2026-08-10 for B2.2.** Two complete disposable builds
+**Reproducibility: verified 2026-08-13 for B2.7.** Two complete disposable builds
 from these pins were byte-identical to each other and to the committed output
 set; `./verify.sh` independently repeats the same comparison.
 
-The immediately preceding B2.1 artifact digest
+The immediately preceding B2.2 artifact digest
+`60dbbc1127fbfb0e7e479cf7e2f7e6e20183c60d0559268f039d8db58bf60a3a`
+remains an exact state-writer compatibility tuple. Its fixed synthetic PhaseB2
+provider fixture under `test/fixtures/mls-state-b2-2/` restores, decrypts its
+reference ciphertext and creates a reply under this artifact. The immediately
+preceding B2.1 artifact digest
 `d0399fddc2ed5f030927f9786d295c394bcdfa133a1c69feeb9514edf2cd6f01`
 remains an exact state-writer compatibility tuple. Its fixed synthetic fixture
 under `test/fixtures/mls-state-b2-1/` is restored by this artifact. The earlier
@@ -119,8 +124,8 @@ suite. This is bounded compatibility evidence, not a general migration or
 interoperability claim.
 
 The complete generated public surface is discovered structurally and frozen at
-54,941 canonical JSON bytes with SHA-256
-`1eb94ae14138918fb4ad0d8b91bb5560fa0898a23d7272542aa4b36fed342cc6`.
+57,363 canonical JSON bytes with SHA-256
+`84fc77b3394fff5d48027dce3fe55c29aa339507bf9bd140f9c9966a60ba4061`.
 
 Two build inputs remain pinned only indirectly, and are listed here rather than hidden:
 `wasm-bindgen-cli` is fetched by wasm-pack at the version the lockfile dictates, but the

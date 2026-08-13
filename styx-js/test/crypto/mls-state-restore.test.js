@@ -2,6 +2,7 @@
 // on the real WASM runtime, and every corruption fails closed (structured error, no
 // WASM trap, no silent fresh-start).
 import { describe, test, expect, beforeAll } from '@jest/globals';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { MlsEngine } from '../../src/crypto/mls/mls-engine.js';
@@ -29,6 +30,7 @@ function loadFixture(relativeUrl) {
 const PRE_B1_FIXTURE = loadFixture('../fixtures/mls-state-v1/');
 const B1_FIXTURE = loadFixture('../fixtures/mls-state-b1/');
 const B2_1_FIXTURE = loadFixture('../fixtures/mls-state-b2-1/');
+const B2_2_PROVIDER_FIXTURE = loadFixture('../fixtures/mls-state-b2-2/');
 const FIXTURE_ENVELOPE = PRE_B1_FIXTURE.envelope;
 const CTX = PRE_B1_FIXTURE.context;
 
@@ -45,6 +47,41 @@ async function restoreFromFixture(fixture = PRE_B1_FIXTURE) {
     engine.loadSession(contact, groupId);
   }
   return engine;
+}
+
+function strictPhaseB2ProviderFixture(fixture) {
+  const envelopeFields = [
+    'ciphersuite', 'envelopeVersion', 'format', 'openMlsRevision', 'payload',
+    'payloadEncoding', 'payloadSha256', 'sourceHead', 'storageSchemaVersion',
+    'wasmArtifactSha256',
+  ];
+  const contextFields = [
+    'alice', 'bob', 'ciphersuite', 'epoch', 'format', 'groupContextSha256',
+    'groupId', 'openMlsRevision', 'proofCreatedAt', 'referenceCiphertext',
+    'referencePlaintext', 'replyPlaintext', 'selfCheck', 'sourceHead',
+    'verifiedLeafDigest', 'version', 'wasmArtifactSha256',
+  ];
+  expect(Object.keys(fixture.envelope).sort()).toEqual(envelopeFields);
+  expect(Object.keys(fixture.context).sort()).toEqual(contextFields);
+  expect(fixture.envelope).toMatchObject({
+    format: 'styx-phase-b2-provider-state',
+    envelopeVersion: 1,
+    storageSchemaVersion: 1,
+    payloadEncoding: 'base64',
+  });
+  expect(fixture.context).toMatchObject({
+    format: 'styx-phase-b2-writer-fixture-context',
+    version: 1,
+    selfCheck: 'restore-reference-decrypt-and-reply-pass',
+  });
+  for (const field of ['sourceHead', 'openMlsRevision', 'wasmArtifactSha256', 'ciphersuite']) {
+    expect(fixture.envelope[field]).toBe(fixture.context[field]);
+  }
+  const stateBytes = base64ToBytes(fixture.envelope.payload);
+  expect(Buffer.from(stateBytes).toString('base64')).toBe(fixture.envelope.payload);
+  expect(createHash('sha256').update(stateBytes).digest('hex'))
+    .toBe(fixture.envelope.payloadSha256);
+  return Object.freeze({ context: fixture.context, stateBytes });
 }
 
 beforeAll(async () => { await MlsEngine.initWasm({ wasmBytes }); });
@@ -158,5 +195,48 @@ describe('mls-state-b2-1 fixture restore under the B2.2 runtime', () => {
     const response = session.encrypt(utf8Encode('B2.1 fixture restored response'));
     expect(response).toBeInstanceOf(Uint8Array);
     expect(response.length).toBeGreaterThan(0);
+  });
+});
+
+describe('mls-state-b2-2 PhaseB2 writer fixture under the B2.7 runtime', () => {
+  test('strictly restores the exact provider, decrypts the reference and creates a reply', async () => {
+    const wasm = await import('../../vendor/openmls-wasm/openmls_wasm.js');
+    const { context, stateBytes } = strictPhaseB2ProviderFixture(B2_2_PROVIDER_FIXTURE);
+    const provider = new wasm.Provider();
+    let identity;
+    let group;
+    let received;
+    try {
+      provider.restore_state(stateBytes);
+      identity = wasm.PhaseB2Identity.load(
+        provider,
+        base64ToBytes(context.alice.accountPublicKey),
+        base64ToBytes(context.alice.leafSignatureKey),
+      );
+      group = wasm.PhaseB2Group.load(provider, base64ToBytes(context.groupId));
+      expect(identity).toBeDefined();
+      expect(group).toBeDefined();
+      expect(group.matches_own_identity(
+        base64ToBytes(context.alice.accountPublicKey),
+        base64ToBytes(context.alice.leafSignatureKey),
+      )).toBe(true);
+      received = group.receive_application_message(
+        provider, base64ToBytes(context.referenceCiphertext));
+      expect(utf8Decode(received.plaintext())).toBe(context.referencePlaintext);
+      expect(received.sender_leaf_index()).toBe(context.bob.leafIndex);
+      expect(bytesToBase64(received.sender_credential_identity()))
+        .toBe(context.bob.accountPublicKey);
+      expect(bytesToBase64(received.sender_signature_key()))
+        .toBe(context.bob.leafSignatureKey);
+      const response = group.create_application_message(
+        provider, identity, utf8Encode(context.replyPlaintext));
+      expect(response).toBeInstanceOf(Uint8Array);
+      expect(response.length).toBeGreaterThan(0);
+    } finally {
+      received?.free();
+      group?.free();
+      identity?.free();
+      provider.free();
+    }
   });
 });
