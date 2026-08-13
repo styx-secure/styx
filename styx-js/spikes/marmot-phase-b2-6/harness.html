@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Phase B2.6 retained-convergence probe</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "@noble/hashes/sha256": "/node_modules/@noble/hashes/esm/sha256.js",
+        "@noble/hashes/crypto": "/node_modules/@noble/hashes/esm/crypto.js",
+        "@noble/hashes/utils": "/node_modules/@noble/hashes/esm/utils.js",
+        "@noble/curves/secp256k1": "/node_modules/@noble/curves/esm/secp256k1.js",
+        "@noble/hashes/": "/node_modules/@noble/hashes/esm/",
+        "@noble/curves/": "/node_modules/@noble/curves/esm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <main>STYX_SPIKE_PROTOTYPE — isolated B2.6 browser evidence only</main>
+  <script type="module">
+    import { schnorr } from '@noble/curves/secp256k1.js';
+    import initOpenMls, * as wasm from '../../vendor/openmls-wasm/openmls_wasm.js';
+    import { bytesToHex, copyBytes, digestHex } from './b2-6-canonical.mjs';
+    import { createB26Coordinator } from './b2-6-coordinator.mjs';
+    import { openB26Journal } from './b2-6-journal.mjs';
+
+    const textEncoder = new TextEncoder();
+    const groupId = Uint8Array.from({ length: 32 }, (_, position) => position + 11);
+    const groupIdHex = bytesToHex(groupId);
+    const actorRegistry = new Map();
+
+    await initOpenMls({ module_or_path: new URL(
+      '../../vendor/openmls-wasm/openmls_wasm_bg.wasm', import.meta.url,
+    ) });
+
+    function releaseWasm(...values) {
+      for (const value of values.flat()) {
+        try { value?.free?.(); } catch { /* best-effort probe cleanup */ }
+      }
+    }
+
+    function digestBytes(value) {
+      return Uint8Array.from(value.match(/../g), (octet) => Number.parseInt(octet, 16));
+    }
+
+    function createAccountProof(privateKey, signatureKey, createdAt) {
+      const accountKey = Uint8Array.from(schnorr.getPublicKey(privateKey));
+      const tags = [
+        ['d', 'marmot.account-identity-proof.v2'],
+        ['component', '0x8009'],
+        ['ciphersuite', '0x0001'],
+        ['signature_scheme', '0x0807'],
+        ['mls_signature_key', bytesToHex(signatureKey)],
+      ];
+      const event = [0, bytesToHex(accountKey), createdAt, 450, tags,
+        'Authorize this MLS leaf key for my Marmot account'];
+      const signature = Uint8Array.from(schnorr.sign(
+        digestBytes(digestHex(textEncoder.encode(JSON.stringify(event)))), privateKey));
+      const proofBytes = new Uint8Array(104);
+      proofBytes.set(accountKey, 0);
+      new DataView(proofBytes.buffer).setBigUint64(32, BigInt(createdAt));
+      proofBytes.set(signature, 40);
+      return Object.freeze({ accountKey, proofBytes });
+    }
+
+    function createPeer(provider, seed) {
+      const privateKey = new Uint8Array(32);
+      privateKey[31] = seed;
+      const accountKey = Uint8Array.from(schnorr.getPublicKey(privateKey));
+      const identity = new wasm.PhaseB2Identity(provider, accountKey);
+      const signatureKey = copyBytes(identity.leaf_signature_key());
+      const { proofBytes } = createAccountProof(
+        privateKey, signatureKey, 1_786_435_200 + seed);
+      const generated = identity.key_package(provider, proofBytes);
+      const framed = copyBytes(generated.to_framed_bytes());
+      releaseWasm(generated);
+      return Object.freeze({ accountKey, identity, signatureKey, proofBytes,
+        keyPackage: wasm.PhaseB2KeyPackage.from_framed_bytes(framed) });
+    }
+
+    function observed(promise) {
+      return promise.then((value) => ({ ok: true, value }))
+        .catch((error) => ({ ok: false, code: error?.code, message: String(error) }));
+    }
+
+    class BrowserActor {
+      constructor(journal) {
+        this.journal = journal;
+        this.blocker = { armed: false, entered: false, release: null, wait: null };
+        this.pendingSettlement = null;
+        this.messageBlocker = { armed: false, entered: false, release: null, wait: null };
+        this.pendingQueue = null;
+        this.peerIdentityHex = null;
+        this.source = null;
+        this.branches = new Map();
+        this.coordinator = createB26Coordinator({ journal, wasm,
+          beforeReplay: async () => {
+            if (!this.blocker.armed) return;
+            this.blocker.entered = true;
+            await this.blocker.wait;
+          },
+          beforeOutboundCommit: async () => {
+            if (!this.messageBlocker.armed) return;
+            this.messageBlocker.entered = true;
+            await this.messageBlocker.wait;
+          } });
+      }
+
+      async initialize() {
+        const creatorProvider = new wasm.Provider();
+        const joinerProvider = new wasm.Provider();
+        const creator = createPeer(creatorProvider, 1);
+        const joiner = createPeer(joinerProvider, 2);
+        const group = wasm.PhaseB2Group.create_new(
+          creatorProvider, creator.identity, groupId, creator.proofBytes);
+        const pending = group.prepare_add(
+          creatorProvider, creator.identity, joiner.keyPackage);
+        const welcomeBytes = copyBytes(pending.welcome());
+        const projection = pending.projection();
+        let joinedGroup;
+        let ratchetTree;
+        let parsedTree;
+        try {
+          group.confirm_pending(
+            creatorProvider, pending, projection.verified_leaf_digest());
+          ratchetTree = group.export_ratchet_tree();
+          parsedTree = wasm.PhaseB2RatchetTree.from_bytes(ratchetTree.to_bytes());
+          joinedGroup = wasm.PhaseB2Group.join(joinerProvider, welcomeBytes, parsedTree);
+          this.peerIdentityHex = bytesToHex(joiner.accountKey);
+          this.source = Object.freeze({
+            accountKey: copyBytes(joiner.accountKey),
+            signatureKey: copyBytes(joiner.signatureKey),
+            snapshotBytes: copyBytes(joinerProvider.serialize_state()),
+          });
+          await this.coordinator.initializeStable({
+            snapshotBytes: copyBytes(creatorProvider.serialize_state()),
+            groupId,
+            accountKey: creator.accountKey,
+            signatureKey: creator.signatureKey,
+          });
+        } finally {
+          releaseWasm(joinedGroup, parsedTree, ratchetTree, projection, pending, group,
+            creator.keyPackage, creator.identity,
+            joiner.keyPackage, joiner.identity, creatorProvider, joinerProvider);
+        }
+      }
+
+      async prepareAcknowledgedUpdate() {
+        await this.coordinator.prepareSelfUpdate(groupIdHex);
+        await this.coordinator.recordAttempt(groupIdHex);
+        return this.coordinator.recordAcknowledgement(
+          groupIdHex, 1, this.peerIdentityHex, textEncoder.encode('browser-ack'));
+      }
+
+      prepareBranch(label, length) {
+        if (this.source === null || !Number.isSafeInteger(length) || length < 1) {
+          throw new Error('browser branch source is unavailable');
+        }
+        const commits = [];
+        let snapshotBytes = this.source.snapshotBytes;
+        for (let index = 0; index < length; index += 1) {
+          const provider = new wasm.Provider();
+          provider.restore_state(snapshotBytes);
+          const identity = wasm.PhaseB2Identity.load(
+            provider, this.source.accountKey, this.source.signatureKey);
+          const group = wasm.PhaseB2Group.load(provider, groupId);
+          if (identity === undefined || group === undefined) {
+            releaseWasm(group, identity, provider);
+            throw new Error('browser branch restore failed');
+          }
+          const pending = group.prepare_self_update(provider, identity);
+          const projection = pending.projection();
+          const commitBytes = copyBytes(pending.commit());
+          group.confirm_pending(provider, pending, projection.verified_leaf_digest());
+          snapshotBytes = copyBytes(provider.serialize_state());
+          commits.push(commitBytes);
+          releaseWasm(projection, pending, group, identity, provider);
+        }
+        this.branches.set(label, commits);
+        return commits.map((commitBytes) => digestHex(commitBytes));
+      }
+
+      async admitBranch(label, indexes) {
+        const commits = this.branches.get(label);
+        if (commits === undefined) throw new Error('unknown browser branch');
+        for (const index of indexes) {
+          await this.coordinator.admitCommit(groupIdHex, commits[index]);
+        }
+      }
+
+      async settleBranch(label, indexes) {
+        await this.admitBranch(label, indexes);
+        return this.coordinator.settlePass(groupIdHex);
+      }
+
+      armReplayBarrier() {
+        this.blocker.armed = true;
+        this.blocker.entered = false;
+        this.blocker.wait = new Promise((resolve) => { this.blocker.release = resolve; });
+      }
+
+      startSettlement(passDigestHex) {
+        this.pendingSettlement = observed(this.coordinator.settle(passDigestHex));
+      }
+
+      releaseReplayBarrier() { this.blocker.release?.(); }
+
+      armMessageBarrier() {
+        this.messageBlocker.armed = true;
+        this.messageBlocker.entered = false;
+        this.messageBlocker.wait = new Promise((resolve) => {
+          this.messageBlocker.release = resolve;
+        });
+      }
+
+      startQueue(requestId, payload) {
+        this.pendingQueue = observed(this.coordinator.queueApplicationMessage(
+          groupIdHex, requestId, textEncoder.encode(payload)));
+      }
+
+      releaseMessageBarrier() {
+        this.messageBlocker.release?.();
+        this.messageBlocker.armed = false;
+      }
+
+      close() { this.journal.close(); }
+
+      destroy() { return this.journal.destroy(); }
+    }
+
+    function actor(name) {
+      const value = actorRegistry.get(name);
+      if (value === undefined) throw new Error(`unknown B2.6 actor: ${name}`);
+      return value;
+    }
+
+    globalThis.B26Harness = Object.freeze({
+      async open(name, databaseTag) {
+        actorRegistry.set(name, new BrowserActor(await openB26Journal({ databaseTag })));
+      },
+      initialize: (name) => actor(name).initialize(),
+      prepare: (name) => actor(name).prepareAcknowledgedUpdate(),
+      prepareBranch: (name, label, length) => actor(name).prepareBranch(label, length),
+      admitBranch: (name, label, indexes) => actor(name).admitBranch(label, indexes),
+      settleBranch: (name, label, indexes) => actor(name).settleBranch(label, indexes),
+      freeze: (name) => actor(name).coordinator.freeze(groupIdHex),
+      arm: (name) => actor(name).armReplayBarrier(),
+      startSettle: (name, passDigestHex) => actor(name).startSettlement(passDigestHex),
+      entered: (name) => actor(name).blocker.entered,
+      release: (name) => actor(name).releaseReplayBarrier(),
+      result: (name) => actor(name).pendingSettlement,
+      probe: (name) => observed(actor(name).coordinator.createLivenessProbe(
+        groupIdHex, textEncoder.encode('browser-one-use-probe'))),
+      queue: (name, requestId, payload) => observed(
+        actor(name).coordinator.queueApplicationMessage(
+          groupIdHex, requestId, textEncoder.encode(payload))),
+      armMessage: (name) => actor(name).armMessageBarrier(),
+      startQueue: (name, requestId, payload) =>
+        actor(name).startQueue(requestId, payload),
+      enteredMessage: (name) => actor(name).messageBlocker.entered,
+      releaseMessage: (name) => actor(name).releaseMessageBarrier(),
+      queueResult: (name) => actor(name).pendingQueue,
+      queueState: (name, instanceKeyHex, ordinal) =>
+        actor(name).journal.readOutbox(instanceKeyHex, ordinal),
+      async finishQueued(name, instanceKeyHex, ordinal) {
+        const owner = actor(name);
+        const outbox = await owner.coordinator.readQueuedApplicationMessage(
+          instanceKeyHex, ordinal);
+        const recipientIdentityHex = outbox.recipientScope[0];
+        const attempt = await owner.coordinator.recordApplicationAttempt(
+          instanceKeyHex, ordinal, recipientIdentityHex);
+        await owner.coordinator.recordApplicationAcknowledgement(
+          instanceKeyHex, ordinal, attempt.attemptOrdinal,
+          recipientIdentityHex, textEncoder.encode('browser-ack'));
+        return { ciphertextDigestHex: outbox.ciphertextDigestHex };
+      },
+      async read(name) {
+        const { head } = await actor(name).journal.readHead(groupIdHex);
+        return { head };
+      },
+      close(name) {
+        actor(name).close();
+        actorRegistry.delete(name);
+      },
+      async destroy(name) {
+        await actor(name).destroy();
+        actorRegistry.delete(name);
+      },
+    });
+  </script>
+</body>
+</html>
