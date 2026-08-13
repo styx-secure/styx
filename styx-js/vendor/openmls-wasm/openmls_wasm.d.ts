@@ -274,7 +274,13 @@ export class PhaseB2Group {
     prepare_add(provider: Provider, sender: PhaseB2Identity, new_member: PhaseB2KeyPackage): PhaseB2PendingCommit;
     prepare_remove(provider: Provider, sender: PhaseB2Identity, removed_leaf_index: number): PhaseB2PendingCommit;
     prepare_self_update(provider: Provider, sender: PhaseB2Identity): PhaseB2PendingCommit;
+    /**
+     * Legacy sender-discarding receive API. B2.7 and later must use
+     * `receive_application_message` so authenticated sender evidence is not
+     * lost before the durable boundary.
+     */
     process_application_message(provider: Provider, bytes: Uint8Array): Uint8Array;
+    receive_application_message(provider: Provider, bytes: Uint8Array): PhaseB2ReceivedApplicationMessage;
     required_component_ids(): Uint16Array;
     stage_inbound_commit(provider: Provider, bytes: Uint8Array): PhaseB2StagedCommit;
 }
@@ -323,6 +329,25 @@ export class PhaseB2RatchetTree {
     [Symbol.dispose](): void;
     static from_bytes(bytes: Uint8Array): PhaseB2RatchetTree;
     to_bytes(): Uint8Array;
+}
+
+/**
+ * Closed result of the Phase B2 current-epoch application receive boundary.
+ *
+ * The sender fields come from the authenticated OpenMLS `ProcessedMessage`
+ * and the profile-valid leaf in the same loaded group instance. They are not
+ * inferred from application payload bytes.
+ */
+export class PhaseB2ReceivedApplicationMessage {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    epoch(): bigint;
+    group_id(): Uint8Array;
+    plaintext(): Uint8Array;
+    sender_credential_identity(): Uint8Array;
+    sender_leaf_index(): number;
+    sender_signature_key(): Uint8Array;
 }
 
 export class PhaseB2StagedCommit {
@@ -394,6 +419,7 @@ export interface InitOutput {
     readonly __wbg_phaseb2keypackage_free: (a: number, b: number) => void;
     readonly __wbg_phaseb2pendingcommit_free: (a: number, b: number) => void;
     readonly __wbg_phaseb2ratchettree_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb2receivedapplicationmessage_free: (a: number, b: number) => void;
     readonly __wbg_phaseb2stagedcommit_free: (a: number, b: number) => void;
     readonly __wbg_provider_free: (a: number, b: number) => void;
     readonly __wbg_ratchettree_free: (a: number, b: number) => void;
@@ -543,6 +569,7 @@ export interface InitOutput {
     readonly phaseb2group_prepare_remove: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly phaseb2group_prepare_self_update: (a: number, b: number, c: number) => [number, number, number];
     readonly phaseb2group_process_application_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly phaseb2group_receive_application_message: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly phaseb2group_required_component_ids: (a: number) => [number, number, number, number];
     readonly phaseb2group_stage_inbound_commit: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly phaseb2identity_account_public_key: (a: number) => [number, number];
@@ -564,6 +591,11 @@ export interface InitOutput {
     readonly phaseb2pendingcommit_welcome: (a: number) => [number, number];
     readonly phaseb2ratchettree_from_bytes: (a: number, b: number) => [number, number, number];
     readonly phaseb2ratchettree_to_bytes: (a: number) => [number, number, number, number];
+    readonly phaseb2receivedapplicationmessage_group_id: (a: number) => [number, number];
+    readonly phaseb2receivedapplicationmessage_plaintext: (a: number) => [number, number];
+    readonly phaseb2receivedapplicationmessage_sender_credential_identity: (a: number) => [number, number];
+    readonly phaseb2receivedapplicationmessage_sender_leaf_index: (a: number) => number;
+    readonly phaseb2receivedapplicationmessage_sender_signature_key: (a: number) => [number, number];
     readonly phaseb2stagedcommit_projection: (a: number) => number;
     readonly provider_new: () => number;
     readonly provider_restore_state: (a: number, b: number, c: number) => [number, number];
@@ -572,6 +604,7 @@ export interface InitOutput {
     readonly ratchettree_to_bytes: (a: number) => [number, number];
     readonly phaseb1group_epoch: (a: number) => bigint;
     readonly phaseb2group_epoch: (a: number) => bigint;
+    readonly phaseb2receivedapplicationmessage_epoch: (a: number) => bigint;
     readonly phaseb2stagedcommit_is_consumed: (a: number) => number;
     readonly phaseb2keypackage_ciphersuite_id: (a: number) => number;
     readonly greet: () => void;

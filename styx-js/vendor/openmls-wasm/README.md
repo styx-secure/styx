@@ -28,7 +28,7 @@ Run from this directory:
 ```
 
 Docker is required. No host Rust toolchain is used. The committed WASM is
-2,074,265 bytes raw and 747,555 bytes gzip.
+2,081,600 bytes raw and 750,045 bytes gzip.
 
 ## Profiles
 
@@ -58,8 +58,10 @@ Both use:
 
 `PhaseB2*` additionally exposes bounded Add, Remove and self-update preparation,
 authenticated inbound Commit staging, complete candidate-state projection, and
-a WASM-recomputed digest over the candidate leaves. It does not verify the
-BIP-340 account-identity proof; that remains a later policy-layer requirement.
+a WASM-recomputed digest over the candidate leaves. B2.7 adds an isolated
+sender-preserving application receive result containing the OpenMLS-authenticated
+sender leaf, credential identity and leaf signature key. It does not verify the
+BIP-340 account-identity proof; that remains the JavaScript policy boundary.
 
 No product source imports the probe. It demonstrates local mechanics only: it
 is not a Marmot interoperability, security-audit, or production-readiness claim.
@@ -73,8 +75,8 @@ It adds:
 - legacy identity/group reload and member-identity inspection;
 - returned errors rather than WASM traps on hostile wire bodies;
 - the isolated Phase B1 and Phase B2 profiles, framed KeyPackage inspection,
-  explicit pending/staged Commit lifecycles, and bounded candidate projection
-  described above.
+  explicit pending/staged Commit lifecycles, bounded candidate projection and
+  sender-preserving application receive boundary described above.
 
 The patch and its probe API are outside the scope of upstream OpenMLS audits.
 `roundtrip.mjs` proves the unchanged legacy 1:1 path; the capability evidence is
