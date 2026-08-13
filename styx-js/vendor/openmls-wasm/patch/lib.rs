@@ -2063,6 +2063,51 @@ impl PhaseB2StagedCommit {
     }
 }
 
+/// Closed result of the Phase B2 current-epoch application receive boundary.
+///
+/// The sender fields come from the authenticated OpenMLS `ProcessedMessage`
+/// and the profile-valid leaf in the same loaded group instance. They are not
+/// inferred from application payload bytes.
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+#[derive(Debug)]
+pub struct PhaseB2ReceivedApplicationMessage {
+    group_id: Vec<u8>,
+    epoch: u64,
+    sender_leaf_index: u32,
+    sender_credential_identity: Vec<u8>,
+    sender_signature_key: Vec<u8>,
+    plaintext: Vec<u8>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB2ReceivedApplicationMessage {
+    pub fn group_id(&self) -> Vec<u8> {
+        self.group_id.clone()
+    }
+
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+
+    pub fn sender_leaf_index(&self) -> u32 {
+        self.sender_leaf_index
+    }
+
+    pub fn sender_credential_identity(&self) -> Vec<u8> {
+        self.sender_credential_identity.clone()
+    }
+
+    pub fn sender_signature_key(&self) -> Vec<u8> {
+        self.sender_signature_key.clone()
+    }
+
+    pub fn plaintext(&self) -> Vec<u8> {
+        self.plaintext.clone()
+    }
+}
+
 #[cfg(feature = "extensions-draft")]
 #[wasm_bindgen]
 pub struct PhaseB2Group {
@@ -2232,6 +2277,72 @@ impl PhaseB2Group {
                 .map(|message| message.tls_serialize_detached())
                 .transpose()?,
             projection,
+        })
+    }
+
+    fn receive_application_message_recovery(
+        &mut self,
+        provider: &Provider,
+        bytes: &[u8],
+    ) -> Result<PhaseB2ReceivedApplicationMessage, &'static str> {
+        let message = MlsMessageIn::tls_deserialize_exact(bytes)
+            .map_err(|_| "phase-b2 receive: malformed MLSMessage")?;
+        let private = match message.extract() {
+            MlsMessageBodyIn::PrivateMessage(message) => message,
+            _ => return Err("phase-b2 receive: PrivateMessage application required"),
+        };
+        if private.group_id() != self.mls_group.group_id() {
+            return Err("phase-b2 receive: group id mismatch");
+        }
+        if private.epoch() != self.mls_group.epoch() {
+            return Err("phase-b2 receive: current epoch required");
+        }
+
+        let processed = self
+            .mls_group
+            .process_message(provider.as_ref(), ProtocolMessage::from(private))
+            .map_err(|_| "phase-b2 receive: OpenMLS processing failed")?;
+        if processed.group_id() != self.mls_group.group_id() {
+            return Err("phase-b2 receive: authenticated group id mismatch");
+        }
+        if processed.epoch() != self.mls_group.epoch() {
+            return Err("phase-b2 receive: authenticated epoch mismatch");
+        }
+        if matches!(
+            processed.content(),
+            openmls::framing::ProcessedMessageContent::OwnPrivateMessage
+        ) {
+            return Err("phase-b2 receive: own message rejected");
+        }
+
+        let sender_leaf_index = match processed.sender() {
+            Sender::Member(index) => index.u32(),
+            Sender::External(_) | Sender::NewMemberProposal | Sender::NewMemberCommit => {
+                return Err("phase-b2 receive: non-member sender rejected");
+            }
+        };
+        let processed_credential_identity = processed.credential().serialized_content().to_vec();
+        let sender = phase_b2_member_at(&self.mls_group, sender_leaf_index)
+            .map_err(|_| "phase-b2 receive: current sender leaf is not profile-valid")?;
+        if processed_credential_identity != sender.credential_identity {
+            return Err(
+                "phase-b2 receive: authenticated credential disagrees with current leaf",
+            );
+        }
+        let plaintext = match processed.into_content() {
+            openmls::framing::ProcessedMessageContent::ApplicationMessage(message) => {
+                message.into_bytes()
+            }
+            _ => return Err("phase-b2 receive: message is not application data"),
+        };
+
+        Ok(PhaseB2ReceivedApplicationMessage {
+            group_id: self.mls_group.group_id().to_vec(),
+            epoch: self.mls_group.epoch().as_u64(),
+            sender_leaf_index,
+            sender_credential_identity: sender.credential_identity,
+            sender_signature_key: sender.leaf_signature_key,
+            plaintext,
         })
     }
 }
@@ -2731,6 +2842,9 @@ impl PhaseB2Group {
             .tls_serialize_detached()?)
     }
 
+    /// Legacy sender-discarding receive API. B2.7 and later must use
+    /// `receive_application_message` so authenticated sender evidence is not
+    /// lost before the durable boundary.
     pub fn process_application_message(
         &mut self,
         provider: &Provider,
@@ -2760,6 +2874,16 @@ impl PhaseB2Group {
                 "phase-b2 application: message is not application data",
             )),
         }
+    }
+
+    pub fn receive_application_message(
+        &mut self,
+        provider: &Provider,
+        bytes: &[u8],
+    ) -> Result<PhaseB2ReceivedApplicationMessage, JsError> {
+        self.validate_provider(provider)?;
+        self.receive_application_message_recovery(provider, bytes)
+            .map_err(JsError::new)
     }
 }
 
@@ -4273,6 +4397,384 @@ mod tests {
                 .unwrap(),
             plaintext
         );
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b2_receive_binds_current_epoch_authenticated_sender() {
+        fn assert_received(
+            received: PhaseB2ReceivedApplicationMessage,
+            expected_group_id: &[u8],
+            expected_epoch: u64,
+            expected_leaf: u32,
+            expected_identity: &[u8],
+            expected_signature_key: &[u8],
+            expected_plaintext: &[u8],
+        ) {
+            assert_eq!(received.group_id(), expected_group_id);
+            assert_eq!(received.epoch(), expected_epoch);
+            assert_eq!(received.sender_leaf_index(), expected_leaf);
+            assert_eq!(received.sender_credential_identity(), expected_identity);
+            assert_eq!(received.sender_signature_key(), expected_signature_key);
+            assert_eq!(received.plaintext(), expected_plaintext);
+        }
+
+        let group_id = b"phase-b2-authenticated-receive";
+        let mut alice_provider = Provider::new();
+        let mut bob_provider = Provider::new();
+        let mut charlie_provider = Provider::new();
+        let (alice, alice_proof, _) = phase_b2_identity(&alice_provider, 0x81);
+        let (_bob, _, bob_key_package) = phase_b2_identity(&bob_provider, 0x82);
+        let (charlie, charlie_proof, charlie_key_package) =
+            phase_b2_identity(&charlie_provider, 0x83);
+
+        let mut alice_group = PhaseB2Group::create_new(
+            &alice_provider,
+            &alice,
+            group_id,
+            &alice_proof,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let mut add_bob = alice_group
+            .prepare_add(&alice_provider, &alice, &bob_key_package)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let add_bob_projection = add_bob.projection();
+        alice_group
+            .confirm_pending(
+                &mut alice_provider,
+                &mut add_bob,
+                &add_bob_projection.verified_leaf_digest(),
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        let mut bob_group = PhaseB2Group::join(
+            &bob_provider,
+            &add_bob.welcome().unwrap(),
+            PhaseB2RatchetTree::from_bytes(
+                &alice_group.export_ratchet_tree().to_bytes().unwrap(),
+            )
+            .map_err(js_error_to_string)
+            .unwrap(),
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+
+        let mut add_charlie = alice_group
+            .prepare_add(&alice_provider, &alice, &charlie_key_package)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let add_charlie_projection = add_charlie.projection();
+        let charlie_leaf = add_charlie_projection
+            .proposal_added_leaf_index(0)
+            .unwrap()
+            .unwrap();
+        let mut bob_staged_add = bob_group
+            .stage_inbound_commit(&bob_provider, &add_charlie.commit())
+            .map_err(js_error_to_string)
+            .unwrap();
+        bob_group
+            .merge_staged_commit(
+                &mut bob_provider,
+                &mut bob_staged_add,
+                &add_charlie_projection.verified_leaf_digest(),
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        alice_group
+            .confirm_pending(
+                &mut alice_provider,
+                &mut add_charlie,
+                &add_charlie_projection.verified_leaf_digest(),
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        let mut charlie_group = PhaseB2Group::join(
+            &charlie_provider,
+            &add_charlie.welcome().unwrap(),
+            PhaseB2RatchetTree::from_bytes(
+                &alice_group.export_ratchet_tree().to_bytes().unwrap(),
+            )
+            .map_err(js_error_to_string)
+            .unwrap(),
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        assert_eq!(alice_group.epoch(), 2);
+        assert_eq!(bob_group.epoch(), 2);
+        assert_eq!(charlie_group.epoch(), 2);
+
+        for (plaintext, from_charlie) in [
+            (b"alice-one".as_slice(), false),
+            (b"charlie-one".as_slice(), true),
+            (b"alice-two".as_slice(), false),
+        ] {
+            let (message, leaf, identity, signature_key) = if from_charlie {
+                (
+                    charlie_group
+                        .create_application_message(&charlie_provider, &charlie, plaintext)
+                        .map_err(js_error_to_string)
+                        .unwrap(),
+                    charlie_leaf,
+                    charlie.account_public_key.as_slice(),
+                    charlie.keypair.public(),
+                )
+            } else {
+                (
+                    alice_group
+                        .create_application_message(&alice_provider, &alice, plaintext)
+                        .map_err(js_error_to_string)
+                        .unwrap(),
+                    0,
+                    alice.account_public_key.as_slice(),
+                    alice.keypair.public(),
+                )
+            };
+            let received = bob_group
+                .receive_application_message(&bob_provider, &message)
+                .map_err(js_error_to_string)
+                .unwrap();
+            assert_received(
+                received,
+                group_id,
+                2,
+                leaf,
+                identity,
+                signature_key,
+                plaintext,
+            );
+        }
+
+        let own_message = alice_group
+            .create_application_message(&alice_provider, &alice, b"own echo")
+            .map_err(js_error_to_string)
+            .unwrap();
+        assert_eq!(
+            alice_group
+                .receive_application_message_recovery(&alice_provider, &own_message)
+                .unwrap_err(),
+            "phase-b2 receive: own message rejected"
+        );
+
+        let old_charlie_message = charlie_group
+            .create_application_message(
+                &charlie_provider,
+                &charlie,
+                b"old Charlie leaf must never cross epochs",
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        let stale_bob_snapshot = bob_provider.serialize_state();
+        let stale_bob_provider = Provider::new();
+        stale_bob_provider
+            .restore_state(&stale_bob_snapshot)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let mut stale_bob_group = PhaseB2Group::load(&stale_bob_provider, group_id)
+            .map_err(js_error_to_string)
+            .unwrap()
+            .unwrap();
+
+        let mut self_update = alice_group
+            .prepare_self_update(&alice_provider, &alice)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let self_projection = self_update.projection();
+        let bob_before_public = bob_provider.serialize_state();
+        assert_eq!(
+            bob_group
+                .receive_application_message_recovery(&bob_provider, &self_update.commit())
+                .unwrap_err(),
+            "phase-b2 receive: PrivateMessage application required"
+        );
+        assert_eq!(bob_before_public, bob_provider.serialize_state());
+        let mut bob_staged_update = bob_group
+            .stage_inbound_commit(&bob_provider, &self_update.commit())
+            .map_err(js_error_to_string)
+            .unwrap();
+        bob_group
+            .merge_staged_commit(
+                &mut bob_provider,
+                &mut bob_staged_update,
+                &self_projection.verified_leaf_digest(),
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        let mut charlie_staged_update = charlie_group
+            .stage_inbound_commit(&charlie_provider, &self_update.commit())
+            .map_err(js_error_to_string)
+            .unwrap();
+        charlie_group
+            .merge_staged_commit(
+                &mut charlie_provider,
+                &mut charlie_staged_update,
+                &self_projection.verified_leaf_digest(),
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        alice_group
+            .confirm_pending(
+                &mut alice_provider,
+                &mut self_update,
+                &self_projection.verified_leaf_digest(),
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+
+        let new_epoch_message = alice_group
+            .create_application_message(&alice_provider, &alice, b"new epoch")
+            .map_err(js_error_to_string)
+            .unwrap();
+        let stale_before = stale_bob_provider.serialize_state();
+        assert_eq!(
+            stale_bob_group
+                .receive_application_message_recovery(&stale_bob_provider, &new_epoch_message)
+                .unwrap_err(),
+            "phase-b2 receive: current epoch required"
+        );
+        assert_eq!(stale_before, stale_bob_provider.serialize_state());
+        let bob_before_old_epoch = bob_provider.serialize_state();
+        assert_eq!(
+            bob_group
+                .receive_application_message_recovery(&bob_provider, &old_charlie_message)
+                .unwrap_err(),
+            "phase-b2 receive: current epoch required"
+        );
+        assert_eq!(bob_before_old_epoch, bob_provider.serialize_state());
+
+        let mut remove_charlie = alice_group
+            .prepare_remove(&alice_provider, &alice, charlie_leaf)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let remove_projection = remove_charlie.projection();
+        let mut bob_staged_remove = bob_group
+            .stage_inbound_commit(&bob_provider, &remove_charlie.commit())
+            .map_err(js_error_to_string)
+            .unwrap();
+        bob_group
+            .merge_staged_commit(
+                &mut bob_provider,
+                &mut bob_staged_remove,
+                &remove_projection.verified_leaf_digest(),
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        alice_group
+            .confirm_pending(
+                &mut alice_provider,
+                &mut remove_charlie,
+                &remove_projection.verified_leaf_digest(),
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+
+        let readd_key_package = charlie
+            .key_package(&charlie_provider, &charlie_proof)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let mut readd_charlie = alice_group
+            .prepare_add(&alice_provider, &alice, &readd_key_package)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let readd_projection = readd_charlie.projection();
+        assert_eq!(
+            readd_projection
+                .proposal_added_leaf_index(0)
+                .unwrap()
+                .unwrap(),
+            charlie_leaf,
+            "test requires the removed leaf index to be reused"
+        );
+        let mut bob_staged_readd = bob_group
+            .stage_inbound_commit(&bob_provider, &readd_charlie.commit())
+            .map_err(js_error_to_string)
+            .unwrap();
+        bob_group
+            .merge_staged_commit(
+                &mut bob_provider,
+                &mut bob_staged_readd,
+                &readd_projection.verified_leaf_digest(),
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        alice_group
+            .confirm_pending(
+                &mut alice_provider,
+                &mut readd_charlie,
+                &readd_projection.verified_leaf_digest(),
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        let bob_before_reused_leaf = bob_provider.serialize_state();
+        assert_eq!(
+            bob_group
+                .receive_application_message_recovery(&bob_provider, &old_charlie_message)
+                .unwrap_err(),
+            "phase-b2 receive: current epoch required"
+        );
+        assert_eq!(bob_before_reused_leaf, bob_provider.serialize_state());
+
+        let replay_message = alice_group
+            .create_application_message(&alice_provider, &alice, b"replay once")
+            .map_err(js_error_to_string)
+            .unwrap();
+        assert_received(
+            bob_group
+                .receive_application_message(&bob_provider, &replay_message)
+                .map_err(js_error_to_string)
+                .unwrap(),
+            group_id,
+            alice_group.epoch(),
+            0,
+            &alice.account_public_key,
+            alice.keypair.public(),
+            b"replay once",
+        );
+        assert!(bob_group
+            .receive_application_message_recovery(&bob_provider, &replay_message)
+            .is_err());
+
+        let tamper_message = alice_group
+            .create_application_message(&alice_provider, &alice, b"tampered generation")
+            .map_err(js_error_to_string)
+            .unwrap();
+        let mut tampered = tamper_message.clone();
+        *tampered.last_mut().unwrap() ^= 1;
+        assert_eq!(
+            bob_group
+                .receive_application_message_recovery(&bob_provider, &tampered)
+                .unwrap_err(),
+            "phase-b2 receive: OpenMLS processing failed"
+        );
+        assert!(bob_group
+            .receive_application_message_recovery(&bob_provider, &tamper_message)
+            .is_err());
+        let after_tamper_message = alice_group
+            .create_application_message(&alice_provider, &alice, b"next generation remains live")
+            .map_err(js_error_to_string)
+            .unwrap();
+        assert_received(
+            bob_group
+                .receive_application_message(&bob_provider, &after_tamper_message)
+                .map_err(js_error_to_string)
+                .unwrap(),
+            group_id,
+            alice_group.epoch(),
+            0,
+            &alice.account_public_key,
+            alice.keypair.public(),
+            b"next generation remains live",
+        );
+
+        let malformed_before = bob_provider.serialize_state();
+        assert_eq!(
+            bob_group
+                .receive_application_message_recovery(&bob_provider, &[1, 2, 3])
+                .unwrap_err(),
+            "phase-b2 receive: malformed MLSMessage"
+        );
+        assert_eq!(malformed_before, bob_provider.serialize_state());
     }
 
     #[cfg(feature = "extensions-draft")]
