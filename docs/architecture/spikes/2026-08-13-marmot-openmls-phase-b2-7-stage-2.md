@@ -64,6 +64,12 @@ SHA-256
 `84fc77b3394fff5d48027dce3fe55c29aa339507bf9bd140f9c9966a60ba4061`.
 Two new clean external builds matched each other and every installed file.
 
+The isolated B2.7 durable runtime stamp records the installed candidate WASM
+digest `ed5e740d...`. It deliberately overrides the inherited B2.3/B2.2 writer
+digest, so a B2.7 record states the artifact that actually performed its MLS
+operation rather than merely remaining internally self-consistent with an older
+writer tuple.
+
 The B2.2 writer is admitted only as the named exact tuple recorded in
 `MLS_BUILD_INFO`. The immutable synthetic fixture restores with the candidate,
 decrypts its reference ciphertext and creates a reply. No generic or partial
@@ -154,18 +160,34 @@ The root invocation also reported the documented relay-test self-skips because
 no relay was running at `ws://localhost:17777`. The changed paths do not depend
 on relay behavior. These skips are not counted as B2.7 evidence.
 
-Exact-head CI, the fresh Fable 5 source review and independent human review are
-pending and cannot be described as green in this candidate report.
+Post-correction exact-head CI, focused reviewer re-verification and independent
+human review are external gate evidence; this candidate report does not presume
+or describe them as green.
 
 ## Independent review
 
-Fable 5 reviewed the complete Stage 2 contract before implementation. A fresh
-clean read-only exact-source review is required after the final source head and
-all local gates are green. Claude Opus does not review this task. Agent review
-is evidence only and cannot satisfy the independent human gate.
+Fable 5 reviewed the complete Stage 2 contract before implementation and then
+performed a fresh clean read-only exact-source review of source head
+`8f203e9752e4e9255f8dab0999a3730ab71e3611`, tree
+`2975a3c1710c8eb211f3a5e3b0574ebed057b189`, in Claude Code session
+`d51cd29e-0d4f-4447-9a09-252bc5c351b4`. The external report is 31,653 bytes,
+SHA-256 `10ef0e47713c1eb5f9b6e14360601a0861cd8851c01de79d660c2d528d5b593f`,
+and its verdict is `APPROVE WITH NON-BLOCKING NOTES`.
 
-Final reviewer session, report digest, exact head and disposition will be added
-after that review without changing the technical claims above.
+The reviewer found no exploitable security, integrity, attribution, durability,
+compatibility, concurrency or parser defect. Its LOW-1 note identified that the
+B2.7 runtime stamp inherited the superseded B2.2 WASM digest. The implementation
+now overrides that stamp with the installed B2.7 digest, and the existing
+72-test B2.7 suite pins it without adding or weakening a test. LOW-2 concerned
+only stale Draft-PR metadata, which is updated separately without changing the
+reviewed tree. The correction requires focused re-verification by the same
+reviewer on its exact source head; Claude Opus does not review this task.
+
+The Fable environment could not execute shell commands because its nested-user
+sandbox failed closed. The review therefore treated the independently executed
+local and exact-head CI results as external evidence, disclosed that limitation,
+and verified the source, Git trees, scope and completed CI metadata read-only.
+Agent review is evidence only and cannot satisfy the independent human gate.
 
 ## Rollback
 

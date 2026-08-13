@@ -27,6 +27,7 @@ export const B27_DB_PREFIX = 'styx-b2-7-poc-v1-';
 export const B27_MARMOT_REVISION = '4ad4ae21479c3f3fa9950c6fc4556a76941a62e1';
 export const B27_RUNTIME = Object.freeze({
   ...B23_RUNTIME,
+  wasmArtifactSha256: 'ed5e740d9c93aa46aa1afb7b6065e4b5b92be972a8a080ddd0a35091260691bb',
   marmotRevision: B27_MARMOT_REVISION,
 });
 
