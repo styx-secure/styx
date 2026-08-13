@@ -1,0 +1,17 @@
+[package]
+name = "styx-b3-mdk-peer"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "AGPL-3.0-or-later"
+
+[dependencies]
+async-trait = "0.1"
+cgka-engine = { git = "https://github.com/marmot-protocol/mdk.git", rev = "9396adb6aa6b95b521a7979facd5ea7040c07288", features = ["test-conformance-snapshot"] }
+cgka-traits = { git = "https://github.com/marmot-protocol/mdk.git", rev = "9396adb6aa6b95b521a7979facd5ea7040c07288" }
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+storage-sqlite = { git = "https://github.com/marmot-protocol/mdk.git", rev = "9396adb6aa6b95b521a7979facd5ea7040c07288" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
