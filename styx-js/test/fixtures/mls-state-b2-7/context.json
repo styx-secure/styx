@@ -1,0 +1,29 @@
+{
+  "format": "styx-phase-b2-writer-fixture-context",
+  "version": 1,
+  "sourceHead": "a69df78c720bc679840172f68a68327ef603636c",
+  "openMlsRevision": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+  "wasmArtifactSha256": "ed5e740d9c93aa46aa1afb7b6065e4b5b92be972a8a080ddd0a35091260691bb",
+  "ciphersuite": "MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
+  "proofCreatedAt": 1786572000,
+  "groupId": "c3R5eC1iMi03LXdyaXRlci1maXh0dXJlLXYx",
+  "epoch": "1",
+  "groupContextSha256": "rXVPgtbtYKfxygvDSec1YAlSWJ3LzI3dRWxsyw2tTdA=",
+  "verifiedLeafDigest": "ERT7uyZ9c/zJD/WGu6+Rv6O4Xj0isWK2ovp4HK2Hf6c=",
+  "alice": {
+    "accountPublicKey": "eb5mfvncu6xVoGKVzocLBwKb/NstzijZWfKBWxb4F5g=",
+    "leafSignatureKey": "V1z0e81xVmdxetESimG5ydjYyR47kx1adIDje17+6V8=",
+    "identityProof": "eb5mfvncu6xVoGKVzocLBwKb/NstzijZWfKBWxb4F5gAAAAAanzs4IHa/ZTMHih0twDeh3Ily0nlkB93G4/xY9j9kfNhA/Sy1DijD1ZxlAwtQLRTv3SQli/B74HfENnpdhfkzWXTTkY=",
+    "leafIndex": 0
+  },
+  "bob": {
+    "accountPublicKey": "xgR/lEHtfW0wRUBulcB82Fx3jkuM7zynq6wJuVxwnuU=",
+    "leafSignatureKey": "QZESQ53DVRUfv1TqKEjMnLlcVQRKFpSdf+5i8w4N4oE=",
+    "identityProof": "xgR/lEHtfW0wRUBulcB82Fx3jkuM7zynq6wJuVxwnuUAAAAAanzs4AsHXTx77L/UxNHku0Y2cbjfAQLbrZGrE3Hf3w81laIKH1FtV1aDIqnE4psjxJmi/Nwc5zMauAs/mDqik5ki7Vc=",
+    "leafIndex": 1
+  },
+  "referenceCiphertext": "AAEAAhtzdHl4LWIyLTctd3JpdGVyLWZpeHR1cmUtdjEAAAAAAAAAAQEAHK2on9v7I4GIrJa6HW5H9ua9fbKfkW/iamFU7gNAsZekJ2TkksvggthUgTKwzeVU+5GCcua7SBG1HqPDFQd/xu8k00YnPmT3crzveC7hfL0j9U4MH3U3RDO0ckMP843EAweFmPXTy9+DOklaDQqS2gkevgNcMbUpXGBosFz94HIp//cu/3RDwSvVi2FSlbOlHUPL79w0k8lSeKS4XsHfBlYiBZhYDzfu72G7wuIK2Uo058q03gs7Pz0ZJbTLe6pEyAOAyP5JADvwRNNnOTiaWg==",
+  "referencePlaintext": "mls-state-b2-7 reference message — only a compatible restored PhaseB2 session decrypts this",
+  "replyPlaintext": "B2.7 writer fixture restored response",
+  "selfCheck": "restore-reference-decrypt-and-reply-pass"
+}
