@@ -1,0 +1,26 @@
+{
+  "format": "styx-phase-b3-1-writer-fixture-context",
+  "version": 1,
+  "sourceHead": "019da38921deca8b9bb9a4ca6544c827db8ef3ac",
+  "openMlsRevision": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+  "wasmArtifactSha256": "26a41d86d7fd2c9ab4184344e4ff00f5eebb5bc7609ba22e98b12ce903d4a4dd",
+  "ciphersuite": "MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519",
+  "proofCreatedAt": 1786707600,
+  "accountPublicKey": "+TCKAZJYwxBJNE+F+J1SKbUxyEWDb5mwhgHxE7zgNvk=",
+  "leafSignatureKey": "czRwvSxNree9kaTmrV4b7iz1DiXfDgO8x7fwFt/1OFs=",
+  "identityProof": "+TCKAZJYwxBJNE+F+J1SKbUxyEWDb5mwhgHxE7zgNvkAAAAAan7+kCSLHpk4Fpo0HUnaLI4pTPOllVXDYHI0t9Hr6M8w4plvw7/FwJ66Nii8qPrwpcCUBFg7uvxvSNInMdOhAnztKpU=",
+  "framedKeyPackage": "AAEABQABAAEg4LobUHQLvWM7aEG/O0gAFj3cefNOpJ4ElHHp9LIO8j4gvtRDIVyf3T9dOWYnD7+fv4ybstxgB8XPlR2xXKiAy2AgczRwvSxNree9kaTmrV4b7iz1DiXfDgO8x7fwFt/1OFsAASD5MIoBkljDEEk0T4X4nVIptTHIRYNvmbCGAfETvOA2+QIAAQIAAQIABgIACAIAAQEAAAAAan707wAAAABqiD1/QH4ABkB6QHgAAQkIgAGAA4AJgAyACUBo+TCKAZJYwxBJNE+F+J1SKbUxyEWDb5mwhgHxE7zgNvkAAAAAan7+kCSLHpk4Fpo0HUnaLI4pTPOllVXDYHI0t9Hr6M8w4plvw7/FwJ66Nii8qPrwpcCUBFg7uvxvSNInMdOhAnztKpVAQDugJqy4rRyWtSmgW8znXusu6FIv6usHfnvks4twUjMXRBCK6kJ0S2UY+feW8+pc6+uD6CXMlmp6VvzkAOy+UAsAQEDr5ZMRbDtJ46vRCCgjFddY8iWBV9LQGUqy4zcVP9OSH+/CTB8xl2LMwqxXwqHzNt1LvFVwO8WtZL38dHOkdKkI",
+  "framedKeyPackageSha256": "45c37058e95ad78f8c211d5dfa61e523ed3964969fd78ecc2995ef11c8f8e819",
+  "leafComponentIds": [
+    1,
+    32777
+  ],
+  "supportedComponentIds": [
+    32769,
+    32771,
+    32777,
+    32780
+  ],
+  "isLastResort": false,
+  "selfCheck": "restore-identity-and-key-package-round-trip-pass"
+}

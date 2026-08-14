@@ -10,7 +10,10 @@ use openmls::{
         AppDataDictionary, AppDataDictionaryExtension, Extension, ExtensionType, Extensions,
         RequiredCapabilitiesExtension,
     },
-    group::{GroupContext, StagedCommit, PURE_PLAINTEXT_WIRE_FORMAT_POLICY},
+    group::{
+        GroupContext, ProcessedWelcome, StagedCommit, WelcomeError,
+        PURE_PLAINTEXT_WIRE_FORMAT_POLICY,
+    },
     key_packages::Lifetime,
     messages::proposals::{Proposal, ProposalOrRefType, ProposalType},
     prelude::{Capabilities, LeafNode, LeafNodeParameters},
@@ -27,6 +30,7 @@ use openmls_basic_credential::SignatureKeyPair;
 use openmls_rust_crypto::OpenMlsRustCrypto;
 use openmls_traits::{
     crypto::OpenMlsCrypto,
+    storage::StorageProvider as _,
     types::{Ciphersuite, VerifiableCiphersuite},
     OpenMlsProvider,
 };
@@ -103,6 +107,16 @@ const PHASE_B2_MAX_COMPONENTS: usize = 64;
 const PHASE_B2_MAX_GROUP_CONTEXT_BYTES: usize = 1_048_576;
 #[cfg(feature = "extensions-draft")]
 const PHASE_B2_DIGEST_DOMAIN: &[u8; 26] = b"STYX-B2-VERIFIED-LEAVES-v1";
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32_VERIFIED_LEAF_DOMAIN: &[u8] = b"STYX-B32-JOIN-VERIFIED-LEAVES-v1";
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32_PROJECTION_DOMAIN: &[u8] = b"STYX-B32-JOIN-PROJECTION-v1";
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32_PROJECTION_VERSION: u16 = 1;
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32_MAX_WELCOME_BYTES: usize = 1_048_576;
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32_MAX_KEY_PACKAGE_BYTES: usize = 16_384;
 
 thread_local! {
     static NEXT_PROVIDER_INSTANCE_ID: Cell<u32> = const { Cell::new(1) };
@@ -1981,6 +1995,67 @@ struct PhaseB2GroupContext {
     lifecycle: Vec<u8>,
 }
 
+/// Canonical, immutable description of one fully validated B3.2 join candidate.
+///
+/// Provider snapshot digests are deliberately instance-scoped commitments to
+/// exact bytes within this operation. They are not canonical logical-state
+/// identities across unrelated restores (the storage map has no stable order).
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+#[derive(Clone, PartialEq, Eq)]
+pub struct PhaseB32JoinProjection {
+    group_id: Vec<u8>,
+    epoch: u64,
+    ciphersuite_id: u16,
+    members: Vec<PhaseB2Member>,
+    own_leaf_index: u32,
+    welcome_sender_leaf_index: u32,
+    welcome_sender_identity: Vec<u8>,
+    welcome_sender_signature_key: Vec<u8>,
+    group_context_tls: Vec<u8>,
+    group_context: PhaseB31GroupContext,
+    group_context_sha256: Vec<u8>,
+    verified_leaf_digest: Vec<u8>,
+    welcome_sha256: Vec<u8>,
+    expected_key_package_sha256: Vec<u8>,
+    predecessor_state_sha256: Vec<u8>,
+    candidate_state_sha256: Vec<u8>,
+    projection_sha256: Vec<u8>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[derive(Clone)]
+struct PhaseB32WelcomeBinding {
+    provider_instance_id: u32,
+    provider_restore_generation: u32,
+    expected_author: Vec<u8>,
+    predecessor_state_sha256: Vec<u8>,
+    welcome_sha256: Vec<u8>,
+    expected_key_package_sha256: Vec<u8>,
+    candidate_state_sha256: Vec<u8>,
+    projection_sha256: Vec<u8>,
+}
+
+/// One-use capability holding exact candidate provider bytes. It never owns or
+/// mutates the predecessor provider.
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB32PendingWelcome {
+    binding: Option<PhaseB32WelcomeBinding>,
+    candidate_state: Vec<u8>,
+    projection: PhaseB32JoinProjection,
+}
+
+/// Load-only B3.2 group. The experiment intentionally exposes no create, join,
+/// message, Commit or update operation through this type.
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB32Group {
+    mls_group: MlsGroup,
+    provider_instance_id: u32,
+    provider_restore_generation: u32,
+}
+
 #[cfg(feature = "extensions-draft")]
 #[derive(Clone, PartialEq, Eq)]
 struct PhaseB2ProposalProjection {
@@ -2100,6 +2175,265 @@ fn phase_b2_verified_leaf_digest(
     crypto
         .hash(PROBE_CIPHERSUITE.hash_algorithm(), &payload)
         .map_err(|_| JsError::new("phase-b2 digest: SHA-256 failed"))
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32_sha256(
+    crypto: &impl OpenMlsCrypto,
+    bytes: &[u8],
+    error: &'static str,
+) -> Result<Vec<u8>, JsError> {
+    crypto
+        .hash(PROBE_CIPHERSUITE.hash_algorithm(), bytes)
+        .map_err(|_| JsError::new(error))
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32_member_at(group: &MlsGroup, leaf_index: u32) -> Result<PhaseB2Member, JsError> {
+    let index = openmls::prelude::LeafNodeIndex::new(leaf_index);
+    let member = group
+        .members()
+        .find(|member| member.index == index)
+        .ok_or_else(|| JsError::new("PHASE_B32_MEMBER_ABSENT"))?;
+    let leaf = group
+        .public_group()
+        .leaf(index)
+        .ok_or_else(|| JsError::new("PHASE_B32_MEMBER_LEAF_ABSENT"))?;
+    let supported_component_ids = phase_b31_validate_leaf(leaf)
+        .map_err(|_| JsError::new("PHASE_B32_MEMBER_PROFILE_INVALID"))?;
+    let dictionary = leaf
+        .extensions()
+        .app_data_dictionary()
+        .ok_or_else(|| JsError::new("PHASE_B32_MEMBER_PROFILE_INVALID"))?
+        .dictionary();
+    let proof = dictionary
+        .get(&ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID)
+        .ok_or_else(|| JsError::new("PHASE_B32_MEMBER_PROOF_INVALID"))?;
+    let credential_identity = leaf.credential().serialized_content().to_vec();
+    let leaf_signature_key = leaf.signature_key().as_slice().to_vec();
+    if credential_identity != member.credential.serialized_content()
+        || leaf_signature_key != member.signature_key
+    {
+        return Err(JsError::new("PHASE_B32_MEMBER_METADATA_MISMATCH"));
+    }
+    Ok(PhaseB2Member {
+        leaf_index,
+        credential_identity,
+        leaf_signature_key,
+        identity_proof: proof.to_vec(),
+        component_ids: dictionary.entries().map(|entry| entry.id()).collect(),
+        supported_component_ids,
+    })
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32_group_state(
+    group: &MlsGroup,
+) -> Result<(Vec<PhaseB2Member>, Vec<u8>, PhaseB31GroupContext), JsError> {
+    if group.ciphersuite() != PROBE_CIPHERSUITE {
+        return Err(JsError::new("PHASE_B32_CIPHERSUITE_MISMATCH"));
+    }
+    if !group.is_active() || group.own_leaf_node().is_none() {
+        return Err(JsError::new("PHASE_B32_GROUP_NOT_ACTIVE"));
+    }
+    if group.group_id().as_slice().is_empty() || group.group_id().as_slice().len() > 64 {
+        return Err(JsError::new("PHASE_B32_GROUP_ID_INVALID"));
+    }
+    let count = group.members().count();
+    if count == 0 || count > PHASE_B2_MAX_MEMBERS {
+        return Err(JsError::new("PHASE_B32_MEMBER_LIMIT"));
+    }
+    let mut members = Vec::with_capacity(count);
+    for member in group.members() {
+        members.push(phase_b32_member_at(group, member.index.u32())?);
+    }
+    members.sort_by_key(|member| member.leaf_index);
+    let identities = members
+        .iter()
+        .map(|member| member.credential_identity.clone())
+        .collect::<Vec<_>>();
+    let context = group.public_group().group_context();
+    if context.tls_serialized_len() > PHASE_B2_MAX_GROUP_CONTEXT_BYTES {
+        return Err(JsError::new("PHASE_B32_GROUP_CONTEXT_LIMIT"));
+    }
+    let context_tls = context
+        .tls_serialize_detached()
+        .map_err(|_| JsError::new("PHASE_B32_GROUP_CONTEXT_SERIALIZATION_FAILED"))?;
+    let context_projection =
+        phase_b31_validate_group_context_extensions(context.extensions(), &identities)
+            .map_err(|_| JsError::new("PHASE_B32_GROUP_CONTEXT_INVALID"))?;
+    Ok((members, context_tls, context_projection))
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32_verified_leaf_digest(
+    crypto: &impl OpenMlsCrypto,
+    members: &[PhaseB2Member],
+) -> Result<Vec<u8>, JsError> {
+    if members.is_empty() || members.len() > PHASE_B2_MAX_MEMBERS {
+        return Err(JsError::new("PHASE_B32_MEMBER_LIMIT"));
+    }
+    let mut payload = Vec::new();
+    payload.extend_from_slice(PHASE_B32_VERIFIED_LEAF_DOMAIN);
+    payload.push(0);
+    payload.extend_from_slice(&(members.len() as u32).to_be_bytes());
+    for member in members {
+        if member.credential_identity.len() != 32
+            || member.leaf_signature_key.len() != 32
+            || member.identity_proof.len() != ACCOUNT_IDENTITY_PROOF_V2_LENGTH
+        {
+            return Err(JsError::new("PHASE_B32_MEMBER_PROOF_INVALID"));
+        }
+        payload.extend_from_slice(&member.leaf_index.to_be_bytes());
+        payload.extend_from_slice(&member.credential_identity);
+        payload.extend_from_slice(&member.leaf_signature_key);
+        payload.extend_from_slice(&member.identity_proof);
+    }
+    phase_b32_sha256(
+        crypto,
+        &payload,
+        "PHASE_B32_VERIFIED_LEAF_DIGEST_FAILED",
+    )
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32_append_bytes(output: &mut Vec<u8>, value: &[u8]) -> Result<(), JsError> {
+    let len = u32::try_from(value.len()).map_err(|_| JsError::new("PHASE_B32_PROJECTION_LIMIT"))?;
+    output.extend_from_slice(&len.to_be_bytes());
+    output.extend_from_slice(value);
+    Ok(())
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32_append_components(
+    output: &mut Vec<u8>,
+    components: &[u16],
+) -> Result<(), JsError> {
+    let len = u32::try_from(components.len())
+        .map_err(|_| JsError::new("PHASE_B32_PROJECTION_LIMIT"))?;
+    output.extend_from_slice(&len.to_be_bytes());
+    for component in components {
+        output.extend_from_slice(&component.to_be_bytes());
+    }
+    Ok(())
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32_projection_payload(
+    projection: &PhaseB32JoinProjection,
+) -> Result<Vec<u8>, JsError> {
+    let mut output = Vec::new();
+    output.extend_from_slice(PHASE_B32_PROJECTION_DOMAIN);
+    output.push(0);
+    output.extend_from_slice(&PHASE_B32_PROJECTION_VERSION.to_be_bytes());
+    phase_b32_append_bytes(&mut output, &projection.group_id)?;
+    output.extend_from_slice(&projection.epoch.to_be_bytes());
+    output.extend_from_slice(&projection.ciphersuite_id.to_be_bytes());
+    output.extend_from_slice(&(projection.members.len() as u32).to_be_bytes());
+    for member in &projection.members {
+        output.extend_from_slice(&member.leaf_index.to_be_bytes());
+        phase_b32_append_bytes(&mut output, &member.credential_identity)?;
+        phase_b32_append_bytes(&mut output, &member.leaf_signature_key)?;
+        phase_b32_append_bytes(&mut output, &member.identity_proof)?;
+        phase_b32_append_components(&mut output, &member.component_ids)?;
+        phase_b32_append_components(&mut output, &member.supported_component_ids)?;
+    }
+    output.extend_from_slice(&projection.own_leaf_index.to_be_bytes());
+    output.extend_from_slice(&projection.welcome_sender_leaf_index.to_be_bytes());
+    phase_b32_append_bytes(&mut output, &projection.welcome_sender_identity)?;
+    phase_b32_append_bytes(&mut output, &projection.welcome_sender_signature_key)?;
+    phase_b32_append_components(
+        &mut output,
+        &projection.group_context.required_components,
+    )?;
+    phase_b32_append_bytes(&mut output, &projection.group_context.group_profile.name)?;
+    phase_b32_append_bytes(
+        &mut output,
+        &projection.group_context.group_profile.description,
+    )?;
+    phase_b32_append_bytes(
+        &mut output,
+        &projection.group_context.administrator_policy,
+    )?;
+    phase_b32_append_bytes(&mut output, &projection.group_context.lifecycle)?;
+    for digest in [
+        &projection.group_context_sha256,
+        &projection.verified_leaf_digest,
+        &projection.welcome_sha256,
+        &projection.expected_key_package_sha256,
+        &projection.predecessor_state_sha256,
+        &projection.candidate_state_sha256,
+    ] {
+        if digest.len() != 32 {
+            return Err(JsError::new("PHASE_B32_PROJECTION_DIGEST_INVALID"));
+        }
+        output.extend_from_slice(digest);
+    }
+    Ok(output)
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32_projection_from_group(
+    crypto: &impl OpenMlsCrypto,
+    group: &MlsGroup,
+    welcome_sender_leaf_index: u32,
+    expected_author: &[u8],
+    welcome_sha256: &[u8],
+    expected_key_package_sha256: &[u8],
+    predecessor_state_sha256: &[u8],
+    candidate_state_sha256: &[u8],
+) -> Result<PhaseB32JoinProjection, JsError> {
+    if expected_author.len() != 32 {
+        return Err(JsError::new("PHASE_B32_EXPECTED_AUTHOR_INVALID"));
+    }
+    let (members, group_context_tls, group_context) = phase_b32_group_state(group)?;
+    let own_leaf_index = group.own_leaf_index().u32();
+    let sender = members
+        .iter()
+        .find(|member| member.leaf_index == welcome_sender_leaf_index)
+        .ok_or_else(|| JsError::new("PHASE_B32_WELCOME_AUTHOR_NOT_MEMBER"))?;
+    if sender.credential_identity != expected_author {
+        return Err(JsError::new("PHASE_B32_WELCOME_AUTHOR_MISMATCH"));
+    }
+    let admins = phase_b2_decode_admin_policy_recovery(&group_context.administrator_policy)
+        .map_err(|_| JsError::new("PHASE_B32_ADMIN_POLICY_INVALID"))?;
+    if !admins.iter().any(|admin| admin == expected_author) {
+        return Err(JsError::new("PHASE_B32_WELCOME_AUTHOR_NOT_ADMIN"));
+    }
+    let welcome_sender_identity = sender.credential_identity.clone();
+    let welcome_sender_signature_key = sender.leaf_signature_key.clone();
+    let group_context_sha256 = phase_b32_sha256(
+        crypto,
+        &group_context_tls,
+        "PHASE_B32_GROUP_CONTEXT_DIGEST_FAILED",
+    )?;
+    let verified_leaf_digest = phase_b32_verified_leaf_digest(crypto, &members)?;
+    let mut projection = PhaseB32JoinProjection {
+        group_id: group.group_id().to_vec(),
+        epoch: group.epoch().as_u64(),
+        ciphersuite_id: group.ciphersuite().into(),
+        members,
+        own_leaf_index,
+        welcome_sender_leaf_index,
+        welcome_sender_identity,
+        welcome_sender_signature_key,
+        group_context_tls,
+        group_context,
+        group_context_sha256,
+        verified_leaf_digest,
+        welcome_sha256: welcome_sha256.to_vec(),
+        expected_key_package_sha256: expected_key_package_sha256.to_vec(),
+        predecessor_state_sha256: predecessor_state_sha256.to_vec(),
+        candidate_state_sha256: candidate_state_sha256.to_vec(),
+        projection_sha256: Vec::new(),
+    };
+    let payload = phase_b32_projection_payload(&projection)?;
+    projection.projection_sha256 = phase_b32_sha256(
+        crypto,
+        &payload,
+        "PHASE_B32_PROJECTION_DIGEST_FAILED",
+    )?;
+    Ok(projection)
 }
 
 #[cfg(feature = "extensions-draft")]
@@ -2567,6 +2901,112 @@ impl PhaseB2CommitProjection {
         self.candidate_members
             .get(index)
             .ok_or_else(|| JsError::new("phase-b2 projection: candidate member index out of range"))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+impl PhaseB32JoinProjection {
+    fn member(&self, index: usize) -> Result<&PhaseB2Member, JsError> {
+        self.members
+            .get(index)
+            .ok_or_else(|| JsError::new("PHASE_B32_PROJECTION_MEMBER_INDEX_INVALID"))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB32JoinProjection {
+    pub fn domain(&self) -> String {
+        "STYX-B32-JOIN-PROJECTION-v1".into()
+    }
+    pub fn version(&self) -> u16 {
+        PHASE_B32_PROJECTION_VERSION
+    }
+    pub fn group_id(&self) -> Vec<u8> {
+        self.group_id.clone()
+    }
+    pub fn epoch(&self) -> u64 {
+        self.epoch
+    }
+    pub fn ciphersuite_id(&self) -> u16 {
+        self.ciphersuite_id
+    }
+    pub fn member_count(&self) -> u32 {
+        self.members.len() as u32
+    }
+    pub fn member_leaf_index(&self, index: usize) -> Result<u32, JsError> {
+        self.member(index).map(|member| member.leaf_index)
+    }
+    pub fn member_identity(&self, index: usize) -> Result<Vec<u8>, JsError> {
+        self.member(index)
+            .map(|member| member.credential_identity.clone())
+    }
+    pub fn member_signature_key(&self, index: usize) -> Result<Vec<u8>, JsError> {
+        self.member(index)
+            .map(|member| member.leaf_signature_key.clone())
+    }
+    pub fn member_identity_proof(&self, index: usize) -> Result<Vec<u8>, JsError> {
+        self.member(index)
+            .map(|member| member.identity_proof.clone())
+    }
+    pub fn member_component_ids(&self, index: usize) -> Result<Vec<u16>, JsError> {
+        self.member(index)
+            .map(|member| member.component_ids.clone())
+    }
+    pub fn member_supported_component_ids(&self, index: usize) -> Result<Vec<u16>, JsError> {
+        self.member(index)
+            .map(|member| member.supported_component_ids.clone())
+    }
+    pub fn own_leaf_index(&self) -> u32 {
+        self.own_leaf_index
+    }
+    pub fn welcome_sender_leaf_index(&self) -> u32 {
+        self.welcome_sender_leaf_index
+    }
+    pub fn welcome_sender_identity(&self) -> Vec<u8> {
+        self.welcome_sender_identity.clone()
+    }
+    pub fn welcome_sender_signature_key(&self) -> Vec<u8> {
+        self.welcome_sender_signature_key.clone()
+    }
+    pub fn group_context_tls(&self) -> Vec<u8> {
+        self.group_context_tls.clone()
+    }
+    pub fn required_component_ids(&self) -> Vec<u16> {
+        self.group_context.required_components.clone()
+    }
+    pub fn group_profile_name(&self) -> Vec<u8> {
+        self.group_context.group_profile.name.clone()
+    }
+    pub fn group_profile_description(&self) -> Vec<u8> {
+        self.group_context.group_profile.description.clone()
+    }
+    pub fn administrator_policy(&self) -> Vec<u8> {
+        self.group_context.administrator_policy.clone()
+    }
+    pub fn lifecycle(&self) -> Vec<u8> {
+        self.group_context.lifecycle.clone()
+    }
+    pub fn group_context_sha256(&self) -> Vec<u8> {
+        self.group_context_sha256.clone()
+    }
+    pub fn verified_leaf_digest(&self) -> Vec<u8> {
+        self.verified_leaf_digest.clone()
+    }
+    pub fn welcome_sha256(&self) -> Vec<u8> {
+        self.welcome_sha256.clone()
+    }
+    pub fn expected_key_package_sha256(&self) -> Vec<u8> {
+        self.expected_key_package_sha256.clone()
+    }
+    pub fn predecessor_state_sha256(&self) -> Vec<u8> {
+        self.predecessor_state_sha256.clone()
+    }
+    pub fn candidate_state_sha256(&self) -> Vec<u8> {
+        self.candidate_state_sha256.clone()
+    }
+    pub fn projection_sha256(&self) -> Vec<u8> {
+        self.projection_sha256.clone()
     }
 }
 
@@ -3446,6 +3886,375 @@ impl PhaseB2Group {
         self.validate_provider(provider)?;
         self.receive_application_message_recovery(provider, bytes)
             .map_err(JsError::new)
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32_map_welcome_error<E>(error: WelcomeError<E>) -> JsError {
+    let code = match error {
+        WelcomeError::MissingRatchetTree => "PHASE_B32_MISSING_EMBEDDED_RATCHET_TREE",
+        WelcomeError::NoMatchingKeyPackage
+        | WelcomeError::PrivateInitKeyNotFound
+        | WelcomeError::NoMatchingEncryptionKey
+        | WelcomeError::JoinerSecretNotFound => "PHASE_B32_KEY_PACKAGE_NOT_AVAILABLE",
+        WelcomeError::CiphersuiteMismatch | WelcomeError::UnsupportedMlsVersion => {
+            "PHASE_B32_CIPHERSUITE_MISMATCH"
+        }
+        WelcomeError::GroupAlreadyExists => "PHASE_B32_GROUP_ID_COLLISION",
+        WelcomeError::InvalidGroupInfoSignature | WelcomeError::UnknownSender => {
+            "PHASE_B32_WELCOME_AUTHOR_INVALID"
+        }
+        WelcomeError::UnsupportedCapability | WelcomeError::UnsupportedExtensions => {
+            "PHASE_B32_GROUP_PROFILE_UNSUPPORTED"
+        }
+        _ => "PHASE_B32_WELCOME_REJECTED",
+    };
+    JsError::new(code)
+}
+
+#[cfg(feature = "extensions-draft")]
+impl PhaseB32PendingWelcome {
+    fn validate_binding(
+        provider: &Provider,
+        binding: &PhaseB32WelcomeBinding,
+    ) -> Result<(), JsError> {
+        if provider.instance_id != binding.provider_instance_id {
+            return Err(JsError::new("PHASE_B32_WRONG_PROVIDER"));
+        }
+        if provider.restore_generation.get() != binding.provider_restore_generation {
+            return Err(JsError::new("PHASE_B32_PROVIDER_RESTORED"));
+        }
+        let predecessor_digest = phase_b32_sha256(
+            provider.as_ref().crypto(),
+            &provider.serialize_state(),
+            "PHASE_B32_PREDECESSOR_DIGEST_FAILED",
+        )?;
+        if predecessor_digest != binding.predecessor_state_sha256 {
+            return Err(JsError::new("PHASE_B32_PREDECESSOR_CHANGED"));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB32PendingWelcome {
+    pub fn prepare(
+        provider: &Provider,
+        identity: &PhaseB2Identity,
+        welcome_bytes: &[u8],
+        expected_key_package_bytes: &[u8],
+        expected_author: &[u8],
+    ) -> Result<PhaseB32PendingWelcome, JsError> {
+        if welcome_bytes.is_empty() || welcome_bytes.len() > PHASE_B32_MAX_WELCOME_BYTES {
+            return Err(JsError::new("PHASE_B32_WELCOME_SIZE_INVALID"));
+        }
+        if expected_key_package_bytes.is_empty()
+            || expected_key_package_bytes.len() > PHASE_B32_MAX_KEY_PACKAGE_BYTES
+        {
+            return Err(JsError::new("PHASE_B32_KEY_PACKAGE_SIZE_INVALID"));
+        }
+        if expected_author.len() != 32 {
+            return Err(JsError::new("PHASE_B32_EXPECTED_AUTHOR_INVALID"));
+        }
+
+        let expected_key_package =
+            PhaseB31KeyPackage::from_framed_bytes(expected_key_package_bytes)
+                .map_err(|_| JsError::new("PHASE_B32_EXPECTED_KEY_PACKAGE_INVALID"))?;
+        if expected_key_package.0.last_resort() {
+            return Err(JsError::new("PHASE_B32_LAST_RESORT_KEY_PACKAGE_REJECTED"));
+        }
+        if expected_key_package.credential_identity() != identity.account_public_key
+            || expected_key_package.leaf_signature_key() != identity.keypair.public()
+        {
+            return Err(JsError::new("PHASE_B32_OWN_IDENTITY_MISMATCH"));
+        }
+
+        let message = MlsMessageIn::tls_deserialize_exact(welcome_bytes)
+            .map_err(|_| JsError::new("PHASE_B32_WELCOME_FRAMING_INVALID"))?;
+        let welcome = match message.extract() {
+            MlsMessageBodyIn::Welcome(welcome) => welcome,
+            _ => return Err(JsError::new("PHASE_B32_NOT_A_WELCOME")),
+        };
+        if welcome.ciphersuite() != PROBE_CIPHERSUITE {
+            return Err(JsError::new("PHASE_B32_CIPHERSUITE_MISMATCH"));
+        }
+
+        let predecessor_state = provider.serialize_state();
+        let predecessor_state_sha256 = phase_b32_sha256(
+            provider.as_ref().crypto(),
+            &predecessor_state,
+            "PHASE_B32_PREDECESSOR_DIGEST_FAILED",
+        )?;
+        let welcome_sha256 = phase_b32_sha256(
+            provider.as_ref().crypto(),
+            welcome_bytes,
+            "PHASE_B32_WELCOME_DIGEST_FAILED",
+        )?;
+        let expected_key_package_sha256 = phase_b32_sha256(
+            provider.as_ref().crypto(),
+            expected_key_package_bytes,
+            "PHASE_B32_KEY_PACKAGE_DIGEST_FAILED",
+        )?;
+
+        // Every potentially destructive OpenMLS operation below is confined to
+        // this serialize/restore clone. The predecessor provider is never passed
+        // to Welcome processing.
+        let clone = Provider::new();
+        clone.restore_state(&predecessor_state)?;
+        let expected_key_package_ref = expected_key_package
+            .0
+            .hash_ref(clone.as_ref().crypto())
+            .map_err(|_| JsError::new("PHASE_B32_KEY_PACKAGE_REFERENCE_FAILED"))?;
+        if !welcome
+            .secrets()
+            .iter()
+            .any(|secret| secret.new_member() == expected_key_package_ref)
+        {
+            return Err(JsError::new("PHASE_B32_KEY_PACKAGE_MISMATCH"));
+        }
+        let stored_key_package: openmls::key_packages::KeyPackageBundle = clone
+            .inner
+            .storage()
+            .key_package(&expected_key_package_ref)
+            .map_err(|_| JsError::new("PHASE_B32_KEY_PACKAGE_STORAGE_FAILED"))?
+            .ok_or_else(|| JsError::new("PHASE_B32_KEY_PACKAGE_NOT_AVAILABLE"))?;
+        phase_b31_inspect_key_package(stored_key_package.key_package())
+            .map_err(|_| JsError::new("PHASE_B32_STORED_KEY_PACKAGE_INVALID"))?;
+        let stored_key_package_bytes = MlsMessageOut::from(stored_key_package.key_package().clone())
+            .tls_serialize_detached()
+            .map_err(|_| JsError::new("PHASE_B32_KEY_PACKAGE_SERIALIZATION_FAILED"))?;
+        if stored_key_package_bytes != expected_key_package_bytes {
+            return Err(JsError::new("PHASE_B32_KEY_PACKAGE_MISMATCH"));
+        }
+        let config = MlsGroupJoinConfig::builder()
+            .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+            .build();
+        let processed = ProcessedWelcome::new_from_welcome(&clone.inner, &config, welcome)
+            .map_err(phase_b32_map_welcome_error)?;
+        let remaining_expected_key_package: Option<openmls::key_packages::KeyPackageBundle> = clone
+            .inner
+            .storage()
+            .key_package(&expected_key_package_ref)
+            .map_err(|_| JsError::new("PHASE_B32_KEY_PACKAGE_STORAGE_FAILED"))?;
+        if remaining_expected_key_package.is_some() {
+            return Err(JsError::new("PHASE_B32_KEY_PACKAGE_NOT_CONSUMED"));
+        }
+
+        // `None` is intentional and load-bearing: only the RatchetTree inside
+        // encrypted GroupInfo is admitted by the B3.2 path.
+        let staged = processed
+            .into_staged_welcome(&clone.inner, None)
+            .map_err(phase_b32_map_welcome_error)?;
+        let welcome_sender_leaf_index = staged.welcome_sender_index().u32();
+        let staged_sender = staged
+            .welcome_sender()
+            .map_err(|_| JsError::new("PHASE_B32_WELCOME_AUTHOR_INVALID"))?;
+        phase_b31_validate_leaf(staged_sender)
+            .map_err(|_| JsError::new("PHASE_B32_WELCOME_AUTHOR_PROFILE_INVALID"))?;
+        if staged_sender.credential().serialized_content() != expected_author {
+            return Err(JsError::new("PHASE_B32_WELCOME_AUTHOR_MISMATCH"));
+        }
+        let group_id = staged.group_context().group_id().to_vec();
+        if group_id.is_empty() || group_id.len() > 64 {
+            return Err(JsError::new("PHASE_B32_GROUP_ID_INVALID"));
+        }
+        if MlsGroup::load(provider.inner.storage(), &GroupId::from_slice(&group_id))?.is_some() {
+            return Err(JsError::new("PHASE_B32_GROUP_ID_COLLISION"));
+        }
+
+        let group = staged
+            .into_group(&clone.inner)
+            .map_err(phase_b32_map_welcome_error)?;
+        let own = group
+            .own_leaf_node()
+            .ok_or_else(|| JsError::new("PHASE_B32_OWN_LEAF_ABSENT"))?;
+        if own.credential().serialized_content() != identity.account_public_key
+            || own.signature_key().as_slice() != identity.keypair.public()
+        {
+            return Err(JsError::new("PHASE_B32_OWN_IDENTITY_MISMATCH"));
+        }
+        let candidate_state = clone.serialize_state();
+        let candidate_state_sha256 = phase_b32_sha256(
+            provider.as_ref().crypto(),
+            &candidate_state,
+            "PHASE_B32_CANDIDATE_DIGEST_FAILED",
+        )?;
+        let projection = phase_b32_projection_from_group(
+            provider.as_ref().crypto(),
+            &group,
+            welcome_sender_leaf_index,
+            expected_author,
+            &welcome_sha256,
+            &expected_key_package_sha256,
+            &predecessor_state_sha256,
+            &candidate_state_sha256,
+        )?;
+
+        // A candidate that cannot be loaded from its exact released bytes is
+        // rejected before it can become the durable journal head.
+        let scratch = Provider::new();
+        scratch.restore_state(&candidate_state)?;
+        let scratch_group = MlsGroup::load(
+            scratch.inner.storage(),
+            &GroupId::from_slice(&projection.group_id),
+        )?
+        .ok_or_else(|| JsError::new("PHASE_B32_CANDIDATE_RESTORE_FAILED"))?;
+        let scratch_projection = phase_b32_projection_from_group(
+            scratch.as_ref().crypto(),
+            &scratch_group,
+            welcome_sender_leaf_index,
+            expected_author,
+            &welcome_sha256,
+            &expected_key_package_sha256,
+            &predecessor_state_sha256,
+            &candidate_state_sha256,
+        )?;
+        if scratch_projection != projection {
+            return Err(JsError::new("PHASE_B32_CANDIDATE_PROJECTION_MISMATCH"));
+        }
+        if provider.serialize_state() != predecessor_state {
+            return Err(JsError::new("PHASE_B32_LIVE_PROVIDER_MUTATED"));
+        }
+
+        let binding = PhaseB32WelcomeBinding {
+            provider_instance_id: provider.instance_id,
+            provider_restore_generation: provider.restore_generation.get(),
+            expected_author: expected_author.to_vec(),
+            predecessor_state_sha256,
+            welcome_sha256,
+            expected_key_package_sha256,
+            candidate_state_sha256,
+            projection_sha256: projection.projection_sha256.clone(),
+        };
+        Ok(Self {
+            binding: Some(binding),
+            candidate_state,
+            projection,
+        })
+    }
+
+    pub fn projection(&self) -> PhaseB32JoinProjection {
+        self.projection.clone()
+    }
+
+    pub fn is_consumed(&self) -> bool {
+        self.binding.is_none()
+    }
+
+    pub fn release_candidate_state(
+        &mut self,
+        provider: &Provider,
+        projection_sha256: &[u8],
+        expected_author: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        let binding = self
+            .binding
+            .as_ref()
+            .ok_or_else(|| JsError::new("PHASE_B32_HANDLE_CONSUMED"))?;
+        Self::validate_binding(provider, binding)?;
+        if expected_author != binding.expected_author {
+            return Err(JsError::new("PHASE_B32_WELCOME_AUTHOR_MISMATCH"));
+        }
+        if projection_sha256.len() != 32 || projection_sha256 != binding.projection_sha256 {
+            return Err(JsError::new("PHASE_B32_PROJECTION_DIGEST_MISMATCH"));
+        }
+        if self.projection.welcome_sha256 != binding.welcome_sha256
+            || self.projection.expected_key_package_sha256
+                != binding.expected_key_package_sha256
+            || self.projection.candidate_state_sha256 != binding.candidate_state_sha256
+            || self.projection.projection_sha256 != binding.projection_sha256
+        {
+            return Err(JsError::new("PHASE_B32_HANDLE_BINDING_MISMATCH"));
+        }
+        let candidate_digest = phase_b32_sha256(
+            provider.as_ref().crypto(),
+            &self.candidate_state,
+            "PHASE_B32_CANDIDATE_DIGEST_FAILED",
+        )?;
+        if candidate_digest != binding.candidate_state_sha256 {
+            return Err(JsError::new("PHASE_B32_CANDIDATE_DIGEST_MISMATCH"));
+        }
+        self.binding.take();
+        Ok(std::mem::take(&mut self.candidate_state))
+    }
+
+    pub fn discard(&mut self, provider: &Provider) -> Result<(), JsError> {
+        let binding = self
+            .binding
+            .as_ref()
+            .ok_or_else(|| JsError::new("PHASE_B32_HANDLE_CONSUMED"))?;
+        Self::validate_binding(provider, binding)?;
+        self.binding.take();
+        self.candidate_state.clear();
+        Ok(())
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+impl PhaseB32Group {
+    fn validate_provider(&self, provider: &Provider) -> Result<(), JsError> {
+        if self.provider_instance_id != provider.instance_id {
+            return Err(JsError::new("PHASE_B32_GROUP_WRONG_PROVIDER"));
+        }
+        if self.provider_restore_generation != provider.restore_generation.get() {
+            return Err(JsError::new("PHASE_B32_GROUP_PROVIDER_RESTORED"));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB32Group {
+    pub fn load(provider: &Provider, group_id: &[u8]) -> Result<Option<PhaseB32Group>, JsError> {
+        if group_id.is_empty() || group_id.len() > 64 {
+            return Err(JsError::new("PHASE_B32_GROUP_ID_INVALID"));
+        }
+        let requested = GroupId::from_slice(group_id);
+        let Some(group) = MlsGroup::load(provider.inner.storage(), &requested)? else {
+            return Ok(None);
+        };
+        if group.group_id() != &requested {
+            return Err(JsError::new("PHASE_B32_LOADED_GROUP_ID_MISMATCH"));
+        }
+        phase_b32_group_state(&group)?;
+        Ok(Some(Self {
+            mls_group: group,
+            provider_instance_id: provider.instance_id,
+            provider_restore_generation: provider.restore_generation.get(),
+        }))
+    }
+
+    pub fn group_id(&self) -> Vec<u8> {
+        self.mls_group.group_id().to_vec()
+    }
+
+    pub fn epoch(&self) -> u64 {
+        self.mls_group.epoch().as_u64()
+    }
+
+    pub fn projection(
+        &self,
+        provider: &Provider,
+        welcome_sender_leaf_index: u32,
+        expected_author: &[u8],
+        welcome_sha256: &[u8],
+        expected_key_package_sha256: &[u8],
+        predecessor_state_sha256: &[u8],
+        candidate_state_sha256: &[u8],
+    ) -> Result<PhaseB32JoinProjection, JsError> {
+        self.validate_provider(provider)?;
+        phase_b32_projection_from_group(
+            provider.as_ref().crypto(),
+            &self.mls_group,
+            welcome_sender_leaf_index,
+            expected_author,
+            welcome_sha256,
+            expected_key_package_sha256,
+            predecessor_state_sha256,
+            candidate_state_sha256,
+        )
     }
 }
 
@@ -4933,6 +5742,279 @@ mod tests {
         .chain([profile_description.len() as u8])
         .chain(profile_description.iter().copied())
         .collect::<Vec<_>>());
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    struct PhaseB32NativeFixture {
+        joiner_provider: Provider,
+        joiner: PhaseB2Identity,
+        joiner_proof: Vec<u8>,
+        group_id: Vec<u8>,
+        expected_author: Vec<u8>,
+        key_package_bytes: Vec<u8>,
+        welcome_bytes: Vec<u8>,
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32_native_fixture(
+        group_id: &[u8],
+        founder_byte: u8,
+        joiner_byte: u8,
+        embed_ratchet_tree: bool,
+    ) -> PhaseB32NativeFixture {
+        let mut founder_provider = Provider::new();
+        let joiner_provider = Provider::new();
+        let (founder, founder_proof, _) =
+            phase_b2_identity(&founder_provider, founder_byte);
+        let (joiner, joiner_proof, _) = phase_b2_identity(&joiner_provider, joiner_byte);
+        let joiner_key_package = joiner
+            .b3_1_key_package(&joiner_provider, &joiner_proof)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let key_package_bytes = joiner_key_package.to_framed_bytes().unwrap();
+
+        let mut founder_group = MlsGroup::builder()
+            .ciphersuite(PROBE_CIPHERSUITE)
+            .with_group_id(GroupId::from_slice(group_id))
+            .with_wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+            .use_ratchet_tree_extension(embed_ratchet_tree)
+            .with_group_context_extensions(
+                phase_b31_group_context_extensions(
+                    &founder.account_public_key,
+                    b"B3.2 native join",
+                    b"clone-only embedded-tree Welcome fixture",
+                )
+                .map_err(js_error_to_string)
+                .unwrap(),
+            )
+            .with_capabilities(phase_b2_capabilities())
+            .with_leaf_node_extensions(
+                phase_b31_leaf_extensions(&founder_proof)
+                    .map_err(js_error_to_string)
+                    .unwrap(),
+            )
+            .unwrap()
+            .build(
+                &founder_provider.inner,
+                &founder.keypair,
+                founder.credential_with_key.clone(),
+            )
+            .unwrap();
+        let (_, welcome, _) = founder_group
+            .add_members(
+                &founder_provider.inner,
+                &founder.keypair,
+                &[joiner_key_package.0.clone()],
+            )
+            .unwrap();
+        founder_group
+            .merge_pending_commit(founder_provider.as_mut())
+            .unwrap();
+
+        PhaseB32NativeFixture {
+            joiner_provider,
+            joiner,
+            joiner_proof,
+            group_id: group_id.to_vec(),
+            expected_author: founder.account_public_key,
+            key_package_bytes,
+            welcome_bytes: welcome.tls_serialize_detached().unwrap(),
+        }
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32_assert_rejected<F>(operation: F)
+    where
+        F: FnOnce() -> Result<(), JsError>,
+    {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(operation));
+        assert!(
+            result.is_err() || result.unwrap().is_err(),
+            "hostile B3.2 operation unexpectedly succeeded"
+        );
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32_welcome_prepare_is_clone_only_one_use_and_restartable() {
+        let fixture = phase_b32_native_fixture(b"phase-b32-native-success", 0x81, 0x82, true);
+        let predecessor = fixture.joiner_provider.serialize_state();
+        let mut pending = PhaseB32PendingWelcome::prepare(
+            &fixture.joiner_provider,
+            &fixture.joiner,
+            &fixture.welcome_bytes,
+            &fixture.key_package_bytes,
+            &fixture.expected_author,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        assert_eq!(fixture.joiner_provider.serialize_state(), predecessor);
+
+        let projection = pending.projection();
+        assert_eq!(projection.domain(), "STYX-B32-JOIN-PROJECTION-v1");
+        assert_eq!(projection.version(), 1);
+        assert_eq!(projection.group_id(), fixture.group_id);
+        assert_eq!(projection.epoch(), 1);
+        assert_eq!(projection.ciphersuite_id(), 0x0001);
+        assert_eq!(projection.member_count(), 2);
+        assert_eq!(projection.welcome_sender_identity(), fixture.expected_author);
+        assert_eq!(projection.group_profile_name(), b"B3.2 native join");
+        assert_eq!(projection.lifecycle(), vec![0x00]);
+        assert_eq!(projection.projection_sha256().len(), 32);
+
+        let candidate = pending
+            .release_candidate_state(
+                &fixture.joiner_provider,
+                &projection.projection_sha256(),
+                &fixture.expected_author,
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        assert!(pending.is_consumed());
+        assert_eq!(fixture.joiner_provider.serialize_state(), predecessor);
+        phase_b32_assert_rejected(|| {
+            pending
+                .release_candidate_state(
+                    &fixture.joiner_provider,
+                    &projection.projection_sha256(),
+                    &fixture.expected_author,
+                )
+                .map(|_| ())
+        });
+
+        let activated = Provider::new();
+        activated.restore_state(&candidate).unwrap();
+        let loaded = PhaseB32Group::load(&activated, &fixture.group_id)
+            .map_err(js_error_to_string)
+            .unwrap()
+            .expect("released candidate must load after a fresh restore");
+        assert_eq!(loaded.group_id(), fixture.group_id);
+        assert_eq!(loaded.epoch(), 1);
+        let restored_projection = loaded
+            .projection(
+                &activated,
+                projection.welcome_sender_leaf_index(),
+                &fixture.expected_author,
+                &projection.welcome_sha256(),
+                &projection.expected_key_package_sha256(),
+                &projection.predecessor_state_sha256(),
+                &projection.candidate_state_sha256(),
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        assert!(restored_projection == projection);
+
+        let activated_before_replay = activated.serialize_state();
+        phase_b32_assert_rejected(|| {
+            PhaseB32PendingWelcome::prepare(
+                &activated,
+                &fixture.joiner,
+                &fixture.welcome_bytes,
+                &fixture.key_package_bytes,
+                &fixture.expected_author,
+            )
+            .map(|_| ())
+        });
+        assert_eq!(activated.serialize_state(), activated_before_replay);
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32_welcome_rejects_mismatch_missing_tree_and_group_collision_without_mutation() {
+        let fixture = phase_b32_native_fixture(b"phase-b32-native-hostile", 0x83, 0x84, true);
+        let predecessor = fixture.joiner_provider.serialize_state();
+
+        let other_key_package = fixture
+            .joiner
+            .b3_1_key_package(&fixture.joiner_provider, &fixture.joiner_proof)
+            .map_err(js_error_to_string)
+            .unwrap()
+            .to_framed_bytes()
+            .unwrap();
+        let with_other_key_package = fixture.joiner_provider.serialize_state();
+        phase_b32_assert_rejected(|| {
+            PhaseB32PendingWelcome::prepare(
+                &fixture.joiner_provider,
+                &fixture.joiner,
+                &fixture.welcome_bytes,
+                &other_key_package,
+                &fixture.expected_author,
+            )
+            .map(|_| ())
+        });
+        assert_eq!(fixture.joiner_provider.serialize_state(), with_other_key_package);
+
+        phase_b32_assert_rejected(|| {
+            PhaseB32PendingWelcome::prepare(
+                &fixture.joiner_provider,
+                &fixture.joiner,
+                &fixture.welcome_bytes,
+                &fixture.key_package_bytes,
+                &[0xff; 32],
+            )
+            .map(|_| ())
+        });
+        assert_eq!(fixture.joiner_provider.serialize_state(), with_other_key_package);
+        assert_ne!(with_other_key_package, predecessor);
+
+        let missing_tree =
+            phase_b32_native_fixture(b"phase-b32-native-no-tree", 0x85, 0x86, false);
+        let missing_tree_predecessor = missing_tree.joiner_provider.serialize_state();
+        phase_b32_assert_rejected(|| {
+            PhaseB32PendingWelcome::prepare(
+                &missing_tree.joiner_provider,
+                &missing_tree.joiner,
+                &missing_tree.welcome_bytes,
+                &missing_tree.key_package_bytes,
+                &missing_tree.expected_author,
+            )
+            .map(|_| ())
+        });
+        assert_eq!(
+            missing_tree.joiner_provider.serialize_state(),
+            missing_tree_predecessor
+        );
+
+        let collision = phase_b32_native_fixture(b"phase-b32-native-collision", 0x87, 0x88, true);
+        let conflicting_group = MlsGroup::builder()
+            .ciphersuite(PROBE_CIPHERSUITE)
+            .with_group_id(GroupId::from_slice(&collision.group_id))
+            .with_wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+            .with_group_context_extensions(
+                phase_b31_group_context_extensions(
+                    &collision.joiner.account_public_key,
+                    b"collision",
+                    b"pre-existing group",
+                )
+                .map_err(js_error_to_string)
+                .unwrap(),
+            )
+            .with_capabilities(phase_b2_capabilities())
+            .with_leaf_node_extensions(
+                phase_b31_leaf_extensions(&collision.joiner_proof)
+                    .map_err(js_error_to_string)
+                    .unwrap(),
+            )
+            .unwrap()
+            .build(
+                &collision.joiner_provider.inner,
+                &collision.joiner.keypair,
+                collision.joiner.credential_with_key.clone(),
+            )
+            .unwrap();
+        assert_eq!(conflicting_group.group_id().as_slice(), collision.group_id);
+        let collision_predecessor = collision.joiner_provider.serialize_state();
+        phase_b32_assert_rejected(|| {
+            PhaseB32PendingWelcome::prepare(
+                &collision.joiner_provider,
+                &collision.joiner,
+                &collision.welcome_bytes,
+                &collision.key_package_bytes,
+                &collision.expected_author,
+            )
+            .map(|_| ())
+        });
+        assert_eq!(collision.joiner_provider.serialize_state(), collision_predecessor);
     }
 
     #[cfg(feature = "extensions-draft")]

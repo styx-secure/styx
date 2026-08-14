@@ -32,6 +32,7 @@ const B1_FIXTURE = loadFixture('../fixtures/mls-state-b1/');
 const B2_1_FIXTURE = loadFixture('../fixtures/mls-state-b2-1/');
 const B2_2_PROVIDER_FIXTURE = loadFixture('../fixtures/mls-state-b2-2/');
 const B2_7_PROVIDER_FIXTURE = loadFixture('../fixtures/mls-state-b2-7/');
+const B3_1_PROVIDER_FIXTURE = loadFixture('../fixtures/mls-state-b3-1/');
 const FIXTURE_ENVELOPE = PRE_B1_FIXTURE.envelope;
 const CTX = PRE_B1_FIXTURE.context;
 
@@ -280,6 +281,53 @@ describe('mls-state-b2-7 outgoing writer fixture before the B3.1 artifact rebuil
     } finally {
       received?.free();
       group?.free();
+      identity?.free();
+      provider.free();
+    }
+  });
+});
+
+describe('mls-state-b3-1 outgoing writer fixture before the B3.2 artifact rebuild', () => {
+  test('restores the exact identity and re-parses the persisted non-last-resort KeyPackage', async () => {
+    const wasm = await import('../../vendor/openmls-wasm/openmls_wasm.js');
+    const { context, envelope } = B3_1_PROVIDER_FIXTURE;
+    expect(Object.keys(envelope).sort()).toEqual([
+      'ciphersuite', 'envelopeVersion', 'format', 'openMlsRevision', 'payload',
+      'payloadEncoding', 'payloadSha256', 'sourceHead', 'storageSchemaVersion',
+      'wasmArtifactSha256',
+    ]);
+    expect(envelope).toMatchObject({
+      format: 'styx-phase-b3-1-provider-state',
+      sourceHead: '019da38921deca8b9bb9a4ca6544c827db8ef3ac',
+      wasmArtifactSha256: '26a41d86d7fd2c9ab4184344e4ff00f5eebb5bc7609ba22e98b12ce903d4a4dd',
+    });
+    const stateBytes = base64ToBytes(envelope.payload);
+    expect(createHash('sha256').update(stateBytes).digest('hex')).toBe(envelope.payloadSha256);
+    const provider = new wasm.Provider();
+    let identity;
+    let keyPackage;
+    try {
+      provider.restore_state(stateBytes);
+      identity = wasm.PhaseB2Identity.load(
+        provider,
+        base64ToBytes(context.accountPublicKey),
+        base64ToBytes(context.leafSignatureKey),
+      );
+      expect(identity).toBeDefined();
+      expect(bytesToBase64(identity.account_public_key())).toBe(context.accountPublicKey);
+      expect(bytesToBase64(identity.leaf_signature_key())).toBe(context.leafSignatureKey);
+      const framed = base64ToBytes(context.framedKeyPackage);
+      expect(createHash('sha256').update(framed).digest('hex')).toBe(context.framedKeyPackageSha256);
+      keyPackage = wasm.PhaseB31KeyPackage.from_framed_bytes(framed);
+      expect(keyPackage.is_last_resort()).toBe(false);
+      expect(keyPackage.ciphersuite_id()).toBe(1);
+      expect([...keyPackage.component_ids()]).toEqual(context.leafComponentIds);
+      expect([...keyPackage.supported_component_ids()]).toEqual(context.supportedComponentIds);
+      expect(bytesToBase64(keyPackage.credential_identity())).toBe(context.accountPublicKey);
+      expect(bytesToBase64(keyPackage.leaf_signature_key())).toBe(context.leafSignatureKey);
+      expect(bytesToBase64(keyPackage.identity_proof())).toBe(context.identityProof);
+    } finally {
+      keyPackage?.free();
       identity?.free();
       provider.free();
     }
