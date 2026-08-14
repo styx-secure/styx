@@ -5,6 +5,10 @@
 
 > **Status:** exploratory, non-normative proposal
 > **Observed base:** `main @ d90931a3f59ce89c1594cad64ce385d58857b305`
+> **Public-claims synchronization:** assurance and exercise/pilot wording is
+> aligned with the Project Brief at
+> `main @ 4c56cd549f1a6de2cc61da38cc1d9c1909ce04d0`; the capability inventory
+> remains the snapshot from the observed base above.
 > This roadmap proposes candidates for future Issues. It does not authorize
 > code, cryptography, persisted formats, migrations, or vault changes.
 
@@ -71,7 +75,7 @@ second core to extend (ADR-0003).
 | Capability/version discovery | **missing** | **missing** | The worker has an internal protocol version, not an application-platform contract. |
 | Compliance hooks | **missing** | **partial** | Dart: `packages/ledger_engine/lib/src/pruning/retention_manager.dart` provides reference retention; workflows, roles, legal hold, and regulatory routing are absent. |
 | Verifiable assurance profiles | **missing** | **partial** conceptually | Dart: `packages/push_bridge_client/lib/src/privacy_profile.dart` defines local profiles, not verified end-to-end assurance profiles. |
-| External audit of the complete product | **missing** | **missing** | The README prohibits high-risk use; an upstream OpenMLS audit does not cover Styx patches, PWA, protocol, and operations. |
+| Targeted independent review of a bounded high-risk scope | **missing** | **missing** | The README prohibits high-risk use; an upstream OpenMLS audit does not cover the Styx-authored scope, integration, PWA, application protocol, or operations. Review boundaries, residual risks, remediation, and retest must remain explicit. |
 
 ## 3. What to reuse and what not to reuse
 
@@ -139,7 +143,9 @@ recovery / multi-device / role custody
        │
 anonymous-dialogue reference application
        │
-independent review → controlled pilot
+targeted bounded review → remediation/retest
+       │
+separately gated synthetic/non-sensitive exercise or pilot decision
 ```
 
 ### Increment A — Consolidate the canary vault
@@ -277,11 +283,13 @@ May proceed in parallel when files do not overlap.
 appropriate transparency or signatures, independent artifact comparison, and a
 separate native high-assurance profile.
 
-### Increment P — Review and controlled pilot
+### Increment P — Targeted review and separately gated exercise/pilot decision
 
 **Dependencies:** those required by the selected profile.
-**Candidate outcome:** independent review of the complete product, remediation,
-retest, a limited pilot, and privacy-safe metrics.
+**Candidate outcome:** independent review of a contractually bounded high-risk
+scope, remediation, and retest. Only a separate human gate may then authorize a
+synthetic or non-sensitive organizational exercise, or a decision about whether
+a later controlled pilot can be designed, with privacy-safe metrics.
 
 No high-risk pilot may begin with H1/H2 open or with required CI jobs failed,
 cancelled, absent, or skipped without authorization.
@@ -305,7 +313,8 @@ Each row is intentionally atomic and requires a complete contract.
 | `app-anonymous-dialogue-mvp` | end-to-end text-only flow | platform prerequisites | privacy/legal review |
 | `distribution-authenticity-design` | first-load/update model | reproducible builds | release architecture |
 | `relay-reference-deployment` | reproducible configuration | metadata design | runtime manifests/secrets |
-| `platform-independent-audit` | report, remediation, and retest | candidate release | mandatory human review |
+| `platform-targeted-assurance-review` | bounded report, remediation, and retest | candidate release + approved scope | mandatory human review |
+| `platform-nonsensitive-exercise` | synthetic/non-sensitive workflow exercise and findings | targeted review + selected profile prerequisites | separate human/privacy/legal gate |
 
 ## 6. Non-regression criteria
 
