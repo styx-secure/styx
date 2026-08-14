@@ -1,6 +1,6 @@
 # Styx public identity
 
-> **Status:** approved-direction brand and messaging guide, 8 August 2026.
+> **Status:** approved-direction brand and messaging guide, 14 August 2026.
 >
 > This guide controls public naming, positioning, visual direction, and claim
 > boundaries. It does not change the product specification, licensing,
@@ -104,7 +104,8 @@ plaintext and authoritative application state out of delivery infrastructure.
 Unlike a chat-only interface or a conventional central database, Styx is being
 designed around verifiable state, offline continuity, explicit trust profiles,
 and reusable product semantics. Current implementations are experimental and
-remain subject to conformance, interoperability, audit, and pilot gates.
+remain subject to conformance, interoperability, distribution, and bounded
+assurance gates.
 
 ### What Styx is not
 
@@ -155,8 +156,10 @@ remain paused under the current contribution policy.
 
 **Message:** tested foundations exist, but the requested programme is the work
 needed to turn them into a conformance-backed substrate, a text-first Themis
-alpha, stronger distribution assurance, an independent audit, and a controlled
-pilot.
+alpha, stronger distribution assurance, a targeted independent review of a
+contractually bounded high-risk scope with remediation and retest, and a
+separately gated synthetic or non-sensitive organizational exercise or later
+controlled-pilot decision.
 
 **Required caveat:** screening, consideration, discussion, or an application
 does not mean funding, selection, endorsement, partnership, or a grant.
@@ -217,8 +220,10 @@ Every public statement must identify its rung.
 1. **Implemented evidence:** present tense only when a merged path and test or
    reproducible artifact can be linked. Example: “The repository contains a
    tested Dart reference ledger.”
-2. **Bounded result:** name the exact scope. Example: “Phase A found the pinned
-   OpenMLS revision capable of supporting a gated compatibility proof.”
+2. **Bounded result:** name the exact scope. Example: “In Phase B3.1, the exact
+   pinned MDK peer accepted Styx's isolated KeyPackage and group-profile state;
+   the experiment remained NO-GO before Welcome parsing at the external
+   RatchetTree boundary.”
 3. **Draft candidate:** say **Draft PR** or **candidate** and do not count it as
    current capability.
 4. **Approved direction:** use **is designed to**, **targets**, or **preferred**.
@@ -237,8 +242,9 @@ When space is limited, preserve these facts before adding detail:
 - current transports expose routing, timing, size, and relationship metadata;
 - end-to-end encryption does not protect a compromised endpoint or prevent a
   recipient from copying content;
-- Themis, complete Marmot compatibility, native distribution, independent
-  audit, and controlled pilot are future work;
+- Themis, complete Marmot compatibility, native distribution, a targeted
+  independent review with remediation/retest, and any separately approved
+  organizational exercise or pilot are future work;
 - deletion cannot guarantee physical erasure from every device, backup, or
   third-party copy.
 
@@ -344,8 +350,9 @@ site uses no JavaScript and no essential animation.
 > Themis by Styx is the planned first vertical: confidential case intake and
 > follow-up without requiring a conventional contact identifier.
 
-> A completed Phase A source probe supports proceeding to a bounded
-> interoperability proof. Styx is not currently Marmot-compatible.
+> In Phase B3.1, the exact pinned MDK peer accepted Styx's isolated KeyPackage
+> and group-profile state. The experiment remained NO-GO before Welcome parsing
+> at the external-RatchetTree boundary; Styx is not Marmot-compatible.
 
 ### Avoid
 

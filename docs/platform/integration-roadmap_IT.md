@@ -1,10 +1,14 @@
-<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="9dd23f7bd84ad240a6c624445e28678a6d022d183ff76f836f99deecbc3d8ee4" -->
+<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="a61cb86eb02ec0a98265341e76ece4ea81b680aaa4ee27c53e7317302a4c9e80" -->
 # Roadmap per integrare le capacità applicative in Styx
 
 [English canonical version](integration-roadmap.md)
 
 > **Stato:** proposta esplorativa, non normativa
 > **Base osservata:** `main @ d90931a3f59ce89c1594cad64ce385d58857b305`
+> **Sincronizzazione dei claim pubblici:** il linguaggio su assurance ed
+> esercizio/pilot è allineato al Project Brief a
+> `main @ 4c56cd549f1a6de2cc61da38cc1d9c1909ce04d0`; l'inventario delle capacità
+> resta lo snapshot della base osservata sopra.
 > Questa roadmap propone candidati per future Issue. Non autorizza codice,
 > crittografia, formati persistenti, migrazioni o modifiche al vault.
 
@@ -71,7 +75,7 @@ da estendere (ADR-0003).
 | Capability/version discovery | **missing** | **missing** | Il worker ha protocol version interno, non un contratto di piattaforma applicativa. |
 | Compliance hooks | **missing** | **partial** | Dart: `packages/ledger_engine/lib/src/pruning/retention_manager.dart` offre retention di riferimento; mancano workflow, ruoli, legal hold e routing normativo. |
 | Assurance profiles verificabili | **missing** | **partial** concettuale | Dart: `packages/push_bridge_client/lib/src/privacy_profile.dart` definisce profili locali, non profili di garanzia end-to-end verificati. |
-| Audit esterno del prodotto completo | **missing** | **missing** | Il README vieta uso high-risk; audit OpenMLS upstream non copre patch, PWA, protocollo e operazioni Styx. |
+| Review indipendente mirata di uno scope high-risk delimitato | **missing** | **missing** | Il README vieta uso high-risk; un audit OpenMLS upstream non copre lo scope sviluppato da Styx, l'integrazione, la PWA, il protocollo applicativo o le operazioni. Confini della review, rischi residui, remediation e retest devono restare espliciti. |
 
 ## 3. Cosa riutilizzare e cosa non riutilizzare
 
@@ -139,7 +143,9 @@ recovery / multi-device / role custody
        │
 anonymous-dialogue reference application
        │
-independent review → controlled pilot
+review mirata e delimitata → remediation/retest
+       │
+esercizio sintetico/non sensibile o decisione sul pilot con gate separato
 ```
 
 ### Incremento A — Consolidare il vault canary
@@ -279,11 +285,14 @@ Può avanzare in parallelo quando i file non si sovrappongono.
 release, trasparenza o firme appropriate, confronto indipendente degli
 artefatti e profilo native high-assurance separato.
 
-### Incremento P — Review e controlled pilot
+### Incremento P — Review mirata e decisione separata su esercizio/pilot
 
 **Dipendenze:** quelle richieste dal profilo scelto.
-**Outcome candidato:** review indipendente del prodotto completo, remediation,
-retest, pilot limitato e raccolta di metriche privacy-safe.
+**Outcome candidato:** review indipendente di uno scope high-risk delimitato
+contrattualmente, remediation e retest. Solo un human gate separato può poi
+autorizzare un esercizio organizzativo sintetico o non sensibile, oppure una
+decisione sulla progettazione di un successivo controlled pilot, con metriche
+privacy-safe.
 
 Nessun pilot high-risk deve iniziare con H1/H2 aperti o con job CI richiesti
 falliti, cancellati, assenti o saltati senza autorizzazione.
@@ -307,7 +316,8 @@ Ogni riga è intenzionalmente atomica e necessita di un contratto completo.
 | `app-anonymous-dialogue-mvp` | flusso text-only end-to-end | platform prerequisites | privacy/legal review |
 | `distribution-authenticity-design` | modello first-load/update | reproducible builds | release architecture |
 | `relay-reference-deployment` | configurazione riproducibile | metadata design | runtime manifests/secrets |
-| `platform-independent-audit` | report, remediation e retest | candidate release | mandatory human review |
+| `platform-targeted-assurance-review` | report delimitato, remediation e retest | candidate release + scope approvato | mandatory human review |
+| `platform-nonsensitive-exercise` | esercizio di workflow sintetico/non sensibile e risultati | review mirata + prerequisiti del profilo scelto | gate umano/privacy/legale separato |
 
 ## 6. Criteri di non-regressione
 
