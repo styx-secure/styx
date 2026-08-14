@@ -52,9 +52,9 @@ readiness, application traffic, Commit lifecycle, transport privacy, PWA or
 vault integration. B3.3 owns application-message and restart evidence. No
 product code imports or selects this directory.
 
-Stage 1 does not install generated WASM. After the exact generated tuple is
-approved and installed in Stage 2, the harness is invoked twice with fresh,
-empty paths beneath:
+Stage 1 did not install generated WASM. Stage 2 installed the exact approved
+five-file B3.2 tuple only after human approval. The harness is then invoked
+twice with fresh, empty paths beneath:
 
 ```text
 /home/mverde/.local/share/styx-b3-2-runs/issue-173
@@ -63,3 +63,11 @@ empty paths beneath:
 
 The private child is deleted after evidence extraction; the run child retains
 only the synthetic transcript and report.
+
+## Result
+
+Both exact-pin Stage 2 runs produced the same typed `NO-GO` after durable Welcome
+recording. The authenticated MDK founder leaf advertises a capability superset
+that the frozen exact B3.1 leaf validator rejects. No `JOINED` head was created,
+no product path changed, and no validation was relaxed. See
+`../../../docs/architecture/spikes/2026-08-14-marmot-openmls-phase-b3-2.md`.
