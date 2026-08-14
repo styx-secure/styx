@@ -12,6 +12,7 @@ import {
   B31_FOUNDING_DESCRIPTION,
   B31_FOUNDING_NAME,
   B31_GROUP_CONTEXT_COMPONENT_IDS,
+  B31_MDK_REVISION,
   B31_PRIVATE_ROOT,
   B31_REQUIRED_COMPONENT_IDS,
   B31_RUN_ROOT,
@@ -80,6 +81,60 @@ function typedPeerError(error, fallbackCode) {
   return Object.freeze({ code, details });
 }
 
+function validateMdkHello(value) {
+  assertExactKeys(value, ['mdk_revision', 'protocol', 'transport'], 'MDK hello result');
+  if (value.mdk_revision !== B31_MDK_REVISION
+    || value.protocol !== 'styx-b3-mdk-peer-jsonl-v1'
+    || value.transport !== 'direct_mls_identity_wrapper') {
+    throw new TypeError('MDK hello result does not match the pinned peer contract');
+  }
+  return value;
+}
+
+function validateMdkInitialization(value) {
+  assertExactKeys(value, ['protocol_profile'], 'MDK initialize result');
+  if (value.protocol_profile !== 'current') {
+    throw new TypeError('MDK initialized an unexpected protocol profile');
+  }
+  return value;
+}
+
+function validateMdkCreation(value) {
+  assertExactKeys(value, [
+    'group_id_hex',
+    'projection',
+    'public_external_ratchet_tree_hex',
+    'ratchet_tree_delivery',
+    'welcome_hex',
+    'welcome_message_id_hex',
+    'welcome_sha256',
+  ], 'MDK create_group result');
+  assertLowerHex(value.group_id_hex, 16, 'MDK group id');
+  assertLowerHex(value.welcome_message_id_hex, 32, 'MDK Welcome message id');
+  assertLowerHex(value.welcome_sha256, 32, 'MDK Welcome digest');
+  const welcome = hexBytes(value.welcome_hex, 'MDK Welcome');
+  if (sha256(welcome) !== value.welcome_sha256) {
+    throw new TypeError('MDK Welcome bytes do not match the reported digest');
+  }
+  if (value.ratchet_tree_delivery !== 'embedded_in_encrypted_group_info_only'
+    || value.public_external_ratchet_tree_hex !== null) {
+    throw new TypeError('MDK RatchetTree delivery differs from the bounded B3.1 contract');
+  }
+  if (value.projection === null || typeof value.projection !== 'object'
+    || Array.isArray(value.projection)) {
+    throw new TypeError('MDK create_group result lacks an object projection');
+  }
+  return value;
+}
+
+function validateMdkConfirmation(value) {
+  assertExactKeys(value, ['disposition'], 'MDK confirm_published result');
+  if (value.disposition !== 'welcome_delivery_processed') {
+    throw new TypeError('MDK returned an unexpected Welcome acknowledgement');
+  }
+  return value;
+}
+
 function initialProfileEvidence(expected) {
   return {
     descriptionSha256: sha256(expected.description),
@@ -95,7 +150,7 @@ function initialProfileEvidence(expected) {
   };
 }
 
-function validateMdkProjection(projection, creationGroupIdHex, expected) {
+function validateMdkProjection(projection, creationGroupIdHex, expected, keyPackage) {
   assertExactKeys(projection, [
     'admin_identities_hex',
     'app_components',
@@ -126,6 +181,31 @@ function validateMdkProjection(projection, creationGroupIdHex, expected) {
   ], 'MDK required capabilities');
   const required = [...projection.required_capabilities.app_components];
   assertExactComponentIds(required, B31_REQUIRED_COMPONENT_IDS, 'MDK required components');
+
+  if (!Array.isArray(projection.leaves) || projection.leaves.length !== 2) {
+    throw new TypeError('MDK projection must contain exactly two leaves');
+  }
+  for (const leaf of projection.leaves) {
+    assertExactKeys(leaf, [
+      'account_identity_hex', 'capabilities', 'leaf_index', 'signature_public_key_hex',
+    ], 'MDK projected leaf');
+    assertLowerHex(leaf.account_identity_hex, 32, 'MDK leaf account identity');
+    assertLowerHex(leaf.signature_public_key_hex, 32, 'MDK leaf signature key');
+    if (!Number.isInteger(leaf.leaf_index) || leaf.leaf_index < 0) {
+      throw new TypeError('MDK leaf index must be a non-negative integer');
+    }
+  }
+  const styxLeaf = projection.leaves.find(
+    (leaf) => leaf.account_identity_hex === keyPackage.accountIdentityHex,
+  );
+  if (!styxLeaf || styxLeaf.signature_public_key_hex !== keyPackage.leafSignatureKeyHex) {
+    throw new Error('MDK projection does not bind the exact Styx identity and leaf key');
+  }
+  if (!Array.isArray(projection.sorted_member_identities_hex)
+    || projection.sorted_member_identities_hex.length !== 2
+    || !projection.sorted_member_identities_hex.includes(keyPackage.accountIdentityHex)) {
+    throw new Error('MDK sorted membership does not contain the exact Styx identity');
+  }
 
   if (!Array.isArray(projection.app_components)) {
     throw new TypeError('MDK app_components must be an array');
@@ -218,18 +298,48 @@ async function run() {
       'styx_b31_key_package_after_restart',
       styx.publicKeyPackage(),
     );
+    assertExactKeys(keyPackage, [
+      'accountIdentityHex',
+      'b31ConstructorProfilePreconditionSatisfied',
+      'ciphersuite',
+      'componentIds',
+      'durableRestartEvidence',
+      'identityProofHex',
+      'isLastResort',
+      'keyPackageHex',
+      'keyPackageSha256',
+      'leafSignatureKeyHex',
+      'providerStateCommitmentSha256',
+      'supportedComponentIds',
+      'wasmSha256',
+    ], 'Styx B3.1 public KeyPackage evidence');
     assertExactComponentIds(
       keyPackage.supportedComponentIds,
       B31_SUPPORTED_COMPONENT_IDS,
       'emitted Styx B3.1 supported components',
     );
     const expectedProfile = styx.expectedGroupProfile();
+    const restartEvidence = keyPackage.durableRestartEvidence;
+    assertExactKeys(restartEvidence, [
+      'expectedLeafSignatureKeySha256',
+      'providerStateCommitmentSha256',
+      'restoredIdentityCredentialMatches',
+      'restoredLeafSignatureKeySha256',
+    ], 'Styx durable-restart evidence');
+    const durableRestartValidated = restartEvidence.restoredIdentityCredentialMatches === true
+      && restartEvidence.expectedLeafSignatureKeySha256
+        === restartEvidence.restoredLeafSignatureKeySha256
+      && restartEvidence.providerStateCommitmentSha256
+        === keyPackage.providerStateCommitmentSha256;
     let profileEvidence = initialProfileEvidence(expectedProfile);
     const acceptedBeforeBoundary = {
       mdkAcceptedB31Advertisement: false,
-      styxDurableRestart: true,
+      styxDurableRestart: durableRestartValidated,
+      styxDurableRestartEvidence: restartEvidence,
       styxInternalGroupProfileCodecValidated:
-        keyPackage.internalGroupProfileCodecValidated === true,
+        keyPackage.b31ConstructorProfilePreconditionSatisfied === true
+        && expectedProfile.roundTripValidated === true,
+      styxInternalGroupProfileStateSha256: expectedProfile.encodedSha256,
       styxKeyPackageSha256: keyPackage.keyPackageSha256,
       styxSupportedComponentIdsDecodedFromEmittedBytes:
         keyPackage.supportedComponentIds,
@@ -244,25 +354,29 @@ async function run() {
     const mdkAccountIdentityHex = Buffer.from(schnorr.getPublicKey(mdkSecret)).toString('hex');
 
     mdk = new MdkB31Peer();
-    appendTranscript(transcript, 'mdk_hello', await mdk.request('hello'));
+    appendTranscript(
+      transcript,
+      'mdk_hello',
+      validateMdkHello(await mdk.request('hello')),
+    );
     appendTranscript(
       transcript,
       'mdk_initialize',
-      await mdk.request('initialize', {
+      validateMdkInitialization(await mdk.request('initialize', {
         account_identity_hex: mdkAccountIdentityHex,
         database_key_path: databaseKeyPath,
         database_path: databasePath,
         node_binary: process.execPath,
         signer_script: B31_MDK_DRIVER_PATH,
         signer_secret_path: mdkSecretPath,
-      }),
+      })),
     );
 
     let creation;
     try {
-      creation = await mdk.request('create_group', {
+      creation = validateMdkCreation(await mdk.request('create_group', {
         key_package_hex: keyPackage.keyPackageHex,
-      });
+      }));
     } catch (error) {
       if (typeof error?.code !== 'string') throw error;
       const typed = typedPeerError(error, 'mdk_create_group_rejected');
@@ -306,6 +420,7 @@ async function run() {
           creation.projection,
           creation.group_id_hex,
           expectedProfile,
+          keyPackage,
         );
         appendTranscript(transcript, 'styx_validate_mdk_group_profile_projection', profileEvidence);
       } catch (error) {
@@ -339,9 +454,9 @@ async function run() {
         appendTranscript(
           transcript,
           'mdk_acknowledge_welcome_delivery',
-          await mdk.request('confirm_published', {
+          validateMdkConfirmation(await mdk.request('confirm_published', {
             welcome_message_id_hex: creation.welcome_message_id_hex,
-          }),
+          })),
         );
       } catch (error) {
         const typed = typedPeerError(error, 'mdk_confirm_published_failed');
@@ -374,7 +489,7 @@ async function run() {
       );
       report = finalizeReport({
         acceptedBeforeBoundary,
-        claim: 'B3.1 cleared the exact 0x8001 capability gate but did not establish Styx/MDK interoperability; the bounded flow stops at Styx Welcome join.',
+        claim: 'B3.1 cleared the exact 0x8001 capability gate but did not establish Styx/MDK interoperability; the bounded flow stops at the public Styx join wrapper before Welcome parsing because its external RatchetTree argument is unavailable.',
         disposition: 'NO-GO',
         firstIncompatibleOperation: 'styx_join_mdk_welcome',
         pins,

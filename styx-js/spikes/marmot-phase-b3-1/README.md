@@ -31,9 +31,10 @@ Both `run-a` and `run-b` produced the same typed boundary:
 - MDK required exactly `[0x8001, 0x8003, 0x8009, 0x800c]`;
 - the independent Styx codec decoded MDK's `0x8001` bytes and proved exact byte
   equality with the canonical founding profile;
-- the bounded flow then stopped at `styx_join_mdk_welcome`, because the public
-  Styx join API requires an external RatchetTree while the exact MDK path keeps
-  it inside encrypted GroupInfo.
+- the bounded flow then stopped at `styx_join_mdk_welcome`, before Welcome
+  parsing, because wasm-bindgen requires the public Styx join wrapper's external
+  `PhaseB2RatchetTree` argument while the exact MDK path keeps the tree inside
+  encrypted GroupInfo.
 
 The disposition is therefore `NO-GO`, with
 `compatibilityEstablished: false`. B3.1 closed the exact missing-`0x8001`
@@ -71,6 +72,10 @@ node styx-js/spikes/marmot-phase-b3-1/b3-1-orchestrator.mjs \
 The orchestrator verifies all pins before creating state, writes only canonical
 public evidence under the run directory, and removes the corresponding private
 directory in a `finally` block. Existing run directories are rejected.
+The public evidence includes measured provider-state and restored-leaf-key
+commitments, an independently recomputed Welcome digest, and strict schemas for
+each MDK response. The public join ceiling records that Welcome parsing was not
+attempted.
 
 ## Files and boundaries
 
@@ -82,7 +87,8 @@ directory in a `finally` block. Existing run directories are rejected.
 - `b3-1-orchestrator.mjs` executes the fail-closed probe and records the first
   incompatible operation.
 - `verify-pins.mjs` verifies source history, trees, artifact tuple, lockfiles,
-  external checkouts, licenses and the outgoing B2.7 fixture.
+  external checkouts, licenses, the outgoing B2.7 fixture and the exact base
+  identity of the four files admitted only as Git copy-detection operands.
 - `generate-b2-7-legacy-fixture.mjs` is one-shot and must never overwrite its
   checked-in synthetic fixture.
 

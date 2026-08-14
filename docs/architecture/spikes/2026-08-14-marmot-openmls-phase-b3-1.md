@@ -43,7 +43,8 @@ The fail-closed harness performed these operations twice with fresh state:
 6. project MDK's resulting GroupContext through a strict Rust evidence schema;
 7. independently decode `marmot.group.profile.v1` in JavaScript and require
    exact byte equality with the expected founding state;
-8. acknowledge publication and attempt the bounded Welcome join;
+8. acknowledge publication and attempt the bounded public Welcome-join API,
+   recording whether the wrapper reaches Welcome parsing;
 9. stop at the first incompatible operation, write a canonical hash-linked
    report/transcript, and delete private run state.
 
@@ -53,6 +54,9 @@ Both runs established all of the following:
 
 - `mdkAcceptedB31Advertisement: true`;
 - `styxDurableRestart: true`;
+- measured provider-state and restored leaf-signature-key commitments agree;
+- every top-level MDK response matches its exact expected schema and the
+  Welcome bytes match an independently recomputed SHA-256 digest;
 - exact emitted supported components
   `[0x8001, 0x8003, 0x8009, 0x800c]`;
 - exact MDK GroupContext components
@@ -80,8 +84,8 @@ Public evidence locations:
 Transcript heads:
 
 ```text
-run-a  115b3b07d3887c6492c93d2c2351e16d0572d6ed22e3c27343ae9046e07dd4a9
-run-b  d14f508bafc8a7db17f4d19afa14352deee118a647a8afd22db2ce793b075ff6
+run-a  963d62b619e67be090cb1382376550dc21c958cf0f25976f85eca0aea3ffa0d4
+run-b  14bf6379cfc8ebe85ebde4652e4503d950d076867c01cb2ba717524fe18adcaa
 ```
 
 Fresh cryptographic material makes GroupContext, projection, KeyPackage,
@@ -99,7 +103,9 @@ styx_join_mdk_welcome
 
 MDK reports that the RatchetTree is embedded in encrypted GroupInfo, while the
 bounded public Styx join surface requires a `PhaseB2RatchetTree` argument. The
-typed Styx outcome is:
+failure is deliberately classified at the wasm-bindgen argument-binding layer:
+the required argument is absent, so Welcome parsing is not attempted. The typed
+Styx outcome is:
 
 ```text
 STYX_PUBLIC_JOIN_REQUIRES_EXTERNAL_RATCHET_TREE

@@ -312,9 +312,36 @@ export function validateB31Report(report, transcriptHeadSha256) {
     || report.firstIncompatibleOperation.length === 0) {
     throw new TypeError('B3.1 report lacks the first incompatible operation');
   }
+  assertExactKeys(report.acceptedBeforeBoundary, [
+    'mdkAcceptedB31Advertisement',
+    'styxDurableRestart',
+    'styxDurableRestartEvidence',
+    'styxInternalGroupProfileCodecValidated',
+    'styxInternalGroupProfileStateSha256',
+    'styxKeyPackageSha256',
+    'styxSupportedComponentIdsDecodedFromEmittedBytes',
+  ], 'B3.1 accepted-before-boundary evidence');
   if (report.acceptedBeforeBoundary?.styxDurableRestart !== true
     || report.acceptedBeforeBoundary?.styxInternalGroupProfileCodecValidated !== true) {
     throw new TypeError('B3.1 report lacks the independent Styx capability evidence');
+  }
+  const restart = report.acceptedBeforeBoundary.styxDurableRestartEvidence;
+  assertExactKeys(restart, [
+    'expectedLeafSignatureKeySha256',
+    'providerStateCommitmentSha256',
+    'restoredIdentityCredentialMatches',
+    'restoredLeafSignatureKeySha256',
+  ], 'B3.1 durable-restart evidence');
+  for (const [label, digest] of [
+    ['expected leaf-signature key', restart.expectedLeafSignatureKeySha256],
+    ['provider-state commitment', restart.providerStateCommitmentSha256],
+    ['restored leaf-signature key', restart.restoredLeafSignatureKeySha256],
+    ['internal group-profile state',
+      report.acceptedBeforeBoundary.styxInternalGroupProfileStateSha256],
+  ]) assertLowerHex(digest, 32, label);
+  if (restart.restoredIdentityCredentialMatches !== true
+    || restart.expectedLeafSignatureKeySha256 !== restart.restoredLeafSignatureKeySha256) {
+    throw new TypeError('B3.1 durable-restart evidence does not bind the restored identity');
   }
   if (report.firstIncompatibleOperation === 'styx_join_mdk_welcome') {
     if (report.disposition !== 'NO-GO'
@@ -322,6 +349,23 @@ export function validateB31Report(report, transcriptHeadSha256) {
       || report.profileEvidence?.exactProfileByteEquality !== true) {
       throw new TypeError('B3.1 Welcome boundary lacks exact MDK/profile evidence');
     }
+    assertExactKeys(report.typedOutcomes?.styx, [
+      'boundaryLayer',
+      'errorCode',
+      'errorMessage',
+      'errorName',
+      'requiredArgument',
+      'welcomeParsingAttempted',
+      'welcomeSha256',
+    ], 'B3.1 Styx Welcome boundary');
+    if (report.typedOutcomes.styx.boundaryLayer !== 'wasm_bindgen_argument_binding'
+      || report.typedOutcomes.styx.errorCode
+        !== 'STYX_PUBLIC_JOIN_REQUIRES_EXTERNAL_RATCHET_TREE'
+      || report.typedOutcomes.styx.requiredArgument !== 'PhaseB2RatchetTree'
+      || report.typedOutcomes.styx.welcomeParsingAttempted !== false) {
+      throw new TypeError('B3.1 Styx Welcome boundary is misclassified');
+    }
+    assertLowerHex(report.typedOutcomes.styx.welcomeSha256, 32, 'B3.1 Welcome digest');
   }
   assertLowerHex(report.transcriptHeadSha256, 32, 'report transcript head');
   if (report.transcriptHeadSha256 !== transcriptHeadSha256) {

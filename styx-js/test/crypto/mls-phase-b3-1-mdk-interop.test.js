@@ -26,7 +26,14 @@ function syntheticNoGo(head) {
     acceptedBeforeBoundary: {
       mdkAcceptedB31Advertisement: false,
       styxDurableRestart: true,
+      styxDurableRestartEvidence: {
+        expectedLeafSignatureKeySha256: 'b'.repeat(64),
+        providerStateCommitmentSha256: 'c'.repeat(64),
+        restoredIdentityCredentialMatches: true,
+        restoredLeafSignatureKeySha256: 'b'.repeat(64),
+      },
       styxInternalGroupProfileCodecValidated: true,
+      styxInternalGroupProfileStateSha256: 'd'.repeat(64),
       styxKeyPackageSha256: 'a'.repeat(64),
       styxSupportedComponentIdsDecodedFromEmittedBytes:
         [...B31_SUPPORTED_COMPONENT_IDS],
@@ -102,8 +109,32 @@ describe('Phase B3.1 exact-pin MDK bounded evidence', () => {
       expect(report.compatibilityEstablished).toBe(false);
       expect(report.acceptedBeforeBoundary.styxDurableRestart).toBe(true);
       expect(report.acceptedBeforeBoundary.styxInternalGroupProfileCodecValidated).toBe(true);
+      expect(report.acceptedBeforeBoundary.styxInternalGroupProfileStateSha256)
+        .toBe('67b0033c2ec0c46eb9f36b23e54b205ba8a10312b5e32450fab88225b212b720');
+      const restart = report.acceptedBeforeBoundary.styxDurableRestartEvidence;
+      expect(Object.keys(restart).sort()).toEqual([
+        'expectedLeafSignatureKeySha256',
+        'providerStateCommitmentSha256',
+        'restoredIdentityCredentialMatches',
+        'restoredLeafSignatureKeySha256',
+      ]);
+      expect(restart.restoredIdentityCredentialMatches).toBe(true);
+      expect(restart.expectedLeafSignatureKeySha256)
+        .toBe(restart.restoredLeafSignatureKeySha256);
+      expect(restart.providerStateCommitmentSha256).toMatch(/^[0-9a-f]{64}$/);
       expect(report.acceptedBeforeBoundary.styxSupportedComponentIdsDecodedFromEmittedBytes)
         .toEqual(B31_SUPPORTED_COMPONENT_IDS);
+      if (report.firstIncompatibleOperation === 'styx_join_mdk_welcome') {
+        const boundary = transcript.find(
+          (record) => record.operation === 'styx_join_without_external_ratchet_tree',
+        )?.evidence;
+        expect(boundary).toEqual(expect.objectContaining({
+          boundaryLayer: 'wasm_bindgen_argument_binding',
+          errorCode: 'STYX_PUBLIC_JOIN_REQUIRES_EXTERNAL_RATCHET_TREE',
+          requiredArgument: 'PhaseB2RatchetTree',
+          welcomeParsingAttempted: false,
+        }));
+      }
       const publicEvidenceKeys = evidenceKeys({ report, transcript });
       for (const forbiddenKey of [
         'accountPrivateKey',

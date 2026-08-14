@@ -31,6 +31,9 @@ const generatedCargoTargetPrefix = 'styx-js/spikes/marmot-phase-b3/mdk-peer/targ
 const allowedPaths = new Set([
   'docs/architecture/spikes/2026-08-14-marmot-openmls-phase-b3-1.md',
   'styx-js/spikes/marmot-phase-b2-7/b2-7-canonical.mjs',
+  'styx-js/spikes/marmot-phase-b2-7/generate-b2-2-fixture.mjs',
+  'styx-js/spikes/marmot-phase-b3/b3-mdk-driver.mjs',
+  'styx-js/spikes/marmot-phase-b3/b3-styx-driver.mjs',
   'styx-js/spikes/marmot-phase-b3-1/README.md',
   'styx-js/spikes/marmot-phase-b3-1/b3-1-canonical.mjs',
   'styx-js/spikes/marmot-phase-b3-1/b3-1-mdk-driver.mjs',
@@ -45,6 +48,7 @@ const allowedPaths = new Set([
   'styx-js/test/crypto/mls-phase-b3-1-group-profile.test.js',
   'styx-js/test/crypto/mls-phase-b3-1-mdk-interop.test.js',
   'styx-js/test/crypto/mls-state-restore.test.js',
+  'styx-js/test/fixtures/mls-state-b2-2/README.md',
   'styx-js/test/fixtures/mls-state-b2-7/README.md',
   'styx-js/test/fixtures/mls-state-b2-7/context.json',
   'styx-js/test/fixtures/mls-state-b2-7/envelope.json',
@@ -58,6 +62,29 @@ const allowedPaths = new Set([
   'styx-js/vendor/openmls-wasm/package.json',
   'styx-js/vendor/openmls-wasm/patch/lib.rs',
 ]);
+
+const copyDetectionOperands = Object.freeze({
+  'styx-js/spikes/marmot-phase-b2-7/generate-b2-2-fixture.mjs': Object.freeze({
+    blob: 'ba5e0a98a35c48d88aac06752aeed6570b773a53',
+    bytes: 7551,
+    sha256: '28b203f136dcac524e44cdb8a05c57823135e9448f18f881ac1100c61cb593dd',
+  }),
+  'styx-js/spikes/marmot-phase-b3/b3-mdk-driver.mjs': Object.freeze({
+    blob: 'eed2d4cfe5af56b7e58d4f27f15f94fbae0e1602',
+    bytes: 4446,
+    sha256: '4402958b3ba78755a298f63240de6cdd2cbcd1060137359209488f2c9adbc13d',
+  }),
+  'styx-js/spikes/marmot-phase-b3/b3-styx-driver.mjs': Object.freeze({
+    blob: '33cea719ee49486f99b6094a282eb366aad6e4e6',
+    bytes: 5353,
+    sha256: 'bc757f16bf01d995a9d19a56dc7e6800edba460a54482d1bb7654caa78aba343',
+  }),
+  'styx-js/test/fixtures/mls-state-b2-2/README.md': Object.freeze({
+    blob: '9d9d780ceebce77b6cb38e2b30c39afd19d79c6f',
+    bytes: 2671,
+    sha256: 'eb2bac1820f45a78648d804c2f2315b517e095cfa7d9a803fb00a52a75595314',
+  }),
+});
 
 const artifactTuple = Object.freeze({
   'openmls_wasm.d.ts': Object.freeze({
@@ -103,6 +130,28 @@ function verifyArtifactTuple() {
   return result;
 }
 
+function verifyCopyDetectionOperands() {
+  const result = {};
+  for (const [path, expected] of Object.entries(copyDetectionOperands)) {
+    const absolutePath = resolve(repositoryDirectory, path);
+    const bytes = readFileSync(absolutePath);
+    requireEqual(
+      git(repositoryDirectory, 'rev-parse', `${B31_BASE_SHA}:${path}`),
+      expected.blob,
+      `${path} base blob`,
+    );
+    requireEqual(
+      git(repositoryDirectory, 'hash-object', '--', path),
+      expected.blob,
+      `${path} working-tree blob`,
+    );
+    requireEqual(statSync(absolutePath).size, expected.bytes, `${path} byte length`);
+    requireEqual(sha256(bytes), expected.sha256, `${path} digest`);
+    result[path] = expected;
+  }
+  return result;
+}
+
 export function verifyPins() {
   requireEqual(git(repositoryDirectory, 'rev-parse', `${B31_BASE_SHA}^{tree}`),
     B31_BASE_TREE, 'base tree');
@@ -122,6 +171,7 @@ export function verifyPins() {
   if (outOfScope.length > 0) throw new Error(`out-of-scope paths: ${outOfScope.join(', ')}`);
 
   const installedArtifactTuple = verifyArtifactTuple();
+  const verifiedCopyDetectionOperands = verifyCopyDetectionOperands();
   const patchSource = readFileSync(
     resolve(styxJsDirectory, 'vendor', 'openmls-wasm', 'patch', 'lib.rs'),
     'utf8',
@@ -177,6 +227,7 @@ export function verifyPins() {
     baseSha: B31_BASE_SHA,
     baseTree: B31_BASE_TREE,
     changedPaths: changed,
+    copyDetectionOperands: verifiedCopyDetectionOperands,
     marmotRevision: B31_MARMOT_REVISION,
     marmotTree: B31_MARMOT_TREE,
     mdkLockSha256: B31_MDK_LOCK_SHA256,

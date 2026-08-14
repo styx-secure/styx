@@ -40,6 +40,7 @@ export class StyxB31Peer {
   #leafSignatureKey;
   #privateDirectory;
   #keyPackageBytes;
+  #restartEvidence;
 
   static async create(privateDirectory) {
     const instance = new StyxB31Peer(privateDirectory);
@@ -116,16 +117,27 @@ export class StyxB31Peer {
       resolve(this.#privateDirectory, 'styx-provider-state.hex'),
       'utf8',
     ).trim();
+    const stateBytes = hexBytes(stateHex, 'Styx B3.1 provider state');
     free(this.#identity);
     free(this.#provider);
     this.#provider = new this.#wasm.Provider();
-    this.#provider.restore_state(hexBytes(stateHex, 'Styx B3.1 provider state'));
+    this.#provider.restore_state(stateBytes);
     this.#identity = this.#wasm.PhaseB2Identity.load(
       this.#provider,
       this.#accountPublicKey,
       this.#leafSignatureKey,
     );
     if (!this.#identity) throw new Error('Styx B3.1 identity did not survive durable restart');
+    const restoredLeafSignatureKey = Uint8Array.from(this.#identity.leaf_signature_key());
+    if (!bytesEqual(restoredLeafSignatureKey, this.#leafSignatureKey)) {
+      throw new Error('Styx B3.1 durable restart changed the leaf signature key');
+    }
+    this.#restartEvidence = Object.freeze({
+      expectedLeafSignatureKeySha256: sha256(this.#leafSignatureKey),
+      providerStateCommitmentSha256: sha256(stateBytes),
+      restoredIdentityCredentialMatches: true,
+      restoredLeafSignatureKeySha256: sha256(restoredLeafSignatureKey),
+    });
   }
 
   publicKeyPackage() {
@@ -135,21 +147,15 @@ export class StyxB31Peer {
         accountIdentityHex: Buffer.from(parsed.credential_identity()).toString('hex'),
         ciphersuite: parsed.ciphersuite_id(),
         componentIds: [...parsed.component_ids()],
+        durableRestartEvidence: this.#restartEvidence,
         identityProofHex: Buffer.from(parsed.identity_proof()).toString('hex'),
-        internalGroupProfileCodecValidated: true,
+        b31ConstructorProfilePreconditionSatisfied: true,
         isLastResort: parsed.is_last_resort(),
         keyPackageHex: Buffer.from(this.#keyPackageBytes).toString('hex'),
         keyPackageSha256: sha256(this.#keyPackageBytes),
         leafSignatureKeyHex: Buffer.from(parsed.leaf_signature_key()).toString('hex'),
-        providerStateCommitmentSha256: sha256(
-          hexBytes(
-            readFileSync(
-              resolve(this.#privateDirectory, 'styx-provider-state.hex'),
-              'utf8',
-            ).trim(),
-            'Styx B3.1 provider state',
-          ),
-        ),
+        providerStateCommitmentSha256:
+          this.#restartEvidence.providerStateCommitmentSha256,
         supportedComponentIds: [...parsed.supported_component_ids()],
         wasmSha256: sha256(this.#wasmBytes),
       };
@@ -169,7 +175,9 @@ export class StyxB31Peer {
     return {
       description,
       encoded,
+      encodedSha256: sha256(encoded),
       name,
+      roundTripValidated: true,
     };
   }
 
@@ -187,7 +195,10 @@ export class StyxB31Peer {
     if (!captured) throw new Error('Styx unexpectedly joined without an external RatchetTree');
     return {
       ...captured,
+      boundaryLayer: 'wasm_bindgen_argument_binding',
       errorCode: 'STYX_PUBLIC_JOIN_REQUIRES_EXTERNAL_RATCHET_TREE',
+      requiredArgument: 'PhaseB2RatchetTree',
+      welcomeParsingAttempted: false,
       welcomeSha256: sha256(welcome),
     };
   }
