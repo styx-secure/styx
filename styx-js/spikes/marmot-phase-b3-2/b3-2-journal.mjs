@@ -359,11 +359,11 @@ function assertLexicalChild(path, root, label) {
   return candidate;
 }
 
-function assertPrivateChild(path) {
-  mkdirSync(B32_PRIVATE_ROOT, { recursive: true, mode: 0o700 });
-  chmodSync(B32_PRIVATE_ROOT, 0o700);
-  const root = assertOwnerOnlyDirectory(B32_PRIVATE_ROOT, 'B3.2 private root');
-  const candidate = assertLexicalChild(path, B32_PRIVATE_ROOT, 'journal directory');
+function assertPrivateChild(path, approvedRoot) {
+  mkdirSync(approvedRoot, { recursive: true, mode: 0o700 });
+  chmodSync(approvedRoot, 0o700);
+  const root = assertOwnerOnlyDirectory(approvedRoot, 'B3.2 private root');
+  const candidate = assertLexicalChild(path, approvedRoot, 'journal directory');
   mkdirSync(candidate, { recursive: true, mode: 0o700 });
   chmodSync(candidate, 0o700);
   const real = assertOwnerOnlyDirectory(candidate, 'B3.2 journal directory');
@@ -409,8 +409,8 @@ function processIsAlive(pid) {
  * tested local-filesystem primitive, not arbitrary power-loss durability.
  */
 export class FileB32Store {
-  constructor(directory) {
-    this.directory = assertPrivateChild(directory);
+  constructor(directory, approvedRoot = B32_PRIVATE_ROOT) {
+    this.directory = assertPrivateChild(directory, approvedRoot);
     this.blobDirectory = resolve(this.directory, 'blobs');
     mkdirSync(this.blobDirectory, { recursive: true, mode: 0o700 });
     chmodSync(this.blobDirectory, 0o700);
@@ -524,6 +524,11 @@ export class FileB32Store {
   }
 }
 
-export function openB32FileJournal(directory) {
-  return new B32Journal(new FileB32Store(directory));
+/**
+ * The root parameter relocates synthetic evidence in hermetic test runners.
+ * The formal harness omits it and remains pinned to B32_PRIVATE_ROOT; either
+ * way, the journal directory must be a real owner-only child of that root.
+ */
+export function openB32FileJournal(directory, approvedRoot = B32_PRIVATE_ROOT) {
+  return new B32Journal(new FileB32Store(directory, approvedRoot));
 }
