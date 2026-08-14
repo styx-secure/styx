@@ -149,11 +149,13 @@ product:
    staged-Commit authorization, recovery, convergence, message-ratchet and
    current-epoch sender-attribution behavior. These are synthetic proof
    surfaces, not product activation. The exact-pin B3 harness then exercised a
-   real independent MDK peer. B3.1 closed its first `0x8001` capability gap:
-   MDK accepted the isolated Styx KeyPackage, created a group, and Styx decoded
+   real independent MDK peer. B3.1 closed its first `0x8001` capability gap in
+   a separately rebuilt isolated profile without changing the frozen B2 product
+   profile: MDK accepted that Styx KeyPackage, created a group, and Styx decoded
    the exact group-profile state. The experiment still ended **NO-GO** before
-   Welcome parsing because the public Styx join API requires an external
-   RatchetTree that the tested MDK founding result does not expose separately.
+   Welcome parsing because the isolated public join surface exercised by the
+   harness requires an external RatchetTree that the tested MDK founding result
+   does not expose separately.
    No Welcome join, bidirectional traffic, Commit processing, cross-peer
    restart, Marmot compatibility or product readiness was established
    ([B2.7 report](architecture/spikes/2026-08-13-marmot-openmls-phase-b2-7-stage-2.md),
@@ -170,7 +172,7 @@ reported.
 - define the language-neutral Styx application protocol and adversarial
   conformance corpus, extract independent Dart cases, and freeze parallel Dart
   feature development;
-- continue the bounded secure-session proof from its current typed NO-GO:
+- continue the bounded secure-session proof from its documented NO-GO:
   decide and test an explicit RatchetTree delivery/join boundary, then attempt
   a full bidirectional message, Commit and cross-peer restart round trip against
   the exact independent peer without weakening either implementation;
