@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -58,6 +58,88 @@ const moduleUrl = new URL('../../vendor/openmls-wasm/openmls_wasm.js', import.me
 moduleUrl.searchParams.set('fixture', 'b3-1-writer');
 const wasm = await import(moduleUrl.href);
 await wasm.default({ module_or_path: wasmBytes });
+
+function strictKeys(value, expected, label) {
+  const actual = Object.keys(value).sort();
+  const wanted = [...expected].sort();
+  assert(
+    actual.length === wanted.length && actual.every((key, index) => key === wanted[index]),
+    `${label} fields are not exact`,
+  );
+}
+
+if (existsSync(envelopePath) || existsSync(contextPath)) {
+  assert(existsSync(envelopePath) && existsSync(contextPath), 'committed fixture is incomplete');
+  const envelopeJson = readFileSync(envelopePath, 'utf8');
+  const contextJson = readFileSync(contextPath, 'utf8');
+  const envelope = JSON.parse(envelopeJson);
+  const context = JSON.parse(contextJson);
+  strictKeys(envelope, [
+    'format', 'envelopeVersion', 'storageSchemaVersion', 'sourceHead', 'openMlsRevision',
+    'wasmArtifactSha256', 'ciphersuite', 'payloadEncoding', 'payloadSha256', 'payload',
+  ], 'committed envelope');
+  strictKeys(context, [
+    'format', 'version', 'sourceHead', 'openMlsRevision', 'wasmArtifactSha256',
+    'ciphersuite', 'proofCreatedAt', 'accountPublicKey', 'leafSignatureKey',
+    'identityProof', 'framedKeyPackage', 'framedKeyPackageSha256', 'leafComponentIds',
+    'supportedComponentIds', 'isLastResort', 'selfCheck',
+  ], 'committed context');
+  assert(envelope.format === 'styx-phase-b3-1-provider-state', 'wrong envelope format');
+  assert(context.format === 'styx-phase-b3-1-writer-fixture-context', 'wrong context format');
+  for (const field of ['sourceHead', 'openMlsRevision', 'wasmArtifactSha256', 'ciphersuite']) {
+    assert(envelope[field] === context[field], `committed ${field} mismatch`);
+  }
+  assert(context.sourceHead === SOURCE_HEAD, 'wrong committed source head');
+  assert(context.openMlsRevision === OPENMLS_REVISION, 'wrong committed OpenMLS revision');
+  assert(context.wasmArtifactSha256 === writerSha256, 'wrong committed writer digest');
+  const snapshot = Uint8Array.from(Buffer.from(envelope.payload, 'base64'));
+  const framedKeyPackage = Uint8Array.from(Buffer.from(context.framedKeyPackage, 'base64'));
+  const accountPublicKey = Uint8Array.from(Buffer.from(context.accountPublicKey, 'base64'));
+  const leafSignatureKey = Uint8Array.from(Buffer.from(context.leafSignatureKey, 'base64'));
+  assert(sha256(snapshot) === envelope.payloadSha256, 'committed Provider digest mismatch');
+  assert(
+    sha256(framedKeyPackage) === context.framedKeyPackageSha256,
+    'committed KeyPackage digest mismatch',
+  );
+  const provider = new wasm.Provider();
+  const identity = (() => {
+    provider.restore_state(snapshot);
+    return wasm.PhaseB2Identity.load(provider, accountPublicKey, leafSignatureKey);
+  })();
+  const parsed = wasm.PhaseB31KeyPackage.from_framed_bytes(framedKeyPackage);
+  try {
+    assert(identity !== undefined, 'committed Provider does not restore its identity');
+    assert(parsed.ciphersuite_id() === 1, 'committed KeyPackage ciphersuite changed');
+    assert(!parsed.is_last_resort(), 'committed KeyPackage became last-resort');
+    assert(
+      equalNumbers([...parsed.component_ids()], context.leafComponentIds),
+      'committed LeafNode component ids changed',
+    );
+    assert(
+      equalNumbers([...parsed.supported_component_ids()], context.supportedComponentIds),
+      'committed supported components changed',
+    );
+    assert(
+      Buffer.from(parsed.credential_identity()).equals(Buffer.from(accountPublicKey))
+        && Buffer.from(parsed.leaf_signature_key()).equals(Buffer.from(leafSignatureKey)),
+      'committed KeyPackage identity binding changed',
+    );
+  } finally {
+    parsed.free();
+    identity?.free();
+    provider.free();
+  }
+  console.log(JSON.stringify({
+    mode: 'verify-committed',
+    context: { bytes: Buffer.byteLength(contextJson), sha256: sha256(contextJson) },
+    envelope: { bytes: Buffer.byteLength(envelopeJson), sha256: sha256(envelopeJson) },
+    keyPackage: { bytes: framedKeyPackage.length, sha256: sha256(framedKeyPackage) },
+    payload: { bytes: snapshot.length, sha256: sha256(snapshot) },
+    selfCheck: context.selfCheck,
+    writerSha256,
+  }, null, 2));
+  process.exit(0);
+}
 
 const accountPrivateKey = exactPrivateKey(3);
 const accountPublicKey = Uint8Array.from(schnorr.getPublicKey(accountPrivateKey));
@@ -163,4 +245,3 @@ console.log(JSON.stringify({
   selfCheck: context.selfCheck,
   writerSha256,
 }, null, 2));
-

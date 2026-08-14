@@ -1997,9 +1997,9 @@ struct PhaseB2GroupContext {
 
 /// Canonical, immutable description of one fully validated B3.2 join candidate.
 ///
-/// Provider snapshots are deliberately absent from the logical fields. Their
-/// digests are commitments to exact bytes within one operation, not canonical
-/// identities across a restore (the provider storage map has no stable order).
+/// Provider snapshot digests are deliberately instance-scoped commitments to
+/// exact bytes within this operation. They are not canonical logical-state
+/// identities across unrelated restores (the storage map has no stable order).
 #[cfg(feature = "extensions-draft")]
 #[wasm_bindgen]
 #[derive(Clone, PartialEq, Eq)]
