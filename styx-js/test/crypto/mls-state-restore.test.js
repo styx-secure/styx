@@ -31,6 +31,7 @@ const PRE_B1_FIXTURE = loadFixture('../fixtures/mls-state-v1/');
 const B1_FIXTURE = loadFixture('../fixtures/mls-state-b1/');
 const B2_1_FIXTURE = loadFixture('../fixtures/mls-state-b2-1/');
 const B2_2_PROVIDER_FIXTURE = loadFixture('../fixtures/mls-state-b2-2/');
+const B2_7_PROVIDER_FIXTURE = loadFixture('../fixtures/mls-state-b2-7/');
 const FIXTURE_ENVELOPE = PRE_B1_FIXTURE.envelope;
 const CTX = PRE_B1_FIXTURE.context;
 
@@ -230,6 +231,50 @@ describe('mls-state-b2-2 PhaseB2 writer fixture under the B2.7 runtime', () => {
         .toBe(context.bob.leafSignatureKey);
       const response = group.create_application_message(
         provider, identity, utf8Encode(context.replyPlaintext));
+      expect(response).toBeInstanceOf(Uint8Array);
+      expect(response.length).toBeGreaterThan(0);
+    } finally {
+      received?.free();
+      group?.free();
+      identity?.free();
+      provider.free();
+    }
+  });
+});
+
+describe('mls-state-b2-7 outgoing writer fixture before the B3.1 artifact rebuild', () => {
+  test('strictly restores the exact provider, decrypts the reference and creates a reply', async () => {
+    const wasm = await import('../../vendor/openmls-wasm/openmls_wasm.js');
+    const { context, stateBytes } = strictPhaseB2ProviderFixture(B2_7_PROVIDER_FIXTURE);
+    const provider = new wasm.Provider();
+    let identity;
+    let group;
+    let received;
+    try {
+      provider.restore_state(stateBytes);
+      identity = wasm.PhaseB2Identity.load(
+        provider,
+        base64ToBytes(context.alice.accountPublicKey),
+        base64ToBytes(context.alice.leafSignatureKey),
+      );
+      group = wasm.PhaseB2Group.load(provider, base64ToBytes(context.groupId));
+      expect(identity).toBeDefined();
+      expect(group).toBeDefined();
+      received = group.receive_application_message(
+        provider,
+        base64ToBytes(context.referenceCiphertext),
+      );
+      expect(utf8Decode(received.plaintext())).toBe(context.referencePlaintext);
+      expect(received.sender_leaf_index()).toBe(context.bob.leafIndex);
+      expect(bytesToBase64(received.sender_credential_identity()))
+        .toBe(context.bob.accountPublicKey);
+      expect(bytesToBase64(received.sender_signature_key()))
+        .toBe(context.bob.leafSignatureKey);
+      const response = group.create_application_message(
+        provider,
+        identity,
+        utf8Encode(context.replyPlaintext),
+      );
       expect(response).toBeInstanceOf(Uint8Array);
       expect(response.length).toBeGreaterThan(0);
     } finally {

@@ -1,7 +1,7 @@
 # Vendored OpenMLS-WASM
 
 This directory contains the pinned OpenMLS WebAssembly engine used by the
-legacy Styx chat and by isolated Phase B1/Phase B2 capability probes. The complete pin,
+legacy Styx chat and by isolated Phase B1/Phase B2/B3.1 capability probes. The complete pin,
 toolchain, licensing classification, hashes, and residual risks are recorded in
 [`PROVENANCE.md`](./PROVENANCE.md).
 
@@ -15,7 +15,7 @@ toolchain, licensing classification, hashes, and residual risks are recorded in
 - Enabled upstream feature: `extensions-draft`
 
 The source revision has not changed. The draft feature is enabled because the
-non-product Phase B1/Phase B2 probes need the upstream application-data dictionary and
+non-product Phase B1/Phase B2/B3.1 probes need the upstream application-data dictionary and
 staged-commit APIs. The feature expands the compiled parser surface for both
 profiles; it does not make the shipping product select the probe profile.
 
@@ -28,7 +28,7 @@ Run from this directory:
 ```
 
 Docker is required. No host Rust toolchain is used. The committed WASM is
-2,081,600 bytes raw and 750,045 bytes gzip.
+2,094,818 bytes raw and 752,392 bytes gzip (`gzip -9 -n`).
 
 ## Profiles
 
@@ -41,8 +41,8 @@ The legacy API remains the shipping path:
 - existing `Identity`, `Group`, `KeyPackage`, `RatchetTree`, and automatic
   inbound merge semantics are unchanged.
 
-The separate `PhaseB1*` and `PhaseB2*` exports are capability-probe types only.
-Both use:
+The separate `PhaseB1*`, `PhaseB2*` and `PhaseB31*` exports are
+capability-probe types only. They use:
 
 - ciphersuite:
   `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` (`0x0001`);
@@ -63,6 +63,13 @@ sender-preserving application receive result containing the OpenMLS-authenticate
 sender leaf, credential identity and leaf signature key. It does not verify the
 BIP-340 account-identity proof; that remains the JavaScript policy boundary.
 
+`PhaseB31KeyPackage` is a proof-only, non-product wrapper that advertises the
+exact supported component set `[0x8001, 0x8003, 0x8009, 0x800c]` decoded from
+the emitted LeafNode bytes. Its constructor performs an internal strict
+round-trip of canonical present-empty `marmot.group.profile.v1` GroupContext
+state. Existing `PhaseB2*` lists, validators, serialized state and behavior are
+unchanged, and B3.1 exposes no product getter or mutation API.
+
 No product source imports the probe. It demonstrates local mechanics only: it
 is not a Marmot interoperability, security-audit, or production-readiness claim.
 
@@ -74,7 +81,8 @@ It adds:
 - whole-provider persistence and strict hostile-input restoration;
 - legacy identity/group reload and member-identity inspection;
 - returned errors rather than WASM traps on hostile wire bodies;
-- the isolated Phase B1 and Phase B2 profiles, framed KeyPackage inspection,
+- the isolated Phase B1 and Phase B2 profiles, the isolated B3.1
+  KeyPackage/profile capability, framed KeyPackage inspection,
   explicit pending/staged Commit lifecycles, bounded candidate projection and
   sender-preserving application receive boundary described above.
 
