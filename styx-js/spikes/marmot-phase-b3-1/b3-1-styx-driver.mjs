@@ -135,7 +135,6 @@ export class StyxB31Peer {
     this.#restartEvidence = Object.freeze({
       expectedLeafSignatureKeySha256: sha256(this.#leafSignatureKey),
       providerStateCommitmentSha256: sha256(stateBytes),
-      restoredIdentityCredentialMatches: true,
       restoredLeafSignatureKeySha256: sha256(restoredLeafSignatureKey),
     });
   }
@@ -143,6 +142,13 @@ export class StyxB31Peer {
   publicKeyPackage() {
     const parsed = this.#wasm.PhaseB31KeyPackage.from_framed_bytes(this.#keyPackageBytes);
     try {
+      const exposureProviderState = hexBytes(
+        readFileSync(
+          resolve(this.#privateDirectory, 'styx-provider-state.hex'),
+          'utf8',
+        ).trim(),
+        'Styx B3.1 provider state at public exposure',
+      );
       return {
         accountIdentityHex: Buffer.from(parsed.credential_identity()).toString('hex'),
         ciphersuite: parsed.ciphersuite_id(),
@@ -154,8 +160,7 @@ export class StyxB31Peer {
         keyPackageHex: Buffer.from(this.#keyPackageBytes).toString('hex'),
         keyPackageSha256: sha256(this.#keyPackageBytes),
         leafSignatureKeyHex: Buffer.from(parsed.leaf_signature_key()).toString('hex'),
-        providerStateCommitmentSha256:
-          this.#restartEvidence.providerStateCommitmentSha256,
+        providerStateCommitmentSha256: sha256(exposureProviderState),
         supportedComponentIds: [...parsed.supported_component_ids()],
         wasmSha256: sha256(this.#wasmBytes),
       };

@@ -29,7 +29,6 @@ function syntheticNoGo(head) {
       styxDurableRestartEvidence: {
         expectedLeafSignatureKeySha256: 'b'.repeat(64),
         providerStateCommitmentSha256: 'c'.repeat(64),
-        restoredIdentityCredentialMatches: true,
         restoredLeafSignatureKeySha256: 'b'.repeat(64),
       },
       styxInternalGroupProfileCodecValidated: true,
@@ -115,10 +114,8 @@ describe('Phase B3.1 exact-pin MDK bounded evidence', () => {
       expect(Object.keys(restart).sort()).toEqual([
         'expectedLeafSignatureKeySha256',
         'providerStateCommitmentSha256',
-        'restoredIdentityCredentialMatches',
         'restoredLeafSignatureKeySha256',
       ]);
-      expect(restart.restoredIdentityCredentialMatches).toBe(true);
       expect(restart.expectedLeafSignatureKeySha256)
         .toBe(restart.restoredLeafSignatureKeySha256);
       expect(restart.providerStateCommitmentSha256).toMatch(/^[0-9a-f]{64}$/);

@@ -329,7 +329,6 @@ export function validateB31Report(report, transcriptHeadSha256) {
   assertExactKeys(restart, [
     'expectedLeafSignatureKeySha256',
     'providerStateCommitmentSha256',
-    'restoredIdentityCredentialMatches',
     'restoredLeafSignatureKeySha256',
   ], 'B3.1 durable-restart evidence');
   for (const [label, digest] of [
@@ -339,9 +338,8 @@ export function validateB31Report(report, transcriptHeadSha256) {
     ['internal group-profile state',
       report.acceptedBeforeBoundary.styxInternalGroupProfileStateSha256],
   ]) assertLowerHex(digest, 32, label);
-  if (restart.restoredIdentityCredentialMatches !== true
-    || restart.expectedLeafSignatureKeySha256 !== restart.restoredLeafSignatureKeySha256) {
-    throw new TypeError('B3.1 durable-restart evidence does not bind the restored identity');
+  if (restart.expectedLeafSignatureKeySha256 !== restart.restoredLeafSignatureKeySha256) {
+    throw new TypeError('B3.1 durable-restart evidence does not preserve the leaf signature key');
   }
   if (report.firstIncompatibleOperation === 'styx_join_mdk_welcome') {
     if (report.disposition !== 'NO-GO'

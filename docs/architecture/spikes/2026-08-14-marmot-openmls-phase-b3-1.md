@@ -84,8 +84,8 @@ Public evidence locations:
 Transcript heads:
 
 ```text
-run-a  963d62b619e67be090cb1382376550dc21c958cf0f25976f85eca0aea3ffa0d4
-run-b  14bf6379cfc8ebe85ebde4652e4503d950d076867c01cb2ba717524fe18adcaa
+run-a  fa8464b946afcdaa8b1d76734441d6fd06f24a3ec877f13e0ad66caf3117969e
+run-b  8a299301bc3e9e4bd1f42cdb21c4757cafaddf5451a10138c9e6025c505f6a1b
 ```
 
 Fresh cryptographic material makes GroupContext, projection, KeyPackage,

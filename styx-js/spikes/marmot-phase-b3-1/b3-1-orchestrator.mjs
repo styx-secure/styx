@@ -12,6 +12,7 @@ import {
   B31_FOUNDING_DESCRIPTION,
   B31_FOUNDING_NAME,
   B31_GROUP_CONTEXT_COMPONENT_IDS,
+  B31_LEAF_COMPONENT_IDS,
   B31_MDK_REVISION,
   B31_PRIVATE_ROOT,
   B31_REQUIRED_COMPONENT_IDS,
@@ -201,6 +202,27 @@ function validateMdkProjection(projection, creationGroupIdHex, expected, keyPack
   if (!styxLeaf || styxLeaf.signature_public_key_hex !== keyPackage.leafSignatureKeyHex) {
     throw new Error('MDK projection does not bind the exact Styx identity and leaf key');
   }
+  assertExactKeys(styxLeaf.capabilities, [
+    'app_components', 'ciphersuites', 'credentials', 'extensions', 'proposals', 'versions',
+  ], 'MDK projected Styx leaf capabilities');
+  assertExactComponentIds(
+    styxLeaf.capabilities.app_components,
+    B31_SUPPORTED_COMPONENT_IDS,
+    'MDK projected Styx supported components',
+  );
+  for (const [field, expectedValues] of [
+    ['ciphersuites', [1]],
+    ['credentials', [1]],
+    ['extensions', [6]],
+    ['proposals', [8]],
+    ['versions', [1]],
+  ]) {
+    assertExactComponentIds(
+      styxLeaf.capabilities[field],
+      expectedValues,
+      `MDK projected Styx ${field}`,
+    );
+  }
   if (!Array.isArray(projection.sorted_member_identities_hex)
     || projection.sorted_member_identities_hex.length !== 2
     || !projection.sorted_member_identities_hex.includes(keyPackage.accountIdentityHex)) {
@@ -318,16 +340,19 @@ async function run() {
       B31_SUPPORTED_COMPONENT_IDS,
       'emitted Styx B3.1 supported components',
     );
+    assertExactComponentIds(
+      keyPackage.componentIds,
+      B31_LEAF_COMPONENT_IDS,
+      'emitted Styx B3.1 leaf component locations',
+    );
     const expectedProfile = styx.expectedGroupProfile();
     const restartEvidence = keyPackage.durableRestartEvidence;
     assertExactKeys(restartEvidence, [
       'expectedLeafSignatureKeySha256',
       'providerStateCommitmentSha256',
-      'restoredIdentityCredentialMatches',
       'restoredLeafSignatureKeySha256',
     ], 'Styx durable-restart evidence');
-    const durableRestartValidated = restartEvidence.restoredIdentityCredentialMatches === true
-      && restartEvidence.expectedLeafSignatureKeySha256
+    const durableRestartValidated = restartEvidence.expectedLeafSignatureKeySha256
         === restartEvidence.restoredLeafSignatureKeySha256
       && restartEvidence.providerStateCommitmentSha256
         === keyPackage.providerStateCommitmentSha256;
