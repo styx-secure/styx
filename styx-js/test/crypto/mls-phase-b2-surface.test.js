@@ -9,8 +9,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VENDOR = join(HERE, '../../vendor/openmls-wasm');
 const PRODUCT_SRC = join(HERE, '../../src');
-const EXPECTED_CANONICAL_BYTES = 57363;
-const EXPECTED_CANONICAL_SHA256 = '84fc77b3394fff5d48027dce3fe55c29aa339507bf9bd140f9c9966a60ba4061';
+const EXPECTED_CANONICAL_BYTES = 60042;
+const EXPECTED_CANONICAL_SHA256 = 'd6e025ee02f12aae62c11da2bbdeba857a1840236a033cb39543789272ae81fc';
 
 function valueShape(value) {
   if (typeof value === 'function') return `function:${value.length}`;

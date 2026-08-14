@@ -292,6 +292,7 @@ export class PhaseB2Identity {
     free(): void;
     [Symbol.dispose](): void;
     account_public_key(): Uint8Array;
+    b3_1_key_package(provider: Provider, proof: Uint8Array): PhaseB31KeyPackage;
     key_package(provider: Provider, proof: Uint8Array): PhaseB2KeyPackage;
     leaf_signature_key(): Uint8Array;
     static load(provider: Provider, account_public_key: Uint8Array, leaf_signature_key: Uint8Array): PhaseB2Identity | undefined;
@@ -358,6 +359,24 @@ export class PhaseB2StagedCommit {
     projection(): PhaseB2CommitProjection;
 }
 
+/**
+ * Isolated B3.1 proof wrapper. Product code must not reference this surface.
+ */
+export class PhaseB31KeyPackage {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    ciphersuite_id(): number;
+    component_ids(): Uint16Array;
+    credential_identity(): Uint8Array;
+    static from_framed_bytes(bytes: Uint8Array): PhaseB31KeyPackage;
+    identity_proof(): Uint8Array;
+    is_last_resort(): boolean;
+    leaf_signature_key(): Uint8Array;
+    supported_component_ids(): Uint16Array;
+    to_framed_bytes(): Uint8Array;
+}
+
 export class Provider {
     free(): void;
     [Symbol.dispose](): void;
@@ -421,6 +440,7 @@ export interface InitOutput {
     readonly __wbg_phaseb2ratchettree_free: (a: number, b: number) => void;
     readonly __wbg_phaseb2receivedapplicationmessage_free: (a: number, b: number) => void;
     readonly __wbg_phaseb2stagedcommit_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb31keypackage_free: (a: number, b: number) => void;
     readonly __wbg_provider_free: (a: number, b: number) => void;
     readonly __wbg_ratchettree_free: (a: number, b: number) => void;
     readonly addmessages_commit: (a: number) => any;
@@ -573,6 +593,7 @@ export interface InitOutput {
     readonly phaseb2group_required_component_ids: (a: number) => [number, number, number, number];
     readonly phaseb2group_stage_inbound_commit: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly phaseb2identity_account_public_key: (a: number) => [number, number];
+    readonly phaseb2identity_b3_1_key_package: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly phaseb2identity_key_package: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly phaseb2identity_leaf_signature_key: (a: number) => [number, number];
     readonly phaseb2identity_load: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
@@ -597,6 +618,14 @@ export interface InitOutput {
     readonly phaseb2receivedapplicationmessage_sender_leaf_index: (a: number) => number;
     readonly phaseb2receivedapplicationmessage_sender_signature_key: (a: number) => [number, number];
     readonly phaseb2stagedcommit_projection: (a: number) => number;
+    readonly phaseb31keypackage_component_ids: (a: number) => [number, number];
+    readonly phaseb31keypackage_credential_identity: (a: number) => [number, number];
+    readonly phaseb31keypackage_from_framed_bytes: (a: number, b: number) => [number, number, number];
+    readonly phaseb31keypackage_identity_proof: (a: number) => [number, number];
+    readonly phaseb31keypackage_is_last_resort: (a: number) => number;
+    readonly phaseb31keypackage_leaf_signature_key: (a: number) => [number, number];
+    readonly phaseb31keypackage_supported_component_ids: (a: number) => [number, number, number, number];
+    readonly phaseb31keypackage_to_framed_bytes: (a: number) => [number, number, number, number];
     readonly provider_new: () => number;
     readonly provider_restore_state: (a: number, b: number, c: number) => [number, number];
     readonly provider_serialize_state: (a: number) => [number, number];
@@ -607,6 +636,7 @@ export interface InitOutput {
     readonly phaseb2receivedapplicationmessage_epoch: (a: number) => bigint;
     readonly phaseb2stagedcommit_is_consumed: (a: number) => number;
     readonly phaseb2keypackage_ciphersuite_id: (a: number) => number;
+    readonly phaseb31keypackage_ciphersuite_id: (a: number) => number;
     readonly greet: () => void;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;

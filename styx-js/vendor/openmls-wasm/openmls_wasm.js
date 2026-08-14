@@ -2146,6 +2146,21 @@ export class PhaseB2Identity {
     /**
      * @param {Provider} provider
      * @param {Uint8Array} proof
+     * @returns {PhaseB31KeyPackage}
+     */
+    b3_1_key_package(provider, proof) {
+        _assertClass(provider, Provider);
+        const ptr0 = passArray8ToWasm0(proof, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb2identity_b3_1_key_package(this.__wbg_ptr, provider.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB31KeyPackage.__wrap(ret[0]);
+    }
+    /**
+     * @param {Provider} provider
+     * @param {Uint8Array} proof
      * @returns {PhaseB2KeyPackage}
      */
     key_package(provider, proof) {
@@ -2519,6 +2534,116 @@ export class PhaseB2StagedCommit {
 }
 if (Symbol.dispose) PhaseB2StagedCommit.prototype[Symbol.dispose] = PhaseB2StagedCommit.prototype.free;
 
+/**
+ * Isolated B3.1 proof wrapper. Product code must not reference this surface.
+ */
+export class PhaseB31KeyPackage {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB31KeyPackage.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB31KeyPackageFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB31KeyPackageFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb31keypackage_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    ciphersuite_id() {
+        const ret = wasm.phaseb31keypackage_ciphersuite_id(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    component_ids() {
+        const ret = wasm.phaseb31keypackage_component_ids(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    credential_identity() {
+        const ret = wasm.phaseb31keypackage_credential_identity(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {Uint8Array} bytes
+     * @returns {PhaseB31KeyPackage}
+     */
+    static from_framed_bytes(bytes) {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb31keypackage_from_framed_bytes(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB31KeyPackage.__wrap(ret[0]);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    identity_proof() {
+        const ret = wasm.phaseb31keypackage_identity_proof(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {boolean}
+     */
+    is_last_resort() {
+        const ret = wasm.phaseb31keypackage_is_last_resort(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    leaf_signature_key() {
+        const ret = wasm.phaseb31keypackage_leaf_signature_key(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    supported_component_ids() {
+        const ret = wasm.phaseb31keypackage_supported_component_ids(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    to_framed_bytes() {
+        const ret = wasm.phaseb31keypackage_to_framed_bytes(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) PhaseB31KeyPackage.prototype[Symbol.dispose] = PhaseB31KeyPackage.prototype.free;
+
 export class Provider {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -2806,6 +2931,9 @@ const PhaseB2ReceivedApplicationMessageFinalization = (typeof FinalizationRegist
 const PhaseB2StagedCommitFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_phaseb2stagedcommit_free(ptr, 1));
+const PhaseB31KeyPackageFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb31keypackage_free(ptr, 1));
 const ProviderFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_provider_free(ptr, 1));

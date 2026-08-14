@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+import { schnorr } from '@noble/curves/secp256k1';
 
 import {
   B31CanonicalError,
@@ -15,6 +17,8 @@ import {
   encodeCanonicalQuicVarint,
   encodeGroupProfileBytes,
 } from '../../spikes/marmot-phase-b3-1/b3-1-canonical.mjs';
+import { createAccountIdentityProofV2 }
+  from '../../spikes/marmot-phase-b1/identity-proof-v2.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STYX_JS = join(HERE, '../..');
@@ -26,9 +30,31 @@ const GENERATOR = join(
 const PATCH = join(STYX_JS, 'vendor/openmls-wasm/patch/lib.rs');
 const EXPECTED_WRITER = 'ed5e740d9c93aa46aa1afb7b6065e4b5b92be972a8a080ddd0a35091260691bb';
 const EXPECTED_SOURCE_HEAD = 'a69df78c720bc679840172f68a68327ef603636c';
+let wasmPromise;
 
 function sha256(value) {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function free(value) {
+  try { value?.free?.(); } catch { /* test cleanup */ }
+}
+
+async function loadWasm() {
+  if (!wasmPromise) {
+    wasmPromise = (async () => {
+      const moduleUrl = pathToFileURL(join(STYX_JS, 'vendor/openmls-wasm/openmls_wasm.js'));
+      moduleUrl.searchParams.set('b3-1-group-profile-test', '1');
+      const wasm = await import(moduleUrl.href);
+      await wasm.default({
+        module_or_path: readFileSync(
+          join(STYX_JS, 'vendor/openmls-wasm/openmls_wasm_bg.wasm'),
+        ),
+      });
+      return wasm;
+    })();
+  }
+  return wasmPromise;
 }
 
 describe('Phase B3.1 Stage 1 source and outgoing-artifact evidence', () => {
@@ -166,5 +192,50 @@ describe('Phase B3.1 canonical JavaScript codec', () => {
       B31_SUPPORTED_COMPONENT_IDS,
       'supported components',
     )).toThrow(expect.objectContaining({ code: 'B31_PROFILE_MISMATCH' }));
+  });
+});
+
+describe('Phase B3.1 installed WASM surface', () => {
+  test('emitted bytes advertise the exact isolated profile and reject cross-profile parsing', async () => {
+    const wasm = await loadWasm();
+    const provider = new wasm.Provider();
+    const accountPrivateKey = new Uint8Array(32);
+    accountPrivateKey[31] = 0x31;
+    const accountPublicKey = Uint8Array.from(schnorr.getPublicKey(accountPrivateKey));
+    const identity = new wasm.PhaseB2Identity(provider, accountPublicKey);
+    const proof = createAccountIdentityProofV2(
+      accountPrivateKey,
+      identity.leaf_signature_key(),
+      1_786_435_231,
+    );
+    let b31;
+    let parsedB31;
+    let b2;
+    let parsedB2;
+    try {
+      b31 = identity.b3_1_key_package(provider, proof);
+      const b31Bytes = Uint8Array.from(b31.to_framed_bytes());
+      parsedB31 = wasm.PhaseB31KeyPackage.from_framed_bytes(b31Bytes);
+      expect([...parsedB31.supported_component_ids()]).toEqual(
+        [...B31_SUPPORTED_COMPONENT_IDS],
+      );
+      expect([...parsedB31.component_ids()]).toEqual([1, 0x8009]);
+      expect(parsedB31.ciphersuite_id()).toBe(1);
+      expect(parsedB31.is_last_resort()).toBe(false);
+      expect(() => wasm.PhaseB2KeyPackage.from_framed_bytes(b31Bytes)).toThrow();
+
+      b2 = identity.key_package(provider, proof);
+      const b2Bytes = Uint8Array.from(b2.to_framed_bytes());
+      parsedB2 = wasm.PhaseB2KeyPackage.from_framed_bytes(b2Bytes);
+      expect([...parsedB2.supported_component_ids()]).toEqual([0x8003, 0x8009, 0x800c]);
+      expect(() => wasm.PhaseB31KeyPackage.from_framed_bytes(b2Bytes)).toThrow();
+    } finally {
+      free(parsedB2);
+      free(b2);
+      free(parsedB31);
+      free(b31);
+      free(identity);
+      free(provider);
+    }
   });
 });

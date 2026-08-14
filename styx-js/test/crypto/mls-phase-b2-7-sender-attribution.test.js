@@ -382,7 +382,7 @@ function rebuildEdge(record, changes) {
 describe('Phase B2.7 retained-history convergence', () => {
   test('Stage 2 runtime source uses only the sender-preserving receive API', () => {
     expect(B27_RUNTIME.wasmArtifactSha256)
-      .toBe('ed5e740d9c93aa46aa1afb7b6065e4b5b92be972a8a080ddd0a35091260691bb');
+      .toBe('26a41d86d7fd2c9ab4184344e4ff00f5eebb5bc7609ba22e98b12ce903d4a4dd');
     const runtimeFiles = [
       'b2-7-canonical.mjs',
       'b2-7-record.mjs',
