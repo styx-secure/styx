@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -50,10 +50,6 @@ function createPeer(wasm, provider, privateKey) {
 
 function assert(condition, message) {
   if (!condition) throw new Error(`B2.7 writer fixture: ${message}`);
-}
-
-if (existsSync(contextPath) || existsSync(envelopePath)) {
-  throw new Error('B2.7 writer fixture outputs already exist; immutable fixture not overwritten');
 }
 
 const wasmBytes = readFileSync(join(wasmDirectory, 'openmls_wasm_bg.wasm'));

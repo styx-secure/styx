@@ -89,14 +89,14 @@ describe('Phase B3.1 Stage 1 source and outgoing-artifact evidence', () => {
 
   test('the one-shot generator binds the exact outgoing tuple and refuses overwrite', () => {
     const generator = readFileSync(GENERATOR, 'utf8');
-    expect(Buffer.byteLength(generator)).toBe(7551);
+    expect(Buffer.byteLength(generator)).toBe(7378);
     expect(sha256(generator)).toBe(
-      '88c92ae2103b36ccc65b07ab6abd1512ee68b30cf97583766d69fcc1b02ad20c',
+      '059268ac2a85616a67feee5cede38fd7368e0317bacedb8595ce1bd7530ef7b6',
     );
     expect(generator).toContain(`const EXPECTED_WRITER_SHA256 =\n  '${EXPECTED_WRITER}'`);
     expect(generator).toContain(`const SOURCE_HEAD = '${EXPECTED_SOURCE_HEAD}'`);
     expect(generator).toContain("flag: 'wx'");
-    expect(generator).toContain('immutable fixture not overwritten');
+    expect(generator).not.toContain('existsSync');
   });
 
   test('the isolated Rust source freezes B2 and separates B3.1 roles and limits', () => {
