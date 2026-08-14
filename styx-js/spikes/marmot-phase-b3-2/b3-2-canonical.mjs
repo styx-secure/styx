@@ -24,6 +24,7 @@ export const B32_PROJECTION_VERSION = 1;
 export const B32_BASE_SHA = '019da38921deca8b9bb9a4ca6544c827db8ef3ac';
 export const B32_BASE_TREE = 'fa593e0aa61889e98005ff402b3bc0aedcfa4f4c';
 export const B32_OPENMLS_REVISION = '09e92777dba0528d3d29e2e5e681b7e91637c7be';
+export const B32_WASM_SHA256 = 'd281d4a4c3c72999e966c1e70bff68b0ddc5eda23653295adbf620bad723f62c';
 export const B32_MARMOT_REVISION = '4ad4ae21479c3f3fa9950c6fc4556a76941a62e1';
 export const B32_MDK_REVISION = '9396adb6aa6b95b521a7979facd5ea7040c07288';
 export const B32_RUN_ROOT = '/home/mverde/.local/share/styx-b3-2-runs/issue-173';

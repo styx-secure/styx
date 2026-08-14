@@ -8,6 +8,7 @@ import {
   B32_MDK_REVISION,
   B32_PRIVATE_ROOT,
   B32_STATE,
+  B32_WASM_SHA256,
   sha256Hex,
 } from '../../spikes/marmot-phase-b3-2/b3-2-canonical.mjs';
 import { openB32FileJournal } from '../../spikes/marmot-phase-b3-2/b3-2-journal.mjs';
@@ -45,10 +46,12 @@ describe('Phase B3.2 source boundary and exact pins', () => {
     expect(driverSource).toContain('await this.#journal.commitJoined');
   });
 
-  test('pins exact MDK and preserves the outgoing B3.1 tuple during Stage 1', () => {
+  test('pins exact MDK, outgoing B3.1 state writer and installed B3.2 artifact', () => {
     const pins = verifyPins();
     expect(pins.mdkRevision).toBe(B32_MDK_REVISION);
-    expect(pins.installedWasmSha256).toBe(pins.outgoingB31WasmSha256);
+    expect(pins.installedWasmSha256).toBe(B32_WASM_SHA256);
+    expect(pins.expectedB32WasmSha256).toBe(B32_WASM_SHA256);
+    expect(pins.outgoingB31WasmSha256).not.toBe(pins.installedWasmSha256);
     expect(pins.openMlsRevision).toBe('09e92777dba0528d3d29e2e5e681b7e91637c7be');
   });
 });

@@ -17,6 +17,7 @@ import {
   B32_MARMOT_REVISION,
   B32_MDK_REVISION,
   B32_OPENMLS_REVISION,
+  B32_WASM_SHA256,
 } from './b3-2-canonical.mjs';
 
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -43,6 +44,7 @@ export function verifyPins() {
   requireEqual(git(mdkRoot, 'status', '--porcelain'), '', 'MDK worktree');
   requireEqual(sha256(resolve(mdkRoot, 'Cargo.lock')), B31_MDK_LOCK_SHA256, 'external MDK lockfile');
   const wasmSha256 = sha256(resolve(repoRoot, 'styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm'));
+  requireEqual(wasmSha256, B32_WASM_SHA256, 'installed B3.2 WASM');
   return Object.freeze({
     baseSha: B32_BASE_SHA,
     baseTree: B32_BASE_TREE,
@@ -52,6 +54,7 @@ export function verifyPins() {
     mdkLockSha256: B31_MDK_LOCK_SHA256,
     openMlsRevision: B32_OPENMLS_REVISION,
     outgoingB31WasmSha256: B31_WASM_SHA256,
+    expectedB32WasmSha256: B32_WASM_SHA256,
     installedWasmSha256: wasmSha256,
   });
 }

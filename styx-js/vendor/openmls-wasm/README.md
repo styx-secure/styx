@@ -1,7 +1,7 @@
 # Vendored OpenMLS-WASM
 
 This directory contains the pinned OpenMLS WebAssembly engine used by the
-legacy Styx chat and by isolated Phase B1/Phase B2/B3.1 capability probes. The complete pin,
+legacy Styx chat and by isolated Phase B1/Phase B2/B3.1/B3.2 capability probes. The complete pin,
 toolchain, licensing classification, hashes, and residual risks are recorded in
 [`PROVENANCE.md`](./PROVENANCE.md).
 
@@ -15,7 +15,7 @@ toolchain, licensing classification, hashes, and residual risks are recorded in
 - Enabled upstream feature: `extensions-draft`
 
 The source revision has not changed. The draft feature is enabled because the
-non-product Phase B1/Phase B2/B3.1 probes need the upstream application-data dictionary and
+non-product Phase B1/Phase B2/B3.1/B3.2 probes need the upstream application-data dictionary and
 staged-commit APIs. The feature expands the compiled parser surface for both
 profiles; it does not make the shipping product select the probe profile.
 
@@ -28,7 +28,7 @@ Run from this directory:
 ```
 
 Docker is required. No host Rust toolchain is used. The committed WASM is
-2,094,818 bytes raw and 752,392 bytes gzip (`gzip -9 -n`).
+2,139,387 bytes raw and 763,846 bytes gzip (`gzip -9 -n`).
 
 ## Profiles
 
@@ -41,7 +41,7 @@ The legacy API remains the shipping path:
 - existing `Identity`, `Group`, `KeyPackage`, `RatchetTree`, and automatic
   inbound merge semantics are unchanged.
 
-The separate `PhaseB1*`, `PhaseB2*` and `PhaseB31*` exports are
+The separate `PhaseB1*`, `PhaseB2*`, `PhaseB31*` and `PhaseB32*` exports are
 capability-probe types only. They use:
 
 - ciphersuite:
@@ -70,6 +70,14 @@ round-trip of canonical present-empty `marmot.group.profile.v1` GroupContext
 state. Existing `PhaseB2*` lists, validators, serialized state and behavior are
 unchanged, and B3.1 exposes no product getter or mutation API.
 
+The B3.2 wrapper consumes one clone of an exact B3.1 Provider, identity and
+non-last-resort KeyPackage together with an MDK-authored Welcome. It permits
+only the RatchetTree embedded in encrypted GroupInfo, prepares the join without
+mutating the predecessor, projects and validates the complete candidate, and
+releases candidate Provider bytes exactly once. `PhaseB32PendingWelcome`,
+`PhaseB32JoinProjection`, and `PhaseB32Group` remain isolated probe types; they
+do not expose a product join path or establish application-message compatibility.
+
 No product source imports the probe. It demonstrates local mechanics only: it
 is not a Marmot interoperability, security-audit, or production-readiness claim.
 
@@ -84,7 +92,8 @@ It adds:
 - the isolated Phase B1 and Phase B2 profiles, the isolated B3.1
   KeyPackage/profile capability, framed KeyPackage inspection,
   explicit pending/staged Commit lifecycles, bounded candidate projection and
-  sender-preserving application receive boundary described above.
+  sender-preserving application receive boundary, and the isolated B3.2
+  embedded-tree Welcome preparation/release surface described above.
 
 The patch and its probe API are outside the scope of upstream OpenMLS audits.
 `roundtrip.mjs` proves the unchanged legacy 1:1 path; the capability evidence is
@@ -105,7 +114,8 @@ not introduce Marmot, MDK, Darkmatter, or Least Authority code or fixtures.
 - Provider persistence rewrites the complete in-memory store.
 - The legacy API still auto-merges inbound Commits by design; only the isolated
   Phase B1/Phase B2 APIs expose explicit staging.
-- The capability APIs do not implement durable publish-before-apply, crash recovery,
-  authorization policy, fork resolution, or concurrent Commit convergence.
+- The capability APIs do not implement durable publish-before-apply, production
+  crash recovery, authorization policy, fork resolution, or concurrent Commit
+  convergence. The B3.2 spike owns only its file-backed Welcome journal evidence.
 - Browser-origin control, compromised devices/extensions, metadata exposure,
   malicious recipients, and rollback/physical-erasure limits remain.

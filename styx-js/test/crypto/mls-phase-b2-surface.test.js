@@ -1,4 +1,4 @@
-// Frozen, automatically discovered public surface of the generated B2.7 artifact.
+// Frozen, automatically discovered public surface of the generated B3.2 artifact.
 // This intentionally snapshots every export, descriptor, declaration member and
 // raw InitOutput member so a future generated addition cannot evade a narrow list.
 import { createHash } from 'node:crypto';
@@ -9,8 +9,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VENDOR = join(HERE, '../../vendor/openmls-wasm');
 const PRODUCT_SRC = join(HERE, '../../src');
-const EXPECTED_CANONICAL_BYTES = 60042;
-const EXPECTED_CANONICAL_SHA256 = 'd6e025ee02f12aae62c11da2bbdeba857a1840236a033cb39543789272ae81fc';
+const EXPECTED_CANONICAL_BYTES = 70501;
+const EXPECTED_CANONICAL_SHA256 = '91b6d584a5612678ff7b9d1fd6551bf299ee4fceb9e74858ddfe3e2ed3ddc860';
 
 function valueShape(value) {
   if (typeof value === 'function') return `function:${value.length}`;
@@ -75,16 +75,16 @@ function javascriptFiles(root) {
   return files.sort();
 }
 
-describe('generated OpenMLS Phase B2 surface', () => {
+describe('generated OpenMLS Phase B3.2 surface', () => {
   test('the complete automatically discovered public surface matches the approved snapshot', async () => {
     const canonical = JSON.stringify(await discoverGeneratedSurface());
     expect(Buffer.byteLength(canonical)).toBe(EXPECTED_CANONICAL_BYTES);
     expect(createHash('sha256').update(canonical).digest('hex')).toBe(EXPECTED_CANONICAL_SHA256);
   });
 
-  test('product source does not reference an isolated PhaseB2 or PhaseB31 surface', () => {
+  test('product source does not reference an isolated Phase B probe surface', () => {
     const offenders = javascriptFiles(PRODUCT_SRC)
-      .filter((path) => /\b(?:PhaseB2|PhaseB31)/.test(readFileSync(path, 'utf8')))
+      .filter((path) => /\b(?:PhaseB2|PhaseB31|PhaseB32)/.test(readFileSync(path, 'utf8')))
       .map((path) => path.slice(PRODUCT_SRC.length + 1));
     expect(offenders).toEqual([]);
   });
