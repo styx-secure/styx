@@ -105,7 +105,7 @@ Unlike a chat-only interface or a conventional central database, Styx is being
 designed around verifiable state, offline continuity, explicit trust profiles,
 and reusable product semantics. Current implementations are experimental and
 remain subject to conformance, interoperability, distribution, and bounded
-assurance gates.
+assurance gates, with any exercise or pilot decision gated separately.
 
 ### What Styx is not
 
@@ -221,9 +221,9 @@ Every public statement must identify its rung.
    reproducible artifact can be linked. Example: “The repository contains a
    tested Dart reference ledger.”
 2. **Bounded result:** name the exact scope. Example: “In Phase B3.1, the exact
-   pinned MDK peer accepted Styx's isolated KeyPackage and group-profile state;
-   the experiment remained NO-GO before Welcome parsing at the external
-   RatchetTree boundary.”
+   pinned MDK peer accepted Styx's isolated KeyPackage and created a group whose
+   exact group-profile state Styx decoded. The experiment remained NO-GO before
+   Welcome parsing at the external-RatchetTree boundary.”
 3. **Draft candidate:** say **Draft PR** or **candidate** and do not count it as
    current capability.
 4. **Approved direction:** use **is designed to**, **targets**, or **preferred**.
@@ -351,8 +351,9 @@ site uses no JavaScript and no essential animation.
 > follow-up without requiring a conventional contact identifier.
 
 > In Phase B3.1, the exact pinned MDK peer accepted Styx's isolated KeyPackage
-> and group-profile state. The experiment remained NO-GO before Welcome parsing
-> at the external-RatchetTree boundary; Styx is not Marmot-compatible.
+> and created a group whose exact group-profile state Styx decoded. The
+> experiment remained NO-GO before Welcome parsing at the external-RatchetTree
+> boundary; Styx is not Marmot-compatible.
 
 ### Avoid
 

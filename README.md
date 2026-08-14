@@ -38,10 +38,11 @@ review, safeguarding procedures, or emergency channels.
   independent review of a bounded high-risk scope, and any separately approved exercise or pilot
   remain future work.
 - **Current technical direction:** Marmot is the preferred compatibility target for the
-  MLS-over-Nostr session profile. An exact pinned MDK peer accepted the isolated B3.1 KeyPackage
-  and group-profile state, but the experiment remains **NO-GO** before Welcome parsing at the
-  external-RatchetTree boundary. Current Styx builds are not Marmot-compatible. The chat is a
-  minimal reference application and interoperability harness, not the product roadmap.
+  MLS-over-Nostr session profile. An exact pinned MDK peer accepted Styx's isolated B3.1
+  KeyPackage and created a group whose exact group-profile state Styx decoded. The experiment
+  remains **NO-GO** before Welcome parsing at the external-RatchetTree boundary. Current Styx
+  builds are not Marmot-compatible. The chat is a minimal reference application and
+  interoperability harness, not the product roadmap.
 
 The proposed funded programme takes these tested foundations through a conformance-backed Styx
 protocol, a bounded secure-session interoperability decision, a reusable SDK and reliable delivery,
@@ -53,6 +54,9 @@ evidence, milestones, measurable outcomes, and explicit non-claims. The
 [public identity guide](docs/BRAND_IDENTITY.md) defines naming and claim boundaries; the
 [dependency-free landing-page source](website/README.md) turns that identity into a reviewable
 public surface without deploying it.
+
+This programme description is not a promise of a complete-product audit or authorization for a
+live high-risk pilot.
 
 Current transports expose routing, timing, size, and relationship metadata. E2EE also does not
 protect a compromised endpoint, a malicious recipient, or a browser build supplied by an origin
