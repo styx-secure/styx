@@ -1,6 +1,6 @@
 # Styx project brief
 
-> **Status:** public project and funding brief, 8 August 2026.
+> **Status:** public project and funding brief, 14 August 2026.
 >
 > Styx is experimental, has not completed an independent security audit, and
 > is not ready for sensitive, high-risk, or life-critical use. This brief
@@ -144,28 +144,36 @@ product:
    does not authenticate the PWA served on first load and does not transfer an
    upstream audit to Styx
    ([technical specification](../specs/04-tech-spec.md#security-and-persistence-boundaries)).
-5. **Bounded compatibility evidence.** The completed Marmot/OpenMLS Phase A
-   source probe found that the pinned OpenMLS revision can support a gated
-   compatibility proof without replacing the MLS engine. It also documented
-   that the current wrapper and wire behavior are not compatible. Phase B must
-   still establish lifecycle safety and a real round trip against an
-   independent implementation
-   ([Phase A report](architecture/spikes/2026-08-08-marmot-openmls-phase-a.md)).
+5. **Bounded secure-session and independent-peer evidence.** Merged Phase
+   B1–B2.7 work exposes an isolated AES-128-GCM profile and exercises durable
+   staged-Commit authorization, recovery, convergence, message-ratchet and
+   current-epoch sender-attribution behavior. These are synthetic proof
+   surfaces, not product activation. The exact-pin B3 harness then exercised a
+   real independent MDK peer. B3.1 closed its first `0x8001` capability gap:
+   MDK accepted the isolated Styx KeyPackage, created a group, and Styx decoded
+   the exact group-profile state. The experiment still ended **NO-GO** before
+   Welcome parsing because the public Styx join API requires an external
+   RatchetTree that the tested MDK founding result does not expose separately.
+   No Welcome join, bidirectional traffic, Commit processing, cross-peer
+   restart, Marmot compatibility or product readiness was established
+   ([B2.7 report](architecture/spikes/2026-08-13-marmot-openmls-phase-b2-7-stage-2.md),
+   [B3 report](architecture/spikes/2026-08-13-marmot-openmls-phase-b3.md),
+   [B3.1 report](architecture/spikes/2026-08-14-marmot-openmls-phase-b3-1.md)).
 
 Draft or proposed work is not counted as completed evidence. In particular,
-the Phase B1 pull request is an isolated capability candidate, not a merged
-interoperability result or a product feature
-([Issue #129](https://github.com/styx-secure/styx/issues/129),
-[Draft PR #130](https://github.com/styx-secure/styx/pull/130)).
+future RatchetTree and full-round-trip increments remain design and
+implementation candidates until separately contracted, merged, reviewed and
+reported.
 
 ## What remains
 
 - define the language-neutral Styx application protocol and adversarial
   conformance corpus, extract independent Dart cases, and freeze parallel Dart
   feature development;
-- complete the bounded secure-session proof: profile exposure, durable commit
-  lifecycle and policy, hostile tests, and a real independent round trip that
-  produces a documented GO or NO-GO;
+- continue the bounded secure-session proof from its current typed NO-GO:
+  decide and test an explicit RatchetTree delivery/join boundary, then attempt
+  a full bidirectional message, Commit and cross-peer restart round trip against
+  the exact independent peer without weakening either implementation;
 - separate application contexts and identity profiles, define versioned secure
   application objects, and expose a minimal SDK independent of chat;
 - add crash-safe outbox, acknowledgement, retry, idempotency, deduplication,
@@ -177,9 +185,11 @@ interoperability result or a product feature
   revocation, retention, audit, export, continuity, and accessible safety copy;
 - improve PWA distribution assurance, define a stronger signed native profile,
   and validate relay and deployment operations;
-- commission an independent review of the complete candidate, remediate and
-  retest findings, and run only a bounded pilot approved by the responsible
-  security, privacy, legal, and safeguarding functions.
+- commission an independent review of a contractually bounded high-risk scope,
+  remediate and retest findings within that scope, and authorize a synthetic or
+  non-sensitive organizational exercise or later pilot only through separate
+  security, privacy, legal, and safeguarding gates. This is not a promise of a
+  complete-product audit within the proposed programme.
 
 The detailed capability gaps and proposed dependency order are recorded in the
 [application capability model](platform/application-capability-model.md) and
@@ -194,11 +204,11 @@ independent review, exact tests, and human gate.
 | Milestone | Concrete output | Completion evidence |
 |---|---|---|
 | 1. Application protocol and conformance | Versioned language-neutral objects, transitions, error rules, adversarial scenarios, and reusable vectors; Dart cases extracted before its feature freeze | Independent implementations execute the applicable corpus; divergences are resolved in the specification rather than hidden in ports |
-| 2. Secure-session interoperability decision | Completed staged-commit lifecycle, identity and KeyPackage policy, hostile tests, and an independent MDK round trip or a documented NO-GO | Reproducible byte-level evidence and an explicit compatibility decision; no claim based only on shared algorithms or event kinds |
+| 2. Secure-session interoperability decision | Preserve the completed staged-commit, identity, KeyPackage and hostile-test evidence; resolve or reject the RatchetTree seam; then attempt a full independent MDK round trip or retain a documented NO-GO | Reproducible byte-level evidence and an explicit compatibility decision; no claim based only on capability acceptance, shared algorithms or event kinds |
 | 3. Minimum SDK and reliable delivery | Data-only application interfaces, context separation, persistent outbox, ACK states, retry, idempotency, deduplication, and crash recovery | Tests demonstrate offline recovery and never label relay publication as recipient or human receipt |
 | 4. Anonymous-case capability and Themis alpha | Fresh per-case identity, accountless return capability, text submission and dialogue, operator roles and revocation, retention, and safety UX | Cross-case unlinkability tests under the declared model; end-to-end reporter/operator scenarios without conventional contact details |
 | 5. Distribution and deployment assurance | Verifiable artifacts and updates, stricter browser release controls, a native high-assurance profile decision, and reproducible relay/deployment guidance | Independent artifact comparison, update/rollback tests, metadata data-flow evidence, and continuity drills |
-| 6. Independent audit, remediation, and controlled pilot | Complete-product security review, finding disposition, retest, operational procedures, and a narrowly scoped organizational pilot | No unresolved blocking finding; reviewed residual risks; trained operators; aggregate privacy-safe pilot measures and an explicit expansion decision |
+| 6. Targeted independent review, remediation, and gated field decision | Contractually bounded review of the highest-risk Styx-authored scope, finding disposition, retest and operational procedures; a synthetic/non-sensitive exercise or later pilot only after separate readiness gates | No unresolved blocking finding within the reviewed scope; reviewed residual risks; trained operators; and an explicit GO/NO-GO decision before any broader field use |
 
 ## How success will be measured
 
@@ -213,12 +223,13 @@ independent review, exact tests, and human gate.
   Styx/Nostr chat identity, within the declared test environment;
 - relay, hosting, push, browser, and organizational metadata is measured and
   documented rather than described as absent;
-- an independent reviewer reproduces the release, tests the integrated threat
-  model, and verifies remediation of blocking findings;
-- a controlled pilot reports only bounded, non-identifying operational
-  measures such as completion of test scenarios, delivery reliability,
-  accessibility findings, response-process coverage, and incident-drill
-  results.
+- an independent reviewer reproduces the release and verifies the declared
+  high-risk review scope, its threat-model boundaries, finding disposition and
+  remediation of blocking findings within that scope;
+- any separately authorized synthetic/non-sensitive exercise or later pilot
+  reports only bounded, non-identifying operational measures such as completion
+  of test scenarios, delivery reliability, accessibility findings,
+  response-process coverage, and incident-drill results.
 
 User counts, message volume, stars, or a passing primitive test suite do not by
 themselves demonstrate safety, anonymity, adoption, or readiness.
@@ -238,6 +249,9 @@ themselves demonstrate safety, anonymity, adoption, or readiness.
 - Themis does not currently exist as a complete application. Its anonymous
   capability, metadata profile, operator controls, and deployment procedure are
   proposed work.
+- The completed B1–B3.1 work is isolated interoperability and lifecycle
+  evidence. It is not wired into the product, and the exact independent-peer
+  experiment remains NO-GO at the RatchetTree/Welcome boundary.
 - Styx does not claim universal anonymity, absence of servers or metadata,
   legal compliance, certification, upstream endorsement, or equivalence to a
   reviewed messenger.
@@ -269,5 +283,6 @@ compatibility or use does not imply endorsement.
 - [Integration roadmap](platform/integration-roadmap.md)
 - [Anonymous bidirectional dialogue use case](platform/use-cases/anonymous-dialogue.md)
 - [Marmot/OpenMLS Phase A capability report](architecture/spikes/2026-08-08-marmot-openmls-phase-a.md)
+- [Current exact-pin B3.1 interoperability report](architecture/spikes/2026-08-14-marmot-openmls-phase-b3-1.md)
 - [Current chat security report](security/2026-07-10-styx-chat-security-report.md)
 - [Repository governance](../AGENTS.md)
