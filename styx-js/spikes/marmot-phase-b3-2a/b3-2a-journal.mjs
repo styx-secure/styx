@@ -379,11 +379,6 @@ function syncDirectory(directory) {
   try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
 }
 
-function processIsAlive(pid) {
-  if (!Number.isSafeInteger(pid) || pid < 1) return false;
-  try { process.kill(pid, 0); return true; } catch (error) { return error?.code === 'EPERM'; }
-}
-
 export class FileB32aStore {
   constructor(directory, approvedRoot = B32A_PRIVATE_ROOT) {
     this.directory = assertPrivateChild(directory, approvedRoot);
@@ -423,35 +418,38 @@ export class FileB32aStore {
   }
 
   #acquireLock() {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        mkdirSync(this.lockDirectory, { mode: 0o700 });
-        try { durableWrite(resolve(this.lockDirectory, 'owner'), `${process.pid}\n`); }
-        catch (error) {
-          const ownerPath = resolve(this.lockDirectory, 'owner');
-          if (existsSync(ownerPath)) unlinkSync(ownerPath);
-          if (existsSync(this.lockDirectory)) rmdirSync(this.lockDirectory);
-          throw error;
-        }
-        return;
-      } catch (error) {
-        if (error?.code !== 'EEXIST') throw error;
+    const owner = `${process.pid}:${randomUUID()}\n`;
+    let directoryCreated = false;
+    try {
+      mkdirSync(this.lockDirectory, { mode: 0o700 });
+      directoryCreated = true;
+      durableWrite(resolve(this.lockDirectory, 'owner'), owner);
+      return owner;
+    } catch (error) {
+      if (directoryCreated) {
         const ownerPath = resolve(this.lockDirectory, 'owner');
-        let owner = null;
-        try { owner = Number.parseInt(readFileSync(ownerPath, 'utf8').trim(), 10); }
-        catch { failB32a(B32A_ERROR.CAS_CONFLICT, 'CAS lock owner is incomplete'); }
-        if (processIsAlive(owner)) failB32a(B32A_ERROR.CAS_CONFLICT, 'another CAS writer is active');
-        unlinkSync(ownerPath);
-        rmdirSync(this.lockDirectory);
+        if (existsSync(ownerPath)) unlinkSync(ownerPath);
+        if (existsSync(this.lockDirectory)) rmdirSync(this.lockDirectory);
       }
+      if (error?.code === 'EEXIST') {
+        failB32a(B32A_ERROR.CAS_CONFLICT, 'CAS lock exists; stale-lock recovery is explicit');
+      }
+      throw error;
     }
-    failB32a(B32A_ERROR.CAS_CONFLICT, 'CAS lock could not be acquired');
   }
 
-  #releaseLock() {
+  #releaseLock(expectedOwner) {
     const ownerPath = resolve(this.lockDirectory, 'owner');
-    if (existsSync(ownerPath)) unlinkSync(ownerPath);
-    if (existsSync(this.lockDirectory)) rmdirSync(this.lockDirectory);
+    let durableOwner;
+    try { durableOwner = readFileSync(ownerPath, 'utf8'); }
+    catch (error) {
+      failB32a(B32A_ERROR.CAS_CONFLICT, 'CAS lock disappeared before release', {}, error);
+    }
+    if (durableOwner !== expectedOwner) {
+      failB32a(B32A_ERROR.CAS_CONFLICT, 'CAS lock ownership changed before release');
+    }
+    unlinkSync(ownerPath);
+    rmdirSync(this.lockDirectory);
   }
 
   #writeImmutableBlob(bytes) {
@@ -480,7 +478,7 @@ export class FileB32aStore {
   }
 
   async compareAndSwap(expectedDigest, nextHead, blobWrites) {
-    this.#acquireLock();
+    const lockOwner = this.#acquireLock();
     try {
       const current = await this.readHead();
       if ((current?.headDigestHex ?? null) !== expectedDigest) return false;
@@ -492,7 +490,7 @@ export class FileB32aStore {
       syncDirectory(this.directory);
       return true;
     } finally {
-      this.#releaseLock();
+      this.#releaseLock(lockOwner);
     }
   }
 }

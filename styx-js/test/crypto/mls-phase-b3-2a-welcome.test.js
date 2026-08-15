@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -201,6 +201,31 @@ describe('Phase B3.2a closed durable journal', () => {
     }
   });
 
+  test('file store never breaks a pre-existing lock automatically', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'styx-b32a-root-'));
+    try {
+      const values = b32aFixture();
+      const directory = join(root, 'journal');
+      const journal = new B32aJournal(new FileB32aStore(directory, root));
+      await journal.initializeStable({
+        predecessorState: values.predecessor,
+        keyPackage: values.keyPackage,
+        accountIdentityHex: values.joiner.identityHex,
+        leafSignatureKeyHex: values.joiner.signatureKeyHex,
+        expectedAuthorHex: values.founder.identityHex,
+      });
+      const lockDirectory = join(directory, 'cas.lock');
+      mkdirSync(lockDirectory, { mode: 0o700 });
+      writeFileSync(join(lockDirectory, 'owner'), '999999:stale-test-owner\n', { mode: 0o600 });
+      await expect(journal.recordWelcome(values.welcome))
+        .rejects.toMatchObject({ code: B32A_ERROR.CAS_CONFLICT });
+      expect(existsSync(lockDirectory)).toBe(true);
+      expect((await journal.read()).head.state).toBe(B32A_STATE.STABLE_ADVERTISED);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('a Welcome CAS race has one winner and one canonical head', async () => {
     const values = b32aFixture();
     const { journal } = await stableJournal(values);
@@ -226,6 +251,19 @@ describe('Phase B3.2a artifact-independent durable-input driver', () => {
     expect(allZero(engine.prepareInputs.flat())).toBe(true);
     expect(allZero(engine.releasedCandidates)).toBe(true);
     expect((await journal.activationState()).bytes).toEqual(values.candidate);
+  });
+
+  test('fails closed if the returned CAS head differs from the restarted durable head', async () => {
+    const values = b32aFixture();
+    const { journal } = await recordedJournal(values);
+    const commitJoined = journal.commitJoined.bind(journal);
+    journal.commitJoined = async (...args) => ({
+      ...await commitJoined(...args),
+      projectionRecordSha256Hex: '00'.repeat(32),
+    });
+    await expect(new B32aDurableJoinDriver(journal, new FakeB32aEngine(values))
+      .joinRecordedWelcome()).rejects.toMatchObject({ code: B32A_ERROR.STATE_CONFLICT });
+    expect((await journal.read()).head.state).toBe(B32A_STATE.JOINED);
   });
 
   test('projection rebinding discards pending state, clears inputs and keeps predecessor authoritative', async () => {

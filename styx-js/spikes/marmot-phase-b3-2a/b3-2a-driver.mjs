@@ -133,6 +133,10 @@ export class B32aDurableJoinDriver {
       await this.#verifyCandidate(candidate, projection);
       const head = await this.journal.commitJoined(candidate, projection, evidence);
       const restarted = await this.verifyJoined();
+      if (restarted.projectionRecordSha256Hex !== head.projectionRecordSha256Hex) {
+        failB32a(B32A_ERROR.STATE_CONFLICT,
+          'post-CAS durable head does not match the committed projection');
+      }
       return Object.freeze({
         head,
         projection,

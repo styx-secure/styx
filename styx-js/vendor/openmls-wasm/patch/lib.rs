@@ -861,21 +861,27 @@ impl PhaseB32aPrivateProvider {
         }
         let mut entries = values.iter().collect::<Vec<_>>();
         entries.sort_by(|(left, _), (right, _)| left.as_slice().cmp(right.as_slice()));
-        let mut output = Vec::new();
-        output.extend_from_slice(&(entries.len() as u64).to_be_bytes());
+        let mut output = PhaseB32aWipeBytes(Vec::new());
+        output
+            .0
+            .extend_from_slice(&(entries.len() as u64).to_be_bytes());
         for (key, value) in entries {
             if key.len() > PHASE_B32A_MAX_PROVIDER_KEY_BYTES {
                 return Err(JsError::new("PHASE_B32A_PROVIDER_KEY_LIMIT"));
             }
-            output.extend_from_slice(&(key.len() as u64).to_be_bytes());
-            output.extend_from_slice(&(value.len() as u64).to_be_bytes());
-            output.extend_from_slice(key);
-            output.extend_from_slice(value);
-            if output.len() > PHASE_B32A_MAX_PROVIDER_BYTES {
+            output
+                .0
+                .extend_from_slice(&(key.len() as u64).to_be_bytes());
+            output
+                .0
+                .extend_from_slice(&(value.len() as u64).to_be_bytes());
+            output.0.extend_from_slice(key);
+            output.0.extend_from_slice(value);
+            if output.0.len() > PHASE_B32A_MAX_PROVIDER_BYTES {
                 return Err(JsError::new("PHASE_B32A_PROVIDER_SNAPSHOT_SIZE_INVALID"));
             }
         }
-        Ok(output)
+        Ok(std::mem::take(&mut output.0))
     }
 }
 

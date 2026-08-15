@@ -38,7 +38,7 @@ approval.
 | MDK commit / tree | `9396adb6aa6b95b521a7979facd5ea7040c07288` / `a1145de604e616634dae9a1ef6bf5033c9c9e879` |
 | Vendored Cargo.lock SHA-256 | `33964e33f6a48e8b9982c5894c4a7e9ddc5ee2e5157c763596393a08c607672b` |
 | External MDK Cargo.lock SHA-256 | `edb8c706e12934b8d94239203f73d24a2d480033c3ec6830f19d06c85a247b09` |
-| Stage 1 Rust patch SHA-256 | `35f5174bb23f83759628207d731c79939e18d8477b6a4dc7c747155328171ca7` |
+| Stage 1 Rust patch SHA-256 | `9d2b497f91e3065f6a7226954a421d97173e04ec9064d7e25377253632c4c996` |
 
 No pin, lockfile, ciphersuite, dependency, manifest or historical Provider
 serializer changed.
@@ -47,13 +47,13 @@ serializer changed.
 
 Two clean disposable builds from the exact source pin and the same Stage 1
 patch produced byte-identical files. The files remain outside the repository at
-`/home/mverde/.local/share/styx-b3-2a-runs/issue-175/stage1-final-20260815T000000Z/`.
+`/home/mverde/.local/share/styx-b3-2a-runs/issue-175/stage1-post-review-20260815T023500Z/`.
 
 | File | Bytes | SHA-256 |
 | --- | ---: | --- |
 | `openmls_wasm.js` | 153005 | `f73093ae4f2f4a408e94a91512fe4ae45400e1b41cfe4d0384dddb7179430dfc` |
 | `openmls_wasm.d.ts` | 55147 | `32aeca75d16efd5fe27e8f640ebea21e2f4f1e4abd27b2e8176af9573195f0f3` |
-| `openmls_wasm_bg.wasm` | 2243907 | `1246a3dab68d27e03007eb503936517f0a336fbe6ba873fbe961b9e12bdce641` |
+| `openmls_wasm_bg.wasm` | 2243925 | `31ea1e4dba48cb5a2492a6c65843fe5536f278085fbb12429ec4756c4fd434ff` |
 | `openmls_wasm_bg.wasm.d.ts` | 31041 | `c2d0a05d2debf27c8afe2f87974b64f22fc3a0dce7dba933b31cc38cdfc40fd6` |
 | `package.json` | 449 | `88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85` |
 
@@ -141,8 +141,8 @@ Primary upstream evidence:
 
 - Native wrapper suite: 25 passed, 0 failed.
 - Targeted artifact-independent Jest suite plus historical state restore and
-  envelope tests: 73 passed, 0 failed.
-- Full JavaScript Jest suite: 1,474 passed, 0 failed. Relay-dependent suites
+  envelope tests: 75 passed, 0 failed.
+- Full JavaScript Jest suite: 1,476 passed, 0 failed. Relay-dependent suites
   emitted their existing unavailable-local-relay warnings; no relay evidence is
   claimed by B3.2a.
 - Two clean disposable builds: all five candidate files byte-identical.
@@ -181,6 +181,9 @@ MDK Welcome join.
 - The journal is isolated filesystem evidence, not a product storage boundary;
   arbitrary power-loss atomicity and orphan secret-blob cleanup remain future
   requirements.
+- File-journal locks fail closed and are never broken automatically. A crashed
+  writer therefore requires explicit operator cleanup in this isolated harness;
+  product-grade crash recovery remains a future requirement.
 - Best-effort buffer clearing is not physical erasure and does not defend
   against a hostile browser origin, extension, operating system or device.
 - No application message, Commit lifecycle, convergence, transport, metadata
