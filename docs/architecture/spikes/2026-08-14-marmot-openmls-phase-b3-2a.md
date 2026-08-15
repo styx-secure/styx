@@ -4,9 +4,9 @@ Date: 2026-08-15
 
 Issue: #175
 
-Stage: **Stage 2 executed at the approved exact tuple**
+Stage: **post-review tuple installed; fresh Stage 2 verification pending**
 
-Disposition: **GO for the bounded B3.2a durable restarted Welcome-join claim**
+Disposition: **pending fresh evidence at the post-review tuple**
 
 Installed artifact changed: **yes; exact human-approved five-file tuple**
 
@@ -37,28 +37,29 @@ installed that exact tuple and exercised it twice against the exact MDK pin.
 | MDK commit / tree | `9396adb6aa6b95b521a7979facd5ea7040c07288` / `a1145de604e616634dae9a1ef6bf5033c9c9e879` |
 | Vendored Cargo.lock SHA-256 | `33964e33f6a48e8b9982c5894c4a7e9ddc5ee2e5157c763596393a08c607672b` |
 | External MDK Cargo.lock SHA-256 | `edb8c706e12934b8d94239203f73d24a2d480033c3ec6830f19d06c85a247b09` |
-| Stage 1 Rust patch SHA-256 | `9d2b497f91e3065f6a7226954a421d97173e04ec9064d7e25377253632c4c996` |
+| Post-review Rust patch SHA-256 | `56bfa7e7439f3a5dce260930b0ba19604581177de8092170a1f057592de30a7c` |
 
 No pin, lockfile, ciphersuite, dependency, manifest or historical Provider
 serializer changed.
 
 ## Installed artifact tuple
 
-Two clean disposable builds from the exact source pin and the same Stage 1
-patch produced byte-identical files; an independent Fable review built a third
-identical tuple. The approved source files remain at
-`/home/mverde/.local/share/styx-b3-2a-runs/issue-175/stage1-post-review-20260815T023500Z/`.
+Two clean disposable builds from the exact source pin and the approved
+post-review patch produced byte-identical files. The build evidence remains at
+`/home/mverde/.local/share/styx-b3-2a-runs/issue-175/post-review-c68aac6/`.
 
 | File | Bytes | SHA-256 |
 | --- | ---: | --- |
 | `openmls_wasm.js` | 153005 | `f73093ae4f2f4a408e94a91512fe4ae45400e1b41cfe4d0384dddb7179430dfc` |
 | `openmls_wasm.d.ts` | 55147 | `32aeca75d16efd5fe27e8f640ebea21e2f4f1e4abd27b2e8176af9573195f0f3` |
-| `openmls_wasm_bg.wasm` | 2243925 | `31ea1e4dba48cb5a2492a6c65843fe5536f278085fbb12429ec4756c4fd434ff` |
+| `openmls_wasm_bg.wasm` | 2243916 | `f1596c27c90f71e50998bfae1be212e6b016944e18fe3c3fecee1eb44e64f869` |
 | `openmls_wasm_bg.wasm.d.ts` | 31041 | `c2d0a05d2debf27c8afe2f87974b64f22fc3a0dce7dba933b31cc38cdfc40fd6` |
 | `package.json` | 449 | `88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85` |
 
-The Issue #175 Stage 2 amendment approved this exact tuple against source HEAD
-`c103428e9e232b7da7e79ed7bbae4c304bcfcbfe`; no different artifact was installed.
+The Issue #175 post-review approval bound this exact tuple to source commit
+`c68aac60acd4c7c5ec249213c80a38971cc40562`, tree
+`efb25a2d810db2dd014f504853c365b8ca1f8116`, the patch digest above and the
+unchanged Cargo.lock digest. No different artifact was installed.
 
 ## Additive generated surface
 
@@ -104,7 +105,10 @@ unchanged.
 
 Each unmodified candidate is scratch-restored through the canonical-order parser
 and reproduces its own full projection. Candidate release owns no live Provider
-or identity handle, is one-use, and returns only the already validated bytes.
+or identity handle and is one-use. It consumes the pending wrapper before all
+caller-controlled validation: success transfers only the already validated
+bytes, while every rejection wipes and clears the candidate and makes retry
+fail closed.
 
 The isolated JavaScript journal uses a new B3.2a namespace and the state sequence
 `STABLE_ADVERTISED -> WELCOME_RECORDED -> JOINED`. It independently rechecks
@@ -142,7 +146,7 @@ Primary upstream evidence:
 
 ## Verification
 
-- Native wrapper suite: 25 passed, 0 failed.
+- Native wrapper suite: 26 passed, 0 failed.
 - Targeted artifact-independent Jest suite plus historical state restore and
   envelope tests: 75 passed, 0 failed.
 - Full JavaScript Jest suite: 101 suites and 1,483 tests passed, 0 failed. Relay-dependent suites

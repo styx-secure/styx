@@ -11,7 +11,7 @@
 
 export const MLS_BUILD_INFO = Object.freeze({
   openMlsRevision: '09e92777dba0528d3d29e2e5e681b7e91637c7be',
-  wasmArtifactSha256: '31ea1e4dba48cb5a2492a6c65843fe5536f278085fbb12429ec4756c4fd434ff',
+  wasmArtifactSha256: 'f1596c27c90f71e50998bfae1be212e6b016944e18fe3c3fecee1eb44e64f869',
   ciphersuite: 'MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519',
 });
 

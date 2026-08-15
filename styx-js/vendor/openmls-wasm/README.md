@@ -86,6 +86,10 @@ file journal makes `WELCOME_RECORDED -> JOINED` the sole durable join
 linearization point. The strict `MessageSecrets.added_at` comparator classifies
 only the pinned retention-timestamp variance between independent preparations;
 it never rewrites candidate bytes or excludes them from SHA-256.
+Candidate release consumes the pending wrapper before caller-controlled
+validation. Success transfers the exact candidate once; every rejection wipes
+and clears it, returns a stable bounded error category, and makes retry fail
+closed.
 
 No product source imports the probe. It demonstrates local mechanics only: it
 is not a Marmot interoperability, security-audit, or production-readiness claim.

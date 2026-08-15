@@ -99,16 +99,20 @@ unchanged source pin and pins above):**
 
 | File | sha256 |
 |---|---|
-| `openmls_wasm_bg.wasm` | `31ea1e4dba48cb5a2492a6c65843fe5536f278085fbb12429ec4756c4fd434ff` |
+| `openmls_wasm_bg.wasm` | `f1596c27c90f71e50998bfae1be212e6b016944e18fe3c3fecee1eb44e64f869` |
 | `openmls_wasm.js` | `f73093ae4f2f4a408e94a91512fe4ae45400e1b41cfe4d0384dddb7179430dfc` |
 | `openmls_wasm.d.ts` | `32aeca75d16efd5fe27e8f640ebea21e2f4f1e4abd27b2e8176af9573195f0f3` |
 | `openmls_wasm_bg.wasm.d.ts` | `c2d0a05d2debf27c8afe2f87974b64f22fc3a0dce7dba933b31cc38cdfc40fd6` |
 | `package.json` | `88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85` |
 
-**Reproducibility: verified 2026-08-15 for B3.2a.** Two complete disposable builds
-from these pins were byte-identical to each other and to the committed output
-set; an independent Fable 5 review reproduced a third identical build from the
-exact approved source tree. `./verify.sh` independently repeats the comparison.
+**Reproducibility: verified 2026-08-15 for the post-review B3.2a correction.**
+Two complete disposable builds from source commit
+`c68aac60acd4c7c5ec249213c80a38971cc40562` and patch SHA-256
+`56bfa7e7439f3a5dce260930b0ba19604581177de8092170a1f057592de30a7c`
+were byte-identical to each other and to the committed output set. The source
+correction makes candidate release fail closed and consuming on every outcome;
+it does not change the generated JavaScript or declaration surfaces.
+`./verify.sh` independently repeats the comparison.
 
 The immediately preceding B3.2 artifact digest
 `d281d4a4c3c72999e966c1e70bff68b0ddc5eda23653295adbf620bad723f62c`
