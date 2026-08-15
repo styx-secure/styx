@@ -25,9 +25,15 @@ Git worktree. Reports omit timestamps, raw findings, raw Issue text, environment
 values, absolute paths, Markdown, and HTML.
 
 The observer recognizes the closed top-level interfaces of the existing v1
-reports. It does not replace their authoritative schema validators. An invalid
-or non-canonical document is diagnosed as `INVALID`; it is never repaired or
-partially trusted.
+reports. It checks RFC 8259 canonical bytes, the closed top-level field set, and
+the well-formedness of identity, linkage, generation, enum, and conclusion
+fields that affect its diagnosis. It deliberately does not recursively validate
+producer-owned payloads such as findings, failures, diagnostics, or changed
+entries, and it does not replace the authoritative schema validators. A
+`CURRENT` diagnosis therefore does not attest full-schema validity. A document
+that fails the observer's own checks is diagnosed as `INVALID`; it is never
+repaired. Where a producer-reachable invariant is narrower than the published
+schema, the observer may also reject fail-closed rather than broaden acceptance.
 
 ## Candidate identity
 
@@ -68,6 +74,8 @@ of a field required by that evidence class is `UNPROVABLE`, never a match.
 
 `artifact_sha256` records the digest of the bytes actually observed. Linked
 scope/test digests are cross-checked where existing evidence carries them.
+If an upstream linked item is `UNPROVABLE`, that uncertainty propagates to its
+dependents even when the byte digest itself matches.
 These facts establish diagnostic provenance only. They do not turn an advisory
 field into authenticated evidence and do not authorize future reuse.
 

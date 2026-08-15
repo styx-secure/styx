@@ -6,6 +6,8 @@ import unittest
 import support
 from model import (
     InputError,
+    REASONS,
+    STATES,
     build_report,
     canonical_json_bytes,
     classify_document,
@@ -172,6 +174,28 @@ class InvalidEvidenceTest(unittest.TestCase):
         self.assertEqual(item["state"], "INVALID")
         self.assertEqual(item["reasons"], ["MALFORMED_JSON"])
 
+    def test_non_json_constants_are_malformed(self):
+        baseline = canonical_json_bytes(support.scope_report())
+        for token in (b"NaN", b"Infinity", b"-Infinity"):
+            with self.subTest(token=token):
+                raw = baseline.replace(
+                    b'"changed_entries":[]',
+                    b'"changed_entries":[' + token + b']',
+                )
+                item = self.item(raw)
+                self.assertEqual(item["state"], "INVALID")
+                self.assertEqual(item["reasons"], ["MALFORMED_JSON"])
+
+    def test_lone_unicode_surrogate_is_malformed(self):
+        baseline = canonical_json_bytes(support.scope_report())
+        raw = baseline.replace(
+            b'"diagnostics":[]',
+            b'"diagnostics":[{"text":"\\ud800"}]',
+        )
+        item = self.item(raw)
+        self.assertEqual(item["state"], "INVALID")
+        self.assertEqual(item["reasons"], ["MALFORMED_JSON"])
+
     def test_duplicate_key(self):
         item = self.item(b'{"schema":"x","schema":"y"}\n')
         self.assertEqual(item["reasons"], ["DUPLICATE_KEY"])
@@ -246,6 +270,25 @@ class ContradictionTest(unittest.TestCase):
         )
         self.assertTrue(all(item["state"] == "CONTRADICTORY" for item in report["items"]))
 
+    def test_unprovable_linked_scope_propagates_to_dependents(self):
+        scope_raw = canonical_json_bytes(
+            support.scope_report(
+                issue_number=None,
+                base_sha=None,
+                head_sha=None,
+                issue_body_sha256=None,
+                contract_version=None,
+            )
+        )
+        test_raw = canonical_json_bytes(support.test_report(scope_raw))
+        review_raw = canonical_json_bytes(support.review_report(scope_raw, test_raw))
+        report = build_report(
+            support.candidate(),
+            {"scope": (scope_raw, None), "test": (test_raw, None), "review": (review_raw, None)},
+        )
+        self.assertEqual([item["state"] for item in report["items"]], ["UNPROVABLE"] * 3)
+        self.assertTrue(all("FIELD_NOT_AVAILABLE" in item["reasons"] for item in report["items"]))
+
 
 class CandidateValidationTest(unittest.TestCase):
     def test_candidate_is_closed(self):
@@ -272,6 +315,26 @@ class CandidateValidationTest(unittest.TestCase):
     def test_candidate_rejects_duplicate_keys(self):
         with self.assertRaises(InputError):
             load_candidate(b'{"repository":"a","repository":"b"}\n')
+
+    def test_candidate_rejects_non_json_constants_and_noncanonical_encoding(self):
+        baseline = canonical_json_bytes(support.candidate())
+        with self.assertRaises(InputError):
+            load_candidate(baseline.replace(b'"issue_number":182', b'"issue_number":NaN'))
+        with self.assertRaises(InputError):
+            load_candidate(baseline.replace(b'"issue_number":182', b'"issue_number": 182'))
+
+
+class SchemaModelConsistencyTest(unittest.TestCase):
+    def test_state_and_reason_enums_match_published_schema(self):
+        import json
+
+        schema_path = (
+            support.TOOL_ROOT.parents[1]
+            / "docs/governance/schemas/evidence-status-v1.schema.json"
+        )
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        self.assertEqual(tuple(schema["$defs"]["state"]["enum"]), STATES)
+        self.assertEqual(tuple(schema["$defs"]["reason"]["enum"]), REASONS)
 
 
 if __name__ == "__main__":

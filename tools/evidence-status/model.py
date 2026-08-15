@@ -162,8 +162,21 @@ class DuplicateKeyError(ValueError):
     """Raised when strict JSON encounters a duplicate object key."""
 
 
+class NonJsonConstantError(ValueError):
+    """Raised when the Python decoder encounters a non-RFC-8259 constant."""
+
+
 def canonical_json_bytes(value: Mapping[str, Any]) -> bytes:
-    return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode("utf-8")
+    return (
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        + "\n"
+    ).encode("utf-8")
 
 
 def sha256_hex(raw: bytes) -> str:
@@ -179,8 +192,16 @@ def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return value
 
 
+def _reject_non_json_constant(value: str) -> None:
+    raise NonJsonConstantError(value)
+
+
 def parse_json(raw: bytes) -> Any:
-    return json.loads(raw.decode("utf-8", "strict"), object_pairs_hook=_reject_duplicate_keys)
+    return json.loads(
+        raw.decode("utf-8", "strict"),
+        object_pairs_hook=_reject_duplicate_keys,
+        parse_constant=_reject_non_json_constant,
+    )
 
 
 def _is_int(value: Any) -> bool:
@@ -212,8 +233,14 @@ def load_candidate(raw: bytes) -> dict[str, Any]:
         candidate = parse_json(raw)
     except DuplicateKeyError as exc:
         raise InputError("candidate contains a duplicate JSON key") from exc
-    except (UnicodeError, json.JSONDecodeError, RecursionError) as exc:
+    except (UnicodeError, ValueError, RecursionError) as exc:
         raise InputError(f"candidate is not strict JSON: {exc}") from exc
+    try:
+        canonical = canonical_json_bytes(candidate) if isinstance(candidate, dict) else None
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        raise InputError(f"candidate is not strict JSON: {exc}") from exc
+    if canonical != raw:
+        raise InputError("candidate must use canonical JSON encoding")
     if not isinstance(candidate, dict) or set(candidate) != CANDIDATE_FIELDS:
         raise InputError("candidate must be a closed object with the documented fields")
     if (
@@ -417,11 +444,15 @@ def classify_document(
         document = parse_json(raw)
     except DuplicateKeyError:
         return _invalid_item(kind, "DUPLICATE_KEY", raw), None
-    except (UnicodeError, json.JSONDecodeError, RecursionError):
+    except (UnicodeError, ValueError, RecursionError):
         return _invalid_item(kind, "MALFORMED_JSON", raw), None
     if not isinstance(document, dict):
         return _invalid_item(kind, "SCHEMA_MISMATCH", raw), None
-    if canonical_json_bytes(document) != raw:
+    try:
+        canonical = canonical_json_bytes(document)
+    except (UnicodeError, ValueError, RecursionError):
+        return _invalid_item(kind, "MALFORMED_JSON", raw), None
+    if canonical != raw:
         return _invalid_item(kind, "NON_CANONICAL_JSON", raw), None
     if not _basic_shape(kind, document):
         return _invalid_item(kind, "SCHEMA_MISMATCH", raw), None
@@ -551,6 +582,16 @@ def apply_cross_checks(
             or by_kind["test"]["state"] == "CONTRADICTORY"
         ):
             _mark_contradictory(by_kind["review"])
+
+    # A digest link proves which bytes were consumed, not that an upstream
+    # artifact exposed enough immutable identity to support a current claim.
+    # Propagate that uncertainty through the dependency chain while preserving
+    # any stronger contradiction already found above.
+    if scope_doc is not None and by_kind["scope"]["state"] == "UNPROVABLE":
+        _mark_unprovable(by_kind["test"])
+        _mark_unprovable(by_kind["review"])
+    if test_doc is not None and by_kind["test"]["state"] == "UNPROVABLE":
+        _mark_unprovable(by_kind["review"])
 
 
 def build_report(
