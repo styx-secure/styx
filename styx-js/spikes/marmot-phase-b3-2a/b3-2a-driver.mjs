@@ -149,6 +149,7 @@ export class B32aDurableJoinDriver {
       }
       rethrowNative(error, 'B3.2a durable Welcome join');
     } finally {
+      for (const bytes of Object.values(bundle.blobs)) clearBytes(bytes);
       clearBytes(candidate);
       clearBytes(predecessor);
       clearBytes(keyPackage);

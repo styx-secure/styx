@@ -166,6 +166,11 @@ function buildHead(fields) {
 
 function copyBytes(bytes) { return Uint8Array.from(bytes); }
 
+function clearBundleBlobs(bundle) {
+  if (!bundle?.blobs) return;
+  for (const bytes of Object.values(bundle.blobs)) bytes?.fill?.(0);
+}
+
 export class MemoryB32aStore {
   constructor() {
     this.head = null;
@@ -288,18 +293,22 @@ export class B32aJournal {
       failB32a(B32A_ERROR.RESOURCE_LIMIT, 'Welcome exceeds its envelope', {}, error);
     }
     const bundle = await this.read();
-    const welcomeBlobSha256Hex = sha256Hex(welcomeBytes);
-    if (bundle.head.state !== B32A_STATE.STABLE_ADVERTISED) {
-      if (bundle.head.welcomeBlobSha256Hex === welcomeBlobSha256Hex) {
-        failB32a(B32A_ERROR.DUPLICATE_REPLAY, 'the exact Welcome was already recorded');
+    try {
+      const welcomeBlobSha256Hex = sha256Hex(welcomeBytes);
+      if (bundle.head.state !== B32A_STATE.STABLE_ADVERTISED) {
+        if (bundle.head.welcomeBlobSha256Hex === welcomeBlobSha256Hex) {
+          failB32a(B32A_ERROR.DUPLICATE_REPLAY, 'the exact Welcome was already recorded');
+        }
+        failB32a(B32A_ERROR.STATE_CONFLICT, 'Welcome requires STABLE_ADVERTISED');
       }
-      failB32a(B32A_ERROR.STATE_CONFLICT, 'Welcome requires STABLE_ADVERTISED');
+      const head = buildHead({
+        ...headPayload(bundle.head), sequence: 2, state: B32A_STATE.WELCOME_RECORDED,
+        previousHeadDigestHex: bundle.head.headDigestHex, welcomeBlobSha256Hex,
+      });
+      return this.#cas(bundle.head, head, [copyBytes(welcomeBytes)]);
+    } finally {
+      clearBundleBlobs(bundle);
     }
-    const head = buildHead({
-      ...headPayload(bundle.head), sequence: 2, state: B32A_STATE.WELCOME_RECORDED,
-      previousHeadDigestHex: bundle.head.headDigestHex, welcomeBlobSha256Hex,
-    });
-    return this.#cas(bundle.head, head, [copyBytes(welcomeBytes)]);
   }
 
   async commitJoined(candidateState, projectionValue, evidenceValue) {
@@ -316,39 +325,47 @@ export class B32aJournal {
       evidenceValue, candidateBlobSha256Hex,
     );
     const bundle = await this.read();
-    if (bundle.head.state === B32A_STATE.JOINED) {
-      if (bundle.head.welcomeBlobSha256Hex === projection.welcomeSha256Hex) {
-        failB32a(B32A_ERROR.DUPLICATE_REPLAY, 'the exact Welcome is already JOINED');
+    try {
+      if (bundle.head.state === B32A_STATE.JOINED) {
+        if (bundle.head.welcomeBlobSha256Hex === projection.welcomeSha256Hex) {
+          failB32a(B32A_ERROR.DUPLICATE_REPLAY, 'the exact Welcome is already JOINED');
+        }
+        failB32a(B32A_ERROR.STATE_CONFLICT, 'joined head is terminal');
       }
-      failB32a(B32A_ERROR.STATE_CONFLICT, 'joined head is terminal');
+      if (bundle.head.state !== B32A_STATE.WELCOME_RECORDED) {
+        failB32a(B32A_ERROR.STATE_CONFLICT, 'candidate commit requires WELCOME_RECORDED');
+      }
+      if (projection.predecessorStateSha256Hex !== bundle.head.predecessorBlobSha256Hex
+        || projection.expectedKeyPackageSha256Hex !== bundle.head.keyPackageBlobSha256Hex
+        || projection.welcomeSha256Hex !== bundle.head.welcomeBlobSha256Hex
+        || projection.candidateStateSha256Hex !== candidateBlobSha256Hex
+        || projection.welcomeAuthor.identityHex !== bundle.head.expectedAuthorHex
+        || !projectionOwnBindsHead(projection, bundle.head)) {
+        failB32a(B32A_ERROR.PROJECTION_MISMATCH, 'candidate projection does not bind durable inputs');
+      }
+      const projectionRecordSha256Hex = b32aProjectionRecordSha256(projection);
+      const head = buildHead({
+        ...headPayload(bundle.head), sequence: 3, state: B32A_STATE.JOINED,
+        previousHeadDigestHex: bundle.head.headDigestHex, groupIdHex: projection.groupIdHex,
+        candidateBlobSha256Hex, projection, projectionRecordSha256Hex, preparationEvidence,
+      });
+      return this.#cas(bundle.head, head, [copyBytes(candidateState)]);
+    } finally {
+      clearBundleBlobs(bundle);
     }
-    if (bundle.head.state !== B32A_STATE.WELCOME_RECORDED) {
-      failB32a(B32A_ERROR.STATE_CONFLICT, 'candidate commit requires WELCOME_RECORDED');
-    }
-    if (projection.predecessorStateSha256Hex !== bundle.head.predecessorBlobSha256Hex
-      || projection.expectedKeyPackageSha256Hex !== bundle.head.keyPackageBlobSha256Hex
-      || projection.welcomeSha256Hex !== bundle.head.welcomeBlobSha256Hex
-      || projection.candidateStateSha256Hex !== candidateBlobSha256Hex
-      || projection.welcomeAuthor.identityHex !== bundle.head.expectedAuthorHex
-      || !projectionOwnBindsHead(projection, bundle.head)) {
-      failB32a(B32A_ERROR.PROJECTION_MISMATCH, 'candidate projection does not bind durable inputs');
-    }
-    const projectionRecordSha256Hex = b32aProjectionRecordSha256(projection);
-    const head = buildHead({
-      ...headPayload(bundle.head), sequence: 3, state: B32A_STATE.JOINED,
-      previousHeadDigestHex: bundle.head.headDigestHex, groupIdHex: projection.groupIdHex,
-      candidateBlobSha256Hex, projection, projectionRecordSha256Hex, preparationEvidence,
-    });
-    return this.#cas(bundle.head, head, [copyBytes(candidateState)]);
   }
 
   async activationState() {
     const bundle = await this.read();
-    const key = bundle.head.state === B32A_STATE.JOINED
-      ? 'candidateBlobSha256Hex' : 'predecessorBlobSha256Hex';
-    return Object.freeze({
-      state: bundle.head.state, bytes: copyBytes(bundle.blobs[key]), head: bundle.head,
-    });
+    try {
+      const key = bundle.head.state === B32A_STATE.JOINED
+        ? 'candidateBlobSha256Hex' : 'predecessorBlobSha256Hex';
+      return Object.freeze({
+        state: bundle.head.state, bytes: copyBytes(bundle.blobs[key]), head: bundle.head,
+      });
+    } finally {
+      clearBundleBlobs(bundle);
+    }
   }
 }
 

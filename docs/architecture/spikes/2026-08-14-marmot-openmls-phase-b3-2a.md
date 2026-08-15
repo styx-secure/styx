@@ -4,13 +4,13 @@ Date: 2026-08-15
 
 Issue: #175
 
-Stage: **Stage 1 candidate evidence; Stage 2 not authorized**
+Stage: **Stage 2 executed at the approved exact tuple**
 
-Disposition: **candidate implementation passes the bounded Stage 1 checks run so far**
+Disposition: **GO for the bounded B3.2a durable restarted Welcome-join claim**
 
-Installed artifact changed: **no**
+Installed artifact changed: **yes; exact human-approved five-file tuple**
 
-Exact-pin MDK round trip established: **not yet; reserved for Stage 2**
+Exact-pin MDK round trip established: **yes; two independent runs**
 
 Application traffic tested: **no**
 
@@ -21,10 +21,9 @@ profiles, bind Welcome processing exclusively to exact durable predecessor
 bytes, and produce one scratch-restorable canonical candidate for a closed
 CAS journal?
 
-Stage 1 answers only the source, parser, profile, state-machine and reproducible
-candidate-artifact portions of that question. Installing the candidate tuple
-and running the exact MDK peer require a separate Issue amendment and human
-approval.
+Stage 1 answered the source, parser, profile, state-machine and reproducible
+candidate-artifact portions of that question. The separately approved Stage 2
+installed that exact tuple and exercised it twice against the exact MDK pin.
 
 ## Frozen source and dependencies
 
@@ -43,10 +42,11 @@ approval.
 No pin, lockfile, ciphersuite, dependency, manifest or historical Provider
 serializer changed.
 
-## Candidate artifact tuple
+## Installed artifact tuple
 
 Two clean disposable builds from the exact source pin and the same Stage 1
-patch produced byte-identical files. The files remain outside the repository at
+patch produced byte-identical files; an independent Fable review built a third
+identical tuple. The approved source files remain at
 `/home/mverde/.local/share/styx-b3-2a-runs/issue-175/stage1-post-review-20260815T023500Z/`.
 
 | File | Bytes | SHA-256 |
@@ -57,8 +57,8 @@ patch produced byte-identical files. The files remain outside the repository at
 | `openmls_wasm_bg.wasm.d.ts` | 31041 | `c2d0a05d2debf27c8afe2f87974b64f22fc3a0dce7dba933b31cc38cdfc40fd6` |
 | `package.json` | 449 | `88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85` |
 
-The installed B3.2 tuple is unchanged. These candidate files must not be copied
-into the repository unless the exact tuple and evidence are separately approved.
+The Issue #175 Stage 2 amendment approved this exact tuple against source HEAD
+`c103428e9e232b7da7e79ed7bbae4c304bcfcbfe`; no different artifact was installed.
 
 ## Additive generated surface
 
@@ -137,12 +137,12 @@ Primary upstream evidence:
 - [Pinned OpenMLS MessageSecrets representation](https://github.com/openmls/openmls/blob/09e92777dba0528d3d29e2e5e681b7e91637c7be/openmls/src/schedule/message_secrets.rs)
 - [Pinned wasm clock implementation](https://github.com/daxpedda/web-time/blob/v1.1.0/src/time/system_time.rs#L19-L25)
 
-## Stage 1 verification completed so far
+## Verification
 
 - Native wrapper suite: 25 passed, 0 failed.
 - Targeted artifact-independent Jest suite plus historical state restore and
   envelope tests: 75 passed, 0 failed.
-- Full JavaScript Jest suite: 1,476 passed, 0 failed. Relay-dependent suites
+- Full JavaScript Jest suite: 101 suites and 1,483 tests passed, 0 failed. Relay-dependent suites
   emitted their existing unavailable-local-relay warnings; no relay evidence is
   claimed by B3.2a.
 - Two clean disposable builds: all five candidate files byte-identical.
@@ -155,26 +155,37 @@ Primary upstream evidence:
   head/blob corruption, digest rebinding, replay/state conflicts, persistence
   failure, CAS races, content-address collision and transient-buffer clearing.
 
-Final Stage 1 diff checks and agent-enforcement results are recorded in the
-Issue amendment after the Stage 1 source is committed. Any subsequent source or
-tuple drift invalidates this evidence.
+Stage 2 added the exact-pin MDK/Styx harness and produced two fresh runs. Both
+reported `GO`, used member profiles `[MDK_PIN_9396ADB, STYX_B32A]`, classified
+the independently prepared candidate difference as
+`RETENTION_TIMESTAMP_BOUNDED`, committed the first unmodified candidate through
+the sole `JOINED` CAS, scratch-restored it, and restored it again after a fresh
+Node process restart. The private run directories were removed after each run.
+
+| Evidence | Run A | Run B |
+| --- | --- | --- |
+| Report SHA-256 | `5cc0cb87dd0def5b13e4d1ec3f4fbbe6c70524bd38ddb291208b88f002121bcc` | `09cc788fac8f849c3f9f77d529b0be21073bb6c4cfb762b15f44b1acefffc408` |
+| Transcript SHA-256 | `2ea7f051c0727289649b067dda88d03142e8982f4c8dd41664985ad8805d0ef1` | `5f05f811e553d9577d0890b8c8167ce0fece0af6fde9dd2fdf0e5327a6926da7` |
+| Transcript head | `0d384748b8fcba3b2cd81382ec56df16b4b09564b9d8b2cc9eeb859d6bfd6db8` | `7cf6b21ddce63ce51eba8b733d615c31e76b983ac9f1b9052b3aa4f28cf3acea` |
+
+The paired evidence proves only the bounded claim below. Random identities,
+groups and ciphertexts intentionally make byte-for-byte report equality neither
+expected nor required. Any subsequent source, pin or installed-tuple drift
+invalidates the evidence.
 
 ## Bounded conclusion
 
-At the exact declared pins, the Stage 1 candidate can produce a fully
-digest-bound Welcome candidate that is deterministic modulo the pinned OpenMLS
-local `MessageSecrets.added_at` retention timestamp. The implementation keeps
-each candidate unmodified, validates it by exact scratch restore and makes only
-one candidate eligible for the authoritative CAS.
-
-This is source and isolated harness evidence. Until Stage 2 is approved and the
-exact MDK runs complete, it does not establish an exact-pinned durable restarted
-MDK Welcome join.
+At the exact declared pins, MDK accepts the exact Styx B3.2a KeyPackage, creates
+an embedded-tree Welcome, and Styx durably records, validates, commits and
+restores the joined candidate after a fresh process restart. The implementation
+keeps each candidate unmodified and makes only the first validated candidate
+eligible for the authoritative CAS. This is a bounded exact-profile Welcome
+join result, not a general compatibility or application-traffic claim.
 
 ## Residual risks and non-claims
 
-- The candidate WASM is not installed, reviewed or approved.
-- The Styx Rust patch and `extensions-draft` surface remain unaudited.
+- The installed WASM tuple is reproducible and independently reviewed, but the
+  Styx-authored Rust patch and its `extensions-draft` surface remain unaudited.
 - The exact MDK pin still lists default `0x0003`; the exception expires on any
   pin or observed-profile drift.
 - Neither Styx nor the exact MDK pin implements SafeAAD GroupContext framing.
