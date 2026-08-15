@@ -36,6 +36,7 @@ def contract_body(
     marker: str = "<!-- styx-task-contract:v1 -->",
     test_heading: str = "Required tests",
     binary_artifacts: tuple[str, ...] | None = None,
+    copy_sources: tuple[str, ...] | None = None,
 ) -> str:
     binary_section = ""
     if binary_artifacts is not None:
@@ -44,6 +45,15 @@ def contract_body(
 
 ```text
 {chr(10).join(binary_artifacts)}
+```
+"""
+    copy_source_section = ""
+    if copy_sources is not None:
+        copy_source_section = f"""
+## Allowed copy sources
+
+```text
+{chr(10).join(copy_sources)}
 ```
 """
     return f"""{marker}
@@ -67,7 +77,7 @@ None.
 ```text
 {chr(10).join(forbidden)}
 ```
-{binary_section}
+{binary_section}{copy_source_section}
 
 ## Native dependencies
 

@@ -18,6 +18,7 @@ sys.dont_write_bytecode = True
 from contract import ContractError, evaluate_path, parse_contract, pattern_matches, validate_pattern
 from git_inventory import (
     SHA_RE,
+    authorize_copy_sources,
     content_diagnostics,
     inventory_changes,
     output_is_inside_repository,
@@ -136,6 +137,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         for entry in entries:
             for path in entry.checked_paths():
                 evaluations[path] = evaluate_path(path, contract)
+        authorized_copy_sources, copy_source_diagnostics = authorize_copy_sources(
+            repo,
+            args.base_sha,
+            args.head_sha,
+            entries,
+            contract.allowed_copy_sources,
+        )
+        diagnostics.extend(copy_source_diagnostics)
+        for path, marker in authorized_copy_sources.items():
+            evaluation = evaluations[path]
+            evaluations[path] = PathEvaluation(
+                path=evaluation.path,
+                allowed_matches=(*evaluation.allowed_matches, marker),
+                forbidden_matches=evaluation.forbidden_matches,
+                violations=(),
+            )
         for evaluation in evaluations.values():
             if "PATH_NOT_ALLOWED" in evaluation.violations:
                 diagnostics.append(
