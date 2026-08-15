@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/styx-secure/styx/blob/main/docs/governance/schemas/evidence-status-v1.schema.json",
+  "title": "Styx diagnostic evidence status v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "tool_version",
+    "candidate",
+    "items",
+    "generation"
+  ],
+  "properties": {
+    "schema": {
+      "const": "styx.evidence-status/v1"
+    },
+    "tool_version": {
+      "$ref": "#/$defs/semver"
+    },
+    "candidate": {
+      "$ref": "#/$defs/candidate"
+    },
+    "items": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/item" },
+            { "properties": { "kind": { "const": "scope" } } }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/item" },
+            { "properties": { "kind": { "const": "test" } } }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/item" },
+            { "properties": { "kind": { "const": "review" } } }
+          ]
+        }
+      ],
+      "items": false
+    },
+    "generation": {
+      "$ref": "#/$defs/generation"
+    }
+  },
+  "$defs": {
+    "semver": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^(?!\\.{1,2}/)[A-Za-z0-9_.-]+/(?!\\.{1,2}$)[A-Za-z0-9_.-]+$"
+    },
+    "commitSha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "nullableCommitSha": {
+      "oneOf": [
+        { "$ref": "#/$defs/commitSha" },
+        { "type": "null" }
+      ]
+    },
+    "nullableSha256": {
+      "oneOf": [
+        { "$ref": "#/$defs/sha256" },
+        { "type": "null" }
+      ]
+    },
+    "nullableInteger": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1 },
+        { "type": "null" }
+      ]
+    },
+    "nullableString": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "null" }
+      ]
+    },
+    "toolVersions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "review"],
+      "properties": {
+        "scope": { "$ref": "#/$defs/semver" },
+        "review": { "$ref": "#/$defs/semver" }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "issue_number",
+        "base_sha",
+        "head_sha",
+        "issue_body_sha256",
+        "diff_sha256",
+        "tool_versions"
+      ],
+      "properties": {
+        "repository": { "$ref": "#/$defs/repository" },
+        "issue_number": { "type": "integer", "minimum": 1 },
+        "base_sha": { "$ref": "#/$defs/commitSha" },
+        "head_sha": { "$ref": "#/$defs/commitSha" },
+        "issue_body_sha256": { "$ref": "#/$defs/sha256" },
+        "diff_sha256": { "$ref": "#/$defs/sha256" },
+        "tool_versions": { "$ref": "#/$defs/toolVersions" }
+      }
+    },
+    "state": {
+      "enum": ["CURRENT", "STALE", "MISSING", "CONTRADICTORY", "UNPROVABLE", "INVALID"]
+    },
+    "reason": {
+      "enum": [
+        "IDENTITY_MATCH",
+        "REPOSITORY_MISMATCH",
+        "ISSUE_MISMATCH",
+        "ISSUE_BODY_MISMATCH",
+        "BASE_MISMATCH",
+        "HEAD_MISMATCH",
+        "DIFF_MISMATCH",
+        "TOOL_MISMATCH",
+        "SCHEMA_MISMATCH",
+        "CONCLUSION_NOT_GREEN",
+        "FIELD_NOT_AVAILABLE",
+        "FILE_MISSING",
+        "MALFORMED_JSON",
+        "NON_CANONICAL_JSON",
+        "DUPLICATE_KEY",
+        "INPUT_TOO_LARGE",
+        "CONTRADICTORY_ARTIFACTS"
+      ]
+    },
+    "observed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "repository",
+        "issue_number",
+        "base_sha",
+        "head_sha",
+        "issue_body_sha256",
+        "diff_sha256",
+        "tool_version",
+        "conclusion_green"
+      ],
+      "properties": {
+        "schema": { "$ref": "#/$defs/nullableString" },
+        "repository": {
+          "oneOf": [
+            { "$ref": "#/$defs/repository" },
+            { "type": "null" }
+          ]
+        },
+        "issue_number": { "$ref": "#/$defs/nullableInteger" },
+        "base_sha": { "$ref": "#/$defs/nullableCommitSha" },
+        "head_sha": { "$ref": "#/$defs/nullableCommitSha" },
+        "issue_body_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "diff_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "tool_version": { "$ref": "#/$defs/nullableString" },
+        "conclusion_green": {
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "state", "reasons", "artifact_sha256", "observed"],
+      "properties": {
+        "kind": { "enum": ["scope", "test", "review"] },
+        "state": { "$ref": "#/$defs/state" },
+        "reasons": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/reason" }
+        },
+        "artifact_sha256": { "$ref": "#/$defs/nullableSha256" },
+        "observed": { "$ref": "#/$defs/observed" }
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonical_json", "timestamp_omitted"],
+      "properties": {
+        "canonical_json": { "const": "RFC8259-sort-keys-utf8-lf" },
+        "timestamp_omitted": { "const": true }
+      }
+    }
+  }
+}
