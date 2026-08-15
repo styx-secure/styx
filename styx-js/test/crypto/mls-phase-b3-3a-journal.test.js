@@ -368,4 +368,40 @@ describe('Phase B3.3a isolated durable application journal', () => {
     expect(rejected.reason).toMatchObject({ code: B33A_ERROR.CAS_CONFLICT });
     expect(rejected.reason).not.toHaveProperty('ciphertextBytes');
   });
+
+  test('a concurrent inbound CAS loser releases no plaintext', async () => {
+    const { values, adapter, store, journal, wasm } = await joinedFixture();
+    const plaintext = eventBytes(values.founder.identityHex, 12);
+    const ciphertext = Uint8Array.from([0x58, ...plaintext]);
+    wasm.seedInbound(ciphertext, plaintext, values.founder);
+
+    let arrivals = 0;
+    let releaseBarrier;
+    const barrier = new Promise((resolve) => { releaseBarrier = resolve; });
+    store.beforeCas = async ({ nextHead }) => {
+      if (nextHead.sequence !== 2) return;
+      arrivals += 1;
+      if (arrivals === 2) releaseBarrier();
+      await barrier;
+    };
+
+    const results = await Promise.allSettled([
+      adapter.receive(ciphertext),
+      adapter.receive(ciphertext),
+    ]);
+    const fulfilled = results.filter((result) => result.status === 'fulfilled');
+    expect(fulfilled).toHaveLength(1);
+    expect(fulfilled[0].value).toEqual(expect.objectContaining({
+      status: B33A_OUTCOME.COMMITTED,
+      plaintextBytes: plaintext,
+    }));
+    const rejected = results.find((result) => result.status === 'rejected');
+    expect(rejected.reason).toMatchObject({ code: B33A_ERROR.CAS_CONFLICT });
+    expect(rejected.reason).not.toHaveProperty('plaintextBytes');
+
+    const durable = await journal.readCurrent();
+    expect(durable.head.sequence).toBe(2);
+    expect(durable.head.inboundRecords).toHaveLength(1);
+    durable.stateBytes.fill(0);
+  });
 });

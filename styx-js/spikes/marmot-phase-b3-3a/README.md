@@ -65,6 +65,14 @@ Stage 2 installs only that approved tuple and performs two new, disjoint exact
 runs. Development runs are diagnostic evidence, not substitutes for those
 post-installation runs.
 
+During Stage 1, the vendored integrity verifier is expected to report a tuple
+mismatch only when both isolated builds are byte-identical to each other and
+that reviewed candidate intentionally differs from the still-installed B3.2a
+tuple. Any other verification failure is blocking. After the approved tuple is
+installed in Stage 2, the same verifier must exit successfully. Each Stage 2
+run also rebuilds the pinned MDK peer from its locked, clean source checkout and
+records the resulting source and executable identity in its evidence.
+
 ## Stage 1 commands
 
 From the documented directories:

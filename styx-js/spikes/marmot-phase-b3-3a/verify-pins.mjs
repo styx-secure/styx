@@ -120,6 +120,8 @@ export function verifyPins(candidatePath) {
   requireEqual(git(repoRoot, 'rev-parse', `${B33A_BASE_SHA}^{tree}`),
     B33A_BASE_TREE, 'B3.3a base tree');
   execFileSync('git', ['merge-base', '--is-ancestor', B33A_BASE_SHA, 'HEAD'], { cwd: repoRoot });
+  requireEqual(git(repoRoot, 'status', '--porcelain', '--untracked-files=no'),
+    '', 'Styx tracked worktree');
   requireEqual(git(mdkRoot, 'rev-parse', 'HEAD'), B33A_MDK_REVISION, 'MDK revision');
   requireEqual(git(mdkRoot, 'rev-parse', 'HEAD^{tree}'), B33A_MDK_TREE, 'MDK tree');
   requireEqual(git(mdkRoot, 'status', '--porcelain'), '', 'MDK worktree');
