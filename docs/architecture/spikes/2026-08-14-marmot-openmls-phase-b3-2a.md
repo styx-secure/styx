@@ -4,9 +4,9 @@ Date: 2026-08-15
 
 Issue: #175
 
-Stage: **post-review tuple installed; fresh Stage 2 verification pending**
+Stage: **Stage 2 re-executed at the approved post-review tuple**
 
-Disposition: **pending fresh evidence at the post-review tuple**
+Disposition: **GO for the bounded B3.2a durable restarted Welcome-join claim**
 
 Installed artifact changed: **yes; exact human-approved five-file tuple**
 
@@ -148,8 +148,8 @@ Primary upstream evidence:
 
 - Native wrapper suite: 26 passed, 0 failed.
 - Targeted artifact-independent Jest suite plus historical state restore and
-  envelope tests: 75 passed, 0 failed.
-- Full JavaScript Jest suite: 101 suites and 1,483 tests passed, 0 failed. Relay-dependent suites
+  envelope tests: 83 passed, 0 failed.
+- Full JavaScript Jest suite: 101 suites and 1,490 tests passed, 0 failed. Relay-dependent suites
   emitted their existing unavailable-local-relay warnings; no relay evidence is
   claimed by B3.2a.
 - Two clean disposable builds: all five candidate files byte-identical.
@@ -162,7 +162,7 @@ Primary upstream evidence:
   head/blob corruption, digest rebinding, replay/state conflicts, persistence
   failure, CAS races, content-address collision and transient-buffer clearing.
 
-Stage 2 added the exact-pin MDK/Styx harness and produced two fresh runs. Both
+Fresh post-review Stage 2 execution produced two exact-pin MDK/Styx runs. Both
 reported `GO`, used member profiles `[MDK_PIN_9396ADB, STYX_B32A]`, classified
 the independently prepared candidate difference as
 `RETENTION_TIMESTAMP_BOUNDED`, committed the first unmodified candidate through
@@ -171,9 +171,9 @@ Node process restart. The private run directories were removed after each run.
 
 | Evidence | Run A | Run B |
 | --- | --- | --- |
-| Report SHA-256 | `6feabcb1dfb2024b0c7a95437c11c1a1a3ebc1edc0cacff17fe8bd882bf3d062` | `5f74edb7808e447ab8d73bb4101f75ec43cca238ad5e80fe3848a9032a433145` |
-| Transcript SHA-256 | `8ca36b0cee1646558c58215af3b2b3da4d41965cf8261eafc36205689eafa6f3` | `e2d7bead40c9600ca26ed0f65fa72a99110e5713636de9eb05900c457c83fb20` |
-| Transcript head | `3cd931dd2bca539a230aaf484476a22debe52c1a465615e3c44ee8164b5acf9d` | `49e682ab2adbb6e0fc500237b27f4e64ad4e3a3e75c46d86d1c6383e9213dd56` |
+| Report SHA-256 | `9b627a928310a240af3074cc4f43a684aab1a69280aa225018177d9f3063c4bd` | `8889d21cd901e711cf43a3b9f673c73755f8ef383efd343c7fdf19e42d370312` |
+| Transcript SHA-256 | `55623f68f46bc8e2f65100b9e3626f3d7dd01b7d209d3ed924373eb16ec7b4aa` | `1ce1afa2b2e5fb2294ef101cd46aa5d1259fa83bef7db7e208c2713cc532dfa3` |
+| Transcript head | `8e564532d0f8710fccef3eb2bd15ba8f2f5fb7a9c4191ba75e25d786a5fb72dd` | `b4bf2f398e6fb7391d0065ea97ab133d120af87d6e4497532c80a4ef00d1114c` |
 
 The paired evidence proves only the bounded claim below. Random identities,
 groups and ciphertexts intentionally make byte-for-byte report equality neither
