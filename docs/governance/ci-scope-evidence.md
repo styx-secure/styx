@@ -66,6 +66,22 @@ bound by `issue_body_sha256`; no extra report field or workflow-side exception
 exists. Unlisted or mismatched binaries and every binary delete, rename, copy,
 symlink, gitlink or unsupported mode remain fail-closed.
 
+Task-contract v1 may also include the optional `Allowed copy sources` section.
+It authorizes only an exact immutable text blob in the `old_path` role of a Git
+copy record. The trusted-base guard independently verifies its literal path,
+base/HEAD regular-blob identity and mode, SHA-256, byte length, text
+classification and absence from every other changed-entry role. One exact
+source may serve multiple copies, but each destination still passes all ordinary
+allow/forbid, object and content checks. Rename, source mutation/deletion,
+binary/symlink/gitlink source, unused declaration and every destination-side
+exception remain fail-closed.
+
+The report schema and closed field set do not change. An authorized source keeps
+its real forbidden matches and uses the documented synthetic
+`![styx-copy-source sha256=<declared-64hex>]` item in `allowed_matches`. The
+ordinary pattern grammar rejects that marker, and `issue_body_sha256` binds the
+declaration. CI does not contain a separate exception or trust worktree bytes.
+
 The scope guard supports an optional `--worktree-sha` argument. Its default
 remains `--head-sha`, preserving local behavior. Observation CI passes the
 trusted base SHA so the worktree can remain on trusted code while the head is

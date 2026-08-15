@@ -132,7 +132,61 @@ class ReportTests(GuardIntegrationCase):
         self.assertEqual(golden_keys, set(report))
         self.assertNotIn("allowed_binary_artifacts", report)
         self.assertEqual(hashlib.sha256(body.encode("utf-8")).hexdigest(), report["issue_body_sha256"])
-        self.assertEqual("0.2.0", report["tool_version"])
+        self.assertEqual("0.3.0", report["tool_version"])
+
+    def test_copy_source_marker_preserves_v1_schema_and_downstream_validation(self) -> None:
+        source = "legacy/source.mjs"
+        destination = "tools/agent-enforcement/copied.mjs"
+        data = ("immutable exact source\n" * 32).encode()
+        self.repo.write(source, data)
+        base = self.repo.commit("base")
+        self.repo.write(destination, data)
+        head = self.repo.commit("copy")
+        body = contract_body(
+            forbidden=("legacy/**",),
+            copy_sources=(
+                f"{hashlib.sha256(data).hexdigest()} {len(data)} {source}",
+            ),
+        )
+        result, report, destination_path = self.invoke(base, head, body=body)
+        self.assert_verdict(result, report, "PASS", 0)
+
+        schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+        MiniSchemaValidator(schema).validate(report)
+        golden_keys = set(
+            json.loads(
+                (ROOT / "tools/agent-enforcement/tests/fixtures/golden-pass.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        )
+        self.assertEqual(golden_keys, set(report))
+        self.assertNotIn("allowed_copy_sources", report)
+        marker = f"![styx-copy-source sha256={hashlib.sha256(data).hexdigest()}]"
+        self.assertIn(
+            marker,
+            next(
+                path
+                for entry in report["changed_entries"]
+                for path in entry["paths"]
+                if path["path"] == source
+            )["allowed_matches"],
+        )
+
+        validator_script = (
+            "import pathlib,sys; "
+            f"sys.path.insert(0, {str(ROOT / 'tools' / 'test-orchestrator')!r}); "
+            "from executor import validate_scope_report_document; "
+            "validate_scope_report_document(pathlib.Path(sys.argv[1]).read_bytes())"
+        )
+        downstream = subprocess.run(
+            ["python3", "-c", validator_script, str(destination_path)],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        self.assertEqual(0, downstream.returncode, downstream.stderr)
 
 
 if __name__ == "__main__":
