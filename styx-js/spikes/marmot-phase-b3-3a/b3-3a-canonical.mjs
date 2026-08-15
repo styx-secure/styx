@@ -1,0 +1,198 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// STYX_SPIKE_PROTOTYPE — exact B3.3a application-record codecs.
+
+import { createHash } from 'node:crypto';
+
+export const B33A_FORMAT = 'styx-marmot-b3.3a-application-journal';
+export const B33A_VERSION = 1;
+export const B33A_PROVIDER_FORMAT = 'phase-b32a-provider-canonical-v1';
+export const B33A_STATE = Object.freeze({ ACTIVE: 'ACTIVE' });
+export const B33A_OUTCOME = Object.freeze({
+  COMMITTED: 'COMMITTED',
+  DUPLICATE: 'DUPLICATE',
+});
+export const B33A_ERROR = Object.freeze({
+  CAS_CONFLICT: 'B33A_CAS_CONFLICT',
+  CORRUPT: 'B33A_CORRUPT',
+  DUPLICATE_INITIALIZATION: 'B33A_DUPLICATE_INITIALIZATION',
+  ENGINE_REJECTED: 'B33A_ENGINE_REJECTED',
+  INNER_EVENT_REJECTED: 'B33A_INNER_EVENT_REJECTED',
+  INVALID: 'B33A_INVALID',
+  PERSISTENCE_FAILED: 'B33A_PERSISTENCE_FAILED',
+  RESOURCE_LIMIT: 'B33A_RESOURCE_LIMIT',
+  STATE_CONFLICT: 'B33A_STATE_CONFLICT',
+});
+export const B33A_LIMITS = Object.freeze({
+  maxCiphertextBytes: 1024 * 1024,
+  maxContentBytes: 256 * 1024,
+  maxEventBytes: 320 * 1024,
+  maxJournalRecords: 64,
+  maxProviderBytes: 8 * 1024 * 1024,
+  maxRequestIdBytes: 128,
+  maxTagCount: 128,
+  maxTagItems: 16,
+  maxTagItemBytes: 4096,
+});
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder('utf-8', { fatal: true });
+const EVENT_FIELDS = Object.freeze(['id', 'pubkey', 'created_at', 'kind', 'tags', 'content']);
+
+export class B33aError extends Error {
+  constructor(code, message, details = {}, cause = undefined) {
+    super(message, { cause });
+    this.name = 'B33aError';
+    this.code = code;
+    this.details = Object.freeze({ ...details });
+  }
+}
+
+export function failB33a(code, message, details = {}, cause = undefined) {
+  throw new B33aError(code, message, details, cause);
+}
+
+export function sha256Hex(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+export function canonicalJsonBytes(value) {
+  return textEncoder.encode(JSON.stringify(value));
+}
+
+export function bytesToHex(value) {
+  return Buffer.from(assertBytes('bytes', value)).toString('hex');
+}
+
+export function hexToBytes(label, value, bytes = null) {
+  assertHex(label, value, bytes);
+  return Uint8Array.from(Buffer.from(value, 'hex'));
+}
+
+export function assertHex(label, value, bytes = null) {
+  if (typeof value !== 'string' || !/^(?:[0-9a-f]{2})+$/.test(value)
+    || (bytes !== null && value.length !== bytes * 2)) {
+    failB33a(B33A_ERROR.INVALID, `${label} is not exact lowercase hexadecimal`);
+  }
+  return value;
+}
+
+export function assertDigest(label, value) {
+  if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) {
+    failB33a(B33A_ERROR.INVALID, `${label} is not a SHA-256 digest`);
+  }
+  return value;
+}
+
+export function assertBytes(label, value, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+  if (!(value instanceof Uint8Array) || value.byteLength < min || value.byteLength > max) {
+    failB33a(B33A_ERROR.RESOURCE_LIMIT, `${label} is outside its byte envelope`);
+  }
+  return value;
+}
+
+export function copyBytes(value) { return Uint8Array.from(value); }
+
+export function clearBytes(value) { value?.fill?.(0); }
+
+export function exactObject(value, fields, label, error = B33A_ERROR.INVALID) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    failB33a(error, `${label} is not an object`);
+  }
+  const keys = Reflect.ownKeys(value);
+  if (keys.some((key) => typeof key !== 'string') || keys.length !== fields.length
+    || keys.some((key, index) => key !== fields[index])) {
+    failB33a(error, `${label} fields or field order are not exact`);
+  }
+  const result = {};
+  for (const field of fields) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, field);
+    if (!descriptor || !Object.hasOwn(descriptor, 'value')) {
+      failB33a(error, `${label} contains an accessor or missing field`);
+    }
+    result[field] = descriptor.value;
+  }
+  return result;
+}
+
+function assertBoundedString(label, value, maximumBytes) {
+  if (typeof value !== 'string' || textEncoder.encode(value).byteLength > maximumBytes) {
+    failB33a(B33A_ERROR.INNER_EVENT_REJECTED, `${label} is outside its UTF-8 envelope`);
+  }
+  return value;
+}
+
+function normalizeTags(value) {
+  if (!Array.isArray(value) || value.length > B33A_LIMITS.maxTagCount) {
+    failB33a(B33A_ERROR.INNER_EVENT_REJECTED, 'event tags exceed their envelope');
+  }
+  return value.map((tag, tagIndex) => {
+    if (!Array.isArray(tag) || tag.length > B33A_LIMITS.maxTagItems) {
+      failB33a(B33A_ERROR.INNER_EVENT_REJECTED, `event tag ${tagIndex} is invalid`);
+    }
+    return tag.map((item, itemIndex) => assertBoundedString(
+      `event tag ${tagIndex}:${itemIndex}`, item, B33A_LIMITS.maxTagItemBytes,
+    ));
+  });
+}
+
+export function nip01EventId(event) {
+  return sha256Hex(canonicalJsonBytes([
+    0, event.pubkey, event.created_at, event.kind, event.tags, event.content,
+  ]));
+}
+
+export function decodeMarmotAppEvent(bytes, expectedSenderIdentityHex) {
+  assertBytes('Marmot application event', bytes, { min: 2, max: B33A_LIMITS.maxEventBytes });
+  let text;
+  let parsed;
+  try {
+    text = textDecoder.decode(bytes);
+    parsed = JSON.parse(text);
+  } catch (error) {
+    failB33a(B33A_ERROR.INNER_EVENT_REJECTED, 'application event is not strict UTF-8 JSON', {}, error);
+  }
+  const event = exactObject(
+    parsed, EVENT_FIELDS, 'Marmot application event', B33A_ERROR.INNER_EVENT_REJECTED,
+  );
+  assertHex('event id', event.id, 32);
+  assertHex('event pubkey', event.pubkey, 32);
+  if (!Number.isSafeInteger(event.created_at) || event.created_at < 0
+    || !Number.isSafeInteger(event.kind) || event.kind < 0 || event.kind > 0xffff) {
+    failB33a(B33A_ERROR.INNER_EVENT_REJECTED, 'event timestamp or kind is invalid');
+  }
+  event.tags = normalizeTags(event.tags);
+  event.content = assertBoundedString('event content', event.content, B33A_LIMITS.maxContentBytes);
+  const canonical = canonicalJsonBytes(event);
+  if (!Buffer.from(canonical).equals(Buffer.from(bytes))) {
+    failB33a(B33A_ERROR.INNER_EVENT_REJECTED,
+      'application event is not the exact canonical JSON encoding');
+  }
+  if (nip01EventId(event) !== event.id) {
+    failB33a(B33A_ERROR.INNER_EVENT_REJECTED, 'application event id is invalid');
+  }
+  if (event.pubkey !== expectedSenderIdentityHex) {
+    failB33a(B33A_ERROR.INNER_EVENT_REJECTED,
+      'application event pubkey differs from the MLS-authenticated sender');
+  }
+  return Object.freeze({ ...event, tags: Object.freeze(event.tags.map(Object.freeze)) });
+}
+
+export function encodeMarmotAppEvent(fields) {
+  const value = exactObject(
+    fields, ['pubkey', 'created_at', 'kind', 'tags', 'content'], 'event fields',
+  );
+  const unsigned = {
+    pubkey: value.pubkey,
+    created_at: value.created_at,
+    kind: value.kind,
+    tags: value.tags,
+    content: value.content,
+  };
+  const event = {
+    id: nip01EventId(unsigned),
+    ...unsigned,
+  };
+  const bytes = canonicalJsonBytes(event);
+  decodeMarmotAppEvent(bytes, event.pubkey);
+  return bytes;
+}
