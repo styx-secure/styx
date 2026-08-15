@@ -8337,6 +8337,142 @@ mod tests {
     }
 
     #[cfg(feature = "extensions-draft")]
+    fn phase_b33a_hostile_founder_state(
+        group_id: &[u8],
+        founder_byte: u8,
+        joiner_byte: u8,
+        capabilities: Capabilities,
+        add_forbidden_component: bool,
+        add_third_member: bool,
+    ) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+        let mut founder_provider = Provider::new();
+        let joiner_provider = Provider::new();
+        let (founder, founder_proof, _) = phase_b2_identity(&founder_provider, founder_byte);
+        let (joiner, joiner_proof, _) = phase_b2_identity(&joiner_provider, joiner_byte);
+        let joiner_key_package = joiner
+            .b3_2a_key_package(&joiner_provider, &joiner_proof)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let mut additions = vec![joiner_key_package.0.clone()];
+        let mut third_owner = None;
+        if add_third_member {
+            let third_provider = Provider::new();
+            let (third, third_proof, _) = phase_b2_identity(&third_provider, joiner_byte + 1);
+            let third_key_package = third
+                .b3_2a_key_package(&third_provider, &third_proof)
+                .map_err(js_error_to_string)
+                .unwrap();
+            additions.push(third_key_package.0.clone());
+            third_owner = Some((third_provider, third, third_key_package));
+        }
+        let extensions = if add_forbidden_component {
+            let mut dictionary = AppDataDictionary::new();
+            dictionary.insert(
+                0x0001,
+                PHASE_B32A_SUPPORTED_COMPONENTS
+                    .to_vec()
+                    .tls_serialize_detached()
+                    .unwrap(),
+            );
+            dictionary.insert(
+                0x0002,
+                Vec::<ComponentId>::new().tls_serialize_detached().unwrap(),
+            );
+            dictionary.insert(0x0003, b"forbidden superset".to_vec());
+            dictionary.insert(ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID, founder_proof);
+            Extensions::single(Extension::AppDataDictionary(
+                AppDataDictionaryExtension::new(dictionary),
+            ))
+            .unwrap()
+        } else {
+            phase_b32a_mdk_leaf_extensions(&founder_proof)
+        };
+        let mut group = MlsGroup::builder()
+            .ciphersuite(PROBE_CIPHERSUITE)
+            .with_group_id(GroupId::from_slice(group_id))
+            .with_wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+            .use_ratchet_tree_extension(true)
+            .with_group_context_extensions(
+                phase_b31_group_context_extensions(
+                    &founder.account_public_key,
+                    b"B3.3a hostile profile fixture",
+                    b"native rejection evidence",
+                )
+                .map_err(js_error_to_string)
+                .unwrap(),
+            )
+            .with_capabilities(capabilities)
+            .with_leaf_node_extensions(extensions)
+            .unwrap()
+            .build(
+                &founder_provider.inner,
+                &founder.keypair,
+                founder.credential_with_key.clone(),
+            )
+            .unwrap();
+        group
+            .add_members(&founder_provider.inner, &founder.keypair, &additions)
+            .unwrap();
+        group
+            .merge_pending_commit(founder_provider.as_mut())
+            .unwrap();
+        drop(third_owner);
+        let private = PhaseB32aPrivateProvider::from_snapshot(
+            &founder_provider.serialize_state(),
+            PhaseB32aSnapshotRole::Predecessor,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        (
+            private.canonical_state().map_err(js_error_to_string).unwrap(),
+            founder.account_public_key,
+            founder.keypair.public().to_vec(),
+        )
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b33a_next_epoch_ciphertext(
+        fixture: &PhaseB33aNativeFixture,
+        plaintext: &[u8],
+    ) -> Vec<u8> {
+        let mut private = PhaseB32aPrivateProvider::from_snapshot(
+            &fixture.founder_state,
+            PhaseB32aSnapshotRole::CanonicalCandidate,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let mut group = MlsGroup::load(
+            private.provider.inner.storage(),
+            &GroupId::from_slice(&fixture.group_id),
+        )
+        .unwrap()
+        .unwrap();
+        let identity = PhaseB2Identity::load(
+            &private.provider,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .unwrap();
+        group
+            .self_update(
+                private.provider.as_ref(),
+                &identity.keypair,
+                LeafNodeParameters::default(),
+            )
+            .unwrap();
+        group
+            .merge_pending_commit(private.provider.as_mut())
+            .unwrap();
+        group
+            .create_message(private.provider.as_ref(), &identity.keypair, plaintext)
+            .unwrap()
+            .tls_serialize_detached()
+            .unwrap()
+    }
+
+    #[cfg(feature = "extensions-draft")]
     fn assert_phase_b32a_failed_release_consumed(
         pending: &mut PhaseB32aPendingWelcome,
         projection_sha256: &[u8],
@@ -8566,14 +8702,25 @@ mod tests {
             )
             .unwrap();
         let proposal = proposal.tls_serialize_detached().unwrap();
-        let mut handshake_receiver = phase_b33a_load(
-            &fixture.joiner_state,
-            &fixture.group_id,
-            &fixture.joiner_identity,
-            &fixture.joiner_signature_key,
-        );
-        phase_b32_assert_rejected(|| handshake_receiver.prepare_inbound(&proposal).map(|_| ()));
-        assert!(handshake_receiver.is_consumed());
+        let (commit, _, _) = hostile_group
+            .commit_to_pending_proposals(
+                hostile_private.provider.as_ref(),
+                &hostile_identity.keypair,
+            )
+            .unwrap();
+        let commit = commit.tls_serialize_detached().unwrap();
+        for handshake in [&proposal, &commit] {
+            let mut handshake_receiver = phase_b33a_load(
+                &fixture.joiner_state,
+                &fixture.group_id,
+                &fixture.joiner_identity,
+                &fixture.joiner_signature_key,
+            );
+            phase_b32_assert_rejected(|| {
+                handshake_receiver.prepare_inbound(handshake).map(|_| ())
+            });
+            assert!(handshake_receiver.is_consumed());
+        }
 
         let mut receiver_after_rejection = phase_b33a_load(
             &fixture.joiner_state,
@@ -8658,6 +8805,202 @@ mod tests {
         let _ciphertext = release.take_ciphertext().unwrap();
         phase_b32_assert_rejected(|| release.take_canonical_state().map(|_| ()));
         phase_b32_assert_rejected(|| release.take_ciphertext().map(|_| ()));
+
+        let mut sender = phase_b33a_load(
+            &fixture.founder_state,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+        );
+        let mut sender_pending = sender.prepare_outbound(b"inbound one-use release").unwrap();
+        let (_, inbound_ciphertext) = phase_b33a_release_outbound(&mut sender_pending);
+        let mut receiver = phase_b33a_load(
+            &fixture.joiner_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        );
+        let mut inbound_pending = receiver.prepare_inbound(&inbound_ciphertext).unwrap();
+        let inbound_state_digest = inbound_pending.canonical_state_sha256().unwrap();
+        let inbound_ciphertext_digest = inbound_pending.ciphertext_sha256().unwrap();
+        phase_b32_assert_rejected(|| {
+            inbound_pending
+                .release(&inbound_state_digest, &inbound_ciphertext_digest, &[0; 32])
+                .map(|_| ())
+        });
+        assert!(inbound_pending.is_consumed());
+        phase_b32_assert_rejected(|| inbound_pending.discard());
+
+        let mut second_receiver = phase_b33a_load(
+            &fixture.joiner_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        );
+        let mut second_inbound = second_receiver.prepare_inbound(&inbound_ciphertext).unwrap();
+        let inbound_state_digest = second_inbound.canonical_state_sha256().unwrap();
+        let inbound_ciphertext_digest = second_inbound.ciphertext_sha256().unwrap();
+        let inbound_plaintext_digest = second_inbound.plaintext_sha256().unwrap();
+        let mut inbound_release = second_inbound
+            .release(
+                &inbound_state_digest,
+                &inbound_ciphertext_digest,
+                &inbound_plaintext_digest,
+            )
+            .unwrap();
+        let _state = inbound_release.take_canonical_state().unwrap();
+        let _ciphertext = inbound_release.take_ciphertext().unwrap();
+        let _plaintext = inbound_release.take_plaintext().unwrap();
+        phase_b32_assert_rejected(|| inbound_release.take_canonical_state().map(|_| ()));
+        phase_b32_assert_rejected(|| inbound_release.take_ciphertext().map(|_| ()));
+        phase_b32_assert_rejected(|| inbound_release.take_plaintext().map(|_| ()));
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b33a_wrong_profiles_member_count_and_input_classes_fail_closed() {
+        let fixture = phase_b33a_native_fixture(
+            b"phase-b33a-native-hostile-inputs",
+            0xb7,
+            0xb8,
+        );
+
+        let (hybrid_state, hybrid_identity, hybrid_signature_key) =
+            phase_b33a_hostile_founder_state(
+                b"phase-b33a-hybrid-profile",
+                0xb9,
+                0xba,
+                phase_b32a_styx_capabilities(),
+                false,
+                false,
+            );
+        phase_b32_assert_rejected(|| {
+            PhaseB33aGroup::load_canonical_state(
+                &hybrid_state,
+                b"phase-b33a-hybrid-profile",
+                &hybrid_identity,
+                &hybrid_signature_key,
+            )
+            .map(|_| ())
+        });
+
+        let (superset_state, superset_identity, superset_signature_key) =
+            phase_b33a_hostile_founder_state(
+                b"phase-b33a-superset-profile",
+                0xbb,
+                0xbc,
+                phase_b32a_mdk_capabilities(),
+                true,
+                false,
+            );
+        phase_b32_assert_rejected(|| {
+            PhaseB33aGroup::load_canonical_state(
+                &superset_state,
+                b"phase-b33a-superset-profile",
+                &superset_identity,
+                &superset_signature_key,
+            )
+            .map(|_| ())
+        });
+
+        let (three_member_state, three_member_identity, three_member_signature_key) =
+            phase_b33a_hostile_founder_state(
+                b"phase-b33a-three-members",
+                0xbd,
+                0xbe,
+                phase_b32a_mdk_capabilities(),
+                false,
+                true,
+            );
+        phase_b32_assert_rejected(|| {
+            PhaseB33aGroup::load_canonical_state(
+                &three_member_state,
+                b"phase-b33a-three-members",
+                &three_member_identity,
+                &three_member_signature_key,
+            )
+            .map(|_| ())
+        });
+
+        let mut empty_outbound = phase_b33a_load(
+            &fixture.founder_state,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+        );
+        phase_b32_assert_rejected(|| empty_outbound.prepare_outbound(&[]).map(|_| ()));
+        assert!(empty_outbound.is_consumed());
+
+        let mut malformed_inbound = phase_b33a_load(
+            &fixture.joiner_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        );
+        phase_b32_assert_rejected(|| malformed_inbound.prepare_inbound(&[0xff]).map(|_| ()));
+        assert!(malformed_inbound.is_consumed());
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b33a_wrong_group_and_epoch_leave_no_durable_candidate() {
+        let fixture = phase_b33a_native_fixture(
+            b"phase-b33a-group-and-epoch",
+            0xc1,
+            0xc2,
+        );
+        let other = phase_b33a_native_fixture(
+            b"phase-b33a-other-group",
+            0xc3,
+            0xc4,
+        );
+        let mut other_sender = phase_b33a_load(
+            &other.founder_state,
+            &other.group_id,
+            &other.founder_identity,
+            &other.founder_signature_key,
+        );
+        let mut other_pending = other_sender.prepare_outbound(b"wrong group").unwrap();
+        let (_, wrong_group_ciphertext) = phase_b33a_release_outbound(&mut other_pending);
+        let mut wrong_group_receiver = phase_b33a_load(
+            &fixture.joiner_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        );
+        phase_b32_assert_rejected(|| {
+            wrong_group_receiver
+                .prepare_inbound(&wrong_group_ciphertext)
+                .map(|_| ())
+        });
+        assert!(wrong_group_receiver.is_consumed());
+
+        let stale_epoch_ciphertext =
+            phase_b33a_next_epoch_ciphertext(&fixture, b"future epoch");
+        let mut stale_epoch_receiver = phase_b33a_load(
+            &fixture.joiner_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        );
+        phase_b32_assert_rejected(|| {
+            stale_epoch_receiver
+                .prepare_inbound(&stale_epoch_ciphertext)
+                .map(|_| ())
+        });
+        assert!(stale_epoch_receiver.is_consumed());
+
+        // Failed operations expose no replacement candidate. Reloading the
+        // authoritative durable bytes therefore yields the exact same bytes.
+        for _ in 0..32 {
+            let private = PhaseB32aPrivateProvider::from_snapshot(
+                &fixture.joiner_state,
+                PhaseB32aSnapshotRole::CanonicalCandidate,
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+            assert_eq!(private.canonical_state().unwrap(), fixture.joiner_state);
+        }
     }
 
     #[cfg(feature = "extensions-draft")]

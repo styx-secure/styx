@@ -357,13 +357,21 @@ fn initialize(state: &mut PeerState, request: &Map<String, Value>) -> Result<Val
         signer_script: path_field(request, "signer_script")?,
         secret_path: path_field(request, "signer_secret_path")?,
     };
-    let engine = EngineBuilder::new(storage)
+    let mut engine = EngineBuilder::new(storage)
         .identity(account_identity)
         .account_identity_proof_signer(Arc::new(signer))
         .protocol_profile(ProtocolProfile::Current)
         .peeler(Box::new(DirectMlsPeeler))
         .build()
         .map_err(|error| RpcError::peer(format!("build current-profile engine: {error}")))?;
+    engine
+        .hydrate_all_stored_groups()
+        .map_err(|error| RpcError::peer(format!("hydrate durable groups: {error}")))?;
+    if !engine.quarantined_groups().is_empty() {
+        return Err(RpcError::fatal_peer(
+            "one or more durable groups were quarantined during hydration",
+        ));
+    }
     state.engine = Some(engine);
     Ok(json!({"protocol_profile": "current"}))
 }

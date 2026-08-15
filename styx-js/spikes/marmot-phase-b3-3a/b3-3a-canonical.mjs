@@ -8,6 +8,8 @@ export const B33A_VERSION = 1;
 export const B33A_PROVIDER_FORMAT = 'phase-b32a-provider-canonical-v1';
 export const B33A_RUN_ROOT = '/home/mverde/.local/share/styx-b3-3a-runs/issue-185';
 export const B33A_PRIVATE_ROOT = '/home/mverde/.local/share/styx-b3-3a-private/issue-185';
+export const B33A_BUILD_ROOT = '/home/mverde/.local/share/styx-b3-3a-builds/issue-185';
+export const B33A_REPORT_FORMAT = 'styx-marmot-b3.3a-application-evidence';
 export const B33A_STATE = Object.freeze({ ACTIVE: 'ACTIVE' });
 export const B33A_OUTCOME = Object.freeze({
   COMMITTED: 'COMMITTED',
@@ -96,6 +98,114 @@ export function assertBytes(label, value, { min = 0, max = Number.MAX_SAFE_INTEG
 export function copyBytes(value) { return Uint8Array.from(value); }
 
 export function clearBytes(value) { value?.fill?.(0); }
+
+export function appendB33aTranscript(transcript, operation, evidence) {
+  if (!Array.isArray(transcript) || typeof operation !== 'string'
+    || !/^[a-z0-9_]{1,96}$/.test(operation)) {
+    failB33a(B33A_ERROR.INVALID, 'transcript append input is invalid');
+  }
+  const previousEntrySha256Hex = transcript.length === 0
+    ? null : transcript.at(-1).entrySha256Hex;
+  const payload = { ordinal: transcript.length + 1, operation,
+    previousEntrySha256Hex, evidence };
+  const entry = Object.freeze({
+    ...payload,
+    entrySha256Hex: sha256Hex(canonicalJsonBytes(payload)),
+  });
+  transcript.push(entry);
+  return evidence;
+}
+
+export function validateB33aTranscript(transcript) {
+  if (!Array.isArray(transcript) || transcript.length === 0) {
+    failB33a(B33A_ERROR.INVALID, 'transcript is empty');
+  }
+  let previous = null;
+  for (const [index, entry] of transcript.entries()) {
+    const value = exactObject(entry, [
+      'ordinal', 'operation', 'previousEntrySha256Hex', 'evidence', 'entrySha256Hex',
+    ], 'B3.3a transcript entry');
+    if (value.ordinal !== index + 1 || value.previousEntrySha256Hex !== previous
+      || typeof value.operation !== 'string' || !/^[a-z0-9_]{1,96}$/.test(value.operation)) {
+      failB33a(B33A_ERROR.INVALID, 'transcript sequence or operation is invalid');
+    }
+    const payload = { ordinal: value.ordinal, operation: value.operation,
+      previousEntrySha256Hex: value.previousEntrySha256Hex, evidence: value.evidence };
+    if (sha256Hex(canonicalJsonBytes(payload)) !== value.entrySha256Hex) {
+      failB33a(B33A_ERROR.INVALID, 'transcript entry digest is invalid');
+    }
+    previous = value.entrySha256Hex;
+  }
+  return previous;
+}
+
+function validateCandidateTuple(value) {
+  const tuple = exactObject(value, [
+    'openmls_wasm.js', 'openmls_wasm.d.ts', 'openmls_wasm_bg.wasm',
+    'openmls_wasm_bg.wasm.d.ts', 'package.json',
+  ], 'B3.3a candidate tuple');
+  for (const [name, digest] of Object.entries(tuple)) assertDigest(name, digest);
+  return Object.freeze(tuple);
+}
+
+export function validateB33aReport(value, transcriptHeadSha256Hex) {
+  if (value?.disposition === 'GO') {
+    const report = exactObject(value, [
+      'format', 'version', 'disposition', 'claim', 'applicationEventsCommitted',
+      'bidirectionalApplicationTrafficEstablished', 'candidateTuple',
+      'commitLifecycleTested', 'groupIdHex', 'replayPlaintextReleased',
+      'transcriptHeadSha256Hex',
+    ], 'B3.3a GO report');
+    if (report.format !== B33A_REPORT_FORMAT || report.version !== 1
+      || typeof report.claim !== 'string' || report.claim.length === 0
+      || report.applicationEventsCommitted !== 4
+      || report.bidirectionalApplicationTrafficEstablished !== true
+      || report.commitLifecycleTested !== false || report.replayPlaintextReleased !== false
+      || report.transcriptHeadSha256Hex !== transcriptHeadSha256Hex) {
+      failB33a(B33A_ERROR.INVALID, 'B3.3a GO report claim or evidence is incoherent');
+    }
+    assertHex('GO report group id', report.groupIdHex);
+    return Object.freeze({ ...report, candidateTuple: validateCandidateTuple(report.candidateTuple) });
+  }
+  if (value?.disposition === 'NO-GO') {
+    const report = exactObject(value, [
+      'format', 'version', 'disposition', 'claim', 'applicationEventsCommitted',
+      'bidirectionalApplicationTrafficEstablished', 'commitLifecycleTested', 'failure',
+      'firstIncompatibleOperation', 'transcriptHeadSha256Hex',
+    ], 'B3.3a NO-GO report');
+    if (report.format !== B33A_REPORT_FORMAT || report.version !== 1
+      || !Number.isSafeInteger(report.applicationEventsCommitted)
+      || report.applicationEventsCommitted < 0 || report.applicationEventsCommitted > 3
+      || report.bidirectionalApplicationTrafficEstablished !== false
+      || report.commitLifecycleTested !== false
+      || typeof report.firstIncompatibleOperation !== 'string'
+      || report.transcriptHeadSha256Hex !== transcriptHeadSha256Hex) {
+      failB33a(B33A_ERROR.INVALID, 'B3.3a NO-GO report is incoherent');
+    }
+    const failure = exactObject(report.failure, ['code', 'message'], 'B3.3a typed failure');
+    if (typeof failure.code !== 'string' || typeof failure.message !== 'string') {
+      failB33a(B33A_ERROR.INVALID, 'B3.3a typed failure is invalid');
+    }
+    return Object.freeze({ ...report, failure: Object.freeze(failure) });
+  }
+  if (value?.disposition === 'BLOCKED') {
+    const report = exactObject(value, [
+      'format', 'version', 'disposition', 'claim', 'applicationEventsCommitted',
+      'bidirectionalApplicationTrafficEstablished', 'commitLifecycleTested',
+      'transcriptHeadSha256Hex',
+    ], 'B3.3a BLOCKED report');
+    if (report.format !== B33A_REPORT_FORMAT || report.version !== 1
+      || !Number.isSafeInteger(report.applicationEventsCommitted)
+      || report.applicationEventsCommitted < 0 || report.applicationEventsCommitted > 3
+      || report.bidirectionalApplicationTrafficEstablished !== false
+      || report.commitLifecycleTested !== false
+      || report.transcriptHeadSha256Hex !== transcriptHeadSha256Hex) {
+      failB33a(B33A_ERROR.INVALID, 'B3.3a BLOCKED report is incoherent');
+    }
+    return Object.freeze(report);
+  }
+  failB33a(B33A_ERROR.INVALID, 'B3.3a report disposition is invalid');
+}
 
 export function exactObject(value, fields, label, error = B33A_ERROR.INVALID) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {

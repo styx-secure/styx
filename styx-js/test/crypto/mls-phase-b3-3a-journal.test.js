@@ -332,13 +332,23 @@ describe('Phase B3.3a isolated durable application journal', () => {
     });
 
   test('persistence failure and a concurrent CAS loser release no transport payload', async () => {
-    const { values, adapter, store, journal } = await joinedFixture();
+    const { values, adapter, store, journal, wasm } = await joinedFixture();
     store.failNext = new Error('synthetic disk failure');
     await expect(adapter.send('persistence-failure', eventBytes(values.joiner.identityHex, 5)))
       .rejects.toMatchObject({ code: B33A_ERROR.PERSISTENCE_FAILED });
     const afterFailure = await journal.readCurrent();
     expect(afterFailure.head.sequence).toBe(1);
     afterFailure.stateBytes.fill(0);
+
+    const inboundPlaintext = eventBytes(values.founder.identityHex, 11);
+    const inboundCiphertext = Uint8Array.from([0x57, ...inboundPlaintext]);
+    wasm.seedInbound(inboundCiphertext, inboundPlaintext, values.founder);
+    store.failNext = new Error('synthetic inbound disk failure');
+    await expect(adapter.receive(inboundCiphertext))
+      .rejects.toMatchObject({ code: B33A_ERROR.PERSISTENCE_FAILED });
+    const afterInboundFailure = await journal.readCurrent();
+    expect(afterInboundFailure.head.sequence).toBe(1);
+    afterInboundFailure.stateBytes.fill(0);
 
     let arrivals = 0;
     let releaseBarrier;
