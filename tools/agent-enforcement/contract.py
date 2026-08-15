@@ -11,7 +11,9 @@ from model import (
     CONTRACT_MARKER,
     BinaryArtifactAuthorization,
     Contract,
+    ContractBaseShaError,
     ContractError,
+    CopySourceAuthorization,
     GitInputError,
     PathEvaluation,
 )
@@ -24,9 +26,15 @@ INDENTED_CODE_RE = re.compile(r"^(?: {4}|\t)")
 MAX_PATH_SEGMENTS = 255
 MAX_BINARY_ARTIFACTS = 32
 MAX_BINARY_ARTIFACT_SIZE = 1024 * 1024 * 1024
+MAX_COPY_SOURCES = 32
+MAX_COPY_SOURCE_SIZE = 64 * 1024 * 1024
 BINARY_ARTIFACT_HEADING = "Allowed binary artifacts"
+COPY_SOURCE_HEADING = "Allowed copy sources"
 BINARY_ARTIFACT_RE = re.compile(r"^([0-9a-f]{64}) +([1-9][0-9]*) +(.+)$")
+COPY_SOURCE_RE = re.compile(r"^([0-9a-f]{64}) +([1-9][0-9]*) +(.+)$")
 BINARY_PATH_WILDCARDS = frozenset("*?[]{}")
+BASE_SHA_DECLARATION_RE = re.compile(r"^- Exact base SHA: `([0-9a-f]{40})`\.$")
+BASE_SHA_LABEL = "Exact base SHA:"
 
 REQUIRED_HEADINGS = (
     "Observable outcome",
@@ -93,6 +101,48 @@ def _scan_structure(body: str) -> tuple[list[tuple[str, int, int]], list[tuple[s
     return headings, markers
 
 
+def _structural_lines(body: str) -> list[str]:
+    """Return non-code lines, preserving exact Markdown spelling."""
+
+    structural: list[str] = []
+    fence: tuple[str, int] | None = None
+    for line in body.splitlines():
+        if fence is not None:
+            if _fence_close(line, *fence):
+                fence = None
+            continue
+        if INDENTED_CODE_RE.match(line):
+            continue
+        opened = _fence_open(line)
+        if opened:
+            fence = opened
+            continue
+        structural.append(line)
+    if fence is not None:
+        raise ContractError("unterminated fenced code block")
+    return structural
+
+
+def parse_base_sha(body: str, base_section: str) -> str:
+    """Parse the one canonical Base SHA declaration outside code blocks."""
+
+    body_candidates = [line for line in _structural_lines(body) if BASE_SHA_LABEL in line]
+    if not body_candidates:
+        raise ContractBaseShaError("missing exact Base SHA declaration")
+    if len(body_candidates) != 1:
+        raise ContractBaseShaError("duplicate exact Base SHA declaration")
+    match = BASE_SHA_DECLARATION_RE.fullmatch(body_candidates[0])
+    if match is None:
+        raise ContractBaseShaError("exact Base SHA declaration is malformed")
+
+    section_candidates = [
+        line for line in _structural_lines(base_section) if BASE_SHA_LABEL in line
+    ]
+    if section_candidates != body_candidates:
+        raise ContractBaseShaError("exact Base SHA declaration must occur in the Base section")
+    return match.group(1)
+
+
 def _section_map(body: str) -> tuple[dict[str, str], list[tuple[str, int]], list[tuple[str, int]]]:
     headings, markers = _scan_structure(body)
 
@@ -117,8 +167,9 @@ def _section_map(body: str) -> tuple[dict[str, str], list[tuple[str, int]], list
     if len(occurrences[chosen]) != 1:
         raise ContractError(f"duplicate required heading: {chosen}")
 
-    if len(occurrences.get(BINARY_ARTIFACT_HEADING, [])) > 1:
-        raise ContractError(f"duplicate optional heading: {BINARY_ARTIFACT_HEADING}")
+    for optional_heading in (BINARY_ARTIFACT_HEADING, COPY_SOURCE_HEADING):
+        if len(occurrences.get(optional_heading, [])) > 1:
+            raise ContractError(f"duplicate optional heading: {optional_heading}")
 
     sections: dict[str, str] = {}
     for name in (*REQUIRED_HEADINGS, chosen):
@@ -127,6 +178,9 @@ def _section_map(body: str) -> tuple[dict[str, str], list[tuple[str, int]], list
     if BINARY_ARTIFACT_HEADING in occurrences:
         section_start, section_end = occurrences[BINARY_ARTIFACT_HEADING][0]
         sections[BINARY_ARTIFACT_HEADING] = body[section_start:section_end]
+    if COPY_SOURCE_HEADING in occurrences:
+        section_start, section_end = occurrences[COPY_SOURCE_HEADING][0]
+        sections[COPY_SOURCE_HEADING] = body[section_start:section_end]
     return sections, [(name, line) for name, _, line in headings], markers
 
 
@@ -188,15 +242,23 @@ def validate_pattern(pattern: str) -> str:
     return pattern
 
 
-def validate_binary_artifact_path(path: str) -> str:
+def _validate_literal_repository_path(path: str, *, label: str) -> str:
     if path != path.strip(" "):
-        raise ContractError(f"binary artifact path has surrounding spaces: {path!r}")
+        raise ContractError(f"{label} path has surrounding spaces: {path!r}")
     if any(char in BINARY_PATH_WILDCARDS for char in path):
-        raise ContractError(f"binary artifact path must be literal: {path!r}")
+        raise ContractError(f"{label} path must be literal: {path!r}")
     try:
         return validate_repo_path(path)
     except GitInputError as exc:
         raise ContractError(exc.message) from exc
+
+
+def validate_binary_artifact_path(path: str) -> str:
+    return _validate_literal_repository_path(path, label="binary artifact")
+
+
+def validate_copy_source_path(path: str) -> str:
+    return _validate_literal_repository_path(path, label="copy source")
 
 
 def parse_binary_artifacts(section: str | None) -> tuple[BinaryArtifactAuthorization, ...]:
@@ -235,6 +297,42 @@ def parse_binary_artifacts(section: str | None) -> tuple[BinaryArtifactAuthoriza
     return tuple(declarations)
 
 
+def parse_copy_sources(section: str | None) -> tuple[CopySourceAuthorization, ...]:
+    if section is None:
+        return ()
+
+    lines = _extract_single_fenced_block(section, COPY_SOURCE_HEADING)
+    declarations: list[CopySourceAuthorization] = []
+    for line in lines:
+        if line == "":
+            continue
+        match = COPY_SOURCE_RE.fullmatch(line)
+        if match is None:
+            raise ContractError(
+                "malformed copy source declaration; expected "
+                "'<lowercase-sha256> <positive-byte-length> <literal-repository-path>'"
+            )
+        sha256, raw_length, raw_path = match.groups()
+        if len(raw_length) > 8:
+            raise ContractError("copy source declaration exceeds the 64 MiB size limit")
+        byte_length = int(raw_length)
+        if byte_length > MAX_COPY_SOURCE_SIZE:
+            raise ContractError("copy source declaration exceeds the 64 MiB size limit")
+        path = validate_copy_source_path(raw_path)
+        declarations.append(CopySourceAuthorization(sha256, byte_length, path))
+        if len(declarations) > MAX_COPY_SOURCES:
+            raise ContractError(f"more than {MAX_COPY_SOURCES} copy sources declared")
+
+    if not declarations:
+        raise ContractError(f"'{COPY_SOURCE_HEADING}' must contain at least one declaration")
+    duplicate_paths = sorted(
+        {item.path for item in declarations if sum(other.path == item.path for other in declarations) > 1}
+    )
+    if duplicate_paths:
+        raise ContractError("duplicate copy source path(s): " + ", ".join(duplicate_paths))
+    return tuple(declarations)
+
+
 def parse_contract(body_bytes: bytes) -> Contract:
     try:
         body = body_bytes.decode("utf-8", "strict")
@@ -262,6 +360,7 @@ def parse_contract(body_bytes: bytes) -> Contract:
 
     return Contract(
         version="v1",
+        base_sha=parse_base_sha(body, sections["Base"]),
         allowed_patterns=parse_patterns(
             _extract_single_fenced_block(sections["Allowed paths"], "Allowed paths"),
             "Allowed paths",
@@ -271,6 +370,7 @@ def parse_contract(body_bytes: bytes) -> Contract:
             "Forbidden paths",
         ),
         allowed_binary_artifacts=parse_binary_artifacts(sections.get(BINARY_ARTIFACT_HEADING)),
+        allowed_copy_sources=parse_copy_sources(sections.get(COPY_SOURCE_HEADING)),
     )
 
 

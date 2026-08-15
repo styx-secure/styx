@@ -19,6 +19,10 @@ class GitGuardTests(GuardIntegrationCase):
     def binary_declaration(path: str, data: bytes, *, length: int | None = None) -> str:
         return f"{hashlib.sha256(data).hexdigest()} {len(data) if length is None else length} {path}"
 
+    @staticmethod
+    def copy_source_declaration(path: str, data: bytes, *, length: int | None = None) -> str:
+        return f"{hashlib.sha256(data).hexdigest()} {len(data) if length is None else length} {path}"
+
     def test_valid_in_scope_text_change_passes(self) -> None:
         base, head = self.simple_history()
         result, report, _ = self.invoke(base, head)
@@ -79,6 +83,281 @@ class GitGuardTests(GuardIntegrationCase):
         self.assert_verdict(result, report, "PASS", 0)
         copy = next(item for item in report["changed_entries"] if item["status"] == "C")
         self.assertEqual(2, len(copy["paths"]))
+
+    def test_exact_read_only_copy_source_authorization_preserves_audit_evidence(self) -> None:
+        source = "legacy/source.mjs"
+        destination = "new/copied.mjs"
+        data = ("export const immutable = true;\n" * 24).encode()
+        self.repo.write(source, data)
+        base = self.repo.commit("base")
+        self.repo.write(destination, data)
+        head = self.repo.commit("copy")
+        base_body = contract_body(allowed=("new/**",), forbidden=("legacy/**",))
+
+        result, report, _ = self.invoke(base, head, body=base_body)
+        self.assert_verdict(result, report, "FAIL", 2)
+
+        declaration = self.copy_source_declaration(source, data)
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(
+                allowed=("new/**",),
+                forbidden=("legacy/**",),
+                copy_sources=(declaration,),
+            ),
+            output=self.root / "authorized-copy.json",
+        )
+        self.assert_verdict(result, report, "PASS", 0)
+        copy = next(item for item in report["changed_entries"] if item["status"] == "C")
+        source_evaluation = copy["paths"][0]
+        self.assertEqual(source, source_evaluation["path"])
+        self.assertEqual(
+            [f"![styx-copy-source sha256={hashlib.sha256(data).hexdigest()}]"],
+            source_evaluation["allowed_matches"],
+        )
+        self.assertEqual(["legacy/**"], source_evaluation["forbidden_matches"])
+        self.assertEqual([], source_evaluation["violations"])
+
+    def test_one_exact_source_can_authorize_multiple_copy_destinations(self) -> None:
+        source = "legacy/source.mjs"
+        data = ("shared immutable source\n" * 32).encode()
+        self.repo.write(source, data)
+        base = self.repo.commit("base")
+        self.repo.write("new/first.mjs", data)
+        self.repo.write("new/second.mjs", data)
+        head = self.repo.commit("two copies")
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(
+                allowed=("new/**",),
+                forbidden=("legacy/**",),
+                copy_sources=(self.copy_source_declaration(source, data),),
+            ),
+        )
+        self.assert_verdict(result, report, "PASS", 0)
+        copies = [item for item in report["changed_entries"] if item["status"] == "C"]
+        self.assertEqual(2, len(copies))
+        self.assertEqual({"new/first.mjs", "new/second.mjs"}, {item["new_path"] for item in copies})
+
+    def test_copy_source_wrong_hash_length_destination_and_destination_only_fail(self) -> None:
+        source = "legacy/source.mjs"
+        destination = "new/copied.mjs"
+        data = ("copy source\n" * 32).encode()
+        self.repo.write(source, data)
+        base = self.repo.commit("base")
+        self.repo.write(destination, data)
+        head = self.repo.commit("copy")
+        cases = {
+            "wrong hash": self.copy_source_declaration(source, b"x" * len(data)),
+            "wrong length": self.copy_source_declaration(source, data, length=len(data) + 1),
+            "destination only": self.copy_source_declaration(destination, data),
+        }
+        for index, (name, declaration) in enumerate(cases.items()):
+            with self.subTest(name=name):
+                result, report, _ = self.invoke(
+                    base,
+                    head,
+                    body=contract_body(
+                        allowed=("new/**",),
+                        forbidden=("legacy/**",),
+                        copy_sources=(declaration,),
+                    ),
+                    output=self.root / f"copy-mismatch-{index}.json",
+                )
+                self.assert_verdict(result, report, "FAIL", 2)
+
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(
+                allowed=("unrelated/**",),
+                forbidden=("legacy/**", "new/**"),
+                copy_sources=(self.copy_source_declaration(source, data),),
+            ),
+            output=self.root / "copy-destination-forbidden.json",
+        )
+        self.assert_verdict(result, report, "FAIL", 2)
+        destination_evaluation = next(
+            path
+            for entry in report["changed_entries"]
+            for path in entry["paths"]
+            if path["path"] == destination
+        )
+        self.assertIn("PATH_FORBIDDEN", destination_evaluation["violations"])
+
+    def test_copy_source_changed_deleted_renamed_or_binary_fails(self) -> None:
+        source = "legacy/source.mjs"
+        destination = "new/copied.mjs"
+        data = ("immutable source\n" * 32).encode()
+
+        self.repo.write(source, data)
+        base = self.repo.commit("base")
+        self.repo.write(source, data + b"changed\n")
+        self.repo.write(destination, data)
+        head = self.repo.commit("source changed and copied")
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(
+                allowed=("new/**",),
+                forbidden=("legacy/**",),
+                copy_sources=(self.copy_source_declaration(source, data),),
+            ),
+        )
+        self.assert_verdict(result, report, "FAIL", 2)
+        self.assertIn("P_COPY_SOURCE_CHANGED_ROLE", {item["code"] for item in report["diagnostics"]})
+
+        for operation in ("delete", "rename"):
+            self.repo = Repo(self.root / f"copy-source-{operation}")
+            self.repo.write(source, data)
+            base = self.repo.commit("base")
+            if operation == "delete":
+                self.repo.remove(source)
+            else:
+                target = self.repo.root / destination
+                target.parent.mkdir(parents=True)
+                (self.repo.root / source).rename(target)
+            head = self.repo.commit(operation)
+            result, report, _ = self.invoke(
+                base,
+                head,
+                body=contract_body(
+                    allowed=("new/**",),
+                    forbidden=("legacy/**",),
+                    copy_sources=(self.copy_source_declaration(source, data),),
+                ),
+                output=self.root / f"copy-source-{operation}.json",
+            )
+            self.assert_verdict(result, report, "FAIL", 2)
+            self.assertIn("P_COPY_SOURCE_UNUSED", {item["code"] for item in report["diagnostics"]})
+
+        self.repo = Repo(self.root / "copy-source-binary")
+        binary = b"binary\x00source" * 32
+        self.repo.write(source, binary)
+        base = self.repo.commit("base")
+        self.repo.write(destination, binary)
+        head = self.repo.commit("binary copy")
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(
+                allowed=("new/**",),
+                forbidden=("legacy/**",),
+                copy_sources=(self.copy_source_declaration(source, binary),),
+            ),
+            output=self.root / "copy-source-binary.json",
+        )
+        self.assert_verdict(result, report, "FAIL", 2)
+        self.assertIn("P_COPY_SOURCE_BINARY", {item["code"] for item in report["diagnostics"]})
+
+    def test_copy_source_symlink_gitlink_and_misleading_source_fail(self) -> None:
+        entry = ChangedEntry("C", 100, "legacy/source", "new/copy")
+        declaration = git_inventory.CopySourceAuthorization("1" * 64, 1, "legacy/source")
+        for mode, object_type in (
+            ("120000", "blob"),
+            ("160000", "commit"),
+            ("040000", "tree"),
+            ("100000", "blob"),
+        ):
+            with self.subTest(mode=mode), mock.patch.object(
+                git_inventory,
+                "tree_object",
+                return_value=TreeObject(mode, object_type, "1" * 40, "legacy/source"),
+            ):
+                authorized, diagnostics = git_inventory.authorize_copy_sources(
+                    Path("."), "1" * 40, "2" * 40, (entry,), (declaration,)
+                )
+                self.assertEqual({}, authorized)
+                self.assertIn("P_COPY_SOURCE_OBJECT", {item.code for item in diagnostics})
+
+        source_a = "legacy/declared.mjs"
+        source_b = "legacy/actual.mjs"
+        destination = "new/copied.mjs"
+        data_a = ("declared source\n" * 32).encode()
+        data_b = ("actual source\n" * 32).encode()
+        self.repo = Repo(self.root / "misleading-copy-source")
+        self.repo.write(source_a, data_a)
+        self.repo.write(source_b, data_b)
+        base = self.repo.commit("base")
+        self.repo.write(destination, data_b)
+        head = self.repo.commit("copy other source")
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(
+                allowed=("new/**",),
+                forbidden=("legacy/**",),
+                copy_sources=(self.copy_source_declaration(source_a, data_a),),
+            ),
+            output=self.root / "misleading-copy-source.json",
+        )
+        self.assert_verdict(result, report, "FAIL", 2)
+        self.assertIn("P_COPY_SOURCE_UNUSED", {item["code"] for item in report["diagnostics"]})
+
+    def test_pr176_two_copy_source_regression_is_exact_and_fail_closed(self) -> None:
+        def shaped(prefix: str, common_lines: int) -> tuple[bytes, bytes]:
+            original = [f"{prefix}-stable-{index:03d}-payload-value\n" for index in range(100)]
+            changed = original[:common_lines] + [
+                f"replacement-{prefix}-{index:03d}-xxxxxxxx\n"
+                for index in range(common_lines, 100)
+            ]
+            return "".join(original).encode(), "".join(changed).encode()
+
+        old_a = "styx-js/spikes/marmot-phase-b3-2/b3-2-orchestrator.mjs"
+        old_b = "styx-js/spikes/marmot-phase-b3-2/verify-pins.mjs"
+        new_a = "styx-js/spikes/marmot-phase-b3-2a/b3-2a-orchestrator.mjs"
+        new_b = "styx-js/spikes/marmot-phase-b3-2a/verify-pins.mjs"
+        source_a, destination_a = shaped("orchestrator", 68)
+        source_b, destination_b = shaped("pins", 60)
+        self.repo.write(old_a, source_a)
+        self.repo.write(old_b, source_b)
+        base = self.repo.commit("base")
+        self.repo.write(new_a, destination_a)
+        self.repo.write(new_b, destination_b)
+        head = self.repo.commit("candidate")
+        common = {
+            "allowed": ("styx-js/spikes/marmot-phase-b3-2a/**",),
+            "forbidden": ("styx-js/spikes/marmot-phase-b3-2/**",),
+        }
+
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(**common),
+        )
+        self.assert_verdict(result, report, "FAIL", 2)
+        copies = [item for item in report["changed_entries"] if item["status"] == "C"]
+        self.assertEqual({old_a, old_b}, {item["old_path"] for item in copies})
+        self.assertEqual({68, 60}, {item["score"] for item in copies})
+
+        declarations = (
+            self.copy_source_declaration(old_a, source_a),
+            self.copy_source_declaration(old_b, source_b),
+        )
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(**common, copy_sources=declarations),
+            output=self.root / "pr176-copy-regression.json",
+        )
+        self.assert_verdict(result, report, "PASS", 0)
+        copies = [item for item in report["changed_entries"] if item["status"] == "C"]
+        self.assertEqual({old_a, old_b}, {item["old_path"] for item in copies})
+        self.assertEqual({68, 60}, {item["score"] for item in copies})
+
+        wrong = (
+            self.copy_source_declaration(old_a, source_a),
+            self.copy_source_declaration(old_b, b"x" * len(source_b)),
+        )
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(**common, copy_sources=wrong),
+            output=self.root / "pr176-copy-regression-wrong.json",
+        )
+        self.assert_verdict(result, report, "FAIL", 2)
 
     def test_symlink_gitlink_and_binary_fail_closed(self) -> None:
         self.repo.write("tools/agent-enforcement/target.txt", "target\n")
@@ -171,7 +450,10 @@ class GitGuardTests(GuardIntegrationCase):
         head = self.repo.commit("head")
         run(["git", "checkout", "-q", base], self.repo.root)
 
-        body = contract_body(binary_artifacts=(self.binary_declaration(path, data),))
+        body = contract_body(
+            binary_artifacts=(self.binary_declaration(path, data),),
+            base_sha=base,
+        )
         self.issue.write_text(body, encoding="utf-8")
         result = subprocess.run(
             [
@@ -391,9 +673,22 @@ class GitGuardTests(GuardIntegrationCase):
                 )
                 self.assert_verdict(result, report, "ERROR", 3)
 
+    def test_contract_base_sha_mismatch_is_typed_error(self) -> None:
+        base, head = self.simple_history()
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(base_sha="2" * 40),
+        )
+        self.assert_verdict(result, report, "ERROR", 3)
+        self.assertIn(
+            "E_CONTRACT_BASE_SHA",
+            {item["code"] for item in report["diagnostics"]},
+        )
+
     def test_shallow_repository_is_error(self) -> None:
         base, head = self.simple_history()
-        self.issue.write_text(contract_body(), encoding="utf-8")
+        self.issue.write_text(contract_body(base_sha=base), encoding="utf-8")
         clone_root = self.root / "shallow-clone"
         run(
             ["git", "clone", "-q", "--depth", "1", f"file://{self.repo.root}", str(clone_root)],
@@ -426,7 +721,7 @@ class GitGuardTests(GuardIntegrationCase):
 
     def test_concurrent_mutation_is_repository_changed_error(self) -> None:
         base, head = self.simple_history()
-        self.issue.write_text(contract_body(), encoding="utf-8")
+        self.issue.write_text(contract_body(base_sha=base), encoding="utf-8")
         intruder = self.repo.root / "intruder.txt"
         original_inventory = scope_guard.inventory_changes
 
@@ -464,7 +759,7 @@ class GitGuardTests(GuardIntegrationCase):
         base, head = self.simple_history()
         subdirectory = self.repo.root / "tools"
         destination = self.repo.root / "smuggled-report.json"
-        self.issue.write_text(contract_body(), encoding="utf-8")
+        self.issue.write_text(contract_body(base_sha=base), encoding="utf-8")
         result = subprocess.run(
             [
                 "python3",
@@ -526,7 +821,7 @@ class GitGuardTests(GuardIntegrationCase):
 
         issue = self.root / "self-host-issue.md"
         report_path = self.root / "self-host-report.json"
-        issue.write_text(contract_body(), encoding="utf-8")
+        issue.write_text(contract_body(base_sha=base), encoding="utf-8")
         result = subprocess.run(
             [
                 "python3",

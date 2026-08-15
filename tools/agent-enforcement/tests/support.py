@@ -36,6 +36,8 @@ def contract_body(
     marker: str = "<!-- styx-task-contract:v1 -->",
     test_heading: str = "Required tests",
     binary_artifacts: tuple[str, ...] | None = None,
+    copy_sources: tuple[str, ...] | None = None,
+    base_sha: str = "1" * 40,
 ) -> str:
     binary_section = ""
     if binary_artifacts is not None:
@@ -44,6 +46,15 @@ def contract_body(
 
 ```text
 {chr(10).join(binary_artifacts)}
+```
+"""
+    copy_source_section = ""
+    if copy_sources is not None:
+        copy_source_section = f"""
+## Allowed copy sources
+
+```text
+{chr(10).join(copy_sources)}
 ```
 """
     return f"""{marker}
@@ -67,7 +78,7 @@ None.
 ```text
 {chr(10).join(forbidden)}
 ```
-{binary_section}
+{binary_section}{copy_source_section}
 
 ## Native dependencies
 
@@ -105,7 +116,7 @@ Human merge gate.
 
 ## Base
 
-Explicit SHA.
+- Exact base SHA: `{base_sha}`.
 """
 
 
@@ -181,7 +192,14 @@ class GuardIntegrationCase(unittest.TestCase):
         output: Path | None = None,
         execution_id: str = "test-execution-001",
     ):
-        self.issue.write_text(body if body is not None else contract_body(), encoding="utf-8")
+        contract = body if body is not None else contract_body(base_sha=base)
+        default_declaration = f"- Exact base SHA: `{'1' * 40}`."
+        if default_declaration in contract:
+            contract = contract.replace(
+                default_declaration,
+                f"- Exact base SHA: `{base}`.",
+            )
+        self.issue.write_text(contract, encoding="utf-8")
         destination = output or self.output
         result = subprocess.run(
             [

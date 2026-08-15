@@ -27,6 +27,7 @@ def synthetic_event(
     action: str = "opened",
     repository: str = "styx-secure/styx",
     base_repository: str = "styx-secure/styx",
+    base_ref: str = "main",
     head_repository: str = "example-fork/styx",
 ) -> dict[str, object]:
     return {
@@ -36,7 +37,11 @@ def synthetic_event(
         "pull_request": {
             "number": 7,
             "body": body,
-            "base": {"sha": base_sha, "repo": {"full_name": base_repository}},
+            "base": {
+                "sha": base_sha,
+                "ref": base_ref,
+                "repo": {"full_name": base_repository},
+            },
             "head": {"sha": head_sha, "repo": {"full_name": head_repository}},
         },
     }
@@ -87,6 +92,8 @@ class CiAdapterUnitTests(unittest.TestCase):
             repository="styx-secure/styx",
             run_id="123",
             run_attempt="2",
+            trusted_tool_sha=BASE_SHA,
+            workflow_sha=BASE_SHA,
         )
 
     def test_issue_reference_is_strict_and_local(self) -> None:
@@ -108,6 +115,7 @@ class CiAdapterUnitTests(unittest.TestCase):
         self.assertEqual(48, context.issue_number)
         self.assertEqual(7, context.pull_number)
         self.assertIn("run-123-attempt-2", context.execution_id)
+        self.assertIn(f"tool-{BASE_SHA}", context.execution_id)
         self.assertIn(HEAD_SHA, context.artifact_name)
 
         cases = (
@@ -116,6 +124,7 @@ class CiAdapterUnitTests(unittest.TestCase):
             (synthetic_event(repository="other/repo"), "E_CI_EVENT_REPOSITORY"),
             (synthetic_event(base_repository="other/repo"), "E_CI_EVENT_REPOSITORY"),
             (synthetic_event(head_repository="not a repo"), "E_CI_EVENT_REPOSITORY"),
+            (synthetic_event(base_ref="release"), "E_CI_EVENT_BASE_REF"),
         )
         for event, expected_code in cases:
             with self.subTest(expected_code=expected_code):
@@ -125,7 +134,26 @@ class CiAdapterUnitTests(unittest.TestCase):
                         repository="styx-secure/styx",
                         run_id="123",
                         run_attempt="2",
+                        trusted_tool_sha=BASE_SHA,
+                        workflow_sha=BASE_SHA,
                     )
+                self.assertEqual(expected_code, caught.exception.code)
+
+    def test_workflow_identity_is_strict_and_equal(self) -> None:
+        self.assertEqual(
+            (BASE_SHA, BASE_SHA),
+            ci_adapter.validate_workflow_identity(BASE_SHA, BASE_SHA),
+        )
+        cases = (
+            ("", BASE_SHA, "E_CI_TRUSTED_TOOL_SHA"),
+            ("A" * 40, BASE_SHA, "E_CI_TRUSTED_TOOL_SHA"),
+            (BASE_SHA, "main", "E_CI_WORKFLOW_SHA"),
+            (BASE_SHA, HEAD_SHA, "E_CI_WORKFLOW_SHA_MISMATCH"),
+        )
+        for trusted, workflow, expected_code in cases:
+            with self.subTest(expected_code=expected_code):
+                with self.assertRaises(ci_adapter.CiAdapterError) as caught:
+                    ci_adapter.validate_workflow_identity(trusted, workflow)
                 self.assertEqual(expected_code, caught.exception.code)
 
     def test_issue_api_success_preserves_utf8_body_bytes(self) -> None:
@@ -245,6 +273,8 @@ class CiAdapterUnitTests(unittest.TestCase):
                         server_url="https://github.com",
                         run_id="123",
                         run_attempt="1",
+                        trusted_tool_sha=BASE_SHA,
+                        workflow_sha=BASE_SHA,
                         report_path=report_path,
                         token="ephemeral-token",
                         issue_fetcher=issue_fetcher,
@@ -273,6 +303,8 @@ class CiAdapterUnitTests(unittest.TestCase):
                 server_url="https://github.com",
                 run_id="123",
                 run_attempt="1",
+                trusted_tool_sha=BASE_SHA,
+                workflow_sha=BASE_SHA,
                 token="ephemeral-token",
                 issue_fetcher=lambda *_args, **_kwargs: b"contract",
                 head_fetcher=lambda *_args, **_kwargs: None,
@@ -363,6 +395,80 @@ class CiAdapterUnitTests(unittest.TestCase):
             any(arguments[0] in {"checkout", "worktree", "update-ref"} for arguments, _ in calls)
         )
 
+    def test_head_fetch_requires_base_ancestor_of_trusted_tool(self) -> None:
+        trusted_sha = "c" * 40
+        context = ci_adapter.validate_event(
+            synthetic_event(),
+            repository="styx-secure/styx",
+            run_id="123",
+            run_attempt="1",
+            trusted_tool_sha=trusted_sha,
+            workflow_sha=trusted_sha,
+        )
+
+        def fake_run_git(_repo, arguments, *, check=True, env_extra=None):
+            del check, env_extra
+            stdout = ""
+            return_code = 0
+            if arguments[:2] == ["rev-parse", "HEAD"]:
+                stdout = trusted_sha + "\n"
+            elif arguments[:2] == ["rev-parse", "--is-shallow-repository"]:
+                stdout = "false\n"
+            elif arguments == [
+                "merge-base",
+                "--is-ancestor",
+                BASE_SHA,
+                trusted_sha,
+            ]:
+                return_code = 1
+            return subprocess.CompletedProcess(arguments, return_code, stdout, "")
+
+        with tempfile.TemporaryDirectory() as temp_directory, mock.patch.object(
+            ci_adapter, "_run_git", fake_run_git
+        ):
+            with self.assertRaises(ci_adapter.CiAdapterError) as caught:
+                ci_adapter.fetch_pull_head_object(
+                    context,
+                    repo=Path(temp_directory),
+                    server_url="https://github.com",
+                    token="ephemeral-token",
+                )
+        self.assertEqual("E_CI_GIT_TRUSTED_ANCESTRY", caught.exception.code)
+
+    def test_adapter_rejects_workflow_identity_mismatch_before_network_use(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_directory:
+            root = Path(temp_directory)
+            repo = root / "repo"
+            runner_temp = root / "runner"
+            repo.mkdir()
+            runner_temp.mkdir()
+            event_file = root / "event.json"
+            event_file.write_text(json.dumps(synthetic_event()), encoding="utf-8")
+            report_path = runner_temp / "report.json"
+            issue_fetcher = mock.Mock(side_effect=AssertionError("network must not be used"))
+            exit_code = ci_adapter.run_observation(
+                event_file=event_file,
+                repo=repo,
+                runner_temp=runner_temp,
+                repository="styx-secure/styx",
+                api_url="https://api.github.com",
+                server_url="https://github.com",
+                run_id="123",
+                run_attempt="1",
+                trusted_tool_sha=BASE_SHA,
+                workflow_sha=HEAD_SHA,
+                report_path=report_path,
+                token="ephemeral-token",
+                issue_fetcher=issue_fetcher,
+            )
+            self.assertEqual(EXIT_ERROR, exit_code)
+            issue_fetcher.assert_not_called()
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            self.assertIn(
+                "E_CI_WORKFLOW_SHA_MISMATCH",
+                {item["code"] for item in report["diagnostics"]},
+            )
+
     def test_workflow_is_read_only_trusted_base_and_fully_pinned(self) -> None:
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("pull_request_target:", workflow)
@@ -378,8 +484,12 @@ class CiAdapterUnitTests(unittest.TestCase):
         for permission in ("contents: read", "issues: read", "pull-requests: read", "actions: read"):
             self.assertIn(permission, workflow)
         self.assertNotIn(": write", workflow)
-        self.assertIn("ref: ${{ github.event.pull_request.base.sha }}", workflow)
+        self.assertIn("branches:\n      - main", workflow)
+        self.assertIn("ref: ${{ github.sha }}", workflow)
+        self.assertNotIn("ref: ${{ github.event.pull_request.base.sha }}", workflow)
         self.assertNotIn("ref: ${{ github.event.pull_request.head.sha }}", workflow)
+        self.assertIn('--trusted-tool-sha "$GITHUB_SHA"', workflow)
+        self.assertIn('--workflow-sha "$GITHUB_WORKFLOW_SHA"', workflow)
         self.assertIn("persist-credentials: false", workflow)
         self.assertIn("--no-write-fetch-head", (ROOT / "tools" / "agent-enforcement" / "ci_adapter.py").read_text(encoding="utf-8"))
 
@@ -392,13 +502,27 @@ class CiAdapterUnitTests(unittest.TestCase):
             self.assertRegex(sha, r"^[0-9a-f]{40}$")
         self.assertNotIn("@v", workflow)
 
+        precheck = workflow.split("- name: Validate immutable workflow identity", 1)[1].split(
+            "- name: Checkout trusted workflow commit", 1
+        )[0]
+        self.assertNotIn("${{", precheck)
+        for untrusted in (
+            "github.event",
+            "github.head_ref",
+            "GITHUB_HEAD_REF",
+            "pull_request",
+        ):
+            self.assertNotIn(untrusted, precheck)
+        self.assertIn("GITHUB_SHA", precheck)
+        self.assertIn("GITHUB_WORKFLOW_SHA", precheck)
+
 
 class CiAdapterIntegrationTests(GuardIntegrationCase):
     def test_guard_inspects_head_objects_while_worktree_remains_at_trusted_base(self) -> None:
         base, head = self.simple_history()
         run(["git", "checkout", "-q", base], self.repo.root)
         before = self.repo.snapshot()
-        self.issue.write_text(contract_body(), encoding="utf-8")
+        self.issue.write_text(contract_body(base_sha=base), encoding="utf-8")
         result = subprocess.run(
             [
                 "python3",
@@ -495,7 +619,9 @@ class CiAdapterIntegrationTests(GuardIntegrationCase):
                     run_attempt="1",
                     report_path=report_path,
                     token="ephemeral-token",
-                    issue_fetcher=lambda *_args, **_kwargs: contract_body().encode("utf-8"),
+                    trusted_tool_sha=base,
+                    workflow_sha=base,
+                    issue_fetcher=lambda *_args, **_kwargs: contract_body(base_sha=base).encode("utf-8"),
                     head_fetcher=lambda *_args, **_kwargs: None,
                     guard_runner=real_guard_runner,
                 )
@@ -505,6 +631,91 @@ class CiAdapterIntegrationTests(GuardIntegrationCase):
                     json.loads(report_path.read_text(encoding="utf-8"))["verdict"],
                 )
                 self.assertEqual(before, self.repo.snapshot())
+
+    def test_distinct_trusted_tool_evaluates_base_to_head_without_executing_head_tools(self) -> None:
+        self.repo.write("tools/agent-enforcement/base.txt", "base\n")
+        base = self.repo.commit("base")
+
+        run(["git", "checkout", "-qb", "trusted-tool"], self.repo.root)
+        self.repo.write("tools/agent-enforcement/trusted.txt", "trusted\n")
+        trusted = self.repo.commit("trusted tool")
+
+        run(["git", "checkout", "-qb", "candidate", base], self.repo.root)
+        self.repo.write(
+            "tools/agent-enforcement/ci_adapter.py",
+            "raise SystemExit('head-controlled code executed')\n",
+        )
+        head = self.repo.commit("malicious candidate tool")
+        run(["git", "checkout", "-q", trusted], self.repo.root)
+        before = self.repo.snapshot()
+
+        runner_temp = self.root / "runner-split"
+        runner_temp.mkdir()
+        event_file = self.root / "event-split.json"
+        event_file.write_text(
+            json.dumps(
+                synthetic_event(
+                    base_sha=base,
+                    head_sha=head,
+                    head_repository="styx-secure/styx",
+                )
+            ),
+            encoding="utf-8",
+        )
+        report_path = runner_temp / "report.json"
+
+        def trusted_guard_runner(context, **kwargs):
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(ROOT / "tools" / "agent-enforcement" / "scope_guard.py"),
+                    "--issue-number",
+                    str(context.issue_number),
+                    "--issue-body-file",
+                    str(kwargs["issue_body_path"]),
+                    "--base-sha",
+                    context.base_sha,
+                    "--head-sha",
+                    context.head_sha,
+                    "--worktree-sha",
+                    context.trusted_tool_sha,
+                    "--execution-id",
+                    context.execution_id,
+                    "--output",
+                    str(kwargs["report_path"]),
+                    "--repo",
+                    str(kwargs["repo"]),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            return result.returncode
+
+        exit_code = ci_adapter.run_observation(
+            event_file=event_file,
+            repo=self.repo.root,
+            runner_temp=runner_temp,
+            repository="styx-secure/styx",
+            api_url="https://api.github.com",
+            server_url="https://github.com",
+            run_id="123",
+            run_attempt="1",
+            trusted_tool_sha=trusted,
+            workflow_sha=trusted,
+            report_path=report_path,
+            token="ephemeral-token",
+            issue_fetcher=lambda *_args, **_kwargs: contract_body(base_sha=base).encode("utf-8"),
+            head_fetcher=lambda *_args, **_kwargs: None,
+            guard_runner=trusted_guard_runner,
+        )
+        self.assertEqual(EXIT_PASS, exit_code)
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        self.assertEqual("PASS", report["verdict"])
+        self.assertIn(f"tool-{trusted}", report["execution_id"])
+        self.assertEqual(base, report["base_sha"])
+        self.assertEqual(head, report["head_sha"])
+        self.assertEqual(before, self.repo.snapshot())
 
     def test_non_ancestor_and_malformed_event_fail_closed(self) -> None:
         self.repo.write("tools/agent-enforcement/base.txt", "base\n")
@@ -536,6 +747,8 @@ class CiAdapterIntegrationTests(GuardIntegrationCase):
             server_url="https://github.com",
             run_id="123",
             run_attempt="1",
+            trusted_tool_sha=base,
+            workflow_sha=base,
             report_path=report_path,
             token="ephemeral-token",
             issue_fetcher=lambda *_args, **_kwargs: contract_body().encode("utf-8"),

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Trusted-base CI adapter for non-blocking Styx scope evidence.
+"""Trusted-tool CI adapter for non-blocking Styx scope evidence.
 
 The adapter reads a ``pull_request_target`` event, resolves exactly one local
 Issue contract, fetches the pull-request head as Git object data without
-updating refs or checking it out, invokes the trusted-base scope guard, and
+updating refs or checking it out, invokes the trusted-tool scope guard, and
 writes a safe job summary.
 """
 
@@ -89,6 +89,8 @@ class ObservationContext:
     issue_number: int
     base_sha: str
     head_sha: str
+    trusted_tool_sha: str
+    workflow_sha: str
     execution_id: str
     artifact_name: str
 
@@ -139,6 +141,27 @@ def _require_sha(value: Any, label: str) -> str:
     return value
 
 
+def validate_workflow_identity(trusted_tool_sha: str, workflow_sha: str) -> tuple[str, str]:
+    """Validate the immutable checkout SHA and its runner-provided witness."""
+
+    if SHA_RE.fullmatch(trusted_tool_sha) is None:
+        raise CiAdapterError(
+            "E_CI_TRUSTED_TOOL_SHA",
+            "trusted tool SHA must be a lowercase full 40-hex SHA",
+        )
+    if SHA_RE.fullmatch(workflow_sha) is None:
+        raise CiAdapterError(
+            "E_CI_WORKFLOW_SHA",
+            "workflow SHA must be a lowercase full 40-hex SHA",
+        )
+    if trusted_tool_sha != workflow_sha:
+        raise CiAdapterError(
+            "E_CI_WORKFLOW_SHA_MISMATCH",
+            "trusted tool SHA and workflow SHA must be identical",
+        )
+    return trusted_tool_sha, workflow_sha
+
+
 def parse_issue_reference(pr_body: str) -> int:
     """Resolve exactly one ``Styx-Task: #N`` line from a PR body."""
 
@@ -166,6 +189,8 @@ def validate_event(
     repository: str,
     run_id: str,
     run_attempt: str,
+    trusted_tool_sha: str,
+    workflow_sha: str,
 ) -> ObservationContext:
     """Validate the trusted event envelope and derive deterministic identifiers."""
 
@@ -173,6 +198,10 @@ def validate_event(
         raise CiAdapterError("E_CI_INPUT", "repository must use owner/name syntax")
     run_id_number = _positive_decimal(run_id, "run ID")
     run_attempt_number = _positive_decimal(run_attempt, "run attempt")
+    trusted_tool_sha, workflow_sha = validate_workflow_identity(
+        trusted_tool_sha,
+        workflow_sha,
+    )
 
     root = _require_dict(event, "E_CI_EVENT", "event")
     action = root.get("action")
@@ -199,6 +228,8 @@ def validate_event(
     base_repo = _require_dict(base.get("repo"), "E_CI_EVENT", "pull_request.base.repo")
     if _require_string(base_repo, "full_name", "E_CI_EVENT") != repository:
         raise CiAdapterError("E_CI_EVENT_REPOSITORY", "pull-request base repository is not local")
+    if _require_string(base, "ref", "E_CI_EVENT") != "main":
+        raise CiAdapterError("E_CI_EVENT_BASE_REF", "pull-request base ref must be main")
     base_sha = _require_sha(base.get("sha"), "base SHA")
 
     head = _require_dict(pull.get("head"), "E_CI_EVENT", "pull_request.head")
@@ -209,7 +240,8 @@ def validate_event(
         raise CiAdapterError("E_CI_EVENT_REPOSITORY", "pull-request head repository name is malformed")
 
     execution_id = (
-        f"gha-pr-{pull_number}-run-{run_id_number}-attempt-{run_attempt_number}-head-{head_sha}"
+        f"gha-pr-{pull_number}-run-{run_id_number}-attempt-{run_attempt_number}"
+        f"-head-{head_sha}-tool-{trusted_tool_sha}"
     )
     artifact_name = (
         f"styx-scope-pr-{pull_number}-{head_sha}-run-{run_id_number}-attempt-{run_attempt_number}"
@@ -220,6 +252,8 @@ def validate_event(
         issue_number=issue_number,
         base_sha=base_sha,
         head_sha=head_sha,
+        trusted_tool_sha=trusted_tool_sha,
+        workflow_sha=workflow_sha,
         execution_id=execution_id,
         artifact_name=artifact_name,
     )
@@ -429,12 +463,25 @@ def fetch_pull_head_object(
         raise CiAdapterError("E_CI_REPOSITORY", "repository path does not exist")
 
     actual_head = _run_git(repo, ["rev-parse", "HEAD"]).stdout.strip()
-    if actual_head != context.base_sha:
-        raise CiAdapterError("E_CI_REPOSITORY", "trusted checkout HEAD does not equal the event base SHA")
+    if actual_head != context.trusted_tool_sha:
+        raise CiAdapterError(
+            "E_CI_REPOSITORY",
+            "trusted checkout HEAD does not equal the trusted tool SHA",
+        )
     if _run_git(repo, ["status", "--porcelain=v1", "--untracked-files=all"]).stdout:
         raise CiAdapterError("E_CI_REPOSITORY", "trusted checkout is dirty before object preparation")
     if _run_git(repo, ["rev-parse", "--is-shallow-repository"]).stdout.strip() == "true":
         raise CiAdapterError("E_CI_REPOSITORY", "trusted checkout is shallow")
+    trusted_ancestry = _run_git(
+        repo,
+        ["merge-base", "--is-ancestor", context.base_sha, context.trusted_tool_sha],
+        check=False,
+    )
+    if trusted_ancestry.returncode != 0:
+        raise CiAdapterError(
+            "E_CI_GIT_TRUSTED_ANCESTRY",
+            "base SHA is not an ancestor of the trusted tool SHA",
+        )
 
     credentials = base64.b64encode(f"x-access-token:{token}".encode("utf-8")).decode("ascii")
     endpoint = f"{server_base}/{context.repository}.git"
@@ -468,7 +515,7 @@ def fetch_pull_head_object(
 
     final_head = _run_git(repo, ["rev-parse", "HEAD"]).stdout.strip()
     final_status = _run_git(repo, ["status", "--porcelain=v1", "--untracked-files=all"]).stdout
-    if final_head != context.base_sha or final_status:
+    if final_head != context.trusted_tool_sha or final_status:
         raise CiAdapterError("E_CI_REPOSITORY_CHANGED", "object preparation changed the checkout")
 
 
@@ -523,7 +570,7 @@ def _run_guard(
             "--head-sha",
             context.head_sha,
             "--worktree-sha",
-            context.base_sha,
+            context.trusted_tool_sha,
             "--execution-id",
             context.execution_id,
             "--output",
@@ -578,6 +625,8 @@ def run_observation(
     server_url: str,
     run_id: str,
     run_attempt: str,
+    trusted_tool_sha: str,
+    workflow_sha: str,
     report_path: Path,
     token: str,
     issue_fetcher: Callable[..., bytes] = fetch_issue_body,
@@ -598,7 +647,14 @@ def run_observation(
             raise CiAdapterError("E_CI_OUTPUT", "report path must be inside RUNNER_TEMP")
         report_path_safe = True
         event = _load_json_file(event_file, size_limit=MAX_EVENT_BYTES, code="E_CI_EVENT")
-        context = validate_event(event, repository=repository, run_id=run_id, run_attempt=run_attempt)
+        context = validate_event(
+            event,
+            repository=repository,
+            run_id=run_id,
+            run_attempt=run_attempt,
+            trusted_tool_sha=trusted_tool_sha,
+            workflow_sha=workflow_sha,
+        )
         body = issue_fetcher(context, api_url=api_url, token=token)
         issue_body_sha256 = hashlib.sha256(body).hexdigest()
         issue_body_path = runner_temp / f"styx-issue-{context.issue_number}.md"
@@ -730,7 +786,7 @@ class AdapterArgumentParser(argparse.ArgumentParser):
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
-    parser = AdapterArgumentParser(description="Publish trusted-base Styx scope evidence in CI.")
+    parser = AdapterArgumentParser(description="Publish trusted-tool Styx scope evidence in CI.")
     subparsers = parser.add_subparsers(dest="command", required=True, parser_class=AdapterArgumentParser)
 
     run_parser = subparsers.add_parser("run")
@@ -742,6 +798,8 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     run_parser.add_argument("--server-url", required=True)
     run_parser.add_argument("--run-id", required=True)
     run_parser.add_argument("--run-attempt", required=True)
+    run_parser.add_argument("--trusted-tool-sha", required=True)
+    run_parser.add_argument("--workflow-sha", required=True)
     run_parser.add_argument("--report", type=Path, required=True)
 
     summary_parser = subparsers.add_parser("summarize")
@@ -763,6 +821,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         server_url=args.server_url,
         run_id=args.run_id,
         run_attempt=args.run_attempt,
+        trusted_tool_sha=args.trusted_tool_sha,
+        workflow_sha=args.workflow_sha,
         report_path=args.report,
         token=os.environ.get("GITHUB_TOKEN", ""),
     )

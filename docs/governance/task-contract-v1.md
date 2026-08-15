@@ -51,14 +51,16 @@ Required verification
 
 Additional headings are permitted. They cannot replace or duplicate required headings.
 
-One optional heading has defined v1 semantics:
+Two optional headings have defined v1 semantics:
 
 ```text
 Allowed binary artifacts
+Allowed copy sources
 ```
 
-When present, it must occur exactly once and satisfy the exact-artifact syntax
-below. Contracts that omit it retain the original fail-closed binary behavior.
+When present, either heading must occur exactly once and satisfy its exact
+syntax below. Contracts that omit them retain the original fail-closed binary
+and two-sided rename/copy behavior.
 
 ## Code blocks and structural text
 
@@ -74,6 +76,25 @@ A fence closes on a line with a run of the same character at least as long as
 the opening run, indented at most three spaces, with nothing else but trailing
 whitespace. Markers, headings and fence lookalikes inside any of these blocks
 are ignored. An unterminated fence fails closed.
+
+## Exact Base SHA declaration
+
+The `Base` section must contain exactly one structural line in this exact form:
+
+```text
+- Exact base SHA: `<lowercase-full-40-hex>`.
+```
+
+Every structural line outside fenced and indented code that contains the
+declaration label is a candidate, including prose and inline-code mentions. The
+entire Issue body must contain exactly one candidate, and that candidate must be
+the canonical declaration in `Base`. Missing, duplicate, malformed, uppercase,
+abbreviated, code-only, or misplaced lookalikes make the contract invalid. The
+guard compares the parsed value byte-for-byte with `--base-sha`; a mismatch
+produces the typed `E_CONTRACT_BASE_SHA` error. This intentionally strict,
+fail-closed rule prevents a rendered Issue from presenting a human-visible Base
+lookalike that the machine ignores. It also binds the approved task contract to
+the exact historical diff base without changing the v1 report schema.
 
 ## Path declarations
 
@@ -150,6 +171,61 @@ SHA-256 and length prove byte identity only. They do not establish source
 provenance, reproducibility, safety, licensing or cryptographic correctness;
 task-specific tests and human review remain mandatory.
 
+## Exact read-only copy-source declarations
+
+`Allowed copy sources` contains exactly one fenced code block and at least one
+declaration. Each non-empty line has this form:
+
+```text
+<lowercase-sha256> <positive-decimal-byte-length> <literal-repository-path>
+```
+
+The lexical rules are the same strict rules used by exact binary declarations:
+the hash is exactly 64 lowercase hexadecimal characters, the canonical positive
+decimal length has no sign, fraction, zero or leading zero, and the normalized
+POSIX-relative path contains no glob metacharacter or control character. A
+contract can declare at most 32 distinct source paths, each no larger than 64
+MiB. Empty, duplicate, malformed, oversized, multiple-fence or unterminated
+sections invalidate the contract with `ERROR`.
+
+This declaration is not ordinary path permission. It can authorize only the
+`old_path` of a Git `C` record produced by the frozen inventory command. The
+source must:
+
+- exist at both the exact base and exact candidate HEAD as the same regular Git
+  blob with the same mode and object identity;
+- have independently calculated SHA-256 and byte length equal to the Issue
+  declaration;
+- remain text under both the NUL-byte and Git binary checks; and
+- appear nowhere else on either side of any changed record.
+
+One immutable declaration can serve multiple `C` records that share the exact
+source. Every destination is still checked independently against ordinary
+`Allowed paths`, `Forbidden paths`, object-mode and content rules. A declaration
+cannot authorize a rename, source modification, deletion, replacement,
+symlink, gitlink, binary source, destination, or any `A/M/D/R` role. An unused
+or mismatched declaration fails closed rather than silently becoming inert.
+
+The source remains fully visible in the v1 report. Its path evaluation retains
+the real `forbidden_matches` and records this exact synthetic item in
+`allowed_matches`:
+
+```text
+![styx-copy-source sha256=<declared-64hex>]
+```
+
+The leading `!` and bracketed syntax are rejected by the ordinary v1
+`validate_pattern` grammar, so the marker cannot collide with or be copied into
+`Allowed paths` as a pattern. A successfully verified source has no path
+violation only in this precise copy-source role. The exact Issue-body SHA-256
+binds the declaration without adding a report field.
+
+The mechanism prevents a Git similarity classification from turning immutable
+historical source bytes into apparent unauthorized writes. It does not prove
+the copied destination is correct, secure, suitably licensed or derived for an
+acceptable purpose; destination diff review, secret scanning and independent
+review remain mandatory.
+
 ## Git inventory semantics
 
 The CLI accepts only lowercase full 40-hex commit SHAs. Symbolic refs such as `main`, `HEAD` or tags are rejected.
@@ -160,7 +236,8 @@ The repository must satisfy all of the following:
 - the repository is not shallow;
 - both commit objects are locally available;
 - base is an ancestor of head;
-- worktree `HEAD` equals the declared head SHA;
+- worktree `HEAD` equals `--worktree-sha` (or `--head-sha` when that optional
+  argument is omitted);
 - index and worktree are clean, including untracked files;
 - the report output path is outside the tested repository.
 
@@ -207,6 +284,7 @@ python3 tools/agent-enforcement/scope_guard.py \
   --issue-body-file /absolute/path/issue-46.md \
   --base-sha 67eabffeec19a7446e8fc84b151ae9799fbe3869 \
   --head-sha <full-40-hex-head> \
+  --worktree-sha <full-40-hex-trusted-tool-or-head> \
   --execution-id issue-46-attempt-001 \
   --output /absolute/path/task-scope-report.json \
   --repo /absolute/path/to/styx
@@ -259,12 +337,14 @@ The report records:
 - stable diagnostics;
 - final `PASS`, `FAIL` or `ERROR` verdict.
 
-The closed v1 report shape does not repeat binary declarations. The existing
-`issue_body_sha256` covers the exact UTF-8 Issue-body bytes, including the full
-optional section, and therefore binds declarations to the evidence without a
-schema or consumer change. Tool version `0.2.0` identifies this
-backward-compatible semantic extension; the contract and report schema remain
-v1.
+The closed v1 report shape does not repeat binary or copy-source declarations.
+The existing `issue_body_sha256` covers the exact UTF-8 Issue-body bytes,
+including both optional sections, and therefore binds declarations to the
+evidence without a schema or consumer change. Verified copy sources are exposed
+only by the documented synthetic `allowed_matches` marker while retaining real
+forbidden matches and both `old_path`/`new_path` values. Tool version `0.4.0`
+identifies the mandatory exact Base binding and trusted-tool provenance
+semantics; the contract and report schema remain v1.
 
 Canonical encoding is UTF-8 JSON with recursively sorted keys, compact separators and one trailing LF. Wall-clock timestamps are omitted. Equivalent inputs with the same execution ID produce byte-identical report bytes.
 
@@ -289,13 +369,23 @@ The test suite creates isolated temporary Git repositories and does not need net
 - Only contract version `v1` is accepted.
 - Markdown parsing is intentionally strict and line-oriented.
 - Rename/copy classification follows the exact Git invocation above and therefore Git's similarity scoring.
+- Copy detection is heuristic. Exact copy-source authorization binds the source
+  identity and role, not the correctness or intent of Git's similarity match.
 - NUL-byte inspection is a conservative binary heuristic.
 - Exact-digest authorization identifies bytes but cannot determine whether
   those bytes are trustworthy or reproducibly built.
-- Inspecting a very large blob consumes memory; the 1 GiB declaration ceiling
-  bounds authorization but is not a general repository-size policy.
+- A human can explicitly authorize copying sensitive text into an otherwise
+  allowed destination; the guard cannot replace destination content review.
+- The synthetic v1 marker is less explicit than a future dedicated report-v2
+  field, so its exact spelling and non-collision tests are compatibility
+  requirements.
+- Inspecting a very large blob consumes memory; the 1 GiB binary-artifact and
+  64 MiB copy-source ceilings bound authorization but are not a general
+  repository-size policy.
 - Report-only execution does not publish checks and does not block a merge.
-- GitHub Actions integration, required-check registration, broker operations, persona isolation and Passaggio B are separate human-authorized tasks.
+- GitHub Actions trust-source selection, required-check registration, broker
+  operations, persona isolation and Passaggio B are separate human-authorized
+  controls.
 
 ## Rollback
 

@@ -81,6 +81,45 @@ class ContractParserTests(unittest.TestCase):
             contract_body(test_heading="Required verification").encode("utf-8")
         )
         self.assertEqual("v1", parsed.version)
+        self.assertEqual("1" * 40, parsed.base_sha)
+
+    def test_exact_base_sha_declaration_is_mandatory_and_structural(self) -> None:
+        canonical = f"- Exact base SHA: `{'1' * 40}`."
+        cases = {
+            "missing": contract_body().replace(canonical, "Base omitted."),
+            "uppercase": contract_body().replace("1" * 40, "A" * 40),
+            "abbreviated": contract_body().replace("1" * 40, "1" * 12),
+            "missing punctuation": contract_body().replace(canonical, canonical[:-1]),
+            "duplicate": contract_body().replace(canonical, f"{canonical}\n{canonical}"),
+            "inline-code label duplicate": contract_body().replace(
+                "Test contract.",
+                "Test contract. The inline label `Exact base SHA:` is not a declaration.",
+            ),
+            "outside Base": contract_body().replace(
+                canonical,
+                "Base omitted.",
+            ).replace("Test contract.", f"Test contract.\n\n{canonical}"),
+            "fenced lookalike only": contract_body().replace(
+                canonical,
+                f"```text\n{canonical}\n```",
+            ),
+            "indented lookalike only": contract_body().replace(
+                canonical,
+                f"    {canonical}",
+            ),
+        }
+        for name, body in cases.items():
+            with self.subTest(name=name):
+                with self.assertRaises(scope_guard.ContractError) as caught:
+                    scope_guard.parse_contract(body.encode("utf-8"))
+                self.assertEqual("E_CONTRACT_BASE_SHA", caught.exception.code)
+
+        fenced_extra = contract_body().replace(
+            "Test contract.",
+            f"Test contract.\n\n```text\n{canonical}\n```",
+        )
+        parsed = scope_guard.parse_contract(fenced_extra.encode("utf-8"))
+        self.assertEqual("1" * 40, parsed.base_sha)
 
     def test_malformed_patterns_are_errors(self) -> None:
         bad_patterns = (
@@ -193,6 +232,109 @@ class ContractParserTests(unittest.TestCase):
         )
         parsed = scope_guard.parse_contract(body.encode("utf-8"))
         self.assertEqual((), parsed.allowed_binary_artifacts)
+
+    def test_copy_source_section_is_optional_and_strict(self) -> None:
+        legacy = scope_guard.parse_contract(contract_body().encode("utf-8"))
+        self.assertEqual((), legacy.allowed_copy_sources)
+
+        declaration = f"{self.SHA256} 7 legacy/source with spaces.mjs"
+        parsed = scope_guard.parse_contract(
+            contract_body(copy_sources=(declaration,)).encode("utf-8")
+        )
+        self.assertEqual(1, len(parsed.allowed_copy_sources))
+        source = parsed.allowed_copy_sources[0]
+        self.assertEqual(self.SHA256, source.sha256)
+        self.assertEqual(7, source.byte_length)
+        self.assertEqual("legacy/source with spaces.mjs", source.path)
+
+        maximum = scope_guard.parse_contract(
+            contract_body(
+                copy_sources=(
+                    f"{self.SHA256} {contract_module.MAX_COPY_SOURCE_SIZE} legacy/maximum.mjs",
+                )
+            ).encode("utf-8")
+        )
+        self.assertEqual(contract_module.MAX_COPY_SOURCE_SIZE, maximum.allowed_copy_sources[0].byte_length)
+
+    def test_copy_source_declaration_rejects_malformed_values(self) -> None:
+        good_path = "legacy/source.mjs"
+        cases = {
+            "uppercase hash": f"{'A' * 64} 1 {good_path}",
+            "short hash": f"{'1' * 63} 1 {good_path}",
+            "non-hex hash": f"{'z' * 64} 1 {good_path}",
+            "signed length": f"{self.SHA256} +1 {good_path}",
+            "fractional length": f"{self.SHA256} 1.0 {good_path}",
+            "zero length": f"{self.SHA256} 0 {good_path}",
+            "leading-zero length": f"{self.SHA256} 01 {good_path}",
+            "oversized length": f"{self.SHA256} 67108865 {good_path}",
+            "unbounded integer": f"{self.SHA256} {'9' * 5000} {good_path}",
+            "missing path": f"{self.SHA256} 1",
+            "tab separators": f"{self.SHA256}\t1\t{good_path}",
+            "absolute path": f"{self.SHA256} 1 /source.mjs",
+            "dot path": f"{self.SHA256} 1 legacy/../source.mjs",
+            "repeated slash": f"{self.SHA256} 1 legacy//source.mjs",
+            "wildcard star": f"{self.SHA256} 1 legacy/*.mjs",
+            "wildcard question": f"{self.SHA256} 1 legacy/source?.mjs",
+            "wildcard class": f"{self.SHA256} 1 legacy/source[0].mjs",
+            "wildcard brace": f"{self.SHA256} 1 legacy/source{{0}}.mjs",
+            "control character": f"{self.SHA256} 1 legacy/source\x01.mjs",
+            "trailing space": f"{self.SHA256} 1 {good_path} ",
+        }
+        for name, declaration in cases.items():
+            with self.subTest(name=name), self.assertRaises(scope_guard.ContractError):
+                scope_guard.parse_contract(
+                    contract_body(copy_sources=(declaration,)).encode("utf-8")
+                )
+
+    def test_copy_source_section_rejects_duplicates_limits_and_bad_fences(self) -> None:
+        duplicate_path = contract_body(
+            copy_sources=(
+                f"{self.SHA256} 1 legacy/source.mjs",
+                f"{'2' * 64} 2 legacy/source.mjs",
+            )
+        )
+        too_many = tuple(
+            f"{self.SHA256} 1 legacy/source-{index}.mjs" for index in range(33)
+        )
+        at_limit = tuple(
+            f"{self.SHA256} 1 legacy/limit-{index}.mjs" for index in range(32)
+        )
+        parsed_at_limit = scope_guard.parse_contract(
+            contract_body(copy_sources=at_limit).encode("utf-8")
+        )
+        self.assertEqual(contract_module.MAX_COPY_SOURCES, len(parsed_at_limit.allowed_copy_sources))
+        declaration = f"{self.SHA256} 1 legacy/source.mjs"
+        cases = {
+            "duplicate path": duplicate_path,
+            "too many": contract_body(copy_sources=too_many),
+            "empty": contract_body(copy_sources=()),
+            "duplicate heading": contract_body(copy_sources=(declaration,))
+            + "\n## Allowed copy sources\n\n```text\nignored\n```\n",
+            "multiple fences": contract_body(copy_sources=(declaration,)).replace(
+                "## Native dependencies",
+                "```text\nsecond\n```\n\n## Native dependencies",
+                1,
+            ),
+            "unterminated fence": contract_body(copy_sources=(declaration,)).replace(
+                f"{declaration}\n```\n", f"{declaration}\n", 1
+            ),
+        }
+        for name, body in cases.items():
+            with self.subTest(name=name), self.assertRaises(scope_guard.ContractError):
+                scope_guard.parse_contract(body.encode("utf-8"))
+
+    def test_copy_source_heading_inside_fence_is_not_structural(self) -> None:
+        body = contract_body().replace(
+            "Test contract.",
+            "Test contract.\n\n```text\n## Allowed copy sources\ninvalid\n```",
+        )
+        parsed = scope_guard.parse_contract(body.encode("utf-8"))
+        self.assertEqual((), parsed.allowed_copy_sources)
+
+    def test_copy_source_marker_cannot_be_an_ordinary_pattern(self) -> None:
+        marker = f"![styx-copy-source sha256={self.SHA256}]"
+        with self.assertRaises(scope_guard.ContractError):
+            scope_guard.validate_pattern(marker)
 
     def test_adversarial_deep_paths_are_deterministic_errors(self) -> None:
         deep_pattern = "/".join(["a"] * (contract_module.MAX_PATH_SEGMENTS + 1))

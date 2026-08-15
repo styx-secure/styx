@@ -13,6 +13,7 @@ from contract import validate_repo_path
 from model import (
     BinaryArtifactAuthorization,
     ChangedEntry,
+    CopySourceAuthorization,
     Diagnostic,
     GitInputError,
     RepositoryStateError,
@@ -21,6 +22,7 @@ from model import (
 
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 SUPPORTED_STATUSES = {"A", "M", "D", "R", "C"}
+COPY_SOURCE_MARKER_TEMPLATE = "![styx-copy-source sha256={sha256}]"
 
 
 def run_git(
@@ -268,6 +270,143 @@ def _entry_is_binary(repo: Path, base_sha: str, head_sha: str, entry: ChangedEnt
         ],
     ).stdout
     return raw.startswith(b"-\t-\t") or b"\0-\t-\t" in raw
+
+
+def _blob_size(repo: Path, object_sha: str) -> int:
+    raw = run_git(repo, ["cat-file", "-s", object_sha], text=True).stdout.strip()
+    if not raw.isdigit():
+        raise GitInputError("Git returned a malformed blob size")
+    return int(raw)
+
+
+def authorize_copy_sources(
+    repo: Path,
+    base_sha: str,
+    head_sha: str,
+    entries: Sequence[ChangedEntry],
+    declarations: Sequence[CopySourceAuthorization],
+) -> tuple[dict[str, str], list[Diagnostic]]:
+    """Verify exact immutable C-record sources and return report markers.
+
+    A marker authorizes only path evaluation for a copy's old/source side. The
+    source remains visible with its real forbidden matches, and every content,
+    object, destination, and repository check remains independent.
+    """
+
+    authorized: dict[str, str] = {}
+    diagnostics: list[Diagnostic] = []
+    for declaration in declarations:
+        path = declaration.path
+        matching_copies = tuple(
+            entry for entry in entries if entry.status == "C" and entry.old_path == path
+        )
+        if not matching_copies:
+            diagnostics.append(
+                Diagnostic(
+                    "P_COPY_SOURCE_UNUSED",
+                    "copy source declaration does not match a Git copy source",
+                    "error",
+                    path,
+                )
+            )
+            continue
+
+        conflicting_role = False
+        for entry in entries:
+            if entry.status == "C" and entry.old_path == path:
+                if entry.new_path == path:
+                    conflicting_role = True
+                continue
+            if path in entry.checked_paths():
+                conflicting_role = True
+        if conflicting_role:
+            diagnostics.append(
+                Diagnostic(
+                    "P_COPY_SOURCE_CHANGED_ROLE",
+                    "declared copy source also appears in another changed-entry role",
+                    "error",
+                    path,
+                )
+            )
+            continue
+
+        base_object = tree_object(repo, base_sha, path)
+        head_object = tree_object(repo, head_sha, path)
+        if base_object is None or head_object is None:
+            diagnostics.append(
+                Diagnostic(
+                    "P_COPY_SOURCE_MISSING",
+                    "declared copy source must exist at both base and HEAD",
+                    "error",
+                    path,
+                )
+            )
+            continue
+        if (
+            base_object.object_type != "blob"
+            or head_object.object_type != "blob"
+            or base_object.mode not in {"100644", "100755"}
+            or head_object.mode not in {"100644", "100755"}
+        ):
+            diagnostics.append(
+                Diagnostic(
+                    "P_COPY_SOURCE_OBJECT",
+                    "declared copy source must be a regular Git blob at base and HEAD",
+                    "error",
+                    path,
+                )
+            )
+            continue
+        if base_object.mode != head_object.mode or base_object.object_sha != head_object.object_sha:
+            diagnostics.append(
+                Diagnostic(
+                    "P_COPY_SOURCE_DRIFT",
+                    "declared copy source mode or blob identity changed between base and HEAD",
+                    "error",
+                    path,
+                )
+            )
+            continue
+
+        actual_length = _blob_size(repo, base_object.object_sha)
+        if actual_length != declaration.byte_length:
+            diagnostics.append(
+                Diagnostic(
+                    "P_COPY_SOURCE_LENGTH_MISMATCH",
+                    "copy source blob length does not match its declaration",
+                    "error",
+                    path,
+                )
+            )
+            continue
+        blob_bytes = run_git(repo, ["cat-file", "blob", base_object.object_sha]).stdout
+        if len(blob_bytes) != actual_length:
+            raise GitInputError("Git blob size changed during copy-source inspection")
+        if hashlib.sha256(blob_bytes).hexdigest() != declaration.sha256:
+            diagnostics.append(
+                Diagnostic(
+                    "P_COPY_SOURCE_HASH_MISMATCH",
+                    "copy source blob SHA-256 does not match its declaration",
+                    "error",
+                    path,
+                )
+            )
+            continue
+        if b"\x00" in blob_bytes or any(
+            _entry_is_binary(repo, base_sha, head_sha, entry) for entry in matching_copies
+        ):
+            diagnostics.append(
+                Diagnostic(
+                    "P_COPY_SOURCE_BINARY",
+                    "declared copy source is binary under the conservative v1 rules",
+                    "error",
+                    path,
+                )
+            )
+            continue
+
+        authorized[path] = COPY_SOURCE_MARKER_TEMPLATE.format(sha256=declaration.sha256)
+    return authorized, diagnostics
 
 
 def content_diagnostics(
