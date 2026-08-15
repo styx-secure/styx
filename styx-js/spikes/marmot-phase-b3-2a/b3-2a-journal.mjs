@@ -3,8 +3,8 @@
 
 import { randomUUID } from 'node:crypto';
 import {
-  chmodSync, closeSync, existsSync, fstatSync, fsyncSync, linkSync, mkdirSync, openSync,
-  readFileSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync,
+  chmodSync, closeSync, existsSync, fsyncSync, linkSync, mkdirSync, openSync,
+  readSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 
@@ -380,8 +380,10 @@ function assertPrivateChild(directory, approvedRoot) {
   }
   mkdirSync(target, { recursive: true, mode: 0o700 });
   chmodSync(target, 0o700);
-  if (relative(root, realpathSync(target)).startsWith('..')) {
-    failB32a(B32A_ERROR.INVALID, 'journal directory escaped the private root');
+  const resolvedFromRoot = relative(root, realpathSync(target));
+  if (resolvedFromRoot === '' || resolvedFromRoot === '..'
+    || resolvedFromRoot.startsWith(`..${sep}`)) {
+    failB32a(B32A_ERROR.INVALID, 'journal directory is not a resolved strict child');
   }
   return target;
 }
@@ -396,7 +398,11 @@ function syncDirectory(directory) {
   try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
 }
 
-function readBoundedFile(path, maximumBytes, tooLargeMessage) {
+function readBoundedFile(path, maximumBytes, failureCode, tooLargeMessage) {
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes <= 0
+    || maximumBytes > B32_LIMITS.maxProviderBytes) {
+    failB32a(B32A_ERROR.INVALID, 'bounded read limit is invalid');
+  }
   let descriptor;
   try {
     descriptor = openSync(path, 'r');
@@ -404,13 +410,54 @@ function readBoundedFile(path, maximumBytes, tooLargeMessage) {
     if (error?.code === 'ENOENT') return null;
     throw error;
   }
+  let scratch;
   try {
-    if (fstatSync(descriptor).size > maximumBytes) {
-      failB32a(B32A_ERROR.CORRUPT, tooLargeMessage);
+    scratch = Buffer.alloc(maximumBytes + 1);
+    let offset = 0;
+    let reachedEof = false;
+    while (offset < scratch.length) {
+      let count;
+      try {
+        count = readSync(descriptor, scratch, offset, scratch.length - offset, null);
+      } catch (error) {
+        if (error?.code === 'EINTR') continue;
+        throw error;
+      }
+      if (count === 0) {
+        reachedEof = true;
+        break;
+      }
+      offset += count;
     }
-    return Uint8Array.from(readFileSync(descriptor));
+    if (!reachedEof && offset > maximumBytes) {
+      failB32a(failureCode, tooLargeMessage);
+    }
+    return Uint8Array.from(scratch.subarray(0, offset));
   } finally {
+    scratch?.fill(0);
     closeSync(descriptor);
+  }
+}
+
+function boundedFileEquals(path, expectedBytes, tooLargeMessage) {
+  const actual = readBoundedFile(
+    path,
+    B32_LIMITS.maxProviderBytes,
+    B32A_ERROR.CORRUPT,
+    tooLargeMessage,
+  );
+  if (actual === null) return null;
+  try {
+    if (actual.byteLength !== expectedBytes.byteLength) return false;
+    const actualView = Buffer.from(actual.buffer, actual.byteOffset, actual.byteLength);
+    const expectedView = Buffer.from(
+      expectedBytes.buffer,
+      expectedBytes.byteOffset,
+      expectedBytes.byteLength,
+    );
+    return actualView.equals(expectedView);
+  } finally {
+    actual.fill(0);
   }
 }
 
@@ -429,6 +476,7 @@ export class FileB32aStore {
       const raw = readBoundedFile(
         this.headPath,
         B32_LIMITS.maxJournalHeadBytes,
+        B32A_ERROR.CORRUPT,
         'durable head exceeds the resource envelope',
       );
       if (raw === null) return null;
@@ -449,6 +497,7 @@ export class FileB32aStore {
     return readBoundedFile(
       path,
       B32_LIMITS.maxProviderBytes,
+      B32A_ERROR.CORRUPT,
       'durable blob exceeds the resource envelope',
     );
   }
@@ -476,10 +525,30 @@ export class FileB32aStore {
 
   #releaseLock(expectedOwner) {
     const ownerPath = resolve(this.lockDirectory, 'owner');
-    let durableOwner;
-    try { durableOwner = readFileSync(ownerPath, 'utf8'); }
-    catch (error) {
+    let durableOwnerBytes;
+    try {
+      durableOwnerBytes = readBoundedFile(
+        ownerPath,
+        128,
+        B32A_ERROR.CAS_CONFLICT,
+        'CAS lock owner exceeds the resource envelope',
+      );
+    } catch (error) {
+      if (error instanceof B32aError) throw error;
       failB32a(B32A_ERROR.CAS_CONFLICT, 'CAS lock disappeared before release', {}, error);
+    }
+    if (durableOwnerBytes === null) {
+      failB32a(B32A_ERROR.CAS_CONFLICT, 'CAS lock disappeared before release');
+    }
+    let durableOwner;
+    try {
+      durableOwner = Buffer.from(
+        durableOwnerBytes.buffer,
+        durableOwnerBytes.byteOffset,
+        durableOwnerBytes.byteLength,
+      ).toString('utf8');
+    } finally {
+      durableOwnerBytes.fill(0);
     }
     if (durableOwner !== expectedOwner) {
       failB32a(B32A_ERROR.CAS_CONFLICT, 'CAS lock ownership changed before release');
@@ -491,8 +560,13 @@ export class FileB32aStore {
   #writeImmutableBlob(bytes) {
     const valueDigest = sha256Hex(bytes);
     const finalPath = resolve(this.blobDirectory, valueDigest);
-    if (existsSync(finalPath)) {
-      if (!Buffer.from(readFileSync(finalPath)).equals(Buffer.from(bytes))) {
+    const existingMatch = boundedFileEquals(
+      finalPath,
+      bytes,
+      'immutable blob exceeds the resource envelope',
+    );
+    if (existingMatch !== null) {
+      if (!existingMatch) {
         failB32a(B32A_ERROR.CORRUPT, 'immutable blob content-address collision');
       }
       return;
@@ -505,7 +579,11 @@ export class FileB32aStore {
       syncDirectory(this.blobDirectory);
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
-      if (!Buffer.from(readFileSync(finalPath)).equals(Buffer.from(bytes))) {
+      if (boundedFileEquals(
+        finalPath,
+        bytes,
+        'immutable blob exceeds the resource envelope',
+      ) !== true) {
         failB32a(B32A_ERROR.CORRUPT, 'immutable blob race disagreed on bytes');
       }
     } finally {

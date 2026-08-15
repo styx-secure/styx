@@ -3031,6 +3031,45 @@ pub struct PhaseB32aPendingWelcome {
     differing_storage_key: Vec<u8>,
 }
 
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_release_failure(
+    pending: &PhaseB32aPendingWelcome,
+    binding: &PhaseB32aWelcomeBinding,
+    projection_sha256: &[u8],
+    expected_author: &[u8],
+) -> Option<&'static str> {
+    if expected_author != binding.expected_author {
+        return Some("PHASE_B32A_WELCOME_AUTHOR_MISMATCH");
+    }
+    if !phase_b32a_constant_time_eq_32(projection_sha256, &binding.projection_sha256) {
+        return Some("PHASE_B32A_PROJECTION_DIGEST_MISMATCH");
+    }
+    if pending.projection.predecessor_state_sha256 != binding.predecessor_state_sha256
+        || pending.projection.welcome_sha256 != binding.welcome_sha256
+        || pending.projection.expected_key_package_sha256
+            != binding.expected_key_package_sha256
+        || pending.projection.candidate_state_sha256 != binding.candidate_state_sha256
+        || pending.projection.projection_sha256 != binding.projection_sha256
+        || pending.preparation_classification != binding.preparation_classification
+        || pending.second_candidate_state_sha256 != binding.second_candidate_state_sha256
+        || pending.differing_storage_key != binding.differing_storage_key
+    {
+        return Some("PHASE_B32A_HANDLE_BINDING_MISMATCH");
+    }
+    let digest = match phase_b32_sha256(
+        &openmls_rust_crypto::RustCrypto::default(),
+        &pending.candidate_state.0,
+        "PHASE_B32A_CANDIDATE_DIGEST_FAILED",
+    ) {
+        Ok(digest) => digest,
+        Err(_) => return Some("PHASE_B32A_CANDIDATE_DIGEST_FAILED"),
+    };
+    if !phase_b32a_constant_time_eq_32(&digest, &binding.candidate_state_sha256) {
+        return Some("PHASE_B32A_CANDIDATE_DIGEST_MISMATCH");
+    }
+    None
+}
+
 /// Load-only B3.2a group whose Provider is private and operation-scoped.
 #[cfg(feature = "extensions-draft")]
 #[wasm_bindgen]
@@ -5827,35 +5866,18 @@ impl PhaseB32aPendingWelcome {
     ) -> Result<Vec<u8>, JsError> {
         let binding = self
             .binding
-            .as_ref()
+            .take()
             .ok_or_else(|| JsError::new("PHASE_B32A_HANDLE_CONSUMED"))?;
-        if expected_author != binding.expected_author {
-            return Err(JsError::new("PHASE_B32A_WELCOME_AUTHOR_MISMATCH"));
+        if let Some(error) = phase_b32a_release_failure(
+            self,
+            &binding,
+            projection_sha256,
+            expected_author,
+        ) {
+            self.candidate_state.0.fill(0);
+            self.candidate_state.0.clear();
+            return Err(JsError::new(error));
         }
-        if !phase_b32a_constant_time_eq_32(projection_sha256, &binding.projection_sha256) {
-            return Err(JsError::new("PHASE_B32A_PROJECTION_DIGEST_MISMATCH"));
-        }
-        if self.projection.predecessor_state_sha256 != binding.predecessor_state_sha256
-            || self.projection.welcome_sha256 != binding.welcome_sha256
-            || self.projection.expected_key_package_sha256 != binding.expected_key_package_sha256
-            || self.projection.candidate_state_sha256 != binding.candidate_state_sha256
-            || self.projection.projection_sha256 != binding.projection_sha256
-            || self.preparation_classification != binding.preparation_classification
-            || self.second_candidate_state_sha256
-                != binding.second_candidate_state_sha256
-            || self.differing_storage_key != binding.differing_storage_key
-        {
-            return Err(JsError::new("PHASE_B32A_HANDLE_BINDING_MISMATCH"));
-        }
-        let digest = phase_b32_sha256(
-            &openmls_rust_crypto::RustCrypto::default(),
-            &self.candidate_state.0,
-            "PHASE_B32A_CANDIDATE_DIGEST_FAILED",
-        )?;
-        if !phase_b32a_constant_time_eq_32(&digest, &binding.candidate_state_sha256) {
-            return Err(JsError::new("PHASE_B32A_CANDIDATE_DIGEST_MISMATCH"));
-        }
-        self.binding.take();
         Ok(std::mem::take(&mut self.candidate_state.0))
     }
 
@@ -7659,6 +7681,54 @@ mod tests {
     }
 
     #[cfg(feature = "extensions-draft")]
+    fn phase_b32a_pending_fixture(
+        group_id: &[u8],
+        founder_byte: u8,
+        joiner_byte: u8,
+    ) -> (PhaseB32aNativeFixture, PhaseB32aPendingWelcome) {
+        let fixture = phase_b32a_native_fixture(group_id, founder_byte, joiner_byte);
+        let pending = PhaseB32aPendingWelcome::prepare_from_durable_state(
+            &fixture.predecessor_state,
+            &fixture.predecessor_sha256,
+            &fixture.account_identity,
+            &fixture.leaf_signature_key,
+            &fixture.welcome_bytes,
+            &fixture.key_package_bytes,
+            &fixture.expected_author,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        (fixture, pending)
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn assert_phase_b32a_failed_release_consumed(
+        pending: &mut PhaseB32aPendingWelcome,
+        projection_sha256: &[u8],
+        expected_author: &[u8],
+        expected_error: &str,
+    ) {
+        assert!(!pending.candidate_state.0.is_empty());
+        assert_eq!(
+            phase_b32a_release_failure(
+                pending,
+                pending.binding.as_ref().unwrap(),
+                projection_sha256,
+                expected_author,
+            ),
+            Some(expected_error),
+        );
+        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            pending.release_candidate_state(projection_sha256, expected_author)
+        }));
+        assert!(rejected.is_err() || rejected.unwrap().is_err());
+        assert!(pending.is_consumed());
+        assert!(pending.candidate_state.0.is_empty());
+        assert!(pending.candidate_state.0.capacity() > 0);
+        phase_b32_assert_rejected(|| pending.discard());
+    }
+
+    #[cfg(feature = "extensions-draft")]
     #[test]
     fn phase_b32a_exact_profiles_accept_only_bounded_retention_metadata() {
         let fixture = phase_b32a_native_fixture(b"phase-b32a-native-success", 0x91, 0x92);
@@ -7759,6 +7829,7 @@ mod tests {
             .map_err(js_error_to_string)
             .unwrap();
         assert!(pending.is_consumed());
+        phase_b32_assert_rejected(|| pending.discard());
         phase_b32_assert_rejected(|| {
             pending
                 .release_candidate_state(
@@ -7784,6 +7855,55 @@ mod tests {
                 candidate,
             );
         }
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32a_failed_release_wipes_immediately_and_preserves_typed_errors() {
+        let (wrong_author_fixture, mut wrong_author) =
+            phase_b32a_pending_fixture(b"phase-b32a-release-author", 0xa1, 0xa2);
+        let wrong_author_projection = wrong_author.projection().projection_sha256();
+        let mut forged_author = wrong_author_fixture.expected_author.clone();
+        forged_author[0] ^= 1;
+        assert_phase_b32a_failed_release_consumed(
+            &mut wrong_author,
+            &wrong_author_projection,
+            &forged_author,
+            "PHASE_B32A_WELCOME_AUTHOR_MISMATCH",
+        );
+
+        let (wrong_projection_fixture, mut wrong_projection) =
+            phase_b32a_pending_fixture(b"phase-b32a-release-projection", 0xa3, 0xa4);
+        let mut forged_projection = wrong_projection.projection().projection_sha256();
+        forged_projection[0] ^= 1;
+        assert_phase_b32a_failed_release_consumed(
+            &mut wrong_projection,
+            &forged_projection,
+            &wrong_projection_fixture.expected_author,
+            "PHASE_B32A_PROJECTION_DIGEST_MISMATCH",
+        );
+
+        let (binding_fixture, mut binding_mismatch) =
+            phase_b32a_pending_fixture(b"phase-b32a-release-binding", 0xa5, 0xa6);
+        let binding_projection = binding_mismatch.projection().projection_sha256();
+        binding_mismatch.projection.welcome_sha256[0] ^= 1;
+        assert_phase_b32a_failed_release_consumed(
+            &mut binding_mismatch,
+            &binding_projection,
+            &binding_fixture.expected_author,
+            "PHASE_B32A_HANDLE_BINDING_MISMATCH",
+        );
+
+        let (digest_fixture, mut digest_mismatch) =
+            phase_b32a_pending_fixture(b"phase-b32a-release-digest", 0xa7, 0xa8);
+        let digest_projection = digest_mismatch.projection().projection_sha256();
+        digest_mismatch.candidate_state.0[0] ^= 1;
+        assert_phase_b32a_failed_release_consumed(
+            &mut digest_mismatch,
+            &digest_projection,
+            &digest_fixture.expected_author,
+            "PHASE_B32A_CANDIDATE_DIGEST_MISMATCH",
+        );
     }
 
     #[cfg(feature = "extensions-draft")]
