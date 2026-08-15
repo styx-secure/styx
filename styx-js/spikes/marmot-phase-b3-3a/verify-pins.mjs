@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-// STYX_SPIKE_PROTOTYPE — Stage 1 immutable-input and candidate-tuple verifier.
+// STYX_SPIKE_PROTOTYPE — immutable-input and approved-artifact verifier.
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, realpathSync, statSync } from 'node:fs';
@@ -19,6 +19,13 @@ export const B33A_MDK_LOCK_SHA256 =
   'edb8c706e12934b8d94239203f73d24a2d480033c3ec6830f19d06c85a247b09';
 export const B33A_VENDOR_LOCK_SHA256 =
   '33964e33f6a48e8b9982c5894c4a7e9ddc5ee2e5157c763596393a08c607672b';
+export const B33A_APPROVED_ARTIFACT_TUPLE = Object.freeze({
+  'openmls_wasm.js': '044a7cce67730ea45964f1bfc3e54ee79f3ff6ee277029efb87d9abd57a9aa6f',
+  'openmls_wasm.d.ts': 'c64a515a55591d8c84bfe0386b2db984d83e39f3ace7a14553d2cd7f11dc8048',
+  'openmls_wasm_bg.wasm': '7087b53f8f0597f0107802d5b629cd211d138d4f916b2ddd5831862088551624',
+  'openmls_wasm_bg.wasm.d.ts': 'eb26390ba4b96299df0105ed72c1bf2a292217a8635f816488a64d65b7deb6dc',
+  'package.json': '88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85',
+});
 
 const GENERATED_FILES = Object.freeze([
   'openmls_wasm.js',
@@ -29,6 +36,7 @@ const GENERATED_FILES = Object.freeze([
 ]);
 const directory = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(directory, '..', '..', '..');
+const installedArtifactDirectory = resolve(repoRoot, 'styx-js/vendor/openmls-wasm');
 const mdkRoot = '/home/mverde/.local/share/styx-upstreams/mdk-9396adb6';
 const EXACT_ALLOWED_PATHS = new Set([
   'styx-js/vendor/openmls-wasm/patch/lib.rs',
@@ -112,8 +120,33 @@ function verifyCommittedScope() {
 
 export function candidateTuple(candidatePath) {
   const candidate = strictBuildChild(candidatePath);
-  return Object.freeze(Object.fromEntries(GENERATED_FILES.map((name) =>
-    [name, sha256(resolve(candidate, name))])));
+  return assertApprovedArtifactTuple(Object.freeze(Object.fromEntries(
+    GENERATED_FILES.map((name) => [name, sha256(resolve(candidate, name))]),
+  )), 'candidate');
+}
+
+export function assertApprovedArtifactTuple(tuple, label = 'artifact') {
+  const names = Object.keys(tuple ?? {}).sort();
+  const expectedNames = [...GENERATED_FILES].sort();
+  if (names.length !== expectedNames.length
+    || names.some((name, index) => name !== expectedNames[index])) {
+    failB33a(B33A_ERROR.INVALID, `${label} tuple does not contain the exact approved files`);
+  }
+  for (const name of GENERATED_FILES) {
+    requireEqual(tuple[name], B33A_APPROVED_ARTIFACT_TUPLE[name], `${label} ${name}`);
+  }
+  return tuple;
+}
+
+export function installedArtifactTuple() {
+  return assertApprovedArtifactTuple(Object.freeze(Object.fromEntries(
+    GENERATED_FILES.map((name) => [
+      name,
+      readExactRegularFile(
+        resolve(installedArtifactDirectory, name), B33A_APPROVED_ARTIFACT_TUPLE[name],
+      ).sha256Hex,
+    ])),
+  ), 'installed artifact');
 }
 
 export function verifyPins(candidatePath) {
@@ -130,10 +163,14 @@ export function verifyPins(candidatePath) {
   requireEqual(sha256(resolve(repoRoot, 'styx-js/vendor/openmls-wasm/Cargo.lock')),
     B33A_VENDOR_LOCK_SHA256, 'vendored Cargo.lock');
   const changedPaths = verifyCommittedScope();
+  const installedTuple = installedArtifactTuple();
+  const exactCandidateTuple = candidatePath === undefined
+    ? installedTuple
+    : candidateTuple(candidatePath);
   return Object.freeze({
     baseSha: B33A_BASE_SHA,
     baseTree: B33A_BASE_TREE,
-    candidateTuple: candidateTuple(candidatePath),
+    candidateTuple: exactCandidateTuple,
     changedPaths,
     marmotRevision: B33A_MARMOT_REVISION,
     mdkLockSha256: B33A_MDK_LOCK_SHA256,
@@ -148,8 +185,9 @@ export function verifyPins(candidatePath) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 4 || process.argv[2] !== '--candidate-dir') {
-    throw new Error('usage: verify-pins.mjs --candidate-dir PATH');
+  if (process.argv.length !== 2
+    && (process.argv.length !== 4 || process.argv[2] !== '--candidate-dir')) {
+    throw new Error('usage: verify-pins.mjs [--candidate-dir PATH]');
   }
   process.stdout.write(`${JSON.stringify(verifyPins(process.argv[3]))}\n`);
 }

@@ -41,8 +41,10 @@ convergence. Those belong to B3.3b.
   WASM operations.
 - `b3-3a-styx-driver.mjs`: fresh-process Styx peer that imports a disposable
   candidate tuple without installing it.
-- `b3-3a-mdk-driver.mjs`: strict fresh-process JSON-lines boundary around the
-  pinned MDK executable.
+- `b3-3a-mdk-builder.mjs`: fresh locked build in a disjoint target directory,
+  with a descriptor-bound SHA-256 identity for the resulting executable.
+- `b3-3a-mdk-driver.mjs`: strict fresh-process JSON-lines boundary around that
+  exact per-run MDK executable.
 - `b3-3a-mdk-signer.mjs`: owner-only synthetic proof signer for the pinned MDK
   public signer callback.
 - `b3-3a-orchestrator.mjs`: exact two-peer sequence, restart/replay checks,
@@ -73,6 +75,18 @@ installed in Stage 2, the same verifier must exit successfully. Each Stage 2
 run also rebuilds the pinned MDK peer from its locked, clean source checkout and
 records the resulting source and executable identity in its evidence.
 
+The owner-approved tuple is frozen directly in `verify-pins.mjs`; both the
+candidate directory and installed vendor files must match all five digests.
+The verifier has no permissive or discovery fallback.
+
+| File | Approved SHA-256 |
+|---|---|
+| `openmls_wasm.js` | `044a7cce67730ea45964f1bfc3e54ee79f3ff6ee277029efb87d9abd57a9aa6f` |
+| `openmls_wasm.d.ts` | `c64a515a55591d8c84bfe0386b2db984d83e39f3ace7a14553d2cd7f11dc8048` |
+| `openmls_wasm_bg.wasm` | `7087b53f8f0597f0107802d5b629cd211d138d4f916b2ddd5831862088551624` |
+| `openmls_wasm_bg.wasm.d.ts` | `eb26390ba4b96299df0105ed72c1bf2a292217a8635f816488a64d65b7deb6dc` |
+| `package.json` | `88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85` |
+
 ## Stage 1 commands
 
 From the documented directories:
@@ -88,6 +102,35 @@ Build candidates must be new strict children of
 directories must likewise be new strict children of their frozen roots. The
 orchestrator refuses existing directories and always removes the exact private
 state child before returning.
+
+## Stage 2 commands
+
+After the approved tuple is installed and committed, verify it without a
+candidate override:
+
+```bash
+cd styx-js
+node spikes/marmot-phase-b3-3a/verify-pins.mjs
+```
+
+Each final run requires a different, nonexistent run, private and MDK build
+child. The orchestrator executes `cargo build --locked` itself in that fresh
+build child and records the pinned MDK revision/tree/lock, local peer lock,
+Cargo version and executable SHA-256 in the adjacent `verify_exact_inputs` and
+`build_locked_mdk_peer` evidence entries:
+
+```bash
+node spikes/marmot-phase-b3-3a/b3-3a-orchestrator.mjs \
+  --run-dir /home/mverde/.local/share/styx-b3-3a-runs/issue-185/stage2-run-a \
+  --private-dir /home/mverde/.local/share/styx-b3-3a-private/issue-185/stage2-run-a \
+  --candidate-dir /home/mverde/.local/share/styx-b3-3a-builds/issue-185/stage1-final-a-1dc8149 \
+  --mdk-build-dir /home/mverde/.local/share/styx-b3-3a-mdk-builds/issue-185/stage2-run-a
+```
+
+Repeat with new `stage2-run-b` children and the independently built but
+byte-identical Stage 1 candidate `stage1-final-b-1dc8149`. Existing directories,
+dirty tracked inputs, tuple drift, unlocked dependencies or a non-executable
+result fail closed.
 
 ## Evidence and non-claims
 

@@ -540,6 +540,73 @@ export class PhaseB32aPendingWelcome {
     second_candidate_state_sha256(): Uint8Array;
 }
 
+/**
+ * One-use exact-profile B3.3a operation boundary.
+ *
+ * The Provider, group and local signing identity are private to this handle.
+ * Either application operation consumes all three, including on failure.
+ */
+export class PhaseB33aGroup {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    epoch(): bigint;
+    group_id(): Uint8Array;
+    is_consumed(): boolean;
+    static load_canonical_state(candidate_state: Uint8Array, group_id: Uint8Array, expected_own_identity: Uint8Array, expected_own_signature_key: Uint8Array): PhaseB33aGroup | undefined;
+    prepare_inbound(ciphertext: Uint8Array): PhaseB33aPendingInbound;
+    prepare_outbound(plaintext: Uint8Array): PhaseB33aPendingOutbound;
+}
+
+export class PhaseB33aInboundRelease {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    take_canonical_state(): Uint8Array;
+    take_ciphertext(): Uint8Array;
+    take_plaintext(): Uint8Array;
+}
+
+export class PhaseB33aOutboundRelease {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    take_canonical_state(): Uint8Array;
+    take_ciphertext(): Uint8Array;
+}
+
+export class PhaseB33aPendingInbound {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    canonical_state_sha256(): Uint8Array;
+    ciphertext_sha256(): Uint8Array;
+    discard(): void;
+    epoch(): bigint;
+    group_id(): Uint8Array;
+    is_consumed(): boolean;
+    plaintext_sha256(): Uint8Array;
+    release(expected_canonical_state_sha256: Uint8Array, expected_ciphertext_sha256: Uint8Array, expected_plaintext_sha256: Uint8Array): PhaseB33aInboundRelease;
+    sender_credential_identity(): Uint8Array;
+    sender_leaf_index(): number;
+    sender_signature_key(): Uint8Array;
+}
+
+export class PhaseB33aPendingOutbound {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    canonical_state_sha256(): Uint8Array;
+    ciphertext_sha256(): Uint8Array;
+    discard(): void;
+    epoch(): bigint;
+    group_id(): Uint8Array;
+    is_consumed(): boolean;
+    release(expected_canonical_state_sha256: Uint8Array, expected_ciphertext_sha256: Uint8Array): PhaseB33aOutboundRelease;
+    sender_credential_identity(): Uint8Array;
+    sender_signature_key(): Uint8Array;
+}
+
 export class Provider {
     free(): void;
     [Symbol.dispose](): void;
@@ -611,6 +678,11 @@ export interface InitOutput {
     readonly __wbg_phaseb32group_free: (a: number, b: number) => void;
     readonly __wbg_phaseb32joinprojection_free: (a: number, b: number) => void;
     readonly __wbg_phaseb32pendingwelcome_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33agroup_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33ainboundrelease_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33aoutboundrelease_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33apendinginbound_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33apendingoutbound_free: (a: number, b: number) => void;
     readonly __wbg_provider_free: (a: number, b: number) => void;
     readonly __wbg_ratchettree_free: (a: number, b: number) => void;
     readonly addmessages_commit: (a: number) => any;
@@ -885,6 +957,35 @@ export interface InitOutput {
     readonly phaseb32pendingwelcome_prepare: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
     readonly phaseb32pendingwelcome_projection: (a: number) => number;
     readonly phaseb32pendingwelcome_release_candidate_state: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly phaseb33agroup_epoch: (a: number) => [bigint, number, number];
+    readonly phaseb33agroup_group_id: (a: number) => [number, number, number, number];
+    readonly phaseb33agroup_is_consumed: (a: number) => number;
+    readonly phaseb33agroup_load_canonical_state: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
+    readonly phaseb33agroup_prepare_inbound: (a: number, b: number, c: number) => [number, number, number];
+    readonly phaseb33agroup_prepare_outbound: (a: number, b: number, c: number) => [number, number, number];
+    readonly phaseb33ainboundrelease_take_canonical_state: (a: number) => [number, number, number, number];
+    readonly phaseb33ainboundrelease_take_ciphertext: (a: number) => [number, number, number, number];
+    readonly phaseb33ainboundrelease_take_plaintext: (a: number) => [number, number, number, number];
+    readonly phaseb33aoutboundrelease_take_canonical_state: (a: number) => [number, number, number, number];
+    readonly phaseb33aoutboundrelease_take_ciphertext: (a: number) => [number, number, number, number];
+    readonly phaseb33apendinginbound_canonical_state_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33apendinginbound_ciphertext_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33apendinginbound_discard: (a: number) => [number, number];
+    readonly phaseb33apendinginbound_epoch: (a: number) => [bigint, number, number];
+    readonly phaseb33apendinginbound_group_id: (a: number) => [number, number, number, number];
+    readonly phaseb33apendinginbound_plaintext_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33apendinginbound_release: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
+    readonly phaseb33apendinginbound_sender_credential_identity: (a: number) => [number, number, number, number];
+    readonly phaseb33apendinginbound_sender_leaf_index: (a: number) => [number, number, number];
+    readonly phaseb33apendinginbound_sender_signature_key: (a: number) => [number, number, number, number];
+    readonly phaseb33apendingoutbound_canonical_state_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33apendingoutbound_ciphertext_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33apendingoutbound_discard: (a: number) => [number, number];
+    readonly phaseb33apendingoutbound_epoch: (a: number) => [bigint, number, number];
+    readonly phaseb33apendingoutbound_group_id: (a: number) => [number, number, number, number];
+    readonly phaseb33apendingoutbound_release: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly phaseb33apendingoutbound_sender_credential_identity: (a: number) => [number, number, number, number];
+    readonly phaseb33apendingoutbound_sender_signature_key: (a: number) => [number, number, number, number];
     readonly provider_new: () => number;
     readonly provider_restore_state: (a: number, b: number, c: number) => [number, number];
     readonly provider_serialize_state: (a: number) => [number, number];
@@ -900,6 +1001,8 @@ export interface InitOutput {
     readonly phaseb32joinprojection_welcome_sender_leaf_index: (a: number) => number;
     readonly phaseb32joinprojection_version: (a: number) => number;
     readonly phaseb2stagedcommit_is_consumed: (a: number) => number;
+    readonly phaseb33apendinginbound_is_consumed: (a: number) => number;
+    readonly phaseb33apendingoutbound_is_consumed: (a: number) => number;
     readonly phaseb2keypackage_ciphersuite_id: (a: number) => number;
     readonly phaseb31keypackage_ciphersuite_id: (a: number) => number;
     readonly phaseb32akeypackage_ciphersuite_id: (a: number) => number;

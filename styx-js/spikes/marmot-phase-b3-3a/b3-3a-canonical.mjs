@@ -9,6 +9,8 @@ export const B33A_PROVIDER_FORMAT = 'phase-b32a-provider-canonical-v1';
 export const B33A_RUN_ROOT = '/home/mverde/.local/share/styx-b3-3a-runs/issue-185';
 export const B33A_PRIVATE_ROOT = '/home/mverde/.local/share/styx-b3-3a-private/issue-185';
 export const B33A_BUILD_ROOT = '/home/mverde/.local/share/styx-b3-3a-builds/issue-185';
+export const B33A_MDK_BUILD_ROOT =
+  '/home/mverde/.local/share/styx-b3-3a-mdk-builds/issue-185';
 export const B33A_REPORT_FORMAT = 'styx-marmot-b3.3a-application-evidence';
 export const B33A_STATE = Object.freeze({ ACTIVE: 'ACTIVE' });
 export const B33A_OUTCOME = Object.freeze({

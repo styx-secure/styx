@@ -23,6 +23,7 @@ import {
   validateB33aReport,
   validateB33aTranscript,
 } from './b3-3a-canonical.mjs';
+import { buildMdkPeer } from './b3-3a-mdk-builder.mjs';
 import { MdkB33aProcess } from './b3-3a-mdk-driver.mjs';
 import { B33A_MDK_SIGNER_PATH } from './b3-3a-mdk-signer.mjs';
 import { StyxB33aProcess } from './b3-3a-styx-driver.mjs';
@@ -32,13 +33,19 @@ const MDK_PROTOCOL = 'styx-b3-mdk-peer-jsonl-v1';
 const scriptPath = fileURLToPath(import.meta.url);
 
 function parseArgs(args) {
-  if (args.length !== 6 || args[0] !== '--run-dir' || args[2] !== '--private-dir'
-    || args[4] !== '--candidate-dir') {
+  if (args.length !== 8 || args[0] !== '--run-dir' || args[2] !== '--private-dir'
+    || args[4] !== '--candidate-dir' || args[6] !== '--mdk-build-dir') {
     throw new Error(
-      'usage: b3-3a-orchestrator.mjs --run-dir PATH --private-dir PATH --candidate-dir PATH',
+      'usage: b3-3a-orchestrator.mjs --run-dir PATH --private-dir PATH '
+      + '--candidate-dir PATH --mdk-build-dir PATH',
     );
   }
-  return { runDirectory: args[1], privateDirectory: args[3], candidateDirectory: args[5] };
+  return {
+    runDirectory: args[1],
+    privateDirectory: args[3],
+    candidateDirectory: args[5],
+    mdkBuildDirectory: args[7],
+  };
 }
 
 function prepareEmptyChild(path, root, label) {
@@ -201,6 +208,13 @@ async function runMode(args) {
     const pins = appendB33aTranscript(
       transcript, 'verify_exact_inputs', verifyPins(args.candidateDirectory),
     );
+    const mdkBuild = buildMdkPeer(args.mdkBuildDirectory);
+    appendB33aTranscript(transcript, 'build_locked_mdk_peer', Object.freeze({
+      mdkLockSha256: pins.mdkLockSha256,
+      mdkRevision: pins.mdkRevision,
+      mdkTree: pins.mdkTree,
+      ...mdkBuild.evidence,
+    }));
     mdkSecret = accountSecret();
     const mdkIdentityHex = Buffer.from(schnorr.getPublicKey(mdkSecret)).toString('hex');
     const mdkSecretPath = resolve(privateDirectory, 'mdk-account-secret.hex');
@@ -221,7 +235,7 @@ async function runMode(args) {
     const keyPackage = appendB33aTranscript(
       transcript, 'styx_advertise_exact_key_package', await styx.request('public_key_package'),
     );
-    mdk = new MdkB33aProcess();
+    mdk = new MdkB33aProcess(mdkBuild.executable);
     appendB33aTranscript(transcript, 'mdk_initialize_new', await initializeMdk(mdk, {
       transcript, identityHex: mdkIdentityHex, databaseKeyPath, databasePath,
       secretPath: mdkSecretPath,
@@ -290,7 +304,7 @@ async function runMode(args) {
       },
     ));
     appendB33aTranscript(transcript, 'styx_restored_head', await styx.request('verify_active'));
-    mdk = new MdkB33aProcess();
+    mdk = new MdkB33aProcess(mdkBuild.executable);
     appendB33aTranscript(transcript, 'mdk_fresh_process_initialize', await initializeMdk(mdk, {
       transcript, identityHex: mdkIdentityHex, databaseKeyPath, databasePath,
       secretPath: mdkSecretPath,

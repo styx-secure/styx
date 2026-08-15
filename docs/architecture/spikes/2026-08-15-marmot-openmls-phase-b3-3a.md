@@ -1,13 +1,13 @@
 # Phase B3.3a: exact-profile durable application traffic
 
-Date: 2026-08-15
+Date: 2026-08-16
 
 Issue: #185
 
-Stage: **Stage 1 source candidate; human tuple approval pending**
+Stage: **Stage 2 approved tuple installed; final paired execution pending**
 
-Disposition: **candidate implementation reaches bounded development GO; no
-installed-artifact or Stage 2 conclusion yet**
+Disposition: **Stage 1 reached bounded GO and the owner approved the exact
+source/tree/patch/lock/tuple; no final Stage 2 conclusion yet**
 
 ## Question and scope
 
@@ -32,6 +32,16 @@ profiles or historical persisted formats.
 | Vendored Cargo lock SHA-256 | `33964e33f6a48e8b9982c5894c4a7e9ddc5ee2e5157c763596393a08c607672b` |
 | External MDK Cargo lock SHA-256 | `edb8c706e12934b8d94239203f73d24a2d480033c3ec6830f19d06c85a247b09` |
 | Ciphersuite | `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` (`0x0001`) |
+
+The installed Stage 2 tuple is exactly:
+
+| File | SHA-256 |
+| --- | --- |
+| `openmls_wasm.js` | `044a7cce67730ea45964f1bfc3e54ee79f3ff6ee277029efb87d9abd57a9aa6f` |
+| `openmls_wasm.d.ts` | `c64a515a55591d8c84bfe0386b2db984d83e39f3ace7a14553d2cd7f11dc8048` |
+| `openmls_wasm_bg.wasm` | `7087b53f8f0597f0107802d5b629cd211d138d4f916b2ddd5831862088551624` |
+| `openmls_wasm_bg.wasm.d.ts` | `eb26390ba4b96299df0105ed72c1bf2a292217a8635f816488a64d65b7deb6dc` |
+| `package.json` | `88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85` |
 
 ## Candidate architecture
 
@@ -61,7 +71,7 @@ fail-closed lock, atomic head replacement and directory synchronization. A
 stale lock is never broken automatically. This is isolated evidence, not a
 claim of product-grade crash recovery or physical erasure.
 
-## Current Stage 1 evidence
+## Closed Stage 1 evidence
 
 - Native wrapper tests cover durable bidirectional traffic and restart,
   malformed input, wrong group and epoch, replay, own echo, public proposal and
@@ -78,21 +88,34 @@ claim of product-grade crash recovery or physical erasure.
   both first-message replays without a second plaintext/event, continued in
   both directions and deleted private state.
 
-The final source commit/tree, patch digest and reproducible five-file candidate
-tuple will be recorded only after Stage 1 implementation and independent review
-are complete. Earlier development tuples are intentionally not approved or
-installed.
+The reviewed Stage 1 source commit is
+`2d37bbc66828dbd30c1f5058989441e276704502`, tree
+`ca7ea7fb3a6f4c3f22c058c7c1bc689ba577bf12`; the Rust patch digest is
+`3647f49d787285bc5f810cc4529245b7a978f1d111cc5fc0f00c0e9b9e65b745`.
+Two locked builds produced the byte-identical five-file tuple above. Fable 5
+and DeepSeek V4 Flash independently reviewed the exact candidate, their
+findings were incorporated, and the owner approved the binding before
+installation.
+
+## Stage 2 execution boundary
+
+`verify-pins.mjs` now hard-codes the approved tuple and fails unless both the
+installed runtime and any supplied candidate directory match all five digests.
+For each final run, the orchestrator builds the pinned MDK peer with
+`cargo build --locked` in a different new target directory. The public
+`verify_exact_inputs` and `build_locked_mdk_peer` transcript entries record the
+clean MDK source revision/tree/lock, the local peer lock, Cargo version and the
+descriptor-bound SHA-256 of the exact executable used by both fresh MDK
+processes in that run.
 
 ## Remaining gates
 
-1. Complete final hostile and full-regression verification.
-2. Produce two clean byte-identical builds from the final Stage 1 source.
-3. Obtain independent exact-candidate reviews from Fable 5 and DeepSeek V4
-   Flash and resolve every finding.
-4. Obtain owner approval binding the exact source commit/tree, patch digest,
-   Cargo lock digest and five-file tuple.
-5. Install only that tuple in Stage 2, rerun every required check and execute
-   two fresh, disjoint exact interop runs.
+1. Commit the approved tuple and Stage 2 verifier/build-evidence boundary.
+2. Run the complete locked native, vendored, JavaScript and chat-build matrix.
+3. Execute and validate two fresh disjoint Stage 2 interop runs, each with its
+   own locked MDK target directory and executable identity.
+4. Obtain independent exact-HEAD agent review, then human security and final
+   owner gates. The pull request remains Draft until all gates are green.
 
 ## Residual risks and non-claims
 

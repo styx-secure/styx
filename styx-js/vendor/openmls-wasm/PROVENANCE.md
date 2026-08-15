@@ -55,8 +55,8 @@ MLS state already written to disk by this artifact.
 - **The local patch is not audited.** `patch/lib.rs` is Styx code compiled into the crate. In
   addition to persistence, reload, member inspection and wire-error hardening, it now contains
   the isolated Phase B1/Phase B2 probe APIs, the isolated B3.1 group-profile capability
-  wrapper, the isolated B3.2/B3.2a embedded-tree Welcome wrappers, and explicit staged/pending
-  Commit APIs. It is outside the scope of every
+  wrapper, the isolated B3.2/B3.2a embedded-tree Welcome wrappers, the isolated B3.3a
+  application-message wrapper, and explicit staged/pending Commit APIs. It is outside the scope of every
   upstream OpenMLS or Marmot-family audit; review it separately.
 - ~~`Provider::restore_state` `u64 as usize` length arithmetic wraps on wasm32.~~ **Fixed
   2026-07-11** (code review): all offsets use checked arithmetic and oversized lengths are
@@ -73,7 +73,8 @@ MLS state already written to disk by this artifact.
   shipping product remains on the legacy path.
 - **Legacy ciphersuite (shipping):**
   `MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519` (`patch/lib.rs`).
-- **Phase B1, Phase B2, Phase B3.1, Phase B3.2 and Phase B3.2a ciphersuite (non-product probes):**
+- **Phase B1, Phase B2, Phase B3.1, Phase B3.2, Phase B3.2a and Phase B3.3a
+  ciphersuite (non-product probes):**
   `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519` (`0x0001`).
 - **Crypto provider:** `openmls_rust_crypto` (RustCrypto), not libcrux.
 - **Rebuild:** `./build.sh` — Docker, no host Rust toolchain needed.
@@ -94,25 +95,32 @@ image: a tag can be re-pushed, a digest cannot.
 | Dependency graph | `./Cargo.lock` (workspace lockfile; builds run `-- --locked`, and `build.sh` aborts on drift) |
 | OpenMLS source | commit `09e9277…` (above) |
 
-**Artifact (rebuilt 2026-08-15 for the isolated B3.2a exact-profile durable Welcome capability, from the
+**Artifact (rebuilt 2026-08-15 for the isolated B3.3a exact-profile durable
+application-message capability, from the
 unchanged source pin and pins above):**
 
 | File | sha256 |
 |---|---|
-| `openmls_wasm_bg.wasm` | `f1596c27c90f71e50998bfae1be212e6b016944e18fe3c3fecee1eb44e64f869` |
-| `openmls_wasm.js` | `f73093ae4f2f4a408e94a91512fe4ae45400e1b41cfe4d0384dddb7179430dfc` |
-| `openmls_wasm.d.ts` | `32aeca75d16efd5fe27e8f640ebea21e2f4f1e4abd27b2e8176af9573195f0f3` |
-| `openmls_wasm_bg.wasm.d.ts` | `c2d0a05d2debf27c8afe2f87974b64f22fc3a0dce7dba933b31cc38cdfc40fd6` |
+| `openmls_wasm_bg.wasm` | `7087b53f8f0597f0107802d5b629cd211d138d4f916b2ddd5831862088551624` |
+| `openmls_wasm.js` | `044a7cce67730ea45964f1bfc3e54ee79f3ff6ee277029efb87d9abd57a9aa6f` |
+| `openmls_wasm.d.ts` | `c64a515a55591d8c84bfe0386b2db984d83e39f3ace7a14553d2cd7f11dc8048` |
+| `openmls_wasm_bg.wasm.d.ts` | `eb26390ba4b96299df0105ed72c1bf2a292217a8635f816488a64d65b7deb6dc` |
 | `package.json` | `88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85` |
 
-**Reproducibility: verified 2026-08-15 for the post-review B3.2a correction.**
-Two complete disposable builds from source commit
-`c68aac60acd4c7c5ec249213c80a38971cc40562` and patch SHA-256
-`56bfa7e7439f3a5dce260930b0ba19604581177de8092170a1f057592de30a7c`
-were byte-identical to each other and to the committed output set. The source
-correction makes candidate release fail closed and consuming on every outcome;
-it does not change the generated JavaScript or declaration surfaces.
-`./verify.sh` independently repeats the comparison.
+**Reproducibility: verified 2026-08-15 for the reviewed B3.3a candidate.** Two
+complete disposable locked builds associated with exact reviewed source commit
+`2d37bbc66828dbd30c1f5058989441e276704502`, tree
+`ca7ea7fb3a6f4c3f22c058c7c1bc689ba577bf12`, and patch SHA-256
+`3647f49d787285bc5f810cc4529245b7a978f1d111cc5fc0f00c0e9b9e65b745`
+were byte-identical across the complete five-file tuple. The owner separately
+approved those exact five digests before installation. `./verify.sh`
+independently rebuilds twice and compares both results with the committed set.
+
+The immediately preceding B3.2a artifact digest
+`f1596c27c90f71e50998bfae1be212e6b016944e18fe3c3fecee1eb44e64f869`
+remains an exact state-writer compatibility tuple. B3.3a preserves its canonical
+Provider format and adds only isolated one-use application send/receive handles;
+it does not relabel the B3.2a writer identity.
 
 The immediately preceding B3.2 artifact digest
 `d281d4a4c3c72999e966c1e70bff68b0ddc5eda23653295adbf620bad723f62c`
@@ -152,13 +160,13 @@ suite. This is bounded compatibility evidence, not a general migration or
 interoperability claim.
 
 The complete generated public surface is discovered structurally and frozen at
-86,893 canonical JSON bytes with SHA-256
-`1b3dff1f3f4b7b46af5d1f5c600b5d4a9a2134e33733cf79ece4c50f8598db20`.
-Relative to B3.2, the high-level surface additions are
-`PhaseB2Identity.b3_2a_key_package(...)`, `PhaseB32aKeyPackage`,
-`PhaseB32aPendingWelcome`, `PhaseB32aJoinProjection`, and `PhaseB32aGroup`;
-no historical high-level export was removed or renamed, and no product source
-may reference an isolated Phase B probe type.
+96,701 canonical JSON bytes with SHA-256
+`b1ecc7a6585eef31f574b5caa9c19d5855058a290629fb917015dc683327caec`.
+Relative to B3.2a, the high-level additions are `PhaseB33aGroup`,
+`PhaseB33aPendingOutbound`, `PhaseB33aOutboundRelease`,
+`PhaseB33aPendingInbound`, and `PhaseB33aInboundRelease`; no historical
+high-level export was removed or renamed, and product source remains barred
+from all isolated Phase B surfaces.
 
 Two build inputs remain pinned only indirectly, and are listed here rather than hidden:
 `wasm-bindgen-cli` is fetched by wasm-pack at the version the lockfile dictates, but the

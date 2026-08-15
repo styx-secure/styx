@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -25,17 +33,30 @@ import { b32aFixture }
   from '../../spikes/marmot-phase-b3-2a/b3-2a-test-support.mjs';
 import {
   B33A_REPORT_FORMAT,
+  B33A_MDK_BUILD_ROOT,
+  B33A_PRIVATE_ROOT,
+  B33A_RUN_ROOT,
   appendB33aTranscript,
   validateB33aReport,
   validateB33aTranscript,
 } from '../../spikes/marmot-phase-b3-3a/b3-3a-canonical.mjs';
 import { readExactRegularFile }
   from '../../spikes/marmot-phase-b3-3a/b3-3a-artifact-reader.mjs';
+import { B33A_MDK_PEER_LOCK_SHA256, executableSha256 }
+  from '../../spikes/marmot-phase-b3-3a/b3-3a-mdk-builder.mjs';
 import {
   B33aJournal,
   MemoryB33aStore,
   parseB33aHead,
 } from '../../spikes/marmot-phase-b3-3a/b3-3a-journal.mjs';
+import {
+  B33A_APPROVED_ARTIFACT_TUPLE,
+  B33A_MDK_LOCK_SHA256,
+  B33A_MDK_REVISION,
+  B33A_MDK_TREE,
+  assertApprovedArtifactTuple,
+  installedArtifactTuple,
+} from '../../spikes/marmot-phase-b3-3a/verify-pins.mjs';
 
 const digest = (marker) => marker.repeat(64).slice(0, 64);
 
@@ -89,6 +110,36 @@ describe('Phase B3.3a evidence and format separation', () => {
     }
   });
 
+  test('binds both the installed runtime and candidate verifier to the approved tuple', () => {
+    expect(Object.isFrozen(B33A_APPROVED_ARTIFACT_TUPLE)).toBe(true);
+    expect(installedArtifactTuple()).toEqual(B33A_APPROVED_ARTIFACT_TUPLE);
+    expect(assertApprovedArtifactTuple(B33A_APPROVED_ARTIFACT_TUPLE))
+      .toBe(B33A_APPROVED_ARTIFACT_TUPLE);
+    expect(() => assertApprovedArtifactTuple({
+      ...B33A_APPROVED_ARTIFACT_TUPLE,
+      'openmls_wasm_bg.wasm': '00'.repeat(32),
+    })).toThrow('artifact openmls_wasm_bg.wasm drifted');
+  });
+
+  test('identifies only a stable bounded executable regular file', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'styx-b33a-executable-'));
+    const executable = join(directory, 'peer');
+    const link = join(directory, 'peer-link');
+    try {
+      writeFileSync(executable, '#!/bin/sh\nexit 0\n');
+      chmodSync(executable, 0o700);
+      symlinkSync(executable, link);
+      expect(executableSha256(executable)).toBe(
+        createHash('sha256').update('#!/bin/sh\nexit 0\n').digest('hex'),
+      );
+      expect(() => executableSha256(link)).toThrow();
+      chmodSync(executable, 0o600);
+      expect(() => executableSha256(executable)).toThrow('not a bounded executable regular file');
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   test('validates a closed hash-linked GO report', () => {
     const transcript = [];
     appendB33aTranscript(transcript, 'synthetic_step', { ok: true });
@@ -129,5 +180,62 @@ describe('Phase B3.3a evidence and format separation', () => {
     expect(() => parseB33aHead(b32aHead)).toThrow();
     expect(() => validateB31Report(b33aHead, b33aHead.headDigestHex)).toThrow();
     expect(() => parseB33aHead({ format: B31_FORMAT })).toThrow();
+  });
+
+  test('paired Stage 2 runs, when present, bind disjoint locked MDK executables', () => {
+    const names = ['stage2-run-a', 'stage2-run-b'];
+    const runPaths = names.map((name) => join(B33A_RUN_ROOT, name));
+    expect(existsSync(join(runPaths[0], 'report.json')))
+      .toBe(existsSync(join(runPaths[1], 'report.json')));
+    if (!existsSync(join(runPaths[0], 'report.json'))) return;
+
+    const runs = runPaths.map((path, index) => {
+      const report = JSON.parse(readFileSync(join(path, 'report.json'), 'utf8'));
+      const transcript = JSON.parse(readFileSync(join(path, 'transcript.json'), 'utf8'));
+      const transcriptHead = validateB33aTranscript(transcript);
+      expect(validateB33aReport(report, transcriptHead)).toEqual(report);
+      expect(report).toEqual(expect.objectContaining({
+        disposition: 'GO',
+        applicationEventsCommitted: 4,
+        bidirectionalApplicationTrafficEstablished: true,
+        candidateTuple: B33A_APPROVED_ARTIFACT_TUPLE,
+        commitLifecycleTested: false,
+        replayPlaintextReleased: false,
+      }));
+      const pins = transcript[0];
+      expect(pins.operation).toBe('verify_exact_inputs');
+      expect(pins.evidence).toEqual(expect.objectContaining({
+        candidateTuple: B33A_APPROVED_ARTIFACT_TUPLE,
+        mdkLockSha256: B33A_MDK_LOCK_SHA256,
+        mdkRevision: B33A_MDK_REVISION,
+        mdkTree: B33A_MDK_TREE,
+      }));
+      const build = transcript[1];
+      expect(build.operation).toBe('build_locked_mdk_peer');
+      expect(build.evidence).toEqual(expect.objectContaining({
+        cargoCommand: 'cargo build --locked --target-dir <fresh-build-child>',
+        mdkLockSha256: B33A_MDK_LOCK_SHA256,
+        mdkPeerCargoLockSha256Hex: B33A_MDK_PEER_LOCK_SHA256,
+        mdkRevision: B33A_MDK_REVISION,
+        mdkTree: B33A_MDK_TREE,
+      }));
+      expect(build.evidence.cargoVersion).toMatch(/^cargo \d+\.\d+\.\d+/);
+      expect(build.evidence.mdkExecutableSha256Hex).toMatch(/^[0-9a-f]{64}$/);
+      const executable = join(
+        B33A_MDK_BUILD_ROOT, names[index], 'debug', 'styx-b3-mdk-peer',
+      );
+      expect(executableSha256(executable)).toBe(build.evidence.mdkExecutableSha256Hex);
+      const publicEvidence = JSON.stringify({ report, transcript });
+      for (const forbidden of [B33A_PRIVATE_ROOT, 'accountPrivateKey', 'databaseKey',
+        'databasePath', 'privateDirectory', 'providerState', 'secretPath']) {
+        expect(publicEvidence).not.toContain(forbidden);
+      }
+      expect(existsSync(join(B33A_PRIVATE_ROOT, names[index]))).toBe(false);
+      return { report, transcript };
+    });
+    expect(runs[0].transcript.map((record) => record.operation))
+      .toEqual(runs[1].transcript.map((record) => record.operation));
+    expect(runs[0].transcript[0].evidence.sourceCommit)
+      .toBe(runs[1].transcript[0].evidence.sourceCommit);
   });
 });
