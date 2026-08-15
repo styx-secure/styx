@@ -1,4 +1,4 @@
-// Frozen, automatically discovered public surface of the generated B3.2 artifact.
+// Frozen, automatically discovered public surface of the generated B3.2a artifact.
 // This intentionally snapshots every export, descriptor, declaration member and
 // raw InitOutput member so a future generated addition cannot evade a narrow list.
 import { createHash } from 'node:crypto';
@@ -9,8 +9,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const VENDOR = join(HERE, '../../vendor/openmls-wasm');
 const PRODUCT_SRC = join(HERE, '../../src');
-const EXPECTED_CANONICAL_BYTES = 70501;
-const EXPECTED_CANONICAL_SHA256 = '91b6d584a5612678ff7b9d1fd6551bf299ee4fceb9e74858ddfe3e2ed3ddc860';
+const EXPECTED_CANONICAL_BYTES = 86893;
+const EXPECTED_CANONICAL_SHA256 = '1b3dff1f3f4b7b46af5d1f5c600b5d4a9a2134e33733cf79ece4c50f8598db20';
 
 function valueShape(value) {
   if (typeof value === 'function') return `function:${value.length}`;
@@ -75,7 +75,7 @@ function javascriptFiles(root) {
   return files.sort();
 }
 
-describe('generated OpenMLS Phase B3.2 surface', () => {
+describe('generated OpenMLS Phase B3.2a surface', () => {
   test('the complete automatically discovered public surface matches the approved snapshot', async () => {
     const canonical = JSON.stringify(await discoverGeneratedSurface());
     expect(Buffer.byteLength(canonical)).toBe(EXPECTED_CANONICAL_BYTES);

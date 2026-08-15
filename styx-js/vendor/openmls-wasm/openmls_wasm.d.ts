@@ -293,6 +293,7 @@ export class PhaseB2Identity {
     [Symbol.dispose](): void;
     account_public_key(): Uint8Array;
     b3_1_key_package(provider: Provider, proof: Uint8Array): PhaseB31KeyPackage;
+    b3_2a_key_package(provider: Provider, proof: Uint8Array): PhaseB32aKeyPackage;
     key_package(provider: Provider, proof: Uint8Array): PhaseB2KeyPackage;
     leaf_signature_key(): Uint8Array;
     static load(provider: Provider, account_public_key: Uint8Array, leaf_signature_key: Uint8Array): PhaseB2Identity | undefined;
@@ -448,6 +449,97 @@ export class PhaseB32PendingWelcome {
     release_candidate_state(provider: Provider, projection_sha256: Uint8Array, expected_author: Uint8Array): Uint8Array;
 }
 
+/**
+ * Load-only B3.2a group whose Provider is private and operation-scoped.
+ */
+export class PhaseB32aGroup {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    canonical_state(): Uint8Array;
+    epoch(): bigint;
+    group_id(): Uint8Array;
+    static load_canonical_state(candidate_state: Uint8Array, group_id: Uint8Array): PhaseB32aGroup | undefined;
+    projection(welcome_sender_leaf_index: number, expected_author: Uint8Array, expected_own_identity: Uint8Array, expected_own_signature_key: Uint8Array, welcome_sha256: Uint8Array, expected_key_package_sha256: Uint8Array, predecessor_state_sha256: Uint8Array, candidate_state_sha256: Uint8Array): PhaseB32aJoinProjection;
+}
+
+export class PhaseB32aJoinProjection {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    administrator_policy(): Uint8Array;
+    candidate_state_sha256(): Uint8Array;
+    ciphersuite_id(): number;
+    domain(): string;
+    epoch(): bigint;
+    expected_key_package_sha256(): Uint8Array;
+    group_context_sha256(): Uint8Array;
+    group_context_tls(): Uint8Array;
+    group_id(): Uint8Array;
+    group_profile_description(): Uint8Array;
+    group_profile_name(): Uint8Array;
+    lifecycle(): Uint8Array;
+    member_component_ids(index: number): Uint16Array;
+    member_count(): number;
+    member_emits_empty_safe_aad(index: number): boolean;
+    member_identity(index: number): Uint8Array;
+    member_identity_proof(index: number): Uint8Array;
+    member_leaf_index(index: number): number;
+    member_lists_default_required_capabilities(index: number): boolean;
+    member_profile(index: number): string;
+    member_profile_sha256(index: number): Uint8Array;
+    member_signature_key(index: number): Uint8Array;
+    member_supported_component_ids(index: number): Uint16Array;
+    own_leaf_index(): number;
+    predecessor_state_sha256(): Uint8Array;
+    projection_sha256(): Uint8Array;
+    provider_format(): string;
+    required_component_ids(): Uint16Array;
+    verified_leaf_digest(): Uint8Array;
+    version(): number;
+    welcome_sender_identity(): Uint8Array;
+    welcome_sender_leaf_index(): number;
+    welcome_sender_signature_key(): Uint8Array;
+    welcome_sha256(): Uint8Array;
+}
+
+/**
+ * Exact Styx B3.2a KeyPackage. It is additive and does not relabel B3.1 bytes.
+ */
+export class PhaseB32aKeyPackage {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    capability_extension_ids(): Uint16Array;
+    capability_proposal_ids(): Uint16Array;
+    ciphersuite_id(): number;
+    component_ids(): Uint16Array;
+    credential_identity(): Uint8Array;
+    static from_framed_bytes(bytes: Uint8Array): PhaseB32aKeyPackage;
+    identity_proof(): Uint8Array;
+    is_last_resort(): boolean;
+    leaf_signature_key(): Uint8Array;
+    supported_component_ids(): Uint16Array;
+    to_framed_bytes(): Uint8Array;
+}
+
+/**
+ * One-use B3.2a candidate. It owns no live Provider or identity handle.
+ */
+export class PhaseB32aPendingWelcome {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    differing_storage_key(): Uint8Array;
+    discard(): void;
+    is_consumed(): boolean;
+    preparation_classification(): string;
+    static prepare_from_durable_state(predecessor_state: Uint8Array, expected_predecessor_sha256: Uint8Array, account_identity: Uint8Array, leaf_signature_key: Uint8Array, welcome_bytes: Uint8Array, expected_key_package_bytes: Uint8Array, expected_author: Uint8Array): PhaseB32aPendingWelcome;
+    projection(): PhaseB32aJoinProjection;
+    release_candidate_state(projection_sha256: Uint8Array, expected_author: Uint8Array): Uint8Array;
+    second_candidate_state_sha256(): Uint8Array;
+}
+
 export class Provider {
     free(): void;
     [Symbol.dispose](): void;
@@ -512,6 +604,10 @@ export interface InitOutput {
     readonly __wbg_phaseb2receivedapplicationmessage_free: (a: number, b: number) => void;
     readonly __wbg_phaseb2stagedcommit_free: (a: number, b: number) => void;
     readonly __wbg_phaseb31keypackage_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb32agroup_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb32ajoinprojection_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb32akeypackage_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb32apendingwelcome_free: (a: number, b: number) => void;
     readonly __wbg_phaseb32group_free: (a: number, b: number) => void;
     readonly __wbg_phaseb32joinprojection_free: (a: number, b: number) => void;
     readonly __wbg_phaseb32pendingwelcome_free: (a: number, b: number) => void;
@@ -668,6 +764,7 @@ export interface InitOutput {
     readonly phaseb2group_stage_inbound_commit: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly phaseb2identity_account_public_key: (a: number) => [number, number];
     readonly phaseb2identity_b3_1_key_package: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly phaseb2identity_b3_2a_key_package: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly phaseb2identity_key_package: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly phaseb2identity_leaf_signature_key: (a: number) => [number, number];
     readonly phaseb2identity_load: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
@@ -700,12 +797,67 @@ export interface InitOutput {
     readonly phaseb31keypackage_leaf_signature_key: (a: number) => [number, number];
     readonly phaseb31keypackage_supported_component_ids: (a: number) => [number, number, number, number];
     readonly phaseb31keypackage_to_framed_bytes: (a: number) => [number, number, number, number];
+    readonly phaseb32agroup_canonical_state: (a: number) => [number, number, number, number];
+    readonly phaseb32agroup_epoch: (a: number) => bigint;
+    readonly phaseb32agroup_group_id: (a: number) => [number, number];
+    readonly phaseb32agroup_load_canonical_state: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly phaseb32agroup_projection: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number) => [number, number, number];
+    readonly phaseb32ajoinprojection_administrator_policy: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_candidate_state_sha256: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_ciphersuite_id: (a: number) => number;
+    readonly phaseb32ajoinprojection_domain: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_expected_key_package_sha256: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_group_context_sha256: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_group_context_tls: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_group_id: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_group_profile_description: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_group_profile_name: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_lifecycle: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_member_component_ids: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb32ajoinprojection_member_count: (a: number) => number;
+    readonly phaseb32ajoinprojection_member_emits_empty_safe_aad: (a: number, b: number) => [number, number, number];
+    readonly phaseb32ajoinprojection_member_identity: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb32ajoinprojection_member_identity_proof: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb32ajoinprojection_member_leaf_index: (a: number, b: number) => [number, number, number];
+    readonly phaseb32ajoinprojection_member_lists_default_required_capabilities: (a: number, b: number) => [number, number, number];
+    readonly phaseb32ajoinprojection_member_profile: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb32ajoinprojection_member_profile_sha256: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb32ajoinprojection_member_signature_key: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb32ajoinprojection_member_supported_component_ids: (a: number, b: number) => [number, number, number, number];
+    readonly phaseb32ajoinprojection_own_leaf_index: (a: number) => number;
+    readonly phaseb32ajoinprojection_predecessor_state_sha256: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_projection_sha256: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_provider_format: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_required_component_ids: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_verified_leaf_digest: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_version: (a: number) => number;
+    readonly phaseb32ajoinprojection_welcome_sender_identity: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_welcome_sender_leaf_index: (a: number) => number;
+    readonly phaseb32ajoinprojection_welcome_sender_signature_key: (a: number) => [number, number];
+    readonly phaseb32ajoinprojection_welcome_sha256: (a: number) => [number, number];
+    readonly phaseb32akeypackage_capability_extension_ids: (a: number) => [number, number];
+    readonly phaseb32akeypackage_capability_proposal_ids: (a: number) => [number, number];
+    readonly phaseb32akeypackage_component_ids: (a: number) => [number, number];
+    readonly phaseb32akeypackage_credential_identity: (a: number) => [number, number];
+    readonly phaseb32akeypackage_from_framed_bytes: (a: number, b: number) => [number, number, number];
+    readonly phaseb32akeypackage_identity_proof: (a: number) => [number, number];
+    readonly phaseb32akeypackage_is_last_resort: (a: number) => number;
+    readonly phaseb32akeypackage_leaf_signature_key: (a: number) => [number, number];
+    readonly phaseb32akeypackage_supported_component_ids: (a: number) => [number, number, number, number];
+    readonly phaseb32akeypackage_to_framed_bytes: (a: number) => [number, number, number, number];
+    readonly phaseb32apendingwelcome_differing_storage_key: (a: number) => [number, number];
+    readonly phaseb32apendingwelcome_discard: (a: number) => [number, number];
+    readonly phaseb32apendingwelcome_is_consumed: (a: number) => number;
+    readonly phaseb32apendingwelcome_preparation_classification: (a: number) => [number, number];
+    readonly phaseb32apendingwelcome_prepare_from_durable_state: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number) => [number, number, number];
+    readonly phaseb32apendingwelcome_projection: (a: number) => number;
+    readonly phaseb32apendingwelcome_release_candidate_state: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly phaseb32apendingwelcome_second_candidate_state_sha256: (a: number) => [number, number];
     readonly phaseb32group_group_id: (a: number) => [number, number];
     readonly phaseb32group_load: (a: number, b: number, c: number) => [number, number, number];
     readonly phaseb32group_projection: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number) => [number, number, number];
     readonly phaseb32joinprojection_administrator_policy: (a: number) => [number, number];
     readonly phaseb32joinprojection_candidate_state_sha256: (a: number) => [number, number];
-    readonly phaseb32joinprojection_ciphersuite_id: (a: number) => number;
     readonly phaseb32joinprojection_domain: (a: number) => [number, number];
     readonly phaseb32joinprojection_expected_key_package_sha256: (a: number) => [number, number];
     readonly phaseb32joinprojection_group_context_sha256: (a: number) => [number, number];
@@ -721,14 +873,11 @@ export interface InitOutput {
     readonly phaseb32joinprojection_member_leaf_index: (a: number, b: number) => [number, number, number];
     readonly phaseb32joinprojection_member_signature_key: (a: number, b: number) => [number, number, number, number];
     readonly phaseb32joinprojection_member_supported_component_ids: (a: number, b: number) => [number, number, number, number];
-    readonly phaseb32joinprojection_own_leaf_index: (a: number) => number;
     readonly phaseb32joinprojection_predecessor_state_sha256: (a: number) => [number, number];
     readonly phaseb32joinprojection_projection_sha256: (a: number) => [number, number];
     readonly phaseb32joinprojection_required_component_ids: (a: number) => [number, number];
     readonly phaseb32joinprojection_verified_leaf_digest: (a: number) => [number, number];
-    readonly phaseb32joinprojection_version: (a: number) => number;
     readonly phaseb32joinprojection_welcome_sender_identity: (a: number) => [number, number];
-    readonly phaseb32joinprojection_welcome_sender_leaf_index: (a: number) => number;
     readonly phaseb32joinprojection_welcome_sender_signature_key: (a: number) => [number, number];
     readonly phaseb32joinprojection_welcome_sha256: (a: number) => [number, number];
     readonly phaseb32pendingwelcome_discard: (a: number, b: number) => [number, number];
@@ -744,11 +893,17 @@ export interface InitOutput {
     readonly phaseb1group_epoch: (a: number) => bigint;
     readonly phaseb2group_epoch: (a: number) => bigint;
     readonly phaseb2receivedapplicationmessage_epoch: (a: number) => bigint;
+    readonly phaseb32ajoinprojection_epoch: (a: number) => bigint;
     readonly phaseb32group_epoch: (a: number) => bigint;
     readonly phaseb32joinprojection_epoch: (a: number) => bigint;
+    readonly phaseb32joinprojection_own_leaf_index: (a: number) => number;
+    readonly phaseb32joinprojection_welcome_sender_leaf_index: (a: number) => number;
+    readonly phaseb32joinprojection_version: (a: number) => number;
     readonly phaseb2stagedcommit_is_consumed: (a: number) => number;
     readonly phaseb2keypackage_ciphersuite_id: (a: number) => number;
     readonly phaseb31keypackage_ciphersuite_id: (a: number) => number;
+    readonly phaseb32akeypackage_ciphersuite_id: (a: number) => number;
+    readonly phaseb32joinprojection_ciphersuite_id: (a: number) => number;
     readonly greet: () => void;
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;

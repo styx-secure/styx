@@ -78,6 +78,14 @@ const PHASE_B31_SUPPORTED_COMPONENTS: [ComponentId; 4] = [
     GROUP_LIFECYCLE_V1_COMPONENT_ID,
 ];
 #[cfg(feature = "extensions-draft")]
+const PHASE_B32A_SUPPORTED_COMPONENTS: [ComponentId; 5] = [
+    0x0001,
+    GROUP_PROFILE_V1_COMPONENT_ID,
+    ADMIN_POLICY_V1_COMPONENT_ID,
+    ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID,
+    GROUP_LIFECYCLE_V1_COMPONENT_ID,
+];
+#[cfg(feature = "extensions-draft")]
 const PHASE_B31_REQUIRED_COMPONENTS: [ComponentId; 4] = [
     GROUP_PROFILE_V1_COMPONENT_ID,
     ADMIN_POLICY_V1_COMPONENT_ID,
@@ -117,6 +125,22 @@ const PHASE_B32_PROJECTION_VERSION: u16 = 1;
 const PHASE_B32_MAX_WELCOME_BYTES: usize = 1_048_576;
 #[cfg(feature = "extensions-draft")]
 const PHASE_B32_MAX_KEY_PACKAGE_BYTES: usize = 16_384;
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32A_MAX_PROVIDER_BYTES: usize = 8 * 1024 * 1024;
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32A_MAX_PROVIDER_ENTRIES: usize = 4096;
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32A_MAX_PROVIDER_KEY_BYTES: usize = 64 * 1024;
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32A_MAX_JSON_DEPTH: usize = 64;
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32A_MAX_JSON_NODES: usize = 262_144;
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32A_PROJECTION_DOMAIN: &[u8] = b"STYX-B32A-JOIN-PROJECTION-v1";
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32A_LEAF_PROFILE_DOMAIN: &[u8] = b"STYX-B32A-LEAF-PROFILE-v1";
+#[cfg(feature = "extensions-draft")]
+const PHASE_B32A_PROJECTION_VERSION: u16 = 1;
 
 thread_local! {
     static NEXT_PROVIDER_INSTANCE_ID: Cell<u32> = const { Cell::new(1) };
@@ -249,6 +273,615 @@ impl Provider {
                 .ok_or_else(|| JsError::new("restore_state: restore generation exhausted"))?,
         );
         Ok(())
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PhaseB32aSnapshotRole {
+    Predecessor,
+    CanonicalCandidate,
+}
+
+#[cfg(feature = "extensions-draft")]
+struct PhaseB32aWipeBytes(Vec<u8>);
+
+#[cfg(feature = "extensions-draft")]
+impl Drop for PhaseB32aWipeBytes {
+    fn drop(&mut self) {
+        self.0.fill(0);
+        self.0.clear();
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+struct PhaseB32aSnapshotEntries(Vec<(Vec<u8>, Vec<u8>)>);
+
+#[cfg(feature = "extensions-draft")]
+impl Drop for PhaseB32aSnapshotEntries {
+    fn drop(&mut self) {
+        for (key, value) in &mut self.0 {
+            key.fill(0);
+            value.fill(0);
+        }
+        self.0.clear();
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+struct PhaseB32aSeenKeys(std::collections::HashSet<Vec<u8>>);
+
+#[cfg(feature = "extensions-draft")]
+impl Drop for PhaseB32aSeenKeys {
+    fn drop(&mut self) {
+        for mut key in self.0.drain() {
+            key.fill(0);
+        }
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum PhaseB32aPreparationClassification {
+    ByteIdentical,
+    RetentionTimestampBounded,
+}
+
+#[cfg(feature = "extensions-draft")]
+impl PhaseB32aPreparationClassification {
+    fn tag(self) -> &'static str {
+        match self {
+            Self::ByteIdentical => "BYTE_IDENTICAL",
+            Self::RetentionTimestampBounded => "RETENTION_TIMESTAMP_BOUNDED",
+        }
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+struct PhaseB32aPreparationEvidence {
+    classification: PhaseB32aPreparationClassification,
+    second_candidate_state_sha256: Vec<u8>,
+    differing_storage_key: Vec<u8>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[derive(Clone, Copy)]
+struct PhaseB32aTimestampSpans {
+    seconds: (usize, usize),
+    nanos: (usize, usize),
+}
+
+/// Minimal strict JSON recognizer for the exact serde-json representation at
+/// the pinned OpenMLS revision. It retains no parsed secret values. The only
+/// returned offsets identify the two local retention-timestamp integers.
+#[cfg(feature = "extensions-draft")]
+struct PhaseB32aStrictJson<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+    nodes: usize,
+}
+
+#[cfg(feature = "extensions-draft")]
+impl<'a> PhaseB32aStrictJson<'a> {
+    fn new(bytes: &'a [u8]) -> Result<Self, JsError> {
+        std::str::from_utf8(bytes)
+            .map_err(|_| JsError::new("PHASE_B32A_MESSAGE_SECRETS_JSON_INVALID"))?;
+        Ok(Self {
+            bytes,
+            offset: 0,
+            nodes: 0,
+        })
+    }
+
+    fn error() -> JsError {
+        JsError::new("PHASE_B32A_MESSAGE_SECRETS_JSON_INVALID")
+    }
+
+    fn byte(&self) -> Option<u8> {
+        self.bytes.get(self.offset).copied()
+    }
+
+    fn bump_node(&mut self) -> Result<(), JsError> {
+        self.nodes = self.nodes.checked_add(1).ok_or_else(Self::error)?;
+        if self.nodes > PHASE_B32A_MAX_JSON_NODES {
+            return Err(Self::error());
+        }
+        Ok(())
+    }
+
+    fn expect(&mut self, expected: u8) -> Result<(), JsError> {
+        if self.byte() != Some(expected) {
+            return Err(Self::error());
+        }
+        self.offset += 1;
+        Ok(())
+    }
+
+    fn expect_literal(&mut self, expected: &[u8]) -> Result<(), JsError> {
+        let end = self
+            .offset
+            .checked_add(expected.len())
+            .filter(|end| *end <= self.bytes.len())
+            .ok_or_else(Self::error)?;
+        if &self.bytes[self.offset..end] != expected {
+            return Err(Self::error());
+        }
+        self.offset = end;
+        Ok(())
+    }
+
+    /// Pinned serde field names are unescaped ASCII. Rejecting escaped object
+    /// keys also rejects alternate encodings and semantic duplicate keys.
+    fn object_key(&mut self) -> Result<&'a [u8], JsError> {
+        self.expect(b'"')?;
+        let start = self.offset;
+        while let Some(byte) = self.byte() {
+            match byte {
+                b'"' => {
+                    let key = &self.bytes[start..self.offset];
+                    self.offset += 1;
+                    if key.is_empty()
+                        || key
+                            .iter()
+                            .any(|byte| *byte < 0x20 || *byte >= 0x7f || *byte == b'\\')
+                    {
+                        return Err(Self::error());
+                    }
+                    return Ok(key);
+                }
+                b'\\' | 0x00..=0x1f | 0x80..=0xff => return Err(Self::error()),
+                _ => self.offset += 1,
+            }
+        }
+        Err(Self::error())
+    }
+
+    fn expected_key(&mut self, expected: &[u8]) -> Result<(), JsError> {
+        if self.object_key()? != expected {
+            return Err(Self::error());
+        }
+        self.expect(b':')
+    }
+
+    fn string_value(&mut self) -> Result<(), JsError> {
+        self.expect(b'"')?;
+        while let Some(byte) = self.byte() {
+            match byte {
+                b'"' => {
+                    self.offset += 1;
+                    return Ok(());
+                }
+                b'\\' => {
+                    self.offset += 1;
+                    match self.byte() {
+                        Some(b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't') => {
+                            self.offset += 1;
+                        }
+                        Some(b'u') => {
+                            self.offset += 1;
+                            for _ in 0..4 {
+                                if !self.byte().is_some_and(|byte| byte.is_ascii_hexdigit()) {
+                                    return Err(Self::error());
+                                }
+                                self.offset += 1;
+                            }
+                        }
+                        _ => return Err(Self::error()),
+                    }
+                }
+                0x00..=0x1f => return Err(Self::error()),
+                _ => self.offset += 1,
+            }
+        }
+        Err(Self::error())
+    }
+
+    fn number(&mut self) -> Result<(usize, usize), JsError> {
+        let start = self.offset;
+        if self.byte() == Some(b'-') {
+            self.offset += 1;
+        }
+        match self.byte() {
+            Some(b'0') => {
+                self.offset += 1;
+                if self.byte().is_some_and(|byte| byte.is_ascii_digit()) {
+                    return Err(Self::error());
+                }
+            }
+            Some(b'1'..=b'9') => {
+                self.offset += 1;
+                while self.byte().is_some_and(|byte| byte.is_ascii_digit()) {
+                    self.offset += 1;
+                }
+            }
+            _ => return Err(Self::error()),
+        }
+        if self.byte() == Some(b'.') {
+            self.offset += 1;
+            if !self.byte().is_some_and(|byte| byte.is_ascii_digit()) {
+                return Err(Self::error());
+            }
+            while self.byte().is_some_and(|byte| byte.is_ascii_digit()) {
+                self.offset += 1;
+            }
+        }
+        if self.byte().is_some_and(|byte| byte == b'e' || byte == b'E') {
+            self.offset += 1;
+            if self.byte().is_some_and(|byte| byte == b'+' || byte == b'-') {
+                self.offset += 1;
+            }
+            if !self.byte().is_some_and(|byte| byte.is_ascii_digit()) {
+                return Err(Self::error());
+            }
+            while self.byte().is_some_and(|byte| byte.is_ascii_digit()) {
+                self.offset += 1;
+            }
+        }
+        Ok((start, self.offset))
+    }
+
+    fn unsigned_integer(&mut self) -> Result<(usize, usize, u64), JsError> {
+        let start = self.offset;
+        match self.byte() {
+            Some(b'0') => {
+                self.offset += 1;
+                if self.byte().is_some_and(|byte| byte.is_ascii_digit()) {
+                    return Err(Self::error());
+                }
+            }
+            Some(b'1'..=b'9') => {
+                self.offset += 1;
+                while self.byte().is_some_and(|byte| byte.is_ascii_digit()) {
+                    self.offset += 1;
+                }
+            }
+            _ => return Err(Self::error()),
+        }
+        let end = self.offset;
+        let value = std::str::from_utf8(&self.bytes[start..end])
+            .map_err(|_| Self::error())?
+            .parse::<u64>()
+            .map_err(|_| Self::error())?;
+        Ok((start, end, value))
+    }
+
+    fn value(&mut self, depth: usize) -> Result<(), JsError> {
+        if depth > PHASE_B32A_MAX_JSON_DEPTH {
+            return Err(Self::error());
+        }
+        self.bump_node()?;
+        match self.byte() {
+            Some(b'{') => self.object(depth + 1),
+            Some(b'[') => self.array(depth + 1),
+            Some(b'"') => self.string_value(),
+            Some(b't') => self.expect_literal(b"true"),
+            Some(b'f') => self.expect_literal(b"false"),
+            Some(b'n') => self.expect_literal(b"null"),
+            Some(b'-' | b'0'..=b'9') => self.number().map(|_| ()),
+            _ => Err(Self::error()),
+        }
+    }
+
+    fn array(&mut self, depth: usize) -> Result<(), JsError> {
+        self.expect(b'[')?;
+        if self.byte() == Some(b']') {
+            self.offset += 1;
+            return Ok(());
+        }
+        loop {
+            self.value(depth)?;
+            match self.byte() {
+                Some(b',') => self.offset += 1,
+                Some(b']') => {
+                    self.offset += 1;
+                    return Ok(());
+                }
+                _ => return Err(Self::error()),
+            }
+        }
+    }
+
+    fn object(&mut self, depth: usize) -> Result<(), JsError> {
+        self.expect(b'{')?;
+        if self.byte() == Some(b'}') {
+            self.offset += 1;
+            return Ok(());
+        }
+        let mut keys = std::collections::HashSet::new();
+        loop {
+            let key = self.object_key()?.to_vec();
+            if !keys.insert(key) {
+                return Err(Self::error());
+            }
+            self.expect(b':')?;
+            self.value(depth)?;
+            match self.byte() {
+                Some(b',') => self.offset += 1,
+                Some(b'}') => {
+                    self.offset += 1;
+                    return Ok(());
+                }
+                _ => return Err(Self::error()),
+            }
+        }
+    }
+
+    fn message_secrets_timestamp_spans(mut self) -> Result<PhaseB32aTimestampSpans, JsError> {
+        self.expect(b'{')?;
+        self.expected_key(b"max_epochs")?;
+        self.unsigned_integer()?;
+        self.expect(b',')?;
+        self.expected_key(b"past_epoch_trees")?;
+        self.array(1)?;
+        self.expect(b',')?;
+        self.expected_key(b"message_secrets")?;
+        self.expect(b'{')?;
+        for key in [
+            b"sender_data_secret".as_slice(),
+            b"membership_key".as_slice(),
+            b"confirmation_key".as_slice(),
+            b"serialized_context".as_slice(),
+            b"secret_tree".as_slice(),
+        ] {
+            self.expected_key(key)?;
+            self.value(2)?;
+            self.expect(b',')?;
+        }
+        self.expected_key(b"added_at")?;
+        self.expect(b'{')?;
+        self.expected_key(b"secs_since_epoch")?;
+        let (seconds_start, seconds_end, _) = self.unsigned_integer()?;
+        self.expect(b',')?;
+        self.expected_key(b"nanos_since_epoch")?;
+        let (nanos_start, nanos_end, nanos) = self.unsigned_integer()?;
+        if nanos >= 1_000_000_000 {
+            return Err(Self::error());
+        }
+        self.expect(b'}')?;
+        self.expect(b'}')?;
+        self.expect(b'}')?;
+        if self.offset != self.bytes.len() {
+            return Err(Self::error());
+        }
+        Ok(PhaseB32aTimestampSpans {
+            seconds: (seconds_start, seconds_end),
+            nanos: (nanos_start, nanos_end),
+        })
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_message_secrets_timestamp_spans(
+    value: &[u8],
+) -> Result<PhaseB32aTimestampSpans, JsError> {
+    PhaseB32aStrictJson::new(value)?.message_secrets_timestamp_spans()
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_values_equal_except_retention_timestamp(
+    left: &[u8],
+    left_spans: PhaseB32aTimestampSpans,
+    right: &[u8],
+    right_spans: PhaseB32aTimestampSpans,
+) -> bool {
+    left[..left_spans.seconds.0] == right[..right_spans.seconds.0]
+        && left[left_spans.seconds.1..left_spans.nanos.0]
+            == right[right_spans.seconds.1..right_spans.nanos.0]
+        && left[left_spans.nanos.1..] == right[right_spans.nanos.1..]
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_compare_candidate_states(
+    first_state: &[u8],
+    second_state: &[u8],
+    second_candidate_state_sha256: Vec<u8>,
+) -> Result<PhaseB32aPreparationEvidence, JsError> {
+    if second_candidate_state_sha256.len() != 32 {
+        return Err(JsError::new(
+            "PHASE_B32A_SECOND_CANDIDATE_DIGEST_INVALID",
+        ));
+    }
+    let first = phase_b32a_snapshot_entries(
+        first_state,
+        PhaseB32aSnapshotRole::CanonicalCandidate,
+    )?;
+    let second = phase_b32a_snapshot_entries(
+        second_state,
+        PhaseB32aSnapshotRole::CanonicalCandidate,
+    )?;
+    if first.0.len() != second.0.len() {
+        return Err(JsError::new("PHASE_B32A_PREPARATION_KEY_SET_MISMATCH"));
+    }
+    let mut message_secrets_count = 0usize;
+    let mut differing_storage_key = Vec::new();
+    for ((first_key, first_value), (second_key, second_value)) in
+        first.0.iter().zip(second.0.iter())
+    {
+        if first_key != second_key {
+            return Err(JsError::new("PHASE_B32A_PREPARATION_KEY_SET_MISMATCH"));
+        }
+        let is_message_secrets = first_key.starts_with(b"MessageSecrets");
+        if is_message_secrets {
+            message_secrets_count += 1;
+            let first_spans = phase_b32a_message_secrets_timestamp_spans(first_value)?;
+            let second_spans = phase_b32a_message_secrets_timestamp_spans(second_value)?;
+            if first_value != second_value {
+                if !phase_b32a_values_equal_except_retention_timestamp(
+                    first_value,
+                    first_spans,
+                    second_value,
+                    second_spans,
+                ) {
+                    return Err(JsError::new(
+                        "PHASE_B32A_MESSAGE_SECRETS_NON_TIMESTAMP_DIVERGENCE",
+                    ));
+                }
+                differing_storage_key = first_key.clone();
+            }
+        } else if first_value != second_value {
+            return Err(JsError::new("PHASE_B32A_NON_RETENTION_DIVERGENCE"));
+        }
+    }
+    if message_secrets_count != 1 {
+        return Err(JsError::new(
+            "PHASE_B32A_MESSAGE_SECRETS_ENTRY_COUNT_INVALID",
+        ));
+    }
+    Ok(PhaseB32aPreparationEvidence {
+        classification: if differing_storage_key.is_empty() {
+            PhaseB32aPreparationClassification::ByteIdentical
+        } else {
+            PhaseB32aPreparationClassification::RetentionTimestampBounded
+        },
+        second_candidate_state_sha256,
+        differing_storage_key,
+    })
+}
+
+/// Private, operation-scoped provider. Its raw in-memory store is overwritten
+/// best-effort on every exit before the map is dropped. This does not claim
+/// allocator-page or physical erasure.
+#[cfg(feature = "extensions-draft")]
+struct PhaseB32aPrivateProvider {
+    provider: Provider,
+}
+
+#[cfg(feature = "extensions-draft")]
+impl Drop for PhaseB32aPrivateProvider {
+    fn drop(&mut self) {
+        if let Ok(mut values) = self.provider.inner.storage().values.write() {
+            for (mut key, mut value) in values.drain() {
+                key.fill(0);
+                value.fill(0);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_constant_time_eq_32(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != 32 || right.len() != 32 {
+        return false;
+    }
+    let mut difference = 0u8;
+    for index in 0..32 {
+        difference |= left[index] ^ right[index];
+    }
+    difference == 0
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_read_u64(bytes: &[u8], offset: &mut usize) -> Result<u64, JsError> {
+    let end = offset
+        .checked_add(8)
+        .filter(|end| *end <= bytes.len())
+        .ok_or_else(|| JsError::new("PHASE_B32A_PROVIDER_SNAPSHOT_MALFORMED"))?;
+    let mut encoded = [0u8; 8];
+    encoded.copy_from_slice(&bytes[*offset..end]);
+    *offset = end;
+    Ok(u64::from_be_bytes(encoded))
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_snapshot_entries(
+    bytes: &[u8],
+    role: PhaseB32aSnapshotRole,
+) -> Result<PhaseB32aSnapshotEntries, JsError> {
+    if bytes.is_empty() || bytes.len() > PHASE_B32A_MAX_PROVIDER_BYTES {
+        return Err(JsError::new("PHASE_B32A_PROVIDER_SNAPSHOT_SIZE_INVALID"));
+    }
+    let mut offset = 0usize;
+    let count = usize::try_from(phase_b32a_read_u64(bytes, &mut offset)?)
+        .map_err(|_| JsError::new("PHASE_B32A_PROVIDER_ENTRY_LIMIT"))?;
+    if count > PHASE_B32A_MAX_PROVIDER_ENTRIES {
+        return Err(JsError::new("PHASE_B32A_PROVIDER_ENTRY_LIMIT"));
+    }
+    let mut entries = PhaseB32aSnapshotEntries(Vec::with_capacity(count));
+    let mut seen = PhaseB32aSeenKeys(std::collections::HashSet::with_capacity(count));
+    let mut previous_key: Option<PhaseB32aWipeBytes> = None;
+    for _ in 0..count {
+        let key_len = usize::try_from(phase_b32a_read_u64(bytes, &mut offset)?)
+            .map_err(|_| JsError::new("PHASE_B32A_PROVIDER_SNAPSHOT_MALFORMED"))?;
+        let value_len = usize::try_from(phase_b32a_read_u64(bytes, &mut offset)?)
+            .map_err(|_| JsError::new("PHASE_B32A_PROVIDER_SNAPSHOT_MALFORMED"))?;
+        if key_len > PHASE_B32A_MAX_PROVIDER_KEY_BYTES {
+            return Err(JsError::new("PHASE_B32A_PROVIDER_KEY_LIMIT"));
+        }
+        let key_end = offset
+            .checked_add(key_len)
+            .filter(|end| *end <= bytes.len())
+            .ok_or_else(|| JsError::new("PHASE_B32A_PROVIDER_SNAPSHOT_MALFORMED"))?;
+        let mut key = PhaseB32aWipeBytes(bytes[offset..key_end].to_vec());
+        offset = key_end;
+        let value_end = offset
+            .checked_add(value_len)
+            .filter(|end| *end <= bytes.len())
+            .ok_or_else(|| JsError::new("PHASE_B32A_PROVIDER_SNAPSHOT_MALFORMED"))?;
+        let mut value = PhaseB32aWipeBytes(bytes[offset..value_end].to_vec());
+        offset = value_end;
+        if !seen.0.insert(key.0.clone()) {
+            return Err(JsError::new("PHASE_B32A_PROVIDER_DUPLICATE_KEY"));
+        }
+        if role == PhaseB32aSnapshotRole::CanonicalCandidate {
+            if previous_key
+                .as_ref()
+                .is_some_and(|previous| previous.0.as_slice() >= key.0.as_slice())
+            {
+                return Err(JsError::new("PHASE_B32A_PROVIDER_NONCANONICAL_ORDER"));
+            }
+            previous_key = Some(PhaseB32aWipeBytes(key.0.clone()));
+        }
+        entries
+            .0
+            .push((std::mem::take(&mut key.0), std::mem::take(&mut value.0)));
+    }
+    if offset != bytes.len() {
+        return Err(JsError::new("PHASE_B32A_PROVIDER_TRAILING_BYTES"));
+    }
+    Ok(entries)
+}
+
+#[cfg(feature = "extensions-draft")]
+impl PhaseB32aPrivateProvider {
+    fn from_snapshot(bytes: &[u8], role: PhaseB32aSnapshotRole) -> Result<Self, JsError> {
+        let mut parsed = phase_b32a_snapshot_entries(bytes, role)?;
+        let provider = Provider::new();
+        let mut map = std::collections::HashMap::with_capacity(parsed.0.len());
+        for (key, value) in std::mem::take(&mut parsed.0) {
+            map.insert(key, value);
+        }
+        *provider.inner.storage().values.write().unwrap() = map;
+        Ok(Self { provider })
+    }
+
+    fn canonical_state(&self) -> Result<Vec<u8>, JsError> {
+        let values = self.provider.inner.storage().values.read().unwrap();
+        if values.len() > PHASE_B32A_MAX_PROVIDER_ENTRIES {
+            return Err(JsError::new("PHASE_B32A_PROVIDER_ENTRY_LIMIT"));
+        }
+        let mut entries = values.iter().collect::<Vec<_>>();
+        entries.sort_by(|(left, _), (right, _)| left.as_slice().cmp(right.as_slice()));
+        let mut output = PhaseB32aWipeBytes(Vec::new());
+        output
+            .0
+            .extend_from_slice(&(entries.len() as u64).to_be_bytes());
+        for (key, value) in entries {
+            if key.len() > PHASE_B32A_MAX_PROVIDER_KEY_BYTES {
+                return Err(JsError::new("PHASE_B32A_PROVIDER_KEY_LIMIT"));
+            }
+            output
+                .0
+                .extend_from_slice(&(key.len() as u64).to_be_bytes());
+            output
+                .0
+                .extend_from_slice(&(value.len() as u64).to_be_bytes());
+            output.0.extend_from_slice(key);
+            output.0.extend_from_slice(value);
+            if output.0.len() > PHASE_B32A_MAX_PROVIDER_BYTES {
+                return Err(JsError::new("PHASE_B32A_PROVIDER_SNAPSHOT_SIZE_INVALID"));
+            }
+        }
+        Ok(std::mem::take(&mut output.0))
     }
 }
 
@@ -1229,6 +1862,49 @@ fn phase_b31_leaf_extensions(proof: &[u8]) -> Result<Extensions<LeafNode>, JsErr
 }
 
 #[cfg(feature = "extensions-draft")]
+fn phase_b32a_styx_capabilities() -> Capabilities {
+    phase_b2_capabilities()
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_mdk_capabilities() -> Capabilities {
+    Capabilities::new(
+        None,
+        Some(&[PROBE_CIPHERSUITE]),
+        Some(&[
+            ExtensionType::RequiredCapabilities,
+            ExtensionType::AppDataDictionary,
+        ]),
+        Some(&[ProposalType::AppDataUpdate]),
+        None,
+    )
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_leaf_extensions(proof: &[u8]) -> Result<Extensions<LeafNode>, JsError> {
+    if proof.len() != ACCOUNT_IDENTITY_PROOF_V2_LENGTH {
+        return Err(JsError::new("PHASE_B32A_IDENTITY_PROOF_INVALID"));
+    }
+    let supported = PHASE_B32A_SUPPORTED_COMPONENTS
+        .to_vec()
+        .tls_serialize_detached()
+        .map_err(|_| JsError::new("PHASE_B32A_COMPONENT_ENCODING_FAILED"))?;
+    if phase_b31_decode_component_ids(&supported)
+        .map_err(|_| JsError::new("PHASE_B32A_COMPONENT_ENCODING_FAILED"))?
+        != PHASE_B32A_SUPPORTED_COMPONENTS
+    {
+        return Err(JsError::new("PHASE_B32A_COMPONENT_ENCODING_FAILED"));
+    }
+    let mut dictionary = AppDataDictionary::new();
+    dictionary.insert(0x0001, supported);
+    dictionary.insert(ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID, proof.to_vec());
+    Extensions::single(Extension::AppDataDictionary(
+        AppDataDictionaryExtension::new(dictionary),
+    ))
+    .map_err(|_| JsError::new("PHASE_B32A_LEAF_EXTENSION_CONSTRUCTION_FAILED"))
+}
+
+#[cfg(feature = "extensions-draft")]
 fn phase_b31_check_component_profile(
     component_ids: &[ComponentId],
     supported_component_ids: &[ComponentId],
@@ -1747,6 +2423,29 @@ impl PhaseB2Identity {
         phase_b31_inspect_key_package(&key_package)?;
         Ok(PhaseB31KeyPackage(key_package))
     }
+
+    pub fn b3_2a_key_package(
+        &self,
+        provider: &Provider,
+        proof: &[u8],
+    ) -> Result<PhaseB32aKeyPackage, JsError> {
+        phase_b2_check_identity_proof(&self.account_public_key, proof)
+            .map_err(|_| JsError::new("PHASE_B32A_IDENTITY_PROOF_INVALID"))?;
+        let key_package = OpenMlsKeyPackage::builder()
+            .key_package_lifetime(Lifetime::new(PROBE_KEY_PACKAGE_LIFETIME_SECONDS))
+            .leaf_node_capabilities(phase_b32a_styx_capabilities())
+            .leaf_node_extensions(phase_b32a_leaf_extensions(proof)?)
+            .build(
+                PROBE_CIPHERSUITE,
+                &provider.inner,
+                &self.keypair,
+                self.credential_with_key.clone(),
+            )?
+            .key_package()
+            .clone();
+        phase_b32a_validate_styx_key_package(&key_package)?;
+        Ok(PhaseB32aKeyPackage(key_package))
+    }
 }
 
 #[cfg(feature = "extensions-draft")]
@@ -1940,6 +2639,206 @@ impl PhaseB31KeyPackage {
 }
 
 #[cfg(feature = "extensions-draft")]
+fn phase_b32a_validate_styx_leaf(leaf: &LeafNode) -> Result<Vec<ComponentId>, JsError> {
+    if leaf.credential().serialized_content().len() != 32
+        || leaf.signature_key().as_slice().len() != 32
+    {
+        return Err(JsError::new("PHASE_B32A_STYX_IDENTITY_INVALID"));
+    }
+    if leaf.capabilities() != &phase_b32a_styx_capabilities() {
+        return Err(JsError::new("PHASE_B32A_STYX_CAPABILITIES_INVALID"));
+    }
+    let dictionary = leaf
+        .extensions()
+        .app_data_dictionary()
+        .ok_or_else(|| JsError::new("PHASE_B32A_STYX_DICTIONARY_MISSING"))?
+        .dictionary();
+    let ids = dictionary.entries().map(|entry| entry.id()).collect::<Vec<_>>();
+    if ids != [0x0001, ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID] {
+        return Err(JsError::new("PHASE_B32A_STYX_DICTIONARY_INVALID"));
+    }
+    let supported = phase_b31_decode_component_ids(
+        dictionary
+            .get(&0x0001)
+            .ok_or_else(|| JsError::new("PHASE_B32A_STYX_APP_COMPONENTS_MISSING"))?,
+    )
+    .map_err(|_| JsError::new("PHASE_B32A_STYX_APP_COMPONENTS_INVALID"))?;
+    if supported != PHASE_B32A_SUPPORTED_COMPONENTS {
+        return Err(JsError::new("PHASE_B32A_STYX_APP_COMPONENTS_INVALID"));
+    }
+    let proof = dictionary
+        .get(&ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID)
+        .ok_or_else(|| JsError::new("PHASE_B32A_STYX_PROOF_MISSING"))?;
+    phase_b2_check_identity_proof(leaf.credential().serialized_content(), proof)
+        .map_err(|_| JsError::new("PHASE_B32A_STYX_PROOF_INVALID"))?;
+    Ok(supported)
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_validate_styx_key_package(
+    key_package: &OpenMlsKeyPackage,
+) -> Result<(), JsError> {
+    let lifetime = key_package.life_time();
+    phase_b2_check_key_package_metadata(
+        key_package.ciphersuite(),
+        key_package.last_resort(),
+        lifetime.has_acceptable_range(),
+        lifetime.not_after().saturating_sub(lifetime.not_before()),
+    )
+    .map_err(|_| JsError::new("PHASE_B32A_KEY_PACKAGE_METADATA_INVALID"))?;
+    phase_b32a_validate_styx_leaf(key_package.leaf_node())?;
+    Ok(())
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_validate_mdk_leaf(leaf: &LeafNode) -> Result<Vec<ComponentId>, JsError> {
+    if leaf.credential().serialized_content().len() != 32
+        || leaf.signature_key().as_slice().len() != 32
+    {
+        return Err(JsError::new("PHASE_B32A_MDK_IDENTITY_INVALID"));
+    }
+    if leaf.capabilities() != &phase_b32a_mdk_capabilities() {
+        return Err(JsError::new("PHASE_B32A_MDK_CAPABILITIES_INVALID"));
+    }
+    let dictionary = leaf
+        .extensions()
+        .app_data_dictionary()
+        .ok_or_else(|| JsError::new("PHASE_B32A_MDK_DICTIONARY_MISSING"))?
+        .dictionary();
+    let ids = dictionary.entries().map(|entry| entry.id()).collect::<Vec<_>>();
+    if ids != [0x0001, 0x0002, ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID] {
+        return Err(JsError::new("PHASE_B32A_MDK_DICTIONARY_INVALID"));
+    }
+    let supported_bytes = dictionary
+        .get(&0x0001)
+        .ok_or_else(|| JsError::new("PHASE_B32A_MDK_APP_COMPONENTS_MISSING"))?;
+    let supported = phase_b31_decode_component_ids(supported_bytes)
+        .map_err(|_| JsError::new("PHASE_B32A_MDK_APP_COMPONENTS_INVALID"))?;
+    if supported != PHASE_B32A_SUPPORTED_COMPONENTS {
+        return Err(JsError::new("PHASE_B32A_MDK_APP_COMPONENTS_INVALID"));
+    }
+    let empty_components = Vec::<ComponentId>::new()
+        .tls_serialize_detached()
+        .map_err(|_| JsError::new("PHASE_B32A_MDK_SAFE_AAD_INVALID"))?;
+    if dictionary
+        .get(&0x0002)
+        .ok_or_else(|| JsError::new("PHASE_B32A_MDK_SAFE_AAD_MISSING"))?
+        != empty_components
+    {
+        return Err(JsError::new("PHASE_B32A_MDK_SAFE_AAD_INVALID"));
+    }
+    let proof = dictionary
+        .get(&ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID)
+        .ok_or_else(|| JsError::new("PHASE_B32A_MDK_PROOF_MISSING"))?;
+    phase_b2_check_identity_proof(leaf.credential().serialized_content(), proof)
+        .map_err(|_| JsError::new("PHASE_B32A_MDK_PROOF_INVALID"))?;
+    Ok(supported)
+}
+
+/// Exact Styx B3.2a KeyPackage. It is additive and does not relabel B3.1 bytes.
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB32aKeyPackage(OpenMlsKeyPackage);
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB32aKeyPackage {
+    pub fn to_framed_bytes(&self) -> Result<Vec<u8>, JsError> {
+        MlsMessageOut::from(self.0.clone())
+            .tls_serialize_detached()
+            .map_err(|_| JsError::new("PHASE_B32A_KEY_PACKAGE_FRAMING_FAILED"))
+    }
+
+    pub fn from_framed_bytes(bytes: &[u8]) -> Result<PhaseB32aKeyPackage, JsError> {
+        if bytes.is_empty() || bytes.len() > PHASE_B32_MAX_KEY_PACKAGE_BYTES {
+            return Err(JsError::new("PHASE_B32A_KEY_PACKAGE_SIZE_INVALID"));
+        }
+        let message = MlsMessageIn::tls_deserialize_exact(bytes)
+            .map_err(|_| JsError::new("PHASE_B32A_KEY_PACKAGE_FRAMING_INVALID"))?;
+        let input = match message.extract() {
+            MlsMessageBodyIn::KeyPackage(key_package) => key_package,
+            _ => return Err(JsError::new("PHASE_B32A_NOT_A_KEY_PACKAGE")),
+        };
+        let key_package = input
+            .validate(
+                &openmls_rust_crypto::RustCrypto::default(),
+                openmls::prelude::ProtocolVersion::Mls10,
+            )
+            .map_err(|_| JsError::new("PHASE_B32A_KEY_PACKAGE_SIGNATURE_INVALID"))?;
+        phase_b32a_validate_styx_key_package(&key_package)?;
+        Ok(Self(key_package))
+    }
+
+    pub fn ciphersuite_id(&self) -> u16 {
+        self.0.ciphersuite().into()
+    }
+    pub fn credential_identity(&self) -> Vec<u8> {
+        self.0.leaf_node().credential().serialized_content().to_vec()
+    }
+    pub fn leaf_signature_key(&self) -> Vec<u8> {
+        self.0.leaf_node().signature_key().as_slice().to_vec()
+    }
+    pub fn identity_proof(&self) -> Vec<u8> {
+        self.0
+            .leaf_node()
+            .extensions()
+            .app_data_dictionary()
+            .expect("validated B3.2a KeyPackage")
+            .dictionary()
+            .get(&ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID)
+            .expect("validated B3.2a KeyPackage")
+            .to_vec()
+    }
+    pub fn component_ids(&self) -> Vec<u16> {
+        self.0
+            .leaf_node()
+            .extensions()
+            .app_data_dictionary()
+            .expect("validated B3.2a KeyPackage")
+            .dictionary()
+            .entries()
+            .map(|entry| entry.id())
+            .collect()
+    }
+    pub fn supported_component_ids(&self) -> Result<Vec<u16>, JsError> {
+        phase_b31_decode_component_ids(
+            self.0
+                .leaf_node()
+                .extensions()
+                .app_data_dictionary()
+                .expect("validated B3.2a KeyPackage")
+                .dictionary()
+                .get(&0x0001)
+                .expect("validated B3.2a KeyPackage"),
+        )
+        .map_err(JsError::new)
+    }
+    pub fn capability_extension_ids(&self) -> Vec<u16> {
+        self.0
+            .leaf_node()
+            .capabilities()
+            .extensions()
+            .iter()
+            .copied()
+            .map(u16::from)
+            .collect()
+    }
+    pub fn capability_proposal_ids(&self) -> Vec<u16> {
+        self.0
+            .leaf_node()
+            .capabilities()
+            .proposals()
+            .iter()
+            .copied()
+            .map(u16::from)
+            .collect()
+    }
+    pub fn is_last_resort(&self) -> bool {
+        self.0.last_resort()
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
 #[wasm_bindgen]
 pub struct PhaseB2RatchetTree(RatchetTreeIn);
 
@@ -2054,6 +2953,129 @@ pub struct PhaseB32Group {
     mls_group: MlsGroup,
     provider_instance_id: u32,
     provider_restore_generation: u32,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PhaseB32aLeafProfile {
+    StyxB32a,
+    MdkPin9396adb,
+}
+
+#[cfg(feature = "extensions-draft")]
+impl PhaseB32aLeafProfile {
+    fn tag(self) -> &'static str {
+        match self {
+            Self::StyxB32a => "STYX_B32A",
+            Self::MdkPin9396adb => "MDK_PIN_9396ADB",
+        }
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[derive(Clone, PartialEq, Eq)]
+struct PhaseB32aMember {
+    member: PhaseB2Member,
+    profile: PhaseB32aLeafProfile,
+    profile_sha256: Vec<u8>,
+    lists_default_required_capabilities: bool,
+    emits_empty_safe_aad: bool,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+#[derive(Clone, PartialEq, Eq)]
+pub struct PhaseB32aJoinProjection {
+    group_id: Vec<u8>,
+    epoch: u64,
+    ciphersuite_id: u16,
+    members: Vec<PhaseB32aMember>,
+    own_leaf_index: u32,
+    welcome_sender_leaf_index: u32,
+    welcome_sender_identity: Vec<u8>,
+    welcome_sender_signature_key: Vec<u8>,
+    group_context_tls: Vec<u8>,
+    group_context: PhaseB31GroupContext,
+    group_context_sha256: Vec<u8>,
+    verified_leaf_digest: Vec<u8>,
+    welcome_sha256: Vec<u8>,
+    expected_key_package_sha256: Vec<u8>,
+    predecessor_state_sha256: Vec<u8>,
+    candidate_state_sha256: Vec<u8>,
+    projection_sha256: Vec<u8>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[derive(Clone)]
+struct PhaseB32aWelcomeBinding {
+    expected_author: Vec<u8>,
+    predecessor_state_sha256: Vec<u8>,
+    welcome_sha256: Vec<u8>,
+    expected_key_package_sha256: Vec<u8>,
+    candidate_state_sha256: Vec<u8>,
+    projection_sha256: Vec<u8>,
+    preparation_classification: PhaseB32aPreparationClassification,
+    second_candidate_state_sha256: Vec<u8>,
+    differing_storage_key: Vec<u8>,
+}
+
+/// One-use B3.2a candidate. It owns no live Provider or identity handle.
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB32aPendingWelcome {
+    binding: Option<PhaseB32aWelcomeBinding>,
+    candidate_state: PhaseB32aWipeBytes,
+    projection: PhaseB32aJoinProjection,
+    preparation_classification: PhaseB32aPreparationClassification,
+    second_candidate_state_sha256: Vec<u8>,
+    differing_storage_key: Vec<u8>,
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_release_failure(
+    pending: &PhaseB32aPendingWelcome,
+    binding: &PhaseB32aWelcomeBinding,
+    projection_sha256: &[u8],
+    expected_author: &[u8],
+) -> Option<&'static str> {
+    if expected_author != binding.expected_author {
+        return Some("PHASE_B32A_WELCOME_AUTHOR_MISMATCH");
+    }
+    if !phase_b32a_constant_time_eq_32(projection_sha256, &binding.projection_sha256) {
+        return Some("PHASE_B32A_PROJECTION_DIGEST_MISMATCH");
+    }
+    if pending.projection.predecessor_state_sha256 != binding.predecessor_state_sha256
+        || pending.projection.welcome_sha256 != binding.welcome_sha256
+        || pending.projection.expected_key_package_sha256
+            != binding.expected_key_package_sha256
+        || pending.projection.candidate_state_sha256 != binding.candidate_state_sha256
+        || pending.projection.projection_sha256 != binding.projection_sha256
+        || pending.preparation_classification != binding.preparation_classification
+        || pending.second_candidate_state_sha256 != binding.second_candidate_state_sha256
+        || pending.differing_storage_key != binding.differing_storage_key
+    {
+        return Some("PHASE_B32A_HANDLE_BINDING_MISMATCH");
+    }
+    let digest = match phase_b32_sha256(
+        &openmls_rust_crypto::RustCrypto::default(),
+        &pending.candidate_state.0,
+        "PHASE_B32A_CANDIDATE_DIGEST_FAILED",
+    ) {
+        Ok(digest) => digest,
+        Err(_) => return Some("PHASE_B32A_CANDIDATE_DIGEST_FAILED"),
+    };
+    if !phase_b32a_constant_time_eq_32(&digest, &binding.candidate_state_sha256) {
+        return Some("PHASE_B32A_CANDIDATE_DIGEST_MISMATCH");
+    }
+    None
+}
+
+/// Load-only B3.2a group whose Provider is private and operation-scoped.
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB32aGroup {
+    provider: PhaseB32aPrivateProvider,
+    mls_group: MlsGroup,
 }
 
 #[cfg(feature = "extensions-draft")]
@@ -2432,6 +3454,286 @@ fn phase_b32_projection_from_group(
         crypto,
         &payload,
         "PHASE_B32_PROJECTION_DIGEST_FAILED",
+    )?;
+    Ok(projection)
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_profile_digest(
+    crypto: &impl OpenMlsCrypto,
+    leaf: &LeafNode,
+    profile: PhaseB32aLeafProfile,
+) -> Result<Vec<u8>, JsError> {
+    let capability_bytes = leaf
+        .capabilities()
+        .tls_serialize_detached()
+        .map_err(|_| JsError::new("PHASE_B32A_PROFILE_SERIALIZATION_FAILED"))?;
+    let extension_bytes = leaf
+        .extensions()
+        .tls_serialize_detached()
+        .map_err(|_| JsError::new("PHASE_B32A_PROFILE_SERIALIZATION_FAILED"))?;
+    let mut payload = Vec::new();
+    payload.extend_from_slice(PHASE_B32A_LEAF_PROFILE_DOMAIN);
+    payload.push(0);
+    phase_b32_append_bytes(&mut payload, profile.tag().as_bytes())?;
+    phase_b32_append_bytes(&mut payload, &capability_bytes)?;
+    phase_b32_append_bytes(&mut payload, &extension_bytes)?;
+    phase_b32_sha256(crypto, &payload, "PHASE_B32A_PROFILE_DIGEST_FAILED")
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_member_at(
+    crypto: &impl OpenMlsCrypto,
+    group: &MlsGroup,
+    leaf_index: u32,
+) -> Result<PhaseB32aMember, JsError> {
+    let index = openmls::prelude::LeafNodeIndex::new(leaf_index);
+    let metadata = group
+        .members()
+        .find(|member| member.index == index)
+        .ok_or_else(|| JsError::new("PHASE_B32A_MEMBER_ABSENT"))?;
+    let leaf = group
+        .public_group()
+        .leaf(index)
+        .ok_or_else(|| JsError::new("PHASE_B32A_MEMBER_LEAF_ABSENT"))?;
+
+    let (profile, supported_component_ids, lists_default, emits_empty_safe_aad) =
+        if leaf.capabilities() == &phase_b32a_styx_capabilities() {
+            (
+                PhaseB32aLeafProfile::StyxB32a,
+                phase_b32a_validate_styx_leaf(leaf)?,
+                false,
+                false,
+            )
+        } else if leaf.capabilities() == &phase_b32a_mdk_capabilities() {
+            (
+                PhaseB32aLeafProfile::MdkPin9396adb,
+                phase_b32a_validate_mdk_leaf(leaf)?,
+                true,
+                true,
+            )
+        } else {
+            return Err(JsError::new("PHASE_B32A_LEAF_PROFILE_UNKNOWN_OR_HYBRID"));
+        };
+
+    let dictionary = leaf
+        .extensions()
+        .app_data_dictionary()
+        .ok_or_else(|| JsError::new("PHASE_B32A_MEMBER_DICTIONARY_MISSING"))?
+        .dictionary();
+    let proof = dictionary
+        .get(&ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID)
+        .ok_or_else(|| JsError::new("PHASE_B32A_MEMBER_PROOF_MISSING"))?;
+    let credential_identity = leaf.credential().serialized_content().to_vec();
+    let leaf_signature_key = leaf.signature_key().as_slice().to_vec();
+    if credential_identity != metadata.credential.serialized_content()
+        || leaf_signature_key != metadata.signature_key
+    {
+        return Err(JsError::new("PHASE_B32A_MEMBER_METADATA_MISMATCH"));
+    }
+    let member = PhaseB2Member {
+        leaf_index,
+        credential_identity,
+        leaf_signature_key,
+        identity_proof: proof.to_vec(),
+        component_ids: dictionary.entries().map(|entry| entry.id()).collect(),
+        supported_component_ids,
+    };
+    Ok(PhaseB32aMember {
+        profile,
+        profile_sha256: phase_b32a_profile_digest(crypto, leaf, profile)?,
+        member,
+        lists_default_required_capabilities: lists_default,
+        emits_empty_safe_aad,
+    })
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_group_state(
+    crypto: &impl OpenMlsCrypto,
+    group: &MlsGroup,
+) -> Result<(Vec<PhaseB32aMember>, Vec<u8>, PhaseB31GroupContext), JsError> {
+    if group.ciphersuite() != PROBE_CIPHERSUITE {
+        return Err(JsError::new("PHASE_B32A_CIPHERSUITE_MISMATCH"));
+    }
+    if !group.is_active() || group.own_leaf_node().is_none() {
+        return Err(JsError::new("PHASE_B32A_GROUP_NOT_ACTIVE"));
+    }
+    if group.group_id().as_slice().is_empty() || group.group_id().as_slice().len() > 64 {
+        return Err(JsError::new("PHASE_B32A_GROUP_ID_INVALID"));
+    }
+    if group.members().count() != 2 {
+        return Err(JsError::new("PHASE_B32A_EXACTLY_TWO_MEMBERS_REQUIRED"));
+    }
+    let mut members = Vec::with_capacity(2);
+    for member in group.members() {
+        members.push(phase_b32a_member_at(crypto, group, member.index.u32())?);
+    }
+    members.sort_by_key(|member| member.member.leaf_index);
+    let identities = members
+        .iter()
+        .map(|member| member.member.credential_identity.clone())
+        .collect::<Vec<_>>();
+    let context = group.public_group().group_context();
+    if context.tls_serialized_len() > PHASE_B2_MAX_GROUP_CONTEXT_BYTES {
+        return Err(JsError::new("PHASE_B32A_GROUP_CONTEXT_LIMIT"));
+    }
+    let context_tls = context
+        .tls_serialize_detached()
+        .map_err(|_| JsError::new("PHASE_B32A_GROUP_CONTEXT_SERIALIZATION_FAILED"))?;
+    let projected = phase_b31_validate_group_context_extensions(context.extensions(), &identities)
+        .map_err(|_| JsError::new("PHASE_B32A_GROUP_CONTEXT_INVALID"))?;
+    Ok((members, context_tls, projected))
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_verified_leaf_digest(
+    crypto: &impl OpenMlsCrypto,
+    members: &[PhaseB32aMember],
+) -> Result<Vec<u8>, JsError> {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(PHASE_B32_VERIFIED_LEAF_DOMAIN);
+    payload.push(0);
+    payload.extend_from_slice(&(members.len() as u32).to_be_bytes());
+    for projected in members {
+        let member = &projected.member;
+        payload.extend_from_slice(&member.leaf_index.to_be_bytes());
+        payload.extend_from_slice(&member.credential_identity);
+        payload.extend_from_slice(&member.leaf_signature_key);
+        payload.extend_from_slice(&member.identity_proof);
+        phase_b32_append_bytes(&mut payload, projected.profile.tag().as_bytes())?;
+        payload.extend_from_slice(&projected.profile_sha256);
+    }
+    phase_b32_sha256(crypto, &payload, "PHASE_B32A_VERIFIED_LEAF_DIGEST_FAILED")
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_projection_payload(
+    projection: &PhaseB32aJoinProjection,
+) -> Result<Vec<u8>, JsError> {
+    let mut output = Vec::new();
+    output.extend_from_slice(PHASE_B32A_PROJECTION_DOMAIN);
+    output.push(0);
+    output.extend_from_slice(&PHASE_B32A_PROJECTION_VERSION.to_be_bytes());
+    phase_b32_append_bytes(&mut output, &projection.group_id)?;
+    output.extend_from_slice(&projection.epoch.to_be_bytes());
+    output.extend_from_slice(&projection.ciphersuite_id.to_be_bytes());
+    output.extend_from_slice(&(projection.members.len() as u32).to_be_bytes());
+    for projected in &projection.members {
+        let member = &projected.member;
+        output.extend_from_slice(&member.leaf_index.to_be_bytes());
+        phase_b32_append_bytes(&mut output, &member.credential_identity)?;
+        phase_b32_append_bytes(&mut output, &member.leaf_signature_key)?;
+        phase_b32_append_bytes(&mut output, &member.identity_proof)?;
+        phase_b32_append_components(&mut output, &member.component_ids)?;
+        phase_b32_append_components(&mut output, &member.supported_component_ids)?;
+        phase_b32_append_bytes(&mut output, projected.profile.tag().as_bytes())?;
+        output.extend_from_slice(&projected.profile_sha256);
+        output.push(u8::from(projected.lists_default_required_capabilities));
+        output.push(u8::from(projected.emits_empty_safe_aad));
+    }
+    output.extend_from_slice(&projection.own_leaf_index.to_be_bytes());
+    output.extend_from_slice(&projection.welcome_sender_leaf_index.to_be_bytes());
+    phase_b32_append_bytes(&mut output, &projection.welcome_sender_identity)?;
+    phase_b32_append_bytes(&mut output, &projection.welcome_sender_signature_key)?;
+    phase_b32_append_components(&mut output, &projection.group_context.required_components)?;
+    phase_b32_append_bytes(&mut output, &projection.group_context.group_profile.name)?;
+    phase_b32_append_bytes(&mut output, &projection.group_context.group_profile.description)?;
+    phase_b32_append_bytes(&mut output, &projection.group_context.administrator_policy)?;
+    phase_b32_append_bytes(&mut output, &projection.group_context.lifecycle)?;
+    for digest in [
+        &projection.group_context_sha256,
+        &projection.verified_leaf_digest,
+        &projection.welcome_sha256,
+        &projection.expected_key_package_sha256,
+        &projection.predecessor_state_sha256,
+        &projection.candidate_state_sha256,
+    ] {
+        if digest.len() != 32 {
+            return Err(JsError::new("PHASE_B32A_PROJECTION_DIGEST_INVALID"));
+        }
+        output.extend_from_slice(digest);
+    }
+    Ok(output)
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_projection_from_group(
+    crypto: &impl OpenMlsCrypto,
+    group: &MlsGroup,
+    welcome_sender_leaf_index: u32,
+    expected_author: &[u8],
+    expected_own_identity: &[u8],
+    expected_own_signature_key: &[u8],
+    welcome_sha256: &[u8],
+    expected_key_package_sha256: &[u8],
+    predecessor_state_sha256: &[u8],
+    candidate_state_sha256: &[u8],
+) -> Result<PhaseB32aJoinProjection, JsError> {
+    if expected_author.len() != 32
+        || expected_own_identity.len() != 32
+        || expected_own_signature_key.len() != 32
+    {
+        return Err(JsError::new("PHASE_B32A_IDENTITY_LOCATOR_INVALID"));
+    }
+    let (members, group_context_tls, group_context) = phase_b32a_group_state(crypto, group)?;
+    let own_leaf_index = group.own_leaf_index().u32();
+    let own = members
+        .iter()
+        .find(|member| member.member.leaf_index == own_leaf_index)
+        .ok_or_else(|| JsError::new("PHASE_B32A_OWN_LEAF_ABSENT"))?;
+    if own.profile != PhaseB32aLeafProfile::StyxB32a
+        || own.member.credential_identity != expected_own_identity
+        || own.member.leaf_signature_key != expected_own_signature_key
+    {
+        return Err(JsError::new("PHASE_B32A_OWN_PROFILE_OR_IDENTITY_MISMATCH"));
+    }
+    let sender = members
+        .iter()
+        .find(|member| member.member.leaf_index == welcome_sender_leaf_index)
+        .ok_or_else(|| JsError::new("PHASE_B32A_WELCOME_AUTHOR_NOT_MEMBER"))?;
+    if sender.profile != PhaseB32aLeafProfile::MdkPin9396adb
+        || sender.member.credential_identity != expected_author
+    {
+        return Err(JsError::new("PHASE_B32A_WELCOME_AUTHOR_PROFILE_MISMATCH"));
+    }
+    let admins = phase_b2_decode_admin_policy_recovery(&group_context.administrator_policy)
+        .map_err(|_| JsError::new("PHASE_B32A_ADMIN_POLICY_INVALID"))?;
+    if !admins.iter().any(|admin| admin == expected_author) {
+        return Err(JsError::new("PHASE_B32A_WELCOME_AUTHOR_NOT_ADMIN"));
+    }
+    let welcome_sender_identity = sender.member.credential_identity.clone();
+    let welcome_sender_signature_key = sender.member.leaf_signature_key.clone();
+    let group_context_sha256 = phase_b32_sha256(
+        crypto,
+        &group_context_tls,
+        "PHASE_B32A_GROUP_CONTEXT_DIGEST_FAILED",
+    )?;
+    let verified_leaf_digest = phase_b32a_verified_leaf_digest(crypto, &members)?;
+    let mut projection = PhaseB32aJoinProjection {
+        group_id: group.group_id().to_vec(),
+        epoch: group.epoch().as_u64(),
+        ciphersuite_id: group.ciphersuite().into(),
+        members,
+        own_leaf_index,
+        welcome_sender_leaf_index,
+        welcome_sender_identity,
+        welcome_sender_signature_key,
+        group_context_tls,
+        group_context,
+        group_context_sha256,
+        verified_leaf_digest,
+        welcome_sha256: welcome_sha256.to_vec(),
+        expected_key_package_sha256: expected_key_package_sha256.to_vec(),
+        predecessor_state_sha256: predecessor_state_sha256.to_vec(),
+        candidate_state_sha256: candidate_state_sha256.to_vec(),
+        projection_sha256: Vec::new(),
+    };
+    let payload = phase_b32a_projection_payload(&projection)?;
+    projection.projection_sha256 = phase_b32_sha256(
+        crypto,
+        &payload,
+        "PHASE_B32A_PROJECTION_DIGEST_FAILED",
     )?;
     Ok(projection)
 }
@@ -3008,6 +4310,74 @@ impl PhaseB32JoinProjection {
     pub fn projection_sha256(&self) -> Vec<u8> {
         self.projection_sha256.clone()
     }
+}
+
+#[cfg(feature = "extensions-draft")]
+impl PhaseB32aJoinProjection {
+    fn member(&self, index: usize) -> Result<&PhaseB32aMember, JsError> {
+        self.members
+            .get(index)
+            .ok_or_else(|| JsError::new("PHASE_B32A_PROJECTION_MEMBER_INDEX_INVALID"))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB32aJoinProjection {
+    pub fn domain(&self) -> String { "STYX-B32A-JOIN-PROJECTION-v1".into() }
+    pub fn version(&self) -> u16 { PHASE_B32A_PROJECTION_VERSION }
+    pub fn provider_format(&self) -> String { "phase-b32a-provider-canonical-v1".into() }
+    pub fn group_id(&self) -> Vec<u8> { self.group_id.clone() }
+    pub fn epoch(&self) -> u64 { self.epoch }
+    pub fn ciphersuite_id(&self) -> u16 { self.ciphersuite_id }
+    pub fn member_count(&self) -> u32 { self.members.len() as u32 }
+    pub fn member_leaf_index(&self, index: usize) -> Result<u32, JsError> {
+        self.member(index).map(|member| member.member.leaf_index)
+    }
+    pub fn member_identity(&self, index: usize) -> Result<Vec<u8>, JsError> {
+        self.member(index).map(|member| member.member.credential_identity.clone())
+    }
+    pub fn member_signature_key(&self, index: usize) -> Result<Vec<u8>, JsError> {
+        self.member(index).map(|member| member.member.leaf_signature_key.clone())
+    }
+    pub fn member_identity_proof(&self, index: usize) -> Result<Vec<u8>, JsError> {
+        self.member(index).map(|member| member.member.identity_proof.clone())
+    }
+    pub fn member_component_ids(&self, index: usize) -> Result<Vec<u16>, JsError> {
+        self.member(index).map(|member| member.member.component_ids.clone())
+    }
+    pub fn member_supported_component_ids(&self, index: usize) -> Result<Vec<u16>, JsError> {
+        self.member(index).map(|member| member.member.supported_component_ids.clone())
+    }
+    pub fn member_profile(&self, index: usize) -> Result<String, JsError> {
+        self.member(index).map(|member| member.profile.tag().into())
+    }
+    pub fn member_profile_sha256(&self, index: usize) -> Result<Vec<u8>, JsError> {
+        self.member(index).map(|member| member.profile_sha256.clone())
+    }
+    pub fn member_lists_default_required_capabilities(&self, index: usize) -> Result<bool, JsError> {
+        self.member(index).map(|member| member.lists_default_required_capabilities)
+    }
+    pub fn member_emits_empty_safe_aad(&self, index: usize) -> Result<bool, JsError> {
+        self.member(index).map(|member| member.emits_empty_safe_aad)
+    }
+    pub fn own_leaf_index(&self) -> u32 { self.own_leaf_index }
+    pub fn welcome_sender_leaf_index(&self) -> u32 { self.welcome_sender_leaf_index }
+    pub fn welcome_sender_identity(&self) -> Vec<u8> { self.welcome_sender_identity.clone() }
+    pub fn welcome_sender_signature_key(&self) -> Vec<u8> { self.welcome_sender_signature_key.clone() }
+    pub fn group_context_tls(&self) -> Vec<u8> { self.group_context_tls.clone() }
+    pub fn required_component_ids(&self) -> Vec<u16> { self.group_context.required_components.clone() }
+    pub fn group_profile_name(&self) -> Vec<u8> { self.group_context.group_profile.name.clone() }
+    pub fn group_profile_description(&self) -> Vec<u8> { self.group_context.group_profile.description.clone() }
+    pub fn administrator_policy(&self) -> Vec<u8> { self.group_context.administrator_policy.clone() }
+    pub fn lifecycle(&self) -> Vec<u8> { self.group_context.lifecycle.clone() }
+    pub fn group_context_sha256(&self) -> Vec<u8> { self.group_context_sha256.clone() }
+    pub fn verified_leaf_digest(&self) -> Vec<u8> { self.verified_leaf_digest.clone() }
+    pub fn welcome_sha256(&self) -> Vec<u8> { self.welcome_sha256.clone() }
+    pub fn expected_key_package_sha256(&self) -> Vec<u8> { self.expected_key_package_sha256.clone() }
+    pub fn predecessor_state_sha256(&self) -> Vec<u8> { self.predecessor_state_sha256.clone() }
+    pub fn candidate_state_sha256(&self) -> Vec<u8> { self.candidate_state_sha256.clone() }
+    pub fn projection_sha256(&self) -> Vec<u8> { self.projection_sha256.clone() }
 }
 
 #[cfg(feature = "extensions-draft")]
@@ -4201,6 +5571,378 @@ impl PhaseB32Group {
             return Err(JsError::new("PHASE_B32_GROUP_PROVIDER_RESTORED"));
         }
         Ok(())
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_prepare_once(
+    predecessor_state: &[u8],
+    expected_predecessor_sha256: &[u8],
+    account_identity: &[u8],
+    leaf_signature_key: &[u8],
+    welcome_bytes: &[u8],
+    expected_key_package_bytes: &[u8],
+    expected_author: &[u8],
+) -> Result<(PhaseB32aWipeBytes, PhaseB32aJoinProjection), JsError> {
+    if welcome_bytes.is_empty() || welcome_bytes.len() > PHASE_B32_MAX_WELCOME_BYTES {
+        return Err(JsError::new("PHASE_B32A_WELCOME_SIZE_INVALID"));
+    }
+    if expected_key_package_bytes.is_empty()
+        || expected_key_package_bytes.len() > PHASE_B32_MAX_KEY_PACKAGE_BYTES
+    {
+        return Err(JsError::new("PHASE_B32A_KEY_PACKAGE_SIZE_INVALID"));
+    }
+    if expected_predecessor_sha256.len() != 32
+        || account_identity.len() != 32
+        || leaf_signature_key.len() != 32
+        || expected_author.len() != 32
+    {
+        return Err(JsError::new("PHASE_B32A_INPUT_LOCATOR_INVALID"));
+    }
+    let standalone_crypto = openmls_rust_crypto::RustCrypto::default();
+    let predecessor_state_sha256 = phase_b32_sha256(
+        &standalone_crypto,
+        predecessor_state,
+        "PHASE_B32A_PREDECESSOR_DIGEST_FAILED",
+    )?;
+    if !phase_b32a_constant_time_eq_32(
+        &predecessor_state_sha256,
+        expected_predecessor_sha256,
+    ) {
+        return Err(JsError::new("PHASE_B32A_PREDECESSOR_DIGEST_MISMATCH"));
+    }
+
+    let private = PhaseB32aPrivateProvider::from_snapshot(
+        predecessor_state,
+        PhaseB32aSnapshotRole::Predecessor,
+    )?;
+    let identity = PhaseB2Identity::load(
+        &private.provider,
+        account_identity,
+        leaf_signature_key,
+    )?
+    .ok_or_else(|| JsError::new("PHASE_B32A_IDENTITY_KEY_NOT_FOUND"))?;
+    if identity.account_public_key != account_identity || identity.keypair.public() != leaf_signature_key {
+        return Err(JsError::new("PHASE_B32A_IDENTITY_KEY_MISMATCH"));
+    }
+
+    let expected_key_package = PhaseB32aKeyPackage::from_framed_bytes(expected_key_package_bytes)
+        .map_err(|_| JsError::new("PHASE_B32A_EXPECTED_KEY_PACKAGE_INVALID"))?;
+    if expected_key_package.0.last_resort() {
+        return Err(JsError::new("PHASE_B32A_LAST_RESORT_KEY_PACKAGE_REJECTED"));
+    }
+    if expected_key_package.credential_identity() != account_identity
+        || expected_key_package.leaf_signature_key() != leaf_signature_key
+    {
+        return Err(JsError::new("PHASE_B32A_OWN_KEY_PACKAGE_IDENTITY_MISMATCH"));
+    }
+
+    let message = MlsMessageIn::tls_deserialize_exact(welcome_bytes)
+        .map_err(|_| JsError::new("PHASE_B32A_WELCOME_FRAMING_INVALID"))?;
+    let welcome = match message.extract() {
+        MlsMessageBodyIn::Welcome(welcome) => welcome,
+        _ => return Err(JsError::new("PHASE_B32A_NOT_A_WELCOME")),
+    };
+    if welcome.ciphersuite() != PROBE_CIPHERSUITE {
+        return Err(JsError::new("PHASE_B32A_CIPHERSUITE_MISMATCH"));
+    }
+    let crypto = private.provider.as_ref().crypto();
+    let welcome_sha256 = phase_b32_sha256(
+        crypto,
+        welcome_bytes,
+        "PHASE_B32A_WELCOME_DIGEST_FAILED",
+    )?;
+    let expected_key_package_sha256 = phase_b32_sha256(
+        crypto,
+        expected_key_package_bytes,
+        "PHASE_B32A_KEY_PACKAGE_DIGEST_FAILED",
+    )?;
+    let expected_key_package_ref = expected_key_package
+        .0
+        .hash_ref(crypto)
+        .map_err(|_| JsError::new("PHASE_B32A_KEY_PACKAGE_REFERENCE_FAILED"))?;
+    if !welcome
+        .secrets()
+        .iter()
+        .any(|secret| secret.new_member() == expected_key_package_ref)
+    {
+        return Err(JsError::new("PHASE_B32A_KEY_PACKAGE_MISMATCH"));
+    }
+    let stored_key_package: openmls::key_packages::KeyPackageBundle = private
+        .provider
+        .inner
+        .storage()
+        .key_package(&expected_key_package_ref)
+        .map_err(|_| JsError::new("PHASE_B32A_KEY_PACKAGE_STORAGE_FAILED"))?
+        .ok_or_else(|| JsError::new("PHASE_B32A_KEY_PACKAGE_NOT_AVAILABLE"))?;
+    phase_b32a_validate_styx_key_package(stored_key_package.key_package())
+        .map_err(|_| JsError::new("PHASE_B32A_STORED_KEY_PACKAGE_INVALID"))?;
+    let stored_key_package_bytes = MlsMessageOut::from(stored_key_package.key_package().clone())
+        .tls_serialize_detached()
+        .map_err(|_| JsError::new("PHASE_B32A_KEY_PACKAGE_SERIALIZATION_FAILED"))?;
+    if stored_key_package_bytes != expected_key_package_bytes {
+        return Err(JsError::new("PHASE_B32A_KEY_PACKAGE_MISMATCH"));
+    }
+
+    let config = MlsGroupJoinConfig::builder()
+        .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+        .build();
+    let processed = ProcessedWelcome::new_from_welcome(&private.provider.inner, &config, welcome)
+        .map_err(phase_b32_map_welcome_error)?;
+    let remaining: Option<openmls::key_packages::KeyPackageBundle> = private
+        .provider
+        .inner
+        .storage()
+        .key_package(&expected_key_package_ref)
+        .map_err(|_| JsError::new("PHASE_B32A_KEY_PACKAGE_STORAGE_FAILED"))?;
+    if remaining.is_some() {
+        return Err(JsError::new("PHASE_B32A_KEY_PACKAGE_NOT_CONSUMED"));
+    }
+    let staged = processed
+        .into_staged_welcome(&private.provider.inner, None)
+        .map_err(phase_b32_map_welcome_error)?;
+    let welcome_sender_leaf_index = staged.welcome_sender_index().u32();
+    let staged_sender = staged
+        .welcome_sender()
+        .map_err(|_| JsError::new("PHASE_B32A_WELCOME_AUTHOR_INVALID"))?;
+    phase_b32a_validate_mdk_leaf(staged_sender)
+        .map_err(|_| JsError::new("PHASE_B32A_WELCOME_AUTHOR_PROFILE_INVALID"))?;
+    if staged_sender.credential().serialized_content() != expected_author {
+        return Err(JsError::new("PHASE_B32A_WELCOME_AUTHOR_MISMATCH"));
+    }
+    let group_id = staged.group_context().group_id().to_vec();
+    if group_id.is_empty() || group_id.len() > 64 {
+        return Err(JsError::new("PHASE_B32A_GROUP_ID_INVALID"));
+    }
+    if MlsGroup::load(
+        private.provider.inner.storage(),
+        &GroupId::from_slice(&group_id),
+    )?
+    .is_some()
+    {
+        return Err(JsError::new("PHASE_B32A_GROUP_ID_COLLISION"));
+    }
+    let group = staged
+        .into_group(&private.provider.inner)
+        .map_err(phase_b32_map_welcome_error)?;
+    let candidate_state = PhaseB32aWipeBytes(private.canonical_state()?);
+    let candidate_state_sha256 = phase_b32_sha256(
+        crypto,
+        &candidate_state.0,
+        "PHASE_B32A_CANDIDATE_DIGEST_FAILED",
+    )?;
+    let projection = phase_b32a_projection_from_group(
+        crypto,
+        &group,
+        welcome_sender_leaf_index,
+        expected_author,
+        account_identity,
+        leaf_signature_key,
+        &welcome_sha256,
+        &expected_key_package_sha256,
+        &predecessor_state_sha256,
+        &candidate_state_sha256,
+    )?;
+
+    let scratch = PhaseB32aPrivateProvider::from_snapshot(
+        &candidate_state.0,
+        PhaseB32aSnapshotRole::CanonicalCandidate,
+    )?;
+    let scratch_group = MlsGroup::load(
+        scratch.provider.inner.storage(),
+        &GroupId::from_slice(&projection.group_id),
+    )?
+    .ok_or_else(|| JsError::new("PHASE_B32A_CANDIDATE_RESTORE_FAILED"))?;
+    let scratch_projection = phase_b32a_projection_from_group(
+        scratch.provider.as_ref().crypto(),
+        &scratch_group,
+        welcome_sender_leaf_index,
+        expected_author,
+        account_identity,
+        leaf_signature_key,
+        &welcome_sha256,
+        &expected_key_package_sha256,
+        &predecessor_state_sha256,
+        &candidate_state_sha256,
+    )?;
+    if scratch_projection != projection {
+        return Err(JsError::new("PHASE_B32A_CANDIDATE_PROJECTION_MISMATCH"));
+    }
+    Ok((candidate_state, projection))
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_projections_equal_except_candidate_digests(
+    first: &PhaseB32aJoinProjection,
+    second: &PhaseB32aJoinProjection,
+) -> bool {
+    let mut first = first.clone();
+    let mut second = second.clone();
+    first.candidate_state_sha256.clear();
+    first.projection_sha256.clear();
+    second.candidate_state_sha256.clear();
+    second.projection_sha256.clear();
+    first == second
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB32aPendingWelcome {
+    pub fn prepare_from_durable_state(
+        predecessor_state: &[u8],
+        expected_predecessor_sha256: &[u8],
+        account_identity: &[u8],
+        leaf_signature_key: &[u8],
+        welcome_bytes: &[u8],
+        expected_key_package_bytes: &[u8],
+        expected_author: &[u8],
+    ) -> Result<PhaseB32aPendingWelcome, JsError> {
+        let (first_state, first_projection) = phase_b32a_prepare_once(
+            predecessor_state,
+            expected_predecessor_sha256,
+            account_identity,
+            leaf_signature_key,
+            welcome_bytes,
+            expected_key_package_bytes,
+            expected_author,
+        )?;
+        let (second_state, second_projection) = phase_b32a_prepare_once(
+            predecessor_state,
+            expected_predecessor_sha256,
+            account_identity,
+            leaf_signature_key,
+            welcome_bytes,
+            expected_key_package_bytes,
+            expected_author,
+        )?;
+        if !phase_b32a_projections_equal_except_candidate_digests(
+            &first_projection,
+            &second_projection,
+        ) {
+            return Err(JsError::new("PHASE_B32A_PREPARATION_PROJECTION_DIVERGENCE"));
+        }
+        let evidence = phase_b32a_compare_candidate_states(
+            &first_state.0,
+            &second_state.0,
+            second_projection.candidate_state_sha256.clone(),
+        )?;
+        let binding = PhaseB32aWelcomeBinding {
+            expected_author: expected_author.to_vec(),
+            predecessor_state_sha256: first_projection.predecessor_state_sha256.clone(),
+            welcome_sha256: first_projection.welcome_sha256.clone(),
+            expected_key_package_sha256: first_projection.expected_key_package_sha256.clone(),
+            candidate_state_sha256: first_projection.candidate_state_sha256.clone(),
+            projection_sha256: first_projection.projection_sha256.clone(),
+            preparation_classification: evidence.classification,
+            second_candidate_state_sha256: evidence.second_candidate_state_sha256.clone(),
+            differing_storage_key: evidence.differing_storage_key.clone(),
+        };
+        Ok(Self {
+            binding: Some(binding),
+            candidate_state: first_state,
+            projection: first_projection,
+            preparation_classification: evidence.classification,
+            second_candidate_state_sha256: evidence.second_candidate_state_sha256,
+            differing_storage_key: evidence.differing_storage_key,
+        })
+    }
+
+    pub fn projection(&self) -> PhaseB32aJoinProjection { self.projection.clone() }
+    pub fn is_consumed(&self) -> bool { self.binding.is_none() }
+    pub fn preparation_classification(&self) -> String {
+        self.preparation_classification.tag().to_string()
+    }
+    pub fn second_candidate_state_sha256(&self) -> Vec<u8> {
+        self.second_candidate_state_sha256.clone()
+    }
+    pub fn differing_storage_key(&self) -> Vec<u8> {
+        self.differing_storage_key.clone()
+    }
+
+    pub fn release_candidate_state(
+        &mut self,
+        projection_sha256: &[u8],
+        expected_author: &[u8],
+    ) -> Result<Vec<u8>, JsError> {
+        let binding = self
+            .binding
+            .take()
+            .ok_or_else(|| JsError::new("PHASE_B32A_HANDLE_CONSUMED"))?;
+        if let Some(error) = phase_b32a_release_failure(
+            self,
+            &binding,
+            projection_sha256,
+            expected_author,
+        ) {
+            self.candidate_state.0.fill(0);
+            self.candidate_state.0.clear();
+            return Err(JsError::new(error));
+        }
+        Ok(std::mem::take(&mut self.candidate_state.0))
+    }
+
+    pub fn discard(&mut self) -> Result<(), JsError> {
+        self.binding
+            .take()
+            .ok_or_else(|| JsError::new("PHASE_B32A_HANDLE_CONSUMED"))?;
+        self.candidate_state.0.fill(0);
+        self.candidate_state.0.clear();
+        Ok(())
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB32aGroup {
+    pub fn load_canonical_state(
+        candidate_state: &[u8],
+        group_id: &[u8],
+    ) -> Result<Option<PhaseB32aGroup>, JsError> {
+        if group_id.is_empty() || group_id.len() > 64 {
+            return Err(JsError::new("PHASE_B32A_GROUP_ID_INVALID"));
+        }
+        let provider = PhaseB32aPrivateProvider::from_snapshot(
+            candidate_state,
+            PhaseB32aSnapshotRole::CanonicalCandidate,
+        )?;
+        let requested = GroupId::from_slice(group_id);
+        let Some(group) = MlsGroup::load(provider.provider.inner.storage(), &requested)? else {
+            return Ok(None);
+        };
+        if group.group_id() != &requested {
+            return Err(JsError::new("PHASE_B32A_LOADED_GROUP_ID_MISMATCH"));
+        }
+        phase_b32a_group_state(provider.provider.as_ref().crypto(), &group)?;
+        Ok(Some(Self { provider, mls_group: group }))
+    }
+
+    pub fn group_id(&self) -> Vec<u8> { self.mls_group.group_id().to_vec() }
+    pub fn epoch(&self) -> u64 { self.mls_group.epoch().as_u64() }
+    pub fn canonical_state(&self) -> Result<Vec<u8>, JsError> { self.provider.canonical_state() }
+
+    pub fn projection(
+        &self,
+        welcome_sender_leaf_index: u32,
+        expected_author: &[u8],
+        expected_own_identity: &[u8],
+        expected_own_signature_key: &[u8],
+        welcome_sha256: &[u8],
+        expected_key_package_sha256: &[u8],
+        predecessor_state_sha256: &[u8],
+        candidate_state_sha256: &[u8],
+    ) -> Result<PhaseB32aJoinProjection, JsError> {
+        phase_b32a_projection_from_group(
+            self.provider.provider.as_ref().crypto(),
+            &self.mls_group,
+            welcome_sender_leaf_index,
+            expected_author,
+            expected_own_identity,
+            expected_own_signature_key,
+            welcome_sha256,
+            expected_key_package_sha256,
+            predecessor_state_sha256,
+            candidate_state_sha256,
+        )
     }
 }
 
@@ -5832,6 +7574,571 @@ mod tests {
             result.is_err() || result.unwrap().is_err(),
             "hostile B3.2 operation unexpectedly succeeded"
         );
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32a_mdk_leaf_extensions(proof: &[u8]) -> Extensions<LeafNode> {
+        let mut dictionary = AppDataDictionary::new();
+        dictionary.insert(
+            0x0001,
+            PHASE_B32A_SUPPORTED_COMPONENTS
+                .to_vec()
+                .tls_serialize_detached()
+                .unwrap(),
+        );
+        dictionary.insert(
+            0x0002,
+            Vec::<ComponentId>::new().tls_serialize_detached().unwrap(),
+        );
+        dictionary.insert(ACCOUNT_IDENTITY_PROOF_V2_COMPONENT_ID, proof.to_vec());
+        Extensions::single(Extension::AppDataDictionary(
+            AppDataDictionaryExtension::new(dictionary),
+        ))
+        .unwrap()
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    struct PhaseB32aNativeFixture {
+        predecessor_state: Vec<u8>,
+        predecessor_sha256: Vec<u8>,
+        account_identity: Vec<u8>,
+        leaf_signature_key: Vec<u8>,
+        group_id: Vec<u8>,
+        expected_author: Vec<u8>,
+        key_package_bytes: Vec<u8>,
+        welcome_bytes: Vec<u8>,
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32a_native_fixture(
+        group_id: &[u8],
+        founder_byte: u8,
+        joiner_byte: u8,
+    ) -> PhaseB32aNativeFixture {
+        let mut founder_provider = Provider::new();
+        let joiner_provider = Provider::new();
+        let (founder, founder_proof, _) = phase_b2_identity(&founder_provider, founder_byte);
+        let (joiner, joiner_proof, _) = phase_b2_identity(&joiner_provider, joiner_byte);
+        let joiner_key_package = joiner
+            .b3_2a_key_package(&joiner_provider, &joiner_proof)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let key_package_bytes = joiner_key_package.to_framed_bytes().unwrap();
+        let account_identity = joiner.account_public_key.clone();
+        let leaf_signature_key = joiner.keypair.public().to_vec();
+
+        let mut founder_group = MlsGroup::builder()
+            .ciphersuite(PROBE_CIPHERSUITE)
+            .with_group_id(GroupId::from_slice(group_id))
+            .with_wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+            .use_ratchet_tree_extension(true)
+            .with_group_context_extensions(
+                phase_b31_group_context_extensions(
+                    &founder.account_public_key,
+                    b"B3.2a exact-pin join",
+                    b"durable-input canonical candidate",
+                )
+                .map_err(js_error_to_string)
+                .unwrap(),
+            )
+            .with_capabilities(phase_b32a_mdk_capabilities())
+            .with_leaf_node_extensions(phase_b32a_mdk_leaf_extensions(&founder_proof))
+            .unwrap()
+            .build(
+                &founder_provider.inner,
+                &founder.keypair,
+                founder.credential_with_key.clone(),
+            )
+            .unwrap();
+        let (_, welcome, _) = founder_group
+            .add_members(
+                &founder_provider.inner,
+                &founder.keypair,
+                &[joiner_key_package.0.clone()],
+            )
+            .unwrap();
+        founder_group
+            .merge_pending_commit(founder_provider.as_mut())
+            .unwrap();
+        let predecessor_state = joiner_provider.serialize_state();
+        let predecessor_sha256 = phase_b32_sha256(
+            joiner_provider.as_ref().crypto(),
+            &predecessor_state,
+            "test",
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        PhaseB32aNativeFixture {
+            predecessor_state,
+            predecessor_sha256,
+            account_identity,
+            leaf_signature_key,
+            group_id: group_id.to_vec(),
+            expected_author: founder.account_public_key,
+            key_package_bytes,
+            welcome_bytes: welcome.tls_serialize_detached().unwrap(),
+        }
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32a_pending_fixture(
+        group_id: &[u8],
+        founder_byte: u8,
+        joiner_byte: u8,
+    ) -> (PhaseB32aNativeFixture, PhaseB32aPendingWelcome) {
+        let fixture = phase_b32a_native_fixture(group_id, founder_byte, joiner_byte);
+        let pending = PhaseB32aPendingWelcome::prepare_from_durable_state(
+            &fixture.predecessor_state,
+            &fixture.predecessor_sha256,
+            &fixture.account_identity,
+            &fixture.leaf_signature_key,
+            &fixture.welcome_bytes,
+            &fixture.key_package_bytes,
+            &fixture.expected_author,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        (fixture, pending)
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn assert_phase_b32a_failed_release_consumed(
+        pending: &mut PhaseB32aPendingWelcome,
+        projection_sha256: &[u8],
+        expected_author: &[u8],
+        expected_error: &str,
+    ) {
+        assert!(!pending.candidate_state.0.is_empty());
+        assert_eq!(
+            phase_b32a_release_failure(
+                pending,
+                pending.binding.as_ref().unwrap(),
+                projection_sha256,
+                expected_author,
+            ),
+            Some(expected_error),
+        );
+        let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            pending.release_candidate_state(projection_sha256, expected_author)
+        }));
+        assert!(rejected.is_err() || rejected.unwrap().is_err());
+        assert!(pending.is_consumed());
+        assert!(pending.candidate_state.0.is_empty());
+        assert!(pending.candidate_state.0.capacity() > 0);
+        phase_b32_assert_rejected(|| pending.discard());
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32a_exact_profiles_accept_only_bounded_retention_metadata() {
+        let fixture = phase_b32a_native_fixture(b"phase-b32a-native-success", 0x91, 0x92);
+        let parsed_key_package = PhaseB32aKeyPackage::from_framed_bytes(
+            &fixture.key_package_bytes,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        assert_eq!(parsed_key_package.capability_extension_ids(), vec![0x0006]);
+        assert_eq!(parsed_key_package.capability_proposal_ids(), vec![0x0008]);
+        assert_eq!(parsed_key_package.component_ids(), vec![0x0001, 0x8009]);
+        assert_eq!(
+            parsed_key_package.supported_component_ids().unwrap(),
+            PHASE_B32A_SUPPORTED_COMPONENTS,
+        );
+
+        let (state_a, projection_a) = phase_b32a_prepare_once(
+            &fixture.predecessor_state,
+            &fixture.predecessor_sha256,
+            &fixture.account_identity,
+            &fixture.leaf_signature_key,
+            &fixture.welcome_bytes,
+            &fixture.key_package_bytes,
+            &fixture.expected_author,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let (state_b, projection_b) = phase_b32a_prepare_once(
+            &fixture.predecessor_state,
+            &fixture.predecessor_sha256,
+            &fixture.account_identity,
+            &fixture.leaf_signature_key,
+            &fixture.welcome_bytes,
+            &fixture.key_package_bytes,
+            &fixture.expected_author,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        assert!(phase_b32a_projections_equal_except_candidate_digests(
+            &projection_a,
+            &projection_b,
+        ));
+        let evidence = phase_b32a_compare_candidate_states(
+            &state_a.0,
+            &state_b.0,
+            projection_b.candidate_state_sha256.clone(),
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        assert_eq!(evidence.second_candidate_state_sha256.len(), 32);
+        match evidence.classification {
+            PhaseB32aPreparationClassification::ByteIdentical => {
+                assert!(evidence.differing_storage_key.is_empty());
+            }
+            PhaseB32aPreparationClassification::RetentionTimestampBounded => {
+                assert!(evidence
+                    .differing_storage_key
+                    .starts_with(b"MessageSecrets"));
+            }
+        }
+
+        assert_eq!(projection_a.member_count(), 2);
+        assert_eq!(projection_a.member_profile(0).unwrap(), "MDK_PIN_9396ADB");
+        assert_eq!(projection_a.member_profile(1).unwrap(), "STYX_B32A");
+        assert!(projection_a.member_lists_default_required_capabilities(0).unwrap());
+        assert!(projection_a.member_emits_empty_safe_aad(0).unwrap());
+        assert!(!projection_a.member_lists_default_required_capabilities(1).unwrap());
+        assert!(!projection_a.member_emits_empty_safe_aad(1).unwrap());
+        assert_eq!(projection_a.welcome_sender_identity(), fixture.expected_author);
+
+        let mut pending = PhaseB32aPendingWelcome::prepare_from_durable_state(
+            &fixture.predecessor_state,
+            &fixture.predecessor_sha256,
+            &fixture.account_identity,
+            &fixture.leaf_signature_key,
+            &fixture.welcome_bytes,
+            &fixture.key_package_bytes,
+            &fixture.expected_author,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        assert!(matches!(
+            pending.preparation_classification().as_str(),
+            "BYTE_IDENTICAL" | "RETENTION_TIMESTAMP_BOUNDED"
+        ));
+        assert_eq!(pending.second_candidate_state_sha256().len(), 32);
+        if pending.preparation_classification() == "RETENTION_TIMESTAMP_BOUNDED" {
+            assert!(pending.differing_storage_key().starts_with(b"MessageSecrets"));
+        } else {
+            assert!(pending.differing_storage_key().is_empty());
+        }
+        let projection = pending.projection();
+        let candidate = pending
+            .release_candidate_state(
+                &projection.projection_sha256(),
+                &fixture.expected_author,
+        )
+            .map_err(js_error_to_string)
+            .unwrap();
+        assert!(pending.is_consumed());
+        phase_b32_assert_rejected(|| pending.discard());
+        phase_b32_assert_rejected(|| {
+            pending
+                .release_candidate_state(
+                &projection.projection_sha256(),
+                &fixture.expected_author,
+            )
+                .map(|_| ())
+        });
+        let restored = PhaseB32aGroup::load_canonical_state(&candidate, &fixture.group_id)
+            .map_err(js_error_to_string)
+            .unwrap()
+            .expect("released exact candidate must restore");
+        assert_eq!(restored.group_id(), fixture.group_id);
+        for _ in 0..200 {
+            let provider = PhaseB32aPrivateProvider::from_snapshot(
+                &candidate,
+                PhaseB32aSnapshotRole::CanonicalCandidate,
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+            assert_eq!(
+                provider.canonical_state().map_err(js_error_to_string).unwrap(),
+                candidate,
+            );
+        }
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32a_failed_release_wipes_immediately_and_preserves_typed_errors() {
+        let (wrong_author_fixture, mut wrong_author) =
+            phase_b32a_pending_fixture(b"phase-b32a-release-author", 0xa1, 0xa2);
+        let wrong_author_projection = wrong_author.projection().projection_sha256();
+        let mut forged_author = wrong_author_fixture.expected_author.clone();
+        forged_author[0] ^= 1;
+        assert_phase_b32a_failed_release_consumed(
+            &mut wrong_author,
+            &wrong_author_projection,
+            &forged_author,
+            "PHASE_B32A_WELCOME_AUTHOR_MISMATCH",
+        );
+
+        let (wrong_projection_fixture, mut wrong_projection) =
+            phase_b32a_pending_fixture(b"phase-b32a-release-projection", 0xa3, 0xa4);
+        let mut forged_projection = wrong_projection.projection().projection_sha256();
+        forged_projection[0] ^= 1;
+        assert_phase_b32a_failed_release_consumed(
+            &mut wrong_projection,
+            &forged_projection,
+            &wrong_projection_fixture.expected_author,
+            "PHASE_B32A_PROJECTION_DIGEST_MISMATCH",
+        );
+
+        let (binding_fixture, mut binding_mismatch) =
+            phase_b32a_pending_fixture(b"phase-b32a-release-binding", 0xa5, 0xa6);
+        let binding_projection = binding_mismatch.projection().projection_sha256();
+        binding_mismatch.projection.welcome_sha256[0] ^= 1;
+        assert_phase_b32a_failed_release_consumed(
+            &mut binding_mismatch,
+            &binding_projection,
+            &binding_fixture.expected_author,
+            "PHASE_B32A_HANDLE_BINDING_MISMATCH",
+        );
+
+        let (digest_fixture, mut digest_mismatch) =
+            phase_b32a_pending_fixture(b"phase-b32a-release-digest", 0xa7, 0xa8);
+        let digest_projection = digest_mismatch.projection().projection_sha256();
+        digest_mismatch.candidate_state.0[0] ^= 1;
+        assert_phase_b32a_failed_release_consumed(
+            &mut digest_mismatch,
+            &digest_projection,
+            &digest_fixture.expected_author,
+            "PHASE_B32A_CANDIDATE_DIGEST_MISMATCH",
+        );
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32a_retention_comparator_is_strict_and_fail_closed() {
+        let encode_snapshot = |entries: &[(&[u8], &[u8])]| {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&(entries.len() as u64).to_be_bytes());
+            for (key, value) in entries {
+                bytes.extend_from_slice(&(key.len() as u64).to_be_bytes());
+                bytes.extend_from_slice(&(value.len() as u64).to_be_bytes());
+                bytes.extend_from_slice(key);
+                bytes.extend_from_slice(value);
+            }
+            bytes
+        };
+        let message_secrets = |seconds: u64, nanos: u64| {
+            format!(
+                "{{\"max_epochs\":0,\"past_epoch_trees\":[],\"message_secrets\":{{\"sender_data_secret\":[],\"membership_key\":[],\"confirmation_key\":[],\"serialized_context\":[],\"secret_tree\":{{}},\"added_at\":{{\"secs_since_epoch\":{seconds},\"nanos_since_epoch\":{nanos}}}}}}}"
+            )
+            .into_bytes()
+        };
+        let key = b"MessageSecrets[1,2,3]\\u0001";
+        let first_value = message_secrets(100, 10);
+        let second_value = message_secrets(101, 20);
+        let first = encode_snapshot(&[(key, &first_value), (b"Other", b"same")]);
+        let identical = encode_snapshot(&[(key, &first_value), (b"Other", b"same")]);
+        let second = encode_snapshot(&[(key, &second_value), (b"Other", b"same")]);
+
+        let identical_evidence =
+            phase_b32a_compare_candidate_states(&first, &identical, vec![0x11; 32])
+                .map_err(js_error_to_string)
+                .unwrap();
+        assert_eq!(
+            identical_evidence.classification,
+            PhaseB32aPreparationClassification::ByteIdentical
+        );
+        assert!(identical_evidence.differing_storage_key.is_empty());
+
+        let bounded = phase_b32a_compare_candidate_states(&first, &second, vec![0x22; 32])
+            .map_err(js_error_to_string)
+            .unwrap();
+        assert_eq!(
+            bounded.classification,
+            PhaseB32aPreparationClassification::RetentionTimestampBounded
+        );
+        assert_eq!(bounded.differing_storage_key, key);
+
+        let other_difference =
+            encode_snapshot(&[(key, &first_value), (b"Other", b"different")]);
+        phase_b32_assert_rejected(|| {
+            phase_b32a_compare_candidate_states(
+                &first,
+                &other_difference,
+                vec![0x33; 32],
+            )
+            .map(|_| ())
+        });
+        let multiple_differences =
+            encode_snapshot(&[(key, &second_value), (b"Other", b"different")]);
+        phase_b32_assert_rejected(|| {
+            phase_b32a_compare_candidate_states(
+                &first,
+                &multiple_differences,
+                vec![0x34; 32],
+            )
+            .map(|_| ())
+        });
+
+        let changed_secret = String::from_utf8(first_value.clone())
+            .unwrap()
+            .replace("\"sender_data_secret\":[]", "\"sender_data_secret\":[1]")
+            .into_bytes();
+        let changed_secret_snapshot =
+            encode_snapshot(&[(key, &changed_secret), (b"Other", b"same")]);
+        phase_b32_assert_rejected(|| {
+            phase_b32a_compare_candidate_states(
+                &first,
+                &changed_secret_snapshot,
+                vec![0x44; 32],
+            )
+            .map(|_| ())
+        });
+
+        let second_message_key = b"MessageSecrets[4,5,6]\\u0001";
+        let two_message_entries = encode_snapshot(&[
+            (key, &first_value),
+            (second_message_key, &first_value),
+            (b"Other", b"same"),
+        ]);
+        phase_b32_assert_rejected(|| {
+            phase_b32a_compare_candidate_states(
+                &two_message_entries,
+                &two_message_entries,
+                vec![0x55; 32],
+            )
+            .map(|_| ())
+        });
+        phase_b32_assert_rejected(|| {
+            phase_b32a_compare_candidate_states(&first, &identical, vec![0x66; 31])
+                .map(|_| ())
+        });
+
+        for malformed in [
+            String::from_utf8(first_value.clone()).unwrap().replace(
+                "\"added_at\":{\"secs_since_epoch\":100,\"nanos_since_epoch\":10}",
+                "\"added_at\":null",
+            ),
+            String::from_utf8(first_value.clone()).unwrap().replace(
+                ",\"nanos_since_epoch\":10",
+                "",
+            ),
+            String::from_utf8(first_value.clone()).unwrap().replace(
+                "\"nanos_since_epoch\":10",
+                "\"nanos_since_epoch\":10,\"extra\":0",
+            ),
+            String::from_utf8(first_value.clone()).unwrap().replace(
+                "\"nanos_since_epoch\":10",
+                "\"nanos_since_epoch\":10,\"nanos_since_epoch\":10",
+            ),
+            String::from_utf8(first_value.clone()).unwrap().replace(
+                "\"secs_since_epoch\":100,\"nanos_since_epoch\":10",
+                "\"nanos_since_epoch\":10,\"secs_since_epoch\":100",
+            ),
+            String::from_utf8(first_value.clone()).unwrap().replace(
+                "\"nanos_since_epoch\":10",
+                "\"nanoseconds\":10",
+            ),
+            String::from_utf8(first_value.clone()).unwrap().replace(
+                "\"secs_since_epoch\":100",
+                "\"secs_since_epoch\":-1",
+            ),
+            String::from_utf8(first_value.clone()).unwrap().replace(
+                "\"secs_since_epoch\":100",
+                "\"secs_since_epoch\":18446744073709551616",
+            ),
+            String::from_utf8(first_value.clone()).unwrap().replace(
+                "\"nanos_since_epoch\":10",
+                "\"nanos_since_epoch\":1000000000",
+            ),
+            String::from_utf8(first_value.clone()).unwrap().replace(
+                "\"nanos_since_epoch\":10",
+                "\"nanos_since_epoch\":\"10\"",
+            ),
+            String::from_utf8(first_value.clone()).unwrap().replace(
+                "\"max_epochs\":0",
+                "\"max_epochs\":0 ",
+            ),
+        ] {
+            phase_b32_assert_rejected(|| {
+                phase_b32a_message_secrets_timestamp_spans(malformed.as_bytes()).map(|_| ())
+            });
+        }
+        let deep_value = format!("{}0{}", "[".repeat(66), "]".repeat(66));
+        let too_deep = String::from_utf8(first_value)
+            .unwrap()
+            .replace("\"sender_data_secret\":[]", &format!("\"sender_data_secret\":{deep_value}"));
+        phase_b32_assert_rejected(|| {
+            phase_b32a_message_secrets_timestamp_spans(too_deep.as_bytes()).map(|_| ())
+        });
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32a_snapshot_parser_and_digest_binding_fail_closed() {
+        let encode = |entries: &[(&[u8], &[u8])]| {
+            let mut bytes = Vec::new();
+            bytes.extend_from_slice(&(entries.len() as u64).to_be_bytes());
+            for (key, value) in entries {
+                bytes.extend_from_slice(&(key.len() as u64).to_be_bytes());
+                bytes.extend_from_slice(&(value.len() as u64).to_be_bytes());
+                bytes.extend_from_slice(key);
+                bytes.extend_from_slice(value);
+            }
+            bytes
+        };
+        let unordered = encode(&[(b"b", b"2"), (b"a", b"1")]);
+        assert!(phase_b32a_snapshot_entries(
+            &unordered,
+            PhaseB32aSnapshotRole::Predecessor,
+        )
+        .is_ok());
+        phase_b32_assert_rejected(|| {
+            phase_b32a_snapshot_entries(
+                &unordered,
+                PhaseB32aSnapshotRole::CanonicalCandidate,
+            )
+            .map(|_| ())
+        });
+        let duplicate = encode(&[(b"a", b"1"), (b"a", b"2")]);
+        phase_b32_assert_rejected(|| {
+            phase_b32a_snapshot_entries(&duplicate, PhaseB32aSnapshotRole::Predecessor)
+                .map(|_| ())
+        });
+        let mut trailing = encode(&[(b"a", b"1")]);
+        trailing.push(0);
+        phase_b32_assert_rejected(|| {
+            phase_b32a_snapshot_entries(&trailing, PhaseB32aSnapshotRole::Predecessor)
+                .map(|_| ())
+        });
+        let private = PhaseB32aPrivateProvider::from_snapshot(
+            &unordered,
+            PhaseB32aSnapshotRole::Predecessor,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let canonical = private.canonical_state().map_err(js_error_to_string).unwrap();
+        for _ in 0..200 {
+            let restored = PhaseB32aPrivateProvider::from_snapshot(
+                &canonical,
+                PhaseB32aSnapshotRole::CanonicalCandidate,
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+            assert_eq!(
+                restored.canonical_state().map_err(js_error_to_string).unwrap(),
+                canonical,
+            );
+        }
+
+        let fixture = phase_b32a_native_fixture(b"phase-b32a-native-hostile", 0x93, 0x94);
+        let mut wrong_digest = fixture.predecessor_sha256.clone();
+        wrong_digest[0] ^= 1;
+        phase_b32_assert_rejected(|| {
+            PhaseB32aPendingWelcome::prepare_from_durable_state(
+                &fixture.predecessor_state,
+                &wrong_digest,
+                &fixture.account_identity,
+                &fixture.leaf_signature_key,
+                &fixture.welcome_bytes,
+                &fixture.key_package_bytes,
+                &fixture.expected_author,
+            )
+            .map(|_| ())
+        });
     }
 
     #[cfg(feature = "extensions-draft")]

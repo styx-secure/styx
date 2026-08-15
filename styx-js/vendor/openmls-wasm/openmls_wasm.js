@@ -2161,6 +2161,21 @@ export class PhaseB2Identity {
     /**
      * @param {Provider} provider
      * @param {Uint8Array} proof
+     * @returns {PhaseB32aKeyPackage}
+     */
+    b3_2a_key_package(provider, proof) {
+        _assertClass(provider, Provider);
+        const ptr0 = passArray8ToWasm0(proof, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb2identity_b3_2a_key_package(this.__wbg_ptr, provider.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB32aKeyPackage.__wrap(ret[0]);
+    }
+    /**
+     * @param {Provider} provider
+     * @param {Uint8Array} proof
      * @returns {PhaseB2KeyPackage}
      */
     key_package(provider, proof) {
@@ -3122,6 +3137,727 @@ export class PhaseB32PendingWelcome {
 }
 if (Symbol.dispose) PhaseB32PendingWelcome.prototype[Symbol.dispose] = PhaseB32PendingWelcome.prototype.free;
 
+/**
+ * Load-only B3.2a group whose Provider is private and operation-scoped.
+ */
+export class PhaseB32aGroup {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB32aGroup.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB32aGroupFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB32aGroupFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb32agroup_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    canonical_state() {
+        const ret = wasm.phaseb32agroup_canonical_state(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {bigint}
+     */
+    epoch() {
+        const ret = wasm.phaseb32agroup_epoch(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    group_id() {
+        const ret = wasm.phaseb32agroup_group_id(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {Uint8Array} candidate_state
+     * @param {Uint8Array} group_id
+     * @returns {PhaseB32aGroup | undefined}
+     */
+    static load_canonical_state(candidate_state, group_id) {
+        const ptr0 = passArray8ToWasm0(candidate_state, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(group_id, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb32agroup_load_canonical_state(ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] === 0 ? undefined : PhaseB32aGroup.__wrap(ret[0]);
+    }
+    /**
+     * @param {number} welcome_sender_leaf_index
+     * @param {Uint8Array} expected_author
+     * @param {Uint8Array} expected_own_identity
+     * @param {Uint8Array} expected_own_signature_key
+     * @param {Uint8Array} welcome_sha256
+     * @param {Uint8Array} expected_key_package_sha256
+     * @param {Uint8Array} predecessor_state_sha256
+     * @param {Uint8Array} candidate_state_sha256
+     * @returns {PhaseB32aJoinProjection}
+     */
+    projection(welcome_sender_leaf_index, expected_author, expected_own_identity, expected_own_signature_key, welcome_sha256, expected_key_package_sha256, predecessor_state_sha256, candidate_state_sha256) {
+        const ptr0 = passArray8ToWasm0(expected_author, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(expected_own_identity, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(expected_own_signature_key, wasm.__wbindgen_malloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(welcome_sha256, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passArray8ToWasm0(expected_key_package_sha256, wasm.__wbindgen_malloc);
+        const len4 = WASM_VECTOR_LEN;
+        const ptr5 = passArray8ToWasm0(predecessor_state_sha256, wasm.__wbindgen_malloc);
+        const len5 = WASM_VECTOR_LEN;
+        const ptr6 = passArray8ToWasm0(candidate_state_sha256, wasm.__wbindgen_malloc);
+        const len6 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb32agroup_projection(this.__wbg_ptr, welcome_sender_leaf_index, ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB32aJoinProjection.__wrap(ret[0]);
+    }
+}
+if (Symbol.dispose) PhaseB32aGroup.prototype[Symbol.dispose] = PhaseB32aGroup.prototype.free;
+
+export class PhaseB32aJoinProjection {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB32aJoinProjection.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB32aJoinProjectionFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB32aJoinProjectionFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb32ajoinprojection_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    administrator_policy() {
+        const ret = wasm.phaseb32ajoinprojection_administrator_policy(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    candidate_state_sha256() {
+        const ret = wasm.phaseb32ajoinprojection_candidate_state_sha256(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    ciphersuite_id() {
+        const ret = wasm.phaseb32ajoinprojection_ciphersuite_id(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {string}
+     */
+    domain() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.phaseb32ajoinprojection_domain(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @returns {bigint}
+     */
+    epoch() {
+        const ret = wasm.phaseb32ajoinprojection_epoch(this.__wbg_ptr);
+        return BigInt.asUintN(64, ret);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    expected_key_package_sha256() {
+        const ret = wasm.phaseb32ajoinprojection_expected_key_package_sha256(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    group_context_sha256() {
+        const ret = wasm.phaseb32ajoinprojection_group_context_sha256(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    group_context_tls() {
+        const ret = wasm.phaseb32ajoinprojection_group_context_tls(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    group_id() {
+        const ret = wasm.phaseb32ajoinprojection_group_id(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    group_profile_description() {
+        const ret = wasm.phaseb32ajoinprojection_group_profile_description(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    group_profile_name() {
+        const ret = wasm.phaseb32ajoinprojection_group_profile_name(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    lifecycle() {
+        const ret = wasm.phaseb32ajoinprojection_lifecycle(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {number} index
+     * @returns {Uint16Array}
+     */
+    member_component_ids(index) {
+        const ret = wasm.phaseb32ajoinprojection_member_component_ids(this.__wbg_ptr, index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    member_count() {
+        const ret = wasm.phaseb32ajoinprojection_member_count(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @param {number} index
+     * @returns {boolean}
+     */
+    member_emits_empty_safe_aad(index) {
+        const ret = wasm.phaseb32ajoinprojection_member_emits_empty_safe_aad(this.__wbg_ptr, index);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {number} index
+     * @returns {Uint8Array}
+     */
+    member_identity(index) {
+        const ret = wasm.phaseb32ajoinprojection_member_identity(this.__wbg_ptr, index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {number} index
+     * @returns {Uint8Array}
+     */
+    member_identity_proof(index) {
+        const ret = wasm.phaseb32ajoinprojection_member_identity_proof(this.__wbg_ptr, index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {number} index
+     * @returns {number}
+     */
+    member_leaf_index(index) {
+        const ret = wasm.phaseb32ajoinprojection_member_leaf_index(this.__wbg_ptr, index);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * @param {number} index
+     * @returns {boolean}
+     */
+    member_lists_default_required_capabilities(index) {
+        const ret = wasm.phaseb32ajoinprojection_member_lists_default_required_capabilities(this.__wbg_ptr, index);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] !== 0;
+    }
+    /**
+     * @param {number} index
+     * @returns {string}
+     */
+    member_profile(index) {
+        let deferred2_0;
+        let deferred2_1;
+        try {
+            const ret = wasm.phaseb32ajoinprojection_member_profile(this.__wbg_ptr, index);
+            var ptr1 = ret[0];
+            var len1 = ret[1];
+            if (ret[3]) {
+                ptr1 = 0; len1 = 0;
+                throw takeFromExternrefTable0(ret[2]);
+            }
+            deferred2_0 = ptr1;
+            deferred2_1 = len1;
+            return getStringFromWasm0(ptr1, len1);
+        } finally {
+            wasm.__wbindgen_free(deferred2_0, deferred2_1, 1);
+        }
+    }
+    /**
+     * @param {number} index
+     * @returns {Uint8Array}
+     */
+    member_profile_sha256(index) {
+        const ret = wasm.phaseb32ajoinprojection_member_profile_sha256(this.__wbg_ptr, index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {number} index
+     * @returns {Uint8Array}
+     */
+    member_signature_key(index) {
+        const ret = wasm.phaseb32ajoinprojection_member_signature_key(this.__wbg_ptr, index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {number} index
+     * @returns {Uint16Array}
+     */
+    member_supported_component_ids(index) {
+        const ret = wasm.phaseb32ajoinprojection_member_supported_component_ids(this.__wbg_ptr, index);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    own_leaf_index() {
+        const ret = wasm.phaseb32ajoinprojection_own_leaf_index(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    predecessor_state_sha256() {
+        const ret = wasm.phaseb32ajoinprojection_predecessor_state_sha256(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    projection_sha256() {
+        const ret = wasm.phaseb32ajoinprojection_projection_sha256(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {string}
+     */
+    provider_format() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.phaseb32ajoinprojection_provider_format(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    required_component_ids() {
+        const ret = wasm.phaseb32ajoinprojection_required_component_ids(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    verified_leaf_digest() {
+        const ret = wasm.phaseb32ajoinprojection_verified_leaf_digest(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    version() {
+        const ret = wasm.phaseb32ajoinprojection_version(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    welcome_sender_identity() {
+        const ret = wasm.phaseb32ajoinprojection_welcome_sender_identity(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    welcome_sender_leaf_index() {
+        const ret = wasm.phaseb32ajoinprojection_welcome_sender_leaf_index(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    welcome_sender_signature_key() {
+        const ret = wasm.phaseb32ajoinprojection_welcome_sender_signature_key(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    welcome_sha256() {
+        const ret = wasm.phaseb32ajoinprojection_welcome_sha256(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) PhaseB32aJoinProjection.prototype[Symbol.dispose] = PhaseB32aJoinProjection.prototype.free;
+
+/**
+ * Exact Styx B3.2a KeyPackage. It is additive and does not relabel B3.1 bytes.
+ */
+export class PhaseB32aKeyPackage {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB32aKeyPackage.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB32aKeyPackageFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB32aKeyPackageFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb32akeypackage_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    capability_extension_ids() {
+        const ret = wasm.phaseb32akeypackage_capability_extension_ids(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    capability_proposal_ids() {
+        const ret = wasm.phaseb32akeypackage_capability_proposal_ids(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    ciphersuite_id() {
+        const ret = wasm.phaseb32akeypackage_ciphersuite_id(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    component_ids() {
+        const ret = wasm.phaseb32akeypackage_component_ids(this.__wbg_ptr);
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    credential_identity() {
+        const ret = wasm.phaseb32akeypackage_credential_identity(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {Uint8Array} bytes
+     * @returns {PhaseB32aKeyPackage}
+     */
+    static from_framed_bytes(bytes) {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb32akeypackage_from_framed_bytes(ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB32aKeyPackage.__wrap(ret[0]);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    identity_proof() {
+        const ret = wasm.phaseb32akeypackage_identity_proof(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {boolean}
+     */
+    is_last_resort() {
+        const ret = wasm.phaseb32akeypackage_is_last_resort(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    leaf_signature_key() {
+        const ret = wasm.phaseb32akeypackage_leaf_signature_key(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint16Array}
+     */
+    supported_component_ids() {
+        const ret = wasm.phaseb32akeypackage_supported_component_ids(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU16FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 2, 2);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    to_framed_bytes() {
+        const ret = wasm.phaseb32akeypackage_to_framed_bytes(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) PhaseB32aKeyPackage.prototype[Symbol.dispose] = PhaseB32aKeyPackage.prototype.free;
+
+/**
+ * One-use B3.2a candidate. It owns no live Provider or identity handle.
+ */
+export class PhaseB32aPendingWelcome {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB32aPendingWelcome.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB32aPendingWelcomeFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB32aPendingWelcomeFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb32apendingwelcome_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    differing_storage_key() {
+        const ret = wasm.phaseb32apendingwelcome_differing_storage_key(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    discard() {
+        const ret = wasm.phaseb32apendingwelcome_discard(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @returns {boolean}
+     */
+    is_consumed() {
+        const ret = wasm.phaseb32apendingwelcome_is_consumed(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {string}
+     */
+    preparation_classification() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.phaseb32apendingwelcome_preparation_classification(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * @param {Uint8Array} predecessor_state
+     * @param {Uint8Array} expected_predecessor_sha256
+     * @param {Uint8Array} account_identity
+     * @param {Uint8Array} leaf_signature_key
+     * @param {Uint8Array} welcome_bytes
+     * @param {Uint8Array} expected_key_package_bytes
+     * @param {Uint8Array} expected_author
+     * @returns {PhaseB32aPendingWelcome}
+     */
+    static prepare_from_durable_state(predecessor_state, expected_predecessor_sha256, account_identity, leaf_signature_key, welcome_bytes, expected_key_package_bytes, expected_author) {
+        const ptr0 = passArray8ToWasm0(predecessor_state, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(expected_predecessor_sha256, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(account_identity, wasm.__wbindgen_malloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(leaf_signature_key, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ptr4 = passArray8ToWasm0(welcome_bytes, wasm.__wbindgen_malloc);
+        const len4 = WASM_VECTOR_LEN;
+        const ptr5 = passArray8ToWasm0(expected_key_package_bytes, wasm.__wbindgen_malloc);
+        const len5 = WASM_VECTOR_LEN;
+        const ptr6 = passArray8ToWasm0(expected_author, wasm.__wbindgen_malloc);
+        const len6 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb32apendingwelcome_prepare_from_durable_state(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB32aPendingWelcome.__wrap(ret[0]);
+    }
+    /**
+     * @returns {PhaseB32aJoinProjection}
+     */
+    projection() {
+        const ret = wasm.phaseb32apendingwelcome_projection(this.__wbg_ptr);
+        return PhaseB32aJoinProjection.__wrap(ret);
+    }
+    /**
+     * @param {Uint8Array} projection_sha256
+     * @param {Uint8Array} expected_author
+     * @returns {Uint8Array}
+     */
+    release_candidate_state(projection_sha256, expected_author) {
+        const ptr0 = passArray8ToWasm0(projection_sha256, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(expected_author, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb32apendingwelcome_release_candidate_state(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v3;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    second_candidate_state_sha256() {
+        const ret = wasm.phaseb32apendingwelcome_second_candidate_state_sha256(this.__wbg_ptr);
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) PhaseB32aPendingWelcome.prototype[Symbol.dispose] = PhaseB32aPendingWelcome.prototype.free;
+
 export class Provider {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -3421,6 +4157,18 @@ const PhaseB32JoinProjectionFinalization = (typeof FinalizationRegistry === 'und
 const PhaseB32PendingWelcomeFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_phaseb32pendingwelcome_free(ptr, 1));
+const PhaseB32aGroupFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb32agroup_free(ptr, 1));
+const PhaseB32aJoinProjectionFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb32ajoinprojection_free(ptr, 1));
+const PhaseB32aKeyPackageFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb32akeypackage_free(ptr, 1));
+const PhaseB32aPendingWelcomeFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb32apendingwelcome_free(ptr, 1));
 const ProviderFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_provider_free(ptr, 1));
