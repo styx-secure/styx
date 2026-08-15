@@ -3,8 +3,8 @@
 
 import { randomUUID } from 'node:crypto';
 import {
-  chmodSync, closeSync, existsSync, fsyncSync, linkSync, mkdirSync, openSync,
-  readFileSync, realpathSync, renameSync, rmdirSync, statSync, unlinkSync, writeFileSync,
+  chmodSync, closeSync, existsSync, fstatSync, fsyncSync, linkSync, mkdirSync, openSync,
+  readFileSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync,
 } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 
@@ -396,6 +396,24 @@ function syncDirectory(directory) {
   try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
 }
 
+function readBoundedFile(path, maximumBytes, tooLargeMessage) {
+  let descriptor;
+  try {
+    descriptor = openSync(path, 'r');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+  try {
+    if (fstatSync(descriptor).size > maximumBytes) {
+      failB32a(B32A_ERROR.CORRUPT, tooLargeMessage);
+    }
+    return Uint8Array.from(readFileSync(descriptor));
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
 export class FileB32aStore {
   constructor(directory, approvedRoot = B32A_PRIVATE_ROOT) {
     this.directory = assertPrivateChild(directory, approvedRoot);
@@ -407,12 +425,13 @@ export class FileB32aStore {
   }
 
   async readHead() {
-    if (!existsSync(this.headPath)) return null;
     try {
-      if (statSync(this.headPath).size > B32_LIMITS.maxJournalHeadBytes) {
-        failB32a(B32A_ERROR.CORRUPT, 'durable head exceeds the resource envelope');
-      }
-      const raw = Uint8Array.from(readFileSync(this.headPath));
+      const raw = readBoundedFile(
+        this.headPath,
+        B32_LIMITS.maxJournalHeadBytes,
+        'durable head exceeds the resource envelope',
+      );
+      if (raw === null) return null;
       const parsed = JSON.parse(Buffer.from(raw).toString('utf8'));
       if (!Buffer.from(raw).equals(Buffer.from(canonicalJsonBytes(parsed)))) {
         failB32a(B32A_ERROR.CORRUPT, 'durable head is not canonical JSON');
@@ -427,11 +446,11 @@ export class FileB32aStore {
   async readBlob(valueDigest) {
     digest('blob digest', valueDigest);
     const path = resolve(this.blobDirectory, valueDigest);
-    if (!existsSync(path)) return null;
-    if (statSync(path).size > B32_LIMITS.maxProviderBytes) {
-      failB32a(B32A_ERROR.CORRUPT, 'durable blob exceeds the resource envelope');
-    }
-    return Uint8Array.from(readFileSync(path));
+    return readBoundedFile(
+      path,
+      B32_LIMITS.maxProviderBytes,
+      'durable blob exceeds the resource envelope',
+    );
   }
 
   #acquireLock() {

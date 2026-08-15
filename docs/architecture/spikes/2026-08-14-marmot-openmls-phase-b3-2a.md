@@ -112,6 +112,9 @@ every durable-input digest, both Schnorr identity proofs and the complete
 projection. The `WELCOME_RECORDED -> JOINED` CAS is the sole authoritative join
 linearization point. Local predecessor and candidate buffers are cleared on
 success, engine rejection, persistence failure and CAS conflict.
+File-backed head and blob reads bind the size check and content read to the
+same open descriptor, so an atomic path replacement cannot bypass the resource
+envelope between a pathname `stat` and a later read.
 
 ## Exact-pin retention timestamp classification
 
@@ -164,9 +167,9 @@ Node process restart. The private run directories were removed after each run.
 
 | Evidence | Run A | Run B |
 | --- | --- | --- |
-| Report SHA-256 | `5cc0cb87dd0def5b13e4d1ec3f4fbbe6c70524bd38ddb291208b88f002121bcc` | `09cc788fac8f849c3f9f77d529b0be21073bb6c4cfb762b15f44b1acefffc408` |
-| Transcript SHA-256 | `2ea7f051c0727289649b067dda88d03142e8982f4c8dd41664985ad8805d0ef1` | `5f05f811e553d9577d0890b8c8167ce0fece0af6fde9dd2fdf0e5327a6926da7` |
-| Transcript head | `0d384748b8fcba3b2cd81382ec56df16b4b09564b9d8b2cc9eeb859d6bfd6db8` | `7cf6b21ddce63ce51eba8b733d615c31e76b983ac9f1b9052b3aa4f28cf3acea` |
+| Report SHA-256 | `6feabcb1dfb2024b0c7a95437c11c1a1a3ebc1edc0cacff17fe8bd882bf3d062` | `5f74edb7808e447ab8d73bb4101f75ec43cca238ad5e80fe3848a9032a433145` |
+| Transcript SHA-256 | `8ca36b0cee1646558c58215af3b2b3da4d41965cf8261eafc36205689eafa6f3` | `e2d7bead40c9600ca26ed0f65fa72a99110e5713636de9eb05900c457c83fb20` |
+| Transcript head | `3cd931dd2bca539a230aaf484476a22debe52c1a465615e3c44ee8164b5acf9d` | `49e682ab2adbb6e0fc500237b27f4e64ad4e3a3e75c46d86d1c6383e9213dd56` |
 
 The paired evidence proves only the bounded claim below. Random identities,
 groups and ciphertexts intentionally make byte-for-byte report equality neither
