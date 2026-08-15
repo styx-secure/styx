@@ -81,6 +81,45 @@ class ContractParserTests(unittest.TestCase):
             contract_body(test_heading="Required verification").encode("utf-8")
         )
         self.assertEqual("v1", parsed.version)
+        self.assertEqual("1" * 40, parsed.base_sha)
+
+    def test_exact_base_sha_declaration_is_mandatory_and_structural(self) -> None:
+        canonical = f"- Exact base SHA: `{'1' * 40}`."
+        cases = {
+            "missing": contract_body().replace(canonical, "Base omitted."),
+            "uppercase": contract_body().replace("1" * 40, "A" * 40),
+            "abbreviated": contract_body().replace("1" * 40, "1" * 12),
+            "missing punctuation": contract_body().replace(canonical, canonical[:-1]),
+            "duplicate": contract_body().replace(canonical, f"{canonical}\n{canonical}"),
+            "inline-code label duplicate": contract_body().replace(
+                "Test contract.",
+                "Test contract. The inline label `Exact base SHA:` is not a declaration.",
+            ),
+            "outside Base": contract_body().replace(
+                canonical,
+                "Base omitted.",
+            ).replace("Test contract.", f"Test contract.\n\n{canonical}"),
+            "fenced lookalike only": contract_body().replace(
+                canonical,
+                f"```text\n{canonical}\n```",
+            ),
+            "indented lookalike only": contract_body().replace(
+                canonical,
+                f"    {canonical}",
+            ),
+        }
+        for name, body in cases.items():
+            with self.subTest(name=name):
+                with self.assertRaises(scope_guard.ContractError) as caught:
+                    scope_guard.parse_contract(body.encode("utf-8"))
+                self.assertEqual("E_CONTRACT_BASE_SHA", caught.exception.code)
+
+        fenced_extra = contract_body().replace(
+            "Test contract.",
+            f"Test contract.\n\n```text\n{canonical}\n```",
+        )
+        parsed = scope_guard.parse_contract(fenced_extra.encode("utf-8"))
+        self.assertEqual("1" * 40, parsed.base_sha)
 
     def test_malformed_patterns_are_errors(self) -> None:
         bad_patterns = (

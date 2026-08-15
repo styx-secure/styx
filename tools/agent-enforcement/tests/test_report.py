@@ -117,7 +117,8 @@ class ReportTests(GuardIntegrationCase):
         body = contract_body(
             binary_artifacts=(
                 f"{hashlib.sha256(data).hexdigest()} {len(data)} {path}",
-            )
+            ),
+            base_sha=base,
         )
         result, report, _ = self.invoke(base, head, body=body)
         self.assert_verdict(result, report, "PASS", 0)
@@ -132,7 +133,7 @@ class ReportTests(GuardIntegrationCase):
         self.assertEqual(golden_keys, set(report))
         self.assertNotIn("allowed_binary_artifacts", report)
         self.assertEqual(hashlib.sha256(body.encode("utf-8")).hexdigest(), report["issue_body_sha256"])
-        self.assertEqual("0.3.0", report["tool_version"])
+        self.assertEqual("0.4.0", report["tool_version"])
 
     def test_copy_source_marker_preserves_v1_schema_and_downstream_validation(self) -> None:
         source = "legacy/source.mjs"

@@ -29,6 +29,7 @@ from git_inventory import (
 from model import (
     ChangedEntry,
     Contract,
+    ContractBaseShaError,
     Diagnostic,
     EXIT_ERROR,
     EXIT_FAIL,
@@ -126,6 +127,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         issue_body_bytes = args.issue_body_file.read_bytes()
         issue_hash = hashlib.sha256(issue_body_bytes).hexdigest()
         contract = parse_contract(issue_body_bytes)
+        if contract.base_sha != args.base_sha:
+            raise ContractBaseShaError(
+                "contract Base SHA does not match the evaluated --base-sha"
+            )
         initial_status = verify_repository(
             repo,
             args.base_sha,

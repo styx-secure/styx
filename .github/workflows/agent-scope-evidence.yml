@@ -2,6 +2,8 @@ name: Agent scope evidence
 
 on:
   pull_request_target:
+    branches:
+      - main
     types:
       - opened
       - reopened
@@ -35,17 +37,35 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout trusted base commit
+      - name: Validate immutable workflow identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          readonly sha_pattern='^[0-9a-f]{40}$'
+          if [[ ! "${GITHUB_SHA:-}" =~ $sha_pattern ]]; then
+            echo "::error::GITHUB_SHA is not a lowercase full 40-hex SHA"
+            exit 3
+          fi
+          if [[ ! "${GITHUB_WORKFLOW_SHA:-}" =~ $sha_pattern ]]; then
+            echo "::error::GITHUB_WORKFLOW_SHA is not a lowercase full 40-hex SHA"
+            exit 3
+          fi
+          if [[ "$GITHUB_SHA" != "$GITHUB_WORKFLOW_SHA" ]]; then
+            echo "::error::workflow identity witness does not match GITHUB_SHA"
+            exit 3
+          fi
+
+      - name: Checkout trusted workflow commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
           clean: true
           lfs: false
           submodules: false
 
-      - name: Run trusted-base scope observation
+      - name: Run trusted-tool scope observation
         env:
           GITHUB_TOKEN: ${{ github.token }}
           STYX_REPORT_PATH: ${{ runner.temp }}/styx-task-scope-report.json
@@ -62,6 +82,8 @@ jobs:
             --server-url "$GITHUB_SERVER_URL" \
             --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --trusted-tool-sha "$GITHUB_SHA" \
+            --workflow-sha "$GITHUB_WORKFLOW_SHA" \
             --report "$STYX_REPORT_PATH"
           observation_code=$?
           set -e

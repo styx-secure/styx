@@ -11,6 +11,7 @@ from model import (
     CONTRACT_MARKER,
     BinaryArtifactAuthorization,
     Contract,
+    ContractBaseShaError,
     ContractError,
     CopySourceAuthorization,
     GitInputError,
@@ -32,6 +33,8 @@ COPY_SOURCE_HEADING = "Allowed copy sources"
 BINARY_ARTIFACT_RE = re.compile(r"^([0-9a-f]{64}) +([1-9][0-9]*) +(.+)$")
 COPY_SOURCE_RE = re.compile(r"^([0-9a-f]{64}) +([1-9][0-9]*) +(.+)$")
 BINARY_PATH_WILDCARDS = frozenset("*?[]{}")
+BASE_SHA_DECLARATION_RE = re.compile(r"^- Exact base SHA: `([0-9a-f]{40})`\.$")
+BASE_SHA_LABEL = "Exact base SHA:"
 
 REQUIRED_HEADINGS = (
     "Observable outcome",
@@ -96,6 +99,48 @@ def _scan_structure(body: str) -> tuple[list[tuple[str, int, int]], list[tuple[s
     if fence is not None:
         raise ContractError("unterminated fenced code block")
     return headings, markers
+
+
+def _structural_lines(body: str) -> list[str]:
+    """Return non-code lines, preserving exact Markdown spelling."""
+
+    structural: list[str] = []
+    fence: tuple[str, int] | None = None
+    for line in body.splitlines():
+        if fence is not None:
+            if _fence_close(line, *fence):
+                fence = None
+            continue
+        if INDENTED_CODE_RE.match(line):
+            continue
+        opened = _fence_open(line)
+        if opened:
+            fence = opened
+            continue
+        structural.append(line)
+    if fence is not None:
+        raise ContractError("unterminated fenced code block")
+    return structural
+
+
+def parse_base_sha(body: str, base_section: str) -> str:
+    """Parse the one canonical Base SHA declaration outside code blocks."""
+
+    body_candidates = [line for line in _structural_lines(body) if BASE_SHA_LABEL in line]
+    if not body_candidates:
+        raise ContractBaseShaError("missing exact Base SHA declaration")
+    if len(body_candidates) != 1:
+        raise ContractBaseShaError("duplicate exact Base SHA declaration")
+    match = BASE_SHA_DECLARATION_RE.fullmatch(body_candidates[0])
+    if match is None:
+        raise ContractBaseShaError("exact Base SHA declaration is malformed")
+
+    section_candidates = [
+        line for line in _structural_lines(base_section) if BASE_SHA_LABEL in line
+    ]
+    if section_candidates != body_candidates:
+        raise ContractBaseShaError("exact Base SHA declaration must occur in the Base section")
+    return match.group(1)
 
 
 def _section_map(body: str) -> tuple[dict[str, str], list[tuple[str, int]], list[tuple[str, int]]]:
@@ -315,6 +360,7 @@ def parse_contract(body_bytes: bytes) -> Contract:
 
     return Contract(
         version="v1",
+        base_sha=parse_base_sha(body, sections["Base"]),
         allowed_patterns=parse_patterns(
             _extract_single_fenced_block(sections["Allowed paths"], "Allowed paths"),
             "Allowed paths",
