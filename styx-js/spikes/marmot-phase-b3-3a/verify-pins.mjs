@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // STYX_SPIKE_PROTOTYPE — Stage 1 immutable-input and candidate-tuple verifier.
 
-import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync, realpathSync, statSync } from 'node:fs';
+import { readdirSync, realpathSync, statSync } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { B33A_BUILD_ROOT, B33A_ERROR, failB33a } from './b3-3a-canonical.mjs';
+import { readExactRegularFile } from './b3-3a-artifact-reader.mjs';
 
 export const B33A_BASE_SHA = '1404d05ed2604195e3b697caeccad9133a6cdc34';
 export const B33A_BASE_TREE = '7d0ee0078385f3f7a85e1f8f23e11adc347cddf8';
@@ -54,7 +54,7 @@ function git(cwd, ...args) {
 }
 
 function sha256(path) {
-  return createHash('sha256').update(readFileSync(path)).digest('hex');
+  return readExactRegularFile(path).sha256Hex;
 }
 
 function requireEqual(actual, expected, label) {
@@ -112,13 +112,8 @@ function verifyCommittedScope() {
 
 export function candidateTuple(candidatePath) {
   const candidate = strictBuildChild(candidatePath);
-  return Object.freeze(Object.fromEntries(GENERATED_FILES.map((name) => {
-    const path = resolve(candidate, name);
-    if (!statSync(path).isFile()) {
-      failB33a(B33A_ERROR.INVALID, `${name} is not a regular candidate file`);
-    }
-    return [name, sha256(path)];
-  })));
+  return Object.freeze(Object.fromEntries(GENERATED_FILES.map((name) =>
+    [name, sha256(resolve(candidate, name))])));
 }
 
 export function verifyPins(candidatePath) {

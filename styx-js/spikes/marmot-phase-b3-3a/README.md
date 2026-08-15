@@ -33,6 +33,8 @@ convergence. Those belong to B3.3b.
 
 - `b3-3a-canonical.mjs`: strict codecs, limits and closed report/transcript
   validation.
+- `b3-3a-artifact-reader.mjs`: descriptor-bound, no-symlink reads tied to the
+  exact candidate tuple before JavaScript or WASM execution.
 - `b3-3a-journal.mjs`: isolated in-memory and owner-only file-backed CAS
   journals.
 - `b3-3a-engine-adapter.mjs`: trusted write-ahead boundary around the one-use

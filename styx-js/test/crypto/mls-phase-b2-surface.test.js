@@ -84,7 +84,7 @@ describe('generated OpenMLS Phase B3.2a surface', () => {
 
   test('product source does not reference an isolated Phase B probe surface', () => {
     const offenders = javascriptFiles(PRODUCT_SRC)
-      .filter((path) => /\b(?:PhaseB2|PhaseB31|PhaseB32)/.test(readFileSync(path, 'utf8')))
+      .filter((path) => /\b(?:PhaseB2|PhaseB31|PhaseB32|PhaseB33)/.test(readFileSync(path, 'utf8')))
       .map((path) => path.slice(PRODUCT_SRC.length + 1));
     expect(offenders).toEqual([]);
   });

@@ -214,6 +214,7 @@ async function runMode(args) {
     styx = new StyxB33aProcess();
     appendB33aTranscript(transcript, 'styx_initialize_new', await styx.request('initialize_new', {
       artifact_directory: args.candidateDirectory,
+      artifact_tuple: pins.candidateTuple,
       expected_author_hex: mdkIdentityHex,
       private_directory: styxPrivateDirectory,
     }));
@@ -284,6 +285,7 @@ async function runMode(args) {
     appendB33aTranscript(transcript, 'styx_fresh_process_restore', await styx.request(
       'initialize_existing', {
         artifact_directory: args.candidateDirectory,
+        artifact_tuple: pins.candidateTuple,
         private_directory: styxPrivateDirectory,
       },
     ));

@@ -3,10 +3,10 @@
 
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { readFileSync, realpathSync, statSync } from 'node:fs';
+import { realpathSync, statSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 
 import { schnorr } from '@noble/curves/secp256k1';
 
@@ -35,6 +35,7 @@ import {
   sha256Hex,
 } from './b3-3a-canonical.mjs';
 import { B33aApplicationAdapter } from './b3-3a-engine-adapter.mjs';
+import { readExactRegularFile } from './b3-3a-artifact-reader.mjs';
 import { openB33aFileJournal } from './b3-3a-journal.mjs';
 
 const PROOF_CREATED_AT = 1_786_680_000;
@@ -74,54 +75,77 @@ function candidateDirectory(path) {
   return candidate;
 }
 
-async function loadCandidateWasm(candidatePath, cacheTag) {
+function exactCandidateTuple(value) {
+  exactFields(value, [
+    'openmls_wasm.js', 'openmls_wasm.d.ts', 'openmls_wasm_bg.wasm',
+    'openmls_wasm_bg.wasm.d.ts', 'package.json',
+  ], 'candidate tuple');
+  for (const digest of Object.values(value)) {
+    if (typeof digest !== 'string' || !/^[0-9a-f]{64}$/.test(digest)) {
+      failB33a(B33A_ERROR.INVALID, 'candidate tuple contains an invalid digest');
+    }
+  }
+  return Object.freeze({ ...value });
+}
+
+async function loadCandidateWasm(candidatePath, expectedTuple, cacheTag) {
   const directory = candidateDirectory(candidatePath);
   const wasmPath = resolve(directory, 'openmls_wasm_bg.wasm');
   const modulePath = resolve(directory, 'openmls_wasm.js');
-  if (!statSync(wasmPath).isFile() || !statSync(modulePath).isFile()) {
-    failB33a(B33A_ERROR.INVALID, 'candidate artifact files are not regular files');
-  }
-  const wasmBytes = Uint8Array.from(readFileSync(wasmPath));
-  const moduleUrl = pathToFileURL(modulePath);
-  moduleUrl.searchParams.set('b3-3a', `${cacheTag}-${process.pid}-${Date.now()}-${Math.random()}`);
-  const wasm = await import(moduleUrl.href);
-  await wasm.default({ module_or_path: wasmBytes });
-  for (const name of [
-    'Provider', 'PhaseB2Identity', 'PhaseB32aKeyPackage',
-    'PhaseB32aPendingWelcome', 'PhaseB32aGroup', 'PhaseB33aGroup',
-  ]) {
-    if (typeof wasm[name] !== 'function') {
-      clearBytes(wasmBytes);
-      failB33a(B33A_ERROR.ENGINE_REJECTED, `candidate WASM lacks ${name}`);
+  const tuple = exactCandidateTuple(expectedTuple);
+  const wasmBytes = readExactRegularFile(
+    wasmPath, tuple['openmls_wasm_bg.wasm'],
+  ).bytes;
+  const moduleBytes = readExactRegularFile(modulePath, tuple['openmls_wasm.js']).bytes;
+  try {
+    const nonce = randomBytes(16).toString('hex');
+    const moduleUrl = `data:text/javascript;base64,${Buffer.from(moduleBytes).toString('base64')}`
+      + `#b3-3a-${cacheTag}-${process.pid}-${nonce}`;
+    const wasm = await import(moduleUrl);
+    await wasm.default({ module_or_path: wasmBytes });
+    for (const name of [
+      'Provider', 'PhaseB2Identity', 'PhaseB32aKeyPackage',
+      'PhaseB32aPendingWelcome', 'PhaseB32aGroup', 'PhaseB33aGroup',
+    ]) {
+      if (typeof wasm[name] !== 'function') {
+        failB33a(B33A_ERROR.ENGINE_REJECTED, `candidate WASM lacks ${name}`);
+      }
     }
+    return Object.freeze({ wasm, wasmBytes });
+  } catch (error) {
+    clearBytes(wasmBytes);
+    throw error;
+  } finally {
+    clearBytes(moduleBytes);
   }
-  return Object.freeze({ wasm, wasmBytes });
 }
 
 export class StyxB33aPeer {
   #artifactDirectory;
+  #artifactTuple;
   #b32aJournal;
   #b33aJournal;
   #adapter;
   #wasm;
   #wasmBytes;
 
-  static async create(privateDirectory, artifactDirectory, expectedAuthorHex) {
-    const peer = new StyxB33aPeer(privateDirectory, artifactDirectory);
+  static async create(privateDirectory, artifactDirectory, artifactTuple, expectedAuthorHex) {
+    const peer = new StyxB33aPeer(privateDirectory, artifactDirectory, artifactTuple);
     await peer.#load('create');
     await peer.#initializeB32a(expectedAuthorHex);
     return peer;
   }
 
-  static async open(privateDirectory, artifactDirectory) {
-    const peer = new StyxB33aPeer(privateDirectory, artifactDirectory);
+  static async open(privateDirectory, artifactDirectory, artifactTuple) {
+    const peer = new StyxB33aPeer(privateDirectory, artifactDirectory, artifactTuple);
     await peer.#load('restart');
     await peer.verifyActive();
     return peer;
   }
 
-  constructor(privateDirectory, artifactDirectory) {
+  constructor(privateDirectory, artifactDirectory, artifactTuple) {
     this.#artifactDirectory = artifactDirectory;
+    this.#artifactTuple = exactCandidateTuple(artifactTuple);
     this.#b32aJournal = openB32aFileJournal(
       resolve(privateDirectory, 'b32a-journal'), B33A_PRIVATE_ROOT,
     );
@@ -131,7 +155,9 @@ export class StyxB33aPeer {
   }
 
   async #load(cacheTag) {
-    const loaded = await loadCandidateWasm(this.#artifactDirectory, cacheTag);
+    const loaded = await loadCandidateWasm(
+      this.#artifactDirectory, this.#artifactTuple, cacheTag,
+    );
     this.#wasm = loaded.wasm;
     this.#wasmBytes = loaded.wasmBytes;
     this.#adapter = new B33aApplicationAdapter({ journal: this.#b33aJournal, wasm: this.#wasm });
@@ -274,20 +300,24 @@ async function serve() {
       switch (request.op) {
         case 'initialize_new':
           exactFields(request, [
-            'artifact_directory', 'expected_author_hex', 'id', 'op', 'private_directory',
+            'artifact_directory', 'artifact_tuple', 'expected_author_hex', 'id', 'op',
+            'private_directory',
           ], 'initialize_new request');
           if (peer) failB33a(B33A_ERROR.STATE_CONFLICT, 'peer is already initialized');
           peer = await StyxB33aPeer.create(
-            request.private_directory, request.artifact_directory, request.expected_author_hex,
+            request.private_directory, request.artifact_directory, request.artifact_tuple,
+            request.expected_author_hex,
           );
           result = { disposition: 'new_peer_initialized' };
           break;
         case 'initialize_existing':
           exactFields(request, [
-            'artifact_directory', 'id', 'op', 'private_directory',
+            'artifact_directory', 'artifact_tuple', 'id', 'op', 'private_directory',
           ], 'initialize_existing request');
           if (peer) failB33a(B33A_ERROR.STATE_CONFLICT, 'peer is already initialized');
-          peer = await StyxB33aPeer.open(request.private_directory, request.artifact_directory);
+          peer = await StyxB33aPeer.open(
+            request.private_directory, request.artifact_directory, request.artifact_tuple,
+          );
           result = { disposition: 'durable_peer_restored' };
           break;
         case 'public_key_package':

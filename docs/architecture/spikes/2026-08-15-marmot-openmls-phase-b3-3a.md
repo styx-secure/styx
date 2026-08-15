@@ -49,6 +49,13 @@ authenticated sender evidence. Both paths read the committed bytes back before
 returning a copy to the orchestrator. All local scratch copies are cleared on
 success and failure.
 
+The artifact loader binds each fresh Styx process to the tuple measured by the
+orchestrator. It opens candidate files with `O_NOFOLLOW`, validates the regular
+file inode before and after the descriptor-bound read, checks the exact SHA-256
+digest, and imports the generated JavaScript from those verified bytes. It does
+not execute a path after a separate check, so a path replacement cannot change
+the code or WASM bytes exercised by the recorded tuple.
+
 The file journal uses immutable content-addressed blobs, an exclusive
 fail-closed lock, atomic head replacement and directory synchronization. A
 stale lock is never broken automatically. This is isolated evidence, not a
@@ -96,5 +103,12 @@ installed.
   privacy property.
 - File-backed evidence is not the browser vault or a production persistence
   profile.
+- Transient clearing is best effort: the operation-scoped Provider is wiped on
+  drop, but wasm-bindgen copies returned across the boundary cannot be proven
+  physically zeroized after the JavaScript copy is made.
+- Non-roster senders are rejected by OpenMLS membership authentication and then
+  rebound to the exact roster in both WASM and JavaScript; the candidate has
+  layered hostile coverage rather than a separately constructible valid-group
+  native fixture for an authenticated non-member.
 - No real user data, security certification, general Marmot compatibility,
   legal-evidence or production-suitability claim is made.

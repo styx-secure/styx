@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import {
   B31_FORMAT,
   validateB31Report,
@@ -24,6 +29,8 @@ import {
   validateB33aReport,
   validateB33aTranscript,
 } from '../../spikes/marmot-phase-b3-3a/b3-3a-canonical.mjs';
+import { readExactRegularFile }
+  from '../../spikes/marmot-phase-b3-3a/b3-3a-artifact-reader.mjs';
 import {
   B33aJournal,
   MemoryB33aStore,
@@ -63,6 +70,25 @@ async function heads() {
 }
 
 describe('Phase B3.3a evidence and format separation', () => {
+  test('reads the exact artifact inode and rejects digest drift or symlinks', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'styx-b33a-artifact-'));
+    const artifact = join(directory, 'artifact.bin');
+    const link = join(directory, 'artifact-link.bin');
+    const bytes = Buffer.from('exact immutable candidate bytes');
+    const expected = createHash('sha256').update(bytes).digest('hex');
+    try {
+      writeFileSync(artifact, bytes);
+      symlinkSync(artifact, link);
+      const read = readExactRegularFile(artifact, expected);
+      expect(Buffer.from(read.bytes)).toEqual(bytes);
+      expect(read.sha256Hex).toBe(expected);
+      expect(() => readExactRegularFile(artifact, '00'.repeat(32))).toThrow();
+      expect(() => readExactRegularFile(link, expected)).toThrow();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   test('validates a closed hash-linked GO report', () => {
     const transcript = [];
     appendB33aTranscript(transcript, 'synthetic_step', { ok: true });
