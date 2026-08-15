@@ -6,6 +6,8 @@ import { createHash } from 'node:crypto';
 export const B33A_FORMAT = 'styx-marmot-b3.3a-application-journal';
 export const B33A_VERSION = 1;
 export const B33A_PROVIDER_FORMAT = 'phase-b32a-provider-canonical-v1';
+export const B33A_RUN_ROOT = '/home/mverde/.local/share/styx-b3-3a-runs/issue-185';
+export const B33A_PRIVATE_ROOT = '/home/mverde/.local/share/styx-b3-3a-private/issue-185';
 export const B33A_STATE = Object.freeze({ ACTIVE: 'ACTIVE' });
 export const B33A_OUTCOME = Object.freeze({
   COMMITTED: 'COMMITTED',
@@ -26,6 +28,7 @@ export const B33A_LIMITS = Object.freeze({
   maxCiphertextBytes: 1024 * 1024,
   maxContentBytes: 256 * 1024,
   maxEventBytes: 320 * 1024,
+  maxJournalHeadBytes: 1024 * 1024,
   maxJournalRecords: 64,
   maxProviderBytes: 8 * 1024 * 1024,
   maxRequestIdBytes: 128,

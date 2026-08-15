@@ -2,6 +2,12 @@
 
 import { B32A_PREPARATION } from '../../spikes/marmot-phase-b3-2a/b3-2a-canonical.mjs';
 import {
+  mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { resolve } from 'node:path';
+
+import {
   B32aJournal,
   MemoryB32aStore,
 } from '../../spikes/marmot-phase-b3-2a/b3-2a-journal.mjs';
@@ -19,6 +25,7 @@ import { B33aApplicationAdapter }
   from '../../spikes/marmot-phase-b3-3a/b3-3a-engine-adapter.mjs';
 import {
   B33aJournal,
+  FileB33aStore,
   MemoryB33aStore,
 } from '../../spikes/marmot-phase-b3-3a/b3-3a-journal.mjs';
 
@@ -159,7 +166,7 @@ function fakeWasm(projection) {
   };
 }
 
-async function joinedFixture() {
+async function joinedFixture(store = new MemoryB33aStore()) {
   const values = b32aFixture();
   const b32a = new B32aJournal(new MemoryB32aStore());
   await b32a.initializeStable({
@@ -175,7 +182,6 @@ async function joinedFixture() {
     secondCandidateStateSha256Hex: values.projection.candidateStateSha256Hex,
     differingStorageKeyHex: '',
   });
-  const store = new MemoryB33aStore();
   const journal = new B33aJournal(store);
   const wasm = fakeWasm(values.projection);
   const adapter = new B33aApplicationAdapter({ journal, wasm });
@@ -232,6 +238,59 @@ describe('Phase B3.3a isolated durable application journal', () => {
     const durable = await new B33aJournal(store).readCurrent();
     expect(durable.head.sequence).toBe(3);
     durable.stateBytes.fill(0);
+  });
+
+  test('reopens a private file journal and continues from its durable ratchet state', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'styx-b33a-root-'));
+    const directory = resolve(root, 'journal');
+    try {
+      const firstStore = new FileB33aStore(directory, root);
+      const { values, adapter, wasm, joinedHead } = await joinedFixture(firstStore);
+      const first = await adapter.send(
+        'file-request-1', eventBytes(values.joiner.identityHex, 9),
+      );
+      expect(first.status).toBe(B33A_OUTCOME.COMMITTED);
+
+      const restartedJournal = new B33aJournal(new FileB33aStore(directory, root));
+      const restarted = new B33aApplicationAdapter({ journal: restartedJournal, wasm });
+      const duplicate = await restarted.send(
+        'file-request-1', eventBytes(values.joiner.identityHex, 9),
+      );
+      expect(duplicate).toEqual(expect.objectContaining({
+        status: B33A_OUTCOME.DUPLICATE,
+        requestId: 'file-request-1',
+      }));
+      const second = await restarted.send(
+        'file-request-2', eventBytes(values.joiner.identityHex, 10),
+      );
+      expect(second.status).toBe(B33A_OUTCOME.COMMITTED);
+
+      const durable = await restartedJournal.readCurrent();
+      expect(durable.head.sequence).toBe(3);
+      expect(durable.head.sourceB32aHeadDigestHex).toBe(joinedHead.headDigestHex);
+      durable.stateBytes.fill(0);
+      expect(statSync(directory).mode & 0o777).toBe(0o700);
+      expect(statSync(resolve(directory, 'head.json')).mode & 0o777).toBe(0o600);
+      expect(statSync(resolve(directory, 'blobs')).mode & 0o777).toBe(0o700);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('file journal rejects escaping paths and non-canonical durable heads', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'styx-b33a-root-'));
+    try {
+      expect(() => new FileB33aStore(resolve(root, '..', 'escape'), root))
+        .toThrow(expect.objectContaining({ code: B33A_ERROR.INVALID }));
+      const directory = resolve(root, 'journal');
+      const { journal } = await joinedFixture(new FileB33aStore(directory, root));
+      const headPath = resolve(directory, 'head.json');
+      writeFileSync(headPath, ` ${readFileSync(headPath, 'utf8')}`);
+      await expect(journal.readCurrent())
+        .rejects.toMatchObject({ code: B33A_ERROR.CORRUPT });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test('releases plaintext once only after inbound CAS and durable read-back', async () => {

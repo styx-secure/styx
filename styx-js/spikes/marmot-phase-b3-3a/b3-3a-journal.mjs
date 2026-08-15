@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // STYX_SPIKE_PROTOTYPE — isolated B3.3a authoritative CAS journal.
 
+import { randomUUID } from 'node:crypto';
+import {
+  chmodSync, closeSync, existsSync, fsyncSync, linkSync, mkdirSync, openSync,
+  readSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync,
+} from 'node:fs';
+import { relative, resolve, sep } from 'node:path';
+
 import { B32A_STATE } from '../marmot-phase-b3-2a/b3-2a-canonical.mjs';
 import { parseB32aHead } from '../marmot-phase-b3-2a/b3-2a-journal.mjs';
 import {
@@ -8,6 +15,7 @@ import {
   B33A_FORMAT,
   B33A_LIMITS,
   B33A_OUTCOME,
+  B33A_PRIVATE_ROOT,
   B33A_PROVIDER_FORMAT,
   B33A_STATE,
   B33A_VERSION,
@@ -397,4 +405,195 @@ export class B33aJournal {
       clearBytes(current.stateBytes);
     }
   }
+}
+
+function assertPrivateChild(directory, approvedRoot) {
+  mkdirSync(approvedRoot, { recursive: true, mode: 0o700 });
+  chmodSync(approvedRoot, 0o700);
+  const root = realpathSync(approvedRoot);
+  const target = resolve(directory);
+  const pathFromRoot = relative(root, target);
+  if (pathFromRoot === '' || pathFromRoot === '..' || pathFromRoot.startsWith(`..${sep}`)) {
+    failB33a(B33A_ERROR.INVALID, 'journal directory is not a strict child of the private root');
+  }
+  mkdirSync(target, { recursive: true, mode: 0o700 });
+  chmodSync(target, 0o700);
+  const resolvedFromRoot = relative(root, realpathSync(target));
+  if (resolvedFromRoot === '' || resolvedFromRoot === '..'
+    || resolvedFromRoot.startsWith(`..${sep}`)) {
+    failB33a(B33A_ERROR.INVALID, 'journal directory is not a resolved strict child');
+  }
+  return target;
+}
+
+function durableWrite(path, value) {
+  const descriptor = openSync(path, 'wx', 0o600);
+  try { writeFileSync(descriptor, value); fsyncSync(descriptor); } finally { closeSync(descriptor); }
+}
+
+function syncDirectory(directory) {
+  const descriptor = openSync(directory, 'r');
+  try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
+}
+
+function readBoundedFile(path, maximumBytes, label) {
+  let descriptor;
+  try { descriptor = openSync(path, 'r'); } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+  let scratch;
+  try {
+    scratch = Buffer.alloc(maximumBytes + 1);
+    let offset = 0;
+    let reachedEof = false;
+    while (offset < scratch.length) {
+      let count;
+      try { count = readSync(descriptor, scratch, offset, scratch.length - offset, null); } catch (error) {
+        if (error?.code === 'EINTR') continue;
+        throw error;
+      }
+      if (count === 0) { reachedEof = true; break; }
+      offset += count;
+    }
+    if (!reachedEof && offset > maximumBytes) {
+      failB33a(B33A_ERROR.CORRUPT, `${label} exceeds its resource envelope`);
+    }
+    return Uint8Array.from(scratch.subarray(0, offset));
+  } finally {
+    scratch?.fill(0);
+    closeSync(descriptor);
+  }
+}
+
+function boundedFileEquals(path, expectedBytes, maximumBytes, label) {
+  const actual = readBoundedFile(path, maximumBytes, label);
+  if (actual === null) return null;
+  try { return Buffer.from(actual).equals(Buffer.from(expectedBytes)); } finally { actual.fill(0); }
+}
+
+export class FileB33aStore {
+  constructor(directory, approvedRoot = B33A_PRIVATE_ROOT) {
+    this.directory = assertPrivateChild(directory, approvedRoot);
+    this.blobDirectory = resolve(this.directory, 'blobs');
+    mkdirSync(this.blobDirectory, { recursive: true, mode: 0o700 });
+    chmodSync(this.blobDirectory, 0o700);
+    this.headPath = resolve(this.directory, 'head.json');
+    this.lockDirectory = resolve(this.directory, 'cas.lock');
+  }
+
+  async readHead() {
+    const raw = readBoundedFile(
+      this.headPath, B33A_LIMITS.maxJournalHeadBytes, 'durable head',
+    );
+    if (raw === null) return null;
+    try {
+      let parsed;
+      try { parsed = JSON.parse(Buffer.from(raw).toString('utf8')); } catch (error) {
+        failB33a(B33A_ERROR.CORRUPT, 'durable head is not strict JSON', {}, error);
+      }
+      if (!Buffer.from(raw).equals(Buffer.from(canonicalJsonBytes(parsed)))) {
+        failB33a(B33A_ERROR.CORRUPT, 'durable head is not canonical JSON');
+      }
+      return parsed;
+    } finally {
+      raw.fill(0);
+    }
+  }
+
+  async readBlob(valueDigest) {
+    assertDigest('blob digest', valueDigest);
+    return readBoundedFile(
+      resolve(this.blobDirectory, valueDigest), B33A_LIMITS.maxProviderBytes, 'durable blob',
+    );
+  }
+
+  #acquireLock() {
+    const owner = `${process.pid}:${randomUUID()}\n`;
+    let created = false;
+    try {
+      mkdirSync(this.lockDirectory, { mode: 0o700 });
+      created = true;
+      durableWrite(resolve(this.lockDirectory, 'owner'), owner);
+      return owner;
+    } catch (error) {
+      if (created) {
+        const ownerPath = resolve(this.lockDirectory, 'owner');
+        if (existsSync(ownerPath)) unlinkSync(ownerPath);
+        if (existsSync(this.lockDirectory)) rmdirSync(this.lockDirectory);
+      }
+      if (error?.code === 'EEXIST') {
+        failB33a(B33A_ERROR.CAS_CONFLICT, 'CAS lock exists; stale-lock recovery is explicit');
+      }
+      throw error;
+    }
+  }
+
+  #releaseLock(expectedOwner) {
+    const ownerPath = resolve(this.lockDirectory, 'owner');
+    const ownerBytes = readBoundedFile(ownerPath, 128, 'CAS lock owner');
+    if (ownerBytes === null) {
+      failB33a(B33A_ERROR.CAS_CONFLICT, 'CAS lock disappeared before release');
+    }
+    let owner;
+    try { owner = Buffer.from(ownerBytes).toString('utf8'); } finally { ownerBytes.fill(0); }
+    if (owner !== expectedOwner) {
+      failB33a(B33A_ERROR.CAS_CONFLICT, 'CAS lock ownership changed before release');
+    }
+    unlinkSync(ownerPath);
+    rmdirSync(this.lockDirectory);
+  }
+
+  #writeImmutableBlob(bytes) {
+    const valueDigest = sha256Hex(bytes);
+    const finalPath = resolve(this.blobDirectory, valueDigest);
+    const existing = boundedFileEquals(
+      finalPath, bytes, B33A_LIMITS.maxProviderBytes, 'immutable blob',
+    );
+    if (existing !== null) {
+      if (!existing) failB33a(B33A_ERROR.CORRUPT, 'immutable blob content-address collision');
+      return;
+    }
+    const temporary = resolve(
+      this.blobDirectory, `.${valueDigest}.${process.pid}.${randomUUID()}.tmp`,
+    );
+    durableWrite(temporary, bytes);
+    try {
+      linkSync(temporary, finalPath);
+      chmodSync(finalPath, 0o600);
+      syncDirectory(this.blobDirectory);
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      if (boundedFileEquals(
+        finalPath, bytes, B33A_LIMITS.maxProviderBytes, 'immutable blob',
+      ) !== true) {
+        failB33a(B33A_ERROR.CORRUPT, 'immutable blob race disagreed on bytes');
+      }
+    } finally {
+      if (existsSync(temporary)) unlinkSync(temporary);
+    }
+  }
+
+  async compareAndSwap(expectedDigest, nextHead, blobWrites) {
+    const owner = this.#acquireLock();
+    try {
+      const current = await this.readHead();
+      if ((current?.headDigestHex ?? null) !== expectedDigest) return false;
+      for (const bytes of blobWrites) this.#writeImmutableBlob(bytes);
+      const temporary = resolve(
+        this.directory, `.head.${process.pid}.${randomUUID()}.tmp`,
+      );
+      durableWrite(temporary, canonicalJsonBytes(nextHead));
+      renameSync(temporary, this.headPath);
+      chmodSync(this.headPath, 0o600);
+      syncDirectory(this.directory);
+      return true;
+    } finally {
+      this.#releaseLock(owner);
+    }
+  }
+}
+
+export function openB33aFileJournal(directory, approvedRoot = B33A_PRIVATE_ROOT) {
+  return new B33aJournal(new FileB33aStore(directory, approvedRoot));
 }
