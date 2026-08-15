@@ -12,11 +12,14 @@ use cgka_engine::account_identity_proof::{
 };
 use cgka_engine::{Engine, EngineBuilder};
 use cgka_traits::EngineError;
-use cgka_traits::engine::{CgkaEngine, CreateGroupRequest, KeyPackage, SendResult};
+use cgka_traits::app_event::MarmotAppEvent;
+use cgka_traits::engine::{
+    CgkaEngine, CreateGroupRequest, GroupEvent, KeyPackage, SendIntent, SendResult,
+};
 use cgka_traits::error::PeelerError;
 use cgka_traits::group::ProtocolProfile;
 use cgka_traits::group_context::GroupContextSnapshot;
-use cgka_traits::ingest::{PeeledContent, PeeledMessage};
+use cgka_traits::ingest::{IngestOutcome, InputRejectionCategory, PeeledContent, PeeledMessage};
 use cgka_traits::peeler::TransportPeeler;
 use cgka_traits::transport::{
     EncryptedPayload, Timestamp, TransportEnvelope, TransportMessage, TransportSource,
@@ -29,6 +32,9 @@ use storage_sqlite::{SqlCipherKey, SqliteAccountStorage};
 const PROTOCOL: &str = "styx-b3-mdk-peer-jsonl-v1";
 const MAX_LINE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_HEX_BYTES: usize = 2 * 1024 * 1024;
+const MAX_GROUP_ID_BYTES: usize = 64;
+const MAX_APPLICATION_EVENT_BYTES: usize = 320 * 1024;
+const MAX_GROUP_MESSAGE_BYTES: usize = 1024 * 1024;
 
 #[derive(Default)]
 struct DirectMlsPeeler;
@@ -175,6 +181,7 @@ struct RpcError {
     code: &'static str,
     message: String,
     details: Option<Value>,
+    terminate: bool,
 }
 
 impl RpcError {
@@ -183,6 +190,7 @@ impl RpcError {
             code: "invalid_request",
             message: message.into(),
             details: None,
+            terminate: false,
         }
     }
 
@@ -191,6 +199,7 @@ impl RpcError {
             code: "invalid_state",
             message: message.into(),
             details: None,
+            terminate: false,
         }
     }
 
@@ -199,6 +208,16 @@ impl RpcError {
             code: "mdk_peer_error",
             message: message.into(),
             details: None,
+            terminate: false,
+        }
+    }
+
+    fn fatal_peer(message: impl Into<String>) -> Self {
+        Self {
+            code: "mdk_peer_quarantined",
+            message: message.into(),
+            details: None,
+            terminate: true,
         }
     }
 
@@ -207,6 +226,7 @@ impl RpcError {
             code: "bounded_nogo",
             message: message.into(),
             details: None,
+            terminate: false,
         }
     }
 
@@ -236,6 +256,7 @@ impl RpcError {
                     "proposals": required.proposals,
                 },
             })),
+            terminate: false,
         }
     }
 }
@@ -270,7 +291,27 @@ fn decode_hex_field(object: &Map<String, Value>, field: &str) -> Result<Vec<u8>,
     if encoded.len() > MAX_HEX_BYTES * 2 || encoded.len() % 2 != 0 {
         return Err(RpcError::input(format!("{field} has an invalid length")));
     }
+    if !encoded
+        .bytes()
+        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(RpcError::input(format!("{field} must be lowercase hex")));
+    }
     hex::decode(encoded).map_err(|_| RpcError::input(format!("{field} must be lowercase hex")))
+}
+
+fn decode_bounded_hex_field(
+    object: &Map<String, Value>,
+    field: &str,
+    maximum_bytes: usize,
+) -> Result<Vec<u8>, RpcError> {
+    let decoded = decode_hex_field(object, field)?;
+    if decoded.is_empty() || decoded.len() > maximum_bytes {
+        return Err(RpcError::input(format!(
+            "{field} is outside its resource envelope"
+        )));
+    }
+    Ok(decoded)
 }
 
 fn path_field(object: &Map<String, Value>, field: &str) -> Result<PathBuf, RpcError> {
@@ -378,8 +419,19 @@ async fn create_group(
         .engine()?
         .conformance_group_snapshot(&group_id)
         .map_err(|error| RpcError::peer(format!("capture conformance projection: {error}")))?;
+    let creation_events = state.engine_mut()?.drain_events();
+    if creation_events.iter().any(|event| {
+        !matches!(event, GroupEvent::GroupCreated { group_id: event_group_id }
+            if event_group_id == &group_id)
+    }) {
+        state.engine = None;
+        return Err(RpcError::fatal_peer(
+            "group creation emitted an unexpected application-visible event",
+        ));
+    }
     state.group_id = Some(group_id.clone());
     Ok(json!({
+        "creation_event_count": creation_events.len(),
         "group_id_hex": hex::encode(group_id.as_slice()),
         "welcome_hex": hex::encode(&welcome.payload),
         "welcome_message_id_hex": hex::encode(welcome.id.as_slice()),
@@ -417,15 +469,224 @@ fn public_projection(state: &PeerState, request: &Map<String, Value>) -> Result<
         .map_err(|error| RpcError::peer(format!("serialize conformance projection: {error}")))
 }
 
-fn unsupported_after_nogo(
+fn restore_group(state: &mut PeerState, request: &Map<String, Value>) -> Result<Value, RpcError> {
+    exact_fields(request, &["group_id_hex", "id", "op"])?;
+    if state.group_id.is_some() {
+        return Err(RpcError::state("group is already selected in this process"));
+    }
+    let group_id = GroupId::new(decode_bounded_hex_field(
+        request,
+        "group_id_hex",
+        MAX_GROUP_ID_BYTES,
+    )?);
+    let projection = state
+        .engine()?
+        .conformance_group_snapshot(&group_id)
+        .map_err(|error| RpcError::peer(format!("restore durable group projection: {error}")))?;
+    let hydration_events = state.engine_mut()?.drain_events();
+    if !hydration_events.is_empty() {
+        state.engine = None;
+        return Err(RpcError::fatal_peer(
+            "durable group restoration produced pending application-visible events",
+        ));
+    }
+    state.group_id = Some(group_id);
+    Ok(json!({
+        "disposition": "durable_group_restored",
+        "projection": projection,
+    }))
+}
+
+async fn send_application(
+    state: &mut PeerState,
     request: &Map<String, Value>,
-    operation: &str,
 ) -> Result<Value, RpcError> {
+    exact_fields(request, &["id", "op", "payload_hex"])?;
+    let group_id = state
+        .group_id
+        .clone()
+        .ok_or_else(|| RpcError::state("group is not initialized"))?;
+    let payload = decode_bounded_hex_field(request, "payload_hex", MAX_APPLICATION_EVENT_BYTES)?;
+    MarmotAppEvent::decode(&payload)
+        .map_err(|error| RpcError::input(format!("invalid Marmot application event: {error}")))?;
+    let result = match state
+        .engine_mut()?
+        .send(SendIntent::AppMessage {
+            group_id: group_id.clone(),
+            payload,
+        })
+        .await
+    {
+        Ok(result) => result,
+        Err(error) => {
+            state.engine = None;
+            state.group_id = None;
+            return Err(RpcError::fatal_peer(format!(
+                "application send failed after entering the MDK mutation boundary: {error}"
+            )));
+        }
+    };
+    let unexpected_events = state.engine_mut()?.drain_events();
+    if !unexpected_events.is_empty() {
+        state.engine = None;
+        state.group_id = None;
+        return Err(RpcError::fatal_peer(
+            "application send produced unexpected application-visible events",
+        ));
+    }
+    match result {
+        SendResult::ApplicationMessage {
+            msg,
+            group_id: result_group_id,
+            app_event_id,
+            source_epoch,
+            retention,
+        } if result_group_id == group_id => Ok(json!({
+            "app_event_id_hex": app_event_id,
+            "disposition": "application_message_durably_prepared",
+            "group_id_hex": hex::encode(result_group_id.as_slice()),
+            "group_message_hex": hex::encode(&msg.payload),
+            "message_id_hex": hex::encode(msg.id.as_slice()),
+            "retention": retention,
+            "source_epoch": source_epoch,
+        })),
+        SendResult::ApplicationMessage { .. } => {
+            state.engine = None;
+            state.group_id = None;
+            Err(RpcError::fatal_peer(
+                "application send returned ciphertext for a different group",
+            ))
+        }
+        SendResult::Queued { .. } => Err(RpcError::bounded(
+            "application send was convergence-queued outside the B3.3a stable-group claim",
+        )),
+        other => Err(RpcError::bounded(format!(
+            "application send returned a non-application disposition: {other:?}"
+        ))),
+    }
+}
+
+async fn ingest_group_message(
+    state: &mut PeerState,
+    request: &Map<String, Value>,
+) -> Result<Value, RpcError> {
+    exact_fields(request, &["group_message_hex", "id", "op"])?;
+    let group_id = state
+        .group_id
+        .clone()
+        .ok_or_else(|| RpcError::state("group is not initialized"))?;
+    let payload = decode_bounded_hex_field(request, "group_message_hex", MAX_GROUP_MESSAGE_BYTES)?;
+    let transport = TransportMessage {
+        id: message_id(&payload, b"group"),
+        payload,
+        timestamp: Timestamp(0),
+        causal_deps: Vec::new(),
+        source: TransportSource("styx-b3-direct-mls".into()),
+        envelope: TransportEnvelope::GroupMessage {
+            transport_group_id: group_id.as_slice().to_vec(),
+        },
+    };
+    let transport_message_id_hex = hex::encode(transport.id.as_slice());
+    let outcome = match state.engine_mut()?.ingest(transport).await {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            state.engine = None;
+            state.group_id = None;
+            return Err(RpcError::fatal_peer(format!(
+                "group-message ingest failed after entering the MDK mutation boundary: {error}"
+            )));
+        }
+    };
+    let events = state.engine_mut()?.drain_events();
+    match outcome {
+        IngestOutcome::Processed => match events.as_slice() {
+            [
+                GroupEvent::MessageReceived {
+                    group_id: event_group_id,
+                    sender,
+                    epoch,
+                    payload,
+                    retention,
+                },
+            ] if event_group_id == &group_id => {
+                let sender_identity_hex = hex::encode(sender.as_slice());
+                let app_event = MarmotAppEvent::decode(payload).map_err(|error| {
+                    RpcError::fatal_peer(format!(
+                        "MDK released a malformed application event: {error}"
+                    ))
+                })?;
+                app_event
+                    .validate_sender(&sender_identity_hex)
+                    .map_err(|error| {
+                        RpcError::fatal_peer(format!(
+                            "MDK application event broke authenticated sender binding: {error}"
+                        ))
+                    })?;
+                Ok(json!({
+                    "app_event_id_hex": app_event.id,
+                    "disposition": "application_message_processed",
+                    "epoch": epoch,
+                    "group_id_hex": hex::encode(event_group_id.as_slice()),
+                    "message_id_hex": transport_message_id_hex,
+                    "payload_hex": hex::encode(payload),
+                    "retention": retention,
+                    "sender_identity_hex": sender_identity_hex,
+                }))
+            }
+            _ => {
+                state.engine = None;
+                state.group_id = None;
+                Err(RpcError::fatal_peer(
+                    "processed application ingest did not emit exactly one matching message",
+                ))
+            }
+        },
+        IngestOutcome::Ignored { category }
+            if matches!(
+                category,
+                InputRejectionCategory::Duplicate | InputRejectionCategory::OwnEcho
+            ) =>
+        {
+            if !events.is_empty() {
+                state.engine = None;
+                state.group_id = None;
+                return Err(RpcError::fatal_peer(
+                    "duplicate or own-echo ingest unexpectedly released events",
+                ));
+            }
+            Ok(json!({
+                "disposition": match category {
+                    InputRejectionCategory::Duplicate => "duplicate",
+                    InputRejectionCategory::OwnEcho => "own_echo",
+                    _ => unreachable!(),
+                },
+                "message_id_hex": transport_message_id_hex,
+            }))
+        }
+        other => {
+            if !events.is_empty() {
+                state.engine = None;
+                state.group_id = None;
+                return Err(RpcError::fatal_peer(
+                    "non-processed ingest unexpectedly released events",
+                ));
+            }
+            Err(RpcError {
+                code: "bounded_nogo",
+                message: "group message did not reach the exact B3.3a application outcome".into(),
+                details: serde_json::to_value(other).ok(),
+                terminate: false,
+            })
+        }
+    }
+}
+
+fn unsupported_in_b33a(request: &Map<String, Value>, operation: &str) -> Result<Value, RpcError> {
     if !request.contains_key("id") || !request.contains_key("op") {
         return Err(RpcError::input("id and op are required"));
     }
     Err(RpcError::bounded(format!(
-        "{operation} is unreachable after the first bounded incompatibility at Styx Welcome join"
+        "{operation} is intentionally outside the B3.3a application-traffic boundary"
     )))
 }
 
@@ -445,9 +706,10 @@ async fn dispatch(state: &mut PeerState, value: &Value) -> Result<(Value, bool),
         "create_group" => create_group(state, request).await?,
         "confirm_published" => confirm_published(state, request)?,
         "public_projection" => public_projection(state, request)?,
-        "send_application" | "ingest_group_message" | "self_update" => {
-            unsupported_after_nogo(request, operation)?
-        }
+        "restore_group" => restore_group(state, request)?,
+        "send_application" => send_application(state, request).await?,
+        "ingest_group_message" => ingest_group_message(state, request).await?,
+        "self_update" => unsupported_in_b33a(request, operation)?,
         "checkpoint_and_exit" => {
             exact_fields(request, &["id", "op"])?;
             return Ok((json!({"checkpointed": true}), true));
@@ -495,10 +757,13 @@ async fn main() {
                 Ok((result, should_exit)) => {
                     (json!({"id": id, "ok": true, "result": result}), should_exit)
                 }
-                Err(error) => (
-                    json!({"id": id, "ok": false, "error": {"code": error.code, "details": error.details, "message": error.message}}),
-                    false,
-                ),
+                Err(error) => {
+                    let terminate = error.terminate;
+                    (
+                        json!({"id": id, "ok": false, "error": {"code": error.code, "details": error.details, "message": error.message}}),
+                        terminate,
+                    )
+                }
             },
             Err(_) => (
                 json!({"id": id, "ok": false, "error": {"code": "invalid_json", "message": "request is not valid JSON"}}),
@@ -527,5 +792,41 @@ mod tests {
     fn exact_fields_rejects_extras() {
         let value = json!({"id": 1, "op": "hello", "extra": true});
         assert!(exact_fields(object(&value).unwrap(), &["id", "op"]).is_err());
+    }
+
+    #[test]
+    fn hex_fields_require_canonical_lowercase_encoding() {
+        let uppercase = json!({"payload_hex": "AB"});
+        let error = decode_hex_field(object(&uppercase).unwrap(), "payload_hex").unwrap_err();
+        assert_eq!(error.code, "invalid_request");
+        assert!(!error.terminate);
+
+        let lowercase = json!({"payload_hex": "ab"});
+        assert_eq!(
+            decode_hex_field(object(&lowercase).unwrap(), "payload_hex").unwrap(),
+            vec![0xab]
+        );
+    }
+
+    #[test]
+    fn bounded_hex_fields_reject_empty_and_oversized_values() {
+        let empty = json!({"payload_hex": ""});
+        assert!(decode_bounded_hex_field(object(&empty).unwrap(), "payload_hex", 1).is_err());
+
+        let oversized = json!({"payload_hex": "0001"});
+        assert!(decode_bounded_hex_field(object(&oversized).unwrap(), "payload_hex", 1).is_err());
+
+        let exact = json!({"payload_hex": "00"});
+        assert_eq!(
+            decode_bounded_hex_field(object(&exact).unwrap(), "payload_hex", 1).unwrap(),
+            vec![0]
+        );
+    }
+
+    #[test]
+    fn fatal_peer_errors_quarantine_the_process() {
+        let error = RpcError::fatal_peer("synthetic fatal mutation failure");
+        assert_eq!(error.code, "mdk_peer_quarantined");
+        assert!(error.terminate);
     }
 }

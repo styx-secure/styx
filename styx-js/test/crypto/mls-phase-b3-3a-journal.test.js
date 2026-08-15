@@ -193,7 +193,7 @@ function eventBytes(pubkey, marker) {
   return encodeMarmotAppEvent({
     pubkey,
     created_at: 1_786_680_100 + marker,
-    kind: 445,
+    kind: 9,
     tags: [['h', `synthetic-${marker}`]],
     content: `synthetic application event ${marker}`,
   });
