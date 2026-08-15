@@ -97,38 +97,54 @@ class NoGoFixTests(unittest.TestCase):
                 ["/bin/bash", "--noprofile", "--norc", "-lc", "python3 -m unittest"],
             )
 
-    def test_settings_are_noninteractive_and_runner_state_is_not_task_writable(self):
+    def test_settings_preserve_mucc_boundary_without_project_runner_write_grants(self):
         settings = json.loads((ROOT / ".claude/settings.json").read_text(encoding="utf-8"))
-        self.assertEqual(settings["permissions"]["defaultMode"], "dontAsk")
-        self.assertIn(
-            "~/.local/state/styx-agent-runner/worktrees",
-            settings["permissions"]["additionalDirectories"],
-        )
-        self.assertTrue(settings["sandbox"]["autoAllowBashIfSandboxed"])
-        self.assertFalse(settings["sandbox"]["allowUnsandboxedCommands"])
-        self.assertIn(
-            "python3 tools/agent-runner/styx-agent run --issue * --execution-id issue-*",
-            settings["sandbox"]["excludedCommands"],
-        )
-        allow_write = set(settings["sandbox"]["filesystem"]["allowWrite"])
-        deny_write = set(settings["sandbox"]["filesystem"]["denyWrite"])
-        self.assertEqual(
-            allow_write,
-            {
-                "~/.local/state/styx-agent-runner/worktrees",
-                "~/.local/state/styx-agent-runner/git",
-            },
-        )
-        self.assertIn("~/.local/state/styx-agent-runner/active.json", deny_write)
-        self.assertIn("~/.local/state/styx-agent-runner/runs", deny_write)
-        self.assertIn("~/.local/state/styx-agent-runner/evidence", deny_write)
-        self.assertIn("*", settings["sandbox"]["network"]["deniedDomains"])
-        self.assertIn("PostToolUse", settings["hooks"])
-        self.assertIn("PostToolUseFailure", settings["hooks"])
-        self.assertIn("PostToolBatch", settings["hooks"])
-        hook_commands = json.dumps(settings["hooks"])
-        self.assertIn("worktree_integrity.py", hook_commands)
-        self.assertIn("styx_guard.py", hook_commands)
+        self.assertEqual(settings["disableBypassPermissionsMode"], "disable")
+        permissions = settings["permissions"]
+        self.assertEqual(permissions["defaultMode"], "default")
+        self.assertNotIn("additionalDirectories", permissions)
+        self.assertNotIn("allow", permissions)
+        self.assertNotIn("sandbox", settings)
+        self.assertNotIn("hooks", settings)
+
+        denied = set(permissions["deny"])
+        for command in (
+            "Bash(curl *)",
+            "Bash(wget *)",
+            "Bash(ssh *)",
+            "Bash(scp *)",
+            "Bash(sftp *)",
+            "Bash(nc *)",
+            "Bash(ncat *)",
+            "Bash(socat *)",
+            "Bash(sudo *)",
+            "Bash(apt *)",
+            "Bash(apt-get *)",
+            "Bash(dpkg *)",
+            "Bash(snap *)",
+            "Bash(systemctl *)",
+            "Bash(service *)",
+        ):
+            self.assertIn(command, denied)
+        for path in (
+            "Read(~/.config/gh/**)",
+            "Read(~/.config/git/**)",
+            "Read(~/.ssh/**)",
+            "Read(~/.aws/**)",
+            "Read(~/.gnupg/**)",
+            "Read(~/.docker/config.json)",
+            "Read(~/.git-credentials)",
+            "Read(~/.gitconfig)",
+            "Read(~/.netrc)",
+        ):
+            self.assertIn(path, denied)
+        for deprecated in (
+            "Bash(git push *)",
+            "Bash(gh *)",
+            "Bash(find *)",
+            "Bash(sed *)",
+        ):
+            self.assertNotIn(deprecated, denied)
 
     def test_attestation_detects_state_tampering_and_real_diff_violation(self):
         with tempfile.TemporaryDirectory() as tmp:

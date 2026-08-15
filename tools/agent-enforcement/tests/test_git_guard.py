@@ -450,7 +450,10 @@ class GitGuardTests(GuardIntegrationCase):
         head = self.repo.commit("head")
         run(["git", "checkout", "-q", base], self.repo.root)
 
-        body = contract_body(binary_artifacts=(self.binary_declaration(path, data),))
+        body = contract_body(
+            binary_artifacts=(self.binary_declaration(path, data),),
+            base_sha=base,
+        )
         self.issue.write_text(body, encoding="utf-8")
         result = subprocess.run(
             [
@@ -670,9 +673,22 @@ class GitGuardTests(GuardIntegrationCase):
                 )
                 self.assert_verdict(result, report, "ERROR", 3)
 
+    def test_contract_base_sha_mismatch_is_typed_error(self) -> None:
+        base, head = self.simple_history()
+        result, report, _ = self.invoke(
+            base,
+            head,
+            body=contract_body(base_sha="2" * 40),
+        )
+        self.assert_verdict(result, report, "ERROR", 3)
+        self.assertIn(
+            "E_CONTRACT_BASE_SHA",
+            {item["code"] for item in report["diagnostics"]},
+        )
+
     def test_shallow_repository_is_error(self) -> None:
         base, head = self.simple_history()
-        self.issue.write_text(contract_body(), encoding="utf-8")
+        self.issue.write_text(contract_body(base_sha=base), encoding="utf-8")
         clone_root = self.root / "shallow-clone"
         run(
             ["git", "clone", "-q", "--depth", "1", f"file://{self.repo.root}", str(clone_root)],
@@ -705,7 +721,7 @@ class GitGuardTests(GuardIntegrationCase):
 
     def test_concurrent_mutation_is_repository_changed_error(self) -> None:
         base, head = self.simple_history()
-        self.issue.write_text(contract_body(), encoding="utf-8")
+        self.issue.write_text(contract_body(base_sha=base), encoding="utf-8")
         intruder = self.repo.root / "intruder.txt"
         original_inventory = scope_guard.inventory_changes
 
@@ -743,7 +759,7 @@ class GitGuardTests(GuardIntegrationCase):
         base, head = self.simple_history()
         subdirectory = self.repo.root / "tools"
         destination = self.repo.root / "smuggled-report.json"
-        self.issue.write_text(contract_body(), encoding="utf-8")
+        self.issue.write_text(contract_body(base_sha=base), encoding="utf-8")
         result = subprocess.run(
             [
                 "python3",
@@ -805,7 +821,7 @@ class GitGuardTests(GuardIntegrationCase):
 
         issue = self.root / "self-host-issue.md"
         report_path = self.root / "self-host-report.json"
-        issue.write_text(contract_body(), encoding="utf-8")
+        issue.write_text(contract_body(base_sha=base), encoding="utf-8")
         result = subprocess.run(
             [
                 "python3",

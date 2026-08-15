@@ -272,6 +272,8 @@ Human merge gate.
 ## Base
 
 `main @ {base_sha}`
+
+- Exact base SHA: `{base_sha}`.
 """
 
 

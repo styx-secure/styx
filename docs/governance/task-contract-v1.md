@@ -77,6 +77,25 @@ the opening run, indented at most three spaces, with nothing else but trailing
 whitespace. Markers, headings and fence lookalikes inside any of these blocks
 are ignored. An unterminated fence fails closed.
 
+## Exact Base SHA declaration
+
+The `Base` section must contain exactly one structural line in this exact form:
+
+```text
+- Exact base SHA: `<lowercase-full-40-hex>`.
+```
+
+Every structural line outside fenced and indented code that contains the
+declaration label is a candidate, including prose and inline-code mentions. The
+entire Issue body must contain exactly one candidate, and that candidate must be
+the canonical declaration in `Base`. Missing, duplicate, malformed, uppercase,
+abbreviated, code-only, or misplaced lookalikes make the contract invalid. The
+guard compares the parsed value byte-for-byte with `--base-sha`; a mismatch
+produces the typed `E_CONTRACT_BASE_SHA` error. This intentionally strict,
+fail-closed rule prevents a rendered Issue from presenting a human-visible Base
+lookalike that the machine ignores. It also binds the approved task contract to
+the exact historical diff base without changing the v1 report schema.
+
 ## Path declarations
 
 `Allowed paths` and `Forbidden paths` each contain exactly one fenced code block. Every non-empty line is one POSIX repository-relative pattern.
@@ -217,7 +236,8 @@ The repository must satisfy all of the following:
 - the repository is not shallow;
 - both commit objects are locally available;
 - base is an ancestor of head;
-- worktree `HEAD` equals the declared head SHA;
+- worktree `HEAD` equals `--worktree-sha` (or `--head-sha` when that optional
+  argument is omitted);
 - index and worktree are clean, including untracked files;
 - the report output path is outside the tested repository.
 
@@ -264,6 +284,7 @@ python3 tools/agent-enforcement/scope_guard.py \
   --issue-body-file /absolute/path/issue-46.md \
   --base-sha 67eabffeec19a7446e8fc84b151ae9799fbe3869 \
   --head-sha <full-40-hex-head> \
+  --worktree-sha <full-40-hex-trusted-tool-or-head> \
   --execution-id issue-46-attempt-001 \
   --output /absolute/path/task-scope-report.json \
   --repo /absolute/path/to/styx
@@ -321,9 +342,9 @@ The existing `issue_body_sha256` covers the exact UTF-8 Issue-body bytes,
 including both optional sections, and therefore binds declarations to the
 evidence without a schema or consumer change. Verified copy sources are exposed
 only by the documented synthetic `allowed_matches` marker while retaining real
-forbidden matches and both `old_path`/`new_path` values. Tool version `0.3.0`
-identifies this backward-compatible semantic extension; the contract and report
-schema remain v1.
+forbidden matches and both `old_path`/`new_path` values. Tool version `0.4.0`
+identifies the mandatory exact Base binding and trusted-tool provenance
+semantics; the contract and report schema remain v1.
 
 Canonical encoding is UTF-8 JSON with recursively sorted keys, compact separators and one trailing LF. Wall-clock timestamps are omitted. Equivalent inputs with the same execution ID produce byte-identical report bytes.
 
@@ -362,7 +383,9 @@ The test suite creates isolated temporary Git repositories and does not need net
   64 MiB copy-source ceilings bound authorization but are not a general
   repository-size policy.
 - Report-only execution does not publish checks and does not block a merge.
-- GitHub Actions integration, required-check registration, broker operations, persona isolation and Passaggio B are separate human-authorized tasks.
+- GitHub Actions trust-source selection, required-check registration, broker
+  operations, persona isolation and Passaggio B are separate human-authorized
+  controls.
 
 ## Rollback
 

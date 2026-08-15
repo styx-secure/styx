@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 
 SCHEMA_ID = "styx.task-scope-report/v1"
-TOOL_VERSION = "0.3.0"
+TOOL_VERSION = "0.4.0"
 CONTRACT_MARKER = "<!-- styx-task-contract:v1 -->"
 
 EXIT_PASS = 0
@@ -26,6 +26,10 @@ class GuardError(Exception):
 
 class ContractError(GuardError):
     code = "E_CONTRACT"
+
+
+class ContractBaseShaError(ContractError):
+    code = "E_CONTRACT_BASE_SHA"
 
 
 class GitInputError(GuardError):
@@ -71,6 +75,7 @@ class CopySourceAuthorization:
 @dataclasses.dataclass(frozen=True)
 class Contract:
     version: str
+    base_sha: str
     allowed_patterns: tuple[str, ...]
     forbidden_patterns: tuple[str, ...]
     allowed_binary_artifacts: tuple[BinaryArtifactAuthorization, ...] = ()

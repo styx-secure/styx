@@ -46,30 +46,44 @@ class ReviewHardeningTests(unittest.TestCase):
         }
         self.assertIsNone(READ_ONLY_GUARD.inspect(safe))
 
-    def test_settings_narrow_runner_exclusion_and_deny_extra_stores(self):
+    def test_settings_preserve_sensitive_denies_without_legacy_blocking_profile(self):
         settings = json.loads((ROOT / ".claude/settings.json").read_text(encoding="utf-8"))
-        self.assertEqual(
-            settings["sandbox"]["excludedCommands"],
-            ["python3 tools/agent-runner/styx-agent run --issue * --execution-id issue-*"],
-        )
-        self.assertNotIn(
-            "python3 tools/agent-runner/styx-agent run *",
-            settings["sandbox"]["excludedCommands"],
-        )
-        hook_commands = json.dumps(settings["hooks"]["PreToolUse"])
-        self.assertIn("read_only_guard.py", hook_commands)
-        self.assertIn("Bash(find *)", settings["permissions"]["deny"])
-        self.assertIn("Bash(sed *)", settings["permissions"]["deny"])
+        self.assertEqual(settings["disableBypassPermissionsMode"], "disable")
+        permissions = settings["permissions"]
+        self.assertEqual(permissions["defaultMode"], "default")
+        self.assertNotIn("additionalDirectories", permissions)
+        self.assertNotIn("allow", permissions)
+        self.assertNotIn("sandbox", settings)
+        self.assertNotIn("hooks", settings)
 
-        deny_read = set(settings["sandbox"]["filesystem"]["denyRead"])
-        for path in (
-            "~/.aws",
-            "~/.gnupg",
-            "~/.docker/config.json",
-            "~/.gitconfig",
-            "~/.config/git",
+        denied = set(permissions["deny"])
+        for command in (
+            "Bash(curl *)",
+            "Bash(wget *)",
+            "Bash(ssh *)",
+            "Bash(scp *)",
+            "Bash(sftp *)",
+            "Bash(nc *)",
+            "Bash(ncat *)",
+            "Bash(socat *)",
+            "Bash(sudo *)",
         ):
-            self.assertIn(path, deny_read)
+            self.assertIn(command, denied)
+        for path in (
+            "Read(~/.aws/**)",
+            "Read(~/.gnupg/**)",
+            "Read(~/.docker/config.json)",
+            "Read(~/.gitconfig)",
+            "Read(~/.config/git/**)",
+        ):
+            self.assertIn(path, denied)
+        for deprecated in (
+            "Bash(git push *)",
+            "Bash(gh *)",
+            "Bash(find *)",
+            "Bash(sed *)",
+        ):
+            self.assertNotIn(deprecated, denied)
 
     def test_nested_test_sandbox_masks_additional_credential_stores(self):
         review_hardening.apply(security_hardening)
