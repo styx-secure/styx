@@ -82,6 +82,20 @@ export function canonicalJsonBytes(value) {
   return Buffer.from(`${JSON.stringify(value)}\n`, 'utf8');
 }
 
+export function b33b1RosterSha256(membersValue) {
+  const members = membersValue
+    .map((member) => ({
+      leafIndex: member.leafIndex,
+      identityHex: member.identityHex,
+      signatureKeyHex: member.signatureKeyHex,
+    }))
+    .sort((left, right) => left.leafIndex - right.leafIndex);
+  return sha256Hex(canonicalJsonBytes({
+    domain: 'STYX-B33B1-ROSTER-v1',
+    members,
+  }));
+}
+
 export function bytesToHex(bytes) {
   return Buffer.from(bytes).toString('hex');
 }

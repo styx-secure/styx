@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
@@ -295,6 +295,40 @@ describe('Phase B3.3b-1 durable epoch-transition journal', () => {
       const stable = await third.commitAcceptedLocal(merge.head.headDigestHex, committed(prepared));
       expect(stable.action).toBe(B33B1_RECOVERY.STABLE);
       [active, pending, retry, accepted, merge, stable].forEach(clearRecovery);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('private file journal serializes competing CAS writers across instances', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'styx-b33b1-cas-root-'));
+    const directory = resolve(root, 'journal');
+    try {
+      const first = new B33b1Journal(new FileB33b1Store(directory, root));
+      const second = new B33b1Journal(new FileB33b1Store(directory, root));
+      const outcomes = await Promise.allSettled([
+        first.activate(activation()), second.activate(activation()),
+      ]);
+      expect(outcomes.filter(({ status }) => status === 'fulfilled')).toHaveLength(1);
+      const rejected = outcomes.find(({ status }) => status === 'rejected');
+      expect(rejected?.reason).toMatchObject({ code: B33B1_ERROR.CAS_CONFLICT });
+      const recovered = await first.readRecovery();
+      expect(recovered.action).toBe(B33B1_RECOVERY.STABLE);
+      clearRecovery(recovered);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('private file journal treats a stale CAS lock as explicit fail-closed state', async () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'styx-b33b1-stale-lock-root-'));
+    const directory = resolve(root, 'journal');
+    try {
+      const journal = new B33b1Journal(new FileB33b1Store(directory, root));
+      mkdirSync(resolve(directory, 'cas.lock'), { mode: 0o700 });
+      await expect(journal.activate(activation())).rejects.toMatchObject({
+        code: B33B1_ERROR.CAS_CONFLICT,
+      });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -11,6 +11,7 @@ describe('Phase B3.3b-1 Stage 1 journalled sequence', () => {
     const report = await runStage1Probe(candidateDirectory);
     expect(report).toEqual(expect.objectContaining({
       finalEpoch: '3',
+      freshProcessRecoveryCount: 3,
       transitionCount: 2,
       mdkPreparedCommitRecoveredExactly: true,
       styxLocalCommitRetriedExactly: true,

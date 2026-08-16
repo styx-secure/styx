@@ -8,6 +8,7 @@ import {
   B33B1_PROVIDER_FORMAT,
   B33B1_RECOVERY,
   B33b1Error,
+  b33b1RosterSha256,
   bytesToHex,
   canonicalJsonBytes,
   clearBytes,
@@ -21,20 +22,6 @@ import {
 function sameBytes(left, right) {
   return left.byteLength === right.byteLength
     && left.every((value, index) => value === right[index]);
-}
-
-function rosterSha256(projection) {
-  const members = projection.members
-    .map((member) => ({
-      leafIndex: member.leafIndex,
-      identityHex: member.identityHex,
-      signatureKeyHex: member.signatureKeyHex,
-    }))
-    .sort((left, right) => left.leafIndex - right.leafIndex);
-  return sha256Hex(canonicalJsonBytes({
-    domain: 'STYX-B33B1-ROSTER-v1',
-    members,
-  }));
 }
 
 function sameProjection(left, right) {
@@ -123,7 +110,7 @@ export class B33b1EvolutionAdapter {
         leafSignatureKeyHex: sourceHead.leafSignatureKeyHex,
         epochDec: sourceHead.projection.epochDec,
         groupContextSha256Hex: sourceHead.projection.groupContextSha256Hex,
-        rosterSha256Hex: rosterSha256(sourceHead.projection),
+        rosterSha256Hex: b33b1RosterSha256(sourceHead.projection.members),
       });
     } finally {
       clearBytes(expectedPredecessor);

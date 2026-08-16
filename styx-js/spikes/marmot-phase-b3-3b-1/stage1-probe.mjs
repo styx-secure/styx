@@ -2,8 +2,10 @@
 // STYX_SPIKE_PROTOTYPE — journalled sequential evolution and retained-traffic probe.
 
 import { randomBytes } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { schnorr } from '@noble/curves/secp256k1';
 
 import { B32A_PRIVATE_ROOT } from '../marmot-phase-b3-2a/b3-2a-canonical.mjs';
@@ -17,8 +19,9 @@ import { buildMdkPeer } from '../marmot-phase-b3-3a/b3-3a-mdk-builder.mjs';
 import { MdkB33aProcess } from '../marmot-phase-b3-3a/b3-3a-mdk-driver.mjs';
 import { B33A_MDK_SIGNER_PATH } from '../marmot-phase-b3-3a/b3-3a-mdk-signer.mjs';
 import {
-  B33B1_ERROR, B33B1_PRIVATE_ROOT, B33B1_RECOVERY, bytesToHex,
-  canonicalJsonBytes, clearBytes, failB33b1, sha256Hex,
+  B33B1_ERROR, B33B1_LIMITS, B33B1_PRIVATE_ROOT, B33B1_RECOVERY,
+  b33b1RosterSha256, bytesToHex, canonicalJsonBytes, clearBytes, exactFields,
+  failB33b1, sha256Hex,
 } from './b3-3b-1-canonical.mjs';
 import { B33b1EvolutionAdapter } from './b3-3b-1-engine-adapter.mjs';
 import { openB33b1FileJournal } from './b3-3b-1-journal.mjs';
@@ -44,7 +47,7 @@ function freshDirectory(root, prefix) {
   return path;
 }
 
-async function loadCandidate(candidatePath, tuple) {
+export async function loadCandidate(candidatePath, tuple) {
   const directory = strictCandidateDirectory(candidatePath);
   const wasmRead = readExactRegularFile(
     resolve(directory, 'openmls_wasm_bg.wasm'), tuple['openmls_wasm_bg.wasm'],
@@ -68,6 +71,88 @@ async function loadCandidate(candidatePath, tuple) {
     return Object.freeze({ wasm, wasmBytes: wasmRead.bytes });
   } finally {
     clearBytes(moduleRead.bytes);
+  }
+}
+
+const FRESH_PROCESS_WORKER = fileURLToPath(new URL('./stage1-fresh-process.mjs', import.meta.url));
+const FRESH_CHECKPOINT_FIELDS = Object.freeze([
+  'committedCommitSha256Hex', 'epochDec', 'groupContextSha256Hex', 'groupIdHex',
+  'headDigestHex', 'rosterSha256Hex',
+]);
+const FRESH_PROJECTION_FIELDS = Object.freeze([
+  'authoritySha256Hex', 'candidateGroupContextSha256Hex', 'commitSha256Hex',
+  'committerAccountHex', 'committerLeafIndex', 'committerSignatureKeyHex', 'domain',
+  'groupIdHex', 'orderingPriority', 'parentGroupContextSha256Hex',
+  'parentStateSha256Hex', 'sourceEpoch', 'targetEpoch', 'verifiedLeafDigestHex',
+]);
+
+function requireDigest(value, label) {
+  if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) {
+    failB33b1(B33B1_ERROR.CORRUPT, `${label} is not a SHA-256 digest`);
+  }
+}
+
+function parseFreshProcessResult(action, value) {
+  if (action === 'retry-local') {
+    const parsed = exactFields(value, [
+      'action', 'commitHex', 'commitSha256Hex', 'headDigestHex', 'processId', 'projection',
+    ], 'fresh-process local retry');
+    const projection = exactFields(
+      parsed.projection, FRESH_PROJECTION_FIELDS, 'fresh-process local projection',
+    );
+    if (parsed.action !== action || typeof parsed.commitHex !== 'string'
+      || parsed.commitHex.length < 2 || parsed.commitHex.length % 2 !== 0
+      || parsed.commitHex.length > B33B1_LIMITS.maxCommitBytes * 2
+      || !/^[0-9a-f]+$/.test(parsed.commitHex)) {
+      failB33b1(B33B1_ERROR.CORRUPT, 'fresh-process local retry is not canonical');
+    }
+    requireDigest(parsed.commitSha256Hex, 'fresh-process Commit');
+    requireDigest(parsed.headDigestHex, 'fresh-process head');
+    if (!Number.isSafeInteger(parsed.processId) || parsed.processId <= 0
+      || parsed.processId === process.pid
+      || sha256Hex(Buffer.from(parsed.commitHex, 'hex')) !== parsed.commitSha256Hex
+      || projection.commitSha256Hex !== parsed.commitSha256Hex) {
+      failB33b1(B33B1_ERROR.CORRUPT, 'fresh-process local retry digest disagrees');
+    }
+    return Object.freeze({ ...parsed, projection: Object.freeze({ ...projection }) });
+  }
+  const parsed = exactFields(
+    value, ['action', 'head', 'processId'], 'fresh-process recovery result',
+  );
+  const head = exactFields(parsed.head, FRESH_CHECKPOINT_FIELDS, 'fresh-process checkpoint');
+  if (parsed.action !== action || !Number.isSafeInteger(parsed.processId)
+    || parsed.processId <= 0 || parsed.processId === process.pid) {
+    failB33b1(B33B1_ERROR.CORRUPT, 'fresh-process recovery action changed');
+  }
+  for (const field of [
+    'committedCommitSha256Hex', 'groupContextSha256Hex', 'headDigestHex', 'rosterSha256Hex',
+  ]) requireDigest(head[field], `fresh-process ${field}`);
+  return Object.freeze({ action, head: Object.freeze({ ...head }) });
+}
+
+function recoverInFreshProcess(action, candidatePath, journalDirectory) {
+  const result = spawnSync(process.execPath, [
+    FRESH_PROCESS_WORKER, action, candidatePath, journalDirectory,
+  ], {
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: 120_000,
+  });
+  if (result.error || result.status !== 0 || result.signal !== null) {
+    failB33b1(B33B1_ERROR.ENGINE_REJECTED, `fresh-process ${action} failed`, {
+      error: result.error?.message ?? null,
+      signal: result.signal,
+      status: result.status,
+      stderr: (result.stderr ?? '').slice(0, 4096),
+    });
+  }
+  try {
+    return parseFreshProcessResult(action, JSON.parse(result.stdout));
+  } catch (error) {
+    failB33b1(B33B1_ERROR.CORRUPT, `fresh-process ${action} returned invalid JSON`, {
+      cause: error instanceof Error ? error.message : `${error}`,
+      stdout: result.stdout.slice(0, 4096),
+    });
   }
 }
 
@@ -96,12 +181,44 @@ function event(identityHex, groupIdHex, marker) {
   });
 }
 
-function requireProjection(styxHead, mdkProjection, label) {
+function mdkRosterSha256(mdkProjection, label) {
+  if (!Array.isArray(mdkProjection?.leaves)
+    || !Array.isArray(mdkProjection?.sorted_member_identities_hex)
+    || mdkProjection.leaves.length !== mdkProjection.sorted_member_identities_hex.length) {
+    failB33b1(B33B1_ERROR.ENGINE_REJECTED, `${label} MDK roster is incomplete`);
+  }
+  const members = mdkProjection.leaves.map((leaf) => {
+    if (!Number.isSafeInteger(leaf?.leaf_index) || leaf.leaf_index < 0
+      || typeof leaf.account_identity_hex !== 'string'
+      || !/^[0-9a-f]{64}$/.test(leaf.account_identity_hex)
+      || typeof leaf.signature_public_key_hex !== 'string'
+      || !/^[0-9a-f]{64}$/.test(leaf.signature_public_key_hex)) {
+      failB33b1(B33B1_ERROR.ENGINE_REJECTED, `${label} MDK roster leaf is invalid`);
+    }
+    return {
+      leafIndex: leaf.leaf_index,
+      identityHex: leaf.account_identity_hex,
+      signatureKeyHex: leaf.signature_public_key_hex,
+    };
+  });
+  const identities = members.map(({ identityHex }) => identityHex).sort();
+  if (new Set(members.map(({ leafIndex }) => leafIndex)).size !== members.length
+    || !identities.every((identity, index) => (
+      identity === mdkProjection.sorted_member_identities_hex[index]
+    ))) {
+    failB33b1(B33B1_ERROR.ENGINE_REJECTED, `${label} MDK roster projection disagrees`);
+  }
+  return b33b1RosterSha256(members);
+}
+
+function requireProjection(styxHead, mdkProjection, mdkCommitSha256Hex, label) {
   if (mdkProjection?.epoch?.toString() !== styxHead.epochDec
     || mdkProjection?.group_context_sha256 !== styxHead.groupContextSha256Hex
-    || mdkProjection?.group_id_hex !== styxHead.groupIdHex) {
+    || mdkProjection?.group_id_hex !== styxHead.groupIdHex
+    || mdkRosterSha256(mdkProjection, label) !== styxHead.rosterSha256Hex
+    || mdkCommitSha256Hex !== styxHead.committedCommitSha256Hex) {
     failB33b1(B33B1_ERROR.ENGINE_REJECTED, `${label} peer projections diverged`, {
-      mdkProjection, styxHead,
+      mdkCommitSha256Hex, mdkProjection, styxHead,
     });
   }
 }
@@ -126,6 +243,7 @@ export async function runStage1Probe(candidatePath) {
   let loaded;
   let withheldStyx;
   let withheldMdk;
+  let freshProcessRecoveryCount = 0;
   try {
     const mdkBuild = buildMdkPeer(mdkBuildPath);
     mdkSecret = accountSecret();
@@ -187,16 +305,23 @@ export async function runStage1Probe(candidatePath) {
         'MDK did not recover byte-identical publication material', recoveredMdk);
     }
 
-    const staged = await adapter.stageInbound(
+    await adapter.stageInbound(
       Uint8Array.from(Buffer.from(recoveredMdk.group_message_hex, 'hex')),
     );
+    adapter = undefined;
+    const applied = recoverInFreshProcess(
+      'apply-staged-inbound', candidatePath, journalDirectory,
+    );
+    freshProcessRecoveryCount += 1;
     journal = openB33b1FileJournal(journalDirectory);
     adapter = new B33b1EvolutionAdapter({ journal, wasm: loaded.wasm });
-    const applied = await adapter.applyStagedInbound();
     await mdk.request('confirm_group_published', {
       message_id_hex: recoveredMdk.message_id_hex,
     });
-    requireProjection(applied.head, await mdk.request('public_projection'), 'epoch two');
+    requireProjection(
+      applied.head, await mdk.request('public_projection'), recoveredMdk.commit_sha256,
+      'epoch two',
+    );
 
     const liveMdk = await mdk.request('send_application', {
       payload_hex: bytesToHex(event(mdkIdentityHex, creation.group_id_hex, 3)),
@@ -218,14 +343,17 @@ export async function runStage1Probe(candidatePath) {
     clearBytes(liveStyx.ciphertextBytes);
 
     const styxPrepared = await adapter.prepareLocal();
+    adapter = undefined;
+    const retry = recoverInFreshProcess('retry-local', candidatePath, journalDirectory);
+    freshProcessRecoveryCount += 1;
     journal = openB33b1FileJournal(journalDirectory);
     adapter = new B33b1EvolutionAdapter({ journal, wasm: loaded.wasm });
-    const retry = await adapter.retryLocal();
-    if (!Buffer.from(retry.commitBytes).equals(Buffer.from(styxPrepared.commitBytes))) {
+    const retryCommitBytes = Uint8Array.from(Buffer.from(retry.commitHex, 'hex'));
+    if (!Buffer.from(retryCommitBytes).equals(Buffer.from(styxPrepared.commitBytes))) {
       failB33b1(B33B1_ERROR.CORRUPT, 'local retry changed exact Commit bytes');
     }
     const buffered = await mdk.request('ingest_group_evolution', {
-      group_message_hex: bytesToHex(retry.commitBytes),
+      group_message_hex: retry.commitHex,
     });
     await mdk.close();
     mdk = new MdkB33aProcess(mdkBuild.executable);
@@ -262,12 +390,19 @@ export async function runStage1Probe(candidatePath) {
       peerGroupContextSha256Hex: retry.projection.candidateGroupContextSha256Hex,
       evidenceSha256Hex: sha256Hex(canonicalJsonBytes(settled)),
     });
+    adapter = undefined;
+    const merged = recoverInFreshProcess(
+      'merge-accepted-local', candidatePath, journalDirectory,
+    );
+    freshProcessRecoveryCount += 1;
     journal = openB33b1FileJournal(journalDirectory);
     adapter = new B33b1EvolutionAdapter({ journal, wasm: loaded.wasm });
-    const merged = await adapter.mergeAcceptedLocal();
-    requireProjection(merged.head, await mdk.request('public_projection'), 'epoch three');
+    requireProjection(
+      merged.head, await mdk.request('public_projection'), settled.accepted_content_sha256,
+      'epoch three',
+    );
     clearBytes(styxPrepared.commitBytes);
-    clearBytes(retry.commitBytes);
+    clearBytes(retryCommitBytes);
 
     const delayedFromMdk = await adapter.receiveApplication(
       Uint8Array.from(Buffer.from(withheldMdk.group_message_hex, 'hex')),
@@ -306,6 +441,7 @@ export async function runStage1Probe(candidatePath) {
         finalGroupContextSha256Hex: final.head.groupContextSha256Hex,
         transitionCount: final.head.transitions.length,
         applicationRecordCount: final.head.applicationRecords.length,
+        freshProcessRecoveryCount,
         mdkPreparedCommitRecoveredExactly: true,
         styxLocalCommitRetriedExactly: true,
         retainedTrafficAcceptedBothDirections: true,

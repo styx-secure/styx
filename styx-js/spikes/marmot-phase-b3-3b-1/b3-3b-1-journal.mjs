@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // STYX_SPIKE_PROTOTYPE — durable B3.3b-1 epoch-transition journal.
 
+import { randomUUID } from 'node:crypto';
 import {
-  closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync,
-  statSync, writeFileSync,
+  chmodSync, closeSync, existsSync, fsyncSync, linkSync, mkdirSync, openSync,
+  readSync, realpathSync, renameSync, rmdirSync, unlinkSync, writeFileSync,
 } from 'node:fs';
-import { basename, dirname, resolve } from 'node:path';
+import { relative, resolve, sep } from 'node:path';
 import {
   B33B1_DISPOSITION,
   B33B1_ERROR,
@@ -24,6 +25,7 @@ import {
 
 const HEAD_DOMAIN = 'STYX-B33B1-JOURNAL-HEAD-v1';
 const JOURNAL_ID_DOMAIN = 'STYX-B33B1-JOURNAL-ID-v1';
+const MAX_HEAD_BYTES = 1024 * 1024;
 const HEAD_FIELDS = Object.freeze([
   'domain', 'journalIdHex', 'sequence', 'state', 'previousHeadDigestHex',
   'sourceB32aHeadDigestHex', 'providerFormat', 'groupIdHex', 'accountIdentityHex',
@@ -605,26 +607,81 @@ export class B33b1Journal {
 }
 
 function assertPrivateDirectory(directory, approvedRoot) {
-  const root = resolve(approvedRoot);
+  mkdirSync(approvedRoot, { recursive: true, mode: 0o700 });
+  chmodSync(approvedRoot, 0o700);
+  const root = realpathSync(approvedRoot);
   const target = resolve(directory);
-  if (target === root || !target.startsWith(`${root}/`) || basename(target).length < 1) {
+  const pathFromRoot = relative(root, target);
+  if (pathFromRoot === '' || pathFromRoot === '..' || pathFromRoot.startsWith(`..${sep}`)) {
     failB33b1(B33B1_ERROR.INVALID, 'journal path is outside its approved private root');
+  }
+  mkdirSync(target, { recursive: true, mode: 0o700 });
+  chmodSync(target, 0o700);
+  const resolvedFromRoot = relative(root, realpathSync(target));
+  if (resolvedFromRoot === '' || resolvedFromRoot === '..'
+    || resolvedFromRoot.startsWith(`..${sep}`)) {
+    failB33b1(B33B1_ERROR.INVALID, 'journal path resolves outside its approved private root');
   }
   return target;
 }
 
-function fsyncDirectory(path) {
-  const descriptor = openSync(path, 'r');
+function syncDirectory(directory) {
+  const descriptor = openSync(directory, 'r');
   try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
 }
 
-function durableReplace(path, bytes) {
-  const temporary = `${path}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(temporary, bytes, { mode: 0o600, flag: 'wx' });
-  const descriptor = openSync(temporary, 'r');
-  try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
-  renameSync(temporary, path);
-  fsyncDirectory(dirname(path));
+function durableWrite(path, value) {
+  const descriptor = openSync(path, 'wx', 0o600);
+  try { writeFileSync(descriptor, value); fsyncSync(descriptor); } finally { closeSync(descriptor); }
+}
+
+function readBoundedFile(path, maximumBytes, failureCode, tooLargeMessage) {
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes <= 0
+    || maximumBytes > B33B1_LIMITS.maxProviderBytes) {
+    failB33b1(B33B1_ERROR.INVALID, 'bounded read limit is invalid');
+  }
+  let descriptor;
+  try {
+    descriptor = openSync(path, 'r');
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+  let scratch;
+  try {
+    scratch = Buffer.alloc(maximumBytes + 1);
+    let offset = 0;
+    let reachedEof = false;
+    while (offset < scratch.length) {
+      let count;
+      try {
+        count = readSync(descriptor, scratch, offset, scratch.length - offset, null);
+      } catch (error) {
+        if (error?.code === 'EINTR') continue;
+        throw error;
+      }
+      if (count === 0) { reachedEof = true; break; }
+      offset += count;
+    }
+    if (!reachedEof && offset > maximumBytes) failB33b1(failureCode, tooLargeMessage);
+    return Uint8Array.from(scratch.subarray(0, offset));
+  } finally {
+    scratch?.fill(0);
+    closeSync(descriptor);
+  }
+}
+
+function boundedFileEquals(path, expectedBytes, tooLargeMessage) {
+  const actual = readBoundedFile(
+    path, B33B1_LIMITS.maxProviderBytes, B33B1_ERROR.CORRUPT, tooLargeMessage,
+  );
+  if (actual === null) return null;
+  try {
+    if (actual.byteLength !== expectedBytes.byteLength) return false;
+    return Buffer.from(actual.buffer, actual.byteOffset, actual.byteLength).equals(Buffer.from(
+      expectedBytes.buffer, expectedBytes.byteOffset, expectedBytes.byteLength,
+    ));
+  } finally { actual.fill(0); }
 }
 
 export class FileB33b1Store {
@@ -632,45 +689,130 @@ export class FileB33b1Store {
     this.directory = assertPrivateDirectory(directory, approvedRoot);
     this.headPath = resolve(this.directory, 'head.json');
     this.blobDirectory = resolve(this.directory, 'blobs');
+    this.lockDirectory = resolve(this.directory, 'cas.lock');
     mkdirSync(this.blobDirectory, { recursive: true, mode: 0o700 });
-    if ((statSync(this.directory).mode & 0o077) !== 0
-      || (statSync(this.blobDirectory).mode & 0o077) !== 0) {
-      failB33b1(B33B1_ERROR.INVALID, 'journal directories are not owner-only');
-    }
+    chmodSync(this.blobDirectory, 0o700);
   }
 
   async readHead() {
-    if (!existsSync(this.headPath)) return null;
-    const bytes = readFileSync(this.headPath);
-    if (bytes.byteLength > 1024 * 1024) {
-      failB33b1(B33B1_ERROR.CORRUPT, 'journal head exceeds its byte envelope');
-    }
-    try { return JSON.parse(bytes.toString('utf8')); } catch {
-      failB33b1(B33B1_ERROR.CORRUPT, 'journal head is not JSON');
+    let bytes;
+    try {
+      bytes = readBoundedFile(
+        this.headPath, MAX_HEAD_BYTES, B33B1_ERROR.CORRUPT,
+        'journal head exceeds its byte envelope',
+      );
+      if (bytes === null) return null;
+      const parsed = JSON.parse(Buffer.from(bytes).toString('utf8'));
+      if (!Buffer.from(bytes).equals(Buffer.from(canonicalJsonBytes(parsed)))) {
+        failB33b1(B33B1_ERROR.CORRUPT, 'journal head is not canonical JSON');
+      }
+      return parsed;
+    } catch (error) {
+      if (error instanceof B33b1Error) throw error;
+      failB33b1(B33B1_ERROR.CORRUPT, 'journal head is not JSON', {
+        cause: error instanceof Error ? error.message : `${error}`,
+      });
+    } finally {
+      bytes?.fill(0);
     }
   }
 
   async readBlob(digest) {
     requireDigest('blob digest', digest);
+    return readBoundedFile(
+      resolve(this.blobDirectory, digest), B33B1_LIMITS.maxProviderBytes,
+      B33B1_ERROR.CORRUPT, 'durable blob exceeds its byte envelope',
+    );
+  }
+
+  #acquireLock() {
+    const owner = `${process.pid}:${randomUUID()}\n`;
+    let directoryCreated = false;
+    try {
+      mkdirSync(this.lockDirectory, { mode: 0o700 });
+      directoryCreated = true;
+      durableWrite(resolve(this.lockDirectory, 'owner'), owner);
+      return owner;
+    } catch (error) {
+      if (directoryCreated) {
+        const ownerPath = resolve(this.lockDirectory, 'owner');
+        if (existsSync(ownerPath)) unlinkSync(ownerPath);
+        if (existsSync(this.lockDirectory)) rmdirSync(this.lockDirectory);
+      }
+      if (error?.code === 'EEXIST') {
+        failB33b1(B33B1_ERROR.CAS_CONFLICT,
+          'CAS lock exists; stale-lock recovery is explicit');
+      }
+      throw error;
+    }
+  }
+
+  #releaseLock(expectedOwner) {
+    const ownerPath = resolve(this.lockDirectory, 'owner');
+    const ownerBytes = readBoundedFile(
+      ownerPath, 128, B33B1_ERROR.CAS_CONFLICT,
+      'CAS lock owner exceeds its byte envelope',
+    );
+    if (ownerBytes === null) {
+      failB33b1(B33B1_ERROR.CAS_CONFLICT, 'CAS lock disappeared before release');
+    }
+    let durableOwner;
+    try { durableOwner = Buffer.from(ownerBytes).toString('utf8'); }
+    finally { ownerBytes.fill(0); }
+    if (durableOwner !== expectedOwner) {
+      failB33b1(B33B1_ERROR.CAS_CONFLICT, 'CAS lock ownership changed before release');
+    }
+    unlinkSync(ownerPath);
+    rmdirSync(this.lockDirectory);
+  }
+
+  #writeImmutableBlob(bytes) {
+    const digest = sha256Hex(bytes);
     const path = resolve(this.blobDirectory, digest);
-    if (!existsSync(path)) return null;
-    return Uint8Array.from(readFileSync(path));
+    const existingMatch = boundedFileEquals(
+      path, bytes, 'immutable blob exceeds its byte envelope',
+    );
+    if (existingMatch !== null) {
+      if (!existingMatch) {
+        failB33b1(B33B1_ERROR.CORRUPT, 'immutable blob content-address collision');
+      }
+      return;
+    }
+    const temporary = resolve(
+      this.blobDirectory, `.${digest}.${process.pid}.${randomUUID()}.tmp`,
+    );
+    durableWrite(temporary, bytes);
+    try {
+      linkSync(temporary, path);
+      chmodSync(path, 0o600);
+      syncDirectory(this.blobDirectory);
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      if (boundedFileEquals(
+        path, bytes, 'immutable blob exceeds its byte envelope',
+      ) !== true) {
+        failB33b1(B33B1_ERROR.CORRUPT, 'immutable blob race disagreed on bytes');
+      }
+    } finally {
+      if (existsSync(temporary)) unlinkSync(temporary);
+    }
   }
 
   async compareAndSwap(expectedDigest, nextHead, blobs) {
-    const current = await this.readHead();
-    if ((current?.headDigestHex ?? null) !== expectedDigest) return false;
-    for (const blob of blobs) {
-      const digest = sha256Hex(blob);
-      const path = resolve(this.blobDirectory, digest);
-      if (!existsSync(path)) durableReplace(path, blob);
-      const reread = readFileSync(path);
-      if (sha256Hex(reread) !== digest) {
-        failB33b1(B33B1_ERROR.CORRUPT, 'durable blob read-back failed');
-      }
+    const lockOwner = this.#acquireLock();
+    try {
+      const current = await this.readHead();
+      if ((current?.headDigestHex ?? null) !== expectedDigest) return false;
+      for (const blob of blobs) this.#writeImmutableBlob(blob);
+      const temporary = resolve(this.directory, `.head.${process.pid}.${randomUUID()}.tmp`);
+      durableWrite(temporary, canonicalJsonBytes(nextHead));
+      renameSync(temporary, this.headPath);
+      chmodSync(this.headPath, 0o600);
+      syncDirectory(this.directory);
+      return true;
+    } finally {
+      this.#releaseLock(lockOwner);
     }
-    durableReplace(this.headPath, canonicalJsonBytes(nextHead));
-    return true;
   }
 }
 
