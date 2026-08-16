@@ -111,7 +111,7 @@ export const B33B1_STAGE1_OPERATION_SEQUENCE = Object.freeze([
   'final-durable-state-verified',
 ]);
 
-function stage1OperationTrace() {
+export function createB33b1Stage1OperationTrace() {
   const observed = [];
   return Object.freeze({
     advance(name) {
@@ -292,7 +292,7 @@ function clearRecovery(value) {
 
 export async function runStage1Probe(candidatePath) {
   const pins = verifyPins(candidatePath);
-  const operations = stage1OperationTrace();
+  const operations = createB33b1Stage1OperationTrace();
   const b32Root = freshDirectory(B32A_PRIVATE_ROOT, 'b33b1-stage1-b32-');
   const b33Root = freshDirectory(B33B1_PRIVATE_ROOT, 'b33b1-stage1-journal-');
   const mdkRoot = freshDirectory(B33A_PRIVATE_ROOT, 'b33b1-stage1-mdk-');
@@ -478,6 +478,13 @@ export async function runStage1Probe(candidatePath) {
       monotonic_ms: 1_000_000_000,
     });
     if (settled?.disposition !== 'group_evolution_settled'
+      || settled?.status !== 'settled'
+      || settled?.candidate_count !== 1
+      || settled?.eligible_count !== 1
+      || settled?.accepted_content_sha256 !== retry.commitSha256Hex
+      || settled?.from_epoch?.toString() !== retry.projection.sourceEpoch
+      || settled?.to_epoch?.toString() !== retry.projection.targetEpoch
+      || settled?.group_id_hex !== creation.group_id_hex
       || JSON.stringify(settled?.accepted_app_message_ids)
         !== JSON.stringify(expectedAcceptedAppMessageIds)
       || JSON.stringify(settled?.already_seen_message_ids)
