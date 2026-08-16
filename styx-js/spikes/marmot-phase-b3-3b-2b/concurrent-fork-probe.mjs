@@ -41,9 +41,9 @@ function validateRun(run) {
     if (scenario.expectedWinner !== scenario.desiredWinner
       || scenario.journalEvidence?.state !== 'STABLE'
       || scenario.journalEvidence?.effectCount !== 1
-      || scenario.journalEvidence?.selectedCommitSha256Hex
-        !== scenario.selection?.selectedCommitSha256Hex
-        && scenario.deliveryMode === 'after_restart') {
+      || (scenario.deliveryMode === 'after_restart'
+        && scenario.journalEvidence?.selectedCommitSha256Hex
+          !== scenario.selection?.selectedCommitSha256Hex)) {
       failB33b2b(B33B2B_ERROR.ENGINE_REJECTED,
         'durable scenario did not reach one converged stable result', { scenario });
     }

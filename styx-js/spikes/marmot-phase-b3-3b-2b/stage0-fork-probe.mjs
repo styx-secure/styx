@@ -2,6 +2,7 @@
 // STYX_SPIKE_PROTOTYPE — observe the exact pinned concurrent-fork behavior.
 
 import { createHash, randomBytes } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import {
   chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
 } from 'node:fs';
@@ -86,7 +87,7 @@ function sameBytes(left, right) {
     && left.every((value, index) => value === right[index]);
 }
 
-async function loadCandidate(candidatePath, tuple) {
+export async function loadCandidate(candidatePath, tuple) {
   const directory = artifactDirectory(candidatePath);
   const wasmRead = readExactRegularFile(
     resolve(directory, 'openmls_wasm_bg.wasm'), tuple['openmls_wasm_bg.wasm'],
@@ -112,6 +113,32 @@ async function loadCandidate(candidatePath, tuple) {
   } finally {
     clearBytes(moduleRead.bytes);
   }
+}
+
+function runFreshAdapterProcess({
+  action, bindingPath, candidatePath, journalDirectory, rivalCommitPath = '',
+}) {
+  const workerPath = fileURLToPath(new URL('./engine-fresh-process.mjs', import.meta.url));
+  try {
+    return JSON.parse(execFileSync(process.execPath, [
+      workerPath,
+      action,
+      bindingPath,
+      journalDirectory,
+      candidatePath ?? '',
+      rivalCommitPath,
+    ], {
+      encoding: 'utf8',
+      maxBuffer: 4 * 1024 * 1024,
+      timeout: 120_000,
+    }));
+  } catch (error) {
+    failB33b2b(B33B2B_ERROR.ENGINE_REJECTED,
+      `fresh-process adapter action ${action} failed`, {
+        nativeMessage: error instanceof Error ? error.message : `${error}`,
+      });
+  }
+  return undefined;
 }
 
 function activate(wasm, activation) {
@@ -559,6 +586,8 @@ async function runScenario(
   let forkAdapter;
   let forkJournal;
   let effectSink;
+  let forkBindingPath;
+  let forkJournalDirectory;
   let journalEvidence;
   try {
     mdkSecret = accountSecret();
@@ -602,8 +631,15 @@ async function runScenario(
     try { active = activate(loaded.wasm, activation); } finally { clearBytes(activation.bytes); }
 
     if (durableProof) {
-      const forkJournalDirectory = resolve(styxRoot, 'b33b2b-journal');
+      forkJournalDirectory = resolve(styxRoot, 'b33b2b-journal');
       mkdirSync(forkJournalDirectory, { mode: 0o700 });
+      forkBindingPath = resolve(styxRoot, 'b33b2b-binding.json');
+      writeFileSync(forkBindingPath, JSON.stringify({
+        groupIdHex: bytesToHex(active.groupId),
+        ownIdentityHex: bytesToHex(active.ownIdentity),
+        ownSignatureKeyHex: bytesToHex(active.ownSignatureKey),
+      }), { flag: 'wx', mode: 0o600 });
+      chmodSync(forkBindingPath, 0o600);
       forkJournal = openB33b2bFileJournal(forkJournalDirectory, B32A_PRIVATE_ROOT);
       effectSink = new MemoryB33b2bEffectSink();
       forkAdapter = new B33b2bEvolutionAdapter({
@@ -638,23 +674,33 @@ async function runScenario(
         clearBytes(localRecovery.localCommitBytes);
       }
       forkAdapter.close();
-      forkJournal = openB33b2bFileJournal(
-        resolve(styxRoot, 'b33b2b-journal'), B32A_PRIVATE_ROOT,
-      );
-      forkAdapter = new B33b2bEvolutionAdapter({
-        binding: active, effectSink, journal: forkJournal, wasm: loaded.wasm,
+      forkAdapter = null;
+      const retry = runFreshAdapterProcess({
+        action: 'retry-local',
+        bindingPath: forkBindingPath,
+        candidatePath,
+        journalDirectory: forkJournalDirectory,
       });
-      const retry = await forkAdapter.retryLocal();
-      if (!sameBytes(retry.commitBytes, local.commit)
+      const retryBytes = Uint8Array.from(Buffer.from(retry.commitHex, 'hex'));
+      if (!sameBytes(retryBytes, local.commit)
         || retry.commitSha256Hex !== local.evidence.commitSha256Hex) {
-        clearBytes(retry.commitBytes);
+        clearBytes(retryBytes);
         failB33b2b(B33B2B_ERROR.CORRUPT,
           'restart regenerated the unresolved local publication obligation');
       }
-      clearBytes(retry.commitBytes);
-      const rival = await forkAdapter.recordRival(
-        Uint8Array.from(Buffer.from(mdkLocal.group_message_hex, 'hex')),
-      );
+      clearBytes(retryBytes);
+      const rivalCommitPath = resolve(styxRoot, 'b33b2b-rival-commit.bin');
+      writeFileSync(rivalCommitPath, Buffer.from(mdkLocal.group_message_hex, 'hex'), {
+        flag: 'wx', mode: 0o600,
+      });
+      chmodSync(rivalCommitPath, 0o600);
+      const rival = runFreshAdapterProcess({
+        action: 'record-rival',
+        bindingPath: forkBindingPath,
+        candidatePath,
+        journalDirectory: forkJournalDirectory,
+        rivalCommitPath,
+      });
       rivalOnStyx = Object.freeze({ evidence: rival.projection });
     } else {
       rivalOnStyx = applyInbound(
@@ -755,37 +801,28 @@ async function runScenario(
     );
 
     if (durableProof) {
-      forkAdapter.close();
-      forkJournal = openB33b2bFileJournal(
-        resolve(styxRoot, 'b33b2b-journal'), B32A_PRIVATE_ROOT,
-      );
-      forkAdapter = new B33b2bEvolutionAdapter({
-        binding: active, effectSink, journal: forkJournal, wasm: loaded.wasm,
+      const frozen = runFreshAdapterProcess({
+        action: 'freeze',
+        bindingPath: forkBindingPath,
+        candidatePath,
+        journalDirectory: forkJournalDirectory,
       });
-      const frozen = await forkAdapter.freezeRace();
-      forkAdapter.close();
+      const prepared = runFreshAdapterProcess({
+        action: 'prepare',
+        bindingPath: forkBindingPath,
+        candidatePath,
+        journalDirectory: forkJournalDirectory,
+      });
+      const stable = runFreshAdapterProcess({
+        action: 'commit',
+        bindingPath: forkBindingPath,
+        candidatePath,
+        journalDirectory: forkJournalDirectory,
+      });
       forkAdapter = new B33b2bEvolutionAdapter({
         binding: active, effectSink,
         journal: openB33b2bFileJournal(
-          resolve(styxRoot, 'b33b2b-journal'), B32A_PRIVATE_ROOT,
-        ),
-        wasm: loaded.wasm,
-      });
-      const prepared = await forkAdapter.prepareSettlement();
-      forkAdapter.close();
-      forkAdapter = new B33b2bEvolutionAdapter({
-        binding: active, effectSink,
-        journal: openB33b2bFileJournal(
-          resolve(styxRoot, 'b33b2b-journal'), B32A_PRIVATE_ROOT,
-        ),
-        wasm: loaded.wasm,
-      });
-      const stable = await forkAdapter.commitStable();
-      forkAdapter.close();
-      forkAdapter = new B33b2bEvolutionAdapter({
-        binding: active, effectSink,
-        journal: openB33b2bFileJournal(
-          resolve(styxRoot, 'b33b2b-journal'), B32A_PRIVATE_ROOT,
+          forkJournalDirectory, B32A_PRIVATE_ROOT,
         ),
         wasm: loaded.wasm,
       });
