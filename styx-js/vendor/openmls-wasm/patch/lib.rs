@@ -3260,6 +3260,63 @@ pub struct PhaseB33b1AppliedInboundRelease {
 }
 
 #[cfg(feature = "extensions-draft")]
+struct PhaseB33b1ApplicationOutboundData {
+    group_id: Vec<u8>,
+    current_epoch: u64,
+    message_epoch: u64,
+    sender_leaf_index: u32,
+    sender_credential_identity: Vec<u8>,
+    sender_signature_key: Vec<u8>,
+    canonical_state_sha256: Vec<u8>,
+    ciphertext_sha256: Vec<u8>,
+    canonical_state: PhaseB32aWipeBytes,
+    ciphertext: PhaseB32aWipeBytes,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1PendingApplicationOutbound {
+    data: Option<PhaseB33b1ApplicationOutboundData>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1ApplicationOutboundRelease {
+    canonical_state: Option<PhaseB32aWipeBytes>,
+    ciphertext: Option<PhaseB32aWipeBytes>,
+}
+
+#[cfg(feature = "extensions-draft")]
+struct PhaseB33b1ApplicationInboundData {
+    group_id: Vec<u8>,
+    current_epoch: u64,
+    message_epoch: u64,
+    sender_leaf_index: u32,
+    sender_credential_identity: Vec<u8>,
+    sender_signature_key: Vec<u8>,
+    canonical_state_sha256: Vec<u8>,
+    ciphertext_sha256: Vec<u8>,
+    plaintext_sha256: Vec<u8>,
+    canonical_state: PhaseB32aWipeBytes,
+    ciphertext: PhaseB32aWipeBytes,
+    plaintext: PhaseB32aWipeBytes,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1PendingApplicationInbound {
+    data: Option<PhaseB33b1ApplicationInboundData>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1ApplicationInboundRelease {
+    canonical_state: Option<PhaseB32aWipeBytes>,
+    ciphertext: Option<PhaseB32aWipeBytes>,
+    plaintext: Option<PhaseB32aWipeBytes>,
+}
+
+#[cfg(feature = "extensions-draft")]
 #[derive(Clone, PartialEq, Eq)]
 struct PhaseB2ProposalProjection {
     kind: &'static str,
@@ -6802,6 +6859,173 @@ impl PhaseB33b1AppliedInboundRelease {
 
 #[cfg(feature = "extensions-draft")]
 #[wasm_bindgen]
+impl PhaseB33b1PendingApplicationOutbound {
+    pub fn is_consumed(&self) -> bool { self.data.is_none() }
+    pub fn group_id(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.group_id.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn current_epoch(&self) -> Result<u64, JsError> {
+        self.data.as_ref().map(|data| data.current_epoch)
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn message_epoch(&self) -> Result<u64, JsError> {
+        self.data.as_ref().map(|data| data.message_epoch)
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn sender_leaf_index(&self) -> Result<u32, JsError> {
+        self.data.as_ref().map(|data| data.sender_leaf_index)
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn sender_credential_identity(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.sender_credential_identity.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn sender_signature_key(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.sender_signature_key.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn canonical_state_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.canonical_state_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn ciphertext_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.ciphertext_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn release(
+        &mut self,
+        expected_state_sha256: &[u8],
+        expected_ciphertext_sha256: &[u8],
+    ) -> Result<PhaseB33b1ApplicationOutboundRelease, JsError> {
+        let data = self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))?;
+        if !phase_b32a_constant_time_eq_32(
+            expected_state_sha256,
+            &data.canonical_state_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_ciphertext_sha256,
+            &data.ciphertext_sha256,
+        ) {
+            return Err(JsError::new("PHASE_B33B1_APP_OUTBOUND_BINDING_MISMATCH"));
+        }
+        Ok(PhaseB33b1ApplicationOutboundRelease {
+            canonical_state: Some(data.canonical_state),
+            ciphertext: Some(data.ciphertext),
+        })
+    }
+    pub fn discard(&mut self) -> Result<(), JsError> {
+        self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1ApplicationOutboundRelease {
+    pub fn take_canonical_state(&mut self) -> Result<Vec<u8>, JsError> {
+        self.canonical_state.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_STATE_ALREADY_TAKEN"))
+    }
+    pub fn take_ciphertext(&mut self) -> Result<Vec<u8>, JsError> {
+        self.ciphertext.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_CIPHERTEXT_ALREADY_TAKEN"))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1PendingApplicationInbound {
+    pub fn is_consumed(&self) -> bool { self.data.is_none() }
+    pub fn group_id(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.group_id.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn current_epoch(&self) -> Result<u64, JsError> {
+        self.data.as_ref().map(|data| data.current_epoch)
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn message_epoch(&self) -> Result<u64, JsError> {
+        self.data.as_ref().map(|data| data.message_epoch)
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn sender_leaf_index(&self) -> Result<u32, JsError> {
+        self.data.as_ref().map(|data| data.sender_leaf_index)
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn sender_credential_identity(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.sender_credential_identity.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn sender_signature_key(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.sender_signature_key.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn canonical_state_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.canonical_state_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn ciphertext_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.ciphertext_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn plaintext_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.plaintext_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn release(
+        &mut self,
+        expected_state_sha256: &[u8],
+        expected_ciphertext_sha256: &[u8],
+        expected_plaintext_sha256: &[u8],
+    ) -> Result<PhaseB33b1ApplicationInboundRelease, JsError> {
+        let data = self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))?;
+        if !phase_b32a_constant_time_eq_32(
+            expected_state_sha256,
+            &data.canonical_state_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_ciphertext_sha256,
+            &data.ciphertext_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_plaintext_sha256,
+            &data.plaintext_sha256,
+        ) {
+            return Err(JsError::new("PHASE_B33B1_APP_INBOUND_BINDING_MISMATCH"));
+        }
+        Ok(PhaseB33b1ApplicationInboundRelease {
+            canonical_state: Some(data.canonical_state),
+            ciphertext: Some(data.ciphertext),
+            plaintext: Some(data.plaintext),
+        })
+    }
+    pub fn discard(&mut self) -> Result<(), JsError> {
+        self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1ApplicationInboundRelease {
+    pub fn take_canonical_state(&mut self) -> Result<Vec<u8>, JsError> {
+        self.canonical_state.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_STATE_ALREADY_TAKEN"))
+    }
+    pub fn take_ciphertext(&mut self) -> Result<Vec<u8>, JsError> {
+        self.ciphertext.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_CIPHERTEXT_ALREADY_TAKEN"))
+    }
+    pub fn take_plaintext(&mut self) -> Result<Vec<u8>, JsError> {
+        self.plaintext.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_PLAINTEXT_ALREADY_TAKEN"))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
 impl PhaseB33b1Group {
     pub fn load_clean_canonical_state(
         candidate_state: &[u8],
@@ -6914,6 +7138,154 @@ impl PhaseB33b1Group {
                 pending_state_sha256,
                 pending_state,
                 commit,
+            }),
+        })
+    }
+
+    pub fn prepare_application_outbound(
+        &mut self,
+        plaintext: &[u8],
+    ) -> Result<PhaseB33b1PendingApplicationOutbound, JsError> {
+        let (provider, mut group, identity) = self.take_operation_parts()?;
+        if plaintext.is_empty() {
+            return Err(JsError::new("PHASE_B33B1_APP_PLAINTEXT_EMPTY"));
+        }
+        let original_group_id = group.group_id().to_vec();
+        let original_epoch = group.epoch().as_u64();
+        let sender_leaf_index = group.own_leaf_index().u32();
+        phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        let ciphertext = group
+            .create_message(provider.provider.as_ref(), &identity.keypair, plaintext)?
+            .tls_serialize_detached()?;
+        phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        if group.group_id().as_slice() != original_group_id
+            || group.epoch().as_u64() != original_epoch
+        {
+            return Err(JsError::new("PHASE_B33B1_APP_OUTBOUND_GROUP_CHANGED"));
+        }
+        let canonical_state = provider.canonical_state()?;
+        let canonical_state_sha256 = phase_b33a_sha256(
+            &provider,
+            &canonical_state,
+            "PHASE_B33B1_APP_STATE_DIGEST_FAILED",
+        )?;
+        let ciphertext_sha256 = phase_b33a_sha256(
+            &provider,
+            &ciphertext,
+            "PHASE_B33B1_APP_CIPHERTEXT_DIGEST_FAILED",
+        )?;
+        Ok(PhaseB33b1PendingApplicationOutbound {
+            data: Some(PhaseB33b1ApplicationOutboundData {
+                group_id: original_group_id,
+                current_epoch: original_epoch,
+                message_epoch: original_epoch,
+                sender_leaf_index,
+                sender_credential_identity: identity.account_public_key.clone(),
+                sender_signature_key: identity.keypair.public().to_vec(),
+                canonical_state_sha256,
+                ciphertext_sha256,
+                canonical_state: PhaseB32aWipeBytes(canonical_state),
+                ciphertext: PhaseB32aWipeBytes(ciphertext),
+            }),
+        })
+    }
+
+    pub fn prepare_application_inbound(
+        &mut self,
+        ciphertext: &[u8],
+    ) -> Result<PhaseB33b1PendingApplicationInbound, JsError> {
+        let (provider, mut group, identity) = self.take_operation_parts()?;
+        if ciphertext.is_empty() {
+            return Err(JsError::new("PHASE_B33B1_APP_CIPHERTEXT_EMPTY"));
+        }
+        let original_group_id = group.group_id().to_vec();
+        let current_epoch = group.epoch().as_u64();
+        phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        let message = MlsMessageIn::tls_deserialize_exact(ciphertext)
+            .map_err(|_| JsError::new("PHASE_B33B1_APP_MLS_MESSAGE_MALFORMED"))?;
+        let private = match message.extract() {
+            MlsMessageBodyIn::PrivateMessage(message) => message,
+            _ => return Err(JsError::new("PHASE_B33B1_APP_PRIVATE_MESSAGE_REQUIRED")),
+        };
+        if private.group_id().as_slice() != original_group_id {
+            return Err(JsError::new("PHASE_B33B1_APP_GROUP_ID_MISMATCH"));
+        }
+        let message_epoch = private.epoch().as_u64();
+        if message_epoch > current_epoch {
+            return Err(JsError::new("PHASE_B33B1_APP_FUTURE_EPOCH_REJECTED"));
+        }
+        let processed = group
+            .process_message(provider.provider.as_ref(), ProtocolMessage::from(private))
+            .map_err(|_| JsError::new("PHASE_B33B1_APP_OPENMLS_PROCESSING_FAILED"))?;
+        if processed.group_id().as_slice() != original_group_id {
+            return Err(JsError::new("PHASE_B33B1_APP_AUTHENTICATED_GROUP_ID_MISMATCH"));
+        }
+        if processed.epoch().as_u64() != message_epoch {
+            return Err(JsError::new("PHASE_B33B1_APP_AUTHENTICATED_EPOCH_MISMATCH"));
+        }
+        if matches!(
+            processed.content(),
+            openmls::framing::ProcessedMessageContent::OwnPrivateMessage
+        ) {
+            return Err(JsError::new("PHASE_B33B1_APP_OWN_MESSAGE_REJECTED"));
+        }
+        let sender_leaf_index = match processed.sender() {
+            Sender::Member(index) => index.u32(),
+            Sender::External(_) | Sender::NewMemberProposal | Sender::NewMemberCommit => {
+                return Err(JsError::new("PHASE_B33B1_APP_NON_MEMBER_SENDER_REJECTED"));
+            }
+        };
+        let authenticated_identity = processed.credential().serialized_content().to_vec();
+        let sender = phase_b32a_member_at(
+            provider.provider.as_ref().crypto(),
+            &group,
+            sender_leaf_index,
+        )?;
+        if sender.member.credential_identity != authenticated_identity {
+            return Err(JsError::new("PHASE_B33B1_APP_SENDER_CREDENTIAL_MISMATCH"));
+        }
+        let plaintext = match processed.into_content() {
+            openmls::framing::ProcessedMessageContent::ApplicationMessage(message) => {
+                message.into_bytes()
+            }
+            _ => return Err(JsError::new("PHASE_B33B1_APP_APPLICATION_MESSAGE_REQUIRED")),
+        };
+        phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        if group.group_id().as_slice() != original_group_id
+            || group.epoch().as_u64() != current_epoch
+        {
+            return Err(JsError::new("PHASE_B33B1_APP_INBOUND_GROUP_CHANGED"));
+        }
+        let canonical_state = provider.canonical_state()?;
+        let canonical_state_sha256 = phase_b33a_sha256(
+            &provider,
+            &canonical_state,
+            "PHASE_B33B1_APP_STATE_DIGEST_FAILED",
+        )?;
+        let ciphertext_sha256 = phase_b33a_sha256(
+            &provider,
+            ciphertext,
+            "PHASE_B33B1_APP_CIPHERTEXT_DIGEST_FAILED",
+        )?;
+        let plaintext_sha256 = phase_b33a_sha256(
+            &provider,
+            &plaintext,
+            "PHASE_B33B1_APP_PLAINTEXT_DIGEST_FAILED",
+        )?;
+        Ok(PhaseB33b1PendingApplicationInbound {
+            data: Some(PhaseB33b1ApplicationInboundData {
+                group_id: original_group_id,
+                current_epoch,
+                message_epoch,
+                sender_leaf_index,
+                sender_credential_identity: sender.member.credential_identity,
+                sender_signature_key: sender.member.leaf_signature_key,
+                canonical_state_sha256,
+                ciphertext_sha256,
+                plaintext_sha256,
+                canonical_state: PhaseB32aWipeBytes(canonical_state),
+                ciphertext: PhaseB32aWipeBytes(ciphertext.to_vec()),
+                plaintext: PhaseB32aWipeBytes(plaintext),
             }),
         })
     }
@@ -9539,6 +9911,40 @@ mod tests {
     }
 
     #[cfg(feature = "extensions-draft")]
+    fn phase_b33b1_release_application_outbound(
+        pending: &mut PhaseB33b1PendingApplicationOutbound,
+    ) -> (Vec<u8>, Vec<u8>) {
+        let state_sha256 = pending.canonical_state_sha256().unwrap();
+        let ciphertext_sha256 = pending.ciphertext_sha256().unwrap();
+        let mut release = pending
+            .release(&state_sha256, &ciphertext_sha256)
+            .map_err(js_error_to_string)
+            .unwrap();
+        (
+            release.take_canonical_state().unwrap(),
+            release.take_ciphertext().unwrap(),
+        )
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b33b1_release_application_inbound(
+        pending: &mut PhaseB33b1PendingApplicationInbound,
+    ) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+        let state_sha256 = pending.canonical_state_sha256().unwrap();
+        let ciphertext_sha256 = pending.ciphertext_sha256().unwrap();
+        let plaintext_sha256 = pending.plaintext_sha256().unwrap();
+        let mut release = pending
+            .release(&state_sha256, &ciphertext_sha256, &plaintext_sha256)
+            .map_err(js_error_to_string)
+            .unwrap();
+        (
+            release.take_canonical_state().unwrap(),
+            release.take_ciphertext().unwrap(),
+            release.take_plaintext().unwrap(),
+        )
+    }
+
+    #[cfg(feature = "extensions-draft")]
     #[test]
     fn phase_b33b1_activation_roundtrips_retention_and_cross_readers_fail_closed() {
         let fixture = phase_b33a_native_fixture(b"phase-b33b1-activation", 0xa1, 0xa2);
@@ -9580,6 +9986,157 @@ mod tests {
                 &fixture.joiner_signature_key,
             )
             .map(|_| ())
+        });
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b33b1_retained_application_message_survives_next_epoch() {
+        let fixture = phase_b33a_native_fixture(b"phase-b33b1-retained-app", 0xb1, 0xb2);
+        let founder_parent = phase_b33b1_activate(
+            &fixture.founder_state,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+        );
+        let joiner_parent = phase_b33b1_activate(
+            &fixture.joiner_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        );
+
+        let plaintext = b"withheld at epoch one";
+        let mut founder = PhaseB33b1Group::load_clean_canonical_state(
+            &founder_parent,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("founder must load");
+        let mut outbound = founder
+            .prepare_application_outbound(plaintext)
+            .map_err(js_error_to_string)
+            .unwrap();
+        assert_eq!(outbound.current_epoch().unwrap(), 1);
+        assert_eq!(outbound.message_epoch().unwrap(), 1);
+        let (founder_after_send, ciphertext) =
+            phase_b33b1_release_application_outbound(&mut outbound);
+
+        let mut founder = PhaseB33b1Group::load_clean_canonical_state(
+            &founder_after_send,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("founder after send must load");
+        let mut local = founder.prepare_self_update().map_err(js_error_to_string).unwrap();
+        let parent_sha256 = local.parent_state_sha256().unwrap();
+        let pending_sha256 = local.pending_state_sha256().unwrap();
+        let commit_sha256 = local.commit_sha256().unwrap();
+        let authority_sha256 = local.authority_sha256().unwrap();
+        let mut local_release = local
+            .release(&parent_sha256, &pending_sha256, &commit_sha256, &authority_sha256)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let pending_state = local_release.take_pending_state().unwrap();
+        let commit = local_release.take_commit().unwrap();
+        let mut joiner = PhaseB33b1Group::load_clean_canonical_state(
+            &joiner_parent,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("joiner parent must load");
+        let mut staged = joiner.stage_inbound_commit(&commit).map_err(js_error_to_string).unwrap();
+        let staged_parent_sha256 = staged.parent_state_sha256().unwrap();
+        let staged_commit_sha256 = staged.commit_sha256().unwrap();
+        let staged_authority_sha256 = staged.authority_sha256().unwrap();
+        let mut staged_release = staged
+            .release(&staged_parent_sha256, &staged_commit_sha256, &staged_authority_sha256)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let staged_parent = staged_release.take_parent_state().unwrap();
+        let staged_commit = staged_release.take_commit().unwrap();
+        let mut applied = PhaseB33b1Group::apply_inbound_commit(
+            &staged_parent,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+            &staged_commit,
+            &staged_parent_sha256,
+            &staged_commit_sha256,
+            &staged_authority_sha256,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let joiner_epoch_two = applied.take_committed_state().unwrap();
+        let mut confirmed = PhaseB33b1Group::confirm_local_commit(
+            &pending_state,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+            &commit,
+            &parent_sha256,
+            &pending_sha256,
+            &commit_sha256,
+            &authority_sha256,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let founder_epoch_two = confirmed.take_committed_state().unwrap();
+        assert!(!founder_epoch_two.is_empty());
+
+        let mut joiner = PhaseB33b1Group::load_clean_canonical_state(
+            &joiner_epoch_two,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("joiner epoch two must load");
+        let mut inbound = joiner
+            .prepare_application_inbound(&ciphertext)
+            .map_err(js_error_to_string)
+            .unwrap();
+        assert_eq!(inbound.current_epoch().unwrap(), 2);
+        assert_eq!(inbound.message_epoch().unwrap(), 1);
+        let (_, exact_ciphertext, recovered_plaintext) =
+            phase_b33b1_release_application_inbound(&mut inbound);
+        assert_eq!(exact_ciphertext, ciphertext);
+        assert_eq!(recovered_plaintext, plaintext);
+
+        let mut replay = PhaseB33b1Group::load_clean_canonical_state(
+            &joiner_epoch_two,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("unconsumed epoch two state must load");
+        let mut first = replay
+            .prepare_application_inbound(&ciphertext)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let (consumed_state, _, _) = phase_b33b1_release_application_inbound(&mut first);
+        phase_b32_assert_rejected(|| {
+            let mut consumed = PhaseB33b1Group::load_clean_canonical_state(
+                &consumed_state,
+                &fixture.group_id,
+                &fixture.joiner_identity,
+                &fixture.joiner_signature_key,
+            )
+            ?
+            .expect("consumed state must load");
+            consumed.prepare_application_inbound(&ciphertext).map(|_| ())
         });
     }
 

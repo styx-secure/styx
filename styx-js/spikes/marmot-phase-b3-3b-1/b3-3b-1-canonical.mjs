@@ -16,10 +16,41 @@ export const B33B1_MAX_PAST_EPOCHS = 5;
 
 export const B33B1_ERROR = Object.freeze({
   BLOCKED: 'B33B1_BLOCKED',
+  CAS_CONFLICT: 'B33B1_CAS_CONFLICT',
+  CORRUPT: 'B33B1_CORRUPT',
+  DUPLICATE_INITIALIZATION: 'B33B1_DUPLICATE_INITIALIZATION',
   INVALID: 'B33B1_INVALID',
   PIN_DRIFT: 'B33B1_PIN_DRIFT',
   ENGINE_REJECTED: 'B33B1_ENGINE_REJECTED',
+  PERSISTENCE_FAILED: 'B33B1_PERSISTENCE_FAILED',
+  RESOURCE_LIMIT: 'B33B1_RESOURCE_LIMIT',
+  STATE_CONFLICT: 'B33B1_STATE_CONFLICT',
   MDK_REJECTS_STYX_SELF_UPDATE: 'MDK_REJECTS_STYX_SELF_UPDATE',
+});
+
+export const B33B1_STATE = Object.freeze({
+  ACTIVE: 'ACTIVE',
+  LOCAL_PENDING: 'LOCAL_PENDING',
+  LOCAL_ACCEPTED: 'LOCAL_ACCEPTED',
+  INBOUND_STAGED: 'INBOUND_STAGED',
+});
+
+export const B33B1_RECOVERY = Object.freeze({
+  STABLE: 'STABLE',
+  REPUBLISH_LOCAL: 'REPUBLISH_LOCAL',
+  MERGE_ACCEPTED_LOCAL: 'MERGE_ACCEPTED_LOCAL',
+  RESTAGE_INBOUND: 'RESTAGE_INBOUND',
+});
+
+export const B33B1_DISPOSITION = Object.freeze({
+  LOCAL_COMMITTED: 'LOCAL_COMMITTED',
+  INBOUND_COMMITTED: 'INBOUND_COMMITTED',
+});
+
+export const B33B1_LIMITS = Object.freeze({
+  maxCommitBytes: 1024 * 1024,
+  maxJournalTransitions: 64,
+  maxProviderBytes: 8 * 1024 * 1024,
 });
 
 export const B33B1_GENERATED_FILES = Object.freeze([
@@ -47,6 +78,10 @@ export function sha256Hex(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
+export function canonicalJsonBytes(value) {
+  return Buffer.from(`${JSON.stringify(value)}\n`, 'utf8');
+}
+
 export function bytesToHex(bytes) {
   return Buffer.from(bytes).toString('hex');
 }
@@ -72,13 +107,29 @@ export function exactFields(value, fields, label) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     failB33b1(B33B1_ERROR.INVALID, `${label} is not an object`);
   }
-  const actual = Object.keys(value).sort();
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    failB33b1(B33B1_ERROR.INVALID, `${label} has a forbidden prototype`);
+  }
+  const keys = Reflect.ownKeys(value);
+  if (keys.some((key) => typeof key !== 'string')) {
+    failB33b1(B33B1_ERROR.INVALID, `${label} has symbol fields`);
+  }
+  const actual = keys.sort();
   const expected = [...fields].sort();
   if (actual.length !== expected.length
     || actual.some((field, index) => field !== expected[index])) {
     failB33b1(B33B1_ERROR.INVALID, `${label} fields are not exact`);
   }
-  return value;
+  const result = {};
+  for (const field of fields) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, field);
+    if (!descriptor || !Object.hasOwn(descriptor, 'value')) {
+      failB33b1(B33B1_ERROR.INVALID, `${label} contains an accessor`);
+    }
+    result[field] = descriptor.value;
+  }
+  return result;
 }
 
 export function projectionEvidence(projection) {
