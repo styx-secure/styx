@@ -21,6 +21,7 @@ import {
 
 const DIGEST = /^[0-9a-f]{64}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
+const GROUP_ID = /^[0-9a-f]{32}$/;
 const REQUIRED_TRUE_FIELDS = Object.freeze([
   'mdkPreparedCommitRecoveredExactly',
   'styxLocalCommitRetriedExactly',
@@ -44,7 +45,7 @@ export function validateStage2Run(report, label = 'run') {
     blocked(`${label} artifact identity drifted`);
   }
   if (!COMMIT.test(report.sourceCommit) || !COMMIT.test(report.sourceTree)
-    || !DIGEST.test(report.groupIdHex)
+    || !GROUP_ID.test(report.groupIdHex)
     || !DIGEST.test(report.finalGroupContextSha256Hex)
     || !DIGEST.test(report.finalRosterSha256Hex)
     || !DIGEST.test(report.participantSetSha256Hex)) {

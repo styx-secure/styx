@@ -18,7 +18,7 @@ function run(marker) {
     artifactSourceCommit: B33B1_APPROVED_SOURCE_SHA,
     artifactSourceTree: B33B1_APPROVED_SOURCE_TREE,
     candidateTuple: B33B1_APPROVED_ARTIFACT_TUPLE,
-    groupIdHex: hex(marker),
+    groupIdHex: marker.repeat(32).slice(0, 32),
     finalEpoch: '3',
     finalGroupContextSha256Hex: hex(`${marker}a`),
     finalRosterSha256Hex: hex(`${marker}b`),
@@ -54,6 +54,7 @@ describe('B3.3b-1 Stage 2 paired evidence', () => {
 
   test.each([
     ['artifact tuple', (value) => { value.candidateTuple = {}; }],
+    ['group identifier', (value) => { value.groupIdHex = hex('f'); }],
     ['operation sequence', (value) => { value.operationSequence = []; }],
     ['retention', (value) => { value.retentionPolicy = 4; }],
     ['fresh-process recovery', (value) => { value.freshProcessRecoveryCount = 2; }],
