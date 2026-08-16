@@ -199,14 +199,38 @@ describe('Phase B3.3b-2b durable settlement journal', () => {
   });
 
   test('fails closed when retained authority is missing or corrupt', async () => {
-    for (const mode of ['missing', 'corrupt']) {
+    for (const mode of ['missing', 'truncated', 'substituted']) {
       const fixture = await journalAtFrozen();
       const parentDigest = fixture.head.retainedParent.stateBlobSha256Hex;
       if (mode === 'missing') fixture.store.blobs.delete(parentDigest);
+      else if (mode === 'truncated') fixture.store.blobs.set(parentDigest, new Uint8Array());
       else fixture.store.blobs.set(parentDigest, bytes('substituted-parent'));
       await expect(fixture.journal.readRecovery())
         .rejects.toHaveProperty('code', B33B2B_ERROR.CORRUPT);
       expect(fixture.store.head.state).toBe(B33B2B_STATE.RACE_FROZEN);
+    }
+  });
+
+  test('fails closed for missing or corrupt candidate, successor and settlement blobs', async () => {
+    for (const target of ['local', 'rival', 'successor', 'settlement']) {
+      for (const mode of ['missing', 'corrupt']) {
+        const fixture = await journalAtFrozen();
+        const prepared = await prepare(fixture);
+        const digestByTarget = {
+          local: prepared.head.localCandidate.commitBlobSha256Hex,
+          rival: prepared.head.rivalCandidate.commitBlobSha256Hex,
+          successor: prepared.head.successorStateBlobSha256Hex,
+          settlement: prepared.head.settlement.recordBlobSha256Hex,
+        };
+        const targetDigest = digestByTarget[target];
+        if (mode === 'missing') fixture.store.blobs.delete(targetDigest);
+        else fixture.store.blobs.set(targetDigest, bytes(`corrupt-${target}`));
+
+        await expect(fixture.journal.readRecovery())
+          .rejects.toHaveProperty('code', B33B2B_ERROR.CORRUPT);
+        expect(fixture.store.head.headDigestHex).toBe(prepared.head.headDigestHex);
+        expect(fixture.store.head.state).toBe(B33B2B_STATE.SETTLEMENT_PREPARED);
+      }
     }
   });
 
@@ -236,6 +260,51 @@ describe('Phase B3.3b-2b durable settlement journal', () => {
       ...fixture.head,
       previousHeadDigestHex: digest('unrelated-head'),
     })).toThrow(/end of its transition history/);
+  });
+
+  test('rejects forged authenticated fields and any frozen-set extension or permutation', async () => {
+    const fixture = await journalAtFrozen();
+    const originalCanonical = fixture.head.canonical;
+    const candidateMutations = [
+      { groupIdHex: 'dcba' },
+      { parentStateSha256Hex: digest('wrong-parent') },
+      { sourceEpoch: '6' },
+      { targetEpoch: '9' },
+      { committerAccountHex: '33'.repeat(32) },
+      { committerSignatureKeyHex: 'cc'.repeat(32) },
+      { authoritySha256Hex: digest('wrong-authority') },
+      { commitSha256Hex: digest('wrong-commit') },
+      { candidateGroupContextSha256Hex: digest('wrong-context') },
+      { orderingPriority: 'application' },
+      { witnessCount: 1 },
+    ];
+
+    for (const mutation of candidateMutations) {
+      expect(() => parseB33b2bHead({
+        ...fixture.head,
+        rivalCandidate: {
+          ...fixture.head.rivalCandidate,
+          projection: {
+            ...fixture.head.rivalCandidate.projection,
+            ...mutation,
+          },
+        },
+      })).toThrow();
+    }
+    expect(() => parseB33b2bHead({
+      ...fixture.head,
+      localCandidate: fixture.head.rivalCandidate,
+      rivalCandidate: fixture.head.localCandidate,
+    })).toThrow();
+    expect(() => parseB33b2bHead({
+      ...fixture.head,
+      rivalCandidate: null,
+    })).toThrow();
+    expect(() => parseB33b2bHead({
+      ...fixture.head,
+      thirdCandidate: fixture.head.rivalCandidate,
+    })).toThrow();
+    expect(fixture.store.head.canonical).toEqual(originalCanonical);
   });
 
   test('fails closed before the private blob store exceeds its byte envelope', async () => {
