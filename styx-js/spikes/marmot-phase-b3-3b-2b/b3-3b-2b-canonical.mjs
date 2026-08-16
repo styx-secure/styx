@@ -30,6 +30,7 @@ export const B33B2B_LIMITS = Object.freeze({
   maxBlobBytes: 8 * 1024 * 1024,
   maxCommitBytes: 1024 * 1024,
   maxHeadBytes: 1024 * 1024,
+  maxStoreBytes: 64 * 1024 * 1024,
   maxTransitions: 16,
 });
 

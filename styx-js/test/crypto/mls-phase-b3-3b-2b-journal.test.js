@@ -13,6 +13,7 @@ import {
 } from '../../spikes/marmot-phase-b3-3b-2b/b3-3b-2b-journal.mjs';
 import {
   B33B2B_ERROR,
+  B33B2B_LIMITS,
   B33B2B_STATE,
 } from '../../spikes/marmot-phase-b3-3b-2b/b3-3b-2b-canonical.mjs';
 
@@ -235,5 +236,20 @@ describe('Phase B3.3b-2b durable settlement journal', () => {
       ...fixture.head,
       previousHeadDigestHex: digest('unrelated-head'),
     })).toThrow(/end of its transition history/);
+  });
+
+  test('fails closed before the private blob store exceeds its byte envelope', async () => {
+    const store = new MemoryB33b2bStore();
+    store.blobs.set('ff'.repeat(32), new Uint8Array(B33B2B_LIMITS.maxStoreBytes));
+    const journal = new B33b2bJournal(store);
+
+    await expect(journal.activate({
+      forkEpoch: '7',
+      groupIdDigestHex: digest('group-id'),
+      parentGroupContextSha256Hex: digest('parent-context'),
+      parentStateBytes: bytes('parent-state'),
+      rosterDigestHex: digest('roster'),
+    })).rejects.toHaveProperty('code', B33B2B_ERROR.RESOURCE_LIMIT);
+    expect(store.head).toBeNull();
   });
 });

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // STYX_SPIKE_PROTOTYPE — durable bounded concurrent-fork settlement journal.
 
+import { lstatSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import {
   B33B1_PROVIDER_FORMAT,
   canonicalJsonBytes,
@@ -433,6 +436,16 @@ export class MemoryB33b2bStore {
 
   async compareAndSwap(expectedDigest, nextHead, blobs) {
     if ((this.head?.headDigestHex ?? null) !== expectedDigest) return false;
+    const unique = new Map(blobs.map((blob) => [sha256Hex(blob), blob]));
+    let total = [...this.blobs.values()]
+      .reduce((sum, blob) => sum + blob.byteLength, 0);
+    for (const [digest, blob] of unique) {
+      if (!this.blobs.has(digest)) total += blob.byteLength;
+    }
+    if (total > B33B2B_LIMITS.maxStoreBytes) {
+      failB33b2b(B33B2B_ERROR.RESOURCE_LIMIT,
+        'journal blob store exceeds its total byte envelope');
+    }
     for (const blob of blobs) {
       this.writeOrdinal += 1;
       await this.beforeWrite?.({
@@ -447,6 +460,45 @@ export class MemoryB33b2bStore {
     if ((this.head?.headDigestHex ?? null) !== expectedDigest) return false;
     this.head = structuredClone(nextHead);
     return true;
+  }
+}
+
+export class FileB33b2bStore {
+  constructor(directory, approvedRoot) {
+    this.inner = new FileB33b1Store(directory, approvedRoot);
+  }
+
+  async readHead() { return this.inner.readHead(); }
+
+  async readBlob(digest) { return this.inner.readBlob(digest); }
+
+  #storedBytes() {
+    let total = 0;
+    for (const name of readdirSync(this.inner.blobDirectory)) {
+      const record = lstatSync(resolve(this.inner.blobDirectory, name));
+      if (!record.isFile()) {
+        failB33b2b(B33B2B_ERROR.CORRUPT,
+          'journal blob store contains a non-regular entry');
+      }
+      total += record.size;
+      if (total > B33B2B_LIMITS.maxStoreBytes) break;
+    }
+    return total;
+  }
+
+  async compareAndSwap(expectedDigest, nextHead, blobs) {
+    const unique = new Map(blobs.map((blob) => [sha256Hex(blob), blob]));
+    let total = this.#storedBytes();
+    for (const [digest, blob] of unique) {
+      const existing = await this.inner.readBlob(digest);
+      if (existing === null) total += blob.byteLength;
+      clearBytes(existing);
+    }
+    if (total > B33B2B_LIMITS.maxStoreBytes) {
+      failB33b2b(B33B2B_ERROR.RESOURCE_LIMIT,
+        'journal blob store exceeds its total byte envelope');
+    }
+    return this.inner.compareAndSwap(expectedDigest, nextHead, blobs);
   }
 }
 
@@ -807,5 +859,5 @@ export function memoryB33b2bJournal() {
 }
 
 export function openB33b2bFileJournal(directory, approvedRoot) {
-  return new B33b2bJournal(new FileB33b1Store(directory, approvedRoot));
+  return new B33b2bJournal(new FileB33b2bStore(directory, approvedRoot));
 }
