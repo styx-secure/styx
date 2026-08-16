@@ -123,9 +123,10 @@ function recover(action, candidatePath, journalDirectory) {
   ], `fresh-process ${action}`);
 }
 
-function receiveInFreshStyx(candidatePath, journalDirectory, ciphertextBytes, forgedMetadata) {
+function receiveInFreshStyx(context, journalDirectory, ciphertextBytes, forgedMetadata) {
+  context.freshStyxReceiverCount += 1;
   return runWorker(RECEIVER_WORKER, [
-    candidatePath === undefined ? '--installed' : candidatePath,
+    context.candidatePath === undefined ? '--installed' : context.candidatePath,
     journalDirectory,
     bytesToHex(ciphertextBytes),
     JSON.stringify(forgedMetadata),
@@ -419,6 +420,7 @@ export async function runRetainedWindowProbe(candidatePath) {
     adapter: undefined,
     candidatePath,
     freshProcessRecoveryCount: 0,
+    freshStyxReceiverCount: 0,
     loaded: undefined,
     mdk: undefined,
     mdkAcceptedIds: [],
@@ -501,7 +503,7 @@ export async function runRetainedWindowProbe(candidatePath) {
     });
     context.mdkAcceptedIds.push(future.message_id_hex);
     const futureResult = receiveInFreshStyx(
-      candidatePath, futureSnapshot,
+      context, futureSnapshot,
       Uint8Array.from(Buffer.from(future.group_message_hex, 'hex')),
       { currentEpoch: '2', messageEpoch: '2', source: 'caller-forged' },
     );
@@ -588,7 +590,7 @@ export async function runRetainedWindowProbe(candidatePath) {
     }));
     const corruptFromMdk = mutate(Buffer.from(distance4.fromMdk.group_message_hex, 'hex'));
     const corruptStyxResult = receiveInFreshStyx(
-      candidatePath, context.journalDirectory, corruptFromMdk,
+      context, context.journalDirectory, corruptFromMdk,
       { currentEpoch: '3', messageEpoch: '3', source: 'caller-forged' },
     );
     requireFreshStyxRejection(corruptStyxResult, 'corrupted distance-4 control');
@@ -627,7 +629,7 @@ export async function runRetainedWindowProbe(candidatePath) {
     operations.advance('corrupted-distance4-rejected');
 
     const distance4Styx = receiveInFreshStyx(
-      candidatePath, context.journalDirectory,
+      context, context.journalDirectory,
       Uint8Array.from(Buffer.from(distance4.fromMdk.group_message_hex, 'hex')),
       { currentEpoch: '999', messageEpoch: '999', senderLeafIndex: 999 },
     );
@@ -637,7 +639,7 @@ export async function runRetainedWindowProbe(candidatePath) {
       group_message_hex: bytesToHex(distance4.fromStyx.ciphertextBytes),
     });
     const distance4StyxReplay = receiveInFreshStyx(
-      candidatePath, context.journalDirectory,
+      context, context.journalDirectory,
       Uint8Array.from(Buffer.from(distance4.fromMdk.group_message_hex, 'hex')),
       { currentEpoch: '0', messageEpoch: '0' },
     );
@@ -693,7 +695,7 @@ export async function runRetainedWindowProbe(candidatePath) {
     const distance5 = retained.get(5);
     await restartMdk(context);
     const distance5Styx = receiveInFreshStyx(
-      candidatePath, context.journalDirectory,
+      context, context.journalDirectory,
       Uint8Array.from(Buffer.from(distance5.fromMdk.group_message_hex, 'hex')),
       { currentEpoch: '-1', messageEpoch: '-1' },
     );
@@ -703,7 +705,7 @@ export async function runRetainedWindowProbe(candidatePath) {
       group_message_hex: bytesToHex(distance5.fromStyx.ciphertextBytes),
     });
     const distance5StyxReplay = receiveInFreshStyx(
-      candidatePath, context.journalDirectory,
+      context, context.journalDirectory,
       Uint8Array.from(Buffer.from(distance5.fromMdk.group_message_hex, 'hex')), {},
     );
     const distance5MdkReplay = await context.mdk.request('ingest_group_message', {
@@ -759,16 +761,21 @@ export async function runRetainedWindowProbe(candidatePath) {
     await restartMdk(context);
     const styxBeforeDistance6 = await readStyxCheckpoint(context.journalDirectory);
     const distance6Styx = receiveInFreshStyx(
-      candidatePath, context.journalDirectory,
+      context, context.journalDirectory,
       Uint8Array.from(Buffer.from(distance6.fromMdk.group_message_hex, 'hex')), {},
     );
     requireFreshStyxRejection(distance6Styx, 'distance-6 Styx control');
     const distance6StyxReplay = receiveInFreshStyx(
-      candidatePath, context.journalDirectory,
+      context, context.journalDirectory,
       Uint8Array.from(Buffer.from(distance6.fromMdk.group_message_hex, 'hex')),
       { disposition: 'application_message_processed' },
     );
     requireFreshStyxRejection(distance6StyxReplay, 'distance-6 Styx replay control');
+    if (distance6Styx.errorCode !== corruptStyxResult.errorCode
+      || distance6StyxReplay.errorCode !== corruptStyxResult.errorCode) {
+      failB33b2a('B33B2A_CORRUPT',
+        'Styx distance-6 rejection became distinguishable from corrupted traffic');
+    }
     const styxAfterDistance6 = await readStyxCheckpoint(context.journalDirectory);
     if (!sameJson(styxBeforeDistance6, styxAfterDistance6)) {
       failB33b2a('B33B2A_CORRUPT', 'Styx durable authority changed after distance-6 rejection');
@@ -831,7 +838,7 @@ export async function runRetainedWindowProbe(candidatePath) {
         finalGroupContextSha256Hex: finalRecovery.head.groupContextSha256Hex,
         finalRosterSha256Hex: finalRecovery.head.rosterSha256Hex,
         freshProcessRecoveryCount: context.freshProcessRecoveryCount,
-        freshStyxReceiverCount: 8,
+        freshStyxReceiverCount: context.freshStyxReceiverCount,
         mdkBuildEvidence: mdkBuild.evidence,
         mdkDistance6Reason: mdkDistance6Result.rejection.details,
         operationSequence: operations.complete(),
