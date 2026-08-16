@@ -11,6 +11,12 @@
 
 export const MLS_BUILD_INFO = Object.freeze({
   openMlsRevision: '09e92777dba0528d3d29e2e5e681b7e91637c7be',
+  wasmArtifactSha256: 'fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e',
+  ciphersuite: 'MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519',
+});
+
+export const B3_3A_MLS_BUILD_INFO = Object.freeze({
+  openMlsRevision: '09e92777dba0528d3d29e2e5e681b7e91637c7be',
   wasmArtifactSha256: '7087b53f8f0597f0107802d5b629cd211d138d4f916b2ddd5831862088551624',
   ciphersuite: 'MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519',
 });
@@ -74,6 +80,7 @@ export const COMPATIBLE_MLS_STATE_TUPLES = Object.freeze([
   B3_1_MLS_BUILD_INFO,
   B3_2_MLS_BUILD_INFO,
   B3_2A_MLS_BUILD_INFO,
+  B3_3A_MLS_BUILD_INFO,
   MLS_BUILD_INFO,
 ]);
 

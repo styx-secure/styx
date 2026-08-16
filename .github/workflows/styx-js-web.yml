@@ -82,16 +82,40 @@ jobs:
     needs: changes
     if: needs.changes.outputs.web == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Checkout the exact pinned MDK source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: marmot-protocol/mdk
+          ref: 9396adb6aa6b95b521a7979facd5ea7040c07288
+          path: .styx-pins/mdk-9396adb6
+          persist-credentials: false
+          fetch-depth: 1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
+      - name: Install the exact Rust toolchain used by the approved probes
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.97.1 --profile minimal
+          test "$(RUSTUP_TOOLCHAIN=1.97.1 rustc --version | awk '{print $2}')" = "1.97.1"
+          test "$(RUSTUP_TOOLCHAIN=1.97.1 cargo --version | awk '{print $2}')" = "1.97.1"
+      - name: Provision the approved private probe parent
+        run: |
+          set -euo pipefail
+          sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 0755 /home/mverde
       - name: Unit + app tests
         working-directory: styx-js
+        env:
+          B33B1_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
+          RUSTUP_TOOLCHAIN: 1.97.1
         run: |
           npm ci
-          npm test -- --testTimeout=20000
+          npm test -- --runInBand --testTimeout=20000
       - name: Build the PWA
         working-directory: styx-js/apps/chat
         run: |

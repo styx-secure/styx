@@ -1,7 +1,8 @@
 # Vendored OpenMLS-WASM
 
 This directory contains the pinned OpenMLS WebAssembly engine used by the
-legacy Styx chat and by isolated Phase B1/Phase B2/B3.1/B3.2/B3.2a/B3.3a capability probes. The complete pin,
+legacy Styx chat and by isolated Phase B1/Phase B2/B3.1/B3.2/B3.2a/B3.3a/B3.3b-1
+capability probes. The complete pin,
 toolchain, licensing classification, hashes, and residual risks are recorded in
 [`PROVENANCE.md`](./PROVENANCE.md).
 
@@ -15,7 +16,7 @@ toolchain, licensing classification, hashes, and residual risks are recorded in
 - Enabled upstream feature: `extensions-draft`
 
 The source revision has not changed. The draft feature is enabled because the
-non-product Phase B1/Phase B2/B3.1/B3.2/B3.2a/B3.3a probes need the upstream application-data dictionary and
+non-product Phase B1/Phase B2/B3.1/B3.2/B3.2a/B3.3a/B3.3b-1 probes need the upstream application-data dictionary and
 staged-commit APIs. The feature expands the compiled parser surface for both
 profiles; it does not make the shipping product select the probe profile.
 
@@ -28,7 +29,7 @@ Run from this directory:
 ```
 
 Docker is required. No host Rust toolchain is used. The committed WASM is
-2,266,967 bytes raw and 806,069 bytes gzip (`gzip -9 -n`).
+2,358,165 bytes raw and 824,040 bytes gzip (`gzip -9 -n`).
 
 ## Profiles
 
@@ -100,6 +101,14 @@ derived from the processed MLS message and rebound by the JavaScript adapter
 to the exact two-member roster. The wrapper does not expose Commit processing,
 epoch changes, product APIs or transport behavior.
 
+The B3.3b-1 wrapper adds an isolated sequential self-update lifecycle. It fixes
+retention to exactly five past epochs, binds local pending and inbound staged
+Commits to one-use handles and authenticated candidate projections, and exposes
+only the MDK-compatible ordering inputs needed by a future convergence probe.
+The JavaScript journal persists every transition before publication,
+confirmation or plaintext release. The bounded probe neither chooses between
+concurrent branches nor creates a product Commit path.
+
 No product source imports the probe. It demonstrates local mechanics only: it
 is not a Marmot interoperability, security-audit, or production-readiness claim.
 
@@ -115,8 +124,9 @@ It adds:
   KeyPackage/profile capability, framed KeyPackage inspection,
   explicit pending/staged Commit lifecycles, bounded candidate projection and
   sender-preserving application receive boundary, the isolated B3.2/B3.2a
-  embedded-tree Welcome preparation/release surfaces, and the isolated B3.3a
-  one-use application-message boundary described above.
+  embedded-tree Welcome preparation/release surfaces, the isolated B3.3a
+  one-use application-message boundary, and the isolated B3.3b-1 sequential
+  Commit lifecycle described above.
 
 The patch and its probe API are outside the scope of upstream OpenMLS audits.
 `roundtrip.mjs` proves the unchanged legacy 1:1 path; the capability evidence is

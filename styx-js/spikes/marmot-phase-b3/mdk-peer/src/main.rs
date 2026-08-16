@@ -10,12 +10,14 @@ use async_trait::async_trait;
 use cgka_engine::account_identity_proof::{
     AccountIdentityProofRequest, AccountIdentityProofSigner,
 };
+use cgka_engine::canonicalization::ConvergenceStatus;
 use cgka_engine::{Engine, EngineBuilder};
 use cgka_traits::EngineError;
 use cgka_traits::app_event::MarmotAppEvent;
 use cgka_traits::engine::{
     CgkaEngine, CreateGroupRequest, GroupEvent, KeyPackage, SendIntent, SendResult,
 };
+use cgka_traits::engine_state::PendingStateRef;
 use cgka_traits::error::PeelerError;
 use cgka_traits::group::ProtocolProfile;
 use cgka_traits::group_context::GroupContextSnapshot;
@@ -153,6 +155,7 @@ impl AccountIdentityProofSigner for NodeProofSigner {
 struct PeerState {
     engine: Option<Engine<SqliteAccountStorage>>,
     group_id: Option<GroupId>,
+    pending_evolution: Option<(MessageId, PendingStateRef)>,
 }
 
 impl PeerState {
@@ -160,6 +163,7 @@ impl PeerState {
         Self {
             engine: None,
             group_id: None,
+            pending_evolution: None,
         }
     }
 
@@ -173,6 +177,37 @@ impl PeerState {
         self.engine
             .as_mut()
             .ok_or_else(|| RpcError::state("peer is not initialized"))
+    }
+
+    fn register_pending_evolution(
+        &mut self,
+        message_id: MessageId,
+        pending: PendingStateRef,
+    ) -> Result<(), RpcError> {
+        if self.pending_evolution.is_some() {
+            return Err(RpcError::state(
+                "a group evolution already awaits a publication outcome",
+            ));
+        }
+        self.pending_evolution = Some((message_id, pending));
+        Ok(())
+    }
+
+    fn take_pending_evolution(
+        &mut self,
+        expected_message_id: &MessageId,
+    ) -> Result<PendingStateRef, RpcError> {
+        let (message_id, pending) = self
+            .pending_evolution
+            .take()
+            .ok_or_else(|| RpcError::state("no group evolution awaits publication"))?;
+        if &message_id != expected_message_id {
+            self.pending_evolution = Some((message_id, pending));
+            return Err(RpcError::state(
+                "publication outcome does not match the pending group evolution",
+            ));
+        }
+        Ok(pending)
     }
 }
 
@@ -284,6 +319,73 @@ fn string_field<'a>(object: &'a Map<String, Value>, field: &str) -> Result<&'a s
         .get(field)
         .and_then(Value::as_str)
         .ok_or_else(|| RpcError::input(format!("{field} must be a string")))
+}
+
+fn u64_field(object: &Map<String, Value>, field: &str) -> Result<u64, RpcError> {
+    object
+        .get(field)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| RpcError::input(format!("{field} must be an unsigned integer")))
+}
+
+fn sha256_hex_array_field(
+    object: &Map<String, Value>,
+    field: &str,
+) -> Result<Vec<String>, RpcError> {
+    let values = object
+        .get(field)
+        .and_then(Value::as_array)
+        .ok_or_else(|| RpcError::input(format!("{field} must be an array")))?;
+    if values.len() > 16 {
+        return Err(RpcError::input(format!(
+            "{field} exceeds the Stage 1 bound"
+        )));
+    }
+    let mut result = Vec::with_capacity(values.len());
+    for value in values {
+        let encoded = value
+            .as_str()
+            .ok_or_else(|| RpcError::input(format!("{field} must contain strings")))?;
+        if encoded.len() != 64
+            || !encoded
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(RpcError::input(format!(
+                "{field} must contain canonical lowercase SHA-256 hex values"
+            )));
+        }
+        result.push(encoded.to_owned());
+    }
+    result.sort();
+    if result.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(RpcError::input(format!(
+            "{field} contains duplicate values"
+        )));
+    }
+    Ok(result)
+}
+
+fn require_application_witnesses(
+    actual_accepted: &[String],
+    actual_already_seen: &[String],
+    expected_accepted: &[String],
+    expected_already_seen: &[String],
+) -> Result<(), RpcError> {
+    if actual_accepted == expected_accepted && actual_already_seen == expected_already_seen {
+        return Ok(());
+    }
+    Err(RpcError {
+        code: "bounded_nogo",
+        message: "MDK_REJECTS_STYX_SELF_UPDATE".into(),
+        details: Some(json!({
+            "accepted_app_messages": actual_accepted,
+            "already_seen": actual_already_seen,
+            "expected_accepted_app_messages": expected_accepted,
+            "expected_already_seen": expected_already_seen,
+        })),
+        terminate: false,
+    })
 }
 
 fn decode_hex_field(object: &Map<String, Value>, field: &str) -> Result<Vec<u8>, RpcError> {
@@ -574,6 +676,503 @@ async fn send_application(
     }
 }
 
+async fn self_update(
+    state: &mut PeerState,
+    request: &Map<String, Value>,
+) -> Result<Value, RpcError> {
+    exact_fields(request, &["id", "op"])?;
+    if state.pending_evolution.is_some() {
+        return Err(RpcError::state(
+            "a group evolution already awaits a publication outcome",
+        ));
+    }
+    let group_id = state
+        .group_id
+        .clone()
+        .ok_or_else(|| RpcError::state("group is not initialized"))?;
+    let source_epoch = state
+        .engine()?
+        .epoch(&group_id)
+        .map_err(|error| RpcError::peer(format!("read source epoch: {error}")))?;
+    let result = match state
+        .engine_mut()?
+        .send(SendIntent::SelfUpdate {
+            group_id: group_id.clone(),
+        })
+        .await
+    {
+        Ok(result) => result,
+        Err(error) => {
+            state.engine = None;
+            state.group_id = None;
+            state.pending_evolution = None;
+            return Err(RpcError::fatal_peer(format!(
+                "self-update failed after entering the MDK mutation boundary: {error}"
+            )));
+        }
+    };
+    let unexpected_events = state.engine_mut()?.drain_events();
+    if !unexpected_events.is_empty() {
+        state.engine = None;
+        state.group_id = None;
+        state.pending_evolution = None;
+        return Err(RpcError::fatal_peer(
+            "self-update preparation produced application-visible events",
+        ));
+    }
+    match result {
+        SendResult::GroupEvolution {
+            msg,
+            welcomes,
+            pending,
+        } if welcomes.is_empty() => {
+            let message_id = msg.id.clone();
+            state.register_pending_evolution(message_id.clone(), pending)?;
+            Ok(json!({
+                "commit_sha256": hex::encode(Sha256::digest(&msg.payload)),
+                "disposition": "self_update_durably_prepared",
+                "group_id_hex": hex::encode(group_id.as_slice()),
+                "group_message_hex": hex::encode(&msg.payload),
+                "message_id_hex": hex::encode(message_id.as_slice()),
+                "source_epoch": source_epoch,
+            }))
+        }
+        SendResult::GroupEvolution { .. } => {
+            state.engine = None;
+            state.group_id = None;
+            state.pending_evolution = None;
+            Err(RpcError::fatal_peer(
+                "self-update unexpectedly produced Welcome material after staging",
+            ))
+        }
+        SendResult::Queued { .. } => Err(RpcError::bounded(
+            "self-update was convergence-queued outside the sequential B3.3b-1 claim",
+        )),
+        other => Err(RpcError::bounded(format!(
+            "self-update returned an unexpected disposition: {other:?}"
+        ))),
+    }
+}
+
+fn drain_auto_publish(
+    state: &mut PeerState,
+    request: &Map<String, Value>,
+) -> Result<Value, RpcError> {
+    exact_fields(request, &["id", "op"])?;
+    if state.pending_evolution.is_some() {
+        return Err(RpcError::state(
+            "a group evolution is already registered in this process",
+        ));
+    }
+    let mut recovered = state.engine_mut()?.drain_auto_publish();
+    if recovered.is_empty() {
+        return Ok(json!({"disposition": "no_auto_publish"}));
+    }
+    if recovered.len() != 1 {
+        state.engine = None;
+        state.group_id = None;
+        return Err(RpcError::fatal_peer(
+            "sequential B3.3b-1 recovery produced multiple auto-publish obligations",
+        ));
+    }
+    let recovered = recovered.remove(0);
+    let message_id = recovered.msg.id.clone();
+    state.register_pending_evolution(message_id.clone(), recovered.pending)?;
+    Ok(json!({
+        "commit_sha256": hex::encode(Sha256::digest(&recovered.msg.payload)),
+        "disposition": "group_evolution_recovered_for_publication",
+        "group_message_hex": hex::encode(&recovered.msg.payload),
+        "message_id_hex": hex::encode(message_id.as_slice()),
+    }))
+}
+
+async fn confirm_group_published(
+    state: &mut PeerState,
+    request: &Map<String, Value>,
+) -> Result<Value, RpcError> {
+    exact_fields(request, &["id", "message_id_hex", "op"])?;
+    let group_id = state
+        .group_id
+        .clone()
+        .ok_or_else(|| RpcError::state("group is not initialized"))?;
+    let message_id = MessageId::new(decode_hex_field(request, "message_id_hex")?);
+    let pending = state.take_pending_evolution(&message_id)?;
+    let event = match state.engine_mut()?.confirm_published(pending).await {
+        Ok(event) => event,
+        Err(error) => {
+            state.engine = None;
+            state.group_id = None;
+            state.pending_evolution = None;
+            return Err(RpcError::fatal_peer(format!(
+                "confirm group evolution failed after entering the MDK mutation boundary: {error}"
+            )));
+        }
+    };
+    let events = state.engine_mut()?.drain_events();
+    if events.as_slice() != [event.clone()] {
+        state.engine = None;
+        state.group_id = None;
+        return Err(RpcError::fatal_peer(
+            "confirmed self-update did not emit exactly its returned epoch event",
+        ));
+    }
+    match event {
+        GroupEvent::EpochChanged {
+            group_id: event_group_id,
+            from,
+            to,
+        } if event_group_id == group_id => Ok(json!({
+            "disposition": "group_evolution_confirmed",
+            "from_epoch": from,
+            "group_id_hex": hex::encode(event_group_id.as_slice()),
+            "message_id_hex": hex::encode(message_id.as_slice()),
+            "to_epoch": to,
+        })),
+        other => {
+            state.engine = None;
+            state.group_id = None;
+            Err(RpcError::fatal_peer(format!(
+                "confirmed self-update emitted an unexpected event: {other:?}"
+            )))
+        }
+    }
+}
+
+async fn fail_group_publication(
+    state: &mut PeerState,
+    request: &Map<String, Value>,
+) -> Result<Value, RpcError> {
+    exact_fields(request, &["id", "message_id_hex", "op"])?;
+    let message_id = MessageId::new(decode_hex_field(request, "message_id_hex")?);
+    let pending = state.take_pending_evolution(&message_id)?;
+    if let Err(error) = state.engine_mut()?.publish_failed(pending).await {
+        state.engine = None;
+        state.group_id = None;
+        state.pending_evolution = None;
+        return Err(RpcError::fatal_peer(format!(
+            "rollback group evolution failed after entering the MDK mutation boundary: {error}"
+        )));
+    }
+    if !state.engine_mut()?.drain_events().is_empty() {
+        state.engine = None;
+        state.group_id = None;
+        return Err(RpcError::fatal_peer(
+            "failed publication unexpectedly produced application-visible events",
+        ));
+    }
+    Ok(json!({
+        "disposition": "group_evolution_rolled_back",
+        "message_id_hex": hex::encode(message_id.as_slice()),
+    }))
+}
+
+async fn ingest_group_evolution(
+    state: &mut PeerState,
+    request: &Map<String, Value>,
+) -> Result<Value, RpcError> {
+    exact_fields(request, &["group_message_hex", "id", "op"])?;
+    let group_id = state
+        .group_id
+        .clone()
+        .ok_or_else(|| RpcError::state("group is not initialized"))?;
+    let payload = decode_bounded_hex_field(request, "group_message_hex", MAX_GROUP_MESSAGE_BYTES)?;
+    let content_sha256 = hex::encode(Sha256::digest(&payload));
+    let transport = TransportMessage {
+        id: message_id(&payload, b"group"),
+        payload,
+        timestamp: Timestamp(0),
+        causal_deps: Vec::new(),
+        source: TransportSource("styx-b3-direct-mls".into()),
+        envelope: TransportEnvelope::GroupMessage {
+            transport_group_id: group_id.as_slice().to_vec(),
+        },
+    };
+    let transport_message_id = transport.id.clone();
+    let outcome = match state.engine_mut()?.ingest(transport).await {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            state.engine = None;
+            state.group_id = None;
+            state.pending_evolution = None;
+            return Err(RpcError::fatal_peer(format!(
+                "group-evolution ingest failed after entering the MDK mutation boundary: {error}"
+            )));
+        }
+    };
+    let events = state.engine_mut()?.drain_events();
+    match outcome {
+        IngestOutcome::Processed => match events.as_slice() {
+            [
+                GroupEvent::EpochChanged {
+                    group_id: event_group_id,
+                    from,
+                    to,
+                },
+            ] if event_group_id == &group_id => Ok(json!({
+                "disposition": "group_evolution_processed",
+                "from_epoch": from,
+                "group_id_hex": hex::encode(event_group_id.as_slice()),
+                "message_id_hex": hex::encode(transport_message_id.as_slice()),
+                "to_epoch": to,
+            })),
+            _ => {
+                state.engine = None;
+                state.group_id = None;
+                Err(RpcError::fatal_peer(
+                    "processed self-update did not emit exactly one matching epoch event",
+                ))
+            }
+        },
+        IngestOutcome::Ignored { category }
+            if matches!(
+                category,
+                InputRejectionCategory::Duplicate | InputRejectionCategory::OwnEcho
+            ) =>
+        {
+            if !events.is_empty() {
+                state.engine = None;
+                state.group_id = None;
+                return Err(RpcError::fatal_peer(
+                    "duplicate or own-echo evolution unexpectedly released events",
+                ));
+            }
+            Ok(json!({
+                "disposition": match category {
+                    InputRejectionCategory::Duplicate => "duplicate",
+                    InputRejectionCategory::OwnEcho => "own_echo",
+                    _ => unreachable!(),
+                },
+                "message_id_hex": hex::encode(transport_message_id.as_slice()),
+            }))
+        }
+        IngestOutcome::Buffered {
+            group_id: buffered_group_id,
+            epoch,
+        } if buffered_group_id == group_id => {
+            if !events.is_empty() {
+                state.engine = None;
+                state.group_id = None;
+                return Err(RpcError::fatal_peer(
+                    "buffered evolution unexpectedly released events",
+                ));
+            }
+            Ok(json!({
+                "content_sha256": content_sha256,
+                "disposition": "group_evolution_buffered",
+                "epoch": epoch.0,
+                "group_id_hex": hex::encode(buffered_group_id.as_slice()),
+                "message_id_hex": hex::encode(transport_message_id.as_slice()),
+            }))
+        }
+        other => {
+            if !events.is_empty() {
+                state.engine = None;
+                state.group_id = None;
+                return Err(RpcError::fatal_peer(
+                    "rejected evolution unexpectedly released events",
+                ));
+            }
+            Err(RpcError {
+                code: "bounded_nogo",
+                message: "MDK_REJECTS_STYX_SELF_UPDATE".into(),
+                details: serde_json::to_value(other).ok(),
+                terminate: false,
+            })
+        }
+    }
+}
+
+fn converge_group_evolution(
+    state: &mut PeerState,
+    request: &Map<String, Value>,
+) -> Result<Value, RpcError> {
+    exact_fields(
+        request,
+        &[
+            "expected_accepted_app_message_ids",
+            "expected_already_seen_message_ids",
+            "expected_content_sha256",
+            "expected_from_epoch",
+            "expected_to_epoch",
+            "id",
+            "monotonic_ms",
+            "op",
+        ],
+    )?;
+    if state.pending_evolution.is_some() {
+        return Err(RpcError::state(
+            "cannot converge a remote evolution during local pending publication",
+        ));
+    }
+    let expected_content = decode_hex_field(request, "expected_content_sha256")?;
+    if expected_content.len() != 32 {
+        return Err(RpcError::input(
+            "expected_content_sha256 must contain exactly 32 bytes",
+        ));
+    }
+    let expected_content_hex = hex::encode(expected_content);
+    let expected_accepted_app_messages =
+        sha256_hex_array_field(request, "expected_accepted_app_message_ids")?;
+    let expected_already_seen =
+        sha256_hex_array_field(request, "expected_already_seen_message_ids")?;
+    let expected_from = u64_field(request, "expected_from_epoch")?;
+    let expected_to = u64_field(request, "expected_to_epoch")?;
+    if expected_to
+        != expected_from
+            .checked_add(1)
+            .ok_or_else(|| RpcError::input("expected epoch transition overflows"))?
+    {
+        return Err(RpcError::input(
+            "expected evolution must advance exactly one epoch",
+        ));
+    }
+    let monotonic_ms = u64_field(request, "monotonic_ms")?;
+    if !(1_000..=1_000_000_000).contains(&monotonic_ms) {
+        return Err(RpcError::input(
+            "monotonic_ms is outside the deterministic Stage 0 envelope",
+        ));
+    }
+    let group_id = state
+        .group_id
+        .clone()
+        .ok_or_else(|| RpcError::state("group is not initialized"))?;
+    let current_epoch = state
+        .engine()?
+        .epoch(&group_id)
+        .map_err(|error| RpcError::peer(format!("read pre-convergence epoch: {error}")))?;
+    if current_epoch.0 != expected_from {
+        return Err(RpcError::state(
+            "pre-convergence group epoch differs from the journalled parent",
+        ));
+    }
+    if !state.engine_mut()?.drain_events().is_empty() {
+        state.engine = None;
+        state.group_id = None;
+        return Err(RpcError::fatal_peer(
+            "convergence began with undrained application-visible events",
+        ));
+    }
+
+    let result = state
+        .engine_mut()?
+        .converge_stored_openmls_messages_at(&group_id, monotonic_ms)
+        .map_err(|error| {
+            RpcError::fatal_peer(format!(
+                "stored group-evolution convergence failed after mutation boundary: {error}"
+            ))
+        })?;
+    let events = state.engine_mut()?.drain_events();
+    let status = match result.convergence_status {
+        ConvergenceStatus::Syncing => "syncing",
+        ConvergenceStatus::Resolving => "resolving",
+        ConvergenceStatus::Settled => "settled",
+        ConvergenceStatus::Blocked => "blocked",
+    };
+    let exact_non_application_collections = result.accepted_proposals.is_empty()
+        && result.deferred_messages.is_empty()
+        && result.invalidated_app_messages.is_empty()
+        && result.dropped_messages.is_empty()
+        && result.queued_outbound_intents.is_empty()
+        && result.publishable_outbound_messages.is_empty()
+        && result.errors.is_empty();
+    let actual_already_seen = result
+        .already_seen
+        .iter()
+        .map(|entry| entry.message_id.clone())
+        .collect::<Vec<_>>();
+    if let Err(error) = require_application_witnesses(
+        &result.accepted_app_messages,
+        &actual_already_seen,
+        &expected_accepted_app_messages,
+        &expected_already_seen,
+    ) {
+        state.engine = None;
+        state.group_id = None;
+        return Err(error);
+    }
+    let exact_waiting = result.convergence_status == ConvergenceStatus::Syncing
+        && result.previous_tip == expected_from
+        && result.selected_tip.is_none()
+        && result.candidate_count == 0
+        && result.eligible_count == 0
+        && result.accepted_commits.is_empty()
+        && expected_accepted_app_messages.is_empty()
+        && expected_already_seen.is_empty()
+        && exact_non_application_collections
+        && events.is_empty();
+    if exact_waiting {
+        return Ok(json!({
+            "candidate_count": result.candidate_count,
+            "disposition": "group_evolution_waiting",
+            "eligible_count": result.eligible_count,
+            "from_epoch": expected_from,
+            "group_id_hex": hex::encode(group_id.as_slice()),
+            "monotonic_ms": monotonic_ms,
+            "status": status,
+        }));
+    }
+    let exact_result = result.convergence_status == ConvergenceStatus::Settled
+        && result.previous_tip == expected_from
+        && result.selected_tip == Some(expected_to)
+        && result.candidate_count == 1
+        && result.eligible_count == 1
+        && result.accepted_commits.as_slice() == [expected_content_hex.as_str()]
+        && exact_non_application_collections;
+    let exact_event = matches!(
+        events.as_slice(),
+        [GroupEvent::EpochChanged {
+            group_id: event_group_id,
+            from,
+            to,
+        }] if event_group_id == &group_id
+            && from.0 == expected_from
+            && to.0 == expected_to
+    );
+    if !exact_result || !exact_event {
+        let details = json!({
+            "accepted_app_messages": result.accepted_app_messages,
+            "accepted_commits": result.accepted_commits,
+            "accepted_proposals": result.accepted_proposals.len(),
+            "already_seen": actual_already_seen,
+            "candidate_count": result.candidate_count,
+            "deferred_messages": result.deferred_messages.len(),
+            "dropped_messages": result.dropped_messages.len(),
+            "eligible_count": result.eligible_count,
+            "errors": result.errors.len(),
+            "event_count": events.len(),
+            "expected_accepted_app_messages": expected_accepted_app_messages,
+            "expected_already_seen": expected_already_seen,
+            "invalidated_app_messages": result.invalidated_app_messages.len(),
+            "previous_tip": result.previous_tip,
+            "publishable_outbound_messages": result.publishable_outbound_messages.len(),
+            "queued_outbound_intents": result.queued_outbound_intents.len(),
+            "selected_tip": result.selected_tip,
+            "status": status,
+        });
+        state.engine = None;
+        state.group_id = None;
+        return Err(RpcError {
+            code: "bounded_nogo",
+            message: "MDK_REJECTS_STYX_SELF_UPDATE".into(),
+            details: Some(details),
+            terminate: false,
+        });
+    }
+    Ok(json!({
+        "accepted_app_message_ids": expected_accepted_app_messages,
+        "accepted_content_sha256": expected_content_hex,
+        "already_seen_message_ids": expected_already_seen,
+        "candidate_count": result.candidate_count,
+        "disposition": "group_evolution_settled",
+        "eligible_count": result.eligible_count,
+        "from_epoch": expected_from,
+        "group_id_hex": hex::encode(group_id.as_slice()),
+        "monotonic_ms": monotonic_ms,
+        "status": status,
+        "to_epoch": expected_to,
+    }))
+}
+
 async fn ingest_group_message(
     state: &mut PeerState,
     request: &Map<String, Value>,
@@ -689,15 +1288,6 @@ async fn ingest_group_message(
     }
 }
 
-fn unsupported_in_b33a(request: &Map<String, Value>, operation: &str) -> Result<Value, RpcError> {
-    if !request.contains_key("id") || !request.contains_key("op") {
-        return Err(RpcError::input("id and op are required"));
-    }
-    Err(RpcError::bounded(format!(
-        "{operation} is intentionally outside the B3.3a application-traffic boundary"
-    )))
-}
-
 async fn dispatch(state: &mut PeerState, value: &Value) -> Result<(Value, bool), RpcError> {
     let request = object(value)?;
     let operation = string_field(request, "op")?;
@@ -717,7 +1307,12 @@ async fn dispatch(state: &mut PeerState, value: &Value) -> Result<(Value, bool),
         "restore_group" => restore_group(state, request)?,
         "send_application" => send_application(state, request).await?,
         "ingest_group_message" => ingest_group_message(state, request).await?,
-        "self_update" => unsupported_in_b33a(request, operation)?,
+        "self_update" => self_update(state, request).await?,
+        "drain_auto_publish" => drain_auto_publish(state, request)?,
+        "confirm_group_published" => confirm_group_published(state, request).await?,
+        "fail_group_publication" => fail_group_publication(state, request).await?,
+        "ingest_group_evolution" => ingest_group_evolution(state, request).await?,
+        "converge_group_evolution" => converge_group_evolution(state, request)?,
         "checkpoint_and_exit" => {
             exact_fields(request, &["id", "op"])?;
             return Ok((json!({"checkpointed": true}), true));
@@ -726,6 +1321,7 @@ async fn dispatch(state: &mut PeerState, value: &Value) -> Result<(Value, bool),
             exact_fields(request, &["id", "op"])?;
             state.engine = None;
             state.group_id = None;
+            state.pending_evolution = None;
             json!({"destroyed": true})
         }
         _ => return Err(RpcError::input("unknown operation")),
@@ -832,9 +1428,105 @@ mod tests {
     }
 
     #[test]
+    fn application_witness_expectations_fail_closed_on_every_vector_mutation() {
+        let first = "11".repeat(32);
+        let second = "22".repeat(32);
+        let seen = "33".repeat(32);
+        let actual_accepted = vec![first.clone(), second.clone()];
+        let actual_seen = vec![seen.clone()];
+
+        assert!(
+            require_application_witnesses(
+                &actual_accepted,
+                &actual_seen,
+                &actual_accepted,
+                &actual_seen,
+            )
+            .is_ok()
+        );
+
+        for result in [
+            require_application_witnesses(
+                &actual_accepted,
+                &actual_seen,
+                std::slice::from_ref(&first),
+                &actual_seen,
+            ),
+            require_application_witnesses(
+                &actual_accepted,
+                &actual_seen,
+                &[first.clone(), second.clone(), "44".repeat(32)],
+                &actual_seen,
+            ),
+            require_application_witnesses(
+                &actual_accepted,
+                &actual_seen,
+                &[second.clone(), first.clone()],
+                &actual_seen,
+            ),
+            require_application_witnesses(
+                &actual_accepted,
+                &actual_seen,
+                &[first.clone(), "55".repeat(32)],
+                &actual_seen,
+            ),
+            require_application_witnesses(&actual_accepted, &actual_seen, &actual_accepted, &[]),
+            require_application_witnesses(
+                &actual_accepted,
+                &actual_seen,
+                &actual_accepted,
+                &[seen.clone(), "66".repeat(32)],
+            ),
+            require_application_witnesses(
+                &actual_accepted,
+                &actual_seen,
+                &actual_accepted,
+                &["77".repeat(32)],
+            ),
+        ] {
+            let error = result.unwrap_err();
+            assert_eq!(error.code, "bounded_nogo");
+            assert_eq!(error.message, "MDK_REJECTS_STYX_SELF_UPDATE");
+            assert!(!error.terminate);
+            assert!(error.details.is_some());
+        }
+    }
+
+    #[test]
+    fn unsigned_integer_fields_reject_negative_fractional_and_string_values() {
+        for value in [json!(-1), json!(1.5), json!("1")] {
+            let request = json!({"epoch": value});
+            let error = u64_field(object(&request).unwrap(), "epoch").unwrap_err();
+            assert_eq!(error.code, "invalid_request");
+            assert!(!error.terminate);
+        }
+
+        let request = json!({"epoch": 3});
+        assert_eq!(u64_field(object(&request).unwrap(), "epoch").unwrap(), 3);
+    }
+
+    #[test]
     fn fatal_peer_errors_quarantine_the_process() {
         let error = RpcError::fatal_peer("synthetic fatal mutation failure");
         assert_eq!(error.code, "mdk_peer_quarantined");
         assert!(error.terminate);
+    }
+
+    #[test]
+    fn pending_evolution_is_process_local_exact_id_and_one_use() {
+        let mut state = PeerState::new();
+        let expected = MessageId::new(vec![0x31; 32]);
+        let wrong = MessageId::new(vec![0x32; 32]);
+        state
+            .register_pending_evolution(expected.clone(), PendingStateRef::new(7))
+            .unwrap();
+        assert!(
+            state
+                .register_pending_evolution(expected.clone(), PendingStateRef::new(8))
+                .is_err()
+        );
+        assert!(state.take_pending_evolution(&wrong).is_err());
+        assert_eq!(state.take_pending_evolution(&expected).unwrap().as_u64(), 7);
+        assert!(state.take_pending_evolution(&expected).is_err());
     }
 }

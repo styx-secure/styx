@@ -11,7 +11,7 @@ use openmls::{
         RequiredCapabilitiesExtension,
     },
     group::{
-        GroupContext, ProcessedWelcome, StagedCommit, WelcomeError,
+        GroupContext, PastEpochDeletionPolicy, ProcessedWelcome, StagedCommit, WelcomeError,
         PURE_PLAINTEXT_WIRE_FORMAT_POLICY,
     },
     key_packages::Lifetime,
@@ -141,6 +141,10 @@ const PHASE_B32A_PROJECTION_DOMAIN: &[u8] = b"STYX-B32A-JOIN-PROJECTION-v1";
 const PHASE_B32A_LEAF_PROFILE_DOMAIN: &[u8] = b"STYX-B32A-LEAF-PROFILE-v1";
 #[cfg(feature = "extensions-draft")]
 const PHASE_B32A_PROJECTION_VERSION: u16 = 1;
+#[cfg(feature = "extensions-draft")]
+const PHASE_B33B1_MAX_PAST_EPOCHS: usize = 5;
+#[cfg(feature = "extensions-draft")]
+const PHASE_B33B1_PROVIDER_FORMAT: &str = "phase-b33b1-provider-canonical-v1";
 
 thread_local! {
     static NEXT_PROVIDER_INSTANCE_ID: Cell<u32> = const { Cell::new(1) };
@@ -3144,6 +3148,174 @@ pub struct PhaseB33aInboundRelease {
     plaintext: Option<PhaseB32aWipeBytes>,
 }
 
+/// One-use activation result for the B3.3b-1 retained-traffic profile.
+///
+/// This handle owns the only releasable copy of the activated canonical state.
+/// It binds that state to the exact predecessor and public group projection so
+/// callers can durably CAS the transition before constructing any later group
+/// operation.
+#[cfg(feature = "extensions-draft")]
+struct PhaseB33b1ActivationData {
+    group_id: Vec<u8>,
+    epoch: u64,
+    predecessor_state_sha256: Vec<u8>,
+    candidate_state_sha256: Vec<u8>,
+    group_context_sha256: Vec<u8>,
+    verified_leaf_digest: Vec<u8>,
+    candidate_state: PhaseB32aWipeBytes,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1PendingActivation {
+    data: Option<PhaseB33b1ActivationData>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1ActivationRelease {
+    candidate_state: Option<PhaseB32aWipeBytes>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+#[derive(Clone, PartialEq, Eq)]
+pub struct PhaseB33b1CommitProjection {
+    group_id: Vec<u8>,
+    source_epoch: u64,
+    target_epoch: u64,
+    committer_leaf_index: u32,
+    committer_account: Vec<u8>,
+    committer_signature_key: Vec<u8>,
+    parent_state_sha256: Vec<u8>,
+    parent_group_context_sha256: Vec<u8>,
+    candidate_group_context_sha256: Vec<u8>,
+    verified_leaf_digest: Vec<u8>,
+    commit_sha256: Vec<u8>,
+    authority_sha256: Vec<u8>,
+}
+
+/// One-use exact-profile operation boundary for sequential B3.3b-1 Commits.
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1Group {
+    provider: Option<PhaseB32aPrivateProvider>,
+    mls_group: Option<MlsGroup>,
+    identity: Option<PhaseB2Identity>,
+}
+
+#[cfg(feature = "extensions-draft")]
+struct PhaseB33b1LocalCommitData {
+    projection: PhaseB33b1CommitProjection,
+    parent_state_sha256: Vec<u8>,
+    pending_state_sha256: Vec<u8>,
+    pending_state: PhaseB32aWipeBytes,
+    commit: PhaseB32aWipeBytes,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1PendingLocalCommit {
+    data: Option<PhaseB33b1LocalCommitData>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1LocalCommitRelease {
+    pending_state: Option<PhaseB32aWipeBytes>,
+    commit: Option<PhaseB32aWipeBytes>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1ConfirmedCommitRelease {
+    committed_state: Option<PhaseB32aWipeBytes>,
+}
+
+#[cfg(feature = "extensions-draft")]
+struct PhaseB33b1InboundData {
+    projection: PhaseB33b1CommitProjection,
+    parent_state_sha256: Vec<u8>,
+    parent_state: PhaseB32aWipeBytes,
+    commit: PhaseB32aWipeBytes,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1PendingInboundCommit {
+    data: Option<PhaseB33b1InboundData>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1InboundCommitRelease {
+    parent_state: Option<PhaseB32aWipeBytes>,
+    commit: Option<PhaseB32aWipeBytes>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1AppliedInboundRelease {
+    committed_state: Option<PhaseB32aWipeBytes>,
+}
+
+#[cfg(feature = "extensions-draft")]
+struct PhaseB33b1ApplicationOutboundData {
+    group_id: Vec<u8>,
+    current_epoch: u64,
+    message_epoch: u64,
+    sender_leaf_index: u32,
+    sender_credential_identity: Vec<u8>,
+    sender_signature_key: Vec<u8>,
+    canonical_state_sha256: Vec<u8>,
+    ciphertext_sha256: Vec<u8>,
+    canonical_state: PhaseB32aWipeBytes,
+    ciphertext: PhaseB32aWipeBytes,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1PendingApplicationOutbound {
+    data: Option<PhaseB33b1ApplicationOutboundData>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1ApplicationOutboundRelease {
+    canonical_state: Option<PhaseB32aWipeBytes>,
+    ciphertext: Option<PhaseB32aWipeBytes>,
+}
+
+#[cfg(feature = "extensions-draft")]
+struct PhaseB33b1ApplicationInboundData {
+    group_id: Vec<u8>,
+    current_epoch: u64,
+    message_epoch: u64,
+    sender_leaf_index: u32,
+    sender_credential_identity: Vec<u8>,
+    sender_signature_key: Vec<u8>,
+    canonical_state_sha256: Vec<u8>,
+    ciphertext_sha256: Vec<u8>,
+    plaintext_sha256: Vec<u8>,
+    canonical_state: PhaseB32aWipeBytes,
+    ciphertext: PhaseB32aWipeBytes,
+    plaintext: PhaseB32aWipeBytes,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1PendingApplicationInbound {
+    data: Option<PhaseB33b1ApplicationInboundData>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1ApplicationInboundRelease {
+    canonical_state: Option<PhaseB32aWipeBytes>,
+    ciphertext: Option<PhaseB32aWipeBytes>,
+    plaintext: Option<PhaseB32aWipeBytes>,
+}
+
 #[cfg(feature = "extensions-draft")]
 #[derive(Clone, PartialEq, Eq)]
 struct PhaseB2ProposalProjection {
@@ -3548,21 +3720,11 @@ fn phase_b32a_profile_digest(
 }
 
 #[cfg(feature = "extensions-draft")]
-fn phase_b32a_member_at(
+fn phase_b32a_project_leaf(
     crypto: &impl OpenMlsCrypto,
-    group: &MlsGroup,
+    leaf: &LeafNode,
     leaf_index: u32,
 ) -> Result<PhaseB32aMember, JsError> {
-    let index = openmls::prelude::LeafNodeIndex::new(leaf_index);
-    let metadata = group
-        .members()
-        .find(|member| member.index == index)
-        .ok_or_else(|| JsError::new("PHASE_B32A_MEMBER_ABSENT"))?;
-    let leaf = group
-        .public_group()
-        .leaf(index)
-        .ok_or_else(|| JsError::new("PHASE_B32A_MEMBER_LEAF_ABSENT"))?;
-
     let (profile, supported_component_ids, lists_default, emits_empty_safe_aad) =
         if leaf.capabilities() == &phase_b32a_styx_capabilities() {
             (
@@ -3592,11 +3754,6 @@ fn phase_b32a_member_at(
         .ok_or_else(|| JsError::new("PHASE_B32A_MEMBER_PROOF_MISSING"))?;
     let credential_identity = leaf.credential().serialized_content().to_vec();
     let leaf_signature_key = leaf.signature_key().as_slice().to_vec();
-    if credential_identity != metadata.credential.serialized_content()
-        || leaf_signature_key != metadata.signature_key
-    {
-        return Err(JsError::new("PHASE_B32A_MEMBER_METADATA_MISMATCH"));
-    }
     let member = PhaseB2Member {
         leaf_index,
         credential_identity,
@@ -3615,9 +3772,34 @@ fn phase_b32a_member_at(
 }
 
 #[cfg(feature = "extensions-draft")]
-fn phase_b32a_group_state(
+fn phase_b32a_member_at(
     crypto: &impl OpenMlsCrypto,
     group: &MlsGroup,
+    leaf_index: u32,
+) -> Result<PhaseB32aMember, JsError> {
+    let index = openmls::prelude::LeafNodeIndex::new(leaf_index);
+    let metadata = group
+        .members()
+        .find(|member| member.index == index)
+        .ok_or_else(|| JsError::new("PHASE_B32A_MEMBER_ABSENT"))?;
+    let leaf = group
+        .public_group()
+        .leaf(index)
+        .ok_or_else(|| JsError::new("PHASE_B32A_MEMBER_LEAF_ABSENT"))?;
+    let projected = phase_b32a_project_leaf(crypto, leaf, leaf_index)?;
+    if projected.member.credential_identity != metadata.credential.serialized_content()
+        || projected.member.leaf_signature_key != metadata.signature_key
+    {
+        return Err(JsError::new("PHASE_B32A_MEMBER_METADATA_MISMATCH"));
+    }
+    Ok(projected)
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_group_state_with_retention(
+    crypto: &impl OpenMlsCrypto,
+    group: &MlsGroup,
+    expected_max_past_epochs: usize,
 ) -> Result<(Vec<PhaseB32aMember>, Vec<u8>, PhaseB31GroupContext), JsError> {
     if group.ciphersuite() != PROBE_CIPHERSUITE {
         return Err(JsError::new("PHASE_B32A_CIPHERSUITE_MISMATCH"));
@@ -3630,6 +3812,15 @@ fn phase_b32a_group_state(
     }
     if group.members().count() != 2 {
         return Err(JsError::new("PHASE_B32A_EXACTLY_TWO_MEMBERS_REQUIRED"));
+    }
+    if group.past_epoch_deletion_policy()
+        != &PastEpochDeletionPolicy::MaxEpochs(expected_max_past_epochs)
+    {
+        return Err(JsError::new(if expected_max_past_epochs == 0 {
+            "PHASE_B32A_RETENTION_POLICY_MISMATCH"
+        } else {
+            "PHASE_B33B1_RETENTION_POLICY_MISMATCH"
+        }));
     }
     let mut members = Vec::with_capacity(2);
     for member in group.members() {
@@ -3650,6 +3841,22 @@ fn phase_b32a_group_state(
     let projected = phase_b31_validate_group_context_extensions(context.extensions(), &identities)
         .map_err(|_| JsError::new("PHASE_B32A_GROUP_CONTEXT_INVALID"))?;
     Ok((members, context_tls, projected))
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_group_state(
+    crypto: &impl OpenMlsCrypto,
+    group: &MlsGroup,
+) -> Result<(Vec<PhaseB32aMember>, Vec<u8>, PhaseB31GroupContext), JsError> {
+    phase_b32a_group_state_with_retention(crypto, group, 0)
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b33b1_group_state(
+    crypto: &impl OpenMlsCrypto,
+    group: &MlsGroup,
+) -> Result<(Vec<PhaseB32aMember>, Vec<u8>, PhaseB31GroupContext), JsError> {
+    phase_b32a_group_state_with_retention(crypto, group, PHASE_B33B1_MAX_PAST_EPOCHS)
 }
 
 #[cfg(feature = "extensions-draft")]
@@ -6041,6 +6248,1333 @@ fn phase_b33a_sha256(
 }
 
 #[cfg(feature = "extensions-draft")]
+fn phase_b33b1_validate_clean_group(
+    provider: &PhaseB32aPrivateProvider,
+    group: &MlsGroup,
+    identity: &PhaseB2Identity,
+) -> Result<(Vec<PhaseB32aMember>, Vec<u8>, PhaseB31GroupContext), JsError> {
+    if group.pending_commit().is_some() || group.pending_proposals().next().is_some() {
+        return Err(JsError::new("PHASE_B33B1_PENDING_HANDSHAKE_STATE"));
+    }
+    let state = phase_b33b1_group_state(provider.provider.as_ref().crypto(), group)?;
+    phase_b33a_validate_own_identity(&state.0, group, identity)?;
+    Ok(state)
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1PendingActivation {
+    pub fn prepare_from_b32a_state(
+        predecessor_state: &[u8],
+        expected_predecessor_state_sha256: &[u8],
+        group_id: &[u8],
+        expected_own_identity: &[u8],
+        expected_own_signature_key: &[u8],
+    ) -> Result<Option<PhaseB33b1PendingActivation>, JsError> {
+        if expected_predecessor_state_sha256.len() != 32 {
+            return Err(JsError::new("PHASE_B33B1_PREDECESSOR_DIGEST_INVALID"));
+        }
+        if group_id.is_empty() || group_id.len() > 64 {
+            return Err(JsError::new("PHASE_B33B1_GROUP_ID_INVALID"));
+        }
+        if expected_own_identity.len() != 32 || expected_own_signature_key.len() != 32 {
+            return Err(JsError::new("PHASE_B33B1_OWN_IDENTITY_INPUT_INVALID"));
+        }
+        let standalone_crypto = openmls_rust_crypto::RustCrypto::default();
+        let predecessor_state_sha256 = phase_b32_sha256(
+            &standalone_crypto,
+            predecessor_state,
+            "PHASE_B33B1_PREDECESSOR_DIGEST_FAILED",
+        )?;
+        if !phase_b32a_constant_time_eq_32(
+            &predecessor_state_sha256,
+            expected_predecessor_state_sha256,
+        ) {
+            return Err(JsError::new("PHASE_B33B1_PREDECESSOR_DIGEST_MISMATCH"));
+        }
+
+        let provider = PhaseB32aPrivateProvider::from_snapshot(
+            predecessor_state,
+            PhaseB32aSnapshotRole::CanonicalCandidate,
+        )?;
+        let requested = GroupId::from_slice(group_id);
+        let Some(mut group) = MlsGroup::load(provider.provider.inner.storage(), &requested)? else {
+            return Ok(None);
+        };
+        if group.group_id() != &requested {
+            return Err(JsError::new("PHASE_B33B1_LOADED_GROUP_ID_MISMATCH"));
+        }
+        if group.pending_commit().is_some() || group.pending_proposals().next().is_some() {
+            return Err(JsError::new("PHASE_B33B1_PENDING_HANDSHAKE_STATE"));
+        }
+        let (before_members, before_context_tls, _) =
+            phase_b32a_group_state(provider.provider.as_ref().crypto(), &group)?;
+        let identity = PhaseB2Identity::load(
+            &provider.provider,
+            expected_own_identity,
+            expected_own_signature_key,
+        )?
+        .ok_or_else(|| JsError::new("PHASE_B33B1_OWN_SIGNING_KEY_ABSENT"))?;
+        phase_b33a_validate_own_identity(&before_members, &group, &identity)?;
+        let epoch = group.epoch().as_u64();
+
+        group
+            .set_past_epoch_deletion_policy(
+                &provider.provider.inner,
+                PastEpochDeletionPolicy::MaxEpochs(PHASE_B33B1_MAX_PAST_EPOCHS),
+            )
+            .map_err(|_| JsError::new("STYX_RETENTION_POLICY_NOT_ROUNDTRIPPABLE"))?;
+        let (members, group_context_tls, _) =
+            phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        if members != before_members || group_context_tls != before_context_tls {
+            return Err(JsError::new("PHASE_B33B1_ACTIVATION_CHANGED_PUBLIC_STATE"));
+        }
+
+        let candidate_state = PhaseB32aWipeBytes(provider.canonical_state()?);
+        let candidate_state_sha256 = phase_b33a_sha256(
+            &provider,
+            &candidate_state.0,
+            "PHASE_B33B1_CANDIDATE_DIGEST_FAILED",
+        )?;
+        let group_context_sha256 = phase_b33a_sha256(
+            &provider,
+            &group_context_tls,
+            "PHASE_B33B1_GROUP_CONTEXT_DIGEST_FAILED",
+        )?;
+        let verified_leaf_digest =
+            phase_b32a_verified_leaf_digest(provider.provider.as_ref().crypto(), &members)?;
+
+        let scratch = PhaseB32aPrivateProvider::from_snapshot(
+            &candidate_state.0,
+            PhaseB32aSnapshotRole::CanonicalCandidate,
+        )?;
+        let restored = MlsGroup::load(scratch.provider.inner.storage(), &requested)?
+            .ok_or_else(|| JsError::new("STYX_RETENTION_POLICY_NOT_ROUNDTRIPPABLE"))?;
+        let restored_identity = PhaseB2Identity::load(
+            &scratch.provider,
+            expected_own_identity,
+            expected_own_signature_key,
+        )?
+        .ok_or_else(|| JsError::new("PHASE_B33B1_OWN_SIGNING_KEY_ABSENT"))?;
+        let (restored_members, restored_context_tls, _) =
+            phase_b33b1_validate_clean_group(&scratch, &restored, &restored_identity)
+                .map_err(|_| JsError::new("STYX_RETENTION_POLICY_NOT_ROUNDTRIPPABLE"))?;
+        if restored.epoch().as_u64() != epoch
+            || restored_members != members
+            || restored_context_tls != group_context_tls
+            || scratch.canonical_state()?.as_slice() != candidate_state.0.as_slice()
+        {
+            return Err(JsError::new("STYX_RETENTION_POLICY_NOT_ROUNDTRIPPABLE"));
+        }
+
+        Ok(Some(Self {
+            data: Some(PhaseB33b1ActivationData {
+                group_id: group_id.to_vec(),
+                epoch,
+                predecessor_state_sha256,
+                candidate_state_sha256,
+                group_context_sha256,
+                verified_leaf_digest,
+                candidate_state,
+            }),
+        }))
+    }
+
+    pub fn is_consumed(&self) -> bool { self.data.is_none() }
+    pub fn provider_format(&self) -> String { PHASE_B33B1_PROVIDER_FORMAT.into() }
+    pub fn max_past_epochs(&self) -> u32 { PHASE_B33B1_MAX_PAST_EPOCHS as u32 }
+    pub fn group_id(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.group_id.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))
+    }
+    pub fn epoch(&self) -> Result<u64, JsError> {
+        self.data.as_ref().map(|data| data.epoch)
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))
+    }
+    pub fn predecessor_state_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.predecessor_state_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))
+    }
+    pub fn candidate_state_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.candidate_state_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))
+    }
+    pub fn group_context_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.group_context_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))
+    }
+    pub fn verified_leaf_digest(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.verified_leaf_digest.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))
+    }
+    pub fn release(
+        &mut self,
+        expected_predecessor_state_sha256: &[u8],
+        expected_candidate_state_sha256: &[u8],
+        expected_group_context_sha256: &[u8],
+        expected_verified_leaf_digest: &[u8],
+    ) -> Result<PhaseB33b1ActivationRelease, JsError> {
+        let data = self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))?;
+        if !phase_b32a_constant_time_eq_32(
+            expected_predecessor_state_sha256,
+            &data.predecessor_state_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_candidate_state_sha256,
+            &data.candidate_state_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_group_context_sha256,
+            &data.group_context_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_verified_leaf_digest,
+            &data.verified_leaf_digest,
+        ) {
+            return Err(JsError::new("PHASE_B33B1_ACTIVATION_BINDING_MISMATCH"));
+        }
+        Ok(PhaseB33b1ActivationRelease {
+            candidate_state: Some(data.candidate_state),
+        })
+    }
+    pub fn discard(&mut self) -> Result<(), JsError> {
+        self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1ActivationRelease {
+    pub fn take_candidate_state(&mut self) -> Result<Vec<u8>, JsError> {
+        self.candidate_state.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_STATE_ALREADY_TAKEN"))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b33b1_projection_payload(
+    projection: &PhaseB33b1CommitProjection,
+) -> Result<Vec<u8>, JsError> {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(b"STYX-B33B1-COMMIT-AUTHORITY-v1");
+    payload.push(0);
+    phase_b32_append_bytes(&mut payload, &projection.group_id)?;
+    payload.extend_from_slice(&projection.source_epoch.to_be_bytes());
+    payload.extend_from_slice(&projection.target_epoch.to_be_bytes());
+    payload.extend_from_slice(&projection.committer_leaf_index.to_be_bytes());
+    phase_b32_append_bytes(&mut payload, &projection.committer_account)?;
+    phase_b32_append_bytes(&mut payload, &projection.committer_signature_key)?;
+    phase_b32_append_bytes(&mut payload, b"ordinary")?;
+    for digest in [
+        &projection.parent_state_sha256,
+        &projection.parent_group_context_sha256,
+        &projection.candidate_group_context_sha256,
+        &projection.verified_leaf_digest,
+        &projection.commit_sha256,
+    ] {
+        if digest.len() != 32 {
+            return Err(JsError::new("PHASE_B33B1_PROJECTION_DIGEST_INVALID"));
+        }
+        payload.extend_from_slice(digest);
+    }
+    Ok(payload)
+}
+
+#[cfg(feature = "extensions-draft")]
+const PHASE_B33B1_NON_ROSTER_COMMITTER: &str = "PHASE_B33B1_NON_ROSTER_COMMITTER";
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b33b1_roster_committer(
+    members: &[PhaseB32aMember],
+    committer_leaf_index: u32,
+) -> Result<&PhaseB32aMember, &'static str> {
+    members
+        .iter()
+        .find(|member| member.member.leaf_index == committer_leaf_index)
+        .ok_or(PHASE_B33B1_NON_ROSTER_COMMITTER)
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b33b1_project_commit(
+    provider: &PhaseB32aPrivateProvider,
+    identity: &PhaseB2Identity,
+    parent: &MlsGroup,
+    staged: &StagedCommit,
+    candidate: &MlsGroup,
+    committer_leaf_index: u32,
+    parent_state_sha256: &[u8],
+    commit_bytes: &[u8],
+) -> Result<PhaseB33b1CommitProjection, JsError> {
+    if parent_state_sha256.len() != 32 || commit_bytes.is_empty() {
+        return Err(JsError::new("PHASE_B33B1_PROJECTION_INPUT_INVALID"));
+    }
+    let crypto = provider.provider.as_ref().crypto();
+    let (parent_members, parent_context_tls, _) = phase_b33b1_group_state(crypto, parent)?;
+    phase_b33a_validate_own_identity(&parent_members, parent, identity)?;
+    let source_epoch = parent.epoch().as_u64();
+    let target_epoch = staged.epoch().as_u64();
+    if target_epoch != source_epoch.saturating_add(1)
+        || candidate.epoch().as_u64() != target_epoch
+        || candidate.group_id() != parent.group_id()
+    {
+        return Err(JsError::new("PHASE_B33B1_EPOCH_TRANSITION_INVALID"));
+    }
+    if staged.queued_proposals().next().is_some() {
+        return Err(JsError::new("PHASE_B33B1_PROPOSALS_FORBIDDEN"));
+    }
+    let update_leaf = staged
+        .update_path_leaf_node()
+        .ok_or_else(|| JsError::new("PHASE_B33B1_UPDATE_PATH_REQUIRED"))?;
+    let committer = phase_b33b1_roster_committer(&parent_members, committer_leaf_index)
+        .map_err(JsError::new)?;
+    let projected_update = phase_b32a_project_leaf(crypto, update_leaf, committer_leaf_index)?;
+    if projected_update != *committer {
+        return Err(JsError::new("STYX_SELF_UPDATE_LEAF_NOT_CONFORMANT"));
+    }
+
+    let (candidate_members, candidate_context_tls, _) =
+        phase_b33b1_group_state(crypto, candidate)?;
+    phase_b33a_validate_own_identity(&candidate_members, candidate, identity)?;
+    if candidate_members != parent_members {
+        return Err(JsError::new("STYX_SELF_UPDATE_LEAF_NOT_CONFORMANT"));
+    }
+    let candidate_committer = phase_b33b1_roster_committer(
+        &candidate_members,
+        committer_leaf_index,
+    )
+    .map_err(JsError::new)?;
+    if candidate_committer != committer {
+        return Err(JsError::new("STYX_SELF_UPDATE_LEAF_NOT_CONFORMANT"));
+    }
+    let staged_context_tls = staged
+        .group_context()
+        .tls_serialize_detached()
+        .map_err(|_| JsError::new("PHASE_B33B1_GROUP_CONTEXT_SERIALIZATION_FAILED"))?;
+    if staged_context_tls != candidate_context_tls {
+        return Err(JsError::new("PHASE_B33B1_STAGED_CONTEXT_MISMATCH"));
+    }
+    let parent_group_context_sha256 =
+        phase_b33a_sha256(provider, &parent_context_tls, "PHASE_B33B1_GROUP_CONTEXT_DIGEST_FAILED")?;
+    let candidate_group_context_sha256 = phase_b33a_sha256(
+        provider,
+        &candidate_context_tls,
+        "PHASE_B33B1_GROUP_CONTEXT_DIGEST_FAILED",
+    )?;
+    let verified_leaf_digest = phase_b32a_verified_leaf_digest(crypto, &candidate_members)?;
+    let commit_sha256 =
+        phase_b33a_sha256(provider, commit_bytes, "PHASE_B33B1_COMMIT_DIGEST_FAILED")?;
+    let mut projection = PhaseB33b1CommitProjection {
+        group_id: parent.group_id().to_vec(),
+        source_epoch,
+        target_epoch,
+        committer_leaf_index,
+        committer_account: committer.member.credential_identity.clone(),
+        committer_signature_key: committer.member.leaf_signature_key.clone(),
+        parent_state_sha256: parent_state_sha256.to_vec(),
+        parent_group_context_sha256,
+        candidate_group_context_sha256,
+        verified_leaf_digest,
+        commit_sha256,
+        authority_sha256: Vec::new(),
+    };
+    projection.authority_sha256 = phase_b33a_sha256(
+        provider,
+        &phase_b33b1_projection_payload(&projection)?,
+        "PHASE_B33B1_AUTHORITY_DIGEST_FAILED",
+    )?;
+    Ok(projection)
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b33b1_candidate_from_pending(
+    pending_state: &[u8],
+    group_id: &[u8],
+) -> Result<(PhaseB32aPrivateProvider, MlsGroup), JsError> {
+    let mut candidate_provider = PhaseB32aPrivateProvider::from_snapshot(
+        pending_state,
+        PhaseB32aSnapshotRole::CanonicalCandidate,
+    )?;
+    let requested = GroupId::from_slice(group_id);
+    let mut candidate = MlsGroup::load(candidate_provider.provider.inner.storage(), &requested)?
+        .ok_or_else(|| JsError::new("PHASE_B33B1_CANDIDATE_GROUP_ABSENT"))?;
+    if candidate.pending_commit().is_none() {
+        return Err(JsError::new("PHASE_B33B1_PENDING_COMMIT_ABSENT"));
+    }
+    candidate
+        .merge_pending_commit(candidate_provider.provider.as_mut())
+        .map_err(|_| JsError::new("PHASE_B33B1_CANDIDATE_MERGE_FAILED"))?;
+    Ok((candidate_provider, candidate))
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b33b1_process_inbound_commit(
+    provider: &PhaseB32aPrivateProvider,
+    group: &mut MlsGroup,
+    commit_bytes: &[u8],
+) -> Result<(u32, Vec<u8>, StagedCommit), JsError> {
+    if commit_bytes.is_empty() || commit_bytes.len() > PHASE_B32_MAX_WELCOME_BYTES {
+        return Err(JsError::new("PHASE_B33B1_COMMIT_SIZE_INVALID"));
+    }
+    let message = MlsMessageIn::tls_deserialize_exact(commit_bytes)
+        .map_err(|_| JsError::new("PHASE_B33B1_COMMIT_MALFORMED"))?;
+    let public = match message.extract() {
+        MlsMessageBodyIn::PublicMessage(message) => message,
+        MlsMessageBodyIn::PrivateMessage(_) => {
+            return Err(JsError::new("PHASE_B33B1_PRIVATE_COMMIT_REJECTED"));
+        }
+        _ => return Err(JsError::new("PHASE_B33B1_PUBLIC_COMMIT_REQUIRED")),
+    };
+    if public.group_id() != group.group_id() {
+        return Err(JsError::new("PHASE_B33B1_COMMIT_GROUP_ID_MISMATCH"));
+    }
+    if public.epoch().as_u64() != group.epoch().as_u64() {
+        return Err(JsError::new("PHASE_B33B1_COMMIT_EPOCH_MISMATCH"));
+    }
+    let processed = group
+        .process_message(provider.provider.as_ref(), public)
+        .map_err(|_| JsError::new("PHASE_B33B1_COMMIT_PROCESSING_FAILED"))?;
+    let committer_leaf_index = phase_b2_member_sender(
+        processed.sender(),
+        "PHASE_B33B1_NON_MEMBER_COMMITTER_REJECTED",
+    )?;
+    if committer_leaf_index == group.own_leaf_index().u32() {
+        return Err(JsError::new("PHASE_B33B1_OWN_ECHO_REJECTED"));
+    }
+    let authenticated_identity = processed.credential().serialized_content().to_vec();
+    let staged = match processed.into_content() {
+        openmls::framing::ProcessedMessageContent::StagedCommitMessage(commit) => *commit,
+        openmls::framing::ProcessedMessageContent::OwnPendingCommit => {
+            return Err(JsError::new("PHASE_B33B1_OWN_ECHO_REJECTED"));
+        }
+        openmls::framing::ProcessedMessageContent::UnresolvedAppDataCommit(_) => {
+            return Err(JsError::new("PHASE_B33B1_APP_DATA_UPDATE_REJECTED"));
+        }
+        _ => return Err(JsError::new("PHASE_B33B1_COMMIT_REQUIRED")),
+    };
+    Ok((committer_leaf_index, authenticated_identity, staged))
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b33b1_candidate_from_inbound(
+    parent_state: &[u8],
+    group_id: &[u8],
+    commit_bytes: &[u8],
+) -> Result<(PhaseB32aPrivateProvider, MlsGroup, u32, Vec<u8>), JsError> {
+    let mut provider = PhaseB32aPrivateProvider::from_snapshot(
+        parent_state,
+        PhaseB32aSnapshotRole::CanonicalCandidate,
+    )?;
+    let requested = GroupId::from_slice(group_id);
+    let mut group = MlsGroup::load(provider.provider.inner.storage(), &requested)?
+        .ok_or_else(|| JsError::new("PHASE_B33B1_CANDIDATE_GROUP_ABSENT"))?;
+    let (committer_leaf_index, authenticated_identity, staged) =
+        phase_b33b1_process_inbound_commit(&provider, &mut group, commit_bytes)?;
+    group
+        .merge_staged_commit(provider.provider.as_mut(), staged)
+        .map_err(|_| JsError::new("PHASE_B33B1_CANDIDATE_MERGE_FAILED"))?;
+    Ok((provider, group, committer_leaf_index, authenticated_identity))
+}
+
+#[cfg(feature = "extensions-draft")]
+impl PhaseB33b1Group {
+    fn take_operation_parts(
+        &mut self,
+    ) -> Result<(PhaseB32aPrivateProvider, MlsGroup, PhaseB2Identity), JsError> {
+        if self.provider.is_none() || self.mls_group.is_none() || self.identity.is_none() {
+            return Err(JsError::new("PHASE_B33B1_GROUP_CONSUMED"));
+        }
+        Ok((
+            self.provider.take().expect("checked provider"),
+            self.mls_group.take().expect("checked group"),
+            self.identity.take().expect("checked identity"),
+        ))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1CommitProjection {
+    pub fn domain(&self) -> String { "STYX-B33B1-COMMIT-PROJECTION-v1".into() }
+    pub fn group_id(&self) -> Vec<u8> { self.group_id.clone() }
+    pub fn source_epoch(&self) -> u64 { self.source_epoch }
+    pub fn target_epoch(&self) -> u64 { self.target_epoch }
+    pub fn committer_leaf_index(&self) -> u32 { self.committer_leaf_index }
+    pub fn committer_account(&self) -> Vec<u8> { self.committer_account.clone() }
+    pub fn committer_signature_key(&self) -> Vec<u8> { self.committer_signature_key.clone() }
+    pub fn ordering_priority(&self) -> String { "ordinary".into() }
+    pub fn parent_state_sha256(&self) -> Vec<u8> { self.parent_state_sha256.clone() }
+    pub fn parent_group_context_sha256(&self) -> Vec<u8> {
+        self.parent_group_context_sha256.clone()
+    }
+    pub fn candidate_group_context_sha256(&self) -> Vec<u8> {
+        self.candidate_group_context_sha256.clone()
+    }
+    pub fn verified_leaf_digest(&self) -> Vec<u8> { self.verified_leaf_digest.clone() }
+    pub fn commit_sha256(&self) -> Vec<u8> { self.commit_sha256.clone() }
+    pub fn authority_sha256(&self) -> Vec<u8> { self.authority_sha256.clone() }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1PendingLocalCommit {
+    pub fn is_consumed(&self) -> bool { self.data.is_none() }
+    pub fn projection(&self) -> Result<PhaseB33b1CommitProjection, JsError> {
+        self.data.as_ref().map(|data| data.projection.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_LOCAL_COMMIT_CONSUMED"))
+    }
+    pub fn parent_state_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.parent_state_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_LOCAL_COMMIT_CONSUMED"))
+    }
+    pub fn pending_state_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.pending_state_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_LOCAL_COMMIT_CONSUMED"))
+    }
+    pub fn commit_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.projection.commit_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_LOCAL_COMMIT_CONSUMED"))
+    }
+    pub fn authority_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.projection.authority_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_LOCAL_COMMIT_CONSUMED"))
+    }
+    pub fn release(
+        &mut self,
+        expected_parent_state_sha256: &[u8],
+        expected_pending_state_sha256: &[u8],
+        expected_commit_sha256: &[u8],
+        expected_authority_sha256: &[u8],
+    ) -> Result<PhaseB33b1LocalCommitRelease, JsError> {
+        let data = self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_LOCAL_COMMIT_CONSUMED"))?;
+        if !phase_b32a_constant_time_eq_32(
+            expected_parent_state_sha256,
+            &data.parent_state_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_pending_state_sha256,
+            &data.pending_state_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_commit_sha256,
+            &data.projection.commit_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_authority_sha256,
+            &data.projection.authority_sha256,
+        ) {
+            return Err(JsError::new("PHASE_B33B1_LOCAL_COMMIT_BINDING_MISMATCH"));
+        }
+        Ok(PhaseB33b1LocalCommitRelease {
+            pending_state: Some(data.pending_state),
+            commit: Some(data.commit),
+        })
+    }
+    pub fn discard(&mut self) -> Result<(), JsError> {
+        self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_LOCAL_COMMIT_CONSUMED"))?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1LocalCommitRelease {
+    pub fn take_pending_state(&mut self) -> Result<Vec<u8>, JsError> {
+        self.pending_state.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_PENDING_STATE_ALREADY_TAKEN"))
+    }
+    pub fn take_commit(&mut self) -> Result<Vec<u8>, JsError> {
+        self.commit.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_COMMIT_ALREADY_TAKEN"))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1ConfirmedCommitRelease {
+    pub fn take_committed_state(&mut self) -> Result<Vec<u8>, JsError> {
+        self.committed_state.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_COMMITTED_STATE_ALREADY_TAKEN"))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1PendingInboundCommit {
+    pub fn is_consumed(&self) -> bool { self.data.is_none() }
+    pub fn projection(&self) -> Result<PhaseB33b1CommitProjection, JsError> {
+        self.data.as_ref().map(|data| data.projection.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_INBOUND_COMMIT_CONSUMED"))
+    }
+    pub fn parent_state_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.parent_state_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_INBOUND_COMMIT_CONSUMED"))
+    }
+    pub fn commit_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.projection.commit_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_INBOUND_COMMIT_CONSUMED"))
+    }
+    pub fn authority_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.projection.authority_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_INBOUND_COMMIT_CONSUMED"))
+    }
+    pub fn release(
+        &mut self,
+        expected_parent_state_sha256: &[u8],
+        expected_commit_sha256: &[u8],
+        expected_authority_sha256: &[u8],
+    ) -> Result<PhaseB33b1InboundCommitRelease, JsError> {
+        let data = self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_INBOUND_COMMIT_CONSUMED"))?;
+        if !phase_b32a_constant_time_eq_32(
+            expected_parent_state_sha256,
+            &data.parent_state_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_commit_sha256,
+            &data.projection.commit_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_authority_sha256,
+            &data.projection.authority_sha256,
+        ) {
+            return Err(JsError::new("PHASE_B33B1_INBOUND_COMMIT_BINDING_MISMATCH"));
+        }
+        Ok(PhaseB33b1InboundCommitRelease {
+            parent_state: Some(data.parent_state),
+            commit: Some(data.commit),
+        })
+    }
+    pub fn discard(&mut self) -> Result<(), JsError> {
+        self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_INBOUND_COMMIT_CONSUMED"))?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1InboundCommitRelease {
+    pub fn take_parent_state(&mut self) -> Result<Vec<u8>, JsError> {
+        self.parent_state.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_PARENT_STATE_ALREADY_TAKEN"))
+    }
+    pub fn take_commit(&mut self) -> Result<Vec<u8>, JsError> {
+        self.commit.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_COMMIT_ALREADY_TAKEN"))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1AppliedInboundRelease {
+    pub fn take_committed_state(&mut self) -> Result<Vec<u8>, JsError> {
+        self.committed_state.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_COMMITTED_STATE_ALREADY_TAKEN"))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1PendingApplicationOutbound {
+    pub fn is_consumed(&self) -> bool { self.data.is_none() }
+    pub fn group_id(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.group_id.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn current_epoch(&self) -> Result<u64, JsError> {
+        self.data.as_ref().map(|data| data.current_epoch)
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn message_epoch(&self) -> Result<u64, JsError> {
+        self.data.as_ref().map(|data| data.message_epoch)
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn sender_leaf_index(&self) -> Result<u32, JsError> {
+        self.data.as_ref().map(|data| data.sender_leaf_index)
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn sender_credential_identity(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.sender_credential_identity.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn sender_signature_key(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.sender_signature_key.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn canonical_state_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.canonical_state_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn ciphertext_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.ciphertext_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))
+    }
+    pub fn release(
+        &mut self,
+        expected_state_sha256: &[u8],
+        expected_ciphertext_sha256: &[u8],
+    ) -> Result<PhaseB33b1ApplicationOutboundRelease, JsError> {
+        let data = self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))?;
+        if !phase_b32a_constant_time_eq_32(
+            expected_state_sha256,
+            &data.canonical_state_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_ciphertext_sha256,
+            &data.ciphertext_sha256,
+        ) {
+            return Err(JsError::new("PHASE_B33B1_APP_OUTBOUND_BINDING_MISMATCH"));
+        }
+        Ok(PhaseB33b1ApplicationOutboundRelease {
+            canonical_state: Some(data.canonical_state),
+            ciphertext: Some(data.ciphertext),
+        })
+    }
+    pub fn discard(&mut self) -> Result<(), JsError> {
+        self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_OUTBOUND_CONSUMED"))?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1ApplicationOutboundRelease {
+    pub fn take_canonical_state(&mut self) -> Result<Vec<u8>, JsError> {
+        self.canonical_state.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_STATE_ALREADY_TAKEN"))
+    }
+    pub fn take_ciphertext(&mut self) -> Result<Vec<u8>, JsError> {
+        self.ciphertext.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_CIPHERTEXT_ALREADY_TAKEN"))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1PendingApplicationInbound {
+    pub fn is_consumed(&self) -> bool { self.data.is_none() }
+    pub fn group_id(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.group_id.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn current_epoch(&self) -> Result<u64, JsError> {
+        self.data.as_ref().map(|data| data.current_epoch)
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn message_epoch(&self) -> Result<u64, JsError> {
+        self.data.as_ref().map(|data| data.message_epoch)
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn sender_leaf_index(&self) -> Result<u32, JsError> {
+        self.data.as_ref().map(|data| data.sender_leaf_index)
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn sender_credential_identity(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.sender_credential_identity.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn sender_signature_key(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.sender_signature_key.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn canonical_state_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.canonical_state_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn ciphertext_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.ciphertext_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn plaintext_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.plaintext_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))
+    }
+    pub fn release(
+        &mut self,
+        expected_state_sha256: &[u8],
+        expected_ciphertext_sha256: &[u8],
+        expected_plaintext_sha256: &[u8],
+    ) -> Result<PhaseB33b1ApplicationInboundRelease, JsError> {
+        let data = self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))?;
+        if !phase_b32a_constant_time_eq_32(
+            expected_state_sha256,
+            &data.canonical_state_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_ciphertext_sha256,
+            &data.ciphertext_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_plaintext_sha256,
+            &data.plaintext_sha256,
+        ) {
+            return Err(JsError::new("PHASE_B33B1_APP_INBOUND_BINDING_MISMATCH"));
+        }
+        Ok(PhaseB33b1ApplicationInboundRelease {
+            canonical_state: Some(data.canonical_state),
+            ciphertext: Some(data.ciphertext),
+            plaintext: Some(data.plaintext),
+        })
+    }
+    pub fn discard(&mut self) -> Result<(), JsError> {
+        self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_INBOUND_CONSUMED"))?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1ApplicationInboundRelease {
+    pub fn take_canonical_state(&mut self) -> Result<Vec<u8>, JsError> {
+        self.canonical_state.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_STATE_ALREADY_TAKEN"))
+    }
+    pub fn take_ciphertext(&mut self) -> Result<Vec<u8>, JsError> {
+        self.ciphertext.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_CIPHERTEXT_ALREADY_TAKEN"))
+    }
+    pub fn take_plaintext(&mut self) -> Result<Vec<u8>, JsError> {
+        self.plaintext.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_APP_PLAINTEXT_ALREADY_TAKEN"))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1Group {
+    pub fn load_clean_canonical_state(
+        candidate_state: &[u8],
+        group_id: &[u8],
+        expected_own_identity: &[u8],
+        expected_own_signature_key: &[u8],
+    ) -> Result<Option<PhaseB33b1Group>, JsError> {
+        if group_id.is_empty() || group_id.len() > 64 {
+            return Err(JsError::new("PHASE_B33B1_GROUP_ID_INVALID"));
+        }
+        if expected_own_identity.len() != 32 || expected_own_signature_key.len() != 32 {
+            return Err(JsError::new("PHASE_B33B1_OWN_IDENTITY_INPUT_INVALID"));
+        }
+        let provider = PhaseB32aPrivateProvider::from_snapshot(
+            candidate_state,
+            PhaseB32aSnapshotRole::CanonicalCandidate,
+        )?;
+        let requested = GroupId::from_slice(group_id);
+        let Some(group) = MlsGroup::load(provider.provider.inner.storage(), &requested)? else {
+            return Ok(None);
+        };
+        if group.group_id() != &requested {
+            return Err(JsError::new("PHASE_B33B1_LOADED_GROUP_ID_MISMATCH"));
+        }
+        let identity = PhaseB2Identity::load(
+            &provider.provider,
+            expected_own_identity,
+            expected_own_signature_key,
+        )?
+        .ok_or_else(|| JsError::new("PHASE_B33B1_OWN_SIGNING_KEY_ABSENT"))?;
+        phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        Ok(Some(Self {
+            provider: Some(provider),
+            mls_group: Some(group),
+            identity: Some(identity),
+        }))
+    }
+
+    pub fn is_consumed(&self) -> bool {
+        self.provider.is_none() || self.mls_group.is_none() || self.identity.is_none()
+    }
+
+    pub fn prepare_self_update(&mut self) -> Result<PhaseB33b1PendingLocalCommit, JsError> {
+        let (provider, mut group, identity) = self.take_operation_parts()?;
+        let (parent_members, _, _) = phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        let parent_state = PhaseB32aWipeBytes(provider.canonical_state()?);
+        let parent_state_sha256 = phase_b33a_sha256(
+            &provider,
+            &parent_state.0,
+            "PHASE_B33B1_PARENT_STATE_DIGEST_FAILED",
+        )?;
+        let source_epoch = group.epoch().as_u64();
+        let own_leaf_index = group.own_leaf_index().u32();
+        let commit_bundle = group
+            .commit_builder()
+            .consume_proposal_store(false)
+            .force_self_update(true)
+            .load_psks(provider.provider.inner.storage())
+            .map_err(|_| JsError::new("PHASE_B33B1_SELF_UPDATE_LOAD_PSKS_FAILED"))?
+            .build(
+                provider.provider.inner.rand(),
+                provider.provider.inner.crypto(),
+                &identity.keypair,
+                |_| true,
+            )
+            .map_err(|_| JsError::new("PHASE_B33B1_SELF_UPDATE_BUILD_FAILED"))?
+            .stage_commit(provider.provider.as_ref())
+            .map_err(|_| JsError::new("PHASE_B33B1_SELF_UPDATE_STAGE_FAILED"))?;
+        let commit = PhaseB32aWipeBytes(
+            commit_bundle
+                .into_commit()
+                .tls_serialize_detached()
+                .map_err(|_| JsError::new("PHASE_B33B1_COMMIT_SERIALIZATION_FAILED"))?,
+        );
+        let staged = group
+            .pending_commit()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_PENDING_COMMIT_ABSENT"))?;
+        if group.epoch().as_u64() != source_epoch {
+            return Err(JsError::new("PHASE_B33B1_PARENT_EPOCH_CHANGED"));
+        }
+        let pending_state = PhaseB32aWipeBytes(provider.canonical_state()?);
+        let pending_state_sha256 = phase_b33a_sha256(
+            &provider,
+            &pending_state.0,
+            "PHASE_B33B1_PENDING_STATE_DIGEST_FAILED",
+        )?;
+        let (candidate_provider, candidate_group) =
+            phase_b33b1_candidate_from_pending(&pending_state.0, group.group_id().as_slice())?;
+        let projection = phase_b33b1_project_commit(
+            &candidate_provider,
+            &identity,
+            &group,
+            staged,
+            &candidate_group,
+            own_leaf_index,
+            &parent_state_sha256,
+            &commit.0,
+        )?;
+        if projection.committer_account != identity.account_public_key
+            || projection.committer_signature_key != identity.keypair.public()
+            || projection.source_epoch != source_epoch
+            || parent_members.len() != 2
+        {
+            return Err(JsError::new("STYX_SELF_UPDATE_LEAF_NOT_CONFORMANT"));
+        }
+        Ok(PhaseB33b1PendingLocalCommit {
+            data: Some(PhaseB33b1LocalCommitData {
+                projection,
+                parent_state_sha256,
+                pending_state_sha256,
+                pending_state,
+                commit,
+            }),
+        })
+    }
+
+    pub fn prepare_application_outbound(
+        &mut self,
+        plaintext: &[u8],
+    ) -> Result<PhaseB33b1PendingApplicationOutbound, JsError> {
+        let (provider, mut group, identity) = self.take_operation_parts()?;
+        if plaintext.is_empty() {
+            return Err(JsError::new("PHASE_B33B1_APP_PLAINTEXT_EMPTY"));
+        }
+        let original_group_id = group.group_id().to_vec();
+        let original_epoch = group.epoch().as_u64();
+        let sender_leaf_index = group.own_leaf_index().u32();
+        phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        let ciphertext = group
+            .create_message(provider.provider.as_ref(), &identity.keypair, plaintext)?
+            .tls_serialize_detached()?;
+        phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        if group.group_id().as_slice() != original_group_id
+            || group.epoch().as_u64() != original_epoch
+        {
+            return Err(JsError::new("PHASE_B33B1_APP_OUTBOUND_GROUP_CHANGED"));
+        }
+        let canonical_state = provider.canonical_state()?;
+        let canonical_state_sha256 = phase_b33a_sha256(
+            &provider,
+            &canonical_state,
+            "PHASE_B33B1_APP_STATE_DIGEST_FAILED",
+        )?;
+        let ciphertext_sha256 = phase_b33a_sha256(
+            &provider,
+            &ciphertext,
+            "PHASE_B33B1_APP_CIPHERTEXT_DIGEST_FAILED",
+        )?;
+        Ok(PhaseB33b1PendingApplicationOutbound {
+            data: Some(PhaseB33b1ApplicationOutboundData {
+                group_id: original_group_id,
+                current_epoch: original_epoch,
+                message_epoch: original_epoch,
+                sender_leaf_index,
+                sender_credential_identity: identity.account_public_key.clone(),
+                sender_signature_key: identity.keypair.public().to_vec(),
+                canonical_state_sha256,
+                ciphertext_sha256,
+                canonical_state: PhaseB32aWipeBytes(canonical_state),
+                ciphertext: PhaseB32aWipeBytes(ciphertext),
+            }),
+        })
+    }
+
+    pub fn prepare_application_inbound(
+        &mut self,
+        ciphertext: &[u8],
+    ) -> Result<PhaseB33b1PendingApplicationInbound, JsError> {
+        let (provider, mut group, identity) = self.take_operation_parts()?;
+        if ciphertext.is_empty() {
+            return Err(JsError::new("PHASE_B33B1_APP_CIPHERTEXT_EMPTY"));
+        }
+        let original_group_id = group.group_id().to_vec();
+        let current_epoch = group.epoch().as_u64();
+        phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        let message = MlsMessageIn::tls_deserialize_exact(ciphertext)
+            .map_err(|_| JsError::new("PHASE_B33B1_APP_MLS_MESSAGE_MALFORMED"))?;
+        let private = match message.extract() {
+            MlsMessageBodyIn::PrivateMessage(message) => message,
+            _ => return Err(JsError::new("PHASE_B33B1_APP_PRIVATE_MESSAGE_REQUIRED")),
+        };
+        if private.group_id().as_slice() != original_group_id {
+            return Err(JsError::new("PHASE_B33B1_APP_GROUP_ID_MISMATCH"));
+        }
+        let message_epoch = private.epoch().as_u64();
+        if message_epoch > current_epoch {
+            return Err(JsError::new("PHASE_B33B1_APP_FUTURE_EPOCH_REJECTED"));
+        }
+        let processed = group
+            .process_message(provider.provider.as_ref(), ProtocolMessage::from(private))
+            .map_err(|_| JsError::new("PHASE_B33B1_APP_OPENMLS_PROCESSING_FAILED"))?;
+        if processed.group_id().as_slice() != original_group_id {
+            return Err(JsError::new("PHASE_B33B1_APP_AUTHENTICATED_GROUP_ID_MISMATCH"));
+        }
+        if processed.epoch().as_u64() != message_epoch {
+            return Err(JsError::new("PHASE_B33B1_APP_AUTHENTICATED_EPOCH_MISMATCH"));
+        }
+        if matches!(
+            processed.content(),
+            openmls::framing::ProcessedMessageContent::OwnPrivateMessage
+        ) {
+            return Err(JsError::new("PHASE_B33B1_APP_OWN_MESSAGE_REJECTED"));
+        }
+        let sender_leaf_index = match processed.sender() {
+            Sender::Member(index) => index.u32(),
+            Sender::External(_) | Sender::NewMemberProposal | Sender::NewMemberCommit => {
+                return Err(JsError::new("PHASE_B33B1_APP_NON_MEMBER_SENDER_REJECTED"));
+            }
+        };
+        let authenticated_identity = processed.credential().serialized_content().to_vec();
+        let sender = phase_b32a_member_at(
+            provider.provider.as_ref().crypto(),
+            &group,
+            sender_leaf_index,
+        )?;
+        if sender.member.credential_identity != authenticated_identity {
+            return Err(JsError::new("PHASE_B33B1_APP_SENDER_CREDENTIAL_MISMATCH"));
+        }
+        let plaintext = match processed.into_content() {
+            openmls::framing::ProcessedMessageContent::ApplicationMessage(message) => {
+                message.into_bytes()
+            }
+            _ => return Err(JsError::new("PHASE_B33B1_APP_APPLICATION_MESSAGE_REQUIRED")),
+        };
+        phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        if group.group_id().as_slice() != original_group_id
+            || group.epoch().as_u64() != current_epoch
+        {
+            return Err(JsError::new("PHASE_B33B1_APP_INBOUND_GROUP_CHANGED"));
+        }
+        let canonical_state = provider.canonical_state()?;
+        let canonical_state_sha256 = phase_b33a_sha256(
+            &provider,
+            &canonical_state,
+            "PHASE_B33B1_APP_STATE_DIGEST_FAILED",
+        )?;
+        let ciphertext_sha256 = phase_b33a_sha256(
+            &provider,
+            ciphertext,
+            "PHASE_B33B1_APP_CIPHERTEXT_DIGEST_FAILED",
+        )?;
+        let plaintext_sha256 = phase_b33a_sha256(
+            &provider,
+            &plaintext,
+            "PHASE_B33B1_APP_PLAINTEXT_DIGEST_FAILED",
+        )?;
+        Ok(PhaseB33b1PendingApplicationInbound {
+            data: Some(PhaseB33b1ApplicationInboundData {
+                group_id: original_group_id,
+                current_epoch,
+                message_epoch,
+                sender_leaf_index,
+                sender_credential_identity: sender.member.credential_identity,
+                sender_signature_key: sender.member.leaf_signature_key,
+                canonical_state_sha256,
+                ciphertext_sha256,
+                plaintext_sha256,
+                canonical_state: PhaseB32aWipeBytes(canonical_state),
+                ciphertext: PhaseB32aWipeBytes(ciphertext.to_vec()),
+                plaintext: PhaseB32aWipeBytes(plaintext),
+            }),
+        })
+    }
+
+    pub fn stage_inbound_commit(
+        &mut self,
+        commit_bytes: &[u8],
+    ) -> Result<PhaseB33b1PendingInboundCommit, JsError> {
+        let (provider, mut group, identity) = self.take_operation_parts()?;
+        phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        let parent_state = PhaseB32aWipeBytes(provider.canonical_state()?);
+        let parent_state_sha256 = phase_b33a_sha256(
+            &provider,
+            &parent_state.0,
+            "PHASE_B33B1_PARENT_STATE_DIGEST_FAILED",
+        )?;
+        let (committer_leaf_index, authenticated_identity, staged) =
+            phase_b33b1_process_inbound_commit(&provider, &mut group, commit_bytes)?;
+        let (candidate_provider, candidate_group, candidate_committer, candidate_identity) =
+            phase_b33b1_candidate_from_inbound(
+                &parent_state.0,
+                group.group_id().as_slice(),
+                commit_bytes,
+            )?;
+        if candidate_committer != committer_leaf_index
+            || candidate_identity != authenticated_identity
+        {
+            return Err(JsError::new("PHASE_B33B1_AUTHENTICATED_COMMITTER_MISMATCH"));
+        }
+        let projection = phase_b33b1_project_commit(
+            &candidate_provider,
+            &identity,
+            &group,
+            &staged,
+            &candidate_group,
+            committer_leaf_index,
+            &parent_state_sha256,
+            commit_bytes,
+        )?;
+        if authenticated_identity != projection.committer_account {
+            return Err(JsError::new("PHASE_B33B1_COMMITTER_CREDENTIAL_MISMATCH"));
+        }
+        Ok(PhaseB33b1PendingInboundCommit {
+            data: Some(PhaseB33b1InboundData {
+                projection,
+                parent_state_sha256,
+                parent_state,
+                commit: PhaseB32aWipeBytes(commit_bytes.to_vec()),
+            }),
+        })
+    }
+
+    pub fn apply_inbound_commit(
+        parent_state: &[u8],
+        group_id: &[u8],
+        expected_own_identity: &[u8],
+        expected_own_signature_key: &[u8],
+        commit_bytes: &[u8],
+        expected_parent_state_sha256: &[u8],
+        expected_commit_sha256: &[u8],
+        expected_authority_sha256: &[u8],
+    ) -> Result<PhaseB33b1AppliedInboundRelease, JsError> {
+        for digest in [
+            expected_parent_state_sha256,
+            expected_commit_sha256,
+            expected_authority_sha256,
+        ] {
+            if digest.len() != 32 {
+                return Err(JsError::new("PHASE_B33B1_APPLY_DIGEST_INVALID"));
+            }
+        }
+        let mut provider = PhaseB32aPrivateProvider::from_snapshot(
+            parent_state,
+            PhaseB32aSnapshotRole::CanonicalCandidate,
+        )?;
+        let parent_state_sha256 = phase_b33a_sha256(
+            &provider,
+            parent_state,
+            "PHASE_B33B1_PARENT_STATE_DIGEST_FAILED",
+        )?;
+        let commit_sha256 = phase_b33a_sha256(
+            &provider,
+            commit_bytes,
+            "PHASE_B33B1_COMMIT_DIGEST_FAILED",
+        )?;
+        if !phase_b32a_constant_time_eq_32(
+            &parent_state_sha256,
+            expected_parent_state_sha256,
+        ) || !phase_b32a_constant_time_eq_32(&commit_sha256, expected_commit_sha256) {
+            return Err(JsError::new("PHASE_B33B1_APPLY_BINDING_MISMATCH"));
+        }
+        let requested = GroupId::from_slice(group_id);
+        let mut group = MlsGroup::load(provider.provider.inner.storage(), &requested)?
+            .ok_or_else(|| JsError::new("PHASE_B33B1_GROUP_ABSENT"))?;
+        let identity = PhaseB2Identity::load(
+            &provider.provider,
+            expected_own_identity,
+            expected_own_signature_key,
+        )?
+        .ok_or_else(|| JsError::new("PHASE_B33B1_OWN_SIGNING_KEY_ABSENT"))?;
+        phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        let (committer_leaf_index, authenticated_identity, staged) =
+            phase_b33b1_process_inbound_commit(&provider, &mut group, commit_bytes)?;
+        let (candidate_provider, candidate_group, candidate_committer, candidate_identity) =
+            phase_b33b1_candidate_from_inbound(parent_state, group_id, commit_bytes)?;
+        if candidate_committer != committer_leaf_index
+            || candidate_identity != authenticated_identity
+        {
+            return Err(JsError::new("PHASE_B33B1_AUTHENTICATED_COMMITTER_MISMATCH"));
+        }
+        let projection = phase_b33b1_project_commit(
+            &candidate_provider,
+            &identity,
+            &group,
+            &staged,
+            &candidate_group,
+            committer_leaf_index,
+            &parent_state_sha256,
+            commit_bytes,
+        )?;
+        if authenticated_identity != projection.committer_account
+            || !phase_b32a_constant_time_eq_32(
+                &projection.commit_sha256,
+                expected_commit_sha256,
+            )
+            || !phase_b32a_constant_time_eq_32(
+                &projection.authority_sha256,
+                expected_authority_sha256,
+            )
+        {
+            return Err(JsError::new("PHASE_B33B1_APPLY_AUTHORITY_MISMATCH"));
+        }
+        group
+            .merge_staged_commit(provider.provider.as_mut(), staged)
+            .map_err(|_| JsError::new("PHASE_B33B1_INBOUND_MERGE_FAILED"))?;
+        let (committed_members, committed_context_tls, _) =
+            phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        let committed_context_sha256 = phase_b33a_sha256(
+            &provider,
+            &committed_context_tls,
+            "PHASE_B33B1_GROUP_CONTEXT_DIGEST_FAILED",
+        )?;
+        let committed_leaf_digest =
+            phase_b32a_verified_leaf_digest(provider.provider.as_ref().crypto(), &committed_members)?;
+        if !phase_b32a_constant_time_eq_32(
+            &committed_context_sha256,
+            &projection.candidate_group_context_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            &committed_leaf_digest,
+            &projection.verified_leaf_digest,
+        ) {
+            return Err(JsError::new("PHASE_B33B1_APPLIED_STATE_MISMATCH"));
+        }
+        Ok(PhaseB33b1AppliedInboundRelease {
+            committed_state: Some(PhaseB32aWipeBytes(provider.canonical_state()?)),
+        })
+    }
+
+    pub fn confirm_local_commit(
+        pending_state: &[u8],
+        group_id: &[u8],
+        expected_own_identity: &[u8],
+        expected_own_signature_key: &[u8],
+        commit_bytes: &[u8],
+        expected_parent_state_sha256: &[u8],
+        expected_pending_state_sha256: &[u8],
+        expected_commit_sha256: &[u8],
+        expected_authority_sha256: &[u8],
+    ) -> Result<PhaseB33b1ConfirmedCommitRelease, JsError> {
+        for digest in [
+            expected_parent_state_sha256,
+            expected_pending_state_sha256,
+            expected_commit_sha256,
+            expected_authority_sha256,
+        ] {
+            if digest.len() != 32 {
+                return Err(JsError::new("PHASE_B33B1_CONFIRM_DIGEST_INVALID"));
+            }
+        }
+        let mut provider = PhaseB32aPrivateProvider::from_snapshot(
+            pending_state,
+            PhaseB32aSnapshotRole::CanonicalCandidate,
+        )?;
+        let pending_state_sha256 = phase_b33a_sha256(
+            &provider,
+            pending_state,
+            "PHASE_B33B1_PENDING_STATE_DIGEST_FAILED",
+        )?;
+        let commit_sha256 = phase_b33a_sha256(
+            &provider,
+            commit_bytes,
+            "PHASE_B33B1_COMMIT_DIGEST_FAILED",
+        )?;
+        if !phase_b32a_constant_time_eq_32(&pending_state_sha256, expected_pending_state_sha256)
+            || !phase_b32a_constant_time_eq_32(&commit_sha256, expected_commit_sha256)
+        {
+            return Err(JsError::new("PHASE_B33B1_CONFIRM_BINDING_MISMATCH"));
+        }
+        let requested = GroupId::from_slice(group_id);
+        let mut group = MlsGroup::load(provider.provider.inner.storage(), &requested)?
+            .ok_or_else(|| JsError::new("PHASE_B33B1_GROUP_ABSENT"))?;
+        let identity = PhaseB2Identity::load(
+            &provider.provider,
+            expected_own_identity,
+            expected_own_signature_key,
+        )?
+        .ok_or_else(|| JsError::new("PHASE_B33B1_OWN_SIGNING_KEY_ABSENT"))?;
+        let (members, _, _) = phase_b33b1_group_state(provider.provider.as_ref().crypto(), &group)?;
+        phase_b33a_validate_own_identity(&members, &group, &identity)?;
+        let staged = group
+            .pending_commit()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_PENDING_COMMIT_ABSENT"))?;
+        let own_leaf_index = group.own_leaf_index().u32();
+        let (candidate_provider, candidate_group) =
+            phase_b33b1_candidate_from_pending(pending_state, group_id)?;
+        let projection = phase_b33b1_project_commit(
+            &candidate_provider,
+            &identity,
+            &group,
+            staged,
+            &candidate_group,
+            own_leaf_index,
+            expected_parent_state_sha256,
+            commit_bytes,
+        )?;
+        if !phase_b32a_constant_time_eq_32(&projection.commit_sha256, expected_commit_sha256)
+            || !phase_b32a_constant_time_eq_32(
+                &projection.authority_sha256,
+                expected_authority_sha256,
+            )
+        {
+            return Err(JsError::new("PHASE_B33B1_CONFIRM_AUTHORITY_MISMATCH"));
+        }
+        let message = MlsMessageIn::tls_deserialize_exact(commit_bytes)
+            .map_err(|_| JsError::new("PHASE_B33B1_COMMIT_MALFORMED"))?;
+        let public = match message.extract() {
+            MlsMessageBodyIn::PublicMessage(message) => message,
+            _ => return Err(JsError::new("PHASE_B33B1_PUBLIC_COMMIT_REQUIRED")),
+        };
+        let processed = group
+            .process_message(provider.provider.as_ref(), public)
+            .map_err(|_| JsError::new("PHASE_B33B1_OWN_COMMIT_PROCESSING_FAILED"))?;
+        if !matches!(
+            processed.into_content(),
+            openmls::framing::ProcessedMessageContent::OwnPendingCommit
+        ) {
+            return Err(JsError::new("PHASE_B33B1_OWN_PENDING_COMMIT_REQUIRED"));
+        }
+        group
+            .merge_pending_commit(provider.provider.as_mut())
+            .map_err(|_| JsError::new("PHASE_B33B1_PENDING_MERGE_FAILED"))?;
+        let (committed_members, committed_context_tls, _) =
+            phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        let committed_context_sha256 = phase_b33a_sha256(
+            &provider,
+            &committed_context_tls,
+            "PHASE_B33B1_GROUP_CONTEXT_DIGEST_FAILED",
+        )?;
+        let committed_leaf_digest =
+            phase_b32a_verified_leaf_digest(provider.provider.as_ref().crypto(), &committed_members)?;
+        if !phase_b32a_constant_time_eq_32(
+            &committed_context_sha256,
+            &projection.candidate_group_context_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            &committed_leaf_digest,
+            &projection.verified_leaf_digest,
+        ) {
+            return Err(JsError::new("PHASE_B33B1_CONFIRMED_STATE_MISMATCH"));
+        }
+        Ok(PhaseB33b1ConfirmedCommitRelease {
+            committed_state: Some(PhaseB32aWipeBytes(provider.canonical_state()?)),
+        })
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
 impl PhaseB33aGroup {
     fn take_operation_parts(
         &mut self,
@@ -8334,6 +9868,673 @@ mod tests {
             release.take_ciphertext().unwrap(),
             release.take_plaintext().unwrap(),
         )
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b33b1_activate(
+        state: &[u8],
+        group_id: &[u8],
+        identity: &[u8],
+        signature_key: &[u8],
+    ) -> Vec<u8> {
+        let predecessor_sha256 = phase_b32_sha256(
+            &openmls_rust_crypto::RustCrypto::default(),
+            state,
+            "test",
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let mut pending = PhaseB33b1PendingActivation::prepare_from_b32a_state(
+            state,
+            &predecessor_sha256,
+            group_id,
+            identity,
+            signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("fixture group must be present");
+        assert_eq!(pending.provider_format(), PHASE_B33B1_PROVIDER_FORMAT);
+        assert_eq!(pending.max_past_epochs(), PHASE_B33B1_MAX_PAST_EPOCHS as u32);
+        let candidate_sha256 = pending.candidate_state_sha256().unwrap();
+        let group_context_sha256 = pending.group_context_sha256().unwrap();
+        let verified_leaf_digest = pending.verified_leaf_digest().unwrap();
+        let mut release = pending
+            .release(
+                &predecessor_sha256,
+                &candidate_sha256,
+                &group_context_sha256,
+                &verified_leaf_digest,
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        let candidate = release.take_candidate_state().unwrap();
+        assert_eq!(
+            phase_b32_sha256(
+                &openmls_rust_crypto::RustCrypto::default(),
+                &candidate,
+                "test",
+            )
+            .map_err(js_error_to_string)
+            .unwrap(),
+            candidate_sha256,
+        );
+        assert!(pending.is_consumed());
+        candidate
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b33b1_release_application_outbound(
+        pending: &mut PhaseB33b1PendingApplicationOutbound,
+    ) -> (Vec<u8>, Vec<u8>) {
+        let state_sha256 = pending.canonical_state_sha256().unwrap();
+        let ciphertext_sha256 = pending.ciphertext_sha256().unwrap();
+        let mut release = pending
+            .release(&state_sha256, &ciphertext_sha256)
+            .map_err(js_error_to_string)
+            .unwrap();
+        (
+            release.take_canonical_state().unwrap(),
+            release.take_ciphertext().unwrap(),
+        )
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b33b1_release_application_inbound(
+        pending: &mut PhaseB33b1PendingApplicationInbound,
+    ) -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+        let state_sha256 = pending.canonical_state_sha256().unwrap();
+        let ciphertext_sha256 = pending.ciphertext_sha256().unwrap();
+        let plaintext_sha256 = pending.plaintext_sha256().unwrap();
+        let mut release = pending
+            .release(&state_sha256, &ciphertext_sha256, &plaintext_sha256)
+            .map_err(js_error_to_string)
+            .unwrap();
+        (
+            release.take_canonical_state().unwrap(),
+            release.take_ciphertext().unwrap(),
+            release.take_plaintext().unwrap(),
+        )
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b33b1_activation_roundtrips_retention_and_cross_readers_fail_closed() {
+        let fixture = phase_b33a_native_fixture(b"phase-b33b1-activation", 0xa1, 0xa2);
+        let activated = phase_b33b1_activate(
+            &fixture.joiner_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        );
+
+        let provider = PhaseB32aPrivateProvider::from_snapshot(
+            &activated,
+            PhaseB32aSnapshotRole::CanonicalCandidate,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let group = MlsGroup::load(
+            provider.provider.inner.storage(),
+            &GroupId::from_slice(&fixture.group_id),
+        )
+        .unwrap()
+        .expect("activated group must restore");
+        assert_eq!(
+            group.past_epoch_deletion_policy(),
+            &PastEpochDeletionPolicy::MaxEpochs(PHASE_B33B1_MAX_PAST_EPOCHS),
+        );
+        phase_b33b1_group_state(provider.provider.as_ref().crypto(), &group)
+            .map_err(js_error_to_string)
+            .unwrap();
+
+        phase_b32_assert_rejected(|| {
+            PhaseB32aGroup::load_canonical_state(&activated, &fixture.group_id).map(|_| ())
+        });
+        phase_b32_assert_rejected(|| {
+            PhaseB33aGroup::load_canonical_state(
+                &activated,
+                &fixture.group_id,
+                &fixture.joiner_identity,
+                &fixture.joiner_signature_key,
+            )
+            .map(|_| ())
+        });
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b33b1_retained_application_message_survives_next_epoch() {
+        let fixture = phase_b33a_native_fixture(b"phase-b33b1-retained-app", 0xb1, 0xb2);
+        let founder_parent = phase_b33b1_activate(
+            &fixture.founder_state,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+        );
+        let joiner_parent = phase_b33b1_activate(
+            &fixture.joiner_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        );
+
+        let plaintext = b"withheld at epoch one";
+        let mut founder = PhaseB33b1Group::load_clean_canonical_state(
+            &founder_parent,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("founder must load");
+        let mut outbound = founder
+            .prepare_application_outbound(plaintext)
+            .map_err(js_error_to_string)
+            .unwrap();
+        assert_eq!(outbound.current_epoch().unwrap(), 1);
+        assert_eq!(outbound.message_epoch().unwrap(), 1);
+        let (founder_after_send, ciphertext) =
+            phase_b33b1_release_application_outbound(&mut outbound);
+
+        let mut founder = PhaseB33b1Group::load_clean_canonical_state(
+            &founder_after_send,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("founder after send must load");
+        let mut local = founder.prepare_self_update().map_err(js_error_to_string).unwrap();
+        let parent_sha256 = local.parent_state_sha256().unwrap();
+        let pending_sha256 = local.pending_state_sha256().unwrap();
+        let commit_sha256 = local.commit_sha256().unwrap();
+        let authority_sha256 = local.authority_sha256().unwrap();
+        let mut local_release = local
+            .release(&parent_sha256, &pending_sha256, &commit_sha256, &authority_sha256)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let pending_state = local_release.take_pending_state().unwrap();
+        let commit = local_release.take_commit().unwrap();
+        let mut joiner = PhaseB33b1Group::load_clean_canonical_state(
+            &joiner_parent,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("joiner parent must load");
+        let mut staged = joiner.stage_inbound_commit(&commit).map_err(js_error_to_string).unwrap();
+        let staged_parent_sha256 = staged.parent_state_sha256().unwrap();
+        let staged_commit_sha256 = staged.commit_sha256().unwrap();
+        let staged_authority_sha256 = staged.authority_sha256().unwrap();
+        let mut staged_release = staged
+            .release(&staged_parent_sha256, &staged_commit_sha256, &staged_authority_sha256)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let staged_parent = staged_release.take_parent_state().unwrap();
+        let staged_commit = staged_release.take_commit().unwrap();
+        let mut applied = PhaseB33b1Group::apply_inbound_commit(
+            &staged_parent,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+            &staged_commit,
+            &staged_parent_sha256,
+            &staged_commit_sha256,
+            &staged_authority_sha256,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let joiner_epoch_two = applied.take_committed_state().unwrap();
+        let mut confirmed = PhaseB33b1Group::confirm_local_commit(
+            &pending_state,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+            &commit,
+            &parent_sha256,
+            &pending_sha256,
+            &commit_sha256,
+            &authority_sha256,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let founder_epoch_two = confirmed.take_committed_state().unwrap();
+        assert!(!founder_epoch_two.is_empty());
+
+        let mut joiner = PhaseB33b1Group::load_clean_canonical_state(
+            &joiner_epoch_two,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("joiner epoch two must load");
+        let mut inbound = joiner
+            .prepare_application_inbound(&ciphertext)
+            .map_err(js_error_to_string)
+            .unwrap();
+        assert_eq!(inbound.current_epoch().unwrap(), 2);
+        assert_eq!(inbound.message_epoch().unwrap(), 1);
+        let (_, exact_ciphertext, recovered_plaintext) =
+            phase_b33b1_release_application_inbound(&mut inbound);
+        assert_eq!(exact_ciphertext, ciphertext);
+        assert_eq!(recovered_plaintext, plaintext);
+
+        let mut replay = PhaseB33b1Group::load_clean_canonical_state(
+            &joiner_epoch_two,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("unconsumed epoch two state must load");
+        let mut first = replay
+            .prepare_application_inbound(&ciphertext)
+            .map_err(js_error_to_string)
+            .unwrap();
+        let (consumed_state, _, _) = phase_b33b1_release_application_inbound(&mut first);
+        phase_b32_assert_rejected(|| {
+            let mut consumed = PhaseB33b1Group::load_clean_canonical_state(
+                &consumed_state,
+                &fixture.group_id,
+                &fixture.joiner_identity,
+                &fixture.joiner_signature_key,
+            )
+            ?
+            .expect("consumed state must load");
+            consumed.prepare_application_inbound(&ciphertext).map(|_| ())
+        });
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b33b1_local_self_update_is_write_ahead_and_requires_own_echo() {
+        let fixture = phase_b33a_native_fixture(b"phase-b33b1-local-update", 0xa3, 0xa4);
+        let activated = phase_b33b1_activate(
+            &fixture.joiner_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        );
+        let mut group = PhaseB33b1Group::load_clean_canonical_state(
+            &activated,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("activated group must load");
+        let mut pending = group
+            .prepare_self_update()
+            .map_err(js_error_to_string)
+            .unwrap();
+        assert!(group.is_consumed());
+        let projection = pending.projection().unwrap();
+        assert_eq!(projection.source_epoch(), 1);
+        assert_eq!(projection.target_epoch(), 2);
+        assert_eq!(projection.ordering_priority(), "ordinary");
+        assert_eq!(projection.committer_account(), fixture.joiner_identity);
+        assert_eq!(projection.committer_signature_key(), fixture.joiner_signature_key);
+        let parent_sha256 = pending.parent_state_sha256().unwrap();
+        let pending_sha256 = pending.pending_state_sha256().unwrap();
+        let commit_sha256 = pending.commit_sha256().unwrap();
+        let authority_sha256 = pending.authority_sha256().unwrap();
+        let mut release = pending
+            .release(
+                &parent_sha256,
+                &pending_sha256,
+                &commit_sha256,
+                &authority_sha256,
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        let pending_state = release.take_pending_state().unwrap();
+        let commit = release.take_commit().unwrap();
+        assert!(pending.is_consumed());
+
+        let mut confirmed = PhaseB33b1Group::confirm_local_commit(
+            &pending_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+            &commit,
+            &parent_sha256,
+            &pending_sha256,
+            &commit_sha256,
+            &authority_sha256,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let committed_state = confirmed.take_committed_state().unwrap();
+        let restored = PhaseB33b1Group::load_clean_canonical_state(
+            &committed_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("confirmed group must load");
+        assert!(!restored.is_consumed());
+        assert_eq!(
+            phase_b32_sha256(
+                &openmls_rust_crypto::RustCrypto::default(),
+                &commit,
+                "test",
+            )
+            .map_err(js_error_to_string)
+            .unwrap(),
+            commit_sha256,
+        );
+
+        phase_b32_assert_rejected(|| {
+            PhaseB33b1Group::confirm_local_commit(
+                &committed_state,
+                &fixture.group_id,
+                &fixture.joiner_identity,
+                &fixture.joiner_signature_key,
+                &commit,
+                &parent_sha256,
+                &pending_sha256,
+                &commit_sha256,
+                &authority_sha256,
+            )
+            .map(|_| ())
+        });
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b33b1_inbound_self_update_restages_applies_once_and_exposes_ordering_tuple() {
+        let fixture = phase_b33a_native_fixture(b"phase-b33b1-inbound-update", 0xa5, 0xa6);
+        let founder_parent = phase_b33b1_activate(
+            &fixture.founder_state,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+        );
+        let joiner_parent = phase_b33b1_activate(
+            &fixture.joiner_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        );
+
+        let mut founder = PhaseB33b1Group::load_clean_canonical_state(
+            &founder_parent,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("activated founder must load");
+        let mut local = founder.prepare_self_update().map_err(js_error_to_string).unwrap();
+        let local_parent_sha256 = local.parent_state_sha256().unwrap();
+        let local_pending_sha256 = local.pending_state_sha256().unwrap();
+        let local_commit_sha256 = local.commit_sha256().unwrap();
+        let local_authority_sha256 = local.authority_sha256().unwrap();
+        let mut local_release = local
+            .release(
+                &local_parent_sha256,
+                &local_pending_sha256,
+                &local_commit_sha256,
+                &local_authority_sha256,
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        let founder_pending = local_release.take_pending_state().unwrap();
+        let commit = local_release.take_commit().unwrap();
+
+        let mut joiner = PhaseB33b1Group::load_clean_canonical_state(
+            &joiner_parent,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("activated joiner must load");
+        let mut inbound = joiner
+            .stage_inbound_commit(&commit)
+            .map_err(js_error_to_string)
+            .unwrap();
+        assert!(joiner.is_consumed());
+        let projection = inbound.projection().unwrap();
+        assert_eq!(projection.source_epoch(), 1);
+        assert_eq!(projection.target_epoch(), 2);
+        assert_eq!(projection.ordering_priority(), "ordinary");
+        assert_eq!(projection.committer_account(), fixture.founder_identity);
+        assert_eq!(projection.committer_signature_key(), fixture.founder_signature_key);
+        assert_eq!(projection.commit_sha256(), local_commit_sha256);
+        let inbound_parent_sha256 = inbound.parent_state_sha256().unwrap();
+        let inbound_commit_sha256 = inbound.commit_sha256().unwrap();
+        let inbound_authority_sha256 = inbound.authority_sha256().unwrap();
+        let mut inbound_release = inbound
+            .release(
+                &inbound_parent_sha256,
+                &inbound_commit_sha256,
+                &inbound_authority_sha256,
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        let durable_parent = inbound_release.take_parent_state().unwrap();
+        let durable_commit = inbound_release.take_commit().unwrap();
+        assert_eq!(durable_commit, commit);
+        assert!(inbound.is_consumed());
+        phase_b32_assert_rejected(|| {
+            inbound.release(
+                &inbound_parent_sha256,
+                &inbound_commit_sha256,
+                &inbound_authority_sha256,
+            )
+            .map(|_| ())
+        });
+
+        let mut applied = PhaseB33b1Group::apply_inbound_commit(
+            &durable_parent,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+            &durable_commit,
+            &inbound_parent_sha256,
+            &inbound_commit_sha256,
+            &inbound_authority_sha256,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let joiner_committed = applied.take_committed_state().unwrap();
+        let mut founder_confirmed = PhaseB33b1Group::confirm_local_commit(
+            &founder_pending,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+            &commit,
+            &local_parent_sha256,
+            &local_pending_sha256,
+            &local_commit_sha256,
+            &local_authority_sha256,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let founder_committed = founder_confirmed.take_committed_state().unwrap();
+
+        let founder_provider = PhaseB32aPrivateProvider::from_snapshot(
+            &founder_committed,
+            PhaseB32aSnapshotRole::CanonicalCandidate,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let joiner_provider = PhaseB32aPrivateProvider::from_snapshot(
+            &joiner_committed,
+            PhaseB32aSnapshotRole::CanonicalCandidate,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let founder_group = MlsGroup::load(
+            founder_provider.provider.inner.storage(),
+            &GroupId::from_slice(&fixture.group_id),
+        )
+        .unwrap()
+        .unwrap();
+        let joiner_group = MlsGroup::load(
+            joiner_provider.provider.inner.storage(),
+            &GroupId::from_slice(&fixture.group_id),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(founder_group.epoch(), joiner_group.epoch());
+        assert_eq!(founder_group.epoch().as_u64(), 2);
+        assert_eq!(
+            founder_group
+                .public_group()
+                .group_context()
+                .tls_serialize_detached()
+                .unwrap(),
+            joiner_group
+                .public_group()
+                .group_context()
+                .tls_serialize_detached()
+                .unwrap(),
+        );
+
+        phase_b32_assert_rejected(|| {
+            PhaseB33b1Group::apply_inbound_commit(
+                &joiner_committed,
+                &fixture.group_id,
+                &fixture.joiner_identity,
+                &fixture.joiner_signature_key,
+                &commit,
+                &inbound_parent_sha256,
+                &inbound_commit_sha256,
+                &inbound_authority_sha256,
+            )
+            .map(|_| ())
+        });
+        let mut own_parent = PhaseB33b1Group::load_clean_canonical_state(
+            &founder_parent,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .unwrap();
+        phase_b32_assert_rejected(|| own_parent.stage_inbound_commit(&commit).map(|_| ()));
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b33b1_same_parent_candidates_expose_distinct_mdk_ordering_inputs() {
+        let fixture = phase_b33a_native_fixture(b"phase-b33b1-dual-candidate", 0xa7, 0xa8);
+        let founder_parent = phase_b33b1_activate(
+            &fixture.founder_state,
+            &fixture.group_id,
+            &fixture.founder_identity,
+            &fixture.founder_signature_key,
+        );
+        let joiner_parent = phase_b33b1_activate(
+            &fixture.joiner_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        );
+
+        let make_commit = || {
+            let mut group = PhaseB33b1Group::load_clean_canonical_state(
+                &founder_parent,
+                &fixture.group_id,
+                &fixture.founder_identity,
+                &fixture.founder_signature_key,
+            )
+            .map_err(js_error_to_string)
+            .unwrap()
+            .unwrap();
+            let mut pending = group.prepare_self_update().map_err(js_error_to_string).unwrap();
+            let parent = pending.parent_state_sha256().unwrap();
+            let state = pending.pending_state_sha256().unwrap();
+            let commit = pending.commit_sha256().unwrap();
+            let authority = pending.authority_sha256().unwrap();
+            let mut release = pending
+                .release(&parent, &state, &commit, &authority)
+                .map_err(js_error_to_string)
+                .unwrap();
+            release.take_commit().unwrap()
+        };
+        let first_commit = make_commit();
+        let second_commit = make_commit();
+        assert_ne!(first_commit, second_commit);
+
+        let stage = |commit: &[u8]| {
+            let mut group = PhaseB33b1Group::load_clean_canonical_state(
+                &joiner_parent,
+                &fixture.group_id,
+                &fixture.joiner_identity,
+                &fixture.joiner_signature_key,
+            )
+            .map_err(js_error_to_string)
+            .unwrap()
+            .unwrap();
+            group
+                .stage_inbound_commit(commit)
+                .map_err(js_error_to_string)
+                .unwrap()
+                .projection()
+                .unwrap()
+        };
+        let first = stage(&first_commit);
+        let second = stage(&second_commit);
+        assert_eq!(first.source_epoch(), second.source_epoch());
+        assert_eq!(first.source_epoch(), 1);
+        assert_eq!(first.ordering_priority(), "ordinary");
+        assert_eq!(second.ordering_priority(), "ordinary");
+        assert_eq!(first.committer_account(), second.committer_account());
+        assert_eq!(first.committer_account(), fixture.founder_identity);
+        assert_ne!(first.commit_sha256(), second.commit_sha256());
+        assert_ne!(first.authority_sha256(), second.authority_sha256());
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b33b1_projection_guard_rejects_non_roster_committer_in_isolation() {
+        // Guard-in-isolation seam: production rejects non-members in process_message first.
+        // This proves the later projection boundary independently remains fail-closed.
+        let fixture = phase_b33a_native_fixture(b"phase-b33b1-non-roster", 0xa9, 0xaa);
+        let joiner_parent = phase_b33b1_activate(
+            &fixture.joiner_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        );
+        let mut joiner = PhaseB33b1Group::load_clean_canonical_state(
+            &joiner_parent,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .unwrap();
+        let (provider, parent, _) = joiner.take_operation_parts().unwrap();
+        let (members, _, _) = phase_b33b1_group_state(
+            provider.provider.as_ref().crypto(),
+            &parent,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let error = match phase_b33b1_roster_committer(&members, u32::MAX) {
+            Err(error) => error,
+            Ok(_) => panic!("non-roster committer unexpectedly resolved"),
+        };
+        assert_eq!(error, PHASE_B33B1_NON_ROSTER_COMMITTER);
     }
 
     #[cfg(feature = "extensions-draft")]

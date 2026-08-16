@@ -18,7 +18,13 @@ import {
   B32aJournal,
   FileB32aStore,
   MemoryB32aStore,
+  parseB32aHead,
 } from '../../spikes/marmot-phase-b3-2a/b3-2a-journal.mjs';
+import { parseB32Head } from '../../spikes/marmot-phase-b3-2/b3-2-journal.mjs';
+import {
+  B33b1Journal,
+  MemoryB33b1Store,
+} from '../../spikes/marmot-phase-b3-3b-1/b3-3b-1-journal.mjs';
 import { B32aDurableJoinDriver } from '../../spikes/marmot-phase-b3-2a/b3-2a-driver.mjs';
 import {
   b32aFixture,
@@ -26,6 +32,21 @@ import {
 } from '../../spikes/marmot-phase-b3-2a/b3-2a-test-support.mjs';
 
 const bytes = (hex) => Uint8Array.from(Buffer.from(hex, 'hex'));
+
+test('B3.2 and B3.2a readers reject an exact B3.3b-1 active head', async () => {
+  const active = await new B33b1Journal(new MemoryB33b1Store()).activate({
+    stateBytes: Uint8Array.of(1, 2, 3),
+    sourceB32aHeadDigestHex: '11'.repeat(32),
+    groupIdHex: '22'.repeat(16),
+    accountIdentityHex: '33'.repeat(32),
+    leafSignatureKeyHex: '44'.repeat(32),
+    epochDec: '1',
+    groupContextSha256Hex: '55'.repeat(32),
+    rosterSha256Hex: '66'.repeat(32),
+  });
+  expect(() => parseB32Head(active.head)).toThrow();
+  expect(() => parseB32aHead(active.head)).toThrow();
+});
 
 class FakeB32aEngine {
   constructor(values, mutateProjection = null, releaseError = null) {

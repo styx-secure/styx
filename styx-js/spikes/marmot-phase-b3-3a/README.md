@@ -75,11 +75,13 @@ installed in Stage 2, the same verifier must exit successfully. Each Stage 2
 run also rebuilds the pinned MDK peer from its locked, clean source checkout and
 records the resulting source and executable identity in its evidence.
 
-The owner-approved tuple is frozen directly in `verify-pins.mjs`; both the
-candidate directory and installed vendor files must match all five digests.
-The verifier has no permissive or discovery fallback.
+The owner-approved historical tuple is frozen directly in `verify-pins.mjs`.
+After B3.3b-1 installs a newer current runtime, the B3.3a verifier requires an
+explicit historical candidate directory matching all five digests; invoking it
+without that directory fails closed. It never treats the current installed
+runtime as B3.3a evidence and has no permissive or discovery fallback.
 
-| File | Approved SHA-256 |
+| File | Historical B3.3a SHA-256 |
 |---|---|
 | `openmls_wasm.js` | `044a7cce67730ea45964f1bfc3e54ee79f3ff6ee277029efb87d9abd57a9aa6f` |
 | `openmls_wasm.d.ts` | `c64a515a55591d8c84bfe0386b2db984d83e39f3ace7a14553d2cd7f11dc8048` |
@@ -105,12 +107,13 @@ state child before returning.
 
 ## Stage 2 commands
 
-After the approved tuple is installed and committed, verify it without a
-candidate override:
+After a later runtime is installed, verify historical B3.3a evidence only with
+an explicit approved historical candidate:
 
 ```bash
 cd styx-js
-node spikes/marmot-phase-b3-3a/verify-pins.mjs
+node spikes/marmot-phase-b3-3a/verify-pins.mjs \
+  --candidate-dir /home/mverde/.local/share/styx-b3-3a-builds/issue-185/stage1-final-a-1dc8149
 ```
 
 Each final run requires a different, nonexistent run, private and MDK build

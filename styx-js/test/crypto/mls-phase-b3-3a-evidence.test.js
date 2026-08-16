@@ -56,7 +56,7 @@ import {
   B33A_MDK_REVISION,
   B33A_MDK_TREE,
   assertApprovedArtifactTuple,
-  installedArtifactTuple,
+  verifyPins,
 } from '../../spikes/marmot-phase-b3-3a/verify-pins.mjs';
 
 const digest = (marker) => marker.repeat(64).slice(0, 64);
@@ -111,9 +111,11 @@ describe('Phase B3.3a evidence and format separation', () => {
     }
   });
 
-  test('binds both the installed runtime and candidate verifier to the approved tuple', () => {
+  test('keeps B3.3a historical and requires its artifact explicitly', () => {
     expect(Object.isFrozen(B33A_APPROVED_ARTIFACT_TUPLE)).toBe(true);
-    expect(installedArtifactTuple()).toEqual(B33A_APPROVED_ARTIFACT_TUPLE);
+    expect(() => verifyPins()).toThrow(
+      'historical B3.3a candidate directory must be supplied explicitly',
+    );
     expect(assertApprovedArtifactTuple(B33A_APPROVED_ARTIFACT_TUPLE))
       .toBe(B33A_APPROVED_ARTIFACT_TUPLE);
     expect(() => assertApprovedArtifactTuple({
