@@ -255,7 +255,11 @@ export class B33b2bEvolutionAdapter {
     }));
     await this.journal.markUnrecoverable(head.headDigestHex, reasonDigestHex);
     failB33b2b(B33B2B_ERROR.UNRECOVERABLE,
-      `${operation} made the bounded fork unrecoverable`, { reasonDigestHex });
+      `${operation} made the bounded fork unrecoverable`, {
+        causeCode: error?.code ?? null,
+        causeMessage: error instanceof Error ? error.message : `${error}`,
+        reasonDigestHex,
+      });
   }
 
   async verifyDurableAuthority() {
