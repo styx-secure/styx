@@ -559,6 +559,10 @@ export class B33b2bJournal {
     }, [copyBytes(fields.parentStateBytes)], true);
   }
 
+  async readHead() {
+    return this.#head();
+  }
+
   async recordLocalBranch(expectedHeadDigestHex, fields) {
     const head = await this.#head();
     if (head.headDigestHex !== expectedHeadDigestHex || head.state !== B33B2B_STATE.ACTIVATED) {

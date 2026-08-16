@@ -45,6 +45,11 @@ import {
   compareIdentityHex,
   failB33b2b,
 } from './b3-3b-2b-canonical.mjs';
+import {
+  B33b2bEvolutionAdapter,
+  MemoryB33b2bEffectSink,
+} from './b3-3b-2b-engine-adapter.mjs';
+import { openB33b2bFileJournal } from './b3-3b-2b-journal.mjs';
 
 const MAX_IDENTITY_ATTEMPTS = 32;
 
@@ -529,7 +534,9 @@ function releasePrepared(prepared) {
   clearBytes(prepared?.pendingState);
 }
 
-async function runScenario(candidatePath, pins, mdkBuild, desiredWinner, deliveryMode) {
+async function runScenario(
+  candidatePath, pins, mdkBuild, desiredWinner, deliveryMode, durableProof = false,
+) {
   const scenarioRoot = freshPrivateDirectory(
     B32A_PRIVATE_ROOT, `b33b2b-${desiredWinner}-${deliveryMode}-`,
   );
@@ -544,6 +551,10 @@ async function runScenario(candidatePath, pins, mdkBuild, desiredWinner, deliver
   let localBranch;
   let rivalOnStyx;
   let selected;
+  let forkAdapter;
+  let forkJournal;
+  let effectSink;
+  let journalEvidence;
   try {
     mdkSecret = accountSecret();
     const mdkIdentityHex = bytesToHex(schnorr.getPublicKey(mdkSecret));
@@ -585,15 +596,58 @@ async function runScenario(candidatePath, pins, mdkBuild, desiredWinner, deliver
     const activation = await journal.activationState();
     try { active = activate(loaded.wasm, activation); } finally { clearBytes(activation.bytes); }
 
-    local = prepareLocal(loaded.wasm, active.candidateState, active);
+    if (durableProof) {
+      const forkJournalDirectory = resolve(styxRoot, 'b33b2b-journal');
+      mkdirSync(forkJournalDirectory, { mode: 0o700 });
+      forkJournal = openB33b2bFileJournal(forkJournalDirectory, B32A_PRIVATE_ROOT);
+      effectSink = new MemoryB33b2bEffectSink();
+      forkAdapter = new B33b2bEvolutionAdapter({
+        binding: active, effectSink, journal: forkJournal, wasm: loaded.wasm,
+      });
+      const initialRoster = [keyPackage.accountIdentityHex, mdkIdentityHex].sort();
+      await forkAdapter.activate({
+        forkEpoch: activation.head.projection.epochDec,
+        groupIdDigestHex: digestFields(
+          'STYX-B33B2B-GROUP-ID-v1', creation.group_id_hex,
+        ),
+        parentGroupContextSha256Hex: active.contextSha256Hex,
+        parentStateBytes: active.candidateState,
+        rosterDigestHex: digestFields('STYX-B33B2B-ROSTER-v1', ...initialRoster),
+      });
+      const prepared = await forkAdapter.prepareLocal();
+      local = Object.freeze({ commit: prepared.commitBytes, evidence: prepared.projection });
+    } else {
+      local = prepareLocal(loaded.wasm, active.candidateState, active);
+    }
     const mdkLocal = await mdk.request('self_update');
     if (mdkLocal.source_epoch.toString() !== local.evidence.sourceEpoch) {
       failB33b2b(B33B2B_ERROR.ENGINE_REJECTED,
         'same-parent race did not begin from one epoch');
     }
-    rivalOnStyx = applyInbound(
-      loaded.wasm, active.candidateState, active, mdkLocal.group_message_hex,
-    );
+    if (durableProof) {
+      const localRecovery = await forkJournal.readRecovery();
+      try { localBranch = Uint8Array.from(localRecovery.canonicalStateBytes); }
+      finally {
+        clearBytes(localRecovery.canonicalStateBytes);
+        clearBytes(localRecovery.parentStateBytes);
+        clearBytes(localRecovery.localCommitBytes);
+      }
+      forkAdapter.close();
+      forkJournal = openB33b2bFileJournal(
+        resolve(styxRoot, 'b33b2b-journal'), B32A_PRIVATE_ROOT,
+      );
+      forkAdapter = new B33b2bEvolutionAdapter({
+        binding: active, effectSink, journal: forkJournal, wasm: loaded.wasm,
+      });
+      const rival = await forkAdapter.recordRival(
+        Uint8Array.from(Buffer.from(mdkLocal.group_message_hex, 'hex')),
+      );
+      rivalOnStyx = Object.freeze({ evidence: rival.projection });
+    } else {
+      rivalOnStyx = applyInbound(
+        loaded.wasm, active.candidateState, active, mdkLocal.group_message_hex,
+      );
+    }
     if (rivalOnStyx.evidence.sourceEpoch !== local.evidence.sourceEpoch
       || rivalOnStyx.evidence.targetEpoch !== local.evidence.targetEpoch
       || rivalOnStyx.evidence.orderingPriority !== 'ordinary'
@@ -602,7 +656,7 @@ async function runScenario(candidatePath, pins, mdkBuild, desiredWinner, deliver
         'candidate projections are not the bounded ordinary depth-one race');
     }
 
-    localBranch = confirmLocal(loaded.wasm, local, active);
+    if (!durableProof) localBranch = confirmLocal(loaded.wasm, local, active);
     const styxBranchPath = resolve(styxRoot, 'b33b2b-local-branch.bin');
     writeFileSync(styxBranchPath, localBranch, { flag: 'wx', mode: 0o600 });
     chmodSync(styxBranchPath, 0o600);
@@ -687,6 +741,62 @@ async function runScenario(candidatePath, pins, mdkBuild, desiredWinner, deliver
       'post-settlement MDK projection did not match the selected branch',
     );
 
+    if (durableProof) {
+      forkAdapter.close();
+      forkJournal = openB33b2bFileJournal(
+        resolve(styxRoot, 'b33b2b-journal'), B32A_PRIVATE_ROOT,
+      );
+      forkAdapter = new B33b2bEvolutionAdapter({
+        binding: active, effectSink, journal: forkJournal, wasm: loaded.wasm,
+      });
+      const frozen = await forkAdapter.freezeRace();
+      forkAdapter.close();
+      forkAdapter = new B33b2bEvolutionAdapter({
+        binding: active, effectSink,
+        journal: openB33b2bFileJournal(
+          resolve(styxRoot, 'b33b2b-journal'), B32A_PRIVATE_ROOT,
+        ),
+        wasm: loaded.wasm,
+      });
+      const prepared = await forkAdapter.prepareSettlement();
+      forkAdapter.close();
+      forkAdapter = new B33b2bEvolutionAdapter({
+        binding: active, effectSink,
+        journal: openB33b2bFileJournal(
+          resolve(styxRoot, 'b33b2b-journal'), B32A_PRIVATE_ROOT,
+        ),
+        wasm: loaded.wasm,
+      });
+      const stable = await forkAdapter.commitStable();
+      const delivered = await forkAdapter.deliverStableEffect();
+      const finalRecovery = await forkAdapter.journal.readRecovery();
+      try {
+        requireEqual(finalRecovery.head.canonical.groupContextSha256Hex,
+          selected.group_context_sha256,
+          'durable Styx canonical head did not match the selected MDK branch');
+        requireEqual(finalRecovery.head.selectedCommitSha256Hex,
+          expectedWinnerCandidate.evidence.commitSha256Hex,
+          'durable Styx head selected a different exact Commit');
+        journalEvidence = Object.freeze({
+          effectCount: effectSink.effects.size,
+          effectDisposition: delivered.disposition,
+          finalHeadDigestHex: finalRecovery.head.headDigestHex,
+          frozenSetDigestHex: frozen.frozenSetDigestHex,
+          preparedHeadDigestHex: prepared.headDigestHex,
+          selectedCommitSha256Hex: finalRecovery.head.selectedCommitSha256Hex,
+          stableHeadDigestHex: stable.headDigestHex,
+          state: finalRecovery.head.state,
+        });
+      } finally {
+        clearBytes(finalRecovery.canonicalStateBytes);
+        clearBytes(finalRecovery.parentStateBytes);
+        clearBytes(finalRecovery.localCommitBytes);
+        clearBytes(finalRecovery.rivalCommitBytes);
+        clearBytes(finalRecovery.successorStateBytes);
+        clearBytes(finalRecovery.settlementRecordBytes);
+      }
+    }
+
     let restoredSelected;
     if (deliveryMode === 'before_restart') {
       await mdk.close();
@@ -711,6 +821,7 @@ async function runScenario(candidatePath, pins, mdkBuild, desiredWinner, deliver
         'STYX-B33B2B-GROUP-ID-v1', creation.group_id_hex,
       ),
       initialDisposition: ingest.disposition,
+      journalEvidence,
       parentGroupContextSha256Hex: local.evidence.parentGroupContextSha256Hex,
       rosterDigest: digestFields('STYX-B33B2B-ROSTER-v1', ...sortedRoster),
       selectedGroupContextSha256Hex: selected.group_context_sha256,
@@ -719,6 +830,7 @@ async function runScenario(candidatePath, pins, mdkBuild, desiredWinner, deliver
       targetEpoch: local.evidence.targetEpoch,
     });
   } finally {
+    forkAdapter?.close();
     await mdk?.close().catch(() => {});
     clearBytes(mdkSecret);
     clearBytes(loaded?.wasmBytes);
@@ -747,6 +859,31 @@ export async function runStage0ForkProbe(candidatePath) {
       for (const deliveryMode of ['after_restart', 'before_restart']) {
         scenarios.push(await runScenario(
           candidatePath, pins, mdkBuild, desiredWinner, deliveryMode,
+        ));
+      }
+    }
+    return Object.freeze({
+      mdkRevision: pins.mdkRevision,
+      scenarios: Object.freeze(scenarios),
+    });
+  } finally {
+    rmSync(mdkBuildPath, { recursive: true, force: true });
+  }
+}
+
+export async function runDurableForkProbe(candidatePath) {
+  const pins = verifyPins(candidatePath);
+  mkdirSync(B33A_MDK_BUILD_ROOT, { recursive: true, mode: 0o700 });
+  const mdkBuildPath = resolve(
+    B33A_MDK_BUILD_ROOT, `b33b2b-durable-${process.pid}-${randomBytes(6).toString('hex')}`,
+  );
+  try {
+    const mdkBuild = buildMdkPeer(mdkBuildPath);
+    const scenarios = [];
+    for (const desiredWinner of ['styx', 'mdk']) {
+      for (const deliveryMode of ['after_restart', 'before_restart']) {
+        scenarios.push(await runScenario(
+          candidatePath, pins, mdkBuild, desiredWinner, deliveryMode, true,
         ));
       }
     }
