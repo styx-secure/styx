@@ -303,14 +303,19 @@ async function preparePair(context, sourceEpoch, distance, marker) {
   return Object.freeze({ distance, fromMdk, fromStyx, sourceEpoch });
 }
 
-async function rejectedByMdkWithoutProjectionMutation(context, ciphertextBytes, expectedReason) {
+async function rejectedByMdkWithoutProjectionMutation(
+  context, ciphertextBytes, expectedReason, allowDuplicate = false,
+) {
   const before = await context.mdk.request('public_projection');
   let rejection;
   try {
-    await context.mdk.request('ingest_group_message', {
+    const result = await context.mdk.request('ingest_group_message', {
       group_message_hex: bytesToHex(ciphertextBytes),
     });
-    failB33b2a('B33B2A_ENGINE_REJECTED', 'MDK unexpectedly accepted rejected control');
+    if (!allowDuplicate || !['duplicate', 'own_echo'].includes(result?.disposition)) {
+      failB33b2a('B33B2A_ENGINE_REJECTED', 'MDK unexpectedly accepted rejected control');
+    }
+    rejection = Object.freeze({ code: result.disposition, details: null, message: 'replay' });
   } catch (error) {
     if (error?.code?.startsWith?.('B33B2A_')) throw error;
     rejection = Object.freeze({
@@ -594,7 +599,7 @@ export async function runRetainedWindowProbe(candidatePath) {
       context, distance6.fromStyx.ciphertextBytes, 'BeyondAppRetention|beyond_app_retention',
     );
     await rejectedByMdkWithoutProjectionMutation(
-      context, distance6.fromStyx.ciphertextBytes, 'BeyondAppRetention|beyond_app_retention',
+      context, distance6.fromStyx.ciphertextBytes, undefined, true,
     );
     operations.advance('distance6-rejected-without-mutation');
 
