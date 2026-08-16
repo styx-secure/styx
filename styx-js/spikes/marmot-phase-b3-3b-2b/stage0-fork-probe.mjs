@@ -929,13 +929,8 @@ async function runScenario(
     releasePrepared(local);
     clearBytes(localBranch);
     clearBytes(rivalOnStyx?.committedState);
-    if (process.env.B33B2B_DEBUG_KEEP === '1') {
-      process.stderr.write(`B33B2B_DEBUG_ROOT=${scenarioRoot}\n`);
-      process.stderr.write(`B33B2B_DEBUG_MDK_ROOT=${mdkRoot}\n`);
-    } else {
-      rmSync(scenarioRoot, { recursive: true, force: true });
-      rmSync(mdkRoot, { recursive: true, force: true });
-    }
+    rmSync(scenarioRoot, { recursive: true, force: true });
+    rmSync(mdkRoot, { recursive: true, force: true });
   }
 }
 
