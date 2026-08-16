@@ -61,8 +61,22 @@ No agent may:
 - decide cryptography, persisted formats, migrations or vault architecture
   outside their approved technical process.
 
-Agents must not receive generic persistent GitHub credentials. Any broker or App
-must expose minimum operations and must never expose merge or approval actions.
+Agents must not receive generic persistent GitHub credentials and must never
+invoke provider merge or approval APIs directly.
+
+ForgeRelay is the mandatory human-delegation boundary for actions requested from
+the configured `maverde73` and `manexada` operators. An agent may submit a
+ForgeRelay proposal for any supported action, including approval or merge,
+because the proposal is presented to the named human operator for acceptance,
+editing or rejection; submitting the proposal does not itself satisfy the human
+gate. The authorized operator's acceptance remains the human decision.
+
+Before reporting `Blocked` for an action ForgeRelay can request, the agent MUST
+submit the exact ForgeRelay request, report its result and verify the resulting
+provider state when the request completes. A missing response, rejection or
+unchanged provider state remains fail-closed. Agents use only the documented
+ForgeRelay CLI and MUST NOT read, search, index or modify ForgeRelay source,
+configuration or credentials.
 
 ## Scope and parallel work
 
