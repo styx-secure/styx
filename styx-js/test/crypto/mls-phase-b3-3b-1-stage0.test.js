@@ -35,9 +35,10 @@ describe('Phase B3.3b-1 Stage 0 exact-pin capabilities', () => {
 
   test('candidate is exact and pinned MDK accepts the Styx self-update', async () => {
     const candidate = process.env.B33B1_CANDIDATE_DIR;
-    if (!candidate) return;
-    expect(Object.keys(candidateTuple(candidate)).sort())
-      .toEqual([...B33B1_GENERATED_FILES].sort());
+    if (candidate) {
+      expect(Object.keys(candidateTuple(candidate)).sort())
+        .toEqual([...B33B1_GENERATED_FILES].sort());
+    }
     const result = await runStage0Probe(candidate);
     expect(result).toEqual(expect.objectContaining({
       finalEpoch: '3',
