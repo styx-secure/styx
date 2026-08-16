@@ -366,6 +366,28 @@ fn sha256_hex_array_field(
     Ok(result)
 }
 
+fn require_application_witnesses(
+    actual_accepted: &[String],
+    actual_already_seen: &[String],
+    expected_accepted: &[String],
+    expected_already_seen: &[String],
+) -> Result<(), RpcError> {
+    if actual_accepted == expected_accepted && actual_already_seen == expected_already_seen {
+        return Ok(());
+    }
+    Err(RpcError {
+        code: "bounded_nogo",
+        message: "MDK_REJECTS_STYX_SELF_UPDATE".into(),
+        details: Some(json!({
+            "accepted_app_messages": actual_accepted,
+            "already_seen": actual_already_seen,
+            "expected_accepted_app_messages": expected_accepted,
+            "expected_already_seen": expected_already_seen,
+        })),
+        terminate: false,
+    })
+}
+
 fn decode_hex_field(object: &Map<String, Value>, field: &str) -> Result<Vec<u8>, RpcError> {
     let encoded = string_field(object, field)?;
     if encoded.len() > MAX_HEX_BYTES * 2 || encoded.len() % 2 != 0 {
@@ -1053,14 +1075,29 @@ fn converge_group_evolution(
         && result.queued_outbound_intents.is_empty()
         && result.publishable_outbound_messages.is_empty()
         && result.errors.is_empty();
+    let actual_already_seen = result
+        .already_seen
+        .iter()
+        .map(|entry| entry.message_id.clone())
+        .collect::<Vec<_>>();
+    if let Err(error) = require_application_witnesses(
+        &result.accepted_app_messages,
+        &actual_already_seen,
+        &expected_accepted_app_messages,
+        &expected_already_seen,
+    ) {
+        state.engine = None;
+        state.group_id = None;
+        return Err(error);
+    }
     let exact_waiting = result.convergence_status == ConvergenceStatus::Syncing
         && result.previous_tip == expected_from
         && result.selected_tip.is_none()
         && result.candidate_count == 0
         && result.eligible_count == 0
         && result.accepted_commits.is_empty()
-        && result.accepted_app_messages.is_empty()
-        && result.already_seen.is_empty()
+        && expected_accepted_app_messages.is_empty()
+        && expected_already_seen.is_empty()
         && exact_non_application_collections
         && events.is_empty();
     if exact_waiting {
@@ -1080,12 +1117,6 @@ fn converge_group_evolution(
         && result.candidate_count == 1
         && result.eligible_count == 1
         && result.accepted_commits.as_slice() == [expected_content_hex.as_str()]
-        && result.accepted_app_messages == expected_accepted_app_messages
-        && result
-            .already_seen
-            .iter()
-            .map(|entry| entry.message_id.as_str())
-            .eq(expected_already_seen.iter().map(String::as_str))
         && exact_non_application_collections;
     let exact_event = matches!(
         events.as_slice(),
@@ -1102,9 +1133,7 @@ fn converge_group_evolution(
             "accepted_app_messages": result.accepted_app_messages,
             "accepted_commits": result.accepted_commits,
             "accepted_proposals": result.accepted_proposals.len(),
-            "already_seen": result.already_seen.iter()
-                .map(|entry| entry.message_id.as_str())
-                .collect::<Vec<_>>(),
+            "already_seen": actual_already_seen,
             "candidate_count": result.candidate_count,
             "deferred_messages": result.deferred_messages.len(),
             "dropped_messages": result.dropped_messages.len(),
@@ -1130,7 +1159,9 @@ fn converge_group_evolution(
         });
     }
     Ok(json!({
+        "accepted_app_message_ids": expected_accepted_app_messages,
         "accepted_content_sha256": expected_content_hex,
+        "already_seen_message_ids": expected_already_seen,
         "candidate_count": result.candidate_count,
         "disposition": "group_evolution_settled",
         "eligible_count": result.eligible_count,
@@ -1394,6 +1425,71 @@ mod tests {
             decode_bounded_hex_field(object(&exact).unwrap(), "payload_hex", 1).unwrap(),
             vec![0]
         );
+    }
+
+    #[test]
+    fn application_witness_expectations_fail_closed_on_every_vector_mutation() {
+        let first = "11".repeat(32);
+        let second = "22".repeat(32);
+        let seen = "33".repeat(32);
+        let actual_accepted = vec![first.clone(), second.clone()];
+        let actual_seen = vec![seen.clone()];
+
+        assert!(
+            require_application_witnesses(
+                &actual_accepted,
+                &actual_seen,
+                &actual_accepted,
+                &actual_seen,
+            )
+            .is_ok()
+        );
+
+        for result in [
+            require_application_witnesses(
+                &actual_accepted,
+                &actual_seen,
+                std::slice::from_ref(&first),
+                &actual_seen,
+            ),
+            require_application_witnesses(
+                &actual_accepted,
+                &actual_seen,
+                &[first.clone(), second.clone(), "44".repeat(32)],
+                &actual_seen,
+            ),
+            require_application_witnesses(
+                &actual_accepted,
+                &actual_seen,
+                &[second.clone(), first.clone()],
+                &actual_seen,
+            ),
+            require_application_witnesses(
+                &actual_accepted,
+                &actual_seen,
+                &[first.clone(), "55".repeat(32)],
+                &actual_seen,
+            ),
+            require_application_witnesses(&actual_accepted, &actual_seen, &actual_accepted, &[]),
+            require_application_witnesses(
+                &actual_accepted,
+                &actual_seen,
+                &actual_accepted,
+                &[seen.clone(), "66".repeat(32)],
+            ),
+            require_application_witnesses(
+                &actual_accepted,
+                &actual_seen,
+                &actual_accepted,
+                &["77".repeat(32)],
+            ),
+        ] {
+            let error = result.unwrap_err();
+            assert_eq!(error.code, "bounded_nogo");
+            assert_eq!(error.message, "MDK_REJECTS_STYX_SELF_UPDATE");
+            assert!(!error.terminate);
+            assert!(error.details.is_some());
+        }
     }
 
     #[test]

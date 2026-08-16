@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { runStage1Probe }
+import { B33B1_STAGE1_OPERATION_SEQUENCE, runStage1Probe }
   from '../../spikes/marmot-phase-b3-3b-1/stage1-probe.mjs';
 
 const candidateDirectory = process.env.B33B1_CANDIDATE_DIR;
@@ -18,6 +18,7 @@ describe('Phase B3.3b-1 Stage 1 journalled sequence', () => {
       retainedTrafficAcceptedBothDirections: true,
       retainedTrafficReplayRejectedBothDirections: true,
     }));
+    expect(report.operationSequence).toEqual(B33B1_STAGE1_OPERATION_SEQUENCE);
     expect(report.applicationRecordCount).toBeGreaterThanOrEqual(4);
   }, 240_000);
 });

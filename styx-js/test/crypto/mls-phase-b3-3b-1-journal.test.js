@@ -195,6 +195,29 @@ describe('Phase B3.3b-1 durable epoch-transition journal', () => {
     [current, staged, recovery, stable].forEach(clearRecovery);
   });
 
+  test('exact inbound Commit bytes cannot stage or merge a second candidate', async () => {
+    const { journal, store, fields, current } = await activated();
+    const inbound = inboundFields(fields.stateBytes, 1, 96, fields);
+    const staged = await journal.stageInbound(current.head.headDigestHex, inbound);
+    const stagedHeadDigestHex = staged.head.headDigestHex;
+
+    await expect(journal.stageInbound(stagedHeadDigestHex, inbound)).rejects.toMatchObject({
+      code: B33B1_ERROR.CAS_CONFLICT,
+    });
+
+    const recovery = await new B33b1Journal(store).readRecovery();
+    expect(recovery).toEqual(expect.objectContaining({
+      action: B33B1_RECOVERY.RESTAGE_INBOUND,
+      commitBytes: inbound.commitBytes,
+    }));
+    expect(recovery.head).toEqual(expect.objectContaining({
+      headDigestHex: stagedHeadDigestHex,
+      transitions: [],
+    }));
+    expect(recovery.head.stagedInbound).toEqual(staged.head.stagedInbound);
+    [current, staged, recovery].forEach(clearRecovery);
+  });
+
   test('application ratchet state is durable without changing epoch authority', async () => {
     const { journal, fields, current } = await activated();
     const outboundState = bytes(200, 300);

@@ -86,6 +86,55 @@ const FRESH_PROJECTION_FIELDS = Object.freeze([
   'parentStateSha256Hex', 'sourceEpoch', 'targetEpoch', 'verifiedLeafDigestHex',
 ]);
 
+export const B33B1_STAGE1_OPERATION_SEQUENCE = Object.freeze([
+  'group-created-and-joined',
+  'b33b1-activated',
+  'epoch1-retained-traffic-prepared',
+  'mdk-self-update-prepared',
+  'mdk-self-update-recovered-after-restart',
+  'styx-inbound-staged',
+  'styx-inbound-applied-after-restart',
+  'mdk-self-update-confirmed',
+  'epoch2-projection-verified',
+  'epoch2-live-traffic',
+  'styx-self-update-prepared',
+  'styx-self-update-retried-after-restart',
+  'mdk-styx-update-buffered',
+  'mdk-restarted-from-buffered-parent',
+  'mdk-convergence-waiting',
+  'mdk-convergence-settled',
+  'peer-acceptance-durable',
+  'styx-local-merge-after-restart',
+  'epoch3-projection-verified',
+  'retained-traffic-delivered',
+  'retained-traffic-replay-rejected',
+  'final-durable-state-verified',
+]);
+
+function stage1OperationTrace() {
+  const observed = [];
+  return Object.freeze({
+    advance(name) {
+      const expected = B33B1_STAGE1_OPERATION_SEQUENCE[observed.length];
+      if (name !== expected) {
+        failB33b1(B33B1_ERROR.BLOCKED, 'Stage 1 operation sequence drifted', {
+          expected, observed: Object.freeze([...observed]), received: name,
+        });
+      }
+      observed.push(name);
+    },
+    complete() {
+      if (observed.length !== B33B1_STAGE1_OPERATION_SEQUENCE.length) {
+        failB33b1(B33B1_ERROR.BLOCKED, 'Stage 1 operation sequence is incomplete', {
+          expected: B33B1_STAGE1_OPERATION_SEQUENCE,
+          observed: Object.freeze([...observed]),
+        });
+      }
+      return Object.freeze([...observed]);
+    },
+  });
+}
+
 function requireDigest(value, label) {
   if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value)) {
     failB33b1(B33B1_ERROR.CORRUPT, `${label} is not a SHA-256 digest`);
@@ -223,6 +272,17 @@ function requireProjection(styxHead, mdkProjection, mdkCommitSha256Hex, label) {
   }
 }
 
+function requireProjectedCandidate(evidence, durableHead, mdkProjection, label) {
+  if (mdkProjection?.epoch?.toString() !== evidence.targetEpoch
+    || mdkProjection?.group_context_sha256 !== evidence.candidateGroupContextSha256Hex
+    || mdkProjection?.group_id_hex !== evidence.groupIdHex
+    || mdkRosterSha256(mdkProjection, label) !== durableHead.rosterSha256Hex) {
+    failB33b1(B33B1_ERROR.ENGINE_REJECTED, `${label} candidate projection diverged`, {
+      durableHead, evidence, mdkProjection,
+    });
+  }
+}
+
 function clearRecovery(value) {
   clearBytes(value?.stateBytes);
   clearBytes(value?.parentStateBytes);
@@ -232,6 +292,7 @@ function clearRecovery(value) {
 
 export async function runStage1Probe(candidatePath) {
   const pins = verifyPins(candidatePath);
+  const operations = stage1OperationTrace();
   const b32Root = freshDirectory(B32A_PRIVATE_ROOT, 'b33b1-stage1-b32-');
   const b33Root = freshDirectory(B33B1_PRIVATE_ROOT, 'b33b1-stage1-journal-');
   const mdkRoot = freshDirectory(B33A_PRIVATE_ROOT, 'b33b1-stage1-mdk-');
@@ -273,6 +334,7 @@ export async function runStage1Probe(candidatePath) {
     if (joined.projection.groupIdHex !== creation.group_id_hex) {
       failB33b1(B33B1_ERROR.ENGINE_REJECTED, 'peers joined different groups');
     }
+    operations.advance('group-created-and-joined');
 
     loaded = await loadCandidate(candidatePath, pins.candidateTuple);
     const b32Journal = openB32aFileJournal(resolve(b32Root, 'journal'));
@@ -284,6 +346,7 @@ export async function runStage1Probe(candidatePath) {
     try { active = await adapter.activateFromB32a(activation.head, activation.bytes); }
     finally { clearBytes(activation.bytes); }
     clearRecovery(active);
+    operations.advance('b33b1-activated');
 
     withheldMdk = await mdk.request('send_application', {
       payload_hex: bytesToHex(event(mdkIdentityHex, creation.group_id_hex, 1)),
@@ -291,8 +354,10 @@ export async function runStage1Probe(candidatePath) {
     withheldStyx = await adapter.prepareApplicationOutbound(
       event(keyPackage.accountIdentityHex, creation.group_id_hex, 2),
     );
+    operations.advance('epoch1-retained-traffic-prepared');
 
     const mdkPrepared = await mdk.request('self_update');
+    operations.advance('mdk-self-update-prepared');
     await mdk.close();
     mdk = new MdkB33aProcess(mdkBuild.executable);
     await initializeMdk(mdk, mdkFields);
@@ -304,24 +369,29 @@ export async function runStage1Probe(candidatePath) {
       failB33b1(B33B1_ERROR.ENGINE_REJECTED,
         'MDK did not recover byte-identical publication material', recoveredMdk);
     }
+    operations.advance('mdk-self-update-recovered-after-restart');
 
     await adapter.stageInbound(
       Uint8Array.from(Buffer.from(recoveredMdk.group_message_hex, 'hex')),
     );
+    operations.advance('styx-inbound-staged');
     adapter = undefined;
     const applied = recoverInFreshProcess(
       'apply-staged-inbound', candidatePath, journalDirectory,
     );
     freshProcessRecoveryCount += 1;
+    operations.advance('styx-inbound-applied-after-restart');
     journal = openB33b1FileJournal(journalDirectory);
     adapter = new B33b1EvolutionAdapter({ journal, wasm: loaded.wasm });
     await mdk.request('confirm_group_published', {
       message_id_hex: recoveredMdk.message_id_hex,
     });
+    operations.advance('mdk-self-update-confirmed');
     requireProjection(
       applied.head, await mdk.request('public_projection'), recoveredMdk.commit_sha256,
       'epoch two',
     );
+    operations.advance('epoch2-projection-verified');
 
     const liveMdk = await mdk.request('send_application', {
       payload_hex: bytesToHex(event(mdkIdentityHex, creation.group_id_hex, 3)),
@@ -341,8 +411,10 @@ export async function runStage1Probe(candidatePath) {
     }
     const liveStyxContentSha256Hex = sha256Hex(liveStyx.ciphertextBytes);
     clearBytes(liveStyx.ciphertextBytes);
+    operations.advance('epoch2-live-traffic');
 
     const styxPrepared = await adapter.prepareLocal();
+    operations.advance('styx-self-update-prepared');
     adapter = undefined;
     const retry = recoverInFreshProcess('retry-local', candidatePath, journalDirectory);
     freshProcessRecoveryCount += 1;
@@ -352,13 +424,30 @@ export async function runStage1Probe(candidatePath) {
     if (!Buffer.from(retryCommitBytes).equals(Buffer.from(styxPrepared.commitBytes))) {
       failB33b1(B33B1_ERROR.CORRUPT, 'local retry changed exact Commit bytes');
     }
+    operations.advance('styx-self-update-retried-after-restart');
     const buffered = await mdk.request('ingest_group_evolution', {
       group_message_hex: retry.commitHex,
     });
+    if (buffered?.disposition !== 'group_evolution_buffered'
+      || buffered?.epoch?.toString() !== '2'
+      || buffered?.content_sha256 !== retry.commitSha256Hex) {
+      failB33b1(B33B1_ERROR.ENGINE_REJECTED,
+        'MDK did not buffer the exact epoch-two Styx candidate', buffered);
+    }
+    operations.advance('mdk-styx-update-buffered');
     await mdk.close();
     mdk = new MdkB33aProcess(mdkBuild.executable);
     await initializeMdk(mdk, mdkFields);
-    await mdk.request('restore_group', { group_id_hex: creation.group_id_hex });
+    const restoredBufferedParent = await mdk.request('restore_group', {
+      group_id_hex: creation.group_id_hex,
+    });
+    if (restoredBufferedParent?.projection?.epoch?.toString() !== '2'
+      || restoredBufferedParent?.projection?.group_context_sha256
+        !== retry.projection.parentGroupContextSha256Hex) {
+      failB33b1(B33B1_ERROR.ENGINE_REJECTED,
+        'fresh MDK process did not restore the buffered candidate parent', restoredBufferedParent);
+    }
+    operations.advance('mdk-restarted-from-buffered-parent');
     const waiting = await mdk.request('converge_group_evolution', {
       expected_accepted_app_message_ids: [],
       expected_already_seen_message_ids: [],
@@ -367,40 +456,63 @@ export async function runStage1Probe(candidatePath) {
       expected_to_epoch: 3,
       monotonic_ms: 1_000_000,
     });
+    if (waiting?.disposition !== 'group_evolution_waiting'
+      || waiting?.from_epoch?.toString() !== '2'
+      || waiting?.candidate_count !== 0
+      || waiting?.eligible_count !== 0) {
+      failB33b1(B33B1_ERROR.ENGINE_REJECTED,
+        'MDK convergence did not enter the bounded waiting state', waiting);
+    }
+    operations.advance('mdk-convergence-waiting');
+    const expectedAcceptedAppMessageIds = Object.freeze([
+      withheldMdk.message_id_hex,
+      liveMdk.message_id_hex,
+    ].sort());
+    const expectedAlreadySeenMessageIds = Object.freeze([liveStyxContentSha256Hex]);
     const settled = await mdk.request('converge_group_evolution', {
-      expected_accepted_app_message_ids: [
-        withheldMdk.message_id_hex,
-        liveMdk.message_id_hex,
-      ].sort(),
-      expected_already_seen_message_ids: [liveStyxContentSha256Hex],
+      expected_accepted_app_message_ids: expectedAcceptedAppMessageIds,
+      expected_already_seen_message_ids: expectedAlreadySeenMessageIds,
       expected_content_sha256: retry.commitSha256Hex,
       expected_from_epoch: 2,
       expected_to_epoch: 3,
       monotonic_ms: 1_000_000_000,
     });
-    if (buffered?.disposition !== 'group_evolution_buffered'
-      || waiting?.disposition !== 'group_evolution_waiting'
-      || settled?.disposition !== 'group_evolution_settled') {
+    if (settled?.disposition !== 'group_evolution_settled'
+      || JSON.stringify(settled?.accepted_app_message_ids)
+        !== JSON.stringify(expectedAcceptedAppMessageIds)
+      || JSON.stringify(settled?.already_seen_message_ids)
+        !== JSON.stringify(expectedAlreadySeenMessageIds)) {
       failB33b1(B33B1_ERROR.ENGINE_REJECTED, 'MDK convergence lifecycle drifted', {
         buffered, waiting, settled,
       });
     }
+    operations.advance('mdk-convergence-settled');
+    const preAcceptance = await journal.readRecovery();
+    try {
+      requireProjectedCandidate(
+        retry.projection, preAcceptance.head, await mdk.request('public_projection'),
+        'pre-acceptance epoch three',
+      );
+    } finally { clearRecovery(preAcceptance); }
     await adapter.recordLocalAcceptance(retry.headDigestHex, {
       commitSha256Hex: retry.commitSha256Hex,
       peerGroupContextSha256Hex: retry.projection.candidateGroupContextSha256Hex,
       evidenceSha256Hex: sha256Hex(canonicalJsonBytes(settled)),
     });
+    operations.advance('peer-acceptance-durable');
     adapter = undefined;
     const merged = recoverInFreshProcess(
       'merge-accepted-local', candidatePath, journalDirectory,
     );
     freshProcessRecoveryCount += 1;
+    operations.advance('styx-local-merge-after-restart');
     journal = openB33b1FileJournal(journalDirectory);
     adapter = new B33b1EvolutionAdapter({ journal, wasm: loaded.wasm });
     requireProjection(
       merged.head, await mdk.request('public_projection'), settled.accepted_content_sha256,
       'epoch three',
     );
+    operations.advance('epoch3-projection-verified');
     clearBytes(styxPrepared.commitBytes);
     clearBytes(retryCommitBytes);
 
@@ -417,6 +529,7 @@ export async function runStage1Probe(candidatePath) {
     if (delayedFromStyx?.disposition !== 'application_message_processed') {
       failB33b1(B33B1_ERROR.ENGINE_REJECTED, 'MDK did not authenticate retained Styx traffic');
     }
+    operations.advance('retained-traffic-delivered');
     const styxReplay = await adapter.receiveApplication(
       Uint8Array.from(Buffer.from(withheldMdk.group_message_hex, 'hex')),
     );
@@ -428,12 +541,15 @@ export async function runStage1Probe(candidatePath) {
       failB33b1(B33B1_ERROR.ENGINE_REJECTED, 'retained traffic replay was not rejected');
     }
     clearBytes(delayedFromMdk.plaintextBytes);
+    operations.advance('retained-traffic-replay-rejected');
 
     const final = await journal.readRecovery();
     try {
       if (final.action !== B33B1_RECOVERY.STABLE || final.head.epochDec !== '3') {
         failB33b1(B33B1_ERROR.CORRUPT, 'final durable authority is not epoch three');
       }
+      operations.advance('final-durable-state-verified');
+      const operationSequence = operations.complete();
       return Object.freeze({
         candidateTuple: pins.candidateTuple,
         groupIdHex: creation.group_id_hex,
@@ -442,6 +558,7 @@ export async function runStage1Probe(candidatePath) {
         transitionCount: final.head.transitions.length,
         applicationRecordCount: final.head.applicationRecords.length,
         freshProcessRecoveryCount,
+        operationSequence,
         mdkPreparedCommitRecoveredExactly: true,
         styxLocalCommitRetriedExactly: true,
         retainedTrafficAcceptedBothDirections: true,

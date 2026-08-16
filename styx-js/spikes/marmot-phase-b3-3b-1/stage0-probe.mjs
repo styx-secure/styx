@@ -292,6 +292,7 @@ export async function runStage0Probe(candidatePath) {
   let active;
   let first;
   let local;
+  let competingLocal;
   let finalState;
   try {
     const mdkBuild = buildMdkPeer(mdkBuildPath);
@@ -346,6 +347,30 @@ export async function runStage0Probe(candidatePath) {
     requireMdkRoster(afterMdk, expectedRoster, 'post-MDK-update state');
 
     local = prepareLocal(loaded.wasm, first.committedState, active);
+    try {
+      competingLocal = prepareLocal(loaded.wasm, first.committedState, active);
+    } catch (error) {
+      failB33b1(B33B1_ERROR.DUAL_CANDIDATE_STAGING_INSUFFICIENT,
+        'candidate WASM could not stage two self-updates from the same durable parent', {
+          cause: error instanceof Error ? error.message : `${error}`,
+        });
+    }
+    if (local.evidence.sourceEpoch !== competingLocal.evidence.sourceEpoch
+      || local.evidence.targetEpoch !== competingLocal.evidence.targetEpoch
+      || local.evidence.orderingPriority !== competingLocal.evidence.orderingPriority
+      || local.evidence.orderingPriority !== 'ordinary'
+      || local.evidence.committerAccountHex !== competingLocal.evidence.committerAccountHex
+      || !/^[0-9a-f]{64}$/.test(local.evidence.committerAccountHex)
+      || local.evidence.groupIdHex !== competingLocal.evidence.groupIdHex
+      || !/^[0-9a-f]{64}$/.test(local.evidence.commitSha256Hex)
+      || !/^[0-9a-f]{64}$/.test(competingLocal.evidence.commitSha256Hex)
+      || local.evidence.commitSha256Hex === competingLocal.evidence.commitSha256Hex) {
+      failB33b1(B33B1_ERROR.DUAL_CANDIDATE_STAGING_INSUFFICIENT,
+        'same-parent candidate ordering inputs were absent, invalid, or indistinguishable', {
+          first: local.evidence,
+          second: competingLocal.evidence,
+        });
+    }
     let buffered;
     try {
       buffered = await mdk.request('ingest_group_evolution', {
@@ -413,10 +438,24 @@ export async function runStage0Probe(candidatePath) {
       || settled?.accepted_content_sha256 !== local.evidence.commitSha256Hex
       || settled?.from_epoch?.toString() !== local.evidence.sourceEpoch
       || settled?.to_epoch?.toString() !== local.evidence.targetEpoch
-      || settled?.group_id_hex !== creation.group_id_hex) {
+      || settled?.group_id_hex !== creation.group_id_hex
+      || !Array.isArray(settled?.accepted_app_message_ids)
+      || settled.accepted_app_message_ids.length !== 0
+      || !Array.isArray(settled?.already_seen_message_ids)
+      || settled.already_seen_message_ids.length !== 0) {
       failB33b1(B33B1_ERROR.MDK_REJECTS_STYX_SELF_UPDATE,
         'pinned MDK did not select exactly the buffered Styx self-update', settled);
     }
+
+    const beforeStyx = await mdk.request('public_projection');
+    if (beforeStyx.epoch.toString() !== local.evidence.targetEpoch
+      || beforeStyx.group_context_sha256 !== local.evidence.candidateGroupContextSha256Hex
+      || beforeStyx.group_id_hex !== local.evidence.groupIdHex
+      || settled.accepted_content_sha256 !== local.evidence.commitSha256Hex) {
+      failB33b1(B33B1_ERROR.MDK_REJECTS_STYX_SELF_UPDATE,
+        'MDK projection diverged before local confirmation', { beforeStyx, settled });
+    }
+    requireMdkRoster(beforeStyx, expectedRoster, 'pre-confirmation Styx-update state');
 
     finalState = confirmLocal(loaded.wasm, local, active);
     const afterStyx = await mdk.request('public_projection');
@@ -470,6 +509,12 @@ export async function runStage0Probe(candidatePath) {
     clearBytes(local?.parentDigest);
     clearBytes(local?.pendingDigest);
     clearBytes(local?.pendingState);
+    clearBytes(competingLocal?.authorityDigest);
+    clearBytes(competingLocal?.commit);
+    clearBytes(competingLocal?.commitDigest);
+    clearBytes(competingLocal?.parentDigest);
+    clearBytes(competingLocal?.pendingDigest);
+    clearBytes(competingLocal?.pendingState);
     clearBytes(finalState);
     rmSync(styxRoot, { recursive: true, force: true });
     rmSync(mdkRoot, { recursive: true, force: true });

@@ -6481,6 +6481,20 @@ fn phase_b33b1_projection_payload(
 }
 
 #[cfg(feature = "extensions-draft")]
+const PHASE_B33B1_NON_ROSTER_COMMITTER: &str = "PHASE_B33B1_NON_ROSTER_COMMITTER";
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b33b1_roster_committer(
+    members: &[PhaseB32aMember],
+    committer_leaf_index: u32,
+) -> Result<&PhaseB32aMember, &'static str> {
+    members
+        .iter()
+        .find(|member| member.member.leaf_index == committer_leaf_index)
+        .ok_or(PHASE_B33B1_NON_ROSTER_COMMITTER)
+}
+
+#[cfg(feature = "extensions-draft")]
 fn phase_b33b1_project_commit(
     provider: &PhaseB32aPrivateProvider,
     identity: &PhaseB2Identity,
@@ -6511,10 +6525,8 @@ fn phase_b33b1_project_commit(
     let update_leaf = staged
         .update_path_leaf_node()
         .ok_or_else(|| JsError::new("PHASE_B33B1_UPDATE_PATH_REQUIRED"))?;
-    let committer = parent_members
-        .iter()
-        .find(|member| member.member.leaf_index == committer_leaf_index)
-        .ok_or_else(|| JsError::new("PHASE_B33B1_NON_ROSTER_COMMITTER"))?;
+    let committer = phase_b33b1_roster_committer(&parent_members, committer_leaf_index)
+        .map_err(JsError::new)?;
     let projected_update = phase_b32a_project_leaf(crypto, update_leaf, committer_leaf_index)?;
     if projected_update != *committer {
         return Err(JsError::new("STYX_SELF_UPDATE_LEAF_NOT_CONFORMANT"));
@@ -6526,10 +6538,11 @@ fn phase_b33b1_project_commit(
     if candidate_members != parent_members {
         return Err(JsError::new("STYX_SELF_UPDATE_LEAF_NOT_CONFORMANT"));
     }
-    let candidate_committer = candidate_members
-        .iter()
-        .find(|member| member.member.leaf_index == committer_leaf_index)
-        .ok_or_else(|| JsError::new("PHASE_B33B1_NON_ROSTER_COMMITTER"))?;
+    let candidate_committer = phase_b33b1_roster_committer(
+        &candidate_members,
+        committer_leaf_index,
+    )
+    .map_err(JsError::new)?;
     if candidate_committer != committer {
         return Err(JsError::new("STYX_SELF_UPDATE_LEAF_NOT_CONFORMANT"));
     }
@@ -10487,6 +10500,41 @@ mod tests {
         assert_eq!(first.committer_account(), fixture.founder_identity);
         assert_ne!(first.commit_sha256(), second.commit_sha256());
         assert_ne!(first.authority_sha256(), second.authority_sha256());
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b33b1_projection_guard_rejects_non_roster_committer_in_isolation() {
+        // Guard-in-isolation seam: production rejects non-members in process_message first.
+        // This proves the later projection boundary independently remains fail-closed.
+        let fixture = phase_b33a_native_fixture(b"phase-b33b1-non-roster", 0xa9, 0xaa);
+        let joiner_parent = phase_b33b1_activate(
+            &fixture.joiner_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        );
+        let mut joiner = PhaseB33b1Group::load_clean_canonical_state(
+            &joiner_parent,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .unwrap();
+        let (provider, parent, _) = joiner.take_operation_parts().unwrap();
+        let (members, _, _) = phase_b33b1_group_state(
+            provider.provider.as_ref().crypto(),
+            &parent,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let error = match phase_b33b1_roster_committer(&members, u32::MAX) {
+            Err(error) => error,
+            Ok(_) => panic!("non-roster committer unexpectedly resolved"),
+        };
+        assert_eq!(error, PHASE_B33B1_NON_ROSTER_COMMITTER);
     }
 
     #[cfg(feature = "extensions-draft")]
