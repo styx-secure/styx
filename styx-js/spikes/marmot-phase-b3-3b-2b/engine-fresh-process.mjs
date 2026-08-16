@@ -96,6 +96,7 @@ try {
 } catch (error) {
   process.stderr.write(`${JSON.stringify({
     code: error?.code ?? null,
+    details: error?.details ?? null,
     message: error instanceof Error ? error.message : `${error}`,
   })}\n`);
   process.exitCode = 1;
