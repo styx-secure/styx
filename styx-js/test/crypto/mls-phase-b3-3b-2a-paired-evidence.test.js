@@ -27,7 +27,7 @@ function report(marker) {
     finalGroupContextSha256Hex: digest(`${marker}a`),
     finalRosterSha256Hex: digest(`${marker}b`),
     freshProcessRecoveryCount: 9,
-    freshStyxReceiverCount: 7,
+    freshStyxReceiverCount: 8,
     futureEpochRejectedWithoutMutation: true,
     groupIdHex: marker.repeat(32).slice(0, 32),
     mdkBuildEvidence: {

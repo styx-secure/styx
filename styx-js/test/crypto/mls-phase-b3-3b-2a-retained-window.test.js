@@ -33,7 +33,7 @@ describe('Phase B3.3b-2a exact retained application window', () => {
       alternateUpdateAuthors: true,
       finalEpoch: '7',
       freshProcessRecoveryCount: 9,
-      freshStyxReceiverCount: 7,
+      freshStyxReceiverCount: 8,
       rejectedDistance: 6,
       retainedDistances: [4, 5],
       retentionPolicy: 5,

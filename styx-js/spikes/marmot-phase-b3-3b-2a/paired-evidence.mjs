@@ -54,7 +54,7 @@ export function validateRetainedWindowRun(report, label = 'run') {
     || report.transitionCount !== 6
     || report.applicationRecordCount < 5
     || report.freshProcessRecoveryCount !== 9
-    || report.freshStyxReceiverCount !== 7
+    || report.freshStyxReceiverCount !== 8
     || report.retentionPolicy !== B33B2A_RETENTION_POLICY
     || report.rejectedDistance !== B33B2A_REJECTED_DISTANCE
     || !sameJson(report.retainedDistances, B33B2A_RETAINED_DISTANCES)

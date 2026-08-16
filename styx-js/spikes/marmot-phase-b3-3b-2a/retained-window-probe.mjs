@@ -4,7 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
-  chmodSync, cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync,
+  chmodSync, copyFileSync, cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync,
 } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -331,6 +331,25 @@ async function rejectedByMdkWithoutProjectionMutation(context, ciphertextBytes, 
   return rejection;
 }
 
+async function forgedMetadataRejectedByMdk(context, ciphertextBytes) {
+  const before = await context.mdk.request('public_projection');
+  let rejected = false;
+  try {
+    await context.mdk.request('ingest_group_message', {
+      group_message_hex: bytesToHex(ciphertextBytes),
+      message_epoch: 999,
+      sender_leaf_index: 999,
+      disposition: 'application_message_processed',
+    });
+  } catch (error) {
+    rejected = error?.code === 'invalid_request';
+  }
+  const after = await context.mdk.request('public_projection');
+  if (!rejected || !sameJson(before, after)) {
+    failB33b2a('B33B2A_CORRUPT', 'MDK accepted caller-forged application metadata');
+  }
+}
+
 function requireFreshStyxRejection(result, label) {
   if (result.accepted !== false || !sameJson(result.before, result.after)) {
     failB33b2a('B33B2A_CORRUPT', `${label} mutated or accepted in fresh Styx receiver`, result);
@@ -368,6 +387,7 @@ export async function runRetainedWindowProbe(candidatePath) {
     mdkFields: undefined,
   };
   let mdkSecret;
+  let futureFromStyx;
   const retained = new Map();
   try {
     const mdkBuild = buildMdkPeer(mdkBuildPath);
@@ -420,6 +440,13 @@ export async function runRetainedWindowProbe(candidatePath) {
     operations.advance('epoch1-distance6-prepared');
     const futureSnapshot = resolve(futureRoot, 'journal');
     cpSync(context.journalDirectory, futureSnapshot, { recursive: true, errorOnExist: true });
+    const futureDatabasePath = resolve(mdkRoot, 'future-account.sqlite3');
+    await context.mdk.close();
+    context.mdk = undefined;
+    copyFileSync(databasePath, futureDatabasePath);
+    context.mdk = new MdkB33aProcess(context.mdkExecutable);
+    await initializeMdk(context.mdk, context.mdkFields);
+    await context.mdk.request('restore_group', { group_id_hex: context.groupIdHex });
 
     await applyMdkUpdate(context, 1);
     operations.advance('epoch2-mdk-update-applied');
@@ -433,6 +460,29 @@ export async function runRetainedWindowProbe(candidatePath) {
       { currentEpoch: '2', messageEpoch: '2', source: 'caller-forged' },
     );
     requireFreshStyxRejection(futureResult, 'future-epoch control');
+    futureFromStyx = await context.adapter.prepareApplicationOutbound(
+      event(context.styxIdentityHex, context.groupIdHex, 21),
+    );
+    let futureMdk = new MdkB33aProcess(context.mdkExecutable);
+    const futureMdkFields = { ...context.mdkFields, databasePath: futureDatabasePath };
+    await initializeMdk(futureMdk, futureMdkFields);
+    await futureMdk.request('restore_group', { group_id_hex: context.groupIdHex });
+    const futureMdkBefore = await futureMdk.request('public_projection');
+    let futureMdkRejected = false;
+    try {
+      await futureMdk.request('ingest_group_message', {
+        group_message_hex: bytesToHex(futureFromStyx.ciphertextBytes),
+      });
+    } catch { futureMdkRejected = true; }
+    await futureMdk.close().catch(() => {});
+    futureMdk = new MdkB33aProcess(context.mdkExecutable);
+    await initializeMdk(futureMdk, futureMdkFields);
+    await futureMdk.request('restore_group', { group_id_hex: context.groupIdHex });
+    const futureMdkAfter = await futureMdk.request('public_projection');
+    await futureMdk.close();
+    if (!futureMdkRejected || !sameJson(futureMdkBefore, futureMdkAfter)) {
+      failB33b2a('B33B2A_CORRUPT', 'future-epoch MDK control mutated or was accepted');
+    }
     operations.advance('future-epoch-control-rejected');
 
     retained.set(5, await preparePair(context, 2, 5, 30));
@@ -454,6 +504,7 @@ export async function runRetainedWindowProbe(candidatePath) {
     operations.advance('receivers-restarted');
 
     const distance4 = retained.get(4);
+    await forgedMetadataRejectedByMdk(context, distance4.fromStyx.ciphertextBytes);
     const corruptFromMdk = mutate(Buffer.from(distance4.fromMdk.group_message_hex, 'hex'));
     const corruptStyxResult = receiveInFreshStyx(
       candidatePath, context.journalDirectory, corruptFromMdk,
@@ -491,6 +542,7 @@ export async function runRetainedWindowProbe(candidatePath) {
     operations.advance('distance4-delivered-exactly-once');
 
     const distance5 = retained.get(5);
+    await restartMdk(context);
     const distance5Styx = receiveInFreshStyx(
       candidatePath, context.journalDirectory,
       Uint8Array.from(Buffer.from(distance5.fromMdk.group_message_hex, 'hex')),
@@ -515,17 +567,27 @@ export async function runRetainedWindowProbe(candidatePath) {
     operations.advance('distance5-delivered-exactly-once');
 
     const distance6 = retained.get(6);
+    await restartMdk(context);
     const styxBeforeDistance6 = await readStyxCheckpoint(context.journalDirectory);
     const distance6Styx = receiveInFreshStyx(
       candidatePath, context.journalDirectory,
       Uint8Array.from(Buffer.from(distance6.fromMdk.group_message_hex, 'hex')), {},
     );
     requireFreshStyxRejection(distance6Styx, 'distance-6 Styx control');
+    const distance6StyxReplay = receiveInFreshStyx(
+      candidatePath, context.journalDirectory,
+      Uint8Array.from(Buffer.from(distance6.fromMdk.group_message_hex, 'hex')),
+      { disposition: 'application_message_processed' },
+    );
+    requireFreshStyxRejection(distance6StyxReplay, 'distance-6 Styx replay control');
     const styxAfterDistance6 = await readStyxCheckpoint(context.journalDirectory);
     if (!sameJson(styxBeforeDistance6, styxAfterDistance6)) {
       failB33b2a('B33B2A_CORRUPT', 'Styx durable authority changed after distance-6 rejection');
     }
     const mdkDistance6Rejection = await rejectedByMdkWithoutProjectionMutation(
+      context, distance6.fromStyx.ciphertextBytes, 'BeyondAppRetention|beyond_app_retention',
+    );
+    await rejectedByMdkWithoutProjectionMutation(
       context, distance6.fromStyx.ciphertextBytes, 'BeyondAppRetention|beyond_app_retention',
     );
     operations.advance('distance6-rejected-without-mutation');
@@ -548,7 +610,7 @@ export async function runRetainedWindowProbe(candidatePath) {
         finalGroupContextSha256Hex: finalRecovery.head.groupContextSha256Hex,
         finalRosterSha256Hex: finalRecovery.head.rosterSha256Hex,
         freshProcessRecoveryCount: context.freshProcessRecoveryCount,
-        freshStyxReceiverCount: 7,
+        freshStyxReceiverCount: 8,
         mdkBuildEvidence: mdkBuild.evidence,
         mdkDistance6Reason: mdkDistance6Rejection.details,
         operationSequence: operations.complete(),
@@ -574,6 +636,7 @@ export async function runRetainedWindowProbe(candidatePath) {
     await context.mdk?.close().catch(() => {});
     clearBytes(mdkSecret);
     clearBytes(context.loaded?.wasmBytes);
+    clearBytes(futureFromStyx?.ciphertextBytes);
     for (const value of retained.values()) clearBytes(value.fromStyx.ciphertextBytes);
     rmSync(b32Root, { recursive: true, force: true });
     rmSync(b33Root, { recursive: true, force: true });
