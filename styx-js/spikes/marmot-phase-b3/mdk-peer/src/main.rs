@@ -548,6 +548,22 @@ async fn ingest_fork_evolution(
                 json!(format!("{category:?}").to_ascii_lowercase()),
             );
         }
+        IngestOutcome::Stale { reason } => {
+            if !events.is_empty() {
+                state.engine = None;
+                state.group_id = None;
+                return Err(RpcError::fatal_peer(
+                    "stale fork ingest released application-visible events",
+                ));
+            }
+            object.insert("disposition".into(), json!("stale"));
+            object.insert(
+                "reason".into(),
+                serde_json::to_value(reason).map_err(|error| {
+                    RpcError::peer(format!("serialize stale fork reason: {error}"))
+                })?,
+            );
+        }
         other => {
             if !events.is_empty() {
                 state.engine = None;
