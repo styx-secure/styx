@@ -36,7 +36,6 @@ const GENERATED_FILES = Object.freeze([
 ]);
 const directory = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(directory, '..', '..', '..');
-const installedArtifactDirectory = resolve(repoRoot, 'styx-js/vendor/openmls-wasm');
 const mdkRoot = '/home/mverde/.local/share/styx-upstreams/mdk-9396adb6';
 const EXACT_ALLOWED_PATHS = new Set([
   'styx-js/vendor/openmls-wasm/patch/lib.rs',
@@ -55,6 +54,14 @@ const EXACT_ALLOWED_PATHS = new Set([
   'styx-js/test/crypto/kdf-wasm.test.js',
   'styx-js/test/storage/mls-state-envelope.test.js',
   'docs/architecture/spikes/2026-08-15-marmot-openmls-phase-b3-3a.md',
+]);
+const B33B1_STAGE2_ALLOWED_PATHS = new Set([
+  'styx-js/spikes/marmot-phase-b3-3a/verify-pins.mjs',
+  'styx-js/spikes/marmot-phase-b3-3a/README.md',
+  'styx-js/test/crypto/mls-phase-b3-3a-evidence.test.js',
+  'styx-js/test/crypto/mls-phase-b2-surface.test.js',
+  'styx-js/test/crypto/kdf-wasm.test.js',
+  'styx-js/test/storage/mls-state-envelope.test.js',
 ]);
 
 function git(cwd, ...args) {
@@ -86,8 +93,9 @@ function strictBuildChild(path) {
 }
 
 function allowedPath(path) {
-  return EXACT_ALLOWED_PATHS.has(path)
+  return EXACT_ALLOWED_PATHS.has(path) || B33B1_STAGE2_ALLOWED_PATHS.has(path)
     || path.startsWith('styx-js/spikes/marmot-phase-b3-3a/')
+    || path.startsWith('styx-js/spikes/marmot-phase-b3-3b-1/')
     || /^styx-js\/test\/crypto\/mls-phase-b3-3a-.*\.test\.js$/.test(path)
     || /^styx-js\/test\/crypto\/mls-phase-b3-2a-.*\.test\.js$/.test(path);
 }
@@ -138,18 +146,11 @@ export function assertApprovedArtifactTuple(tuple, label = 'artifact') {
   return tuple;
 }
 
-export function installedArtifactTuple() {
-  return assertApprovedArtifactTuple(Object.freeze(Object.fromEntries(
-    GENERATED_FILES.map((name) => [
-      name,
-      readExactRegularFile(
-        resolve(installedArtifactDirectory, name), B33A_APPROVED_ARTIFACT_TUPLE[name],
-      ).sha256Hex,
-    ])),
-  ), 'installed artifact');
-}
-
 export function verifyPins(candidatePath) {
+  if (candidatePath === undefined) {
+    failB33a(B33A_ERROR.INVALID,
+      'historical B3.3a candidate directory must be supplied explicitly');
+  }
   requireEqual(git(repoRoot, 'rev-parse', `${B33A_BASE_SHA}^{tree}`),
     B33A_BASE_TREE, 'B3.3a base tree');
   execFileSync('git', ['merge-base', '--is-ancestor', B33A_BASE_SHA, 'HEAD'], { cwd: repoRoot });
@@ -163,10 +164,7 @@ export function verifyPins(candidatePath) {
   requireEqual(sha256(resolve(repoRoot, 'styx-js/vendor/openmls-wasm/Cargo.lock')),
     B33A_VENDOR_LOCK_SHA256, 'vendored Cargo.lock');
   const changedPaths = verifyCommittedScope();
-  const installedTuple = installedArtifactTuple();
-  const exactCandidateTuple = candidatePath === undefined
-    ? installedTuple
-    : candidateTuple(candidatePath);
+  const exactCandidateTuple = candidateTuple(candidatePath);
   return Object.freeze({
     baseSha: B33A_BASE_SHA,
     baseTree: B33A_BASE_TREE,
@@ -185,9 +183,8 @@ export function verifyPins(candidatePath) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 2
-    && (process.argv.length !== 4 || process.argv[2] !== '--candidate-dir')) {
-    throw new Error('usage: verify-pins.mjs [--candidate-dir PATH]');
+  if (process.argv.length !== 4 || process.argv[2] !== '--candidate-dir') {
+    throw new Error('usage: verify-pins.mjs --candidate-dir HISTORICAL_PATH');
   }
   process.stdout.write(`${JSON.stringify(verifyPins(process.argv[3]))}\n`);
 }

@@ -58,6 +58,7 @@ lowercase hexadecimal and remain subject to the peer's fixed line/field bounds.
 | `confirm_group_published` | `message_id_hex` | Apply the exact registered group evolution through `confirm_published` and require one matching epoch transition. |
 | `fail_group_publication` | `message_id_hex` | Roll back the exact registered group evolution through `publish_failed`; this is not valid after ambiguous or successful publication. |
 | `ingest_group_evolution` | `group_message_hex` | Ingest an exact peer Commit and accept only one matching epoch transition, or an explicit duplicate/own-echo disposition. |
+| `converge_group_evolution` | `expected_accepted_app_message_ids`, `expected_already_seen_message_ids`, `expected_content_sha256`, `expected_from_epoch`, `expected_to_epoch`, `monotonic_ms` | Run pinned MDK single-candidate convergence and return only exact transition and predeclared message-witness evidence; every mismatch quarantines the peer. |
 | `checkpoint_and_exit` | none | Drop the process after all preceding synchronous durable operations complete. |
 | `destroy` | none | Drop the in-process engine and group selection; private-file removal remains orchestrator-owned. |
 

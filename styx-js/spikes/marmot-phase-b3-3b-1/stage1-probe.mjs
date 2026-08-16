@@ -25,7 +25,7 @@ import {
 } from './b3-3b-1-canonical.mjs';
 import { B33b1EvolutionAdapter } from './b3-3b-1-engine-adapter.mjs';
 import { openB33b1FileJournal } from './b3-3b-1-journal.mjs';
-import { strictCandidateDirectory, verifyPins } from './verify-pins.mjs';
+import { artifactDirectory, verifyPins } from './verify-pins.mjs';
 
 function accountSecret() {
   for (;;) {
@@ -48,7 +48,7 @@ function freshDirectory(root, prefix) {
 }
 
 export async function loadCandidate(candidatePath, tuple) {
-  const directory = strictCandidateDirectory(candidatePath);
+  const directory = artifactDirectory(candidatePath);
   const wasmRead = readExactRegularFile(
     resolve(directory, 'openmls_wasm_bg.wasm'), tuple['openmls_wasm_bg.wasm'],
   );
@@ -180,8 +180,9 @@ function parseFreshProcessResult(action, value) {
 }
 
 function recoverInFreshProcess(action, candidatePath, journalDirectory) {
+  const artifactSelector = candidatePath === undefined ? '--installed' : candidatePath;
   const result = spawnSync(process.execPath, [
-    FRESH_PROCESS_WORKER, action, candidatePath, journalDirectory,
+    FRESH_PROCESS_WORKER, action, artifactSelector, journalDirectory,
   ], {
     encoding: 'utf8',
     maxBuffer: 16 * 1024 * 1024,

@@ -28,10 +28,40 @@ export const B33B1_MDK_LOCK_SHA256 =
   'edb8c706e12934b8d94239203f73d24a2d480033c3ec6830f19d06c85a247b09';
 export const B33B1_VENDOR_LOCK_SHA256 =
   '33964e33f6a48e8b9982c5894c4a7e9ddc5ee2e5157c763596393a08c607672b';
+export const B33B1_APPROVED_SOURCE_SHA =
+  'f7a7cb7b08e1f9a86652e2d5a2230c8aadc46f30';
+export const B33B1_APPROVED_SOURCE_TREE =
+  'd59f8192b8b97d94215266b93e9bc4f72c3a4380';
+export const B33B1_APPROVED_ARTIFACT_TUPLE = Object.freeze({
+  'openmls_wasm.js': '3de8fd46e4897aae117ee7b10ac41dffd02b507952c4024b0fe69d89fbb0c973',
+  'openmls_wasm.d.ts': '057974ec53e3588da3dbf159f183b3e3ddb4a3b0a57d5391194f124a483ede86',
+  'openmls_wasm_bg.wasm': 'fef05368f143de044274f8804d2ba195a1f886bc528651e98bd9c393fde4650e',
+  'openmls_wasm_bg.wasm.d.ts': 'c21ace2360b264437541025e4703bcb38b53010793829d1904cb85b3d2aa238a',
+  'package.json': '88f2ec1e2a5c1904b0fc1d147221c32ba6dcbf1cb4441c53b04a1b2a03bd1d85',
+});
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(directory, '..', '..', '..');
+export const B33B1_INSTALLED_ARTIFACT_DIRECTORY =
+  resolve(repoRoot, 'styx-js/vendor/openmls-wasm');
 const mdkRoot = '/home/mverde/.local/share/styx-reviews/upstreams/mdk-9396adb6';
+const STAGE2_ALLOWED_PATHS = new Set([
+  'styx-js/vendor/openmls-wasm/openmls_wasm.js',
+  'styx-js/vendor/openmls-wasm/openmls_wasm.d.ts',
+  'styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm',
+  'styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm.d.ts',
+  'styx-js/vendor/openmls-wasm/package.json',
+  'styx-js/vendor/openmls-wasm/README.md',
+  'styx-js/vendor/openmls-wasm/PROVENANCE.md',
+  'styx-js/src/crypto/mls/mls-build-info.js',
+  'styx-js/spikes/marmot-phase-b3-3a/verify-pins.mjs',
+  'styx-js/spikes/marmot-phase-b3-3a/README.md',
+  'styx-js/test/crypto/mls-phase-b2-surface.test.js',
+  'styx-js/test/crypto/mls-phase-b3-2a-welcome.test.js',
+  'styx-js/test/crypto/mls-phase-b3-3a-evidence.test.js',
+  'styx-js/test/crypto/kdf-wasm.test.js',
+  'styx-js/test/storage/mls-state-envelope.test.js',
+]);
 
 function git(cwd, ...args) {
   return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
@@ -69,13 +99,48 @@ export function strictCandidateDirectory(path) {
 
 export function candidateTuple(path) {
   const candidate = strictCandidateDirectory(path);
-  return Object.freeze(Object.fromEntries(B33B1_GENERATED_FILES.map((name) => [
-    name, sha256(resolve(candidate, name)),
-  ])));
+  return assertApprovedArtifactTuple(Object.freeze(Object.fromEntries(
+    B33B1_GENERATED_FILES.map((name) => [
+      name, sha256(resolve(candidate, name)),
+    ])),
+  ), 'candidate');
+}
+
+export function artifactDirectory(candidatePath) {
+  return candidatePath === undefined
+    ? B33B1_INSTALLED_ARTIFACT_DIRECTORY
+    : strictCandidateDirectory(candidatePath);
+}
+
+export function assertApprovedArtifactTuple(tuple, label = 'artifact') {
+  const names = Object.keys(tuple ?? {}).sort();
+  const expectedNames = [...B33B1_GENERATED_FILES].sort();
+  if (names.length !== expectedNames.length
+    || names.some((name, index) => name !== expectedNames[index])) {
+    failB33b1(B33B1_ERROR.INVALID,
+      `${label} tuple does not contain the exact approved files`);
+  }
+  for (const name of B33B1_GENERATED_FILES) {
+    requireEqual(tuple[name], B33B1_APPROVED_ARTIFACT_TUPLE[name], `${label} ${name}`);
+  }
+  return tuple;
+}
+
+export function installedArtifactTuple() {
+  return assertApprovedArtifactTuple(Object.freeze(Object.fromEntries(
+    B33B1_GENERATED_FILES.map((name) => [
+      name,
+      readExactRegularFile(
+        resolve(B33B1_INSTALLED_ARTIFACT_DIRECTORY, name),
+        B33B1_APPROVED_ARTIFACT_TUPLE[name],
+      ).sha256Hex,
+    ])),
+  ), 'installed artifact');
 }
 
 function allowedPath(path) {
-  return path === 'styx-js/vendor/openmls-wasm/patch/lib.rs'
+  return STAGE2_ALLOWED_PATHS.has(path)
+    || path === 'styx-js/vendor/openmls-wasm/patch/lib.rs'
     || path === 'styx-js/spikes/marmot-phase-b3/mdk-peer/src/main.rs'
     || path === 'styx-js/spikes/marmot-phase-b3/README.md'
     || path.startsWith('styx-js/spikes/marmot-phase-b3-3b-1/')
@@ -95,6 +160,10 @@ function verifyCommittedScope() {
 }
 
 export function verifyPins(candidatePath) {
+  requireEqual(git(repoRoot, 'rev-parse', `${B33B1_APPROVED_SOURCE_SHA}^{tree}`),
+    B33B1_APPROVED_SOURCE_TREE, 'approved artifact source tree');
+  execFileSync('git', ['merge-base', '--is-ancestor', B33B1_APPROVED_SOURCE_SHA, 'HEAD'],
+    { cwd: repoRoot });
   requireEqual(git(repoRoot, 'rev-parse', `${B33B1_BASE_SHA}^{tree}`),
     B33B1_BASE_TREE, 'B3.3b-1 base tree');
   execFileSync('git', ['merge-base', '--is-ancestor', B33B1_BASE_SHA, 'HEAD'],
@@ -109,9 +178,12 @@ export function verifyPins(candidatePath) {
   requireEqual(sha256(resolve(repoRoot, 'styx-js/vendor/openmls-wasm/Cargo.lock')),
     B33B1_VENDOR_LOCK_SHA256, 'vendored Cargo.lock');
   return Object.freeze({
+    artifactSourceCommit: B33B1_APPROVED_SOURCE_SHA,
+    artifactSourceTree: B33B1_APPROVED_SOURCE_TREE,
     baseSha: B33B1_BASE_SHA,
     baseTree: B33B1_BASE_TREE,
-    candidateTuple: candidateTuple(candidatePath),
+    candidateTuple: candidatePath === undefined
+      ? installedArtifactTuple() : candidateTuple(candidatePath),
     changedPaths: verifyCommittedScope(),
     marmotRevision: B33B1_MARMOT_REVISION,
     mdkLockSha256: B33B1_MDK_LOCK_SHA256,
@@ -126,8 +198,9 @@ export function verifyPins(candidatePath) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 4 || process.argv[2] !== '--candidate-dir') {
-    throw new Error('usage: verify-pins.mjs --candidate-dir PATH');
+  if (process.argv.length !== 2
+    && (process.argv.length !== 4 || process.argv[2] !== '--candidate-dir')) {
+    throw new Error('usage: verify-pins.mjs [--candidate-dir PATH]');
   }
   process.stdout.write(`${JSON.stringify(verifyPins(process.argv[3]))}\n`);
 }

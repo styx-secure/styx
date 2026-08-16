@@ -26,11 +26,12 @@ function checkpoint(head) {
 }
 
 async function main() {
-  const [action, candidatePath, journalDirectory, ...rest] = process.argv.slice(2);
+  const [action, artifactSelector, journalDirectory, ...rest] = process.argv.slice(2);
   if (rest.length !== 0 || !['apply-staged-inbound', 'retry-local',
-    'merge-accepted-local'].includes(action) || !candidatePath || !journalDirectory) {
+    'merge-accepted-local'].includes(action) || !artifactSelector || !journalDirectory) {
     failB33b1(B33B1_ERROR.INVALID, 'invalid fresh-process recovery invocation');
   }
+  const candidatePath = artifactSelector === '--installed' ? undefined : artifactSelector;
   const pins = verifyPins(candidatePath);
   const loaded = await loadCandidate(candidatePath, pins.candidateTuple);
   const journal = openB33b1FileJournal(journalDirectory, B33B1_PRIVATE_ROOT);

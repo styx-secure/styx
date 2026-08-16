@@ -8,7 +8,11 @@ import {
 } from '../../spikes/marmot-phase-b3-3b-1/b3-3b-1-canonical.mjs';
 import { runStage0Probe }
   from '../../spikes/marmot-phase-b3-3b-1/stage0-probe.mjs';
-import { candidateTuple }
+import {
+  B33B1_APPROVED_ARTIFACT_TUPLE,
+  candidateTuple,
+  installedArtifactTuple,
+}
   from '../../spikes/marmot-phase-b3-3b-1/verify-pins.mjs';
 
 describe('Phase B3.3b-1 Stage 0 exact-pin capabilities', () => {
@@ -22,6 +26,11 @@ describe('Phase B3.3b-1 Stage 0 exact-pin capabilities', () => {
       'openmls_wasm.js', 'openmls_wasm.d.ts', 'openmls_wasm_bg.wasm',
       'openmls_wasm_bg.wasm.d.ts', 'package.json',
     ]);
+  });
+
+  test('binds the installed runtime to the owner-approved Stage 2 tuple', () => {
+    expect(Object.isFrozen(B33B1_APPROVED_ARTIFACT_TUPLE)).toBe(true);
+    expect(installedArtifactTuple()).toEqual(B33B1_APPROVED_ARTIFACT_TUPLE);
   });
 
   test('candidate is exact and pinned MDK accepts the Styx self-update', async () => {

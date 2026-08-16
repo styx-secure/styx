@@ -34,7 +34,6 @@ describe('Phase B3.3b-1 Stage 1 journalled sequence', () => {
   });
 
   test('recovers both commit directions and retained application traffic', async () => {
-    expect(candidateDirectory).toBeTruthy();
     const report = await runStage1Probe(candidateDirectory);
     expect(report).toEqual(expect.objectContaining({
       finalEpoch: '3',

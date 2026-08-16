@@ -607,6 +607,177 @@ export class PhaseB33aPendingOutbound {
     sender_signature_key(): Uint8Array;
 }
 
+export class PhaseB33b1ActivationRelease {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    take_candidate_state(): Uint8Array;
+}
+
+export class PhaseB33b1ApplicationInboundRelease {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    take_canonical_state(): Uint8Array;
+    take_ciphertext(): Uint8Array;
+    take_plaintext(): Uint8Array;
+}
+
+export class PhaseB33b1ApplicationOutboundRelease {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    take_canonical_state(): Uint8Array;
+    take_ciphertext(): Uint8Array;
+}
+
+export class PhaseB33b1AppliedInboundRelease {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    take_committed_state(): Uint8Array;
+}
+
+export class PhaseB33b1CommitProjection {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    authority_sha256(): Uint8Array;
+    candidate_group_context_sha256(): Uint8Array;
+    commit_sha256(): Uint8Array;
+    committer_account(): Uint8Array;
+    committer_leaf_index(): number;
+    committer_signature_key(): Uint8Array;
+    domain(): string;
+    group_id(): Uint8Array;
+    ordering_priority(): string;
+    parent_group_context_sha256(): Uint8Array;
+    parent_state_sha256(): Uint8Array;
+    source_epoch(): bigint;
+    target_epoch(): bigint;
+    verified_leaf_digest(): Uint8Array;
+}
+
+export class PhaseB33b1ConfirmedCommitRelease {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    take_committed_state(): Uint8Array;
+}
+
+/**
+ * One-use exact-profile operation boundary for sequential B3.3b-1 Commits.
+ */
+export class PhaseB33b1Group {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    static apply_inbound_commit(parent_state: Uint8Array, group_id: Uint8Array, expected_own_identity: Uint8Array, expected_own_signature_key: Uint8Array, commit_bytes: Uint8Array, expected_parent_state_sha256: Uint8Array, expected_commit_sha256: Uint8Array, expected_authority_sha256: Uint8Array): PhaseB33b1AppliedInboundRelease;
+    static confirm_local_commit(pending_state: Uint8Array, group_id: Uint8Array, expected_own_identity: Uint8Array, expected_own_signature_key: Uint8Array, commit_bytes: Uint8Array, expected_parent_state_sha256: Uint8Array, expected_pending_state_sha256: Uint8Array, expected_commit_sha256: Uint8Array, expected_authority_sha256: Uint8Array): PhaseB33b1ConfirmedCommitRelease;
+    is_consumed(): boolean;
+    static load_clean_canonical_state(candidate_state: Uint8Array, group_id: Uint8Array, expected_own_identity: Uint8Array, expected_own_signature_key: Uint8Array): PhaseB33b1Group | undefined;
+    prepare_application_inbound(ciphertext: Uint8Array): PhaseB33b1PendingApplicationInbound;
+    prepare_application_outbound(plaintext: Uint8Array): PhaseB33b1PendingApplicationOutbound;
+    prepare_self_update(): PhaseB33b1PendingLocalCommit;
+    stage_inbound_commit(commit_bytes: Uint8Array): PhaseB33b1PendingInboundCommit;
+}
+
+export class PhaseB33b1InboundCommitRelease {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    take_commit(): Uint8Array;
+    take_parent_state(): Uint8Array;
+}
+
+export class PhaseB33b1LocalCommitRelease {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    take_commit(): Uint8Array;
+    take_pending_state(): Uint8Array;
+}
+
+export class PhaseB33b1PendingActivation {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    candidate_state_sha256(): Uint8Array;
+    discard(): void;
+    epoch(): bigint;
+    group_context_sha256(): Uint8Array;
+    group_id(): Uint8Array;
+    is_consumed(): boolean;
+    max_past_epochs(): number;
+    predecessor_state_sha256(): Uint8Array;
+    static prepare_from_b32a_state(predecessor_state: Uint8Array, expected_predecessor_state_sha256: Uint8Array, group_id: Uint8Array, expected_own_identity: Uint8Array, expected_own_signature_key: Uint8Array): PhaseB33b1PendingActivation | undefined;
+    provider_format(): string;
+    release(expected_predecessor_state_sha256: Uint8Array, expected_candidate_state_sha256: Uint8Array, expected_group_context_sha256: Uint8Array, expected_verified_leaf_digest: Uint8Array): PhaseB33b1ActivationRelease;
+    verified_leaf_digest(): Uint8Array;
+}
+
+export class PhaseB33b1PendingApplicationInbound {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    canonical_state_sha256(): Uint8Array;
+    ciphertext_sha256(): Uint8Array;
+    current_epoch(): bigint;
+    discard(): void;
+    group_id(): Uint8Array;
+    is_consumed(): boolean;
+    message_epoch(): bigint;
+    plaintext_sha256(): Uint8Array;
+    release(expected_state_sha256: Uint8Array, expected_ciphertext_sha256: Uint8Array, expected_plaintext_sha256: Uint8Array): PhaseB33b1ApplicationInboundRelease;
+    sender_credential_identity(): Uint8Array;
+    sender_leaf_index(): number;
+    sender_signature_key(): Uint8Array;
+}
+
+export class PhaseB33b1PendingApplicationOutbound {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    canonical_state_sha256(): Uint8Array;
+    ciphertext_sha256(): Uint8Array;
+    current_epoch(): bigint;
+    discard(): void;
+    group_id(): Uint8Array;
+    is_consumed(): boolean;
+    message_epoch(): bigint;
+    release(expected_state_sha256: Uint8Array, expected_ciphertext_sha256: Uint8Array): PhaseB33b1ApplicationOutboundRelease;
+    sender_credential_identity(): Uint8Array;
+    sender_leaf_index(): number;
+    sender_signature_key(): Uint8Array;
+}
+
+export class PhaseB33b1PendingInboundCommit {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    authority_sha256(): Uint8Array;
+    commit_sha256(): Uint8Array;
+    discard(): void;
+    is_consumed(): boolean;
+    parent_state_sha256(): Uint8Array;
+    projection(): PhaseB33b1CommitProjection;
+    release(expected_parent_state_sha256: Uint8Array, expected_commit_sha256: Uint8Array, expected_authority_sha256: Uint8Array): PhaseB33b1InboundCommitRelease;
+}
+
+export class PhaseB33b1PendingLocalCommit {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    authority_sha256(): Uint8Array;
+    commit_sha256(): Uint8Array;
+    discard(): void;
+    is_consumed(): boolean;
+    parent_state_sha256(): Uint8Array;
+    pending_state_sha256(): Uint8Array;
+    projection(): PhaseB33b1CommitProjection;
+    release(expected_parent_state_sha256: Uint8Array, expected_pending_state_sha256: Uint8Array, expected_commit_sha256: Uint8Array, expected_authority_sha256: Uint8Array): PhaseB33b1LocalCommitRelease;
+}
+
 export class Provider {
     free(): void;
     [Symbol.dispose](): void;
@@ -683,6 +854,20 @@ export interface InitOutput {
     readonly __wbg_phaseb33aoutboundrelease_free: (a: number, b: number) => void;
     readonly __wbg_phaseb33apendinginbound_free: (a: number, b: number) => void;
     readonly __wbg_phaseb33apendingoutbound_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33b1activationrelease_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33b1applicationinboundrelease_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33b1applicationoutboundrelease_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33b1appliedinboundrelease_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33b1commitprojection_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33b1confirmedcommitrelease_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33b1group_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33b1inboundcommitrelease_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33b1localcommitrelease_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33b1pendingactivation_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33b1pendingapplicationinbound_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33b1pendingapplicationoutbound_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33b1pendinginboundcommit_free: (a: number, b: number) => void;
+    readonly __wbg_phaseb33b1pendinglocalcommit_free: (a: number, b: number) => void;
     readonly __wbg_provider_free: (a: number, b: number) => void;
     readonly __wbg_ratchettree_free: (a: number, b: number) => void;
     readonly addmessages_commit: (a: number) => any;
@@ -986,6 +1171,85 @@ export interface InitOutput {
     readonly phaseb33apendingoutbound_release: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
     readonly phaseb33apendingoutbound_sender_credential_identity: (a: number) => [number, number, number, number];
     readonly phaseb33apendingoutbound_sender_signature_key: (a: number) => [number, number, number, number];
+    readonly phaseb33b1activationrelease_take_candidate_state: (a: number) => [number, number, number, number];
+    readonly phaseb33b1applicationinboundrelease_take_canonical_state: (a: number) => [number, number, number, number];
+    readonly phaseb33b1applicationinboundrelease_take_ciphertext: (a: number) => [number, number, number, number];
+    readonly phaseb33b1applicationinboundrelease_take_plaintext: (a: number) => [number, number, number, number];
+    readonly phaseb33b1applicationoutboundrelease_take_canonical_state: (a: number) => [number, number, number, number];
+    readonly phaseb33b1applicationoutboundrelease_take_ciphertext: (a: number) => [number, number, number, number];
+    readonly phaseb33b1appliedinboundrelease_take_committed_state: (a: number) => [number, number, number, number];
+    readonly phaseb33b1commitprojection_authority_sha256: (a: number) => [number, number];
+    readonly phaseb33b1commitprojection_candidate_group_context_sha256: (a: number) => [number, number];
+    readonly phaseb33b1commitprojection_commit_sha256: (a: number) => [number, number];
+    readonly phaseb33b1commitprojection_committer_account: (a: number) => [number, number];
+    readonly phaseb33b1commitprojection_committer_signature_key: (a: number) => [number, number];
+    readonly phaseb33b1commitprojection_domain: (a: number) => [number, number];
+    readonly phaseb33b1commitprojection_group_id: (a: number) => [number, number];
+    readonly phaseb33b1commitprojection_ordering_priority: (a: number) => [number, number];
+    readonly phaseb33b1commitprojection_parent_group_context_sha256: (a: number) => [number, number];
+    readonly phaseb33b1commitprojection_parent_state_sha256: (a: number) => [number, number];
+    readonly phaseb33b1commitprojection_verified_leaf_digest: (a: number) => [number, number];
+    readonly phaseb33b1confirmedcommitrelease_take_committed_state: (a: number) => [number, number, number, number];
+    readonly phaseb33b1group_apply_inbound_commit: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number) => [number, number, number];
+    readonly phaseb33b1group_confirm_local_commit: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number, q: number, r: number) => [number, number, number];
+    readonly phaseb33b1group_load_clean_canonical_state: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number];
+    readonly phaseb33b1group_prepare_application_inbound: (a: number, b: number, c: number) => [number, number, number];
+    readonly phaseb33b1group_prepare_application_outbound: (a: number, b: number, c: number) => [number, number, number];
+    readonly phaseb33b1group_prepare_self_update: (a: number) => [number, number, number];
+    readonly phaseb33b1group_stage_inbound_commit: (a: number, b: number, c: number) => [number, number, number];
+    readonly phaseb33b1inboundcommitrelease_take_commit: (a: number) => [number, number, number, number];
+    readonly phaseb33b1inboundcommitrelease_take_parent_state: (a: number) => [number, number, number, number];
+    readonly phaseb33b1localcommitrelease_take_commit: (a: number) => [number, number, number, number];
+    readonly phaseb33b1localcommitrelease_take_pending_state: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingactivation_candidate_state_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingactivation_discard: (a: number) => [number, number];
+    readonly phaseb33b1pendingactivation_epoch: (a: number) => [bigint, number, number];
+    readonly phaseb33b1pendingactivation_group_context_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingactivation_group_id: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingactivation_max_past_epochs: (a: number) => number;
+    readonly phaseb33b1pendingactivation_predecessor_state_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingactivation_prepare_from_b32a_state: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
+    readonly phaseb33b1pendingactivation_provider_format: (a: number) => [number, number];
+    readonly phaseb33b1pendingactivation_release: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
+    readonly phaseb33b1pendingactivation_verified_leaf_digest: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingapplicationinbound_canonical_state_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingapplicationinbound_ciphertext_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingapplicationinbound_current_epoch: (a: number) => [bigint, number, number];
+    readonly phaseb33b1pendingapplicationinbound_discard: (a: number) => [number, number];
+    readonly phaseb33b1pendingapplicationinbound_group_id: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingapplicationinbound_is_consumed: (a: number) => number;
+    readonly phaseb33b1pendingapplicationinbound_message_epoch: (a: number) => [bigint, number, number];
+    readonly phaseb33b1pendingapplicationinbound_plaintext_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingapplicationinbound_release: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
+    readonly phaseb33b1pendingapplicationinbound_sender_credential_identity: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingapplicationinbound_sender_leaf_index: (a: number) => [number, number, number];
+    readonly phaseb33b1pendingapplicationinbound_sender_signature_key: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingapplicationoutbound_canonical_state_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingapplicationoutbound_ciphertext_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingapplicationoutbound_current_epoch: (a: number) => [bigint, number, number];
+    readonly phaseb33b1pendingapplicationoutbound_discard: (a: number) => [number, number];
+    readonly phaseb33b1pendingapplicationoutbound_group_id: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingapplicationoutbound_is_consumed: (a: number) => number;
+    readonly phaseb33b1pendingapplicationoutbound_message_epoch: (a: number) => [bigint, number, number];
+    readonly phaseb33b1pendingapplicationoutbound_release: (a: number, b: number, c: number, d: number, e: number) => [number, number, number];
+    readonly phaseb33b1pendingapplicationoutbound_sender_credential_identity: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendingapplicationoutbound_sender_leaf_index: (a: number) => [number, number, number];
+    readonly phaseb33b1pendingapplicationoutbound_sender_signature_key: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendinginboundcommit_authority_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendinginboundcommit_commit_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendinginboundcommit_discard: (a: number) => [number, number];
+    readonly phaseb33b1pendinginboundcommit_is_consumed: (a: number) => number;
+    readonly phaseb33b1pendinginboundcommit_parent_state_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendinginboundcommit_projection: (a: number) => [number, number, number];
+    readonly phaseb33b1pendinginboundcommit_release: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
+    readonly phaseb33b1pendinglocalcommit_authority_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendinglocalcommit_commit_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendinglocalcommit_discard: (a: number) => [number, number];
+    readonly phaseb33b1pendinglocalcommit_is_consumed: (a: number) => number;
+    readonly phaseb33b1pendinglocalcommit_parent_state_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendinglocalcommit_pending_state_sha256: (a: number) => [number, number, number, number];
+    readonly phaseb33b1pendinglocalcommit_projection: (a: number) => [number, number, number];
+    readonly phaseb33b1pendinglocalcommit_release: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
     readonly provider_new: () => number;
     readonly provider_restore_state: (a: number, b: number, c: number) => [number, number];
     readonly provider_serialize_state: (a: number) => [number, number];
@@ -999,10 +1263,15 @@ export interface InitOutput {
     readonly phaseb32joinprojection_epoch: (a: number) => bigint;
     readonly phaseb32joinprojection_own_leaf_index: (a: number) => number;
     readonly phaseb32joinprojection_welcome_sender_leaf_index: (a: number) => number;
+    readonly phaseb33b1commitprojection_committer_leaf_index: (a: number) => number;
+    readonly phaseb33b1commitprojection_source_epoch: (a: number) => bigint;
+    readonly phaseb33b1commitprojection_target_epoch: (a: number) => bigint;
     readonly phaseb32joinprojection_version: (a: number) => number;
+    readonly phaseb33b1group_is_consumed: (a: number) => number;
     readonly phaseb2stagedcommit_is_consumed: (a: number) => number;
     readonly phaseb33apendinginbound_is_consumed: (a: number) => number;
     readonly phaseb33apendingoutbound_is_consumed: (a: number) => number;
+    readonly phaseb33b1pendingactivation_is_consumed: (a: number) => number;
     readonly phaseb2keypackage_ciphersuite_id: (a: number) => number;
     readonly phaseb31keypackage_ciphersuite_id: (a: number) => number;
     readonly phaseb32akeypackage_ciphersuite_id: (a: number) => number;

@@ -39,7 +39,7 @@ import {
   safeFree,
   sha256Hex,
 } from './b3-3b-1-canonical.mjs';
-import { strictCandidateDirectory, verifyPins } from './verify-pins.mjs';
+import { artifactDirectory, verifyPins } from './verify-pins.mjs';
 
 function accountSecret() {
   for (;;) {
@@ -62,7 +62,7 @@ function freshPrivateDirectory(root, prefix) {
 }
 
 async function loadCandidate(candidatePath, tuple) {
-  const directory = strictCandidateDirectory(candidatePath);
+  const directory = artifactDirectory(candidatePath);
   const wasmRead = readExactRegularFile(
     resolve(directory, 'openmls_wasm_bg.wasm'), tuple['openmls_wasm_bg.wasm'],
   );
