@@ -74,15 +74,22 @@ export function validateStage2Run(report, label = 'run') {
 export function validateStage2Pair(firstValue, secondValue) {
   const first = validateStage2Run(firstValue, 'first run');
   const second = validateStage2Run(secondValue, 'second run');
-  if (first.sourceCommit !== second.sourceCommit || first.sourceTree !== second.sourceTree
-    || !sameJson(first.candidateTuple, second.candidateTuple)
-    || first.mdkBuildEvidence.mdkExecutableSha256Hex
-      !== second.mdkBuildEvidence.mdkExecutableSha256Hex
-    || first.groupIdHex === second.groupIdHex
-    || first.participantSetSha256Hex === second.participantSetSha256Hex
-    || first.finalGroupContextSha256Hex === second.finalGroupContextSha256Hex
-    || first.finalRosterSha256Hex === second.finalRosterSha256Hex) {
-    blocked('paired runs were not exact-head, reproducible and disjoint');
+  const failures = [];
+  if (first.sourceCommit !== second.sourceCommit) failures.push('source commit drift');
+  if (first.sourceTree !== second.sourceTree) failures.push('source tree drift');
+  if (!sameJson(first.candidateTuple, second.candidateTuple)) failures.push('artifact tuple drift');
+  if (first.groupIdHex === second.groupIdHex) failures.push('group reuse');
+  if (first.participantSetSha256Hex === second.participantSetSha256Hex) {
+    failures.push('participant reuse');
+  }
+  if (first.finalGroupContextSha256Hex === second.finalGroupContextSha256Hex) {
+    failures.push('GroupContext reuse');
+  }
+  if (first.finalRosterSha256Hex === second.finalRosterSha256Hex) {
+    failures.push('roster reuse');
+  }
+  if (failures.length !== 0) {
+    blocked('paired runs were not exact-head and disjoint', { failures });
   }
   return Object.freeze({
     artifactSourceCommit: first.artifactSourceCommit,

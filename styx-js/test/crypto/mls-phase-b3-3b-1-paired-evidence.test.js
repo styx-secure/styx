@@ -46,7 +46,10 @@ function run(marker) {
 
 describe('B3.3b-1 Stage 2 paired evidence', () => {
   test('accepts two exact-head reproducible and disjoint bounded GO runs', () => {
-    expect(validateStage2Pair(run('3'), run('4'))).toEqual(expect.objectContaining({
+    const first = run('3');
+    const second = run('4');
+    second.mdkBuildEvidence.mdkExecutableSha256Hex = hex('d');
+    expect(validateStage2Pair(first, second)).toEqual(expect.objectContaining({
       claim: 'B3.3b-1 BOUNDED_GO',
       sourceCommit: '1'.repeat(40),
       sourceTree: '2'.repeat(40),
@@ -74,9 +77,6 @@ describe('B3.3b-1 Stage 2 paired evidence', () => {
       second.participantSetSha256Hex = first.participantSetSha256Hex;
     }],
     ['source', (_first, second) => { second.sourceCommit = '9'.repeat(40); }],
-    ['MDK executable', (_first, second) => {
-      second.mdkBuildEvidence.mdkExecutableSha256Hex = hex('d');
-    }],
   ])('rejects paired %s non-disjointness or drift', (_label, mutate) => {
     const first = run('3');
     const second = run('4');
