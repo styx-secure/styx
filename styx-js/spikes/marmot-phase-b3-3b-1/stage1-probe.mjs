@@ -214,6 +214,7 @@ export async function runStage1Probe(candidatePath) {
     if (liveMdkReceive?.disposition !== 'application_message_processed') {
       failB33b1(B33B1_ERROR.ENGINE_REJECTED, 'epoch-two Styx traffic was not processed');
     }
+    const liveStyxContentSha256Hex = sha256Hex(liveStyx.ciphertextBytes);
     clearBytes(liveStyx.ciphertextBytes);
 
     const styxPrepared = await adapter.prepareLocal();
@@ -231,12 +232,19 @@ export async function runStage1Probe(candidatePath) {
     await initializeMdk(mdk, mdkFields);
     await mdk.request('restore_group', { group_id_hex: creation.group_id_hex });
     const waiting = await mdk.request('converge_group_evolution', {
+      expected_accepted_app_message_ids: [],
+      expected_already_seen_message_ids: [],
       expected_content_sha256: retry.commitSha256Hex,
       expected_from_epoch: 2,
       expected_to_epoch: 3,
       monotonic_ms: 1_000_000,
     });
     const settled = await mdk.request('converge_group_evolution', {
+      expected_accepted_app_message_ids: [
+        withheldMdk.message_id_hex,
+        liveMdk.message_id_hex,
+      ].sort(),
+      expected_already_seen_message_ids: [liveStyxContentSha256Hex],
       expected_content_sha256: retry.commitSha256Hex,
       expected_from_epoch: 2,
       expected_to_epoch: 3,

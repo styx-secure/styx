@@ -381,6 +381,8 @@ export async function runStage0Probe(candidatePath) {
     requireMdkRoster(restored.projection, expectedRoster, 'restored parent state');
 
     const waiting = await mdk.request('converge_group_evolution', {
+      expected_accepted_app_message_ids: [],
+      expected_already_seen_message_ids: [],
       expected_content_sha256: local.evidence.commitSha256Hex,
       expected_from_epoch: Number(local.evidence.sourceEpoch),
       expected_to_epoch: Number(local.evidence.targetEpoch),
@@ -397,6 +399,8 @@ export async function runStage0Probe(candidatePath) {
     }
 
     const settled = await mdk.request('converge_group_evolution', {
+      expected_accepted_app_message_ids: [],
+      expected_already_seen_message_ids: [],
       expected_content_sha256: local.evidence.commitSha256Hex,
       expected_from_epoch: Number(local.evidence.sourceEpoch),
       expected_to_epoch: Number(local.evidence.targetEpoch),

@@ -328,6 +328,44 @@ fn u64_field(object: &Map<String, Value>, field: &str) -> Result<u64, RpcError> 
         .ok_or_else(|| RpcError::input(format!("{field} must be an unsigned integer")))
 }
 
+fn sha256_hex_array_field(
+    object: &Map<String, Value>,
+    field: &str,
+) -> Result<Vec<String>, RpcError> {
+    let values = object
+        .get(field)
+        .and_then(Value::as_array)
+        .ok_or_else(|| RpcError::input(format!("{field} must be an array")))?;
+    if values.len() > 16 {
+        return Err(RpcError::input(format!(
+            "{field} exceeds the Stage 1 bound"
+        )));
+    }
+    let mut result = Vec::with_capacity(values.len());
+    for value in values {
+        let encoded = value
+            .as_str()
+            .ok_or_else(|| RpcError::input(format!("{field} must contain strings")))?;
+        if encoded.len() != 64
+            || !encoded
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err(RpcError::input(format!(
+                "{field} must contain canonical lowercase SHA-256 hex values"
+            )));
+        }
+        result.push(encoded.to_owned());
+    }
+    result.sort();
+    if result.windows(2).any(|pair| pair[0] == pair[1]) {
+        return Err(RpcError::input(format!(
+            "{field} contains duplicate values"
+        )));
+    }
+    Ok(result)
+}
+
 fn decode_hex_field(object: &Map<String, Value>, field: &str) -> Result<Vec<u8>, RpcError> {
     let encoded = string_field(object, field)?;
     if encoded.len() > MAX_HEX_BYTES * 2 || encoded.len() % 2 != 0 {
@@ -929,6 +967,8 @@ fn converge_group_evolution(
     exact_fields(
         request,
         &[
+            "expected_accepted_app_message_ids",
+            "expected_already_seen_message_ids",
             "expected_content_sha256",
             "expected_from_epoch",
             "expected_to_epoch",
@@ -949,6 +989,10 @@ fn converge_group_evolution(
         ));
     }
     let expected_content_hex = hex::encode(expected_content);
+    let expected_accepted_app_messages =
+        sha256_hex_array_field(request, "expected_accepted_app_message_ids")?;
+    let expected_already_seen =
+        sha256_hex_array_field(request, "expected_already_seen_message_ids")?;
     let expected_from = u64_field(request, "expected_from_epoch")?;
     let expected_to = u64_field(request, "expected_to_epoch")?;
     if expected_to
@@ -1002,12 +1046,10 @@ fn converge_group_evolution(
         ConvergenceStatus::Settled => "settled",
         ConvergenceStatus::Blocked => "blocked",
     };
-    let exact_collections = result.accepted_proposals.is_empty()
-        && result.accepted_app_messages.is_empty()
+    let exact_non_application_collections = result.accepted_proposals.is_empty()
         && result.deferred_messages.is_empty()
         && result.invalidated_app_messages.is_empty()
         && result.dropped_messages.is_empty()
-        && result.already_seen.is_empty()
         && result.queued_outbound_intents.is_empty()
         && result.publishable_outbound_messages.is_empty()
         && result.errors.is_empty();
@@ -1017,7 +1059,9 @@ fn converge_group_evolution(
         && result.candidate_count == 0
         && result.eligible_count == 0
         && result.accepted_commits.is_empty()
-        && exact_collections
+        && result.accepted_app_messages.is_empty()
+        && result.already_seen.is_empty()
+        && exact_non_application_collections
         && events.is_empty();
     if exact_waiting {
         return Ok(json!({
@@ -1036,7 +1080,13 @@ fn converge_group_evolution(
         && result.candidate_count == 1
         && result.eligible_count == 1
         && result.accepted_commits.as_slice() == [expected_content_hex.as_str()]
-        && exact_collections;
+        && result.accepted_app_messages == expected_accepted_app_messages
+        && result
+            .already_seen
+            .iter()
+            .map(|entry| entry.message_id.as_str())
+            .eq(expected_already_seen.iter().map(String::as_str))
+        && exact_non_application_collections;
     let exact_event = matches!(
         events.as_slice(),
         [GroupEvent::EpochChanged {
@@ -1049,16 +1099,20 @@ fn converge_group_evolution(
     );
     if !exact_result || !exact_event {
         let details = json!({
-            "accepted_app_messages": result.accepted_app_messages.len(),
+            "accepted_app_messages": result.accepted_app_messages,
             "accepted_commits": result.accepted_commits,
             "accepted_proposals": result.accepted_proposals.len(),
-            "already_seen": result.already_seen.len(),
+            "already_seen": result.already_seen.iter()
+                .map(|entry| entry.message_id.as_str())
+                .collect::<Vec<_>>(),
             "candidate_count": result.candidate_count,
             "deferred_messages": result.deferred_messages.len(),
             "dropped_messages": result.dropped_messages.len(),
             "eligible_count": result.eligible_count,
             "errors": result.errors.len(),
             "event_count": events.len(),
+            "expected_accepted_app_messages": expected_accepted_app_messages,
+            "expected_already_seen": expected_already_seen,
             "invalidated_app_messages": result.invalidated_app_messages.len(),
             "previous_tip": result.previous_tip,
             "publishable_outbound_messages": result.publishable_outbound_messages.len(),
