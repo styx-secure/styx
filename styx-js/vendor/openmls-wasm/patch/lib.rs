@@ -11,7 +11,7 @@ use openmls::{
         RequiredCapabilitiesExtension,
     },
     group::{
-        GroupContext, ProcessedWelcome, StagedCommit, WelcomeError,
+        GroupContext, PastEpochDeletionPolicy, ProcessedWelcome, StagedCommit, WelcomeError,
         PURE_PLAINTEXT_WIRE_FORMAT_POLICY,
     },
     key_packages::Lifetime,
@@ -141,6 +141,10 @@ const PHASE_B32A_PROJECTION_DOMAIN: &[u8] = b"STYX-B32A-JOIN-PROJECTION-v1";
 const PHASE_B32A_LEAF_PROFILE_DOMAIN: &[u8] = b"STYX-B32A-LEAF-PROFILE-v1";
 #[cfg(feature = "extensions-draft")]
 const PHASE_B32A_PROJECTION_VERSION: u16 = 1;
+#[cfg(feature = "extensions-draft")]
+const PHASE_B33B1_MAX_PAST_EPOCHS: usize = 5;
+#[cfg(feature = "extensions-draft")]
+const PHASE_B33B1_PROVIDER_FORMAT: &str = "phase-b33b1-provider-canonical-v1";
 
 thread_local! {
     static NEXT_PROVIDER_INSTANCE_ID: Cell<u32> = const { Cell::new(1) };
@@ -3144,6 +3148,35 @@ pub struct PhaseB33aInboundRelease {
     plaintext: Option<PhaseB32aWipeBytes>,
 }
 
+/// One-use activation result for the B3.3b-1 retained-traffic profile.
+///
+/// This handle owns the only releasable copy of the activated canonical state.
+/// It binds that state to the exact predecessor and public group projection so
+/// callers can durably CAS the transition before constructing any later group
+/// operation.
+#[cfg(feature = "extensions-draft")]
+struct PhaseB33b1ActivationData {
+    group_id: Vec<u8>,
+    epoch: u64,
+    predecessor_state_sha256: Vec<u8>,
+    candidate_state_sha256: Vec<u8>,
+    group_context_sha256: Vec<u8>,
+    verified_leaf_digest: Vec<u8>,
+    candidate_state: PhaseB32aWipeBytes,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1PendingActivation {
+    data: Option<PhaseB33b1ActivationData>,
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+pub struct PhaseB33b1ActivationRelease {
+    candidate_state: Option<PhaseB32aWipeBytes>,
+}
+
 #[cfg(feature = "extensions-draft")]
 #[derive(Clone, PartialEq, Eq)]
 struct PhaseB2ProposalProjection {
@@ -3615,9 +3648,10 @@ fn phase_b32a_member_at(
 }
 
 #[cfg(feature = "extensions-draft")]
-fn phase_b32a_group_state(
+fn phase_b32a_group_state_with_retention(
     crypto: &impl OpenMlsCrypto,
     group: &MlsGroup,
+    expected_max_past_epochs: usize,
 ) -> Result<(Vec<PhaseB32aMember>, Vec<u8>, PhaseB31GroupContext), JsError> {
     if group.ciphersuite() != PROBE_CIPHERSUITE {
         return Err(JsError::new("PHASE_B32A_CIPHERSUITE_MISMATCH"));
@@ -3630,6 +3664,15 @@ fn phase_b32a_group_state(
     }
     if group.members().count() != 2 {
         return Err(JsError::new("PHASE_B32A_EXACTLY_TWO_MEMBERS_REQUIRED"));
+    }
+    if group.past_epoch_deletion_policy()
+        != &PastEpochDeletionPolicy::MaxEpochs(expected_max_past_epochs)
+    {
+        return Err(JsError::new(if expected_max_past_epochs == 0 {
+            "PHASE_B32A_RETENTION_POLICY_MISMATCH"
+        } else {
+            "PHASE_B33B1_RETENTION_POLICY_MISMATCH"
+        }));
     }
     let mut members = Vec::with_capacity(2);
     for member in group.members() {
@@ -3650,6 +3693,22 @@ fn phase_b32a_group_state(
     let projected = phase_b31_validate_group_context_extensions(context.extensions(), &identities)
         .map_err(|_| JsError::new("PHASE_B32A_GROUP_CONTEXT_INVALID"))?;
     Ok((members, context_tls, projected))
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b32a_group_state(
+    crypto: &impl OpenMlsCrypto,
+    group: &MlsGroup,
+) -> Result<(Vec<PhaseB32aMember>, Vec<u8>, PhaseB31GroupContext), JsError> {
+    phase_b32a_group_state_with_retention(crypto, group, 0)
+}
+
+#[cfg(feature = "extensions-draft")]
+fn phase_b33b1_group_state(
+    crypto: &impl OpenMlsCrypto,
+    group: &MlsGroup,
+) -> Result<(Vec<PhaseB32aMember>, Vec<u8>, PhaseB31GroupContext), JsError> {
+    phase_b32a_group_state_with_retention(crypto, group, PHASE_B33B1_MAX_PAST_EPOCHS)
 }
 
 #[cfg(feature = "extensions-draft")]
@@ -6041,6 +6100,210 @@ fn phase_b33a_sha256(
 }
 
 #[cfg(feature = "extensions-draft")]
+fn phase_b33b1_validate_clean_group(
+    provider: &PhaseB32aPrivateProvider,
+    group: &MlsGroup,
+    identity: &PhaseB2Identity,
+) -> Result<(Vec<PhaseB32aMember>, Vec<u8>, PhaseB31GroupContext), JsError> {
+    if group.pending_commit().is_some() || group.pending_proposals().next().is_some() {
+        return Err(JsError::new("PHASE_B33B1_PENDING_HANDSHAKE_STATE"));
+    }
+    let state = phase_b33b1_group_state(provider.provider.as_ref().crypto(), group)?;
+    phase_b33a_validate_own_identity(&state.0, group, identity)?;
+    Ok(state)
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1PendingActivation {
+    pub fn prepare_from_b32a_state(
+        predecessor_state: &[u8],
+        expected_predecessor_state_sha256: &[u8],
+        group_id: &[u8],
+        expected_own_identity: &[u8],
+        expected_own_signature_key: &[u8],
+    ) -> Result<Option<PhaseB33b1PendingActivation>, JsError> {
+        if expected_predecessor_state_sha256.len() != 32 {
+            return Err(JsError::new("PHASE_B33B1_PREDECESSOR_DIGEST_INVALID"));
+        }
+        if group_id.is_empty() || group_id.len() > 64 {
+            return Err(JsError::new("PHASE_B33B1_GROUP_ID_INVALID"));
+        }
+        if expected_own_identity.len() != 32 || expected_own_signature_key.len() != 32 {
+            return Err(JsError::new("PHASE_B33B1_OWN_IDENTITY_INPUT_INVALID"));
+        }
+        let standalone_crypto = openmls_rust_crypto::RustCrypto::default();
+        let predecessor_state_sha256 = phase_b32_sha256(
+            &standalone_crypto,
+            predecessor_state,
+            "PHASE_B33B1_PREDECESSOR_DIGEST_FAILED",
+        )?;
+        if !phase_b32a_constant_time_eq_32(
+            &predecessor_state_sha256,
+            expected_predecessor_state_sha256,
+        ) {
+            return Err(JsError::new("PHASE_B33B1_PREDECESSOR_DIGEST_MISMATCH"));
+        }
+
+        let provider = PhaseB32aPrivateProvider::from_snapshot(
+            predecessor_state,
+            PhaseB32aSnapshotRole::CanonicalCandidate,
+        )?;
+        let requested = GroupId::from_slice(group_id);
+        let Some(mut group) = MlsGroup::load(provider.provider.inner.storage(), &requested)? else {
+            return Ok(None);
+        };
+        if group.group_id() != &requested {
+            return Err(JsError::new("PHASE_B33B1_LOADED_GROUP_ID_MISMATCH"));
+        }
+        if group.pending_commit().is_some() || group.pending_proposals().next().is_some() {
+            return Err(JsError::new("PHASE_B33B1_PENDING_HANDSHAKE_STATE"));
+        }
+        let (before_members, before_context_tls, _) =
+            phase_b32a_group_state(provider.provider.as_ref().crypto(), &group)?;
+        let identity = PhaseB2Identity::load(
+            &provider.provider,
+            expected_own_identity,
+            expected_own_signature_key,
+        )?
+        .ok_or_else(|| JsError::new("PHASE_B33B1_OWN_SIGNING_KEY_ABSENT"))?;
+        phase_b33a_validate_own_identity(&before_members, &group, &identity)?;
+        let epoch = group.epoch().as_u64();
+
+        group
+            .set_past_epoch_deletion_policy(
+                &provider.provider.inner,
+                PastEpochDeletionPolicy::MaxEpochs(PHASE_B33B1_MAX_PAST_EPOCHS),
+            )
+            .map_err(|_| JsError::new("STYX_RETENTION_POLICY_NOT_ROUNDTRIPPABLE"))?;
+        let (members, group_context_tls, _) =
+            phase_b33b1_validate_clean_group(&provider, &group, &identity)?;
+        if members != before_members || group_context_tls != before_context_tls {
+            return Err(JsError::new("PHASE_B33B1_ACTIVATION_CHANGED_PUBLIC_STATE"));
+        }
+
+        let candidate_state = PhaseB32aWipeBytes(provider.canonical_state()?);
+        let candidate_state_sha256 = phase_b33a_sha256(
+            &provider,
+            &candidate_state.0,
+            "PHASE_B33B1_CANDIDATE_DIGEST_FAILED",
+        )?;
+        let group_context_sha256 = phase_b33a_sha256(
+            &provider,
+            &group_context_tls,
+            "PHASE_B33B1_GROUP_CONTEXT_DIGEST_FAILED",
+        )?;
+        let verified_leaf_digest =
+            phase_b32a_verified_leaf_digest(provider.provider.as_ref().crypto(), &members)?;
+
+        let scratch = PhaseB32aPrivateProvider::from_snapshot(
+            &candidate_state.0,
+            PhaseB32aSnapshotRole::CanonicalCandidate,
+        )?;
+        let restored = MlsGroup::load(scratch.provider.inner.storage(), &requested)?
+            .ok_or_else(|| JsError::new("STYX_RETENTION_POLICY_NOT_ROUNDTRIPPABLE"))?;
+        let restored_identity = PhaseB2Identity::load(
+            &scratch.provider,
+            expected_own_identity,
+            expected_own_signature_key,
+        )?
+        .ok_or_else(|| JsError::new("PHASE_B33B1_OWN_SIGNING_KEY_ABSENT"))?;
+        let (restored_members, restored_context_tls, _) =
+            phase_b33b1_validate_clean_group(&scratch, &restored, &restored_identity)
+                .map_err(|_| JsError::new("STYX_RETENTION_POLICY_NOT_ROUNDTRIPPABLE"))?;
+        if restored.epoch().as_u64() != epoch
+            || restored_members != members
+            || restored_context_tls != group_context_tls
+            || scratch.canonical_state()?.as_slice() != candidate_state.0.as_slice()
+        {
+            return Err(JsError::new("STYX_RETENTION_POLICY_NOT_ROUNDTRIPPABLE"));
+        }
+
+        Ok(Some(Self {
+            data: Some(PhaseB33b1ActivationData {
+                group_id: group_id.to_vec(),
+                epoch,
+                predecessor_state_sha256,
+                candidate_state_sha256,
+                group_context_sha256,
+                verified_leaf_digest,
+                candidate_state,
+            }),
+        }))
+    }
+
+    pub fn is_consumed(&self) -> bool { self.data.is_none() }
+    pub fn provider_format(&self) -> String { PHASE_B33B1_PROVIDER_FORMAT.into() }
+    pub fn max_past_epochs(&self) -> u32 { PHASE_B33B1_MAX_PAST_EPOCHS as u32 }
+    pub fn group_id(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.group_id.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))
+    }
+    pub fn epoch(&self) -> Result<u64, JsError> {
+        self.data.as_ref().map(|data| data.epoch)
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))
+    }
+    pub fn predecessor_state_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.predecessor_state_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))
+    }
+    pub fn candidate_state_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.candidate_state_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))
+    }
+    pub fn group_context_sha256(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.group_context_sha256.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))
+    }
+    pub fn verified_leaf_digest(&self) -> Result<Vec<u8>, JsError> {
+        self.data.as_ref().map(|data| data.verified_leaf_digest.clone())
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))
+    }
+    pub fn release(
+        &mut self,
+        expected_predecessor_state_sha256: &[u8],
+        expected_candidate_state_sha256: &[u8],
+        expected_group_context_sha256: &[u8],
+        expected_verified_leaf_digest: &[u8],
+    ) -> Result<PhaseB33b1ActivationRelease, JsError> {
+        let data = self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))?;
+        if !phase_b32a_constant_time_eq_32(
+            expected_predecessor_state_sha256,
+            &data.predecessor_state_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_candidate_state_sha256,
+            &data.candidate_state_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_group_context_sha256,
+            &data.group_context_sha256,
+        ) || !phase_b32a_constant_time_eq_32(
+            expected_verified_leaf_digest,
+            &data.verified_leaf_digest,
+        ) {
+            return Err(JsError::new("PHASE_B33B1_ACTIVATION_BINDING_MISMATCH"));
+        }
+        Ok(PhaseB33b1ActivationRelease {
+            candidate_state: Some(data.candidate_state),
+        })
+    }
+    pub fn discard(&mut self) -> Result<(), JsError> {
+        self.data.take()
+            .ok_or_else(|| JsError::new("PHASE_B33B1_ACTIVATION_CONSUMED"))?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
+#[wasm_bindgen]
+impl PhaseB33b1ActivationRelease {
+    pub fn take_candidate_state(&mut self) -> Result<Vec<u8>, JsError> {
+        self.candidate_state.take().map(|mut bytes| std::mem::take(&mut bytes.0))
+            .ok_or_else(|| JsError::new("PHASE_B33B1_STATE_ALREADY_TAKEN"))
+    }
+}
+
+#[cfg(feature = "extensions-draft")]
 impl PhaseB33aGroup {
     fn take_operation_parts(
         &mut self,
@@ -8334,6 +8597,104 @@ mod tests {
             release.take_ciphertext().unwrap(),
             release.take_plaintext().unwrap(),
         )
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b33b1_activate(
+        state: &[u8],
+        group_id: &[u8],
+        identity: &[u8],
+        signature_key: &[u8],
+    ) -> Vec<u8> {
+        let predecessor_sha256 = phase_b32_sha256(
+            &openmls_rust_crypto::RustCrypto::default(),
+            state,
+            "test",
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let mut pending = PhaseB33b1PendingActivation::prepare_from_b32a_state(
+            state,
+            &predecessor_sha256,
+            group_id,
+            identity,
+            signature_key,
+        )
+        .map_err(js_error_to_string)
+        .unwrap()
+        .expect("fixture group must be present");
+        assert_eq!(pending.provider_format(), PHASE_B33B1_PROVIDER_FORMAT);
+        assert_eq!(pending.max_past_epochs(), PHASE_B33B1_MAX_PAST_EPOCHS as u32);
+        let candidate_sha256 = pending.candidate_state_sha256().unwrap();
+        let group_context_sha256 = pending.group_context_sha256().unwrap();
+        let verified_leaf_digest = pending.verified_leaf_digest().unwrap();
+        let mut release = pending
+            .release(
+                &predecessor_sha256,
+                &candidate_sha256,
+                &group_context_sha256,
+                &verified_leaf_digest,
+            )
+            .map_err(js_error_to_string)
+            .unwrap();
+        let candidate = release.take_candidate_state().unwrap();
+        assert_eq!(
+            phase_b32_sha256(
+                &openmls_rust_crypto::RustCrypto::default(),
+                &candidate,
+                "test",
+            )
+            .map_err(js_error_to_string)
+            .unwrap(),
+            candidate_sha256,
+        );
+        assert!(pending.is_consumed());
+        candidate
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b33b1_activation_roundtrips_retention_and_cross_readers_fail_closed() {
+        let fixture = phase_b33a_native_fixture(b"phase-b33b1-activation", 0xa1, 0xa2);
+        let activated = phase_b33b1_activate(
+            &fixture.joiner_state,
+            &fixture.group_id,
+            &fixture.joiner_identity,
+            &fixture.joiner_signature_key,
+        );
+
+        let provider = PhaseB32aPrivateProvider::from_snapshot(
+            &activated,
+            PhaseB32aSnapshotRole::CanonicalCandidate,
+        )
+        .map_err(js_error_to_string)
+        .unwrap();
+        let group = MlsGroup::load(
+            provider.provider.inner.storage(),
+            &GroupId::from_slice(&fixture.group_id),
+        )
+        .unwrap()
+        .expect("activated group must restore");
+        assert_eq!(
+            group.past_epoch_deletion_policy(),
+            &PastEpochDeletionPolicy::MaxEpochs(PHASE_B33B1_MAX_PAST_EPOCHS),
+        );
+        phase_b33b1_group_state(provider.provider.as_ref().crypto(), &group)
+            .map_err(js_error_to_string)
+            .unwrap();
+
+        phase_b32_assert_rejected(|| {
+            PhaseB32aGroup::load_canonical_state(&activated, &fixture.group_id).map(|_| ())
+        });
+        phase_b32_assert_rejected(|| {
+            PhaseB33aGroup::load_canonical_state(
+                &activated,
+                &fixture.group_id,
+                &fixture.joiner_identity,
+                &fixture.joiner_signature_key,
+            )
+            .map(|_| ())
+        });
     }
 
     #[cfg(feature = "extensions-draft")]
