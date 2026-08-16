@@ -81,6 +81,11 @@ function digestFields(domain, ...fields) {
   return hash.digest('hex');
 }
 
+function sameBytes(left, right) {
+  return left.byteLength === right.byteLength
+    && left.every((value, index) => value === right[index]);
+}
+
 async function loadCandidate(candidatePath, tuple) {
   const directory = artifactDirectory(candidatePath);
   const wasmRead = readExactRegularFile(
