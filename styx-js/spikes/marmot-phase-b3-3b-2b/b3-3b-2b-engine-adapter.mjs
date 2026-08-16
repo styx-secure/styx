@@ -269,19 +269,26 @@ export class B33b2bEvolutionAdapter {
     try {
       recovery = await this.journal.readRecovery();
       this.#verifyCanonicalState(recovery.canonicalStateBytes, head.canonical);
+      this.#verifyCanonicalState(recovery.parentStateBytes, {
+        epoch: head.retainedParent.epoch,
+        groupContextSha256Hex: head.retainedParent.groupContextSha256Hex,
+      });
       const expectedGroupId = bytesToHex(this.binding.groupId);
-      for (const [candidate, commitBytes] of [
-        [head.localCandidate, recovery.localCommitBytes],
-        [head.rivalCandidate, recovery.rivalCommitBytes],
-      ]) {
-        if (candidate !== null) {
-          const repeated = this.#stageExact(
-            recovery.parentStateBytes, commitBytes, candidate, false,
-          );
-          if (repeated.evidence.groupIdHex !== expectedGroupId) {
-            failB33b2b(B33B2B_ERROR.ENGINE_REJECTED,
-              'candidate group binding changed after restart');
-          }
+      if (head.localCandidate !== null
+        && (head.localCandidate.projection.groupIdHex !== expectedGroupId
+          || sha256Hex(recovery.localCommitBytes)
+            !== head.localCandidate.projection.commitSha256Hex)) {
+        failB33b2b(B33B2B_ERROR.CORRUPT,
+          'durable local candidate binding changed after restart');
+      }
+      if (head.rivalCandidate !== null) {
+        const repeated = this.#stageExact(
+          recovery.parentStateBytes, recovery.rivalCommitBytes,
+          head.rivalCandidate, false,
+        );
+        if (repeated.evidence.groupIdHex !== expectedGroupId) {
+          failB33b2b(B33B2B_ERROR.ENGINE_REJECTED,
+            'candidate group binding changed after restart');
         }
       }
       if (head.successorStateBlobSha256Hex !== null) {

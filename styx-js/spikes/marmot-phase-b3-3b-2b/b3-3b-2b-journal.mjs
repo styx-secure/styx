@@ -375,6 +375,19 @@ export function parseB33b2bHead(value) {
       !== expectedWinner(localCandidate, rivalCandidate).projection.commitSha256Hex) {
     failB33b2b(B33B2B_ERROR.CORRUPT, 'selected Commit violates authenticated ordering');
   }
+  if ([
+    B33B2B_STATE.LOCAL_BRANCH_DURABLE,
+    B33B2B_STATE.RIVAL_RECORDED,
+    B33B2B_STATE.RACE_FROZEN,
+    B33B2B_STATE.SETTLEMENT_PREPARED,
+  ].includes(head.state)
+    && (canonical.commitSha256Hex !== localCandidate.projection.commitSha256Hex
+      || canonical.groupContextSha256Hex
+        !== localCandidate.projection.candidateGroupContextSha256Hex
+      || canonical.epoch !== localCandidate.projection.targetEpoch)) {
+    failB33b2b(B33B2B_ERROR.CORRUPT,
+      'pre-settlement canonical authority is not the durable local branch');
+  }
   if (head.state === B33B2B_STATE.STABLE
     && (canonical.stateBlobSha256Hex !== head.successorStateBlobSha256Hex
       || canonical.commitSha256Hex !== head.selectedCommitSha256Hex
