@@ -67,4 +67,3 @@ export function createB33b2aOperationTrace() {
     },
   });
 }
-
