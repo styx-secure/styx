@@ -4,7 +4,8 @@
 import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import {
-  chmodSync, copyFileSync, cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync,
+  chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, rmSync,
+  writeFileSync,
 } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -444,6 +445,11 @@ export async function runRetainedWindowProbe(candidatePath) {
     await context.mdk.close();
     context.mdk = undefined;
     copyFileSync(databasePath, futureDatabasePath);
+    for (const suffix of ['-wal', '-shm']) {
+      if (existsSync(`${databasePath}${suffix}`)) {
+        copyFileSync(`${databasePath}${suffix}`, `${futureDatabasePath}${suffix}`);
+      }
+    }
     context.mdk = new MdkB33aProcess(context.mdkExecutable);
     await initializeMdk(context.mdk, context.mdkFields);
     await context.mdk.request('restore_group', { group_id_hex: context.groupIdHex });
