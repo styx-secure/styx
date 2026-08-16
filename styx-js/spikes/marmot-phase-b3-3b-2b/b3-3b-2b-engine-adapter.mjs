@@ -257,6 +257,7 @@ export class B33b2bEvolutionAdapter {
     failB33b2b(B33B2B_ERROR.UNRECOVERABLE,
       `${operation} made the bounded fork unrecoverable`, {
         causeCode: error?.code ?? null,
+        causeDetails: error?.details ?? null,
         causeMessage: error instanceof Error ? error.message : `${error}`,
         reasonDigestHex,
       });
