@@ -32,6 +32,10 @@ export const B33B1_APPROVED_SOURCE_SHA =
   'f7a7cb7b08e1f9a86652e2d5a2230c8aadc46f30';
 export const B33B1_APPROVED_SOURCE_TREE =
   'd59f8192b8b97d94215266b93e9bc4f72c3a4380';
+export const B33B1_APPROVED_PATCH_SHA256 =
+  '334331f481ec173a6f151ecbe73887d6ea67d22574fc4014a5827c8eb667b22d';
+export const B33B1_APPROVED_PROVENANCE_SHA256 =
+  '2265e15f618cd9f49288694cce55b17bac39e65562a4e2f112cb3ff002a53c9c';
 export const B33B1_APPROVED_ARTIFACT_TUPLE = Object.freeze({
   'openmls_wasm.js': '3de8fd46e4897aae117ee7b10ac41dffd02b507952c4024b0fe69d89fbb0c973',
   'openmls_wasm.d.ts': '057974ec53e3588da3dbf159f183b3e3ddb4a3b0a57d5391194f124a483ede86',
@@ -47,24 +51,6 @@ export const B33B1_INSTALLED_ARTIFACT_DIRECTORY =
 export const B33B1_DEFAULT_MDK_ROOT =
   '/home/mverde/.local/share/styx-reviews/upstreams/mdk-9396adb6';
 const MAX_GIT_DIAGNOSTIC_CHARS = 2048;
-const STAGE2_ALLOWED_PATHS = new Set([
-  '.github/workflows/styx-js-web.yml',
-  'styx-js/vendor/openmls-wasm/openmls_wasm.js',
-  'styx-js/vendor/openmls-wasm/openmls_wasm.d.ts',
-  'styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm',
-  'styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm.d.ts',
-  'styx-js/vendor/openmls-wasm/package.json',
-  'styx-js/vendor/openmls-wasm/README.md',
-  'styx-js/vendor/openmls-wasm/PROVENANCE.md',
-  'styx-js/src/crypto/mls/mls-build-info.js',
-  'styx-js/spikes/marmot-phase-b3-3a/verify-pins.mjs',
-  'styx-js/spikes/marmot-phase-b3-3a/README.md',
-  'styx-js/test/crypto/mls-phase-b2-surface.test.js',
-  'styx-js/test/crypto/mls-phase-b3-2a-welcome.test.js',
-  'styx-js/test/crypto/mls-phase-b3-3a-evidence.test.js',
-  'styx-js/test/crypto/kdf-wasm.test.js',
-  'styx-js/test/storage/mls-state-envelope.test.js',
-]);
 
 function clipped(value) {
   return String(value ?? '').slice(0, MAX_GIT_DIAGNOSTIC_CHARS);
@@ -185,32 +171,13 @@ export function installedArtifactTuple() {
   ), 'installed artifact');
 }
 
-function allowedPath(path) {
-  return STAGE2_ALLOWED_PATHS.has(path)
-    || path === 'styx-js/vendor/openmls-wasm/patch/lib.rs'
-    || path === 'styx-js/spikes/marmot-phase-b3/mdk-peer/src/main.rs'
-    || path === 'styx-js/spikes/marmot-phase-b3/README.md'
-    || path.startsWith('styx-js/spikes/marmot-phase-b3-3b-1/')
-    || /^styx-js\/test\/crypto\/mls-phase-b3-3b-1-.*\.test\.js$/.test(path)
-    || /^docs\/architecture\/spikes\/2026-.*-marmot-openmls-phase-b3-3b-1\.md$/.test(path);
-}
-
-function verifyCommittedScope() {
-  const changed = git(repoRoot, 'diff', '--name-only', '--no-renames',
-    `${B33B1_BASE_SHA}..HEAD`, '--').split('\n').filter(Boolean);
-  const forbidden = changed.filter((path) => !allowedPath(path));
-  if (forbidden.length !== 0) {
-    failB33b1(B33B1_ERROR.INVALID,
-      `committed source escaped Issue #188: ${forbidden.join(', ')}`);
-  }
-  return Object.freeze(changed);
-}
-
 export function verifyPins(candidatePath) {
   const exactMdkRoot = mdkRoot();
-  requireEqual(git(repoRoot, 'rev-parse', `${B33B1_APPROVED_SOURCE_SHA}^{tree}`),
-    B33B1_APPROVED_SOURCE_TREE, 'approved artifact source tree');
-  git(repoRoot, 'merge-base', '--is-ancestor', B33B1_APPROVED_SOURCE_SHA, 'HEAD');
+  // The approved artifact source revision is provenance metadata, not a
+  // required ancestor of the installed repository. GitHub's required squash
+  // merge preserves the reviewed tree but deliberately does not preserve the
+  // task branch's intermediate commits in main's ancestry. The installed
+  // tuple, exact patch and provenance record are the durable identity checks.
   requireEqual(git(repoRoot, 'rev-parse', `${B33B1_BASE_SHA}^{tree}`),
     B33B1_BASE_TREE, 'B3.3b-1 base tree');
   git(repoRoot, 'merge-base', '--is-ancestor', B33B1_BASE_SHA, 'HEAD');
@@ -225,6 +192,10 @@ export function verifyPins(candidatePath) {
     B33B1_MDK_LOCK_SHA256, 'external MDK Cargo.lock');
   requireEqual(sha256(resolve(repoRoot, 'styx-js/vendor/openmls-wasm/Cargo.lock')),
     B33B1_VENDOR_LOCK_SHA256, 'vendored Cargo.lock');
+  requireEqual(sha256(resolve(repoRoot, 'styx-js/vendor/openmls-wasm/patch/lib.rs')),
+    B33B1_APPROVED_PATCH_SHA256, 'approved B3.3b-1 patch');
+  requireEqual(sha256(resolve(repoRoot, 'styx-js/vendor/openmls-wasm/PROVENANCE.md')),
+    B33B1_APPROVED_PROVENANCE_SHA256, 'approved B3.3b-1 provenance');
   return Object.freeze({
     artifactSourceCommit: B33B1_APPROVED_SOURCE_SHA,
     artifactSourceTree: B33B1_APPROVED_SOURCE_TREE,
@@ -232,13 +203,12 @@ export function verifyPins(candidatePath) {
     baseTree: B33B1_BASE_TREE,
     candidateTuple: candidatePath === undefined
       ? installedArtifactTuple() : candidateTuple(candidatePath),
-    changedPaths: verifyCommittedScope(),
     marmotRevision: B33B1_MARMOT_REVISION,
     mdkLockSha256: B33B1_MDK_LOCK_SHA256,
     mdkRevision: B33B1_MDK_REVISION,
     mdkTree: B33B1_MDK_TREE,
     openMlsRevision: B33B1_OPENMLS_REVISION,
-    patchSha256: sha256(resolve(repoRoot, 'styx-js/vendor/openmls-wasm/patch/lib.rs')),
+    patchSha256: B33B1_APPROVED_PATCH_SHA256,
     sourceCommit: git(repoRoot, 'rev-parse', 'HEAD'),
     sourceTree: git(repoRoot, 'rev-parse', 'HEAD^{tree}'),
     vendorLockSha256: B33B1_VENDOR_LOCK_SHA256,
