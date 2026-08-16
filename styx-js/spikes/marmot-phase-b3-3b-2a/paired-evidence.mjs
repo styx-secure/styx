@@ -62,6 +62,15 @@ export function validateRetainedWindowRun(report, label = 'run') {
     || REQUIRED_TRUE_FIELDS.some((field) => report[field] !== true)) {
     blocked(`${label} retained-window invariants were not all satisfied`);
   }
+  if (!Array.isArray(report.safeCaseEvidence)
+    || report.safeCaseEvidence.length !== 10
+    || report.safeCaseEvidence.some((record) => !record || typeof record !== 'object'
+      || !DIGEST.test(record.ciphertextSha256Hex)
+      || !['MDK_TO_STYX', 'STYX_TO_MDK'].includes(record.direction)
+      || !['1', '2', '3'].includes(record.messageEpoch)
+      || !['1', '7'].includes(record.referenceTipEpoch))) {
+    blocked(`${label} safe case evidence is incomplete or malformed`);
+  }
   if (!/BeyondAppRetention|beyond_app_retention/i.test(
     JSON.stringify(report.mdkDistance6Reason),
   )) {

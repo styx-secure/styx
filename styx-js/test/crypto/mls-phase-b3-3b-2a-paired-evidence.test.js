@@ -43,6 +43,14 @@ function report(marker) {
     retainedDistances: [4, 5],
     retainedWindowAcceptedBothDirectionsExactlyOnce: true,
     retentionPolicy: 5,
+    safeCaseEvidence: Array.from({ length: 10 }, (_, index) => ({
+      caseId: `case-${index}`,
+      ciphertextSha256Hex: digest(`${index + 1}`),
+      direction: index % 2 === 0 ? 'MDK_TO_STYX' : 'STYX_TO_MDK',
+      messageEpoch: index < 2 ? '2' : '3',
+      outcome: { accepted: index >= 4 && index < 8 },
+      referenceTipEpoch: index < 2 ? '1' : '7',
+    })),
     sourceCommit: '1'.repeat(40),
     sourceTree: '2'.repeat(40),
     staleWindowRejectedBothDirectionsWithoutMutation: true,
@@ -66,6 +74,7 @@ describe('B3.3b-2a paired evidence validation', () => {
     ['operation sequence', (value) => { value.operationSequence = []; }],
     ['typed MDK reason', (value) => { value.mdkDistance6Reason = null; }],
     ['fresh process count', (value) => { value.freshProcessRecoveryCount = 8; }],
+    ['case evidence', (value) => { value.safeCaseEvidence = []; }],
     ['locked build', (value) => { value.mdkBuildEvidence.mdkPeerCargoLockSha256Hex = digest('f'); }],
   ])('rejects %s drift', (_label, mutate) => {
     const value = report('3');

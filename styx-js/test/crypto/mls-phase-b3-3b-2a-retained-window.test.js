@@ -41,6 +41,19 @@ describe('Phase B3.3b-2a exact retained application window', () => {
       staleWindowRejectedBothDirectionsWithoutMutation: true,
       transitionCount: 6,
     }));
+    expect(report.safeCaseEvidence).toHaveLength(10);
+    expect(report.safeCaseEvidence.map((record) => record.caseId)).toEqual([
+      'future-mdk-to-styx',
+      'future-styx-to-mdk',
+      'corrupt-distance4-mdk-to-styx',
+      'corrupt-distance4-styx-to-mdk',
+      'distance4-mdk-to-styx',
+      'distance4-styx-to-mdk',
+      'distance5-mdk-to-styx',
+      'distance5-styx-to-mdk',
+      'distance6-mdk-to-styx',
+      'distance6-styx-to-mdk',
+    ]);
     expect(report.operationSequence).toEqual(B33B2A_OPERATION_SEQUENCE);
   }, 1_200_000);
 });
