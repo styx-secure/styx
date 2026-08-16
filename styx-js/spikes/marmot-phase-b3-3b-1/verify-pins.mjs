@@ -46,6 +46,7 @@ export const B33B1_INSTALLED_ARTIFACT_DIRECTORY =
   resolve(repoRoot, 'styx-js/vendor/openmls-wasm');
 const mdkRoot = '/home/mverde/.local/share/styx-reviews/upstreams/mdk-9396adb6';
 const STAGE2_ALLOWED_PATHS = new Set([
+  '.github/workflows/styx-js-web.yml',
   'styx-js/vendor/openmls-wasm/openmls_wasm.js',
   'styx-js/vendor/openmls-wasm/openmls_wasm.d.ts',
   'styx-js/vendor/openmls-wasm/openmls_wasm_bg.wasm',
