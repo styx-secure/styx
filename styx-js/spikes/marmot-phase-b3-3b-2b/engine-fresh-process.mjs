@@ -76,9 +76,9 @@ async function run() {
         try { return await adapter.recordRival(rivalCommit); }
         finally { clearBytes(rivalCommit); }
       }
-      case 'freeze': return adapter.freezeRace();
-      case 'prepare': return adapter.prepareSettlement();
-      case 'commit': return adapter.commitStable();
+      case 'freeze': return await adapter.freezeRace();
+      case 'prepare': return await adapter.prepareSettlement();
+      case 'commit': return await adapter.commitStable();
       default:
         failB33b2b(B33B2B_ERROR.INVALID, `unknown fresh-process action ${action}`);
     }
