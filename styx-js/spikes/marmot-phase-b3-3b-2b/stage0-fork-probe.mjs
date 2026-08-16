@@ -639,6 +639,14 @@ async function runScenario(
       forkAdapter = new B33b2bEvolutionAdapter({
         binding: active, effectSink, journal: forkJournal, wasm: loaded.wasm,
       });
+      const retry = await forkAdapter.retryLocal();
+      if (!sameBytes(retry.commitBytes, local.commit)
+        || retry.commitSha256Hex !== local.evidence.commitSha256Hex) {
+        clearBytes(retry.commitBytes);
+        failB33b2b(B33B2B_ERROR.CORRUPT,
+          'restart regenerated the unresolved local publication obligation');
+      }
+      clearBytes(retry.commitBytes);
       const rival = await forkAdapter.recordRival(
         Uint8Array.from(Buffer.from(mdkLocal.group_message_hex, 'hex')),
       );
@@ -768,7 +776,44 @@ async function runScenario(
         wasm: loaded.wasm,
       });
       const stable = await forkAdapter.commitStable();
+      forkAdapter.close();
+      forkAdapter = new B33b2bEvolutionAdapter({
+        binding: active, effectSink,
+        journal: openB33b2bFileJournal(
+          resolve(styxRoot, 'b33b2b-journal'), B32A_PRIVATE_ROOT,
+        ),
+        wasm: loaded.wasm,
+      });
+      let injectedAfterAcceptance = false;
+      if (desiredWinner === 'styx' && deliveryMode === 'after_restart') {
+        effectSink.afterAccept = () => {
+          effectSink.afterAccept = null;
+          injectedAfterAcceptance = true;
+          throw new Error('injected crash after effect acceptance before journal acknowledgement');
+        };
+        try {
+          await forkAdapter.deliverStableEffect();
+          failB33b2b(B33B2B_ERROR.BLOCKED,
+            'effect crash injection did not interrupt acknowledgement');
+        } catch (error) {
+          if (error?.message !==
+            'injected crash after effect acceptance before journal acknowledgement') throw error;
+        }
+        forkAdapter.close();
+        forkAdapter = new B33b2bEvolutionAdapter({
+          binding: active, effectSink,
+          journal: openB33b2bFileJournal(
+            resolve(styxRoot, 'b33b2b-journal'), B32A_PRIVATE_ROOT,
+          ),
+          wasm: loaded.wasm,
+        });
+      }
       const delivered = await forkAdapter.deliverStableEffect();
+      const repeatedDelivery = await forkAdapter.deliverStableEffect();
+      if (repeatedDelivery.disposition !== 'already_delivered') {
+        failB33b2b(B33B2B_ERROR.CORRUPT,
+          'acknowledged settlement effect was offered again');
+      }
       const finalRecovery = await forkAdapter.journal.readRecovery();
       try {
         requireEqual(finalRecovery.head.canonical.groupContextSha256Hex,
@@ -780,6 +825,7 @@ async function runScenario(
         journalEvidence = Object.freeze({
           effectCount: effectSink.effects.size,
           effectDisposition: delivered.disposition,
+          injectedAfterAcceptance,
           finalHeadDigestHex: finalRecovery.head.headDigestHex,
           frozenSetDigestHex: frozen.frozenSetDigestHex,
           preparedHeadDigestHex: prepared.headDigestHex,

@@ -15,9 +15,13 @@ describe('Phase B3.3b-2b exact-pin durable concurrent fork', () => {
       expect(scenario.expectedWinner).toBe(scenario.desiredWinner);
       expect(scenario.journalEvidence).toEqual(expect.objectContaining({
         effectCount: 1,
-        effectDisposition: 'accepted',
         state: 'STABLE',
       }));
+      expect(['accepted', 'duplicate'])
+        .toContain(scenario.journalEvidence.effectDisposition);
+      expect(scenario.journalEvidence.injectedAfterAcceptance).toBe(
+        scenario.desiredWinner === 'styx' && scenario.deliveryMode === 'after_restart',
+      );
       expect(scenario.journalEvidence.selectedCommitSha256Hex)
         .toMatch(/^[0-9a-f]{64}$/);
       expect(scenario.journalEvidence.frozenSetDigestHex)

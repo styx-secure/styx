@@ -18,6 +18,7 @@ function normalizedScenario(scenario) {
     expectedWinner: scenario.expectedWinner,
     finalState: scenario.journalEvidence?.state,
     initialDisposition: scenario.initialDisposition,
+    injectedAfterAcceptance: scenario.journalEvidence?.injectedAfterAcceptance,
     selectionDisposition: scenario.selection?.disposition ?? scenario.selection?.status,
     decisiveRule: scenario.selection?.decisiveRule ?? null,
     deferredReason: scenario.selection?.deferredReason ?? null,
