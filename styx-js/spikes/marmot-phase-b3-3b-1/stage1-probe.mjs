@@ -19,7 +19,7 @@ import { buildMdkPeer } from '../marmot-phase-b3-3a/b3-3a-mdk-builder.mjs';
 import { MdkB33aProcess } from '../marmot-phase-b3-3a/b3-3a-mdk-driver.mjs';
 import { B33A_MDK_SIGNER_PATH } from '../marmot-phase-b3-3a/b3-3a-mdk-signer.mjs';
 import {
-  B33B1_ERROR, B33B1_LIMITS, B33B1_PRIVATE_ROOT, B33B1_RECOVERY,
+  B33B1_ERROR, B33B1_LIMITS, B33B1_MAX_PAST_EPOCHS, B33B1_PRIVATE_ROOT, B33B1_RECOVERY,
   b33b1RosterSha256, bytesToHex, canonicalJsonBytes, clearBytes, exactFields,
   failB33b1, sha256Hex,
 } from './b3-3b-1-canonical.mjs';
@@ -558,15 +558,27 @@ export async function runStage1Probe(candidatePath) {
       }
       operations.advance('final-durable-state-verified');
       const operationSequence = operations.complete();
+      const participantSetSha256Hex = sha256Hex(canonicalJsonBytes([
+        keyPackage.accountIdentityHex,
+        mdkIdentityHex,
+      ].sort()));
       return Object.freeze({
+        artifactSourceCommit: pins.artifactSourceCommit,
+        artifactSourceTree: pins.artifactSourceTree,
         candidateTuple: pins.candidateTuple,
         groupIdHex: creation.group_id_hex,
         finalEpoch: final.head.epochDec,
         finalGroupContextSha256Hex: final.head.groupContextSha256Hex,
+        finalRosterSha256Hex: final.head.rosterSha256Hex,
         transitionCount: final.head.transitions.length,
         applicationRecordCount: final.head.applicationRecords.length,
         freshProcessRecoveryCount,
+        mdkBuildEvidence: mdkBuild.evidence,
         operationSequence,
+        participantSetSha256Hex,
+        retentionPolicy: B33B1_MAX_PAST_EPOCHS,
+        sourceCommit: pins.sourceCommit,
+        sourceTree: pins.sourceTree,
         mdkPreparedCommitRecoveredExactly: true,
         styxLocalCommitRetriedExactly: true,
         retainedTrafficAcceptedBothDirections: true,
