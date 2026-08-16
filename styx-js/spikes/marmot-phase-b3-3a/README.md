@@ -121,13 +121,13 @@ Cargo version and executable SHA-256 in the adjacent `verify_exact_inputs` and
 
 ```bash
 node spikes/marmot-phase-b3-3a/b3-3a-orchestrator.mjs \
-  --run-dir /home/mverde/.local/share/styx-b3-3a-runs/issue-185/stage2-run-a \
-  --private-dir /home/mverde/.local/share/styx-b3-3a-private/issue-185/stage2-run-a \
+  --run-dir /home/mverde/.local/share/styx-b3-3a-runs/issue-185/stage2-final-a \
+  --private-dir /home/mverde/.local/share/styx-b3-3a-private/issue-185/stage2-final-a \
   --candidate-dir /home/mverde/.local/share/styx-b3-3a-builds/issue-185/stage1-final-a-1dc8149 \
-  --mdk-build-dir /home/mverde/.local/share/styx-b3-3a-mdk-builds/issue-185/stage2-run-a
+  --mdk-build-dir /home/mverde/.local/share/styx-b3-3a-mdk-builds/issue-185/stage2-final-a
 ```
 
-Repeat with new `stage2-run-b` children and the independently built but
+Repeat with new `stage2-final-b` children and the independently built but
 byte-identical Stage 1 candidate `stage1-final-b-1dc8149`. Existing directories,
 dirty tracked inputs, tuple drift, unlocked dependencies or a non-executable
 result fail closed.

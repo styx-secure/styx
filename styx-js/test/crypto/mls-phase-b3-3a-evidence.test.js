@@ -36,6 +36,7 @@ import {
   B33A_MDK_BUILD_ROOT,
   B33A_PRIVATE_ROOT,
   B33A_RUN_ROOT,
+  B33A_STAGE2_GO_OPERATIONS,
   appendB33aTranscript,
   validateB33aReport,
   validateB33aTranscript,
@@ -183,7 +184,7 @@ describe('Phase B3.3a evidence and format separation', () => {
   });
 
   test('paired Stage 2 runs, when present, bind disjoint locked MDK executables', () => {
-    const names = ['stage2-run-a', 'stage2-run-b'];
+    const names = ['stage2-final-a', 'stage2-final-b'];
     const runPaths = names.map((name) => join(B33A_RUN_ROOT, name));
     expect(existsSync(join(runPaths[0], 'report.json')))
       .toBe(existsSync(join(runPaths[1], 'report.json')));
@@ -231,6 +232,7 @@ describe('Phase B3.3a evidence and format separation', () => {
         expect(publicEvidence).not.toContain(forbidden);
       }
       expect(existsSync(join(B33A_PRIVATE_ROOT, names[index]))).toBe(false);
+      expect(transcript.map((record) => record.operation)).toEqual(B33A_STAGE2_GO_OPERATIONS);
       return { report, transcript };
     });
     expect(runs[0].transcript.map((record) => record.operation))

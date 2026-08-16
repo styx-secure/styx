@@ -12,6 +12,35 @@ export const B33A_BUILD_ROOT = '/home/mverde/.local/share/styx-b3-3a-builds/issu
 export const B33A_MDK_BUILD_ROOT =
   '/home/mverde/.local/share/styx-b3-3a-mdk-builds/issue-185';
 export const B33A_REPORT_FORMAT = 'styx-marmot-b3.3a-application-evidence';
+export const B33A_STAGE2_GO_OPERATIONS = Object.freeze([
+  'verify_exact_inputs',
+  'build_locked_mdk_peer',
+  'styx_initialize_new',
+  'styx_advertise_exact_key_package',
+  'mdk_hello',
+  'mdk_initialize_new',
+  'mdk_create_exact_group',
+  'styx_record_welcome',
+  'styx_join_and_activate_b33a',
+  'mdk_confirm_welcome_delivery',
+  'styx_post_join_fresh_process_restore',
+  'styx_post_join_restored_head',
+  'mdk_send_application_1',
+  'styx_receive_durable_application_1',
+  'styx_send_durable_application_1',
+  'mdk_receive_application_1',
+  'styx_fresh_process_restore',
+  'styx_restored_head',
+  'mdk_hello',
+  'mdk_fresh_process_initialize',
+  'mdk_fresh_process_restore_group',
+  'styx_replay_rejected_without_plaintext',
+  'mdk_replay_rejected_without_event',
+  'mdk_send_application_2',
+  'styx_receive_durable_application_2',
+  'styx_send_durable_application_2',
+  'mdk_receive_application_2',
+]);
 export const B33A_STATE = Object.freeze({ ACTIVE: 'ACTIVE' });
 export const B33A_OUTCOME = Object.freeze({
   COMMITTED: 'COMMITTED',

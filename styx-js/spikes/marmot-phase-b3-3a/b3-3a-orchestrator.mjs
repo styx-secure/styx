@@ -16,6 +16,7 @@ import {
   B33A_PRIVATE_ROOT,
   B33A_REPORT_FORMAT,
   B33A_RUN_ROOT,
+  B33A_STAGE2_GO_OPERATIONS,
   appendB33aTranscript,
   canonicalJsonBytes,
   encodeMarmotAppEvent,
@@ -260,6 +261,20 @@ async function runMode(args) {
       'confirm_published', { welcome_message_id_hex: creation.welcome_message_id_hex },
     ));
 
+    await styx.close();
+    styx = null;
+    styx = new StyxB33aProcess();
+    appendB33aTranscript(transcript, 'styx_post_join_fresh_process_restore', await styx.request(
+      'initialize_existing', {
+        artifact_directory: args.candidateDirectory,
+        artifact_tuple: pins.candidateTuple,
+        private_directory: styxPrivateDirectory,
+      },
+    ));
+    appendB33aTranscript(
+      transcript, 'styx_post_join_restored_head', await styx.request('verify_active'),
+    );
+
     const mdkEvent1 = syntheticEvent(mdkIdentityHex, creation.group_id_hex, 1, 'mdk-to-styx');
     const mdkEvent1Id = JSON.parse(Buffer.from(mdkEvent1).toString('utf8')).id;
     const mdkSent1 = await mdk.request('send_application', {
@@ -362,6 +377,13 @@ async function runMode(args) {
         group_message_hex: styxSent2.ciphertext_hex,
       }), styxEvent2, keyPackage.accountIdentityHex));
     applicationEventsCommitted += 1;
+
+    const completedOperations = transcript.map((record) => record.operation);
+    if (JSON.stringify(completedOperations) !== JSON.stringify(B33A_STAGE2_GO_OPERATIONS)) {
+      const error = new Error('Stage 2 execution did not follow the exact contracted sequence');
+      error.code = 'E_B33A_STAGE2_SEQUENCE_MISMATCH';
+      throw error;
+    }
 
     const transcriptHeadSha256Hex = validateB33aTranscript(transcript);
     report = Object.freeze({
