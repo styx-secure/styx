@@ -97,6 +97,7 @@ function allowedPath(path) {
     || path.startsWith('styx-js/spikes/marmot-phase-b3-3a/')
     || path.startsWith('styx-js/spikes/marmot-phase-b3-3b-1/')
     || /^styx-js\/test\/crypto\/mls-phase-b3-3a-.*\.test\.js$/.test(path)
+    || /^styx-js\/test\/crypto\/mls-phase-b3-3b-1-.*\.test\.js$/.test(path)
     || /^styx-js\/test\/crypto\/mls-phase-b3-2a-.*\.test\.js$/.test(path);
 }
 
