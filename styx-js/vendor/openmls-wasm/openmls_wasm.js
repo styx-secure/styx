@@ -3858,6 +3858,472 @@ export class PhaseB32aPendingWelcome {
 }
 if (Symbol.dispose) PhaseB32aPendingWelcome.prototype[Symbol.dispose] = PhaseB32aPendingWelcome.prototype.free;
 
+/**
+ * One-use exact-profile B3.3a operation boundary.
+ *
+ * The Provider, group and local signing identity are private to this handle.
+ * Either application operation consumes all three, including on failure.
+ */
+export class PhaseB33aGroup {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB33aGroup.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB33aGroupFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB33aGroupFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb33agroup_free(ptr, 0);
+    }
+    /**
+     * @returns {bigint}
+     */
+    epoch() {
+        const ret = wasm.phaseb33agroup_epoch(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return BigInt.asUintN(64, ret[0]);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    group_id() {
+        const ret = wasm.phaseb33agroup_group_id(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {boolean}
+     */
+    is_consumed() {
+        const ret = wasm.phaseb33agroup_is_consumed(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @param {Uint8Array} candidate_state
+     * @param {Uint8Array} group_id
+     * @param {Uint8Array} expected_own_identity
+     * @param {Uint8Array} expected_own_signature_key
+     * @returns {PhaseB33aGroup | undefined}
+     */
+    static load_canonical_state(candidate_state, group_id, expected_own_identity, expected_own_signature_key) {
+        const ptr0 = passArray8ToWasm0(candidate_state, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(group_id, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(expected_own_identity, wasm.__wbindgen_malloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ptr3 = passArray8ToWasm0(expected_own_signature_key, wasm.__wbindgen_malloc);
+        const len3 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb33agroup_load_canonical_state(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] === 0 ? undefined : PhaseB33aGroup.__wrap(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} ciphertext
+     * @returns {PhaseB33aPendingInbound}
+     */
+    prepare_inbound(ciphertext) {
+        const ptr0 = passArray8ToWasm0(ciphertext, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb33agroup_prepare_inbound(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB33aPendingInbound.__wrap(ret[0]);
+    }
+    /**
+     * @param {Uint8Array} plaintext
+     * @returns {PhaseB33aPendingOutbound}
+     */
+    prepare_outbound(plaintext) {
+        const ptr0 = passArray8ToWasm0(plaintext, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb33agroup_prepare_outbound(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB33aPendingOutbound.__wrap(ret[0]);
+    }
+}
+if (Symbol.dispose) PhaseB33aGroup.prototype[Symbol.dispose] = PhaseB33aGroup.prototype.free;
+
+export class PhaseB33aInboundRelease {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB33aInboundRelease.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB33aInboundReleaseFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB33aInboundReleaseFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb33ainboundrelease_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    take_canonical_state() {
+        const ret = wasm.phaseb33ainboundrelease_take_canonical_state(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    take_ciphertext() {
+        const ret = wasm.phaseb33ainboundrelease_take_ciphertext(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    take_plaintext() {
+        const ret = wasm.phaseb33ainboundrelease_take_plaintext(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) PhaseB33aInboundRelease.prototype[Symbol.dispose] = PhaseB33aInboundRelease.prototype.free;
+
+export class PhaseB33aOutboundRelease {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB33aOutboundRelease.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB33aOutboundReleaseFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB33aOutboundReleaseFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb33aoutboundrelease_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    take_canonical_state() {
+        const ret = wasm.phaseb33aoutboundrelease_take_canonical_state(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    take_ciphertext() {
+        const ret = wasm.phaseb33aoutboundrelease_take_ciphertext(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) PhaseB33aOutboundRelease.prototype[Symbol.dispose] = PhaseB33aOutboundRelease.prototype.free;
+
+export class PhaseB33aPendingInbound {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB33aPendingInbound.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB33aPendingInboundFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB33aPendingInboundFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb33apendinginbound_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    canonical_state_sha256() {
+        const ret = wasm.phaseb33apendinginbound_canonical_state_sha256(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    ciphertext_sha256() {
+        const ret = wasm.phaseb33apendinginbound_ciphertext_sha256(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    discard() {
+        const ret = wasm.phaseb33apendinginbound_discard(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @returns {bigint}
+     */
+    epoch() {
+        const ret = wasm.phaseb33apendinginbound_epoch(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return BigInt.asUintN(64, ret[0]);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    group_id() {
+        const ret = wasm.phaseb33apendinginbound_group_id(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {boolean}
+     */
+    is_consumed() {
+        const ret = wasm.phaseb33apendinginbound_is_consumed(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    plaintext_sha256() {
+        const ret = wasm.phaseb33apendinginbound_plaintext_sha256(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @param {Uint8Array} expected_canonical_state_sha256
+     * @param {Uint8Array} expected_ciphertext_sha256
+     * @param {Uint8Array} expected_plaintext_sha256
+     * @returns {PhaseB33aInboundRelease}
+     */
+    release(expected_canonical_state_sha256, expected_ciphertext_sha256, expected_plaintext_sha256) {
+        const ptr0 = passArray8ToWasm0(expected_canonical_state_sha256, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(expected_ciphertext_sha256, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passArray8ToWasm0(expected_plaintext_sha256, wasm.__wbindgen_malloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb33apendinginbound_release(this.__wbg_ptr, ptr0, len0, ptr1, len1, ptr2, len2);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB33aInboundRelease.__wrap(ret[0]);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    sender_credential_identity() {
+        const ret = wasm.phaseb33apendinginbound_sender_credential_identity(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {number}
+     */
+    sender_leaf_index() {
+        const ret = wasm.phaseb33apendinginbound_sender_leaf_index(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    sender_signature_key() {
+        const ret = wasm.phaseb33apendinginbound_sender_signature_key(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) PhaseB33aPendingInbound.prototype[Symbol.dispose] = PhaseB33aPendingInbound.prototype.free;
+
+export class PhaseB33aPendingOutbound {
+    static __wrap(ptr) {
+        const obj = Object.create(PhaseB33aPendingOutbound.prototype);
+        obj.__wbg_ptr = ptr;
+        PhaseB33aPendingOutboundFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        PhaseB33aPendingOutboundFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_phaseb33apendingoutbound_free(ptr, 0);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    canonical_state_sha256() {
+        const ret = wasm.phaseb33apendingoutbound_canonical_state_sha256(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    ciphertext_sha256() {
+        const ret = wasm.phaseb33apendingoutbound_ciphertext_sha256(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    discard() {
+        const ret = wasm.phaseb33apendingoutbound_discard(this.__wbg_ptr);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * @returns {bigint}
+     */
+    epoch() {
+        const ret = wasm.phaseb33apendingoutbound_epoch(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return BigInt.asUintN(64, ret[0]);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    group_id() {
+        const ret = wasm.phaseb33apendingoutbound_group_id(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {boolean}
+     */
+    is_consumed() {
+        const ret = wasm.phaseb33apendingoutbound_is_consumed(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
+     * @param {Uint8Array} expected_canonical_state_sha256
+     * @param {Uint8Array} expected_ciphertext_sha256
+     * @returns {PhaseB33aOutboundRelease}
+     */
+    release(expected_canonical_state_sha256, expected_ciphertext_sha256) {
+        const ptr0 = passArray8ToWasm0(expected_canonical_state_sha256, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passArray8ToWasm0(expected_ciphertext_sha256, wasm.__wbindgen_malloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.phaseb33apendingoutbound_release(this.__wbg_ptr, ptr0, len0, ptr1, len1);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return PhaseB33aOutboundRelease.__wrap(ret[0]);
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    sender_credential_identity() {
+        const ret = wasm.phaseb33apendingoutbound_sender_credential_identity(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+    /**
+     * @returns {Uint8Array}
+     */
+    sender_signature_key() {
+        const ret = wasm.phaseb33apendingoutbound_sender_signature_key(this.__wbg_ptr);
+        if (ret[3]) {
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        var v1 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+        wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+        return v1;
+    }
+}
+if (Symbol.dispose) PhaseB33aPendingOutbound.prototype[Symbol.dispose] = PhaseB33aPendingOutbound.prototype.free;
+
 export class Provider {
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -4169,6 +4635,21 @@ const PhaseB32aKeyPackageFinalization = (typeof FinalizationRegistry === 'undefi
 const PhaseB32aPendingWelcomeFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_phaseb32apendingwelcome_free(ptr, 1));
+const PhaseB33aGroupFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb33agroup_free(ptr, 1));
+const PhaseB33aInboundReleaseFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb33ainboundrelease_free(ptr, 1));
+const PhaseB33aOutboundReleaseFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb33aoutboundrelease_free(ptr, 1));
+const PhaseB33aPendingInboundFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb33apendinginbound_free(ptr, 1));
+const PhaseB33aPendingOutboundFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_phaseb33apendingoutbound_free(ptr, 1));
 const ProviderFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_provider_free(ptr, 1));

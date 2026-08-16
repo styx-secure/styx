@@ -1,7 +1,7 @@
 # Vendored OpenMLS-WASM
 
 This directory contains the pinned OpenMLS WebAssembly engine used by the
-legacy Styx chat and by isolated Phase B1/Phase B2/B3.1/B3.2/B3.2a capability probes. The complete pin,
+legacy Styx chat and by isolated Phase B1/Phase B2/B3.1/B3.2/B3.2a/B3.3a capability probes. The complete pin,
 toolchain, licensing classification, hashes, and residual risks are recorded in
 [`PROVENANCE.md`](./PROVENANCE.md).
 
@@ -15,7 +15,7 @@ toolchain, licensing classification, hashes, and residual risks are recorded in
 - Enabled upstream feature: `extensions-draft`
 
 The source revision has not changed. The draft feature is enabled because the
-non-product Phase B1/Phase B2/B3.1/B3.2/B3.2a probes need the upstream application-data dictionary and
+non-product Phase B1/Phase B2/B3.1/B3.2/B3.2a/B3.3a probes need the upstream application-data dictionary and
 staged-commit APIs. The feature expands the compiled parser surface for both
 profiles; it does not make the shipping product select the probe profile.
 
@@ -28,7 +28,7 @@ Run from this directory:
 ```
 
 Docker is required. No host Rust toolchain is used. The committed WASM is
-2,243,925 bytes raw and 789,472 bytes gzip (`gzip -9 -n`).
+2,266,967 bytes raw and 806,069 bytes gzip (`gzip -9 -n`).
 
 ## Profiles
 
@@ -41,7 +41,8 @@ The legacy API remains the shipping path:
 - existing `Identity`, `Group`, `KeyPackage`, `RatchetTree`, and automatic
   inbound merge semantics are unchanged.
 
-The separate `PhaseB1*`, `PhaseB2*`, `PhaseB31*`, `PhaseB32*` and `PhaseB32a*` exports are
+The separate `PhaseB1*`, `PhaseB2*`, `PhaseB31*`, `PhaseB32*`, `PhaseB32a*` and
+`PhaseB33a*` exports are
 capability-probe types only. They use:
 
 - ciphersuite:
@@ -91,6 +92,14 @@ validation. Success transfers the exact candidate once; every rejection wipes
 and clears it, returns a stable bounded error category, and makes retry fail
 closed.
 
+The B3.3a wrapper loads only that exact B3.2a canonical state into a private
+operation-scoped Provider. Its outbound and inbound handles are one-use and
+bind the post-operation canonical state to the ciphertext and, for inbound
+traffic, plaintext digests before release. Authenticated sender evidence is
+derived from the processed MLS message and rebound by the JavaScript adapter
+to the exact two-member roster. The wrapper does not expose Commit processing,
+epoch changes, product APIs or transport behavior.
+
 No product source imports the probe. It demonstrates local mechanics only: it
 is not a Marmot interoperability, security-audit, or production-readiness claim.
 
@@ -105,8 +114,9 @@ It adds:
 - the isolated Phase B1 and Phase B2 profiles, the isolated B3.1
   KeyPackage/profile capability, framed KeyPackage inspection,
   explicit pending/staged Commit lifecycles, bounded candidate projection and
-  sender-preserving application receive boundary, and the isolated B3.2/B3.2a
-  embedded-tree Welcome preparation/release surfaces described above.
+  sender-preserving application receive boundary, the isolated B3.2/B3.2a
+  embedded-tree Welcome preparation/release surfaces, and the isolated B3.3a
+  one-use application-message boundary described above.
 
 The patch and its probe API are outside the scope of upstream OpenMLS audits.
 `roundtrip.mjs` proves the unchanged legacy 1:1 path; the capability evidence is
@@ -129,6 +139,7 @@ not introduce Marmot, MDK, Darkmatter, or Least Authority code or fixtures.
   Phase B1/Phase B2 APIs expose explicit staging.
 - The capability APIs do not implement durable publish-before-apply, production
   crash recovery, authorization policy, fork resolution, or concurrent Commit
-  convergence. The B3.2a spike owns only its isolated file-backed Welcome journal evidence.
+  convergence. The B3.2a and B3.3a spikes own only their isolated synthetic
+  file-backed journal evidence.
 - Browser-origin control, compromised devices/extensions, metadata exposure,
   malicious recipients, and rollback/physical-erasure limits remain.

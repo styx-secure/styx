@@ -19,6 +19,10 @@ import {
 import { openB32aFileJournal } from '../../spikes/marmot-phase-b3-2a/b3-2a-journal.mjs';
 import { B32_WASM_SHA256 } from '../../spikes/marmot-phase-b3-2/b3-2-canonical.mjs';
 import { validateB32Transcript } from '../../spikes/marmot-phase-b3-2/b3-2-canonical.mjs';
+import {
+  B3_2A_MLS_BUILD_INFO,
+  MLS_BUILD_INFO,
+} from '../../src/crypto/mls/mls-build-info.js';
 
 const repoRoot = resolve(new URL('../../..', import.meta.url).pathname);
 const patchSource = readFileSync(
@@ -57,7 +61,9 @@ describe('Phase B3.2a source boundary and exact pins', () => {
     );
     expect(B32A_MDK_REVISION).toBe('9396adb6aa6b95b521a7979facd5ea7040c07288');
     expect(B32A_OPENMLS_REVISION).toBe('09e92777dba0528d3d29e2e5e681b7e91637c7be');
-    expect(sha256Hex(installed)).toBe(B32A_WASM_SHA256);
+    expect(sha256Hex(installed)).toBe(MLS_BUILD_INFO.wasmArtifactSha256);
+    expect(MLS_BUILD_INFO.wasmArtifactSha256).not.toBe(B32A_WASM_SHA256);
+    expect(B3_2A_MLS_BUILD_INFO.wasmArtifactSha256).toBe(B32A_WASM_SHA256);
     expect(B32A_WASM_SHA256).not.toBe(B32_WASM_SHA256);
   });
 });

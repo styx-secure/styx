@@ -24,6 +24,36 @@ This is the first observed incompatibility. The probe therefore does not reach
 Welcome processing, application traffic, Commit processing or restart traffic.
 Those later operations remain untested, not failed.
 
+That result is historical evidence for Issue #165. Later bounded phases add
+new exact profiles and RPC operations without relabelling or weakening this
+NO-GO. In particular, B3.3a uses the same pinned MDK adapter only after an exact
+B3.2a group has been established; it does not claim that the original B3
+KeyPackage became compatible.
+
+## Strict JSON-lines RPC operations
+
+Every request is an exact-field JSON object containing `id` and `op`. Unknown
+fields and unknown operations fail closed. Binary inputs and outputs are
+lowercase hexadecimal and remain subject to the peer's fixed line/field bounds.
+
+| Operation | Required additional fields | Bounded purpose |
+|---|---|---|
+| `hello` | none | Report the frozen adapter protocol, MDK revision and direct synthetic envelope. |
+| `initialize` | `account_identity_hex`, `database_key_path`, `database_path`, `node_binary`, `signer_script`, `signer_secret_path` | Open the encrypted MDK store and current-profile engine. |
+| `create_group` | `key_package_hex` | Create the exact current-profile two-member group and return one Welcome. |
+| `confirm_published` | `welcome_message_id_hex` | Acknowledge the independent durable Welcome-delivery obligation. |
+| `public_projection` | none | Return MDK's public conformance snapshot for the selected group. |
+| `restore_group` | `group_id_hex` | Select and validate an already durable group after a fresh process starts. |
+| `send_application` | `payload_hex` | Validate a Marmot inner event and return MDK's durably prepared MLS application ciphertext. |
+| `ingest_group_message` | `group_message_hex` | Ingest one direct-envelope MLS message and release plaintext only from the exact authenticated `MessageReceived` event. |
+| `checkpoint_and_exit` | none | Drop the process after all preceding synchronous durable operations complete. |
+| `destroy` | none | Drop the in-process engine and group selection; private-file removal remains orchestrator-owned. |
+| `self_update` | none | Always return a bounded NO-GO because epoch changes belong to B3.3b. |
+
+An MDK error after entering an application-message mutation boundary is fatal
+to that peer process. It returns `mdk_peer_quarantined` once and exits, so a
+possibly queued application event cannot be drained by a later RPC call.
+
 ## Frozen inputs
 
 - Styx base: `925554ef89921ee6b6fa8ea1c976ed3a05977a26`, tree
