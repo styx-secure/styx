@@ -30,6 +30,13 @@ NO-GO. In particular, B3.3a uses the same pinned MDK adapter only after an exact
 B3.2a group has been established; it does not claim that the original B3
 KeyPackage became compatible.
 
+Issue #188 additively extends that adapter for the isolated B3.3b-1 sequential
+self-update probe. The extension does not change the historical B3 result or
+activate any product path. It keeps MDK's `PendingStateRef` process-local,
+requires publication outcomes to match the exact transport message id, and
+recovers a fresh pending reference only through the pinned public
+`drain_auto_publish` API after restart.
+
 ## Strict JSON-lines RPC operations
 
 Every request is an exact-field JSON object containing `id` and `op`. Unknown
@@ -46,9 +53,13 @@ lowercase hexadecimal and remain subject to the peer's fixed line/field bounds.
 | `restore_group` | `group_id_hex` | Select and validate an already durable group after a fresh process starts. |
 | `send_application` | `payload_hex` | Validate a Marmot inner event and return MDK's durably prepared MLS application ciphertext. |
 | `ingest_group_message` | `group_message_hex` | Ingest one direct-envelope MLS message and release plaintext only from the exact authenticated `MessageReceived` event. |
+| `self_update` | none | Prepare one exact public self-update through `SendIntent::SelfUpdate`; retain its process-local pending reference until a matching publication outcome. |
+| `drain_auto_publish` | none | After restart, recover at most one byte-identical durable group evolution and register only its newly issued process-local pending reference. |
+| `confirm_group_published` | `message_id_hex` | Apply the exact registered group evolution through `confirm_published` and require one matching epoch transition. |
+| `fail_group_publication` | `message_id_hex` | Roll back the exact registered group evolution through `publish_failed`; this is not valid after ambiguous or successful publication. |
+| `ingest_group_evolution` | `group_message_hex` | Ingest an exact peer Commit and accept only one matching epoch transition, or an explicit duplicate/own-echo disposition. |
 | `checkpoint_and_exit` | none | Drop the process after all preceding synchronous durable operations complete. |
 | `destroy` | none | Drop the in-process engine and group selection; private-file removal remains orchestrator-owned. |
-| `self_update` | none | Always return a bounded NO-GO because epoch changes belong to B3.3b. |
 
 An MDK error after entering an application-message mutation boundary is fatal
 to that peer process. It returns `mdk_peer_quarantined` once and exits, so a
