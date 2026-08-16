@@ -3,10 +3,12 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { runInNewContext } from 'node:vm';
 import {
   B33B1_ERROR,
   B33B1_RECOVERY,
   B33B1_STATE,
+  exactFields,
   sha256Hex,
 } from '../../spikes/marmot-phase-b3-3b-1/b3-3b-1-canonical.mjs';
 import {
@@ -117,6 +119,16 @@ function clearRecovery(value) {
 }
 
 describe('Phase B3.3b-1 durable epoch-transition journal', () => {
+  test('strict records accept ordinary cross-realm objects but reject custom prototypes', () => {
+    const crossRealm = runInNewContext('({ value: 7 })');
+    expect(exactFields(crossRealm, ['value'], 'cross-realm record')).toEqual({ value: 7 });
+
+    const inherited = Object.create({ value: 7 });
+    Object.defineProperty(inherited, 'value', { enumerable: true, value: 7 });
+    expect(() => exactFields(inherited, ['value'], 'custom record'))
+      .toThrow(expect.objectContaining({ code: B33B1_ERROR.INVALID }));
+  });
+
   test('activates exact B3.2a state once and restores stable authority', async () => {
     const { journal, fields, current } = await activated();
     expect(current.action).toBe(B33B1_RECOVERY.STABLE);

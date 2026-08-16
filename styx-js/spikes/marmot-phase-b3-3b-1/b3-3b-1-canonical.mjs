@@ -103,12 +103,24 @@ export function safeFree(value) {
   try { value?.free?.(); } catch { /* cleanup cannot change protocol authority */ }
 }
 
+function isOrdinaryObjectPrototype(prototype) {
+  if (prototype === null || prototype === Object.prototype) return true;
+  if (Object.getPrototypeOf(prototype) !== null) return false;
+  const constructor = Object.getOwnPropertyDescriptor(prototype, 'constructor');
+  return constructor !== undefined
+    && Object.hasOwn(constructor, 'value')
+    && typeof constructor.value === 'function'
+    && constructor.value.name === 'Object'
+    && Function.prototype.toString.call(constructor.value)
+      === 'function Object() { [native code] }';
+}
+
 export function exactFields(value, fields, label) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     failB33b1(B33B1_ERROR.INVALID, `${label} is not an object`);
   }
   const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
+  if (!isOrdinaryObjectPrototype(prototype)) {
     failB33b1(B33B1_ERROR.INVALID, `${label} has a forbidden prototype`);
   }
   const keys = Reflect.ownKeys(value);
