@@ -52,7 +52,7 @@ import {
 } from './b3-3b-2b-engine-adapter.mjs';
 import { openB33b2bFileJournal } from './b3-3b-2b-journal.mjs';
 
-const MAX_IDENTITY_ATTEMPTS = 32;
+const MAX_IDENTITY_PAIR_ATTEMPTS = 64;
 
 function accountSecret() {
   for (;;) {
@@ -347,19 +347,30 @@ async function initializeMdk(peer, fields) {
   });
 }
 
-async function selectStyxIdentity(root, mdkIdentityHex, desiredWinner) {
-  for (let attempt = 0; attempt < MAX_IDENTITY_ATTEMPTS; attempt += 1) {
+async function selectSyntheticIdentities(root, desiredWinner) {
+  for (let attempt = 0; attempt < MAX_IDENTITY_PAIR_ATTEMPTS; attempt += 1) {
+    const mdkSecret = accountSecret();
+    const mdkIdentityHex = bytesToHex(schnorr.getPublicKey(mdkSecret));
     const styxRoot = freshPrivateDirectory(root, `identity-${attempt}-`);
-    const styx = await StyxB32aPeer.create(styxRoot, mdkIdentityHex);
-    const keyPackage = await styx.publicKeyPackage();
-    const styxWins = compareIdentityHex(keyPackage.accountIdentityHex, mdkIdentityHex) < 0;
-    if ((desiredWinner === 'styx') === styxWins) {
-      return Object.freeze({ keyPackage, styx, styxRoot });
+    try {
+      const styx = await StyxB32aPeer.create(styxRoot, mdkIdentityHex);
+      const keyPackage = await styx.publicKeyPackage();
+      const styxWins = compareIdentityHex(keyPackage.accountIdentityHex, mdkIdentityHex) < 0;
+      if ((desiredWinner === 'styx') === styxWins) {
+        return Object.freeze({
+          keyPackage, mdkIdentityHex, mdkSecret, styx, styxRoot,
+        });
+      }
+    } catch (error) {
+      clearBytes(mdkSecret);
+      rmSync(styxRoot, { recursive: true, force: true });
+      throw error;
     }
+    clearBytes(mdkSecret);
     rmSync(styxRoot, { recursive: true, force: true });
   }
   failB33b2b(B33B2B_ERROR.BLOCKED,
-    'could not obtain the requested synthetic identity ordering within the bound');
+    'could not obtain the requested synthetic identity-pair ordering within the bound');
 }
 
 function requireEqual(actual, expected, message, details = undefined) {
@@ -590,12 +601,11 @@ async function runScenario(
   let forkJournalDirectory;
   let journalEvidence;
   try {
-    mdkSecret = accountSecret();
-    const mdkIdentityHex = bytesToHex(schnorr.getPublicKey(mdkSecret));
-    const identitySelection = await selectStyxIdentity(
-      scenarioRoot, mdkIdentityHex, desiredWinner,
-    );
-    const { keyPackage, styx, styxRoot } = identitySelection;
+    const identitySelection = await selectSyntheticIdentities(scenarioRoot, desiredWinner);
+    ({ mdkSecret } = identitySelection);
+    const {
+      keyPackage, mdkIdentityHex, styx, styxRoot,
+    } = identitySelection;
     const secretPath = resolve(mdkRoot, 'account-secret.hex');
     const databaseKeyPath = resolve(mdkRoot, 'database-key.hex');
     const databasePath = resolve(mdkRoot, 'account.sqlite3');
