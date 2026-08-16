@@ -27,6 +27,19 @@ const REQUIRED_TRUE_FIELDS = Object.freeze([
   'retainedWindowAcceptedBothDirectionsExactlyOnce',
   'staleWindowRejectedBothDirectionsWithoutMutation',
 ]);
+const REQUIRED_CASE_IDS = Object.freeze([
+  'future-mdk-to-styx',
+  'future-styx-to-mdk',
+  'forged-metadata-styx-to-mdk',
+  'corrupt-distance4-mdk-to-styx',
+  'corrupt-distance4-styx-to-mdk',
+  'distance4-mdk-to-styx',
+  'distance4-styx-to-mdk',
+  'distance5-mdk-to-styx',
+  'distance5-styx-to-mdk',
+  'distance6-mdk-to-styx',
+  'distance6-styx-to-mdk',
+]);
 
 function sameJson(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
@@ -63,12 +76,13 @@ export function validateRetainedWindowRun(report, label = 'run') {
     blocked(`${label} retained-window invariants were not all satisfied`);
   }
   if (!Array.isArray(report.safeCaseEvidence)
-    || report.safeCaseEvidence.length !== 10
+    || report.safeCaseEvidence.length !== 11
     || report.safeCaseEvidence.some((record) => !record || typeof record !== 'object'
       || !DIGEST.test(record.ciphertextSha256Hex)
       || !['MDK_TO_STYX', 'STYX_TO_MDK'].includes(record.direction)
       || !['1', '2', '3'].includes(record.messageEpoch)
-      || !['1', '7'].includes(record.referenceTipEpoch))) {
+      || !['1', '7'].includes(record.referenceTipEpoch))
+    || !sameJson(report.safeCaseEvidence.map((record) => record.caseId), REQUIRED_CASE_IDS)) {
     blocked(`${label} safe case evidence is incomplete or malformed`);
   }
   if (!/BeyondAppRetention|beyond_app_retention/i.test(
@@ -99,6 +113,19 @@ export function validateRetainedWindowPair(firstValue, secondValue) {
   }
   if (first.finalGroupContextSha256Hex === second.finalGroupContextSha256Hex) {
     failures.push('GroupContext reuse');
+  }
+  const normalizedCases = (report) => report.safeCaseEvidence.map((record) => ({
+    accepted: record.outcome.accepted,
+    caseId: record.caseId,
+    direction: record.direction,
+    distance: record.distance ?? null,
+    messageEpoch: record.messageEpoch,
+    referenceTipEpoch: record.referenceTipEpoch,
+    replayDisposition: record.replayDisposition ?? null,
+    type: record.type,
+  }));
+  if (!sameJson(normalizedCases(first), normalizedCases(second))) {
+    failures.push('ordered case verdict drift');
   }
   if (failures.length !== 0) blocked('paired retained-window runs drifted or reused state', {
     failures,

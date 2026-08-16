@@ -163,6 +163,18 @@ function stableCheckpoint(recovery) {
   });
 }
 
+function safeMdkCheckpoint(projection) {
+  return Object.freeze({
+    convergenceStatus: projection.convergence_status,
+    epochDec: `${projection.epoch}`,
+    groupContextSha256Hex: projection.group_context_sha256,
+    participantSetSha256Hex: sha256Hex(canonicalJsonBytes(
+      [...projection.sorted_member_identities_hex].sort(),
+    )),
+    selectedBranchId: projection.selected_branch_id,
+  });
+}
+
 async function readStyxCheckpoint(journalDirectory) {
   const journal = openB33b1FileJournal(journalDirectory, B33B1_PRIVATE_ROOT);
   const recovery = await journal.readRecovery();
@@ -348,7 +360,11 @@ async function rejectedByMdkWithoutProjectionMutation(
       rejection,
     });
   }
-  return Object.freeze({ after, before, rejection });
+  return Object.freeze({
+    after: safeMdkCheckpoint(after),
+    before: safeMdkCheckpoint(before),
+    rejection,
+  });
 }
 
 async function forgedMetadataRejectedByMdk(context, ciphertextBytes) {
@@ -368,6 +384,9 @@ async function forgedMetadataRejectedByMdk(context, ciphertextBytes) {
   if (!rejected || !sameJson(before, after)) {
     failB33b2a('B33B2A_CORRUPT', 'MDK accepted caller-forged application metadata');
   }
+  return Object.freeze({
+    after: safeMdkCheckpoint(after), before: safeMdkCheckpoint(before),
+  });
 }
 
 function requireFreshStyxRejection(result, label) {
@@ -522,8 +541,8 @@ export async function runRetainedWindowProbe(candidatePath) {
       failB33b2a('B33B2A_CORRUPT', 'future-epoch MDK control mutated or was accepted');
     }
     context.safeCaseEvidence.push(Object.freeze({
-      after: futureMdkAfter,
-      before: futureMdkBefore,
+      after: safeMdkCheckpoint(futureMdkAfter),
+      before: safeMdkCheckpoint(futureMdkBefore),
       caseId: 'future-styx-to-mdk',
       ciphertextSha256Hex: sha256Hex(futureFromStyx.ciphertextBytes),
       direction: 'STYX_TO_MDK',
@@ -553,7 +572,20 @@ export async function runRetainedWindowProbe(candidatePath) {
     operations.advance('receivers-restarted');
 
     const distance4 = retained.get(4);
-    await forgedMetadataRejectedByMdk(context, distance4.fromStyx.ciphertextBytes);
+    const forgedMdkResult = await forgedMetadataRejectedByMdk(
+      context, distance4.fromStyx.ciphertextBytes,
+    );
+    context.safeCaseEvidence.push(Object.freeze({
+      after: forgedMdkResult.after,
+      before: forgedMdkResult.before,
+      caseId: 'forged-metadata-styx-to-mdk',
+      ciphertextSha256Hex: sha256Hex(distance4.fromStyx.ciphertextBytes),
+      direction: 'STYX_TO_MDK',
+      messageEpoch: '3',
+      outcome: Object.freeze({ accepted: false, errorCode: 'invalid_request' }),
+      referenceTipEpoch: '7',
+      type: 'caller_forged_metadata',
+    }));
     const corruptFromMdk = mutate(Buffer.from(distance4.fromMdk.group_message_hex, 'hex'));
     const corruptStyxResult = receiveInFreshStyx(
       candidatePath, context.journalDirectory, corruptFromMdk,
@@ -600,6 +632,7 @@ export async function runRetainedWindowProbe(candidatePath) {
       { currentEpoch: '999', messageEpoch: '999', senderLeafIndex: 999 },
     );
     requireFreshStyxDelivery(distance4Styx, 3, 4, 'distance-4 Styx');
+    const distance4MdkBefore = await context.mdk.request('public_projection');
     const distance4Mdk = await context.mdk.request('ingest_group_message', {
       group_message_hex: bytesToHex(distance4.fromStyx.ciphertextBytes),
     });
@@ -611,10 +644,14 @@ export async function runRetainedWindowProbe(candidatePath) {
     const distance4MdkReplay = await context.mdk.request('ingest_group_message', {
       group_message_hex: bytesToHex(distance4.fromStyx.ciphertextBytes),
     });
+    const distance4MdkAfter = await context.mdk.request('public_projection');
     if (distance4Mdk?.disposition !== 'application_message_processed'
       || distance4StyxReplay?.disposition !== 'duplicate'
       || !['duplicate', 'own_echo'].includes(distance4MdkReplay?.disposition)) {
       failB33b2a('B33B2A_ENGINE_REJECTED', 'distance-4 traffic was not exactly once');
+    }
+    if (!sameJson(distance4MdkBefore, distance4MdkAfter)) {
+      failB33b2a('B33B2A_CORRUPT', 'distance-4 MDK delivery advanced canonical authority');
     }
     context.safeCaseEvidence.push(
       Object.freeze({
@@ -632,6 +669,8 @@ export async function runRetainedWindowProbe(candidatePath) {
         type: 'retained_delivery',
       }),
       Object.freeze({
+        after: safeMdkCheckpoint(distance4MdkAfter),
+        before: safeMdkCheckpoint(distance4MdkBefore),
         caseId: 'distance4-styx-to-mdk',
         ciphertextSha256Hex: sha256Hex(distance4.fromStyx.ciphertextBytes),
         direction: 'STYX_TO_MDK',
@@ -659,6 +698,7 @@ export async function runRetainedWindowProbe(candidatePath) {
       { currentEpoch: '-1', messageEpoch: '-1' },
     );
     requireFreshStyxDelivery(distance5Styx, 2, 5, 'distance-5 Styx');
+    const distance5MdkBefore = await context.mdk.request('public_projection');
     const distance5Mdk = await context.mdk.request('ingest_group_message', {
       group_message_hex: bytesToHex(distance5.fromStyx.ciphertextBytes),
     });
@@ -669,10 +709,14 @@ export async function runRetainedWindowProbe(candidatePath) {
     const distance5MdkReplay = await context.mdk.request('ingest_group_message', {
       group_message_hex: bytesToHex(distance5.fromStyx.ciphertextBytes),
     });
+    const distance5MdkAfter = await context.mdk.request('public_projection');
     if (distance5Mdk?.disposition !== 'application_message_processed'
       || distance5StyxReplay?.disposition !== 'duplicate'
       || !['duplicate', 'own_echo'].includes(distance5MdkReplay?.disposition)) {
       failB33b2a('B33B2A_ENGINE_REJECTED', 'distance-5 traffic was not exactly once');
+    }
+    if (!sameJson(distance5MdkBefore, distance5MdkAfter)) {
+      failB33b2a('B33B2A_CORRUPT', 'distance-5 MDK delivery advanced canonical authority');
     }
     context.safeCaseEvidence.push(
       Object.freeze({
@@ -690,6 +734,8 @@ export async function runRetainedWindowProbe(candidatePath) {
         type: 'retained_delivery',
       }),
       Object.freeze({
+        after: safeMdkCheckpoint(distance5MdkAfter),
+        before: safeMdkCheckpoint(distance5MdkBefore),
         caseId: 'distance5-styx-to-mdk',
         ciphertextSha256Hex: sha256Hex(distance5.fromStyx.ciphertextBytes),
         direction: 'STYX_TO_MDK',

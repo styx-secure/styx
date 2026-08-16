@@ -41,10 +41,11 @@ describe('Phase B3.3b-2a exact retained application window', () => {
       staleWindowRejectedBothDirectionsWithoutMutation: true,
       transitionCount: 6,
     }));
-    expect(report.safeCaseEvidence).toHaveLength(10);
+    expect(report.safeCaseEvidence).toHaveLength(11);
     expect(report.safeCaseEvidence.map((record) => record.caseId)).toEqual([
       'future-mdk-to-styx',
       'future-styx-to-mdk',
+      'forged-metadata-styx-to-mdk',
       'corrupt-distance4-mdk-to-styx',
       'corrupt-distance4-styx-to-mdk',
       'distance4-mdk-to-styx',

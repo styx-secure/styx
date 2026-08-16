@@ -13,6 +13,13 @@ import {
 } from '../../spikes/marmot-phase-b3-3b-2a/paired-evidence.mjs';
 
 const digest = (marker) => marker.repeat(64).slice(0, 64);
+const caseIds = [
+  'future-mdk-to-styx', 'future-styx-to-mdk', 'forged-metadata-styx-to-mdk',
+  'corrupt-distance4-mdk-to-styx', 'corrupt-distance4-styx-to-mdk',
+  'distance4-mdk-to-styx', 'distance4-styx-to-mdk',
+  'distance5-mdk-to-styx', 'distance5-styx-to-mdk',
+  'distance6-mdk-to-styx', 'distance6-styx-to-mdk',
+];
 
 function report(marker) {
   return {
@@ -43,8 +50,8 @@ function report(marker) {
     retainedDistances: [4, 5],
     retainedWindowAcceptedBothDirectionsExactlyOnce: true,
     retentionPolicy: 5,
-    safeCaseEvidence: Array.from({ length: 10 }, (_, index) => ({
-      caseId: `case-${index}`,
+    safeCaseEvidence: Array.from({ length: 11 }, (_, index) => ({
+      caseId: caseIds[index],
       ciphertextSha256Hex: digest(`${index + 1}`),
       direction: index % 2 === 0 ? 'MDK_TO_STYX' : 'STYX_TO_MDK',
       messageEpoch: index < 2 ? '2' : '3',
@@ -75,6 +82,7 @@ describe('B3.3b-2a paired evidence validation', () => {
     ['typed MDK reason', (value) => { value.mdkDistance6Reason = null; }],
     ['fresh process count', (value) => { value.freshProcessRecoveryCount = 8; }],
     ['case evidence', (value) => { value.safeCaseEvidence = []; }],
+    ['case verdict order', (value) => { value.safeCaseEvidence[0].caseId = 'drift'; }],
     ['locked build', (value) => { value.mdkBuildEvidence.mdkPeerCargoLockSha256Hex = digest('f'); }],
   ])('rejects %s drift', (_label, mutate) => {
     const value = report('3');
