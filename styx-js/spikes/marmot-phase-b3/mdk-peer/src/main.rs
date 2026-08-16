@@ -15,7 +15,8 @@ use cgka_engine::{Engine, EngineBuilder};
 use cgka_traits::EngineError;
 use cgka_traits::app_event::MarmotAppEvent;
 use cgka_traits::engine::{
-    CgkaEngine, CreateGroupRequest, GroupEvent, KeyPackage, SendIntent, SendResult,
+    CgkaEngine, CommitOrderingKey, CreateGroupRequest, GroupEvent, KeyPackage, SendIntent,
+    SendResult,
 };
 use cgka_traits::engine_state::PendingStateRef;
 use cgka_traits::error::PeelerError;
@@ -386,6 +387,308 @@ fn require_application_witnesses(
         })),
         terminate: false,
     })
+}
+
+fn ordering_key_projection(key: &CommitOrderingKey) -> Value {
+    json!({
+        "commit_digest": hex::encode(key.commit_digest),
+        "committer": hex::encode(key.committer.as_slice()),
+        "priority": format!("{:?}", key.priority).to_ascii_lowercase(),
+        "source_epoch": key.source_epoch.0,
+    })
+}
+
+fn fork_event_projection(event: &GroupEvent) -> Value {
+    match event {
+        GroupEvent::EpochChanged { from, to, .. } => json!({
+            "kind": "epoch_changed", "from_epoch": from.0, "to_epoch": to.0,
+        }),
+        GroupEvent::ForkRecovered {
+            source_epoch,
+            recovered_epoch,
+            winner,
+            invalidated,
+            invalidated_commit_id,
+            ..
+        } => json!({
+            "kind": "fork_recovered",
+            "source_epoch": source_epoch.0,
+            "recovered_epoch": recovered_epoch.0,
+            "winner": ordering_key_projection(winner),
+            "invalidated": ordering_key_projection(invalidated),
+            "invalidated_commit_id": hex::encode(invalidated_commit_id.as_slice()),
+        }),
+        GroupEvent::CommitRolledBack {
+            invalidated_commit_id,
+            ..
+        } => json!({
+            "kind": "commit_rolled_back",
+            "invalidated_commit_id": hex::encode(invalidated_commit_id.as_slice()),
+        }),
+        GroupEvent::GroupStateInvalidated {
+            epoch,
+            invalidated_commit_id,
+            reason,
+            ..
+        } => json!({
+            "kind": "group_state_invalidated",
+            "epoch": epoch.0,
+            "invalidated_commit_id": hex::encode(invalidated_commit_id.as_slice()),
+            "reason": format!("{reason:?}").to_ascii_lowercase(),
+        }),
+        GroupEvent::GroupUnrecoverable { .. } => json!({ "kind": "group_unrecoverable" }),
+        GroupEvent::PendingCommitRecovered {
+            recovered_epoch, ..
+        } => json!({
+            "kind": "pending_commit_recovered", "recovered_epoch": recovered_epoch.0,
+        }),
+        GroupEvent::GroupHydrationQuarantined { reason, .. } => json!({
+            "kind": "group_hydration_quarantined",
+            "reason": format!("{reason:?}").to_ascii_lowercase(),
+        }),
+        GroupEvent::GroupHydrationRecovered {
+            recovered_epoch, ..
+        } => json!({
+            "kind": "group_hydration_recovered", "recovered_epoch": recovered_epoch.0,
+        }),
+        GroupEvent::AppMessageInvalidated {
+            message_id,
+            epoch,
+            reason,
+            ..
+        } => json!({
+            "kind": "app_message_invalidated",
+            "message_id": hex::encode(message_id.as_slice()),
+            "epoch": epoch.0,
+            "reason": format!("{reason:?}").to_ascii_lowercase(),
+        }),
+        GroupEvent::GroupStateChanged {
+            epoch,
+            origin_commit_id,
+            ..
+        } => json!({
+            "kind": "group_state_changed",
+            "epoch": epoch.0,
+            "origin_commit_id": origin_commit_id.as_ref()
+                .map(|id| hex::encode(id.as_slice())),
+        }),
+        GroupEvent::MessageReceived { epoch, .. } => json!({
+            "kind": "message_received", "epoch": epoch.0,
+        }),
+        GroupEvent::GroupCreated { .. } => json!({ "kind": "group_created" }),
+        GroupEvent::GroupJoined { .. } => json!({ "kind": "group_joined" }),
+        GroupEvent::TransportObjectResourceRefused { message_id, .. } => json!({
+            "kind": "transport_object_resource_refused",
+            "message_id": hex::encode(message_id.as_slice()),
+        }),
+    }
+}
+
+async fn ingest_fork_evolution(
+    state: &mut PeerState,
+    request: &Map<String, Value>,
+) -> Result<Value, RpcError> {
+    exact_fields(request, &["group_message_hex", "id", "op"])?;
+    if state.pending_evolution.is_some() {
+        return Err(RpcError::state(
+            "cannot ingest a rival evolution during local pending publication",
+        ));
+    }
+    let group_id = state
+        .group_id
+        .clone()
+        .ok_or_else(|| RpcError::state("group is not initialized"))?;
+    let payload = decode_bounded_hex_field(request, "group_message_hex", MAX_GROUP_MESSAGE_BYTES)?;
+    let content_sha256 = hex::encode(Sha256::digest(&payload));
+    let transport = TransportMessage {
+        id: message_id(&payload, b"group"),
+        payload,
+        timestamp: Timestamp(0),
+        causal_deps: Vec::new(),
+        source: TransportSource("styx-b33b2b-direct-mls".into()),
+        envelope: TransportEnvelope::GroupMessage {
+            transport_group_id: group_id.as_slice().to_vec(),
+        },
+    };
+    let transport_message_id = transport.id.clone();
+    let outcome = match state.engine_mut()?.ingest(transport).await {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            state.engine = None;
+            state.group_id = None;
+            state.pending_evolution = None;
+            return Err(RpcError::fatal_peer(format!(
+                "fork-evolution ingest failed after entering the MDK mutation boundary: {error}"
+            )));
+        }
+    };
+    let events = state.engine_mut()?.drain_events();
+    let projected_events: Vec<Value> = events.iter().map(fork_event_projection).collect();
+    let base = json!({
+        "content_sha256": content_sha256,
+        "events": projected_events,
+        "message_id_hex": hex::encode(transport_message_id.as_slice()),
+    });
+    let mut object = base.as_object().cloned().expect("JSON object");
+    match outcome {
+        IngestOutcome::Processed => {
+            object.insert("disposition".into(), json!("processed"));
+        }
+        IngestOutcome::Buffered {
+            group_id: buffered,
+            epoch,
+        } if buffered == group_id => {
+            object.insert("disposition".into(), json!("buffered"));
+            object.insert("epoch".into(), json!(epoch.0));
+        }
+        IngestOutcome::Ignored { category } => {
+            object.insert("disposition".into(), json!("ignored"));
+            object.insert(
+                "category".into(),
+                json!(format!("{category:?}").to_ascii_lowercase()),
+            );
+        }
+        IngestOutcome::Stale { reason } => {
+            if !events.is_empty() {
+                state.engine = None;
+                state.group_id = None;
+                return Err(RpcError::fatal_peer(
+                    "stale fork ingest released application-visible events",
+                ));
+            }
+            object.insert("disposition".into(), json!("stale"));
+            object.insert(
+                "reason".into(),
+                serde_json::to_value(reason).map_err(|error| {
+                    RpcError::peer(format!("serialize stale fork reason: {error}"))
+                })?,
+            );
+        }
+        other => {
+            if !events.is_empty() {
+                state.engine = None;
+                state.group_id = None;
+                return Err(RpcError::fatal_peer(
+                    "unsupported fork ingest outcome released application-visible events",
+                ));
+            }
+            return Err(RpcError {
+                code: "bounded_nogo",
+                message: "MDK_FORK_INGEST_OUTSIDE_BOUNDED_SURFACE".into(),
+                details: serde_json::to_value(other).ok(),
+                terminate: false,
+            });
+        }
+    }
+    Ok(Value::Object(object))
+}
+
+fn fork_convergence_projection(
+    result: &cgka_engine::canonicalization::CanonicalizationResult,
+    events: &[GroupEvent],
+) -> Value {
+    let trace = result.selection_trace.as_ref().map(|trace| {
+        json!({
+            "selected_branch_id": trace.selected_branch_id,
+            "losing_branch_ids": trace.losing_branch_ids,
+            "candidates": trace.candidates.iter().map(|candidate| json!({
+                "branch_id": candidate.branch_id,
+                "fork_epoch": candidate.fork_epoch,
+                "tip_epoch": candidate.tip_epoch,
+                "tip_priority": format!("{:?}", candidate.tip_priority).to_ascii_lowercase(),
+                "tip_committer": hex::encode(&candidate.tip_committer),
+                "tip_digest": hex::encode(candidate.tip_digest),
+                "app_witness_count": candidate.app_witnesses.len(),
+                "eligible": candidate.eligible,
+                "rejection_reasons": candidate.rejection_reasons,
+                "score": {
+                    "valid_commit_depth": candidate.score.valid_commit_depth,
+                    "effective_commit_depth": candidate.score.effective_commit_depth,
+                    "witness_quorum_met": candidate.score.witness_quorum_met,
+                    "app_witness_score": candidate.score.app_witness_score,
+                    "tip_priority": format!("{:?}", candidate.score.tip_priority)
+                        .to_ascii_lowercase(),
+                    "tip_committer": hex::encode(&candidate.score.tip_committer),
+                    "tip_digest": hex::encode(candidate.score.tip_digest),
+                },
+            })).collect::<Vec<_>>(),
+            "rule_trace": trace.rule_trace.iter().map(|rule| json!({
+                "rule_name": rule.rule_name,
+                "winner_branch_id": rule.winner_branch_id,
+                "other_branch_id": rule.other_branch_id,
+                "winner_value": rule.winner_value,
+                "other_value": rule.other_value,
+                "decisive": rule.decisive,
+            })).collect::<Vec<_>>(),
+        })
+    });
+    json!({
+        "previous_tip": result.previous_tip,
+        "selected_tip": result.selected_tip,
+        "selected_fork_epoch": result.selected_fork_epoch,
+        "selected_branch_id": result.selected_branch_id,
+        "candidate_count": result.candidate_count,
+        "eligible_count": result.eligible_count,
+        "status": match result.convergence_status {
+            ConvergenceStatus::Syncing => "syncing",
+            ConvergenceStatus::Resolving => "resolving",
+            ConvergenceStatus::Settled => "settled",
+            ConvergenceStatus::Blocked => "blocked",
+        },
+        "accepted_commits": result.accepted_commits,
+        "accepted_proposal_count": result.accepted_proposals.len(),
+        "accepted_app_message_count": result.accepted_app_messages.len(),
+        "deferred_messages": result.deferred_messages.iter().map(|message| json!({
+            "message_id": message.message_id,
+            "kind": format!("{:?}", message.kind).to_ascii_lowercase(),
+            "reason": format!("{:?}", message.reason).to_ascii_lowercase(),
+        })).collect::<Vec<_>>(),
+        "invalidated_app_message_count": result.invalidated_app_messages.len(),
+        "dropped_message_count": result.dropped_messages.len(),
+        "already_seen_count": result.already_seen.len(),
+        "queued_outbound_intent_count": result.queued_outbound_intents.len(),
+        "publishable_outbound_message_count": result.publishable_outbound_messages.len(),
+        "error_count": result.errors.len(),
+        "replay_probe_count": result.replay_probe_count,
+        "selection_trace": trace,
+        "events": events.iter().map(fork_event_projection).collect::<Vec<_>>(),
+    })
+}
+
+fn converge_fork_evolution(
+    state: &mut PeerState,
+    request: &Map<String, Value>,
+) -> Result<Value, RpcError> {
+    exact_fields(request, &["id", "monotonic_ms", "op"])?;
+    if state.pending_evolution.is_some() {
+        return Err(RpcError::state(
+            "cannot converge a fork during local pending publication",
+        ));
+    }
+    let group_id = state
+        .group_id
+        .clone()
+        .ok_or_else(|| RpcError::state("group is not initialized"))?;
+    let monotonic_ms = u64_field(request, "monotonic_ms")?;
+    if !(1_000..=1_000_000_000).contains(&monotonic_ms) {
+        return Err(RpcError::input(
+            "monotonic_ms is outside the bounded envelope",
+        ));
+    }
+    let pre_events = state.engine_mut()?.drain_events();
+    if !pre_events.is_empty() {
+        state.engine = None;
+        state.group_id = None;
+        return Err(RpcError::fatal_peer(
+            "fork convergence began with undrained events",
+        ));
+    }
+    let result = state
+        .engine_mut()?
+        .converge_stored_openmls_messages_at(&group_id, monotonic_ms)
+        .map_err(|error| RpcError::fatal_peer(format!("fork convergence failed: {error}")))?;
+    let events = state.engine_mut()?.drain_events();
+    Ok(fork_convergence_projection(&result, &events))
 }
 
 fn decode_hex_field(object: &Map<String, Value>, field: &str) -> Result<Vec<u8>, RpcError> {
@@ -1312,7 +1615,9 @@ async fn dispatch(state: &mut PeerState, value: &Value) -> Result<(Value, bool),
         "confirm_group_published" => confirm_group_published(state, request).await?,
         "fail_group_publication" => fail_group_publication(state, request).await?,
         "ingest_group_evolution" => ingest_group_evolution(state, request).await?,
+        "ingest_fork_evolution" => ingest_fork_evolution(state, request).await?,
         "converge_group_evolution" => converge_group_evolution(state, request)?,
+        "converge_fork_evolution" => converge_fork_evolution(state, request)?,
         "checkpoint_and_exit" => {
             exact_fields(request, &["id", "op"])?;
             return Ok((json!({"checkpointed": true}), true));

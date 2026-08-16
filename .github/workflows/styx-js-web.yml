@@ -113,10 +113,19 @@ jobs:
         env:
           B33B1_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
           B33B2A_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
+          B33B2B_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
           RUSTUP_TOOLCHAIN: 1.97.1
         run: |
           npm ci
           npm test -- --runInBand --testTimeout=20000
+      - name: Run the exact paired B3.3b-2b fork proof
+        working-directory: styx-js
+        env:
+          B33B1_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
+          B33B2B_MDK_ROOT: ${{ github.workspace }}/.styx-pins/mdk-9396adb6
+          RUSTUP_TOOLCHAIN: 1.97.1
+        run: |
+          node spikes/marmot-phase-b3-3b-2b/concurrent-fork-probe.mjs --verify-paired-runs
       - name: Build the PWA
         working-directory: styx-js/apps/chat
         run: |
