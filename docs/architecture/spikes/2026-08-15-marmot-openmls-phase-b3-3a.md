@@ -4,10 +4,10 @@ Date: 2026-08-16
 
 Issue: #185
 
-Stage: **Stage 2 approved tuple installed; final paired execution pending**
+Stage: **Stage 2 paired execution complete; bounded GO awaiting human gates**
 
-Disposition: **Stage 1 reached bounded GO and the owner approved the exact
-source/tree/patch/lock/tuple; no final Stage 2 conclusion yet**
+Disposition: **bounded B3.3a GO on the approved tuple in two disjoint final
+runs; no blocking finding in either independent exact-code review**
 
 ## Question and scope
 
@@ -108,14 +108,56 @@ clean MDK source revision/tree/lock, the local peer lock, Cargo version and the
 descriptor-bound SHA-256 of the exact executable used by both fresh MDK
 processes in that run.
 
-## Remaining gates
+## Final Stage 2 evidence
 
-1. Commit the approved tuple and Stage 2 verifier/build-evidence boundary.
-2. Run the complete locked native, vendored, JavaScript and chat-build matrix.
-3. Execute and validate two fresh disjoint Stage 2 interop runs, each with its
-   own locked MDK target directory and executable identity.
-4. Obtain independent exact-HEAD agent review, then human security and final
-   owner gates. The pull request remains Draft until all gates are green.
+The final execution identity is commit
+`fcf56e326e187b798f3e602b741607a51454841c`, tree
+`8b4f25137d8a8033c295dcd0bf54ea9957a0efcc`. The final correction added a real
+Styx-only fresh-process restore immediately after durable join and before the
+first application event. The orchestrator and evidence validator both require
+the same frozen 27-operation sequence; any sequence drift produces `BLOCKED`,
+never `GO`.
+
+Two fresh, disjoint runs reached the bounded GO independently:
+
+| Evidence | Run A SHA-256 | Run B SHA-256 |
+| --- | --- | --- |
+| `report.json` | `1173156b3585cca77bd31c966ff08083ece35eeb964898123db1bbe3db145ec0` | `d3d6ba4c01c88cb528726b1ed6e9133e4e15c1100c387547eb31a3092995e4f8` |
+| `transcript.json` | `f8d48ab2dc5ae57334bc5817f6bfe3049166dfc4a32c6c9e7d19172d2530fc2e` | `390bef3905652a082d026917df1353b9a53160028e682ce7fccbf2706c8265a7` |
+
+Each run used a different group, Styx identity, private directory and fresh
+locked MDK build. Each completed the post-join restore, first bidirectional
+exchange, both-peer checkpoint and fresh-process restore, replay rejection on
+both peers without a second plaintext/event, second bidirectional exchange,
+hash-chain closure and private-state deletion. Fable 5 additionally reproduced
+a third independent GO run.
+
+The complete verification matrix passed: 31 native OpenMLS tests; two clean
+byte-identical five-file WASM rebuilds matching the committed tuple; 5 pinned
+MDK peer tests; 103 Jest suites / 1505 tests; 3 real-relay suites / 19 tests;
+the PWA build; CodeQL; documentation-claims lint; and the applicable aggregate
+WASM, Dart-reference and `styx-js` CI gates.
+
+Independent review of the execution head produced no blocker:
+
+- Fable 5: `GO`; report SHA-256
+  `faad0e8171d6bcf092da95869ba8d82be95bd0e3ec7b09d75ca9a97982b1edd4`;
+- DeepSeek V4 Flash: `GO`; report SHA-256
+  `b2c70705a5562027e6875d6ab897526dbe850916e7597558d931c7457d2ce596`.
+
+The product/shipping and non-product probe paths intentionally use different
+ciphersuites. Product state metadata names the shipping ChaCha20-Poly1305
+suite; B1 through B3.3a probes use AES-128-GCM (`0x0001`). Historical persisted
+compatibility tuples must not be casually relabelled. A stronger test-only
+declaration binding may be handled separately without changing this proof.
+
+## Open human gates at report time
+
+The implementation, paired execution and independent agent reviews are
+complete. The pull request remains Draft until its contract marker and final
+evidence description are current, exact-final-HEAD CI is green, the independent
+human security reviewer approves, and the owner performs the final readiness
+and merge gates. Agent evidence does not replace either human gate.
 
 ## Residual risks and non-claims
 
