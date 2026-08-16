@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use cgka_engine::account_identity_proof::{
     AccountIdentityProofRequest, AccountIdentityProofSigner,
 };
+use cgka_engine::canonicalization::ConvergenceStatus;
 use cgka_engine::{Engine, EngineBuilder};
 use cgka_traits::EngineError;
 use cgka_traits::app_event::MarmotAppEvent;
@@ -318,6 +319,13 @@ fn string_field<'a>(object: &'a Map<String, Value>, field: &str) -> Result<&'a s
         .get(field)
         .and_then(Value::as_str)
         .ok_or_else(|| RpcError::input(format!("{field} must be a string")))
+}
+
+fn u64_field(object: &Map<String, Value>, field: &str) -> Result<u64, RpcError> {
+    object
+        .get(field)
+        .and_then(Value::as_u64)
+        .ok_or_else(|| RpcError::input(format!("{field} must be an unsigned integer")))
 }
 
 fn decode_hex_field(object: &Map<String, Value>, field: &str) -> Result<Vec<u8>, RpcError> {
@@ -808,6 +816,7 @@ async fn ingest_group_evolution(
         .clone()
         .ok_or_else(|| RpcError::state("group is not initialized"))?;
     let payload = decode_bounded_hex_field(request, "group_message_hex", MAX_GROUP_MESSAGE_BYTES)?;
+    let content_sha256 = hex::encode(Sha256::digest(&payload));
     let transport = TransportMessage {
         id: message_id(&payload, b"group"),
         payload,
@@ -876,6 +885,25 @@ async fn ingest_group_evolution(
                 "message_id_hex": hex::encode(transport_message_id.as_slice()),
             }))
         }
+        IngestOutcome::Buffered {
+            group_id: buffered_group_id,
+            epoch,
+        } if buffered_group_id == group_id => {
+            if !events.is_empty() {
+                state.engine = None;
+                state.group_id = None;
+                return Err(RpcError::fatal_peer(
+                    "buffered evolution unexpectedly released events",
+                ));
+            }
+            Ok(json!({
+                "content_sha256": content_sha256,
+                "disposition": "group_evolution_buffered",
+                "epoch": epoch.0,
+                "group_id_hex": hex::encode(buffered_group_id.as_slice()),
+                "message_id_hex": hex::encode(transport_message_id.as_slice()),
+            }))
+        }
         other => {
             if !events.is_empty() {
                 state.engine = None;
@@ -892,6 +920,172 @@ async fn ingest_group_evolution(
             })
         }
     }
+}
+
+fn converge_group_evolution(
+    state: &mut PeerState,
+    request: &Map<String, Value>,
+) -> Result<Value, RpcError> {
+    exact_fields(
+        request,
+        &[
+            "expected_content_sha256",
+            "expected_from_epoch",
+            "expected_to_epoch",
+            "id",
+            "monotonic_ms",
+            "op",
+        ],
+    )?;
+    if state.pending_evolution.is_some() {
+        return Err(RpcError::state(
+            "cannot converge a remote evolution during local pending publication",
+        ));
+    }
+    let expected_content = decode_hex_field(request, "expected_content_sha256")?;
+    if expected_content.len() != 32 {
+        return Err(RpcError::input(
+            "expected_content_sha256 must contain exactly 32 bytes",
+        ));
+    }
+    let expected_content_hex = hex::encode(expected_content);
+    let expected_from = u64_field(request, "expected_from_epoch")?;
+    let expected_to = u64_field(request, "expected_to_epoch")?;
+    if expected_to
+        != expected_from
+            .checked_add(1)
+            .ok_or_else(|| RpcError::input("expected epoch transition overflows"))?
+    {
+        return Err(RpcError::input(
+            "expected evolution must advance exactly one epoch",
+        ));
+    }
+    let monotonic_ms = u64_field(request, "monotonic_ms")?;
+    if !(1_000..=1_000_000_000).contains(&monotonic_ms) {
+        return Err(RpcError::input(
+            "monotonic_ms is outside the deterministic Stage 0 envelope",
+        ));
+    }
+    let group_id = state
+        .group_id
+        .clone()
+        .ok_or_else(|| RpcError::state("group is not initialized"))?;
+    let current_epoch = state
+        .engine()?
+        .epoch(&group_id)
+        .map_err(|error| RpcError::peer(format!("read pre-convergence epoch: {error}")))?;
+    if current_epoch.0 != expected_from {
+        return Err(RpcError::state(
+            "pre-convergence group epoch differs from the journalled parent",
+        ));
+    }
+    if !state.engine_mut()?.drain_events().is_empty() {
+        state.engine = None;
+        state.group_id = None;
+        return Err(RpcError::fatal_peer(
+            "convergence began with undrained application-visible events",
+        ));
+    }
+
+    let result = state
+        .engine_mut()?
+        .converge_stored_openmls_messages_at(&group_id, monotonic_ms)
+        .map_err(|error| {
+            RpcError::fatal_peer(format!(
+                "stored group-evolution convergence failed after mutation boundary: {error}"
+            ))
+        })?;
+    let events = state.engine_mut()?.drain_events();
+    let status = match result.convergence_status {
+        ConvergenceStatus::Syncing => "syncing",
+        ConvergenceStatus::Resolving => "resolving",
+        ConvergenceStatus::Settled => "settled",
+        ConvergenceStatus::Blocked => "blocked",
+    };
+    let exact_collections = result.accepted_proposals.is_empty()
+        && result.accepted_app_messages.is_empty()
+        && result.deferred_messages.is_empty()
+        && result.invalidated_app_messages.is_empty()
+        && result.dropped_messages.is_empty()
+        && result.already_seen.is_empty()
+        && result.queued_outbound_intents.is_empty()
+        && result.publishable_outbound_messages.is_empty()
+        && result.errors.is_empty();
+    let exact_waiting = result.convergence_status == ConvergenceStatus::Syncing
+        && result.previous_tip == expected_from
+        && result.selected_tip.is_none()
+        && result.candidate_count == 0
+        && result.eligible_count == 0
+        && result.accepted_commits.is_empty()
+        && exact_collections
+        && events.is_empty();
+    if exact_waiting {
+        return Ok(json!({
+            "candidate_count": result.candidate_count,
+            "disposition": "group_evolution_waiting",
+            "eligible_count": result.eligible_count,
+            "from_epoch": expected_from,
+            "group_id_hex": hex::encode(group_id.as_slice()),
+            "monotonic_ms": monotonic_ms,
+            "status": status,
+        }));
+    }
+    let exact_result = result.convergence_status == ConvergenceStatus::Settled
+        && result.previous_tip == expected_from
+        && result.selected_tip == Some(expected_to)
+        && result.candidate_count == 1
+        && result.eligible_count == 1
+        && result.accepted_commits.as_slice() == [expected_content_hex.as_str()]
+        && exact_collections;
+    let exact_event = matches!(
+        events.as_slice(),
+        [GroupEvent::EpochChanged {
+            group_id: event_group_id,
+            from,
+            to,
+        }] if event_group_id == &group_id
+            && from.0 == expected_from
+            && to.0 == expected_to
+    );
+    if !exact_result || !exact_event {
+        let details = json!({
+            "accepted_app_messages": result.accepted_app_messages.len(),
+            "accepted_commits": result.accepted_commits,
+            "accepted_proposals": result.accepted_proposals.len(),
+            "already_seen": result.already_seen.len(),
+            "candidate_count": result.candidate_count,
+            "deferred_messages": result.deferred_messages.len(),
+            "dropped_messages": result.dropped_messages.len(),
+            "eligible_count": result.eligible_count,
+            "errors": result.errors.len(),
+            "event_count": events.len(),
+            "invalidated_app_messages": result.invalidated_app_messages.len(),
+            "previous_tip": result.previous_tip,
+            "publishable_outbound_messages": result.publishable_outbound_messages.len(),
+            "queued_outbound_intents": result.queued_outbound_intents.len(),
+            "selected_tip": result.selected_tip,
+            "status": status,
+        });
+        state.engine = None;
+        state.group_id = None;
+        return Err(RpcError {
+            code: "bounded_nogo",
+            message: "MDK_REJECTS_STYX_SELF_UPDATE".into(),
+            details: Some(details),
+            terminate: false,
+        });
+    }
+    Ok(json!({
+        "accepted_content_sha256": expected_content_hex,
+        "candidate_count": result.candidate_count,
+        "disposition": "group_evolution_settled",
+        "eligible_count": result.eligible_count,
+        "from_epoch": expected_from,
+        "group_id_hex": hex::encode(group_id.as_slice()),
+        "monotonic_ms": monotonic_ms,
+        "status": status,
+        "to_epoch": expected_to,
+    }))
 }
 
 async fn ingest_group_message(
@@ -1033,6 +1227,7 @@ async fn dispatch(state: &mut PeerState, value: &Value) -> Result<(Value, bool),
         "confirm_group_published" => confirm_group_published(state, request).await?,
         "fail_group_publication" => fail_group_publication(state, request).await?,
         "ingest_group_evolution" => ingest_group_evolution(state, request).await?,
+        "converge_group_evolution" => converge_group_evolution(state, request)?,
         "checkpoint_and_exit" => {
             exact_fields(request, &["id", "op"])?;
             return Ok((json!({"checkpointed": true}), true));
@@ -1145,6 +1340,19 @@ mod tests {
             decode_bounded_hex_field(object(&exact).unwrap(), "payload_hex", 1).unwrap(),
             vec![0]
         );
+    }
+
+    #[test]
+    fn unsigned_integer_fields_reject_negative_fractional_and_string_values() {
+        for value in [json!(-1), json!(1.5), json!("1")] {
+            let request = json!({"epoch": value});
+            let error = u64_field(object(&request).unwrap(), "epoch").unwrap_err();
+            assert_eq!(error.code, "invalid_request");
+            assert!(!error.terminate);
+        }
+
+        let request = json!({"epoch": 3});
+        assert_eq!(u64_field(object(&request).unwrap(), "epoch").unwrap(), 3);
     }
 
     #[test]
