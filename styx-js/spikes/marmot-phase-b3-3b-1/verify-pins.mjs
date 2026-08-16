@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // STYX_SPIKE_PROTOTYPE — immutable input and external candidate verifier.
 
-import { execFileSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { readdirSync, realpathSync, statSync } from 'node:fs';
-import { dirname, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { readExactRegularFile }
@@ -44,7 +44,9 @@ const directory = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(directory, '..', '..', '..');
 export const B33B1_INSTALLED_ARTIFACT_DIRECTORY =
   resolve(repoRoot, 'styx-js/vendor/openmls-wasm');
-const mdkRoot = '/home/mverde/.local/share/styx-reviews/upstreams/mdk-9396adb6';
+export const B33B1_DEFAULT_MDK_ROOT =
+  '/home/mverde/.local/share/styx-reviews/upstreams/mdk-9396adb6';
+const MAX_GIT_DIAGNOSTIC_CHARS = 2048;
 const STAGE2_ALLOWED_PATHS = new Set([
   '.github/workflows/styx-js-web.yml',
   'styx-js/vendor/openmls-wasm/openmls_wasm.js',
@@ -64,8 +66,52 @@ const STAGE2_ALLOWED_PATHS = new Set([
   'styx-js/test/storage/mls-state-envelope.test.js',
 ]);
 
+function clipped(value) {
+  return String(value ?? '').slice(0, MAX_GIT_DIAGNOSTIC_CHARS);
+}
+
+function gitFailureDetails(cwd, args, result, error = undefined) {
+  return Object.freeze({
+    args: args.join(' '),
+    cwd,
+    errorCode: clipped(error?.code || result?.error?.code),
+    errorMessage: clipped(error?.message || result?.error?.message),
+    signal: clipped(result?.signal),
+    status: Number.isInteger(result?.status) ? result.status : null,
+    stderr: clipped(result?.stderr),
+  });
+}
+
 function git(cwd, ...args) {
-  return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  let result;
+  try {
+    result = spawnSync('git', args, { cwd, encoding: 'utf8' });
+  } catch (error) {
+    failB33b1(B33B1_ERROR.BLOCKED,
+      'unable to execute the pinned Git verification',
+      gitFailureDetails(cwd, args, undefined, error));
+  }
+  if (result.error) {
+    failB33b1(B33B1_ERROR.BLOCKED,
+      'unable to execute the pinned Git verification',
+      gitFailureDetails(cwd, args, result));
+  }
+  if (result.status !== 0) {
+    failB33b1(B33B1_ERROR.PIN_DRIFT,
+      `pinned Git verification failed: git ${args.join(' ')}`,
+      gitFailureDetails(cwd, args, result));
+  }
+  return result.stdout.trim();
+}
+
+function mdkRoot() {
+  const configured = process.env.B33B1_MDK_ROOT;
+  if (configured === undefined) return B33B1_DEFAULT_MDK_ROOT;
+  if (configured.length === 0 || !isAbsolute(configured)) {
+    failB33b1(B33B1_ERROR.INVALID,
+      'B33B1_MDK_ROOT must be a non-empty absolute path');
+  }
+  return resolve(configured);
 }
 
 function requireEqual(actual, expected, label) {
@@ -161,20 +207,21 @@ function verifyCommittedScope() {
 }
 
 export function verifyPins(candidatePath) {
+  const exactMdkRoot = mdkRoot();
   requireEqual(git(repoRoot, 'rev-parse', `${B33B1_APPROVED_SOURCE_SHA}^{tree}`),
     B33B1_APPROVED_SOURCE_TREE, 'approved artifact source tree');
-  execFileSync('git', ['merge-base', '--is-ancestor', B33B1_APPROVED_SOURCE_SHA, 'HEAD'],
-    { cwd: repoRoot });
+  git(repoRoot, 'merge-base', '--is-ancestor', B33B1_APPROVED_SOURCE_SHA, 'HEAD');
   requireEqual(git(repoRoot, 'rev-parse', `${B33B1_BASE_SHA}^{tree}`),
     B33B1_BASE_TREE, 'B3.3b-1 base tree');
-  execFileSync('git', ['merge-base', '--is-ancestor', B33B1_BASE_SHA, 'HEAD'],
-    { cwd: repoRoot });
+  git(repoRoot, 'merge-base', '--is-ancestor', B33B1_BASE_SHA, 'HEAD');
   requireEqual(git(repoRoot, 'status', '--porcelain', '--untracked-files=no'),
     '', 'Styx tracked worktree');
-  requireEqual(git(mdkRoot, 'rev-parse', 'HEAD'), B33B1_MDK_REVISION, 'MDK revision');
-  requireEqual(git(mdkRoot, 'rev-parse', 'HEAD^{tree}'), B33B1_MDK_TREE, 'MDK tree');
-  requireEqual(git(mdkRoot, 'status', '--porcelain'), '', 'MDK worktree');
-  requireEqual(sha256(resolve(mdkRoot, 'Cargo.lock')),
+  requireEqual(git(exactMdkRoot, 'rev-parse', 'HEAD'),
+    B33B1_MDK_REVISION, 'MDK revision');
+  requireEqual(git(exactMdkRoot, 'rev-parse', 'HEAD^{tree}'),
+    B33B1_MDK_TREE, 'MDK tree');
+  requireEqual(git(exactMdkRoot, 'status', '--porcelain'), '', 'MDK worktree');
+  requireEqual(sha256(resolve(exactMdkRoot, 'Cargo.lock')),
     B33B1_MDK_LOCK_SHA256, 'external MDK Cargo.lock');
   requireEqual(sha256(resolve(repoRoot, 'styx-js/vendor/openmls-wasm/Cargo.lock')),
     B33B1_VENDOR_LOCK_SHA256, 'vendored Cargo.lock');
@@ -199,9 +246,19 @@ export function verifyPins(candidatePath) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  if (process.argv.length !== 2
-    && (process.argv.length !== 4 || process.argv[2] !== '--candidate-dir')) {
-    throw new Error('usage: verify-pins.mjs [--candidate-dir PATH]');
+  try {
+    if (process.argv.length !== 2
+      && (process.argv.length !== 4 || process.argv[2] !== '--candidate-dir')) {
+      throw new Error('usage: verify-pins.mjs [--candidate-dir PATH]');
+    }
+    process.stdout.write(`${JSON.stringify(verifyPins(process.argv[3]))}\n`);
+  } catch (error) {
+    process.stderr.write(`${JSON.stringify({
+      code: clipped(error?.code),
+      details: error?.details,
+      message: clipped(error?.message),
+      name: clipped(error?.name || 'Error'),
+    })}\n`);
+    process.exitCode = 1;
   }
-  process.stdout.write(`${JSON.stringify(verifyPins(process.argv[3]))}\n`);
 }

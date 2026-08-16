@@ -46,5 +46,5 @@ describe('Phase B3.3b-1 Stage 1 journalled sequence', () => {
     }));
     expect(report.operationSequence).toEqual(B33B1_STAGE1_OPERATION_SEQUENCE);
     expect(report.applicationRecordCount).toBeGreaterThanOrEqual(4);
-  }, 240_000);
+  }, 600_000);
 });

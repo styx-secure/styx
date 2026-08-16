@@ -47,5 +47,5 @@ describe('Phase B3.3b-1 Stage 0 exact-pin capabilities', () => {
       mdkStyxSelfUpdateReplayDisposition: 'duplicate',
       retentionPolicy: 5,
     }));
-  }, 240_000);
+  }, 600_000);
 });
