@@ -2,13 +2,14 @@
 
 import { B33B1_STAGE1_OPERATION_SEQUENCE }
   from '../../spikes/marmot-phase-b3-3b-1/stage1-probe.mjs';
+import { B33A_MDK_PEER_LOCK_SHA256 }
+  from '../../spikes/marmot-phase-b3-3a/b3-3a-mdk-builder.mjs';
 import { validateStage2Pair, validateStage2Run }
   from '../../spikes/marmot-phase-b3-3b-1/stage2-paired-evidence.mjs';
 import {
   B33B1_APPROVED_ARTIFACT_TUPLE,
   B33B1_APPROVED_SOURCE_SHA,
   B33B1_APPROVED_SOURCE_TREE,
-  B33B1_MDK_LOCK_SHA256,
 } from '../../spikes/marmot-phase-b3-3b-1/verify-pins.mjs';
 
 const hex = (marker) => marker.repeat(64).slice(0, 64);
@@ -29,7 +30,7 @@ function run(marker) {
       cargoCommand: 'cargo build --locked --target-dir <fresh-build-child>',
       cargoVersion: 'cargo 1.96.0',
       mdkExecutableSha256Hex: hex('e'),
-      mdkPeerCargoLockSha256Hex: B33B1_MDK_LOCK_SHA256,
+      mdkPeerCargoLockSha256Hex: B33A_MDK_PEER_LOCK_SHA256,
     },
     operationSequence: B33B1_STAGE1_OPERATION_SEQUENCE,
     participantSetSha256Hex: hex(`${marker}c`),

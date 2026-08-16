@@ -12,11 +12,12 @@ import {
   B33B1_STAGE1_OPERATION_SEQUENCE,
   runStage1Probe,
 } from './stage1-probe.mjs';
+import { B33A_MDK_PEER_LOCK_SHA256 }
+  from '../marmot-phase-b3-3a/b3-3a-mdk-builder.mjs';
 import {
   B33B1_APPROVED_ARTIFACT_TUPLE,
   B33B1_APPROVED_SOURCE_SHA,
   B33B1_APPROVED_SOURCE_TREE,
-  B33B1_MDK_LOCK_SHA256,
 } from './verify-pins.mjs';
 
 const DIGEST = /^[0-9a-f]{64}$/;
@@ -62,7 +63,7 @@ export function validateStage2Run(report, label = 'run') {
   }
   const build = report.mdkBuildEvidence;
   if (!build || build.cargoCommand !== 'cargo build --locked --target-dir <fresh-build-child>'
-    || build.mdkPeerCargoLockSha256Hex !== B33B1_MDK_LOCK_SHA256
+    || build.mdkPeerCargoLockSha256Hex !== B33A_MDK_PEER_LOCK_SHA256
     || !DIGEST.test(build.mdkExecutableSha256Hex)
     || typeof build.cargoVersion !== 'string' || build.cargoVersion.length === 0) {
     blocked(`${label} fresh locked MDK build evidence is invalid`);
