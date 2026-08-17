@@ -1,0 +1,388 @@
+{
+  "schemaVersion": "1",
+  "baseSha": "f0f7c35fa030477f56ea3b29efa1381f0d2dc972",
+  "cases": [
+    {
+      "id": "HLC-001",
+      "category": "hlc",
+      "operation": "parse-render",
+      "input": { "canonical": "2026-02-24T12:00:00.123Z-0042-a1b2c3d4" },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "HLC-002",
+      "category": "hlc",
+      "operation": "parse-render",
+      "input": { "canonical": "2026-02-24T12:00:00.123456Z-0042-a1b2c3d4" },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "HLC-003",
+      "category": "hlc",
+      "operation": "bytes",
+      "input": { "canonical": "2026-02-24T12:00:00.123Z-0042-nodé0001" },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "HLC-004",
+      "category": "hlc",
+      "operation": "parse-render",
+      "input": { "canonical": "2026-02-24T12:00:00.123Z-abcd-a1b2c3d4" },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "HLC-005",
+      "category": "hlc",
+      "operation": "parse-render",
+      "input": { "canonical": "2026-02-24T12:00:00.123Z-0042-node-with-dash" },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "HLC-006",
+      "category": "hlc",
+      "operation": "compare",
+      "input": {
+        "left": "2026-02-24T12:00:00.123Z-0042-a1b2c3d4",
+        "right": "2026-02-24T12:00:00.123Z-0043-a1b2c3d4"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "HLC-007",
+      "category": "hlc",
+      "operation": "bytes",
+      "input": {
+        "canonical": "2026-02-24T12:00:00.123Z-0042-node日001"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "HLC-008",
+      "category": "hlc",
+      "operation": "bytes-collision-witness",
+      "input": {
+        "left": "2026-02-24T12:00:00.123Z-0042-nodé0001",
+        "right": "2026-02-24T12:00:00.123Z-0042-nodǩ0001"
+      },
+      "unspecifiedBehaviour": true,
+      "unspecifiedReason": "The current Dart byte projection truncates each UTF-16 code unit to eight bits; this collision witness is evidence of ambiguity, not an endorsed encoding."
+    },
+    {
+      "id": "VC-001",
+      "category": "vector-clock",
+      "operation": "project",
+      "input": { "a": "1", "b": "2" },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "VC-002",
+      "category": "vector-clock",
+      "operation": "bytes",
+      "input": { "a": "2147483647", "b": "-1" },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "VC-003",
+      "category": "vector-clock",
+      "operation": "bytes",
+      "input": { "a": "2147483648", "b": "0" },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "VC-004",
+      "category": "vector-clock",
+      "operation": "bytes",
+      "input": { "a": "4294967301", "b": "0" },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "VC-005",
+      "category": "vector-clock",
+      "operation": "increment",
+      "input": { "a": "1", "b": "2", "role": "C" },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "VC-006",
+      "category": "vector-clock",
+      "operation": "merge-relation",
+      "input": {
+        "left": { "a": "2", "b": "1" },
+        "right": { "a": "1", "b": "3" }
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "VC-007",
+      "category": "vector-clock",
+      "operation": "three-party-topology",
+      "input": { "a": "1", "b": "2", "c": "3" },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "VC-008",
+      "category": "vector-clock",
+      "operation": "increment",
+      "input": {
+        "a": "1",
+        "b": "2",
+        "role": "A"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "VC-009",
+      "category": "vector-clock",
+      "operation": "increment",
+      "input": {
+        "a": "1",
+        "b": "2",
+        "role": "B"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "HASH-001",
+      "category": "hashing",
+      "operation": "sha256",
+      "input": { "dataHex": "" },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "HASH-002",
+      "category": "hashing",
+      "operation": "chain-hash",
+      "input": { "previousHex": null, "payloadHex": "00ff10" },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "HASH-003",
+      "category": "hashing",
+      "operation": "composite-hash",
+      "input": { "segmentsHex": ["00", "ff10", "616263"] },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "HASH-004",
+      "category": "hashing",
+      "operation": "segmentation-witness",
+      "input": {
+        "leftSegmentsHex": ["61", "6263"],
+        "rightSegmentsHex": ["6162", "63"]
+      },
+      "unspecifiedBehaviour": true,
+      "unspecifiedReason": "Current composite hashing exposes no segment boundaries; a match is not evidence that the construction is suitable for a normative protocol."
+    },
+    {
+      "id": "HASH-005",
+      "category": "hashing",
+      "operation": "segmentation-witness",
+      "input": {
+        "leftSegmentsHex": [
+          "61",
+          "62"
+        ],
+        "rightSegmentsHex": [
+          "61",
+          "",
+          "62"
+        ]
+      },
+      "unspecifiedBehaviour": true,
+      "unspecifiedReason": "Current composite hashing exposes neither segment boundaries nor an empty-segment marker; a match is not evidence that the construction is suitable for a normative protocol."
+    },
+    {
+      "id": "EVENT-001",
+      "category": "event-hash",
+      "operation": "fixed-preimage",
+      "input": {
+        "previousHash": "abababababababababababababababababababababababababababababababab",
+        "eventType": "transaction",
+        "payloadHex": "010203",
+        "hlcBytesHex": "323032362d30322d32345431323a30303a30302e3132335a2d303034322d6131623263336434"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "EVENT-002",
+      "category": "event-hash",
+      "operation": "genesis-projection",
+      "input": {
+        "privateSeedHex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
+        "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "nodeId": "a1b2c3d4"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "EVENT-003",
+      "category": "event-hash",
+      "operation": "deterministic-genesis-hash",
+      "input": { "nodeId": "a1b2c3d4" },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "ORDER-001",
+      "category": "ordering",
+      "operation": "order",
+      "input": {
+        "events": [
+          { "id": "later", "a": "3", "b": "0", "sender": "bbbb" },
+          { "id": "earlier", "a": "1", "b": "1", "sender": "aaaa" }
+        ]
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "ORDER-002",
+      "category": "ordering",
+      "operation": "order",
+      "input": {
+        "events": [
+          { "id": "lowercase-a", "a": "1", "b": "1", "sender": "aaaaaaaa" },
+          { "id": "uppercase-b", "a": "2", "b": "0", "sender": "BBBBBBBB" }
+        ]
+      },
+      "unspecifiedBehaviour": true,
+      "unspecifiedReason": "The equal-total sender tie-break depends on Dart UTF-16 code-unit ordering versus JavaScript default ICU collation; the observed order is environment-sensitive and non-normative."
+    },
+    {
+      "id": "ORDER-003",
+      "category": "ordering",
+      "operation": "order",
+      "input": {
+        "events": [
+          { "id": "unicode-later", "a": "4", "b": "0", "sender": "émetteur" },
+          { "id": "unicode-earlier", "a": "1", "b": "1", "sender": "émetteur" }
+        ]
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "ORDER-004",
+      "category": "ordering",
+      "operation": "order",
+      "input": {
+        "events": [
+          { "id": "tie-first", "a": "1", "b": "1", "sender": "same-sender" },
+          { "id": "tie-second", "a": "0", "b": "2", "sender": "same-sender" }
+        ]
+      },
+      "unspecifiedBehaviour": true,
+      "unspecifiedReason": "Both ordering comparators return equality; neither implementation documents a shared stable ordering contract for complete ties."
+    },
+    {
+      "id": "ORDER-005",
+      "category": "ordering",
+      "operation": "order",
+      "input": {
+        "events": [
+          {
+            "id": "unicode-sender",
+            "a": "1",
+            "b": "1",
+            "sender": "émetteur"
+          },
+          {
+            "id": "ascii-sender",
+            "a": "0",
+            "b": "2",
+            "sender": "zebra"
+          }
+        ]
+      },
+      "unspecifiedBehaviour": true,
+      "unspecifiedReason": "The equal-total sender tie-break depends on Dart UTF-16 code-unit ordering versus JavaScript default ICU collation; the observed order is environment-sensitive and non-normative."
+    },
+    {
+      "id": "CHAIN-001",
+      "category": "chain-validation",
+      "operation": "empty-chain",
+      "input": {},
+      "unspecifiedBehaviour": true,
+      "unspecifiedReason": "Both validators currently accept an empty chain; this is an incompleteness witness, not an endorsed genesis policy."
+    },
+    {
+      "id": "CHAIN-002",
+      "category": "chain-validation",
+      "operation": "genesis-previous-hash",
+      "input": {
+        "previousHash": "not-null",
+        "senderPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "CHAIN-003",
+      "category": "chain-validation",
+      "operation": "hash-mismatch",
+      "input": {
+        "senderPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "CHAIN-004",
+      "category": "chain-validation",
+      "operation": "signature-invalid",
+      "input": {
+        "senderPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "CHAIN-005",
+      "category": "chain-validation",
+      "operation": "previous-hash-mismatch",
+      "input": {
+        "senderPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "CHAIN-006",
+      "category": "chain-validation",
+      "operation": "signed-valid-chain",
+      "input": {
+        "previousHash": null,
+        "eventType": "transaction",
+        "payloadHex": "01",
+        "hlcCanonical": "2026-02-24T12:00:00.123Z-0042-a1b2c3d4",
+        "eventHashHex": "6a203102c491dbdf209441e5d8edcc3aabc883f7ddb9bc2231dadade0de4878e",
+        "signedMessageHex": "6a203102c491dbdf209441e5d8edcc3aabc883f7ddb9bc2231dadade0de4878e",
+        "senderPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "signatureHex": "a6427faee44642ef6170be5c4c23ee814f83e7a4429824c7b5d38b9abeaa1e17306d7180963cfbd619015515187e6e5e9d266f83e8267309446a9d5618063f0f"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    }
+  ]
+}
