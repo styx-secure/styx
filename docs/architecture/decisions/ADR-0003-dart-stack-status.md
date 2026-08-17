@@ -1,7 +1,16 @@
 # ADR-0003 — Stato dello stack Dart
 
-- **Stato:** Accettato (2026-07-11)
+- **Stato:** Accettato (2026-07-11), chiarito da
+  [ADR-0007](ADR-0007-application-protocol-authority.md) (2026-08-17).
 - **Contesto normativo:** piano operativo Styx Secure §3; `docs/PANORAMICA-PROGETTO.md` §3.1, §7.
+
+> **Chiarimento corrente:** il congelamento della linea di funzionalità Dart
+> resta confermato, ma avverrà dopo l'estrazione una tantum dei comportamenti e
+> dei casi limite necessari al corpus di conformità language-neutral. Dart non
+> è la specifica; anche i vettori originati da Dart diventano autoritativi solo
+> quando appartengono al corpus governato dal protocollo e sono consumati da
+> implementazioni indipendenti. OpenMLS/Rust è un motore del profilo di
+> sessione sicura, non l'autorità del protocollo applicativo.
 
 ## Contesto
 

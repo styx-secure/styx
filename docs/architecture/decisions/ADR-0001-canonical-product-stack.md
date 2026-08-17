@@ -1,7 +1,18 @@
 # ADR-0001 — Stack di prodotto canonico
 
-- **Stato:** Accettato (2026-07-11)
+- **Stato:** Superato per l'autorità applicativa e il framing di prodotto da
+  [ADR-0007](ADR-0007-application-protocol-authority.md) (2026-08-17).
+  Resta una testimonianza storica della scelta di OpenMLS/Rust per il profilo
+  di sessione sicura.
 - **Contesto normativo:** `docs/security/2026-07-11-fattibilita-piano-utente.md`, piano operativo Styx Secure §3.
+
+> **Nota di supersessione:** le sezioni seguenti conservano la decisione del
+> 2026-07-11 nel suo testo storico. I riferimenti al core "protocollare
+> canonico", alla chat come prodotto, alla PWA come accesso universale e alle
+> funzionalità applicative implementate tutte nel core Rust/MLS non descrivono
+> più l'architettura approvata. ADR-0007 separa il protocollo applicativo
+> language-neutral dal profilo di sessione sicura, dai profili runtime e dai
+> verticali di prodotto.
 
 ## Contesto
 
