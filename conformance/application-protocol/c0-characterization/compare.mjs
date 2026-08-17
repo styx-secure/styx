@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -16,13 +17,24 @@ const REPORT = join(HERE, 'report.json');
 const SCHEMA = join(HERE, 'schema.json');
 const JS_RUNNER = join(ROOT, 'styx-js/test/interop/c0-characterization-runner.mjs');
 const DART_RUNNER = join(ROOT, 'test_integration/bin/c0_characterization.dart');
+const EXPECTED_BASES = new Set(['hypothesis-driven', 'observational-baseline']);
+const EXPECTED_CLASSIFICATIONS = new Set(['MATCH', 'DIVERGENCE', 'UNSUPPORTED']);
+
+function adapterEnvironment() {
+  return {
+    ...process.env,
+    LANG: 'C',
+    LC_ALL: 'C',
+    TZ: 'UTC',
+  };
+}
 
 function run(executable, args) {
   const result = spawnSync(executable, args, {
     cwd: ROOT,
     encoding: 'utf8',
     shell: false,
-    env: process.env,
+    env: adapterEnvironment(),
     maxBuffer: 16 * 1024 * 1024,
   });
   if (result.error || result.status !== 0 || result.signal !== null) {
@@ -47,6 +59,51 @@ function assertExactIds(envelope, caseIds) {
   }
 }
 
+function assertCorpusAndExpectationIdentity(corpus, expected) {
+  if (!Array.isArray(corpus.cases)) throw new Error('CORPUS_CASES_NOT_ARRAY');
+  const caseIds = corpus.cases.map((testCase) => testCase?.id);
+  if (caseIds.some((caseId) => typeof caseId !== 'string')) {
+    throw new Error('CORPUS_CASE_ID_INVALID');
+  }
+  if (new Set(caseIds).size !== caseIds.length) {
+    throw new Error('CORPUS_CASE_ID_DUPLICATE');
+  }
+  if (expected.schemaVersion !== corpus.schemaVersion || expected.baseSha !== corpus.baseSha) {
+    throw new Error('EXPECTATION_IDENTITY_MISMATCH');
+  }
+  if (!Array.isArray(expected.expectations)) {
+    throw new Error('EXPECTATIONS_NOT_ARRAY');
+  }
+  if (expected.expectations.length !== caseIds.length) {
+    throw new Error('EXPECTATION_CARDINALITY');
+  }
+
+  const knownIds = new Set(caseIds);
+  const expectationIds = [];
+  const seen = new Set();
+  for (const expectation of expected.expectations) {
+    const caseId = expectation?.caseId;
+    if (typeof caseId !== 'string') throw new Error('EXPECTATION_CASE_ID_INVALID');
+    if (seen.has(caseId)) throw new Error(`EXPECTATION_DUPLICATE:${caseId}`);
+    if (!knownIds.has(caseId)) throw new Error(`EXPECTATION_UNKNOWN:${caseId}`);
+    if (!EXPECTED_CLASSIFICATIONS.has(expectation.classification)) {
+      throw new Error(`EXPECTATION_CLASSIFICATION_INVALID:${caseId}`);
+    }
+    if (!EXPECTED_BASES.has(expectation.basis)) {
+      throw new Error(`EXPECTATION_BASIS_INVALID:${caseId}`);
+    }
+    if (typeof expectation.reason !== 'string' || expectation.reason.length === 0) {
+      throw new Error(`EXPECTATION_REASON_INVALID:${caseId}`);
+    }
+    seen.add(caseId);
+    expectationIds.push(caseId);
+  }
+  if (canonicalJson(expectationIds) !== canonicalJson(caseIds)) {
+    throw new Error('EXPECTATION_CASE_ID_ORDER_MISMATCH');
+  }
+  return caseIds;
+}
+
 function classify(dartObservation, javascriptObservation) {
   if (dartObservation.status === 'UNSUPPORTED' || javascriptObservation.status === 'UNSUPPORTED') {
     return 'UNSUPPORTED';
@@ -67,9 +124,14 @@ function classify(dartObservation, javascriptObservation) {
 }
 
 function generateReport() {
-  const corpus = JSON.parse(readFileSync(CASES, 'utf8'));
+  const corpusBytes = readFileSync(CASES);
+  const corpus = JSON.parse(corpusBytes.toString('utf8'));
   const expected = JSON.parse(readFileSync(EXPECTED, 'utf8'));
   const schema = JSON.parse(readFileSync(SCHEMA, 'utf8'));
+  const caseIds = assertCorpusAndExpectationIdentity(corpus, expected);
+  const independentlyComputedCasesSha256 = createHash('sha256')
+    .update(corpusBytes)
+    .digest('hex');
   const javascriptEnvelope = run(process.execPath, [JS_RUNNER, CASES]);
   const dartEnvelope = run('dart', ['run', DART_RUNNER, CASES]);
 
@@ -79,19 +141,19 @@ function generateReport() {
   if (dartEnvelope.baseSha !== corpus.baseSha || javascriptEnvelope.baseSha !== corpus.baseSha) {
     throw new Error('BASE_SHA_MISMATCH');
   }
-  if (dartEnvelope.casesSha256 !== javascriptEnvelope.casesSha256) {
+  if (
+    dartEnvelope.casesSha256 !== independentlyComputedCasesSha256 ||
+    javascriptEnvelope.casesSha256 !== independentlyComputedCasesSha256
+  ) {
     throw new Error('CORPUS_DIGEST_MISMATCH');
   }
 
-  const caseIds = corpus.cases.map((testCase) => testCase.id);
   assertExactIds(dartEnvelope, caseIds);
   assertExactIds(javascriptEnvelope, caseIds);
 
   const expectationById = new Map(
     expected.expectations.map((expectation) => [expectation.caseId, expectation])
   );
-  if (expectationById.size !== caseIds.length) throw new Error('EXPECTATION_CARDINALITY');
-
   const counts = { MATCH: 0, DIVERGENCE: 0, UNSUPPORTED: 0 };
   const classifications = corpus.cases.map((testCase, index) => {
     const dartObservation = dartEnvelope.observations[index];
@@ -141,6 +203,10 @@ function generateReport() {
         evidence: 'The current JavaScript HLC renderer uses decimal Number.toString() rather than hexadecimal output.',
       },
     ],
+    staleMetadataScope: {
+      assessedLegacyEntries: ['hlcCounter'],
+      remainingLegacyEntries: 'OUT_OF_SCOPE_FOR_C0_1',
+    },
   };
 }
 

@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 
 import {
   canonicalJson,
+  chainErrorCode,
+  decimal,
   runCharacterization,
   validateEnvelope,
 } from './c0-characterization-runner.mjs';
@@ -16,6 +18,19 @@ const REPORT = resolve(ROOT, 'conformance/application-protocol/c0-characterizati
 const SCHEMA = resolve(ROOT, 'conformance/application-protocol/c0-characterization/schema.json');
 
 describe('C0 JavaScript characterization lane', () => {
+  test('rejects decimal inputs outside the exact safe-integer domain', () => {
+    expect(() => decimal('9007199254740992')).toThrow(
+      'HARNESS_DECIMAL_INPUT'
+    );
+    expect(() => decimal('1.5')).toThrow('HARNESS_DECIMAL_INPUT');
+  });
+
+  test('fails closed on an unknown production chain error', () => {
+    expect(() => chainErrorCode({ errorType: 'future-error' })).toThrow(
+      'HARNESS_UNKNOWN_CHAIN_ERROR:future-error'
+    );
+  });
+
   test('regenerates the exact committed JavaScript envelope', async () => {
     const schema = JSON.parse(readFileSync(SCHEMA, 'utf8'));
     const report = JSON.parse(readFileSync(REPORT, 'utf8'));

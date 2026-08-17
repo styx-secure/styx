@@ -139,9 +139,12 @@ function unsupported(caseId, reasonCode, observedToken) {
   };
 }
 
-function decimal(value) {
+export function decimal(value) {
+  if (typeof value !== 'string' || !/^-?[0-9]+$/.test(value)) {
+    throw new Error('HARNESS_DECIMAL_INPUT');
+  }
   const number = Number(value);
-  if (!Number.isFinite(number)) throw new Error('HARNESS_DECIMAL_INPUT');
+  if (!Number.isSafeInteger(number)) throw new Error('HARNESS_DECIMAL_INPUT');
   return number;
 }
 
@@ -186,17 +189,20 @@ function chainEvent({
   previousHash = null,
   eventHash = '00'.repeat(32),
   senderPublicKeyHex,
+  eventType = EventType.TRANSACTION,
+  payload = new Uint8Array([1]),
+  hlc = HybridLogicalClock.fromCanonical(
+    '2026-02-24T12:00:00.123Z-0042-a1b2c3d4'
+  ),
   signature = new Uint8Array(64),
 }) {
   return new LedgerEvent({
     eventId: id,
-    eventType: EventType.TRANSACTION,
-    payload: new Uint8Array([1]),
+    eventType,
+    payload,
     previousHash,
     eventHash,
-    hlc: HybridLogicalClock.fromCanonical(
-      '2026-02-24T12:00:00.123Z-0042-a1b2c3d4'
-    ),
+    hlc,
     vectorClock: new VectorClock(1, 0),
     senderPubkey: senderPublicKeyHex,
     signature,
@@ -204,7 +210,7 @@ function chainEvent({
   });
 }
 
-function chainErrorCode(error) {
+export function chainErrorCode(error) {
   const mapping = {
     [ChainErrorType.HASH_MISMATCH]: 'CHAIN_HASH_MISMATCH',
     [ChainErrorType.SIGNATURE_INVALID]: 'CHAIN_SIGNATURE_INVALID',
@@ -212,7 +218,12 @@ function chainErrorCode(error) {
     [ChainErrorType.HLC_VIOLATION]: 'CHAIN_HLC_VIOLATION',
     [ChainErrorType.GENESIS_VIOLATION]: 'CHAIN_GENESIS_VIOLATION',
   };
-  return error === null ? 'CHAIN_VALID' : mapping[error.errorType];
+  if (error === null) return 'CHAIN_VALID';
+  const code = mapping[error.errorType];
+  if (code === undefined) {
+    throw new Error(`HARNESS_UNKNOWN_CHAIN_ERROR:${String(error.errorType)}`);
+  }
+  return code;
 }
 
 async function runCase(testCase) {
@@ -220,37 +231,66 @@ async function runCase(testCase) {
   const hasher = new Hasher();
 
   if (testCase.category === 'hlc') {
-    try {
+    const parseError = () => observed(
+      id,
+      { kind: 'error', code: 'HLC_PARSE_ERROR' },
+      'HybridLogicalClock.fromCanonical:throw',
+      'HLC_PARSE_ERROR'
+    );
+
+    if (operation === 'parse-render' || operation === 'bytes') {
+      if (typeof input.canonical !== 'string') {
+        throw new Error(`HARNESS_HLC_INPUT:${id}`);
+      }
+      let clock;
+      try {
+        clock = HybridLogicalClock.fromCanonical(input.canonical);
+      } catch {
+        return parseError();
+      }
       if (operation === 'parse-render') {
         return observed(
           id,
-          clockValue(HybridLogicalClock.fromCanonical(input.canonical)),
+          clockValue(clock),
           'HybridLogicalClock.fromCanonical:return'
         );
       }
-      if (operation === 'bytes') {
-        const clock = HybridLogicalClock.fromCanonical(input.canonical);
-        return observed(
-          id,
-          { kind: 'bytes', hex: bytesToHex(clock.toBytes()) },
-          'HybridLogicalClock.toBytes:return'
-        );
+      return observed(
+        id,
+        { kind: 'bytes', hex: bytesToHex(clock.toBytes()) },
+        'HybridLogicalClock.toBytes:return'
+      );
+    }
+    if (operation === 'compare' || operation === 'bytes-collision-witness') {
+      if (typeof input.left !== 'string' || typeof input.right !== 'string') {
+        throw new Error(`HARNESS_HLC_INPUT:${id}`);
+      }
+      let left;
+      let right;
+      try {
+        left = HybridLogicalClock.fromCanonical(input.left);
+        right = HybridLogicalClock.fromCanonical(input.right);
+      } catch {
+        return parseError();
       }
       if (operation === 'compare') {
-        const left = HybridLogicalClock.fromCanonical(input.left);
-        const right = HybridLogicalClock.fromCanonical(input.right);
         return observed(
           id,
           { kind: 'comparison', relation: String(left.compareTo(right)) },
           'HybridLogicalClock.compareTo:return'
         );
       }
-    } catch {
+      const leftHex = bytesToHex(left.toBytes());
+      const rightHex = bytesToHex(right.toBytes());
       return observed(
         id,
-        { kind: 'error', code: 'HLC_PARSE_ERROR' },
-        'HybridLogicalClock.fromCanonical:throw',
-        'HLC_PARSE_ERROR'
+        {
+          kind: 'bytes-collision-witness',
+          leftHex,
+          rightHex,
+          equal: leftHex === rightHex,
+        },
+        'HybridLogicalClock.toBytes:collision-witness'
       );
     }
   }
@@ -496,6 +536,28 @@ async function runCase(testCase) {
         id,
         { kind: 'chain-result', code: chainErrorCode(error) },
         'ChainValidator.validateEvent:return',
+        chainErrorCode(error)
+      );
+    }
+    if (operation === 'signed-valid-chain') {
+      if (input.signedMessageHex !== input.eventHashHex) {
+        throw new Error(`HARNESS_SIGNED_MESSAGE_HASH_MISMATCH:${id}`);
+      }
+      const event = chainEvent({
+        id,
+        previousHash: input.previousHash,
+        eventHash: input.eventHashHex,
+        eventType: input.eventType,
+        payload: hexToBytes(input.payloadHex),
+        hlc: HybridLogicalClock.fromCanonical(input.hlcCanonical),
+        senderPublicKeyHex: input.senderPublicKeyHex,
+        signature: hexToBytes(input.signatureHex),
+      });
+      const error = await validator.validateFullChain([event]);
+      return observed(
+        id,
+        { kind: 'chain-result', code: chainErrorCode(error) },
+        'ChainValidator.validateFullChain:return',
         chainErrorCode(error)
       );
     }

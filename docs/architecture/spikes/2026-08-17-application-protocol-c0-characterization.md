@@ -1,7 +1,7 @@
 # C0 application-protocol characterization
 
-Date: 2026-08-17  
-Status: completed characterization; non-normative  
+Date: 2026-08-17
+Status: completed characterization; non-normative
 Base: `f0f7c35fa030477f56ea3b29efa1381f0d2dc972`
 
 ## Decision question

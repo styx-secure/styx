@@ -99,11 +99,21 @@ Both adapters take the corpus path explicitly. The Dart test runs only Dart;
 the Jest test runs only JavaScript on Node 20. Each test regenerates and
 byte-checks its own committed observation section. Only `compare.mjs` invokes
 both adapters, using fixed executable and argument arrays without a shell.
+For every adapter process the comparator overrides `LANG=C`, `LC_ALL=C` and
+`TZ=UTC`, irrespective of its caller environment. This controls the locale and
+timezone inputs without removing unrelated environment values needed to locate
+the pinned toolchains. Collation-dependent ordering cases remain explicitly
+unspecified because this process setting cannot turn an implementation's
+default collation into a protocol guarantee.
 
 At this base the cross-runtime classification step has no required CI job. It
 is mandatory local and independent-review evidence. Adding a required job, and
 extending the CI claims-lint root to `conformance/`, require separate workflow
 contracts.
+
+`staleMetadataFindings` assesses only the legacy `hlcCounter` entry. Every
+other legacy incompatibility entry remains outside C0.1 and is neither confirmed
+nor disproved by this report.
 
 ## Deliberate boundary
 

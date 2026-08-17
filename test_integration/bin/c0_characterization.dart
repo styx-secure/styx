@@ -201,16 +201,21 @@ LedgerEvent _chainEvent({
   required String senderPublicKeyHex,
   String? previousHash,
   String? eventHash,
+  EventType eventType = EventType.transaction,
+  Uint8List? payload,
+  HybridLogicalClock? hlc,
   Uint8List? signature,
 }) => LedgerEvent(
   eventId: id,
-  eventType: EventType.transaction,
-  payload: Uint8List.fromList([1]),
+  eventType: eventType,
+  payload: payload ?? Uint8List.fromList([1]),
   previousHash: previousHash,
   eventHash: eventHash ?? _repeat('00', 32),
-  hlc: HybridLogicalClock.fromCanonical(
-    '2026-02-24T12:00:00.123Z-0042-a1b2c3d4',
-  ),
+  hlc:
+      hlc ??
+      HybridLogicalClock.fromCanonical(
+        '2026-02-24T12:00:00.123Z-0042-a1b2c3d4',
+      ),
   vectorClock: const VectorClock(a: 1, b: 0),
   senderPubkey: senderPublicKeyHex,
   signature: signature ?? Uint8List(64),
@@ -235,43 +240,63 @@ Future<Map<String, Object?>> _runCase(Map<String, dynamic> testCase) async {
   final hasher = Hasher();
 
   if (category == 'hlc') {
-    try {
+    Map<String, Object?> parseError() => _observed(
+      id,
+      {'kind': 'error', 'code': 'HLC_PARSE_ERROR'},
+      'HybridLogicalClock.fromCanonical:throw',
+      'HLC_PARSE_ERROR',
+    );
+
+    if (operation == 'parse-render' || operation == 'bytes') {
+      final canonical = input['canonical'] as String;
+      late final HybridLogicalClock clock;
+      try {
+        clock = HybridLogicalClock.fromCanonical(canonical);
+      } on Object {
+        return parseError();
+      }
       if (operation == 'parse-render') {
         return _observed(
           id,
-          _clockValue(
-            HybridLogicalClock.fromCanonical(input['canonical'] as String),
-          ),
+          _clockValue(clock),
           'HybridLogicalClock.fromCanonical:return',
         );
       }
-      if (operation == 'bytes') {
-        final clock = HybridLogicalClock.fromCanonical(
-          input['canonical'] as String,
-        );
-        return _observed(
-          id,
-          {'kind': 'bytes', 'hex': _bytesToHex(clock.toBytes())},
-          'HybridLogicalClock.toBytes:return',
-        );
+      return _observed(
+        id,
+        {'kind': 'bytes', 'hex': _bytesToHex(clock.toBytes())},
+        'HybridLogicalClock.toBytes:return',
+      );
+    }
+    if (operation == 'compare' || operation == 'bytes-collision-witness') {
+      final leftCanonical = input['left'] as String;
+      final rightCanonical = input['right'] as String;
+      late final HybridLogicalClock left;
+      late final HybridLogicalClock right;
+      try {
+        left = HybridLogicalClock.fromCanonical(leftCanonical);
+        right = HybridLogicalClock.fromCanonical(rightCanonical);
+      } on Object {
+        return parseError();
       }
       if (operation == 'compare') {
-        final left = HybridLogicalClock.fromCanonical(input['left'] as String);
-        final right = HybridLogicalClock.fromCanonical(
-          input['right'] as String,
-        );
         return _observed(
           id,
           {'kind': 'comparison', 'relation': left.compareTo(right).toString()},
           'HybridLogicalClock.compareTo:return',
         );
       }
-    } on Object {
+      final leftHex = _bytesToHex(left.toBytes());
+      final rightHex = _bytesToHex(right.toBytes());
       return _observed(
         id,
-        {'kind': 'error', 'code': 'HLC_PARSE_ERROR'},
-        'HybridLogicalClock.fromCanonical:throw',
-        'HLC_PARSE_ERROR',
+        {
+          'kind': 'bytes-collision-witness',
+          'leftHex': leftHex,
+          'rightHex': rightHex,
+          'equal': leftHex == rightHex,
+        },
+        'HybridLogicalClock.toBytes:collision-witness',
       );
     }
   }
@@ -581,6 +606,32 @@ Future<Map<String, Object?>> _runCase(Map<String, dynamic> testCase) async {
         id,
         {'kind': 'chain-result', 'code': code},
         'ChainValidator.validateEvent:return',
+        code,
+      );
+    }
+    if (operation == 'signed-valid-chain') {
+      final eventHash = input['eventHashHex'] as String;
+      final signedMessage = input['signedMessageHex'] as String;
+      if (signedMessage != eventHash) {
+        throw StateError('HARNESS_SIGNED_MESSAGE_HASH_MISMATCH:$id');
+      }
+      final event = _chainEvent(
+        id: id,
+        previousHash: input['previousHash'] as String?,
+        eventHash: eventHash,
+        eventType: EventType.values.byName(input['eventType'] as String),
+        payload: _hexToBytes(input['payloadHex'] as String),
+        hlc: HybridLogicalClock.fromCanonical(input['hlcCanonical'] as String),
+        senderPublicKeyHex: sender,
+        signature: _hexToBytes(input['signatureHex'] as String),
+      );
+      final code = _chainErrorCode(
+        await validator.validateFullChain([event]),
+      );
+      return _observed(
+        id,
+        {'kind': 'chain-result', 'code': code},
+        'ChainValidator.validateFullChain:return',
         code,
       );
     }
