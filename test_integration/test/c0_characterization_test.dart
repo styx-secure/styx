@@ -7,7 +7,7 @@ import '../bin/c0_characterization.dart';
 
 void main() {
   test('regenerates the exact committed Dart envelope', () async {
-    const directory = 'conformance/application-protocol/c0-characterization';
+    const directory = '../conformance/application-protocol/c0-characterization';
     final report =
         jsonDecode(
               File('$directory/report.json').readAsStringSync(),
