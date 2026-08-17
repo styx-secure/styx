@@ -25,7 +25,7 @@ contract is the language-neutral specification plus conformance corpus.
 
 ## Application implementation roles
 
-- `styx-js/src/ledger/**` and `styx-js/src/facade/**` are the supported browser
+- `styx-js/src/ledger/**` and `styx-js/src/facade/**` are the active browser
   implementation of the application protocol.
 - `packages/` Dart is an independently developed reference. Its behavioral
   edge cases must be captured as conformance vectors before the implementation
@@ -118,11 +118,13 @@ contracts. Browser-specific APIs must not leak into those contracts.
 | Subject | Authority |
 |---|---|
 | Product direction | `specs/01-vision.md` |
+| Application-protocol authority and implementation roles | `docs/architecture/decisions/ADR-0007-application-protocol-authority.md` |
 | Licensing | `LICENSING.md`, `REUSE.toml` |
 | Repository governance | `AGENTS.md` |
 | Existing vault and MLS-state constraints | `docs/superpowers/specs/**` |
 | Current security findings | `docs/security/2026-07-10-styx-chat-security-report.md` |
 
-The existing ADRs record historical decisions. Any ADR that treats the chat as
-the canonical product must be reconciled by a separate, human-approved task;
-this synthesis does not silently amend it.
+ADR-0007 reconciles the historical ADR-0001 product framing with the approved
+Vision. ADR-0001 remains historical evidence for the OpenMLS/Rust
+secure-session selection; it no longer makes the chat, PWA, MLS engine, or any
+language implementation the canonical Styx application protocol.
