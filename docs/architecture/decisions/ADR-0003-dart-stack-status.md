@@ -27,7 +27,10 @@ Lo stack Dart (`packages/`) è software maturo e testato: ~10.660 righe di libre
 ## Conseguenze
 
 - Il valore del lavoro Dart resta accessibile (design, invarianti, vettori di interop documentati in `test_integration/vectors/`), senza costare manutenzione come secondo prodotto.
-- Le nuove funzionalità della chat si progettano guardando al Dart come *specifica di riferimento* dove utile (es. protocollo di re-key, backup), reimplementandole sul core Rust/MLS.
+- I comportamenti applicativi futuri possono essere estratti dal Dart come
+  candidati a requisiti e vettori del protocollo language-neutral. Il motore
+  Rust/OpenMLS resta limitato al profilo di sessione sicura e non ospita la
+  logica applicativa.
 
 ## Note
 
