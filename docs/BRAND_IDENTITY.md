@@ -1,6 +1,6 @@
 # Styx public identity
 
-> **Status:** approved-direction brand and messaging guide, 14 August 2026.
+> **Status:** approved-direction brand and messaging guide, 17 August 2026.
 >
 > This guide controls public naming, positioning, visual direction, and claim
 > boundaries. It does not change the product specification, licensing,
@@ -209,7 +209,7 @@ paused.
 | metadata-minimizing, when evidenced | do not claim zero metadata | Timing, size, routing, and relationships may remain visible. |
 | experimental and unaudited | military-grade | The phrase has no useful assurance meaning. |
 | planned Themis alpha | anonymous reporting platform | The product and anonymity evidence do not yet exist. |
-| preferred compatibility target | Marmot-compatible | Compatibility requires completed conformance evidence. |
+| interoperated with the exact pinned MDK peer for the operations in the Phase B report | Marmot-compatible | The completed evidence is revision- and operation-bounded, not general conformance. |
 | verifiable state transitions | immutable records | Retention and pruning are intentional; physical deletion is limited. |
 | open source under AGPL-3.0-or-later | free of restrictions | The licence has obligations and trademarks are separate. |
 
@@ -220,10 +220,12 @@ Every public statement must identify its rung.
 1. **Implemented evidence:** present tense only when a merged path and test or
    reproducible artifact can be linked. Example: “The repository contains a
    tested Dart reference ledger.”
-2. **Bounded result:** name the exact scope. Example: “In Phase B3.1, the exact
-   pinned MDK peer accepted Styx's isolated KeyPackage and created a group whose
-   exact group-profile state Styx decoded. The experiment remained NO-GO before
-   Welcome parsing at the external-RatchetTree boundary.”
+2. **Bounded result:** name the exact scope. Example: “At the OpenMLS, Marmot
+   and MDK revisions recorded in the final Phase B report, Styx interoperated
+   with the pinned MDK peer in an isolated synthetic direct-MLS profile through
+   durable Welcome join, bidirectional traffic, sequential self-update, the
+   five-past-epoch delivery boundary and bounded two-candidate same-parent
+   convergence.”
 3. **Draft candidate:** say **Draft PR** or **candidate** and do not count it as
    current capability.
 4. **Approved direction:** use **is designed to**, **targets**, or **preferred**.
@@ -242,7 +244,8 @@ When space is limited, preserve these facts before adding detail:
 - current transports expose routing, timing, size, and relationship metadata;
 - end-to-end encryption does not protect a compromised endpoint or prevent a
   recipient from copying content;
-- Themis, complete Marmot compatibility, native distribution, a targeted
+- Themis, general Marmot conformance, product integration of the isolated
+  profile, native distribution, a targeted
   independent review with remediation/retest, and any separately approved
   organizational exercise or pilot are future work;
 - deletion cannot guarantee physical erasure from every device, backup, or
@@ -350,10 +353,12 @@ site uses no JavaScript and no essential animation.
 > Themis by Styx is the planned first vertical: confidential case intake and
 > follow-up without requiring a conventional contact identifier.
 
-> In Phase B3.1, the exact pinned MDK peer accepted Styx's isolated KeyPackage
-> and created a group whose exact group-profile state Styx decoded. The
-> experiment remained NO-GO before Welcome parsing at the external-RatchetTree
-> boundary; Styx is not Marmot-compatible.
+> At the OpenMLS, Marmot and MDK revisions recorded in the final Phase B
+> report, Styx interoperated with the pinned MDK peer in an isolated synthetic
+> direct-MLS profile through durable Welcome join, bidirectional traffic,
+> sequential self-update, the five-past-epoch delivery boundary and bounded
+> two-candidate same-parent convergence. This is not general Marmot conformance
+> or product activation.
 
 ### Avoid
 
@@ -364,6 +369,8 @@ site uses no JavaScript and no essential animation.
 > Themis is an HRF-backed reporting platform.
 
 > Styx is the decentralized Signal for Bitcoin.
+
+> Styx is Marmot-compatible.
 
 ## 12. Source hierarchy and maintenance
 

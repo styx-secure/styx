@@ -2,7 +2,7 @@
 spec_version: "3.0"
 spec_type: "tech-spec"
 project: "Styx"
-last_updated: "2026-08-08T00:00:00Z"
+last_updated: "2026-08-17T00:00:00Z"
 status: "draft"
 ---
 
@@ -17,7 +17,7 @@ current monorepo directory layout.
 |---|---|---|
 | Product vertical | Workflows, policy, roles, UX | Themis first; reference chat minimal |
 | Styx application protocol | Events, state transitions, causality, evidence, pruning, conformance | JS active browser implementation; Dart independent reference |
-| Secure-session profile | Membership, epochs, CGKA, convergence, confidential delivery | Existing OpenMLS/Nostr path; Marmot preferred compatibility target |
+| Secure-session profile | Membership, epochs, CGKA, convergence, confidential delivery | Bounded exact-pin direct-MLS proof complete; supported adapter and Nostr-envelope integration remain future work |
 | Runtime profile | Key custody, storage, workers, notifications, platform integration | Browser PWA first; signed native profiles future |
 
 No implementation is the canonical application authority. The canonical
@@ -38,8 +38,13 @@ contract is the language-neutral specification plus conformance corpus.
 
 The secure-session layer is replaceable below the application protocol. The
 current JavaScript path uses vendored OpenMLS WASM and Nostr transport. Marmot
-is the preferred target for MLS-over-Nostr compatibility, but current Styx is
-not conformant until independent wire-level evidence proves it.
+is the preferred target for MLS-over-Nostr compatibility. Phase B produced a
+bounded GO against exact pinned OpenMLS, Marmot and MDK revisions for an
+isolated synthetic direct-MLS profile: durable Welcome join, bidirectional
+application traffic, sequential self-update, the five-past-epoch delivery
+boundary and exactly two depth-one same-parent candidates. This is not general
+Marmot conformance, Nostr-envelope interoperability or product activation. See
+the [final Phase B verdict](../docs/architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md).
 
 Marmot compatibility requires, at minimum, its mandatory ciphersuite, current
 account-to-leaf identity proof, capability negotiation, compliant KeyPackages,
@@ -100,9 +105,10 @@ contracts. Browser-specific APIs must not leak into those contracts.
 
 - Crypto, WASM, persisted formats, migrations, runtime manifests, licensing,
   workflows, and governance remain human-gated.
-- A Marmot Phase A result is only a source-capability decision. Phase B needs a
-  new approved contract, exact licensing classifications, adversarial tests,
-  and independent interoperability evidence.
+- The completed Phase B result is evidence only for its exact isolated profile.
+  Any supported application adapter, pin change, transport integration,
+  retention policy or persisted product format needs a new approved contract,
+  adversarial tests and independent evidence.
 - The existing OpenMLS pin must not be moved backward to a release tag that
   predates its security and storage changes.
 - Current builds remain experimental and unsuitable for sensitive use.
