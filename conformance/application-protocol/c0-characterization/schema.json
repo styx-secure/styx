@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://styxsecure.org/schemas/c0-characterization-envelope-v1.json",
+  "title": "Styx C0 characterization adapter envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runtime", "baseSha", "casesSha256", "observations"],
+  "properties": {
+    "schemaVersion": { "const": "1" },
+    "runtime": { "enum": ["dart", "javascript"] },
+    "baseSha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "casesSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "observations": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/observation" }
+    }
+  },
+  "$defs": {
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "status", "value", "reasonCode", "observedToken"],
+      "properties": {
+        "caseId": { "type": "string", "pattern": "^[A-Z]+-[0-9]{3}$" },
+        "status": { "enum": ["OBSERVED", "UNSUPPORTED"] },
+        "value": { "$ref": "#/$defs/semanticValue" },
+        "reasonCode": {
+          "oneOf": [
+            { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+            { "type": "null" }
+          ]
+        },
+        "observedToken": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]+$" }
+      }
+    },
+    "semanticValue": {
+      "oneOf": [
+        { "type": "string" },
+        { "type": "boolean" },
+        { "type": "null" },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/semanticValue" }
+        },
+        {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/semanticValue" }
+        }
+      ]
+    }
+  }
+}
