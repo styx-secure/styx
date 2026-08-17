@@ -105,6 +105,11 @@ retained in the maintainer-controlled private local review-run archive:
 | `README_OPUS5_CONTRACT_FINAL_20260817.md` | `726869249ff5fb9fc46a2f332e35441641f0cc41bf5dad0423fa2d5c563bdbce` |
 | `README_QWEN38_CONTRACT_FINAL_20260817.md` | `39b967840d212a09932f884e6bcdcfaeb694a5c51ca36f7eb135c5fc00c1e9b5` |
 
+The two `CONTRACT_FINAL` reports are retained contract-review custody records.
+They are not `PRIV` evidence used to justify an individual registry decision;
+the four decision-bearing reports are mapped explicitly as `PRIV-01` through
+`PRIV-04` in the registry.
+
 The exact witness may be disclosed after remediation or under a separately
 approved disclosure decision. A digest proves correspondence only while the
 custodian preserves the referenced artifact; it is not a substitute for public

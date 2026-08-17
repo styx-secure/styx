@@ -92,7 +92,11 @@ claim that current code conforms.
   tag and a TLS-presentation-style transcript consisting only of fixed-width or
   explicitly length-framed validated fields. Raw concatenation without field
   boundaries is forbidden. The transcript is regenerated for hashing and
-  signature verification; it is not a generic wire document to parse.
+  signature verification; it is not a generic wire document to parse. Here,
+  “TLS-presentation-style” names only the framing property: every field is
+  fixed-width or an explicitly length-prefixed variable-width value. It does
+  not import a TLS record grammar or select the exact transcript or wire
+  encoding, which remain later specification decisions.
 - **Rationale/evidence:** `HASH-004`, `HASH-005`, `PRIV-01`, `PRIV-02`,
   `PRIV-03` and `PRIV-04` establish boundary erasure at the primitive and
   complete-event/signature levels.
@@ -611,7 +615,7 @@ outcomes.
   immediately reopens the deferral and disclosure posture.
 - **Human ratification:** pending final-HEAD acceptance of this deferral.
 
-## 5. Non-normative worked examples
+## 5. NON-NORMATIVE worked examples
 
 These examples explain decisions; they are not vectors and MUST NOT be copied
 as expected protocol bytes.
@@ -637,10 +641,13 @@ also be transcript-bound and locally evaluated under the application's policy.
 
 ## 6. Gate for C0.3 and exact next sequence
 
-**C0.3 verdict: `NO-GO`.** O-01 through O-10 and O-12 contain choices required
-to derive normative bytes or adversarial expectations. O-11 intentionally does
-not block a transcript-only C0.3 corpus. Starting that corpus now would freeze
-the remaining guesses and create cost pressure on later human decisions.
+**C0.3 verdict: `NO-GO`.** O-01 through O-10 contain choices required to derive
+normative bytes or adversarial expectations. O-12 is additionally blocking if
+O-05 retains physical time in the signed kernel; if O-05 excludes physical
+time, O-12 becomes inapplicable and contributes no transcript field. O-11
+intentionally does not block a transcript-only C0.3 corpus. Starting that corpus
+now would freeze the remaining guesses and create cost pressure on later human
+decisions.
 
 The smallest safe sequence is:
 
@@ -649,8 +656,8 @@ The smallest safe sequence is:
 2. run the adversarial causal-topology probe for O-01, coordinated with O-05,
    O-06 and the privacy conclusions from step 1;
 3. close payload, genesis, clock, cardinality and error questions O-04 through
-   O-10 and O-12 without implementation authority; retain O-11 for the later
-   wire/storage decision;
+   O-10, plus O-12 only if O-05 retains physical time, without implementation
+   authority; retain O-11 for the later wire/storage decision;
 4. approve the exact Apache-2.0 path inventory for the future corpus;
 5. execute C0.3: specification-derived adversarial corpus plus a third
    implementation written only from the specification;
