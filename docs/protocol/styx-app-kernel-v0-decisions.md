@@ -38,16 +38,16 @@ Security-critical evidence fields below use only C0.1 case identifiers and
 these retained private-review references. A reference identifies an immutable
 local artifact by filename and SHA-256; it does not disclose its witness:
 
-Separate `Normative rationale` and `Public inspection pointer (non-witness)`
-fields may cite public repository documents. They contain no witness material
-and never substitute for the security-critical evidence field above.
-
 | Reference | Retained private-review artifact | SHA-256 |
 | --- | --- | --- |
 | `PRIV-01` | `README_OPUS5_20260817T063953Z.md` | `beff559ed88bda3d1cbbbdfdb3686f84003b6d9d8640c25e505d5fc36e831003` |
 | `PRIV-02` | `README_QWEN38_20260817T064405Z.md` | `320234c8afe9ea22b54c24164ab1a8e8e77b3c3af6d4e2ff4f544fe0b3286606` |
 | `PRIV-03` | `README_OPUS5_RECONCILE_20260817T070100Z.md` | `51f027211f231803ddb93f40dabe898673c7ddba2bea8498d774e1deb9d81ec0` |
 | `PRIV-04` | `README_QWEN38_RECONCILE_20260817T070100Z.md` | `4594818fb528e797c74e9eca4e1ffa0ea62988be9c5a539a77f0a3c1d9d6844d` |
+
+Separate `Normative rationale` and `Public inspection pointer (non-witness)`
+fields may cite public repository documents. They contain no witness material
+and never substitute for the security-critical evidence field above.
 
 The words **MUST**, **MUST NOT**, **SHALL**, **SHALL NOT** and **REJECT** below
 express decisions intended to constrain the later specification. They do not
