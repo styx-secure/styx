@@ -31,6 +31,14 @@ Run from this directory:
 Docker is required. No host Rust toolchain is used. The committed WASM is
 2,358,165 bytes raw and 824,040 bytes gzip (`gzip -9 -n`).
 
+Those are the current installed-tuple measurements. They supersede, but do not
+rewrite, the historical B3.2a artifact recorded by Issue #175 / PR #176:
+2,243,916 bytes raw and 789,498 bytes gzip (`gzip -9 -n`), freshly reproduced
+from squash commit `1404d05ed2604195e3b697caeccad9133a6cdc34` on 2026-08-17.
+The historical artifact SHA-256 remains
+`f1596c27c90f71e50998bfae1be212e6b016944e18fe3c3fecee1eb44e64f869`;
+it is evidence for that bounded stage, not the currently installed runtime.
+
 ## Profiles
 
 The legacy API remains the shipping path:

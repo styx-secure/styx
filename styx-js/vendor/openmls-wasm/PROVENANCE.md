@@ -120,6 +120,17 @@ focused JavaScript checks and a third byte-identical build (report SHA-256
 `6471f04fccdf589c41fcb7382985aab5cfb8672adc3dc747af0036b128fc708c`). `./verify.sh`
 independently rebuilds twice and compares both results with the committed set.
 
+**Test-evidence maintenance: verified 2026-08-17 for Issue #198.** Commit
+`f80f8f2ab5ab640babd001433a1826533b189142`, tree
+`66ac55b9e98866e9b60aa8911551d21ed9a40c04`, changed only the `#[cfg(test)]`
+native evidence in `patch/lib.rs`; the resulting patch SHA-256 is
+`612e225d0bcf369d8f409a71b9c943b2d566777466f1682779fae23b0b2fccde`.
+The native suite passed 39 tests and `./verify.sh` performed two complete
+disposable locked builds whose five generated files were byte-identical to the
+installed B3.3b-1 tuple above. No generated file or runtime byte changed. This
+maintenance evidence is additive and does not relabel the historical B3.2a or
+B3.3a artifacts.
+
 The immediately preceding B3.3a artifact digest
 `7087b53f8f0597f0107802d5b629cd211d138d4f916b2ddd5831862088551624`
 remains an exact state-writer compatibility tuple. B3.3b-1 preserves the
