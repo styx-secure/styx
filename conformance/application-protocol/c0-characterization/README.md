@@ -21,10 +21,33 @@ should become normative.
 contains runtime observations or `report.json`. A later change to an expected
 classification requires a separate commit with written justification.
 
-Neither runtime may generate corpus input for the other. The Ed25519 seed,
-public key, empty signed message and signature in `EVENT-002` are RFC 8032 test
-vector 1. They are literal synthetic inputs; the runtime-created genesis
-signature is not compared.
+Neither runtime may generate corpus input for the other. `EVENT-002` consumes
+the RFC 8032 test-vector-1 seed and public key as literal synthetic input; the
+runtime-created genesis signature is not compared.
+
+### Independently derived signed-chain fixture
+
+`CHAIN-006` is a one-event, non-empty valid-chain hypothesis. Its fixture was
+derived before either adapter or the generated report was changed:
+
+- `previousHash` is null, `eventType` is `transaction`, and the payload is the
+  single byte `01`;
+- the HLC canonical string is
+  `2026-02-24T12:00:00.123Z-0042-a1b2c3d4`;
+- the signed preimage is `utf8("transaction") || 0x01 ||
+  ascii(hlcCanonical)`, whose lowercase hex is
+  `7472616e73616374696f6e01323032362d30322d32345431323a30303a30302e3132335a2d303034322d6131623263336434`;
+- SHA-256 of that preimage, and therefore the literal signed-message bytes and
+  stored event hash, is
+  `6a203102c491dbdf209441e5d8edcc3aabc883f7ddb9bc2231dadade0de4878e`;
+- the RFC 8032 test-vector-1 public key is
+  `d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a`;
+- the Ed25519 signature over those 32 hash bytes is
+  `a6427faee44642ef6170be5c4c23ee814f83e7a4429824c7b5d38b9abeaa1e17306d7180963cfbd619015515187e6e5e9d266f83e8267309446a9d5618063f0f`.
+
+Each adapter must fail closed unless `signedMessageHex == eventHashHex`, build
+the event only from these literal fields, and invoke its production full-chain
+validator. Neither adapter may repair or regenerate the fixture.
 
 ## Files
 

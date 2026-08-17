@@ -54,6 +54,27 @@
       "unspecifiedReason": null
     },
     {
+      "id": "HLC-007",
+      "category": "hlc",
+      "operation": "bytes",
+      "input": {
+        "canonical": "2026-02-24T12:00:00.123Z-0042-node日001"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "HLC-008",
+      "category": "hlc",
+      "operation": "bytes-collision-witness",
+      "input": {
+        "left": "2026-02-24T12:00:00.123Z-0042-nodé0001",
+        "right": "2026-02-24T12:00:00.123Z-0042-nodǩ0001"
+      },
+      "unspecifiedBehaviour": true,
+      "unspecifiedReason": "The current Dart byte projection truncates each UTF-16 code unit to eight bits; this collision witness is evidence of ambiguity, not an endorsed encoding."
+    },
+    {
       "id": "VC-001",
       "category": "vector-clock",
       "operation": "project",
@@ -113,6 +134,30 @@
       "unspecifiedReason": null
     },
     {
+      "id": "VC-008",
+      "category": "vector-clock",
+      "operation": "increment",
+      "input": {
+        "a": "1",
+        "b": "2",
+        "role": "A"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "VC-009",
+      "category": "vector-clock",
+      "operation": "increment",
+      "input": {
+        "a": "1",
+        "b": "2",
+        "role": "B"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
       "id": "HASH-001",
       "category": "hashing",
       "operation": "sha256",
@@ -148,6 +193,24 @@
       "unspecifiedReason": "Current composite hashing exposes no segment boundaries; a match is not evidence that the construction is suitable for a normative protocol."
     },
     {
+      "id": "HASH-005",
+      "category": "hashing",
+      "operation": "segmentation-witness",
+      "input": {
+        "leftSegmentsHex": [
+          "61",
+          "62"
+        ],
+        "rightSegmentsHex": [
+          "61",
+          "",
+          "62"
+        ]
+      },
+      "unspecifiedBehaviour": true,
+      "unspecifiedReason": "Current composite hashing exposes neither segment boundaries nor an empty-segment marker; a match is not evidence that the construction is suitable for a normative protocol."
+    },
+    {
       "id": "EVENT-001",
       "category": "event-hash",
       "operation": "fixed-preimage",
@@ -167,9 +230,7 @@
       "input": {
         "privateSeedHex": "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60",
         "publicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-        "nodeId": "a1b2c3d4",
-        "signedMessageHex": "",
-        "signatureHex": "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+        "nodeId": "a1b2c3d4"
       },
       "unspecifiedBehaviour": false,
       "unspecifiedReason": null
@@ -205,8 +266,8 @@
           { "id": "uppercase-b", "a": "2", "b": "0", "sender": "BBBBBBBB" }
         ]
       },
-      "unspecifiedBehaviour": false,
-      "unspecifiedReason": null
+      "unspecifiedBehaviour": true,
+      "unspecifiedReason": "The equal-total sender tie-break depends on Dart UTF-16 code-unit ordering versus JavaScript default ICU collation; the observed order is environment-sensitive and non-normative."
     },
     {
       "id": "ORDER-003",
@@ -233,6 +294,29 @@
       },
       "unspecifiedBehaviour": true,
       "unspecifiedReason": "Both ordering comparators return equality; neither implementation documents a shared stable ordering contract for complete ties."
+    },
+    {
+      "id": "ORDER-005",
+      "category": "ordering",
+      "operation": "order",
+      "input": {
+        "events": [
+          {
+            "id": "unicode-sender",
+            "a": "1",
+            "b": "1",
+            "sender": "émetteur"
+          },
+          {
+            "id": "ascii-sender",
+            "a": "0",
+            "b": "2",
+            "sender": "zebra"
+          }
+        ]
+      },
+      "unspecifiedBehaviour": true,
+      "unspecifiedReason": "The equal-total sender tie-break depends on Dart UTF-16 code-unit ordering versus JavaScript default ICU collation; the observed order is environment-sensitive and non-normative."
     },
     {
       "id": "CHAIN-001",
@@ -279,6 +363,23 @@
       "operation": "previous-hash-mismatch",
       "input": {
         "senderPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a"
+      },
+      "unspecifiedBehaviour": false,
+      "unspecifiedReason": null
+    },
+    {
+      "id": "CHAIN-006",
+      "category": "chain-validation",
+      "operation": "signed-valid-chain",
+      "input": {
+        "previousHash": null,
+        "eventType": "transaction",
+        "payloadHex": "01",
+        "hlcCanonical": "2026-02-24T12:00:00.123Z-0042-a1b2c3d4",
+        "eventHashHex": "6a203102c491dbdf209441e5d8edcc3aabc883f7ddb9bc2231dadade0de4878e",
+        "signedMessageHex": "6a203102c491dbdf209441e5d8edcc3aabc883f7ddb9bc2231dadade0de4878e",
+        "senderPublicKeyHex": "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "signatureHex": "a6427faee44642ef6170be5c4c23ee814f83e7a4429824c7b5d38b9abeaa1e17306d7180963cfbd619015515187e6e5e9d266f83e8267309446a9d5618063f0f"
       },
       "unspecifiedBehaviour": false,
       "unspecifiedReason": null
