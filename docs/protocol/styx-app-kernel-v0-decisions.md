@@ -643,11 +643,11 @@ also be transcript-bound and locally evaluated under the application's policy.
 
 **C0.3 verdict: `NO-GO`.** O-01 through O-10 contain choices required to derive
 normative bytes or adversarial expectations. O-12 is additionally blocking if
-O-05 retains physical time in the signed kernel; if O-05 excludes physical
-time, O-12 becomes inapplicable and contributes no transcript field. O-11
-intentionally does not block a transcript-only C0.3 corpus. Starting that corpus
-now would freeze the remaining guesses and create cost pressure on later human
-decisions.
+v1 retains a physical-time field in any signed object, whether in the kernel or
+in a profile; only if O-05 removes physical time entirely does O-12 become
+inapplicable and contribute no transcript field. O-11 intentionally does not
+block a transcript-only C0.3 corpus. Starting that corpus now would freeze the
+remaining guesses and create cost pressure on later human decisions.
 
 The smallest safe sequence is:
 
@@ -656,8 +656,8 @@ The smallest safe sequence is:
 2. run the adversarial causal-topology probe for O-01, coordinated with O-05,
    O-06 and the privacy conclusions from step 1;
 3. close payload, genesis, clock, cardinality and error questions O-04 through
-   O-10, plus O-12 only if O-05 retains physical time, without implementation
-   authority; retain O-11 for the later wire/storage decision;
+   O-10, plus O-12 unless O-05 removes physical time entirely, without
+   implementation authority; retain O-11 for the later wire/storage decision;
 4. approve the exact Apache-2.0 path inventory for the future corpus;
 5. execute C0.3: specification-derived adversarial corpus plus a third
    implementation written only from the specification;
