@@ -138,7 +138,7 @@
       <ol class="layer-list">
         <li class="layer layer-product"><span class="layer-number">04</span><div><p class="layer-state planned">Planned first vertical</p><h3>Themis product experience</h3><p>Workflow, roles, policy, safety language, and accessible reporter and operator interfaces.</p></div><span class="layer-side">Human purpose</span></li>
         <li class="layer"><span class="layer-number">03</span><div><p class="layer-state planned">Protocol work planned</p><h3>Styx application protocol</h3><p>Versioned objects, state transitions, causality, evidence, retention, pruning, and conformance.</p></div><span class="layer-side">Durable meaning</span></li>
-        <li class="layer"><span class="layer-number">02</span><div><p class="layer-state evidence">Foundations exist</p><h3>Secure-session profiles</h3><p>Membership, epochs, continuous group key agreement, convergence, and confidential delivery. Marmot is a preferred compatibility target, not a current claim.</p></div><span class="layer-side">Protected exchange</span></li>
+        <li class="layer"><span class="layer-number">02</span><div><p class="layer-state evidence">Bounded evidence</p><h3>Secure-session profiles</h3><p>Membership, epochs, continuous group key agreement, convergence, and confidential delivery. Exact-pin interoperability is proven only for the isolated Phase B scope; a supported product adapter remains future work.</p></div><span class="layer-side">Protected exchange</span></li>
         <li class="layer"><span class="layer-number">01</span><div><p class="layer-state evidence">Browser foundation exists</p><h3>Runtime profiles</h3><p>Key custody, encrypted storage, workers, notifications, distribution, and platform integration. A future signed native profile could offer stronger origin assurance.</p></div><span class="layer-side">Local custody</span></li>
       </ol>
       <a class="text-link on-dark" href="https://github.com/styx-secure/styx/blob/main/specs/01-vision.md" target="_blank" rel="noopener noreferrer">Read the approved product vision <span aria-hidden="true">↗</span></a>
@@ -192,9 +192,9 @@
         </article>
         <article>
           <p class="evidence-tag">Bounded result</p>
-          <h3>Compatibility capability probe</h3>
-          <p>Phase A found that the pinned OpenMLS revision can support a gated Marmot compatibility proof. The current wrapper and wire behavior are not compatible.</p>
-          <a data-status="implemented" href="https://github.com/styx-secure/styx/blob/main/docs/architecture/spikes/2026-08-08-marmot-openmls-phase-a.md" target="_blank" rel="noopener noreferrer">Read the Phase A report <span aria-hidden="true">↗</span></a>
+          <h3>Exact-pin interoperability proof</h3>
+          <p>At the revisions recorded in the final Phase B report, Styx interoperated with the pinned MDK peer through a bounded synthetic direct-MLS lifecycle. This is not general Marmot conformance or product activation.</p>
+          <a data-status="implemented" href="https://github.com/styx-secure/styx/blob/main/docs/architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md" target="_blank" rel="noopener noreferrer">Read the bounded Phase B verdict <span aria-hidden="true">↗</span></a>
         </article>
       </div>
     </section>
@@ -209,7 +209,7 @@
       </div>
       <ol class="roadmap-list">
         <li><span>01</span><div><h3>Protocol and conformance</h3><p>Define language-neutral objects, transitions, adversarial scenarios, and reusable vectors.</p></div></li>
-        <li><span>02</span><div><h3>Secure-session decision</h3><p>Complete staged-commit safety, hostile tests, and a real independent round trip—or document a NO-GO.</p></div></li>
+        <li><span>02</span><div><h3>Secure-session decision</h3><p>Bounded exact-pin proof complete. A supported application adapter, transport scope, persistence and retention policy remain separately gated work.</p></div></li>
         <li><span>03</span><div><h3>SDK and reliable delivery</h3><p>Separate application semantics from chat and make offline, retry, acknowledgement, and recovery states truthful.</p></div></li>
         <li><span>04</span><div><h3>Themis alpha</h3><p>Build text-first accountless case intake, return dialogue, operator roles, revocation, retention, and safety UX.</p></div></li>
         <li><span>05</span><div><h3>Distribution assurance</h3><p>Strengthen browser release controls and decide a future signed native profile with reproducible operations.</p></div></li>

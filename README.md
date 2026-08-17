@@ -7,7 +7,7 @@
 > use. The browser profile is also weaker against an adversary that controls the web origin. See
 > the [approved vision](specs/01-vision.md), the
 > [current project brief](docs/PROJECT_BRIEF.md), and the bounded
-> [Phase B3.1 report](docs/architecture/spikes/2026-08-14-marmot-openmls-phase-b3-1.md).
+> [Phase B verdict](docs/architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md).
 
 ## Mission
 
@@ -31,24 +31,26 @@ review, safeguarding procedures, or emergency channels.
 - **Built and tested foundations:** an independent Dart ledger and an active JavaScript browser
   stack with a reference MLS chat, Nostr transport, encrypted IndexedDB vault, crypto-worker
   lifecycle, pinned WASM artifacts, fail-closed storage work, and isolated synthetic
-  secure-session evidence through Phase B3.1.
+  secure-session evidence through the completed Phase B exact-pin proof.
 - **Not yet a complete product:** the language-neutral application protocol, interoperability
-  proof beyond the B3.1 boundary, reliable delivery SDK, metadata-minimizing case routing,
-  anonymous return capability, organizational workflow, distribution assurance, a targeted
-  independent review of a bounded high-risk scope, and any separately approved exercise or pilot
-  remain future work.
+  adapter and supported session integration, reliable delivery SDK, metadata-minimizing case
+  routing, anonymous return capability, organizational workflow, distribution assurance, a
+  targeted independent review of a bounded high-risk scope, and any separately approved exercise
+  or pilot remain future work.
 - **Current technical direction:** Marmot is the preferred compatibility target for the
-  MLS-over-Nostr session profile. An exact pinned MDK peer accepted Styx's isolated B3.1
-  KeyPackage and created a group whose exact group-profile state Styx decoded. The experiment
-  remains **NO-GO** before Welcome parsing at the external-RatchetTree boundary. Current Styx
-  builds are not Marmot-compatible. The chat is a minimal reference application and
-  interoperability harness, not the product roadmap.
+  MLS-over-Nostr session profile. At the exact OpenMLS, Marmot and MDK revisions recorded in the
+  final Phase B report, Styx interoperated with the pinned MDK peer in an isolated synthetic
+  direct-MLS profile through durable Welcome join, bidirectional application traffic, sequential
+  self-update, the five-past-epoch delivery boundary and bounded two-candidate same-parent
+  convergence. This is not general Marmot conformance or product activation. The chat is a
+  minimal reference application and interoperability harness, not the product roadmap.
 
-The proposed funded programme takes these tested foundations through a conformance-backed Styx
-protocol, a bounded secure-session interoperability decision, a reusable SDK and reliable delivery,
-a text-first Themis alpha, stronger distribution assurance, a targeted review of a contractually
-bounded high-risk scope with remediation and retest, and a separately gated synthetic or
-non-sensitive organizational exercise or later controlled-pilot decision. See the
+The proposed funded programme preserves the completed bounded secure-session evidence and takes
+the project through a conformance-backed Styx application protocol, a supported session adapter,
+a reusable SDK and reliable delivery, a text-first Themis alpha, stronger distribution assurance,
+a targeted review of a contractually bounded high-risk scope with remediation and retest, and a
+separately gated synthetic or non-sensitive organizational exercise or later controlled-pilot
+decision. See the
 [project brief](docs/PROJECT_BRIEF.md) for the mission,
 evidence, milestones, measurable outcomes, and explicit non-claims. The
 [public identity guide](docs/BRAND_IDENTITY.md) defines naming and claim boundaries; the

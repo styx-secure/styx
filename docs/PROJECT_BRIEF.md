@@ -1,6 +1,6 @@
 # Styx project brief
 
-> **Status:** public project and funding brief, 14 August 2026.
+> **Status:** public project and funding brief, 17 August 2026.
 >
 > Styx is experimental, has not completed an independent security audit, and
 > is not ready for sensitive, high-risk, or life-critical use. This brief
@@ -73,7 +73,7 @@ client or transport:
 |---|---|---|
 | Product vertical | Workflow, roles, policy, and user experience | Themis first; reference chat minimal |
 | Styx application protocol | Versioned objects, state transitions, causality, evidence, retention, pruning, and conformance | Language-neutral specification and vectors are to become authoritative |
-| Secure-session profile | Membership, epochs, continuous group key agreement, convergence, and confidential delivery | Existing OpenMLS/Nostr path; Marmot is the preferred compatibility target subject to proof |
+| Secure-session profile | Membership, epochs, continuous group key agreement, convergence, and confidential delivery | Bounded exact-pin Styx/MDK direct-MLS proof complete; supported adapter and Nostr-envelope integration remain future work |
 | Runtime profile | Key custody, encrypted storage, workers, notifications, distribution, and platform integration | Browser PWA first; signed native profiles are a future higher-assurance option |
 
 No Dart or JavaScript implementation is intended to be the normative protocol.
@@ -85,8 +85,11 @@ feature line is frozen.
 Nostr is a replaceable store-and-forward transport, not the application
 identity or database. MLS, through the pinned OpenMLS implementation, supplies
 secure-session primitives but not Themis workflow semantics. Marmot is the
-preferred MLS-over-Nostr compatibility target; current Styx is not
-Marmot-compatible, and no upstream project has endorsed or certified Styx.
+preferred MLS-over-Nostr compatibility target. Phase B demonstrated a bounded
+isolated direct-MLS profile against exact pinned OpenMLS, Marmot and MDK
+revisions; it did not establish general Marmot conformance, Nostr-envelope
+interoperability or product activation. No upstream project has endorsed or
+certified Styx.
 
 ## Themis: first vertical
 
@@ -148,34 +151,31 @@ product:
    B1–B2.7 work exposes an isolated AES-128-GCM profile and exercises durable
    staged-Commit authorization, recovery, convergence, message-ratchet and
    current-epoch sender-attribution behavior. These are synthetic proof
-   surfaces, not product activation. The exact-pin B3 harness then exercised a
-   real independent MDK peer. B3.1 closed its first `0x8001` capability gap in
-   a separately rebuilt isolated profile without changing the frozen B2 product
-   profile: MDK accepted that Styx KeyPackage, created a group, and Styx decoded
-   the exact group-profile state. The experiment still ended **NO-GO** before
-   Welcome parsing because the isolated public join surface exercised by the
-   harness requires an external RatchetTree that the tested MDK founding result
-   does not expose separately.
-   No Welcome join, bidirectional traffic, Commit processing, cross-peer
-   restart, Marmot compatibility or product readiness was established
-   ([B2.7 report](architecture/spikes/2026-08-13-marmot-openmls-phase-b2-7-stage-2.md),
-   [B3 report](architecture/spikes/2026-08-13-marmot-openmls-phase-b3.md),
-   [B3.1 report](architecture/spikes/2026-08-14-marmot-openmls-phase-b3-1.md)).
+   surfaces, not product activation. The exact-pin B3 sequence then exercised
+   a real independent MDK peer and closed successive typed KeyPackage,
+   RatchetTree and profile boundaries without weakening validation. At the
+   recorded pins, fresh runs completed durable Welcome join and restart,
+   bidirectional application traffic and replay rejection, sequential ordinary
+   self-updates, the inclusive five-past-epoch delivery boundary, and bounded
+   convergence for exactly two authenticated proposal-free depth-one
+   same-parent candidates. The final result is a **bounded GO** for that
+   isolated synthetic direct-MLS profile, not general Marmot conformance,
+   product integration or production readiness
+   ([final Phase B verdict](architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md)).
 
-Draft or proposed work is not counted as completed evidence. In particular,
-future RatchetTree and full-round-trip increments remain design and
-implementation candidates until separately contracted, merged, reviewed and
-reported.
+Draft or proposed work is not counted as completed evidence. The Phase B proof
+does not become a supported product session layer until a separate integration
+increment defines and verifies the application adapter, authenticated product
+persistence, retention/compaction, transport and runtime boundaries.
 
 ## What remains
 
 - define the language-neutral Styx application protocol and adversarial
   conformance corpus, extract independent Dart cases, and freeze parallel Dart
   feature development;
-- continue the bounded secure-session proof from its documented NO-GO:
-  decide and test an explicit RatchetTree delivery/join boundary, then attempt
-  a full bidirectional message, Commit and cross-peer restart round trip against
-  the exact independent peer without weakening either implementation;
+- turn the completed bounded secure-session proof into a separately versioned,
+  supported adapter only after selecting and testing authenticated product
+  persistence, retention/compaction, transport and runtime boundaries;
 - separate application contexts and identity profiles, define versioned secure
   application objects, and expose a minimal SDK independent of chat;
 - add crash-safe outbox, acknowledgement, retry, idempotency, deduplication,
@@ -206,7 +206,7 @@ independent review, exact tests, and human gate.
 | Milestone | Concrete output | Completion evidence |
 |---|---|---|
 | 1. Application protocol and conformance | Versioned language-neutral objects, transitions, error rules, adversarial scenarios, and reusable vectors; Dart cases extracted before its feature freeze | Independent implementations execute the applicable corpus; divergences are resolved in the specification rather than hidden in ports |
-| 2. Secure-session interoperability decision | Preserve the completed staged-commit, identity, KeyPackage and hostile-test evidence; resolve or reject the RatchetTree seam; then attempt a full independent MDK round trip or retain a documented NO-GO | Reproducible byte-level evidence and an explicit compatibility decision; no claim based only on capability acceptance, shared algorithms or event kinds |
+| 2. Secure-session interoperability decision | **Bounded evidence complete:** preserve the staged-commit, identity, KeyPackage, Welcome, traffic, self-update, retained-window and two-candidate convergence proofs; next define a separately supported adapter without relabelling the isolated harness as product code | Reproducible exact-pin evidence and the [final bounded GO](architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md); no general-conformance or product claim |
 | 3. Minimum SDK and reliable delivery | Data-only application interfaces, context separation, persistent outbox, ACK states, retry, idempotency, deduplication, and crash recovery | Tests demonstrate offline recovery and never label relay publication as recipient or human receipt |
 | 4. Anonymous-case capability and Themis alpha | Fresh per-case identity, accountless return capability, text submission and dialogue, operator roles and revocation, retention, and safety UX | Cross-case unlinkability tests under the declared model; end-to-end reporter/operator scenarios without conventional contact details |
 | 5. Distribution and deployment assurance | Verifiable artifacts and updates, stricter browser release controls, a native high-assurance profile decision, and reproducible relay/deployment guidance | Independent artifact comparison, update/rollback tests, metadata data-flow evidence, and continuity drills |
@@ -251,9 +251,9 @@ themselves demonstrate safety, anonymity, adoption, or readiness.
 - Themis does not currently exist as a complete application. Its anonymous
   capability, metadata profile, operator controls, and deployment procedure are
   proposed work.
-- The completed B1–B3.1 work is isolated interoperability and lifecycle
-  evidence. It is not wired into the product, and the exact independent-peer
-  experiment remains NO-GO at the RatchetTree/Welcome boundary.
+- The completed Phase B work is exact-pin isolated interoperability and
+  lifecycle evidence. It is not wired into the product, does not cover Marmot's
+  Nostr envelopes, and does not establish general conformance.
 - Styx does not claim universal anonymity, absence of servers or metadata,
   legal compliance, certification, upstream endorsement, or equivalence to a
   reviewed messenger.
@@ -285,6 +285,6 @@ compatibility or use does not imply endorsement.
 - [Integration roadmap](platform/integration-roadmap.md)
 - [Anonymous bidirectional dialogue use case](platform/use-cases/anonymous-dialogue.md)
 - [Marmot/OpenMLS Phase A capability report](architecture/spikes/2026-08-08-marmot-openmls-phase-a.md)
-- [Current exact-pin B3.1 interoperability report](architecture/spikes/2026-08-14-marmot-openmls-phase-b3-1.md)
+- [Final exact-pin Phase B interoperability verdict](architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md)
 - [Current chat security report](security/2026-07-10-styx-chat-security-report.md)
 - [Repository governance](../AGENTS.md)
