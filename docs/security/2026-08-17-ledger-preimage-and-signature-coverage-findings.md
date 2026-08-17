@@ -9,6 +9,8 @@
   pipeline, per ADR-0007 §2.
 - **Disclosure:** bounded class-level record. Exact witness inputs and
   reconstruction steps are retained outside the public repository.
+- **Compatibility:** this note is not conformance-ready and creates no stable
+  compatibility commitment.
 
 ## Summary
 
@@ -41,10 +43,10 @@ supported product path at the reviewed base.
 | Dart HLC byte projection | `packages/ledger_engine/lib/src/hlc.dart:82-120` | Implementation-native text/code-unit projection is not a language-neutral cryptographic encoding. |
 
 C0.1 provides public, non-exploit-specific evidence in `HASH-004`, `HASH-005`,
-`HLC-002` through `HLC-008`, `VC-002` through `VC-004`, `ORDER-002`,
-`ORDER-004`, `ORDER-005` and `CHAIN-001`. The independent witness material
-extends those observations to a complete event and signature, but is not
-committed here.
+`HLC-002` through `HLC-005`, `HLC-007`, `HLC-008`, `VC-002` through `VC-004`,
+`ORDER-002`, `ORDER-004`, `ORDER-005` and `CHAIN-001`. The independent witness
+material extends those observations to a complete event and signature, but is
+not committed here.
 
 ## Confirmed impact
 

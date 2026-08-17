@@ -34,6 +34,17 @@ Independent, retained probes also established three security-relevant classes:
 The exact witness inputs are deliberately not committed. The bounded public
 record is `docs/security/2026-08-17-ledger-preimage-and-signature-coverage-findings.md`.
 
+Security-critical evidence fields below use only C0.1 case identifiers and
+these retained private-review references. A reference identifies an immutable
+local artifact by filename and SHA-256; it does not disclose its witness:
+
+| Reference | Retained private-review artifact | SHA-256 |
+| --- | --- | --- |
+| `PRIV-01` | `README_OPUS5_20260817T063953Z.md` | `beff559ed88bda3d1cbbbdfdb3686f84003b6d9d8640c25e505d5fc36e831003` |
+| `PRIV-02` | `README_QWEN38_20260817T064405Z.md` | `320234c8afe9ea22b54c24164ab1a8e8e77b3c3af6d4e2ff4f544fe0b3286606` |
+| `PRIV-03` | `README_OPUS5_RECONCILE_20260817T070100Z.md` | `51f027211f231803ddb93f40dabe898673c7ddba2bea8498d774e1deb9d81ec0` |
+| `PRIV-04` | `README_QWEN38_RECONCILE_20260817T070100Z.md` | `4594818fb528e797c74e9eca4e1ffa0ea62988be9c5a539a77f0a3c1d9d6844d` |
+
 The words **MUST**, **MUST NOT**, **SHALL**, **SHALL NOT** and **REJECT** below
 express decisions intended to constrain the later specification. They do not
 claim that current code conforms.
@@ -53,13 +64,9 @@ claim that current code conforms.
   references; event type; schema and policy identifiers; payload commitment;
   optional clock semantics; and event/content identifier semantics. Each field
   requires an include, derive or exclude decision with rationale.
-- **Rationale/evidence:** the current event object carries `eventId`,
-  `vectorClock`, `senderPubkey` and other fields that are absent from the
-  current hash input (`styx-js/src/ledger/event.js:19-58`,
-  `styx-js/src/ledger/event-factory.js:47-68`). Current deterministic ordering
-  consumes vector totals and sender keys (`styx-js/src/ledger/fork-merge.js:110-123`).
-  Independent probes confirmed that changing causal metadata does not invalidate
-  the existing signature.
+- **Rationale/evidence:** `PRIV-01`, `PRIV-02`, `PRIV-03` and `PRIV-04`
+  confirm that changing causal metadata can leave the existing signature valid
+  while downstream protocol behavior consumes that metadata.
 - **Rejected alternative:** authenticating only the existing
   `previousHash || eventType || payload || hlcBytes` projection.
 - **Security/privacy:** this rule prevents validation and convergence from
@@ -78,11 +85,9 @@ claim that current code conforms.
   explicitly length-framed validated fields. Raw concatenation without field
   boundaries is forbidden. The transcript is regenerated for hashing and
   signature verification; it is not a generic wire document to parse.
-- **Rationale/evidence:** `HASH-004` and `HASH-005` show that current composite
-  hashing erases boundaries and empty-segment presence. Current event factories
-  feed those unframed segments directly to the hash
-  (`styx-js/src/ledger/event-factory.js:109-127`,
-  `packages/ledger_engine/lib/src/event_factory.dart:112-141`).
+- **Rationale/evidence:** `HASH-004`, `HASH-005`, `PRIV-01`, `PRIV-02`,
+  `PRIV-03` and `PRIV-04` establish boundary erasure at the primitive and
+  complete-event/signature levels.
 - **Rejected alternatives:** boundaryless concatenation; relying on field
   content to make boundaries “obvious”; using one domain tag for events,
   genesis, receipts and future merge objects.
@@ -106,8 +111,7 @@ claim that current code conforms.
 - **Rationale/evidence:** `HLC-003`, `HLC-007` and `HLC-008` expose incompatible
   and colliding text-to-byte projections; `HLC-004` and `HLC-005` expose
   permissive/inconsistent parsing; `ORDER-002` and `ORDER-005` expose different
-  collation behavior. Dart currently serializes HLC text through code units
-  (`packages/ledger_engine/lib/src/hlc.dart:110-120`).
+  collation behavior.
 - **Rejected alternatives:** JSON Canonicalization as the event signature
   transcript; `localeCompare`; silently retaining low code-unit bytes; parsing
   an invalid number into a sentinel such as `NaN`.
@@ -125,12 +129,9 @@ claim that current code conforms.
   precision loss and non-integer input before serialization or state change.
   Wrapping is forbidden.
 - **Rationale/evidence:** `VC-002`, `VC-003` and `VC-004` show current signedness
-  ambiguity and wrapping. Independent reproduction showed that incrementing a
-  maximum current counter and serializing it can restore as zero and reverse a
-  causal relation. Current Dart writes signed 32-bit values
-  (`packages/ledger_engine/lib/src/vector_clock.dart:75-80`); JavaScript funnels
-  unrestricted numbers through 32-bit helpers
-  (`styx-js/src/ledger/vector-clock.js:23-26,96-102`).
+  ambiguity and wrapping. Retained private reproductions (`PRIV-02`, `PRIV-03`,
+  `PRIV-04`) show that incrementing a maximum current counter and serializing it
+  can restore as zero and reverse a causal relation.
 - **Rejected alternative:** modulo serialization or language-default coercion.
 - **Security/privacy:** prevents rollback-like causal corruption and
   cross-runtime numeric disagreement.
@@ -157,7 +158,8 @@ claim that current code conforms.
   signed kernel at all.
 - **Residual/reopen condition:** reopen the unit only if a bounded precision,
   lifetime or privacy analysis demonstrates that microseconds cannot be
-  represented consistently. Width, epoch and range are still `OPEN`.
+  represented consistently. Width, epoch, range and precision representation
+  remain `OPEN` under O-12.
 - **Human ratification:** pending final-HEAD approval by `maverde73`.
 
 ### K-06 — Causality precedes deterministic total order
@@ -168,11 +170,9 @@ claim that current code conforms.
   locale-independent tiebreak derived from authenticated event content. Exact
   identifier equality is deduplication, not an ordering tie. A vector-component
   sum is neither causal evidence nor authority.
-- **Rationale/evidence:** the current merge orders first by `vectorClock.total`
-  and then locale-sensitive sender text
-  (`styx-js/src/ledger/fork-merge.js:110-123`). `ORDER-002`, `ORDER-004` and
-  `ORDER-005` show divergence or incomplete tie behavior. Current causal fields
-  are not fully signature-bound.
+- **Rationale/evidence:** `ORDER-002`, `ORDER-004`, `ORDER-005`, `PRIV-01`,
+  `PRIV-03` and `PRIV-04` show divergent or incomplete tie behavior and that
+  current causal/order inputs are not fully signature-bound.
 - **Rejected alternatives:** `vectorClock.total` as primary order; sender text
   with local collation; comparator equality for distinct events.
 - **Security/privacy:** the tiebreak cannot be manipulated through unsigned
@@ -188,16 +188,16 @@ claim that current code conforms.
 - **Rule:** deterministic replica order MUST NOT be interpreted as universal
   domain conflict resolution. Application schemas and policies decide whether
   a concurrent action is valid, rejected, superseded, combined or escalated.
-- **Rationale/evidence:** ADR-0007 assigns state-transition rules to the
-  language-neutral application protocol and workflows/policy to verticals.
-  Accounting and case-management operations cannot safely share one semantic
-  “last writer wins” rule.
+- **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` distinguish
+  deterministic convergence from application authorization and conflict
+  policy.
 - **Rejected alternative:** treating stable byte order as authorization or
   business truth.
 - **Security/privacy:** prevents deterministic transport mechanics from
   bypassing role and workflow rules.
-- **Residual/reopen condition:** none for the separation; each vertical still
-  needs its own policy corpus.
+- **Residual/reopen condition:** reopen if a vertical demonstrates that a
+  conflict rule is both application-independent and required for safe kernel
+  convergence; otherwise each vertical still needs its own policy corpus.
 - **Human ratification:** pending final-HEAD approval by `maverde73`.
 
 ### K-08 — Empty, uninitialized and valid are distinct
@@ -206,9 +206,7 @@ claim that current code conforms.
 - **Rule:** empty or uninitialized history MUST produce a distinct classified
   outcome and MUST NOT be reported as a valid initialized chain.
 - **Rationale/evidence:** `CHAIN-001` shows that both current validators accept
-  an empty list; JavaScript returns success immediately
-  (`styx-js/src/ledger/chain-validator.js:21-28`). C0.1 explicitly marks this as
-  unspecified, not endorsed.
+  an empty list; C0.1 explicitly marks this as unspecified, not endorsed.
 - **Rejected alternative:** `null`/no-error as both “empty” and “valid”.
 - **Security/privacy:** prevents missing state from silently satisfying a
   validation gate.
@@ -223,15 +221,14 @@ claim that current code conforms.
   MUST make all time-dependent inputs injectable for normative vectors.
 - **Rationale/evidence:** `EVENT-002` records different current payloads and
   initial clocks; `EVENT-003` is unsupported because neither public factory
-  accepts the required clock. The current JS genesis serializes JSON while
-  Dart serializes a different literal (`styx-js/src/ledger/event-factory.js:74-105`,
-  `packages/ledger_engine/lib/src/event_factory.dart:76-109`).
+  accepts the required clock.
 - **Rejected alternatives:** selecting either implementation's genesis or
   recording wall-clock-dependent expected hashes.
 - **Security/privacy:** deterministic initialization makes context separation
   and independent conformance testable. Genesis contents remain `OPEN`.
-- **Residual/reopen condition:** none for freshness/injection; exact fields must
-  follow the context, identity and causality decisions.
+- **Residual/reopen condition:** reopen if a required initialization or time
+  input cannot be injected without weakening transcript determinism or security;
+  exact fields must follow the context, identity and causality decisions.
 - **Human ratification:** pending final-HEAD approval by `maverde73`.
 
 ### K-10 — Legacy hard cut and integration prohibition
@@ -242,9 +239,8 @@ claim that current code conforms.
   persist or claim support for current ledger objects before the normative
   corpus is green. No dual acceptance or migration is invented without evidence
   of an installed population.
-- **Rationale/evidence:** ADR-0007 states that the ledger is not integrated in a
-  supported end-to-end pipeline. The hard cut is therefore presently cheaper
-  and safer than carrying ambiguous behavior into v1.
+- **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` record the current
+  non-integration condition and the resulting hard-cut rationale.
 - **Rejected alternatives:** silently blessing all 25 matches; maintaining a
   compatibility mode for hypothetical users.
 - **Security/privacy:** prevents vulnerable legacy semantics from crossing a
@@ -287,48 +283,293 @@ The following observations are not promises and MUST NOT be copied into v1:
 | Silent time-precision truncation | `HLC-002` | `REJECTED` |
 | Signed or wrapping causal counters | `VC-002`, `VC-003`, `VC-004` | `REJECTED` |
 | Fixed two-party topology as kernel by default | `VC-007` | `REJECTED` |
-| `vectorClock.total` as authority/order key | current merge + independent signature probe | `REJECTED` |
+| `vectorClock.total` as authority/order key | `ORDER-004`, `PRIV-01`, `PRIV-03`, `PRIV-04` | `REJECTED` |
 | Locale-sensitive sender ordering | `ORDER-002`, `ORDER-005` | `REJECTED` |
 | Comparator equality for distinct events | `ORDER-004` | `REJECTED` |
 | Empty-chain success | `CHAIN-001` | `REJECTED` |
 | Either current genesis | `EVENT-002`, `EVENT-003` | `VERSIONED_AWAY` |
-| Unsigned UUID or metadata influencing validation | independent signature probe | `REJECTED` |
+| Unsigned UUID or metadata influencing validation | `PRIV-01`, `PRIV-02`, `PRIV-03`, `PRIV-04` | `REJECTED` |
 
 ## 4. Open questions and minimum evidence
 
-All entries in this section block C0.3 when they affect normative bytes or
-expected validation outcomes.
+An `OPEN` status is an explicit decision not to guess. Each entry below blocks
+C0.3 when it affects normative transcript bytes or expected validation
+outcomes.
 
-| ID | Status | Question | Minimum evidence task | Depends on / risk |
-| --- | --- | --- | --- | --- |
-| O-01 | `OPEN` | Sparse/dotted version vector, authenticated parent-hash DAG or another causal representation? | Adversarial convergence probe comparing dynamic membership, offline forks, missing-parent recovery, checkpoint/pruning behavior, byte growth and participant enumeration under the capability threat model. | Blocks causal bytes, identifiers and ordering vectors. |
-| O-02 | `OPEN` | How are authors represented per context, rotated and proven authorized? | Threat-model and transcript-inventory exercise covering case-ephemeral, organization-role and device credentials, including cross-context negative tests on paper. | Blocks author/context transcript fields; avoids confusing key possession with role authorization. |
-| O-03 | `OPEN` | What is the application/case context identifier and how is it bound to genesis? | Collision, uniqueness, unlinkability and context-replay analysis against §5.1/§5.3 of the capability model. | Blocks domain separation and genesis. |
-| O-04 | `OPEN` | Does the payload enter raw or as digest plus length; can it be detached? | Retention/pruning/GDPR design comparing verifiability after payload removal, substitution resistance and bounded parsing. | Blocks payload transcript field and pruning. |
-| O-05 | `OPEN` | Does HLC remain in the signed kernel, move to a profile, or yield to per-author sequence plus parent links? | Evaluate authorization needs, clock-skew attacks, deterministic replay, privacy and overlap with O-01. | Blocks clock field presence. |
-| O-06 | `OPEN` | What are the event/content identifier semantics? | Compare content hash, signed-object hash and separate random id for deduplication, references and privacy; every influential id must satisfy K-01. | Blocks ordering tiebreak and fork references. |
-| O-07 | `OPEN` | What exactly is genesis? | Derive fields only after O-01 through O-06; prove deterministic construction and cross-context rejection. | Blocks initialization vectors. |
-| O-08 | `OPEN` | What clock skew, first-profile cardinality and N-party activation bounds apply? | Runtime-envelope and vertical-role analysis with explicit exhaustion and denial-of-service cases. | Profile choice; must not leak into the kernel by inertia. |
-| O-09 | `OPEN` | Is the specification factored into one kernel plus profiles, and which obligations belong to each? | Responsibility matrix across application protocol, secure session, runtime and vertical policy; reject duplicate or ownerless rules. | Blocks conformance target structure. |
-| O-10 | `OPEN` | Is the protocol error taxonomy closed, and which distinctions are stable? | Enumerate all rejection sites after other fields are decided; collapse only errors that do not affect safe recovery or caller behavior. | Blocks negative-vector expectations. |
-| O-11 | `OPEN` | What is the wire/storage encoding? | Separate dependency and decoder-surface decision after transcript fields are fixed; compare strict custom framing and deterministic CBOR profiles. | Does not reopen K-02 transcript discipline. |
+### O-01 — Causal representation
 
-### Deferred legacy hardening
+- **Status:** `OPEN`.
+- **Question:** sparse/dotted version vector, authenticated parent-hash DAG or
+  another bounded causal representation?
+- **Rationale/evidence:** `VC-007`, `ORDER-004`, `PRIV-01`, `PRIV-03` and
+  `PRIV-04` show that current topology and ordering behavior do not answer the
+  protocol question safely.
+- **Rejected alternatives:** inheriting the fixed two-party vector; selecting a
+  DAG or vector by implementation familiarity; treating a counter sum as
+  causality.
+- **Security/privacy:** the choice affects self-authentication, fork evidence,
+  participant enumeration, linkability, denial of service and convergence.
+- **Missing evidence:** an adversarial comparison over all required dimensions.
+- **Dependent artifact:** causal transcript fields, event identifiers and
+  ordering vectors.
+- **Smallest bounded follow-up:** compare self-authentication, dynamic
+  membership, offline concurrency, fork evidence, missing-parent recovery,
+  checkpoint/pruning behavior, byte growth, participant enumeration and
+  linkability, and deterministic convergence under the capability threat model.
+- **Residual/closure condition:** close only when one bounded representation
+  satisfies the comparison and its failure modes are explicit.
+- **Human ratification:** pending final-HEAD acceptance that this remains open.
+
+### O-02 — Author, rotation and authorization binding
+
+- **Status:** `OPEN`.
+- **Question:** how are authors represented per context, rotated and proven
+  authorized?
+- **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` distinguish key
+  possession from authorization and show why author semantics must be bound.
+- **Rejected alternatives:** treating a supplied verification key as sufficient
+  role authority; unauthenticated author metadata; one globally linkable
+  identity by default.
+- **Security/privacy:** a wrong choice permits role escalation, impersonation or
+  cross-context linkage.
+- **Missing evidence:** a credential, rotation and revocation threat model for
+  case-ephemeral, organization-role and device identities.
+- **Dependent artifact:** author and credential-binding transcript fields.
+- **Smallest bounded follow-up:** produce the threat model and transcript
+  inventory, including cross-context negative cases on paper.
+- **Residual/closure condition:** close only when possession, authorization,
+  rotation, revocation and linkability have separate verified rules.
+- **Human ratification:** pending final-HEAD acceptance that this remains open.
+
+### O-03 — Application/case context and genesis binding
+
+- **Status:** `OPEN`.
+- **Question:** what is the application/case context identifier and how is it
+  bound to genesis?
+- **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` require explicit
+  context separation; C0.1 contains no sufficient context-identifier evidence.
+- **Rejected alternatives:** an ambient database name; an unsigned label;
+  reusing an account identifier as the case identifier without the required
+  uniqueness, replay and linkability analysis.
+- **Security/privacy:** the construction controls cross-context replay,
+  uniqueness and linkability.
+- **Missing evidence:** collision, uniqueness, unlinkability and replay analysis.
+- **Dependent artifact:** domain tag, context field and genesis transcript.
+- **Smallest bounded follow-up:** analyze candidate identifiers against the
+  application-context and unlinkability requirements in the capability threat
+  model.
+- **Residual/closure condition:** close only with deterministic binding and
+  explicit cross-context rejection rules.
+- **Human ratification:** pending final-HEAD acceptance that this remains open.
+
+### O-04 — Payload commitment and detachment
+
+- **Status:** `OPEN`.
+- **Question:** does the payload enter the transcript as raw bytes or as digest
+  plus length, and can it be detached?
+- **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` identify retention
+  and pruning as unresolved; C0.1 does not characterize detached payloads.
+- **Rejected alternatives:** choosing raw bytes because current factories do;
+  digest-only commitment without length or substitution analysis.
+- **Security/privacy:** the choice affects substitution resistance, erasure,
+  retained evidence and parser exposure.
+- **Missing evidence:** a retention/pruning design and adversarial substitution
+  analysis.
+- **Dependent artifact:** payload transcript field, pruning and detached-object
+  rules.
+- **Smallest bounded follow-up:** compare raw and digest-plus-length designs for
+  verification after payload removal, substitution resistance and bounded
+  parsing.
+- **Residual/closure condition:** close only when removal and verification
+  semantics are simultaneously defined.
+- **Human ratification:** pending final-HEAD acceptance that this remains open.
+
+### O-05 — Clock placement
+
+- **Status:** `OPEN`.
+- **Question:** does HLC remain in the signed kernel, move to a profile, or yield
+  to per-author sequence plus parent links?
+- **Rationale/evidence:** `HLC-002` through `HLC-005`, `HLC-007`, `HLC-008` and
+  `PRIV-01` show that current clock representations are not safe authority.
+- **Rejected alternatives:** retaining HLC by inertia; trusting wall time for
+  authorization; repairing malformed clock input.
+- **Security/privacy:** time can enable skew attacks, runtime fingerprinting and
+  unwanted activity correlation.
+- **Missing evidence:** authorization, replay, skew and privacy analysis
+  coordinated with O-01.
+- **Dependent artifact:** clock-field presence and ordering semantics.
+- **Smallest bounded follow-up:** compare the three placements under adversarial
+  replay, deterministic execution and the selected causal representation.
+- **Residual/closure condition:** close only when the clock has a necessary,
+  bounded role not duplicated by causality.
+- **Human ratification:** pending final-HEAD acceptance that this remains open.
+
+### O-06 — Event/content identifier semantics
+
+- **Status:** `OPEN`.
+- **Question:** what are the event and content identifier semantics?
+- **Rationale/evidence:** `ORDER-004`, `PRIV-01`, `PRIV-03` and `PRIV-04` show
+  that identifiers and fork inputs cannot remain mutable conveniences.
+- **Rejected alternatives:** unsigned random identifiers influencing protocol
+  behavior; treating a content hash and signed-object hash as interchangeable.
+- **Security/privacy:** identifiers affect deduplication, replay, fork evidence,
+  reference integrity and correlation.
+- **Missing evidence:** comparison of content hash, signed-object hash and a
+  separate random identifier.
+- **Dependent artifact:** event identifier, ordering tiebreak and fork
+  references.
+- **Smallest bounded follow-up:** compare the candidates for every use and apply
+  K-01 to each influential identifier.
+- **Residual/closure condition:** close only when each identifier has one stated
+  purpose and authenticated derivation or binding.
+- **Human ratification:** pending final-HEAD acceptance that this remains open.
+
+### O-07 — Genesis content
+
+- **Status:** `OPEN`.
+- **Question:** what exactly is genesis?
+- **Rationale/evidence:** `EVENT-002` and `EVENT-003` show divergent current
+  initialization and missing deterministic clock injection.
+- **Rejected alternatives:** inheriting either current genesis; embedding an
+  ambient wall clock; leaving context or initial membership implicit.
+- **Security/privacy:** genesis anchors context, initial authority and replay
+  separation.
+- **Missing evidence:** the outputs of O-01 through O-06.
+- **Dependent artifact:** initialization transcript and genesis vectors.
+- **Smallest bounded follow-up:** derive genesis only after those inputs close,
+  then prove deterministic construction and cross-context rejection.
+- **Residual/closure condition:** close only when every genesis field is
+  necessary, authenticated and independently reproducible.
+- **Human ratification:** pending final-HEAD acceptance that this remains open.
+
+### O-08 — Profile skew, cardinality and activation bounds
+
+- **Status:** `OPEN`.
+- **Question:** what clock-skew policy, first-profile actor cardinality and
+  N-party activation bounds apply?
+- **Rationale/evidence:** `VC-007`, `HLC-002` through `HLC-005`, `HLC-007` and
+  `HLC-008` show that current two-party and clock behavior is not a safe profile
+  definition.
+- **Rejected alternatives:** promoting current limits to kernel rules; unbounded
+  actors or skew; silent degradation outside tested profiles.
+- **Security/privacy:** bounds affect denial of service, metadata exposure and
+  whether a runtime can enforce the profile safely.
+- **Missing evidence:** runtime-envelope and vertical-role capacity analysis.
+- **Dependent artifact:** first supported profile and any later N-party profile.
+- **Smallest bounded follow-up:** evaluate explicit exhaustion, skew and denial-
+  of-service cases without leaking profile choices into the kernel.
+- **Residual/closure condition:** close only with enforceable limits and explicit
+  out-of-profile rejection.
+- **Human ratification:** pending final-HEAD acceptance that this remains open.
+
+### O-09 — Kernel/profile responsibility split
+
+- **Status:** `OPEN`.
+- **Question:** is the specification factored into one kernel plus profiles, and
+  which obligations belong to each?
+- **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` identify the need to
+  separate protocol, secure-session, runtime and vertical authority.
+- **Rejected alternatives:** duplicate ownership; ownerless rules; allowing a
+  runtime or product vertical to redefine kernel acceptance.
+- **Security/privacy:** misplaced rules create bypasses and inconsistent
+  security claims across runtimes.
+- **Missing evidence:** a complete responsibility matrix.
+- **Dependent artifact:** conformance target structure and profile documents.
+- **Smallest bounded follow-up:** assign every known obligation to exactly one
+  layer and reject overlaps or gaps.
+- **Residual/closure condition:** close only when every normative rule has one
+  owner and explicit cross-layer inputs.
+- **Human ratification:** pending final-HEAD acceptance that this remains open.
+
+### O-10 — Stable protocol-error taxonomy
+
+- **Status:** `OPEN`.
+- **Question:** is the protocol-error taxonomy closed, and which distinctions
+  are stable?
+- **Rationale/evidence:** `CHAIN-001`, `HLC-004`, `HLC-005`, `VC-002`, `VC-003`
+  and `VC-004` demonstrate outcomes that future consumers must not collapse into
+  generic success or implementation-native failure.
+- **Rejected alternatives:** exception strings as protocol API; one error for
+  states requiring different safe recovery; exposing unstable parser details.
+- **Security/privacy:** error distinctions affect fail-closed recovery and may
+  also become side channels if over-detailed.
+- **Missing evidence:** the complete rejection-site inventory after other fields
+  close.
+- **Dependent artifact:** negative-vector expectations and consumer recovery
+  contract.
+- **Smallest bounded follow-up:** enumerate rejection sites and collapse only
+  distinctions that cannot alter safe caller behavior.
+- **Residual/closure condition:** close only with a bounded stable taxonomy and
+  privacy review of observable errors.
+- **Human ratification:** pending final-HEAD acceptance that this remains open.
+
+### O-11 — Wire/storage encoding
+
+- **Status:** `OPEN`.
+- **Question:** what is the wire/storage encoding?
+- **Rationale/evidence:** C0.1 contains no language-neutral wire/storage
+  characterization; K-02 deliberately separates regenerated transcripts from
+  transport representation.
+- **Rejected alternatives:** treating an existing convenience JSON projection
+  as normative by inertia; selecting a decoder dependency before its attack
+  surface and canonical profile are known.
+- **Security/privacy:** decoder complexity, canonicality and resource bounds can
+  create malleability or denial-of-service risks.
+- **Missing evidence:** dependency, canonicality and decoder-surface comparison.
+- **Dependent artifact:** wire/storage specification, not the C0.3 regenerated-
+  transcript corpus.
+- **Smallest bounded follow-up:** compare strict custom framing and deterministic
+  CBOR profiles after transcript fields are fixed.
+- **Residual/closure condition:** not C0.3-blocking; close before any supported
+  persistence or remote admission. It does not reopen K-02.
+- **Human ratification:** pending final-HEAD acceptance that this remains open.
+
+### O-12 — Physical-time width, epoch, range and precision privacy
+
+- **Status:** `OPEN`.
+- **Question:** if physical time is retained, what are its exact width, epoch
+  and range, and how is source precision represented without needlessly
+  fingerprinting a runtime class?
+- **Rationale/evidence:** `HLC-002`, `HLC-003`, `HLC-007` and `HLC-008` show
+  precision loss and runtime-dependent projections.
+- **Rejected alternatives:** implicit language-native ranges; inferring source
+  precision from zero-filled digits without privacy analysis; fabricated
+  precision.
+- **Security/privacy:** the field affects overflow, lifetime, linkability and
+  runtime fingerprinting.
+- **Missing evidence:** precision, lifetime and privacy analysis across the
+  declared runtime envelopes.
+- **Dependent artifact:** clock transcript field and its adversarial vectors.
+- **Smallest bounded follow-up:** decide whether precision is declared, inferred
+  or hidden and assess linkability, coordinated with O-05.
+- **Residual/closure condition:** close only if physical time remains and all
+  numeric and privacy properties are bounded.
+- **Human ratification:** pending final-HEAD acceptance that this remains open.
+
+### D-01 — Deferred legacy hardening
 
 - **Status:** `DEFERRED`.
 - **Decision:** strict current HLC and `previousHash` grammar could narrow one
   ambiguity class without changing the current hash layout, but it would leave
   unauthenticated causal and fork fields. It will not be shipped while there is
-  no supported legacy consumer. If a consumer appears before replacement, a
-  separate emergency hardening contract must reassess disclosure and cannot
-  describe that partial fix as a secure protocol.
-- **Missing evidence:** an inventory showing an installed data population or a
-  supported consumer that cannot make the v1 hard cut.
+  no supported legacy consumer.
+- **Rationale/evidence:** `HLC-004`, `HLC-005`, `PRIV-01`, `PRIV-03` and
+  `PRIV-04` show both the narrowable parser defects and the larger signature-
+  coverage gap that such hardening would not repair.
+- **Rejected alternatives:** presenting strict parsing as complete remediation;
+  shipping a compatibility validator for hypothetical consumers.
+- **Security/privacy:** partial hardening could create false confidence while
+  unauthenticated causal and fork semantics remain exploitable if integrated.
+- **Missing evidence:** an installed data population or supported consumer that
+  cannot make the v1 hard cut.
 - **Dependent artifact:** any temporary `styx-legacy-c0` validator, migration or
-  product-admission rule. No such artifact is authorized by this registry.
+  product-admission rule; none is authorized here.
 - **Smallest bounded follow-up:** if the missing evidence appears, inventory the
   exact consumers and stored formats, then choose migration, read-only export or
-  temporary strict validation in a separately reviewed contract.
+  temporary strict validation under a separately reviewed contract.
+- **Residual/reopen condition:** a consumer appearing before replacement
+  immediately reopens the deferral and disclosure posture.
+- **Human ratification:** pending final-HEAD acceptance of this deferral.
 
 ## 5. Non-normative worked examples
 
@@ -337,9 +578,9 @@ as expected protocol bytes.
 
 ### Example A — framing
 
-`type = "ab", payload = "c"` and `type = "a", payload = "bc"` must generate
-different transcripts because the type and payload are length-framed. Concatenating
-the two strings before hashing is forbidden.
+Every variable-width semantic field is length-framed. Consequently, changing
+field assignments cannot preserve the transcript merely because the raw bytes
+would concatenate to the same sequence.
 
 ### Example B — authenticated semantics
 
@@ -356,9 +597,10 @@ also be transcript-bound and locally evaluated under the application's policy.
 
 ## 6. Gate for C0.3 and exact next sequence
 
-**C0.3 verdict: `NO-GO`.** O-01 through O-10 contain choices required to derive
-normative bytes or adversarial expectations. Starting the corpus now would
-freeze guesses and create cost pressure on later human decisions.
+**C0.3 verdict: `NO-GO`.** O-01 through O-10 and O-12 contain choices required
+to derive normative bytes or adversarial expectations. O-11 intentionally does
+not block a transcript-only C0.3 corpus. Starting that corpus now would freeze
+the remaining guesses and create cost pressure on later human decisions.
 
 The smallest safe sequence is:
 
@@ -367,7 +609,8 @@ The smallest safe sequence is:
 2. run the adversarial causal-topology probe for O-01, coordinated with O-05,
    O-06 and the privacy conclusions from step 1;
 3. close payload, genesis, clock, cardinality and error questions O-04 through
-   O-10 without implementation authority;
+   O-10 and O-12 without implementation authority; retain O-11 for the later
+   wire/storage decision;
 4. approve the exact Apache-2.0 path inventory for the future corpus;
 5. execute C0.3: specification-derived adversarial corpus plus a third
    implementation written only from the specification;
