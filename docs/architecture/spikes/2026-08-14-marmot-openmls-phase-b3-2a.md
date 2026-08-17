@@ -39,6 +39,15 @@ installed that exact tuple and exercised it twice against the exact MDK pin.
 | External MDK Cargo.lock SHA-256 | `edb8c706e12934b8d94239203f73d24a2d480033c3ec6830f19d06c85a247b09` |
 | Post-review Rust patch SHA-256 | `56bfa7e7439f3a5dce260930b0ba19604581177de8092170a1f057592de30a7c` |
 
+The Styx base commit and tree in this table are the frozen B3.2a spike/source
+baseline used to construct and verify the candidate. They are intentionally not
+the PR task base. Issue #175 later renewed that task base as governance changes
+landed on `main`, ending at commit
+`55256bb99930f2f0aeb7ab14dbdd153e04a4bf2a` / tree
+`f10d1c3b22744f3fbef9935d2ff20fb8dc8792e0` for the final reviewed PR. Those
+renewals changed neither this frozen source baseline nor the tuple and run
+evidence recorded below.
+
 No pin, lockfile, ciphersuite, dependency, manifest or historical Provider
 serializer changed.
 

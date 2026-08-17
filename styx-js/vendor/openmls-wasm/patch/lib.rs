@@ -9499,6 +9499,39 @@ mod tests {
     }
 
     #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b31_and_b32a_key_package_readers_are_mutually_isolated() {
+        let provider = Provider::new();
+        let (identity, proof, _) = phase_b2_identity(&provider, 0x73);
+        let b31_framed = identity
+            .b3_1_key_package(&provider, &proof)
+            .map_err(js_error_to_string)
+            .unwrap()
+            .to_framed_bytes()
+            .unwrap();
+        let b32a_framed = identity
+            .b3_2a_key_package(&provider, &proof)
+            .map_err(js_error_to_string)
+            .unwrap()
+            .to_framed_bytes()
+            .unwrap();
+
+        PhaseB31KeyPackage::from_framed_bytes(&b31_framed)
+            .map_err(js_error_to_string)
+            .expect("the exact B3.1 reader must retain its own format");
+        PhaseB32aKeyPackage::from_framed_bytes(&b32a_framed)
+            .map_err(js_error_to_string)
+            .expect("the exact B3.2a reader must retain its own format");
+
+        phase_b32_assert_rejected(|| {
+            PhaseB32aKeyPackage::from_framed_bytes(&b31_framed).map(|_| ())
+        });
+        phase_b32_assert_rejected(|| {
+            PhaseB31KeyPackage::from_framed_bytes(&b32a_framed).map(|_| ())
+        });
+    }
+
+    #[cfg(feature = "extensions-draft")]
     struct PhaseB32NativeFixture {
         joiner_provider: Provider,
         joiner: PhaseB2Identity,
@@ -9627,6 +9660,25 @@ mod tests {
         founder_byte: u8,
         joiner_byte: u8,
     ) -> PhaseB32aNativeFixture {
+        phase_b32a_native_fixture_with_options(
+            group_id,
+            founder_byte,
+            joiner_byte,
+            true,
+            true,
+            false,
+        )
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    fn phase_b32a_native_fixture_with_options(
+        group_id: &[u8],
+        founder_byte: u8,
+        joiner_byte: u8,
+        embed_ratchet_tree: bool,
+        exact_mdk_founder: bool,
+        preexisting_group: bool,
+    ) -> PhaseB32aNativeFixture {
         let mut founder_provider = Provider::new();
         let joiner_provider = Provider::new();
         let (founder, founder_proof, _) = phase_b2_identity(&founder_provider, founder_byte);
@@ -9639,11 +9691,54 @@ mod tests {
         let account_identity = joiner.account_public_key.clone();
         let leaf_signature_key = joiner.keypair.public().to_vec();
 
+        if preexisting_group {
+            let conflicting_group = MlsGroup::builder()
+                .ciphersuite(PROBE_CIPHERSUITE)
+                .with_group_id(GroupId::from_slice(group_id))
+                .with_wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+                .with_group_context_extensions(
+                    phase_b31_group_context_extensions(
+                        &joiner.account_public_key,
+                        b"B3.2a collision",
+                        b"pre-existing predecessor group",
+                    )
+                    .map_err(js_error_to_string)
+                    .unwrap(),
+                )
+                .with_capabilities(phase_b2_capabilities())
+                .with_leaf_node_extensions(
+                    phase_b31_leaf_extensions(&joiner_proof)
+                        .map_err(js_error_to_string)
+                        .unwrap(),
+                )
+                .unwrap()
+                .build(
+                    &joiner_provider.inner,
+                    &joiner.keypair,
+                    joiner.credential_with_key.clone(),
+                )
+                .unwrap();
+            assert_eq!(conflicting_group.group_id().as_slice(), group_id);
+        }
+
+        let founder_capabilities = if exact_mdk_founder {
+            phase_b32a_mdk_capabilities()
+        } else {
+            phase_b2_capabilities()
+        };
+        let founder_extensions = if exact_mdk_founder {
+            phase_b32a_mdk_leaf_extensions(&founder_proof)
+        } else {
+            phase_b31_leaf_extensions(&founder_proof)
+                .map_err(js_error_to_string)
+                .unwrap()
+        };
+
         let mut founder_group = MlsGroup::builder()
             .ciphersuite(PROBE_CIPHERSUITE)
             .with_group_id(GroupId::from_slice(group_id))
             .with_wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
-            .use_ratchet_tree_extension(true)
+            .use_ratchet_tree_extension(embed_ratchet_tree)
             .with_group_context_extensions(
                 phase_b31_group_context_extensions(
                     &founder.account_public_key,
@@ -9653,8 +9748,8 @@ mod tests {
                 .map_err(js_error_to_string)
                 .unwrap(),
             )
-            .with_capabilities(phase_b32a_mdk_capabilities())
-            .with_leaf_node_extensions(phase_b32a_mdk_leaf_extensions(&founder_proof))
+            .with_capabilities(founder_capabilities)
+            .with_leaf_node_extensions(founder_extensions)
             .unwrap()
             .build(
                 &founder_provider.inner,
@@ -11331,6 +11426,93 @@ mod tests {
                 candidate,
             );
         }
+    }
+
+    #[cfg(feature = "extensions-draft")]
+    #[test]
+    fn phase_b32a_durable_prepare_rejects_hostile_welcome_variants_without_mutation() {
+        let assert_rejected = |
+            fixture: &PhaseB32aNativeFixture,
+            welcome: &[u8],
+            expected_author: &[u8],
+        | {
+            let predecessor = fixture.predecessor_state.clone();
+            phase_b32_assert_rejected(|| {
+                PhaseB32aPendingWelcome::prepare_from_durable_state(
+                    &fixture.predecessor_state,
+                    &fixture.predecessor_sha256,
+                    &fixture.account_identity,
+                    &fixture.leaf_signature_key,
+                    welcome,
+                    &fixture.key_package_bytes,
+                    expected_author,
+                )
+                .map(|_| ())
+            });
+            assert_eq!(fixture.predecessor_state, predecessor);
+        };
+
+        let missing_tree = phase_b32a_native_fixture_with_options(
+            b"phase-b32a-no-tree",
+            0x95,
+            0x96,
+            false,
+            true,
+            false,
+        );
+        assert_rejected(
+            &missing_tree,
+            &missing_tree.welcome_bytes,
+            &missing_tree.expected_author,
+        );
+
+        let non_welcome = phase_b32a_native_fixture(
+            b"phase-b32a-non-welcome",
+            0x97,
+            0x98,
+        );
+        assert_rejected(
+            &non_welcome,
+            &non_welcome.key_package_bytes,
+            &non_welcome.expected_author,
+        );
+
+        let wrong_author = phase_b32a_native_fixture(
+            b"phase-b32a-wrong-author",
+            0x99,
+            0x9a,
+        );
+        let mut forged_author = wrong_author.expected_author.clone();
+        forged_author[0] ^= 1;
+        assert_rejected(&wrong_author, &wrong_author.welcome_bytes, &forged_author);
+
+        let wrong_profile = phase_b32a_native_fixture_with_options(
+            b"phase-b32a-wrong-founder-profile",
+            0x9b,
+            0x9c,
+            true,
+            false,
+            false,
+        );
+        assert_rejected(
+            &wrong_profile,
+            &wrong_profile.welcome_bytes,
+            &wrong_profile.expected_author,
+        );
+
+        let collision = phase_b32a_native_fixture_with_options(
+            b"phase-b32a-group-collision",
+            0x9d,
+            0x9e,
+            true,
+            true,
+            true,
+        );
+        assert_rejected(
+            &collision,
+            &collision.welcome_bytes,
+            &collision.expected_author,
+        );
     }
 
     #[cfg(feature = "extensions-draft")]
