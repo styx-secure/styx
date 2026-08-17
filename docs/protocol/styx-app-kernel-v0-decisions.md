@@ -67,6 +67,10 @@ claim that current code conforms.
 - **Rationale/evidence:** `PRIV-01`, `PRIV-02`, `PRIV-03` and `PRIV-04`
   confirm that changing causal metadata can leave the existing signature valid
   while downstream protocol behavior consumes that metadata.
+- **Public inspection pointer (non-witness):** the affected public source
+  surfaces are listed in `docs/security/2026-08-17-ledger-preimage-and-signature-coverage-findings.md`
+  under *Affected paths and evidence*; the retained references above establish
+  the complete-event reproduction without publishing its witness.
 - **Rejected alternative:** authenticating only the existing
   `previousHash || eventType || payload || hlcBytes` projection.
 - **Security/privacy:** this rule prevents validation and convergence from
@@ -191,6 +195,12 @@ claim that current code conforms.
 - **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` distinguish
   deterministic convergence from application authorization and conflict
   policy.
+- **Normative rationale:** §1 of
+  `docs/architecture/decisions/ADR-0007-application-protocol-authority.md`
+  assigns language-neutral state-transition rules to the application protocol,
+  while §5 assigns workflows and policy to verticals. Accounting and case-
+  management operations therefore cannot safely inherit one universal conflict
+  rule from replica ordering.
 - **Rejected alternative:** treating stable byte order as authorization or
   business truth.
 - **Security/privacy:** prevents deterministic transport mechanics from
@@ -241,6 +251,11 @@ claim that current code conforms.
   of an installed population.
 - **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` record the current
   non-integration condition and the resulting hard-cut rationale.
+- **Normative rationale:** §2 of
+  `docs/architecture/decisions/ADR-0007-application-protocol-authority.md`
+  records that the ledger is not integrated into a supported end-to-end product
+  pipeline. In the absence of an installed population, a hard cut is safer than
+  carrying ambiguous legacy behavior into v1.
 - **Rejected alternatives:** silently blessing all 25 matches; maintaining a
   compatibility mode for hypothetical users.
 - **Security/privacy:** prevents vulnerable legacy semantics from crossing a
@@ -283,7 +298,7 @@ The following observations are not promises and MUST NOT be copied into v1:
 | Silent time-precision truncation | `HLC-002` | `REJECTED` |
 | Signed or wrapping causal counters | `VC-002`, `VC-003`, `VC-004` | `REJECTED` |
 | Fixed two-party topology as kernel by default | `VC-007` | `REJECTED` |
-| `vectorClock.total` as authority/order key | `ORDER-004`, `PRIV-01`, `PRIV-03`, `PRIV-04` | `REJECTED` |
+| `vectorClock.total` as authority/order key | `ORDER-004`, `ORDER-005`, `PRIV-01`, `PRIV-03`, `PRIV-04` | `REJECTED` |
 | Locale-sensitive sender ordering | `ORDER-002`, `ORDER-005` | `REJECTED` |
 | Comparator equality for distinct events | `ORDER-004` | `REJECTED` |
 | Empty-chain success | `CHAIN-001` | `REJECTED` |
@@ -315,7 +330,8 @@ outcomes.
 - **Smallest bounded follow-up:** compare self-authentication, dynamic
   membership, offline concurrency, fork evidence, missing-parent recovery,
   checkpoint/pruning behavior, byte growth, participant enumeration and
-  linkability, and deterministic convergence under the capability threat model.
+  linkability, and deterministic convergence against the requirements in
+  `docs/platform/application-capability-model.md`, especially §5.1 and §5.3.
 - **Residual/closure condition:** close only when one bounded representation
   satisfies the comparison and its failure modes are explicit.
 - **Human ratification:** pending final-HEAD acceptance that this remains open.
@@ -346,8 +362,12 @@ outcomes.
 - **Status:** `OPEN`.
 - **Question:** what is the application/case context identifier and how is it
   bound to genesis?
-- **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` require explicit
-  context separation; C0.1 contains no sufficient context-identifier evidence.
+- **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` corroborate the need
+  for explicit context separation; C0.1 contains no sufficient context-
+  identifier evidence.
+- **Normative rationale:** the application-context and unlinkability
+  requirements are defined in §5.1 and §5.3 of
+  `docs/platform/application-capability-model.md`.
 - **Rejected alternatives:** an ambient database name; an unsigned label;
   reusing an account identifier as the case identifier without the required
   uniqueness, replay and linkability analysis.
@@ -356,8 +376,8 @@ outcomes.
 - **Missing evidence:** collision, uniqueness, unlinkability and replay analysis.
 - **Dependent artifact:** domain tag, context field and genesis transcript.
 - **Smallest bounded follow-up:** analyze candidate identifiers against the
-  application-context and unlinkability requirements in the capability threat
-  model.
+  application-context and unlinkability requirements in §5.1 and §5.3 of
+  `docs/platform/application-capability-model.md`.
 - **Residual/closure condition:** close only with deterministic binding and
   explicit cross-context rejection rules.
 - **Human ratification:** pending final-HEAD acceptance that this remains open.
@@ -467,8 +487,13 @@ outcomes.
 - **Status:** `OPEN`.
 - **Question:** is the specification factored into one kernel plus profiles, and
   which obligations belong to each?
-- **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` identify the need to
-  separate protocol, secure-session, runtime and vertical authority.
+- **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` corroborate the need
+  to separate protocol, secure-session, runtime and vertical authority.
+- **Normative rationale:** §1 and §5 of
+  `docs/architecture/decisions/ADR-0007-application-protocol-authority.md`
+  define distinct application-protocol and vertical-policy authorities; the
+  registry must make the remaining secure-session and runtime ownership
+  explicit rather than allowing duplicate or ownerless rules.
 - **Rejected alternatives:** duplicate ownership; ownerless rules; allowing a
   runtime or product vertical to redefine kernel acceptance.
 - **Security/privacy:** misplaced rules create bypasses and inconsistent
