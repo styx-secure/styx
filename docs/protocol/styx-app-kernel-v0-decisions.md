@@ -38,6 +38,10 @@ Security-critical evidence fields below use only C0.1 case identifiers and
 these retained private-review references. A reference identifies an immutable
 local artifact by filename and SHA-256; it does not disclose its witness:
 
+Separate `Normative rationale` and `Public inspection pointer (non-witness)`
+fields may cite public repository documents. They contain no witness material
+and never substitute for the security-critical evidence field above.
+
 | Reference | Retained private-review artifact | SHA-256 |
 | --- | --- | --- |
 | `PRIV-01` | `README_OPUS5_20260817T063953Z.md` | `beff559ed88bda3d1cbbbdfdb3686f84003b6d9d8640c25e505d5fc36e831003` |
@@ -200,7 +204,10 @@ claim that current code conforms.
   assigns language-neutral state-transition rules to the application protocol,
   while §5 assigns workflows and policy to verticals. Accounting and case-
   management operations therefore cannot safely inherit one universal conflict
-  rule from replica ordering.
+  rule from replica ordering. Section 5.10 of
+  `docs/platform/application-capability-model.md` independently requires the
+  application to declare its conflict policy rather than treating deterministic
+  replica order as a universal merge rule.
 - **Rejected alternative:** treating stable byte order as authorization or
   business truth.
 - **Security/privacy:** prevents deterministic transport mechanics from
@@ -253,9 +260,9 @@ claim that current code conforms.
   non-integration condition and the resulting hard-cut rationale.
 - **Normative rationale:** §2 of
   `docs/architecture/decisions/ADR-0007-application-protocol-authority.md`
-  records that the ledger is not integrated into a supported end-to-end product
-  pipeline. In the absence of an installed population, a hard cut is safer than
-  carrying ambiguous legacy behavior into v1.
+  records that the ledger is not yet integrated into a supported end-to-end
+  product pipeline. In the absence of an installed population, a hard cut is
+  safer than carrying ambiguous legacy behavior into v1.
 - **Rejected alternatives:** silently blessing all 25 matches; maintaining a
   compatibility mode for hypothetical users.
 - **Security/privacy:** prevents vulnerable legacy semantics from crossing a
@@ -331,7 +338,8 @@ outcomes.
   membership, offline concurrency, fork evidence, missing-parent recovery,
   checkpoint/pruning behavior, byte growth, participant enumeration and
   linkability, and deterministic convergence against the requirements in
-  `docs/platform/application-capability-model.md`, especially §5.1 and §5.3.
+  `docs/platform/application-capability-model.md`, especially §5.10, §5.5 and
+  §5.3.
 - **Residual/closure condition:** close only when one bounded representation
   satisfies the comparison and its failure modes are explicit.
 - **Human ratification:** pending final-HEAD acceptance that this remains open.
@@ -343,6 +351,9 @@ outcomes.
   authorized?
 - **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` distinguish key
   possession from authorization and show why author semantics must be bound.
+- **Normative rationale:** identity profiles, authorization and delegation, and
+  compromise-response requirements are defined in §5.2, §5.6 and §5.13 of
+  `docs/platform/application-capability-model.md`.
 - **Rejected alternatives:** treating a supplied verification key as sufficient
   role authority; unauthenticated author metadata; one globally linkable
   identity by default.
@@ -389,6 +400,9 @@ outcomes.
   plus length, and can it be detached?
 - **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` identify retention
   and pruning as unresolved; C0.1 does not characterize detached payloads.
+- **Normative rationale:** attachment commitment and retention/deletion
+  requirements are defined in §5.12 and §5.15 of
+  `docs/platform/application-capability-model.md`.
 - **Rejected alternatives:** choosing raw bytes because current factories do;
   digest-only commitment without length or substitution analysis.
 - **Security/privacy:** the choice affects substitution resistance, erasure,
@@ -489,11 +503,12 @@ outcomes.
   which obligations belong to each?
 - **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` corroborate the need
   to separate protocol, secure-session, runtime and vertical authority.
-- **Normative rationale:** §1 and §5 of
+- **Normative rationale:** §1, §3, §4 and §5 of
   `docs/architecture/decisions/ADR-0007-application-protocol-authority.md`
-  define distinct application-protocol and vertical-policy authorities; the
-  registry must make the remaining secure-session and runtime ownership
-  explicit rather than allowing duplicate or ownerless rules.
+  already assign application-protocol, secure-session, runtime and vertical
+  authorities at the architectural level. What remains open is the
+  specification-level obligation matrix within and across those layers, which
+  must prevent duplicate or ownerless rules.
 - **Rejected alternatives:** duplicate ownership; ownerless rules; allowing a
   runtime or product vertical to redefine kernel acceptance.
 - **Security/privacy:** misplaced rules create bypasses and inconsistent
