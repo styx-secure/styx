@@ -37,7 +37,7 @@ toolkit, browser API, transport provider or a particular secure-session engine.
 
 ### 2. Application implementations
 
-`styx-js/src/ledger/**` and `styx-js/src/facade/**` are the currently supported
+`styx-js/src/ledger/**` and `styx-js/src/facade/**` are the currently active
 browser implementation of the application protocol. This is an implementation
 role, not normative authority. Its remote-admission path remains deliberately
 contained, and the ledger is not yet integrated into a supported end-to-end

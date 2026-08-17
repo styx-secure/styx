@@ -25,7 +25,7 @@ contract is the language-neutral specification plus conformance corpus.
 
 ## Application implementation roles
 
-- `styx-js/src/ledger/**` and `styx-js/src/facade/**` are the supported browser
+- `styx-js/src/ledger/**` and `styx-js/src/facade/**` are the active browser
   implementation of the application protocol.
 - `packages/` Dart is an independently developed reference. Its behavioral
   edge cases must be captured as conformance vectors before the implementation
