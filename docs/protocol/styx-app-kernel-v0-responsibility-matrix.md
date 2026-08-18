@@ -1,13 +1,15 @@
 # Styx application protocol v0 — responsibility matrix
 
-- **Status:** C0.2a normative responsibility allocation; not a protocol byte
-  specification or implementation claim.
-- **Authority:** Issue #207, ADR-0007 and
+- **Status:** C0.2a normative responsibility allocation, amended by C0.2b only
+  for the decided O-02/O-03 dependencies; not a protocol byte specification or
+  implementation claim.
+- **Authority:** Issues #207 and #209, ADR-0007 and
   `docs/security/STYX-THREAT-MODEL.md`.
 - **Evidence baseline:** `main @
   6409bc1b530622dfd592e4ebdb66e242f458b378`.
-- **Decision effect:** closes O-09 only. O-01 through O-08 and O-10 through
-  O-12 remain open.
+- **Decision effect:** C0.2a closes O-09; C0.2b closes O-02 and O-03 without
+  changing ownership. O-01, O-04 through O-08 and O-10 through O-12 remain
+  open.
 
 This matrix assigns each known normative obligation to exactly one owning
 layer. Ownership means that the layer defines the rule, its conformance
@@ -88,8 +90,8 @@ but the concrete rule is not yet selected.
 | `OB-K05` | Define causal representation and classify predecessor, concurrent, duplicate, missing-parent, replay and fork relationships | Authenticated object plus prior state → causal classification | O-01 open |
 | `OB-K06` | Derive deterministic total order only after causality and use a bytewise authenticated tiebreak | Concurrent authenticated objects → deterministic order | K-06 decided; O-06 open |
 | `OB-K07` | Define the purpose and authenticated derivation/binding of event, content and parent identifiers | Authenticated object fields → identifiers/references | O-06 open |
-| `OB-K08` | Bind application/case context into every authoritative object and reject cross-context replay | Context plus candidate object → accepted context or rejection | O-03 open |
-| `OB-K09` | Define fresh deterministic genesis and initial authenticated authority inputs | Profile/context inputs → genesis object | K-09 decided; O-01–O-07 open |
+| `OB-K08` | Bind application/case context into every authoritative object and reject cross-context replay | Context plus candidate object → accepted context or rejection | O-03 decided; O-06/O-07 complete reference/genesis mechanics |
+| `OB-K09` | Define fresh deterministic genesis and initial authenticated authority inputs | Profile/context inputs → genesis object | K-09 and O-02/O-03 decided; O-01 and O-04–O-07 open |
 | `OB-K10` | Define payload commitment mechanics, bounded parsing and verifiability after permitted detachment/pruning | Payload input or retained commitment → verification result | O-04 open |
 | `OB-K11` | Distinguish empty, uninitialized and valid histories | Stored/input history → classified state | Decided by registry K-08; O-10 error code open |
 | `OB-K12` | Apply deterministic state-transition mechanics and hand semantically concurrent conflicts to `AP` without inventing universal business resolution | Valid authenticated object plus state → applied/rejected/conflict outcome | K-07 decided; profile schemas open |
@@ -104,14 +106,14 @@ but the concrete rule is not yet selected.
 | Obligation | Owned rule | Required input / emitted result | Status dependency |
 | --- | --- | --- | --- |
 | `OB-AP01` | Define closed application object schemas, versions, bounded payload types and unknown-version behavior | User/product intent → bounded transition request | Future profile design |
-| `OB-AP02` | Define actor/credential types, role authority, delegation, rotation, revocation and expiry for each context | Authenticated actor evidence plus context → authorized/unauthorized action | O-02 open |
-| `OB-AP03` | Select context and identity profiles and require cross-context/cross-case separation | Deployment/profile choice → requirements consumed by `K`, `SS`, `RS` and `TR` | O-02/O-03 open |
+| `OB-AP02` | Define actor/credential types, role authority, delegation, rotation, revocation and expiry for each context | Authenticated actor evidence plus context → authorized/unauthorized action | O-02 decided; concrete profile grants and bounds remain future work |
+| `OB-AP03` | Select context and identity profiles and require cross-context/cross-case separation | Deployment/profile choice → requirements consumed by `K`, `SS`, `RS` and `TR` | O-02/O-03 decided; individual application profiles remain future work |
 | `OB-AP04` | Define domain conflict policy: accept, reject, supersede, combine or require human review | Kernel causal/conflict result plus profile state → policy disposition | Profile-specific; K-07 fixed |
 | `OB-AP05` | Define retention, legal-hold, redaction, logical deletion, export and evidence intent by data class | Authenticated policy action → request to kernel/runtime/product operations | Future profile design; O-04 relevant |
 | `OB-AP06` | Select allowed assurance capabilities and reject an internally inconsistent combination | Runtime/session/transport capability declarations → activated or rejected profile | O-08 open |
 | `OB-AP07` | Define application-level acknowledgement meanings and which authenticated actor may issue them | Kernel/session evidence → named application-ack state | Future SDK/delivery work |
 | `OB-AP08` | Define attachment/content admission policy, including text-only profiles, size/type bounds and isolated sanitization requirements | Candidate content metadata → admitted/rejected application object | Future profile design |
-| `OB-AP09` | Define capability/recovery authority without treating recovery as implicit revocation bypass | Recovery proof plus context/profile → bounded authorized recovery action | O-02 and future recovery design |
+| `OB-AP09` | Define capability/recovery authority without treating recovery as implicit revocation bypass | Recovery proof plus context/profile → bounded authorized recovery action | O-02 forbids authority resurrection; concrete recovery profiles remain future work |
 | `OB-AP10` | Define first-profile actor/cardinality, clock-skew and activation bounds as profile rules rather than kernel limits | Capability/resource evidence → in-profile or out-of-profile result | O-08 open |
 
 ### 4.3 Secure-session adapter (`SS`)
@@ -202,13 +204,13 @@ implementation combines some operations atomically:
 This order does not choose a wire encoding, transaction API or session engine.
 It prevents a lower-layer success from bypassing an upper-layer security rule.
 
-## 6. Open-decision allocation
+## 6. Decision allocation
 
-| Registry item | Decision owner | Required contributors | Why it remains open after C0.2a |
+| Registry item | Decision owner | Required contributors | Status after C0.2b |
 | --- | --- | --- | --- |
 | O-01 causal representation | `K` | `AP`, `RS`, `TR` supply conflict, resource and privacy requirements | Candidate topology comparison is not performed here. |
-| O-02 author/rotation/authorization binding | `AP` for authority semantics; `K` for authenticated binding mechanics | `SS`, `RS`, `PV` supply member, custody and operational constraints | This matrix separates the two obligations but selects no credential or rotation construction. |
-| O-03 context/genesis binding | `K` for binding; `AP` for context-profile requirements | `SS`, `RS`, `TR` supply namespace and linkability constraints | No identifier, entropy source or transcript field is selected. |
+| O-02 author/rotation/authorization binding | `AP` for authority semantics; `K` for authenticated binding mechanics | `SS`, `RS`, `PV` supply member, custody and operational constraints | **Decided:** context-local endpoint credential plus authenticated AP authorization state; account, session and bearer inputs remain separate. |
+| O-03 context/genesis binding | `K` for binding; `AP` for context-profile requirements | `SS`, `RS`, `TR` supply namespace and linkability constraints | **Decided:** protocol/profile tuple plus fresh 32-byte random context identifier, authenticated by genesis and all later objects. |
 | O-04 payload commitment/detachment | `K` | `AP` supplies retention/content requirements; `RS` supplies storage bounds | Raw versus digest-plus-length and detachment rules remain unevaluated. |
 | O-05 clock placement | `K` if kernel time is necessary; otherwise the owning profile | `AP`, `RS`, `TR` supply authorization, precision and privacy needs | Necessity relative to O-01 remains unproven. |
 | O-06 event/content identifiers | `K` | `AP`, `RS`, `TR` supply idempotency, storage and correlation requirements | Candidate identifier purposes and derivations remain unevaluated. |
@@ -219,7 +221,7 @@ It prevents a lower-layer success from bypassing an upper-layer security rule.
 | O-11 wire/storage encoding | Owner of each representation: `K` transcript regeneration; `RS` storage; `TR` envelope | Decoders and implementations supply surface evidence | No encoding comparison is performed here. |
 | O-12 physical-time details | Same owner selected by O-05 | `RS` and `TR` supply precision/lifetime/linkability evidence | Inapplicable only if O-05 removes physical time from every signed object. |
 
-O-02 has deliberately split ownership because “who may act” (`AP`) and “how
+O-02 deliberately retains split ownership because “who may act” (`AP`) and “how
 that authority is cryptographically bound into the object” (`K`) are separate
 normative obligations. Neither owner may omit the other's validated output.
 
@@ -299,9 +301,10 @@ Rejected alternatives are:
 - a product vertical redefining kernel acceptance to fit one workflow.
 
 Security consequence: a bypass at one layer cannot be legitimized by a success
-signal from another layer. Residual risk: concrete identifiers, credentials,
-causal topology, payload commitment, bounds and errors remain open, so this
-allocation alone is not executable protocol behavior.
+signal from another layer. Residual risk: event/content and genesis-reference
+identifiers, causal topology, payload commitment, bounds and errors remain open;
+O-02/O-03 semantics still lack executable transcript bytes, so this allocation
+alone is not executable protocol behavior.
 
 Reopen O-09 only if a future obligation cannot be assigned without violating
 the one-owner invariant, a new trust boundary requires a seventh normative
