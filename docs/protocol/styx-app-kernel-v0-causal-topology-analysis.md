@@ -100,7 +100,11 @@ These works do not define Styx authorization, retention or application policy.
 - **Affected replay boundary:** the first position where the canonical order
   over a prior validated set differs from the order over an expanded validated
   set, or the end of the prior order when it remains an exact prefix. It names
-  the earliest replay point, not a checkpoint or finality claim.
+  the earliest replay point, not a checkpoint or finality claim. A prefix is
+  reusable only when every per-event `K → AP` handoff in it is byte-identical
+  to fresh full replay over the expanded set. The v0 handoff rule below makes
+  that condition prefix-local; a future handoff change that violates it must
+  move the boundary earlier rather than reuse stale AP input.
 
 A signed causal claim proves what the credential asserted. It cannot prove that
 a malicious endpoint truthfully disclosed every event it had observed.
@@ -257,6 +261,17 @@ authenticated grant/revocation state. `AP` decides accept, reject, combine,
 supersede or require human review. The byte order is only a deterministic replay
 schedule; it is never authorization or universal last-writer-wins.
 
+The `K → AP` handoff at replay position *i* is prefix-scoped. Its AP-visible
+classification and causal, fork and live-revocation relations describe only the
+event itself and references already replayed at positions `0..i-1`; they MUST
+NOT incorporate a later-sorting event merely because set-relative graph
+diagnostics already know it. A later event supplies the newly actionable fork,
+revocation or concurrency fact when that event is replayed. Set-relative graph
+classification remains available for diagnostics and validation but is not a
+retroactive AP transition. Authenticated checkpoint authority outside the live
+replay horizon is supplied through the checkpoint/predecessor input, not
+invented as a live per-event relation.
+
 The handoff is deliberately application-neutral. A shared-accounting profile
 may combine independent expenses and escalate a concurrent edit to the same
 entry, while a whistleblowing/case-management profile may allow concurrent
@@ -373,6 +388,8 @@ grant/genesis ancestry for the illustrated credentials.
 | Cross-context parent | parent reference resolves to another O-03 tuple | Reject context binding |
 | Late branch after checkpoint | late event depends on pruned history | Accept only with sufficient authenticated checkpoint proof; otherwise stale |
 | Late concurrent insertion | A is projected, then concurrent B arrives with a lower event reference | Recompute the affected suffix; result equals full replay over A+B, never arrival-order append |
+| Late exact-prefix fork | `A0`, then one `A1(A0;G)`, then a higher-reference sibling with the same sequence/predecessor | Prior handoffs remain identical; the sibling handoff exposes the fork and AP revises or quarantines reversible state |
+| Late exact-prefix revocation | an old-key action is projected, then a higher-reference concurrent revocation arrives | Prior handoff remains identical; the revocation transition supplies the new AP fact and cannot retroactively authorize an irreversible effect |
 | Delivery permutation | replicas receive the same valid bounded set in different orders | Same graph, fork flags and deterministic topological order |
 
 ## 10. Checkpoint, pruning and rollback obligations
@@ -385,6 +402,9 @@ absent, pruned, released and corrupt evidence.
 
 Compaction may remove material only when later validation, fork/replay checks,
 revocation and context/genesis checks retain sufficient authenticated evidence.
+Checkpoint-proven revocations outside the live replay prefix remain explicit
+checkpoint/AP authority evidence; they are not repeated as though they were
+new live-replay relations on every handoff.
 The exact snapshot, payload-retention and RS transaction design remain open.
 An external or peer-held checkpoint can improve rollback detection; no local
 chain can prove that an adversary did not restore both state and its local head.

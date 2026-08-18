@@ -350,7 +350,15 @@ outcomes.
   which a future implementation must replay or update with an algorithm proven
   equivalent to full replay. Arrival order cannot freeze the old position, and
   the current replay position alone proves neither authorization nor an
-  irreversible external effect.
+  irreversible external effect. Graph diagnostics are set-relative, while each
+  `K → AP` transition in a full or incremental replay is prefix-scoped: it
+  contains the prefix-visible classification, authenticated grant reference,
+  and only causal/fork/live-revocation facts actionable at that position in the
+  canonical replay. A newly replayed event introduces later-discovered facts;
+  an unchanged prefix is reusable only when its handoffs are byte-identical to
+  those produced by a fresh full replay. Set-relative diagnostics do not
+  retroactively become AP transitions, while checkpoint authority outside the
+  live prefix remains explicit checkpoint/AP input.
 - **Rationale/evidence:** `VC-007`, `ORDER-004`, `PRIV-01`, `PRIV-03` and
   `PRIV-04` show that current topology and ordering behavior do not answer the
   protocol question safely. C0.2c compares four concrete families and selects
@@ -370,11 +378,20 @@ outcomes.
   suffix replay semantics. O-04/O-07 define checkpoint/genesis evidence; O-08
   bounds resources; O-10 names outcomes; O-06 still selects the exact digest
   registry/bytes.
+- **Executable falsification evidence:** the bounded, implementation-independent
+  C0.2d model and report in
+  `docs/protocol/styx-app-kernel-v0-causal-falsification-report.md` find no
+  counterexample within their declared envelope. They distinguish set-relative
+  graph diagnostics from prefix-scoped AP replay and do not constitute a proof
+  or conformance claim.
 - **Residual/reopen condition:** reopen if the executable causal model finds
   delivery-order divergence, bounded frontiers cannot preserve required
-  causality, rotation/revocation cannot reject stale authority, or checkpoints
-  cannot retain required fork evidence within a supported runtime envelope.
-- **Human ratification:** pending exact-final-HEAD approval under Issue #211.
+  causality, incremental handoffs diverge from full prefix-scoped replay,
+  rotation/revocation cannot reject stale authority, or checkpoints cannot
+  retain required fork evidence within a supported runtime envelope.
+- **Human ratification:** C0.2c topology approved under Issue #211; the C0.2d
+  executable evidence and prefix-scoped replay clarification remain pending
+  exact-final-HEAD approval under Issue #213.
 
 ### O-02 — Author, rotation and authorization binding
 
@@ -757,8 +774,9 @@ The smallest safe sequence is:
    routing identity and context identifiers;
 2. preserve the C0.2c O-01 chain/frontier topology, O-05 clock placement and
    O-06 semantic identifier-role separation;
-3. execute the bounded causal-flow simulator/formal falsification gate required
-   by C0.2c and reopen any disproved decision;
+3. retain and extend the bounded C0.2d causal-flow falsification model whenever
+   later choices change its inputs; its current small-state run found no
+   counterexample within bounds and does not replace formal proof;
 4. close payload, exact identifier derivation, genesis, cardinality and error
    questions O-04 and O-06 through O-10, plus O-12 for any time-bearing profile,
    without product implementation authority; retain O-11 for the later
