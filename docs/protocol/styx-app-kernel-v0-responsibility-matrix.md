@@ -1,14 +1,15 @@
 # Styx application protocol v0 — responsibility matrix
 
-- **Status:** C0.2a normative responsibility allocation, amended by C0.2b only
-  for the decided O-02/O-03 dependencies; not a protocol byte specification or
+- **Status:** C0.2a normative responsibility allocation, amended by C0.2b/C0.2c
+  only for decided dependencies; not a protocol byte specification or
   implementation claim.
-- **Authority:** Issues #207 and #209, ADR-0007 and
+- **Authority:** Issues #207, #209 and #211, ADR-0007 and
   `docs/security/STYX-THREAT-MODEL.md`.
 - **Evidence baseline:** `main @
   6409bc1b530622dfd592e4ebdb66e242f458b378`.
-- **Decision effect:** C0.2a closes O-09; C0.2b closes O-02 and O-03 without
-  changing ownership. O-01, O-04 through O-08 and O-10 through O-12 remain
+- **Decision effect:** C0.2a closes O-09; C0.2b closes O-02/O-03; C0.2c closes
+  O-01/O-05 and fixes O-06 semantic roles while exact derivation remains open.
+  Ownership is unchanged. O-04, O-06 through O-08 and O-10 through O-12 remain
   open.
 
 This matrix assigns each known normative obligation to exactly one owning
@@ -87,11 +88,11 @@ but the concrete rule is not yet selected.
 | `OB-K02` | Use versioned domain separation and unambiguous fixed/length framing for regenerated cryptographic transcripts | Validated semantic fields → transcript bytes | Decided by registry K-02 |
 | `OB-K03` | Admit only pinned byte grammars and reject repair, truncation, clamping, normalization and locale-dependent interpretation | Candidate scalar/bytes → canonical value or rejection | Decided by registry K-03 |
 | `OB-K04` | Enforce exact numeric signedness, width, range and non-wrapping arithmetic before state change | Numeric field → bounded integer or rejection | Decided by registry K-04; widths partly open |
-| `OB-K05` | Define causal representation and classify predecessor, concurrent, duplicate, missing-parent, replay and fork relationships | Authenticated object plus prior state → causal classification | O-01 open |
+| `OB-K05` | Define causal representation and classify predecessor, concurrent, duplicate, missing-parent, replay and fork relationships | Authenticated object plus prior state → causal classification | O-01 decided; executable falsification gate pending |
 | `OB-K06` | Derive deterministic total order only after causality and use a bytewise authenticated tiebreak | Concurrent authenticated objects → deterministic order | K-06 decided; O-06 open |
-| `OB-K07` | Define the purpose and authenticated derivation/binding of event, content and parent identifiers | Authenticated object fields → identifiers/references | O-06 open |
+| `OB-K07` | Define the purpose and authenticated derivation/binding of event, content and parent identifiers | Authenticated object fields → identifiers/references | O-06 roles fixed; exact transcript/digest derivation open |
 | `OB-K08` | Bind application/case context into every authoritative object and reject cross-context replay | Context plus candidate object → accepted context or rejection | O-03 decided; O-06/O-07 complete reference/genesis mechanics |
-| `OB-K09` | Define fresh deterministic genesis and initial authenticated authority inputs | Profile/context inputs → genesis object | K-09 and O-02/O-03 decided; O-01 and O-04–O-07 open |
+| `OB-K09` | Define fresh deterministic genesis and initial authenticated authority inputs | Profile/context inputs → genesis object | K-09 and O-01–O-03/O-05 decided; O-04/O-06/O-07 open |
 | `OB-K10` | Define payload commitment mechanics, bounded parsing and verifiability after permitted detachment/pruning | Payload input or retained commitment → verification result | O-04 open |
 | `OB-K11` | Distinguish empty, uninitialized and valid histories | Stored/input history → classified state | Decided by registry K-08; O-10 error code open |
 | `OB-K12` | Apply deterministic state-transition mechanics and hand semantically concurrent conflicts to `AP` without inventing universal business resolution | Valid authenticated object plus state → applied/rejected/conflict outcome | K-07 decided; profile schemas open |
@@ -99,7 +100,7 @@ but the concrete rule is not yet selected.
 | `OB-K14` | Preserve authenticated evidence across checkpoints, compaction and pruning according to a policy supplied by `AP` | Valid history plus authenticated policy request → verifiable transition | O-04 and later retention design open |
 | `OB-K15` | Reject legacy `styx-legacy-c0` objects as v1 and prevent implicit dual acceptance | Versioned object → v1 result or legacy rejection | Decided by registry K-10 |
 | `OB-K16` | Emit stable, bounded protocol outcomes required for safe caller behavior without leaking parser internals | Validation site → stable classified outcome | O-10 open |
-| `OB-K17` | Define physical-time semantics only if retained; never use ambient wall time as unbounded authority | Optional time input → bounded field or absence | K-05 decided conditionally; O-05/O-12 open |
+| `OB-K17` | Define physical-time semantics only if retained; never use ambient wall time as unbounded authority | Optional time input → bounded field or absence | O-05 removes kernel time; O-12 remains profile-conditional |
 
 ### 4.2 Application profile (`AP`)
 
@@ -206,20 +207,20 @@ It prevents a lower-layer success from bypassing an upper-layer security rule.
 
 ## 6. Decision allocation
 
-| Registry item | Decision owner | Required contributors | Status after C0.2b |
+| Registry item | Decision owner | Required contributors | Status after C0.2c |
 | --- | --- | --- | --- |
-| O-01 causal representation | `K` | `AP`, `RS`, `TR` supply conflict, resource and privacy requirements | Candidate topology comparison is not performed here. |
+| O-01 causal representation | `K` | `AP`, `RS`, `TR` supply conflict, resource and privacy requirements | **Decided:** per-credential author chain plus bounded authenticated causal-parent frontier; executable falsification gate pending. |
 | O-02 author/rotation/authorization binding | `AP` for authority semantics; `K` for authenticated binding mechanics | `SS`, `RS`, `PV` supply member, custody and operational constraints | **Decided:** context-local endpoint credential plus authenticated AP authorization state; account, session and bearer inputs remain separate. |
 | O-03 context/genesis binding | `K` for binding; `AP` for context-profile requirements | `SS`, `RS`, `TR` supply namespace and linkability constraints | **Decided:** protocol/profile tuple plus fresh 32-byte random context identifier, authenticated by genesis and all later objects. |
 | O-04 payload commitment/detachment | `K` | `AP` supplies retention/content requirements; `RS` supplies storage bounds | Raw versus digest-plus-length and detachment rules remain unevaluated. |
-| O-05 clock placement | `K` if kernel time is necessary; otherwise the owning profile | `AP`, `RS`, `TR` supply authorization, precision and privacy needs | Necessity relative to O-01 remains unproven. |
-| O-06 event/content identifiers | `K` | `AP`, `RS`, `TR` supply idempotency, storage and correlation requirements | Candidate identifier purposes and derivations remain unevaluated. |
-| O-07 genesis content | `K` | `AP` supplies initial policy/authority requirements | It depends on O-01 through O-06. |
+| O-05 clock placement | `K` if kernel time is necessary; otherwise the owning profile | `AP`, `RS`, `TR` supply authorization, precision and privacy needs | **Decided:** no HLC/physical time in K; optional purpose-bound time belongs to AP profiles. |
+| O-06 event/content identifiers | `K` | `AP`, `RS`, `TR` supply idempotency, storage and correlation requirements | Event, payload, AP, TR and RS roles are separated; exact event-reference bytes/digest registry remain open. |
+| O-07 genesis content | `K` | `AP` supplies initial policy/authority requirements | O-01/O-02/O-03/O-05 inputs are decided; O-04/O-06 remain. |
 | O-08 skew/cardinality/activation bounds | `AP` | `K`, `SS`, `RS`, `TR`, `PV` provide capability/resource envelopes | No first supported profile or runtime capacity evidence is selected. |
 | O-09 responsibility split | This document | All six layers | **Decided:** one kernel plus explicit profiles and the ownership rules in §§1–5. |
 | O-10 stable error taxonomy | `K` for protocol outcomes; each profile for its own typed failures | All consumers supply safe-recovery distinctions | Rejection-site inventory depends on the remaining object decisions. |
 | O-11 wire/storage encoding | Owner of each representation: `K` transcript regeneration; `RS` storage; `TR` envelope | Decoders and implementations supply surface evidence | No encoding comparison is performed here. |
-| O-12 physical-time details | Same owner selected by O-05 | `RS` and `TR` supply precision/lifetime/linkability evidence | Inapplicable only if O-05 removes physical time from every signed object. |
+| O-12 physical-time details | The time-bearing `AP` profile | `RS` and `TR` supply precision/lifetime/linkability evidence | Inapplicable to profiles without time; open for any profile retaining a signed time claim. |
 
 O-02 deliberately retains split ownership because “who may act” (`AP`) and “how
 that authority is cryptographically bound into the object” (`K`) are separate
@@ -301,10 +302,11 @@ Rejected alternatives are:
 - a product vertical redefining kernel acceptance to fit one workflow.
 
 Security consequence: a bypass at one layer cannot be legitimized by a success
-signal from another layer. Residual risk: event/content and genesis-reference
-identifiers, causal topology, payload commitment, bounds and errors remain open;
-O-02/O-03 semantics still lack executable transcript bytes, so this allocation
-alone is not executable protocol behavior.
+signal from another layer. Residual risk: exact event/content and
+genesis-reference derivation, payload commitment, bounds and errors remain
+open; O-01/O-02/O-03/O-05 semantics still lack executable transcript bytes, and
+the causal topology still requires its explicit falsification model, so this
+allocation alone is not executable protocol behavior.
 
 Reopen O-09 only if a future obligation cannot be assigned without violating
 the one-owner invariant, a new trust boundary requires a seventh normative

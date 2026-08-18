@@ -8,6 +8,8 @@
   `docs/protocol/styx-app-kernel-v0-responsibility-matrix.md`.
 - **C0.2b identity/context analysis:**
   `docs/protocol/styx-app-kernel-v0-identity-context-analysis.md`.
+- **C0.2c causal-topology analysis:**
+  `docs/protocol/styx-app-kernel-v0-causal-topology-analysis.md`.
 - **Language:** English is canonical for external, language-neutral protocol
   review. Translations are optional and non-normative.
 - **Ratification:** every `DECIDED` entry below is proposed until the product
@@ -329,29 +331,50 @@ outcomes.
 
 ### O-01 — Causal representation
 
-- **Status:** `OPEN`.
-- **Question:** sparse/dotted version vector, authenticated parent-hash DAG or
-  another bounded causal representation?
+- **Status:** `DECIDED`.
+- **Rule:** every non-genesis event SHALL authenticate a strictly increasing,
+  non-wrapping per-credential author sequence (zero for the first event and
+  incremented by exactly one thereafter), its separate direct author
+  predecessor and a canonical profile-bounded antichain of maximal causal-
+  parent event references; the parent frontier excludes the separately encoded
+  author predecessor. The first event has no author predecessor and causally
+  descends from its credential grant. Transitive reachability over both link
+  classes defines happens-before; absence of reachability in either direction
+  defines concurrency. Duplicate, missing-parent, stale and same-author
+  fork/equivocation outcomes are classified before AP evaluation.
+  Arrival order, relay order, storage order and wall time MUST NOT determine
+  causality. Among ready concurrent events, K-06 bytewise event-reference order
+  produces the deterministic replay schedule; `AP` alone decides semantic
+  conflict outcomes. That schedule is set-relative, not append-only finality: a
+  late admitted concurrent event can invalidate a previously projected suffix,
+  which a future implementation must replay or update with an algorithm proven
+  equivalent to full replay. Arrival order cannot freeze the old position, and
+  the current replay position alone proves neither authorization nor an
+  irreversible external effect.
 - **Rationale/evidence:** `VC-007`, `ORDER-004`, `PRIV-01`, `PRIV-03` and
   `PRIV-04` show that current topology and ordering behavior do not answer the
-  protocol question safely.
-- **Rejected alternatives:** inheriting the fixed two-party vector; selecting a
-  DAG or vector by implementation familiarity; treating a counter sum as
-  causality.
-- **Security/privacy:** the choice affects self-authentication, fork evidence,
-  participant enumeration, linkability, denial of service and convergence.
-- **Missing evidence:** an adversarial comparison over all required dimensions.
-- **Dependent artifact:** causal transcript fields, event identifiers and
-  ordering vectors.
-- **Smallest bounded follow-up:** compare self-authentication, dynamic
-  membership, offline concurrency, fork evidence, missing-parent recovery,
-  checkpoint/pruning behavior, byte growth, participant enumeration and
-  linkability, and deterministic convergence against the requirements in
-  `docs/platform/application-capability-model.md`, especially §5.10, §5.5 and
-  §5.3.
-- **Residual/closure condition:** close only when one bounded representation
-  satisfies the comparison and its failure modes are explicit.
-- **Human ratification:** pending final-HEAD acceptance that this remains open.
+  protocol question safely. C0.2c compares four concrete families and selects
+  the only candidate that combines dynamic endpoint credentials, concrete
+  authenticated parents and explicit per-author fork/gap evidence without a
+  stable participant vector.
+- **Rejected alternatives:** fixed/sparse vector; dotted vector; parent DAG
+  without an author chain; trusted sequencer, consensus, blockchain, counter
+  sum, arrival order or wall time as kernel causality.
+- **Security/privacy:** parent/frontier width and valid sibling fan-out require
+  profile limits. References reveal graph structure to authorized recipients
+  but need not enumerate inactive participants. A malicious author can omit an
+  observed cross-author parent, and a relay can conceal a branch; signatures
+  make claims attributable but not truthful.
+- **Dependent artifact:** author sequence, direct predecessor, canonical parent
+  frontier, derived event reference, causal/fork classifications and affected-
+  suffix replay semantics. O-04/O-07 define checkpoint/genesis evidence; O-08
+  bounds resources; O-10 names outcomes; O-06 still selects the exact digest
+  registry/bytes.
+- **Residual/reopen condition:** reopen if the executable causal model finds
+  delivery-order divergence, bounded frontiers cannot preserve required
+  causality, rotation/revocation cannot reject stale authority, or checkpoints
+  cannot retain required fork evidence within a supported runtime envelope.
+- **Human ratification:** pending exact-final-HEAD approval under Issue #211.
 
 ### O-02 — Author, rotation and authorization binding
 
@@ -465,43 +488,62 @@ outcomes.
 
 ### O-05 — Clock placement
 
-- **Status:** `OPEN`.
-- **Question:** does HLC remain in the signed kernel, move to a profile, or yield
-  to per-author sequence plus parent links?
+- **Status:** `DECIDED`.
+- **Rule:** v1 has no HLC or physical-time field in the semantic kernel. The
+  O-01 per-credential sequence and authenticated causal parents are the kernel
+  logical clock. An application profile may define an authenticated physical-
+  time claim for one named AP purpose, but that claim MUST NOT influence kernel
+  causality, deterministic order, credential authorization or freshness by
+  itself.
 - **Rationale/evidence:** `HLC-002` through `HLC-005`, `HLC-007`, `HLC-008` and
-  `PRIV-01` show that current clock representations are not safe authority.
+  `PRIV-01` show that current clock representations are not safe authority. The
+  C0.2c comparison finds no kernel purpose not already served by sequence and
+  reachability.
 - **Rejected alternatives:** retaining HLC by inertia; trusting wall time for
-  authorization; repairing malformed clock input.
-- **Security/privacy:** time can enable skew attacks, runtime fingerprinting and
-  unwanted activity correlation.
-- **Missing evidence:** authorization, replay, skew and privacy analysis
-  coordinated with O-01.
-- **Dependent artifact:** clock-field presence and ordering semantics.
-- **Smallest bounded follow-up:** compare the three placements under adversarial
-  replay, deterministic execution and the selected causal representation.
-- **Residual/closure condition:** close only when the clock has a necessary,
-  bounded role not duplicated by causality.
-- **Human ratification:** pending final-HEAD acceptance that this remains open.
+  authorization, freshness, causality or universal order; repairing malformed
+  clock input.
+- **Security/privacy:** removing kernel physical time eliminates skew authority
+  and one precision fingerprint. A profile that retains time still exposes its
+  declared precision/source and remains subject to K-05 and O-12.
+- **Dependent artifact:** author sequence and parent fields replace HLC in K.
+  O-12 applies only to profiles retaining a physical-time claim.
+- **Residual/reopen condition:** reopen only if a kernel invariant demonstrably
+  requires physical time and cannot be expressed through O-01 causality or AP
+  policy; convenience, display and arrival order are insufficient.
+- **Human ratification:** pending exact-final-HEAD approval under Issue #211.
 
 ### O-06 — Event/content identifier semantics
 
 - **Status:** `OPEN`.
-- **Question:** what are the event and content identifier semantics?
+- **Question:** which exact digest registry, transcript bytes and output width
+  complete the decided identifier-role separation?
+- **Selected semantic roles:** the event reference is a domain-separated digest
+  derived from the canonical signed semantic transcript, excluding signature
+  bytes and any carried identifier. After signature validation it serves only
+  as parent reference, exact duplicate key and K-06 concurrent tiebreak. O-04
+  owns the distinct payload/content commitment. An AP idempotency key, TR
+  routing identifier and RS storage key remain separate owned values and MUST
+  NOT substitute for event identity.
 - **Rationale/evidence:** `ORDER-004`, `PRIV-01`, `PRIV-03` and `PRIV-04` show
-  that identifiers and fork inputs cannot remain mutable conveniences.
+  that identifiers and fork inputs cannot remain mutable conveniences. C0.2c
+  establishes a non-circular semantic derivation and one purpose per identifier
+  without authorizing exact bytes or an algorithm choice.
 - **Rejected alternatives:** unsigned random identifiers influencing protocol
-  behavior; treating a content hash and signed-object hash as interchangeable.
+  behavior; treating payload/content, event, idempotency, routing and storage
+  identifiers as interchangeable; including signature bytes in event identity.
 - **Security/privacy:** identifiers affect deduplication, replay, fork evidence,
-  reference integrity and correlation.
-- **Missing evidence:** comparison of content hash, signed-object hash and a
-  separate random identifier.
-- **Dependent artifact:** event identifier, ordering tiebreak and fork
-  references.
-- **Smallest bounded follow-up:** compare the candidates for every use and apply
-  K-01 to each influential identifier.
-- **Residual/closure condition:** close only when each identifier has one stated
-  purpose and authenticated derivation or binding.
-- **Human ratification:** pending final-HEAD acceptance that this remains open.
+  reference integrity and correlation. Event references stay inside protected
+  application objects unless a later profile explicitly accepts disclosure.
+- **Missing evidence:** exact K-02 transcript bytes, digest algorithm registry,
+  output width and O-04 payload-commitment interaction.
+- **Dependent artifact:** exact event-reference derivation and negative vectors.
+- **Smallest bounded follow-up:** close O-04, then specify and adversarially test
+  the exact non-circular event-reference bytes and registry.
+- **Residual/closure condition:** close only when semantically distinct valid
+  events cannot share a reference under the selected registry and every exact
+  field has one unambiguous derivation.
+- **Human ratification:** pending exact-final-HEAD acceptance under Issue #211
+  that the semantic roles are fixed while exact derivation remains open.
 
 ### O-07 — Genesis content
 
@@ -701,29 +743,30 @@ also be transcript-bound and locally evaluated under the application's policy.
 
 ## 6. Gate for C0.3 and exact next sequence
 
-**C0.3 verdict: `NO-GO`.** O-01, O-04 through O-08 and O-10 contain choices
-required to derive normative bytes or adversarial expectations. O-12 is
-additionally blocking if v1 retains a physical-time field in any signed object,
-whether in the kernel or in a profile; only if O-05 removes physical time
-entirely does O-12 become inapplicable and contribute no transcript field. O-11
-intentionally does not block a transcript-only C0.3 corpus. Starting that corpus
-now would freeze the remaining guesses and create cost pressure on later human
-decisions.
+**C0.3 verdict: `NO-GO`.** O-04, O-06 through O-08 and O-10 still contain
+choices required to derive normative bytes or adversarial expectations. O-12
+is additionally blocking for any profile that retains a physical-time claim;
+it is inapplicable only to profiles that omit physical time. O-11 intentionally
+does not block a transcript-only C0.3 corpus. Starting that corpus now would
+freeze the remaining guesses and create cost pressure on later human decisions.
 
 The smallest safe sequence is:
 
 1. preserve the completed O-09 responsibility split and the C0.2b O-02/O-03
    separation of application authority, author credentials, session identity,
    routing identity and context identifiers;
-2. run the adversarial causal-topology probe for O-01, coordinated with O-05,
-   O-06 and the decided identity/context privacy constraints;
-3. close payload, genesis, clock, cardinality and error questions O-04 through
-   O-10, plus O-12 unless O-05 removes physical time entirely, without
-   implementation authority; retain O-11 for the later wire/storage decision;
-4. approve the exact Apache-2.0 path inventory for the future corpus;
-5. execute C0.3: specification-derived adversarial corpus plus a third
+2. preserve the C0.2c O-01 chain/frontier topology, O-05 clock placement and
+   O-06 semantic identifier-role separation;
+3. execute the bounded causal-flow simulator/formal falsification gate required
+   by C0.2c and reopen any disproved decision;
+4. close payload, exact identifier derivation, genesis, cardinality and error
+   questions O-04 and O-06 through O-10, plus O-12 for any time-bearing profile,
+   without product implementation authority; retain O-11 for the later
+   wire/storage decision;
+5. approve the exact Apache-2.0 path inventory for the future corpus;
+6. execute C0.3: specification-derived adversarial corpus plus a third
    implementation written only from the specification;
-6. align JavaScript in C0.4; align or freeze the minimum Dart surface only if it
+7. align JavaScript in C0.4; align or freeze the minimum Dart surface only if it
    remains useful as independent evidence.
 
 No supported Phase B adapter may persist current application-ledger objects
