@@ -3,6 +3,9 @@
 - **Status:** non-stable decision registry; not a protocol specification.
 - **Authority:** Issue #205 and ADR-0007.
 - **Evidence base:** C0.1 at `2815cd5891ca2233bd60e91cb7858d8a8f9777df`.
+- **C0.2a boundary model:**
+  `docs/security/STYX-THREAT-MODEL.md` and
+  `docs/protocol/styx-app-kernel-v0-responsibility-matrix.md`.
 - **Language:** English is canonical for external, language-neutral protocol
   review. Translations are optional and non-normative.
 - **Ratification:** every `DECIDED` entry below is proposed until the product
@@ -363,11 +366,14 @@ outcomes.
   identity by default.
 - **Security/privacy:** a wrong choice permits role escalation, impersonation or
   cross-context linkage.
-- **Missing evidence:** a credential, rotation and revocation threat model for
-  case-ephemeral, organization-role and device identities.
+- **Missing evidence:** C0.2a now defines the relevant actors, compromise
+  boundary and split between application authorization and kernel binding. A
+  comparison of concrete credential, rotation and revocation constructions for
+  case-ephemeral, organization-role and device identities is still missing.
 - **Dependent artifact:** author and credential-binding transcript fields.
-- **Smallest bounded follow-up:** produce the threat model and transcript
-  inventory, including cross-context negative cases on paper.
+- **Smallest bounded follow-up:** compare candidate credential and rotation
+  constructions against the C0.2a threat model, then produce the authenticated
+  transcript inventory and cross-context negative cases on paper.
 - **Residual/closure condition:** close only when possession, authorization,
   rotation, revocation and linkability have separate verified rules.
 - **Human ratification:** pending final-HEAD acceptance that this remains open.
@@ -388,10 +394,13 @@ outcomes.
   uniqueness, replay and linkability analysis.
 - **Security/privacy:** the construction controls cross-context replay,
   uniqueness and linkability.
-- **Missing evidence:** collision, uniqueness, unlinkability and replay analysis.
+- **Missing evidence:** C0.2a now identifies the context-separation owners and
+  metadata observers. Collision, uniqueness, unlinkability and replay analysis
+  of concrete context-identifier candidates is still missing.
 - **Dependent artifact:** domain tag, context field and genesis transcript.
 - **Smallest bounded follow-up:** analyze candidate identifiers against the
-  application-context and unlinkability requirements in §5.1 and §5.3 of
+  C0.2a trust boundaries and the application-context and unlinkability
+  requirements in §5.1 and §5.3 of
   `docs/platform/application-capability-model.md`.
 - **Residual/closure condition:** close only with deterministic binding and
   explicit cross-context rejection rules.
@@ -492,38 +501,57 @@ outcomes.
   actors or skew; silent degradation outside tested profiles.
 - **Security/privacy:** bounds affect denial of service, metadata exposure and
   whether a runtime can enforce the profile safely.
-- **Missing evidence:** runtime-envelope and vertical-role capacity analysis.
+- **Missing evidence:** C0.2a assigns activation bounds to the application
+  profile and requires capability/resource envelopes from the other layers.
+  Concrete runtime-envelope and vertical-role capacity measurements are still
+  missing.
 - **Dependent artifact:** first supported profile and any later N-party profile.
-- **Smallest bounded follow-up:** evaluate explicit exhaustion, skew and denial-
-  of-service cases without leaking profile choices into the kernel.
+- **Smallest bounded follow-up:** measure the intended runtime/session/transport
+  envelopes, then evaluate explicit exhaustion, skew and denial-of-service
+  cases without leaking profile choices into the kernel.
 - **Residual/closure condition:** close only with enforceable limits and explicit
   out-of-profile rejection.
 - **Human ratification:** pending final-HEAD acceptance that this remains open.
 
 ### O-09 — Kernel/profile responsibility split
 
-- **Status:** `OPEN`.
-- **Question:** is the specification factored into one kernel plus profiles, and
-  which obligations belong to each?
+- **Status:** `DECIDED`.
+- **Rule:** the specification SHALL be factored into one Styx application
+  semantic kernel plus separately versioned application, secure-session,
+  runtime/storage, transport/routing and product/organizational profiles. Every
+  normative obligation MUST have exactly one owning layer and explicit
+  cross-layer inputs and outputs. A profile MUST NOT weaken or redefine a
+  kernel invariant, and a success signal from one layer MUST NOT satisfy a
+  different layer's gate.
 - **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` corroborate the need
   to separate protocol, secure-session, runtime and vertical authority.
 - **Normative rationale:** §1, §3, §4 and §5 of
   `docs/architecture/decisions/ADR-0007-application-protocol-authority.md`
-  already assign application-protocol, secure-session, runtime and vertical
-  authorities at the architectural level. What remains open is the
-  specification-level obligation matrix within and across those layers, which
-  must prevent duplicate or ownerless rules.
-- **Rejected alternatives:** duplicate ownership; ownerless rules; allowing a
-  runtime or product vertical to redefine kernel acceptance.
+  assign application-protocol, secure-session, runtime and vertical authority
+  at the architectural level. The C0.2a responsibility matrix completes the
+  specification-level allocation and the threat model supplies its adversary
+  and trust-boundary inputs.
+- **Evidence:**
+  `docs/protocol/styx-app-kernel-v0-responsibility-matrix.md` assigns the known
+  obligations to one owner and defines the required boundary contracts;
+  `docs/security/STYX-THREAT-MODEL.md` defines the assets, adversaries,
+  assumptions, visible information and required failure outcomes that the
+  allocation must cover.
+- **Rejected alternatives:** a monolithic core; duplicate ownership; ownerless
+  rules; allowing a runtime or product vertical to redefine kernel acceptance;
+  treating session membership, signature validity, durable storage or relay
+  publication as application authorization or human delivery.
 - **Security/privacy:** misplaced rules create bypasses and inconsistent
-  security claims across runtimes.
-- **Missing evidence:** a complete responsibility matrix.
+  security claims across runtimes. The one-owner rule prevents lower-layer
+  success from bypassing application validation while keeping product policy
+  out of the semantic kernel.
 - **Dependent artifact:** conformance target structure and profile documents.
-- **Smallest bounded follow-up:** assign every known obligation to exactly one
-  layer and reject overlaps or gaps.
-- **Residual/closure condition:** close only when every normative rule has one
-  owner and explicit cross-layer inputs.
-- **Human ratification:** pending final-HEAD acceptance that this remains open.
+- **Residual/reopen condition:** reopen if a future obligation cannot be
+  assigned without violating the one-owner invariant, a new trust boundary
+  requires another normative owner, or implementation evidence shows that the
+  required validation/state-change order cannot be preserved.
+- **Human ratification:** pending final-HEAD approval by `maverde73` and
+  independent approval by `manexada` under Issue #207.
 
 ### O-10 — Stable protocol-error taxonomy
 
@@ -641,7 +669,7 @@ also be transcript-bound and locally evaluated under the application's policy.
 
 ## 6. Gate for C0.3 and exact next sequence
 
-**C0.3 verdict: `NO-GO`.** O-01 through O-10 contain choices required to derive
+**C0.3 verdict: `NO-GO`.** O-01 through O-08 and O-10 contain choices required to derive
 normative bytes or adversarial expectations. O-12 is additionally blocking if
 v1 retains a physical-time field in any signed object, whether in the kernel or
 in a profile; only if O-05 removes physical time entirely does O-12 become
@@ -651,8 +679,9 @@ remaining guesses and create cost pressure on later human decisions.
 
 The smallest safe sequence is:
 
-1. decide O-02, O-03 and O-09 through a signed-envelope responsibility and
-   identity/context threat-model task;
+1. use the completed O-09 responsibility split and C0.2a threat model to decide
+   O-02 and O-03 without merging application authority into cryptographic
+   identity or context identifiers;
 2. run the adversarial causal-topology probe for O-01, coordinated with O-05,
    O-06 and the privacy conclusions from step 1;
 3. close payload, genesis, clock, cardinality and error questions O-04 through
