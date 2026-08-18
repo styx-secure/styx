@@ -6,6 +6,8 @@
 - **C0.2a boundary model:**
   `docs/security/STYX-THREAT-MODEL.md` and
   `docs/protocol/styx-app-kernel-v0-responsibility-matrix.md`.
+- **C0.2b identity/context analysis:**
+  `docs/protocol/styx-app-kernel-v0-identity-context-analysis.md`.
 - **Language:** English is canonical for external, language-neutral protocol
   review. Translations are optional and non-normative.
 - **Ratification:** every `DECIDED` entry below is proposed until the product
@@ -353,58 +355,88 @@ outcomes.
 
 ### O-02 — Author, rotation and authorization binding
 
-- **Status:** `OPEN`.
-- **Question:** how are authors represented per context, rotated and proven
-  authorized?
+- **Status:** `DECIDED`.
+- **Rule:** every authoring endpoint SHALL use a distinct context-local signing
+  credential. Its authenticated grant binds one credential identifier and
+  verification key to one application-context tuple and bounded application
+  authority. `K` verifies the signed binding; `AP` evaluates authority in the
+  authenticated predecessor state. Key possession, signature validity, MLS
+  membership, Nostr identity, durability, delivery and human assignment MUST
+  NOT substitute for application authorization. Persistent-account proofs and
+  anonymous return capabilities are optional profile inputs, not universal
+  authors. Rotation creates a new credential and retires the old one through an
+  authorized transition; recovery MUST NOT resurrect revoked authority.
 - **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` distinguish key
-  possession from authorization and show why author semantics must be bound.
+  possession from authorization. The C0.2b analysis compares five
+  constructions and selects the only candidate that preserves endpoint-specific
+  revocation, transport/session neutrality and case-ephemeral profiles while
+  keeping application authority explicit.
 - **Normative rationale:** identity profiles, authorization and delegation, and
   compromise-response requirements are defined in §5.2, §5.6 and §5.13 of
-  `docs/platform/application-capability-model.md`.
-- **Rejected alternatives:** treating a supplied verification key as sufficient
-  role authority; unauthenticated author metadata; one globally linkable
-  identity by default.
-- **Security/privacy:** a wrong choice permits role escalation, impersonation or
-  cross-context linkage.
-- **Missing evidence:** C0.2a now defines the relevant actors, compromise
-  boundary and split between application authorization and kernel binding. A
-  comparison of concrete credential, rotation and revocation constructions for
-  case-ephemeral, organization-role and device identities is still missing.
-- **Dependent artifact:** author and credential-binding transcript fields.
-- **Smallest bounded follow-up:** compare candidate credential and rotation
-  constructions against the C0.2a threat model, then produce the authenticated
-  transcript inventory and cross-context negative cases on paper.
-- **Residual/closure condition:** close only when possession, authorization,
-  rotation, revocation and linkability have separate verified rules.
-- **Human ratification:** pending final-HEAD acceptance that this remains open.
+  `docs/platform/application-capability-model.md`; owned boundaries are defined
+  by `OB-AP02`, `OB-AP09`, `OB-K01`, `OB-SS01` and `OB-RS01`.
+- **External boundary evidence:** RFC 9420 §5.3 leaves application identifiers
+  and reference-identifier policy to the application. The exact pinned Marmot
+  account-identity proof binds a Nostr account to an MLS leaf key but explicitly
+  does not authorize group admission or continued membership. Neither defines
+  Styx application authority.
+- **Rejected alternatives:** durable account key as universal author; MLS leaf
+  or immediate session sender as application author; self-asserted key plus role
+  text; bearer capability as the general author.
+- **Security/privacy:** context-local credentials limit normal key reuse and
+  allow independent device revocation, but do not prevent linkability through
+  routing, storage, recovery, notifications or user behavior. A compromised
+  valid credential retains its granted authority until revocation becomes
+  effective.
+- **Dependent artifact:** credential identifier, verification-key/algorithm
+  binding, grant/state reference and negative vectors. O-01 defines concurrent
+  and stale ordering; O-05/O-12 gate physical expiry; O-06 defines references;
+  O-07 defines initial authority; O-08 bounds resources; O-10 names failures.
+- **Residual/reopen condition:** reopen if O-01 cannot express safe
+  rotation/revocation, a required profile cannot use context-local credentials,
+  the `AP → K` split permits an authorization bypass, or an approved anonymous
+  profile requires bearer-only authorship.
+- **Human ratification:** pending exact-final-HEAD approval under Issue #209.
 
 ### O-03 — Application/case context and genesis binding
 
-- **Status:** `OPEN`.
-- **Question:** what is the application/case context identifier and how is it
-  bound to genesis?
+- **Status:** `DECIDED`.
+- **Rule:** the authoritative application/case context SHALL be the tuple of
+  Styx protocol version, application-profile identifier,
+  application-profile version and an exactly 32-byte fresh random context
+  identifier generated by the declared runtime CSPRNG. The random identifier
+  MUST NOT be derived from identity, personal data, time, transport, session,
+  storage names or counters and MUST NOT be reused. Genesis and every later
+  authoritative object MUST authenticate the complete tuple; every later object
+  also authenticates an unambiguous reference or commitment to that genesis.
+  Cross-tuple objects are rejected.
 - **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` corroborate the need
-  for explicit context separation; C0.1 contains no sufficient context-
-  identifier evidence.
+  for explicit context separation. The C0.2b comparison rejects ambient,
+  account, organization, MLS, Nostr and complete-genesis-derived identifiers;
+  the selected tuple separates protocol/profile versioning from opaque random
+  case uniqueness without exposing a global identity.
 - **Normative rationale:** the application-context and unlinkability
   requirements are defined in §5.1 and §5.3 of
-  `docs/platform/application-capability-model.md`.
-- **Rejected alternatives:** an ambient database name; an unsigned label;
-  reusing an account identifier as the case identifier without the required
-  uniqueness, replay and linkability analysis.
-- **Security/privacy:** the construction controls cross-context replay,
-  uniqueness and linkability.
-- **Missing evidence:** C0.2a now identifies the context-separation owners and
-  metadata observers. Collision, uniqueness, unlinkability and replay analysis
-  of concrete context-identifier candidates is still missing.
-- **Dependent artifact:** domain tag, context field and genesis transcript.
-- **Smallest bounded follow-up:** analyze candidate identifiers against the
-  C0.2a trust boundaries and the application-context and unlinkability
-  requirements in §5.1 and §5.3 of
-  `docs/platform/application-capability-model.md`.
-- **Residual/closure condition:** close only with deterministic binding and
-  explicit cross-context rejection rules.
-- **Human ratification:** pending final-HEAD acceptance that this remains open.
+  `docs/platform/application-capability-model.md`; `OB-K08`, `OB-K09`,
+  `OB-AP03`, `OB-RS02` and `OB-TR02` retain their separate ownership.
+- **Rejected alternatives:** ambient account, organization, database or
+  deployment identifiers; MLS group IDs or Nostr/routing handles; the complete
+  genesis hash as the context identifier; a raw random value without explicit
+  protocol and application-profile separation.
+- **Security/privacy:** 32 random bytes make accidental collision negligible
+  under the declared CSPRNG assumption, not impossible. The tuple is not an
+  anonymity mechanism if exposed, logged or reused as a routing handle. A
+  compromised RNG or external metadata mapping remains outside this rule.
+- **Dependent artifact:** the context tuple enters the genesis and application
+  object transcripts. O-06 chooses the exact genesis-reference semantics; O-07
+  completes genesis content. `SS`, `RS` and `TR` bind their own namespaces and
+  MUST NOT silently publish or substitute the application tuple.
+- **Residual/reopen condition:** reopen if O-06/O-07 cannot provide an
+  unambiguous authenticated genesis binding, a supported runtime cannot provide
+  the required random input, a supported discovery profile requires a public
+  deterministic context handle, or negative vectors accept cross-profile or
+  cross-context replay.
+- **Human ratification:** pending exact-final-HEAD approval under Issue #209.
 
 ### O-04 — Payload commitment and detachment
 
@@ -669,21 +701,22 @@ also be transcript-bound and locally evaluated under the application's policy.
 
 ## 6. Gate for C0.3 and exact next sequence
 
-**C0.3 verdict: `NO-GO`.** O-01 through O-08 and O-10 contain choices required to derive
-normative bytes or adversarial expectations. O-12 is additionally blocking if
-v1 retains a physical-time field in any signed object, whether in the kernel or
-in a profile; only if O-05 removes physical time entirely does O-12 become
-inapplicable and contribute no transcript field. O-11 intentionally does not
-block a transcript-only C0.3 corpus. Starting that corpus now would freeze the
-remaining guesses and create cost pressure on later human decisions.
+**C0.3 verdict: `NO-GO`.** O-01, O-04 through O-08 and O-10 contain choices
+required to derive normative bytes or adversarial expectations. O-12 is
+additionally blocking if v1 retains a physical-time field in any signed object,
+whether in the kernel or in a profile; only if O-05 removes physical time
+entirely does O-12 become inapplicable and contribute no transcript field. O-11
+intentionally does not block a transcript-only C0.3 corpus. Starting that corpus
+now would freeze the remaining guesses and create cost pressure on later human
+decisions.
 
 The smallest safe sequence is:
 
-1. use the completed O-09 responsibility split and C0.2a threat model to decide
-   O-02 and O-03 without merging application authority into cryptographic
-   identity or context identifiers;
+1. preserve the completed O-09 responsibility split and the C0.2b O-02/O-03
+   separation of application authority, author credentials, session identity,
+   routing identity and context identifiers;
 2. run the adversarial causal-topology probe for O-01, coordinated with O-05,
-   O-06 and the privacy conclusions from step 1;
+   O-06 and the decided identity/context privacy constraints;
 3. close payload, genesis, clock, cardinality and error questions O-04 through
    O-10, plus O-12 unless O-05 removes physical time entirely, without
    implementation authority; retain O-11 for the later wire/storage decision;
