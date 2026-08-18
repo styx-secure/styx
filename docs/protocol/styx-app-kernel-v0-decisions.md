@@ -345,7 +345,12 @@ outcomes.
   Arrival order, relay order, storage order and wall time MUST NOT determine
   causality. Among ready concurrent events, K-06 bytewise event-reference order
   produces the deterministic replay schedule; `AP` alone decides semantic
-  conflict outcomes.
+  conflict outcomes. That schedule is set-relative, not append-only finality: a
+  late admitted concurrent event can invalidate a previously projected suffix,
+  which a future implementation must replay or update with an algorithm proven
+  equivalent to full replay. Arrival order cannot freeze the old position, and
+  the current replay position alone proves neither authorization nor an
+  irreversible external effect.
 - **Rationale/evidence:** `VC-007`, `ORDER-004`, `PRIV-01`, `PRIV-03` and
   `PRIV-04` show that current topology and ordering behavior do not answer the
   protocol question safely. C0.2c compares four concrete families and selects
@@ -361,9 +366,10 @@ outcomes.
   observed cross-author parent, and a relay can conceal a branch; signatures
   make claims attributable but not truthful.
 - **Dependent artifact:** author sequence, direct predecessor, canonical parent
-  frontier, derived event reference and causal/fork classifications. O-04/O-07
-  define checkpoint/genesis evidence; O-08 bounds resources; O-10 names
-  outcomes; O-06 still selects the exact digest registry/bytes.
+  frontier, derived event reference, causal/fork classifications and affected-
+  suffix replay semantics. O-04/O-07 define checkpoint/genesis evidence; O-08
+  bounds resources; O-10 names outcomes; O-06 still selects the exact digest
+  registry/bytes.
 - **Residual/reopen condition:** reopen if the executable causal model finds
   delivery-order divergence, bounded frontiers cannot preserve required
   causality, rotation/revocation cannot reject stale authority, or checkpoints

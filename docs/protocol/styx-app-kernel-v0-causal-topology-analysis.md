@@ -269,6 +269,17 @@ Given the same validated event set, accepted checkpoint/profile inputs and
 cryptographic registry, replicas derive the same graph and order. This is a
 design invariant to be tested, not an implementation claim.
 
+The canonical order is a pure function of that complete input set, not an
+append-only finality claim. A newly admitted concurrent event whose reference
+sorts before an already projected event can change the previously derived
+suffix. A future implementation therefore MUST replay from the earliest
+affected authenticated boundary, or use an incremental algorithm proven
+equivalent to full replay. Arrival cannot freeze the old position. Until a
+separately approved profile defines stronger finality evidence, `AP` and `PV`
+MUST NOT infer authorization, delivery or an irreversible external effect from
+the current replay position alone. This obligation does not select RS
+persistence or external-effect mechanics here.
+
 ### 6.4 Fork and malicious-author limits
 
 Two distinct events with the same credential and sequence, or two distinct
@@ -357,6 +368,7 @@ grant/genesis ancestry for the illustrated credentials.
 | Malicious fan-out | event supplies duplicate, ancestor-redundant or excessive parents | Reject canonicality/resource violation before AP state change |
 | Cross-context parent | parent reference resolves to another O-03 tuple | Reject context binding |
 | Late branch after checkpoint | late event depends on pruned history | Accept only with sufficient authenticated checkpoint proof; otherwise stale |
+| Late concurrent insertion | A is projected, then concurrent B arrives with a lower event reference | Recompute the affected suffix; result equals full replay over A+B, never arrival-order append |
 | Delivery permutation | replicas receive the same valid bounded set in different orders | Same graph, fork flags and deterministic topological order |
 
 ## 10. Checkpoint, pruning and rollback obligations
@@ -424,19 +436,22 @@ Minimum input:
 
 - closed synthetic contexts, credentials, grants/revocations and events;
 - parent sets, author predecessor/sequence and deterministic reference bytes;
-- delivery permutations, checkpoint horizons and bounded resource profiles;
+- delivery prefixes, late concurrent insertions, permutations, checkpoint
+  horizons and bounded resource profiles;
 - adversarial duplicate, omission, fork, gap, fan-out and rollback operations.
 
 Minimum output:
 
 - validation/classification for every event;
 - causal graph, ready sets, deterministic topological order and AP handoff;
+- earliest affected replay boundary for every late admitted event;
 - retained checkpoint evidence and explicit unavailable/stale states; and
 - machine-checkable invariant failures with minimal traces.
 
 It must test set/order convergence, acyclicity, author-sequence monotonicity,
-fork visibility, no state change on missing evidence, context separation,
-arrival/time independence, bounded work and preservation of AP/K ownership.
+fork visibility, equivalence of incremental suffix replay to full replay, no
+state change on missing evidence, context separation, arrival/time
+independence, bounded work and preservation of AP/K ownership.
 This follow-up is a falsification gate: a counterexample reopens the affected
 decision rather than being patched around.
 
