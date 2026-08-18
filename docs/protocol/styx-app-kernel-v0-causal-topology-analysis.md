@@ -97,6 +97,10 @@ These works do not define Styx authorization, retention or application policy.
 - **Checkpoint/compaction boundary:** an authenticated transition that commits
   the exact evidence retained for future validation while allowing older
   material to become unavailable under a later retention design.
+- **Affected replay boundary:** the first position where the canonical order
+  over a prior validated set differs from the order over an expanded validated
+  set, or the end of the prior order when it remains an exact prefix. It names
+  the earliest replay point, not a checkpoint or finality claim.
 
 A signed causal claim proves what the credential asserted. It cannot prove that
 a malicious endpoint truthfully disclosed every event it had observed.
@@ -273,8 +277,8 @@ The canonical order is a pure function of that complete input set, not an
 append-only finality claim. A newly admitted concurrent event whose reference
 sorts before an already projected event can change the previously derived
 suffix. A future implementation therefore MUST replay from the earliest
-affected authenticated boundary, or use an incremental algorithm proven
-equivalent to full replay. Arrival cannot freeze the old position. Until a
+affected replay boundary, or use an incremental algorithm proven equivalent to
+full replay. Arrival cannot freeze the old position. Until a
 separately approved profile defines stronger finality evidence, `AP` and `PV`
 MUST NOT infer authorization, delivery or an irreversible external effect from
 the current replay position alone. This obligation does not select RS
@@ -438,6 +442,8 @@ Minimum input:
 - parent sets, author predecessor/sequence and deterministic reference bytes;
 - delivery prefixes, late concurrent insertions, permutations, checkpoint
   horizons and bounded resource profiles;
+- three-or-more-event mixed causal/concurrent late insertions, late forks and
+  late events that leave the prior order as an exact prefix; and
 - adversarial duplicate, omission, fork, gap, fan-out and rollback operations.
 
 Minimum output:
