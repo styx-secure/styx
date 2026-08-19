@@ -323,6 +323,40 @@ def extend_required_suite(suite: object) -> None:
         trace=(required, later),
         obligation="C0.2f-03",
     )
+    final_snapshot = resumed.snapshots[-1]
+    forged_snapshot = replace(
+        final_snapshot,
+        states=tuple(
+            (
+                reference,
+                replace(state, retention=RetentionState.LOGICALLY_REMOVED),
+            )
+            if reference == required.reference
+            else (reference, state)
+            for reference, state in final_snapshot.states
+        ),
+    )
+    forged_resumed = replace(
+        resumed,
+        snapshots=(*resumed.snapshots[:-1], forged_snapshot),
+    )
+    suite.check_raises(
+        "incremental replay rejects a count-preserving forged old evaluation",
+        lambda: payload.incremental(
+            causal_chain,
+            causal_chain,
+            forged_resumed,
+            chain_records,
+            chain_records,
+            new_observations,
+            new_observations,
+            {},
+            {},
+        ),
+        family="payload-replay-equivalence",
+        trace=(required, later),
+        obligation="C0.2f-03",
+    )
     halt_target = first(b"h0", b"a", GRANT_A)
     halt_required = first(
         b"h1", b"b", GRANT_B, parents=(halt_target.reference,)

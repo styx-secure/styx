@@ -8,7 +8,7 @@ Model: `styx.causal-flow-simulator/v1`
 
 Report schema: `styx.causal-flow-falsification-report/v1`
 
-Machine report SHA-256: `e53f3be6d70bbd687dccb315a348a17cd65a3d7a9e8e0613b55bf54be68f6e5f`
+Machine report SHA-256: `bd72556ce14e38a074dcac61060f77af85bef4d4e8cab0365bd9cbc8abfe34d4`
 
 The exact final candidate HEAD is recorded in immutable PR evidence and in the
 independent exact-HEAD review reports; a tracked file cannot self-identify the
@@ -19,7 +19,7 @@ Issue: [#217](https://github.com/styx-secure/styx/issues/217)
 ## 1. Outcome and claim boundary
 
 The dependency-free C0.2d/C0.2f reference model found no counterexample within
-its declared small-state envelope. The required run performed 84 invariant
+its declared small-state envelope. The required run performed 85 invariant
 evaluations over 37 hostile scenario families, 78 causal/payload exploration
 traces and 54 explicit payload-axis cases. All sixteen obligations in §9 of the
 [O-04 analysis](styx-app-kernel-v0-payload-commitment-analysis.md) are present
@@ -110,7 +110,7 @@ These are falsification bounds, not O-08 production limits.
 
 The report contains one record for every identifier `C0.2f-01` through
 `C0.2f-16`. Obligation 16 has four independent checks; obligations 2, 12, 14
-and 15 each have three; obligations 5, 6, 9, 10 and 11 each have two; every
+and 15 each have three; obligations 3, 5, 6, 9, 10 and 11 each have two; every
 other obligation has one. All records report `passed: true`.
 
 The final machine verdict is:
@@ -163,7 +163,22 @@ fold remains safe only because checkpoint evidence is structurally ignored as
 consumer state; O-07 must preserve or independently justify that boundary.
 O-07 must also decide whether an empty checkpoint horizon is legal and must not
 treat a causally closed horizon as a linear-order resume point without
-accounting for earlier concurrent events in the canonical order.
+accounting for earlier concurrent events in the canonical order. It must also
+decide whether checkpoint horizons may name fork-classified events.
+
+The 54-case closed-axis product classifies every legal and illegal O-04 section
+5.4 payload-axis combination against a single-event causal evaluation. This is
+an explicit bounded narrowing of section 9 obligation 5's "under all delivery
+orders" qualifier: axis validation is event-local and order-independent in this
+model, while multi-order behavior is exercised by the separate causal and
+replay-equivalence families.
+
+`consumer_substitution` is a structural false value in the v0 checkpoint
+assessment and is not independent evidence by itself. The substantive
+non-substitution evidence is the equality of AP projections with and without
+otherwise admissible checkpoint evidence, together with hostile mutations that
+make checkpoint state affect consumer replay and are retained as
+counterexamples.
 
 The repository CI does not yet invoke this bounded gate. Adding an exact
 deterministic CI invocation requires a separately approved workflow change;

@@ -360,8 +360,16 @@ class ReplayAvailabilityTest(unittest.TestCase):
         records = (record(event.reference, ContentClass.REQUIRED, b"req"),)
         observations = {event.reference: VERIFIED}
         old = PayloadModel().evaluate(causal, records, observations, {})
-        forged = replace(old, snapshots=())
-        with self.assertRaises(ModelInputError):
+        snapshot = old.snapshots[0]
+        reference, state = snapshot.states[0]
+        forged_snapshot = replace(
+            snapshot,
+            states=((reference, replace(state, retention=RetentionState.LOGICALLY_REMOVED)),),
+        )
+        forged = replace(old, snapshots=(forged_snapshot,))
+        with self.assertRaisesRegex(
+            ModelInputError, "old payload evaluation does not match validated inputs"
+        ):
             PayloadModel().incremental(
                 causal,
                 causal,
@@ -865,6 +873,40 @@ class PayloadBoundsTest(unittest.TestCase):
         with self.assertRaises(ModelInputError):
             PayloadModel(PayloadProfile(max_input_bytes=8)).evaluate(
                 causal, records, {event.reference: VERIFIED}, {}
+            )
+
+    def test_duplicate_records_and_non_boolean_authorization_fail_closed(self):
+        target = first(b"t0", b"a", GRANT_A)
+        directive = next_event(
+            b"d0", b"a", 1, target.reference, kind="remove"
+        )
+        causal = model().evaluate((directive, target))
+        target_record = record(target.reference, ContentClass.DETACHABLE, b"target")
+        directive_record = PayloadRecord(
+            directive.reference,
+            ContentDescriptor.none(),
+            RemovalClaim(target.reference, b"target"),
+        )
+        observations = {
+            target.reference: VERIFIED,
+            directive.reference: NONE_OBSERVATION,
+        }
+
+        with self.assertRaisesRegex(ModelInputError, "duplicate payload record"):
+            PayloadModel().evaluate(
+                causal,
+                (target_record, target_record, directive_record),
+                observations,
+                {directive.reference: True},
+            )
+        with self.assertRaisesRegex(
+            ModelInputError, "removal authorization must be boolean"
+        ):
+            PayloadModel().evaluate(
+                causal,
+                (target_record, directive_record),
+                observations,
+                {directive.reference: 1},
             )
 
     def test_declared_content_and_geometry_bounds_fail_closed(self):
