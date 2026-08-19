@@ -222,6 +222,36 @@ def extend_required_suite(suite: object) -> None:
     present_without_checkpoint = payload.evaluate(
         causal_required, required_records, {required.reference: VERIFIED}, {}
     )
+    blocking_required = first(b"p0", b"a", GRANT_A)
+    deferred_horizon_member = first(b"z0", b"b", GRANT_B)
+    causal_deferred_horizon = causal_model().evaluate(
+        (deferred_horizon_member, blocking_required)
+    )
+    deferred_horizon_records = (
+        record(blocking_required.reference, ContentClass.REQUIRED, b"blocking"),
+        record(
+            deferred_horizon_member.reference,
+            ContentClass.REQUIRED,
+            b"horizon",
+        ),
+    )
+    deferred_horizon_observations = {
+        blocking_required.reference: MISSING,
+        deferred_horizon_member.reference: VERIFIED,
+    }
+    emittable_deferred_horizon = payload.evaluate(
+        causal_deferred_horizon,
+        deferred_horizon_records,
+        deferred_horizon_observations,
+        {},
+        PayloadCheckpoint((deferred_horizon_member.reference,)),
+    )
+    deferred_horizon_without_checkpoint = payload.evaluate(
+        causal_deferred_horizon,
+        deferred_horizon_records,
+        deferred_horizon_observations,
+        {},
+    )
     suite.check(
         "checkpoint contents ignore producer availability while eligibility changes",
         checkpoint_missing.checkpoint.contents == checkpoint_present.checkpoint.contents
@@ -242,9 +272,23 @@ def extend_required_suite(suite: object) -> None:
         and replace(checkpoint_missing, checkpoint=None)
         == missing_without_checkpoint
         and replace(checkpoint_present, checkpoint=None)
-        == present_without_checkpoint,
+        == present_without_checkpoint
+        and emittable_deferred_horizon.checkpoint is not None
+        and emittable_deferred_horizon.checkpoint.disposition
+        is CheckpointDisposition.EMITTABLE
+        and emittable_deferred_horizon.halted_at == blocking_required.reference
+        and emittable_deferred_horizon.states[
+            deferred_horizon_member.reference
+        ].readiness
+        is ReplayReadiness.CONTENT_DEFERRED
+        and emittable_deferred_horizon.states[
+            deferred_horizon_member.reference
+        ].presentation
+        is PresentationState.DEFERRED
+        and replace(emittable_deferred_horizon, checkpoint=None)
+        == deferred_horizon_without_checkpoint,
         family="checkpoint-non-substitution",
-        trace=(required,),
+        trace=(blocking_required, deferred_horizon_member),
         obligation="C0.2f-12",
     )
     checkpoint_child = first(

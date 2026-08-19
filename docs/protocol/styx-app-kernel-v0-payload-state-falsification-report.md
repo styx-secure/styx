@@ -177,9 +177,11 @@ replay-equivalence families.
 assessment and is not independent evidence by itself. The substantive
 non-substitution evidence compares complete AP projections with and without a
 checkpoint for both a producer-ineligible horizon containing deferred
-`REQUIRED` content and an emittable horizon containing active content. Separate
-independent exact-candidate mutation probes showed that making checkpoint state
-affect either projection causes the tracked checks to retain a counterexample;
+`REQUIRED` content, an emittable horizon containing active content, and an
+emittable horizon whose member remains whole-suffix deferred behind an earlier
+concurrent `REQUIRED` hole outside the horizon closure. Separate independent
+exact-candidate mutation probes showed that making checkpoint state affect any
+of these projections causes the tracked checks to retain a counterexample;
 those probes are review evidence, not part of the tracked required suite.
 
 The repository CI does not yet invoke this bounded gate. Adding an exact

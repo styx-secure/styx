@@ -738,6 +738,54 @@ class CheckpointTest(unittest.TestCase):
         self.assertEqual(result.applied_order, ())
         self.assertEqual(replace(result, checkpoint=None), baseline)
 
+        blocking_required = first(b"p0", b"a", GRANT_A)
+        deferred_horizon_member = first(b"z0", b"b", GRANT_B)
+        deferred_causal = model().evaluate(
+            (deferred_horizon_member, blocking_required)
+        )
+        deferred_records = (
+            record(blocking_required.reference, ContentClass.REQUIRED, b"blocking"),
+            record(
+                deferred_horizon_member.reference,
+                ContentClass.REQUIRED,
+                b"horizon",
+            ),
+        )
+        deferred_observations = {
+            blocking_required.reference: MISSING,
+            deferred_horizon_member.reference: VERIFIED,
+        }
+        deferred_checkpoint = PayloadCheckpoint(
+            (deferred_horizon_member.reference,)
+        )
+        deferred_result = PayloadModel().evaluate(
+            deferred_causal,
+            deferred_records,
+            deferred_observations,
+            {},
+            deferred_checkpoint,
+        )
+        deferred_baseline = PayloadModel().evaluate(
+            deferred_causal,
+            deferred_records,
+            deferred_observations,
+            {},
+        )
+        self.assertEqual(
+            deferred_result.checkpoint.disposition,
+            CheckpointDisposition.EMITTABLE,
+        )
+        self.assertEqual(deferred_result.halted_at, blocking_required.reference)
+        self.assertEqual(
+            deferred_result.states[deferred_horizon_member.reference].readiness,
+            ReplayReadiness.CONTENT_DEFERRED,
+        )
+        self.assertEqual(
+            deferred_result.states[deferred_horizon_member.reference].presentation,
+            PresentationState.DEFERRED,
+        )
+        self.assertEqual(replace(deferred_result, checkpoint=None), deferred_baseline)
+
     def test_checkpoint_eligibility_covers_horizon_ancestor_closure(self):
         required = first(b"f0", b"a", GRANT_A)
         child = first(b"a0", b"b", GRANT_B, parents=(required.reference,))
