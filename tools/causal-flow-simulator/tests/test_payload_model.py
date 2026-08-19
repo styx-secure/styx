@@ -290,6 +290,10 @@ class ReplayAvailabilityTest(unittest.TestCase):
             result.states[current.reference].readiness,
             ReplayReadiness.STALE_EVIDENCE,
         )
+        self.assertEqual(
+            result.checkpoint.disposition, CheckpointDisposition.STALE_EVIDENCE
+        )
+        self.assertFalse(result.checkpoint.producer_eligible)
         self.assertFalse(result.checkpoint.consumer_substitution)
 
 

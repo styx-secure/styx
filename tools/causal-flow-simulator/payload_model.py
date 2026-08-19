@@ -800,6 +800,13 @@ class PayloadModel:
             if checkpoint is None
             else self._assess_checkpoint(records, observations, checkpoint)
         )
+        if assessment is not None:
+            assessment = replace(
+                assessment,
+                disposition=CheckpointDisposition.STALE_EVIDENCE,
+                producer_eligible=False,
+                consumer_substitution=False,
+            )
         return PayloadEvaluation(
             states=dict(sorted(states.items())),
             directive_outcomes=dict(sorted(outcomes.items())),

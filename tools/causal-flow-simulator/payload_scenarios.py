@@ -465,6 +465,9 @@ def extend_required_suite(suite: object) -> None:
         and with_checkpoint.states[compacted_child.reference]
         == without_checkpoint.states[compacted_child.reference]
         and with_checkpoint.checkpoint is not None
+        and with_checkpoint.checkpoint.disposition
+        is CheckpointDisposition.STALE_EVIDENCE
+        and not with_checkpoint.checkpoint.producer_eligible
         and not with_checkpoint.checkpoint.consumer_substitution,
         family="fresh-reconstruction",
         trace=(compacted, compacted_child),
