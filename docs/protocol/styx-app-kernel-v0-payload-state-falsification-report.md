@@ -8,7 +8,7 @@ Model: `styx.causal-flow-simulator/v1`
 
 Report schema: `styx.causal-flow-falsification-report/v1`
 
-Machine report SHA-256: `5378f890d515d0946f8f8002da6d5144a7ec1a0f617610da7832f497b07d45e7`
+Machine report SHA-256: `e4fbd276cfedbc6f7d59b8fc83e6abbe43ab2e90b3d0ce65e4c6eb741a765367`
 
 The exact final candidate HEAD is recorded in immutable PR evidence and in the
 independent exact-HEAD review reports; a tracked file cannot self-identify the
@@ -20,8 +20,8 @@ Issue: [#217](https://github.com/styx-secure/styx/issues/217)
 
 The dependency-free C0.2d/C0.2f reference model found no counterexample within
 its declared small-state envelope. The required run performed 75 invariant
-evaluations over 37 hostile scenario families, 43 causal/payload exploration
-traces and 19 explicit payload-axis cases. All sixteen obligations in §9 of the
+evaluations over 37 hostile scenario families, 78 causal/payload exploration
+traces and 54 explicit payload-axis cases. All sixteen obligations in §9 of the
 [O-04 analysis](styx-app-kernel-v0-payload-commitment-analysis.md) are present
 as machine-readable passed records.
 
@@ -99,7 +99,7 @@ payload profile additionally uses:
 | Payload-checkpoint references | 9 |
 | Aggregate payload input | 8,192 bytes |
 | Payload exploration budget | 512 |
-| Explicitly explored payload-axis cases | 19 |
+| Explicitly explored payload-axis cases | 54 |
 
 These are falsification bounds, not O-08 production limits.
 

@@ -278,7 +278,7 @@ def extend_required_suite(suite: object) -> None:
     )
 
     # 5: exercise the complete local product of minimum observation axes.
-    legal = {
+    content_bearing_legal = {
         (Availability.ABSENT, BindingObservation.NOT_CHECKED),
         (Availability.PARTIAL, BindingObservation.NOT_CHECKED),
         (Availability.PRESENT, BindingObservation.NOT_CHECKED),
@@ -287,20 +287,39 @@ def extend_required_suite(suite: object) -> None:
         (Availability.PRESENT, BindingObservation.LENGTH_MISMATCH),
         (Availability.PRESENT, BindingObservation.COMMITMENT_MISMATCH),
     }
+    none_legal = {
+        (Availability.ABSENT, BindingObservation.NOT_APPLICABLE),
+        (Availability.PRESENT, BindingObservation.NOT_APPLICABLE),
+    }
     classification_matches = True
-    for availability, binding in product(Availability, BindingObservation):
-        suite.payload_explored()
-        try:
-            payload.evaluate(
-                causal,
-                records,
-                {detachable.reference: PayloadObservation(availability, binding)},
-                {},
+    for content_class in ContentClass:
+        axis_records = (
+            record(detachable.reference, content_class, b"axis"),
+        )
+        expected_legal = (
+            none_legal
+            if content_class is ContentClass.NONE
+            else content_bearing_legal
+        )
+        for availability, binding in product(Availability, BindingObservation):
+            suite.payload_explored()
+            try:
+                payload.evaluate(
+                    causal,
+                    axis_records,
+                    {
+                        detachable.reference: PayloadObservation(
+                            availability, binding
+                        )
+                    },
+                    {},
+                )
+                accepted = True
+            except ModelInputError:
+                accepted = False
+            classification_matches &= (
+                accepted == ((availability, binding) in expected_legal)
             )
-            accepted = True
-        except ModelInputError:
-            accepted = False
-        classification_matches &= accepted == ((availability, binding) in legal)
     suite.check(
         "closed payload observation axes reject every unlisted combination",
         classification_matches,
@@ -318,7 +337,6 @@ def extend_required_suite(suite: object) -> None:
         },
         {},
     )
-    suite.payload_explored()
     suite.check(
         "bytes supplied for NONE are rejected as a typed non-content presentation",
         none_supplied.states[detachable.reference].presentation

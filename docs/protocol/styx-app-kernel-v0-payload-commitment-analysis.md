@@ -573,10 +573,10 @@ O-04; it is not patched around. Passing is bounded evidence, not proof.
 
 The dependency-free extension on base
 `e232c2c1c4687fa09ca12594c90e0aafc67b4ebb` exercised every obligation above.
-It evaluated 75 invariants across 37 hostile families, 43 causal/payload
-exploration traces and 19 explicit payload-axis cases. The deterministic report
+It evaluated 75 invariants across 37 hostile families, 78 causal/payload
+exploration traces and 54 explicit payload-axis cases. The deterministic report
 returned `NO_COUNTEREXAMPLE_WITHIN_BOUNDS`; its SHA-256 is
-`5378f890d515d0946f8f8002da6d5144a7ec1a0f617610da7832f497b07d45e7`.
+`e4fbd276cfedbc6f7d59b8fc83e6abbe43ab2e90b3d0ce65e4c6eb741a765367`.
 
 The complete bounds, reproduction commands, claim boundary and residual risks
 are recorded in

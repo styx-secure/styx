@@ -103,7 +103,7 @@ class DescriptorAndAxisTest(unittest.TestCase):
     def test_closed_axis_set_accepts_only_legal_combinations(self):
         event = first(b"a0", b"a", GRANT_A)
         causal = model().evaluate((event,))
-        legal = {
+        content_bearing_legal = {
             (Availability.ABSENT, BindingObservation.NOT_CHECKED),
             (Availability.PARTIAL, BindingObservation.NOT_CHECKED),
             (Availability.PRESENT, BindingObservation.NOT_CHECKED),
@@ -112,20 +112,34 @@ class DescriptorAndAxisTest(unittest.TestCase):
             (Availability.PRESENT, BindingObservation.LENGTH_MISMATCH),
             (Availability.PRESENT, BindingObservation.COMMITMENT_MISMATCH),
         }
-        payload_record = record(event.reference, ContentClass.DETACHABLE, b"ct")
-        for availability, binding in product(Availability, BindingObservation):
-            operation = lambda: PayloadModel().evaluate(
-                causal,
-                (payload_record,),
-                {event.reference: PayloadObservation(availability, binding)},
-                {},
+        none_legal = {
+            (Availability.ABSENT, BindingObservation.NOT_APPLICABLE),
+            (Availability.PRESENT, BindingObservation.NOT_APPLICABLE),
+        }
+        for content_class in ContentClass:
+            payload_record = record(event.reference, content_class, b"ct")
+            legal = (
+                none_legal
+                if content_class is ContentClass.NONE
+                else content_bearing_legal
             )
-            with self.subTest(availability=availability, binding=binding):
-                if (availability, binding) in legal:
-                    operation()
-                else:
-                    with self.assertRaises(ModelInputError):
+            for availability, binding in product(Availability, BindingObservation):
+                operation = lambda: PayloadModel().evaluate(
+                    causal,
+                    (payload_record,),
+                    {event.reference: PayloadObservation(availability, binding)},
+                    {},
+                )
+                with self.subTest(
+                    content_class=content_class,
+                    availability=availability,
+                    binding=binding,
+                ):
+                    if (availability, binding) in legal:
                         operation()
+                    else:
+                        with self.assertRaises(ModelInputError):
+                            operation()
 
     def test_zero_length_content_is_not_none(self):
         event = first(b"a0", b"a", GRANT_A)
