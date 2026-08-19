@@ -179,10 +179,13 @@ non-substitution evidence compares complete AP projections with and without a
 checkpoint for both a producer-ineligible horizon containing deferred
 `REQUIRED` content, an emittable horizon containing active content, and an
 emittable horizon whose member remains whole-suffix deferred behind an earlier
-concurrent `REQUIRED` hole outside the horizon closure. Separate independent
-exact-candidate mutation probes showed that making checkpoint state affect any
-of these projections causes the tracked checks to retain a counterexample;
-those probes are review evidence, not part of the tracked required suite.
+concurrent `REQUIRED` hole outside the horizon closure. The same complete-
+projection comparison covers unavailable, unauthenticated, conflicting and
+stale checkpoint evidence both on active state and while that earlier hole
+keeps the later horizon member deferred. Separate independent exact-candidate
+mutation probes showed that making checkpoint state affect these projections
+causes the tracked checks to retain the smallest relevant counterexample; those
+probes are review evidence, not part of the tracked required suite.
 
 The repository CI does not yet invoke this bounded gate. Adding an exact
 deterministic CI invocation requires a separately approved workflow change;

@@ -826,6 +826,7 @@ class CheckpointTest(unittest.TestCase):
         causal = model().evaluate((event,))
         records = (record(event.reference, ContentClass.DETACHABLE, b"det"),)
         observations = {event.reference: VERIFIED}
+        baseline = PayloadModel().evaluate(causal, records, observations, {})
         cases = (
             (PayloadCheckpoint((event.reference,), available=False), CheckpointDisposition.UNAVAILABLE),
             (PayloadCheckpoint((event.reference,), authenticated=False), CheckpointDisposition.UNAUTHENTICATED),
@@ -837,6 +838,7 @@ class CheckpointTest(unittest.TestCase):
             result = PayloadModel().evaluate(causal, records, observations, {}, checkpoint)
             self.assertEqual(result.checkpoint.disposition, expected)
             self.assertFalse(result.checkpoint.consumer_substitution)
+            self.assertEqual(replace(result, checkpoint=None), baseline)
             if expected is CheckpointDisposition.STALE_EVIDENCE:
                 self.assertFalse(result.checkpoint.producer_eligible)
             if checkpoint.horizon_refs == (event.reference,):
@@ -844,6 +846,62 @@ class CheckpointTest(unittest.TestCase):
                     contents = result.checkpoint.contents
                 else:
                     self.assertEqual(contents, result.checkpoint.contents)
+
+        blocking_required = first(b"p0", b"a", GRANT_A)
+        deferred_horizon_member = first(b"z0", b"b", GRANT_B)
+        halted_causal = model().evaluate(
+            (deferred_horizon_member, blocking_required)
+        )
+        halted_records = (
+            record(blocking_required.reference, ContentClass.REQUIRED, b"blocking"),
+            record(
+                deferred_horizon_member.reference,
+                ContentClass.REQUIRED,
+                b"horizon",
+            ),
+        )
+        halted_observations = {
+            blocking_required.reference: MISSING,
+            deferred_horizon_member.reference: VERIFIED,
+        }
+        halted_baseline = PayloadModel().evaluate(
+            halted_causal, halted_records, halted_observations, {}
+        )
+        halted_cases = (
+            (
+                PayloadCheckpoint(
+                    (deferred_horizon_member.reference,), available=False
+                ),
+                CheckpointDisposition.UNAVAILABLE,
+            ),
+            (
+                PayloadCheckpoint(
+                    (deferred_horizon_member.reference,), authenticated=False
+                ),
+                CheckpointDisposition.UNAUTHENTICATED,
+            ),
+            (
+                PayloadCheckpoint(
+                    (deferred_horizon_member.reference,), conflicting=True
+                ),
+                CheckpointDisposition.CONFLICTING,
+            ),
+            (
+                PayloadCheckpoint((b"unknown",)),
+                CheckpointDisposition.STALE_EVIDENCE,
+            ),
+        )
+        for checkpoint, expected in halted_cases:
+            result = PayloadModel().evaluate(
+                halted_causal,
+                halted_records,
+                halted_observations,
+                {},
+                checkpoint,
+            )
+            self.assertEqual(result.checkpoint.disposition, expected)
+            self.assertFalse(result.checkpoint.consumer_substitution)
+            self.assertEqual(replace(result, checkpoint=None), halted_baseline)
 
     def test_checkpoint_contents_bind_removal_claims(self):
         target = first(b"a0", b"a", GRANT_A)

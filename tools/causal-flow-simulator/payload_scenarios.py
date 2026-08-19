@@ -263,8 +263,7 @@ def extend_required_suite(suite: object) -> None:
         trace=(required,),
         obligation="C0.2f-02",
     )
-    suite.check(
-        "availability-divergent checkpoint production never substitutes consumer state",
+    availability_projection_equal = (
         checkpoint_missing.checkpoint is not None
         and checkpoint_present.checkpoint is not None
         and not checkpoint_missing.checkpoint.consumer_substitution
@@ -273,7 +272,9 @@ def extend_required_suite(suite: object) -> None:
         == missing_without_checkpoint
         and replace(checkpoint_present, checkpoint=None)
         == present_without_checkpoint
-        and emittable_deferred_horizon.checkpoint is not None
+    )
+    emittable_deferred_projection_equal = (
+        emittable_deferred_horizon.checkpoint is not None
         and emittable_deferred_horizon.checkpoint.disposition
         is CheckpointDisposition.EMITTABLE
         and emittable_deferred_horizon.halted_at == blocking_required.reference
@@ -286,9 +287,17 @@ def extend_required_suite(suite: object) -> None:
         ].presentation
         is PresentationState.DEFERRED
         and replace(emittable_deferred_horizon, checkpoint=None)
-        == deferred_horizon_without_checkpoint,
+        == deferred_horizon_without_checkpoint
+    )
+    suite.check(
+        "availability-divergent checkpoint production never substitutes consumer state",
+        availability_projection_equal and emittable_deferred_projection_equal,
         family="checkpoint-non-substitution",
-        trace=(blocking_required, deferred_horizon_member),
+        trace=(
+            (required,)
+            if not availability_projection_equal
+            else (blocking_required, deferred_horizon_member)
+        ),
         obligation="C0.2f-12",
     )
     checkpoint_child = first(
@@ -947,12 +956,12 @@ def extend_required_suite(suite: object) -> None:
         (PayloadCheckpoint((detachable.reference,), conflicting=True), CheckpointDisposition.CONFLICTING),
         (PayloadCheckpoint((b"unknown",)), CheckpointDisposition.STALE_EVIDENCE),
     )
-    checkpoint_typed = True
+    checkpoint_typed_active = True
     for checkpoint, expected in checkpoint_cases:
         evaluated = payload.evaluate(
             causal, records, {detachable.reference: VERIFIED}, {}, checkpoint
         )
-        checkpoint_typed &= (
+        checkpoint_typed_active &= (
             evaluated.checkpoint is not None
             and evaluated.checkpoint.disposition is expected
             and not evaluated.checkpoint.consumer_substitution
@@ -960,16 +969,58 @@ def extend_required_suite(suite: object) -> None:
                 expected is not CheckpointDisposition.STALE_EVIDENCE
                 or not evaluated.checkpoint.producer_eligible
             )
-            and evaluated.states == present.states
-            and evaluated.directive_outcomes == present.directive_outcomes
-            and evaluated.applied_order == present.applied_order
-            and evaluated.halted_at == present.halted_at
+            and replace(evaluated, checkpoint=None) == present
+        )
+    halted_checkpoint_cases = (
+        (
+            PayloadCheckpoint(
+                (deferred_horizon_member.reference,), available=False
+            ),
+            CheckpointDisposition.UNAVAILABLE,
+        ),
+        (
+            PayloadCheckpoint(
+                (deferred_horizon_member.reference,), authenticated=False
+            ),
+            CheckpointDisposition.UNAUTHENTICATED,
+        ),
+        (
+            PayloadCheckpoint(
+                (deferred_horizon_member.reference,), conflicting=True
+            ),
+            CheckpointDisposition.CONFLICTING,
+        ),
+        (PayloadCheckpoint((b"unknown",)), CheckpointDisposition.STALE_EVIDENCE),
+    )
+    checkpoint_typed_halted = True
+    for checkpoint, expected in halted_checkpoint_cases:
+        evaluated = payload.evaluate(
+            causal_deferred_horizon,
+            deferred_horizon_records,
+            deferred_horizon_observations,
+            {},
+            checkpoint,
+        )
+        checkpoint_typed_halted &= (
+            evaluated.checkpoint is not None
+            and evaluated.checkpoint.disposition is expected
+            and not evaluated.checkpoint.consumer_substitution
+            and (
+                expected is not CheckpointDisposition.STALE_EVIDENCE
+                or not evaluated.checkpoint.producer_eligible
+            )
+            and replace(evaluated, checkpoint=None)
+            == deferred_horizon_without_checkpoint
         )
     suite.check(
         "unavailable unauthenticated conflicting and stale checkpoints never substitute",
-        checkpoint_typed,
+        checkpoint_typed_active and checkpoint_typed_halted,
         family="checkpoint-non-substitution",
-        trace=(detachable,),
+        trace=(
+            (detachable,)
+            if not checkpoint_typed_active
+            else (blocking_required, deferred_horizon_member)
+        ),
         obligation="C0.2f-12",
     )
 
