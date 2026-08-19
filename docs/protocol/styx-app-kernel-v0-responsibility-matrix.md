@@ -1,16 +1,16 @@
 # Styx application protocol v0 — responsibility matrix
 
-- **Status:** C0.2a normative responsibility allocation, amended by C0.2b/C0.2c
-  only for decided dependencies; not a protocol byte specification or
-  implementation claim.
-- **Authority:** Issues #207, #209 and #211, ADR-0007 and
+- **Status:** C0.2a normative responsibility allocation, amended by
+  C0.2b/C0.2c/C0.2e only for decided dependencies; not a protocol byte
+  specification or implementation claim.
+- **Authority:** Issues #207, #209, #211 and #215, ADR-0007 and
   `docs/security/STYX-THREAT-MODEL.md`.
 - **Evidence baseline:** `main @
   6409bc1b530622dfd592e4ebdb66e242f458b378`.
 - **Decision effect:** C0.2a closes O-09; C0.2b closes O-02/O-03; C0.2c closes
-  O-01/O-05 and fixes O-06 semantic roles while exact derivation remains open.
-  Ownership is unchanged. O-04, O-06 through O-08 and O-10 through O-12 remain
-  open.
+  O-01/O-05 and fixes O-06 semantic roles while exact derivation remains open;
+  C0.2e closes O-04 semantics with a pending C0.2f evidence gate. Ownership is
+  unchanged. O-06 through O-08 and O-10 through O-13 remain open.
 
 This matrix assigns each known normative obligation to exactly one owning
 layer. Ownership means that the layer defines the rule, its conformance
@@ -92,12 +92,12 @@ but the concrete rule is not yet selected.
 | `OB-K06` | Derive deterministic total order only after causality and use a bytewise authenticated tiebreak | Concurrent authenticated objects → deterministic order | K-06 decided; O-06 open |
 | `OB-K07` | Define the purpose and authenticated derivation/binding of event, content and parent identifiers | Authenticated object fields → identifiers/references | O-06 roles fixed; exact transcript/digest derivation open |
 | `OB-K08` | Bind application/case context into every authoritative object and reject cross-context replay | Context plus candidate object → accepted context or rejection | O-03 decided; O-06/O-07 complete reference/genesis mechanics |
-| `OB-K09` | Define fresh deterministic genesis and initial authenticated authority inputs | Profile/context inputs → genesis object | K-09 and O-01–O-03/O-05 decided; O-04/O-06/O-07 open |
-| `OB-K10` | Define payload commitment mechanics, bounded parsing and verifiability after permitted detachment/pruning | Payload input or retained commitment → verification result | O-04 open |
+| `OB-K09` | Define fresh deterministic genesis and initial authenticated authority inputs | Profile/context inputs → genesis object | K-09 and O-01–O-05 decided; O-06/O-07 open |
+| `OB-K10` | Authenticate the O-04 content descriptor; derive/verify the randomized-opening commitment; keep class, availability, binding, retention and replay readiness distinct; validate append-only removal structure | Payload/opening, descriptor or retained commitment/removal evidence → typed verification/readiness result | O-04 decided; exact suite/bytes O-06, bounds O-08 and codes O-10 open; C0.2f pending |
 | `OB-K11` | Distinguish empty, uninitialized and valid histories | Stored/input history → classified state | Decided by registry K-08; O-10 error code open |
 | `OB-K12` | Apply deterministic state-transition mechanics and hand semantically concurrent conflicts to `AP` without inventing universal business resolution | Valid authenticated object plus state → applied/rejected/conflict outcome | K-07 decided; profile schemas open |
 | `OB-K13` | Define logical replay and duplicate idempotency semantics for application objects | Object identifier plus history → new/duplicate/replay outcome | O-06 and O-10 open |
-| `OB-K14` | Preserve authenticated evidence across checkpoints, compaction and pruning according to a policy supplied by `AP` | Valid history plus authenticated policy request → verifiable transition | O-04 and later retention design open |
+| `OB-K14` | Preserve descriptors, commitments and AP-authorized removal evidence across compaction; reject AP continuation lacking directly verified REQUIRED inputs; do not widen current checkpoint trust into AP-state substitution | Valid history plus authenticated AP policy action and direct content evidence → verifiable logical transition or deferred/stale result | O-04 mechanics decided; O-07 checkpoint contract, O-13 irreversible effects and C0.2f remain open |
 | `OB-K15` | Reject legacy `styx-legacy-c0` objects as v1 and prevent implicit dual acceptance | Versioned object → v1 result or legacy rejection | Decided by registry K-10 |
 | `OB-K16` | Emit stable, bounded protocol outcomes required for safe caller behavior without leaking parser internals | Validation site → stable classified outcome | O-10 open |
 | `OB-K17` | Define physical-time semantics only if retained; never use ambient wall time as unbounded authority | Optional time input → bounded field or absence | O-05 removes kernel time; O-12 remains profile-conditional |
@@ -110,10 +110,10 @@ but the concrete rule is not yet selected.
 | `OB-AP02` | Define actor/credential types, role authority, delegation, rotation, revocation and expiry for each context | Authenticated actor evidence plus context → authorized/unauthorized action | O-02 decided; concrete profile grants and bounds remain future work |
 | `OB-AP03` | Select context and identity profiles and require cross-context/cross-case separation | Deployment/profile choice → requirements consumed by `K`, `SS`, `RS` and `TR` | O-02/O-03 decided; individual application profiles remain future work |
 | `OB-AP04` | Define domain conflict policy: accept, reject, supersede, combine or require human review | Kernel causal/conflict result plus profile state → policy disposition | Profile-specific; K-07 fixed |
-| `OB-AP05` | Define retention, legal-hold, redaction, logical deletion, export and evidence intent by data class | Authenticated policy action → request to kernel/runtime/product operations | Future profile design; O-04 relevant |
+| `OB-AP05` | Define retention, legal hold, append-only logical removal, export, opening retention and post-removal reconstruction intent by data class; authorize actors without redefining K validity | Authenticated policy action plus O-04 class/evidence → bounded request to K/RS/PV | O-04 mechanics decided; profile policy and irreversible-effect rule remain future work |
 | `OB-AP06` | Select allowed assurance capabilities and reject an internally inconsistent combination | Runtime/session/transport capability declarations → activated or rejected profile | O-08 open |
 | `OB-AP07` | Define application-level acknowledgement meanings and which authenticated actor may issue them | Kernel/session evidence → named application-ack state | Future SDK/delivery work |
-| `OB-AP08` | Define attachment/content admission policy, including text-only profiles, size/type bounds and isolated sanitization requirements | Candidate content metadata → admitted/rejected application object | Future profile design |
+| `OB-AP08` | Define closed content types, `REQUIRED` versus `DETACHABLE` use, semantic size/expansion bounds and isolated sanitization; forbid detachment when authoritative reconstruction needs the bytes | Candidate content/metadata → admitted class and bounded application object or rejection | O-04 class contract decided; concrete profile and O-08 numeric bounds remain future work |
 | `OB-AP09` | Define capability/recovery authority without treating recovery as implicit revocation bypass | Recovery proof plus context/profile → bounded authorized recovery action | O-02 forbids authority resurrection; concrete recovery profiles remain future work |
 | `OB-AP10` | Define first-profile actor/cardinality, clock-skew and activation bounds as profile rules rather than kernel limits | Capability/resource evidence → in-profile or out-of-profile result | O-08 open |
 
@@ -142,8 +142,8 @@ but the concrete rule is not yet selected.
 | `OB-RS05` | Define crash recovery, prepared/stable states and reconciliation without duplicate application effect | Durable journal/outbox → recovered state | Product integration future work |
 | `OB-RS06` | Make the outbox durable before publication and reconcile transport results without conflating them with local/application truth | Valid outbound intent → queued/reconciled delivery state | Minimum SDK/reliable delivery future work |
 | `OB-RS07` | Coordinate tabs/processes while retaining atomic compare-and-swap or equivalent as the safety property | Concurrent local mutations → one accepted durable successor | Runtime-specific implementation evidence required |
-| `OB-RS08` | Define storage bounds, quota pressure, eviction, private-mode, suspension and background-execution behavior per supported runtime | Runtime capability/probe → supported/unsupported profile | O-08 and real-browser evidence open |
-| `OB-RS09` | Define rollback detection, external evidence and fail-closed limits without claiming undetectable whole-profile rollback protection | Restored state plus available anchor/evidence → accepted, stale or unknown outcome | Authenticated product persistence future work |
+| `OB-RS08` | Define storage bounds, quota pressure, eviction, private-mode, suspension and background-execution behavior; never interpret eviction as removal and report last-copy/opening loss as a typed durability failure | Runtime capability/probe → supported/unsupported profile or typed loss | O-08/O-13 and real-browser evidence open |
+| `OB-RS09` | Define rollback detection, external evidence and fail-closed limits without claiming undetectable whole-profile rollback protection; expose rollback-past-removal as a privacy regression | Restored state plus available anchor/evidence → accepted, stale or unknown outcome | Authenticated product persistence future work |
 | `OB-RS10` | Perform versioned migrations with verified copy/commit/rollback and no destructive source removal before success | Old durable format → migrated state or intact old state | Each migration separately gated |
 | `OB-RS11` | Implement lock, timeout, reset and crash closure; state locked and unlocked endpoint guarantees separately | Lifecycle event → closed/cleared handles and typed state | Browser/native profile-specific |
 | `OB-RS12` | Authenticate distributed artifacts, updates and rollback within the runtime's trust-root model | Release artifact/configuration → accepted/rejected version | Distribution milestone future work |
@@ -178,7 +178,7 @@ but the concrete rule is not yet selected.
 | `OB-PV08` | Protect operators and users from abuse, spam, traumatic content and illegal material without silently defeating the anonymity profile | Abuse signal and procedure → quarantine/escalation/limit | Themis safety design future work |
 | `OB-PV09` | Control attachments, exports, external viewers and sanitization services in the deployed environment | Admitted AP object → safe operational handling | Product-specific |
 | `OB-PV10` | Authorize synthetic exercise, pilot or production only after explicit technical, security, privacy, legal and human-readiness gates | Evidence package → GO/NO-GO | Milestone 6 / separate authorization |
-| `OB-PV11` | Communicate residual risks, recovery loss and anonymity limits in accessible copy without exceeding evidence | Profile/deployment facts → user documentation | Every product release |
+| `OB-PV11` | Communicate residual risks, recovery loss, anonymity and removal limits in accessible copy; never promise deletion/erasure/unlinkability or rollback-stable removal without evidence | Profile/deployment facts → user documentation | Every product release; O-13 gates destruction claims |
 
 ## 5. Required validation and state-change order
 
@@ -207,24 +207,29 @@ It prevents a lower-layer success from bypassing an upper-layer security rule.
 
 ## 6. Decision allocation
 
-| Registry item | Decision owner | Required contributors | Status after C0.2c |
+| Registry item | Decision owner | Required contributors | Status after C0.2e |
 | --- | --- | --- | --- |
 | O-01 causal representation | `K` | `AP`, `RS`, `TR` supply conflict, resource and privacy requirements | **Decided:** per-credential author chain plus bounded authenticated causal-parent frontier; executable falsification gate pending. |
 | O-02 author/rotation/authorization binding | `AP` for authority semantics; `K` for authenticated binding mechanics | `SS`, `RS`, `PV` supply member, custody and operational constraints | **Decided:** context-local endpoint credential plus authenticated AP authorization state; account, session and bearer inputs remain separate. |
 | O-03 context/genesis binding | `K` for binding; `AP` for context-profile requirements | `SS`, `RS`, `TR` supply namespace and linkability constraints | **Decided:** protocol/profile tuple plus fresh 32-byte random context identifier, authenticated by genesis and all later objects. |
-| O-04 payload commitment/detachment | `K` | `AP` supplies retention/content requirements; `RS` supplies storage bounds | Raw versus digest-plus-length and detachment rules remain unevaluated. |
+| O-04 payload commitment/detachment | `K` for descriptor, commitment, typed state and logical-removal mechanics; `AP` for data-class policy/authorization; `RS` for physical custody/effects | `SS`, `TR` and `PV` supply protected-delivery, fetch and truthful-presentation constraints | **Decided:** descriptor-only randomized-opening commitment; authenticated `NONE`/`REQUIRED`/`DETACHABLE`; append-only logical removal; whole-suffix REQUIRED halt; no v0 checkpoint substitution. C0.2f remains a gate. |
 | O-05 clock placement | `K` if kernel time is necessary; otherwise the owning profile | `AP`, `RS`, `TR` supply authorization, precision and privacy needs | **Decided:** no HLC/physical time in K; optional purpose-bound time belongs to AP profiles. |
 | O-06 event/content identifiers | `K` | `AP`, `RS`, `TR` supply idempotency, storage and correlation requirements | Event, payload, AP, TR and RS roles are separated; exact event-reference bytes/digest registry remain open. |
-| O-07 genesis content | `K` | `AP` supplies initial policy/authority requirements | O-01/O-02/O-03/O-05 inputs are decided; O-04/O-06 remain. |
+| O-07 genesis and checkpoint evidence | `K` for object authentication/binding; `AP` for any producer authorization/acceptance semantics | `RS` supplies custody/rollback bounds; `PV` supplies supportable claims | Genesis remains open on O-06. Checkpoint authentication/acceptance/substitution is a suspended gate; no producer trust model is selected. |
 | O-08 skew/cardinality/activation bounds | `AP` | `K`, `SS`, `RS`, `TR`, `PV` provide capability/resource envelopes | No first supported profile or runtime capacity evidence is selected. |
 | O-09 responsibility split | This document | All six layers | **Decided:** one kernel plus explicit profiles and the ownership rules in §§1–5. |
 | O-10 stable error taxonomy | `K` for protocol outcomes; each profile for its own typed failures | All consumers supply safe-recovery distinctions | Rejection-site inventory depends on the remaining object decisions. |
 | O-11 wire/storage encoding | Owner of each representation: `K` transcript regeneration; `RS` storage; `TR` envelope | Decoders and implementations supply surface evidence | No encoding comparison is performed here. |
 | O-12 physical-time details | The time-bearing `AP` profile | `RS` and `TR` supply precision/lifetime/linkability evidence | Inapplicable to profiles without time; open for any profile retaining a signed time claim. |
+| O-13 irreversible-effect authorization | `AP` for authorization semantics | `RS` owns execution/custody/typed loss; `PV` owns disclosure/claims; `K` supplies retained evidence | **Open coordinating record.** Quarantine-only interim; gates destruction-capable increments and deletion/erasure/unlinkability claims, not O-04/C0.2f/transcript-only C0.3. |
 
 O-02 deliberately retains split ownership because “who may act” (`AP`) and “how
 that authority is cryptographically bound into the object” (`K`) are separate
 normative obligations. Neither owner may omit the other's validated output.
+O-07 uses the same obligation split: `K` alone owns checkpoint-object
+authentication and binding, while `AP` alone owns any producer authorization
+and acceptance semantics. The row coordinates those outputs without creating
+an aggregate multi-owner rule.
 
 ## 7. Capability-model coverage
 

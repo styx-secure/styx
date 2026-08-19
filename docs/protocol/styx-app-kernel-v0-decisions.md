@@ -10,6 +10,10 @@
   `docs/protocol/styx-app-kernel-v0-identity-context-analysis.md`.
 - **C0.2c causal-topology analysis:**
   `docs/protocol/styx-app-kernel-v0-causal-topology-analysis.md`.
+- **C0.2d causal falsification evidence:**
+  `docs/protocol/styx-app-kernel-v0-causal-falsification-report.md`.
+- **C0.2e payload-commitment analysis:**
+  `docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md`.
 - **Language:** English is canonical for external, language-neutral protocol
   review. Translations are optional and non-normative.
 - **Ratification:** every `DECIDED` entry below is proposed until the product
@@ -51,6 +55,21 @@ local artifact by filename and SHA-256; it does not disclose its witness:
 | `PRIV-02` | `README_QWEN38_20260817T064405Z.md` | `320234c8afe9ea22b54c24164ab1a8e8e77b3c3af6d4e2ff4f544fe0b3286606` |
 | `PRIV-03` | `README_OPUS5_RECONCILE_20260817T070100Z.md` | `51f027211f231803ddb93f40dabe898673c7ddba2bea8498d774e1deb9d81ec0` |
 | `PRIV-04` | `README_QWEN38_RECONCILE_20260817T070100Z.md` | `4594818fb528e797c74e9eca4e1ffa0ea62988be9c5a539a77f0a3c1d9d6844d` |
+| `PRIV-05` | `README_GLM53_20260818T210430Z.md` | `1d15836846916d17e98f167c2a7a9512e92adcdc8757cfd0d30398223e345ad0` |
+| `PRIV-06` | `README_QWEN38_MAX_20260818T210430Z.md` | `8974e0db317db217dcbf16fbfb5c6d8cb99fd64b83a042fa48ff11ae388c1243` |
+| `PRIV-07` | `README_OPUS5_20260818T210430Z.md` | `bf6257ed2f5bf787cf20c3ae6e9c6fd4016a08e65c3b5dde56177641345a0109` |
+| `PRIV-08` | `README_GLM53_RECONCILE_20260818T210430Z.md` | `f38d9b5169b48d545582199c5e4f8349c091a782bad998fdccedcd6ee24fc01e` |
+| `PRIV-09` | `README_QWEN38_MAX_RECONCILE_20260818T210430Z.md` | `d8e2b9b1afe9126d02679b7b317ba52026d3dcc269580f4c18501129a5215c77` |
+| `PRIV-10` | `README_OPUS5_RECONCILE_20260818T210430Z.md` | `ae22765850f2ff21263c3ff1cfece34c4b0bc23f9183235711727bd6b0c2f313` |
+| `PRIV-11` | `README_GLM53_ROUND3_20260819.md` | `3e2525d9717388d02106f22ff7f1af5412cda19a4fc96b338e8be93d9c775b69` |
+| `PRIV-12` | `README_QWEN38_MAX_ROUND3_20260819.md` | `3312f16064f290a17faa9abf7cc67ba379f31319fda7a6f57c7344ad67d3a5d7` |
+| `PRIV-13` | `README_OPUS5_ROUND3_20260819.md` | `b952f89dcea5b93fd7a8a57a58448cfe3eecf5bf411a581a503471389ac79c73` |
+| `PRIV-14` | `README_GLM53_ROUND4_20260819.md` | `9478633efa461c84c3effad1881250f1da8a8314da4cf2e1e713b16e6ced2980` |
+| `PRIV-15` | `README_QWEN38_MAX_ROUND4_20260819.md` | `945a6a4899c879e830778655de21630d87aa2b68ea5093bb3afc795c44b5493a` |
+| `PRIV-16` | `README_OPUS5_ROUND4_20260819.md` | `f9a912e8ed6a1af6ba11d24a4bcd304f112adb2a84231d90efcf277ec965bf26` |
+| `PRIV-17` | `README_GLM53_ROUND5_20260819.md` | `0cc4fda73cdef1a07b74846fda0f2df5ca9d04e82b0e8c671f34f0a7e4f86c5a` |
+| `PRIV-18` | `README_QWEN38_MAX_ROUND5_20260819.md` | `d010dd698bdd5afcd26e30834129e194bf463889e2f6dc2873a6e9ef928d3a98` |
+| `PRIV-19` | `README_OPUS5_ROUND5_20260819.md` | `c657154575f3e389a2555ab30f066411eb748c729027e30121f1ac6ea6e80f9c` |
 
 Separate `Normative rationale` and `Public inspection pointer (non-witness)`
 fields may cite public repository documents. They contain no witness material
@@ -480,28 +499,81 @@ outcomes.
 
 ### O-04 — Payload commitment and detachment
 
-- **Status:** `OPEN`.
-- **Question:** does the payload enter the transcript as raw bytes or as digest
-  plus length, and can it be detached?
-- **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` identify retention
-  and pruning as unresolved; C0.1 does not characterize detached payloads.
-- **Normative rationale:** attachment commitment and retention/deletion
-  requirements are defined in §5.12 and §5.15 of
-  `docs/platform/application-capability-model.md`.
-- **Rejected alternatives:** choosing raw bytes because current factories do;
-  digest-only commitment without length or substitution analysis.
-- **Security/privacy:** the choice affects substitution resistance, erasure,
-  retained evidence and parser exposure.
-- **Missing evidence:** a retention/pruning design and adversarial substitution
-  analysis.
-- **Dependent artifact:** payload transcript field, pruning and detached-object
-  rules.
-- **Smallest bounded follow-up:** compare raw and digest-plus-length designs for
-  verification after payload removal, substitution resistance and bounded
-  parsing.
-- **Residual/closure condition:** close only when removal and verification
-  semantics are simultaneously defined.
-- **Human ratification:** pending final-HEAD acceptance that this remains open.
+- **Status:** `DECIDED`; the C0.2f executable falsification gate remains
+  mandatory before C0.3 or implementation.
+- **Rule:** every authoritative event authenticates exactly one bounded content
+  descriptor. `content_class` is one of `NONE`, `REQUIRED` or `DETACHABLE`.
+  For content-bearing classes the descriptor authenticates a closed content-
+  type identifier, exact length, commitment suite/shape, full commitment and
+  any bounded chunk geometry. The commitment binds at least its suite
+  identifier, the complete O-03 tuple, content type, exact length,
+  shape/geometry, exact K-boundary application octets and fresh opening
+  randomizer. The K transcript contains the descriptor but never the content
+  bytes or opening. V0 does not
+  permit deterministic, transcript-randomized or keyed K commitment modes.
+  Production randomizer generation uses the supported runtime CSPRNG and fails
+  closed; conformance-vector injection is not a production fallback.
+- **Removal rule:** availability, binding, retention and replay readiness are
+  separate typed properties. Removal is a later authenticated, AP-authorized
+  event targeting the original event reference and commitment; it never
+  rewrites the target. Directives against `NONE` or `REQUIRED` are inapplicable;
+  consumer target absence affects readiness only and never directive validity,
+  references, causality, order or duplicate identity. Re-presented bytes after
+  valid removal remain removed and are classified separately as verified,
+  unverifiable or substituted according to the retained opening and binding
+  result; none becomes active. Physical destruction of the last local
+  copy/opening is gated by O-13 and MUST NOT be inferred from replay position,
+  timeout, retry/peer count, relay/provider/transport response, quota/storage
+  pressure, cache eviction, private-mode teardown or session end.
+- **Replay/reconstruction:** unavailable `REQUIRED` content keeps the event
+  valid and parent-usable but stops the canonical AP replay suffix until its
+  complete opening verifies. No timeout, retry, peer-count, relay response or
+  causal independence skips the halt. In v0 `DETACHABLE` is permitted only when
+  retained events/descriptors/directives reconstruct current AP state without
+  the bytes. Checkpoints do not substitute; checkpoint-based AP-state
+  reconstruction is suspended. Causal compaction remains possible, but
+  `REQUIRED` content/openings are non-releasable AP-replay dependencies and
+  fresh replicas require all of them in horizon.
+- **Rationale/evidence:** `PRIV-05` through `PRIV-19` independently analyzed and
+  reconciled the design; `HASH-004`, `HASH-005`, `PRIV-01`, `PRIV-03` and
+  `PRIV-04` reject boundaryless legacy behavior. The complete decision,
+  alternatives, attack analysis and minority findings are in
+  `docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md`.
+- **Rejected alternatives:** raw payload in the transcript; deterministic bare
+  digest-plus-length; randomizer in the transcript; keyed commitment as the K
+  default; committing SS/TR/RS ciphertext; unauthenticated `isPruned`-style
+  state; rewriting historical events; a profile-selectable v0 cryptographic
+  mode family.
+- **Security/privacy:** descriptor-only history remains bounded and supports
+  retained verification evidence. With a destroyed opening, the retained
+  ledger alone is not intended to expose a practical equality/dictionary oracle
+  under the future O-06 suite assumptions. Length, type and commitment remain
+  correlatable; randomizer reuse is an honest-producer obligation; authorized
+  recipients and copies remain outside any erasure claim. A single withheld or
+  lost `REQUIRED` opening can halt a context indefinitely. Rollback past a
+  removal directive may re-expose quarantined content under the OB-RS09
+  non-claim. Randomized openings intentionally forfeit stable K-level cross-
+  replica content deduplication; storage-level deduplication is outside K and
+  can reintroduce equality leakage. K cannot verify at runtime that an AP
+  profile's `DETACHABLE` declaration satisfies its reconstruction contract.
+  Authority-bearing data classified as `REQUIRED` has no authorized removal or
+  destruction path in v0; closing O-13 alone does not change that rule.
+- **Dependent artifact:** O-06 selects exact domain tags, algorithms, widths and
+  transcript bytes and prevents cross-event leaf equality; O-07 owns the
+  suspended checkpoint authentication/acceptance/substitution contract; O-08
+  sets resource and custody bounds; O-10 assigns rich local outcomes plus one
+  opaque remote fetch result; O-11 chooses wire/storage/fetch encoding; O-13
+  gates irreversible effects. C0.2f must falsify availability-sensitive replay,
+  typed outcomes, checkpoint non-substitution and fresh reconstruction.
+- **Residual/reopen condition:** reopen on a C0.2f counterexample; an O-06 suite
+  unable to meet the bounded binding/privacy contract; a profile requiring
+  deterministic, keyed, provably hiding or chunk-partial-redaction semantics;
+  infeasible atomic content/opening custody; unauthenticated implementation
+  input; unreconstructable detachable state; any checkpoint AP-state
+  substitution or change to its authentication/authority/acceptance/horizon/
+  equivocation/late-admission contract; or an installed legacy population
+  requiring migration.
+- **Human ratification:** pending exact-final-HEAD approval under Issue #215.
 
 ### O-05 — Clock placement
 
@@ -552,32 +624,52 @@ outcomes.
   reference integrity and correlation. Event references stay inside protected
   application objects unless a later profile explicitly accepts disclosure.
 - **Missing evidence:** exact K-02 transcript bytes, digest algorithm registry,
-  output width and O-04 payload-commitment interaction.
+  output width and executable negative vectors. O-04 now fixes the one-way
+  descriptor-to-event-reference interaction without selecting bytes.
 - **Dependent artifact:** exact event-reference derivation and negative vectors.
-- **Smallest bounded follow-up:** close O-04, then specify and adversarially test
-  the exact non-circular event-reference bytes and registry.
+- **Smallest bounded follow-up:** specify and adversarially test the exact
+  non-circular event-reference and payload-commitment domains, bytes, suites and
+  registry.
 - **Residual/closure condition:** close only when semantically distinct valid
   events cannot share a reference under the selected registry and every exact
   field has one unambiguous derivation.
 - **Human ratification:** pending exact-final-HEAD acceptance under Issue #211
   that the semantic roles are fixed while exact derivation remains open.
 
-### O-07 — Genesis content
+### O-07 — Genesis and checkpoint evidence
 
 - **Status:** `OPEN`.
-- **Question:** what exactly is genesis?
+- **Question:** what exactly is genesis, and what authenticates a checkpoint and
+  makes it accepted for each permitted use?
 - **Rationale/evidence:** `EVENT-002` and `EVENT-003` show divergent current
   initialization and missing deterministic clock injection.
 - **Rejected alternatives:** inheriting either current genesis; embedding an
-  ambient wall clock; leaving context or initial membership implicit.
+  ambient wall clock; leaving context or initial membership implicit; treating
+  C0.2d's trusted synthetic `CheckpointEvidence` input as a production trust
+  rule; allowing a checkpoint to substitute for AP replay in v0.
 - **Security/privacy:** genesis anchors context, initial authority and replay
-  separation.
-- **Missing evidence:** the outputs of O-01 through O-06.
-- **Dependent artifact:** initialization transcript and genesis vectors.
-- **Smallest bounded follow-up:** derive genesis only after those inputs close,
-  then prove deterministic construction and cross-context rejection.
+  separation. Checkpoint acceptance can replace self-verification with trust in
+  a producer, expose possession at a horizon, admit rollback/equivocation and
+  become invalid under late forks or revocations.
+- **Missing evidence:** the outputs of O-01 through O-06; checkpoint
+  authentication, AP-authorized producer/threshold and acceptance rules;
+  anti-rollback/freshness, exact horizon, predecessor/equivocation, profile and
+  suite-version binding, and late-admission recovery. No producer trust model is
+  justified today.
+- **Dependent artifact:** initialization transcript and genesis vectors;
+  production checkpoint evidence and negative vectors. The checkpoint portion
+  is a suspended gate for O-04 checkpoint-based `DETACHABLE` reconstruction and
+  any `REQUIRED`-content substitution.
+- **Smallest bounded follow-up:** derive genesis only after its inputs close.
+  Separately determine whether any checkpoint substitution model is sound; if
+  so, define K authentication/binding with AP authorization inputs, reopen
+  O-01/O-04 (and O-02 if a new authority class is introduced), amend the threat
+  model and rerun C0.2f/C0.3. The decision may keep substitution unsupported.
 - **Residual/closure condition:** close only when every genesis field is
-  necessary, authenticated and independently reproducible.
+  necessary, authenticated and independently reproducible and every supported
+  checkpoint use has one explicit authenticator, owner, acceptance rule,
+  rollback/equivocation behavior and late-evidence response. Closing genesis
+  alone MUST NOT silently close the checkpoint portion.
 - **Human ratification:** pending final-HEAD acceptance that this remains open.
 
 ### O-08 — Profile skew, cardinality and activation bounds
@@ -709,6 +801,46 @@ outcomes.
   numeric and privacy properties are bounded.
 - **Human ratification:** pending final-HEAD acceptance that this remains open.
 
+### O-13 — Irreversible-effect authorization for content destruction
+
+- **Status:** `OPEN`. This is a coordinating decision record, not a kernel
+  object, transcript field or validation outcome. It does not block O-04
+  semantic closure, C0.2f or the transcript-only C0.3 corpus.
+- **Decision owner:** `AP` for authorization semantics only.
+- **Referenced one-owner obligations:** AP owns the authorization policy and
+  authenticated evidence; RS owns execution, custody and typed-loss behavior;
+  PV owns operational/user disclosure. K supplies retention/removal evidence
+  and owns no physical-destruction rule. This follows the O-02 split-obligation
+  precedent and creates no aggregate multi-owner rule.
+- **Question:** which authenticated evidence, if any, is sufficient to authorize
+  destruction of the last local content copy or opening?
+- **Interim rule:** until closure, destruction authority MUST NOT be triggered
+  or inferred from replay position, timeout, retry/peer count,
+  relay/provider/transport response, quota or storage pressure, cache expiry or
+  eviction, private-mode teardown, session end or any runtime-convenience path.
+  Logical removal, quarantine and withholding are the only permitted effects.
+  RS reports loss of the last copy/opening as a typed durability failure, never
+  as removal, and MUST NOT present eviction as erasure.
+- **Profile consequence:** no supported profile may promise deletion, erasure or
+  post-removal unlinkability until O-13 closes. PV presents removal as
+  deletion-pending and discloses that quarantined bytes may remain locally.
+  Closing O-13 does not make `REQUIRED` content removable: authority-bearing
+  personal data in that class remains without an authorized logical-removal or
+  destruction path unless O-04 is separately reopened.
+- **Candidate-evidence bound:** any candidate using an accepted checkpoint,
+  declared horizon or checkpoint-bound authority is unevaluable until O-07's
+  checkpoint-authentication/acceptance contract closes.
+- **Gate:** no implementation increment capable of destroying the last local
+  content copy/opening may proceed before closure.
+- **Closure:** requires the AP authorization rule, the linked RS and PV
+  obligations and conformance evidence, plus explicit non-claims for other
+  replicas, peers, backups and physical media.
+- **Residual/reopen condition:** reopen if a rule permits destruction on
+  evidence invalidated by a later fork/revocation, contradicts O-04 or the
+  quarantine interim, or proves operationally infeasible.
+- **Human ratification:** pending under a separate approved decision that closes
+  this record; Issue #215 only creates and constrains it.
+
 ### D-01 — Deferred legacy hardening
 
 - **Status:** `DEFERRED`.
@@ -760,12 +892,15 @@ also be transcript-bound and locally evaluated under the application's policy.
 
 ## 6. Gate for C0.3 and exact next sequence
 
-**C0.3 verdict: `NO-GO`.** O-04, O-06 through O-08 and O-10 still contain
-choices required to derive normative bytes or adversarial expectations. O-12
-is additionally blocking for any profile that retains a physical-time claim;
-it is inapplicable only to profiles that omit physical time. O-11 intentionally
-does not block a transcript-only C0.3 corpus. Starting that corpus now would
-freeze the remaining guesses and create cost pressure on later human decisions.
+**C0.3 verdict: `NO-GO`.** O-06 through O-08 and O-10 still contain choices
+required to derive normative bytes or adversarial expectations; O-07 now
+explicitly includes the previously deferred checkpoint-authentication contract,
+and the C0.2f
+payload-state falsification gate required by O-04 has not run. O-12 is
+additionally blocking for any profile that retains a physical-time claim; it is
+inapplicable only to profiles that omit physical time. O-11 intentionally does
+not block a transcript-only C0.3 corpus. Starting that corpus now would freeze
+the remaining guesses and create cost pressure on later human decisions.
 
 The smallest safe sequence is:
 
@@ -777,15 +912,18 @@ The smallest safe sequence is:
 3. retain and extend the bounded C0.2d causal-flow falsification model whenever
    later choices change its inputs; its current small-state run found no
    counterexample within bounds and does not replace formal proof;
-4. close payload, exact identifier derivation, genesis, cardinality and error
-   questions O-04 and O-06 through O-10, plus O-12 for any time-bearing profile,
-   without product implementation authority; retain O-11 for the later
-   wire/storage decision;
+4. run the C0.2f payload-state falsification gate, then close exact identifier
+   derivation, genesis/checkpoint evidence, cardinality and error questions O-06
+   through O-10, plus O-12 for any time-bearing profile, without product
+   implementation authority; retain O-11 for the later wire/storage decision;
 5. approve the exact Apache-2.0 path inventory for the future corpus;
 6. execute C0.3: specification-derived adversarial corpus plus a third
    implementation written only from the specification;
 7. align JavaScript in C0.4; align or freeze the minimum Dart surface only if it
    remains useful as independent evidence.
+
+O-13 does not block transcript-only C0.3, but no destruction-capable increment
+or deletion/erasure/unlinkability claim may proceed until it closes.
 
 No supported Phase B adapter may persist current application-ledger objects
 while this `NO-GO` remains in force.
