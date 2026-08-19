@@ -35,8 +35,13 @@ readiness and presentation as separate closed axes. A missing `REQUIRED`
 opening halts the entire canonical suffix. `DETACHABLE` availability changes
 presentation only. Logical removal is an append-only, explicitly authorized
 directive and never mutates the target event. Checkpoints derive descriptors
-from retained records and can make a producer ineligible, but never substitute
-for application state at a consumer.
+and removal claims from retained records and can make a producer ineligible,
+but never substitute for application state at a consumer. If a current event
+depends on causal history represented only by checkpoint evidence, the v0
+payload projection reports `STALE_EVIDENCE` and applies no AP effect: the model
+cannot infer the absent dependency's content class or reconstruct its payload
+state. Bytes unexpectedly presented for a `NONE` event are likewise rejected
+as an explicit typed presentation rather than silently ignored.
 
 Commitments are ideal symbolic terms. Injected randomizers, context, content
 type, exact length, shape, chunk geometry, part ordinal and part length are

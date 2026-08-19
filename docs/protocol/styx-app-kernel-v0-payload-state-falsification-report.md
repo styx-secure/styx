@@ -8,7 +8,7 @@ Model: `styx.causal-flow-simulator/v1`
 
 Report schema: `styx.causal-flow-falsification-report/v1`
 
-Machine report SHA-256: `a9844bb1c18054921aa79218633e99b0f909d5698cb6cfb009219dc993d40060`
+Machine report SHA-256: `5378f890d515d0946f8f8002da6d5144a7ec1a0f617610da7832f497b07d45e7`
 
 The exact final candidate HEAD is recorded in immutable PR evidence and in the
 independent exact-HEAD review reports; a tracked file cannot self-identify the
@@ -19,9 +19,9 @@ Issue: [#217](https://github.com/styx-secure/styx/issues/217)
 ## 1. Outcome and claim boundary
 
 The dependency-free C0.2d/C0.2f reference model found no counterexample within
-its declared small-state envelope. The required run performed 72 invariant
-evaluations over 37 hostile scenario families, 42 causal/payload exploration
-traces and 18 explicit payload-axis cases. All sixteen obligations in §9 of the
+its declared small-state envelope. The required run performed 75 invariant
+evaluations over 37 hostile scenario families, 43 causal/payload exploration
+traces and 19 explicit payload-axis cases. All sixteen obligations in §9 of the
 [O-04 analysis](styx-app-kernel-v0-payload-commitment-analysis.md) are present
 as machine-readable passed records.
 
@@ -40,7 +40,9 @@ C0.2d model and adds:
 - explicit per-replica availability and binding observations;
 - independent retention, replay-readiness and presentation classifications;
 - append-only removal claims with explicit AP authorization input;
-- checkpoint classification without consumer-side AP-state substitution;
+- checkpoint classification without consumer-side AP-state substitution,
+  including fail-closed `STALE_EVIDENCE` for payload dependencies represented
+  only by causal-compaction evidence;
 - ideal symbolic commitment and chunk-leaf terms with injected randomizers;
   and
 - scalar resource checks performed before symbolic expansion.
@@ -63,9 +65,14 @@ or O-13 irreversible-effect authorization.
   commitment matches.
 - Removed-but-presented verified, unverifiable and substituted states remain
   distinct and never silently become active.
-- Checkpoint contents derive only from retained descriptors. Availability can
-  make a producer ineligible, but checkpoint evidence never supplies missing
-  application state to a consumer.
+- Checkpoint contents derive only from retained descriptors and removal claims.
+  Availability can make a producer ineligible, but checkpoint evidence never
+  supplies missing application state to a consumer. A current event whose
+  non-authority dependency exists only in causal-compaction evidence halts
+  before every AP effect because v0 cannot recover the absent payload class or
+  state.
+- Supplying bytes for an event authenticated as `NONE` produces a typed rejected
+  presentation; it cannot turn that event into a content-bearing transition.
 - Incremental replay validates its old evaluation before reusing a prefix and
   equals a fresh full replay for the exercised state changes.
 - Symbolic chunk leaves bind context, suite, content type, ordinal, exact part
@@ -92,16 +99,16 @@ payload profile additionally uses:
 | Payload-checkpoint references | 9 |
 | Aggregate payload input | 8,192 bytes |
 | Payload exploration budget | 512 |
-| Explicitly explored payload-axis cases | 18 |
+| Explicitly explored payload-axis cases | 19 |
 
 These are falsification bounds, not O-08 production limits.
 
 ## 5. Machine obligations and result
 
 The report contains one record for every identifier `C0.2f-01` through
-`C0.2f-16`. Obligations 12 and 15 each have two independent checks, obligation
-16 has three, and every other obligation has at least one. All records report
-`passed: true`.
+`C0.2f-16`. Obligations 2, 5, 10, 12 and 15 each have two independent checks,
+obligation 16 has three, and every other obligation has at least one. All
+records report `passed: true`.
 
 The final machine verdict is:
 

@@ -55,6 +55,7 @@ class ReplayReadiness(str, Enum):
 
 class PresentationState(str, Enum):
     NO_CONTENT = "NO_CONTENT"
+    UNEXPECTED_CONTENT_REJECTED = "UNEXPECTED_CONTENT_REJECTED"
     ACTIVE_VERIFIED = "ACTIVE_VERIFIED"
     ACTIVE_UNAVAILABLE = "ACTIVE_UNAVAILABLE"
     ACTIVE_UNVERIFIABLE = "ACTIVE_UNVERIFIABLE"
@@ -73,6 +74,7 @@ class DirectiveOutcome(str, Enum):
     TARGET_COMMITMENT_MISMATCH = "TARGET_COMMITMENT_MISMATCH"
     ALREADY_REMOVED = "ALREADY_REMOVED"
     DEFERRED_BY_REQUIRED_SUFFIX = "DEFERRED_BY_REQUIRED_SUFFIX"
+    DEFERRED_BY_STALE_EVIDENCE = "DEFERRED_BY_STALE_EVIDENCE"
 
 
 class CheckpointDisposition(str, Enum):
@@ -213,6 +215,7 @@ class PayloadEvaluation:
     directive_outcomes: Mapping[bytes, DirectiveOutcome]
     applied_order: tuple[bytes, ...]
     halted_at: bytes | None
+    stale_dependencies: tuple[bytes, ...]
     snapshots: tuple[PayloadSnapshot, ...]
     checkpoint: CheckpointAssessment | None
 
@@ -242,6 +245,20 @@ def _descriptor_term(descriptor: ContentDescriptor) -> tuple[object, ...]:
         None
         if geometry is None
         else (geometry.chunk_size, geometry.chunk_count, geometry.final_chunk_length),
+    )
+
+
+def _record_term(record: PayloadRecord) -> tuple[object, ...]:
+    removal = record.removal
+    return (
+        *_descriptor_term(record.descriptor),
+        None
+        if removal is None
+        else (
+            "removal",
+            removal.target_reference.hex(),
+            removal.target_commitment.hex(),
+        ),
     )
 
 
@@ -435,6 +452,10 @@ class PayloadModel:
             new_causal, new_records, new_observations, new_authorizations, checkpoint
         )
         boundary = affected_replay_boundary(old_causal.order, new_causal.order)
+        if self._compacted_dependencies(old_causal) != self._compacted_dependencies(
+            new_causal
+        ):
+            boundary = 0
         shared = min(boundary, len(old_causal.order), len(new_causal.order))
         for index in range(shared):
             reference = new_causal.order[index]
@@ -565,7 +586,10 @@ class PayloadModel:
         ):
             raise ModelInputError("payload observation axis type is invalid")
         if descriptor.content_class is ContentClass.NONE:
-            if availability is not Availability.ABSENT or binding is not BindingObservation.NOT_APPLICABLE:
+            if binding is not BindingObservation.NOT_APPLICABLE or availability not in (
+                Availability.ABSENT,
+                Availability.PRESENT,
+            ):
                 raise ModelInputError("NONE event has impossible payload observation")
             return
         legal = {
@@ -632,6 +656,15 @@ class PayloadModel:
         boundary: int,
         prefix: Sequence[PayloadSnapshot],
     ) -> PayloadEvaluation:
+        stale_dependencies = self._compacted_dependencies(causal)
+        if stale_dependencies:
+            return self._stale_projection(
+                causal,
+                records,
+                observations,
+                checkpoint,
+                stale_dependencies,
+            )
         if boundary:
             if len(prefix) != boundary:
                 raise ModelInputError("incremental payload prefix is incomplete")
@@ -703,6 +736,76 @@ class PayloadModel:
             directive_outcomes=dict(sorted(outcomes.items())),
             applied_order=tuple(applied),
             halted_at=halted_at,
+            stale_dependencies=(),
+            snapshots=tuple(snapshots),
+            checkpoint=assessment,
+        )
+
+    @staticmethod
+    def _compacted_dependencies(causal: Evaluation) -> tuple[bytes, ...]:
+        """Return non-authority dependencies represented only by causal evidence.
+
+        C0.2f v0 cannot infer the absent dependency's payload class or reconstruct
+        its AP contribution.  It therefore treats every such dependency as stale
+        rather than allowing checkpoint evidence to substitute for payload state.
+        """
+
+        current = set(causal.decisions)
+        authority_refs = {handoff.grant_ref for handoff in causal.handoffs}
+        compacted: set[bytes] = set()
+        for handoff in causal.handoffs:
+            dependencies = handoff.causal_parents
+            if handoff.author_predecessor is not None:
+                dependencies = (handoff.author_predecessor, *dependencies)
+            compacted.update(
+                dependency
+                for dependency in dependencies
+                if dependency not in current and dependency not in authority_refs
+            )
+        return tuple(sorted(compacted))
+
+    def _stale_projection(
+        self,
+        causal: Evaluation,
+        records: Mapping[bytes, PayloadRecord],
+        observations: Mapping[bytes, PayloadObservation],
+        checkpoint: PayloadCheckpoint | None,
+        stale_dependencies: tuple[bytes, ...],
+    ) -> PayloadEvaluation:
+        states: dict[bytes, PayloadState] = {}
+        outcomes: dict[bytes, DirectiveOutcome] = {}
+        snapshots: list[PayloadSnapshot] = []
+        halted_at = stale_dependencies[0]
+        for reference in causal.order:
+            record = records[reference]
+            state = replace(
+                self._active_state(record.descriptor, observations[reference]),
+                readiness=ReplayReadiness.STALE_EVIDENCE,
+                presentation=PresentationState.DEFERRED,
+            )
+            states[reference] = state
+            if record.removal is not None:
+                outcomes[reference] = DirectiveOutcome.DEFERRED_BY_STALE_EVIDENCE
+            snapshots.append(
+                PayloadSnapshot(
+                    reference,
+                    tuple(sorted(states.items())),
+                    tuple(sorted(outcomes.items())),
+                    (),
+                    halted_at,
+                )
+            )
+        assessment = (
+            None
+            if checkpoint is None
+            else self._assess_checkpoint(records, observations, checkpoint)
+        )
+        return PayloadEvaluation(
+            states=dict(sorted(states.items())),
+            directive_outcomes=dict(sorted(outcomes.items())),
+            applied_order=(),
+            halted_at=halted_at,
+            stale_dependencies=stale_dependencies,
             snapshots=tuple(snapshots),
             checkpoint=assessment,
         )
@@ -712,7 +815,11 @@ class PayloadModel:
         descriptor: ContentDescriptor, observation: PayloadObservation
     ) -> PayloadState:
         if descriptor.content_class is ContentClass.NONE:
-            presentation = PresentationState.NO_CONTENT
+            presentation = (
+                PresentationState.NO_CONTENT
+                if observation.availability is Availability.ABSENT
+                else PresentationState.UNEXPECTED_CONTENT_REJECTED
+            )
         elif observation.binding is BindingObservation.VERIFIED:
             presentation = PresentationState.ACTIVE_VERIFIED
         elif observation.availability in (Availability.ABSENT, Availability.PARTIAL):
@@ -780,7 +887,7 @@ class PayloadModel:
     ) -> CheckpointAssessment:
         known = all(reference in records for reference in checkpoint.horizon_refs)
         contents = tuple(
-            (reference.hex(), *_descriptor_term(records[reference].descriptor))
+            (reference.hex(), *_record_term(records[reference]))
             for reference in checkpoint.horizon_refs
             if reference in records
         )
@@ -835,5 +942,8 @@ def payload_evaluation_json(evaluation: PayloadEvaluation) -> dict[str, object]:
         },
         "applied_order": [reference.hex() for reference in evaluation.applied_order],
         "halted_at": None if evaluation.halted_at is None else evaluation.halted_at.hex(),
+        "stale_dependencies": [
+            reference.hex() for reference in evaluation.stale_dependencies
+        ],
         "checkpoint": checkpoint,
     }

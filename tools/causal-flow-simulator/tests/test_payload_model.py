@@ -29,7 +29,7 @@ from payload_model import (
     symbolic_chunk_terms,
     symbolic_commitment_term,
 )
-from scenarios import CTX, GRANT_A, GRANT_B, first, model, next_event
+from scenarios import CTX, GRANT_A, GRANT_B, checkpoint, first, model, next_event
 
 
 NONE_OBSERVATION = PayloadObservation(
@@ -81,6 +81,24 @@ class DescriptorAndAxisTest(unittest.TestCase):
             PayloadModel().evaluate(
                 causal, (invalid,), {event.reference: NONE_OBSERVATION}, {}
             )
+
+    def test_none_event_rejects_unexpected_supplied_bytes_as_typed_state(self):
+        event = first(b"a0", b"a", GRANT_A)
+        causal = model().evaluate((event,))
+        supplied = PayloadObservation(
+            Availability.PRESENT, BindingObservation.NOT_APPLICABLE
+        )
+        result = PayloadModel().evaluate(
+            causal,
+            (PayloadRecord(event.reference, ContentDescriptor.none()),),
+            {event.reference: supplied},
+            {},
+        )
+        self.assertEqual(result.applied_order, causal.order)
+        self.assertEqual(
+            result.states[event.reference].presentation,
+            PresentationState.UNEXPECTED_CONTENT_REJECTED,
+        )
 
     def test_closed_axis_set_accepts_only_legal_combinations(self):
         event = first(b"a0", b"a", GRANT_A)
@@ -249,6 +267,31 @@ class ReplayAvailabilityTest(unittest.TestCase):
         self.assertEqual(causal.decisions[event.reference].status.value, "admitted")
         self.assertEqual(causal.decisions[event.reference].fork_peers, ())
 
+    def test_compacted_dependency_never_substitutes_for_payload_replay(self):
+        compacted = b"a0"
+        current = next_event(b"a1", b"a", 1, compacted)
+        evidence = checkpoint(
+            proven=frozenset((GRANT_A, compacted)),
+            heads=((b"a", 0, compacted),),
+        )
+        causal = model(evidence=evidence).evaluate((current,))
+        records = (record(current.reference, ContentClass.DETACHABLE, b"current"),)
+        result = PayloadModel().evaluate(
+            causal,
+            records,
+            {current.reference: VERIFIED},
+            {},
+            PayloadCheckpoint((current.reference,)),
+        )
+        self.assertEqual(result.stale_dependencies, (compacted,))
+        self.assertEqual(result.halted_at, compacted)
+        self.assertEqual(result.applied_order, ())
+        self.assertEqual(
+            result.states[current.reference].readiness,
+            ReplayReadiness.STALE_EVIDENCE,
+        )
+        self.assertFalse(result.checkpoint.consumer_substitution)
+
 
 class RemovalTest(unittest.TestCase):
     def fixture(self, target_class: ContentClass = ContentClass.DETACHABLE):
@@ -387,6 +430,64 @@ class RemovalTest(unittest.TestCase):
         self.assertEqual(incremental, full)
         self.assertEqual(full.states[target.reference].retention, RetentionState.ACTIVE)
 
+    def test_late_fork_invalidation_restores_active_state(self):
+        target, directive, old_causal, old_records, old_observations = self.fixture()
+        old_authorizations = {directive.reference: True}
+        old_payload = PayloadModel().evaluate(
+            old_causal, old_records, old_observations, old_authorizations
+        )
+        fork = first(
+            b"r1",
+            b"b",
+            GRANT_B,
+            parents=(target.reference,),
+            kind="remove",
+        )
+        new_causal = model().evaluate((fork, directive, target))
+        new_records = (
+            *old_records,
+            PayloadRecord(
+                fork.reference,
+                ContentDescriptor.none(),
+                RemovalClaim(target.reference, b"target"),
+            ),
+        )
+        new_observations = dict(old_observations)
+        new_observations[fork.reference] = NONE_OBSERVATION
+        new_authorizations = {directive.reference: False, fork.reference: False}
+        full = PayloadModel().evaluate(
+            new_causal,
+            new_records,
+            new_observations,
+            new_authorizations,
+        )
+        boundary, incremental = PayloadModel().incremental(
+            old_causal,
+            new_causal,
+            old_payload,
+            old_records,
+            new_records,
+            old_observations,
+            new_observations,
+            old_authorizations,
+            new_authorizations,
+        )
+        self.assertEqual(incremental, full)
+        self.assertLessEqual(boundary, new_causal.order.index(directive.reference))
+        self.assertEqual(
+            new_causal.decisions[directive.reference].status.value, "fork"
+        )
+        self.assertEqual(
+            new_causal.decisions[fork.reference].status.value, "fork"
+        )
+        self.assertEqual(full.states[target.reference].retention, RetentionState.ACTIVE)
+        self.assertEqual(
+            full.directive_outcomes[directive.reference], DirectiveOutcome.UNAUTHORIZED
+        )
+        self.assertEqual(
+            full.directive_outcomes[fork.reference], DirectiveOutcome.UNAUTHORIZED
+        )
+
 
 class CheckpointTest(unittest.TestCase):
     def test_checkpoint_contents_ignore_availability_but_eligibility_does_not(self):
@@ -442,6 +543,33 @@ class CheckpointTest(unittest.TestCase):
                     contents = result.checkpoint.contents
                 else:
                     self.assertEqual(contents, result.checkpoint.contents)
+
+    def test_checkpoint_contents_bind_removal_claims(self):
+        target = first(b"a0", b"a", GRANT_A)
+        directive = first(
+            b"r0", b"b", GRANT_B, parents=(target.reference,), kind="remove"
+        )
+        causal = model().evaluate((directive, target))
+        target_record = record(target.reference, ContentClass.DETACHABLE, b"target")
+        directive_record = PayloadRecord(
+            directive.reference,
+            ContentDescriptor.none(),
+            RemovalClaim(target.reference, b"target"),
+        )
+        result = PayloadModel().evaluate(
+            causal,
+            (target_record, directive_record),
+            {target.reference: VERIFIED, directive.reference: NONE_OBSERVATION},
+            {directive.reference: True},
+            PayloadCheckpoint(causal.order),
+        )
+        directive_term = next(
+            term for term in result.checkpoint.contents if term[0] == directive.reference.hex()
+        )
+        self.assertEqual(
+            directive_term[-1],
+            ("removal", target.reference.hex(), b"target".hex()),
+        )
 
 
 class PayloadBoundsTest(unittest.TestCase):

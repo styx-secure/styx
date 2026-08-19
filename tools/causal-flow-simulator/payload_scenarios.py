@@ -30,6 +30,7 @@ from payload_model import (
     PayloadProfile,
     PayloadRecord,
     PresentationState,
+    ReplayReadiness,
     RemovalClaim,
     RetentionState,
     SymbolicCommitmentVector,
@@ -50,7 +51,12 @@ VERIFIED = PayloadObservation(Availability.PRESENT, BindingObservation.VERIFIED)
 MISSING = PayloadObservation(Availability.ABSENT, BindingObservation.NOT_CHECKED)
 
 
-def causal_model(*, b_revocations: tuple[bytes, ...] = ()) -> CausalModel:
+def causal_model(
+    *,
+    b_revocations: tuple[bytes, ...] = (),
+    proven_extra: tuple[bytes, ...] = (),
+    heads: tuple[tuple[bytes, int, bytes], ...] = (),
+) -> CausalModel:
     return CausalModel(
         context=CTX,
         authorities=(
@@ -59,7 +65,9 @@ def causal_model(*, b_revocations: tuple[bytes, ...] = ()) -> CausalModel:
             CredentialAuthority(b"c", CTX, GRANT_C),
         ),
         checkpoint=CheckpointEvidence(
-            CTX, frozenset((GRANT_A, GRANT_B, GRANT_C))
+            CTX,
+            frozenset((GRANT_A, GRANT_B, GRANT_C, *proven_extra)),
+            author_heads=heads,
         ),
         profile=Profile(),
     )
@@ -300,6 +308,26 @@ def extend_required_suite(suite: object) -> None:
         trace=(detachable,),
         obligation="C0.2f-05",
     )
+    none_supplied = payload.evaluate(
+        causal_model().evaluate((detachable,)),
+        (PayloadRecord(detachable.reference, ContentDescriptor.none()),),
+        {
+            detachable.reference: PayloadObservation(
+                Availability.PRESENT, BindingObservation.NOT_APPLICABLE
+            )
+        },
+        {},
+    )
+    suite.payload_explored()
+    suite.check(
+        "bytes supplied for NONE are rejected as a typed non-content presentation",
+        none_supplied.states[detachable.reference].presentation
+        is PresentationState.UNEXPECTED_CONTENT_REJECTED
+        and none_supplied.applied_order == causal.order,
+        family="typed-axis-closure",
+        trace=(detachable,),
+        obligation="C0.2f-05",
+    )
 
     # 6 and 7: policy cannot remove REQUIRED and unauthorized directives do nothing.
     target, directive, causal_removal, required_removal_records, removal_observations = (
@@ -320,6 +348,13 @@ def extend_required_suite(suite: object) -> None:
         detachable_observations,
         {directive_d.reference: False},
     )
+    checkpoint_with_directive = payload.evaluate(
+        causal_d,
+        detachable_records,
+        detachable_observations,
+        {directive_d.reference: True},
+        PayloadCheckpoint(causal_d.order),
+    )
     suite.check(
         "authenticated directive cannot mutate or remove REQUIRED content",
         required_removal.directive_outcomes[directive.reference]
@@ -339,6 +374,23 @@ def extend_required_suite(suite: object) -> None:
         family="removal-policy",
         trace=(target_d, directive_d),
         obligation="C0.2f-07",
+    )
+    directive_checkpoint_term = next(
+        item
+        for item in checkpoint_with_directive.checkpoint.contents
+        if item[0] == directive_d.reference.hex()
+    )
+    suite.check(
+        "checkpoint contents commit to retained removal directives",
+        directive_checkpoint_term[-1]
+        == (
+            "removal",
+            target_d.reference.hex(),
+            b"target".hex(),
+        ),
+        family="checkpoint-proof",
+        trace=(target_d, directive_d),
+        obligation="C0.2f-02",
     )
 
     # 8: removed presentations remain removed and distinguish binding evidence.
@@ -377,22 +429,45 @@ def extend_required_suite(suite: object) -> None:
         obligation="C0.2f-08",
     )
 
-    # 9: even authenticated checkpoint evidence never fills a REQUIRED hole.
-    fresh = payload.evaluate(
-        causal_chain,
-        chain_records,
-        old_observations,
+    # 9: causal compaction never substitutes for absent payload replay state.
+    compacted = first(b"c0", b"a", GRANT_A)
+    compacted_child = next_event(
+        b"c1", b"a", 1, compacted.reference
+    )
+    compacted_causal = causal_model(
+        proven_extra=(compacted.reference,),
+        heads=((b"a", 0, compacted.reference),),
+    ).evaluate((compacted_child,))
+    compacted_records = (
+        record(compacted_child.reference, ContentClass.DETACHABLE, b"child"),
+    )
+    compacted_observations = {compacted_child.reference: VERIFIED}
+    without_checkpoint = payload.evaluate(
+        compacted_causal,
+        compacted_records,
+        compacted_observations,
         {},
-        PayloadCheckpoint(causal_chain.order),
+    )
+    with_checkpoint = payload.evaluate(
+        compacted_causal,
+        compacted_records,
+        compacted_observations,
+        {},
+        PayloadCheckpoint((compacted_child.reference,)),
     )
     suite.check(
-        "fresh replica rejects checkpoint substitution for REQUIRED content",
-        fresh.halted_at == required.reference
-        and fresh.applied_order == ()
-        and fresh.checkpoint is not None
-        and not fresh.checkpoint.consumer_substitution,
+        "fresh replica halts on compacted payload dependency with or without checkpoint",
+        without_checkpoint.stale_dependencies == (compacted.reference,)
+        and with_checkpoint.stale_dependencies == (compacted.reference,)
+        and without_checkpoint.applied_order == with_checkpoint.applied_order == ()
+        and without_checkpoint.states[compacted_child.reference].readiness
+        is ReplayReadiness.STALE_EVIDENCE
+        and with_checkpoint.states[compacted_child.reference]
+        == without_checkpoint.states[compacted_child.reference]
+        and with_checkpoint.checkpoint is not None
+        and not with_checkpoint.checkpoint.consumer_substitution,
         family="fresh-reconstruction",
-        trace=(required, later),
+        trace=(compacted, compacted_child),
         obligation="C0.2f-09",
     )
 
@@ -437,6 +512,64 @@ def extend_required_suite(suite: object) -> None:
         in new_causal.handoffs[-1].causal_relations,
         family="late-removal-invalidation",
         trace=(target_d, directive_d, authority_change),
+        obligation="C0.2f-10",
+    )
+    fork_directive = first(
+        b"r1",
+        b"b",
+        GRANT_B,
+        parents=(target_d.reference,),
+        kind="remove",
+    )
+    fork_causal_removal = causal_model().evaluate(
+        (fork_directive, directive_d, target_d)
+    )
+    fork_records_removal = (
+        *detachable_records,
+        PayloadRecord(
+            fork_directive.reference,
+            ContentDescriptor.none(),
+            RemovalClaim(target_d.reference, b"target"),
+        ),
+    )
+    fork_observations_removal = dict(detachable_observations)
+    fork_observations_removal[fork_directive.reference] = NONE_OBSERVATION
+    fork_authorizations = {
+        directive_d.reference: False,
+        fork_directive.reference: False,
+    }
+    fork_full = payload.evaluate(
+        fork_causal_removal,
+        fork_records_removal,
+        fork_observations_removal,
+        fork_authorizations,
+    )
+    fork_boundary, fork_incremental = payload.incremental(
+        causal_d,
+        fork_causal_removal,
+        old_payload,
+        detachable_records,
+        fork_records_removal,
+        detachable_observations,
+        fork_observations_removal,
+        old_auth,
+        fork_authorizations,
+    )
+    suite.check(
+        "late fork invalidates removal authority and incremental equals full",
+        fork_incremental == fork_full
+        and fork_boundary
+        <= fork_causal_removal.order.index(directive_d.reference)
+        and fork_causal_removal.decisions[directive_d.reference].status.value == "fork"
+        and fork_causal_removal.decisions[fork_directive.reference].status.value
+        == "fork"
+        and fork_full.states[target_d.reference].retention is RetentionState.ACTIVE
+        and fork_full.directive_outcomes[directive_d.reference]
+        is DirectiveOutcome.UNAUTHORIZED
+        and fork_full.directive_outcomes[fork_directive.reference]
+        is DirectiveOutcome.UNAUTHORIZED,
+        family="late-removal-invalidation",
+        trace=(target_d, directive_d, fork_directive),
         obligation="C0.2f-10",
     )
 
