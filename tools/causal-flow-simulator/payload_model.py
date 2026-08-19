@@ -452,9 +452,9 @@ class PayloadModel:
             new_causal, new_records, new_observations, new_authorizations, checkpoint
         )
         boundary = affected_replay_boundary(old_causal.order, new_causal.order)
-        if self._compacted_dependencies(old_causal) != self._compacted_dependencies(
-            new_causal
-        ):
+        old_compacted = self._compacted_dependencies(old_causal)
+        new_compacted = self._compacted_dependencies(new_causal)
+        if old_compacted or new_compacted:
             boundary = 0
         shared = min(boundary, len(old_causal.order), len(new_causal.order))
         for index in range(shared):

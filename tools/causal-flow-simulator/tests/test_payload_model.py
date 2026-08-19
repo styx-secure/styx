@@ -295,6 +295,20 @@ class ReplayAvailabilityTest(unittest.TestCase):
         )
         self.assertFalse(result.checkpoint.producer_eligible)
         self.assertFalse(result.checkpoint.consumer_substitution)
+        boundary, incremental = PayloadModel().incremental(
+            causal,
+            causal,
+            result,
+            records,
+            records,
+            {current.reference: VERIFIED},
+            {current.reference: VERIFIED},
+            {},
+            {},
+            PayloadCheckpoint((current.reference,)),
+        )
+        self.assertEqual(boundary, 0)
+        self.assertEqual(incremental, result)
 
 
 class RemovalTest(unittest.TestCase):

@@ -455,6 +455,18 @@ def extend_required_suite(suite: object) -> None:
         {},
         PayloadCheckpoint((compacted_child.reference,)),
     )
+    compacted_boundary, compacted_incremental = payload.incremental(
+        compacted_causal,
+        compacted_causal,
+        with_checkpoint,
+        compacted_records,
+        compacted_records,
+        compacted_observations,
+        compacted_observations,
+        {},
+        {},
+        PayloadCheckpoint((compacted_child.reference,)),
+    )
     suite.check(
         "fresh replica halts on compacted payload dependency with or without checkpoint",
         without_checkpoint.stale_dependencies == (compacted.reference,)
@@ -468,7 +480,9 @@ def extend_required_suite(suite: object) -> None:
         and with_checkpoint.checkpoint.disposition
         is CheckpointDisposition.STALE_EVIDENCE
         and not with_checkpoint.checkpoint.producer_eligible
-        and not with_checkpoint.checkpoint.consumer_substitution,
+        and not with_checkpoint.checkpoint.consumer_substitution
+        and compacted_boundary == 0
+        and compacted_incremental == with_checkpoint,
         family="fresh-reconstruction",
         trace=(compacted, compacted_child),
         obligation="C0.2f-09",
