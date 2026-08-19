@@ -8,6 +8,9 @@
   organizational profiles.
 - **Evidence baseline:** `main @
   6409bc1b530622dfd592e4ebdb66e242f458b378`.
+- **C0.2e amendment:** O-04 payload commitment and logical-removal properties
+  were refined by Issue #215 at base
+  `b49482a13e239b3cec42ac0b264ca452cd78bd9f`.
 - **Language:** English is canonical.
 
 Styx is experimental, has not completed an independent security audit, and is
@@ -59,16 +62,16 @@ the [C0.2a responsibility matrix](../protocol/styx-app-kernel-v0-responsibility-
 | --- | --- | --- | --- | --- |
 | Application plaintext and attachments | Confidentiality to the recipients selected by an authorized application transition | Authentication failure rejects delivery; compromise invokes rotation and product incident handling | `OB-SS03`, `OB-AP08`, `OB-PV09` | An authorized or compromised endpoint can disclose plaintext; attachment metadata requires separate handling. |
 | Application event meaning | Integrity and authenticity of every field that affects validation, authorization, causality, ordering or conflict handling | Invalid transcripts and semantics are rejected before authoritative state change | `OB-K01`–`OB-K04`, `OB-K12` | A valid signature proves key possession, not role authorization or truth. |
-| Application and case context | Domain separation and rejection of cross-context replay | Cross-context objects fail kernel validation | `OB-K08`, requirements from `OB-AP03` | The concrete context identifier and genesis binding remain open under O-03 and O-07. |
-| Author and role authority | Explicit, rotatable, context-bound authorization | Unauthorized or stale authority is rejected; compromise invokes profile rotation/revocation | `OB-AP02`; binding by `OB-K01` | Credential construction, rotation and revocation remain open under O-02. |
-| Causal history and state | Deterministic validation, replay/fork detection and bounded convergence | Classified duplicate, replay, missing-parent, fork or conflict result | `OB-K05`–`OB-K07`, `OB-K13` | The causal representation, clock placement and identifier semantics remain open under O-01, O-05 and O-06. |
+| Application and case context | Domain separation and rejection of cross-context replay | Cross-context objects fail kernel validation | `OB-K08`, requirements from `OB-AP03` | The O-03 context tuple is decided; exact genesis binding mechanics remain open under O-07. |
+| Author and role authority | Explicit, rotatable, context-bound authorization | Unauthorized or stale authority is rejected; compromise invokes profile rotation/revocation | `OB-AP02`; binding by `OB-K01` | O-02 decides credential construction and binding; concrete profile grants and bounds remain future work. |
+| Causal history and state | Deterministic validation, replay/fork detection and bounded convergence | Classified duplicate, replay, missing-parent, fork or conflict result | `OB-K05`–`OB-K07`, `OB-K13` | O-01/O-05 decide causality and clock placement; exact identifier derivation remains open under O-06. |
 | Durable local state | Confidentiality, atomicity, crash safety and rollback behavior within a declared runtime profile | Fail closed on ambiguous persistence; restore/reconcile or require intervention | `OB-RS02`–`OB-RS10` | Browser storage may be evicted; a coherent whole-profile rollback may be undetectable without external evidence. |
 | Session secrets and membership | Confidential authenticated delivery, membership control, forward secrecy and post-compromise recovery within the selected session profile | Reject invalid or unauthorized session transitions; rotate/recover within profile bounds | `OB-SS01`–`OB-SS09` | Phase B proves only the exact pinned isolated profile recorded by its verdict. |
 | Return capabilities and recovery material | Unforgeability, confidentiality, context separation and intentional recovery semantics | Reject invalid/reused context; explain intentional irrecoverability or use the approved recovery route | `OB-AP09`, custody by `OB-RS01` | Loss may be unrecoverable; screenshots, backups and phishing can disclose a capability. |
 | Routing and relationship metadata | Minimization and unlinkability only against the adversaries named by a concrete transport/product profile | Capture concrete data flow and run negative-linkage tests; rotate or disable exposed handles | `OB-TR02`, `OB-TR06`–`OB-TR10` | E2EE does not hide IP addresses, timing, size, frequency or stable routing handles by itself. |
 | Local and remote delivery evidence | Truthful distinction between durable local commit, publication, device receipt and application receipt | Reconcile each typed stage; never promote missing evidence | `OB-RS06`, `OB-TR03`, `OB-AP07` | A relay acknowledgement is not proof that a person received or read an object. |
 | Human workflow state | Truthful distinction between assignment, reading, action, rejection and closure | Authenticated workflow transition plus human/organizational audit where required | `OB-AP01`, `OB-AP02`, `OB-PV01`–`OB-PV04` | Software cannot prove that a human understood, acted lawfully or told the truth. |
-| Retention, pruning and evidence | Authenticated policy and verifiable state transition without overstating erasure or truth | Preserve declared verification evidence and record unreachable copies/peers | `OB-AP05`, mechanics by `OB-K10`/`OB-K14`, operations by `OB-PV03` | Hashes may remain identifying; peers, backups, flash and screenshots may retain copies. |
+| Content commitment, retention and evidence | Authenticated bounded descriptor and randomized-opening content binding; availability remains distinct from validity; logical removal is append-only | Preserve descriptor/commitment/removal evidence; halt the whole REQUIRED AP suffix when direct verification is unavailable; never substitute current checkpoint state | `OB-AP05`, mechanics by `OB-K10`/`OB-K14`, custody by `OB-RS02`–`OB-RS09`, presentation by `OB-PV03`/`OB-PV11` | Length/type/commitment may remain identifying; opening destruction prevents later ledger-only verification and may halt replay permanently; peers, backups, flash and screenshots may retain copies. |
 | Software and configuration | Reproducible, attributable and rollback-aware distribution within a runtime profile | Reject unverifiable/rolled-back artifacts or surface an explicit unsupported state | `OB-RS12`, release decision by `OB-PV10` | A browser origin controlling the first response remains able to substitute JavaScript unless another trust root detects or prevents it. |
 | Operational continuity | Bounded availability, recovery and separation of duties | Typed outage state, tested restore/failover and incident procedure | `OB-TR03`/`OB-TR04`, `OB-PV02`/`OB-PV07` | No profile promises uninterrupted service or protection from every correlated infrastructure failure. |
 
@@ -90,6 +93,13 @@ a synonym for all of them:
   for the scoped actions, subject to traffic-analysis limits;
 - **erasure**: a logical transition and best-effort deletion policy, never an
   absolute physical-erasure guarantee;
+- **content binding**: supplied content plus its opening recomputes the
+  authenticated descriptor commitment; this is separate from event validity
+  and does not prove content truth;
+- **reconstructibility**: in v0 a fresh replica derives authoritative AP state
+  from retained events and every directly verified in-horizon `REQUIRED`
+  content/opening, or reports a declared deferred/stale limit. Current
+  checkpoints never substitute for those inputs;
 - **delivery state**: evidence for a precisely named stage, not a generic
   “sent” flag; and
 - **human and organizational assurance**: procedures, training, independence
@@ -205,8 +215,11 @@ Can cause quota exhaustion, partial writes, corruption, deletion, eviction,
 stale restoration or coherent rollback through browser behavior, backup,
 filesystem snapshots or synchronization. This actor need not know plaintext.
 
-Persistence failure must not be reported as success. Each runtime profile must
-define atomicity, recovery and rollback-detection limits. Security may require
+Persistence failure must not be reported as success. Eviction or teardown loss
+of the last content/opening copy is a typed durability failure, never logical
+removal or erasure. Each runtime profile must define atomicity, recovery and
+rollback-detection limits. Rolling back before a removal directive can
+re-expose quarantined content and is a privacy regression. Security may require
 halting rather than continuing from ambiguous state.
 
 ### A11 — Malicious organizational operator or administrator
@@ -254,7 +267,7 @@ make telemetry or push metadata harmless.
 | Adversary | Primary assets/properties at risk | Required response and evidence | Sole obligation owners | Residual non-claim |
 | --- | --- | --- | --- | --- |
 | A1 malformed-input sender | Event meaning, session/runtime availability | Strict bounded parsing, canonical rejection, stable outcomes and resource tests before state change | `OB-K02`–`OB-K04`, `OB-SS08`, `OB-TR01` each at its parser boundary | A conforming parser cannot prevent all bandwidth exhaustion before bytes reach it. |
-| A2 valid but unauthorized actor | Role authority, case state, retention/export | Separate authentication from context-bound authorization; negative role, rotation and revocation cases | `OB-AP02`; cryptographic binding by `OB-K01` | The concrete credential/rotation construction is still open. |
+| A2 valid but unauthorized actor | Role authority, case state, retention/export | Separate authentication from context-bound authorization; negative role, rotation and revocation cases | `OB-AP02`; cryptographic binding by `OB-K01` | Concrete profile grants and bounds remain future work. |
 | A3 malicious peer | Plaintext, causal state, availability, erasure | Detect replay/fork/conflict, preserve deterministic evidence, expose refusal/timeout, apply product incident process | `OB-K05`–`OB-K14`, `OB-AP04`, `OB-PV04` | An authorized peer can copy plaintext, withhold input or lie in signed content. |
 | A4 compromised authorized peer | Current rights, plaintext and session history | Revoke/rotate, bound synchronized history, recover session and disclose the compromise state | `OB-AP02`, `OB-SS04`–`OB-SS06`, `OB-PV07` | No retroactive protection for plaintext or keys already obtained. |
 | A5 hostile/colluding relay | Availability, freshness, routing metadata | Verify outer objects, ignore relay order as authority, retry/fail over and measure concrete exposure | `OB-TR01`–`OB-TR06`, `OB-TR10` | Colluding relays can correlate all metadata visible to their profile. |
@@ -312,7 +325,7 @@ cover only the bytes actually protected by the named layer.
 The following are requirements on future specifications and profiles, not
 claims about current code.
 
-| Scenario | Required outcome | Detection or recovery expectation | Sole owning layer |
+| Scenario | Required outcome | Detection or recovery expectation | Owning layer or explicit obligation split |
 | --- | --- | --- | --- |
 | Malformed or non-canonical application object | Reject before authoritative state change | Stable classified failure; no parser detail leak beyond the future error policy | Application semantic kernel |
 | Valid signature under an unauthorized key | Reject the transition | Product can explain authorization failure without treating it as bad cryptography | Application profile |
@@ -324,12 +337,18 @@ claims about current code.
 | Relay duplication, reordering, omission or stale response | Never alter application validity; reconcile within delivery policy | Retry/failover or explicit unavailable/expired state | Transport/routing profile |
 | Crash between durable transition and send | Resume without duplicate effect or false delivery | Reconcile outbox and idempotency state | Runtime/storage profile |
 | Persistence or quota failure | Fail closed; do not report success | Typed fatal/recoverable outcome according to the runtime contract | Runtime/storage profile |
-| Coherent local rollback | Detect only within the profile's declared anchor/evidence model; otherwise state the non-claim | Halt, resynchronize or require user action when detected | Runtime/storage profile |
+| Coherent local rollback | Detect only within the profile's declared anchor/evidence model; otherwise state the non-claim; rollback past removal may re-expose quarantined content | Halt, resynchronize or require user action when detected; never present re-exposure as corrected state | Runtime/storage profile |
 | Targeted malicious web release | No PWA guarantee beyond the declared prevention/detection controls | External artifact verification or migration to a stronger signed profile | Runtime/storage profile |
 | Metadata-minimizing delivery | Reveal only the fields allowed by the concrete profile | Data-flow capture and negative linkage evidence against named observers | Transport/routing profile |
 | Operator attempts unauthorized export or policy change | Enforce role and high-impact authorization policy | Minimized independent audit record and incident procedure | Product vertical and organizational operations |
 | Retention/deletion request authorization | Admit only a context-bound action permitted by the selected data-class policy | Reject unauthorized or out-of-policy requests | Application profile |
 | Evidence-preserving prune transition | Apply the authenticated logical transition without promising physical erasure | Preserve the declared commitment/proof and classify invalid history | Application semantic kernel |
+| Content bytes or opening absent | Keep the event valid and causal identity unchanged; expose typed availability/binding/readiness | Defer a `REQUIRED` replay suffix or apply the profile's declared `DETACHABLE` reconstruction contract | Application semantic kernel with application profile |
+| Content mismatches descriptor, length or opening | Never reinterpret corruption as absence or removal | Reject content presentation with a stable typed outcome; retain event validity independently | Application semantic kernel |
+| Content reappears after valid logical removal | Do not silently reactivate or expose it | Distinguish verified removed presentation, unverifiable presentation and substituted presentation; none becomes active | Application semantic kernel and product vertical |
+| Physical destruction requested or caused by runtime pressure | Never infer authority from replay position, timeout, retry/peer count, relay response, quota, eviction or teardown | Quarantine/withhold until O-13 closes; report physical loss as typed durability failure, never removal | Application profile and runtime/storage profile |
+| Fresh replica follows compacted history | Continue causal validation from permitted O-01 evidence, but derive AP state only from retained events and directly verified REQUIRED content/openings | Otherwise halt the AP suffix and report deferred/stale; current checkpoints never substitute | Application semantic kernel and application profile |
+| Checkpoint material offered for AP-state substitution | Treat the capability as unsupported in v0 | Never trust producer eligibility or AP state; O-07 must first define authentication, authority, acceptance, rollback, equivocation, horizon and late-evidence handling | Application semantic kernel and application profile |
 | Service/relay outage | Preserve local truth and expose unavailable delivery state | Bounded retry, alternate routes and continuity procedure | Transport/routing profile |
 
 ## 7. Metadata and unlinkability model
@@ -421,8 +440,9 @@ Current evidence establishes only bounded components:
 
 - C0.1 characterizes Dart and JavaScript legacy-ledger behavior; it also shows
   why current matches cannot define the protocol;
-- C0.2 decides K-01 through K-11 while leaving O-01 through O-08 and O-10
-  through O-12 open;
+- C0.2a through C0.2e decide K-01 through K-11, O-01 through O-05 and O-09,
+  with O-04's C0.2f evidence gate pending; O-06, O-07, O-08 and O-10 through
+  O-13 remain open;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
   described in its final verdict; and
 - existing vault and chat work provides component evidence under its own
