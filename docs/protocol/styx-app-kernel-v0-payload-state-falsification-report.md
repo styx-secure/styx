@@ -175,11 +175,12 @@ replay-equivalence families.
 
 `consumer_substitution` is a structural false value in the v0 checkpoint
 assessment and is not independent evidence by itself. The substantive
-non-substitution evidence is the equality of AP projections with and without
-otherwise admissible checkpoint evidence. Separate independent exact-candidate
-mutation probes showed that making checkpoint state affect consumer replay
-causes those equality checks to retain a counterexample; those probes are
-review evidence, not part of the tracked required suite.
+non-substitution evidence compares complete AP projections with and without a
+checkpoint for both a producer-ineligible horizon containing deferred
+`REQUIRED` content and an emittable horizon containing active content. Separate
+independent exact-candidate mutation probes showed that making checkpoint state
+affect either projection causes the tracked checks to retain a counterexample;
+those probes are review evidence, not part of the tracked required suite.
 
 The repository CI does not yet invoke this bounded gate. Adding an exact
 deterministic CI invocation requires a separately approved workflow change;

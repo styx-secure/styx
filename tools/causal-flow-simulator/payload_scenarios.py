@@ -216,6 +216,12 @@ def extend_required_suite(suite: object) -> None:
     checkpoint_present = payload.evaluate(
         causal_required, required_records, {required.reference: VERIFIED}, {}, horizon
     )
+    missing_without_checkpoint = payload.evaluate(
+        causal_required, required_records, {required.reference: MISSING}, {}
+    )
+    present_without_checkpoint = payload.evaluate(
+        causal_required, required_records, {required.reference: VERIFIED}, {}
+    )
     suite.check(
         "checkpoint contents ignore producer availability while eligibility changes",
         checkpoint_missing.checkpoint.contents == checkpoint_present.checkpoint.contents
@@ -232,7 +238,11 @@ def extend_required_suite(suite: object) -> None:
         checkpoint_missing.checkpoint is not None
         and checkpoint_present.checkpoint is not None
         and not checkpoint_missing.checkpoint.consumer_substitution
-        and not checkpoint_present.checkpoint.consumer_substitution,
+        and not checkpoint_present.checkpoint.consumer_substitution
+        and replace(checkpoint_missing, checkpoint=None)
+        == missing_without_checkpoint
+        and replace(checkpoint_present, checkpoint=None)
+        == present_without_checkpoint,
         family="checkpoint-non-substitution",
         trace=(required,),
         obligation="C0.2f-12",

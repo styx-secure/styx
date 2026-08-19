@@ -732,9 +732,11 @@ class CheckpointTest(unittest.TestCase):
         observations = {required.reference: MISSING, later.reference: VERIFIED}
         checkpoint = PayloadCheckpoint(tuple(sorted(causal.order)))
         result = PayloadModel().evaluate(causal, records, observations, {}, checkpoint)
+        baseline = PayloadModel().evaluate(causal, records, observations, {})
         self.assertEqual(result.halted_at, required.reference)
         self.assertFalse(result.checkpoint.consumer_substitution)
         self.assertEqual(result.applied_order, ())
+        self.assertEqual(replace(result, checkpoint=None), baseline)
 
     def test_checkpoint_eligibility_covers_horizon_ancestor_closure(self):
         required = first(b"f0", b"a", GRANT_A)
