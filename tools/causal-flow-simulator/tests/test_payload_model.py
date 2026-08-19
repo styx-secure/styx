@@ -232,6 +232,14 @@ class SymbolicCommitmentTest(unittest.TestCase):
         )
         with self.assertRaises(ModelInputError):
             symbolic_commitment_term(too_many)
+        oversized_chunk_size = replace(
+            self.vector(b"r1"),
+            chunk_geometry=ChunkGeometry(257, 1, 6),
+            part_symbols=(b"x",),
+            part_lengths=(6,),
+        )
+        with self.assertRaisesRegex(ModelInputError, "chunk size exceeds profile"):
+            symbolic_commitment_term(oversized_chunk_size)
 
 
 class ReplayAvailabilityTest(unittest.TestCase):

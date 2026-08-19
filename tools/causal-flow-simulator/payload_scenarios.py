@@ -321,7 +321,7 @@ def extend_required_suite(suite: object) -> None:
         boundary == 0 and incremental == resumed and resumed.applied_order == causal_chain.order,
         family="payload-replay-equivalence",
         trace=(required, later),
-        obligation="C0.2f-03",
+        obligation="C0.2f-04",
     )
     final_snapshot = resumed.snapshots[-1]
     forged_snapshot = replace(
@@ -1149,6 +1149,18 @@ def extend_required_suite(suite: object) -> None:
     suite.check_raises(
         "attacker-declared chunk count rejects at profile bound",
         lambda: symbolic_commitment_term(too_many_parts),
+        family="payload-resource-bound",
+        obligation="C0.2f-16",
+    )
+    oversized_chunk_size = replace(
+        vector,
+        chunk_geometry=ChunkGeometry(257, 1, 6),
+        part_symbols=(b"x",),
+        part_lengths=(6,),
+    )
+    suite.check_raises(
+        "attacker-declared chunk size rejects at profile bound",
+        lambda: symbolic_commitment_term(oversized_chunk_size),
         family="payload-resource-bound",
         obligation="C0.2f-16",
     )
