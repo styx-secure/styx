@@ -499,8 +499,8 @@ outcomes.
 
 ### O-04 — Payload commitment and detachment
 
-- **Status:** `DECIDED`; the C0.2f executable falsification gate remains
-  mandatory before C0.3 or implementation.
+- **Status:** `DECIDED`; the C0.2f executable falsification gate passed within
+  its declared bounds and remains mandatory to rerun after dependent changes.
 - **Rule:** every authoritative event authenticates exactly one bounded content
   descriptor. `content_class` is one of `NONE`, `REQUIRED` or `DETACHABLE`.
   For content-bearing classes the descriptor authenticates a closed content-
@@ -538,7 +538,10 @@ outcomes.
   reconciled the design; `HASH-004`, `HASH-005`, `PRIV-01`, `PRIV-03` and
   `PRIV-04` reject boundaryless legacy behavior. The complete decision,
   alternatives, attack analysis and minority findings are in
-  `docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md`.
+  `docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md`. The C0.2f
+  model evaluated all sixteen required obligations and returned
+  `NO_COUNTEREXAMPLE_WITHIN_BOUNDS`; exact bounds and residual risks are in
+  `docs/protocol/styx-app-kernel-v0-payload-state-falsification-report.md`.
 - **Rejected alternatives:** raw payload in the transcript; deterministic bare
   digest-plus-length; randomizer in the transcript; keyed commitment as the K
   default; committing SS/TR/RS ciphertext; unauthenticated `isPruned`-style
@@ -563,8 +566,9 @@ outcomes.
   suspended checkpoint authentication/acceptance/substitution contract; O-08
   sets resource and custody bounds; O-10 assigns rich local outcomes plus one
   opaque remote fetch result; O-11 chooses wire/storage/fetch encoding; O-13
-  gates irreversible effects. C0.2f must falsify availability-sensitive replay,
-  typed outcomes, checkpoint non-substitution and fresh reconstruction.
+  gates irreversible effects. C0.2f supplied bounded executable evidence for
+  availability-sensitive replay, typed outcomes, checkpoint non-substitution
+  and fresh reconstruction; dependent semantic changes require rerunning it.
 - **Residual/reopen condition:** reopen on a C0.2f counterexample; an O-06 suite
   unable to meet the bounded binding/privacy contract; a profile requiring
   deterministic, keyed, provably hiding or chunk-partial-redaction semantics;
@@ -892,11 +896,11 @@ also be transcript-bound and locally evaluated under the application's policy.
 
 ## 6. Gate for C0.3 and exact next sequence
 
-**C0.3 verdict: `NO-GO`.** O-06 through O-08 and O-10 still contain choices
-required to derive normative bytes or adversarial expectations; O-07 now
-explicitly includes the previously deferred checkpoint-authentication contract,
-and the C0.2f
-payload-state falsification gate required by O-04 has not run. O-12 is
+**C0.3 verdict: `NO-GO`.** The C0.2f payload-state falsification gate required
+by O-04 has passed within its declared bounds, but O-06 through O-08 and O-10
+still contain choices required to derive normative bytes or adversarial
+expectations; O-07 explicitly includes the previously deferred checkpoint-
+authentication contract. O-12 is
 additionally blocking for any profile that retains a physical-time claim; it is
 inapplicable only to profiles that omit physical time. O-11 intentionally does
 not block a transcript-only C0.3 corpus. Starting that corpus now would freeze
@@ -912,10 +916,11 @@ The smallest safe sequence is:
 3. retain and extend the bounded C0.2d causal-flow falsification model whenever
    later choices change its inputs; its current small-state run found no
    counterexample within bounds and does not replace formal proof;
-4. run the C0.2f payload-state falsification gate, then close exact identifier
-   derivation, genesis/checkpoint evidence, cardinality and error questions O-06
-   through O-10, plus O-12 for any time-bearing profile, without product
-   implementation authority; retain O-11 for the later wire/storage decision;
+4. preserve and rerun the completed C0.2f gate when its inputs change, then
+   close exact identifier derivation, genesis/checkpoint evidence, cardinality
+   and error questions O-06 through O-10, plus O-12 for any time-bearing
+   profile, without product implementation authority; retain O-11 for the later
+   wire/storage decision;
 5. approve the exact Apache-2.0 path inventory for the future corpus;
 6. execute C0.3: specification-derived adversarial corpus plus a third
    implementation written only from the specification;

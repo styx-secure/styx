@@ -1,6 +1,6 @@
 # Styx application protocol v0: payload commitment and detachment analysis
 
-Status: C0.2e normative decision analysis for O-04
+Status: C0.2e normative O-04 decision; C0.2f bounded gate executed
 
 Base: `b49482a13e239b3cec42ac0b264ca452cd78bd9f`
 
@@ -569,6 +569,22 @@ The run records exact model bounds and emits either
 `NO_COUNTEREXAMPLE_WITHIN_BOUNDS` or a minimal blocking trace. A failure reopens
 O-04; it is not patched around. Passing is bounded evidence, not proof.
 
+### C0.2f result
+
+The dependency-free extension on base
+`e232c2c1c4687fa09ca12594c90e0aafc67b4ebb` exercised every obligation above.
+It evaluated 72 invariants across 37 hostile families, 42 causal/payload
+exploration traces and 18 explicit payload-axis cases. The deterministic report
+returned `NO_COUNTEREXAMPLE_WITHIN_BOUNDS`; its SHA-256 is
+`a9844bb1c18054921aa79218633e99b0f909d5698cb6cfb009219dc993d40060`.
+
+The complete bounds, reproduction commands, claim boundary and residual risks
+are recorded in
+[the C0.2f report](styx-app-kernel-v0-payload-state-falsification-report.md).
+This closes only the bounded executable gate. It does not select O-06
+cryptography, O-07 checkpoint authority, O-08 production bounds, O-10 errors or
+O-11 encoding, and it does not authorize product implementation.
+
 ## 10. Dependencies and follow-ups
 
 - **O-06:** choose exact domain tags, commitment/event-reference suites, full
@@ -585,7 +601,8 @@ O-04; it is not patched around. Passing is bounded evidence, not proof.
   remote fetch result, with a non-oracular many-to-one boundary mapping.
 - **O-11:** select wire/storage encoding, content/opening colocation, locator and
   fetch contracts without changing O-04 semantics.
-- **C0.2f:** implement and run §9 before implementation or C0.3.
+- **C0.2f:** §9 is implemented and passed within the recorded bounds; rerun it
+  whenever a dependent decision changes modeled semantics or inputs.
 - **O-13 irreversible-effect authorization:** coordinating record owned by AP
   for authorization semantics, referencing one-owner RS execution/custody/loss
   and PV disclosure/claim obligations. Until it closes, quarantine/withholding
