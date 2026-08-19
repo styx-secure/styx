@@ -455,6 +455,30 @@ class ReplayAvailabilityTest(unittest.TestCase):
         self.assertEqual(boundary, 0)
         self.assertEqual(incremental, result)
 
+    def test_compacted_reference_collision_with_another_grant_stays_stale(self):
+        consumer = first(b"k1", b"b", GRANT_B, parents=(GRANT_C,))
+        grant_owner = first(b"k2", b"c", GRANT_C)
+        causal = model().evaluate((consumer, grant_owner))
+        records = tuple(
+            record(reference, ContentClass.DETACHABLE, b"collision")
+            for reference in causal.order
+        )
+        result = PayloadModel().evaluate(
+            causal,
+            records,
+            {reference: VERIFIED for reference in causal.order},
+            {},
+        )
+        self.assertEqual(result.stale_dependencies, (GRANT_C,))
+        self.assertEqual(result.halted_at, GRANT_C)
+        self.assertEqual(result.applied_order, ())
+        self.assertTrue(
+            all(
+                state.readiness is ReplayReadiness.STALE_EVIDENCE
+                for state in result.states.values()
+            )
+        )
+
 
 class RemovalTest(unittest.TestCase):
     def fixture(self, target_class: ContentClass = ContentClass.DETACHABLE):
@@ -475,7 +499,7 @@ class RemovalTest(unittest.TestCase):
         }
         return target, directive, causal, (target_record, directive_record), observations
 
-    def test_removal_target_must_be_a_retained_causal_ancestor(self):
+    def test_removal_target_must_be_causal_and_compacted_target_defers(self):
         concurrent_target = first(b"a0", b"a", GRANT_A)
         concurrent_directive = first(b"b0", b"b", GRANT_B, kind="remove")
         concurrent_causal = model().evaluate(
@@ -518,13 +542,18 @@ class RemovalTest(unittest.TestCase):
             ContentDescriptor.none(),
             RemovalClaim(compacted_target, b"target"),
         )
-        with self.assertRaisesRegex(ModelInputError, "retained removal target"):
-            PayloadModel().evaluate(
-                compacted_causal,
-                (compacted_record,),
-                {compacted_directive.reference: NONE_OBSERVATION},
-                {compacted_directive.reference: True},
-            )
+        compacted_result = PayloadModel().evaluate(
+            compacted_causal,
+            (compacted_record,),
+            {compacted_directive.reference: NONE_OBSERVATION},
+            {compacted_directive.reference: True},
+        )
+        self.assertEqual(compacted_result.stale_dependencies, (compacted_target,))
+        self.assertEqual(compacted_result.applied_order, ())
+        self.assertEqual(
+            compacted_result.directive_outcomes[compacted_directive.reference],
+            DirectiveOutcome.DEFERRED_BY_STALE_EVIDENCE,
+        )
 
     def test_only_authorized_detachable_removal_applies(self):
         target, directive, causal, records, observations = self.fixture()

@@ -8,7 +8,7 @@ Model: `styx.causal-flow-simulator/v1`
 
 Report schema: `styx.causal-flow-falsification-report/v1`
 
-Machine report SHA-256: `f2012d388ebc49e6705c9b5a76e855d08582304242befdb1cb85cb777bcc3787`
+Machine report SHA-256: `6838b67780c77f07a9d6e51cb6567492b783e1d79c310c99d794475fea5357f8`
 
 The exact final candidate HEAD is recorded in immutable PR evidence and in the
 independent exact-HEAD review reports; a tracked file cannot self-identify the
@@ -19,8 +19,8 @@ Issue: [#217](https://github.com/styx-secure/styx/issues/217)
 ## 1. Outcome and claim boundary
 
 The dependency-free C0.2d/C0.2f reference model found no counterexample within
-its declared small-state envelope. The required run performed 88 invariant
-evaluations over 37 hostile scenario families, 78 causal/payload exploration
+its declared small-state envelope. The required run performed 91 invariant
+evaluations over 38 hostile scenario families, 78 causal/payload exploration
 traces and 54 explicit payload-axis cases. All sixteen obligations in §9 of the
 [O-04 analysis](styx-app-kernel-v0-payload-commitment-analysis.md) are present
 as machine-readable passed records.
@@ -62,7 +62,9 @@ or O-13 irreversible-effect authorization.
   replay order.
 - Logical removal never mutates the target and applies only to an explicitly
   authorized directive against a causal-ancestor `DETACHABLE` target whose
-  commitment matches.
+  commitment matches. A directive whose target exists only in authenticated
+  causal-compaction evidence remains valid but defers without applying an
+  effect until the target can be reconstructed.
 - Removed-but-presented verified, unverifiable and substituted states remain
   distinct and never silently become active.
 - Checkpoint contents derive only from retained descriptors and removal claims.
@@ -104,14 +106,19 @@ payload profile additionally uses:
 | Payload exploration budget | 512 |
 | Explicitly explored payload-axis cases | 54 |
 
+The C0.2d report's historical test count and digest reproduce only from the
+exact C0.2d candidate recorded there. C0.2f extends the shared executable suite,
+so its current counts and digest must be taken from this report; the inherited
+causal bounds themselves are unchanged.
+
 These are falsification bounds, not O-08 production limits.
 
 ## 5. Machine obligations and result
 
 The report contains one record for every identifier `C0.2f-01` through
-`C0.2f-16`. Obligation 16 has seven independent checks; obligations 2, 12, 14
-and 15 each have three; obligations 4, 5, 6, 9, 10 and 11 each have two; every
-other obligation has one. All records report `passed: true`.
+`C0.2f-16`. Obligation 16 has eight independent checks; obligations 2, 5, 9,
+12, 14 and 15 each have three; obligations 3, 6, 10 and 11 each have two;
+every other obligation has one. All records report `passed: true`.
 
 The final machine verdict is:
 
@@ -152,6 +159,10 @@ Bounded exploration cannot establish correctness outside the declared profile.
 The model assumes authenticated causal input and explicit AP authorization; it
 does not prove those mechanisms. Symbolic commitment inequality is an ideal
 model assumption until O-06 selects exact primitives and negative vectors.
+Reference collision resistance remains an inherited C0.2d assumption. The
+hostile suite nevertheless exercises equal bytes across an event reference and
+another authority's grant reference, and the C0.2f compaction guard remains
+fail-closed without treating that cross-role equality as an authority anchor.
 Network omission, endpoint compromise, rollback beyond available evidence,
 physical destruction, opening custody, traffic analysis and legal compliance
 remain outside this result.

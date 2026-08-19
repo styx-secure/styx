@@ -384,7 +384,7 @@ def extend_required_suite(suite: object) -> None:
         boundary == 0 and incremental == resumed and resumed.applied_order == causal_chain.order,
         family="payload-replay-equivalence",
         trace=(required, later),
-        obligation="C0.2f-04",
+        obligation="C0.2f-03",
     )
     final_snapshot = resumed.snapshots[-1]
     forged_snapshot = replace(
@@ -559,6 +559,22 @@ def extend_required_suite(suite: object) -> None:
         none_supplied.states[detachable.reference].presentation
         is PresentationState.UNEXPECTED_CONTENT_REJECTED
         and none_supplied.applied_order == causal.order,
+        family="typed-axis-closure",
+        trace=(detachable,),
+        obligation="C0.2f-05",
+    )
+    noncanonical_none_record = PayloadRecord(
+        detachable.reference,
+        replace(ContentDescriptor.none(), content_type_id="unexpected"),
+    )
+    suite.check_raises(
+        "non-canonical NONE descriptors fail closed before payload projection",
+        lambda: payload.evaluate(
+            causal_model().evaluate((detachable,)),
+            (noncanonical_none_record,),
+            {detachable.reference: NONE_OBSERVATION},
+            {},
+        ),
         family="typed-axis-closure",
         trace=(detachable,),
         obligation="C0.2f-05",
@@ -802,6 +818,37 @@ def extend_required_suite(suite: object) -> None:
         and stale_result.applied_order == (),
         family="fresh-reconstruction",
         trace=(compacted, compacted_child, stale_target, stale_directive),
+        obligation="C0.2f-09",
+    )
+    colliding_compacted = GRANT_C
+    collision_consumer = first(
+        b"k1", b"b", GRANT_B, parents=(colliding_compacted,)
+    )
+    collision_owner = first(b"k2", b"c", GRANT_C)
+    collision_causal = causal_model(
+        proven_extra=(colliding_compacted,)
+    ).evaluate((collision_consumer, collision_owner))
+    collision_records = tuple(
+        record(reference, ContentClass.DETACHABLE, b"collision")
+        for reference in collision_causal.order
+    )
+    collision_result = payload.evaluate(
+        collision_causal,
+        collision_records,
+        {reference: VERIFIED for reference in collision_causal.order},
+        {},
+    )
+    suite.check(
+        "compacted dependency remains stale when its reference equals another authority grant",
+        collision_result.stale_dependencies == (colliding_compacted,)
+        and collision_result.halted_at == colliding_compacted
+        and collision_result.applied_order == ()
+        and all(
+            state.readiness is ReplayReadiness.STALE_EVIDENCE
+            for state in collision_result.states.values()
+        ),
+        family="compacted-reference-collision",
+        trace=(collision_consumer, collision_owner),
         obligation="C0.2f-09",
     )
 
@@ -1120,14 +1167,21 @@ def extend_required_suite(suite: object) -> None:
         ContentDescriptor.none(),
         RemovalClaim(compacted_target.reference, b"compacted"),
     )
-    suite.check_raises(
-        "removal cannot target an event absent from the retained payload set",
-        lambda: payload.evaluate(
-            compacted_target_causal,
-            (compacted_target_record,),
-            {compacted_directive.reference: NONE_OBSERVATION},
-            {compacted_directive.reference: True},
-        ),
+    compacted_target_result = payload.evaluate(
+        compacted_target_causal,
+        (compacted_target_record,),
+        {compacted_directive.reference: NONE_OBSERVATION},
+        {compacted_directive.reference: True},
+    )
+    suite.check(
+        "removal targeting compacted evidence defers without applying an effect",
+        compacted_target_result.stale_dependencies == (compacted_target.reference,)
+        and compacted_target_result.halted_at == compacted_target.reference
+        and compacted_target_result.applied_order == ()
+        and compacted_target_result.directive_outcomes[compacted_directive.reference]
+        is DirectiveOutcome.DEFERRED_BY_STALE_EVIDENCE
+        and compacted_target_result.states[compacted_directive.reference].readiness
+        is ReplayReadiness.STALE_EVIDENCE,
         family="removal-target-cases",
         trace=(compacted_target, compacted_directive),
         obligation="C0.2f-14",
@@ -1292,6 +1346,18 @@ def extend_required_suite(suite: object) -> None:
             detachable_records,
             detachable_observations,
             {directive_d.reference: True},
+        ),
+        family="payload-resource-bound",
+        obligation="C0.2f-16",
+    )
+    suite.check_raises(
+        "attacker-declared checkpoint reference count rejects at profile bound",
+        lambda: PayloadModel(PayloadProfile(max_checkpoint_refs=1)).evaluate(
+            causal,
+            (record(detachable.reference, ContentClass.DETACHABLE, b"det"),),
+            {detachable.reference: VERIFIED},
+            {},
+            PayloadCheckpoint((b"a", b"b")),
         ),
         family="payload-resource-bound",
         obligation="C0.2f-16",

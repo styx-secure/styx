@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Mapping, Sequence
 
-from model import Evaluation, ModelInputError, affected_replay_boundary
+from model import Evaluation, Handoff, ModelInputError, affected_replay_boundary
 
 
 class ContentClass(str, Enum):
@@ -524,11 +524,20 @@ class PayloadModel:
             raise ModelInputError("removal authorizations must match directives")
         if any(type(value) is not bool for value in authorizations.values()):
             raise ModelInputError("removal authorization must be boolean")
+        current = set(causal.decisions)
+        compacted_by_reference = {
+            handoff.reference: set(
+                self._handoff_compacted_dependencies(handoff, current)
+            )
+            for handoff in causal.handoffs
+        }
         for record in records:
             if record.removal is None:
                 continue
             target = record.removal.target_reference
             if target not in record_map:
+                if target in compacted_by_reference.get(record.reference, set()):
+                    continue
                 raise ModelInputError("retained removal target is unavailable")
             if not self._reachable(record.reference, target, causal.graph):
                 raise ModelInputError("removal target is not a causal ancestor")
@@ -753,17 +762,27 @@ class PayloadModel:
         """
 
         current = set(causal.decisions)
-        authority_refs = {handoff.grant_ref for handoff in causal.handoffs}
         compacted: set[bytes] = set()
         for handoff in causal.handoffs:
-            dependencies = handoff.causal_parents
-            if handoff.author_predecessor is not None:
-                dependencies = (handoff.author_predecessor, *dependencies)
             compacted.update(
-                dependency
-                for dependency in dependencies
-                if dependency not in current and dependency not in authority_refs
+                PayloadModel._handoff_compacted_dependencies(handoff, current)
             )
+        return tuple(sorted(compacted))
+
+    @staticmethod
+    def _handoff_compacted_dependencies(
+        handoff: Handoff, current: set[bytes]
+    ) -> tuple[bytes, ...]:
+        compacted = {
+            dependency
+            for dependency in handoff.causal_parents
+            if dependency not in current and dependency != handoff.grant_ref
+        }
+        if (
+            handoff.author_predecessor is not None
+            and handoff.author_predecessor not in current
+        ):
+            compacted.add(handoff.author_predecessor)
         return tuple(sorted(compacted))
 
     def _stale_projection(

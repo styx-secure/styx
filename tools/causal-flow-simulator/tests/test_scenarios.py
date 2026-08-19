@@ -31,6 +31,7 @@ class RequiredSuiteTest(unittest.TestCase):
             "checkpoint-proof",
             "child-before-parent",
             "chunk-privacy",
+            "compacted-reference-collision",
             "cross-context",
             "cycle-defense",
             "delivery-permutation",
