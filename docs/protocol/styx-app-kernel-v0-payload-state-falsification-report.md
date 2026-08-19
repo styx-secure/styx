@@ -8,7 +8,7 @@ Model: `styx.causal-flow-simulator/v1`
 
 Report schema: `styx.causal-flow-falsification-report/v1`
 
-Machine report SHA-256: `4042369e927500d5e4a50e62c97ef047526925fda5903012e36e9c62ed7e2075`
+Machine report SHA-256: `e53f3be6d70bbd687dccb315a348a17cd65a3d7a9e8e0613b55bf54be68f6e5f`
 
 The exact final candidate HEAD is recorded in immutable PR evidence and in the
 independent exact-HEAD review reports; a tracked file cannot self-identify the
@@ -19,7 +19,7 @@ Issue: [#217](https://github.com/styx-secure/styx/issues/217)
 ## 1. Outcome and claim boundary
 
 The dependency-free C0.2d/C0.2f reference model found no counterexample within
-its declared small-state envelope. The required run performed 82 invariant
+its declared small-state envelope. The required run performed 84 invariant
 evaluations over 37 hostile scenario families, 78 causal/payload exploration
 traces and 54 explicit payload-axis cases. All sixteen obligations in §9 of the
 [O-04 analysis](styx-app-kernel-v0-payload-commitment-analysis.md) are present
@@ -109,9 +109,9 @@ These are falsification bounds, not O-08 production limits.
 ## 5. Machine obligations and result
 
 The report contains one record for every identifier `C0.2f-01` through
-`C0.2f-16`. Obligations 2, 14, 15 and 16 each have three independent checks;
-obligations 5, 6, 9, 10, 11 and 12 each have two; every other obligation has
-one. All records report `passed: true`.
+`C0.2f-16`. Obligation 16 has four independent checks; obligations 2, 12, 14
+and 15 each have three; obligations 5, 6, 9, 10 and 11 each have two; every
+other obligation has one. All records report `passed: true`.
 
 The final machine verdict is:
 
@@ -155,6 +155,19 @@ model assumption until O-06 selects exact primitives and negative vectors.
 Network omission, endpoint compromise, rollback beyond available evidence,
 physical destruction, opening custody, traffic analysis and legal compliance
 remain outside this result.
+
+The checkpoint abstraction uses one observation map for both producer
+eligibility and consumer replay, so it does not directly model the
+cross-replica case where a producer has bytes that a consumer lacks. The v0
+fold remains safe only because checkpoint evidence is structurally ignored as
+consumer state; O-07 must preserve or independently justify that boundary.
+O-07 must also decide whether an empty checkpoint horizon is legal and must not
+treat a causally closed horizon as a linear-order resume point without
+accounting for earlier concurrent events in the canonical order.
+
+The repository CI does not yet invoke this bounded gate. Adding an exact
+deterministic CI invocation requires a separately approved workflow change;
+until then, reviewers must execute the reproduction commands directly.
 
 C0.2f removes only the executable payload-state blocker. C0.3 remains
 `NO-GO` until O-06, O-07, O-08 and O-10 close, plus O-12 for any profile that

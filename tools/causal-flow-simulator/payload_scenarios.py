@@ -240,17 +240,31 @@ def extend_required_suite(suite: object) -> None:
     checkpoint_child = first(
         b"q1", b"b", GRANT_B, parents=(required.reference,)
     )
-    checkpoint_chain = causal_model().evaluate((checkpoint_child, required))
+    checkpoint_grandchild = first(
+        b"q2", b"c", GRANT_C, parents=(checkpoint_child.reference,)
+    )
+    checkpoint_chain = causal_model().evaluate(
+        (checkpoint_grandchild, checkpoint_child, required)
+    )
     checkpoint_chain_records = (
         required_records[0],
         record(checkpoint_child.reference, ContentClass.DETACHABLE, b"child"),
+        record(
+            checkpoint_grandchild.reference,
+            ContentClass.DETACHABLE,
+            b"grandchild",
+        ),
     )
     proper_subset_horizon = payload.evaluate(
         checkpoint_chain,
         checkpoint_chain_records,
-        {required.reference: MISSING, checkpoint_child.reference: VERIFIED},
+        {
+            required.reference: MISSING,
+            checkpoint_child.reference: VERIFIED,
+            checkpoint_grandchild.reference: VERIFIED,
+        },
         {},
-        PayloadCheckpoint((checkpoint_child.reference,)),
+        PayloadCheckpoint((checkpoint_grandchild.reference,)),
     )
     suite.check(
         "checkpoint eligibility covers the causal closure of its horizon",
@@ -261,9 +275,13 @@ def extend_required_suite(suite: object) -> None:
         and {
             item[0] for item in proper_subset_horizon.checkpoint.contents
         }
-        == {required.reference.hex(), checkpoint_child.reference.hex()},
+        == {
+            required.reference.hex(),
+            checkpoint_child.reference.hex(),
+            checkpoint_grandchild.reference.hex(),
+        },
         family="checkpoint-availability",
-        trace=(required, checkpoint_child),
+        trace=(required, checkpoint_child, checkpoint_grandchild),
         obligation="C0.2f-02",
     )
 
@@ -481,6 +499,12 @@ def extend_required_suite(suite: object) -> None:
         detachable_observations,
         {directive_d.reference: True},
     )
+    authorized_without_checkpoint = payload.evaluate(
+        causal_d,
+        detachable_records,
+        detachable_observations,
+        {directive_d.reference: True},
+    )
     checkpoint_with_directive = payload.evaluate(
         causal_d,
         detachable_records,
@@ -534,6 +558,23 @@ def extend_required_suite(suite: object) -> None:
         family="checkpoint-proof",
         trace=(target_d, directive_d),
         obligation="C0.2f-02",
+    )
+    suite.check(
+        "emittable checkpoint never substitutes for consumer replay",
+        checkpoint_with_directive.checkpoint is not None
+        and checkpoint_with_directive.checkpoint.disposition
+        is CheckpointDisposition.EMITTABLE
+        and checkpoint_with_directive.states
+        == authorized_without_checkpoint.states
+        and checkpoint_with_directive.directive_outcomes
+        == authorized_without_checkpoint.directive_outcomes
+        and checkpoint_with_directive.applied_order
+        == authorized_without_checkpoint.applied_order
+        and checkpoint_with_directive.halted_at
+        == authorized_without_checkpoint.halted_at,
+        family="checkpoint-non-substitution",
+        trace=(target_d, directive_d),
+        obligation="C0.2f-12",
     )
 
     # 8: removed presentations remain removed and distinguish binding evidence.
@@ -827,6 +868,10 @@ def extend_required_suite(suite: object) -> None:
             evaluated.checkpoint is not None
             and evaluated.checkpoint.disposition is expected
             and not evaluated.checkpoint.consumer_substitution
+            and (
+                expected is not CheckpointDisposition.STALE_EVIDENCE
+                or not evaluated.checkpoint.producer_eligible
+            )
             and evaluated.states == present.states
             and evaluated.directive_outcomes == present.directive_outcomes
             and evaluated.applied_order == present.applied_order
@@ -1038,6 +1083,24 @@ def extend_required_suite(suite: object) -> None:
         "attacker-declared content length rejects at profile bound",
         lambda: PayloadModel(PayloadProfile(max_content_length=16)).evaluate(
             causal, (oversized_record,), {detachable.reference: VERIFIED}, {}
+        ),
+        family="payload-resource-bound",
+        obligation="C0.2f-16",
+    )
+    oversized_text_record = PayloadRecord(
+        detachable.reference,
+        replace(
+            descriptor(ContentClass.DETACHABLE, b"x"),
+            content_type_id="x" * 65,
+        ),
+    )
+    suite.check_raises(
+        "attacker-declared payload text rejects at profile bound",
+        lambda: PayloadModel(PayloadProfile(max_text_bytes=64)).evaluate(
+            causal,
+            (oversized_text_record,),
+            {detachable.reference: VERIFIED},
+            {},
         ),
         family="payload-resource-bound",
         obligation="C0.2f-16",

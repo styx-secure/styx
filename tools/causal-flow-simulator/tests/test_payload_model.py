@@ -29,7 +29,16 @@ from payload_model import (
     symbolic_chunk_terms,
     symbolic_commitment_term,
 )
-from scenarios import CTX, GRANT_A, GRANT_B, checkpoint, first, model, next_event
+from scenarios import (
+    CTX,
+    GRANT_A,
+    GRANT_B,
+    GRANT_C,
+    checkpoint,
+    first,
+    model,
+    next_event,
+)
 
 
 NONE_OBSERVATION = PayloadObservation(
@@ -714,17 +723,23 @@ class CheckpointTest(unittest.TestCase):
     def test_checkpoint_eligibility_covers_horizon_ancestor_closure(self):
         required = first(b"f0", b"a", GRANT_A)
         child = first(b"a0", b"b", GRANT_B, parents=(required.reference,))
-        causal = model().evaluate((child, required))
+        grandchild = first(b"c0", b"c", GRANT_C, parents=(child.reference,))
+        causal = model().evaluate((grandchild, child, required))
         records = (
             record(required.reference, ContentClass.REQUIRED, b"required"),
             record(child.reference, ContentClass.DETACHABLE, b"child"),
+            record(grandchild.reference, ContentClass.DETACHABLE, b"grandchild"),
         )
         result = PayloadModel().evaluate(
             causal,
             records,
-            {required.reference: MISSING, child.reference: VERIFIED},
+            {
+                required.reference: MISSING,
+                child.reference: VERIFIED,
+                grandchild.reference: VERIFIED,
+            },
             {},
-            PayloadCheckpoint((child.reference,)),
+            PayloadCheckpoint((grandchild.reference,)),
         )
         self.assertEqual(
             result.checkpoint.disposition,
@@ -733,7 +748,11 @@ class CheckpointTest(unittest.TestCase):
         self.assertFalse(result.checkpoint.producer_eligible)
         self.assertEqual(
             {item[0] for item in result.checkpoint.contents},
-            {required.reference.hex(), child.reference.hex()},
+            {
+                required.reference.hex(),
+                child.reference.hex(),
+                grandchild.reference.hex(),
+            },
         )
 
     def test_bad_checkpoint_evidence_is_typed_and_non_substituting(self):
@@ -752,6 +771,8 @@ class CheckpointTest(unittest.TestCase):
             result = PayloadModel().evaluate(causal, records, observations, {}, checkpoint)
             self.assertEqual(result.checkpoint.disposition, expected)
             self.assertFalse(result.checkpoint.consumer_substitution)
+            if expected is CheckpointDisposition.STALE_EVIDENCE:
+                self.assertFalse(result.checkpoint.producer_eligible)
             if checkpoint.horizon_refs == (event.reference,):
                 if contents is None:
                     contents = result.checkpoint.contents
@@ -777,6 +798,19 @@ class CheckpointTest(unittest.TestCase):
             {directive.reference: True},
             PayloadCheckpoint(tuple(sorted(causal.order))),
         )
+        baseline = PayloadModel().evaluate(
+            causal,
+            (target_record, directive_record),
+            {target.reference: VERIFIED, directive.reference: NONE_OBSERVATION},
+            {directive.reference: True},
+        )
+        self.assertEqual(
+            result.checkpoint.disposition, CheckpointDisposition.EMITTABLE
+        )
+        self.assertEqual(result.states, baseline.states)
+        self.assertEqual(result.directive_outcomes, baseline.directive_outcomes)
+        self.assertEqual(result.applied_order, baseline.applied_order)
+        self.assertEqual(result.halted_at, baseline.halted_at)
         directive_term = next(
             term for term in result.checkpoint.contents if term[0] == directive.reference.hex()
         )
@@ -791,9 +825,18 @@ class PayloadBoundsTest(unittest.TestCase):
         event = first(b"a0", b"a", GRANT_A)
         causal = model().evaluate((event,))
         records = (record(event.reference, ContentClass.DETACHABLE, b"det"),)
+        other = first(b"b0", b"b", GRANT_B)
+        two_event_causal = model().evaluate((event, other))
+        two_records = (
+            records[0],
+            record(other.reference, ContentClass.DETACHABLE, b"other"),
+        )
         with self.assertRaises(ModelInputError):
             PayloadModel(PayloadProfile(max_records=1)).evaluate(
-                causal, records * 2, {event.reference: VERIFIED}, {}
+                two_event_causal,
+                two_records,
+                {event.reference: VERIFIED, other.reference: VERIFIED},
+                {},
             )
         with self.assertRaises(ModelInputError):
             PayloadModel(PayloadProfile(max_checkpoint_refs=1)).evaluate(
@@ -802,6 +845,22 @@ class PayloadBoundsTest(unittest.TestCase):
                 {event.reference: VERIFIED},
                 {},
                 PayloadCheckpoint((b"a", b"b")),
+            )
+        with self.assertRaisesRegex(ModelInputError, "horizon is not canonical"):
+            PayloadModel().evaluate(
+                causal,
+                records,
+                {event.reference: VERIFIED},
+                {},
+                PayloadCheckpoint((event.reference, event.reference)),
+            )
+        with self.assertRaisesRegex(ModelInputError, "horizon is not canonical"):
+            PayloadModel().evaluate(
+                causal,
+                records,
+                {event.reference: VERIFIED},
+                {},
+                PayloadCheckpoint((b"b", b"a")),
             )
         with self.assertRaises(ModelInputError):
             PayloadModel(PayloadProfile(max_input_bytes=8)).evaluate(
@@ -818,6 +877,22 @@ class PayloadBoundsTest(unittest.TestCase):
         with self.assertRaises(ModelInputError):
             PayloadModel(PayloadProfile(max_content_length=16)).evaluate(
                 causal, (huge,), {event.reference: VERIFIED}, {}
+            )
+        oversized_text = PayloadRecord(
+            event.reference,
+            replace(
+                descriptor(ContentClass.DETACHABLE, b"x"),
+                content_type_id="x" * 65,
+            ),
+        )
+        with self.assertRaisesRegex(
+            ModelInputError, "content type identifier is invalid"
+        ):
+            PayloadModel(PayloadProfile(max_text_bytes=64)).evaluate(
+                causal,
+                (oversized_text,),
+                {event.reference: VERIFIED},
+                {},
             )
         bad_geometry = PayloadRecord(
             event.reference,
