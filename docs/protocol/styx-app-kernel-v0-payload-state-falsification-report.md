@@ -8,7 +8,7 @@ Model: `styx.causal-flow-simulator/v1`
 
 Report schema: `styx.causal-flow-falsification-report/v1`
 
-Machine report SHA-256: `6a7753f154dd5c01a0f0c507c6f3ef3566440f2289109b26837b8cac6ed1d37d`
+Machine report SHA-256: `f2012d388ebc49e6705c9b5a76e855d08582304242befdb1cb85cb777bcc3787`
 
 The exact final candidate HEAD is recorded in immutable PR evidence and in the
 independent exact-HEAD review reports; a tracked file cannot self-identify the
@@ -19,7 +19,7 @@ Issue: [#217](https://github.com/styx-secure/styx/issues/217)
 ## 1. Outcome and claim boundary
 
 The dependency-free C0.2d/C0.2f reference model found no counterexample within
-its declared small-state envelope. The required run performed 86 invariant
+its declared small-state envelope. The required run performed 88 invariant
 evaluations over 37 hostile scenario families, 78 causal/payload exploration
 traces and 54 explicit payload-axis cases. All sixteen obligations in §9 of the
 [O-04 analysis](styx-app-kernel-v0-payload-commitment-analysis.md) are present
@@ -109,7 +109,7 @@ These are falsification bounds, not O-08 production limits.
 ## 5. Machine obligations and result
 
 The report contains one record for every identifier `C0.2f-01` through
-`C0.2f-16`. Obligation 16 has five independent checks; obligations 2, 12, 14
+`C0.2f-16`. Obligation 16 has seven independent checks; obligations 2, 12, 14
 and 15 each have three; obligations 4, 5, 6, 9, 10 and 11 each have two; every
 other obligation has one. All records report `passed: true`.
 

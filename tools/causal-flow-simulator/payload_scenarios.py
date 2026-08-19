@@ -661,14 +661,8 @@ def extend_required_suite(suite: object) -> None:
         checkpoint_with_directive.checkpoint is not None
         and checkpoint_with_directive.checkpoint.disposition
         is CheckpointDisposition.EMITTABLE
-        and checkpoint_with_directive.states
-        == authorized_without_checkpoint.states
-        and checkpoint_with_directive.directive_outcomes
-        == authorized_without_checkpoint.directive_outcomes
-        and checkpoint_with_directive.applied_order
-        == authorized_without_checkpoint.applied_order
-        and checkpoint_with_directive.halted_at
-        == authorized_without_checkpoint.halted_at,
+        and replace(checkpoint_with_directive, checkpoint=None)
+        == authorized_without_checkpoint,
         family="checkpoint-non-substitution",
         trace=(target_d, directive_d),
         obligation="C0.2f-12",
@@ -1276,6 +1270,28 @@ def extend_required_suite(suite: object) -> None:
             repeat_records,
             repeat_observations,
             {directive_d.reference: True, repeat.reference: True},
+        ),
+        family="payload-resource-bound",
+        obligation="C0.2f-16",
+    )
+    suite.check_raises(
+        "attacker-declared record count rejects at profile bound",
+        lambda: PayloadModel(PayloadProfile(max_records=1)).evaluate(
+            repeat_causal,
+            repeat_records,
+            repeat_observations,
+            {directive_d.reference: True, repeat.reference: True},
+        ),
+        family="payload-resource-bound",
+        obligation="C0.2f-16",
+    )
+    suite.check_raises(
+        "aggregate payload input rejects at profile bound",
+        lambda: PayloadModel(PayloadProfile(max_input_bytes=8)).evaluate(
+            causal_d,
+            detachable_records,
+            detachable_observations,
+            {directive_d.reference: True},
         ),
         family="payload-resource-bound",
         obligation="C0.2f-16",
