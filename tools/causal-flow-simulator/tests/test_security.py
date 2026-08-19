@@ -10,6 +10,8 @@ import support
 TOOL = Path(__file__).resolve().parents[1]
 RUNTIME_FILES = (
     TOOL / "model.py",
+    TOOL / "payload_model.py",
+    TOOL / "payload_scenarios.py",
     TOOL / "scenarios.py",
     TOOL / "causal_flow_simulator.py",
 )
@@ -45,7 +47,7 @@ class IsolationTest(unittest.TestCase):
                 self.assertTrue(forbidden.isdisjoint(self.imported_roots(path)))
 
     def test_runtime_does_not_import_any_styx_implementation(self):
-        local_modules = {"model", "scenarios"}
+        local_modules = {"model", "payload_model", "payload_scenarios", "scenarios"}
         standard_modules = {
             "__future__",
             "argparse",
@@ -62,6 +64,18 @@ class IsolationTest(unittest.TestCase):
                 self.assertTrue(
                     self.imported_roots(path).issubset(local_modules | standard_modules)
                 )
+
+    def test_runtime_uses_no_dynamic_code_execution(self):
+        forbidden_calls = {"__import__", "compile", "eval", "exec"}
+        for path in RUNTIME_FILES:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            called = {
+                node.func.id
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+            }
+            with self.subTest(path=path.name):
+                self.assertTrue(forbidden_calls.isdisjoint(called))
 
     def test_event_model_has_no_clock_or_arrival_field(self):
         model_source = (TOOL / "model.py").read_text(encoding="utf-8")

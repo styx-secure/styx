@@ -1,8 +1,9 @@
 # Styx causal-flow simulator
 
-Status: bounded C0.2d falsification model; not production code or conformance
+Status: bounded C0.2d/C0.2f falsification model; not production code or conformance
 
-Issue: [#213](https://github.com/styx-secure/styx/issues/213)
+Issues: [#213](https://github.com/styx-secure/styx/issues/213),
+[#217](https://github.com/styx-secure/styx/issues/217)
 
 ## Purpose
 
@@ -16,7 +17,10 @@ The model accepts closed synthetic contexts, credential authority, checkpoint
 evidence and events with caller-supplied byte references. It classifies input,
 constructs the admitted causal graph, records ready sets, derives the
 deterministic topological order, emits fact-only AP handoffs, and calculates the
-earliest affected replay boundary for late events.
+earliest affected replay boundary for late events. The C0.2f extension then
+folds authenticated content descriptors, per-replica availability/binding
+observations, AP authorization of logical removal, and checkpoint evidence over
+that validated causal order.
 
 Graph decisions are set-relative, while each replay handoff is deliberately
 prefix-scoped: it contains relations and fork evidence available at that point
@@ -25,6 +29,19 @@ it does not retroactively add future facts to an unchanged earlier handoff. If
 the late event sorts earlier, the affected suffix is replayed and those facts
 are recomputed. This distinction is required for incremental replay to remain
 equivalent to a fresh full replay.
+
+The payload model keeps content class, availability, binding, retention, replay
+readiness and presentation as separate closed axes. A missing `REQUIRED`
+opening halts the entire canonical suffix. `DETACHABLE` availability changes
+presentation only. Logical removal is an append-only, explicitly authorized
+directive and never mutates the target event. Checkpoints derive descriptors
+from retained records and can make a producer ineligible, but never substitute
+for application state at a consumer.
+
+Commitments are ideal symbolic terms. Injected randomizers, context, content
+type, exact length, shape, chunk geometry, part ordinal and part length are
+modeled; no digest, signature, transcript byte encoding or O-06 cryptographic
+suite is selected here.
 
 ## Run
 
@@ -47,12 +64,13 @@ The report contains:
 
 - a model and report schema version;
 - the explicit exploration/profile bounds;
-- scenario-family and delivery-trace counts;
+- scenario-family, causal-delivery and payload-axis exploration counts;
+- a machine-readable result for each of the sixteen C0.2f obligations;
 - a machine-readable result for every invariant;
-- retained counterexamples with the smallest observed failing prefix/trace; and
+- the single deterministic smallest observed failing prefix/trace; and
 - explicit non-claims and a bounded verdict.
 
-The default profile also fails closed above 9 event observations, 8 credential
+The causal profile fails closed above 9 event observations, 8 credential
 authorities, 4 causal parents per event, 32 checkpoint/evidence references,
 8 bytes per synthetic reference, 64 UTF-8 bytes per text field, 255 as the
 largest sequence value, 4,096 aggregate input bytes, or 720 explored delivery
@@ -60,17 +78,26 @@ traces. Aggregate bytes include repeated observations and all supplied context,
 authority, checkpoint and event fields; integer sequences are charged as eight
 bytes. These are exploration limits, not proposed production limits.
 
+The payload profile independently fails closed above 9 records, 4 removal
+directives, 1,024 bytes declared content length, 256-byte chunk size, 8 chunks,
+64-byte commitment/reference values, 64-byte injected randomizers or part
+symbols, 9 checkpoint references, 8 KiB aggregate input, or 512 payload
+exploration cases. Scalar bounds are checked before symbolic part expansion.
+These too are model bounds, not production defaults; O-08 remains responsible
+for supported runtime limits.
+
 `NO_COUNTEREXAMPLE_WITHIN_BOUNDS` is not a proof. Any `FAIL` result is blocking:
-the affected C0.2c decision must return to `OPEN`; a caller must not suppress the
-trace or weaken the model merely to obtain green output.
+the affected decision must return to `OPEN` (O-04 for a payload-state
+counterexample); a caller must not suppress the trace or weaken the model merely
+to obtain green output.
 
 ## Semantic boundary
 
-Synthetic event-reference bytes let the model exercise ordering and graph
-semantics without choosing a hash, signature, canonical transcript, wire
-encoding or storage format. Checkpoint evidence distinguishes proven boundary
-references, known-pruned references and unknown references, but cannot prove
-that a remote branch was never hidden.
+Synthetic event-reference and commitment bytes let the model exercise ordering
+and graph semantics without choosing a hash, signature, canonical transcript,
+wire encoding or storage format. Checkpoint evidence distinguishes proven
+boundary references, known-pruned references and unknown references, but cannot
+prove that a remote branch was never hidden.
 
 `K` output is limited to validated facts: prefix-visible classification,
 context/credential identity, authenticated grant reference, causal relations,
@@ -84,8 +111,11 @@ explicit checkpoint/AP input instead of being emitted as a new live relation.
 
 - Exploration is exhaustive only inside the declared small profile.
 - Signatures and reference derivation are assumed, not implemented.
-- Application authorization and business conflict policy are not modeled.
+- Removal authorization is supplied as explicit AP input; the authorization
+  policy and all other business conflict rules are not modeled.
 - Network omission, endpoint compromise, traffic analysis and global rollback
   detection remain outside this tool.
-- Future O-04/O-07/O-08/O-10/O-11 decisions may require the model to be
-  extended and the affected invariants to be run again.
+- Checkpoint authentication is classified but not provided by this model, and
+  accepted checkpoints never replace consumer-side payload verification.
+- O-06/O-07/O-08/O-10/O-11 decisions may require this model and its affected
+  invariants to be extended and rerun.

@@ -1,4 +1,4 @@
-"""Required bounded adversarial scenarios for the C0.2d falsification gate."""
+"""Required bounded adversarial scenarios for the C0.2f falsification gate."""
 
 from __future__ import annotations
 
@@ -21,9 +21,12 @@ from model import (
     event_trace_fingerprint,
     incremental_handoffs,
 )
+from payload_model import PayloadProfile
+from payload_scenarios import extend_required_suite
 
 
-MODEL_VERSION = "styx.causal-flow-simulator/v0"
+MODEL_VERSION = "styx.causal-flow-simulator/v1"
+BASE_SHA = "e232c2c1c4687fa09ca12594c90e0aafc67b4ebb"
 
 
 CTX = Context("example.app", "bounded-v0", "case-1", b"g")
@@ -101,6 +104,8 @@ class Suite:
         self.invariants: list[dict[str, object]] = []
         self.scenario_counts: dict[str, int] = {}
         self.explored_delivery_traces = 0
+        self.payload_exploration_cases = 0
+        self.c0_2f_obligations: dict[str, dict[str, object]] = {}
         self.counterexamples: list[dict[str, object]] = []
         self.samples: dict[str, object] = {}
 
@@ -112,6 +117,12 @@ class Suite:
     def count(self, family: str, amount: int = 1) -> None:
         self.scenario_counts[family] = self.scenario_counts.get(family, 0) + amount
 
+    def payload_explored(self) -> None:
+        self.payload_exploration_cases += 1
+        if self.payload_exploration_cases > PayloadProfile().max_exploration_cases:
+            raise ModelInputError("payload exploration budget exceeded")
+        self.explored()
+
     def check(
         self,
         name: str,
@@ -120,18 +131,44 @@ class Suite:
         family: str,
         trace: Sequence[Event] = (),
         detail: str = "",
+        obligation: str | None = None,
     ) -> None:
         self.count(family)
         self.invariants.append({"name": name, "passed": bool(condition)})
+        if obligation is not None:
+            previous = self.c0_2f_obligations.get(
+                obligation, {"id": obligation, "checks": 0, "passed": True}
+            )
+            self.c0_2f_obligations[obligation] = {
+                "id": obligation,
+                "checks": int(previous["checks"]) + 1,
+                "passed": bool(previous["passed"]) and bool(condition),
+            }
         if condition:
             return
-        self.counterexamples.append(
-            {
-                "invariant": name,
-                "detail": detail,
-                "smallest_observed_trace": event_trace_fingerprint(trace),
-            }
+        candidate = {
+            "invariant": name,
+            "detail": detail,
+            "smallest_observed_trace": event_trace_fingerprint(trace),
+        }
+        candidate_key = (
+            len(candidate["smallest_observed_trace"]),
+            repr(candidate["smallest_observed_trace"]),
+            name,
+            detail,
         )
+        if self.counterexamples:
+            current = self.counterexamples[0]
+            current_key = (
+                len(current["smallest_observed_trace"]),
+                repr(current["smallest_observed_trace"]),
+                str(current["invariant"]),
+                str(current["detail"]),
+            )
+            if candidate_key < current_key:
+                self.counterexamples[0] = candidate
+            return
+        self.counterexamples.append(candidate)
 
     def check_raises(
         self,
@@ -139,18 +176,27 @@ class Suite:
         operation: Callable[[], object],
         *,
         family: str,
+        obligation: str | None = None,
     ) -> None:
         try:
             operation()
         except ModelInputError:
-            self.check(name, True, family=family)
+            self.check(name, True, family=family, obligation=obligation)
         else:
-            self.check(name, False, family=family, detail="operation did not fail closed")
+            self.check(
+                name,
+                False,
+                family=family,
+                detail="operation did not fail closed",
+                obligation=obligation,
+            )
 
     def report(self) -> dict[str, object]:
+        payload_profile = PayloadProfile()
         return {
-            "schema": "styx.causal-flow-falsification-report/v0",
+            "schema": "styx.causal-flow-falsification-report/v1",
             "model_version": MODEL_VERSION,
+            "exact_base_sha": BASE_SHA,
             "bounded_search_envelope": {
                 "max_events_per_evaluation": Profile().max_events,
                 "max_credentials": Profile().max_credentials,
@@ -161,9 +207,27 @@ class Suite:
                 "max_total_input_bytes": Profile().max_input_bytes,
                 "max_sequence": Profile().max_sequence,
                 "max_delivery_traces": Profile().max_delivery_traces,
+                "payload_state": {
+                    "max_records": payload_profile.max_records,
+                    "max_removal_directives": payload_profile.max_directives,
+                    "max_content_length": payload_profile.max_content_length,
+                    "max_chunk_size": payload_profile.max_chunk_size,
+                    "max_chunks": payload_profile.max_chunks,
+                    "max_commitment_bytes": payload_profile.max_commitment_bytes,
+                    "max_randomizer_bytes": payload_profile.max_randomizer_bytes,
+                    "max_symbol_bytes": payload_profile.max_symbol_bytes,
+                    "max_checkpoint_references": payload_profile.max_checkpoint_refs,
+                    "max_total_input_bytes": payload_profile.max_input_bytes,
+                    "max_exploration_cases": payload_profile.max_exploration_cases,
+                },
             },
             "scenario_counts": dict(sorted(self.scenario_counts.items())),
             "explored_delivery_traces": self.explored_delivery_traces,
+            "payload_exploration_cases": self.payload_exploration_cases,
+            "c0_2f_obligations": [
+                self.c0_2f_obligations[key]
+                for key in sorted(self.c0_2f_obligations)
+            ],
             "invariants": self.invariants,
             "samples": dict(sorted(self.samples.items())),
             "counterexamples": self.counterexamples,
@@ -171,7 +235,9 @@ class Suite:
             "non_claims": [
                 "bounded exploration is not a formal proof",
                 "synthetic references do not define transcript or cryptographic bytes",
+                "symbolic commitments do not select or validate an O-06 suite",
                 "the model does not establish global rollback detection",
+                "checkpoint inputs never authorize AP-state substitution",
                 "the result is not a production-readiness or security verdict",
             ],
         }
@@ -596,4 +662,5 @@ def run_required_suite() -> dict[str, object]:
         and affected_replay_boundary((b"a", b"b"), (b"a", b"b", b"c")) == 2,
         family="replay-boundary",
     )
+    extend_required_suite(suite)
     return suite.report()
