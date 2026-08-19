@@ -374,8 +374,10 @@ over references, author heads and other O-01 evidence remain possible, but
 `REQUIRED` content/openings are non-releasable dependencies for AP replay in
 v0. Missing `REQUIRED` bytes produce `CONTENT_DEFERRED`; insufficient
 checkpoint evidence produces `STALE_EVIDENCE` for either content-bearing class.
-An active `DETACHABLE` event is never `CONTENT_DEFERRED`. A fresh replica never
-fabricates state from a commitment or current checkpoint.
+An active `DETACHABLE` event is never `CONTENT_DEFERRED` because its own bytes
+or opening are unavailable; it may still be inside a suffix deferred by an
+earlier `REQUIRED` event. A fresh replica never fabricates state from a
+commitment or current checkpoint.
 
 An AP profile may therefore declare `DETACHABLE` in v0 only when retained
 events, descriptors and directives suffice to reconstruct the authoritative
@@ -573,10 +575,10 @@ O-04; it is not patched around. Passing is bounded evidence, not proof.
 
 The dependency-free extension on base
 `e232c2c1c4687fa09ca12594c90e0aafc67b4ebb` exercised every obligation above.
-It evaluated 75 invariants across 37 hostile families, 78 causal/payload
+It evaluated 82 invariants across 37 hostile families, 78 causal/payload
 exploration traces and 54 explicit payload-axis cases. The deterministic report
 returned `NO_COUNTEREXAMPLE_WITHIN_BOUNDS`; its SHA-256 is
-`e4fbd276cfedbc6f7d59b8fc83e6abbe43ab2e90b3d0ce65e4c6eb741a765367`.
+`4042369e927500d5e4a50e62c97ef047526925fda5903012e36e9c62ed7e2075`.
 
 The complete bounds, reproduction commands, claim boundary and residual risks
 are recorded in

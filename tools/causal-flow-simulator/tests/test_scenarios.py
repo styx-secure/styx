@@ -102,6 +102,28 @@ class RequiredSuiteTest(unittest.TestCase):
             report["counterexamples"][0]["invariant"], "short invariant"
         )
 
+    def test_real_trace_outranks_an_empty_diagnostic_counterexample(self):
+        suite = Suite()
+        trace = (first(b"c0", b"a", b"grant-a"),)
+        suite.check(
+            "real trace invariant",
+            False,
+            family="test",
+            trace=trace,
+        )
+        suite.check(
+            "trace-free bounds diagnostic",
+            False,
+            family="test",
+        )
+        report = suite.report()
+        self.assertEqual(
+            report["counterexamples"][0]["invariant"], "real trace invariant"
+        )
+        self.assertEqual(
+            len(report["counterexamples"][0]["smallest_observed_trace"]), 1
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

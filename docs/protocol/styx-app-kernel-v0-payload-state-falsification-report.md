@@ -8,7 +8,7 @@ Model: `styx.causal-flow-simulator/v1`
 
 Report schema: `styx.causal-flow-falsification-report/v1`
 
-Machine report SHA-256: `e4fbd276cfedbc6f7d59b8fc83e6abbe43ab2e90b3d0ce65e4c6eb741a765367`
+Machine report SHA-256: `4042369e927500d5e4a50e62c97ef047526925fda5903012e36e9c62ed7e2075`
 
 The exact final candidate HEAD is recorded in immutable PR evidence and in the
 independent exact-HEAD review reports; a tracked file cannot self-identify the
@@ -19,7 +19,7 @@ Issue: [#217](https://github.com/styx-secure/styx/issues/217)
 ## 1. Outcome and claim boundary
 
 The dependency-free C0.2d/C0.2f reference model found no counterexample within
-its declared small-state envelope. The required run performed 75 invariant
+its declared small-state envelope. The required run performed 82 invariant
 evaluations over 37 hostile scenario families, 78 causal/payload exploration
 traces and 54 explicit payload-axis cases. All sixteen obligations in §9 of the
 [O-04 analysis](styx-app-kernel-v0-payload-commitment-analysis.md) are present
@@ -66,8 +66,11 @@ or O-13 irreversible-effect authorization.
 - Removed-but-presented verified, unverifiable and substituted states remain
   distinct and never silently become active.
 - Checkpoint contents derive only from retained descriptors and removal claims.
-  Availability can make a producer ineligible, but checkpoint evidence never
-  supplies missing application state to a consumer. A current event whose
+  Eligibility and contents cover the retained causal-ancestor closure of the
+  declared horizon, so an omitted `REQUIRED` ancestor cannot be bypassed by
+  naming only its descendant. Availability can make a producer ineligible, but
+  checkpoint evidence never supplies missing application state to a consumer.
+  A current event whose
   non-authority dependency exists only in causal-compaction evidence halts
   before every AP effect because v0 cannot recover the absent payload class or
   state.
@@ -106,9 +109,9 @@ These are falsification bounds, not O-08 production limits.
 ## 5. Machine obligations and result
 
 The report contains one record for every identifier `C0.2f-01` through
-`C0.2f-16`. Obligations 2, 5, 10, 12 and 15 each have two independent checks,
-obligation 16 has three, and every other obligation has at least one. All
-records report `passed: true`.
+`C0.2f-16`. Obligations 2, 14, 15 and 16 each have three independent checks;
+obligations 5, 6, 9, 10, 11 and 12 each have two; every other obligation has
+one. All records report `passed: true`.
 
 The final machine verdict is:
 

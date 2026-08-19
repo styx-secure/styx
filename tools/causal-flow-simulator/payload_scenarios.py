@@ -237,6 +237,35 @@ def extend_required_suite(suite: object) -> None:
         trace=(required,),
         obligation="C0.2f-12",
     )
+    checkpoint_child = first(
+        b"q1", b"b", GRANT_B, parents=(required.reference,)
+    )
+    checkpoint_chain = causal_model().evaluate((checkpoint_child, required))
+    checkpoint_chain_records = (
+        required_records[0],
+        record(checkpoint_child.reference, ContentClass.DETACHABLE, b"child"),
+    )
+    proper_subset_horizon = payload.evaluate(
+        checkpoint_chain,
+        checkpoint_chain_records,
+        {required.reference: MISSING, checkpoint_child.reference: VERIFIED},
+        {},
+        PayloadCheckpoint((checkpoint_child.reference,)),
+    )
+    suite.check(
+        "checkpoint eligibility covers the causal closure of its horizon",
+        proper_subset_horizon.checkpoint is not None
+        and proper_subset_horizon.checkpoint.disposition
+        is CheckpointDisposition.PRODUCER_INELIGIBLE
+        and not proper_subset_horizon.checkpoint.producer_eligible
+        and {
+            item[0] for item in proper_subset_horizon.checkpoint.contents
+        }
+        == {required.reference.hex(), checkpoint_child.reference.hex()},
+        family="checkpoint-availability",
+        trace=(required, checkpoint_child),
+        obligation="C0.2f-02",
+    )
 
     # 3 and 4: a REQUIRED hole defers the complete suffix and resumes exactly.
     later = first(b"z0", b"b", GRANT_B, parents=(required.reference,))
@@ -276,6 +305,51 @@ def extend_required_suite(suite: object) -> None:
         trace=(required, later),
         obligation="C0.2f-03",
     )
+    halt_target = first(b"h0", b"a", GRANT_A)
+    halt_required = first(
+        b"h1", b"b", GRANT_B, parents=(halt_target.reference,)
+    )
+    halt_directive = first(
+        b"h2",
+        b"c",
+        GRANT_C,
+        parents=(halt_required.reference,),
+        kind="remove",
+    )
+    halt_causal = causal_model().evaluate(
+        (halt_directive, halt_required, halt_target)
+    )
+    halt_records = (
+        record(halt_target.reference, ContentClass.DETACHABLE, b"halt-target"),
+        record(halt_required.reference, ContentClass.REQUIRED, b"halt-required"),
+        PayloadRecord(
+            halt_directive.reference,
+            ContentDescriptor.none(),
+            RemovalClaim(halt_target.reference, b"halt-target"),
+        ),
+    )
+    halted_directive = payload.evaluate(
+        halt_causal,
+        halt_records,
+        {
+            halt_target.reference: VERIFIED,
+            halt_required.reference: MISSING,
+            halt_directive.reference: NONE_OBSERVATION,
+        },
+        {halt_directive.reference: True},
+    )
+    suite.check(
+        "removal in a REQUIRED-deferred suffix cannot affect an earlier target",
+        halted_directive.halted_at == halt_required.reference
+        and halted_directive.directive_outcomes[halt_directive.reference]
+        is DirectiveOutcome.DEFERRED_BY_REQUIRED_SUFFIX
+        and halted_directive.states[halt_target.reference].retention
+        is RetentionState.ACTIVE
+        and halt_directive.reference not in halted_directive.applied_order,
+        family="required-bypass",
+        trace=(halt_target, halt_required, halt_directive),
+        obligation="C0.2f-11",
+    )
 
     # 5: exercise the complete local product of minimum observation axes.
     content_bearing_legal = {
@@ -304,7 +378,7 @@ def extend_required_suite(suite: object) -> None:
         for availability, binding in product(Availability, BindingObservation):
             suite.payload_explored()
             try:
-                payload.evaluate(
+                evaluated_axis = payload.evaluate(
                     causal,
                     axis_records,
                     {
@@ -317,9 +391,37 @@ def extend_required_suite(suite: object) -> None:
                 accepted = True
             except ModelInputError:
                 accepted = False
-            classification_matches &= (
-                accepted == ((availability, binding) in expected_legal)
-            )
+            expected_acceptance = (availability, binding) in expected_legal
+            classification_matches &= accepted == expected_acceptance
+            if accepted:
+                if content_class is ContentClass.NONE:
+                    expected_presentation = (
+                        PresentationState.NO_CONTENT
+                        if availability is Availability.ABSENT
+                        else PresentationState.UNEXPECTED_CONTENT_REJECTED
+                    )
+                elif (
+                    content_class is ContentClass.REQUIRED
+                    and binding is not BindingObservation.VERIFIED
+                ):
+                    expected_presentation = PresentationState.DEFERRED
+                elif binding is BindingObservation.VERIFIED:
+                    expected_presentation = PresentationState.ACTIVE_VERIFIED
+                elif availability in (Availability.ABSENT, Availability.PARTIAL):
+                    expected_presentation = PresentationState.ACTIVE_UNAVAILABLE
+                elif binding in (
+                    BindingObservation.LENGTH_MISMATCH,
+                    BindingObservation.COMMITMENT_MISMATCH,
+                ):
+                    expected_presentation = (
+                        PresentationState.ACTIVE_SUBSTITUTED_REJECTED
+                    )
+                else:
+                    expected_presentation = PresentationState.ACTIVE_UNVERIFIABLE
+                classification_matches &= (
+                    evaluated_axis.states[detachable.reference].presentation
+                    is expected_presentation
+                )
     suite.check(
         "closed payload observation axes reject every unlisted combination",
         classification_matches,
@@ -366,12 +468,25 @@ def extend_required_suite(suite: object) -> None:
         detachable_observations,
         {directive_d.reference: False},
     )
+    mismatched_records = (
+        detachable_records[0],
+        replace(
+            detachable_records[1],
+            removal=RemovalClaim(target_d.reference, b"wrong-commitment"),
+        ),
+    )
+    commitment_mismatch = payload.evaluate(
+        causal_d,
+        mismatched_records,
+        detachable_observations,
+        {directive_d.reference: True},
+    )
     checkpoint_with_directive = payload.evaluate(
         causal_d,
         detachable_records,
         detachable_observations,
         {directive_d.reference: True},
-        PayloadCheckpoint(causal_d.order),
+        PayloadCheckpoint(tuple(sorted(causal_d.order))),
     )
     suite.check(
         "authenticated directive cannot mutate or remove REQUIRED content",
@@ -392,6 +507,16 @@ def extend_required_suite(suite: object) -> None:
         family="removal-policy",
         trace=(target_d, directive_d),
         obligation="C0.2f-07",
+    )
+    suite.check(
+        "removal target commitment mismatch cannot change retention",
+        commitment_mismatch.directive_outcomes[directive_d.reference]
+        is DirectiveOutcome.TARGET_COMMITMENT_MISMATCH
+        and commitment_mismatch.states[target_d.reference].retention
+        is RetentionState.ACTIVE,
+        family="removal-policy",
+        trace=(target_d, directive_d),
+        obligation="C0.2f-06",
     )
     directive_checkpoint_term = next(
         item
@@ -503,6 +628,48 @@ def extend_required_suite(suite: object) -> None:
         and compacted_incremental == with_checkpoint,
         family="fresh-reconstruction",
         trace=(compacted, compacted_child),
+        obligation="C0.2f-09",
+    )
+    stale_target = first(b"s2", b"b", GRANT_B)
+    stale_directive = first(
+        b"s3",
+        b"c",
+        GRANT_C,
+        parents=(compacted_child.reference, stale_target.reference),
+        kind="remove",
+    )
+    stale_causal = causal_model(
+        proven_extra=(compacted.reference,),
+        heads=((b"a", 0, compacted.reference),),
+    ).evaluate((stale_directive, stale_target, compacted_child))
+    stale_records = (
+        compacted_records[0],
+        record(stale_target.reference, ContentClass.DETACHABLE, b"stale-target"),
+        PayloadRecord(
+            stale_directive.reference,
+            ContentDescriptor.none(),
+            RemovalClaim(stale_target.reference, b"stale-target"),
+        ),
+    )
+    stale_result = payload.evaluate(
+        stale_causal,
+        stale_records,
+        {
+            compacted_child.reference: VERIFIED,
+            stale_target.reference: VERIFIED,
+            stale_directive.reference: NONE_OBSERVATION,
+        },
+        {stale_directive.reference: True},
+    )
+    suite.check(
+        "removal under stale causal evidence is deferred without changing retention",
+        stale_result.directive_outcomes[stale_directive.reference]
+        is DirectiveOutcome.DEFERRED_BY_STALE_EVIDENCE
+        and stale_result.states[stale_target.reference].retention
+        is RetentionState.ACTIVE
+        and stale_result.applied_order == (),
+        family="fresh-reconstruction",
+        trace=(compacted, compacted_child, stale_target, stale_directive),
         obligation="C0.2f-09",
     )
 
@@ -631,7 +798,7 @@ def extend_required_suite(suite: object) -> None:
         fork_records,
         fork_observations,
         {},
-        PayloadCheckpoint(fork_causal.order),
+        PayloadCheckpoint(tuple(sorted(fork_causal.order))),
     )
     suite.check(
         "fork-classified REQUIRED hole and checkpoint cannot permit selective bypass",
@@ -660,6 +827,10 @@ def extend_required_suite(suite: object) -> None:
             evaluated.checkpoint is not None
             and evaluated.checkpoint.disposition is expected
             and not evaluated.checkpoint.consumer_substitution
+            and evaluated.states == present.states
+            and evaluated.directive_outcomes == present.directive_outcomes
+            and evaluated.applied_order == present.applied_order
+            and evaluated.halted_at == present.halted_at
         )
     suite.check(
         "unavailable unauthenticated conflicting and stale checkpoints never substitute",
@@ -722,6 +893,67 @@ def extend_required_suite(suite: object) -> None:
         repeat_observations,
         {directive_d.reference: True, repeat.reference: True},
     )
+    concurrent_target = first(b"n0", b"a", GRANT_A)
+    concurrent_directive = first(b"n1", b"b", GRANT_B, kind="remove")
+    concurrent_causal = causal_model().evaluate(
+        (concurrent_directive, concurrent_target)
+    )
+    concurrent_records = (
+        record(
+            concurrent_target.reference,
+            ContentClass.DETACHABLE,
+            b"concurrent",
+        ),
+        PayloadRecord(
+            concurrent_directive.reference,
+            ContentDescriptor.none(),
+            RemovalClaim(concurrent_target.reference, b"concurrent"),
+        ),
+    )
+    suite.check_raises(
+        "removal cannot target a concurrent non-ancestor event",
+        lambda: payload.evaluate(
+            concurrent_causal,
+            concurrent_records,
+            {
+                concurrent_target.reference: VERIFIED,
+                concurrent_directive.reference: NONE_OBSERVATION,
+            },
+            {concurrent_directive.reference: True},
+        ),
+        family="removal-target-cases",
+        trace=(concurrent_target, concurrent_directive),
+        obligation="C0.2f-14",
+    )
+    compacted_target = first(b"n2", b"a", GRANT_A)
+    compacted_directive = next_event(
+        b"n3",
+        b"a",
+        1,
+        compacted_target.reference,
+        kind="remove",
+    )
+    compacted_target_causal = causal_model(
+        proven_extra=(compacted_target.reference,),
+        heads=((b"a", 0, compacted_target.reference),),
+    ).evaluate((compacted_directive,))
+    compacted_target_record = PayloadRecord(
+        compacted_directive.reference,
+        ContentDescriptor.none(),
+        RemovalClaim(compacted_target.reference, b"compacted"),
+    )
+    suite.check_raises(
+        "removal cannot target an event absent from the retained payload set",
+        lambda: payload.evaluate(
+            compacted_target_causal,
+            (compacted_target_record,),
+            {compacted_directive.reference: NONE_OBSERVATION},
+            {compacted_directive.reference: True},
+        ),
+        family="removal-target-cases",
+        trace=(compacted_target, compacted_directive),
+        obligation="C0.2f-14",
+    )
     suite.check(
         "NONE late-admitted and already-removed targets are deterministic",
         none_result.directive_outcomes[none_directive.reference]
@@ -772,6 +1004,28 @@ def extend_required_suite(suite: object) -> None:
             replace(vector, chunk_geometry=ChunkGeometry(4, 2, 3))
         ),
         family="chunk-privacy",
+        obligation="C0.2f-15",
+    )
+    invalid_descriptor_geometry = PayloadRecord(
+        detachable.reference,
+        descriptor(
+            ContentClass.DETACHABLE,
+            b"geometry",
+            length=6,
+            shape=CommitmentShape.CHUNKED,
+            geometry=ChunkGeometry(4, 2, 3),
+        ),
+    )
+    suite.check_raises(
+        "inconsistent descriptor geometry rejects before payload projection",
+        lambda: payload.evaluate(
+            causal,
+            (invalid_descriptor_geometry,),
+            {detachable.reference: VERIFIED},
+            {},
+        ),
+        family="chunk-privacy",
+        trace=(detachable,),
         obligation="C0.2f-15",
     )
 

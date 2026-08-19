@@ -152,6 +152,7 @@ class Suite:
             "smallest_observed_trace": event_trace_fingerprint(trace),
         }
         candidate_key = (
+            not bool(candidate["smallest_observed_trace"]),
             len(candidate["smallest_observed_trace"]),
             repr(candidate["smallest_observed_trace"]),
             name,
@@ -160,6 +161,7 @@ class Suite:
         if self.counterexamples:
             current = self.counterexamples[0]
             current_key = (
+                not bool(current["smallest_observed_trace"]),
                 len(current["smallest_observed_trace"]),
                 repr(current["smallest_observed_trace"]),
                 str(current["invariant"]),
@@ -176,17 +178,25 @@ class Suite:
         operation: Callable[[], object],
         *,
         family: str,
+        trace: Sequence[Event] = (),
         obligation: str | None = None,
     ) -> None:
         try:
             operation()
         except ModelInputError:
-            self.check(name, True, family=family, obligation=obligation)
+            self.check(
+                name,
+                True,
+                family=family,
+                trace=trace,
+                obligation=obligation,
+            )
         else:
             self.check(
                 name,
                 False,
                 family=family,
+                trace=trace,
                 detail="operation did not fail closed",
                 obligation=obligation,
             )
@@ -216,6 +226,7 @@ class Suite:
                     "max_commitment_bytes": payload_profile.max_commitment_bytes,
                     "max_randomizer_bytes": payload_profile.max_randomizer_bytes,
                     "max_symbol_bytes": payload_profile.max_symbol_bytes,
+                    "max_text_bytes": payload_profile.max_text_bytes,
                     "max_checkpoint_references": payload_profile.max_checkpoint_refs,
                     "max_total_input_bytes": payload_profile.max_input_bytes,
                     "max_exploration_cases": payload_profile.max_exploration_cases,

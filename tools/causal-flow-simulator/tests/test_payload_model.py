@@ -141,6 +141,30 @@ class DescriptorAndAxisTest(unittest.TestCase):
                         with self.assertRaises(ModelInputError):
                             operation()
 
+    def test_active_presentations_distinguish_unavailable_unverifiable_and_substituted(self):
+        event = first(b"a0", b"a", GRANT_A)
+        causal = model().evaluate((event,))
+        records = (record(event.reference, ContentClass.DETACHABLE, b"ct"),)
+        cases = {
+            PayloadObservation(
+                Availability.ABSENT, BindingObservation.NOT_CHECKED
+            ): PresentationState.ACTIVE_UNAVAILABLE,
+            PayloadObservation(
+                Availability.PRESENT, BindingObservation.OPENING_MISSING
+            ): PresentationState.ACTIVE_UNVERIFIABLE,
+            PayloadObservation(
+                Availability.PRESENT, BindingObservation.LENGTH_MISMATCH
+            ): PresentationState.ACTIVE_SUBSTITUTED_REJECTED,
+        }
+        observed = set()
+        for observation, expected in cases.items():
+            result = PayloadModel().evaluate(
+                causal, records, {event.reference: observation}, {}
+            )
+            self.assertEqual(result.states[event.reference].presentation, expected)
+            observed.add(result.states[event.reference].presentation)
+        self.assertEqual(observed, set(cases.values()))
+
     def test_zero_length_content_is_not_none(self):
         event = first(b"a0", b"a", GRANT_A)
         causal = model().evaluate((event,))
@@ -238,6 +262,88 @@ class ReplayAvailabilityTest(unittest.TestCase):
         )
         self.assertEqual(boundary, 0)
         self.assertEqual(incremental, resumed)
+
+    def test_removal_in_required_deferred_suffix_does_not_apply(self):
+        target = first(b"a0", b"a", GRANT_A)
+        required = first(b"b0", b"b", GRANT_B, parents=(target.reference,))
+        directive = first(
+            b"c0",
+            b"c",
+            b"gc",
+            parents=(required.reference,),
+            kind="remove",
+        )
+        causal = model().evaluate((directive, required, target))
+        records = (
+            record(target.reference, ContentClass.DETACHABLE, b"target"),
+            record(required.reference, ContentClass.REQUIRED, b"required"),
+            PayloadRecord(
+                directive.reference,
+                ContentDescriptor.none(),
+                RemovalClaim(target.reference, b"target"),
+            ),
+        )
+        result = PayloadModel().evaluate(
+            causal,
+            records,
+            {
+                target.reference: VERIFIED,
+                required.reference: MISSING,
+                directive.reference: NONE_OBSERVATION,
+            },
+            {directive.reference: True},
+        )
+        self.assertEqual(result.halted_at, required.reference)
+        self.assertEqual(
+            result.directive_outcomes[directive.reference],
+            DirectiveOutcome.DEFERRED_BY_REQUIRED_SUFFIX,
+        )
+        self.assertEqual(
+            result.states[target.reference].retention, RetentionState.ACTIVE
+        )
+
+    def test_stale_causal_evidence_defers_removal(self):
+        compacted = b"a0"
+        child = next_event(b"a1", b"a", 1, compacted)
+        target = first(b"b0", b"b", GRANT_B)
+        directive = first(
+            b"c0",
+            b"c",
+            b"gc",
+            parents=(child.reference, target.reference),
+            kind="remove",
+        )
+        evidence = checkpoint(
+            proven=frozenset((GRANT_A, GRANT_B, b"gc", compacted)),
+            heads=((b"a", 0, compacted),),
+        )
+        causal = model(evidence=evidence).evaluate((directive, target, child))
+        records = (
+            record(child.reference, ContentClass.DETACHABLE, b"child"),
+            record(target.reference, ContentClass.DETACHABLE, b"target"),
+            PayloadRecord(
+                directive.reference,
+                ContentDescriptor.none(),
+                RemovalClaim(target.reference, b"target"),
+            ),
+        )
+        result = PayloadModel().evaluate(
+            causal,
+            records,
+            {
+                child.reference: VERIFIED,
+                target.reference: VERIFIED,
+                directive.reference: NONE_OBSERVATION,
+            },
+            {directive.reference: True},
+        )
+        self.assertEqual(
+            result.directive_outcomes[directive.reference],
+            DirectiveOutcome.DEFERRED_BY_STALE_EVIDENCE,
+        )
+        self.assertEqual(
+            result.states[target.reference].retention, RetentionState.ACTIVE
+        )
 
     def test_incremental_rejects_unvalidated_old_payload_state(self):
         event = first(b"a0", b"a", GRANT_A)
@@ -343,6 +449,57 @@ class RemovalTest(unittest.TestCase):
             directive.reference: NONE_OBSERVATION,
         }
         return target, directive, causal, (target_record, directive_record), observations
+
+    def test_removal_target_must_be_a_retained_causal_ancestor(self):
+        concurrent_target = first(b"a0", b"a", GRANT_A)
+        concurrent_directive = first(b"b0", b"b", GRANT_B, kind="remove")
+        concurrent_causal = model().evaluate(
+            (concurrent_directive, concurrent_target)
+        )
+        concurrent_records = (
+            record(
+                concurrent_target.reference,
+                ContentClass.DETACHABLE,
+                b"target",
+            ),
+            PayloadRecord(
+                concurrent_directive.reference,
+                ContentDescriptor.none(),
+                RemovalClaim(concurrent_target.reference, b"target"),
+            ),
+        )
+        with self.assertRaisesRegex(ModelInputError, "causal ancestor"):
+            PayloadModel().evaluate(
+                concurrent_causal,
+                concurrent_records,
+                {
+                    concurrent_target.reference: VERIFIED,
+                    concurrent_directive.reference: NONE_OBSERVATION,
+                },
+                {concurrent_directive.reference: True},
+            )
+
+        compacted_target = b"a0"
+        compacted_directive = next_event(
+            b"a1", b"a", 1, compacted_target, kind="remove"
+        )
+        evidence = checkpoint(
+            proven=frozenset((GRANT_A, compacted_target)),
+            heads=((b"a", 0, compacted_target),),
+        )
+        compacted_causal = model(evidence=evidence).evaluate((compacted_directive,))
+        compacted_record = PayloadRecord(
+            compacted_directive.reference,
+            ContentDescriptor.none(),
+            RemovalClaim(compacted_target, b"target"),
+        )
+        with self.assertRaisesRegex(ModelInputError, "retained removal target"):
+            PayloadModel().evaluate(
+                compacted_causal,
+                (compacted_record,),
+                {compacted_directive.reference: NONE_OBSERVATION},
+                {compacted_directive.reference: True},
+            )
 
     def test_only_authorized_detachable_removal_applies(self):
         target, directive, causal, records, observations = self.fixture()
@@ -548,11 +705,36 @@ class CheckpointTest(unittest.TestCase):
             record(later.reference, ContentClass.DETACHABLE, b"later"),
         )
         observations = {required.reference: MISSING, later.reference: VERIFIED}
-        checkpoint = PayloadCheckpoint(causal.order)
+        checkpoint = PayloadCheckpoint(tuple(sorted(causal.order)))
         result = PayloadModel().evaluate(causal, records, observations, {}, checkpoint)
         self.assertEqual(result.halted_at, required.reference)
         self.assertFalse(result.checkpoint.consumer_substitution)
         self.assertEqual(result.applied_order, ())
+
+    def test_checkpoint_eligibility_covers_horizon_ancestor_closure(self):
+        required = first(b"f0", b"a", GRANT_A)
+        child = first(b"a0", b"b", GRANT_B, parents=(required.reference,))
+        causal = model().evaluate((child, required))
+        records = (
+            record(required.reference, ContentClass.REQUIRED, b"required"),
+            record(child.reference, ContentClass.DETACHABLE, b"child"),
+        )
+        result = PayloadModel().evaluate(
+            causal,
+            records,
+            {required.reference: MISSING, child.reference: VERIFIED},
+            {},
+            PayloadCheckpoint((child.reference,)),
+        )
+        self.assertEqual(
+            result.checkpoint.disposition,
+            CheckpointDisposition.PRODUCER_INELIGIBLE,
+        )
+        self.assertFalse(result.checkpoint.producer_eligible)
+        self.assertEqual(
+            {item[0] for item in result.checkpoint.contents},
+            {required.reference.hex(), child.reference.hex()},
+        )
 
     def test_bad_checkpoint_evidence_is_typed_and_non_substituting(self):
         event = first(b"a0", b"a", GRANT_A)
@@ -593,7 +775,7 @@ class CheckpointTest(unittest.TestCase):
             (target_record, directive_record),
             {target.reference: VERIFIED, directive.reference: NONE_OBSERVATION},
             {directive.reference: True},
-            PayloadCheckpoint(causal.order),
+            PayloadCheckpoint(tuple(sorted(causal.order))),
         )
         directive_term = next(
             term for term in result.checkpoint.contents if term[0] == directive.reference.hex()

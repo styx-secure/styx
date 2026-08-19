@@ -86,8 +86,9 @@ bytes. These are exploration limits, not proposed production limits.
 The payload profile independently fails closed above 9 records, 4 removal
 directives, 1,024 bytes declared content length, 256-byte chunk size, 8 chunks,
 64-byte commitment/reference values, 64-byte injected randomizers or part
-symbols, 9 checkpoint references, 8 KiB aggregate input, or 512 payload
-exploration cases. Scalar bounds are checked before symbolic part expansion.
+symbols, 64 UTF-8 bytes per payload text identifier, 9 checkpoint references,
+8 KiB aggregate input, or 512 payload exploration cases. Scalar bounds are
+checked before symbolic part expansion.
 These too are model bounds, not production defaults; O-08 remains responsible
 for supported runtime limits.
 
@@ -121,6 +122,8 @@ explicit checkpoint/AP input instead of being emitted as a new live relation.
 - Network omission, endpoint compromise, traffic analysis and global rollback
   detection remain outside this tool.
 - Checkpoint authentication is classified but not provided by this model, and
-  accepted checkpoints never replace consumer-side payload verification.
+  accepted checkpoints never replace consumer-side payload verification. A
+  checkpoint's canonical horizon references are expanded to their retained
+  causal-ancestor closure for contents and producer-eligibility assessment.
 - O-06/O-07/O-08/O-10/O-11 decisions may require this model and its affected
   invariants to be extended and rerun.

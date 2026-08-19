@@ -730,7 +730,9 @@ class PayloadModel:
 
         assessment = None
         if checkpoint is not None:
-            assessment = self._assess_checkpoint(records, observations, checkpoint)
+            assessment = self._assess_checkpoint(
+                causal, records, observations, checkpoint
+            )
         return PayloadEvaluation(
             states=dict(sorted(states.items())),
             directive_outcomes=dict(sorted(outcomes.items())),
@@ -798,7 +800,7 @@ class PayloadModel:
         assessment = (
             None
             if checkpoint is None
-            else self._assess_checkpoint(records, observations, checkpoint)
+            else self._assess_checkpoint(causal, records, observations, checkpoint)
         )
         if assessment is not None:
             assessment = replace(
@@ -888,20 +890,32 @@ class PayloadModel:
 
     def _assess_checkpoint(
         self,
+        causal: Evaluation,
         records: Mapping[bytes, PayloadRecord],
         observations: Mapping[bytes, PayloadObservation],
         checkpoint: PayloadCheckpoint,
     ) -> CheckpointAssessment:
         known = all(reference in records for reference in checkpoint.horizon_refs)
-        contents = tuple(
-            (reference.hex(), *_record_term(records[reference]))
+        horizon: set[bytes] = {
+            reference
             for reference in checkpoint.horizon_refs
             if reference in records
+        }
+        pending = list(horizon)
+        while pending:
+            reference = pending.pop()
+            for parent in causal.graph.get(reference, ()):
+                if parent in records and parent not in horizon:
+                    horizon.add(parent)
+                    pending.append(parent)
+        contents = tuple(
+            (reference.hex(), *_record_term(records[reference]))
+            for reference in sorted(horizon)
         )
         eligible = known and all(
             records[reference].descriptor.content_class is not ContentClass.REQUIRED
             or observations[reference].binding is BindingObservation.VERIFIED
-            for reference in checkpoint.horizon_refs
+            for reference in horizon
         )
         if not checkpoint.available:
             disposition = CheckpointDisposition.UNAVAILABLE
