@@ -221,7 +221,11 @@ claim that current code conforms.
   metadata, but an authorized author can grind otherwise valid signed inputs to
   bias its own digest-derived replay position. Replay position MUST NOT confer
   authorization, priority, first-writer-wins truth or irreversible-effect
-  authority. This rule does not decide application conflict policy or provide
+  authority. Because replay handoffs are prefix-scoped, grinding can change
+  whether a concurrent revocation, rotation or policy event is visible at the
+  acting event's own evaluation point. Later disclosure requires revision of
+  reversible AP state and never retroactively authorizes an irreversible
+  effect. This rule does not decide application conflict policy or provide
   fairness or unpredictability.
 - **Residual/reopen condition:** the exact authenticated content identifier is
   `OPEN`; C0.3 cannot begin until it is defined.
@@ -457,7 +461,8 @@ outcomes.
 - **Dependent artifact:** credential identifier, verification-key/algorithm
   binding, grant/state reference and negative vectors. O-01 defines concurrent
   and stale ordering; O-05/O-12 gate physical expiry; O-06 defines references;
-  O-07 defines initial authority; O-08 bounds resources; O-10 names failures.
+  O-07 defines initial authority; O-08 bounds resources; O-10 names failures;
+  O-14 owns the exact signature-suite registry and downgrade evidence.
 - **Residual/reopen condition:** reopen if O-01 cannot express safe
   rotation/revocation, a required profile cannot use context-local credentials,
   the `AP → K` split permits an authorization bypass, or an approved anonymous
@@ -645,7 +650,10 @@ outcomes.
   reference integrity and correlation. Event references stay inside protected
   application objects unless a later profile explicitly accepts disclosure.
   An authorized author can grind its own reference position, so no AP policy
-  may infer authority, priority or irreversible effects from K-06 replay order.
+  may infer final authority, priority or irreversible effects from K-06 replay
+  order. Prefix-scoped handoffs can expose different concurrent authority facts
+  at different replay positions; AP must repair reversible state when later
+  evidence becomes visible.
 - **Missing evidence:** O-06b exact K-02 transcript bytes, digest/commitment
   registry, domain values, widths, randomizer and chunk construction; O-06c
   executable negative evidence. O-14 separately owns the signature-suite
@@ -655,8 +663,8 @@ outcomes.
 - **Smallest bounded follow-up:** O-06b selects one exact profile under a
   security/crypto gate without creating vectors or implementation authority;
   O-06c then adversarially tests framing injectivity, role/context separation,
-  non-circularity, chunk unlinkability, collision handling, grinding
-  non-interference and bounded work.
+  non-circularity, chunk unlinkability, collision handling, grinding-to-handoff
+  interaction, reversible repair and bounded work.
 - **Residual/closure condition:** close only when semantically distinct valid
   events cannot share a reference under the selected registry and every exact
   field has one unambiguous derivation.
@@ -875,6 +883,8 @@ outcomes.
 - **Status:** `OPEN`.
 - **Decision owner:** `K` owns verification semantics and the closed algorithm
   registry; `AP` owns which credential types and assurance profiles it admits.
+  This follows the O-02 split-obligation precedent and creates no aggregate
+  multi-owner rule: each layer alone owns its stated output.
 - **Question:** which exact signature algorithms, key encodings, registry
   identifiers and downgrade rules instantiate the O-02 credential binding?
 - **Interim rule:** an application event includes the context-local credential
@@ -900,6 +910,9 @@ outcomes.
 - **Dependent artifact:** O-02 credential-record bytes, application-signature
   verification and C0.3 invalid-signature/cross-suite expectations. O-06 owns
   only the transcript slot/derivation boundary and MUST NOT absorb this choice.
+  The C0.2f report predates O-14 and therefore does not enumerate it; this
+  registry is the current authority for the expanded C0.3 blocker list without
+  changing that frozen report or its recorded result.
 - **Smallest bounded follow-up:** after O-06a, compare the minimum viable closed
   signature profiles and their exact runtime/supply-chain evidence under a
   separately approved security/crypto contract.

@@ -84,9 +84,11 @@ must not hide durable authority in `DETACHABLE` content.
 | Application-event object-kind/role discriminant | `INCLUDE` | `K`, closed registry | Prevents cross-object and ordinary/removal reinterpretation. Decoder entry point is insufficient. |
 | Event type identifier | `INCLUDE` | `AP`, closed profile registry | Selects the transition schema. Free-form names and inferred types are rejected. |
 | Schema identifier/version needed to parse the transition | `INCLUDE` | `AP`, closed profile registry | Any schema that changes validation must be authenticated. Ambient schema selection is rejected. |
+| AP type-specific transition-field block | `INCLUDE` | `AP`, membership and internal order fixed by the authenticated closed schema identifier/version | Every direct field that changes authorization or transition semantics is authenticated in one bounded schema-defined position. Decoder order, maps and undeclared extension fields are rejected. |
+| Effective grant/policy state | `DERIVE` | `AP`, from authenticated replay state under O-02 | An author-carried "current policy" selector is excluded; the order-sensitive concurrent case is constrained in §3.4 and §6. |
 | Credential identifier | `INCLUDE` | O-02 context-local credential state | Names the author binding without embedding a global account or session identity. |
 | Verification key | `DERIVE` | Authenticated O-02 credential state selected by credential identifier and replay prefix | Repeating an author-supplied key permits substitution. The key is compared through authenticated state. |
-| Signature algorithm identifier | `DERIVE` | Authenticated credential record; exact registry ownership remains open in O-14 | An author-selected algorithm field could enable downgrade or cross-algorithm ambiguity. Unknown or inconsistent algorithms must fail closed. |
+| Signature algorithm identifier | `DERIVE` | Authenticated credential record; O-14 owns the registry and leaves its exact values open | An author-selected algorithm field could enable downgrade or cross-algorithm ambiguity. Unknown or inconsistent algorithms must fail closed. |
 | Signature bytes | `EXCLUDE` | Supplied beside the regenerated transcript | Including the signature in event identity is circular and makes resigning change identity. The signature authenticates, but is not part of, its content. |
 | Author sequence | `INCLUDE` | O-01 | Detects per-credential gaps and equivocation. Arrival order and aggregate counters are rejected. |
 | Direct author-predecessor presence | `INCLUDE` | O-01 | Presence is distinct from a zero or empty reference. Implicit null conventions are rejected. |
@@ -95,7 +97,7 @@ must not hide durable authority in `DETACHABLE` content.
 | Canonical causal-parent references | `INCLUDE` | O-01/O-06 | The bytewise sorted-unique maximal antichain is authenticated. Arrival or insertion order is rejected. |
 | Genesis reference | `INCLUDE` | O-03, semantic form selected in §2; contents remain O-07 | Binds every event to one authenticated genesis without making the random context identifier depend on genesis. |
 | O-04 content descriptor | `INCLUDE` | `K/AP` under O-04 | Authenticates class, type, length, suite, shape, value and geometry. Raw content/opening are excluded. |
-| Author-carried event reference/cache hint | `EXCLUDE` | Convenience representation only | A consumer recomputes the reference. A carried value may be compared only after derivation and cannot be authoritative. |
+| Author-carried event reference/cache hint | `EXCLUDE` | Convenience representation only | A consumer recomputes the reference. A mismatch is an O-11 representation diagnostic, never K semantic invalidity; removing or correcting the hint cannot change admission. |
 | Application-purpose physical time | `EXCLUDE` from K | `AP`, if a later time-bearing profile is approved | O-05 removed physical time from the kernel. Any time claim is committed application content and remains subject to O-12 at that profile boundary. |
 | Relay timestamp, arrival order, storage order, UI time | `EXCLUDE` | `TR`, `RS` or `PV` observations | None may affect validity, causality, replay, fork handling or authorization. |
 | MLS epoch/member identity, Nostr key/event identifier, relay identifier | `EXCLUDE` | `SS`/`TR` | Session and transport authentication do not establish application authorship or context. |
@@ -116,7 +118,7 @@ typed and authenticated:
 | `content_class` | `INCLUDE` | Closed `NONE`, `REQUIRED`, `DETACHABLE` registry. |
 | `content_type_id` | `INCLUDE` | Closed AP registry; granularity must respect removal/privacy claims. |
 | `exact_content_length` | `INCLUDE` | Exact non-wrapping integer; zero content-bearing value remains distinct from `NONE`. |
-| `commitment_suite_id` | `INCLUDE` | Exact value remains O-06b; unknown values fail closed. |
+| `commitment_suite_id` | `INCLUDE` | O-06b pins the exact active-profile value. Unknown or inconsistent values fail closed; an event cannot negotiate or downgrade among suites. |
 | `commitment_shape` | `INCLUDE` | Closed single/chunk-tree discriminant. |
 | `commitment_value` | `INCLUDE` | Full future O-06b output, never a locator or storage hash. |
 | chunk-geometry presence | `INCLUDE` | Absence is valid only for the single shape and cannot alias zero geometry. |
@@ -152,8 +154,14 @@ The authenticated event does not carry an author-selected "current policy"
 selector. Authorization is evaluated against the deterministic, authenticated
 AP state visible at the event's canonical replay prefix, including the
 credential grant and any actionable rotation, revocation or policy events.
-The resulting AP decision covers the exact action, context, credential and
-effective policy state.
+That prefix is order-sensitive: a concurrent revocation, rotation or policy
+event that sorts later is not visible in the acting event's own handoff. AP
+therefore MUST NOT treat the prefix-visible authority set as final when a
+concurrent authority transition is later disclosed. Per the ratified C0.2d
+rule, it must revise only reversible state and MUST NOT authorize an
+irreversible effect before stronger, order-independent evidence. The resulting
+AP decision still covers the exact action, context, credential and effective
+policy state known at that prefix; it is not a finality claim.
 
 If a future profile needs an explicit grant or policy reference because the
 effective state cannot be derived unambiguously, that reference becomes an
@@ -182,8 +190,10 @@ O-06b must instantiate an injective encoding satisfying all of these rules:
 6. counts and lengths are validated against the active profile before
    allocation, hashing, signature work, graph traversal or fetch fan-out;
 7. parent references are full-width, canonical bytewise sorted, unique and
-   form the O-01 maximal antichain; the direct author predecessor is encoded
-   separately and excluded from that frontier;
+   form the O-01 maximal antichain; the direct author predecessor and genesis
+   reference are encoded separately and excluded from that frontier. The first
+   post-genesis event may have an empty frontier when it has no non-genesis
+   causal parent;
 8. a decoder never repairs, clamps, truncates, normalizes or ignores trailing
    semantic bytes;
 9. the regenerated transcript is not a generic wire document; O-11 may choose
@@ -229,9 +239,20 @@ Therefore:
 - a future profile claiming fairness or unpredictability requires a separate
   mechanism and threat analysis.
 
-O-06c must exercise grinding as a non-interference property: changing replay
-position may change evaluation order but cannot change credential validity,
-causal classification, fork evidence or the rule that AP owns conflict policy.
+Changing replay position does not change signature/credential validity,
+graph-set causality or the existence of underlying fork/revocation evidence.
+It **can** change which concurrent revocation, rotation or policy facts appear
+in the acting event's prefix-scoped handoff. An author that omits an observed
+cross-author parent can grind below a concurrent authority transition and make
+that transition absent from its own evaluation point. Later replay still
+discloses the concurrency, so AP must revise reversible state and cannot treat
+the earlier prefix result as irreversible authority.
+
+O-06c must exercise this grinding-to-handoff interaction in both ordering
+directions, including assertions on the acting event's handoff when a
+revocation sorts later. It must show that grinding cannot convert replay
+position into final authorization or an irreversible effect; it must not assert
+the false stronger property that every prefix-scoped handoff is unchanged.
 
 ## 7. Rejection-site inventory for later O-10 work
 
@@ -245,7 +266,8 @@ O-06a identifies these classes without assigning stable codes:
   direct-predecessor mismatch or cross-context reference;
 - unknown credential, key-binding mismatch, unsupported signature algorithm or
   invalid signature;
-- carried/recomputed event-reference mismatch;
+- carried/recomputed event-reference mismatch as an O-11 representation
+  diagnostic that cannot invalidate the regenerated semantic event;
 - content-class/descriptor/geometry inconsistency;
 - commitment/opening/length mismatch;
 - removal target/reference/commitment inconsistency; and
@@ -288,17 +310,17 @@ authorize production implementation. O-06 remains `OPEN` after O-06b.
 A later isolated tool must test framing injectivity, absence/emptiness,
 cross-role/context separation, non-circularity, cross-event chunk equality,
 parent canonicality, suite binding, unknown-suite rejection, structural versus
-binding failures, collision handling, grinding non-interference and bounded
-work. It must rerun C0.2d/C0.2f without changing their recorded results and
+binding failures, collision handling, grinding/prefix-handoff interaction and
+bounded work. It must rerun C0.2d/C0.2f without changing their recorded results and
 must not add `conformance/**` files before the separate K-11 licensing task.
 Only a bounded no-counterexample result plus independent review and human
 ratification may move O-06 to `DECIDED`.
 
 ## 10. Security/privacy consequences and residual risk
 
-The selected inventory prevents unsigned causal, context, descriptor or role
-metadata from influencing authoritative behavior and prevents session,
-transport and storage identifiers from substituting for event identity. It
+The selected inventory is designed to prevent unsigned causal, context,
+descriptor or role metadata from influencing authoritative behavior and to
+prevent session, transport and storage identifiers from substituting for event identity. It
 does not make stable references private: authorized recipients can correlate
 equal references and graph structure, and any profile exposing them outside
 the protected application object inherits that correlator.
@@ -308,8 +330,11 @@ commitment hiding/binding, randomizer misuse, tree construction, parser safety,
 runtime capacity and algorithm downgrade remain open. Bounded O-06c evidence
 will not prove absence of counterexamples outside its envelope. A hostile
 authorized author can withhold parents, equivocate, reuse randomizers or grind
-its replay position; the protocol can attribute and classify these actions but
-cannot force honest claims.
+its replay position. Grinding can suppress a later-sorting concurrent authority
+transition from the acting event's own prefix-scoped handoff; later disclosure
+requires reversible AP repair and does not retroactively make an irreversible
+effect safe. The protocol can attribute and classify these actions but cannot
+force honest claims.
 
 Reopen this inventory if exact encoding cannot be injective without changing a
 semantic field; O-07 genesis cannot bind without self-reference or ambiguity;

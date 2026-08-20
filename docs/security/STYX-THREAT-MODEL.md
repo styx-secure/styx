@@ -12,8 +12,10 @@
   were refined by Issue #215 at base
   `b49482a13e239b3cec42ac0b264ca452cd78bd9f`.
 - **C0.2f/O-06a amendments:** bounded payload-state falsification passed under
-  Issue #217; Issue #219 inventories the semantic transcript and records
-  digest-reference grinding without selecting cryptographic bytes.
+  Issue #217; Issue #219 at base
+  `787b501823cb0b9f36412acef36cbc9c3b81135b` inventories the semantic
+  transcript and records digest-reference grinding without selecting
+  cryptographic bytes.
 - **Language:** English is canonical.
 
 Styx is experimental, has not completed an independent security audit, and is
@@ -146,7 +148,11 @@ deterministic. It cannot prevent an authorized recipient from copying content,
 taking a screenshot, colluding outside the protocol or lying in the content of
 a signed statement. Deterministic replay order is not a fairness mechanism:
 application policy must not derive authorization, priority, first-writer-wins
-truth or irreversible-effect authority from that position.
+truth or irreversible-effect authority from that position. A ground reference
+can make a concurrent revocation, rotation or policy transition absent from the
+acting event's own prefix-scoped handoff; when later replay discloses that
+relationship, AP must revise only reversible state and must not treat the
+earlier prefix as final authority.
 
 ### A4 — Compromised authorized peer
 
@@ -339,7 +345,7 @@ claims about current code.
 | Object replayed in another case/application | Reject by authenticated context binding | Cross-context negative evidence | Application semantic kernel |
 | Duplicate authenticated object in one context | Idempotent duplicate classification | No duplicate application effect | Application semantic kernel |
 | Missing parent, fork or concurrent operation | Classify under the selected bounded causal model | Deterministic recovery, rejection or application conflict handoff | Application semantic kernel |
-| Authorized author grinds a concurrent event reference | Preserve validity/causal/fork classification; treat the result only as a deterministic replay position | Application policy independently resolves the conflict and never grants priority or irreversible authority from position | Application semantic kernel plus application profile |
+| Authorized author grinds a concurrent event reference | Preserve signature validity and graph-set evidence, while allowing the prefix-scoped handoff to expose different concurrent authority facts | Exercise both ordering directions; AP repairs reversible state after later disclosure and never grants priority, final authority or irreversible effects from replay position | Application semantic kernel plus application profile |
 | Semantically conflicting but individually valid operations | Do not infer business truth from total order | Apply the application profile's declared conflict rule or escalate | Application profile |
 | Unauthorized session membership change | Reject before applying the membership transition | Typed session failure and recovery path | Secure-session adapter |
 | Relay duplication, reordering, omission or stale response | Never alter application validity; reconcile within delivery policy | Retry/failover or explicit unavailable/expired state | Transport/routing profile |
