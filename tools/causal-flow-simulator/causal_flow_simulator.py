@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the closed C0.2d causal-flow falsification suite."""
+"""Run the closed C0.2d/C0.2f causal and payload-state falsification suite."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def canonical_json_bytes(value: object) -> bytes:
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the bounded, offline Styx causal-flow falsification model."
+        description="Run the bounded, offline Styx causal/payload falsification model."
     )
     parser.add_argument("--suite", choices=("required",), required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -47,6 +47,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         f"verdict={report['verdict']} "
         f"invariants={len(report['invariants'])} "
         f"traces={report['explored_delivery_traces']} "
+        f"payload_cases={report['payload_exploration_cases']} "
         f"counterexamples={len(report['counterexamples'])}"
     )
     return 1 if report["counterexamples"] else 0
