@@ -11,6 +11,9 @@
 - **C0.2e amendment:** O-04 payload commitment and logical-removal properties
   were refined by Issue #215 at base
   `b49482a13e239b3cec42ac0b264ca452cd78bd9f`.
+- **C0.2f/O-06a amendments:** bounded payload-state falsification passed under
+  Issue #217; Issue #219 inventories the semantic transcript and records
+  digest-reference grinding without selecting cryptographic bytes.
 - **Language:** English is canonical.
 
 Styx is experimental, has not completed an independent security audit, and is
@@ -62,9 +65,9 @@ the [C0.2a responsibility matrix](../protocol/styx-app-kernel-v0-responsibility-
 | --- | --- | --- | --- | --- |
 | Application plaintext and attachments | Confidentiality to the recipients selected by an authorized application transition | Authentication failure rejects delivery; compromise invokes rotation and product incident handling | `OB-SS03`, `OB-AP08`, `OB-PV09` | An authorized or compromised endpoint can disclose plaintext; attachment metadata requires separate handling. |
 | Application event meaning | Integrity and authenticity of every field that affects validation, authorization, causality, ordering or conflict handling | Invalid transcripts and semantics are rejected before authoritative state change | `OB-K01`–`OB-K04`, `OB-K12` | A valid signature proves key possession, not role authorization or truth. |
-| Application and case context | Domain separation and rejection of cross-context replay | Cross-context objects fail kernel validation | `OB-K08`, requirements from `OB-AP03` | The O-03 context tuple is decided; exact genesis binding mechanics remain open under O-07. |
+| Application and case context | Domain separation and rejection of cross-context replay | Cross-context objects fail kernel validation | `OB-K08`, requirements from `OB-AP03` | O-03 and O-06a select the context tuple and genesis-reference role; exact O-06 bytes and O-07 genesis contents remain open. |
 | Author and role authority | Explicit, rotatable, context-bound authorization | Unauthorized or stale authority is rejected; compromise invokes profile rotation/revocation | `OB-AP02`; binding by `OB-K01` | O-02 decides credential construction and binding; concrete profile grants and bounds remain future work. |
-| Causal history and state | Deterministic validation, replay/fork detection and bounded convergence | Classified duplicate, replay, missing-parent, fork or conflict result | `OB-K05`–`OB-K07`, `OB-K13` | O-01/O-05 decide causality and clock placement; exact identifier derivation remains open under O-06. |
+| Causal history and state | Deterministic validation, replay/fork detection and bounded convergence | Classified duplicate, replay, missing-parent, fork or conflict result | `OB-K05`–`OB-K07`, `OB-K13` | O-01/O-05/O-06a decide causality, clock placement and semantic transcript inputs; exact O-06 derivation remains open and digest tiebreaks are grindable. |
 | Durable local state | Confidentiality, atomicity, crash safety and rollback behavior within a declared runtime profile | Fail closed on ambiguous persistence; restore/reconcile or require intervention | `OB-RS02`–`OB-RS10` | Browser storage may be evicted; a coherent whole-profile rollback may be undetectable without external evidence. |
 | Session secrets and membership | Confidential authenticated delivery, membership control, forward secrecy and post-compromise recovery within the selected session profile | Reject invalid or unauthorized session transitions; rotate/recover within profile bounds | `OB-SS01`–`OB-SS09` | Phase B proves only the exact pinned isolated profile recorded by its verdict. |
 | Return capabilities and recovery material | Unforgeability, confidentiality, context separation and intentional recovery semantics | Reject invalid/reused context; explain intentional irrecoverability or use the approved recovery route | `OB-AP09`, custody by `OB-RS01` | Loss may be unrecoverable; screenshots, backups and phishing can disclose a capability. |
@@ -126,20 +129,24 @@ valid object in another case, use a stale role, attempt delegation or rotation,
 or exploit disagreement between clients.
 
 This adversary is why key possession, session membership and application
-authorization are separate checks. The exact author and rotation construction
-remains open under O-02.
+authorization are separate checks. O-02 fixes the semantic credential and
+rotation model; concrete profile grants/bounds and the O-14 signature-suite
+registry remain open.
 
 ### A3 — Malicious peer
 
 Is intentionally authorized to receive some content and may withhold,
 duplicate, reorder, fork, selectively relay or disclose it. It may propose
 conflicting valid actions, omit parents, lie about local delivery/read state,
-or retain data after a deletion request.
+retain data after a deletion request, or repeatedly vary otherwise valid signed
+inputs to bias its own digest-derived concurrent replay position.
 
 Styx aims to make authoritative transitions and contradictions detectable and
 deterministic. It cannot prevent an authorized recipient from copying content,
 taking a screenshot, colluding outside the protocol or lying in the content of
-a signed statement.
+a signed statement. Deterministic replay order is not a fairness mechanism:
+application policy must not derive authorization, priority, first-writer-wins
+truth or irreversible-effect authority from that position.
 
 ### A4 — Compromised authorized peer
 
@@ -308,7 +315,7 @@ JavaScript delivered by a web origin.
 | Boundary | Input crossing the boundary | Receiver may learn | Receiver must not be trusted to decide |
 | --- | --- | --- | --- |
 | Person → product vertical | Plaintext intent, consent, recovery action and human context | Everything the UI collects or displays | Cryptographic validity, causal order or safe persistence merely from user input |
-| Product/application profile → kernel | Closed-schema transition request, policy version, claimed actor/context and bounded payload | Application semantics intentionally supplied | Whether an unauthenticated or out-of-context request is valid |
+| Product/application profile → kernel | Closed-schema transition request, claimed actor/context, bounded payload and authenticated authorization state or explicit approved state reference | Application semantics intentionally supplied | Whether an unauthenticated, author-selected stale-policy or out-of-context request is valid |
 | Kernel → secure-session adapter | Versioned authenticated application object plus destination/session reference selected by a profile | Object size and the session-routing input exposed by that interface | Application authorization, conflict policy or durable application truth |
 | Secure-session adapter → runtime/storage | Session secrets/state, ciphertext, membership outcomes and typed recovery needs | The local runtime necessarily handles protected state | Product role semantics or relay publication as proof of delivery |
 | Secure-session/runtime → transport | Opaque envelope, routing handle, relay set, timing and delivery request | At least envelope size, time, route and connection metadata declared by the transport profile | Plaintext validity, application order, membership authority or human receipt |
@@ -332,6 +339,7 @@ claims about current code.
 | Object replayed in another case/application | Reject by authenticated context binding | Cross-context negative evidence | Application semantic kernel |
 | Duplicate authenticated object in one context | Idempotent duplicate classification | No duplicate application effect | Application semantic kernel |
 | Missing parent, fork or concurrent operation | Classify under the selected bounded causal model | Deterministic recovery, rejection or application conflict handoff | Application semantic kernel |
+| Authorized author grinds a concurrent event reference | Preserve validity/causal/fork classification; treat the result only as a deterministic replay position | Application policy independently resolves the conflict and never grants priority or irreversible authority from position | Application semantic kernel plus application profile |
 | Semantically conflicting but individually valid operations | Do not infer business truth from total order | Apply the application profile's declared conflict rule or escalate | Application profile |
 | Unauthorized session membership change | Reject before applying the membership transition | Typed session failure and recovery path | Secure-session adapter |
 | Relay duplication, reordering, omission or stale response | Never alter application validity; reconcile within delivery policy | Retry/failover or explicit unavailable/expired state | Transport/routing profile |
@@ -440,9 +448,10 @@ Current evidence establishes only bounded components:
 
 - C0.1 characterizes Dart and JavaScript legacy-ledger behavior; it also shows
   why current matches cannot define the protocol;
-- C0.2a through C0.2e decide K-01 through K-11, O-01 through O-05 and O-09,
-  with O-04's C0.2f evidence gate pending; O-06, O-07, O-08 and O-10 through
-  O-13 remain open;
+- C0.2a through C0.2f decide K-01 through K-11, O-01 through O-05 and O-09
+  within their stated evidence bounds; O-06a inventories the semantic
+  transcript without selecting cryptographic bytes; O-06, O-07, O-08 and
+  O-10 through O-14 remain open;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
   described in its final verdict; and
 - existing vault and chat work provides component evidence under its own

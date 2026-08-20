@@ -1,16 +1,17 @@
 # Styx application protocol v0 — responsibility matrix
 
 - **Status:** C0.2a normative responsibility allocation, amended by
-  C0.2b/C0.2c/C0.2e only for decided dependencies; not a protocol byte
+  C0.2b/C0.2c/C0.2e/C0.2f and O-06a only for decided dependencies; not a protocol byte
   specification or implementation claim.
-- **Authority:** Issues #207, #209, #211 and #215, ADR-0007 and
+- **Authority:** Issues #207, #209, #211, #215, #217 and #219, ADR-0007 and
   `docs/security/STYX-THREAT-MODEL.md`.
 - **Evidence baseline:** `main @
   6409bc1b530622dfd592e4ebdb66e242f458b378`.
 - **Decision effect:** C0.2a closes O-09; C0.2b closes O-02/O-03; C0.2c closes
   O-01/O-05 and fixes O-06 semantic roles while exact derivation remains open;
-  C0.2e closes O-04 semantics with a pending C0.2f evidence gate. Ownership is
-  unchanged. O-06 through O-08 and O-10 through O-13 remain open.
+  C0.2e/C0.2f close O-04 within the bounded evidence envelope; O-06a fixes the
+  semantic transcript inventory and exposes O-14 signature-suite ownership.
+  O-06 through O-08 and O-10 through O-14 remain open.
 
 This matrix assigns each known normative obligation to exactly one owning
 layer. Ownership means that the layer defines the rule, its conformance
@@ -65,7 +66,7 @@ bytes.
 | Producer → consumer | Required input/output contract | Consumer validation | Forbidden inference |
 | --- | --- | --- | --- |
 | `PV → AP` | Deployment-selected application/profile version, organizational policy inputs and user intent | `AP` accepts only a supported, internally consistent profile and closed-schema request | UI consent or operator login proves protocol authorization |
-| `AP → K` | Bounded transition request; application/case context; claimed author/credential reference; schema/policy version; authorization evidence; payload commitment input; declared conflict disposition | `K` validates the future canonical object and returns a classified transition result under the `AP`-supplied policy contract | Supplied verification key or total order alone authorizes the action |
+| `AP → K` | Bounded transition request; application/case context; claimed author/credential reference; schema version; authenticated authorization state or explicit profile-approved state reference; payload commitment input; declared conflict disposition | `K` validates the future canonical object and returns a classified transition result under the deterministic `AP` policy state at its replay prefix | Supplied verification key, author-selected stale policy version or total order alone authorizes the action |
 | `K → AP` | Authenticated object identity, causal classification, validation result and typed application-conflict handoff | `AP` applies its declared domain policy and never changes the kernel's causal facts | Deterministic order is business truth |
 | `AP/K → SS` | Versioned opaque application object plus selected session/context binding | `SS` accepts only a supported exact session profile and authenticated session destination | Valid application bytes imply valid MLS membership change |
 | `SS → K` | Authenticated plaintext bytes, sender/session attribution, session epoch/profile identity and a typed session outcome | `K` still validates application version, context, author binding, transcript and replay rules | Successful decryption proves application authorization or freshness |
@@ -89,11 +90,11 @@ but the concrete rule is not yet selected.
 | `OB-K03` | Admit only pinned byte grammars and reject repair, truncation, clamping, normalization and locale-dependent interpretation | Candidate scalar/bytes → canonical value or rejection | Decided by registry K-03 |
 | `OB-K04` | Enforce exact numeric signedness, width, range and non-wrapping arithmetic before state change | Numeric field → bounded integer or rejection | Decided by registry K-04; widths partly open |
 | `OB-K05` | Define causal representation and classify predecessor, concurrent, duplicate, missing-parent, replay and fork relationships | Authenticated object plus prior state → causal classification | O-01 decided; executable falsification gate pending |
-| `OB-K06` | Derive deterministic total order only after causality and use a bytewise authenticated tiebreak | Concurrent authenticated objects → deterministic order | K-06 decided; O-06 open |
-| `OB-K07` | Define the purpose and authenticated derivation/binding of event, content and parent identifiers | Authenticated object fields → identifiers/references | O-06 roles fixed; exact transcript/digest derivation open |
-| `OB-K08` | Bind application/case context into every authoritative object and reject cross-context replay | Context plus candidate object → accepted context or rejection | O-03 decided; O-06/O-07 complete reference/genesis mechanics |
+| `OB-K06` | Derive deterministic total order only after causality and use a bytewise authenticated tiebreak; never expose replay position as application authority | Concurrent authenticated objects → deterministic order | K-06 decided; O-06 exact derivation and grinding evidence open |
+| `OB-K07` | Define the purpose and authenticated derivation/binding of event, content and parent identifiers | Authenticated object fields → identifiers/references | O-06a inventory fixed; O-06b exact profile and O-06c evidence open |
+| `OB-K08` | Bind application/case context and the derived genesis reference into every authoritative object and reject cross-context replay | Context plus candidate object → accepted context or rejection | O-03 and O-06a reference form decided; O-06b/O-06c/O-07 complete exact reference/genesis mechanics |
 | `OB-K09` | Define fresh deterministic genesis and initial authenticated authority inputs | Profile/context inputs → genesis object | K-09 and O-01–O-05 decided; O-06/O-07 open |
-| `OB-K10` | Authenticate the O-04 content descriptor; derive/verify the randomized-opening commitment; keep class, availability, binding, retention and replay readiness distinct; validate append-only removal structure | Payload/opening, descriptor or retained commitment/removal evidence → typed verification/readiness result | O-04 decided; exact suite/bytes O-06, bounds O-08 and codes O-10 open; C0.2f pending |
+| `OB-K10` | Authenticate the O-04 content descriptor; derive/verify the randomized-opening commitment; keep class, availability, binding, retention and replay readiness distinct; validate append-only removal structure | Payload/opening, descriptor or retained commitment/removal evidence → typed verification/readiness result | O-04/C0.2f decided within bounds; exact suite/bytes O-06, bounds O-08 and codes O-10 open |
 | `OB-K11` | Distinguish empty, uninitialized and valid histories | Stored/input history → classified state | Decided by registry K-08; O-10 error code open |
 | `OB-K12` | Apply deterministic state-transition mechanics and hand semantically concurrent conflicts to `AP` without inventing universal business resolution | Valid authenticated object plus state → applied/rejected/conflict outcome | K-07 decided; profile schemas open |
 | `OB-K13` | Define logical replay and duplicate idempotency semantics for application objects | Object identifier plus history → new/duplicate/replay outcome | O-06 and O-10 open |
@@ -101,6 +102,7 @@ but the concrete rule is not yet selected.
 | `OB-K15` | Reject legacy `styx-legacy-c0` objects as v1 and prevent implicit dual acceptance | Versioned object → v1 result or legacy rejection | Decided by registry K-10 |
 | `OB-K16` | Emit stable, bounded protocol outcomes required for safe caller behavior without leaking parser internals | Validation site → stable classified outcome | O-10 open |
 | `OB-K17` | Define physical-time semantics only if retained; never use ambient wall time as unbounded authority | Optional time input → bounded field or absence | O-05 removes kernel time; O-12 remains profile-conditional |
+| `OB-K18` | Resolve each credential identifier to one authenticated verification key/algorithm binding and enforce a closed signature-suite registry with no per-event downgrade | Credential state plus signed transcript/signature → verified author binding or rejection | O-02 binding semantics decided; O-14 exact registry/encodings open |
 
 ### 4.2 Application profile (`AP`)
 
@@ -214,14 +216,15 @@ It prevents a lower-layer success from bypassing an upper-layer security rule.
 | O-03 context/genesis binding | `K` for binding; `AP` for context-profile requirements | `SS`, `RS`, `TR` supply namespace and linkability constraints | **Decided:** protocol/profile tuple plus fresh 32-byte random context identifier, authenticated by genesis and all later objects. |
 | O-04 payload commitment/detachment | `K` for descriptor, commitment, typed state and logical-removal mechanics; `AP` for data-class policy/authorization; `RS` for physical custody/effects | `SS`, `TR` and `PV` supply protected-delivery, fetch and truthful-presentation constraints | **Decided:** descriptor-only randomized-opening commitment; authenticated `NONE`/`REQUIRED`/`DETACHABLE`; append-only logical removal; whole-suffix REQUIRED halt; no v0 checkpoint substitution. C0.2f remains a gate. |
 | O-05 clock placement | `K` if kernel time is necessary; otherwise the owning profile | `AP`, `RS`, `TR` supply authorization, precision and privacy needs | **Decided:** no HLC/physical time in K; optional purpose-bound time belongs to AP profiles. |
-| O-06 event/content identifiers | `K` | `AP`, `RS`, `TR` supply idempotency, storage and correlation requirements | Event, payload, AP, TR and RS roles are separated; exact event-reference bytes/digest registry remain open. |
-| O-07 genesis and checkpoint evidence | `K` for object authentication/binding; `AP` for any producer authorization/acceptance semantics | `RS` supplies custody/rollback bounds; `PV` supplies supportable claims | Genesis remains open on O-06. Checkpoint authentication/acceptance/substitution is a suspended gate; no producer trust model is selected. |
+| O-06 event/content identifiers | `K` | `AP`, `RS`, `TR` supply idempotency, storage and correlation requirements | **O-06a selected:** complete semantic field inventory, abstract framing, genesis-reference role and grinding non-claim. Exact O-06b profile and O-06c evidence remain open. |
+| O-07 genesis and checkpoint evidence | `K` for object authentication/binding; `AP` for any producer authorization/acceptance semantics | `RS` supplies custody/rollback bounds; `PV` supplies supportable claims | Genesis-reference form is selected by O-06a; exact O-06 bytes and O-07 genesis contents remain open. Checkpoint authentication/acceptance/substitution is a suspended gate; no producer trust model is selected. |
 | O-08 skew/cardinality/activation bounds | `AP` | `K`, `SS`, `RS`, `TR`, `PV` provide capability/resource envelopes | No first supported profile or runtime capacity evidence is selected. |
 | O-09 responsibility split | This document | All six layers | **Decided:** one kernel plus explicit profiles and the ownership rules in §§1–5. |
 | O-10 stable error taxonomy | `K` for protocol outcomes; each profile for its own typed failures | All consumers supply safe-recovery distinctions | Rejection-site inventory depends on the remaining object decisions. |
 | O-11 wire/storage encoding | Owner of each representation: `K` transcript regeneration; `RS` storage; `TR` envelope | Decoders and implementations supply surface evidence | No encoding comparison is performed here. |
 | O-12 physical-time details | The time-bearing `AP` profile | `RS` and `TR` supply precision/lifetime/linkability evidence | Inapplicable to profiles without time; open for any profile retaining a signed time claim. |
 | O-13 irreversible-effect authorization | `AP` for authorization semantics | `RS` owns execution/custody/typed loss; `PV` owns disclosure/claims; `K` supplies retained evidence | **Open coordinating record.** Quarantine-only interim; gates destruction-capable increments and deletion/erasure/unlinkability claims, not O-04/C0.2f/transcript-only C0.3. |
+| O-14 signature-suite registry | `K` for verification mechanics and registry; `AP` for admitted credential/assurance profiles | `RS` and implementation evidence supply key custody/runtime capability | **Open:** O-02 binds a key and algorithm to each credential; exact algorithms, key/signature encodings and downgrade evidence remain unselected. |
 
 O-02 deliberately retains split ownership because “who may act” (`AP`) and “how
 that authority is cryptographically bound into the object” (`K`) are separate
@@ -309,7 +312,7 @@ Rejected alternatives are:
 Security consequence: a bypass at one layer cannot be legitimized by a success
 signal from another layer. Residual risk: exact event/content and
 genesis-reference derivation, payload commitment, bounds and errors remain
-open; O-01/O-02/O-03/O-05 semantics still lack executable transcript bytes, and
+open; O-01/O-02/O-03/O-05/O-06a semantics still lack executable transcript bytes, and
 the causal topology still requires its explicit falsification model, so this
 allocation alone is not executable protocol behavior.
 
