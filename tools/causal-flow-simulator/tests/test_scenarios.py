@@ -7,7 +7,9 @@ import unittest
 
 import support
 
-from scenarios import Suite, first, run_required_suite
+from model import ModelInputError
+from payload_model import PayloadProfile
+from scenarios import EXPECTED_C0_2F_OBLIGATIONS, Suite, first, run_required_suite
 
 
 class RequiredSuiteTest(unittest.TestCase):
@@ -45,6 +47,7 @@ class RequiredSuiteTest(unittest.TestCase):
             "malicious-omission-limit",
             "missing-parent",
             "mixed-causal-concurrent",
+            "obligation-registry",
             "ownership-boundary",
             "parent-canonicality",
             "payload-availability-invariance",
@@ -65,6 +68,32 @@ class RequiredSuiteTest(unittest.TestCase):
         }
         self.assertEqual(set(report["scenario_counts"]), required_families)
         self.assertTrue(all(item["passed"] for item in report["invariants"]))
+
+    def test_incomplete_obligation_registry_fails_closed(self):
+        suite = Suite()
+        suite.check(
+            "one obligation is present",
+            True,
+            family="test",
+            obligation="C0.2f-01",
+        )
+        suite.check_c0_2f_obligation_registry()
+        report = suite.report()
+        self.assertEqual(report["verdict"], "FAIL")
+        self.assertEqual(
+            report["counterexamples"][0]["invariant"],
+            "the exact C0.2f obligation registry is complete",
+        )
+        self.assertEqual(
+            EXPECTED_C0_2F_OBLIGATIONS,
+            {f"C0.2f-{number:02d}" for number in range(1, 17)},
+        )
+
+    def test_payload_exploration_budget_fails_closed(self):
+        suite = Suite()
+        suite.payload_exploration_cases = PayloadProfile().max_exploration_cases
+        with self.assertRaises(ModelInputError):
+            suite.payload_explored()
 
     def test_cli_output_is_byte_deterministic(self):
         cli = support.load_cli()

@@ -1458,6 +1458,53 @@ def extend_required_suite(suite: object) -> None:
         family="payload-resource-bound",
         obligation="C0.2f-16",
     )
+    oversized_commitment = replace(
+        oversized_record,
+        descriptor=replace(
+            oversized_record.descriptor,
+            exact_content_length=3,
+            commitment_value=b"c" * 65,
+        ),
+    )
+    suite.check_raises(
+        "attacker-declared commitment rejects at profile bound",
+        lambda: PayloadModel(PayloadProfile(max_commitment_bytes=64)).evaluate(
+            causal,
+            (oversized_commitment,),
+            {detachable.reference: VERIFIED},
+            {},
+        ),
+        family="payload-resource-bound",
+        obligation="C0.2f-16",
+    )
+    suite.check_raises(
+        "attacker-declared randomizer rejects at profile bound",
+        lambda: symbolic_commitment_term(
+            replace(vector, randomizer=b"r" * 65),
+            PayloadProfile(max_randomizer_bytes=64),
+        ),
+        family="payload-resource-bound",
+        obligation="C0.2f-16",
+    )
+    suite.check_raises(
+        "attacker-declared part symbol rejects at profile bound",
+        lambda: symbolic_commitment_term(
+            replace(vector, part_symbols=(b"s" * 65, b"tail")),
+            PayloadProfile(max_symbol_bytes=64),
+        ),
+        family="payload-resource-bound",
+        obligation="C0.2f-16",
+    )
+    exhausted_suite = type(suite)()
+    exhausted_suite.payload_exploration_cases = (
+        PayloadProfile().max_exploration_cases
+    )
+    suite.check_raises(
+        "payload exploration rejects beyond the profile budget",
+        exhausted_suite.payload_explored,
+        family="payload-resource-bound",
+        obligation="C0.2f-16",
+    )
 
     suite.samples["payload_required_halt"] = payload_evaluation_json(blocked)
     suite.samples["payload_removed_presentations"] = {

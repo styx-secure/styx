@@ -71,6 +71,7 @@ The report contains:
 - the explicit exploration/profile bounds;
 - scenario-family, causal-delivery and payload-axis exploration counts;
 - a machine-readable result for each of the sixteen C0.2f obligations;
+- a fail-closed invariant over the exact, non-empty sixteen-obligation registry;
 - a machine-readable result for every invariant;
 - the single deterministic smallest observed failing prefix/trace; and
 - explicit non-claims and a bounded verdict.
@@ -88,7 +89,8 @@ directives, 1,024 bytes declared content length, 256-byte chunk size, 8 chunks,
 64-byte commitment/reference values, 64-byte injected randomizers or part
 symbols, 64 UTF-8 bytes per payload text identifier, 9 checkpoint references,
 8 KiB aggregate input, or 512 payload exploration cases. Scalar bounds are
-checked before symbolic part expansion.
+checked before symbolic part expansion, and each published payload-profile
+scalar bound has an independently asserted adversarial check.
 These too are model bounds, not production defaults; O-08 remains responsible
 for supported runtime limits.
 

@@ -27,6 +27,9 @@ from payload_scenarios import extend_required_suite
 
 MODEL_VERSION = "styx.causal-flow-simulator/v1"
 BASE_SHA = "e232c2c1c4687fa09ca12594c90e0aafc67b4ebb"
+EXPECTED_C0_2F_OBLIGATIONS = frozenset(
+    f"C0.2f-{number:02d}" for number in range(1, 17)
+)
 
 
 CTX = Context("example.app", "bounded-v0", "case-1", b"g")
@@ -200,6 +203,22 @@ class Suite:
                 detail="operation did not fail closed",
                 obligation=obligation,
             )
+
+    def check_c0_2f_obligation_registry(self) -> None:
+        observed = frozenset(self.c0_2f_obligations)
+        complete = observed == EXPECTED_C0_2F_OBLIGATIONS and all(
+            int(item["checks"]) >= 1
+            for item in self.c0_2f_obligations.values()
+        )
+        self.check(
+            "the exact C0.2f obligation registry is complete",
+            complete,
+            family="obligation-registry",
+            detail=(
+                f"expected={sorted(EXPECTED_C0_2F_OBLIGATIONS)!r}; "
+                f"observed={sorted(observed)!r}"
+            ),
+        )
 
     def report(self) -> dict[str, object]:
         payload_profile = PayloadProfile()
@@ -674,4 +693,5 @@ def run_required_suite() -> dict[str, object]:
         family="replay-boundary",
     )
     extend_required_suite(suite)
+    suite.check_c0_2f_obligation_registry()
     return suite.report()

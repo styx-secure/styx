@@ -241,6 +241,31 @@ class SymbolicCommitmentTest(unittest.TestCase):
         with self.assertRaisesRegex(ModelInputError, "chunk size exceeds profile"):
             symbolic_commitment_term(oversized_chunk_size)
 
+    def test_commitment_randomizer_and_symbol_bounds_fail_closed(self):
+        event = first(b"a0", b"a", GRANT_A)
+        causal = model().evaluate((event,))
+        oversized_commitment = PayloadRecord(
+            event.reference,
+            descriptor(ContentClass.DETACHABLE, b"c" * 65),
+        )
+        with self.assertRaises(ModelInputError):
+            PayloadModel(PayloadProfile(max_commitment_bytes=64)).evaluate(
+                causal,
+                (oversized_commitment,),
+                {event.reference: VERIFIED},
+                {},
+            )
+        with self.assertRaises(ModelInputError):
+            symbolic_commitment_term(
+                replace(self.vector(b"r1"), randomizer=b"r" * 65),
+                PayloadProfile(max_randomizer_bytes=64),
+            )
+        with self.assertRaises(ModelInputError):
+            symbolic_commitment_term(
+                replace(self.vector(b"r1"), part_symbols=(b"s" * 65, b"tail")),
+                PayloadProfile(max_symbol_bytes=64),
+            )
+
 
 class ReplayAvailabilityTest(unittest.TestCase):
     def test_required_halts_whole_suffix_and_resumes_deterministically(self):

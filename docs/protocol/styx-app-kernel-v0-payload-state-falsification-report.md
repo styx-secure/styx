@@ -8,7 +8,7 @@ Model: `styx.causal-flow-simulator/v1`
 
 Report schema: `styx.causal-flow-falsification-report/v1`
 
-Machine report SHA-256: `befa783d27d4b87f5c0b281920aab4449e3890617b8500cd95b5fabac028d740`
+Machine report SHA-256: `8bee78b7bde503597d331bea63bca1548bb3d8f006ea4505854b7973b3a5a3f7`
 
 The exact final candidate HEAD is recorded in immutable PR evidence and in the
 independent exact-HEAD review reports; a tracked file cannot self-identify the
@@ -19,11 +19,12 @@ Issue: [#217](https://github.com/styx-secure/styx/issues/217)
 ## 1. Outcome and claim boundary
 
 The dependency-free C0.2d/C0.2f reference model found no counterexample within
-its declared small-state envelope. The required run performed 95 invariant
-evaluations over 38 hostile scenario families, 78 causal/payload exploration
+its declared small-state envelope. The required run performed 100 invariant
+evaluations over 39 hostile scenario families, 78 causal/payload exploration
 traces and 54 explicit payload-axis cases. All sixteen obligations in §9 of the
 [O-04 analysis](styx-app-kernel-v0-payload-commitment-analysis.md) are present
-as machine-readable passed records.
+as machine-readable passed records. A separate registry invariant fails closed
+if any obligation identifier is absent, unexpected or left without a check.
 
 This result supports the selected O-04 payload-state semantics. It is not a
 formal proof, cryptographic-suite selection, implementation-conformance result,
@@ -116,10 +117,13 @@ These are falsification bounds, not O-08 production limits.
 ## 5. Machine obligations and result
 
 The report contains one record for every identifier `C0.2f-01` through
-`C0.2f-16`. Obligation 16 has eight independent checks; obligations 9 and 14
+`C0.2f-16`. Obligation 16 has twelve independent checks; obligations 9 and 14
 each have four; obligations 2, 3, 5, 6, 12 and 15 each have three; obligations
 10 and 11 each have two; every other obligation has one. All records report
-`passed: true`.
+`passed: true`. The additional obligation-16 checks independently exercise the
+declared commitment, randomizer, symbolic-part and exploration-budget bounds;
+the registry check is intentionally outside the obligation totals so that it
+can detect a missing obligation rather than attest itself.
 
 The final machine verdict is:
 
