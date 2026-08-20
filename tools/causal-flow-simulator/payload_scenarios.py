@@ -386,6 +386,37 @@ def extend_required_suite(suite: object) -> None:
         trace=(required, later),
         obligation="C0.2f-03",
     )
+    detachable_prefix_records = (
+        record(required.reference, ContentClass.DETACHABLE, b"required"),
+        chain_records[1],
+    )
+    detachable_prefix = payload.evaluate(
+        causal_chain,
+        detachable_prefix_records,
+        old_observations,
+        {},
+    )
+    record_boundary, record_incremental = payload.incremental(
+        causal_chain,
+        causal_chain,
+        detachable_prefix,
+        detachable_prefix_records,
+        chain_records,
+        old_observations,
+        old_observations,
+        {},
+        {},
+    )
+    suite.check(
+        "prefix record changes force incremental replay to the fresh full result",
+        record_boundary == 0
+        and record_incremental == blocked
+        and detachable_prefix.applied_order == causal_chain.order
+        and blocked.halted_at == required.reference,
+        family="payload-replay-equivalence",
+        trace=(required, later),
+        obligation="C0.2f-03",
+    )
     final_snapshot = resumed.snapshots[-1]
     forged_snapshot = replace(
         final_snapshot,
@@ -636,6 +667,20 @@ def extend_required_suite(suite: object) -> None:
         trace=(target, directive),
         obligation="C0.2f-06",
     )
+    before_removal_state = unauthorized.states[target_d.reference]
+    after_removal_state = authorized_without_checkpoint.states[target_d.reference]
+    suite.check(
+        "applied removal preserves every projected axis except retention and presentation",
+        replace(
+            after_removal_state,
+            retention=before_removal_state.retention,
+            presentation=before_removal_state.presentation,
+        )
+        == before_removal_state,
+        family="removal-policy",
+        trace=(target_d, directive_d),
+        obligation="C0.2f-06",
+    )
     suite.check(
         "unauthorized directive never produces logical removal",
         unauthorized.directive_outcomes[directive_d.reference]
@@ -849,6 +894,35 @@ def extend_required_suite(suite: object) -> None:
         ),
         family="compacted-reference-collision",
         trace=(collision_consumer, collision_owner),
+        obligation="C0.2f-09",
+    )
+    predecessor_collision = next_event(b"k3", b"b", 1, GRANT_B)
+    predecessor_collision_causal = causal_model(
+        heads=((b"b", 0, GRANT_B),)
+    ).evaluate((predecessor_collision,))
+    predecessor_collision_result = payload.evaluate(
+        predecessor_collision_causal,
+        (
+            record(
+                predecessor_collision.reference,
+                ContentClass.DETACHABLE,
+                b"predecessor-collision",
+            ),
+        ),
+        {predecessor_collision.reference: VERIFIED},
+        {},
+    )
+    suite.check(
+        "compacted author predecessor remains stale when it equals the event authority grant",
+        predecessor_collision_result.stale_dependencies == (GRANT_B,)
+        and predecessor_collision_result.halted_at == GRANT_B
+        and predecessor_collision_result.applied_order == ()
+        and predecessor_collision_result.states[
+            predecessor_collision.reference
+        ].readiness
+        is ReplayReadiness.STALE_EVIDENCE,
+        family="compacted-reference-collision",
+        trace=(predecessor_collision,),
         obligation="C0.2f-09",
     )
 
@@ -1140,6 +1214,28 @@ def extend_required_suite(suite: object) -> None:
         lambda: payload.evaluate(
             concurrent_causal,
             concurrent_records,
+            {
+                concurrent_target.reference: VERIFIED,
+                concurrent_directive.reference: NONE_OBSERVATION,
+            },
+            {concurrent_directive.reference: True},
+        ),
+        family="removal-target-cases",
+        trace=(concurrent_target, concurrent_directive),
+        obligation="C0.2f-14",
+    )
+    unrelated_target_records = (
+        concurrent_records[0],
+        replace(
+            concurrent_records[1],
+            removal=RemovalClaim(b"unrelated-missing", b"concurrent"),
+        ),
+    )
+    suite.check_raises(
+        "unrelated unavailable removal target fails closed before projection",
+        lambda: payload.evaluate(
+            concurrent_causal,
+            unrelated_target_records,
             {
                 concurrent_target.reference: VERIFIED,
                 concurrent_directive.reference: NONE_OBSERVATION,

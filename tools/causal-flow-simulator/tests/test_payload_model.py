@@ -280,6 +280,37 @@ class ReplayAvailabilityTest(unittest.TestCase):
         self.assertEqual(boundary, 0)
         self.assertEqual(incremental, resumed)
 
+    def test_incremental_replays_when_prefix_record_changes(self):
+        required = first(b"a0", b"a", GRANT_A)
+        later = first(b"b0", b"b", GRANT_B, parents=(required.reference,))
+        causal = model().evaluate((later, required))
+        old_records = (
+            record(required.reference, ContentClass.DETACHABLE, b"required"),
+            record(later.reference, ContentClass.DETACHABLE, b"later"),
+        )
+        new_records = (
+            record(required.reference, ContentClass.REQUIRED, b"required"),
+            old_records[1],
+        )
+        observations = {required.reference: MISSING, later.reference: VERIFIED}
+        old_payload = PayloadModel().evaluate(causal, old_records, observations, {})
+        fresh = PayloadModel().evaluate(causal, new_records, observations, {})
+        boundary, incremental = PayloadModel().incremental(
+            causal,
+            causal,
+            old_payload,
+            old_records,
+            new_records,
+            observations,
+            observations,
+            {},
+            {},
+        )
+        self.assertEqual(boundary, 0)
+        self.assertEqual(incremental, fresh)
+        self.assertEqual(old_payload.applied_order, causal.order)
+        self.assertEqual(fresh.halted_at, required.reference)
+
     def test_removal_in_required_deferred_suffix_does_not_apply(self):
         target = first(b"a0", b"a", GRANT_A)
         required = first(b"b0", b"b", GRANT_B, parents=(target.reference,))
@@ -479,6 +510,27 @@ class ReplayAvailabilityTest(unittest.TestCase):
             )
         )
 
+    def test_author_predecessor_grant_collision_stays_stale(self):
+        event = next_event(b"k3", b"b", 1, GRANT_B)
+        evidence = checkpoint(
+            proven=frozenset((GRANT_A, GRANT_B, GRANT_C)),
+            heads=((b"b", 0, GRANT_B),),
+        )
+        causal = model(evidence=evidence).evaluate((event,))
+        result = PayloadModel().evaluate(
+            causal,
+            (record(event.reference, ContentClass.DETACHABLE, b"collision"),),
+            {event.reference: VERIFIED},
+            {},
+        )
+        self.assertEqual(result.stale_dependencies, (GRANT_B,))
+        self.assertEqual(result.halted_at, GRANT_B)
+        self.assertEqual(result.applied_order, ())
+        self.assertEqual(
+            result.states[event.reference].readiness,
+            ReplayReadiness.STALE_EVIDENCE,
+        )
+
 
 class RemovalTest(unittest.TestCase):
     def fixture(self, target_class: ContentClass = ContentClass.DETACHABLE):
@@ -555,6 +607,25 @@ class RemovalTest(unittest.TestCase):
             DirectiveOutcome.DEFERRED_BY_STALE_EVIDENCE,
         )
 
+    def test_unrelated_missing_removal_target_fails_closed(self):
+        target, directive, causal, records, observations = self.fixture()
+        unrelated = (
+            records[0],
+            replace(
+                records[1],
+                removal=RemovalClaim(b"unrelated-missing", b"target"),
+            ),
+        )
+        with self.assertRaisesRegex(
+            ModelInputError, "retained removal target is unavailable"
+        ):
+            PayloadModel().evaluate(
+                causal,
+                unrelated,
+                observations,
+                {directive.reference: True},
+            )
+
     def test_only_authorized_detachable_removal_applies(self):
         target, directive, causal, records, observations = self.fixture()
         denied = PayloadModel().evaluate(
@@ -572,6 +643,14 @@ class RemovalTest(unittest.TestCase):
         )
         self.assertEqual(
             allowed.states[target.reference].retention, RetentionState.LOGICALLY_REMOVED
+        )
+        self.assertEqual(
+            replace(
+                allowed.states[target.reference],
+                retention=denied.states[target.reference].retention,
+                presentation=denied.states[target.reference].presentation,
+            ),
+            denied.states[target.reference],
         )
 
     def test_none_required_and_commitment_mismatch_are_inapplicable(self):
