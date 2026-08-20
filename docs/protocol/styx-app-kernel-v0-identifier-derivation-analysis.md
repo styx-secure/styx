@@ -38,8 +38,12 @@ assigns exactly one disposition:
 - **`DERIVE`** — the value is obtained deterministically from already
   authenticated state or another included field and is not repeated as an
   author-controlled transcript member; or
-- **`EXCLUDE`** — the value cannot influence kernel validity, causality,
-  ordering, duplicate identity or application authorization.
+- **`EXCLUDE`** — the value is not a direct member of the regenerated
+  transcript and K cannot consume it as an independent semantic input. An
+  excluded value may still affect AP semantics when it is authenticated
+  indirectly through an included or derived value; for example, content octets
+  are bound through the O-04 descriptor and commitment rather than inserted
+  directly into payload-scaled transcript bytes.
 
 These are semantic dispositions, not byte layouts. O-06b must instantiate
 them with one injective K-02 encoding. O-06c must then try to falsify the exact
@@ -116,12 +120,12 @@ typed and authenticated:
 | Descriptor member | Disposition | Rule |
 | --- | --- | --- |
 | `content_class` | `INCLUDE` | Closed `NONE`, `REQUIRED`, `DETACHABLE` registry. |
-| `content_type_id` | `INCLUDE` | Closed AP registry; granularity must respect removal/privacy claims. |
+| `content_type_id` | `INCLUDE` when content-bearing | Closed AP registry; granularity must respect removal/privacy claims. `content_class` is the presence discriminant. |
 | `exact_content_length` | `INCLUDE` | Exact non-wrapping integer; zero content-bearing value remains distinct from `NONE`. |
-| `commitment_suite_id` | `INCLUDE` | O-06b pins the exact active-profile value. Unknown or inconsistent values fail closed; an event cannot negotiate or downgrade among suites. |
-| `commitment_shape` | `INCLUDE` | Closed single/chunk-tree discriminant. |
-| `commitment_value` | `INCLUDE` | Full future O-06b output, never a locator or storage hash. |
-| chunk-geometry presence | `INCLUDE` | Absence is valid only for the single shape and cannot alias zero geometry. |
+| `commitment_suite_id` | `INCLUDE` when content-bearing | O-06b pins the exact active-profile value. Unknown or inconsistent values fail closed; an event cannot negotiate or downgrade among suites. |
+| `commitment_shape` | `INCLUDE` when content-bearing | Closed single/chunk-tree discriminant. |
+| `commitment_value` | `INCLUDE` when content-bearing | Full future O-06b output, never a locator or storage hash. |
+| chunk-geometry presence | `INCLUDE` when content-bearing | Absence is valid only for the single shape and cannot alias zero geometry. |
 | chunk size/count/tree geometry | `INCLUDE` when present | Exact O-06b representation; O-08 supplies enforceable profile maxima. |
 | content octets | `EXCLUDE` | Bound through the commitment; raw payload-scaled transcript work is rejected. |
 | opening randomizer | `EXCLUDE` | Retained separately; putting it in the transcript enables public candidate testing. |
@@ -140,7 +144,7 @@ In addition to all common event fields, the retention role includes:
 | retention-role discriminant | `INCLUDE` | Prevents an ordinary action from being reinterpreted as removal. |
 | target event reference | `INCLUDE` | Names one retained accepted causal ancestor without mutating it. |
 | target commitment | `INCLUDE` | Detects reference/descriptor substitution and binds the intended content. |
-| claimed removal authorization, legal hold or data-class decision | `DERIVE` from the deterministic AP replay prefix and authenticated policy events | An author cannot make removal authorized by declaring it so. |
+| claimed removal authorization, legal hold or data-class decision | `DERIVE` from the deterministic AP replay prefix and authenticated policy events | An author cannot make removal authorized by declaring it so. Prefix-derived authority may permit only the append-only logical-removal transition after AP validation; physical destruction remains gated by O-13 and cannot be inferred from replay position. |
 | local deletion/quarantine result | `EXCLUDE` | `RS` owns custody and loss reporting; runtime outcome is not application authority. |
 | relay/provider acknowledgement, timeout, retry/peer count or quota state | `EXCLUDE` | O-13 forbids inferring irreversible authority from operational convenience. |
 
@@ -159,7 +163,9 @@ event that sorts later is not visible in the acting event's own handoff. AP
 therefore MUST NOT treat the prefix-visible authority set as final when a
 concurrent authority transition is later disclosed. Per the ratified C0.2d
 rule, it must revise only reversible state and MUST NOT authorize an
-irreversible effect before stronger, order-independent evidence. The resulting
+irreversible effect before stronger evidence. O-06a tightens that safety rule:
+evidence used to justify an irreversible effect cannot derive its authority
+from the event's replay position and must be order-independent. The resulting
 AP decision still covers the exact action, context, credential and effective
 policy state known at that prefix; it is not a finality claim.
 
@@ -191,9 +197,10 @@ O-06b must instantiate an injective encoding satisfying all of these rules:
    allocation, hashing, signature work, graph traversal or fetch fan-out;
 7. parent references are full-width, canonical bytewise sorted, unique and
    form the O-01 maximal antichain; the direct author predecessor and genesis
-   reference are encoded separately and excluded from that frontier. The first
-   post-genesis event may have an empty frontier when it has no non-genesis
-   causal parent;
+   reference are encoded separately and excluded from that frontier. An event's
+   frontier is empty exactly when it has no non-genesis causal parent; multiple
+   concurrent founding-credential events may therefore each have an empty
+   frontier;
 8. a decoder never repairs, clamps, truncates, normalizes or ignores trailing
    semantic bytes;
 9. the regenerated transcript is not a generic wire document; O-11 may choose
@@ -232,9 +239,11 @@ Therefore:
 
 - K-06 reference order is only a deterministic replay schedule for events
   already proven concurrent;
-- replay position MUST NOT confer authorization, priority, ownership,
-  first-writer-wins truth, expiry, removal authority or permission for an
-  irreversible external effect;
+- replay position MUST NOT by itself confer authorization, priority, ownership,
+  first-writer-wins truth, expiry, logical-removal authority or permission for
+  an irreversible external effect. Authenticated prefix state may authorize an
+  append-only logical-removal transition under AP policy, but physical
+  destruction remains gated by O-13 and never follows from replay position;
 - AP must evaluate semantic conflicts independently under K-07; and
 - a future profile claiming fairness or unpredictability requires a separate
   mechanism and threat analysis.
@@ -246,13 +255,20 @@ in the acting event's prefix-scoped handoff. An author that omits an observed
 cross-author parent can grind below a concurrent authority transition and make
 that transition absent from its own evaluation point. Later replay still
 discloses the concurrency, so AP must revise reversible state and cannot treat
-the earlier prefix result as irreversible authority.
+the earlier prefix result as irreversible authority. Grinding can also move an
+event with unavailable `REQUIRED` content ahead of concurrent peers, changing
+which otherwise valid events fall behind the whole-suffix halt. That is a
+reversible availability/deferral effect when the opening is later verified, not
+authority or finality; indefinite withholding remains an accepted O-04 risk.
 
 O-06c must exercise this grinding-to-handoff interaction in both ordering
 directions, including assertions on the acting event's handoff when a
-revocation sorts later. It must show that grinding cannot convert replay
-position into final authorization or an irreversible effect; it must not assert
-the false stronger property that every prefix-scoped handoff is unchanged.
+revocation sorts later. It must also move an unavailable-`REQUIRED` event across
+concurrent peers in both directions and verify the exact whole-suffix deferral
+boundary and recovery after the opening verifies. It must show that grinding
+cannot convert replay position into final authorization or an irreversible
+effect; it must not assert the false stronger property that every prefix-scoped
+handoff or reversible readiness result is unchanged.
 
 ## 7. Rejection-site inventory for later O-10 work
 
@@ -331,10 +347,13 @@ runtime capacity and algorithm downgrade remain open. Bounded O-06c evidence
 will not prove absence of counterexamples outside its envelope. A hostile
 authorized author can withhold parents, equivocate, reuse randomizers or grind
 its replay position. Grinding can suppress a later-sorting concurrent authority
-transition from the acting event's own prefix-scoped handoff; later disclosure
-requires reversible AP repair and does not retroactively make an irreversible
-effect safe. The protocol can attribute and classify these actions but cannot
-force honest claims.
+transition from the acting event's own prefix-scoped handoff or widen the
+reversible suffix deferred behind unavailable `REQUIRED` content. Later
+disclosure requires reversible AP repair and does not retroactively make an
+irreversible effect safe; later opening verification releases the readiness
+halt, while indefinite withholding remains possible. The protocol can
+attribute and classify these actions but cannot force honest claims or
+availability.
 
 Reopen this inventory if exact encoding cannot be injective without changing a
 semantic field; O-07 genesis cannot bind without self-reference or ambiguity;

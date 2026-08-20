@@ -223,10 +223,13 @@ claim that current code conforms.
   authorization, priority, first-writer-wins truth or irreversible-effect
   authority. Because replay handoffs are prefix-scoped, grinding can change
   whether a concurrent revocation, rotation or policy event is visible at the
-  acting event's own evaluation point. Later disclosure requires revision of
+  acting event's own evaluation point. It can also move unavailable `REQUIRED`
+  content across concurrent peers and thereby change the reversible
+  whole-suffix deferral boundary. Later disclosure requires revision of
   reversible AP state and never retroactively authorizes an irreversible
-  effect. This rule does not decide application conflict policy or provide
-  fairness or unpredictability.
+  effect; later opening verification releases the readiness halt. This rule
+  does not decide application conflict policy or provide fairness,
+  unpredictability or availability.
 - **Residual/reopen condition:** the exact authenticated content identifier is
   `OPEN`; C0.3 cannot begin until it is defined.
 - **Human ratification:** pending final-HEAD approval by `maverde73`.
@@ -652,8 +655,10 @@ outcomes.
   An authorized author can grind its own reference position, so no AP policy
   may infer final authority, priority or irreversible effects from K-06 replay
   order. Prefix-scoped handoffs can expose different concurrent authority facts
-  at different replay positions; AP must repair reversible state when later
-  evidence becomes visible.
+  at different replay positions, and grindable placement of unavailable
+  `REQUIRED` content can change the reversible whole-suffix deferral boundary;
+  AP must repair reversible state when later evidence or content becomes
+  available.
 - **Missing evidence:** O-06b exact K-02 transcript bytes, digest/commitment
   registry, domain values, widths, randomizer and chunk construction; O-06c
   executable negative evidence. O-14 separately owns the signature-suite
