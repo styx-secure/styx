@@ -7,6 +7,8 @@
   O-01 through O-05 decisions.
 - **Exact evidence base:**
   `787b501823cb0b9f36412acef36cbc9c3b81135b`.
+- **O-06b-1 amendment base:**
+  `4c2fecd0e9a81421b1d74f988572599162ac3095` under Issue #221.
 - **Language:** English is canonical for external, language-neutral review.
 - **Ratification:** O-06a was ratified under Issue #219; the O-06b-1 amendments
   remain proposed until `maverde73` ratifies the exact final PR HEAD under

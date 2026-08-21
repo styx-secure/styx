@@ -58,7 +58,10 @@ Primary and repository evidence:
   is a reopen event rather than an assumed transparent upgrade.
 - [Web Cryptography Level 2 section 32](https://www.w3.org/TR/webcrypto/#sha)
   registers `SHA-256` for `digest` and delegates its operation to FIPS 180-4.
-  The browser profile therefore needs no new package for one-shot hashing.
+  The specification leaves algorithm support implementation-defined; SHA-256
+  is the existing browser capability to verify during activation, so the
+  browser profile needs no new package for one-shot hashing when that probe
+  passes and must fail closed when it does not.
 - The exact JavaScript lock already contains `@noble/hashes` `1.8.0`, and that
   package exposes SHA-256 over byte arrays. It is existing implementation
   evidence, not permission to reuse the legacy ledger projection.
@@ -109,9 +112,10 @@ precede conversion.
 `opaque32` is exactly 32 octets. `opaque32_vector` is `count:u32` followed by
 exactly `count` adjacent `opaque32` values. `opaque_u32` is `length:u32`
 followed by exactly `length` octets. The length is part of the preimage; trailing
-octets and short values are invalid. The representable `u32` ceiling is not an
-O-08 activation maximum. O-08 must select materially smaller enforceable limits,
-checked before allocation, hashing, signature work, graph traversal or fetch.
+octets and short values are invalid. No representable integer ceiling,
+including either `u32` or `u64`, is an O-08 activation maximum. O-08 must select
+materially smaller enforceable limits, checked before allocation, hashing,
+signature work, graph traversal or fetch.
 
 Presence values are exactly `0x00` for absent and `0x01` for present; every
 other octet is invalid. A present value is followed by its complete field even
@@ -147,8 +151,9 @@ V1 accepts exactly these seven values. An unallocated role code, non-zero
 reserved octet or unknown registry version is unsupported. Adding, splitting or
 reinterpreting a role requires a ratified protocol/domain-registry version
 change; no later document may assign an eighth v1 code by convention. O-06b-2
-must use the already allocated commitment/leaf/node domains but still owns their
-complete preimages.
+must place the exact allocated commitment/leaf/node domain as the first 16
+octets of each corresponding preimage, with no preceding bytes, and still owns
+the remainder of those complete preimages.
 
 ## 5. Application-event signature transcript
 
@@ -200,6 +205,9 @@ overflows or exceeds the active O-08 envelope is rejected before allocation.
 
 The event role is the O-06a retention-role discriminant. It is encoded once,
 not duplicated in the role-specific tail. An unknown event role is invalid.
+Author sequence is zero if and only if direct-predecessor presence is `0x00`;
+every positive author sequence requires presence `0x01`. The predecessor must
+be the immediately prior accepted event for that credential under O-01.
 
 ### 5.2 Content descriptor
 
@@ -226,12 +234,13 @@ chunk_geometry_presence:u8
 
 `content_type_id` is non-zero and belongs to the authenticated AP registry.
 `commitment_suite_id` is a closed O-06b-2 value; no active value is selected by
-this document. Until O-06b-2 closes, no production event is constructible under
-this profile. `commitment_shape` is `0x00` for one value or `0x01` for a chunk
+this document. `commitment_shape` is `0x00` for one value or `0x01` for a chunk
 tree. Single shape requires absent geometry; tree shape requires present,
 non-empty canonical geometry. O-06b-2 fixes the exact commitment length,
 geometry interior and cross-field rules. An outer length mismatch, unknown
-suite/shape or inconsistent presence fails closed.
+suite/shape or inconsistent presence fails closed. Until O-06b-2 closes, no
+content-bearing production event is constructible under this profile; section
+12 records the additional blockers to any production activation.
 
 A zero-length content-bearing object remains distinct from `NONE` because its
 class, type, suite, shape and commitment are present. Raw content, opening,
@@ -298,8 +307,9 @@ representation.
 2. Read `body_length:u32`, isolate exactly that many body octets and require end
    of input. This makes the outer boundary unique.
 3. Read fields 1–17 in their single fixed order. Fixed-width fields consume one
-   known number of octets; every variable block consumes its `u32` length and
-   exactly that many octets.
+   known number of octets. Each `opaque_u32` consumes its `u32` length and
+   exactly that many octets; each `opaque32_vector` consumes its `u32` count and
+   exactly `count * 32` octets after checked non-wrapping multiplication.
 4. The predecessor presence octet uniquely determines whether one `opaque32`
    follows. The parent count uniquely determines the number of 32-octet entries.
    Canonical sort and uniqueness prevent alternate frontier representations.

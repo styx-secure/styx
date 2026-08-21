@@ -631,8 +631,9 @@ outcomes.
 ### O-06 — Event/content identifier semantics
 
 - **Status:** `OPEN`.
-- **Question:** which exact digest registry, transcript bytes and output width
-  complete the decided identifier-role separation?
+- **Question:** which exact commitment/chunk construction and executable
+  evidence complete the identifier/reference profile selected through
+  O-06b-1?
 - **Selected semantic roles:** the event reference is a domain-separated digest
   derived from the canonical signed semantic transcript, excluding signature
   bytes and any carried identifier. After signature validation it serves only
