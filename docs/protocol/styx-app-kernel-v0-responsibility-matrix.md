@@ -1,9 +1,9 @@
 # Styx application protocol v0 — responsibility matrix
 
 - **Status:** C0.2a normative responsibility allocation, amended by
-  C0.2b/C0.2c/C0.2e/C0.2f and O-06a only for decided dependencies; not a protocol byte
-  specification or implementation claim.
-- **Authority:** Issues #207, #209, #211, #215, #217 and #219, ADR-0007 and
+  C0.2b/C0.2c/C0.2e/C0.2f and O-06a only for decided dependencies; not a
+  protocol byte specification or implementation claim.
+- **Authority:** Issues #207, #209, #211, #213, #215, #217 and #219, ADR-0007 and
   `docs/security/STYX-THREAT-MODEL.md`.
 - **Evidence baseline:** `main @
   6409bc1b530622dfd592e4ebdb66e242f458b378`.
@@ -90,7 +90,7 @@ but the concrete rule is not yet selected.
 | `OB-K03` | Admit only pinned byte grammars and reject repair, truncation, clamping, normalization and locale-dependent interpretation | Candidate scalar/bytes → canonical value or rejection | Decided by registry K-03 |
 | `OB-K04` | Enforce exact numeric signedness, width, range and non-wrapping arithmetic before state change | Numeric field → bounded integer or rejection | Decided by registry K-04; widths partly open |
 | `OB-K05` | Define causal representation and classify predecessor, concurrent, duplicate, missing-parent, replay and fork relationships | Authenticated object plus prior state → causal classification | O-01/C0.2d decided within bounds; rerun remains mandatory after dependent changes |
-| `OB-K06` | Derive deterministic total order only after causality and use a bytewise authenticated tiebreak; never expose replay position as application authority, priority or a final availability boundary | Concurrent authenticated objects → deterministic order and prefix-scoped reversible readiness | K-06 decided; O-06 exact derivation and grinding evidence, including REQUIRED-hole placement, remain open |
+| `OB-K06` | Derive deterministic total order only after causality and use a bytewise authenticated tiebreak; never let replay position by itself supply application authority, priority, physical-destruction permission or a final availability boundary | Concurrent authenticated objects plus authenticated prefix state → deterministic order and prefix-scoped reversible readiness or AP-authorized logical removal; O-13 separately gates physical destruction | K-06 decided; O-06 exact derivation and grinding evidence, including REQUIRED-hole placement, remain open |
 | `OB-K07` | Define the purpose and authenticated derivation/binding of event, content and parent identifiers | Authenticated object fields → identifiers/references | O-06a inventory fixed; O-06b exact profile and O-06c evidence open |
 | `OB-K08` | Bind application/case context and the derived genesis reference into every authoritative object and reject cross-context replay | Context plus candidate object → accepted context or rejection | O-03 and O-06a reference form decided; O-06b/O-06c/O-07 complete exact reference/genesis mechanics |
 | `OB-K09` | Define fresh deterministic genesis and initial authenticated authority inputs | Profile/context inputs → genesis object | K-09 and O-01–O-05 decided; O-06/O-07 open |

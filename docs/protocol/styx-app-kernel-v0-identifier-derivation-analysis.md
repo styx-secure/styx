@@ -40,7 +40,7 @@ assigns exactly one disposition:
   author-controlled transcript member; or
 - **`EXCLUDE`** — the value is not a direct member of the regenerated
   transcript and K cannot consume it as an independent semantic input. An
-  excluded value may still affect AP semantics when it is authenticated
+  excluded value may still affect K or AP semantics when it is authenticated
   indirectly through an included or derived value; for example, content octets
   are bound through the O-04 descriptor and commitment rather than inserted
   directly into payload-scaled transcript bytes.
@@ -91,7 +91,7 @@ must not hide durable authority in `DETACHABLE` content.
 | AP type-specific transition-field block | `INCLUDE` | `AP`, membership and internal order fixed by the authenticated closed schema identifier/version | Every direct field that changes authorization or transition semantics is authenticated in one bounded schema-defined position. Decoder order, maps and undeclared extension fields are rejected. |
 | Effective grant/policy state | `DERIVE` | `AP`, from authenticated replay state under O-02 | An author-carried "current policy" selector is excluded; the order-sensitive concurrent case is constrained in §3.4 and §6. |
 | Credential identifier | `INCLUDE` | O-02 context-local credential state | Names the author binding without embedding a global account or session identity. |
-| Verification key | `DERIVE` | Authenticated O-02 credential state selected by credential identifier and replay prefix | Repeating an author-supplied key permits substitution. The key is compared through authenticated state. |
+| Verification key | `DERIVE` | Authenticated O-02 credential state selected by credential identifier and replay prefix | Repeating an author-supplied key permits substitution. O-02 makes the credential grant a causal ancestor of every signed event, so the resulting key binding is prefix-stable. |
 | Signature algorithm identifier | `DERIVE` | Authenticated credential record; O-14 owns the registry and leaves its exact values open | An author-selected algorithm field could enable downgrade or cross-algorithm ambiguity. Unknown or inconsistent algorithms must fail closed. |
 | Signature bytes | `EXCLUDE` | Supplied beside the regenerated transcript | Including the signature in event identity is circular and makes resigning change identity. The signature authenticates, but is not part of, its content. |
 | Author sequence | `INCLUDE` | O-01 | Detects per-credential gaps and equivocation. Arrival order and aggregate counters are rejected. |
@@ -198,9 +198,9 @@ O-06b must instantiate an injective encoding satisfying all of these rules:
 7. parent references are full-width, canonical bytewise sorted, unique and
    form the O-01 maximal antichain; the direct author predecessor and genesis
    reference are encoded separately and excluded from that frontier. An event's
-   frontier is empty exactly when it has no non-genesis causal parent; multiple
-   concurrent founding-credential events may therefore each have an empty
-   frontier;
+   frontier is empty exactly when it has no causal parent other than its direct
+   author predecessor and the genesis reference; multiple concurrent
+   founding-credential events may therefore each have an empty frontier;
 8. a decoder never repairs, clamps, truncates, normalizes or ignores trailing
    semantic bytes;
 9. the regenerated transcript is not a generic wire document; O-11 may choose
@@ -327,8 +327,8 @@ A later isolated tool must test framing injectivity, absence/emptiness,
 cross-role/context separation, non-circularity, cross-event chunk equality,
 parent canonicality, suite binding, unknown-suite rejection, structural versus
 binding failures, collision handling, grinding/prefix-handoff interaction and
-bounded work. It must rerun C0.2d/C0.2f without changing their recorded results and
-must not add `conformance/**` files before the separate K-11 licensing task.
+bounded work. It must rerun C0.2d/C0.2f without changing their recorded results
+and must not add `conformance/**` files before the separate K-11 licensing task.
 Only a bounded no-counterexample result plus independent review and human
 ratification may move O-06 to `DECIDED`.
 
@@ -336,8 +336,8 @@ ratification may move O-06 to `DECIDED`.
 
 The selected inventory is designed to prevent unsigned causal, context,
 descriptor or role metadata from influencing authoritative behavior and to
-prevent session, transport and storage identifiers from substituting for event identity. It
-does not make stable references private: authorized recipients can correlate
+prevent session, transport and storage identifiers from substituting for event
+identity. It does not make stable references private: authorized recipients can correlate
 equal references and graph structure, and any profile exposing them outside
 the protected application object inherits that correlator.
 
@@ -368,5 +368,5 @@ O-06a does not make C0.3 executable. O-06b, O-06c, O-07, O-08, O-10 and O-14
 remain blockers; O-12 additionally blocks any time-bearing profile. O-11 does
 not block a transcript-only corpus but must close before supported persistence
 or remote admission. K-11 requires a separate exact-path licensing amendment
-before C0.3 creates any normative corpus file. No supported adapter may persist
-current application-ledger objects while this `NO-GO` remains in force.
+before C0.3 creates any normative corpus file. No supported Phase B adapter may
+persist current application-ledger objects while this `NO-GO` remains in force.

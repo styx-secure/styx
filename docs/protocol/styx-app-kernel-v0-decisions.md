@@ -219,17 +219,20 @@ claim that current code conforms.
   with local collation; comparator equality for distinct events.
 - **Security/privacy:** the tiebreak cannot be manipulated through unsigned
   metadata, but an authorized author can grind otherwise valid signed inputs to
-  bias its own digest-derived replay position. Replay position MUST NOT confer
-  authorization, priority, first-writer-wins truth or irreversible-effect
-  authority. Because replay handoffs are prefix-scoped, grinding can change
+  bias its own digest-derived replay position. Replay position MUST NOT by
+  itself confer authorization, priority, first-writer-wins truth or
+  irreversible-effect authority. Authenticated prefix state may authorize an
+  append-only logical-removal transition under AP policy, but physical
+  destruction remains gated by O-13 and never follows from replay position.
+  Because replay handoffs are prefix-scoped, grinding can change
   whether a concurrent revocation, rotation or policy event is visible at the
   acting event's own evaluation point. It can also move unavailable `REQUIRED`
   content across concurrent peers and thereby change the reversible
   whole-suffix deferral boundary. Later disclosure requires revision of
   reversible AP state and never retroactively authorizes an irreversible
   effect; later opening verification releases the readiness halt. This rule
-  does not decide application conflict policy or provide fairness,
-  unpredictability or availability.
+  does not decide the causal representation or application conflict policy and
+  does not provide fairness, unpredictability or availability.
 - **Residual/reopen condition:** the exact authenticated content identifier is
   `OPEN`; C0.3 cannot begin until it is defined.
 - **Human ratification:** pending final-HEAD approval by `maverde73`.
@@ -654,7 +657,9 @@ outcomes.
   application objects unless a later profile explicitly accepts disclosure.
   An authorized author can grind its own reference position, so no AP policy
   may infer final authority, priority or irreversible effects from K-06 replay
-  order. Prefix-scoped handoffs can expose different concurrent authority facts
+  order alone. Authenticated prefix state may authorize append-only logical
+  removal under AP policy, but O-13 still gates physical destruction.
+  Prefix-scoped handoffs can expose different concurrent authority facts
   at different replay positions, and grindable placement of unavailable
   `REQUIRED` content can change the reversible whole-suffix deferral boundary;
   AP must repair reversible state when later evidence or content becomes

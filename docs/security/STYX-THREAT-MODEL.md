@@ -148,8 +148,10 @@ deterministic. It cannot prevent an authorized recipient from copying content,
 taking a screenshot, colluding outside the protocol or lying in the content of
 a signed statement. Deterministic replay order is not a fairness mechanism:
 application policy must not derive authorization, priority, first-writer-wins
-truth or irreversible-effect authority from that position. An author that
-grinds its reference can make a concurrent revocation, rotation or policy
+truth or irreversible-effect authority from that position alone. Authenticated
+prefix state may authorize append-only logical removal under AP policy, but
+O-13 still gates physical destruction. An author that grinds its reference can
+make a concurrent revocation, rotation or policy
 transition absent from the acting event's own prefix-scoped handoff, or move
 unavailable `REQUIRED` content ahead of concurrent peers and widen the
 reversible whole-suffix deferral. When later replay discloses the relationship,
