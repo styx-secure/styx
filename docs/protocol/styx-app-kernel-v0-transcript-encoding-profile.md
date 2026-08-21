@@ -270,10 +270,12 @@ target_commitment:opaque_u32
 
 The target commitment length and bytes must equal the commitment authenticated
 by the validated target descriptor under that descriptor's future O-06b-2 suite.
-Target absence affects readiness, not this structural identity. Authorization,
-legal hold, quarantine, local deletion result, transport acknowledgement, time,
-quota and retry state are derived or excluded exactly as O-04/O-06a require and
-are not appended.
+O-04 makes directives against `NONE` or `REQUIRED` content inapplicable, so a
+valid logical-removal tail always targets `DETACHABLE` content with an
+authenticated commitment. Target absence affects readiness, not this structural
+identity. Authorization, legal hold, quarantine, local deletion result,
+transport acknowledgement, time, quota and retry state are derived or excluded
+exactly as O-04/O-06a require and are not appended.
 
 ## 6. Reference derivation
 
@@ -292,8 +294,10 @@ Signature bytes and a carried reference are not inputs.
 O-07 will define the complete genesis semantic inventory and transcript body.
 That future transcript `T_genesis` must begin with `D_GENESIS_SIG` (`0x0002`)
 and use this profile's outer `body_length:u32 || body` rule, but this document
-does not define its body fields or internal bytes. Once O-07 supplies a complete
-canonical `T_genesis`:
+does not define its body fields or internal bytes. As with `T_app`, the future
+genesis `body_length` must not exceed `2^32 - 21`, so the complete transcript
+length remains representable by `len32`. Once O-07 supplies a complete canonical
+`T_genesis`:
 
 ```text
 genesis_reference = H(D_GENESIS_REF || len32(T_genesis) || T_genesis)

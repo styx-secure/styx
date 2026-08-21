@@ -2,10 +2,9 @@
 
 - **Status:** C0.2a normative responsibility allocation, amended by
   C0.2b/C0.2c/C0.2e/C0.2f, O-06a and O-06b-1 only for decided dependencies;
-  not a
-  protocol byte specification or implementation claim.
-- **Authority:** Issues #207, #209, #211, #213, #215, #217, #219 and #221, ADR-0007 and
-  `docs/security/STYX-THREAT-MODEL.md`.
+  not a protocol byte specification or implementation claim.
+- **Authority:** Issues #207, #209, #211, #213, #215, #217, #219 and #221,
+  ADR-0007 and `docs/security/STYX-THREAT-MODEL.md`.
 - **Evidence baseline:** `main @
   6409bc1b530622dfd592e4ebdb66e242f458b378`.
 - **Decision effect:** C0.2a closes O-09; C0.2b closes O-02/O-03; C0.2c closes
