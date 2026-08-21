@@ -18,6 +18,8 @@
   `docs/protocol/styx-app-kernel-v0-payload-state-falsification-report.md`.
 - **O-06a semantic transcript inventory:**
   `docs/protocol/styx-app-kernel-v0-identifier-derivation-analysis.md`.
+- **O-06b-1 transcript/reference profile:**
+  `docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md`.
 - **Language:** English is canonical for external, language-neutral protocol
   review. Translations are optional and non-normative.
 - **Ratification:** every `DECIDED` entry below is proposed until the product
@@ -507,8 +509,9 @@ outcomes.
 - **Dependent artifact:** the context tuple enters the genesis and application
   object transcripts. O-06a selects the genesis reference as the separately
   domain-separated event-reference-role derivation over the complete signed
-  genesis transcript; O-06b still chooses its exact bytes and O-07 completes
-  genesis content and authority. `SS`, `RS` and `TR` bind their own namespaces
+  genesis transcript; O-06b-1 chooses its exact outer framing/reference
+  derivation and O-07 completes genesis content and authority. `SS`, `RS` and
+  `TR` bind their own namespaces
   and MUST NOT silently publish or substitute the application tuple.
 - **Residual/reopen condition:** reopen if O-06/O-07 cannot provide an
   unambiguous authenticated genesis binding, a supported runtime cannot provide
@@ -645,6 +648,17 @@ outcomes.
   reference; excludes physical time, session, transport and storage metadata
   from K; and records the reference-grinding non-claim. It selects no primitive,
   exact byte, width, tag, randomizer, tree geometry, registry value or vector.
+- **O-06b-1 selected transcript/reference profile:**
+  `docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md` fixes the
+  v0 unsigned big-endian scalar grammar, ordered application-event transcript,
+  seven 16-byte role domains and full-width 32-byte SHA-256 event/genesis
+  reference derivation. Domain registry version `0x0001` has role codes
+  `0x0001` through `0x0007`; no per-event negotiation, truncation, fallback or
+  alternate digest is admitted. The proof claim is deliberately conditional:
+  distinct admitted semantic tuples map to distinct framed bytes, provided the
+  future AP schema and O-06b-2 commitment interiors are themselves injective.
+  It is not a mathematical injectivity claim for SHA-256 and is not executable
+  implementation evidence.
 - **Rationale/evidence:** `ORDER-004`, `PRIV-01`, `PRIV-03` and `PRIV-04` show
   that identifiers and fork inputs cannot remain mutable conveniences. C0.2c
   establishes a non-circular semantic derivation and one purpose per identifier
@@ -664,22 +678,29 @@ outcomes.
   `REQUIRED` content can change the reversible whole-suffix deferral boundary;
   AP must repair reversible state when later evidence or content becomes
   available.
-- **Missing evidence:** O-06b exact K-02 transcript bytes, digest/commitment
-  registry, domain values, widths, randomizer and chunk construction; O-06c
-  executable negative evidence. O-14 separately owns the signature-suite
+- **Missing evidence:** O-06b-2 exact randomized-opening commitment suite,
+  content/leaf/node preimages, randomizer and chunk construction; O-06c
+  executable negative evidence. O-07 still owns the complete genesis fields;
+  O-14 separately owns the signature-suite
   registry. O-08 owns measured profile maxima and O-10 owns stable error codes.
-- **Dependent artifact:** exact event/genesis-reference and payload/chunk
-  derivations, followed by bounded adversarial evidence.
-- **Smallest bounded follow-up:** O-06b selects one exact profile under a
-  security/crypto gate without creating vectors or implementation authority;
-  O-06c then adversarially tests framing injectivity, role/context separation,
+- **Dependent artifact:** exact payload/chunk derivations, complete genesis
+  transcript fields and bounded adversarial evidence.
+- **Smallest bounded follow-up:** O-06b-2 selects one exact commitment/chunk
+  profile under a security/crypto gate without creating vectors or
+  implementation authority; O-06c then adversarially tests framing injectivity,
+  role/context separation,
   non-circularity, chunk unlinkability, collision handling, grinding-to-handoff
   interaction, reversible repair and bounded work.
 - **Residual/closure condition:** close only when semantically distinct valid
-  events cannot share a reference under the selected registry and every exact
-  field has one unambiguous derivation.
-- **Human ratification:** O-06a inventory pending exact-final-HEAD acceptance
-  under Issue #219; O-06 itself remains open after that acceptance.
+  events cannot share framed transcript bytes, references rely on the selected
+  SHA-256 collision/second-preimage assumptions, and every exact field has one
+  unambiguous derivation. Reopen O-06b-1 if O-07 cannot supply injectively
+  framed genesis contents, O-06b-2 cannot fit its allocated descriptor slots,
+  or O-14 cannot authenticate these bytes without per-event selection,
+  fallback or a materially different digest/runtime basis.
+- **Human ratification:** O-06a was ratified under Issue #219. O-06b-1 awaits
+  exact-final-HEAD acceptance under Issue #221; O-06 itself remains open after
+  that acceptance.
 
 ### O-07 — Genesis and checkpoint evidence
 
@@ -696,9 +717,10 @@ outcomes.
   separation. Checkpoint acceptance can replace self-verification with trust in
   a producer, expose possession at a horizon, admit rollback/equivocation and
   become invalid under late forks or revocations.
-- **Missing evidence:** O-01 through O-05 provide decided inputs and O-06a now
-  selects a non-self-referential genesis-reference role, but O-06b/O-06c exact
-  derivation evidence is still required before genesis can close;
+- **Missing evidence:** O-01 through O-05 provide decided inputs; O-06a selects
+  a non-self-referential genesis-reference role and O-06b-1 fixes its outer
+  reference derivation, but O-06c evidence and the complete O-07 genesis
+  contents are still required before genesis can close;
   checkpoint authentication, AP-authorized producer/threshold and acceptance rules;
   anti-rollback/freshness, exact horizon, predecessor/equivocation, profile and
   suite-version binding, and late-admission recovery. No producer trust model is
@@ -985,8 +1007,10 @@ also be transcript-bound and locally evaluated under the application's policy.
 ## 6. Gate for C0.3 and exact next sequence
 
 **C0.3 verdict: `NO-GO`.** The C0.2f payload-state falsification gate required
-by O-04 has passed within its declared bounds, and O-06a has fixed the semantic
-transcript inventory without selecting bytes. O-06 through O-08, O-10 and O-14
+by O-04 has passed within its declared bounds. O-06a fixes the semantic
+inventory and O-06b-1 fixes the application transcript/domain/reference
+profile, but not the commitment/chunk construction or executable evidence.
+O-06 through O-08, O-10 and O-14
 still contain choices required to derive normative bytes or adversarial
 expectations; O-07 explicitly includes the previously deferred checkpoint-
 authentication contract. O-12 is
@@ -1005,8 +1029,9 @@ The smallest safe sequence is:
 3. retain and extend the bounded C0.2d causal-flow falsification model whenever
    later choices change its inputs; its current small-state run found no
    counterexample within bounds and does not replace formal proof;
-4. preserve the O-06a semantic inventory, then select O-06b exact identifier
-   and commitment derivations and run O-06c bounded adversarial evidence;
+4. preserve the O-06a inventory and O-06b-1 transcript/reference profile, then
+   select O-06b-2 exact commitment/chunk derivations and run O-06c bounded
+   adversarial evidence;
 5. preserve and rerun the completed C0.2f gate whenever its inputs change, then
    close genesis/checkpoint evidence, cardinality, error and signature-suite
    questions O-07, O-08, O-10 and O-14, plus O-12 for any time-bearing profile,
