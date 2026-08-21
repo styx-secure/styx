@@ -89,12 +89,12 @@ CTX = commitment_suite_id:u16
 `CTX` is exactly 44 octets. It is the ratified O-03 tuple prefixed by
 `commitment_suite_id`; the suite prefix is required by the C0.2f structural
 correspondence and is not part of the O-03 context. The genesis reference is
-deliberately absent. The C0.2f
-symbolic `context_token` also bundled a genesis reference; this byte profile
-tightens that symbolic token to the ratified O-03 tuple without weakening any
-C0.2f invariant because the fresh random context identifier already separates
-contexts and the application transcript separately authenticates the genesis
-reference.
+deliberately absent. Compared with the C0.2f symbolic `context_token`, `CTX`
+also adds the ratified O-03 protocol-version member. The symbolic token bundled
+a genesis reference instead; this byte profile tightens that symbolic token to
+the ratified O-03 tuple without weakening any C0.2f invariant because the fresh
+random context identifier already separates contexts and the application
+transcript separately authenticates the genesis reference.
 
 ## 3. Exact preimages
 
@@ -123,7 +123,9 @@ The object's one opening randomizer is repeated in every leaf. It is never
 replaced with per-leaf derived values. Fresh randomizers make equal chunks in
 different events produce distinct leaf preimages; the ordinal makes equal
 chunks inside one event produce distinct leaf preimages. Equality of the
-resulting digests is a collision finding under A1, never an accepted alias.
+resulting digests for distinct preimages -- as randomizer freshness and ordinal
+separation require here -- is a collision finding under A1, never an accepted
+alias.
 
 ### 3.2 Interior node
 
@@ -220,10 +222,13 @@ exactly two geometry dimensions:
    whereas `tools/causal-flow-simulator/payload_model.py:378` admits every
    bounded value from one through `max_chunk_size`.
 
-Both byte-level domains are strict subsets of the symbolic legal domain. These
-restrictions therefore cannot manufacture a counterexample absent from the
-C0.2f search, and this explicit comparison carries only that bounded
-faithful-instantiation claim.
+Both byte-level restrictions are strict subsets of the model's legality
+predicate in their respective dimensions. This is a structural comparison, not
+a claim that the byte profile's numerical domain is contained in C0.2f's
+concrete search envelope: that envelope remains `max_chunk_size = 256` and
+`max_chunks = 8`. Removing legal vectors cannot manufacture a counterexample
+within that envelope, and no claim is made for production-scale geometries that
+the bounded search did not exercise.
 
 Leaf boundaries are derived only from authenticated geometry:
 `leaf_length = chunk_size` for every ordinal below `chunk_count - 1`, and
@@ -318,16 +323,20 @@ own descriptor and never from the target. Suite `0x0001` therefore requires
 structural rejection before target lookup. The analysed `{0, 32}` alternative
 is rejected because it adds an inverse arm without actionable information.
 
-The 32 octets are never a framing-validity input. Equality is checked only when
-the target is retained, validated and content-bearing; then the value MUST equal
-the target descriptor's commitment, and mismatch is a binding observation on a
-valid directive with no removal effect.
+The 32 octets are never a framing-validity input. Target-class applicability is
+evaluated before commitment equality. Equality is checked only when the target
+is retained, validated and `DETACHABLE`; then the value MUST equal the target
+descriptor's commitment, and mismatch is a binding observation on a valid
+directive with no removal effect.
 
 For a retained validated target of class `NONE` or `REQUIRED`, equality is
 vacuous and the directive is inapplicable regardless of these octets. For an
 absent or non-retained target, readiness is deferred. No canonical filler,
 sentinel or reserved value exists; implementations MUST NOT require, generate,
-normalise or infer meaning from all-zero or any other particular value.
+normalise or infer meaning from all-zero or any other particular value. A filler
+cannot be conditioned on the target class because structural validation precedes
+target lookup; it would manufacture an outcome for a directive that O-04 already
+declares inert; and any fixed constant could equal a genuine commitment value.
 
 An honest producer targets a retained accepted causal ancestor and therefore
 knows its descriptor and commitment. The unconstrained case represents a
@@ -462,6 +471,12 @@ shape, not a proved-versus-unproved choice.
 
 The alternative is rejected because O-04 ratified **no keyed K commitment
 mode**, whereas the selected hash-only construction unambiguously complies.
+O-04 recorded that a keyed commitment depends on key secrecy and rotation and
+makes late or offline verification depend on key custody. When the proposed key
+is the per-commitment opening randomizer, that opening is already the custody
+object required by either construction, so the rationale is not perfectly
+symmetric; this distinction is surfaced for the independent human crypto gate
+and does not authorize the executor to reopen O-04.
 Selecting HMAC would require all of: an explicit O-04 clarification that a
 per-commitment opening used as a key is permitted; an O-06b-1 section 4
 clarification that "preimage" means the caller-supplied primitive input rather
@@ -536,14 +551,21 @@ Where the equality rule is vacuous because the validated target is `NONE` or
 `REQUIRED`, or is absent/not retained, O-06c MUST show:
 
 - structural validity, inapplicability/deferred classification, absence of a
-  removal effect, target retention/presentation and graph-set causality remain
-  invariant;
+  removal effect, target validity, target event reference, target descriptor,
+  target binding-observation status, target retention/presentation and
+  graph-set causality remain invariant;
 - the full AP projection remains invariant when the directive's own content is
   `NONE`, `DETACHABLE`, or verified `REQUIRED`;
-- regenerated transcript, event reference and exact duplicate identity differ;
-  equality of references is a blocking collision finding, never a pass;
+- regenerated transcript, event reference, exact duplicate identity and K-06
+  ordering input differ, and O-06c explicitly asserts each difference; equality
+  of references is a blocking collision finding, never a pass;
 - the K-06 position relative to concurrent peers may differ where reference
-  order differs, but happens-before/concurrency relations do not;
+  order differs, but happens-before/concurrency relations do not; O-06c MUST
+  demonstrate that this deterministic-order variance remains separate from the
+  invariant AP result;
+- any implementation that collapses `D` and `D'` as the same intent against the
+  same target is non-conforming, and O-06c MUST carry this as a directed negative
+  case;
 - if the directive itself has unavailable `REQUIRED` content/opening, the
   whole-suffix deferral boundary may differ in both ordering directions, but
   the effect is reversible and both runs converge once verification succeeds;
@@ -552,8 +574,8 @@ Where the equality rule is vacuous because the validated target is `NONE` or
   equivocation, never deduplication or silent reconciliation.
 
 No octet value may make a directive remove a `NONE`, `REQUIRED` or absent
-target, alter authorization, first-writer truth, expiry, removal authority or
-permit an irreversible external effect.
+target, alter authorization, first-writer truth, expiry or removal authority,
+confer priority or finality, or permit an irreversible external effect.
 
 ## 12. Remaining ownership and reopen predicates
 
