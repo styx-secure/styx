@@ -18,8 +18,10 @@
   cryptographic bytes. Issue #221 at base
   `4c2fecd0e9a81421b1d74f988572599162ac3095` selects the O-06b-1 application
   transcript framing, seven-role domain registry and full-width SHA-256
-  event/genesis reference profile; commitment/chunking and executable
-  falsification remain open.
+  event/genesis reference profile. Issue #223 at base
+  `cf93e6fa9136a383e125dfee76312bb5ca957455` selects the O-06b-2 SHA-256
+  randomized-opening commitment and left-complete chunk-tree profile;
+  executable O-06c falsification remains open.
 - **Language:** English is canonical.
 
 Styx is experimental, has not completed an independent security audit, and is
@@ -71,9 +73,10 @@ the [C0.2a responsibility matrix](../protocol/styx-app-kernel-v0-responsibility-
 | --- | --- | --- | --- | --- |
 | Application plaintext and attachments | Confidentiality to the recipients selected by an authorized application transition | Authentication failure rejects delivery; compromise invokes rotation and product incident handling | `OB-SS03`, `OB-AP08`, `OB-PV09` | An authorized or compromised endpoint can disclose plaintext; attachment metadata requires separate handling. |
 | Application event meaning | Integrity and authenticity of every field that affects validation, authorization, causality, ordering or conflict handling | Invalid transcripts and semantics are rejected before authoritative state change | `OB-K01`–`OB-K04`, `OB-K12` | A valid signature proves key possession, not role authorization or truth. |
+| Payload commitment and retained opening | Binding to one complete payload plus computational hiding after opening destruction under stated assumptions | Reject malformed geometry, wrong suite/context/opening/content and incomplete verification before AP use | `OB-K10`, retention by `OB-K14`/`OB-RS04` | O-06b-2 selects exact bytes but supplies no implementation proof; length/shape remain visible, randomizer custody is operational, complete-object availability is required and SHA-256 assumptions remain explicit. |
 | Application and case context | Domain separation and rejection of cross-context replay | Cross-context objects fail kernel validation | `OB-K08`, requirements from `OB-AP03` | O-03/O-06a select the context tuple/reference role and O-06b-1 fixes the outer reference bytes; O-07 genesis contents remain open. |
 | Author and role authority | Explicit, rotatable, context-bound authorization | Unauthorized or stale authority is rejected; compromise invokes profile rotation/revocation | `OB-AP02`; binding by `OB-K01` | O-02 decides credential construction and binding; concrete profile grants and bounds remain future work. |
-| Causal history and state | Deterministic validation, replay/fork detection and bounded convergence | Classified duplicate, replay, missing-parent, fork or conflict result | `OB-K05`–`OB-K07`, `OB-K13` | O-01/O-05/O-06a decide causality, clock placement and semantic inputs; O-06b-1 fixes SHA-256 reference derivation, while O-06c evidence remains open and digest tiebreaks are grindable. |
+| Causal history and state | Deterministic validation, replay/fork detection and bounded convergence | Classified duplicate, replay, missing-parent, fork or conflict result | `OB-K05`–`OB-K07`, `OB-K13` | O-01/O-05/O-06a decide causality, clock placement and semantic inputs; O-06b-1/O-06b-2 fix reference and commitment derivations, while O-06c evidence remains open and digest tiebreaks, including unconstrained inapplicable-removal tails, are grindable. |
 | Durable local state | Confidentiality, atomicity, crash safety and rollback behavior within a declared runtime profile | Fail closed on ambiguous persistence; restore/reconcile or require intervention | `OB-RS02`–`OB-RS10` | Browser storage may be evicted; a coherent whole-profile rollback may be undetectable without external evidence. |
 | Session secrets and membership | Confidential authenticated delivery, membership control, forward secrecy and post-compromise recovery within the selected session profile | Reject invalid or unauthorized session transitions; rotate/recover within profile bounds | `OB-SS01`–`OB-SS09` | Phase B proves only the exact pinned isolated profile recorded by its verdict. |
 | Return capabilities and recovery material | Unforgeability, confidentiality, context separation and intentional recovery semantics | Reject invalid/reused context; explain intentional irrecoverability or use the approved recovery route | `OB-AP09`, custody by `OB-RS01` | Loss may be unrecoverable; screenshots, backups and phishing can disclose a capability. |
@@ -288,7 +291,7 @@ make telemetry or push metadata harmless.
 
 | Adversary | Primary assets/properties at risk | Required response and evidence | Sole obligation owners | Residual non-claim |
 | --- | --- | --- | --- | --- |
-| A1 malformed-input sender | Event meaning, session/runtime availability | Strict bounded parsing, canonical rejection, stable outcomes and resource tests before state change; O-06b-1 fixes the regenerated transcript grammar but supplies no parser implementation | `OB-K02`–`OB-K04`, `OB-SS08`, `OB-TR01` each at its parser boundary | A conforming parser cannot prevent all bandwidth exhaustion before bytes reach it; the O-06b-1 written profile is not executable evidence. |
+| A1 malformed-input sender | Event meaning, session/runtime availability | Strict bounded parsing, canonical rejection, stable outcomes and resource tests before state change; O-06b-1/O-06b-2 fix regenerated transcript, commitment and geometry grammars but supply no parser implementation | `OB-K02`–`OB-K04`, `OB-SS08`, `OB-TR01` each at its parser boundary | A conforming parser cannot prevent all bandwidth exhaustion before bytes reach it; the written profiles are not executable evidence. |
 | A2 valid but unauthorized actor | Role authority, case state, retention/export | Separate authentication from context-bound authorization; negative role, rotation and revocation cases | `OB-AP02`; cryptographic binding by `OB-K01` | Concrete profile grants and bounds remain future work. |
 | A3 malicious peer | Plaintext, causal state, availability, erasure | Detect replay/fork/conflict, preserve deterministic evidence, expose refusal/timeout, apply product incident process | `OB-K05`–`OB-K14`, `OB-AP04`, `OB-PV04` | An authorized peer can copy plaintext, withhold input or lie in signed content. |
 | A4 compromised authorized peer | Current rights, plaintext and session history | Revoke/rotate, bound synchronized history, recover session and disclose the compromise state | `OB-AP02`, `OB-SS04`–`OB-SS06`, `OB-PV07` | No retroactive protection for plaintext or keys already obtained. |
@@ -299,7 +302,7 @@ make telemetry or push metadata harmless.
 | A9 seized/compromised endpoint | Plaintext, password, local state and recovery material | Distinguish locked/unlocked guarantees, encrypt storage, rotate after compromise and follow incident procedure | `OB-RS01`/`OB-RS02`/`OB-RS11`, `OB-PV07` | Keylogger, screen capture, memory and authorized-recipient leakage remain possible. |
 | A10 fault/eviction/rollback | Durable state, causality, availability | Atomic fail-closed persistence, crash reconciliation, runtime probes and bounded rollback evidence | `OB-RS03`–`OB-RS10` | Coherent rollback can remain undetectable when no independent evidence exists. |
 | A11 malicious operator | Case confidentiality, role authority, audit and erasure | Least privilege, separation of duties, high-impact approval, minimized independent audit and alternate route | `OB-PV02`–`OB-PV06`; machine role semantics `OB-AP02` | Protocol cannot ensure independence, lawful action or prevent off-protocol disclosure. |
-| A12 supply-chain/build adversary | Software/configuration and all plaintext handled by it | Exact provenance, reproducible artifacts, signed/verified updates, rollback control and incident response. O-06b-1 records WebCrypto SHA-256, exact `@noble/hashes` lock evidence and the Dart reference dependency separately; no fallback is permitted. | `OB-RS12`, `OB-PV07`/`OB-PV10` | Upstream audit evidence does not transfer across revision, configuration or Styx integration; Dart's declared `crypto` range and package disclaimer are reference-oracle evidence, not production assurance. |
+| A12 supply-chain/build adversary | Software/configuration and all plaintext handled by it | Exact provenance, reproducible artifacts, signed/verified updates, rollback control and incident response. O-06b-1/O-06b-2 record WebCrypto SHA-256, exact `@noble/hashes` lock evidence and the Dart reference dependency separately; no fallback or new dependency is selected. | `OB-RS12`, `OB-PV07`/`OB-PV10` | Upstream audit evidence does not transfer across revision, configuration or Styx integration; Dart's declared `crypto` range and package disclaimer are reference-oracle evidence, not production assurance. One-shot WebCrypto requires complete-buffer custody and creates an implementation memory-exposure window that O-08 must bound. |
 | A13 availability adversary | Delivery, access and organizational continuity | Bounds, backoff, failover, offline truth, abuse-aware controls and continuity drills | `OB-TR03`/`OB-TR04`/`OB-TR09`, `OB-PV07`/`OB-PV08` | Styx does not guarantee unstoppable, timely or cost-free delivery. |
 | A14 backup/telemetry/push provider | Local replicas, endpoint mapping and behavioral metadata | Minimize/forbid external signals, declare retention, isolate audit and test notification data flow | `OB-RS13`, `OB-TR08`, `OB-PV04` | Providers may retain allowed metadata and correlate it with external datasets. |
 
@@ -465,8 +468,9 @@ Current evidence establishes only bounded components:
   why current matches cannot define the protocol;
 - C0.2a through C0.2f decide K-01 through K-11, O-01 through O-05 and O-09
   within their stated evidence bounds; O-06a inventories the semantic
-  transcript and O-06b-1 selects exact framing/domain/reference bytes without
-  implementation evidence; O-06, O-07, O-08 and
+  transcript, O-06b-1 selects exact framing/domain/reference bytes and O-06b-2
+  selects exact commitment/chunk-tree bytes, all without implementation
+  evidence; O-06, O-07, O-08 and
   O-10 through O-14 remain open;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
   described in its final verdict; and

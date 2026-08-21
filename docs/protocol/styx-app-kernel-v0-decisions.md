@@ -20,6 +20,8 @@
   `docs/protocol/styx-app-kernel-v0-identifier-derivation-analysis.md`.
 - **O-06b-1 transcript/reference profile:**
   `docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md`.
+- **O-06b-2 commitment/chunk-tree profile:**
+  `docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md`.
 - **Language:** English is canonical for external, language-neutral protocol
   review. Translations are optional and non-normative.
 - **Ratification:** every `DECIDED` entry below is proposed until the product
@@ -414,8 +416,8 @@ outcomes.
 - **Dependent artifact:** author sequence, direct predecessor, canonical parent
   frontier, derived event reference, causal/fork classifications and affected-
   suffix replay semantics. O-04/O-07 define checkpoint/genesis evidence; O-08
-  bounds resources; O-10 names outcomes; O-06b-1 selects exact transcript and
-  reference-digest bytes, while O-06b-2 and O-06c complete O-06.
+  bounds resources; O-10 names outcomes; O-06b-1/O-06b-2 select exact transcript,
+  reference and commitment/chunk-tree bytes, while O-06c completes O-06.
 - **Executable falsification evidence:** the bounded, implementation-independent
   C0.2d model and report in
   `docs/protocol/styx-app-kernel-v0-causal-falsification-report.md` find no
@@ -573,7 +575,7 @@ outcomes.
 - **Security/privacy:** descriptor-only history remains bounded and supports
   retained verification evidence. With a destroyed opening, the retained
   ledger alone is not intended to expose a practical equality/dictionary oracle
-  under the future O-06b-2 suite assumptions. Length, type and commitment remain
+  under the selected O-06b-2 suite assumptions. Length, type and commitment remain
   correlatable; randomizer reuse is an honest-producer obligation; authorized
   recipients and copies remain outside any erasure claim. A single withheld or
   lost `REQUIRED` opening can halt a context indefinitely. Rollback past a
@@ -585,8 +587,9 @@ outcomes.
   Authority-bearing data classified as `REQUIRED` has no authorized removal or
   destruction path in v0; closing O-13 alone does not change that rule.
 - **Dependent artifact:** O-06b-1 selects exact domain tags, reference digest,
-  descriptor widths and transcript framing; O-06b-2 must select the commitment
-  and chunk construction and prevent cross-event leaf equality; O-07 owns the
+  descriptor widths and transcript framing; O-06b-2 selects the commitment and
+  chunk construction and binds the fresh per-object randomizer into every leaf;
+  O-07 owns the
   suspended checkpoint authentication/acceptance/substitution contract; O-08
   sets resource and custody bounds; O-10 assigns rich local outcomes plus one
   opaque remote fetch result; O-11 chooses wire/storage/fetch encoding; O-13
@@ -632,9 +635,9 @@ outcomes.
 ### O-06 — Event/content identifier semantics
 
 - **Status:** `OPEN`.
-- **Question:** which exact commitment/chunk construction and executable
-  evidence complete the identifier/reference profile selected through
-  O-06b-1?
+- **Question:** does bounded executable O-06c evidence falsify the exact
+  transcript/reference and commitment/chunk-tree construction selected through
+  O-06b-2?
 - **Selected semantic roles:** the event reference is a domain-separated digest
   derived from the canonical signed semantic transcript, excluding signature
   bytes and any carried identifier. After signature validation it serves only
@@ -661,6 +664,15 @@ outcomes.
   future AP schema and O-06b-2 commitment interiors are themselves injective.
   It is not a mathematical injectivity claim for SHA-256 and is not executable
   implementation evidence.
+- **O-06b-2 selected commitment/chunk-tree profile:**
+  `docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md` fixes
+  registry `styx.commitment-suite.v1`, suite `0x0001`, full-width SHA-256, a
+  fresh 32-octet randomizer, exact content/leaf/interior-node preimages and one
+  left-complete binary tree. It fixes 32-octet commitment values and a canonical
+  16-octet tree-geometry block. The suite is derived from protocol version;
+  negotiation, truncation, fallback and canonical removal-tail filler are
+  forbidden. The written inverse and two-reduction argument state assumptions,
+  not executable proof or implementation authority.
 - **Rationale/evidence:** `ORDER-004`, `PRIV-01`, `PRIV-03` and `PRIV-04` show
   that identifiers and fork inputs cannot remain mutable conveniences. C0.2c
   establishes a non-circular semantic derivation and one purpose per identifier
@@ -680,16 +692,13 @@ outcomes.
   `REQUIRED` content can change the reversible whole-suffix deferral boundary;
   AP must repair reversible state when later evidence or content becomes
   available.
-- **Missing evidence:** O-06b-2 exact randomized-opening commitment suite,
-  content/leaf/node preimages, randomizer and chunk construction; O-06c
-  executable negative evidence. O-07 still owns the complete genesis fields;
+- **Missing evidence:** O-06c executable negative evidence for the combined
+  O-06b-1/O-06b-2 construction. O-07 still owns the complete genesis fields;
   O-14 separately owns the signature-suite
   registry. O-08 owns measured profile maxima and O-10 owns stable error codes.
-- **Dependent artifact:** exact payload/chunk derivations, complete genesis
-  transcript fields and bounded adversarial evidence.
-- **Smallest bounded follow-up:** O-06b-2 selects one exact commitment/chunk
-  profile under a security/crypto gate without creating vectors or
-  implementation authority; O-06c then adversarially tests framing injectivity,
+- **Dependent artifact:** complete genesis transcript fields and bounded
+  adversarial evidence.
+- **Smallest bounded follow-up:** O-06c adversarially tests framing injectivity,
   role/context separation,
   non-circularity, chunk unlinkability, collision handling, grinding-to-handoff
   interaction, reversible repair and bounded work.
@@ -697,12 +706,12 @@ outcomes.
   events cannot share framed transcript bytes, references rely on the selected
   SHA-256 collision/second-preimage assumptions, and every exact field has one
   unambiguous derivation. Reopen O-06b-1 if O-07 cannot supply injectively
-  framed genesis contents, O-06b-2 cannot fit its allocated descriptor slots,
-  or O-14 cannot authenticate these bytes without per-event selection,
+  framed genesis contents, O-06b-2's written inverse or assumptions fail, or
+  O-14 cannot authenticate these bytes without per-event selection,
   fallback or a materially different digest/runtime basis.
-- **Human ratification:** O-06a was ratified under Issue #219. O-06b-1 awaits
-  exact-final-HEAD acceptance under Issue #221; O-06 itself remains open after
-  that acceptance.
+- **Human ratification:** O-06a and O-06b-1 were ratified under Issues #219 and
+  #221. O-06b-2 awaits exact-final-HEAD acceptance under Issue #223; O-06 itself
+  remains open after that acceptance.
 
 ### O-07 — Genesis and checkpoint evidence
 
@@ -1010,8 +1019,9 @@ also be transcript-bound and locally evaluated under the application's policy.
 
 **C0.3 verdict: `NO-GO`.** The C0.2f payload-state falsification gate required
 by O-04 has passed within its declared bounds. O-06a fixes the semantic
-inventory and O-06b-1 fixes the application transcript/domain/reference
-profile, but not the commitment/chunk construction or executable evidence.
+inventory, O-06b-1 fixes the application transcript/domain/reference profile,
+and O-06b-2 fixes the commitment/chunk construction, but executable O-06c
+evidence does not yet exist.
 O-06 through O-08, O-10 and O-14
 still contain choices required to derive normative bytes or adversarial
 expectations; O-07 explicitly includes the previously deferred checkpoint-
@@ -1031,9 +1041,8 @@ The smallest safe sequence is:
 3. retain and extend the bounded C0.2d causal-flow falsification model whenever
    later choices change its inputs; its current small-state run found no
    counterexample within bounds and does not replace formal proof;
-4. preserve the O-06a inventory and O-06b-1 transcript/reference profile, then
-   select O-06b-2 exact commitment/chunk derivations and run O-06c bounded
-   adversarial evidence;
+4. preserve the O-06a inventory and selected O-06b-1/O-06b-2 profiles, then run
+   O-06c bounded adversarial evidence;
 5. preserve and rerun the completed C0.2f gate whenever its inputs change, then
    close genesis/checkpoint evidence, cardinality, error and signature-suite
    questions O-07, O-08, O-10 and O-14, plus O-12 for any time-bearing profile,

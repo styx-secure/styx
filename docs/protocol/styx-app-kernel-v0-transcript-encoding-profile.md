@@ -1,21 +1,27 @@
 # Styx v0 application-event transcript encoding profile — O-06b-1
 
-- **Status:** selected O-06b-1 profile; commitment internals and executable
-  falsification remain open under O-06.
+- **Status:** selected O-06b-1 transcript profile, amended by the selected
+  O-06b-2 commitment profile; executable falsification remains open under
+  O-06c.
 - **Authority:** Issue #221, ADR-0007, ratified K-01 through K-11, O-01 through
   O-05, O-09 and the O-06a semantic inventory.
 - **Exact evidence base:**
   `4c2fecd0e9a81421b1d74f988572599162ac3095`.
+- **O-06b-2 amendment base:**
+  `cf93e6fa9136a383e125dfee76312bb5ca957455` under Issue #223.
 - **Language:** English is canonical for language-neutral review.
-- **Ratification:** every selection below is proposed until `maverde73`
-  ratifies the exact final PR HEAD after independent and human crypto review.
+- **Ratification:** O-06b-1 was ratified under Issue #221. The O-06b-2
+  amendments remain proposed until `maverde73` ratifies the exact final PR HEAD
+  under Issue #223 after independent and human crypto review.
 
 This document fixes exact bytes only for the v0 application-event signature
 transcript, the seven-role domain registry and event/genesis-reference digest
 derivation. It deliberately does **not** select payload-commitment or chunk-tree
-internals, a signature suite, genesis contents, a wire/storage representation,
-an executable vector or implementation. O-06 remains `OPEN`; O-06b-2 and O-06c
-remain mandatory, and C0.3 remains `NO-GO`.
+internals itself, a signature suite, genesis contents, a wire/storage
+representation, an executable vector or implementation. The exact commitment
+internals are now selected separately by
+`styx-app-kernel-v0-commitment-encoding-profile.md`. O-06 remains `OPEN`;
+O-06c remains mandatory, and C0.3 remains `NO-GO`.
 
 ## 1. Inputs and bounded claim
 
@@ -36,7 +42,7 @@ O-06b-1 establishes this bounded proposition:
 The proposition is about **preimages**, not SHA-256 outputs. SHA-256 is not
 mathematically injective. Reference uniqueness therefore additionally depends
 on its collision and second-preimage resistance. Content-binding and hiding
-depend on O-06b-2 and are not claimed here.
+depend on the separate O-06b-2 profile and are not claimed by O-06b-1.
 
 ## 2. Primitive and runtime evidence
 
@@ -245,14 +251,14 @@ chunk_geometry_presence:u8
 ```
 
 `content_type_id` is non-zero and belongs to the authenticated AP registry.
-`commitment_suite_id` is a closed O-06b-2 value; no active value is selected by
-this document. `commitment_shape` is `0x00` for one value or `0x01` for a chunk
-tree. Single shape requires absent geometry; tree shape requires present,
-non-empty canonical geometry. O-06b-2 fixes the exact commitment length,
-geometry interior and cross-field rules. An outer length mismatch, unknown
-suite/shape or inconsistent presence fails closed. Until O-06b-2 closes, no
-content-bearing production event is constructible under this profile; section
-12 records the additional blockers to any production activation.
+`commitment_suite_id` is derive-and-compare data and is exactly `0x0001` for
+Styx protocol v1. `commitment_shape` is `0x00` for one value or `0x01` for a
+chunk tree. `commitment_value` is exactly 32 octets. Single shape requires
+absent geometry; tree shape requires the canonical 16-octet geometry selected
+by `styx-app-kernel-v0-commitment-encoding-profile.md`. Its cross-field rules
+are mandatory. An outer length mismatch, unknown suite/shape, malformed
+geometry or inconsistent presence fails closed. These selected bytes do not
+authorize production activation; section 12 records the remaining blockers.
 
 A zero-length content-bearing object remains distinct from `NONE` because its
 class, type, suite, shape and commitment are present. Raw content, opening,
@@ -268,18 +274,14 @@ target_event_reference:opaque32
 target_commitment:opaque_u32
 ```
 
-The target commitment length and bytes must equal the commitment authenticated
-by the validated target descriptor under that descriptor's future O-06b-2 suite
-when the target is content-bearing. O-04 makes directives against `NONE` or
-`REQUIRED` content inapplicable: such a directive remains a valid authenticated
-event that participates normally in references, causality, order and duplicate
-identity, and AP classifies it as inapplicable rather than K rejecting it here.
-The commitment-equality rule therefore binds only a directive whose validated
-target descriptor is content-bearing; O-06b-1 does not make target content class
-a framing-validity condition. Target absence affects readiness, not this
-structural identity. Authorization, legal hold, quarantine, local deletion
-result, transport acknowledgement, time, quota and retry state are derived or
-excluded exactly as O-04/O-06a require and are not appended.
+The target-commitment container length is exactly 32 octets, derived from the
+suite active for the authenticated protocol version rather than from the
+directive descriptor or target. The equality/applicability rule and the absence
+of a canonical filler are fixed by
+`styx-app-kernel-v0-commitment-encoding-profile.md`. Target absence affects
+readiness, not structural identity. Authorization, legal hold, quarantine,
+local deletion result, transport acknowledgement, time, quota and retry state
+are derived or excluded exactly as O-04/O-06a require and are not appended.
 
 ## 6. Reference derivation
 
@@ -347,14 +349,15 @@ This proof is conditional in two explicit places:
 
 - an AP transition block must have one canonical injective representation under
   its authenticated schema; and
-- commitment/geometry containers must have one canonical injective
-  representation under their O-06b-2 suite.
+- commitment/geometry containers have the canonical injective representation
+  selected by the O-06b-2 profile.
 
 Two different content byte strings can still produce the same descriptor if the
-future commitment collides, and two different transcript preimages can in
-principle produce the same SHA-256 output. O-06b-2 must supply binding/hiding and
-O-06c must attempt executable framing, role, context and collision
-falsification. Neither is replaced by this written inverse.
+selected commitment collides, and two different transcript preimages can in
+principle produce the same SHA-256 output. O-06b-2 records the exact
+binding/hiding assumptions; O-06c must attempt executable framing, role,
+context, commitment and collision falsification. Neither is replaced by this
+written inverse.
 
 ## 8. O-14 compatibility and reopen predicate
 
@@ -438,16 +441,15 @@ reinterpreted.
 
 ## 12. Required next increments and gate
 
-1. **O-06b-2** selects exactly one randomized-opening payload-commitment suite,
-   randomizer width/rule, complete content/leaf/node preimages, chunk geometry,
-   tree construction, binding/hiding assumptions and runtime evidence using the
-   already allocated domains.
+1. **O-06b-2 is selected:**
+   `styx-app-kernel-v0-commitment-encoding-profile.md` fixes exactly one
+   randomized-opening suite, its preimages and chunk-tree construction.
 2. **O-06c** implements bounded adversarial falsification of the complete
    O-06b-1/O-06b-2 construction and reruns C0.2d/C0.2f unchanged.
-3. Only after both pass independent review and human ratification may O-06 move
+3. Only after O-06c passes independent review and human ratification may O-06 move
    to `DECIDED`.
 
-O-06b-1 alone does not make C0.3 executable. O-06b-2, O-06c, O-07, O-08, O-10
-and O-14 remain blockers; O-12 additionally blocks any time-bearing profile.
+O-06b-1 and O-06b-2 together do not make C0.3 executable. O-06c, O-07, O-08,
+O-10 and O-14 remain blockers; O-12 additionally blocks any time-bearing profile.
 O-11 remains required before supported persistence or remote admission, and
 K-11 remains required before any normative corpus file.
