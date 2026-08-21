@@ -86,8 +86,10 @@ CTX = commitment_suite_id:u16
    || context_identifier:opaque32
 ```
 
-`CTX` is exactly 44 octets. Its application/profile/context members are the
-ratified O-03 tuple. The genesis reference is deliberately absent. The C0.2f
+`CTX` is exactly 44 octets. It is the ratified O-03 tuple prefixed by
+`commitment_suite_id`; the suite prefix is required by the C0.2f structural
+correspondence and is not part of the O-03 context. The genesis reference is
+deliberately absent. The C0.2f
 symbolic `context_token` also bundled a genesis reference; this byte profile
 tightens that symbolic token to the ratified O-03 tuple without weakening any
 C0.2f invariant because the fresh random context identifier already separates
@@ -208,11 +210,29 @@ declared final-chunk length. A mismatch is rejected; it is never repaired.
 legality is therefore a function of the authenticated active AP profile and
 version, consistent with O-06b-1's closed AP registries.
 
+This byte profile deliberately tightens the C0.2f symbolic legality domain in
+exactly two geometry dimensions:
+
+1. tree shape requires `chunk_count >= 2`, whereas
+   `tools/causal-flow-simulator/payload_model.py:380` also admits
+   `chunk_count == 1` in its bounded `CHUNKED` arm; and
+2. `chunk_size` must belong to the authenticated active profile's closed set,
+   whereas `tools/causal-flow-simulator/payload_model.py:378` admits every
+   bounded value from one through `max_chunk_size`.
+
+Both byte-level domains are strict subsets of the symbolic legal domain. These
+restrictions therefore cannot manufacture a counterexample absent from the
+C0.2f search, and this explicit comparison carries only that bounded
+faithful-instantiation claim.
+
 Leaf boundaries are derived only from authenticated geometry:
 `leaf_length = chunk_size` for every ordinal below `chunk_count - 1`, and
 `leaf_length = final_chunk_length` for the last ordinal.
 
 ### 4.2 Left-complete tree
+
+For single shape the object has exactly one leaf: `leaf_ordinal = 0` and
+`leaf_length = exact_content_length`; its root is that leaf digest.
 
 The tree follows the left-complete split rule of
 [RFC 9162 section 2.1.1](https://www.rfc-editor.org/rfc/rfc9162.html#section-2.1.1):
@@ -232,6 +252,15 @@ MTH(m elements), m > 1:
   right = MTH(remaining m-k elements)
   result = node(subtree_leaf_count=m, left_child=left, right_child=right)
 ```
+
+Only the left-complete split rule is adopted from RFC 9162. Styx deliberately
+replaces its one-octet leaf/node prefixes with the registered 16-octet domains
+and `len32` framing, and binds the additional leaf and node fields defined in
+section 3. `MTH(one element)` here receives an already-computed Styx leaf digest
+rather than hashing raw content again, and the RFC empty-tree case is
+unreachable because zero-length content uses the non-empty single shape. These
+are deliberate profile adaptations, not claims of byte compatibility with RFC
+9162.
 
 The tree has `n` leaves, `n - 1` interior nodes and depth
 `ceil(log2(n))`. A tree commitment performs `2n` digest invocations: `n` leaf
@@ -381,10 +410,12 @@ geometry; shape `0x01` consumes exactly 16 geometry octets. It then reads
 `root:32`, `opening_randomizer:32` and exact end. The inverse is unique.
 
 Therefore two assignments that differ in any suite-owned field have distinct
-preimages. Domains separate all seven v1 roles. Framing is suffix-free: appending
-bytes makes embedded `len32` inconsistent, so SHA-256 length extension cannot
-turn one valid registered preimage into another. Single/tree shape cannot alias
-because shape and geometry differ and tree shape requires at least two leaves.
+preimages. Domains separate all seven v1 roles. Framing is prefix-free:
+appending bytes makes embedded `len32` inconsistent, so SHA-256 length extension
+cannot turn one valid registered preimage into another. Suffix-free padding is a
+distinct property and is not the reason for this conclusion. Single/tree shape
+cannot alias because shape and geometry differ and tree shape requires at least
+two leaves.
 
 This discharges O-06b-1's suite-interior injectivity condition. It does not make
 SHA-256 injective. Binding still depends on collision and second-preimage
@@ -408,13 +439,17 @@ correlatable retained metadata.
 
 ### 9.1 Two-reduction appendix
 
-**Selected salted-hash family.** Every selected digest whose preimage is a
-function of content octets also contains the same secret, uniform 32-octet
-opening randomizer. Under the random-oracle/hiding-hash assumption, an observer
-without that randomizer cannot test a candidate content value against the
-retained digest more efficiently than guessing the randomizer or breaking that
-assumption. This is the selected argument. It is not a standard-model proof for
-SHA-256 as deployed.
+**Selected salted-hash family.** Every selected digest whose caller-supplied
+preimage directly contains content octets also contains the same secret,
+uniform 32-octet opening randomizer. Interior-node preimages contain only child
+digests; their hiding argument composes inductively from randomized leaf
+digests, because testing a candidate subtree requires first recomputing its
+leaves with the unknown randomizer. The top-level commitment directly binds
+both that randomized root and the same randomizer. Under the
+random-oracle/hiding-hash assumption, an observer without the randomizer cannot
+test a candidate content value against the retained commitment more efficiently
+than guessing the randomizer or breaking that assumption. This is the selected
+argument. It is not a standard-model proof for SHA-256 as deployed.
 
 **Rejected HMAC family.** The alternative uses the fixed-width 32-octet opening
 randomizer as the HMAC-SHA-256 key. Its hiding argument is PRF-based. For a fixed
@@ -482,7 +517,7 @@ O-06c MUST build an independent bounded corpus/model that attempts at least:
 4. geometry inconsistency rejected before allocation, checked arithmetic and
    bounded work independent of attacker-declared inflation;
 5. subtree grafting and duplicate-last-leaf resistance;
-6. suffix-freeness and length-extension non-applicability;
+6. prefix-freeness and length-extension non-applicability;
 7. randomizer width, CSPRNG failure, unknown suite/shape and fallback failure;
 8. commitment equality/mismatch, verifier use of authenticated fields only and
    complete-object verification;
