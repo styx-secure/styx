@@ -1,25 +1,28 @@
 # Styx application-event semantic transcript and identifier analysis — O-06a
 
-- **Status:** selected O-06a semantic inventory; O-06b-1 now fixes its exact
-  application transcript/reference profile, while commitment internals and
-  executable evidence remain open under O-06.
+- **Status:** selected O-06a semantic inventory; O-06b-1 fixes its exact
+  application transcript/reference profile and O-06b-2 fixes commitment and
+  chunk-tree internals, while executable evidence remains open under O-06c.
 - **Authority:** Issue #219, ADR-0007 and the ratified K-01 through K-11 and
   O-01 through O-05 decisions.
 - **Exact evidence base:**
   `787b501823cb0b9f36412acef36cbc9c3b81135b`.
 - **O-06b-1 amendment base:**
   `4c2fecd0e9a81421b1d74f988572599162ac3095` under Issue #221.
+- **O-06b-2 amendment base:**
+  `cf93e6fa9136a383e125dfee76312bb5ca957455` under Issue #223.
 - **Language:** English is canonical for external, language-neutral review.
-- **Ratification:** O-06a was ratified under Issue #219; the O-06b-1 amendments
-  remain proposed until `maverde73` ratifies the exact final PR HEAD under
-  Issue #221 after independent review.
+- **Ratification:** O-06a and O-06b-1 were ratified under Issues #219 and #221.
+  The O-06b-2 amendments remain proposed until `maverde73` ratifies the exact
+  final PR HEAD under Issue #223 after independent review.
 
 This document's O-06a decision fixes the semantic inventory and separation
 rules needed before O-06 selects cryptographic bytes. O-06a itself selected no digest,
 signature primitive, output width, exact domain tag, randomizer width, chunk
 geometry, registry value, wire encoding, storage encoding or executable
-vector. The separate O-06b-1 profile now selects transcript/reference bytes;
-O-06 remains `OPEN`, and neither document authorizes implementation.
+vector. The separate O-06b-1 and O-06b-2 profiles now select
+transcript/reference and commitment/chunk-tree bytes respectively; O-06 remains
+`OPEN`, and none of these documents authorizes implementation.
 
 ## 1. Inputs, method and decision boundary
 
@@ -129,7 +132,7 @@ typed and authenticated:
 | `exact_content_length` | `INCLUDE` | Exact non-wrapping integer; zero content-bearing value remains distinct from `NONE`. |
 | `commitment_suite_id` | `INCLUDE` when content-bearing | O-06b-2 pins the exact active-profile value. Unknown or inconsistent values fail closed; an event cannot negotiate or downgrade among suites. |
 | `commitment_shape` | `INCLUDE` when content-bearing | Closed single/chunk-tree discriminant. |
-| `commitment_value` | `INCLUDE` when content-bearing | Full future O-06b-2 output, never a locator or storage hash. |
+| `commitment_value` | `INCLUDE` when content-bearing | Full 32-octet O-06b-2 output, never a locator or storage hash. |
 | chunk-geometry presence | `INCLUDE` when content-bearing | Absence is valid only for the single shape and cannot alias zero geometry. |
 | chunk size/count/tree geometry | `INCLUDE` when present | Exact O-06b-2 representation; O-08 supplies enforceable profile maxima. |
 | content octets | `EXCLUDE` | Bound through the commitment; raw payload-scaled transcript work is rejected. |
@@ -223,7 +226,7 @@ property. This document does not claim it has been met by exact bytes.
 | O-02 / O-06 | Include the credential identifier; derive key and signature algorithm from authenticated credential state. Do not let an event choose its verification algorithm. | O-14 owns the exact signature-suite registry and downgrade rules. AP/O-02 own authority. |
 | O-03 / O-06 / O-07 | Later events include a genesis reference derived over the complete genesis signed transcript. It is not the random context identifier and creates no self-reference. | O-07 defines necessary genesis fields and authority; O-06b-1 defines exact reference bytes. |
 | O-04 / O-06 | Commitment is computed first from content/opening/context; its descriptor enters the event transcript; the event reference is computed last. The commitment never includes the event reference. | O-06b-1 selects the reference suite and O-06b-2 selects the commitment suite; O-06c falsifies the construction. |
-| O-06 / O-08 | Semantic counts, lengths and geometry slots exist; exact transcript widths are fixed by O-06b-1 and commitment geometry remains O-06b-2. | O-08 supplies measured enforceable profile maxima and activation bounds. |
+| O-06 / O-08 | Semantic counts, lengths and geometry slots exist; exact transcript and commitment-geometry widths are fixed by O-06b-1/O-06b-2. | O-08 supplies measured enforceable profile maxima and activation bounds. |
 | O-06 / O-10 | O-06a identifies rejection sites and safe distinctions without assigning stable codes. | O-10 closes the bounded taxonomy after exact fields close. |
 | O-06 / O-11 | K regenerates transcript/reference preimages from validated semantics. | O-11 owns wire/storage decoding and canonical representation. |
 | O-05/O-12 / O-06 | No physical-time field exists in the v0 K transcript. | A future time-bearing AP profile must close O-12 for its own committed content. |
@@ -335,12 +338,11 @@ supply-chain basis, or materially requires a different reference digest.
 
 ### O-06b-2 — exact commitment and chunk profile
 
-A separately approved security/crypto task must select exactly one randomized-
-opening commitment suite, randomizer rule, content/leaf/interior-node
-preimages, chunk geometry and tree construction under the domains allocated by
-O-06b-1. It must prove the needed binding/hiding and cross-event separation
-properties without changing the selected application transcript framing unless
-that framing's explicit reopen condition is met. It must not define O-07
+Issue #223 selects suite `styx.commitment-suite.v1/0x0001`: full-width SHA-256,
+a fresh 32-octet randomizer, exact content/leaf/interior-node preimages and a
+left-complete binary chunk tree under the domains allocated by O-06b-1. The
+complete construction, written inverse, assumptions and runtime evidence are in
+`styx-app-kernel-v0-commitment-encoding-profile.md`. It does not define O-07
 checkpoint authority, set O-08 runtime maxima, assign O-10 codes, create a
 conformance corpus or authorize production implementation. O-06 remains
 `OPEN` after O-06b-2.
@@ -366,10 +368,11 @@ equal references and graph structure, and any profile exposing them outside
 the protected application object inherits that correlator.
 
 O-06b-1 now supplies an exact application-event encoding and reference digest,
-but it is not an implementation proof. SHA-256 collision/second-preimage
-resistance, commitment hiding/binding, randomizer misuse, tree construction,
-parser safety, runtime capacity and signature-suite downgrade remain residual
-or open. Bounded O-06c evidence
+and O-06b-2 supplies an exact randomized-opening commitment and chunk-tree
+construction, but neither is an implementation proof. SHA-256
+collision/second-preimage resistance, commitment hiding/binding assumptions,
+randomizer custody/misuse, parser safety, runtime capacity and signature-suite
+downgrade remain residual or open. Bounded O-06c evidence
 will not prove absence of counterexamples outside its envelope. A hostile
 authorized author can withhold parents, equivocate, reuse randomizers or grind
 its replay position. Grinding can suppress a later-sorting concurrent authority
@@ -391,7 +394,7 @@ non-circularity or replay-policy counterexample.
 
 ## 11. C0.3 gate
 
-O-06b-1 does not make C0.3 executable. O-06b-2, O-06c, O-07, O-08, O-10 and
+O-06b-1 plus O-06b-2 do not make C0.3 executable. O-06c, O-07, O-08, O-10 and
 O-14 remain blockers; O-12 additionally blocks any time-bearing profile. O-11 does
 not block a transcript-only corpus but must close before supported persistence
 or remote admission. K-11 requires a separate exact-path licensing amendment
