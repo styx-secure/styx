@@ -269,13 +269,17 @@ target_commitment:opaque_u32
 ```
 
 The target commitment length and bytes must equal the commitment authenticated
-by the validated target descriptor under that descriptor's future O-06b-2 suite.
-O-04 makes directives against `NONE` or `REQUIRED` content inapplicable, so a
-valid logical-removal tail always targets `DETACHABLE` content with an
-authenticated commitment. Target absence affects readiness, not this structural
-identity. Authorization, legal hold, quarantine, local deletion result,
-transport acknowledgement, time, quota and retry state are derived or excluded
-exactly as O-04/O-06a require and are not appended.
+by the validated target descriptor under that descriptor's future O-06b-2 suite
+when the target is content-bearing. O-04 makes directives against `NONE` or
+`REQUIRED` content inapplicable: such a directive remains a valid authenticated
+event that participates normally in references, causality, order and duplicate
+identity, and AP classifies it as inapplicable rather than K rejecting it here.
+The commitment-equality rule therefore binds only a directive whose validated
+target descriptor is content-bearing; O-06b-1 does not make target content class
+a framing-validity condition. Target absence affects readiness, not this
+structural identity. Authorization, legal hold, quarantine, local deletion
+result, transport acknowledgement, time, quota and retry state are derived or
+excluded exactly as O-04/O-06a require and are not appended.
 
 ## 6. Reference derivation
 
