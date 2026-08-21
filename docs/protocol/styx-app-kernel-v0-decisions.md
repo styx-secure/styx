@@ -14,6 +14,10 @@
   `docs/protocol/styx-app-kernel-v0-causal-falsification-report.md`.
 - **C0.2e payload-commitment analysis:**
   `docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md`.
+- **C0.2f payload-state falsification evidence:**
+  `docs/protocol/styx-app-kernel-v0-payload-state-falsification-report.md`.
+- **O-06a semantic transcript inventory:**
+  `docs/protocol/styx-app-kernel-v0-identifier-derivation-analysis.md`.
 - **Language:** English is canonical for external, language-neutral protocol
   review. Translations are optional and non-normative.
 - **Ratification:** every `DECIDED` entry below is proposed until the product
@@ -214,8 +218,21 @@ claim that current code conforms.
 - **Rejected alternatives:** `vectorClock.total` as primary order; sender text
   with local collation; comparator equality for distinct events.
 - **Security/privacy:** the tiebreak cannot be manipulated through unsigned
-  metadata. This rule does not decide the causal representation or application
-  conflict policy.
+  metadata, but an authorized author can grind otherwise valid signed inputs to
+  bias its own digest-derived replay position. Replay position MUST NOT by
+  itself confer authorization, priority, first-writer-wins truth or
+  irreversible-effect authority. Authenticated prefix state may authorize an
+  append-only logical-removal transition under AP policy, but physical
+  destruction remains gated by O-13 and never follows from replay position.
+  Because replay handoffs are prefix-scoped, grinding can change
+  whether a concurrent revocation, rotation or policy event is visible at the
+  acting event's own evaluation point. It can also move unavailable `REQUIRED`
+  content across concurrent peers and thereby change the reversible
+  whole-suffix deferral boundary. Later disclosure requires revision of
+  reversible AP state and never retroactively authorizes an irreversible
+  effect; later opening verification releases the readiness halt. This rule
+  does not decide the causal representation or application conflict policy and
+  does not provide fairness, unpredictability or availability.
 - **Residual/reopen condition:** the exact authenticated content identifier is
   `OPEN`; C0.3 cannot begin until it is defined.
 - **Human ratification:** pending final-HEAD approval by `maverde73`.
@@ -450,7 +467,8 @@ outcomes.
 - **Dependent artifact:** credential identifier, verification-key/algorithm
   binding, grant/state reference and negative vectors. O-01 defines concurrent
   and stale ordering; O-05/O-12 gate physical expiry; O-06 defines references;
-  O-07 defines initial authority; O-08 bounds resources; O-10 names failures.
+  O-07 defines initial authority; O-08 bounds resources; O-10 names failures;
+  O-14 owns the exact signature-suite registry and downgrade evidence.
 - **Residual/reopen condition:** reopen if O-01 cannot express safe
   rotation/revocation, a required profile cannot use context-local credentials,
   the `AP → K` split permits an authorization bypass, or an approved anonymous
@@ -487,9 +505,11 @@ outcomes.
   anonymity mechanism if exposed, logged or reused as a routing handle. A
   compromised RNG or external metadata mapping remains outside this rule.
 - **Dependent artifact:** the context tuple enters the genesis and application
-  object transcripts. O-06 chooses the exact genesis-reference semantics; O-07
-  completes genesis content. `SS`, `RS` and `TR` bind their own namespaces and
-  MUST NOT silently publish or substitute the application tuple.
+  object transcripts. O-06a selects the genesis reference as the separately
+  domain-separated event-reference-role derivation over the complete signed
+  genesis transcript; O-06b still chooses its exact bytes and O-07 completes
+  genesis content and authority. `SS`, `RS` and `TR` bind their own namespaces
+  and MUST NOT silently publish or substitute the application tuple.
 - **Residual/reopen condition:** reopen if O-06/O-07 cannot provide an
   unambiguous authenticated genesis binding, a supported runtime cannot provide
   the required random input, a supported discovery profile requires a public
@@ -617,6 +637,14 @@ outcomes.
   owns the distinct payload/content commitment. An AP idempotency key, TR
   routing identifier and RS storage key remain separate owned values and MUST
   NOT substitute for event identity.
+- **O-06a semantic inventory:**
+  `docs/protocol/styx-app-kernel-v0-identifier-derivation-analysis.md`
+  enumerates application-event and removal roles; assigns every known field an
+  `INCLUDE`, `DERIVE` or `EXCLUDE` disposition; fixes the abstract injective
+  framing obligations; selects the genesis reference as a genesis-domain event
+  reference; excludes physical time, session, transport and storage metadata
+  from K; and records the reference-grinding non-claim. It selects no primitive,
+  exact byte, width, tag, randomizer, tree geometry, registry value or vector.
 - **Rationale/evidence:** `ORDER-004`, `PRIV-01`, `PRIV-03` and `PRIV-04` show
   that identifiers and fork inputs cannot remain mutable conveniences. C0.2c
   establishes a non-circular semantic derivation and one purpose per identifier
@@ -627,18 +655,31 @@ outcomes.
 - **Security/privacy:** identifiers affect deduplication, replay, fork evidence,
   reference integrity and correlation. Event references stay inside protected
   application objects unless a later profile explicitly accepts disclosure.
-- **Missing evidence:** exact K-02 transcript bytes, digest algorithm registry,
-  output width and executable negative vectors. O-04 now fixes the one-way
-  descriptor-to-event-reference interaction without selecting bytes.
-- **Dependent artifact:** exact event-reference derivation and negative vectors.
-- **Smallest bounded follow-up:** specify and adversarially test the exact
-  non-circular event-reference and payload-commitment domains, bytes, suites and
-  registry.
+  An authorized author can grind its own reference position, so no AP policy
+  may infer final authority, priority or irreversible effects from K-06 replay
+  order alone. Authenticated prefix state may authorize append-only logical
+  removal under AP policy, but O-13 still gates physical destruction.
+  Prefix-scoped handoffs can expose different concurrent authority facts
+  at different replay positions, and grindable placement of unavailable
+  `REQUIRED` content can change the reversible whole-suffix deferral boundary;
+  AP must repair reversible state when later evidence or content becomes
+  available.
+- **Missing evidence:** O-06b exact K-02 transcript bytes, digest/commitment
+  registry, domain values, widths, randomizer and chunk construction; O-06c
+  executable negative evidence. O-14 separately owns the signature-suite
+  registry. O-08 owns measured profile maxima and O-10 owns stable error codes.
+- **Dependent artifact:** exact event/genesis-reference and payload/chunk
+  derivations, followed by bounded adversarial evidence.
+- **Smallest bounded follow-up:** O-06b selects one exact profile under a
+  security/crypto gate without creating vectors or implementation authority;
+  O-06c then adversarially tests framing injectivity, role/context separation,
+  non-circularity, chunk unlinkability, collision handling, grinding-to-handoff
+  interaction, reversible repair and bounded work.
 - **Residual/closure condition:** close only when semantically distinct valid
   events cannot share a reference under the selected registry and every exact
   field has one unambiguous derivation.
-- **Human ratification:** pending exact-final-HEAD acceptance under Issue #211
-  that the semantic roles are fixed while exact derivation remains open.
+- **Human ratification:** O-06a inventory pending exact-final-HEAD acceptance
+  under Issue #219; O-06 itself remains open after that acceptance.
 
 ### O-07 — Genesis and checkpoint evidence
 
@@ -655,8 +696,10 @@ outcomes.
   separation. Checkpoint acceptance can replace self-verification with trust in
   a producer, expose possession at a horizon, admit rollback/equivocation and
   become invalid under late forks or revocations.
-- **Missing evidence:** the outputs of O-01 through O-06; checkpoint
-  authentication, AP-authorized producer/threshold and acceptance rules;
+- **Missing evidence:** O-01 through O-05 provide decided inputs and O-06a now
+  selects a non-self-referential genesis-reference role, but O-06b/O-06c exact
+  derivation evidence is still required before genesis can close;
+  checkpoint authentication, AP-authorized producer/threshold and acceptance rules;
   anti-rollback/freshness, exact horizon, predecessor/equivocation, profile and
   suite-version binding, and late-admission recovery. No producer trust model is
   justified today.
@@ -845,6 +888,51 @@ outcomes.
 - **Human ratification:** pending under a separate approved decision that closes
   this record; Issue #215 only creates and constrains it.
 
+### O-14 — Signature-suite registry and credential algorithm binding
+
+- **Status:** `OPEN`.
+- **Decision owner:** `K` owns verification semantics and the closed algorithm
+  registry; `AP` owns which credential types and assurance profiles it admits.
+  This follows the O-02 split-obligation precedent and creates no aggregate
+  multi-owner rule: each layer alone owns its stated output.
+- **Question:** which exact signature algorithms, key encodings, registry
+  identifiers and downgrade rules instantiate the O-02 credential binding?
+- **Interim rule:** an application event includes the context-local credential
+  identifier and derives its verification key and algorithm identifier from
+  authenticated credential state. An author-supplied verification key or
+  algorithm selector MUST NOT override that state. Unknown, inconsistent or
+  unsupported algorithms fail closed.
+- **Rationale/evidence:** O-02 already binds one verification key and its
+  algorithm identifier to each credential but explicitly deferred the exact
+  registry. O-06a exposed that no prior open record owned this dependency even
+  though invalid-signature and cross-algorithm vectors are required before
+  C0.3.
+- **Rejected alternatives:** silently treating a language crypto library's
+  defaults as the registry; per-event algorithm negotiation; accepting the same
+  transcript under a second algorithm; letting session or Nostr signature
+  validity stand in for the application credential signature.
+- **Security/privacy:** algorithm confusion or downgrade can turn possession of
+  a different key type into apparent application authorship. Registry choices
+  may also add dependencies and side-channel/supply-chain surfaces.
+- **Missing evidence:** primary-source primitive/profile comparison, exact key
+  and signature encodings, supported-runtime evidence, malformed/cross-suite
+  negative cases, downgrade behavior and independent security review.
+- **Dependent artifact:** O-02 credential-record bytes, application-signature
+  verification and C0.3 invalid-signature/cross-suite expectations. O-06 owns
+  only the transcript slot/derivation boundary and MUST NOT absorb this choice.
+  The C0.2f report predates O-14 and therefore does not enumerate it; this
+  registry is the current authority for the expanded C0.3 blocker list without
+  changing that frozen report or its recorded result.
+- **Smallest bounded follow-up:** after O-06a, compare the minimum viable closed
+  signature profiles and their exact runtime/supply-chain evidence under a
+  separately approved security/crypto contract.
+- **Residual/closure condition:** close only when every supported credential has
+  one unambiguous verification algorithm and encoding, unknown/cross-suite
+  inputs fail closed, no silent negotiation/fallback exists and executable
+  negative evidence passes.
+- **Human ratification:** pending final-HEAD acceptance that this ownership gap
+  is explicit and remains open.
+
 ### D-01 — Deferred legacy hardening
 
 - **Status:** `DEFERRED`.
@@ -897,7 +985,8 @@ also be transcript-bound and locally evaluated under the application's policy.
 ## 6. Gate for C0.3 and exact next sequence
 
 **C0.3 verdict: `NO-GO`.** The C0.2f payload-state falsification gate required
-by O-04 has passed within its declared bounds, but O-06 through O-08 and O-10
+by O-04 has passed within its declared bounds, and O-06a has fixed the semantic
+transcript inventory without selecting bytes. O-06 through O-08, O-10 and O-14
 still contain choices required to derive normative bytes or adversarial
 expectations; O-07 explicitly includes the previously deferred checkpoint-
 authentication contract. O-12 is
@@ -916,15 +1005,17 @@ The smallest safe sequence is:
 3. retain and extend the bounded C0.2d causal-flow falsification model whenever
    later choices change its inputs; its current small-state run found no
    counterexample within bounds and does not replace formal proof;
-4. preserve and rerun the completed C0.2f gate when its inputs change, then
-   close exact identifier derivation, genesis/checkpoint evidence, cardinality
-   and error questions O-06 through O-10, plus O-12 for any time-bearing
-   profile, without product implementation authority; retain O-11 for the later
+4. preserve the O-06a semantic inventory, then select O-06b exact identifier
+   and commitment derivations and run O-06c bounded adversarial evidence;
+5. preserve and rerun the completed C0.2f gate whenever its inputs change, then
+   close genesis/checkpoint evidence, cardinality, error and signature-suite
+   questions O-07, O-08, O-10 and O-14, plus O-12 for any time-bearing profile,
+   without product implementation authority; retain O-11 for the later
    wire/storage decision;
-5. approve the exact Apache-2.0 path inventory for the future corpus;
-6. execute C0.3: specification-derived adversarial corpus plus a third
+6. approve the exact Apache-2.0 path inventory for the future corpus;
+7. execute C0.3: specification-derived adversarial corpus plus a third
    implementation written only from the specification;
-7. align JavaScript in C0.4; align or freeze the minimum Dart surface only if it
+8. align JavaScript in C0.4; align or freeze the minimum Dart surface only if it
    remains useful as independent evidence.
 
 O-13 does not block transcript-only C0.3, but no destruction-capable increment
