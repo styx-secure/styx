@@ -414,8 +414,8 @@ outcomes.
 - **Dependent artifact:** author sequence, direct predecessor, canonical parent
   frontier, derived event reference, causal/fork classifications and affected-
   suffix replay semantics. O-04/O-07 define checkpoint/genesis evidence; O-08
-  bounds resources; O-10 names outcomes; O-06 still selects the exact digest
-  registry/bytes.
+  bounds resources; O-10 names outcomes; O-06b-1 selects exact transcript and
+  reference-digest bytes, while O-06b-2 and O-06c complete O-06.
 - **Executable falsification evidence:** the bounded, implementation-independent
   C0.2d model and report in
   `docs/protocol/styx-app-kernel-v0-causal-falsification-report.md` find no
@@ -573,7 +573,7 @@ outcomes.
 - **Security/privacy:** descriptor-only history remains bounded and supports
   retained verification evidence. With a destroyed opening, the retained
   ledger alone is not intended to expose a practical equality/dictionary oracle
-  under the future O-06 suite assumptions. Length, type and commitment remain
+  under the future O-06b-2 suite assumptions. Length, type and commitment remain
   correlatable; randomizer reuse is an honest-producer obligation; authorized
   recipients and copies remain outside any erasure claim. A single withheld or
   lost `REQUIRED` opening can halt a context indefinitely. Rollback past a
@@ -584,8 +584,9 @@ outcomes.
   profile's `DETACHABLE` declaration satisfies its reconstruction contract.
   Authority-bearing data classified as `REQUIRED` has no authorized removal or
   destruction path in v0; closing O-13 alone does not change that rule.
-- **Dependent artifact:** O-06 selects exact domain tags, algorithms, widths and
-  transcript bytes and prevents cross-event leaf equality; O-07 owns the
+- **Dependent artifact:** O-06b-1 selects exact domain tags, reference digest,
+  descriptor widths and transcript framing; O-06b-2 must select the commitment
+  and chunk construction and prevent cross-event leaf equality; O-07 owns the
   suspended checkpoint authentication/acceptance/substitution contract; O-08
   sets resource and custody bounds; O-10 assigns rich local outcomes plus one
   opaque remote fetch result; O-11 chooses wire/storage/fetch encoding; O-13

@@ -68,8 +68,10 @@ Primary and repository evidence:
 - The Dart reference already declares `package:crypto`, whose
   [publisher documentation](https://pub.dev/packages/crypto) exposes SHA-256
   and chunked hashing. The dependency is not a production assurance claim; the
-  Dart line remains a reference oracle under ADR-0007 and must satisfy the later
-  reproducibility gate before conformance use.
+  Dart line remains a reference oracle under ADR-0007. No Dart dependency lock
+  or distribution-assurance gate for conformance use is defined by this
+  increment, so such use remains blocked rather than inferred from the declared
+  dependency range.
 
 SHA-384/SHA-512 would enlarge every causal reference and signed parent frontier
 without evidence that v0 needs the additional output width. SHA-3, BLAKE2 and
@@ -116,6 +118,13 @@ octets and short values are invalid. No representable integer ceiling,
 including either `u32` or `u64`, is an O-08 activation maximum. O-08 must select
 materially smaller enforceable limits, checked before allocation, hashing,
 signature work, graph traversal or fetch.
+
+A count over fixed-width `opaque32` elements determines the exact octet extent
+as `count * 32` after checked multiplication and therefore satisfies K-02's
+explicit-framing requirement. `u64` gives the non-wrapping author sequence a
+separate exhaustion boundary from every `u32` registry, count and framing
+field; O-08 still owns the supported event rate, lifetime and lower operational
+bounds. A supported O-08 envelope that could exhaust `u64` reopens this choice.
 
 Presence values are exactly `0x00` for absent and `0x01` for present; every
 other octet is invalid. A present value is followed by its complete field even
@@ -164,7 +173,10 @@ application_event_transcript = D_APP || body_length:u32 || body
 ```
 
 `body_length` is the exact octet length of `body`. Its O-08 active maximum must
-be checked before allocating or constructing `body`.
+be checked before allocating or constructing `body`. Independently of that
+smaller operational maximum, it must not exceed `2^32 - 21`, because the
+complete transcript adds 20 octets and must itself be representable by the
+`len32` used in section 6.
 
 ### 5.1 Common body
 
@@ -183,7 +195,7 @@ The total order is normative:
 | 9 | schema version | `u32`; zero is invalid |
 | 10 | AP transition block | `opaque_u32`; its canonical interior is fixed by fields 2, 3, 8 and 9 |
 | 11 | credential identifier | `opaque32`; context-local and non-secret |
-| 12 | author sequence | `u64`; sequence zero is permitted only for that credential's first event; increment never wraps |
+| 12 | author sequence | `u64`; sequence zero is permitted only for that credential's first event; each later value increments by exactly one and never wraps |
 | 13 | direct-predecessor presence | one exact presence octet |
 | 14 | direct predecessor | `opaque32` iff field 13 is `0x01`; omitted iff `0x00` |
 | 15 | causal-parent count and frontier | `opaque32_vector`; count is field 15's leading `u32` |
@@ -303,7 +315,8 @@ transcript. `P` is not a normative decoder and does not select O-11 wire/storage
 representation.
 
 1. Read exactly 16 octets and require `D_APP`; every other registered domain is
-   distinct at role-code octets 6–7, so cross-role equality is impossible.
+   distinct in the `role_code` field defined in section 4, so cross-role
+   equality is impossible.
 2. Read `body_length:u32`, isolate exactly that many body octets and require end
    of input. This makes the outer boundary unique.
 3. Read fields 1–17 in their single fixed order. Fixed-width fields consume one
@@ -363,6 +376,7 @@ encodings, exact registry, downgrade evidence and negative cases.
 This profile adds rejection sites but does not assign stable codes:
 
 - unknown protocol/domain/suite/object/role/class/shape/schema value;
+- event-type/schema inconsistency;
 - non-zero reserved domain octet;
 - invalid integer, range, length, count, presence or exact-end condition;
 - malformed, truncated, overlong or trailing block;
@@ -408,9 +422,11 @@ assess exact resolved artifacts rather than inherit this specification choice.
 Reopen O-06b-1 if the written inverse fails; an O-06c counterexample finds an
 alias; O-06b-2 cannot fit canonical suite interiors into the selected framed
 containers; O-07 needs a different outer genesis boundary; O-14 meets a section
-8 predicate; later O-08 evidence makes the profile infeasible; SHA-256 is
-withdrawn or materially weakened for this use; or a role/domain must be added,
-split or reinterpreted.
+8 predicate; a ratified O-02 credential construction or closed AP registry
+cannot fit the widths in section 5.1; later O-08 evidence makes the profile
+infeasible or could exhaust the `u64` author sequence; SHA-256 is withdrawn or
+materially weakened for this use; or a role/domain must be added, split or
+reinterpreted.
 
 ## 12. Required next increments and gate
 

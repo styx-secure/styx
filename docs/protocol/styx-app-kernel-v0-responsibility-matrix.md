@@ -316,9 +316,9 @@ Rejected alternatives are:
 Security consequence: a bypass at one layer cannot be legitimized by a success
 signal from another layer. Residual risk: payload commitment, genesis contents,
 bounds and errors remain open; O-06b-1 exact transcript/reference bytes still
-lack executable evidence, while the completed C0.2d topology and C0.2f payload-state models remain
-bounded rerun evidence rather than protocol implementation. This allocation
-alone is not executable protocol behavior.
+lack executable evidence, while the completed C0.2d topology and C0.2f
+payload-state models remain bounded rerun evidence rather than protocol
+implementation. This allocation alone is not executable protocol behavior.
 
 Reopen O-09 only if a future obligation cannot be assigned without violating
 the one-owner invariant, a new trust boundary requires a seventh normative
