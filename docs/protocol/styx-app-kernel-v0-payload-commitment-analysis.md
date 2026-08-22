@@ -203,14 +203,11 @@ A zero-length `REQUIRED` or `DETACHABLE` content value still has a commitment
 and opening. It is not `NONE`. Detachability is fixed when the event is signed;
 an unauthenticated storage flag, missing file or wire field cannot change it.
 
-Application-profile grant, revoke, rotate, policy, closure and future
-disposition events use the retention/control role and MUST be `NONE`-class with
-their bounded semantics authenticated in the event transcript. Their exact
-K-readable carriage is deliberately not selected here; C0.2j owns it with
-O-02/O-14 and O-07, and any new carriage outside the existing AP block reopens
-O-06b-1. Other content whose value affects a durable transition is `REQUIRED`
-unless it is already represented by bounded transcript fields. A profile may
-use `DETACHABLE` only when it specifies deterministic replay after removal.
+Authority grants, revocations, policy bounds, genesis inputs and any content
+whose value affects durable authorization or future deterministic state MUST be
+`REQUIRED` or represented directly as bounded transcript fields. A profile may
+use `DETACHABLE` only when it specifies replay after removal. If it cannot do
+so, that data class is `REQUIRED`.
 
 ### 5.3 Single and chunked commitments
 
@@ -302,7 +299,16 @@ authority, AP outcome, retention, time or delivery state. A root is
 `PENDING_OPENING`; an event pending only through causal descent is
 `PENDING_ANCESTOR`. `OPENING_MISSING`, `LENGTH_MISMATCH` and
 `COMMITMENT_MISMATCH` remain distinct local binding observations rather than
-stable O-10 wire codes.
+stable O-10 wire codes. These two pending outcomes refine the historical
+model-local `CONTENT_DEFERRED` readiness label for the C0.2i amended fold; O-10
+still owns the future stable legal-axis taxonomy and wire codes.
+
+For this amended profile, every grant, revoke, rotate, recovery, policy,
+closure and future disposition is a content-free control event: its
+`content_class` is `NONE` and its bounded semantics are authenticated in the
+event transcript. C0.2j/O-07 owns the exact K-readable carriage. The v2 model
+treats rotation/recovery as symbolic evidence only and does not use either to
+mint, rebind or resurrect a credential identifier.
 
 AP applies exactly the non-pending K-valid events in their unchanged canonical
 relative order. Therefore a causally independent event applies even when it

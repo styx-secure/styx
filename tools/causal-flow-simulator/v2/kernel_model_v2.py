@@ -55,6 +55,31 @@ class OpeningObservation(str, Enum):
     VERIFIED = "VERIFIED"
 
 
+class Availability(str, Enum):
+    ABSENT = "ABSENT"
+    PARTIAL = "PARTIAL"
+    PRESENT = "PRESENT"
+
+
+class BindingObservation(str, Enum):
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+    NOT_CHECKED = "NOT_CHECKED"
+    VERIFIED = "VERIFIED"
+    OPENING_MISSING = "OPENING_MISSING"
+    LENGTH_MISMATCH = "LENGTH_MISMATCH"
+    COMMITMENT_MISMATCH = "COMMITMENT_MISMATCH"
+
+
+class AxisPresentation(str, Enum):
+    NO_CONTENT = "NO_CONTENT"
+    UNEXPECTED_CONTENT_REJECTED = "UNEXPECTED_CONTENT_REJECTED"
+    PENDING_OPENING = "PENDING_OPENING"
+    ACTIVE_VERIFIED = "ACTIVE_VERIFIED"
+    ACTIVE_UNAVAILABLE = "ACTIVE_UNAVAILABLE"
+    ACTIVE_UNVERIFIABLE = "ACTIVE_UNVERIFIABLE"
+    ACTIVE_SUBSTITUTED_REJECTED = "ACTIVE_SUBSTITUTED_REJECTED"
+
+
 class Outcome(str, Enum):
     APPLIED = "APPLIED"
     PENDING_OPENING = "PENDING_OPENING"
@@ -66,9 +91,11 @@ class Outcome(str, Enum):
         "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED"
     )
     STRUCTURAL_REJECTION = "STRUCTURAL_REJECTION"
+    INVALID = "INVALID"
     DEFERRED = "DEFERRED"
     STALE_EVIDENCE = "STALE_EVIDENCE"
     REMOVAL_INAPPLICABLE = "REMOVAL_INAPPLICABLE"
+    ALREADY_REMOVED = "ALREADY_REMOVED"
 
 
 class PresentationState(str, Enum):
@@ -89,6 +116,72 @@ CONTROL_KINDS = frozenset(
         EventKind.REMOVE,
     }
 )
+
+
+def classify_payload_axis(
+    content_class: ContentClass,
+    availability: Availability,
+    binding: BindingObservation,
+) -> AxisPresentation:
+    """Classify the closed C0.2f-05 local observation product.
+
+    This is deliberately separate from the application fold: availability and
+    presentation are replica-local observations, while only an unverified
+    REQUIRED opening can halt application replay in C0.2i.
+    """
+
+    if not isinstance(content_class, ContentClass):
+        raise ModelInputError("ILLEGAL_AXIS_COMBINATION", "content class is invalid")
+    if not isinstance(availability, Availability) or not isinstance(
+        binding, BindingObservation
+    ):
+        raise ModelInputError(
+            "ILLEGAL_AXIS_COMBINATION", "payload observation axis type is invalid"
+        )
+
+    if content_class is ContentClass.NONE:
+        if binding is not BindingObservation.NOT_APPLICABLE or availability not in (
+            Availability.ABSENT,
+            Availability.PRESENT,
+        ):
+            raise ModelInputError(
+                "ILLEGAL_AXIS_COMBINATION",
+                "NONE event has impossible payload observation",
+            )
+        return (
+            AxisPresentation.NO_CONTENT
+            if availability is Availability.ABSENT
+            else AxisPresentation.UNEXPECTED_CONTENT_REJECTED
+        )
+
+    legal = {
+        Availability.ABSENT: {BindingObservation.NOT_CHECKED},
+        Availability.PARTIAL: {BindingObservation.NOT_CHECKED},
+        Availability.PRESENT: {
+            BindingObservation.NOT_CHECKED,
+            BindingObservation.VERIFIED,
+            BindingObservation.OPENING_MISSING,
+            BindingObservation.LENGTH_MISMATCH,
+            BindingObservation.COMMITMENT_MISMATCH,
+        },
+    }
+    if binding not in legal[availability]:
+        raise ModelInputError(
+            "ILLEGAL_AXIS_COMBINATION",
+            "content-bearing event has impossible payload observation",
+        )
+    if content_class is ContentClass.REQUIRED and binding is not BindingObservation.VERIFIED:
+        return AxisPresentation.PENDING_OPENING
+    if binding is BindingObservation.VERIFIED:
+        return AxisPresentation.ACTIVE_VERIFIED
+    if availability in (Availability.ABSENT, Availability.PARTIAL):
+        return AxisPresentation.ACTIVE_UNAVAILABLE
+    if binding in (
+        BindingObservation.LENGTH_MISMATCH,
+        BindingObservation.COMMITMENT_MISMATCH,
+    ):
+        return AxisPresentation.ACTIVE_SUBSTITUTED_REJECTED
+    return AxisPresentation.ACTIVE_UNVERIFIABLE
 
 
 @dataclass(frozen=True)
@@ -145,7 +238,8 @@ class Scenario:
     opening_observations: Mapping[str, OpeningObservation] = field(
         default_factory=dict
     )
-    checkpoint_only_dependencies: tuple[str, ...] = ()
+    checkpoint_evidence: tuple[str, ...] = ()
+    replay_dependencies: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -153,11 +247,31 @@ class GraphView:
     admitted: tuple[str, ...]
     deferred: tuple[str, ...]
     structurally_rejected: tuple[str, ...]
+    invalid: tuple[str, ...]
     canonical_order: tuple[str, ...]
     forks: frozenset[str]
     duplicate_observations: int
     collisions: frozenset[str]
     ancestors: Mapping[str, frozenset[str]]
+
+    def semantic_view(self) -> tuple[object, ...]:
+        """Set-relative graph facts; delivery diagnostics are excluded."""
+
+        return (
+            self.admitted,
+            self.deferred,
+            self.structurally_rejected,
+            self.invalid,
+            self.canonical_order,
+            self.forks,
+            self.collisions,
+            tuple(
+                sorted(
+                    (reference, tuple(sorted(ancestors)))
+                    for reference, ancestors in self.ancestors.items()
+                )
+            ),
+        )
 
 
 @dataclass(frozen=True)
@@ -166,6 +280,14 @@ class WorkMetrics:
     pending_descendants: int
     earliest_replay_boundary: int | None
     replayed_event_work: int
+
+
+FoldSnapshot = tuple[
+    Mapping[str, Outcome],
+    tuple[str, ...],
+    frozenset[str],
+    frozenset[str],
+]
 
 
 @dataclass(frozen=True)
@@ -179,12 +301,16 @@ class Projection:
     authorized_credentials: frozenset[str]
     removed_targets: frozenset[str]
     metrics: WorkMetrics
+    replay_prefix_states: tuple[FoldSnapshot, ...] = field(
+        repr=False,
+        compare=False,
+    )
 
     def semantic_view(self) -> tuple[object, ...]:
         """Fields whose equality is asserted by replay/convergence checks."""
 
         return (
-            self.graph,
+            self.graph.semantic_view(),
             tuple(
                 sorted(
                     (key, value.value)
@@ -212,7 +338,13 @@ CURRENT_SYMBOLIC_MAX_CHUNKS = 8
 
 
 def _control_structure_invalid(event: Event) -> bool:
-    return (
+    missing_subject = event.kind in {
+        EventKind.GRANT,
+        EventKind.REVOKE,
+        EventKind.ROTATE,
+        EventKind.RECOVER,
+    } and not event.subject_credential
+    return missing_subject or (
         event.kind in CONTROL_KINDS
         and (
             event.event_role is not EventRole.CONTROL
@@ -342,12 +474,21 @@ def derive_graph(scenario: Scenario) -> tuple[GraphView, Mapping[str, Event]]:
         _bounded_text(credential, "genesis credential identifier")
     if len(scenario.opening_observations) > MAX_EVENTS:
         raise ModelInputError("MODEL_BOUND_EXCEEDED", "opening observation count")
-    for reference in scenario.opening_observations:
+    for reference, observation in scenario.opening_observations.items():
         _bounded_text(reference, "opening event reference")
-    if len(scenario.checkpoint_only_dependencies) > MAX_EVENTS:
-        raise ModelInputError("MODEL_BOUND_EXCEEDED", "checkpoint dependency count")
-    for reference in scenario.checkpoint_only_dependencies:
-        _bounded_text(reference, "checkpoint dependency reference")
+        if not isinstance(observation, OpeningObservation):
+            raise ModelInputError(
+                "ILLEGAL_AXIS_COMBINATION",
+                "opening observation type is invalid",
+            )
+    if len(scenario.checkpoint_evidence) > MAX_EVENTS:
+        raise ModelInputError("MODEL_BOUND_EXCEEDED", "checkpoint evidence count")
+    for reference in scenario.checkpoint_evidence:
+        _bounded_text(reference, "checkpoint evidence reference")
+    if len(scenario.replay_dependencies) > MAX_EVENTS:
+        raise ModelInputError("MODEL_BOUND_EXCEEDED", "replay dependency count")
+    for reference in scenario.replay_dependencies:
+        _bounded_text(reference, "replay dependency reference")
     unique, duplicates = _deduplicate(scenario.events)
 
     structurally_rejected: set[str] = set()
@@ -371,13 +512,20 @@ def derive_graph(scenario: Scenario) -> tuple[GraphView, Mapping[str, Event]]:
             structurally_rejected.add(event.reference)
 
     admitted: dict[str, Event] = {}
+    invalid: set[str] = set()
     deferred = set(unique) - structurally_rejected
     progress = True
     while progress:
         progress = False
         for reference in sorted(tuple(deferred)):
             event = unique[reference]
-            if any(parent not in admitted for parent in _dependencies(event)):
+            dependencies = _dependencies(event)
+            if any(parent in structurally_rejected or parent in invalid for parent in dependencies):
+                invalid.add(reference)
+                deferred.remove(reference)
+                progress = True
+                continue
+            if any(parent not in admitted for parent in dependencies):
                 continue
             if event.direct_predecessor is not None:
                 predecessor = admitted[event.direct_predecessor]
@@ -391,21 +539,28 @@ def derive_graph(scenario: Scenario) -> tuple[GraphView, Mapping[str, Event]]:
                     continue
             candidate = dict(admitted)
             candidate[reference] = event
-            dependencies = _dependencies(event)
             redundant = False
-            for left in dependencies:
-                for right in dependencies:
+            for left in event.parents:
+                for right in event.parents:
                     if left != right and left in _ancestors_of(right, candidate):
                         redundant = True
                         break
                 if redundant:
                     break
+            if event.direct_predecessor is not None and any(
+                parent in _ancestors_of(event.direct_predecessor, candidate)
+                for parent in event.parents
+            ):
+                redundant = True
             if redundant:
                 structurally_rejected.add(reference)
                 deferred.remove(reference)
                 progress = True
                 continue
             if not _binding_is_in_ancestry(event, candidate, genesis):
+                invalid.add(reference)
+                deferred.remove(reference)
+                progress = True
                 continue
             admitted[reference] = event
             deferred.remove(reference)
@@ -426,6 +581,20 @@ def derive_graph(scenario: Scenario) -> tuple[GraphView, Mapping[str, Event]]:
     }
     structurally_rejected.update(cyclic)
     deferred.difference_update(cyclic)
+
+    # A present but invalid/rejected dependency is terminal K-invalidity.  Only
+    # genuinely absent transcript ancestry remains retriable DEFERRED state.
+    progress = True
+    while progress:
+        progress = False
+        for reference in sorted(tuple(deferred)):
+            if any(
+                parent in structurally_rejected or parent in invalid
+                for parent in _dependencies(unique[reference])
+            ):
+                invalid.add(reference)
+                deferred.remove(reference)
+                progress = True
 
     # Parent completeness and symbolic signature ancestry are both K deferral.
     ancestors = {
@@ -465,6 +634,7 @@ def derive_graph(scenario: Scenario) -> tuple[GraphView, Mapping[str, Event]]:
             admitted=tuple(sorted(admitted)),
             deferred=tuple(sorted(deferred)),
             structurally_rejected=tuple(sorted(structurally_rejected)),
+            invalid=tuple(sorted(invalid)),
             canonical_order=order,
             forks=forks,
             duplicate_observations=duplicates,
@@ -518,6 +688,7 @@ def _fold_application(
             for reference in graph.structurally_rejected
         }
     )
+    outcomes.update({reference: Outcome.INVALID for reference in graph.invalid})
     if stale:
         outcomes.update(
             {reference: Outcome.STALE_EVIDENCE for reference in graph.admitted}
@@ -525,7 +696,7 @@ def _fold_application(
         return outcomes, (), frozenset(genesis), frozenset()
 
     authorized = set(genesis)
-    revoked: dict[str, str] = {}
+    revoked: dict[str, set[str]] = {}
     removed: set[str] = set()
     applied: list[str] = []
 
@@ -540,8 +711,8 @@ def _fold_application(
         if reference in graph.forks:
             outcomes[reference] = Outcome.FORK_EVIDENCE
             continue
-        revocation = revoked.get(event.credential_id)
-        if revocation and revocation in graph.ancestors[reference]:
+        revocations = revoked.get(event.credential_id, set())
+        if any(revocation in graph.ancestors[reference] for revocation in revocations):
             outcomes[reference] = Outcome.POST_REVOCATION
             continue
 
@@ -560,12 +731,12 @@ def _fold_application(
                 outcomes[reference] = Outcome.STRUCTURAL_REJECTION
                 continue
             authorized.discard(event.subject_credential)
-            revoked[event.subject_credential] = reference
+            revoked.setdefault(event.subject_credential, set()).add(reference)
         elif event.kind in (EventKind.ROTATE, EventKind.RECOVER):
-            if not event.subject_credential:
-                outcomes[reference] = Outcome.STRUCTURAL_REJECTION
-                continue
-            authorized.add(event.subject_credential)
+            # C0.2i models these as authorized control evidence only.  It does
+            # not let them resurrect a revoked identifier; C0.2j owns exact
+            # credential succession and grant carriage.
+            pass
         elif event.kind is EventKind.REMOVE:
             target = events.get(event.target_reference or "")
             if (
@@ -575,6 +746,85 @@ def _fold_application(
                 or (event.target_commitment and event.target_commitment != target.commitment)
             ):
                 outcomes[reference] = Outcome.REMOVAL_INAPPLICABLE
+                continue
+            if target.reference in removed:
+                outcomes[reference] = Outcome.ALREADY_REMOVED
+                continue
+            removed.add(target.reference)
+
+        outcomes[reference] = Outcome.APPLIED
+        applied.append(reference)
+
+    return outcomes, tuple(applied), frozenset(authorized), frozenset(removed)
+
+
+def _fold_application_from_state(
+    graph: GraphView,
+    events: Mapping[str, Event],
+    pending_roots: frozenset[str],
+    pending: frozenset[str],
+    start_index: int,
+    prior_outcomes: Mapping[str, Outcome],
+    prior_applied: Sequence[str],
+    prior_authorized: Iterable[str],
+    prior_removed: Iterable[str],
+) -> tuple[dict[str, Outcome], tuple[str, ...], frozenset[str], frozenset[str]]:
+    """Continue AP replay from an independently reconstructed prefix state."""
+
+    outcomes = dict(prior_outcomes)
+    applied = list(prior_applied)
+    authorized = set(prior_authorized)
+    removed = set(prior_removed)
+    revoked: dict[str, set[str]] = {}
+    for reference in prior_applied:
+        event = events[reference]
+        if event.kind is EventKind.REVOKE and event.subject_credential:
+            revoked.setdefault(event.subject_credential, set()).add(reference)
+
+    for reference in graph.canonical_order[start_index:]:
+        event = events[reference]
+        if reference in pending_roots:
+            outcomes[reference] = Outcome.PENDING_OPENING
+            continue
+        if reference in pending:
+            outcomes[reference] = Outcome.PENDING_ANCESTOR
+            continue
+        if reference in graph.forks:
+            outcomes[reference] = Outcome.FORK_EVIDENCE
+            continue
+        if any(
+            revocation in graph.ancestors[reference]
+            for revocation in revoked.get(event.credential_id, set())
+        ):
+            outcomes[reference] = Outcome.POST_REVOCATION
+            continue
+        if event.credential_id not in authorized:
+            outcomes[reference] = Outcome.AUTHENTIC_BUT_UNAUTHORIZED
+            continue
+
+        if event.kind is EventKind.GRANT:
+            authorized.add(event.subject_credential or "")
+        elif event.kind is EventKind.REVOKE:
+            subject = event.subject_credential or ""
+            authorized.discard(subject)
+            revoked.setdefault(subject, set()).add(reference)
+        elif event.kind in (EventKind.ROTATE, EventKind.RECOVER):
+            pass
+        elif event.kind is EventKind.REMOVE:
+            target = events.get(event.target_reference or "")
+            if (
+                target is None
+                or target.content_class is not ContentClass.DETACHABLE
+                or target.reference not in graph.ancestors[reference]
+                or (
+                    event.target_commitment
+                    and event.target_commitment != target.commitment
+                )
+            ):
+                outcomes[reference] = Outcome.REMOVAL_INAPPLICABLE
+                continue
+            if target.reference in removed:
+                outcomes[reference] = Outcome.ALREADY_REMOVED
                 continue
             removed.add(target.reference)
 
@@ -594,15 +844,46 @@ def project(scenario: Scenario) -> Projection:
         for reference in graph.admitted
         if events[reference].content_class is ContentClass.REQUIRED
     }
-    stale = bool(scenario.checkpoint_only_dependencies)
-    outcomes, applied, authorized, removed = _fold_application(
-        graph,
-        events,
-        roots,
-        pending,
-        scenario.genesis_authority,
-        stale,
+    stale = bool(
+        set(scenario.checkpoint_evidence) & set(scenario.replay_dependencies)
     )
+    replay_prefix_states: tuple[FoldSnapshot, ...]
+    if stale:
+        outcomes, applied, authorized, removed = _fold_application(
+            graph,
+            events,
+            roots,
+            pending,
+            scenario.genesis_authority,
+            True,
+        )
+        replay_prefix_states = ()
+    else:
+        cached_prefixes: list[FoldSnapshot] = []
+        for boundary in range(len(graph.canonical_order) + 1):
+            prefix_graph = GraphView(
+                admitted=graph.admitted,
+                deferred=graph.deferred,
+                structurally_rejected=graph.structurally_rejected,
+                invalid=graph.invalid,
+                canonical_order=graph.canonical_order[:boundary],
+                forks=graph.forks,
+                duplicate_observations=graph.duplicate_observations,
+                collisions=graph.collisions,
+                ancestors=graph.ancestors,
+            )
+            cached_prefixes.append(
+                _fold_application(
+                    prefix_graph,
+                    events,
+                    roots,
+                    pending,
+                    scenario.genesis_authority,
+                    False,
+                )
+            )
+        replay_prefix_states = tuple(cached_prefixes)
+        outcomes, applied, authorized, removed = replay_prefix_states[-1]
     first = min(
         (graph.canonical_order.index(reference) for reference in pending),
         default=None,
@@ -622,6 +903,7 @@ def project(scenario: Scenario) -> Projection:
             earliest_replay_boundary=first,
             replayed_event_work=0,
         ),
+        replay_prefix_states=replay_prefix_states,
     )
 
 
@@ -636,10 +918,27 @@ def incremental_replay(
     separate set-relative full replay input.
     """
 
-    if tuple(event.transcript_identity() for event in prior.events) != tuple(
-        event.transcript_identity() for event in updated.events
-    ):
+    prior_unique, _ = _deduplicate(prior.events)
+    updated_unique, _ = _deduplicate(updated.events)
+    if {
+        reference: event.transcript_identity()
+        for reference, event in prior_unique.items()
+    } != {
+        reference: event.transcript_identity()
+        for reference, event in updated_unique.items()
+    }:
         raise ModelInputError("INCREMENTAL_INPUT_MISMATCH", "transcript set changed")
+    if (
+        prior.context_identifier != updated.context_identifier
+        or frozenset(prior.genesis_authority) != frozenset(updated.genesis_authority)
+        or frozenset(prior.checkpoint_evidence)
+        != frozenset(updated.checkpoint_evidence)
+        or frozenset(prior.replay_dependencies)
+        != frozenset(updated.replay_dependencies)
+    ):
+        raise ModelInputError(
+            "INCREMENTAL_INPUT_MISMATCH", "non-opening projection input changed"
+        )
     before_verified = {
         reference
         for reference, observation in prior.opening_observations.items()
@@ -653,29 +952,88 @@ def incremental_replay(
     if not before_verified <= after_verified:
         raise ModelInputError("NON_MONOTONE_OPENING_SET", "verified opening removed")
 
-    before = project(prior)
-    after = project(updated)
-    released = before.pending - after.pending
+    graph, events = derive_graph(updated)
+    _, prior_pending = _pending_sets(
+        graph, events, prior.opening_observations
+    )
+    updated_roots, updated_pending = _pending_sets(
+        graph, events, updated.opening_observations
+    )
+    released = prior_pending - updated_pending
     earliest = min(
-        (after.graph.canonical_order.index(reference) for reference in released),
+        (graph.canonical_order.index(reference) for reference in released),
         default=None,
     )
-    work = 0 if earliest is None else len(after.graph.canonical_order) - earliest
+    stale = bool(set(updated.checkpoint_evidence) & set(updated.replay_dependencies))
+
+    # Consume the prefix state cached by the prior full projection, then execute
+    # only the updated suffix.  The fresh oracle used by the scenario suite is
+    # ``project(updated)`` and no semantic field below is copied from it.
+    boundary = len(graph.canonical_order) if earliest is None else earliest
+    if stale:
+        outcomes, applied, authorized, removed = _fold_application(
+            graph,
+            events,
+            updated_roots,
+            updated_pending,
+            updated.genesis_authority,
+            True,
+        )
+    else:
+        prior_projection = project(prior)
+        if not prior_projection.replay_prefix_states:
+            raise ModelInputError(
+                "INCREMENTAL_INPUT_MISMATCH",
+                "prior projection has no reusable prefix state",
+            )
+        (
+            prefix_outcomes,
+            prefix_applied,
+            prefix_authorized,
+            prefix_removed,
+        ) = prior_projection.replay_prefix_states[boundary]
+        if boundary == len(graph.canonical_order):
+            outcomes = prefix_outcomes
+            applied = prefix_applied
+            authorized = prefix_authorized
+            removed = prefix_removed
+        else:
+            outcomes, applied, authorized, removed = _fold_application_from_state(
+                graph,
+                events,
+                updated_roots,
+                updated_pending,
+                boundary,
+                prefix_outcomes,
+                prefix_applied,
+                prefix_authorized,
+                prefix_removed,
+            )
+
+    binding_observations = {
+        reference: updated.opening_observations.get(
+            reference, OpeningObservation.OPENING_MISSING
+        )
+        for reference in graph.admitted
+        if events[reference].content_class is ContentClass.REQUIRED
+    }
+    work = 0 if earliest is None else len(graph.canonical_order) - earliest
     return Projection(
-        graph=after.graph,
-        binding_observations=after.binding_observations,
-        pending_roots=after.pending_roots,
-        pending=after.pending,
-        outcomes=after.outcomes,
-        applied_order=after.applied_order,
-        authorized_credentials=after.authorized_credentials,
-        removed_targets=after.removed_targets,
+        graph=graph,
+        binding_observations=binding_observations,
+        pending_roots=updated_roots,
+        pending=updated_pending,
+        outcomes=outcomes,
+        applied_order=applied,
+        authorized_credentials=authorized,
+        removed_targets=removed,
         metrics=WorkMetrics(
-            pending_roots=len(after.pending_roots),
-            pending_descendants=len(after.pending - after.pending_roots),
+            pending_roots=len(updated_roots),
+            pending_descendants=len(updated_pending - updated_roots),
             earliest_replay_boundary=earliest,
             replayed_event_work=work,
         ),
+        replay_prefix_states=(),
     )
 
 

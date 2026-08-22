@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import replace
+from itertools import product
 from typing import Callable
 
 from kernel_model_v2 import (
+    Availability,
+    AxisPresentation,
+    BindingObservation,
     ContentClass,
     Event,
     EventKind,
@@ -27,6 +31,7 @@ from kernel_model_v2 import (
     derive_graph,
     current_profile_symbolic_commitment,
     current_symbolic_geometry_is_legal,
+    classify_payload_axis,
     frontier_is_producible,
     incremental_replay,
     project,
@@ -57,6 +62,11 @@ C0_2D_FAMILIES = frozenset(
         "resource-bound",
         "rollback-limit",
         "stale-parent",
+        "incremental-full-equivalence",
+        "exhaustive-incremental-replay",
+        "checkpoint-proof",
+        "revocation-race",
+        "ownership-boundary",
     }
 )
 
@@ -111,6 +121,11 @@ class Suite:
         self.max_pending_descendants = 0
         self.max_replayed_work = 0
         self.earliest_replay_boundary: int | None = None
+
+    def evaluate(self, scenario: Scenario):
+        projection = project(scenario)
+        self.observe(projection)
+        return projection
 
     def observe(self, projection) -> None:
         self.max_pending_roots = max(
@@ -230,13 +245,22 @@ def _scenario(
     genesis: tuple[str, ...] = ("admin",),
     context: str = "ctx",
     checkpoint_only: tuple[str, ...] = (),
+    checkpoint_evidence: tuple[str, ...] | None = None,
+    replay_dependencies: tuple[str, ...] | None = None,
 ) -> Scenario:
     return Scenario(
         events=events,
         genesis_authority=genesis,
         context_identifier=context,
         opening_observations=openings or {},
-        checkpoint_only_dependencies=checkpoint_only,
+        checkpoint_evidence=(
+            checkpoint_only if checkpoint_evidence is None else checkpoint_evidence
+        ),
+        replay_dependencies=(
+            checkpoint_only
+            if replay_dependencies is None
+            else replay_dependencies
+        ),
     )
 
 
@@ -245,12 +269,12 @@ def _exercise_causal_core(suite: Suite) -> None:
     child = event("c", 1, predecessor="a")
     side = event("b", 0, credential="peer")
     base = _scenario((root, child, side), genesis=("admin", "peer"))
-    expected = project(base)
+    expected = suite.evaluate(base)
     suite.observe(expected)
     orders = delivery_orders(base.events)
     suite.explored_traces += len(orders)
     for index, order in enumerate(orders):
-        actual = project(replace(base, events=order))
+        actual = suite.evaluate(replace(base, events=order))
         suite.check(
             f"c02d-delivery-{index}",
             actual.semantic_view() == expected.semantic_view(),
@@ -259,7 +283,7 @@ def _exercise_causal_core(suite: Suite) -> None:
             trace=tuple(item.reference for item in order),
         )
 
-    duplicate = project(replace(base, events=(root, root, child, side)))
+    duplicate = suite.evaluate(replace(base, events=(root, root, child, side)))
     suite.check(
         "c02d-duplicate",
         duplicate.graph.duplicate_observations == 1
@@ -267,7 +291,16 @@ def _exercise_causal_core(suite: Suite) -> None:
         family="duplicate-replay",
         detail="byte-identical observations collapse to one graph node",
     )
-    missing = project(_scenario((event("orphan", 1, predecessor="absent"),)))
+    suite.expect_error(
+        "c02d-reference-collision",
+        "REFERENCE_COLLISION_UNSUPPORTED",
+        lambda: suite.evaluate(
+            _scenario((root, replace(root, descriptor="different-descriptor")))
+        ),
+        family="duplicate-replay",
+        detail="one reference cannot identify two non-identical transcripts",
+    )
+    missing = suite.evaluate(_scenario((event("orphan", 1, predecessor="absent"),)))
     suite.check(
         "c02d-missing-parent",
         missing.graph.deferred == ("orphan",)
@@ -276,7 +309,7 @@ def _exercise_causal_core(suite: Suite) -> None:
         detail="transcript-missing K deferral is explicit",
     )
 
-    gap = project(_scenario((event("gap-root", 0), event(
+    gap = suite.evaluate(_scenario((event("gap-root", 0), event(
         "gap", 2, predecessor="gap-root"
     ))))
     suite.check(
@@ -286,7 +319,7 @@ def _exercise_causal_core(suite: Suite) -> None:
         detail="a direct predecessor must have the same credential and sequence n-1",
     )
 
-    reversed_delivery = project(replace(base, events=(child, side, root)))
+    reversed_delivery = suite.evaluate(replace(base, events=(child, side, root)))
     suite.check(
         "c02d-child-before-parent",
         reversed_delivery.semantic_view() == expected.semantic_view(),
@@ -294,7 +327,7 @@ def _exercise_causal_core(suite: Suite) -> None:
         detail="delivery before a direct predecessor cannot change the set-relative result",
     )
 
-    foreign = project(_scenario((event("foreign", 0, context="other"),)))
+    foreign = suite.evaluate(_scenario((event("foreign", 0, context="other"),)))
     suite.check(
         "c02d-cross-context",
         foreign.outcomes["foreign"] is Outcome.STRUCTURAL_REJECTION
@@ -305,7 +338,7 @@ def _exercise_causal_core(suite: Suite) -> None:
 
     cycle_a = event("cycle-a", 0, credential="admin", parents=("cycle-b",))
     cycle_b = event("cycle-b", 0, credential="peer", parents=("cycle-a",))
-    cycle = project(_scenario((cycle_a, cycle_b), genesis=("admin", "peer")))
+    cycle = suite.evaluate(_scenario((cycle_a, cycle_b), genesis=("admin", "peer")))
     suite.check(
         "c02d-cycle-defense",
         set(cycle.graph.structurally_rejected) == {"cycle-a", "cycle-b"}
@@ -314,8 +347,8 @@ def _exercise_causal_core(suite: Suite) -> None:
         detail="a closed dependency cycle is rejected rather than ordered",
     )
 
-    prefix = project(_scenario((root,)))
-    extended = project(base)
+    prefix = suite.evaluate(_scenario((root,)))
+    extended = suite.evaluate(base)
     suite.check(
         "c02d-late-exact-prefix",
         prefix.applied_order == ("a",)
@@ -326,7 +359,7 @@ def _exercise_causal_core(suite: Suite) -> None:
 
     fork_left = event("fork-left", 0)
     fork_right = event("fork-right", 0)
-    late_fork = project(_scenario((fork_left, fork_right)))
+    late_fork = suite.evaluate(_scenario((fork_left, fork_right)))
     suite.check(
         "c02d-late-fork",
         late_fork.graph.forks == {"fork-left", "fork-right"}
@@ -337,8 +370,8 @@ def _exercise_causal_core(suite: Suite) -> None:
 
     high = event("z-high", 0)
     low = event("a-low", 0, credential="peer")
-    high_only = project(_scenario((high,)))
-    with_low = project(_scenario((high, low), genesis=("admin", "peer")))
+    high_only = suite.evaluate(_scenario((high,)))
+    with_low = suite.evaluate(_scenario((high, low), genesis=("admin", "peer")))
     suite.check(
         "c02d-late-lower-reference",
         high_only.applied_order == ("z-high",)
@@ -350,7 +383,7 @@ def _exercise_causal_core(suite: Suite) -> None:
     observed = event("observed", 0, credential="peer")
     claimed_child = event("claimed-child", 0, parents=("observed",))
     omitted = replace(claimed_child, reference="omitted", parents=())
-    omission = project(
+    omission = suite.evaluate(
         _scenario((observed, claimed_child, omitted), genesis=("admin", "peer"))
     )
     suite.check(
@@ -370,7 +403,7 @@ def _exercise_causal_core(suite: Suite) -> None:
         detail="causal edges precede the reference tiebreak used only among ready events",
     )
 
-    duplicate_parents = project(
+    duplicate_parents = suite.evaluate(
         _scenario((event("p", 0, credential="peer"), event(
             "bad-parents", 0, parents=("p", "p")
         )), genesis=("admin", "peer"))
@@ -393,13 +426,13 @@ def _exercise_causal_core(suite: Suite) -> None:
     suite.expect_error(
         "c02d-resource-bound",
         "MODEL_BOUND_EXCEEDED",
-        lambda: project(_scenario(tuple(event(f"bound-{i}", 0) for i in range(MAX_EVENTS + 1)))),
+        lambda: suite.evaluate(_scenario(tuple(event(f"bound-{i}", 0) for i in range(MAX_EVENTS + 1)))),
         family="resource-bound",
         detail="event-set inflation fails before graph exploration",
         obligation="C0.2f-16",
     )
 
-    rolled_back = project(_scenario((root,)))
+    rolled_back = suite.evaluate(_scenario((root,)))
     suite.check(
         "c02d-rollback-limit",
         rolled_back.applied_order == ("a",)
@@ -416,7 +449,7 @@ def _exercise_causal_core(suite: Suite) -> None:
         credential="peer",
         parents=("stale-child", "stale-root"),
     )
-    stale_result = project(
+    stale_result = suite.evaluate(
         _scenario((stale_root, stale_child, stale), genesis=("admin", "peer"))
     )
     suite.check(
@@ -426,13 +459,73 @@ def _exercise_causal_core(suite: Suite) -> None:
         detail="a frontier containing an ancestor of another frontier member is rejected",
     )
 
+    # The direct predecessor is a separate author-chain edge.  A causal parent
+    # may descend from it; only a parent already covered by the predecessor is
+    # redundant.  This is the asymmetric O-01 maximal-frontier rule.
+    admin_zero = event("frontier-a0", 0)
+    peer_zero = event(
+        "frontier-p0", 0, credential="peer", parents=("frontier-a0",)
+    )
+    valid_frontier = event(
+        "frontier-a1",
+        1,
+        predecessor="frontier-a0",
+        parents=("frontier-p0",),
+    )
+    valid_frontier_result = suite.evaluate(
+        _scenario(
+            (admin_zero, peer_zero, valid_frontier),
+            genesis=("admin", "peer"),
+        )
+    )
+    suite.check(
+        "c02d-maximal-frontier-asymmetry",
+        valid_frontier_result.outcomes["frontier-a1"] is Outcome.APPLIED,
+        family="stale-parent",
+        detail="a parent descending from the direct predecessor is not redundant",
+    )
+
+    checkpoint_required = suite.evaluate(
+        _scenario(
+            (event("checkpoint-required", 0),),
+            checkpoint_evidence=("authority-proof", "unrelated-proof"),
+            replay_dependencies=("authority-proof",),
+        )
+    )
+    checkpoint_irrelevant = suite.evaluate(
+        _scenario(
+            (event("checkpoint-irrelevant", 0),),
+            checkpoint_evidence=("unrelated-proof",),
+            replay_dependencies=("authority-proof",),
+        )
+    )
+    suite.check(
+        "c02d-checkpoint-proof",
+        checkpoint_required.outcomes["checkpoint-required"]
+        is Outcome.STALE_EVIDENCE
+        and checkpoint_irrelevant.outcomes["checkpoint-irrelevant"]
+        is Outcome.APPLIED,
+        family="checkpoint-proof",
+        detail="only checkpoint evidence intersecting authenticated replay dependencies makes the projection stale",
+    )
+
+    graph_field_names = set(type(expected.graph).__dataclass_fields__)
+    suite.check(
+        "c02d-ownership-boundary",
+        {"outcomes", "applied_order", "authorized_credentials", "removed_targets"}.isdisjoint(
+            graph_field_names
+        ),
+        family="ownership-boundary",
+        detail="K graph output contains no AP authorization, retention or finality verdict",
+    )
+
 
 def _exercise_pending_fold(suite: Suite) -> None:
-    none_projection = project(_scenario((event("class-none", 0),)))
-    required_projection = project(
+    none_projection = suite.evaluate(_scenario((event("class-none", 0),)))
+    required_projection = suite.evaluate(
         _scenario((event("class-required", 0, content=ContentClass.REQUIRED),))
     )
-    detachable_projection = project(
+    detachable_projection = suite.evaluate(
         _scenario((event("class-detachable", 0, content=ContentClass.DETACHABLE),))
     )
     suite.check(
@@ -450,7 +543,7 @@ def _exercise_pending_fold(suite: Suite) -> None:
     child = event("child", 1, predecessor="hole")
     independent = event("independent", 0, credential="peer")
     closed = _scenario((hole, child, independent), genesis=("admin", "peer"))
-    pending = project(closed)
+    pending = suite.evaluate(closed)
     suite.observe(pending)
     suite.check(
         "pending-closure",
@@ -474,7 +567,7 @@ def _exercise_pending_fold(suite: Suite) -> None:
         closed, opening_observations={"hole": OpeningObservation.VERIFIED}
     )
     resumed = incremental_replay(closed, opened)
-    fresh = project(opened)
+    fresh = suite.evaluate(opened)
     suite.observe(resumed)
     suite.check(
         "incremental-full",
@@ -483,6 +576,12 @@ def _exercise_pending_fold(suite: Suite) -> None:
         family="pending-incremental-full-equivalence",
         detail="monotone opening acquisition resumes from the earliest affected position",
         obligation="C0.2f-03",
+    )
+    suite.check(
+        "c02d-incremental-full-equivalence",
+        resumed.semantic_view() == fresh.semantic_view(),
+        family="incremental-full-equivalence",
+        detail="the incremental suffix machine equals an independent fresh projection",
     )
     suite.check(
         "opening-monotone",
@@ -512,7 +611,7 @@ def _exercise_pending_fold(suite: Suite) -> None:
         obligation="C0.2f-05",
     )
 
-    before_event = project(
+    before_event = suite.evaluate(
         _scenario(
             (independent,),
             {"hole": OpeningObservation.VERIFIED},
@@ -534,7 +633,7 @@ def _exercise_pending_fold(suite: Suite) -> None:
     for index, delivered in enumerate(opened_deliveries):
         suite.check(
             f"opening-event-final-{index}",
-            project(delivered).semantic_view() == fresh.semantic_view(),
+            suite.evaluate(delivered).semantic_view() == fresh.semantic_view(),
             family="opening-event-interleavings",
             detail="equal final transcript/opening sets converge when the opening is observed before or after its event",
             trace=tuple(item.reference for item in delivered.events),
@@ -545,7 +644,7 @@ def _exercise_pending_fold(suite: Suite) -> None:
         OpeningObservation.LENGTH_MISMATCH,
         OpeningObservation.COMMITMENT_MISMATCH,
     ):
-        result = project(_scenario((hole,), {"hole": observation}))
+        result = suite.evaluate(_scenario((hole,), {"hole": observation}))
         suite.check(
             f"binding-{observation.value.lower()}",
             result.outcomes["hole"] is Outcome.PENDING_OPENING
@@ -555,9 +654,151 @@ def _exercise_pending_fold(suite: Suite) -> None:
             obligation="C0.2f-05",
         )
 
-    selective_a = project(closed)
-    selective_b = project(opened)
-    converged_a = project(opened)
+    all_observation_states = {
+        suite.evaluate(_scenario((hole,), {"hole": observation}))
+        .binding_observations["hole"]
+        for observation in OpeningObservation
+    }
+    suite.check(
+        "binding-axis-closed",
+        all_observation_states == set(OpeningObservation),
+        family="binding-observation-distinction",
+        detail="the bounded opening-observation axis is typed, exhaustive and closed",
+        obligation="C0.2f-05",
+    )
+
+    content_bearing_legal = {
+        (Availability.ABSENT, BindingObservation.NOT_CHECKED),
+        (Availability.PARTIAL, BindingObservation.NOT_CHECKED),
+        (Availability.PRESENT, BindingObservation.NOT_CHECKED),
+        (Availability.PRESENT, BindingObservation.VERIFIED),
+        (Availability.PRESENT, BindingObservation.OPENING_MISSING),
+        (Availability.PRESENT, BindingObservation.LENGTH_MISMATCH),
+        (Availability.PRESENT, BindingObservation.COMMITMENT_MISMATCH),
+    }
+    none_legal = {
+        (Availability.ABSENT, BindingObservation.NOT_APPLICABLE),
+        (Availability.PRESENT, BindingObservation.NOT_APPLICABLE),
+    }
+    typed_axis_ok = True
+    typed_axis_cases = 0
+    for content_class, availability, binding in product(
+        ContentClass, Availability, BindingObservation
+    ):
+        legal = none_legal if content_class is ContentClass.NONE else content_bearing_legal
+        expected_acceptance = (availability, binding) in legal
+        try:
+            presentation = classify_payload_axis(
+                content_class,
+                availability,
+                binding,
+            )
+            accepted = True
+        except ModelInputError as error:
+            presentation = None
+            accepted = False
+            typed_axis_ok = typed_axis_ok and error.code == "ILLEGAL_AXIS_COMBINATION"
+
+        typed_axis_ok = typed_axis_ok and accepted == expected_acceptance
+        if accepted:
+            if content_class is ContentClass.NONE:
+                expected_presentation = (
+                    AxisPresentation.NO_CONTENT
+                    if availability is Availability.ABSENT
+                    else AxisPresentation.UNEXPECTED_CONTENT_REJECTED
+                )
+            elif (
+                content_class is ContentClass.REQUIRED
+                and binding is not BindingObservation.VERIFIED
+            ):
+                expected_presentation = AxisPresentation.PENDING_OPENING
+            elif binding is BindingObservation.VERIFIED:
+                expected_presentation = AxisPresentation.ACTIVE_VERIFIED
+            elif availability in (Availability.ABSENT, Availability.PARTIAL):
+                expected_presentation = AxisPresentation.ACTIVE_UNAVAILABLE
+            elif binding in (
+                BindingObservation.LENGTH_MISMATCH,
+                BindingObservation.COMMITMENT_MISMATCH,
+            ):
+                expected_presentation = AxisPresentation.ACTIVE_SUBSTITUTED_REJECTED
+            else:
+                expected_presentation = AxisPresentation.ACTIVE_UNVERIFIABLE
+            typed_axis_ok = typed_axis_ok and presentation is expected_presentation
+        typed_axis_cases += 1
+    suite.explored_traces += typed_axis_cases
+    suite.check(
+        "typed-axis-closure-v2",
+        typed_axis_ok and typed_axis_cases == 54,
+        family="binding-observation-distinction",
+        detail=f"all {typed_axis_cases} content-class/availability/binding combinations are accepted and classified or rejected explicitly",
+        obligation="C0.2f-05",
+    )
+
+    # Exhaust every prior/updated verified-opening pair and every delivery order
+    # for a bounded two-root diamond.  The incremental implementation is not the
+    # fresh oracle and accepts transcript sets rather than tuple order.
+    replay_left = event("replay-left", 0, content=ContentClass.REQUIRED)
+    replay_right = event(
+        "replay-right", 0, credential="peer", content=ContentClass.REQUIRED
+    )
+    replay_child = event(
+        "replay-child",
+        1,
+        predecessor="replay-left",
+        parents=("replay-right",),
+    )
+    replay_events = (replay_left, replay_right, replay_child)
+    replay_refs = ("replay-left", "replay-right")
+    exhaustive_ok = True
+    exhaustive_cases = 0
+    replay_orders = delivery_orders(replay_events)
+    for prior_mask in range(4):
+        for updated_mask in range(4):
+            if prior_mask & ~updated_mask:
+                continue
+            prior_openings = {
+                reference: OpeningObservation.VERIFIED
+                for index, reference in enumerate(replay_refs)
+                if prior_mask & (1 << index)
+            }
+            updated_openings = {
+                reference: OpeningObservation.VERIFIED
+                for index, reference in enumerate(replay_refs)
+                if updated_mask & (1 << index)
+            }
+            for prior_order in replay_orders:
+                for updated_order in replay_orders:
+                    prior_scenario = _scenario(
+                        prior_order,
+                        prior_openings,
+                        genesis=("admin", "peer"),
+                    )
+                    updated_scenario = _scenario(
+                        updated_order,
+                        updated_openings,
+                        genesis=("admin", "peer"),
+                    )
+                    incremental = incremental_replay(
+                        prior_scenario, updated_scenario
+                    )
+                    oracle = suite.evaluate(updated_scenario)
+                    exhaustive_ok = exhaustive_ok and (
+                        incremental.semantic_view() == oracle.semantic_view()
+                    )
+                    suite.observe(incremental)
+                    exhaustive_cases += 1
+    suite.explored_traces += exhaustive_cases
+    suite.check(
+        "c02d-exhaustive-incremental-replay",
+        exhaustive_ok and exhaustive_cases == 324,
+        family="exhaustive-incremental-replay",
+        detail=f"all {exhaustive_cases} bounded opening/delivery combinations equal fresh replay",
+        obligation="C0.2f-03",
+    )
+
+    selective_a = suite.evaluate(closed)
+    selective_b = suite.evaluate(opened)
+    converged_a = suite.evaluate(opened)
     suite.check(
         "selective-convergence",
         selective_a.semantic_view() != selective_b.semantic_view()
@@ -570,7 +811,7 @@ def _exercise_pending_fold(suite: Suite) -> None:
     left = event("left", 0, content=ContentClass.REQUIRED)
     right = event("right", 0, credential="peer", content=ContentClass.REQUIRED)
     diamond = event("diamond", 1, predecessor="left", parents=("right",))
-    one_open = project(
+    one_open = suite.evaluate(
         _scenario(
             (left, right, diamond),
             {"left": OpeningObservation.VERIFIED},
@@ -587,7 +828,7 @@ def _exercise_pending_fold(suite: Suite) -> None:
 
     fork_a = event("fork-a", 0, content=ContentClass.REQUIRED)
     fork_b = event("fork-b", 0, content=ContentClass.REQUIRED)
-    forked = project(
+    forked = suite.evaluate(
         _scenario(
             (fork_a, fork_b),
             {"fork-a": OpeningObservation.VERIFIED},
@@ -601,18 +842,46 @@ def _exercise_pending_fold(suite: Suite) -> None:
         detail="fork evidence is graph-visible while each REQUIRED opening is independent",
         obligation="C0.2f-11",
     )
-
-    for family in ("delayed-reveal", "relay-withholding"):
-        suite.check(
-            family,
-            pending.outcomes["independent"] is Outcome.APPLIED
-            and pending.outcomes["child"] is Outcome.PENDING_ANCESTOR,
-            family=family,
-            detail="delay or withholding neither bypasses descendants nor blocks independence",
+    fork_child = event("fork-child", 1, predecessor="fork-a")
+    fork_descendant = suite.evaluate(
+        _scenario(
+            (fork_a, fork_b, fork_child),
+            {"fork-b": OpeningObservation.VERIFIED},
         )
+    )
+    suite.check(
+        "fork-hole-descendant",
+        fork_descendant.outcomes["fork-a"] is Outcome.PENDING_OPENING
+        and fork_descendant.outcomes["fork-child"] is Outcome.PENDING_ANCESTOR
+        and fork_descendant.outcomes["fork-b"] is Outcome.FORK_EVIDENCE,
+        family="fork-required-partial-opening",
+        detail="an unopened fork-classified REQUIRED sibling blocks its own descendants but not an opened sibling",
+        obligation="C0.2f-11",
+    )
+
+    delayed = incremental_replay(closed, opened)
+    suite.observe(delayed)
+    suite.check(
+        "delayed-reveal",
+        delayed.semantic_view() == fresh.semantic_view()
+        and delayed.metrics.replayed_event_work == 3,
+        family="delayed-reveal",
+        detail="a delayed verified opening triggers measured deterministic suffix replay",
+    )
+    withheld_replica = suite.evaluate(closed)
+    supplied_replica = suite.evaluate(opened)
+    suite.check(
+        "relay-withholding",
+        withheld_replica.pending == {"hole", "child"}
+        and supplied_replica.pending == set()
+        and withheld_replica.outcomes["independent"] is Outcome.APPLIED
+        and supplied_replica.outcomes["independent"] is Outcome.APPLIED,
+        family="relay-withholding",
+        detail="selective opening withholding diverges only the affected subtree and not independent work",
+    )
 
     late_low = event("a-late-low", 0, credential="recovery")
-    with_late_low = project(
+    with_late_low = suite.evaluate(
         replace(
             closed,
             events=closed.events + (late_low,),
@@ -637,7 +906,7 @@ def _exercise_authority_and_control(suite: Suite) -> None:
         parents=("grant-bob",),
         binding_ref="grant-bob",
     )
-    authorized = project(_scenario((grant, bob_action)))
+    authorized = suite.evaluate(_scenario((grant, bob_action)))
     suite.check(
         "bound-and-authorized",
         authorized.outcomes["grant-bob"] is Outcome.APPLIED
@@ -657,12 +926,73 @@ def _exercise_authority_and_control(suite: Suite) -> None:
         direct_predecessor="bob-action",
         parents=("revoke-bob",),
     )
-    revoked = project(_scenario((grant, bob_action, revoke, old_key)))
+    revoked = suite.evaluate(_scenario((grant, bob_action, revoke, old_key)))
     suite.check(
         "post-revocation",
         revoked.outcomes["old-key-action"] is Outcome.POST_REVOCATION,
         family="revoked-old-key",
         detail="causal-past authorized revocation is an AP outcome, not K rejection",
+    )
+
+    first_revoke = event(
+        "revocation-race-first",
+        1,
+        predecessor="grant-bob",
+        kind=EventKind.REVOKE,
+        subject="bob",
+    )
+    second_revoke = event(
+        "a-revocation-race-second",
+        2,
+        predecessor="revocation-race-first",
+        kind=EventKind.REVOKE,
+        subject="bob",
+    )
+    after_first = event(
+        "z-revocation-race-action",
+        0,
+        credential="bob",
+        parents=("revocation-race-first",),
+        binding_ref="grant-bob",
+    )
+    multiple_revocations = suite.evaluate(
+        _scenario((grant, first_revoke, second_revoke, after_first))
+    )
+    concurrent_early_revoke = event(
+        "a-concurrent-revoke",
+        1,
+        predecessor="grant-bob",
+        kind=EventKind.REVOKE,
+        subject="bob",
+    )
+    concurrent_late_action = event(
+        "z-concurrent-action",
+        0,
+        credential="bob",
+        parents=("grant-bob",),
+        binding_ref="grant-bob",
+    )
+    concurrent_early = suite.evaluate(
+        _scenario((grant, concurrent_early_revoke, concurrent_late_action))
+    )
+    concurrent_late_revoke = replace(
+        concurrent_early_revoke, reference="z-concurrent-revoke"
+    )
+    concurrent_early_action = replace(
+        concurrent_late_action, reference="a-concurrent-action"
+    )
+    concurrent_late = suite.evaluate(
+        _scenario((grant, concurrent_late_revoke, concurrent_early_action))
+    )
+    suite.check(
+        "c02d-revocation-race",
+        multiple_revocations.outcomes["z-revocation-race-action"]
+        is Outcome.POST_REVOCATION
+        and concurrent_early.outcomes["z-concurrent-action"]
+        is Outcome.AUTHENTIC_BUT_UNAUTHORIZED
+        and concurrent_late.outcomes["a-concurrent-action"] is Outcome.APPLIED,
+        family="revocation-race",
+        detail="all causal revocations are retained while concurrent revocation is deterministically AP-adjudicated in either reference order",
     )
 
     # A K-valid grant issued after its signer was revoked still binds its subject
@@ -690,7 +1020,7 @@ def _exercise_authority_and_control(suite: Suite) -> None:
         kind=EventKind.REVOKE,
         subject="recovery",
     )
-    unauthorized = project(
+    unauthorized = suite.evaluate(
         _scenario(
             (admin_revoke, bad_grant, unauthorized_revoke),
             genesis=("admin", "recovery"),
@@ -722,7 +1052,7 @@ def _exercise_authority_and_control(suite: Suite) -> None:
         predecessor="recovery-revokes-admin",
         kind=EventKind.POLICY,
     )
-    unauthorized_hole = project(
+    unauthorized_hole = suite.evaluate(
         _scenario(
             (admin_revoke, bad_grant, eve_hole, independent_policy),
             genesis=("admin", "recovery"),
@@ -753,7 +1083,7 @@ def _exercise_authority_and_control(suite: Suite) -> None:
         kind=EventKind.ROTATE,
         subject="admin",
     )
-    authority_projection = project(
+    authority_projection = suite.evaluate(
         _scenario((hole, recovery, blocked_rotation), genesis=("admin", "recovery"))
     )
     suite.check(
@@ -770,13 +1100,6 @@ def _exercise_authority_and_control(suite: Suite) -> None:
         family="rotation-recovery-outside-hole",
         detail="independent recovery applies while self-rotation stays in the pending subtree",
     )
-    suite.check(
-        "sole-authority-self-lockout",
-        authority_projection.outcomes["blocked-rotation"] is Outcome.PENDING_ANCESTOR,
-        family="sole-authority-self-lockout",
-        detail="a sole authority can keep its own control descendant pending without creating a bypass",
-    )
-
     independent_revoke = event(
         "independent-revoke",
         0,
@@ -791,7 +1114,7 @@ def _exercise_authority_and_control(suite: Suite) -> None:
         kind=EventKind.REVOKE,
         subject="recovery",
     )
-    revocation_holes = project(
+    revocation_holes = suite.evaluate(
         _scenario(
             (hole, independent_revoke, blocked_revoke),
             genesis=("admin", "recovery"),
@@ -806,10 +1129,12 @@ def _exercise_authority_and_control(suite: Suite) -> None:
     )
     suite.check(
         "late-authority-replay",
-        unauthorized.outcomes["bad-grant"] is Outcome.POST_REVOCATION
-        and "bad-grant" in unauthorized.graph.admitted,
+        authorized.outcomes["bob-action"] is Outcome.APPLIED
+        and revoked.outcomes["bob-action"] is Outcome.APPLIED
+        and revoked.outcomes["old-key-action"] is Outcome.POST_REVOCATION
+        and "old-key-action" in revoked.graph.admitted,
         family="late-authority-replay",
-        detail="authority is replay-derived and can change without changing K graph admission",
+        detail="late transcript admission extends K evidence and replays AP authority without K-removing old-key descendants",
     )
 
     bad_control = event(
@@ -818,7 +1143,7 @@ def _exercise_authority_and_control(suite: Suite) -> None:
         kind=EventKind.POLICY,
         content=ContentClass.REQUIRED,
     )
-    structural = project(_scenario((bad_control,)))
+    structural = suite.evaluate(_scenario((bad_control,)))
     suite.check(
         "control-none-only",
         structural.outcomes["bad-control"] is Outcome.STRUCTURAL_REJECTION,
@@ -840,7 +1165,7 @@ def _exercise_authority_and_control(suite: Suite) -> None:
         parents=("pending-grant",),
         binding_ref="pending-grant",
     )
-    pending_chain = project(_scenario((hole, pending_grant, eve)))
+    pending_chain = suite.evaluate(_scenario((hole, pending_grant, eve)))
     suite.check(
         "grant-chain-pending",
         {"pending-grant", "eve-action"} <= pending_chain.graph.ancestors.keys()
@@ -849,10 +1174,81 @@ def _exercise_authority_and_control(suite: Suite) -> None:
         detail="the grantee chain is K-valid but causally pending",
     )
 
+    missing_binding = event(
+        "missing-binding",
+        0,
+        credential="eve",
+        binding_ref="pending-grant",
+    )
+    invalid_binding = suite.evaluate(_scenario((pending_grant, missing_binding, hole)))
+    suite.check(
+        "structural-grant-ancestry-invalid",
+        invalid_binding.outcomes["missing-binding"] is Outcome.INVALID
+        and "missing-binding" not in invalid_binding.graph.deferred,
+        family="authentic-but-unauthorized",
+        detail="a present binding outside causal ancestry is terminal INVALID, not retriable transcript deferral",
+        obligation="C0.2f-07",
+    )
+
+    sole_hole = event("sole-hole", 0, content=ContentClass.REQUIRED)
+    sole_control = event(
+        "sole-control",
+        1,
+        predecessor="sole-hole",
+        kind=EventKind.POLICY,
+    )
+    sole_projection = suite.evaluate(_scenario((sole_hole, sole_control)))
+    suite.check(
+        "sole-authority-self-lockout-exact",
+        sole_projection.pending == {"sole-hole", "sole-control"}
+        and not sole_projection.applied_order,
+        family="sole-authority-self-lockout",
+        detail="with one genesis authority and no alternate branch, its own unopened REQUIRED prefix holds its control descendant pending",
+    )
+
+    unauthorized_remove = event(
+        "unauthorized-remove",
+        0,
+        credential="eve",
+        parents=("bad-grant",),
+        binding_ref="bad-grant",
+        kind=EventKind.REMOVE,
+        target="authority-hole",
+        commitment="commitment:authority-hole",
+    )
+    unauthorized_removal = suite.evaluate(
+        _scenario(
+            (admin_revoke, bad_grant, hole, unauthorized_remove),
+            genesis=("admin", "recovery"),
+        )
+    )
+    suite.check(
+        "direct-unauthorized-remove",
+        unauthorized_removal.outcomes["unauthorized-remove"]
+        is Outcome.AUTHENTIC_BUT_UNAUTHORIZED
+        and not unauthorized_removal.removed_targets,
+        family="authentic-but-unauthorized",
+        detail="an authenticated but unauthorized REMOVE has no retention effect",
+        obligation="C0.2f-07",
+    )
+
 
 def _exercise_collisions(suite: Suite) -> None:
     first = event("grant-1", 0, kind=EventKind.GRANT, subject="bob")
-    second = event("grant-2", 0, kind=EventKind.GRANT, subject="bob")
+    second = event(
+        "grant-2", 0, credential="peer", kind=EventKind.GRANT, subject="bob"
+    )
+    revoke_peer = event(
+        "revoke-peer", 0, kind=EventKind.REVOKE, subject="peer"
+    )
+    revoked_peer_grant = event(
+        "revoked-peer-grant",
+        0,
+        credential="peer",
+        parents=("revoke-peer",),
+        kind=EventKind.GRANT,
+        subject="bob",
+    )
     variants = {
         "before-sequence-zero": (second, first),
         "with-attacker-descendant": (
@@ -880,12 +1276,15 @@ def _exercise_collisions(suite: Suite) -> None:
         "genesis-identifier": (
             event("grant-admin", 0, kind=EventKind.GRANT, subject="admin"),
         ),
+        "revoked-credential": (first, revoke_peer, revoked_peer_grant),
     }
     for name, events in variants.items():
         suite.expect_error(
             f"collision-{name}",
             Outcome.CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED.value,
-            lambda events=events: project(_scenario(events)),
+            lambda events=events: suite.evaluate(
+                _scenario(events, genesis=("admin", "peer"))
+            ),
             family="credential-identifier-collision",
             detail="whole-set collision rejection is order-independent and makes no continuation claim",
         )
@@ -893,7 +1292,9 @@ def _exercise_collisions(suite: Suite) -> None:
         suite.expect_error(
             f"collision-{name}-reverse",
             Outcome.CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED.value,
-            lambda reverse=reverse: project(_scenario(reverse)),
+            lambda reverse=reverse: suite.evaluate(
+                _scenario(reverse, genesis=("admin", "peer"))
+            ),
             family="credential-identifier-collision",
             detail="arrival order cannot select a preferred binding",
         )
@@ -905,7 +1306,7 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         "remove", 1, predecessor="detachable", kind=EventKind.REMOVE,
         target="detachable", commitment="commitment:detachable"
     )
-    removed = project(_scenario((detachable, remove)))
+    removed = suite.evaluate(_scenario((detachable, remove)))
     suite.check(
         "detachable-removal",
         removed.removed_targets == {"detachable"},
@@ -960,8 +1361,8 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         (detachable, subtree_hole, subtree_target, subtree_remove),
         genesis=("admin", "peer"),
     )
-    subtree_pending = project(subtree_scenario)
-    subtree_opened = project(
+    subtree_pending = suite.evaluate(subtree_scenario)
+    subtree_opened = suite.evaluate(
         replace(
             subtree_scenario,
             opening_observations={"subtree-hole": OpeningObservation.VERIFIED},
@@ -995,7 +1396,7 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         target="late-target",
         commitment="commitment:late-target",
     )
-    before_late = project(
+    before_late = suite.evaluate(
         _scenario((late_target, grant_bob, bob_remove), genesis=("admin", "peer"))
     )
     late_revoke = event(
@@ -1005,7 +1406,7 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         kind=EventKind.REVOKE,
         subject="bob",
     )
-    after_late = project(
+    after_late = suite.evaluate(
         _scenario(
             (late_target, grant_bob, bob_remove, late_revoke),
             genesis=("admin", "peer"),
@@ -1027,7 +1428,7 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         "remove-required", 1, predecessor="required", kind=EventKind.REMOVE,
         target="required", commitment="commitment:required"
     )
-    attempted = project(
+    attempted = suite.evaluate(
         _scenario(
             (required, remove_required),
             {"required": OpeningObservation.VERIFIED},
@@ -1041,6 +1442,54 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         obligation="C0.2f-06",
     )
 
+    none_target = event("none-target", 0)
+    remove_none = event(
+        "remove-none",
+        1,
+        predecessor="none-target",
+        kind=EventKind.REMOVE,
+        target="none-target",
+        commitment="commitment:none-target",
+    )
+    none_removal = suite.evaluate(_scenario((none_target, remove_none)))
+
+    late_detachable = event(
+        "late-detachable", 0, credential="peer", content=ContentClass.DETACHABLE
+    )
+    late_directive = event(
+        "late-directive",
+        0,
+        kind=EventKind.REMOVE,
+        target="late-detachable",
+        commitment="commitment:late-detachable",
+    )
+    late_removal = suite.evaluate(
+        _scenario((late_directive, late_detachable), genesis=("admin", "peer"))
+    )
+
+    repeat_remove = event(
+        "repeat-remove",
+        2,
+        predecessor="remove",
+        kind=EventKind.REMOVE,
+        target="detachable",
+        commitment="commitment:detachable",
+    )
+    repeated_removal = suite.evaluate(
+        _scenario((detachable, remove, repeat_remove))
+    )
+    suite.check(
+        "removal-target-cases",
+        none_removal.outcomes["remove-none"] is Outcome.REMOVAL_INAPPLICABLE
+        and late_removal.outcomes["late-directive"]
+        is Outcome.REMOVAL_INAPPLICABLE
+        and repeated_removal.outcomes["repeat-remove"]
+        is Outcome.ALREADY_REMOVED,
+        family="required-removal-inapplicable",
+        detail="NONE, non-ancestral late and already-removed targets are deterministically distinguished",
+        obligation="C0.2f-14",
+    )
+
     required_peer = replace(required, credential_id="peer", binding_ref="genesis:peer")
     behind = replace(
         remove,
@@ -1048,7 +1497,7 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         direct_predecessor="detachable",
         parents=("required",),
     )
-    behind_result = project(
+    behind_result = suite.evaluate(
         _scenario((required_peer, detachable, behind), genesis=("admin", "peer"))
     )
     suite.check(
@@ -1059,7 +1508,7 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         obligation="C0.2f-14",
     )
 
-    stale = project(_scenario((detachable,), checkpoint_only=("revocation-x",)))
+    stale = suite.evaluate(_scenario((detachable,), checkpoint_only=("revocation-x",)))
     suite.check(
         "checkpoint-whole-stale",
         stale.outcomes["detachable"] is Outcome.STALE_EVIDENCE
@@ -1068,11 +1517,20 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         detail="checkpoint-only authority evidence makes the whole projection stale",
         obligation="C0.2f-12",
     )
+    unrelated_checkpoint = suite.evaluate(
+        _scenario(
+            (event("unrelated-checkpoint", 0),),
+            checkpoint_evidence=("unrelated",),
+            replay_dependencies=("required-authority",),
+        )
+    )
     suite.check(
         "checkpoint-staleness-nonclaim",
-        stale.outcomes["detachable"] is Outcome.STALE_EVIDENCE,
+        stale.outcomes["detachable"] is Outcome.STALE_EVIDENCE
+        and unrelated_checkpoint.outcomes["unrelated-checkpoint"]
+        is Outcome.APPLIED,
         family="checkpoint-staleness-nonclaim",
-        detail="checkpoint evidence never substitutes for authenticated replay history",
+        detail="checkpoint evidence never substitutes for a matching replay dependency and unrelated evidence does not stale the projection",
     )
     checkpoint_hole = _scenario(
         (event("checkpoint-hole", 0, content=ContentClass.REQUIRED),),
@@ -1080,7 +1538,7 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
     )
     suite.check(
         "checkpoint-pending-producer",
-        project(checkpoint_hole).outcomes["checkpoint-hole"] is Outcome.STALE_EVIDENCE
+        suite.evaluate(checkpoint_hole).outcomes["checkpoint-hole"] is Outcome.STALE_EVIDENCE
         and not frontier_is_producible(checkpoint_hole, ("checkpoint-hole",)),
         family="checkpoint-pending-producer",
         detail="checkpoint closure cannot make a pending frontier producer eligible",
@@ -1088,23 +1546,28 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
     )
 
     flood = tuple(
-        event(f"hole-{index}", 0, content=ContentClass.REQUIRED)
+        event(
+            f"hole-{index}",
+            index,
+            predecessor=None if index == 0 else f"hole-{index - 1}",
+            content=ContentClass.REQUIRED,
+        )
         for index in range(MAX_EVENTS)
     )
-    flooded = project(_scenario(flood))
+    flooded = suite.evaluate(_scenario(flood))
     suite.observe(flooded)
     counts = Counter(event.credential_id for event in flood if event.reference in flooded.pending_roots)
     suite.check(
         "bounded-hole-count",
         flooded.metrics.pending_roots == MAX_EVENTS and counts == {"admin": MAX_EVENTS},
         family="bounded-hole-flood",
-        detail="pending roots are instrumented per credential within explicit bounds",
+        detail="a non-forking author chain can contain the bounded maximum of independently missing REQUIRED openings",
         obligation="C0.2f-16",
     )
     suite.expect_error(
         "event-bound",
         "MODEL_BOUND_EXCEEDED",
-        lambda: project(_scenario(flood + (event("overflow", MAX_EVENTS),))),
+        lambda: suite.evaluate(_scenario(flood + (event("overflow", MAX_EVENTS),))),
         family="resource-bound",
         detail="event inflation rejects before exploration",
         obligation="C0.2f-16",
@@ -1127,6 +1590,25 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         detail="an honest frontier cannot reference locally pending REQUIRED ancestry",
         obligation="C0.2f-09",
     )
+    fresh_missing = suite.evaluate(_scenario(flood))
+    fresh_complete = suite.evaluate(
+        _scenario(
+            flood,
+            {
+                item.reference: OpeningObservation.VERIFIED
+                for item in flood
+            },
+        )
+    )
+    suite.check(
+        "fresh-replica-required-openings",
+        not fresh_missing.applied_order
+        and fresh_complete.applied_order
+        == tuple(item.reference for item in flood),
+        family="custody-frontier-obligation",
+        detail="fresh replay applies the in-horizon chain only when every REQUIRED opening is locally verified",
+        obligation="C0.2f-09",
+    )
 
     suite.check(
         "target-prefix-abandonment-rejected",
@@ -1135,7 +1617,7 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         family="target-prefix-abandonment-rejected",
         detail="neither target-prefix abandonment nor a pending control bypass exists",
     )
-    missing_transcript = project(
+    missing_transcript = suite.evaluate(
         _scenario((event("missing-transcript", 1, predecessor="absent"),))
     )
     suite.check(

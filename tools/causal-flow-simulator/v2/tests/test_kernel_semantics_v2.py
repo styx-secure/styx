@@ -4,24 +4,57 @@ import sys
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 V2_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(V2_ROOT))
 
 from kernel_model_v2 import (  # noqa: E402
+    Availability,
+    AxisPresentation,
+    BindingObservation,
     ContentClass,
     EventKind,
     MAX_TEXT_BYTES,
     ModelInputError,
     OpeningObservation,
     Outcome,
+    classify_payload_axis,
     incremental_replay,
     project,
 )
+import kernel_model_v2  # noqa: E402
 from scenarios_v2 import _scenario, event  # noqa: E402
 
 
 class PendingSubtreeTests(unittest.TestCase):
+    def test_payload_axis_preserves_detachable_substitution_state(self) -> None:
+        self.assertIs(
+            classify_payload_axis(
+                ContentClass.DETACHABLE,
+                Availability.PRESENT,
+                BindingObservation.COMMITMENT_MISMATCH,
+            ),
+            AxisPresentation.ACTIVE_SUBSTITUTED_REJECTED,
+        )
+
+    def test_payload_axis_rejects_unlisted_combination(self) -> None:
+        with self.assertRaisesRegex(
+            ModelInputError, "ILLEGAL_AXIS_COMBINATION"
+        ):
+            classify_payload_axis(
+                ContentClass.REQUIRED,
+                Availability.ABSENT,
+                BindingObservation.VERIFIED,
+            )
+
+    def test_opening_observation_type_fails_closed(self) -> None:
+        root = event("root", 0, content=ContentClass.REQUIRED)
+        with self.assertRaisesRegex(
+            ModelInputError, "ILLEGAL_AXIS_COMBINATION"
+        ):
+            project(_scenario((root,), {"root": "VERIFIED"}))
+
     def test_independent_event_applies_while_descendant_waits(self) -> None:
         root = event("root", 0, content=ContentClass.REQUIRED)
         child = event("child", 1, predecessor="root")
@@ -59,6 +92,32 @@ class PendingSubtreeTests(unittest.TestCase):
         self.assertEqual(incremental.metrics.earliest_replay_boundary, 1)
         self.assertEqual(incremental.metrics.replayed_event_work, 2)
 
+    def test_incremental_uses_prior_cache_not_updated_full_projection(self) -> None:
+        root = event("root", 0, content=ContentClass.REQUIRED)
+        child = event("child", 1, predecessor="root")
+        prior = _scenario((root, child))
+        updated = replace(
+            prior, opening_observations={"root": OpeningObservation.VERIFIED}
+        )
+        real_project = kernel_model_v2.project
+        calls = []
+
+        def guarded_project(candidate):
+            calls.append(candidate)
+            if candidate is updated:
+                self.fail("incremental replay called the updated full oracle")
+            return real_project(candidate)
+
+        with patch.object(kernel_model_v2, "project", side_effect=guarded_project):
+            incremental = incremental_replay(prior, updated)
+
+        self.assertEqual(calls, [prior])
+        self.assertEqual(incremental.semantic_view(), real_project(updated).semantic_view())
+        self.assertEqual(
+            len(real_project(prior).replay_prefix_states),
+            len(real_project(prior).graph.canonical_order) + 1,
+        )
+
     def test_verified_opening_cannot_be_removed(self) -> None:
         root = event("root", 0, content=ContentClass.REQUIRED)
         verified = _scenario(
@@ -75,6 +134,31 @@ class PendingSubtreeTests(unittest.TestCase):
         )
         self.assertIs(result.outcomes["root"], Outcome.STALE_EVIDENCE)
         self.assertEqual(result.applied_order, ())
+
+    def test_checkpoint_evidence_unrelated_to_replay_is_not_stale(self) -> None:
+        root = event("root", 0)
+        result = project(
+            _scenario(
+                (root,),
+                checkpoint_evidence=("unrelated",),
+                replay_dependencies=(),
+            )
+        )
+        self.assertIs(result.outcomes["root"], Outcome.APPLIED)
+
+    def test_incremental_accepts_equal_transcript_sets_in_different_order(self) -> None:
+        root = event("root", 0, content=ContentClass.REQUIRED)
+        side = event("side", 0, credential="peer")
+        prior = _scenario((root, side), genesis=("admin", "peer"))
+        updated = _scenario(
+            (side, root),
+            {"root": OpeningObservation.VERIFIED},
+            genesis=("admin", "peer"),
+        )
+        self.assertEqual(
+            incremental_replay(prior, updated).semantic_view(),
+            project(updated).semantic_view(),
+        )
 
     def test_ready_concurrent_events_use_reference_tiebreak(self) -> None:
         high = event("z-reference", 0, credential="admin")
@@ -97,6 +181,48 @@ class PendingSubtreeTests(unittest.TestCase):
         result = project(_scenario((invalid,)))
         self.assertEqual(result.graph.structurally_rejected, ("self",))
         self.assertIs(result.outcomes["self"], Outcome.STRUCTURAL_REJECTION)
+
+    def test_parent_descending_from_direct_predecessor_is_valid(self) -> None:
+        admin_zero = event("a0", 0)
+        peer_zero = event(
+            "p0", 0, credential="peer", parents=("a0",)
+        )
+        admin_one = event("a1", 1, predecessor="a0", parents=("p0",))
+        result = project(
+            _scenario((admin_zero, peer_zero, admin_one), genesis=("admin", "peer"))
+        )
+        self.assertIn("a1", result.graph.admitted)
+        self.assertIs(result.outcomes["a1"], Outcome.APPLIED)
+
+    def test_parent_ancestor_of_direct_predecessor_is_redundant(self) -> None:
+        peer_zero = event("p0", 0, credential="peer")
+        admin_zero = event("a0", 0, parents=("p0",))
+        admin_one = event("a1", 1, predecessor="a0", parents=("p0",))
+        result = project(
+            _scenario((peer_zero, admin_zero, admin_one), genesis=("admin", "peer"))
+        )
+        self.assertIs(result.outcomes["a1"], Outcome.STRUCTURAL_REJECTION)
+
+    def test_non_ancestral_binding_is_invalid_not_deferred(self) -> None:
+        grant = event("grant", 0, kind=EventKind.GRANT, subject="bob")
+        invalid = event(
+            "bob", 0, credential="bob", binding_ref="grant"
+        )
+        child = event(
+            "bob-child",
+            1,
+            credential="bob",
+            predecessor="bob",
+            binding_ref="grant",
+        )
+        result = project(_scenario((grant, invalid, child)))
+        self.assertEqual(set(result.graph.invalid), {"bob", "bob-child"})
+        self.assertIs(result.outcomes["bob"], Outcome.INVALID)
+        self.assertIs(result.outcomes["bob-child"], Outcome.INVALID)
+
+    def test_subjectless_grant_is_structurally_rejected(self) -> None:
+        result = project(_scenario((event("grant", 0, kind=EventKind.GRANT),)))
+        self.assertIs(result.outcomes["grant"], Outcome.STRUCTURAL_REJECTION)
 
     def test_scalar_bounds_fail_before_graph_expansion(self) -> None:
         oversized = "x" * (MAX_TEXT_BYTES + 1)
@@ -175,6 +301,57 @@ class AuthorityBoundaryTests(unittest.TestCase):
             ):
                 project(_scenario(events))
 
+    def test_all_causal_revocations_are_retained(self) -> None:
+        grant = event("grant", 0, kind=EventKind.GRANT, subject="bob")
+        first = event(
+            "revoke-a", 1, predecessor="grant", kind=EventKind.REVOKE, subject="bob"
+        )
+        second = event(
+            "a-revoke-b",
+            2,
+            predecessor="revoke-a",
+            kind=EventKind.REVOKE,
+            subject="bob",
+        )
+        action = event(
+            "z-bob",
+            0,
+            credential="bob",
+            parents=("revoke-a",),
+            binding_ref="grant",
+        )
+        result = project(_scenario((grant, first, second, action)))
+        self.assertIs(result.outcomes["z-bob"], Outcome.POST_REVOCATION)
+
+    def test_rotation_or_recovery_does_not_resurrect_identifier(self) -> None:
+        grant = event("grant", 0, kind=EventKind.GRANT, subject="bob")
+        revoke = event(
+            "a-revoke", 1, predecessor="grant", kind=EventKind.REVOKE, subject="bob"
+        )
+        recover = event(
+            "z-recover",
+            0,
+            credential="recovery",
+            parents=("grant",),
+            kind=EventKind.RECOVER,
+            subject="bob",
+        )
+        action = event(
+            "zz-bob",
+            0,
+            credential="bob",
+            parents=("z-recover",),
+            binding_ref="grant",
+        )
+        result = project(
+            _scenario((grant, revoke, recover, action), genesis=("admin", "recovery"))
+        )
+        self.assertIs(result.outcomes["z-recover"], Outcome.APPLIED)
+        self.assertIs(
+            result.outcomes["zz-bob"], Outcome.AUTHENTIC_BUT_UNAUTHORIZED
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
+    classify_payload_axis,

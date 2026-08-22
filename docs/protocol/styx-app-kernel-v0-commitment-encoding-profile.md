@@ -96,16 +96,6 @@ the ratified O-03 tuple without weakening any C0.2f invariant because the fresh
 random context identifier already separates contexts and the application
 transcript separately authenticates the genesis reference.
 
-The current `CTX` does **not** bind the producer credential identifier or author
-sequence. Consequently, copying one valid descriptor/opening across credentials
-or across two sequences of the same credential remains verification-valid when
-the other `CTX` members match. This is an explicit current-profile
-non-protection: verification proves binding to one openable value in this
-context, not possession at commit time, knowledge, truthful authorship,
-originality, first submission or semantic truth. C0.2k, after C0.2j selects the
-exact K credential identity, must widen this context and rederive every affected
-length, ceiling and inverse. This task does not change the 44-octet bytes.
-
 ## 3. Exact preimages
 
 `len32(X)` is the O-06b-1 `u32` big-endian octet length of `X`. Every preimage

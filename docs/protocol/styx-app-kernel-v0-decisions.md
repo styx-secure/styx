@@ -383,7 +383,12 @@ outcomes.
   descends from its credential grant. Transitive reachability over both link
   classes defines happens-before; absence of reachability in either direction
   defines concurrency. Duplicate, missing-parent, stale and same-author
-  fork/equivocation outcomes are classified before AP evaluation.
+  fork/equivocation outcomes are classified before AP evaluation. A
+  fork-classified event applies no AP transition but remains authenticated graph
+  evidence; each descendant remains a K candidate and is evaluated at its own
+  prefix. Consequently, a self-fork can expose an alternate descendant branch
+  or revise reversible AP history. C0.2i makes no safe-continuation or finality
+  claim for that case; C0.2j owns the exact fork namespace and binding rule.
   Arrival order, relay order, storage order and wall time MUST NOT determine
   causality. Among ready concurrent events, K-06 bytewise event-reference order
   produces the deterministic replay schedule; `AP` alone decides semantic
@@ -418,9 +423,7 @@ outcomes.
   make claims attributable but not truthful.
 - **Dependent artifact:** author sequence, direct predecessor, canonical parent
   frontier, derived event reference, causal/fork classifications and affected-
-  replay semantics. A frontier producer may reference only locally K-admitted,
-  non-pending events and must possess verified openings for every `REQUIRED`
-  event in their causal ancestry. O-04/O-07 define checkpoint/genesis evidence; O-08
+  suffix replay semantics. O-04/O-07 define checkpoint/genesis evidence; O-08
   bounds resources; O-10 names outcomes; O-06b-1/O-06b-2 select exact transcript,
   reference and commitment/chunk-tree bytes, while O-06c completes O-06.
 - **Executable falsification evidence:** the bounded, implementation-independent
@@ -456,6 +459,12 @@ outcomes.
   anonymous return capabilities are optional profile inputs, not universal
   authors. Rotation creates a new credential and retires the old one through an
   authorized AP transition; recovery MUST NOT resurrect revoked authority.
+  C0.2i's bounded v2 model does not implement that still-open succession
+  mechanism: `ROTATE` and `RECOVER` are authenticated symbolic control evidence
+  only and neither mints, rebinds nor re-authorizes an identifier. It retains
+  every applied revocation when classifying causal descendants. C0.2j must
+  select exact credential succession and K-readable grant evidence before a
+  later model can claim executable rotation or recovery semantics.
   Conflicting grants or identifier reuse are not solved here: C0.2j must define
   collision-resistant credential identity and exact K-readable grant evidence.
 - **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` distinguish key
@@ -619,7 +628,12 @@ outcomes.
   Authority-bearing control data is `NONE`-class transcript data after C0.2i;
   ordinary state-bearing data classified as `REQUIRED` still has no authorized
   removal or destruction path in v0. No finality exists, so visible AP results
-  remain provisional and cannot authorize irreversible effects. The current
+  remain provisional and cannot authorize irreversible effects. Fork-classified
+  events apply no AP transition, but their descendants remain independently
+  evaluated graph candidates; a compromised author can therefore self-fork
+  away from one pending branch or revise reversible control history. C0.2i
+  neither suppresses those descendants nor claims safe continuation; C0.2j owns
+  the exact fork namespace. The current
   44-octet commitment context deliberately does not prevent cross-credential
   descriptor copy or same-credential cross-sequence self-copy; C0.2k owns that
   amendment after C0.2j decides exact credential identity.
@@ -642,8 +656,9 @@ outcomes.
   input; unreconstructable detachable state; any checkpoint AP-state
   substitution or change to its authentication/authority/acceptance/horizon/
   equivocation/late-admission contract; or an installed legacy population
-  requiring migration; or any attempt to continue safely through a conflicting
-  credential identifier before C0.2j.
+  requiring migration; any attempt to continue safely through a conflicting
+  credential identifier before C0.2j; or any attempt to treat self-fork escape
+  or fork-descendant application as final or irreversible before C0.2j/O-16.
 - **Human ratification:** pending exact-final-HEAD approval under Issue #225.
 
 ### O-05 — Clock placement

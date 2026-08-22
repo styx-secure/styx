@@ -78,11 +78,10 @@ uses the application-event object kind and includes the retention-role
 discriminant and the extra fields in §3.3. O-06b-1 ensures that this
 role cannot be reinterpreted as an ordinary application action.
 
-Credential grants, revocations, rotations, policy transitions, closure and
-future dispositions are closed control-role application-event types. They MUST
-be `NONE`-class and place their bounded authoritative values in authenticated
-transcript representation. Their exact K-readable carriage is a C0.2j/O-07
-decision; any new location outside the current AP block reopens O-06b-1.
+Credential grants, revocations, policy transitions and other authority-bearing
+actions are closed application-event types. Their authoritative values are
+either bounded direct transcript fields or `REQUIRED` O-04 content. A profile
+must not hide durable authority in `DETACHABLE` content.
 
 ## 3. Complete K-01 field inventory
 
@@ -143,8 +142,6 @@ typed and authenticated:
 For `NONE`, exact length is zero, geometry is absent, and no commitment value
 or opening may be supplied. A zero-length `REQUIRED` or `DETACHABLE` value has
 a commitment and opening and therefore cannot encode as `NONE`.
-An event with retention/control role `0x01` structurally requires `NONE` before
-commitment/opening processing or AP evaluation.
 
 ### 3.3 Removal-directive fields
 
@@ -155,7 +152,7 @@ In addition to all common event fields, the retention role includes:
 | retention-role discriminant | `INCLUDE` | Prevents an ordinary action from being reinterpreted as removal. |
 | target event reference | `INCLUDE` | Names one retained accepted causal ancestor without mutating it. |
 | target commitment | `INCLUDE` | Detects reference/descriptor substitution and binds the intended content. |
-| claimed removal authorization, legal hold or data-class decision | `DERIVE` from the deterministic AP replay prefix and authenticated `NONE`-class policy events | An author cannot make removal authorized by declaring it so. Prefix-derived authority may permit only the append-only logical-removal transition after AP validation; physical destruction remains gated by O-13 and cannot be inferred from replay position. |
+| claimed removal authorization, legal hold or data-class decision | `DERIVE` from the deterministic AP replay prefix and authenticated policy events | An author cannot make removal authorized by declaring it so. Prefix-derived authority may permit only the append-only logical-removal transition after AP validation; physical destruction remains gated by O-13 and cannot be inferred from replay position. |
 | local deletion/quarantine result | `EXCLUDE` | `RS` owns custody and loss reporting; runtime outcome is not application authority. |
 | relay/provider acknowledgement, timeout, retry/peer count or quota state | `EXCLUDE` | O-13 forbids inferring irreversible authority from operational convenience. |
 
@@ -179,6 +176,18 @@ evidence used to justify an irreversible effect cannot derive its authority
 from the event's replay position and must be order-independent. The resulting
 AP decision still covers the exact action, context, credential and effective
 policy state known at that prefix; it is not a finality claim.
+
+The C0.2i amended profile narrows the earlier content-carriage alternative for
+control-role events: grant, revoke, rotate, recovery, policy, closure and future
+disposition are `NONE`-class and place their bounded authority semantics in the
+authenticated transcript representation. Their exact K-readable carriage is
+owned by C0.2j/O-07; any new location outside the existing AP block reopens
+O-06b-1. The v2 falsification model therefore treats grant contents and
+rotation/recovery as symbolic authenticated control evidence. It retains every
+applied revocation for `POST_REVOCATION` classification, but does not mint,
+rebind or re-authorize an identifier through `ROTATE` or `RECOVER`; C0.2j must
+define exact credential succession before those transitions can make such a
+claim.
 
 If a future profile needs an explicit grant or policy reference because the
 effective state cannot be derived unambiguously, that reference becomes an
@@ -410,12 +419,9 @@ non-circularity or replay-policy counterexample.
 
 ## 11. C0.3 gate
 
-O-06b-1 plus O-06b-2 do not make C0.3 executable. C0.2i selects only the
-pending-subtree semantics. C0.2j must close identifier collision and binding;
-C0.2k must amend the commitment context; O-06c must then falsify the combined
-exact construction. O-07, O-08, O-10 and O-14 remain blockers; O-12
-additionally blocks any time-bearing profile. O-11 does not block a
-transcript-only corpus but must close before supported persistence or remote
-admission. K-11 requires a separate exact-path licensing amendment before C0.3
-creates any normative corpus file. No supported Phase B adapter may persist
-current application-ledger objects while this `NO-GO` remains in force.
+O-06b-1 plus O-06b-2 do not make C0.3 executable. O-06c, O-07, O-08, O-10 and
+O-14 remain blockers; O-12 additionally blocks any time-bearing profile. O-11 does
+not block a transcript-only corpus but must close before supported persistence
+or remote admission. K-11 requires a separate exact-path licensing amendment
+before C0.3 creates any normative corpus file. No supported Phase B adapter may
+persist current application-ledger objects while this `NO-GO` remains in force.

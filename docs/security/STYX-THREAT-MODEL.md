@@ -171,8 +171,17 @@ state and must not treat the earlier prefix as final authority. A compromised
 author can keep its own `REQUIRED` subtree pending forever, selectively disclose
 an opening to different replicas, trigger replay amplification by delayed
 reveal, or exploit the temporary C0.2i identifier-collision rule to freeze an
-identifier's AP authority retroactively. Independent events outside a pending
-subtree still apply. No finality or availability guarantee follows.
+identifier's AP authority retroactively. The collision race includes a reused
+identifier published against onboarding, rotation or recovery, even by a bound
+or revoked credential; v0 deliberately fails closed rather than selecting one
+binding. Target-prefix abandonment by an old key is rejected as a repair
+because target-prefix authority either enables post-revocation censorship or
+becomes circular behind the pending subtree. A self-fork can expose an
+alternate descendant branch outside the author's pending branch and can revise
+reversible control history because fork evidence itself has no AP effect while
+descendants are evaluated at their own prefixes. Independent events outside a
+pending subtree still apply. C0.2i has no safe-continuation, finality or
+availability guarantee for these cases; C0.2j owns the binding/fork design.
 
 ### A4 — Compromised authorized peer
 
@@ -187,7 +196,9 @@ binding or graph admission. `POST_REVOCATION` and authentic-but-unauthorized
 events remain parent-usable graph evidence but apply no AP transition. A late
 concurrent event can reversibly change an earlier authority decision, so no
 irreversible effect is safe. Profiles must not claim retroactive confidentiality
-for content already exposed.
+for content already exposed. The C0.2i model records rotation/recovery as
+symbolic control evidence only: it never resurrects an old identifier and does
+not yet implement the fresh-credential succession required by O-02.
 
 ### A5 — Hostile or colluding relay and service provider
 
@@ -272,10 +283,12 @@ data, misuse emergency access, correlate reporters or conceal actions.
 
 Least privilege, role separation, independent audit, revocation and high-impact
 authorization are product/organizational obligations. A sole authority can
-self-lock its control subtree by withholding an ancestor opening; control and
-removal descendants can therefore take effect at different replicas until
-openings converge. Styx cannot guarantee handler independence, lawful
-processing, finality or protection from retaliation.
+self-lock one control branch by withholding an ancestor opening. This is not an
+absolute context lockout: absent the still-open C0.2j fork rule, the same actor
+may self-fork and continue on an alternate descendant branch. Control and
+removal descendants can therefore take effect at different replicas or be
+revised under later fork evidence. Styx cannot guarantee handler independence,
+lawful processing, finality or protection from retaliation.
 
 ### A12 — Supply-chain or build adversary
 
@@ -313,15 +326,15 @@ make telemetry or push metadata harmless.
 | --- | --- | --- | --- | --- |
 | A1 malformed-input sender | Event meaning, session/runtime availability | Strict bounded parsing, canonical rejection, stable outcomes and resource tests before state change; O-06b-1/O-06b-2 fix regenerated transcript, commitment and geometry grammars but supply no parser implementation | `OB-K02`–`OB-K04`, `OB-SS08`, `OB-TR01` each at its parser boundary | A conforming parser cannot prevent all bandwidth exhaustion before bytes reach it; the written profiles are not executable evidence. |
 | A2 valid but unauthorized actor | Role authority, case state, retention/export | Separate monotone K binding from reversible context-bound AP authority; classify authentic-but-unauthorized and post-revocation actions | `OB-AP02`; cryptographic binding by `OB-K18` | C0.2j must replace the temporary collision-triggered authority freeze and define exact grant evidence. |
-| A3 malicious peer | Plaintext, causal state, availability, erasure | Detect replay/fork/conflict; keep holes and descendants pending; apply independent events; expose selective disclosure and delayed replay | `OB-K05`–`OB-K14`, `OB-AP04`, `OB-PV01`/`OB-PV04` | An authorized peer can copy plaintext, keep a subtree pending forever, amplify replay or lie in signed content. |
-| A4 compromised authorized peer | Current rights, plaintext and session history | Revoke/rotate, preserve K evidence, reversibly re-evaluate AP authority, recover session and disclose compromise | `OB-AP02`, `OB-K18`, `OB-SS04`–`OB-SS06`, `OB-PV07` | No retroactive protection for plaintext/keys; late evidence means no finality. |
+| A3 malicious peer | Plaintext, causal state, availability, erasure | Detect replay/fork/conflict; keep holes and descendants pending; apply independent events; expose selective disclosure, identifier races, self-fork escape and delayed replay | `OB-K05`–`OB-K14`, `OB-AP04`, `OB-PV01`/`OB-PV04` | An authorized peer can copy plaintext, keep a subtree pending forever, amplify replay, force the temporary collision freeze, continue on an alternate fork branch or lie in signed content. |
+| A4 compromised authorized peer | Current rights, plaintext and session history | Revoke/rotate, preserve K evidence, reversibly re-evaluate AP authority, recover session and disclose compromise | `OB-AP02`, `OB-K18`, `OB-SS04`–`OB-SS06`, `OB-PV07` | No retroactive protection for plaintext/keys; C0.2i does not implement credential succession; late/fork evidence means no finality. |
 | A5 hostile/colluding relay | Availability, freshness, routing metadata | Verify outer objects, ignore relay order/response as authority, authenticate fetched openings, retry/fail over and measure exposure | `OB-TR01`–`OB-TR06`, `OB-TR10` | Relays can selectively withhold openings and collude over visible metadata; they never substitute for verification. |
 | A6 network observer | Relationship and activity metadata | Use only profile-approved routing/padding/batching/onion measures and validate via traffic capture | `OB-TR06`/`OB-TR07` | No resistance claim against a global passive observer. |
 | A7 hostile origin/release | Plaintext, keys-as-oracles, software integrity | Enforce distribution/profile controls, external verification and explicit unsupported/rollback outcomes | `OB-RS12`, release gate `OB-PV10` | The current PWA cannot make an adversary-controlled first response trustworthy. |
 | A8 XSS/extension | Plaintext operations, UI trust, local metadata | Minimize callable interfaces and third-party code, lock promptly, enforce runtime containment and test browser controls | `OB-RS01`, `OB-RS11`, product copy `OB-PV11` | A privileged hostile caller can use an unlocked client as an oracle. |
 | A9 seized/compromised endpoint | Plaintext, password, local state and recovery material | Distinguish locked/unlocked guarantees, encrypt storage, rotate after compromise and follow incident procedure | `OB-RS01`/`OB-RS02`/`OB-RS11`, `OB-PV07` | Keylogger, screen capture, memory and authorized-recipient leakage remain possible. |
 | A10 fault/eviction/rollback | Durable state, causality, opening availability | Atomic fail-closed persistence, frontier-opening custody, crash reconciliation, runtime probes and bounded rollback evidence | `OB-RS03`–`OB-RS10`, fetch by `OB-TR05` | Permanent opening loss can strand a subtree; coherent rollback can remain undetectable without independent evidence. |
-| A11 malicious operator | Case confidentiality, role authority, audit and erasure | Least privilege, separation of duties, high-impact approval, alternate authority route and truthful pending/provisional presentation | `OB-PV01`–`OB-PV06`; machine role semantics `OB-AP02` | A sole authority can self-lock; protocol cannot ensure independence, lawful action, finality or prevent off-protocol disclosure. |
+| A11 malicious operator | Case confidentiality, role authority, audit and erasure | Least privilege, separation of duties, high-impact approval, alternate authority route and truthful pending/provisional presentation | `OB-PV01`–`OB-PV06`; machine role semantics `OB-AP02` | A sole authority can strand one branch yet self-fork around it; protocol cannot ensure independence, lawful action, finality or prevent off-protocol disclosure. |
 | A12 supply-chain/build adversary | Software/configuration and all plaintext handled by it | Exact provenance, reproducible artifacts, signed/verified updates, rollback control and incident response. O-06b-1/O-06b-2 record WebCrypto SHA-256, exact `@noble/hashes` lock evidence and the Dart reference dependency separately; no fallback or new dependency is selected. | `OB-RS12`, `OB-PV07`/`OB-PV10` | Upstream audit evidence does not transfer across revision, configuration or Styx integration; Dart's declared `crypto` range and package disclaimer are reference-oracle evidence, not production assurance. One-shot WebCrypto requires complete-buffer custody and creates an implementation memory-exposure window that O-08 must bound. |
 | A13 availability adversary | Delivery, access and organizational continuity | Bounds, backoff, failover, offline truth, abuse-aware controls and continuity drills | `OB-TR03`/`OB-TR04`/`OB-TR09`, `OB-PV07`/`OB-PV08` | Styx does not guarantee unstoppable, timely or cost-free delivery. |
 | A14 backup/telemetry/push provider | Local replicas, endpoint mapping and behavioral metadata | Minimize/forbid external signals, declare retention, isolate audit and test notification data flow | `OB-RS13`, `OB-TR08`, `OB-PV04` | Providers may retain allowed metadata and correlate it with external datasets. |
@@ -498,6 +511,13 @@ Current evidence establishes only bounded components:
   described in its final verdict; and
 - existing vault and chat work provides component evidence under its own
   reports and tests.
+
+C0.2i's bounded evidence deliberately leaves three hostile boundaries open:
+same-identifier races can freeze authority until C0.2j; an old-key target-prefix
+abandonment rule is rejected rather than implemented; and a self-fork can expose
+an alternate descendant branch or revise reversible AP history. Its symbolic
+`ROTATE`/`RECOVER` events do not implement credential succession. None of these
+conditions may be presented as safe continuation, availability or finality.
 
 This threat model does not establish application-protocol conformance,
 supported Marmot/Nostr envelopes, product integration, metadata anonymity,
