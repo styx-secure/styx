@@ -316,6 +316,12 @@ The O-06b-1 tail remains unconditionally:
 target_event_reference:opaque32 || target_commitment:opaque_u32
 ```
 
+The logical-removal role is a control event. C0.2i therefore adds the structural
+cross-field rule `event_role == 0x01 => content_class == NONE`. A violating
+event is rejected before commitment/opening processing, target lookup or AP
+evaluation. The tail remains unchanged and authenticated; `NONE` supplies no
+opening and cannot itself create a pending root.
+
 For Styx protocol v1, the tail length is derived from the single commitment
 suite active for the authenticated protocol version, never from the directive's
 own descriptor and never from the target. Suite `0x0001` therefore requires
@@ -347,12 +353,10 @@ Changing them changes the transcript, event reference, exact duplicate key and
 potential K-06 concurrent tiebreak position, absent a SHA-256 collision. The
 variants are distinct events, not encodings of one event. This creates a 2^256
 grinding space for an inapplicable directive. It confers no AP authority,
-priority, finality or irreversible effect; a content-bearing directive already
-has the opening-randomizer grinding space, and a contentless inapplicable
-directive cannot halt replay or change AP state. Whole-suffix deferral can move
-only when the directive's own class is `REQUIRED` with an unavailable opening,
-where the pre-existing randomizer already supplies the same lever; the effect
-is reversible after verification.
+priority, finality or irreversible effect. A removal directive is necessarily
+`NONE`, so it cannot create an opening hole or change AP state merely through
+these tail octets. If it causally descends from another pending root, it remains
+a pending descendant until that root is released.
 
 ## 7. Verification inputs and rejection classes
 
@@ -509,9 +513,16 @@ as strongly as content; O-08 and RS own custody and redundancy numbers.
 - Chunk-granular refetch can reveal which part is missing and may violate remote
   opacity. O-11 owns fetch design; v0 defines no inclusion proof, audit path,
   partial acceptance or partial redaction.
-- Verification is whole-object. One unavailable `REQUIRED` opening can halt an
-  entire canonical AP suffix indefinitely. This is an accepted O-04 availability
-  risk, not repaired by this profile.
+- Verification is whole-object. Under C0.2i, one unavailable `REQUIRED` opening
+  defers exactly that event and its causal descendants; in a fork-free,
+  non-stale context, causally independent events remain applicable even when
+  they sort later. The subtree can remain
+  pending indefinitely, and delayed reveal can trigger a large reversible
+  replay. O-08 owns production bounds.
+- The current 44-octet `CTX` accepts cross-credential descriptor copy and
+  same-credential cross-sequence self-copy. AP MUST NOT infer possession,
+  knowledge, authorship, originality, first submission or truth from successful
+  verification. C0.2k owns the byte-level repair after C0.2j.
 - No erasure, deletion, post-removal unlinkability, anonymity, compliance,
   interoperability, audit or readiness claim is made.
 
@@ -521,7 +532,9 @@ derivation is a formal reopen and is blocked by this task.
 
 ## 11. O-06c executable handoff
 
-O-06c MUST build an independent bounded corpus/model that attempts at least:
+C0.2i adds a separate v2 bounded model for the amended pending fold while the
+v1 C0.2d/C0.2f evidence remains immutable. After C0.2j and C0.2k, O-06c MUST
+build an independent bounded corpus/model that attempts at least:
 
 1. framing injectivity for all three preimages and separation across all seven
    v1 roles;
@@ -536,9 +549,19 @@ O-06c MUST build an independent bounded corpus/model that attempts at least:
 7. randomizer width, CSPRNG failure, unknown suite/shape and fallback failure;
 8. commitment equality/mismatch, verifier use of authenticated fields only and
    complete-object verification;
-9. grinding in both K-06 ordering directions, including an unavailable
-   `REQUIRED` deferral boundary; and
-10. byte-identical reruns of the combined C0.2d/C0.2f `required` suite.
+9. grinding in both K-06 ordering directions, including the fork-free
+   concurrent grant/revoke laundering counterexample; an unavailable
+   `REQUIRED` event blocks exactly its causal subtree only while the context is
+   fork-free, whereas any admitted fork quarantines the whole v0 AP context;
+10. control-role/`NONE` enforcement before opening or AP work;
+11. current-profile cross-credential and cross-sequence copy as explicit
+    non-protections, then their C0.2k reversal while retaining same-credential,
+    same-sequence equivocation siblings as verifying fork evidence; and
+12. byte-identical reruns of the combined C0.2d/C0.2f v1 and C0.2i v2 required
+    suites; and
+13. deterministic work-order instrumentation and per-stage counters for parsing,
+    transcript regeneration, hashing, graph construction, opening verification
+    and replay, so attacker-controlled work is visible before the final verdict.
 
 ### 11.1 Removal-tail octet-variance property
 
@@ -566,12 +589,14 @@ Where the equality rule is vacuous because the validated target is `NONE` or
 - any implementation that collapses `D` and `D'` as the same intent against the
   same target is non-conforming, and O-06c MUST carry this as a directed negative
   case;
-- if the directive itself has unavailable `REQUIRED` content/opening, the
-  whole-suffix deferral boundary may differ in both ordering directions, but
-  the effect is reversible and both runs converge once verification succeeds;
-  no authority, priority, finality or irreversible effect follows; and
+- a directive cannot itself have `REQUIRED` content. When it descends from a
+  pending root, both tail variants remain in that same pending causal subtree;
+  independent events outside the subtree remain applicable only when each
+  variant is evaluated in a separate fork-free transcript, and no authority,
+  priority, finality or irreversible effect follows; and
 - admitting both variants at the same credential/sequence is same-author
-  equivocation, never deduplication or silent reconciliation.
+  equivocation that permanently quarantines the whole v0 AP context, never
+  deduplication, silent reconciliation or a winning removal.
 
 No octet value may make a directive remove a `NONE`, `REQUIRED` or absent
 target, alter authorization, first-writer truth, expiry or removal authority,
@@ -589,6 +614,11 @@ confer priority or finality, or permit an irreversible external effect.
   and extension rules remain open.
 - **O-12/O-13/O-14:** no physical time, destruction permission, erasure claim,
   signature suite or key/signature encoding is selected.
+- **C0.2j / C0.2k:** C0.2j first selects collision-resistant K credential
+  identity and grant binding. C0.2k then widens `CTX` to bind that exact identity
+  and author sequence and rederives all dependent arithmetic and inverses.
+- **O-15/O-16:** lifecycle/profile succession and finality/stability remain open;
+  v0 is version-pinned and no irreversible-effect claim follows.
 
 Reopen O-06b-2 if the written inverse fails, O-06c finds a counterexample, the
 selected runtime cannot support bounded safe hashing/randomness, O-08 cannot
@@ -597,5 +627,6 @@ is withdrawn/materially weakened, or a future protocol version requires a new
 commitment family. A preference for HMAC triggers the explicit three-part reopen
 and renewed-ratification path in section 9.1; it is never an executor choice.
 
-After this selection, O-06 remains `OPEN`, O-06c remains mandatory, K-11 still
-gates any normative corpus file, and C0.3 remains `NO-GO`.
+After this amendment, O-06 remains `OPEN`; C0.2j, C0.2k and O-06c remain
+mandatory in that order. K-11 still gates any normative corpus file, and C0.3
+remains `NO-GO`.
