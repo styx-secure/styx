@@ -78,10 +78,11 @@ uses the application-event object kind and includes the retention-role
 discriminant and the extra fields in §3.3. O-06b-1 ensures that this
 role cannot be reinterpreted as an ordinary application action.
 
-Credential grants, revocations, policy transitions and other authority-bearing
-actions are closed application-event types. Their authoritative values are
-either bounded direct transcript fields or `REQUIRED` O-04 content. A profile
-must not hide durable authority in `DETACHABLE` content.
+Credential grants, revocations, rotations, policy transitions, closure and
+future dispositions are closed control-role application-event types. They MUST
+be `NONE`-class and place their bounded authoritative values in authenticated
+transcript representation. Their exact K-readable carriage is a C0.2j/O-07
+decision; any new location outside the current AP block reopens O-06b-1.
 
 ## 3. Complete K-01 field inventory
 
@@ -99,7 +100,7 @@ must not hide durable authority in `DETACHABLE` content.
 | AP type-specific transition-field block | `INCLUDE` | `AP`, membership and internal order fixed by the authenticated closed schema identifier/version | Every direct field that changes authorization or transition semantics is authenticated in one bounded schema-defined position. Decoder order, maps and undeclared extension fields are rejected. |
 | Effective grant/policy state | `DERIVE` | `AP`, from authenticated replay state under O-02 | An author-carried "current policy" selector is excluded; the order-sensitive concurrent case is constrained in §3.4 and §6. |
 | Credential identifier | `INCLUDE` | O-02 context-local credential state | Names the author binding without embedding a global account or session identity. |
-| Verification key | `DERIVE` | Authenticated O-02 credential state selected by credential identifier and replay prefix | Repeating an author-supplied key permits substitution. O-02 makes the credential grant a causal ancestor of every signed event, so the resulting key binding is prefix-stable. |
+| Verification key | `DERIVE` | K-valid causal-ancestor grant selected by the credential identifier under the C0.2i unique-identifier assumption | Repeating an author-supplied key permits substitution. More than one K-valid binding for one identifier is `CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED`; C0.2j must replace this denial-of-service envelope with exact collision-resistant identity and K-readable grant evidence. |
 | Signature algorithm identifier | `DERIVE` | Authenticated credential record; O-14 owns the registry and leaves its exact values open | An author-selected algorithm field could enable downgrade or cross-algorithm ambiguity. Unknown or inconsistent algorithms must fail closed. |
 | Signature bytes | `EXCLUDE` | Supplied beside the regenerated transcript | Including the signature in event identity is circular and makes resigning change identity. The signature authenticates, but is not part of, its content. |
 | Author sequence | `INCLUDE` | O-01 | Detects per-credential gaps and equivocation. Arrival order and aggregate counters are rejected. |
@@ -142,6 +143,8 @@ typed and authenticated:
 For `NONE`, exact length is zero, geometry is absent, and no commitment value
 or opening may be supplied. A zero-length `REQUIRED` or `DETACHABLE` value has
 a commitment and opening and therefore cannot encode as `NONE`.
+An event with retention/control role `0x01` structurally requires `NONE` before
+commitment/opening processing or AP evaluation.
 
 ### 3.3 Removal-directive fields
 
@@ -152,7 +155,7 @@ In addition to all common event fields, the retention role includes:
 | retention-role discriminant | `INCLUDE` | Prevents an ordinary action from being reinterpreted as removal. |
 | target event reference | `INCLUDE` | Names one retained accepted causal ancestor without mutating it. |
 | target commitment | `INCLUDE` | Detects reference/descriptor substitution and binds the intended content. |
-| claimed removal authorization, legal hold or data-class decision | `DERIVE` from the deterministic AP replay prefix and authenticated policy events | An author cannot make removal authorized by declaring it so. Prefix-derived authority may permit only the append-only logical-removal transition after AP validation; physical destruction remains gated by O-13 and cannot be inferred from replay position. |
+| claimed removal authorization, legal hold or data-class decision | `DERIVE` from the deterministic AP replay prefix and authenticated `NONE`-class policy events | An author cannot make removal authorized by declaring it so. Prefix-derived authority may permit only the append-only logical-removal transition after AP validation; physical destruction remains gated by O-13 and cannot be inferred from replay position. |
 | local deletion/quarantine result | `EXCLUDE` | `RS` owns custody and loss reporting; runtime outcome is not application authority. |
 | relay/provider acknowledgement, timeout, retry/peer count or quota state | `EXCLUDE` | O-13 forbids inferring irreversible authority from operational convenience. |
 
@@ -264,19 +267,24 @@ cross-author parent can grind below a concurrent authority transition and make
 that transition absent from its own evaluation point. Later replay still
 discloses the concurrency, so AP must revise reversible state and cannot treat
 the earlier prefix result as irreversible authority. Grinding can also move an
-event with unavailable `REQUIRED` content ahead of concurrent peers, changing
-which otherwise valid events fall behind the whole-suffix halt. That is a
-reversible availability/deferral effect when the opening is later verified, not
-authority or finality; indefinite withholding remains an accepted O-04 risk.
+event with unavailable `REQUIRED` content across concurrent peers. C0.2i
+removes replay position from the readiness boundary: only that event and its
+causal descendants enter the pending set, while independent events remain
+applicable. Order can still change deterministic presentation among otherwise
+concurrent applicable events, but it cannot enlarge the pending causal subtree,
+confer authority or create finality; indefinite withholding remains an accepted
+O-04 risk.
 
-O-06c must exercise this grinding-to-handoff interaction in both ordering
+The C0.2i v2 model exercises this grinding-to-handoff interaction in both ordering
 directions, including assertions on the acting event's handoff when a
-revocation sorts later. It must also move an unavailable-`REQUIRED` event across
-concurrent peers in both directions and verify the exact whole-suffix deferral
-boundary and recovery after the opening verifies. It must show that grinding
-cannot convert replay position into final authorization or an irreversible
-effect; it must not assert the false stronger property that every prefix-scoped
-handoff or reversible readiness result is unchanged.
+revocation sorts later. It also moves an unavailable-`REQUIRED` event across
+concurrent peers in both directions and verifies that the pending causal
+subtree and opening-triggered replay are order-independent. C0.2j must replace
+the model's fail-closed unique-identifier assumption with exact
+collision-resistant identity and K-readable grant binding; C0.2k must then
+bind the commitment to that identity before O-06c re-falsifies the exact byte
+profile. None of these increments may assert the false stronger property that
+every prefix-scoped handoff or reversible readiness result is unchanged.
 
 ## 7. Rejection-site inventory for later O-10 work
 
@@ -347,13 +355,21 @@ checkpoint authority, set O-08 runtime maxima, assign O-10 codes, create a
 conformance corpus or authorize production implementation. O-06 remains
 `OPEN` after O-06b-2.
 
-### O-06c — bounded executable falsification
+### C0.2i, C0.2j, C0.2k and O-06c — staged executable closure
 
-A later isolated tool must test framing injectivity, absence/emptiness,
+C0.2i supplies a fresh isolated v2 model for pending-subtree replay while
+preserving the historical v1 evidence byte-for-byte. It deliberately fails
+closed on a credential-identifier collision before positive exploration.
+C0.2j must select exact collision-resistant credential identity and K-readable
+binding evidence. C0.2k must bind the content commitment to that exact identity
+and author sequence; the current 44-octet `CTX` does neither and remains a
+recorded non-protection rather than an inferred guarantee.
+
+O-06c must then test framing injectivity, absence/emptiness,
 cross-role/context separation, non-circularity, cross-event chunk equality,
 parent canonicality, suite binding, unknown-suite rejection, structural versus
 binding failures, collision handling, grinding/prefix-handoff interaction and
-bounded work. It must rerun C0.2d/C0.2f without changing their recorded results
+bounded work. It must rerun C0.2d/C0.2f/C0.2i without changing their recorded results
 and must not add `conformance/**` files before the separate K-11 licensing task.
 Only a bounded no-counterexample result plus independent review and human
 ratification may move O-06 to `DECIDED`.
@@ -372,15 +388,15 @@ and O-06b-2 supplies an exact randomized-opening commitment and chunk-tree
 construction, but neither is an implementation proof. SHA-256
 collision/second-preimage resistance, commitment hiding/binding assumptions,
 randomizer custody/misuse, parser safety, runtime capacity and signature-suite
-downgrade remain residual or open. Bounded O-06c evidence
+downgrade remain residual or open. Bounded C0.2i/O-06c evidence
 will not prove absence of counterexamples outside its envelope. A hostile
 authorized author can withhold parents, equivocate, reuse randomizers or grind
 its replay position. Grinding can suppress a later-sorting concurrent authority
-transition from the acting event's own prefix-scoped handoff or widen the
-reversible suffix deferred behind unavailable `REQUIRED` content. Later
-disclosure requires reversible AP repair and does not retroactively make an
-irreversible effect safe; later opening verification releases the readiness
-halt, while indefinite withholding remains possible. The protocol can
+transition from the acting event's own prefix-scoped handoff. It cannot widen
+the C0.2i pending set beyond the unavailable event's causal descendants merely
+by changing order. Later disclosure requires reversible AP repair and does not
+retroactively make an irreversible effect safe; later opening verification
+replays the affected subtree, while indefinite withholding remains possible. The protocol can
 attribute and classify these actions but cannot force honest claims or
 availability.
 
@@ -394,9 +410,12 @@ non-circularity or replay-policy counterexample.
 
 ## 11. C0.3 gate
 
-O-06b-1 plus O-06b-2 do not make C0.3 executable. O-06c, O-07, O-08, O-10 and
-O-14 remain blockers; O-12 additionally blocks any time-bearing profile. O-11 does
-not block a transcript-only corpus but must close before supported persistence
-or remote admission. K-11 requires a separate exact-path licensing amendment
-before C0.3 creates any normative corpus file. No supported Phase B adapter may
-persist current application-ledger objects while this `NO-GO` remains in force.
+O-06b-1 plus O-06b-2 do not make C0.3 executable. C0.2i selects only the
+pending-subtree semantics. C0.2j must close identifier collision and binding;
+C0.2k must amend the commitment context; O-06c must then falsify the combined
+exact construction. O-07, O-08, O-10 and O-14 remain blockers; O-12
+additionally blocks any time-bearing profile. O-11 does not block a
+transcript-only corpus but must close before supported persistence or remote
+admission. K-11 requires a separate exact-path licensing amendment before C0.3
+creates any normative corpus file. No supported Phase B adapter may persist
+current application-ledger objects while this `NO-GO` remains in force.

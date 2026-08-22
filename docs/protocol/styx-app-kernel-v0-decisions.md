@@ -16,6 +16,8 @@
   `docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md`.
 - **C0.2f payload-state falsification evidence:**
   `docs/protocol/styx-app-kernel-v0-payload-state-falsification-report.md`.
+- **C0.2i pending-subtree falsification evidence:**
+  `docs/protocol/styx-app-kernel-v0-pending-subtree-falsification-report.md`.
 - **O-06a semantic transcript inventory:**
   `docs/protocol/styx-app-kernel-v0-identifier-derivation-analysis.md`.
 - **O-06b-1 transcript/reference profile:**
@@ -230,11 +232,11 @@ claim that current code conforms.
   destruction remains gated by O-13 and never follows from replay position.
   Because replay handoffs are prefix-scoped, grinding can change
   whether a concurrent revocation, rotation or policy event is visible at the
-  acting event's own evaluation point. It can also move unavailable `REQUIRED`
-  content across concurrent peers and thereby change the reversible
-  whole-suffix deferral boundary. Later disclosure requires revision of
-  reversible AP state and never retroactively authorizes an irreversible
-  effect; later opening verification releases the readiness halt. This rule
+  acting event's own evaluation point. It can also move a pending root or its
+  causal descendants relative to independent events, changing bounded replay
+  work but never the pending closure itself. Later disclosure requires revision
+  of reversible AP state and never retroactively authorizes an irreversible
+  effect; later opening verification releases only the affected causal subtree. This rule
   does not decide the causal representation or application conflict policy and
   does not provide fairness, unpredictability or availability.
 - **Residual/reopen condition:** the exact authenticated content identifier is
@@ -392,9 +394,10 @@ outcomes.
   the current replay position alone proves neither authorization nor an
   irreversible external effect. Graph diagnostics are set-relative, while each
   `K → AP` transition in a full or incremental replay is prefix-scoped: it
-  contains the prefix-visible classification, authenticated grant reference,
-  and only causal/fork/live-revocation facts actionable at that position in the
-  canonical replay. A newly replayed event introduces later-discovered facts;
+  contains the prefix-visible classification and authenticated credential-
+  binding evidence. Grant, revoke, rotate and policy authority are reversible
+  `AP`-fold results, not inputs to K admission, graph membership, ordering,
+  duplicate identity or fork classification. A newly replayed event introduces later-discovered facts;
   an unchanged prefix is reusable only when its handoffs are byte-identical to
   those produced by a fresh full replay. Set-relative diagnostics do not
   retroactively become AP transitions, while checkpoint authority outside the
@@ -415,7 +418,9 @@ outcomes.
   make claims attributable but not truthful.
 - **Dependent artifact:** author sequence, direct predecessor, canonical parent
   frontier, derived event reference, causal/fork classifications and affected-
-  suffix replay semantics. O-04/O-07 define checkpoint/genesis evidence; O-08
+  replay semantics. A frontier producer may reference only locally K-admitted,
+  non-pending events and must possess verified openings for every `REQUIRED`
+  event in their causal ancestry. O-04/O-07 define checkpoint/genesis evidence; O-08
   bounds resources; O-10 names outcomes; O-06b-1/O-06b-2 select exact transcript,
   reference and commitment/chunk-tree bytes, while O-06c completes O-06.
 - **Executable falsification evidence:** the bounded, implementation-independent
@@ -437,15 +442,22 @@ outcomes.
 
 - **Status:** `DECIDED`.
 - **Rule:** every authoring endpoint SHALL use a distinct context-local signing
-  credential. Its authenticated grant binds one credential identifier and
-  verification key to one application-context tuple and bounded application
-  authority. `K` verifies the signed binding; `AP` evaluates authority in the
-  authenticated predecessor state. Key possession, signature validity, MLS
+  credential. Credential binding is a monotone K-level historical fact;
+  application authority is a reversible AP-level decision evaluated at the
+  acting event's replay prefix. Binding never implies authority. Under the
+  current bounded envelope, each non-genesis identifier resolves through one
+  K-valid causal-ancestor grant to one verification key and signature
+  algorithm; O-07 supplies the static genesis-authority abstraction. A grant
+  signed by a bound but AP-unauthorized credential can bind its grantee for K
+  verification while conferring no AP authority. Such actions are
+  `AUTHENTIC_BUT_UNAUTHORIZED` and apply no transition. Key possession, signature validity, MLS
   membership, Nostr identity, durability, delivery and human assignment MUST
   NOT substitute for application authorization. Persistent-account proofs and
   anonymous return capabilities are optional profile inputs, not universal
   authors. Rotation creates a new credential and retires the old one through an
-  authorized transition; recovery MUST NOT resurrect revoked authority.
+  authorized AP transition; recovery MUST NOT resurrect revoked authority.
+  Conflicting grants or identifier reuse are not solved here: C0.2j must define
+  collision-resistant credential identity and exact K-readable grant evidence.
 - **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` distinguish key
   possession from authorization. The C0.2b analysis compares five
   constructions and selects the only candidate that preserves endpoint-specific
@@ -524,8 +536,9 @@ outcomes.
 
 ### O-04 — Payload commitment and detachment
 
-- **Status:** `DECIDED`; the C0.2f executable falsification gate passed within
-  its declared bounds and remains mandatory to rerun after dependent changes.
+- **Status:** `DECIDED` as amended by C0.2i. The historical C0.2f evidence remains
+  reproducible but its whole-suffix rule is superseded. The isolated C0.2i v2
+  gate found no counterexample within its declared bounds.
 - **Rule:** every authoritative event authenticates exactly one bounded content
   descriptor. `content_class` is one of `NONE`, `REQUIRED` or `DETACHABLE`.
   For content-bearing classes the descriptor authenticates a closed content-
@@ -538,6 +551,11 @@ outcomes.
   permit deterministic, transcript-randomized or keyed K commitment modes.
   Production randomizer generation uses the supported runtime CSPRNG and fails
   closed; conformance-vector injection is not a production fallback.
+- **Control-event rule:** `event_role == 0x01` structurally requires
+  `content_class == NONE`. AP grant, revoke, rotate, policy, closure and future
+  disposition events are bounded authenticated transcript data, never hidden
+  `REQUIRED` payload. Their exact K-readable carriage remains a C0.2j/O-07
+  decision; any carriage outside the existing AP block reopens O-06b-1.
 - **Removal rule:** availability, binding, retention and replay readiness are
   separate typed properties. Removal is a later authenticated, AP-authorized
   event targeting the original event reference and commitment; it never
@@ -550,42 +568,61 @@ outcomes.
   copy/opening is gated by O-13 and MUST NOT be inferred from replay position,
   timeout, retry/peer count, relay/provider/transport response, quota/storage
   pressure, cache eviction, private-mode teardown or session end.
-- **Replay/reconstruction:** unavailable `REQUIRED` content keeps the event
-  valid and parent-usable but stops the canonical AP replay suffix until its
-  complete opening verifies. No timeout, retry, peer-count, relay response or
-  causal independence skips the halt. In v0 `DETACHABLE` is permitted only when
-  retained events/descriptors/directives reconstruct current AP state without
-  the bytes. Checkpoints do not substitute; checkpoint-based AP-state
-  reconstruction is suspended. Causal compaction remains possible, but
-  `REQUIRED` content/openings are non-releasable AP-replay dependencies and
-  fresh replicas require all of them in horizon.
+- **Replay/reconstruction:** each active K-valid `REQUIRED` event lacking a
+  locally verified opening is a pending root. The pending set is the exact union
+  of every root and all its causal descendants. Pending events are not applied;
+  every K-valid event outside that set is folded in unchanged canonical relative
+  order, including independent events that sort later. Pending depends only on
+  authenticated transcripts, causal descent and the replica's monotone verified-
+  opening set; it never consults AP authority, AP outcome or retention. Roots
+  report model outcome `PENDING_OPENING`, descendants `PENDING_ANCESTOR`.
+  Adding a verified opening removes that reason, recomputes the closure and
+  replays from the earliest affected canonical position; incremental and fresh
+  full replay must agree. Timeout, retries, time, arrival order, relays, peers,
+  checkpoints, majorities and unauthenticated dispositions never substitute.
+  In v0 `DETACHABLE` remains reconstructible without its bytes. Any content- or
+  authority-bearing replay dependency retained only in checkpoint evidence
+  takes precedence as whole-projection `STALE_EVIDENCE`, except O-07's static
+  genesis-authority abstraction. Checkpoints do not substitute, and authority-
+  event transcripts plus every in-horizon `REQUIRED` opening remain
+  non-releasable replay dependencies.
 - **Rationale/evidence:** `PRIV-05` through `PRIV-19` independently analyzed and
   reconciled the design; `HASH-004`, `HASH-005`, `PRIV-01`, `PRIV-03` and
   `PRIV-04` reject boundaryless legacy behavior. The complete decision,
   alternatives, attack analysis and minority findings are in
   `docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md`. The C0.2f
-  model evaluated all sixteen required obligations and returned
-  `NO_COUNTEREXAMPLE_WITHIN_BOUNDS`; exact bounds and residual risks are in
-  `docs/protocol/styx-app-kernel-v0-payload-state-falsification-report.md`.
+  historical model evaluated all sixteen required obligations under the now-
+  superseded whole-suffix semantics. The fresh independent v2 model re-encodes
+  those obligations under pending-subtree replay, covers binding/authority and
+  collision witnesses, and returned `NO_COUNTEREXAMPLE_WITHIN_BOUNDS`; exact
+  bounds and residual risks are in
+  `docs/protocol/styx-app-kernel-v0-pending-subtree-falsification-report.md`.
 - **Rejected alternatives:** raw payload in the transcript; deterministic bare
   digest-plus-length; randomizer in the transcript; keyed commitment as the K
   default; committing SS/TR/RS ciphertext; unauthenticated `isPruned`-style
   state; rewriting historical events; a profile-selectable v0 cryptographic
-  mode family.
+  mode family; whole-suffix halt; `ABANDON_REQUIRED`; timeout, quorum or
+  checkpoint bypass; control lane; provisional-effect lane.
 - **Security/privacy:** descriptor-only history remains bounded and supports
   retained verification evidence. With a destroyed opening, the retained
   ledger alone is not intended to expose a practical equality/dictionary oracle
   under the selected O-06b-2 suite assumptions. Length, type and commitment remain
   correlatable; randomizer reuse is an honest-producer obligation; authorized
-  recipients and copies remain outside any erasure claim. A single withheld or
-  lost `REQUIRED` opening can halt a context indefinitely. Rollback past a
+  recipients and copies remain outside any erasure claim. A withheld or lost
+  `REQUIRED` opening can keep its causal subtree pending indefinitely and
+  selective disclosure can temporarily diverge replica projections. Rollback past a
   removal directive may re-expose quarantined content under the OB-RS09
   non-claim. Randomized openings intentionally forfeit stable K-level cross-
   replica content deduplication; storage-level deduplication is outside K and
   can reintroduce equality leakage. K cannot verify at runtime that an AP
   profile's `DETACHABLE` declaration satisfies its reconstruction contract.
-  Authority-bearing data classified as `REQUIRED` has no authorized removal or
-  destruction path in v0; closing O-13 alone does not change that rule.
+  Authority-bearing control data is `NONE`-class transcript data after C0.2i;
+  ordinary state-bearing data classified as `REQUIRED` still has no authorized
+  removal or destruction path in v0. No finality exists, so visible AP results
+  remain provisional and cannot authorize irreversible effects. The current
+  44-octet commitment context deliberately does not prevent cross-credential
+  descriptor copy or same-credential cross-sequence self-copy; C0.2k owns that
+  amendment after C0.2j decides exact credential identity.
 - **Dependent artifact:** O-06b-1 selects exact domain tags, reference digest,
   descriptor widths and transcript framing; O-06b-2 selects the commitment and
   chunk construction and binds the fresh per-object randomizer into every leaf;
@@ -593,18 +630,21 @@ outcomes.
   suspended checkpoint authentication/acceptance/substitution contract; O-08
   sets resource and custody bounds; O-10 assigns rich local outcomes plus one
   opaque remote fetch result; O-11 chooses wire/storage/fetch encoding; O-13
-  gates irreversible effects. C0.2f supplied bounded executable evidence for
-  availability-sensitive replay, typed outcomes, checkpoint non-substitution
-  and fresh reconstruction; dependent semantic changes require rerunning it.
-- **Residual/reopen condition:** reopen on a C0.2f counterexample; an O-06 suite
+  gates irreversible effects; O-15 owns profile succession and optional future
+  disposition; O-16 owns finality. C0.2i supplied bounded executable evidence
+  for pending-subtree replay, typed outcomes, checkpoint non-substitution and
+  fresh reconstruction; dependent semantic changes require rerunning both the
+  preserved v1 evidence and the current v2 gate.
+- **Residual/reopen condition:** reopen on a C0.2i counterexample; an O-06 suite
   unable to meet the bounded binding/privacy contract; a profile requiring
   deterministic, keyed, provably hiding or chunk-partial-redaction semantics;
   infeasible atomic content/opening custody; unauthenticated implementation
   input; unreconstructable detachable state; any checkpoint AP-state
   substitution or change to its authentication/authority/acceptance/horizon/
   equivocation/late-admission contract; or an installed legacy population
-  requiring migration.
-- **Human ratification:** pending exact-final-HEAD approval under Issue #215.
+  requiring migration; or any attempt to continue safely through a conflicting
+  credential identifier before C0.2j.
+- **Human ratification:** pending exact-final-HEAD approval under Issue #225.
 
 ### O-05 — Clock placement
 
@@ -687,21 +727,26 @@ outcomes.
   may infer final authority, priority or irreversible effects from K-06 replay
   order alone. Authenticated prefix state may authorize append-only logical
   removal under AP policy, but O-13 still gates physical destruction.
-  Prefix-scoped handoffs can expose different concurrent authority facts
-  at different replay positions, and grindable placement of unavailable
-  `REQUIRED` content can change the reversible whole-suffix deferral boundary;
-  AP must repair reversible state when later evidence or content becomes
-  available.
-- **Missing evidence:** O-06c executable negative evidence for the combined
-  O-06b-1/O-06b-2 construction. O-07 still owns the complete genesis fields;
+  Prefix-scoped handoffs can expose different concurrent authority facts at
+  different replay positions. Grindable placement of a `REQUIRED` event can
+  change pending-subtree shape and replay work, but cannot block an independent
+  event or authorize a descendant through a hole. AP must repair reversible
+  state when later evidence or openings become available.
+- **Missing evidence:** C0.2j must first decide collision-resistant credential
+  identity and exact K-readable grant evidence; C0.2k must then bind that exact
+  credential and author sequence into an amended commitment context. O-06c
+  executable negative evidence must target that combined construction. O-07 still owns the complete genesis fields;
   O-14 separately owns the signature-suite
   registry. O-08 owns measured profile maxima and O-10 owns stable error codes.
 - **Dependent artifact:** complete genesis transcript fields and bounded
   adversarial evidence.
-- **Smallest bounded follow-up:** O-06c adversarially tests framing injectivity,
+- **Smallest bounded follow-up:** after C0.2j and C0.2k, O-06c adversarially tests framing injectivity,
   role/context separation,
   non-circularity, chunk unlinkability, collision handling, grinding-to-handoff
-  interaction, reversible repair and bounded work.
+  interaction, pending-subtree/revocation repair, descriptor-copy boundaries
+  and bounded work. It reruns both v1/v2 reproducibility, mutates every
+  transcript byte and each `opaque_u32` length by ±1, and includes an independent
+  encoder in a second language.
 - **Residual/closure condition:** close only when semantically distinct valid
   events cannot share framed transcript bytes, references rely on the selected
   SHA-256 collision/second-preimage assumptions, and every exact field has one
@@ -851,6 +896,12 @@ outcomes.
 - **Security/privacy:** decoder complexity, canonicality and resource bounds can
   create malleability or denial-of-service risks.
 - **Missing evidence:** dependency, canonicality and decoder-surface comparison.
+- **Opening-custody obligation:** an honest frontier producer references only
+  events that are locally K-admitted and non-pending. It therefore has a
+  verified opening for every `REQUIRED` event in the frontier's causal ancestry
+  and MUST be able to serve those openings through the future authenticated,
+  bounded and non-oracular fetch contract. This is a producer obligation, not a
+  transport implementation or availability guarantee.
 - **Dependent artifact:** wire/storage specification, not the C0.3 regenerated-
   transcript corpus.
 - **Smallest bounded follow-up:** compare strict custom framing and deterministic
@@ -966,6 +1017,49 @@ outcomes.
 - **Human ratification:** pending final-HEAD acceptance that this ownership gap
   is explicit and remains open.
 
+### O-15 — Profile succession and optional disposition
+
+- **Status:** `OPEN`.
+- **Decision owner:** `AP` owns authenticated profile succession semantics; K
+  owns only validation of any later selected transcript representation.
+- **Question:** how can a version-pinned context adopt a later profile, and may
+  a later profile define an optional current-prefix disposition mechanism for a
+  permanently orphaned pending subtree without substituting for missing proof?
+- **Interim rule:** v0 contexts are pinned to v0. No timeout, quorum, majority,
+  checkpoint, peer statement, control lane, tombstone or unauthenticated local
+  decision can dispose of a pending root or apply its descendants. There is no
+  baseline `ABANDON_REQUIRED` operation.
+- **Security/privacy:** succession can become a downgrade, split-view or
+  censorship mechanism. A disposition can silently recreate the rejected
+  target-prefix authority problem unless its authenticated current-prefix
+  authority and effect are separately defined and falsified.
+- **Dependent artifact:** profile/version transition transcript, cross-version
+  replay rules, rollback behavior and any optional disposition vectors.
+- **Residual/closure condition:** O-15 does not block transcript-only C0.3 while
+  the first profile remains strictly pinned, but it blocks product readiness and
+  every upgrade or orphan-disposition claim.
+- **Human ratification:** pending final-HEAD acceptance that this remains open.
+
+### O-16 — Finality and stability
+
+- **Status:** `OPEN`.
+- **Decision owner:** `AP` owns any application finality claim; K supplies only
+  authenticated, set-relative causal evidence and never consensus.
+- **Question:** what evidence, if any, makes an AP projection stable against
+  late admission, fork evidence, authority replay or delayed opening reveal?
+- **Interim rule:** no finality exists. Every visible AP result is provisional;
+  canonical position, checkpoint, elapsed time, relay/peer count, majority and
+  local persistence confer no finality and authorize no irreversible effect.
+- **Security/privacy:** false finality can turn a reversible projection into an
+  unsafe human or external action. Stronger finality may add centralized trust,
+  availability dependencies or correlatable public evidence.
+- **Dependent artifact:** stability/finality contract, PV presentation and any
+  irreversible-effect dependency on O-13.
+- **Residual/closure condition:** blocks product readiness and all irreversible-
+  effect claims; it need not block transcript-only C0.3 if that corpus preserves
+  the explicit no-finality boundary.
+- **Human ratification:** pending final-HEAD acceptance that this remains open.
+
 ### D-01 — Deferred legacy hardening
 
 - **Status:** `DEFERRED`.
@@ -1017,11 +1111,12 @@ also be transcript-bound and locally evaluated under the application's policy.
 
 ## 6. Gate for C0.3 and exact next sequence
 
-**C0.3 verdict: `NO-GO`.** The C0.2f payload-state falsification gate required
-by O-04 has passed within its declared bounds. O-06a fixes the semantic
-inventory, O-06b-1 fixes the application transcript/domain/reference profile,
-and O-06b-2 fixes the commitment/chunk construction, but executable O-06c
-evidence does not yet exist.
+**C0.3 verdict: `NO-GO`.** C0.2i replaces the vulnerable C0.2f whole-suffix
+halt with deterministic pending-subtree replay and returns O-04 to `DECIDED`
+only within its bounded evidence envelope. The v1 report remains immutable
+historical evidence; the v2 report is current. C0.2j must now close conflicting
+credential identity and grant carriage, C0.2k must then amend the commitment
+context, and O-06c must falsify their exact combined bytes. None exists yet.
 O-06 through O-08, O-10 and O-14
 still contain choices required to derive normative bytes or adversarial
 expectations; O-07 explicitly includes the previously deferred checkpoint-
@@ -1038,12 +1133,14 @@ The smallest safe sequence is:
    routing identity and context identifiers;
 2. preserve the C0.2c O-01 chain/frontier topology, O-05 clock placement and
    O-06 semantic identifier-role separation;
-3. retain and extend the bounded C0.2d causal-flow falsification model whenever
-   later choices change its inputs; its current small-state run found no
-   counterexample within bounds and does not replace formal proof;
-4. preserve the O-06a inventory and selected O-06b-1/O-06b-2 profiles, then run
-   O-06c bounded adversarial evidence;
-5. preserve and rerun the completed C0.2f gate whenever its inputs change, then
+3. preserve the immutable v1 evidence and the isolated C0.2i v2 pending-
+   subtree model; rerun both whenever their respective inputs change, without
+   treating bounded falsification as proof;
+4. execute C0.2j for collision-resistant credential identity and exact
+   K-readable grant evidence, then C0.2k for the credential/sequence-bound
+   commitment-context amendment, and only then O-06c bounded adversarial
+   evidence over the combined construction;
+5. preserve and rerun the completed v2 gate after those changes, then
    close genesis/checkpoint evidence, cardinality, error and signature-suite
    questions O-07, O-08, O-10 and O-14, plus O-12 for any time-bearing profile,
    without product implementation authority; retain O-11 for the later
@@ -1054,8 +1151,11 @@ The smallest safe sequence is:
 8. align JavaScript in C0.4; align or freeze the minimum Dart surface only if it
    remains useful as independent evidence.
 
-O-13 does not block transcript-only C0.3, but no destruction-capable increment
-or deletion/erasure/unlinkability claim may proceed until it closes.
+O-13, O-15 and O-16 do not block transcript-only C0.3 under a strictly pinned
+v0 profile with explicit no-finality semantics. They do block every destruction-
+capable increment, profile upgrade, product-readiness claim and irreversible
+effect. C0.2j is an unconditional blocker for C0.3, demo and product work; C0.2k
+and O-06c follow it in that order.
 
 No supported Phase B adapter may persist current application-ledger objects
 while this `NO-GO` remains in force.

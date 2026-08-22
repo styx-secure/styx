@@ -274,6 +274,13 @@ target_event_reference:opaque32
 target_commitment:opaque_u32
 ```
 
+The same role structurally requires `content_class == 0x00` (`NONE`). A
+candidate with `event_role == 0x01` and any content-bearing class is rejected
+before commitment/opening processing, target lookup or AP evaluation. Grant,
+revoke, rotate, policy, closure and future disposition control events likewise
+use `NONE` and a bounded authenticated representation; their exact K-readable
+carriage remains C0.2j work and is not allocated by this profile.
+
 The target-commitment container length is exactly 32 octets, derived from the
 suite active for the authenticated protocol version rather than from the
 directive descriptor or target. The equality/applicability rule and the absence
@@ -338,8 +345,11 @@ representation.
    Canonical sort and uniqueness prevent alternate frontier representations.
 5. The content-class octet uniquely chooses the `NONE` or content-bearing arm.
    In the latter arm, shape and geometry-presence rules select exactly one arm.
+   A control role with a content-bearing arm is structurally invalid rather than
+   another inverse branch.
 6. The event-role octet uniquely determines absence or presence of the removal
-   tail. Require exact end of body after the selected tail.
+   tail and, for role `0x01`, requires the already parsed class to be `NONE`.
+   Require exact end of body after the selected tail.
 
 Each step consumes one unambiguous prefix and leaves one unambiguous suffix.
 Therefore `P(encode(x)) = x` for every O-06b-1-owned valid assignment `x`, so two
@@ -393,6 +403,7 @@ This profile adds rejection sites but does not assign stable codes:
 - malformed, truncated, overlong or trailing block;
 - predecessor/frontier inconsistency, non-canonical order or duplicate parent;
 - inconsistent class/length/commitment/geometry arm;
+- a control role paired with any content-bearing class;
 - removal tail absent, present or malformed for the wrong role; and
 - carried-suite mismatch or attempted digest fallback.
 
@@ -444,12 +455,18 @@ reinterpreted.
 1. **O-06b-2 is selected:**
    `styx-app-kernel-v0-commitment-encoding-profile.md` fixes exactly one
    randomized-opening suite, its preimages and chunk-tree construction.
-2. **O-06c** implements bounded adversarial falsification of the complete
-   O-06b-1/O-06b-2 construction and reruns C0.2d/C0.2f unchanged.
-3. Only after O-06c passes independent review and human ratification may O-06 move
-   to `DECIDED`.
+2. **C0.2i** supplies isolated pending-subtree replay evidence without changing
+   these bytes or the historical v1 evidence.
+3. **C0.2j** selects collision-resistant K credential identity and K-readable
+   grant binding; **C0.2k** then amends the commitment context to bind that
+   identity and author sequence.
+4. **O-06c** implements bounded adversarial falsification of the combined
+   construction and reruns C0.2d/C0.2f/C0.2i unchanged.
+5. Only after O-06c passes independent review and human ratification may O-06
+   move to `DECIDED`.
 
-O-06b-1 and O-06b-2 together do not make C0.3 executable. O-06c, O-07, O-08,
-O-10 and O-14 remain blockers; O-12 additionally blocks any time-bearing profile.
-O-11 remains required before supported persistence or remote admission, and
-K-11 remains required before any normative corpus file.
+O-06b-1 and O-06b-2 together do not make C0.3 executable. C0.2j, C0.2k and
+O-06c are mandatory in that order. O-07, O-08, O-10 and O-14 remain blockers;
+O-12 additionally blocks any time-bearing profile. O-11 remains required before
+supported persistence or remote admission, and K-11 remains required before any
+normative corpus file.
