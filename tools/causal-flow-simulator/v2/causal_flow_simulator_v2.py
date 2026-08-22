@@ -40,6 +40,14 @@ def build_report() -> tuple[dict[str, object], bool]:
         and (C0_2D_FAMILIES | C0_2I_FAMILIES) <= set(suite.family_counts)
     )
     passed = not failures and complete
+    obligation_witnesses = {
+        obligation: sorted(
+            item["id"]
+            for item in suite.results
+            if item["obligation"] == obligation
+        )
+        for obligation in sorted(C0_2F_OBLIGATIONS)
+    }
     report: dict[str, object] = {
         "schema": SCHEMA_ID,
         "model_version": MODEL_ID,
@@ -58,6 +66,16 @@ def build_report() -> tuple[dict[str, object], bool]:
             "obligation_check_counts": dict(
                 sorted(suite.obligation_counts.items())
             ),
+        },
+        "evidence_accounting": {
+            "executable_obligation_witnesses": obligation_witnesses,
+            "delivery_permutations_are_independent_semantic_shapes": False,
+            "construction_only_properties": [
+                "The Python enum and dataclass definitions close the modeled vocabulary but do not prove a production parser is closed.",
+                "The fixed simulator constants impose the explored bounds but do not establish safe production limits.",
+                "Symbolic cryptographic values are opaque model atoms and do not establish cryptographic security.",
+            ],
+            "construction_only_properties_counted_as_executable_witnesses": False,
         },
         "instrumentation": {
             "maximum_pending_roots": suite.max_pending_roots,
@@ -85,7 +103,8 @@ def build_report() -> tuple[dict[str, object], bool]:
             "The checkpoint-evidence/replay-dependency intersection is symbolic and does not implement checkpoint authentication or acceptance.",
             "Opening withholding or loss can keep a causal subtree pending forever.",
             "Selective opening distribution can create temporary per-replica projection divergence.",
-            "Fork-classified events have no AP effect, but their descendants remain K candidates; no safe-continuation or finality claim follows.",
+            "Any K-admitted same-author fork permanently quarantines the whole v0 AP context; this prevents authority expansion but permits an authenticated availability denial.",
+            "Fork-free concurrent grant and revocation can launder successor authority in a grindable reference order; C0.2j must replace this v0 authority model.",
             "ROTATE and RECOVER are symbolic authenticated no-ops and do not model credential succession.",
             "The current 44-octet commitment context does not prevent cross-credential descriptor copy or same-credential cross-sequence self-copy.",
             "A verified commitment does not prove possession at commit time, knowledge, truthful authorship, originality, first submission, or semantic truth.",

@@ -16,12 +16,14 @@ class ModuleIsolationTests(unittest.TestCase):
             "kernel_model_v2",
             "scenarios_v2",
             "causal_flow_simulator_v2",
+            "mutation_harness_v2",
         ):
             sys.modules.pop(name, None)
         before = set(sys.modules)
         importlib.import_module("kernel_model_v2")
         importlib.import_module("scenarios_v2")
         importlib.import_module("causal_flow_simulator_v2")
+        importlib.import_module("mutation_harness_v2")
         loaded = []
         for name in set(sys.modules) - before:
             module_file = getattr(sys.modules[name], "__file__", None)

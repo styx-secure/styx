@@ -416,8 +416,10 @@ Exact framing removes cross-field and cross-role reinterpretation from this
 surface. A closed digest suite prevents negotiation and fallback downgrade.
 Stable 32-octet references still expose equality, graph shape and replay order
 to every authorized observer that can see them. SHA-256 does not make the
-reference unpredictable: an authorized author can vary valid inputs and grind
-its concurrent replay position. All O-06a prohibitions on treating that position
+reference unpredictable: any holder of valid signing-key material, including a
+revoked credential, can vary valid inputs and grind its concurrent replay
+position. The current v0 AP fold demonstrably permits a concurrently granted
+successor to survive revocation in one such order. All O-06a prohibitions on treating that position
 as authority, priority, finality or irreversible permission remain in force.
 
 Lengths, parent counts, event type/schema IDs and commitment geometry remain
@@ -461,7 +463,8 @@ reinterpreted.
    grant binding; **C0.2k** then amends the commitment context to bind that
    identity and author sequence.
 4. **O-06c** implements bounded adversarial falsification of the combined
-   construction and reruns C0.2d/C0.2f/C0.2i unchanged.
+   construction, emits deterministic work-order/per-stage instrumentation and
+   reruns C0.2d/C0.2f/C0.2i unchanged.
 5. Only after O-06c passes independent review and human ratification may O-06
    move to `DECIDED`.
 

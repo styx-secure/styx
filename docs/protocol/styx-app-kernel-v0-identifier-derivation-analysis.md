@@ -4,7 +4,8 @@
   application transcript/reference profile and O-06b-2 fixes commitment and
   chunk-tree internals, while executable evidence remains open under O-06c.
 - **Authority:** Issue #219, ADR-0007 and the ratified K-01 through K-11 and
-  O-01 through O-05 decisions.
+  historical O-01 through O-05 decisions, with O-01/O-02/O-04 subsequently
+  reopened by the Issue #225 amendment.
 - **Exact evidence base:**
   `787b501823cb0b9f36412acef36cbc9c3b81135b`.
 - **O-06b-1 amendment base:**
@@ -29,9 +30,9 @@ transcript/reference and commitment/chunk-tree bytes respectively; O-06 remains
 The inventory is derived from the following normative inputs rather than from
 the current Dart or JavaScript ledgers:
 
-- K-01 through K-11 and O-01 through O-05 in
-  `styx-app-kernel-v0-decisions.md`;
-- the O-02/O-03 identity and context model;
+- K-01 through K-11 and the current O-01 through O-05 status and candidate
+  rules in `styx-app-kernel-v0-decisions.md`;
+- the reopened O-02 candidate and decided O-03 identity/context model;
 - the O-01/O-05 causal topology and C0.2d falsification evidence;
 - the O-04 content model and C0.2f falsification evidence;
 - the application-protocol responsibility matrix and threat model; and
@@ -250,10 +251,11 @@ cryptographic-identifier decision.
 ## 6. Event-reference grinding and policy prohibition
 
 A reference used as the K-06 tiebreak is deterministic from an author-controlled
-signed transcript. An authorized author may vary otherwise valid inputs — most
-notably fresh content/opening choices — and spend work to bias bits of its own
-future reference. Signatures make the chosen transcript attributable; they do
-not make its digest an unbiased random beacon.
+signed transcript. Any holder of valid signing-key material, including a
+credential already revoked by the AP fold, may vary otherwise valid inputs —
+most notably fresh content/opening choices — and spend work to bias bits of its
+own future reference. Signatures make the chosen transcript attributable; they
+do not make its digest an unbiased random beacon.
 
 Therefore:
 
@@ -275,18 +277,25 @@ in the acting event's prefix-scoped handoff. An author that omits an observed
 cross-author parent can grind below a concurrent authority transition and make
 that transition absent from its own evaluation point. Later replay still
 discloses the concurrency, so AP must revise reversible state and cannot treat
-the earlier prefix result as irreversible authority. Grinding can also move an
-event with unavailable `REQUIRED` content across concurrent peers. C0.2i
-removes replay position from the readiness boundary: only that event and its
-causal descendants enter the pending set, while independent events remain
-applicable. Order can still change deterministic presentation among otherwise
+the earlier prefix result as irreversible authority. More seriously, the v0 AP
+fold lets a compromised credential grind a concurrent successor `GRANT` before
+its `REVOKE`; because revocation is non-transitive, that successor can remain
+operational. This is a confirmed C0.2j blocker and demonstrates that the current
+construction does not yet enforce the policy prohibition above. Grinding can
+also move an
+event with unavailable `REQUIRED` content across concurrent peers. In a
+fork-free, non-stale context, C0.2i removes replay position from the readiness
+boundary: only that event and its causal descendants enter the pending set,
+while independent events remain applicable. Order can still change
+deterministic presentation among otherwise
 concurrent applicable events, but it cannot enlarge the pending causal subtree,
 confer authority or create finality; indefinite withholding remains an accepted
 O-04 risk.
 
-The C0.2i v2 model exercises this grinding-to-handoff interaction in both ordering
-directions, including assertions on the acting event's handoff when a
-revocation sorts later. It also moves an unavailable-`REQUIRED` event across
+The C0.2i v2 model exercises this grinding-to-handoff interaction in both
+ordering directions, including the fork-free successor-laundering outcome when
+a revocation sorts later and the rejection outcome when it sorts first. It also
+moves an unavailable-`REQUIRED` event across
 concurrent peers in both directions and verifies that the pending causal
 subtree and opening-triggered replay are order-independent. C0.2j must replace
 the model's fail-closed unique-identifier assumption with exact
@@ -378,7 +387,10 @@ O-06c must then test framing injectivity, absence/emptiness,
 cross-role/context separation, non-circularity, cross-event chunk equality,
 parent canonicality, suite binding, unknown-suite rejection, structural versus
 binding failures, collision handling, grinding/prefix-handoff interaction and
-bounded work. It must rerun C0.2d/C0.2f/C0.2i without changing their recorded results
+bounded work. Its evidence must report the deterministic work order and
+per-stage work counters so an implementation cannot hide attacker-controlled
+parsing, hashing, graph or replay work behind a final verdict. It must rerun
+C0.2d/C0.2f/C0.2i without changing their recorded results
 and must not add `conformance/**` files before the separate K-11 licensing task.
 Only a bounded no-counterexample result plus independent review and human
 ratification may move O-06 to `DECIDED`.
@@ -399,9 +411,11 @@ collision/second-preimage resistance, commitment hiding/binding assumptions,
 randomizer custody/misuse, parser safety, runtime capacity and signature-suite
 downgrade remain residual or open. Bounded C0.2i/O-06c evidence
 will not prove absence of counterexamples outside its envelope. A hostile
-authorized author can withhold parents, equivocate, reuse randomizers or grind
-its replay position. Grinding can suppress a later-sorting concurrent authority
-transition from the acting event's own prefix-scoped handoff. It cannot widen
+holder of valid signing-key material, including a revoked credential, can
+withhold parents, equivocate, reuse randomizers or grind its replay position.
+Grinding can suppress a later-sorting concurrent authority transition from the
+acting event's own prefix-scoped handoff and, in the v0 fold, can leave a
+concurrently granted successor operational after revocation. It cannot widen
 the C0.2i pending set beyond the unavailable event's causal descendants merely
 by changing order. Later disclosure requires reversible AP repair and does not
 retroactively make an irreversible effect safe; later opening verification

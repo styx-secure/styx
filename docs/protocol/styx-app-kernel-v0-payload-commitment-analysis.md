@@ -310,8 +310,9 @@ event transcript. C0.2j/O-07 owns the exact K-readable carriage. The v2 model
 treats rotation/recovery as symbolic evidence only and does not use either to
 mint, rebind or resurrect a credential identifier.
 
-AP applies exactly the non-pending K-valid events in their unchanged canonical
-relative order. Therefore a causally independent event applies even when it
+When the live K graph is fork-free and not stale, AP applies exactly the
+non-pending K-valid events in their unchanged canonical relative order.
+Therefore a causally independent event applies even when it
 sorts after a hole, while no descendant can bypass that hole. Adding a verified
 opening monotonically removes one reason for pending status, recomputes the
 descendant closure and replays from the earliest affected canonical position.
@@ -321,10 +322,23 @@ response, peer count, checkpoint, majority statement or unauthenticated
 disposition never substitutes for a missing or non-verifying opening. V0 has no
 `ABANDON_REQUIRED`, control lane or provisional-effect lane.
 
-The whole-projection `STALE_EVIDENCE` rule takes precedence when any replay
-dependency, including grant, revoke, rotate, policy or closure evidence, exists
-only in checkpoint evidence. The sole exemption is O-07's static genesis-
-authority abstraction. Checkpoints do not substitute for retained authenticated
+Any K-admitted same-author fork permanently quarantines the whole v0 AP
+context. Fork siblings are `FORK_EVIDENCE`, other admitted events are
+`FORK_QUARANTINED`, and no AP transition, operational authority, removal or
+producer-eligible frontier exists. Pending sets remain observable diagnostics.
+This prevents descendant authority takeover but lets any holder of valid key
+material permanently deny context availability. A self-fork is an absolute
+context lockout, not an escape from a pending branch. Separately, a fork-free
+concurrent grant/revoke can leave the successor operational in one grindable
+order; C0.2j must replace that non-transitive authority model.
+
+The whole-projection `STALE_EVIDENCE` rule takes precedence when any symbolic
+replay dependency intersects checkpoint evidence absent from the live admitted
+graph. A retained admitted reference does not become stale merely because a
+checkpoint also names it. The sole exemption is O-07's static genesis-authority
+abstraction. This rule models neither checkpoint authentication nor acceptance,
+and its replay-dependency set remains an unvalidated oracle. Checkpoints do not
+substitute for retained authenticated
 history, and authority-event transcripts remain non-releasable AP dependencies.
 C0.2i falsifies the pending construction within a bounded v2 model; it does not
 solve compaction, custody, finality or permanent opening loss.
@@ -372,9 +386,10 @@ other runtime-convenience path. Physical loss through one of those paths is a
 typed RS durability failure, never logical removal. A supported profile cannot
 promise deletion, erasure or post-removal unlinkability while O-13 is open.
 
-Retention state is a replay-derived fold. A late-admitted fork or revocation
-that invalidates a removal directive must restore the same state under full and
-incremental replay. Rolling the event store back past a valid removal directive
+Retention state is a replay-derived fold. A late-admitted fork permanently
+quarantines the whole v0 AP context and empties its removal state; a fork-free
+revocation that invalidates a removal directive must restore the same state
+under full and incremental replay. Rolling the event store back past a valid removal directive
 re-derives the target as `ACTIVE` while quarantined bytes may remain present,
 re-exposing content that policy had removed. This is a privacy regression
 bounded by the existing `OB-RS09` rollback non-claim; PV MUST NOT describe the
@@ -398,14 +413,16 @@ possession observation: some producer claims to have held every in-horizon
 
 In v0 a checkpoint does not substitute for missing `REQUIRED` content or its
 opening, and checkpoint-based AP-state reconstruction for `DETACHABLE` content
-is suspended. No decided Styx
-document defines the checkpoint authenticator or acceptance rule, and the
-C0.2d executable model deliberately treats checkpoint evidence as a trusted
-input within its bounded envelope. O-04 records but does not widen that
-pre-existing deferral. A replica deriving AP state must replay from genesis and
+is suspended. No decided Styx document defines the checkpoint authenticator or
+acceptance rule. The C0.2i model treats checkpoint evidence and replay
+dependencies as symbolic caller-supplied sets, not trusted or authenticated
+state. Only a checkpoint reference absent from the live admitted graph is
+checkpoint-only; matching such absent evidence makes the whole AP projection
+stale. O-04 records but does not widen that pre-existing deferral. A replica
+deriving AP state must replay from genesis and
 directly verify every `REQUIRED` content/opening in its replay horizon. Each
 missing opening makes its event and causal descendants pending; independent
-events remain applicable. Causal compaction and continuation over references,
+events remain applicable only while the context is fork-free. Causal compaction and continuation over references,
 author heads and other O-01 evidence remain possible, but `REQUIRED`
 content/openings and authority-event transcripts are non-releasable dependencies
 for AP replay in v0. Missing `REQUIRED` bytes produce a pending root and causal
@@ -485,8 +502,9 @@ continuation or bypass of the `REQUIRED` halt.
    work, fetch fan-out or decompression by an owning layer.
 13. A supported profile states its post-removal reconstruction contract and
    its evidence-versus-removal trade-off.
-14. Pending roots and their causal descendants do not apply; independent
-   K-valid events do apply in canonical relative order.
+14. In a fork-free, non-stale context, pending roots and their causal
+   descendants do not apply while independent K-valid events do apply in
+   canonical relative order. Any admitted fork instead empties the AP view.
 15. An honest frontier producer retains a verified opening for every
    `REQUIRED` event in the frontier's causal ancestry and can serve it through
    the future O-11 authenticated fetch contract.
@@ -503,7 +521,7 @@ continuation or bypass of the `REQUIRED` halt.
 6. Let K parse, decompress, sanitize or interpret content.
 7. Infer detachability or removal from an unauthenticated runtime/storage flag.
 8. Apply an unavailable `REQUIRED` event or any causal descendant, or block an
-   independent event because of that hole.
+   independent event because of that hole in a fork-free, non-stale context.
 9. Substitute timeout, retry count, time, arrival order, relay/peer response,
    checkpoint, majority statement or unauthenticated disposition for a missing
    or non-verifying opening.
@@ -551,7 +569,7 @@ continuation or bypass of the `REQUIRED` halt.
 | Present matching bytes after removal with opening retained | Removed-but-presented and verified only as a removed presentation; never silently active |
 | Present bytes after removal with opening missing/destroyed | Removed with unverifiable presentation; never silently active or verified |
 | Substitute bytes after removal while opening remains | Removed presentation rejected as substituted; never silently active |
-| Withhold `REQUIRED` content | Valid pending root; causal descendants wait, independent events apply; permanent subtree DoS surfaced |
+| Withhold `REQUIRED` content | Valid pending root; causal descendants wait and independent events apply while fork-free; permanent subtree DoS surfaced |
 | Withhold `DETACHABLE` content | Explicit unavailable presentation; authoritative AP result unchanged |
 | Guess low-entropy removed content from retained ledger | No practical test without the destroyed opening under future suite assumptions; exact guarantee remains O-06 |
 | Reuse a randomizer maliciously | Attribution/residual risk; no false claim that K can prove freshness |
@@ -563,12 +581,14 @@ continuation or bypass of the `REQUIRED` halt.
 | Restore event store without content store | Explicit absence/deferred state, not corruption-free reconstruction |
 | Producer lacks a required opening at a checkpoint horizon | Producer is ineligible and emits nothing at that horizon; no availability bit enters checkpoint state |
 | Supply conflicting or unauthenticated checkpoint material | Unusable evidence; deferred/stale only, never AP-state substitution or selective continuation |
-| Delete then admit a late fork/revocation | Logical state may replay; physical destruction remains blocked until a separate finality/effect rule exists |
+| Delete then admit a late fork/revocation | Revocation may replay logical state; any fork permanently quarantines the whole v0 AP view; physical destruction remains blocked until a separate finality/effect rule exists |
 | Roll back past an accepted removal directive | Retention re-derives active and may re-expose quarantined bytes; explicit OB-RS09 privacy regression |
 | Probe remote fetch failures | One opaque remote result independent of the rich local loss/binding cause |
 | Publish content-bearing control | Structural rejection before commitment/opening processing or AP evaluation |
 | Revoke, rotate or recover independently of a hole | Independent control applies; a control descendant remains pending |
 | Bind an already bound credential identifier | `CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED`; all chains remain graph evidence but produce no AP effect; no safe-continuation claim |
+| Publish any K-admitted same-author fork | Preserve graph/fork/pending diagnostics but permanently quarantine the whole v0 AP context; empty authority/removal/application state and false producer eligibility |
+| Concurrently grant a successor while a peer revokes the compromised credential | Preserve both grindable reference-order outcomes, including the order where the successor remains operational; C0.2j blocks use |
 | Present a checkpoint-only authority dependency | Whole projection `STALE_EVIDENCE`; no checkpoint substitution |
 | Copy a current descriptor across credentials or author sequences | Accepted current-profile non-protection; AP infers no authorship/possession; C0.2k remains mandatory |
 
@@ -591,7 +611,8 @@ The deterministic v2 report searches at least for counterexamples to:
 3. incremental replay equaling full replay for identical transcript and
    verified-opening sets;
 4. pending-root/descendant deferral and deterministic resumption, with no
-   descendant bypass and continued application of independent events;
+   descendant bypass and continued application of independent events only in a
+   fork-free, non-stale context;
 5. exhaustive typed-axis classification and fail-closed illegal combinations;
 6. no directive mutating a prior event or removing `REQUIRED` content;
 7. unauthorized directives never producing logical removal;
@@ -599,12 +620,14 @@ The deterministic v2 report searches at least for counterexamples to:
    distinct and never becoming silently active;
 9. fresh-replica replay requiring every in-horizon `REQUIRED` opening and never
    accepting checkpoint substitution;
-10. late fork/revocation invalidating an applied removal with reversible
-    retention and full/incremental equivalence;
-11. all holes, including fork-classified siblings, neither blocking independent
-    events nor permitting descendants to apply;
-12. conflicting, unauthenticated, unavailable or authority-incomplete
-    checkpoint evidence producing whole-projection staleness, never state;
+10. late revocation replaying removal state, while any late fork permanently
+    empties the whole v0 AP projection;
+11. fork siblings and pending sets remaining diagnostic evidence while every
+    admitted fork quarantines independent and descendant AP work, empties
+    authority/removal/application state and disables producer eligibility;
+12. matching absent checkpoint-only dependencies producing whole-projection
+    staleness, retained live references remaining non-stale, and neither case
+    authenticating or accepting a checkpoint;
 13. opening-divergent replicas not becoming event forks;
 14. removal target edge cases remaining deterministic;
 15. frozen geometry boundaries and current-profile copy non-protections; and
@@ -613,8 +636,12 @@ The deterministic v2 report searches at least for counterexamples to:
 
 The closed registry additionally covers event/opening interleavings, selective
 disclosure convergence, overlapping roots, delay/withholding, authority and
-control interactions, collision rejection, custody/frontier eligibility and
-checkpoint staleness. Every family has a directed assertion and presence check.
+control interactions, fork quarantine, fork-free grant/revoke laundering,
+nested-root replay, collision rejection, custody/frontier eligibility and
+checkpoint staleness. Every family has a discriminating directed assertion and
+presence check. A repository-owned deterministic mutation harness kills the
+five required kernel/test mutants; delivery permutations are coverage, not
+independent semantic shapes.
 Inputs with multiple K-valid bindings for one credential identifier reject
 before positive exploration as `CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED`;
 negative witnesses remain, and no positive verdict covers that class.
@@ -652,7 +679,8 @@ implementation. C0.2j, C0.2k and O-06c remain sequential blockers.
 - **C0.2i:** §9 is implemented in isolated v2 and passed within recorded bounds;
   preserve the v1 digest and rerun v2 whenever a dependent decision changes.
 - **C0.2j then C0.2k:** first decide collision-resistant credential identity,
-  binding resolution and exact K-readable grant evidence; then bind that exact
+  binding resolution, grant provenance, revocation concurrency/transitivity,
+  fork namespace and two-sided possible/required authority; then bind that exact
   credential plus author sequence into an amended commitment context. Both are
   mandatory before O-06c and C0.3.
 - **O-13 irreversible-effect authorization:** coordinating record owned by AP
@@ -713,9 +741,10 @@ The proposed synthesis records both convergence and surviving minorities:
   validity, but its nominal state space is large. O-10 must enumerate the
   closed legal subset. A text-only first profile remains a legitimate scope
   reduction, not a reason to omit the future chunk-shape boundary.
-- **Liveness:** C0.2i supersedes the authorization-blind whole-suffix halt. A
-  withheld or lost `REQUIRED` opening now stalls exactly its pending causal
-  subtree while independent work proceeds. Descendant bypass, provisional
+- **Liveness:** C0.2i supersedes the authorization-blind whole-suffix halt. In
+  a fork-free, non-stale context, a withheld or lost `REQUIRED` opening now
+  stalls exactly its pending causal subtree while independent work proceeds.
+  Descendant bypass, provisional
   effects and target-prefix abandonment remain rejected. Permanent orphaning,
   profile succession and finality remain explicit O-15/O-16 gaps.
 - **Inline content:** Qwen permitted transcript-inline content. It is rejected
@@ -731,10 +760,12 @@ The proposed synthesis records both convergence and surviving minorities:
 
 ## 12. Closure, residual risks and reopen conditions
 
-O-04 is semantically `DECIDED`: removal and retained verification semantics are
-defined together. This status does not authorize bytes or implementation.
-C0.2i v2 is the current named bounded gate before implementation and C0.3; the
-C0.2f v1 report remains immutable evidence for superseded semantics.
+O-04 remains `REOPENED` under the Issue #225 amendment. The candidate removal,
+retained-verification, pending-subtree and fork-quarantine semantics become
+`DECIDED` only after the exact-final C0.2i evidence, independent-review and
+human gates pass. This eventual status would authorize neither implementation
+nor product use. The C0.2f v1 report remains immutable evidence for superseded
+semantics.
 
 Residual risks include malicious randomizer reuse; permanent length/type and
 commitment correlation; loss or withholding of openings; subtree-scoped and

@@ -87,6 +87,7 @@ class Outcome(str, Enum):
     AUTHENTIC_BUT_UNAUTHORIZED = "AUTHENTIC_BUT_UNAUTHORIZED"
     POST_REVOCATION = "POST_REVOCATION"
     FORK_EVIDENCE = "FORK_EVIDENCE"
+    FORK_QUARANTINED = "FORK_QUARANTINED"
     CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED = (
         "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED"
     )
@@ -300,6 +301,8 @@ class Projection:
     applied_order: tuple[str, ...]
     authorized_credentials: frozenset[str]
     removed_targets: frozenset[str]
+    stale_evidence: bool
+    fork_quarantined: bool
     metrics: WorkMetrics
     replay_prefix_states: tuple[FoldSnapshot, ...] = field(
         repr=False,
@@ -323,6 +326,8 @@ class Projection:
             self.applied_order,
             self.authorized_credentials,
             self.removed_targets,
+            self.stale_evidence,
+            self.fork_quarantined,
         )
 
 
@@ -693,7 +698,20 @@ def _fold_application(
         outcomes.update(
             {reference: Outcome.STALE_EVIDENCE for reference in graph.admitted}
         )
-        return outcomes, (), frozenset(genesis), frozenset()
+        return outcomes, (), frozenset(), frozenset()
+
+    if graph.forks:
+        outcomes.update(
+            {
+                reference: (
+                    Outcome.FORK_EVIDENCE
+                    if reference in graph.forks
+                    else Outcome.FORK_QUARANTINED
+                )
+                for reference in graph.admitted
+            }
+        )
+        return outcomes, (), frozenset(), frozenset()
 
     authorized = set(genesis)
     revoked: dict[str, set[str]] = {}
@@ -771,6 +789,12 @@ def _fold_application_from_state(
 ) -> tuple[dict[str, Outcome], tuple[str, ...], frozenset[str], frozenset[str]]:
     """Continue AP replay from an independently reconstructed prefix state."""
 
+    if graph.forks:
+        raise ModelInputError(
+            "INCREMENTAL_INPUT_MISMATCH",
+            "fork-quarantined projections have no reusable AP prefix",
+        )
+
     outcomes = dict(prior_outcomes)
     applied = list(prior_applied)
     authorized = set(prior_authorized)
@@ -844,18 +868,18 @@ def project(scenario: Scenario) -> Projection:
         for reference in graph.admitted
         if events[reference].content_class is ContentClass.REQUIRED
     }
-    stale = bool(
-        set(scenario.checkpoint_evidence) & set(scenario.replay_dependencies)
-    )
+    checkpoint_only = set(scenario.checkpoint_evidence) - set(graph.admitted)
+    stale = bool(checkpoint_only & set(scenario.replay_dependencies))
+    fork_quarantined = bool(graph.forks) and not stale
     replay_prefix_states: tuple[FoldSnapshot, ...]
-    if stale:
+    if stale or fork_quarantined:
         outcomes, applied, authorized, removed = _fold_application(
             graph,
             events,
             roots,
             pending,
             scenario.genesis_authority,
-            True,
+            stale,
         )
         replay_prefix_states = ()
     else:
@@ -897,10 +921,14 @@ def project(scenario: Scenario) -> Projection:
         applied_order=applied,
         authorized_credentials=authorized,
         removed_targets=removed,
+        stale_evidence=stale,
+        fork_quarantined=fork_quarantined,
         metrics=WorkMetrics(
             pending_roots=len(roots),
             pending_descendants=len(pending - roots),
-            earliest_replay_boundary=first,
+            earliest_replay_boundary=(
+                None if stale or fork_quarantined else first
+            ),
             replayed_event_work=0,
         ),
         replay_prefix_states=replay_prefix_states,
@@ -953,31 +981,35 @@ def incremental_replay(
         raise ModelInputError("NON_MONOTONE_OPENING_SET", "verified opening removed")
 
     graph, events = derive_graph(updated)
-    _, prior_pending = _pending_sets(
+    prior_roots, prior_pending = _pending_sets(
         graph, events, prior.opening_observations
     )
     updated_roots, updated_pending = _pending_sets(
         graph, events, updated.opening_observations
     )
-    released = prior_pending - updated_pending
+    affected = (prior_pending - updated_pending) | (
+        prior_roots - updated_roots
+    )
     earliest = min(
-        (graph.canonical_order.index(reference) for reference in released),
+        (graph.canonical_order.index(reference) for reference in affected),
         default=None,
     )
-    stale = bool(set(updated.checkpoint_evidence) & set(updated.replay_dependencies))
+    checkpoint_only = set(updated.checkpoint_evidence) - set(graph.admitted)
+    stale = bool(checkpoint_only & set(updated.replay_dependencies))
+    fork_quarantined = bool(graph.forks) and not stale
 
     # Consume the prefix state cached by the prior full projection, then execute
     # only the updated suffix.  The fresh oracle used by the scenario suite is
     # ``project(updated)`` and no semantic field below is copied from it.
     boundary = len(graph.canonical_order) if earliest is None else earliest
-    if stale:
+    if stale or fork_quarantined:
         outcomes, applied, authorized, removed = _fold_application(
             graph,
             events,
             updated_roots,
             updated_pending,
             updated.genesis_authority,
-            True,
+            stale,
         )
     else:
         prior_projection = project(prior)
@@ -1017,6 +1049,8 @@ def incremental_replay(
         for reference in graph.admitted
         if events[reference].content_class is ContentClass.REQUIRED
     }
+    if stale or fork_quarantined:
+        earliest = None
     work = 0 if earliest is None else len(graph.canonical_order) - earliest
     return Projection(
         graph=graph,
@@ -1027,6 +1061,8 @@ def incremental_replay(
         applied_order=applied,
         authorized_credentials=authorized,
         removed_targets=removed,
+        stale_evidence=stale,
+        fork_quarantined=fork_quarantined,
         metrics=WorkMetrics(
             pending_roots=len(updated_roots),
             pending_descendants=len(updated_pending - updated_roots),
@@ -1054,6 +1090,8 @@ def frontier_is_producible(scenario: Scenario, frontier: Iterable[str]) -> bool:
     projection = project(scenario)
     frontier_set = frozenset(frontier)
     if not frontier_set or not frontier_set <= set(projection.graph.admitted):
+        return False
+    if projection.stale_evidence or projection.fork_quarantined:
         return False
     required_history: set[str] = set(frontier_set)
     for reference in frontier_set:

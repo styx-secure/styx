@@ -514,8 +514,9 @@ as strongly as content; O-08 and RS own custody and redundancy numbers.
   opacity. O-11 owns fetch design; v0 defines no inclusion proof, audit path,
   partial acceptance or partial redaction.
 - Verification is whole-object. Under C0.2i, one unavailable `REQUIRED` opening
-  defers exactly that event and its causal descendants; causally independent
-  events remain applicable even when they sort later. The subtree can remain
+  defers exactly that event and its causal descendants; in a fork-free,
+  non-stale context, causally independent events remain applicable even when
+  they sort later. The subtree can remain
   pending indefinitely, and delayed reveal can trigger a large reversible
   replay. O-08 owns production bounds.
 - The current 44-octet `CTX` accepts cross-credential descriptor copy and
@@ -548,14 +549,19 @@ build an independent bounded corpus/model that attempts at least:
 7. randomizer width, CSPRNG failure, unknown suite/shape and fallback failure;
 8. commitment equality/mismatch, verifier use of authenticated fields only and
    complete-object verification;
-9. grinding in both K-06 ordering directions while proving that an unavailable
-   `REQUIRED` event blocks exactly its causal subtree, never independent peers;
+9. grinding in both K-06 ordering directions, including the fork-free
+   concurrent grant/revoke laundering counterexample; an unavailable
+   `REQUIRED` event blocks exactly its causal subtree only while the context is
+   fork-free, whereas any admitted fork quarantines the whole v0 AP context;
 10. control-role/`NONE` enforcement before opening or AP work;
 11. current-profile cross-credential and cross-sequence copy as explicit
     non-protections, then their C0.2k reversal while retaining same-credential,
     same-sequence equivocation siblings as verifying fork evidence; and
 12. byte-identical reruns of the combined C0.2d/C0.2f v1 and C0.2i v2 required
-    suites.
+    suites; and
+13. deterministic work-order instrumentation and per-stage counters for parsing,
+    transcript regeneration, hashing, graph construction, opening verification
+    and replay, so attacker-controlled work is visible before the final verdict.
 
 ### 11.1 Removal-tail octet-variance property
 
@@ -585,10 +591,12 @@ Where the equality rule is vacuous because the validated target is `NONE` or
   case;
 - a directive cannot itself have `REQUIRED` content. When it descends from a
   pending root, both tail variants remain in that same pending causal subtree;
-  independent events outside the subtree remain applicable, and no authority,
+  independent events outside the subtree remain applicable only when each
+  variant is evaluated in a separate fork-free transcript, and no authority,
   priority, finality or irreversible effect follows; and
 - admitting both variants at the same credential/sequence is same-author
-  equivocation, never deduplication or silent reconciliation.
+  equivocation that permanently quarantines the whole v0 AP context, never
+  deduplication, silent reconciliation or a winning removal.
 
 No octet value may make a directive remove a `NONE`, `REQUIRED` or absent
 target, alter authorization, first-writer truth, expiry or removal authority,

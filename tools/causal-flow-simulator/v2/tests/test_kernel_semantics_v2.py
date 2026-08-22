@@ -20,6 +20,7 @@ from kernel_model_v2 import (  # noqa: E402
     OpeningObservation,
     Outcome,
     classify_payload_axis,
+    frontier_is_producible,
     incremental_replay,
     project,
 )
@@ -92,6 +93,28 @@ class PendingSubtreeTests(unittest.TestCase):
         self.assertEqual(incremental.metrics.earliest_replay_boundary, 1)
         self.assertEqual(incremental.metrics.replayed_event_work, 2)
 
+    def test_incremental_replays_when_only_nested_root_status_changes(self) -> None:
+        outer = event("outer", 0, content=ContentClass.REQUIRED)
+        inner = event(
+            "inner",
+            1,
+            predecessor="outer",
+            content=ContentClass.REQUIRED,
+        )
+        prior = _scenario((outer, inner))
+        updated = replace(
+            prior,
+            opening_observations={"inner": OpeningObservation.VERIFIED},
+        )
+        before = project(prior)
+        incremental = incremental_replay(prior, updated)
+        full = project(updated)
+        self.assertEqual(before.pending, full.pending)
+        self.assertNotEqual(before.pending_roots, full.pending_roots)
+        self.assertEqual(incremental.semantic_view(), full.semantic_view())
+        self.assertIs(incremental.outcomes["inner"], Outcome.PENDING_ANCESTOR)
+        self.assertEqual(incremental.metrics.earliest_replay_boundary, 1)
+
     def test_incremental_uses_prior_cache_not_updated_full_projection(self) -> None:
         root = event("root", 0, content=ContentClass.REQUIRED)
         child = event("child", 1, predecessor="root")
@@ -134,6 +157,16 @@ class PendingSubtreeTests(unittest.TestCase):
         )
         self.assertIs(result.outcomes["root"], Outcome.STALE_EVIDENCE)
         self.assertEqual(result.applied_order, ())
+        self.assertEqual(result.authorized_credentials, frozenset())
+        self.assertTrue(result.stale_evidence)
+
+    def test_live_admitted_reference_is_not_checkpoint_only(self) -> None:
+        root = event("root", 0, content=ContentClass.REQUIRED)
+        scenario = _scenario((root,), checkpoint_only=("root",))
+        result = project(scenario)
+        self.assertFalse(result.stale_evidence)
+        self.assertIs(result.outcomes["root"], Outcome.PENDING_OPENING)
+        self.assertFalse(frontier_is_producible(scenario, ("root",)))
 
     def test_checkpoint_evidence_unrelated_to_replay_is_not_stale(self) -> None:
         root = event("root", 0)
@@ -351,7 +384,78 @@ class AuthorityBoundaryTests(unittest.TestCase):
             result.outcomes["zz-bob"], Outcome.AUTHENTIC_BUT_UNAUTHORIZED
         )
 
+    def test_any_same_author_fork_quarantines_the_whole_ap_projection(self) -> None:
+        left = event("left", 0)
+        right = event("right", 0)
+        independent = event("independent", 0, credential="recovery")
+        scenario = _scenario(
+            (left, right, independent),
+            genesis=("admin", "recovery"),
+        )
+        result = project(scenario)
+        self.assertTrue(result.fork_quarantined)
+        self.assertEqual(result.graph.forks, {"left", "right"})
+        self.assertIs(result.outcomes["left"], Outcome.FORK_EVIDENCE)
+        self.assertIs(result.outcomes["right"], Outcome.FORK_EVIDENCE)
+        self.assertIs(
+            result.outcomes["independent"], Outcome.FORK_QUARANTINED
+        )
+        self.assertEqual(result.applied_order, ())
+        self.assertEqual(result.authorized_credentials, frozenset())
+        self.assertEqual(result.removed_targets, frozenset())
+        self.assertFalse(frontier_is_producible(scenario, ("independent",)))
+
+    def test_concurrent_grant_can_survive_revocation_in_v0_nonclaim(self) -> None:
+        grant = event(
+            "a-grant", 0, kind=EventKind.GRANT, subject="evil"
+        )
+        revoke = event(
+            "z-revoke",
+            0,
+            credential="recovery",
+            kind=EventKind.REVOKE,
+            subject="admin",
+        )
+        action = event(
+            "b-action",
+            0,
+            credential="evil",
+            parents=("a-grant",),
+            binding_ref="a-grant",
+        )
+        unsafe_order = project(
+            _scenario((grant, revoke, action), genesis=("admin", "recovery"))
+        )
+        self.assertFalse(unsafe_order.graph.forks)
+        self.assertIs(unsafe_order.outcomes["b-action"], Outcome.APPLIED)
+        self.assertEqual(
+            unsafe_order.authorized_credentials, {"evil", "recovery"}
+        )
+
+        revoke_first = replace(revoke, reference="a-revoke")
+        grant_last = replace(grant, reference="z-grant")
+        action_last = replace(
+            action,
+            reference="zz-action",
+            parents=("z-grant",),
+            binding_ref="z-grant",
+        )
+        safe_order = project(
+            _scenario(
+                (revoke_first, grant_last, action_last),
+                genesis=("admin", "recovery"),
+            )
+        )
+        self.assertIs(
+            safe_order.outcomes["z-grant"],
+            Outcome.AUTHENTIC_BUT_UNAUTHORIZED,
+        )
+        self.assertIs(
+            safe_order.outcomes["zz-action"],
+            Outcome.AUTHENTIC_BUT_UNAUTHORIZED,
+        )
+        self.assertEqual(safe_order.authorized_credentials, {"recovery"})
+
 
 if __name__ == "__main__":
     unittest.main()
-    classify_payload_axis,

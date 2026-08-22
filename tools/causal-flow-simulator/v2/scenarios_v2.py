@@ -78,6 +78,9 @@ C0_2I_FAMILIES = frozenset(
         "opening-monotonicity",
         "pending-incremental-full-equivalence",
         "fork-required-partial-opening",
+        "fork-quarantine",
+        "fork-free-authority-laundering-nonclaim",
+        "nested-required-root-replay",
         "overlapping-root-diamond",
         "binding-observation-distinction",
         "unauthorized-hole-independent-authority",
@@ -97,6 +100,7 @@ C0_2I_FAMILIES = frozenset(
         "required-removal-inapplicable",
         "checkpoint-pending-producer",
         "checkpoint-authority-staleness",
+        "checkpoint-retained-live",
         "self-rotation-and-admin-recovery",
         "bounded-hole-flood",
         "sole-authority-self-lockout",
@@ -264,6 +268,26 @@ def _scenario(
     )
 
 
+def _delivery_convergence(
+    suite: Suite,
+    scenario: Scenario,
+) -> tuple[object, bool, int, tuple[str, ...]]:
+    """Evaluate every permitted delivery order against one set-relative oracle."""
+
+    expected = suite.evaluate(scenario)
+    orders = delivery_orders(scenario.events)
+    first_failure: tuple[str, ...] = ()
+    converged = True
+    for order in orders:
+        actual = suite.evaluate(replace(scenario, events=order))
+        if actual.semantic_view() != expected.semantic_view():
+            converged = False
+            if not first_failure:
+                first_failure = tuple(item.reference for item in order)
+    suite.explored_traces += len(orders)
+    return expected, converged, len(orders), first_failure
+
+
 def _exercise_causal_core(suite: Suite) -> None:
     root = event("a", 0)
     child = event("c", 1, predecessor="a")
@@ -363,9 +387,15 @@ def _exercise_causal_core(suite: Suite) -> None:
     suite.check(
         "c02d-late-fork",
         late_fork.graph.forks == {"fork-left", "fork-right"}
-        and all(late_fork.outcomes[item] is Outcome.FORK_EVIDENCE for item in late_fork.graph.forks),
+        and all(
+            late_fork.outcomes[item] is Outcome.FORK_EVIDENCE
+            for item in late_fork.graph.forks
+        )
+        and late_fork.fork_quarantined
+        and not late_fork.applied_order
+        and not late_fork.authorized_credentials,
         family="late-fork",
-        detail="same-author same-sequence siblings remain graph-visible fork evidence",
+        detail="same-author same-sequence siblings remain graph-visible while AP is quarantined",
     )
 
     high = event("z-high", 0)
@@ -746,6 +776,7 @@ def _exercise_pending_fold(suite: Suite) -> None:
         1,
         predecessor="replay-left",
         parents=("replay-right",),
+        content=ContentClass.REQUIRED,
     )
     replay_events = (replay_left, replay_right, replay_child)
     replay_refs = ("replay-left", "replay-right")
@@ -851,11 +882,15 @@ def _exercise_pending_fold(suite: Suite) -> None:
     )
     suite.check(
         "fork-hole-descendant",
-        fork_descendant.outcomes["fork-a"] is Outcome.PENDING_OPENING
-        and fork_descendant.outcomes["fork-child"] is Outcome.PENDING_ANCESTOR
-        and fork_descendant.outcomes["fork-b"] is Outcome.FORK_EVIDENCE,
+        fork_descendant.outcomes["fork-a"] is Outcome.FORK_EVIDENCE
+        and fork_descendant.outcomes["fork-b"] is Outcome.FORK_EVIDENCE
+        and fork_descendant.outcomes["fork-child"] is Outcome.FORK_QUARANTINED
+        and fork_descendant.pending_roots == {"fork-a"}
+        and fork_descendant.pending == {"fork-a", "fork-child"}
+        and fork_descendant.fork_quarantined
+        and not fork_descendant.applied_order,
         family="fork-required-partial-opening",
-        detail="an unopened fork-classified REQUIRED sibling blocks its own descendants but not an opened sibling",
+        detail="pending membership remains observable while every AP outcome is fork-quarantined",
         obligation="C0.2f-11",
     )
 
@@ -1206,20 +1241,26 @@ def _exercise_authority_and_control(suite: Suite) -> None:
         detail="with one genesis authority and no alternate branch, its own unopened REQUIRED prefix holds its control descendant pending",
     )
 
+    unauthorized_target = event(
+        "unauthorized-target",
+        0,
+        credential="peer",
+        content=ContentClass.DETACHABLE,
+    )
     unauthorized_remove = event(
         "unauthorized-remove",
         0,
         credential="eve",
-        parents=("bad-grant",),
+        parents=("bad-grant", "unauthorized-target"),
         binding_ref="bad-grant",
         kind=EventKind.REMOVE,
-        target="authority-hole",
-        commitment="commitment:authority-hole",
+        target="unauthorized-target",
+        commitment="commitment:unauthorized-target",
     )
     unauthorized_removal = suite.evaluate(
         _scenario(
-            (admin_revoke, bad_grant, hole, unauthorized_remove),
-            genesis=("admin", "recovery"),
+            (admin_revoke, bad_grant, unauthorized_target, unauthorized_remove),
+            genesis=("admin", "recovery", "peer"),
         )
     )
     suite.check(
@@ -1230,6 +1271,439 @@ def _exercise_authority_and_control(suite: Suite) -> None:
         family="authentic-but-unauthorized",
         detail="an authenticated but unauthorized REMOVE has no retention effect",
         obligation="C0.2f-07",
+    )
+
+
+def _exercise_security_remediation(suite: Suite) -> None:
+    """Exercise the review counterexamples and the bounded interim containment."""
+
+    revoked_admin = event(
+        "a-revoke-admin",
+        0,
+        credential="recovery",
+        kind=EventKind.REVOKE,
+        subject="admin",
+    )
+    revoked_fork_left = event("b-revoked-fork-left", 0)
+    revoked_fork_right = event("c-revoked-fork-right", 0)
+    revoked_fork_scenario = _scenario(
+        (revoked_admin, revoked_fork_left, revoked_fork_right),
+        genesis=("admin", "recovery"),
+    )
+    revoked_fork, converged, count, trace = _delivery_convergence(
+        suite, revoked_fork_scenario
+    )
+    suite.check(
+        "revoked-key-fork-quarantines",
+        converged
+        and count == 6
+        and revoked_fork.fork_quarantined
+        and revoked_fork.graph.forks
+        == {"b-revoked-fork-left", "c-revoked-fork-right"}
+        and not revoked_fork.applied_order
+        and not revoked_fork.authorized_credentials
+        and not revoked_fork.removed_targets
+        and not frontier_is_producible(
+            revoked_fork_scenario, ("a-revoke-admin",)
+        ),
+        family="fork-quarantine",
+        detail="a holder of revoked key material can inject fork evidence but can only quarantine the v0 AP context",
+        trace=trace,
+    )
+
+    honest_succession = event(
+        "g-succ",
+        0,
+        kind=EventKind.GRANT,
+        subject="succ",
+    )
+    honest_self_revoke = event(
+        "self-revoke",
+        1,
+        predecessor="g-succ",
+        kind=EventKind.REVOKE,
+        subject="admin",
+    )
+    attacker_zero = event("zz-a0", 0)
+    attacker_one = event("zz-a1", 1, predecessor="zz-a0")
+    attacker_grant = event(
+        "zz-a2",
+        2,
+        predecessor="zz-a1",
+        kind=EventKind.GRANT,
+        subject="evil",
+    )
+    attacker_action = event(
+        "zz-evil0",
+        0,
+        credential="evil",
+        parents=("zz-a2",),
+        binding_ref="zz-a2",
+    )
+    takeover_scenario = _scenario(
+        (
+            honest_succession,
+            honest_self_revoke,
+            attacker_zero,
+            attacker_one,
+            attacker_grant,
+            attacker_action,
+        )
+    )
+    takeover, converged, count, trace = _delivery_convergence(
+        suite, takeover_scenario
+    )
+    suite.check(
+        "retired-genesis-takeover-contained",
+        converged
+        and count == MAX_DELIVERY_PERMUTATIONS
+        and takeover.fork_quarantined
+        and takeover.graph.forks
+        == {"g-succ", "self-revoke", "zz-a0", "zz-a1"}
+        and takeover.outcomes["zz-a2"] is Outcome.FORK_QUARANTINED
+        and takeover.outcomes["zz-evil0"] is Outcome.FORK_QUARANTINED
+        and not takeover.applied_order
+        and not takeover.authorized_credentials,
+        family="fork-quarantine",
+        detail="forking a succession and self-revocation cannot resurrect the retired authority or mint an attacker successor",
+        trace=trace,
+    )
+
+    member_grant = event(
+        "grant-member",
+        0,
+        kind=EventKind.GRANT,
+        subject="member",
+    )
+    member_left = event(
+        "member-left",
+        0,
+        credential="member",
+        parents=("grant-member",),
+        binding_ref="grant-member",
+    )
+    member_right = replace(member_left, reference="member-right")
+    member_control = event(
+        "member-control",
+        1,
+        credential="member",
+        predecessor="member-left",
+        binding_ref="grant-member",
+        kind=EventKind.POLICY,
+    )
+    independent_policy = event(
+        "recovery-policy",
+        0,
+        credential="recovery",
+        kind=EventKind.POLICY,
+    )
+    ordinary_fork_scenario = _scenario(
+        (
+            member_grant,
+            member_left,
+            member_right,
+            member_control,
+            independent_policy,
+        ),
+        genesis=("admin", "recovery"),
+    )
+    ordinary_fork, converged, count, trace = _delivery_convergence(
+        suite, ordinary_fork_scenario
+    )
+    suite.check(
+        "ordinary-fork-quarantines-independent-control",
+        converged
+        and count == 120
+        and ordinary_fork.fork_quarantined
+        and ordinary_fork.outcomes["member-left"] is Outcome.FORK_EVIDENCE
+        and ordinary_fork.outcomes["member-right"] is Outcome.FORK_EVIDENCE
+        and ordinary_fork.outcomes["member-control"]
+        is Outcome.FORK_QUARANTINED
+        and ordinary_fork.outcomes["recovery-policy"]
+        is Outcome.FORK_QUARANTINED
+        and not ordinary_fork.authorized_credentials,
+        family="fork-quarantine",
+        detail="even a lowest-privilege ordinary fork terminally quarantines independent control work in the interim profile",
+        trace=trace,
+    )
+
+    admin_left = event("admin-left", 0)
+    admin_right = event("admin-right", 0)
+    peer_left = event("peer-left", 0, credential="peer")
+    peer_right = event("peer-right", 0, credential="peer")
+    double_fork_scenario = _scenario(
+        (admin_left, admin_right, peer_left, peer_right),
+        genesis=("admin", "peer"),
+    )
+    double_fork, converged, count, trace = _delivery_convergence(
+        suite, double_fork_scenario
+    )
+    suite.check(
+        "two-equivocators-one-quarantine",
+        converged
+        and count == 24
+        and double_fork.fork_quarantined
+        and double_fork.graph.forks
+        == {"admin-left", "admin-right", "peer-left", "peer-right"}
+        and not double_fork.applied_order,
+        family="fork-quarantine",
+        detail="multiple equivocators still produce one order-independent whole-context quarantine",
+        trace=trace,
+    )
+
+    pending_left = event(
+        "pending-left", 0, content=ContentClass.REQUIRED
+    )
+    pending_right = event(
+        "pending-right", 0, content=ContentClass.REQUIRED
+    )
+    pending_child = event(
+        "pending-child", 1, predecessor="pending-left"
+    )
+    pending_fork_prior = _scenario(
+        (pending_left, pending_right, pending_child),
+        {"pending-right": OpeningObservation.VERIFIED},
+    )
+    pending_fork_updated = replace(
+        pending_fork_prior,
+        opening_observations={
+            "pending-left": OpeningObservation.VERIFIED,
+            "pending-right": OpeningObservation.VERIFIED,
+        },
+    )
+    pending_before = suite.evaluate(pending_fork_prior)
+    pending_after = incremental_replay(
+        pending_fork_prior, pending_fork_updated
+    )
+    pending_fresh = suite.evaluate(pending_fork_updated)
+    suite.check(
+        "fork-pending-late-reveal",
+        pending_before.fork_quarantined
+        and pending_before.pending_roots == {"pending-left"}
+        and pending_before.pending == {"pending-left", "pending-child"}
+        and pending_after.semantic_view() == pending_fresh.semantic_view()
+        and pending_after.fork_quarantined
+        and not pending_after.pending
+        and pending_after.metrics.earliest_replay_boundary is None
+        and pending_after.metrics.replayed_event_work == 0,
+        family="fork-quarantine",
+        detail="opening acquisition changes observable pending sets but never replays or lifts a fixed-transcript fork quarantine",
+        obligation="C0.2f-11",
+    )
+
+    grant_first = event(
+        "a-evil-grant",
+        0,
+        kind=EventKind.GRANT,
+        subject="evil",
+    )
+    revoke_last = event(
+        "z-admin-revoke",
+        0,
+        credential="recovery",
+        kind=EventKind.REVOKE,
+        subject="admin",
+    )
+    evil_first_action = event(
+        "b-evil-action",
+        0,
+        credential="evil",
+        parents=("a-evil-grant",),
+        binding_ref="a-evil-grant",
+    )
+    grant_first_scenario = _scenario(
+        (grant_first, revoke_last, evil_first_action),
+        genesis=("admin", "recovery"),
+    )
+    grant_first_projection, grant_first_converged, grant_first_count, first_trace = (
+        _delivery_convergence(suite, grant_first_scenario)
+    )
+
+    revoke_first = replace(revoke_last, reference="a-admin-revoke")
+    grant_last = replace(grant_first, reference="z-evil-grant")
+    evil_last_action = replace(
+        evil_first_action,
+        reference="zz-evil-action",
+        parents=("z-evil-grant",),
+        binding_ref="z-evil-grant",
+    )
+    revoke_first_scenario = _scenario(
+        (revoke_first, grant_last, evil_last_action),
+        genesis=("admin", "recovery"),
+    )
+    revoke_first_projection, revoke_first_converged, revoke_first_count, second_trace = (
+        _delivery_convergence(suite, revoke_first_scenario)
+    )
+    suite.check(
+        "concurrent-grant-revoke-both-reference-orders",
+        grant_first_converged
+        and revoke_first_converged
+        and grant_first_count == 6
+        and revoke_first_count == 6
+        and not grant_first_projection.graph.forks
+        and not revoke_first_projection.graph.forks
+        and grant_first_projection.outcomes["a-evil-grant"] is Outcome.APPLIED
+        and grant_first_projection.outcomes["b-evil-action"] is Outcome.APPLIED
+        and grant_first_projection.authorized_credentials == {"evil", "recovery"}
+        and revoke_first_projection.outcomes["z-evil-grant"]
+        is Outcome.AUTHENTIC_BUT_UNAUTHORIZED
+        and revoke_first_projection.outcomes["zz-evil-action"]
+        is Outcome.AUTHENTIC_BUT_UNAUTHORIZED
+        and revoke_first_projection.authorized_credentials == {"recovery"},
+        family="fork-free-authority-laundering-nonclaim",
+        detail="v0 intentionally preserves the executable counterexample: a concurrent grant can survive revocation in one grindable reference order; C0.2j is mandatory",
+        trace=first_trace or second_trace,
+    )
+
+    outer = event("nested-outer", 0, content=ContentClass.REQUIRED)
+    inner = event(
+        "nested-inner",
+        1,
+        predecessor="nested-outer",
+        content=ContentClass.REQUIRED,
+    )
+    nested_prior = _scenario((outer, inner))
+    nested_updated = replace(
+        nested_prior,
+        opening_observations={"nested-inner": OpeningObservation.VERIFIED},
+    )
+    nested_prior_projection = suite.evaluate(nested_prior)
+    nested_updated_projection = incremental_replay(nested_prior, nested_updated)
+    nested_oracle = suite.evaluate(nested_updated)
+    suite.check(
+        "nested-root-outcome-replay",
+        nested_prior_projection.pending == nested_oracle.pending
+        and nested_prior_projection.pending_roots
+        != nested_oracle.pending_roots
+        and nested_updated_projection.semantic_view()
+        == nested_oracle.semantic_view()
+        and nested_updated_projection.outcomes["nested-inner"]
+        is Outcome.PENDING_ANCESTOR
+        and nested_updated_projection.metrics.earliest_replay_boundary == 1,
+        family="nested-required-root-replay",
+        detail="a root-only change invalidates the reusable suffix even when pending membership is unchanged",
+        obligation="C0.2f-03",
+    )
+
+    cross_outer = event(
+        "cross-outer", 0, content=ContentClass.REQUIRED
+    )
+    cross_inner = event(
+        "cross-inner",
+        0,
+        credential="peer",
+        parents=("cross-outer",),
+        content=ContentClass.REQUIRED,
+    )
+    cross_prior = _scenario(
+        (cross_outer, cross_inner), genesis=("admin", "peer")
+    )
+    cross_updated = replace(
+        cross_prior,
+        opening_observations={"cross-inner": OpeningObservation.VERIFIED},
+    )
+    cross_incremental = incremental_replay(cross_prior, cross_updated)
+    cross_oracle = suite.evaluate(cross_updated)
+    suite.check(
+        "cross-credential-nested-root-replay",
+        cross_incremental.semantic_view() == cross_oracle.semantic_view()
+        and cross_incremental.outcomes["cross-inner"]
+        is Outcome.PENDING_ANCESTOR,
+        family="nested-required-root-replay",
+        detail="root-delta replay is independent of the credentials that authored the nested REQUIRED events",
+        obligation="C0.2f-03",
+    )
+
+    prefix_grant = event(
+        "a-prefix-grant", 0, kind=EventKind.GRANT, subject="bob"
+    )
+    prefix_revoke = event(
+        "b-prefix-revoke",
+        1,
+        predecessor="a-prefix-grant",
+        kind=EventKind.REVOKE,
+        subject="bob",
+    )
+    prefix_hole = event(
+        "c-prefix-hole",
+        0,
+        credential="peer",
+        content=ContentClass.REQUIRED,
+    )
+    prefix_bob = event(
+        "d-prefix-bob",
+        0,
+        credential="bob",
+        parents=("a-prefix-grant", "c-prefix-hole"),
+        binding_ref="a-prefix-grant",
+    )
+    prefix_prior = _scenario(
+        (prefix_grant, prefix_revoke, prefix_hole, prefix_bob),
+        genesis=("admin", "peer"),
+    )
+    prefix_updated = replace(
+        prefix_prior,
+        opening_observations={"c-prefix-hole": OpeningObservation.VERIFIED},
+    )
+    prefix_incremental = incremental_replay(prefix_prior, prefix_updated)
+    prefix_oracle = suite.evaluate(prefix_updated)
+    suite.check(
+        "prefix-revocation-reconstructed",
+        prefix_incremental.semantic_view() == prefix_oracle.semantic_view()
+        and prefix_incremental.outcomes["d-prefix-bob"]
+        is Outcome.AUTHENTIC_BUT_UNAUTHORIZED,
+        family="nested-required-root-replay",
+        detail="incremental suffix replay reconstructs revocation state from the reused prefix",
+        obligation="C0.2f-10",
+    )
+
+    prefix_target = event(
+        "a-prefix-target",
+        0,
+        credential="peer",
+        content=ContentClass.DETACHABLE,
+    )
+    prefix_remove = event(
+        "b-prefix-remove",
+        0,
+        parents=("a-prefix-target",),
+        kind=EventKind.REMOVE,
+        target="a-prefix-target",
+        commitment="commitment:a-prefix-target",
+    )
+    removal_hole = event(
+        "c-removal-hole",
+        0,
+        credential="recovery",
+        content=ContentClass.REQUIRED,
+    )
+    repeat_remove = event(
+        "d-prefix-repeat-remove",
+        1,
+        predecessor="b-prefix-remove",
+        parents=("c-removal-hole",),
+        kind=EventKind.REMOVE,
+        target="a-prefix-target",
+        commitment="commitment:a-prefix-target",
+    )
+    removal_prior = _scenario(
+        (prefix_target, prefix_remove, removal_hole, repeat_remove),
+        genesis=("admin", "peer", "recovery"),
+    )
+    removal_updated = replace(
+        removal_prior,
+        opening_observations={"c-removal-hole": OpeningObservation.VERIFIED},
+    )
+    removal_incremental = incremental_replay(removal_prior, removal_updated)
+    removal_oracle = suite.evaluate(removal_updated)
+    suite.check(
+        "prefix-removal-reconstructed",
+        removal_incremental.semantic_view() == removal_oracle.semantic_view()
+        and removal_incremental.outcomes["d-prefix-repeat-remove"]
+        is Outcome.ALREADY_REMOVED,
+        family="nested-required-root-replay",
+        detail="incremental suffix replay reconstructs removal state from the reused prefix",
+        obligation="C0.2f-06",
     )
 
 
@@ -1512,7 +1986,10 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
     suite.check(
         "checkpoint-whole-stale",
         stale.outcomes["detachable"] is Outcome.STALE_EVIDENCE
-        and not stale.applied_order,
+        and stale.stale_evidence
+        and not stale.applied_order
+        and not stale.authorized_credentials
+        and not stale.removed_targets,
         family="checkpoint-authority-staleness",
         detail="checkpoint-only authority evidence makes the whole projection stale",
         obligation="C0.2f-12",
@@ -1536,13 +2013,25 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         (event("checkpoint-hole", 0, content=ContentClass.REQUIRED),),
         checkpoint_only=("checkpoint-hole",),
     )
+    retained_checkpoint = suite.evaluate(checkpoint_hole)
     suite.check(
         "checkpoint-pending-producer",
-        suite.evaluate(checkpoint_hole).outcomes["checkpoint-hole"] is Outcome.STALE_EVIDENCE
+        retained_checkpoint.outcomes["checkpoint-hole"]
+        is Outcome.PENDING_OPENING
+        and not retained_checkpoint.stale_evidence
         and not frontier_is_producible(checkpoint_hole, ("checkpoint-hole",)),
         family="checkpoint-pending-producer",
-        detail="checkpoint closure cannot make a pending frontier producer eligible",
+        detail="retained checkpoint evidence is not checkpoint-only and cannot make a pending frontier producer eligible",
         obligation="C0.2f-02",
+    )
+    suite.check(
+        "checkpoint-retained-live",
+        retained_checkpoint.outcomes["checkpoint-hole"]
+        is Outcome.PENDING_OPENING
+        and not retained_checkpoint.stale_evidence,
+        family="checkpoint-retained-live",
+        detail="an admitted live transcript is not stale merely because checkpoint evidence also names it",
+        obligation="C0.2f-12",
     )
 
     flood = tuple(
@@ -1690,6 +2179,7 @@ def run_required_suite() -> Suite:
     _exercise_causal_core(suite)
     _exercise_pending_fold(suite)
     _exercise_authority_and_control(suite)
+    _exercise_security_remediation(suite)
     _exercise_collisions(suite)
     _exercise_retention_checkpoint_and_bounds(suite)
     _close_obligation_registry(suite)

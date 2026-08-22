@@ -9,7 +9,10 @@ Model: `styx.pending-subtree-falsification/v2`
 Report schema: `styx.pending-subtree-report/v2`
 
 Machine report SHA-256:
-`745b5dd4843612093976787afa8a714a88796b52735896de68be69dbea583514`
+`ea930ecd272ebf7057b4c59308d6984a0aa5ca981710be74c259c2794bc042fd`
+
+Mutation report SHA-256:
+`cdcfd71868010ebfc43afe61a1301706c5b53a464064bee52e577749669455f8`
 
 Historical v1 machine report SHA-256:
 `8bee78b7bde503597d331bea63bca1548bb3d8f006ea4505854b7973b3a5a3f7`
@@ -24,16 +27,18 @@ Issue: [#225](https://github.com/styx-secure/styx/issues/225)
 
 The isolated dependency-free C0.2i model found no counterexample within its
 declared small-state envelope to the selected pending-subtree construction. The
-required run performed 94 directed invariant evaluations over all 22 re-encoded
-C0.2d causal families, all 16 C0.2f obligations and all 35 new C0.2i hostile
-families. It explored 386 explicitly recorded delivery, opening/event or typed-
-axis cases, including 324 exhaustive bounded incremental/full combinations and
-all 54 combinations in the closed content-class, availability and binding-
-observation product.
+required run performed 105 directed invariant evaluations over all 22
+re-encoded C0.2d causal families, all 16 C0.2f obligations and all 39 C0.2i
+hostile families. It explored 1,268 explicitly recorded bounded delivery traces,
+opening/event combinations and typed-axis cases. Delivery permutations are
+coverage of one semantic construction, not independent semantic shapes.
 The closed-registry checks fail if any required family or obligation is absent or
-has no directed assertion.
+has no directed assertion. A separate deterministic mutation gate kills all
+five required source mutants, including a named assertion weakened to a
+tautology.
 
-This result supports returning O-04 to `DECIDED` under the amended semantics. It
+This result is candidate evidence for returning O-01, O-02 and O-04 to
+`DECIDED` only after the exact-final review and human gates. It
 does not authorize C0.3, a protocol demo, a production kernel, product work or a
 sensitive pilot. It is not a formal proof, conformance corpus, cryptographic
 argument, interoperability result, audit, anonymity claim, deletion guarantee or
@@ -57,8 +62,11 @@ simulator module. It models:
   observation, with every unlisted combination rejected and every accepted
   combination assigned a typed presentation;
 - per-replica opening observations and deterministic pending-subtree replay;
-- symbolic checkpoint evidence and replay-dependency sets whose non-empty
-  intersection produces whole-projection stale evidence;
+- permanent whole-context AP quarantine whenever the K graph contains a
+  same-author fork, while preserving graph and pending diagnostics;
+- symbolic checkpoint evidence whose references are checkpoint-only only when
+  absent from the live admitted graph, plus an unvalidated replay-dependency
+  oracle whose matching intersection produces whole-projection stale evidence;
 - unsupported credential-identifier collisions as negative witnesses excluded
   from every positive claim; and
 - symbolic current-profile commitment and geometry checks without selecting new
@@ -94,12 +102,37 @@ opening cannot add pending events. Incremental replay after monotone opening
 acquisition equals fresh full replay for the same transcript and verified-opening
 sets. An opening observed before or without its event has no graph or AP effect.
 
-If any content-bearing or authority-bearing replay dependency appears in the
-model's symbolic checkpoint-evidence set, the whole projection is
-`STALE_EVIDENCE` before the pending fold. Unrelated checkpoint evidence does not
-stale a projection. These sets model only the dependency relation; they do not
-implement or authenticate a checkpoint. Checkpoint evidence never substitutes
-for retained authenticated history.
+For an opening-set update over an identical transcript, incremental replay
+starts at the earliest canonical position in:
+
+```text
+(prior_pending - updated_pending)
+union
+(prior_pending_roots - updated_pending_roots)
+```
+
+This includes the nested-root case where membership in the pending set is
+unchanged but an event changes from `PENDING_OPENING` to `PENDING_ANCESTOR`.
+
+Checkpoint staleness is the symbolic intersection:
+
+```text
+(checkpoint_evidence - graph.admitted) intersection replay_dependencies
+```
+
+A retained admitted transcript is therefore live even when checkpoint evidence
+also names it. These inputs model neither checkpoint authentication nor
+acceptance; `replay_dependencies` remains an unvalidated oracle. Matching absent
+evidence makes the whole projection `STALE_EVIDENCE`, whose AP order, authority
+and removal state are empty. Checkpoints never substitute for retained
+authenticated history.
+
+Any K-admitted same-author fork instead activates permanent whole-context AP
+quarantine. Non-stale siblings are `FORK_EVIDENCE`; every other admitted event
+is `FORK_QUARANTINED`. The graph, order, fork set, pending roots and pending
+closure remain observable, but applied order, authority, removals and producer
+eligibility are empty. No later opening, checkpoint, event or replay can lift
+quarantine for the v0-pinned context. `STALE_EVIDENCE` has higher precedence.
 
 ## 4. Authentication and authority boundary
 
@@ -126,6 +159,15 @@ pre-chain and post-chain publication, attacker descendants, genesis collision
 and a grant by a causally revoked credential. This is an explicit denial-of-
 service non-claim, not a collision solution.
 
+Fork quarantine prevents the prior fork-descendant authority takeover but does
+not make v0 authority safe. In a fork-free transcript, a compromised credential
+can issue a concurrent successor `GRANT` while another authority revokes it.
+When the grindable reference order places the grant first, the successor remains
+operational because revocation is non-transitive; the opposite order rejects it.
+The suite preserves both outcomes as an executable counterexample. C0.2j must
+replace the credential/grant provenance, revocation and two-sided authority
+contract before any safe-compromise or product claim.
+
 ## 5. Hostile cases exercised
 
 The directed suite includes:
@@ -142,8 +184,17 @@ The directed suite includes:
   substituted `DETACHABLE` presentations and fail-closed illegal inputs;
 - root/descendant/independent-event separation, overlapping-root diamonds,
   partially opened fork siblings, fork descendants, prior-prefix-cache replay
-  and incremental/full equivalence over 324 verified-opening and delivery-order
-  combinations;
+  and incremental/full equivalence over bounded verified-opening and
+  delivery-order combinations;
+- revoked-key, retired-genesis, ordinary-member and dual-equivocation forks;
+  whole-context quarantine of independent control work; fork-plus-pending late
+  reveal; empty authority/removal/application views and false producer
+  eligibility under quarantine;
+- the fork-free concurrent grant/revoke authority-laundering counterexample in
+  both grindable reference orders;
+- same-credential and cross-credential nested `REQUIRED` roots whose pending
+  membership is unchanged while the root set and typed outcome change;
+- revocation and removal state reconstructed from a reused replay prefix;
 - delayed reveal, relay withholding, late low-reference siblings and bounded
   multi-hole flooding;
 - authentic-but-unauthorized events, terminal invalid binding ancestry,
@@ -155,15 +206,18 @@ The directed suite includes:
   inside a pending subtree, rejection of attempted `REQUIRED` removal, and
   deterministic `NONE`, non-ancestral late and already-removed targets;
 - pending checkpoint producers, matching and unrelated symbolic checkpoint
-  evidence, custody frontiers and retained target-prefix abandonment as a
-  negative design witness;
+  evidence, retained admitted checkpoint references, custody frontiers and
+  retained target-prefix abandonment as a negative design witness;
   and
 - current-profile descriptor-copy/self-copy non-protection and unchanged
   symbolic geometry boundaries.
 
 The suite separately preserves all sixteen C0.2f obligations under the amended
 fold, including post-removal presentation distinctions and resource checks before
-symbolic expansion.
+symbolic expansion. The machine report maps each obligation to its executable
+witness identifiers and separately labels properties that are true only because
+the symbolic vocabulary or search bounds construct them. Those construction-only
+facts are not counted as executable witnesses.
 
 ## 6. Reproducible result
 
@@ -171,7 +225,7 @@ The required environment was Python `3.14.4`. Two v2 required-suite invocations
 were byte-identical and each produced:
 
 ```text
-PENDING SUBTREE FALSIFICATION verdict=NO_COUNTEREXAMPLE_WITHIN_BOUNDS invariants=94 traces=386
+PENDING SUBTREE FALSIFICATION verdict=NO_COUNTEREXAMPLE_WITHIN_BOUNDS invariants=105 traces=1268
 ```
 
 The report records these explicit bounds:
@@ -200,6 +254,20 @@ The historical v1 required suite also ran twice and remained byte-identical at
 its frozen digest. The v1 source, tests, schema and report remain evidence of the
 superseded whole-suffix construction and were not modified.
 
+The repository-owned mutation harness ran twice with byte-identical canonical
+JSON and reported:
+
+```text
+C0.2i MUTATION GATE verdict=ALL_REQUIRED_MUTANTS_KILLED killed=5/5
+```
+
+It source-mutates the v2 kernel/scenario tree and kills: non-sibling application
+under fork quarantine, stale-authority copying, pending-only replay-boundary
+selection, retained-evidence misclassification as checkpoint-only, and a named
+security assertion replaced with `True`. The last mutant is caught by an
+independent AST assertion-contract registry rather than by trusting the weakened
+test itself. Every mutant is executed twice and non-determinism fails the gate.
+
 ## 7. Residual risks and non-claims
 
 - An author or relay can keep that author's causal subtree pending indefinitely
@@ -214,11 +282,14 @@ superseded whole-suffix construction and were not modified.
   retained replay history.
 - Credential-identifier collision remains a cheap retroactive authority-freeze
   attack. C0.2j must solve it before C0.3, demo or product work.
-- Fork-classified events apply no AP transition, but their descendants remain
-  K candidates evaluated at their own prefixes. A compromised author can
-  therefore self-fork around one pending branch or revise reversible control
-  history. The model exercises that behavior but provides no safe-continuation
-  or finality claim; C0.2j must decide the exact fork namespace.
+- Any holder of valid signing-key material, including a revoked credential, can
+  permanently quarantine the entire v0 AP context. This prevents authority
+  expansion but creates an intentional fail-closed availability denial. A
+  self-fork is an absolute context lockout, never a self-lockout escape.
+- Fork-free concurrent grant/revoke can leave an attacker-granted successor
+  operational in one grindable reference order. V0 revocation is non-transitive
+  and does not bound credential compromise. C0.2j must replace the authority
+  model, not merely rename outcomes.
 - `ROTATE` and `RECOVER` are symbolic authenticated no-ops in this bounded
   model. They cannot resurrect an identifier, but the model also does not prove
   the fresh-credential succession required by O-02.
@@ -266,6 +337,19 @@ PYTHONDONTWRITEBYTECODE=1 python3 \
 
 cmp /tmp/styx-c02i-v2-1.json /tmp/styx-c02i-v2-2.json
 sha256sum /tmp/styx-c02i-v2-1.json /tmp/styx-c02i-v2-2.json
+
+PYTHONDONTWRITEBYTECODE=1 python3 \
+  tools/causal-flow-simulator/v2/mutation_harness_v2.py \
+  --suite required --output /tmp/styx-c02i-v2-mutations-1.json
+
+PYTHONDONTWRITEBYTECODE=1 python3 \
+  tools/causal-flow-simulator/v2/mutation_harness_v2.py \
+  --suite required --output /tmp/styx-c02i-v2-mutations-2.json
+
+cmp /tmp/styx-c02i-v2-mutations-1.json \
+  /tmp/styx-c02i-v2-mutations-2.json
+sha256sum /tmp/styx-c02i-v2-mutations-1.json \
+  /tmp/styx-c02i-v2-mutations-2.json
 ```
 
 The positive verdict is valid only when the closed registries are complete and
