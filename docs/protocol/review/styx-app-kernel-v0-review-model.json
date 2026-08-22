@@ -14,8 +14,15 @@
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-02"
+      ],
       "description": "Machine-evaluable application policy; not a human operator or a source of K validity.",
       "id": "application_profile",
+      "obligation_refs": [
+        "OB-AP01"
+      ],
+      "owner": "AP",
       "trust_class": "APPLICATION"
     },
     {
@@ -32,8 +39,15 @@
           "source_id": "threat_model"
         }
       ],
+      "decision_refs": [
+        "O-02"
+      ],
       "description": "Endpoint holding a context-local signing credential; authorization remains a separate AP decision.",
       "id": "authorized_endpoint",
+      "obligation_refs": [
+        "OB-AP01"
+      ],
+      "owner": "AP",
       "trust_class": "APPLICATION"
     },
     {
@@ -51,8 +65,15 @@
           "source_id": "threat_model"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "Adversary controlling valid old or current key material; revocation does not bound compromise in v0.",
       "id": "compromised_credential_holder",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "trust_class": "CRYPTOGRAPHIC"
     },
     {
@@ -69,8 +90,15 @@
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "Language-neutral semantic owner; does not infer roles from key possession or session membership.",
       "id": "kernel",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "trust_class": "APPLICATION"
     },
     {
@@ -86,8 +114,15 @@
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-13"
+      ],
       "description": "Human or organization operating a product vertical; cannot redefine protocol validity.",
       "id": "product_operator",
+      "obligation_refs": [
+        "OB-PV01"
+      ],
+      "owner": "PV",
       "trust_class": "HUMAN"
     },
     {
@@ -99,12 +134,19 @@
       ],
       "citations": [
         {
-          "anchor": "| `SS → K` |",
+          "anchor": "| `SS → K` | Authenticated plaintext bytes, sender/session attribution",
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-02"
+      ],
       "description": "Receiving endpoint; decryption authenticates a session sender but never proves AP authorization.",
       "id": "recipient_endpoint",
+      "obligation_refs": [
+        "OB-AP01"
+      ],
+      "owner": "AP",
       "trust_class": "APPLICATION"
     },
     {
@@ -120,8 +162,15 @@
           "source_id": "threat_model"
         }
       ],
+      "decision_refs": [
+        "O-11"
+      ],
       "description": "Untrusted relay/network observer; cannot be treated as evidence of application truth or human receipt.",
       "id": "relay_observer",
+      "obligation_refs": [
+        "OB-TR01"
+      ],
+      "owner": "TR",
       "trust_class": "NETWORK"
     },
     {
@@ -137,8 +186,15 @@
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-07"
+      ],
       "description": "Runtime/storage owner; durability does not imply publication, receipt or protocol validity.",
       "id": "runtime_profile",
+      "obligation_refs": [
+        "OB-RS01"
+      ],
+      "owner": "RS",
       "trust_class": "RUNTIME"
     },
     {
@@ -154,8 +210,15 @@
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-03"
+      ],
       "description": "Secure-session boundary; current Phase B evidence is bounded and is not a supported adapter claim.",
       "id": "secure_session_adapter",
+      "obligation_refs": [
+        "OB-SS01"
+      ],
+      "owner": "SS",
       "trust_class": "SESSION"
     },
     {
@@ -171,8 +234,15 @@
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-11"
+      ],
       "description": "Transport/routing owner; relay acknowledgement is not device, application or human receipt.",
       "id": "transport_profile",
+      "obligation_refs": [
+        "OB-TR01"
+      ],
+      "owner": "TR",
       "trust_class": "NETWORK"
     }
   ],
@@ -201,15 +271,22 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "depends_on": [],
       "id": "C0.2j",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "reason": "Must replace collision-prone credential identity, define exact K-readable grant evidence, provenance, succession, revocation transitivity and two-sided authority.",
       "status": "OPEN"
     },
     {
       "blocks": [
-        "O-06c",
         "C0.3",
+        "O-06c",
         "demo",
         "product"
       ],
@@ -219,10 +296,17 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "depends_on": [
         "C0.2j"
       ],
       "id": "C0.2k",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "reason": "Must bind the commitment context to the exact credential and author sequence selected by C0.2j.",
       "status": "OPEN"
     },
@@ -237,7 +321,11 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "depends_on": [
+        "C0.3_CORPUS_PATH_APPROVAL",
         "O-06c",
         "O-07",
         "O-08",
@@ -245,8 +333,34 @@
         "O-14"
       ],
       "id": "C0.3",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "reason": "The specification-derived adversarial corpus cannot freeze unresolved normative bytes or outcomes.",
       "status": "NO_GO"
+    },
+    {
+      "blocks": [
+        "C0.3"
+      ],
+      "citations": [
+        {
+          "anchor": "approve the exact Apache-2.0 path inventory for the future corpus",
+          "source_id": "decisions"
+        }
+      ],
+      "decision_refs": [
+        "O-06"
+      ],
+      "depends_on": [],
+      "id": "C0.3_CORPUS_PATH_APPROVAL",
+      "obligation_refs": [
+        "OB-K17"
+      ],
+      "owner": "K",
+      "reason": "A separate approved task must select the exact Apache-2.0 corpus path inventory before C0.3 creates files.",
+      "status": "OPEN"
     },
     {
       "blocks": [
@@ -258,10 +372,17 @@
           "source_id": "commitment_profile"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "depends_on": [
         "C0.2k"
       ],
       "id": "O-06c",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "reason": "Must falsify exact combined transcript, commitment, credential and sequence bytes with real SHA-256 vectors and independent encoders.",
       "status": "OPEN"
     },
@@ -275,10 +396,17 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "depends_on": [
         "O-06c"
       ],
       "id": "O-07",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "reason": "Complete genesis contents and checkpoint authentication, acceptance and substitution boundaries remain open.",
       "status": "OPEN"
     },
@@ -292,10 +420,17 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "depends_on": [
         "O-06c"
       ],
       "id": "O-08",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "reason": "Active parser, graph, content, frontier and cardinality limits remain unset.",
       "status": "OPEN"
     },
@@ -309,11 +444,64 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "depends_on": [
         "O-06c"
       ],
       "id": "O-10",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "reason": "Stable wire/API outcome registry and failure mapping remain open.",
+      "status": "OPEN"
+    },
+    {
+      "blocks": [
+        "time_bearing_profile"
+      ],
+      "citations": [
+        {
+          "anchor": "### O-12 — Physical-time width, epoch, range and precision privacy",
+          "source_id": "decisions"
+        }
+      ],
+      "decision_refs": [
+        "O-12"
+      ],
+      "depends_on": [],
+      "id": "O-12",
+      "obligation_refs": [
+        "OB-AP03"
+      ],
+      "owner": "AP",
+      "reason": "Physical-time width, epoch, range and precision privacy remain open for every time-bearing profile.",
+      "status": "OPEN"
+    },
+    {
+      "blocks": [
+        "destruction_capable_increment",
+        "erasure_claim"
+      ],
+      "citations": [
+        {
+          "anchor": "### O-13 — Irreversible-effect authorization for content destruction",
+          "source_id": "decisions"
+        }
+      ],
+      "decision_refs": [
+        "O-13"
+      ],
+      "depends_on": [],
+      "id": "O-13",
+      "obligation_refs": [
+        "OB-AP06",
+        "OB-RS04"
+      ],
+      "owner": "AP",
+      "reason": "Irreversible-effect authorization and physical destruction remain quarantine-only.",
       "status": "OPEN"
     },
     {
@@ -326,11 +514,41 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "depends_on": [
         "O-06c"
       ],
       "id": "O-14",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "reason": "Exact signature suite, verification boundary and downgrade evidence remain open.",
+      "status": "OPEN"
+    },
+    {
+      "blocks": [
+        "product_readiness",
+        "profile_succession"
+      ],
+      "citations": [
+        {
+          "anchor": "### O-15 — Profile succession and optional disposition",
+          "source_id": "decisions"
+        }
+      ],
+      "decision_refs": [
+        "O-15"
+      ],
+      "depends_on": [],
+      "id": "O-15",
+      "obligation_refs": [
+        "OB-AP10"
+      ],
+      "owner": "AP",
+      "reason": "No profile-upgrade, abandonment or control-lane mechanism is selected for v0.",
       "status": "OPEN"
     },
     {
@@ -344,8 +562,15 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-02"
+      ],
       "depends_on": [],
       "id": "O-16",
+      "obligation_refs": [
+        "OB-AP01"
+      ],
+      "owner": "AP",
       "reason": "Finality, recovery and any later-profile escape from terminal fork evidence remain open and do not block transcript-only C0.3.",
       "status": "OPEN"
     }
@@ -365,14 +590,21 @@
           "source_id": "threat_model"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "A replay dependency appears only in symbolic checkpoint evidence and not in the live admitted graph.",
       "id": "CE_CHECKPOINT_STALE",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "result": "The whole projection is STALE_EVIDENCE; checkpoint evidence never substitutes for retained authenticated history.",
       "status": "EVIDENCE_ONLY",
       "steps": [
+        "Exclude it from graph.admitted",
         "Name a missing reference in checkpoint_evidence",
-        "Name the same reference in replay_dependencies",
-        "Exclude it from graph.admitted"
+        "Name the same reference in replay_dependencies"
       ]
     },
     {
@@ -389,13 +621,20 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "More than one K-valid grant binds one credential identifier in the validated set.",
       "id": "CE_CREDENTIAL_COLLISION",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "result": "All chains under the identifier are graph evidence but apply no AP transition; authority can be frozen cheaply and retroactively.",
       "status": "EVIDENCE_ONLY",
       "steps": [
-        "Admit one valid binding",
         "Admit a second distinct valid binding for the same identifier",
+        "Admit one valid binding",
         "Replay independently of arrival and canonical order"
       ]
     },
@@ -413,14 +652,21 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "Any holder of valid key material publishes two different same-author transcripts at one sequence.",
       "id": "CE_FORK_CONTEXT_QUARANTINE",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "result": "Fork siblings are FORK_EVIDENCE and every other admitted event is FORK_QUARANTINED; operational AP state is empty permanently for v0.",
       "status": "EVIDENCE_ONLY",
       "steps": [
         "Admit two distinct valid same-credential events with the same author sequence",
-        "Retain graph and pending diagnostics",
-        "Attempt independent authority or policy progress"
+        "Attempt independent authority or policy progress",
+        "Retain graph and pending diagnostics"
       ]
     },
     {
@@ -437,13 +683,20 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "A compromised credential concurrently grants a successor while another actor revokes the compromised credential; grant sorts first.",
       "id": "CE_GRANT_REVOKE_LAUNDERING_ORDER_A",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "result": "The successor can remain authorized because revocation is non-transitive and the grant did not causally reference it.",
       "status": "EVIDENCE_ONLY",
       "steps": [
-        "Create concurrent GRANT and REVOKE",
         "Choose references making GRANT sort first",
+        "Create concurrent GRANT and REVOKE",
         "Exercise successor authority after the revocation"
       ]
     },
@@ -461,13 +714,20 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "The same concurrent grant/revoke pair is replayed with the opposite canonical order.",
       "id": "CE_GRANT_REVOKE_LAUNDERING_ORDER_B",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "result": "The grant is authentic but unauthorized in this order, proving that grindable ordering can change authority.",
       "status": "EVIDENCE_ONLY",
       "steps": [
-        "Create concurrent GRANT and REVOKE",
         "Choose references making REVOKE sort first",
+        "Create concurrent GRANT and REVOKE",
         "Observe the successor grant apply no AP transition"
       ]
     },
@@ -485,14 +745,21 @@
           "source_id": "threat_model"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "A REQUIRED event has no locally verified opening.",
       "id": "CE_MISSING_REQUIRED_OPENING",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "result": "The event is PENDING_OPENING and all causal descendants are PENDING_ANCESTOR, while independent events may progress if the context is fork-free and non-stale.",
       "status": "EVIDENCE_ONLY",
       "steps": [
         "Admit a valid REQUIRED transcript",
-        "Withhold or lose its opening",
-        "Admit both causal descendants and independent events"
+        "Admit both causal descendants and independent events",
+        "Withhold or lose its opening"
       ]
     },
     {
@@ -509,27 +776,57 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "Two replicas have the same transcripts but different monotone verified-opening sets.",
       "id": "CE_SELECTIVE_REVEAL",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "result": "Their projections may temporarily differ; convergence is claimed only for equal transcript and opening sets.",
       "status": "EVIDENCE_ONLY",
       "steps": [
+        "Compare projections before and after both obtain the same opening set",
         "Deliver identical signed transcripts to two replicas",
-        "Supply a valid opening to only one replica",
-        "Compare projections before and after both obtain the same opening set"
+        "Supply a valid opening to only one replica"
       ]
     }
   ],
   "flows": [
     {
+      "actor_actions": [
+        {
+          "actions": [
+            "Produce the declared flow input"
+          ],
+          "actor": "authorized_endpoint"
+        },
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "kernel"
+        }
+      ],
       "citations": [
         {
-          "anchor": "| `AP → K` |",
+          "anchor": "| `AP → K` | Bounded transition request; application/case context",
           "source_id": "responsibility"
         }
       ],
       "consumers": [
         "kernel"
+      ],
+      "decision_refs": [
+        "O-01"
+      ],
+      "emitted_evidence": [
+        "APPLIED",
+        "AUTHENTIC_BUT_UNAUTHORIZED",
+        "INVALID",
+        "PENDING_OPENING"
       ],
       "forbidden_inferences": [
         "A verification key or successful signature authorizes the transition",
@@ -540,6 +837,9 @@
         "application_event",
         "content_bytes",
         "opening"
+      ],
+      "obligation_refs": [
+        "OB-K01"
       ],
       "observers": [
         "application_profile",
@@ -552,35 +852,64 @@
         "INVALID",
         "PENDING_OPENING"
       ],
+      "owner": "K",
       "permitted_actions": [
         "Construct one canonical bounded transcript under the selected profile",
         "Sign only after canonical validation and AP authorization inputs are present"
       ],
       "preconditions": [
-        "Supported protocol/profile/schema",
+        "AP authorization evaluated at the acting prefix",
         "Context-local credential binding evidence",
-        "AP authorization evaluated at the acting prefix"
+        "Supported protocol/profile/schema"
       ],
       "producer": "authorized_endpoint",
+      "resulting_state": "The resulting state is selected only by the declared outcome and referenced state-machine rules.",
       "status": "DECIDED"
     },
     {
+      "actor_actions": [
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "kernel"
+        },
+        {
+          "actions": [
+            "Produce the declared flow input"
+          ],
+          "actor": "runtime_profile"
+        }
+      ],
       "citations": [
         {
           "anchor": "### 5.5 Replay and availability",
           "source_id": "payload_analysis"
+        },
+        {
+          "anchor": "| `K` | **Styx application semantic kernel**",
+          "source_id": "responsibility"
         }
       ],
       "consumers": [
         "kernel"
       ],
+      "decision_refs": [
+        "O-01"
+      ],
+      "emitted_evidence": [
+        "STALE_EVIDENCE"
+      ],
       "forbidden_inferences": [
-        "Checkpoint possession authenticates or substitutes the missing history",
-        "A locally parseable snapshot is a valid projection"
+        "A locally parseable snapshot is a valid projection",
+        "Checkpoint possession authenticates or substitutes the missing history"
       ],
       "id": "checkpoint_restore",
       "object_refs": [
         "checkpoint_evidence"
+      ],
+      "obligation_refs": [
+        "OB-K01"
       ],
       "observers": [
         "kernel",
@@ -589,6 +918,7 @@
       "outcomes": [
         "STALE_EVIDENCE"
       ],
+      "owner": "K",
       "permitted_actions": [
         "Use symbolic evidence only to detect a missing replay dependency"
       ],
@@ -597,9 +927,36 @@
         "Live admitted history is revalidated independently"
       ],
       "producer": "runtime_profile",
+      "resulting_state": "The resulting state is selected only by the declared outcome and referenced state-machine rules.",
       "status": "SYMBOLIC"
     },
     {
+      "actor_actions": [
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "application_profile"
+        },
+        {
+          "actions": [
+            "Produce the declared flow input"
+          ],
+          "actor": "compromised_credential_holder"
+        },
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "kernel"
+        },
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "product_operator"
+        }
+      ],
       "citations": [
         {
           "anchor": "whole-context quarantine of independent control work",
@@ -615,6 +972,13 @@
         "kernel",
         "product_operator"
       ],
+      "decision_refs": [
+        "O-01"
+      ],
+      "emitted_evidence": [
+        "FORK_EVIDENCE",
+        "FORK_QUARANTINED"
+      ],
       "forbidden_inferences": [
         "Canonical order chooses a winning sibling",
         "Revocation, late opening or checkpoint can lift v0 quarantine"
@@ -622,6 +986,9 @@
       "id": "fork_quarantine",
       "object_refs": [
         "application_event"
+      ],
+      "obligation_refs": [
+        "OB-K01"
       ],
       "observers": [
         "authorized_endpoint",
@@ -633,6 +1000,7 @@
         "FORK_EVIDENCE",
         "FORK_QUARANTINED"
       ],
+      "owner": "K",
       "permitted_actions": [
         "Preserve graph and pending diagnostics",
         "Surface terminal context quarantine without AP authority"
@@ -641,29 +1009,65 @@
         "Two distinct K-admitted same-author transcripts use one author sequence"
       ],
       "producer": "compromised_credential_holder",
+      "resulting_state": "The resulting state is selected only by the declared outcome and referenced state-machine rules.",
       "status": "DECIDED"
     },
     {
+      "actor_actions": [
+        {
+          "actions": [
+            "Produce the declared flow input"
+          ],
+          "actor": "authorized_endpoint"
+        },
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "kernel"
+        },
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "runtime_profile"
+        }
+      ],
       "citations": [
         {
           "anchor": "### 5.6 Logical removal",
           "source_id": "payload_analysis"
+        },
+        {
+          "anchor": "| `K` | **Styx application semantic kernel**",
+          "source_id": "responsibility"
         }
       ],
       "consumers": [
         "kernel",
         "runtime_profile"
       ],
+      "decision_refs": [
+        "O-01"
+      ],
+      "emitted_evidence": [
+        "APPLIED",
+        "AUTHENTIC_BUT_UNAUTHORIZED",
+        "INVALID"
+      ],
       "forbidden_inferences": [
         "Logical removal proves physical erasure",
-        "Removal of REQUIRED or NONE content is valid",
-        "Re-presented bytes reactivate removed content"
+        "Re-presented bytes reactivate removed content",
+        "Removal of REQUIRED or NONE content is valid"
       ],
       "id": "logical_removal",
       "object_refs": [
         "application_event",
         "content_descriptor",
         "opening"
+      ],
+      "obligation_refs": [
+        "OB-K01"
       ],
       "observers": [
         "application_profile",
@@ -677,19 +1081,36 @@
         "AUTHENTIC_BUT_UNAUTHORIZED",
         "INVALID"
       ],
+      "owner": "K",
       "permitted_actions": [
         "Append an authenticated AP-authorized directive targeting a DETACHABLE commitment",
         "Retain evidence while requesting runtime deletion"
       ],
       "preconditions": [
+        "AP authorizes the directive at its replay prefix",
         "Control event has content_class NONE",
-        "Target descriptor is DETACHABLE",
-        "AP authorizes the directive at its replay prefix"
+        "Target descriptor is DETACHABLE"
       ],
       "producer": "authorized_endpoint",
+      "resulting_state": "The resulting state is selected only by the declared outcome and referenced state-machine rules.",
       "status": "DECIDED"
     },
     {
+      "actor_actions": [
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "application_profile"
+        },
+        {
+          "actions": [
+            "Consume and validate the declared flow input",
+            "Produce the declared flow input"
+          ],
+          "actor": "kernel"
+        }
+      ],
       "citations": [
         {
           "anchor": "## 3. Selected construction",
@@ -704,15 +1125,25 @@
         "application_profile",
         "kernel"
       ],
+      "decision_refs": [
+        "O-01"
+      ],
+      "emitted_evidence": [
+        "PENDING_ANCESTOR",
+        "PENDING_OPENING"
+      ],
       "forbidden_inferences": [
-        "Timeout, retry, relay, peer or checkpoint substitutes for an opening",
-        "An independent event after the root is automatically pending"
+        "An independent event after the root is automatically pending",
+        "Timeout, retry, relay, peer or checkpoint substitutes for an opening"
       ],
       "id": "missing_required_opening",
       "object_refs": [
         "application_event",
         "content_descriptor",
         "opening"
+      ],
+      "obligation_refs": [
+        "OB-K01"
       ],
       "observers": [
         "authorized_endpoint",
@@ -723,18 +1154,40 @@
         "PENDING_ANCESTOR",
         "PENDING_OPENING"
       ],
+      "owner": "K",
       "permitted_actions": [
-        "Defer the root and exact causal-descendant closure",
-        "Apply independent K-valid events in canonical relative order"
+        "Apply independent K-valid events in canonical relative order",
+        "Defer the root and exact causal-descendant closure"
       ],
       "preconditions": [
-        "Fork-free and non-stale context",
-        "Active REQUIRED transcript lacks a locally verified opening"
+        "Active REQUIRED transcript lacks a locally verified opening",
+        "Fork-free and non-stale context"
       ],
       "producer": "kernel",
+      "resulting_state": "The resulting state is selected only by the declared outcome and referenced state-machine rules.",
       "status": "DECIDED"
     },
     {
+      "actor_actions": [
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "application_profile"
+        },
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "kernel"
+        },
+        {
+          "actions": [
+            "Produce the declared flow input"
+          ],
+          "actor": "recipient_endpoint"
+        }
+      ],
       "citations": [
         {
           "anchor": "Incremental replay after monotone opening",
@@ -749,6 +1202,14 @@
         "application_profile",
         "kernel"
       ],
+      "decision_refs": [
+        "O-01"
+      ],
+      "emitted_evidence": [
+        "APPLIED",
+        "PENDING_ANCESTOR",
+        "PENDING_OPENING"
+      ],
       "forbidden_inferences": [
         "A prior projected suffix is final",
         "Arrival order fixes replay position"
@@ -758,6 +1219,9 @@
         "application_event",
         "content_bytes",
         "opening"
+      ],
+      "obligation_refs": [
+        "OB-K01"
       ],
       "observers": [
         "authorized_endpoint",
@@ -769,21 +1233,43 @@
         "PENDING_ANCESTOR",
         "PENDING_OPENING"
       ],
+      "owner": "K",
       "permitted_actions": [
         "Monotonically add the verified opening",
         "Recompute pending closure and replay from the earliest affected position"
       ],
       "preconditions": [
-        "Opening verifies against the authenticated descriptor and exact content",
-        "Full and incremental semantic views remain equivalent"
+        "Full and incremental semantic views remain equivalent",
+        "Opening verifies against the authenticated descriptor and exact content"
       ],
       "producer": "recipient_endpoint",
+      "resulting_state": "The resulting state is selected only by the declared outcome and referenced state-machine rules.",
       "status": "DECIDED"
     },
     {
+      "actor_actions": [
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "kernel"
+        },
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "recipient_endpoint"
+        },
+        {
+          "actions": [
+            "Produce the declared flow input"
+          ],
+          "actor": "secure_session_adapter"
+        }
+      ],
       "citations": [
         {
-          "anchor": "| `SS → K` |",
+          "anchor": "| `SS → K` | Authenticated plaintext bytes, sender/session attribution",
           "source_id": "responsibility"
         }
       ],
@@ -791,13 +1277,24 @@
         "kernel",
         "recipient_endpoint"
       ],
+      "decision_refs": [
+        "O-03"
+      ],
+      "emitted_evidence": [
+        "APPLIED",
+        "AUTHENTIC_BUT_UNAUTHORIZED",
+        "INVALID"
+      ],
       "forbidden_inferences": [
-        "Successful decryption proves application authorization or freshness",
-        "Session identity is the application author"
+        "Session identity is the application author",
+        "Successful decryption proves application authorization or freshness"
       ],
       "id": "secure_session_receive",
       "object_refs": [
         "application_event"
+      ],
+      "obligation_refs": [
+        "OB-SS01"
       ],
       "observers": [
         "recipient_endpoint",
@@ -808,34 +1305,59 @@
         "AUTHENTIC_BUT_UNAUTHORIZED",
         "INVALID"
       ],
+      "owner": "SS",
       "permitted_actions": [
-        "Return authenticated plaintext bytes and typed session attribution",
-        "Re-run K and AP validation independently"
+        "Re-run K and AP validation independently",
+        "Return authenticated plaintext bytes and typed session attribution"
       ],
       "preconditions": [
         "One exact supported secure-session profile",
         "Session message authentication succeeds"
       ],
       "producer": "secure_session_adapter",
+      "resulting_state": "The resulting state is selected only by the declared outcome and referenced state-machine rules.",
       "status": "PROFILE_DEPENDENT"
     },
     {
+      "actor_actions": [
+        {
+          "actions": [
+            "Produce the declared flow input"
+          ],
+          "actor": "kernel"
+        },
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "secure_session_adapter"
+        }
+      ],
       "citations": [
         {
-          "anchor": "| `AP/K → SS` |",
+          "anchor": "| `AP/K → SS` | Versioned opaque application object plus selected session/context binding",
           "source_id": "responsibility"
         }
       ],
       "consumers": [
         "secure_session_adapter"
       ],
+      "decision_refs": [
+        "O-03"
+      ],
+      "emitted_evidence": [
+        "SESSION_PROFILE_REQUIRED"
+      ],
       "forbidden_inferences": [
-        "Valid application bytes imply valid MLS membership change",
-        "The current repository already supplies a supported product adapter"
+        "The current repository already supplies a supported product adapter",
+        "Valid application bytes imply valid MLS membership change"
       ],
       "id": "secure_session_send",
       "object_refs": [
         "application_event"
+      ],
+      "obligation_refs": [
+        "OB-SS01"
       ],
       "observers": [
         "authorized_endpoint",
@@ -845,6 +1367,7 @@
       "outcomes": [
         "SESSION_PROFILE_REQUIRED"
       ],
+      "owner": "SS",
       "permitted_actions": [
         "Pass one validated opaque application object to the selected session profile"
       ],
@@ -853,12 +1376,28 @@
         "Supported adapter profile remains future work"
       ],
       "producer": "kernel",
+      "resulting_state": "The resulting state is selected only by the declared outcome and referenced state-machine rules.",
       "status": "PROFILE_DEPENDENT"
     },
     {
+      "actor_actions": [
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "relay_observer"
+        },
+        {
+          "actions": [
+            "Consume and validate the declared flow input",
+            "Produce the declared flow input"
+          ],
+          "actor": "transport_profile"
+        }
+      ],
       "citations": [
         {
-          "anchor": "| `RS/SS → TR` |",
+          "anchor": "| `RS/SS → TR` | Opaque bounded envelope, routing handle, publication policy",
           "source_id": "responsibility"
         }
       ],
@@ -866,13 +1405,22 @@
         "relay_observer",
         "transport_profile"
       ],
+      "decision_refs": [
+        "O-11"
+      ],
+      "emitted_evidence": [
+        "TRANSPORT_PROFILE_REQUIRED"
+      ],
       "forbidden_inferences": [
-        "Relay OK means device, application or human receipt",
-        "E2EE hides IP address, timing, size, frequency or routing handles"
+        "E2EE hides IP address, timing, size, frequency or routing handles",
+        "Relay OK means device, application or human receipt"
       ],
       "id": "transport_publish",
       "object_refs": [
         "application_event"
+      ],
+      "obligation_refs": [
+        "OB-TR01"
       ],
       "observers": [
         "relay_observer",
@@ -882,27 +1430,63 @@
       "outcomes": [
         "TRANSPORT_PROFILE_REQUIRED"
       ],
+      "owner": "TR",
       "permitted_actions": [
-        "Publish and retry only an opaque bounded envelope",
-        "Expose only typed publication evidence to upper layers"
+        "Expose only typed publication evidence to upper layers",
+        "Publish and retry only an opaque bounded envelope"
       ],
       "preconditions": [
-        "Supported transport envelope, metadata and routing profile",
-        "Outer observability is explicitly declared"
+        "Outer observability is explicitly declared",
+        "Supported transport envelope, metadata and routing profile"
       ],
       "producer": "transport_profile",
+      "resulting_state": "The resulting state is selected only by the declared outcome and referenced state-machine rules.",
       "status": "PROFILE_DEPENDENT"
     },
     {
+      "actor_actions": [
+        {
+          "actions": [
+            "Consume and validate the declared flow input"
+          ],
+          "actor": "application_profile"
+        },
+        {
+          "actions": [
+            "Consume and validate the declared flow input",
+            "Produce the declared flow input"
+          ],
+          "actor": "kernel"
+        }
+      ],
       "citations": [
         {
           "anchor": "### 6.3 Authorization evaluation",
           "source_id": "identity_analysis"
+        },
+        {
+          "anchor": "| `K` | **Styx application semantic kernel**",
+          "source_id": "responsibility"
         }
       ],
       "consumers": [
         "application_profile",
         "kernel"
+      ],
+      "decision_refs": [
+        "O-01"
+      ],
+      "emitted_evidence": [
+        "APPLIED",
+        "AUTHENTIC_BUT_UNAUTHORIZED",
+        "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+        "FORK_EVIDENCE",
+        "FORK_QUARANTINED",
+        "INVALID",
+        "PENDING_ANCESTOR",
+        "PENDING_OPENING",
+        "POST_REVOCATION",
+        "STALE_EVIDENCE"
       ],
       "forbidden_inferences": [
         "K-valid binding implies AP authority",
@@ -912,6 +1496,9 @@
       "object_refs": [
         "application_event",
         "content_descriptor"
+      ],
+      "obligation_refs": [
+        "OB-K01"
       ],
       "observers": [
         "application_profile",
@@ -930,16 +1517,18 @@
         "POST_REVOCATION",
         "STALE_EVIDENCE"
       ],
+      "owner": "K",
       "permitted_actions": [
-        "Classify K facts before AP authority",
-        "Apply only non-pending events in canonical order when fork-free and non-stale"
+        "Apply only non-pending events in canonical order when fork-free and non-stale",
+        "Classify K facts before AP authority"
       ],
       "preconditions": [
+        "Closed profile inputs",
         "Complete validated transcript set",
-        "Monotone locally verified-opening set",
-        "Closed profile inputs"
+        "Monotone locally verified-opening set"
       ],
       "producer": "kernel",
+      "resulting_state": "The resulting state is selected only by the declared outcome and referenced state-machine rules.",
       "status": "DECIDED"
     }
   ],
@@ -951,6 +1540,9 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-02"
+      ],
       "evidence_refs": [
         "CE_GRANT_REVOKE_LAUNDERING_ORDER_A",
         "CE_GRANT_REVOKE_LAUNDERING_ORDER_B"
@@ -958,6 +1550,9 @@
       "id": "INV_AUTH_NOT_KEY",
       "object_refs": [
         "application_event"
+      ],
+      "obligation_refs": [
+        "OB-AP01"
       ],
       "owner": "AP",
       "statement": "Cryptographic validity and historical credential binding never imply application authorization.",
@@ -970,12 +1565,18 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "evidence_refs": [
         "CE_CREDENTIAL_COLLISION",
         "CE_GRANT_REVOKE_LAUNDERING_ORDER_A"
       ],
       "id": "INV_C0_3_NO_GO",
       "object_refs": [],
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "statement": "No transcript-only C0.3 corpus, demo, product implementation or sensitive use is authorized while the declared blockers remain open.",
       "status": "NO_GO"
@@ -987,6 +1588,9 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "evidence_refs": [
         "causal_report"
       ],
@@ -994,8 +1598,62 @@
       "object_refs": [
         "application_event"
       ],
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "statement": "K graph admission, ancestry, canonical order, duplicate identity and fork classification depend on authenticated transcripts, not content availability, AP authority or arrival order.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "Authority-bearing control data is `NONE`-class transcript data",
+          "source_id": "decisions"
+        }
+      ],
+      "decision_refs": [
+        "O-04"
+      ],
+      "evidence_refs": [
+        "decisions"
+      ],
+      "id": "INV_CONTROL_NONE_CLASS",
+      "object_refs": [
+        "application_event",
+        "content_descriptor"
+      ],
+      "obligation_refs": [
+        "OB-AP01",
+        "OB-K10"
+      ],
+      "owner": "K",
+      "statement": "Authority-bearing control data is content-free NONE-class transcript data.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "Domain separation and rejection of cross-context replay",
+          "source_id": "threat_model"
+        }
+      ],
+      "decision_refs": [
+        "O-03"
+      ],
+      "evidence_refs": [
+        "threat_model"
+      ],
+      "id": "INV_CROSS_CONTEXT_REJECTION",
+      "object_refs": [
+        "application_event",
+        "genesis"
+      ],
+      "obligation_refs": [
+        "OB-K08"
+      ],
+      "owner": "K",
+      "statement": "Every authoritative object is context-bound and cross-context replay is rejected.",
       "status": "DECIDED"
     },
     {
@@ -1005,12 +1663,18 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "evidence_refs": [
         "CE_FORK_CONTEXT_QUARANTINE"
       ],
       "id": "INV_FORK_QUARANTINE",
       "object_refs": [
         "application_event"
+      ],
+      "obligation_refs": [
+        "OB-K01"
       ],
       "owner": "K",
       "statement": "Any admitted same-author fork empties the entire v0 operational AP view permanently while retaining diagnostic evidence.",
@@ -1023,12 +1687,18 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "evidence_refs": [
         "CE_CHECKPOINT_STALE"
       ],
       "id": "INV_NO_CHECKPOINT_SUBSTITUTION",
       "object_refs": [
         "checkpoint_evidence"
+      ],
+      "obligation_refs": [
+        "OB-K01"
       ],
       "owner": "K",
       "statement": "Checkpoint-named evidence cannot replace a missing live authenticated replay dependency.",
@@ -1041,6 +1711,9 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "evidence_refs": [
         "CE_MISSING_REQUIRED_OPENING"
       ],
@@ -1049,6 +1722,9 @@
         "content_bytes",
         "content_descriptor",
         "opening"
+      ],
+      "obligation_refs": [
+        "OB-K01"
       ],
       "owner": "K",
       "statement": "No timeout, quorum, relay response, retry or checkpoint substitutes for a missing or non-verifying REQUIRED opening.",
@@ -1061,6 +1737,9 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "evidence_refs": [
         "CE_MISSING_REQUIRED_OPENING"
       ],
@@ -1068,6 +1747,9 @@
       "object_refs": [
         "application_event",
         "opening"
+      ],
+      "obligation_refs": [
+        "OB-K01"
       ],
       "owner": "K",
       "statement": "In a fork-free non-stale context, missing REQUIRED content defers only its root and causal descendants; independent events still fold in canonical relative order.",
@@ -1080,6 +1762,9 @@
           "source_id": "threat_model"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "evidence_refs": [],
       "id": "INV_PROTECTION_SEPARATION",
       "object_refs": [
@@ -1088,8 +1773,36 @@
         "content_descriptor",
         "opening"
       ],
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "statement": "Authentication, application authorization, commitment binding, confidentiality, availability, unlinkability and erasure are separate properties and may not substitute for one another.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "never let replay position supply authority, priority or physical-destruction permission",
+          "source_id": "responsibility"
+        }
+      ],
+      "decision_refs": [
+        "O-02",
+        "O-13"
+      ],
+      "evidence_refs": [
+        "responsibility"
+      ],
+      "id": "INV_REPLAY_NO_AUTHORITY",
+      "object_refs": [
+        "application_event"
+      ],
+      "obligation_refs": [
+        "OB-K06"
+      ],
+      "owner": "AP",
+      "statement": "Replay position alone confers no authorization, priority or irreversible-effect permission.",
       "status": "DECIDED"
     },
     {
@@ -1103,6 +1816,9 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "evidence_refs": [
         "CE_SELECTIVE_REVEAL"
       ],
@@ -1110,6 +1826,9 @@
       "object_refs": [
         "application_event",
         "opening"
+      ],
+      "obligation_refs": [
+        "OB-K01"
       ],
       "owner": "K",
       "statement": "Replicas converge only relative to the same authenticated transcript set and monotone verified-opening set; full and incremental replay must agree.",
@@ -1122,9 +1841,15 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "evidence_refs": [],
       "id": "INV_SOURCE_AUTHORITY",
       "object_refs": [],
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "statement": "This JSON artifact is derived and never overrides its exact cited English normative sources.",
       "status": "DERIVED"
@@ -1138,18 +1863,40 @@
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-02"
+      ],
       "does_not_own": [
         "Kernel validity",
         "Runtime atomicity",
         "Secure-session cryptography",
         "Transport truth"
       ],
+      "forbidden_inferences": [
+        "Decryption proves application authority",
+        "Signature validity proves authorization",
+        "Transport acknowledgement proves human receipt"
+      ],
       "id": "AP",
+      "inputs": [
+        "Authenticated kernel outcomes",
+        "Bounded transition requests",
+        "Profile policy and authorization state"
+      ],
       "name": "Application profile",
+      "obligation_refs": [
+        "OB-AP01"
+      ],
+      "outputs": [
+        "Application authorization decisions",
+        "Conflict and retention dispositions",
+        "Versioned schema choices"
+      ],
+      "owner": "AP",
       "owns": [
+        "Conflict and retention policy",
         "Roles and authorization",
-        "Versioned application schemas",
-        "Conflict and retention policy"
+        "Versioned application schemas"
       ]
     },
     {
@@ -1159,14 +1906,36 @@
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "does_not_own": [
         "Human workflow",
         "Key custody",
         "Routing",
         "Session membership"
       ],
+      "forbidden_inferences": [
+        "Checkpoint presence proves freshness",
+        "Relay order defines causal order",
+        "Successful signature verification proves AP authorization"
+      ],
       "id": "K",
+      "inputs": [
+        "Application transition candidates",
+        "Authenticated evidence",
+        "Canonical application object bytes"
+      ],
       "name": "Application semantic kernel",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "outputs": [
+        "Classified admission and replay outcomes",
+        "Deterministic projection evidence",
+        "Fork and pending classification"
+      ],
+      "owner": "K",
       "owns": [
         "Authenticated application-object semantics",
         "Causality and deterministic replay",
@@ -1180,12 +1949,33 @@
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-13"
+      ],
       "does_not_own": [
         "Cryptographic guarantees",
         "Protocol validity"
       ],
+      "forbidden_inferences": [
+        "Protocol validity proves lawful action",
+        "Software proves human understanding",
+        "UI acknowledgement proves real-world completion"
+      ],
       "id": "PV",
+      "inputs": [
+        "Typed lower-layer outcomes",
+        "User and operator requests"
+      ],
       "name": "Product vertical and organizational operations",
+      "obligation_refs": [
+        "OB-PV01"
+      ],
+      "outputs": [
+        "Human workflow actions",
+        "Incident and safeguarding decisions",
+        "Truthful user-visible states"
+      ],
+      "owner": "PV",
       "owns": [
         "Human workflow and safeguarding",
         "Operational readiness and incident response",
@@ -1199,12 +1989,34 @@
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-07"
+      ],
       "does_not_own": [
         "Application meaning",
         "Remote delivery truth"
       ],
+      "forbidden_inferences": [
+        "Eviction proves erasure",
+        "Local persistence proves remote delivery",
+        "Restore success proves global freshness"
+      ],
       "id": "RS",
+      "inputs": [
+        "Durable state updates",
+        "Key-custody requests",
+        "Typed recovery needs"
+      ],
       "name": "Runtime/storage profile",
+      "obligation_refs": [
+        "OB-RS01"
+      ],
+      "outputs": [
+        "Atomic persistence outcomes",
+        "Custody provenance",
+        "Recovery and rollback evidence"
+      ],
+      "owner": "RS",
       "owns": [
         "Atomic durable state",
         "Crash recovery and rollback boundary",
@@ -1218,13 +2030,34 @@
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-03"
+      ],
       "does_not_own": [
         "Application authorization",
         "Application causal order",
         "Business workflow"
       ],
+      "forbidden_inferences": [
+        "Decryption proves AP authorization",
+        "Membership proves business role",
+        "Session epoch defines application order"
+      ],
       "id": "SS",
+      "inputs": [
+        "Destination and session reference",
+        "Versioned authenticated application bytes"
+      ],
       "name": "Secure-session adapter",
+      "obligation_refs": [
+        "OB-SS01"
+      ],
+      "outputs": [
+        "Authenticated plaintext delivery",
+        "Ciphertext and membership outcomes",
+        "Session recovery requirements"
+      ],
+      "owner": "SS",
       "owns": [
         "Authenticated confidential session payloads",
         "Epoch and membership policy",
@@ -1238,17 +2071,39 @@
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-11"
+      ],
       "does_not_own": [
         "Application truth",
         "Human receipt",
         "Protocol authorization"
       ],
+      "forbidden_inferences": [
+        "Relay acknowledgement proves human receipt",
+        "Relay order proves application order",
+        "Relay response proves application truth"
+      ],
       "id": "TR",
+      "inputs": [
+        "Opaque envelope",
+        "Publication policy",
+        "Routing handles"
+      ],
       "name": "Transport/routing profile",
+      "obligation_refs": [
+        "OB-TR01"
+      ],
+      "outputs": [
+        "Candidate delivery observations",
+        "Publication and retry outcomes",
+        "Transport metadata exposure"
+      ],
+      "owner": "TR",
       "owns": [
         "Envelope and routing semantics",
-        "Publication, retry and failover",
-        "Outer metadata and network bounds"
+        "Outer metadata and network bounds",
+        "Publication, retry and failover"
       ]
     }
   ],
@@ -1260,8 +2115,32 @@
           "source_id": "threat_model"
         }
       ],
+      "decision_refs": [
+        "O-13"
+      ],
       "id": "NC_AUDIT_READINESS",
+      "obligation_refs": [
+        "OB-PV01"
+      ],
+      "owner": "PV",
       "statement": "No completed independent Styx audit, production readiness or suitability for sensitive, high-risk or life-critical use is claimed."
+    },
+    {
+      "citations": [
+        {
+          "anchor": "Styx does not guarantee unstoppable, timely or cost-free delivery.",
+          "source_id": "threat_model"
+        }
+      ],
+      "decision_refs": [
+        "O-11"
+      ],
+      "id": "NC_AVAILABILITY",
+      "obligation_refs": [
+        "OB-TR03"
+      ],
+      "owner": "TR",
+      "statement": "The current baseline does not guarantee unstoppable, timely or cost-free delivery."
     },
     {
       "citations": [
@@ -1270,8 +2149,32 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "id": "NC_COMMITMENT_COPY",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "statement": "The current commitment context does not prevent declared cross-credential or same-credential cross-sequence descriptor copy; C0.2k owns repair."
+    },
+    {
+      "citations": [
+        {
+          "anchor": "absolute physical-erasure guarantee",
+          "source_id": "threat_model"
+        }
+      ],
+      "decision_refs": [
+        "O-13"
+      ],
+      "id": "NC_ERASURE",
+      "obligation_refs": [
+        "OB-AP05"
+      ],
+      "owner": "AP",
+      "statement": "Logical removal is not an absolute physical-erasure guarantee."
     },
     {
       "citations": [
@@ -1280,7 +2183,14 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-02"
+      ],
       "id": "NC_FINALITY",
+      "obligation_refs": [
+        "OB-AP01"
+      ],
+      "owner": "AP",
       "statement": "No replay position, checkpoint or visible AP result authorizes an irreversible effect."
     },
     {
@@ -1290,8 +2200,32 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "id": "NC_GENESIS_CHECKPOINT",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "statement": "Genesis contents and checkpoint authentication, acceptance, substitution and producer authority remain unresolved."
+    },
+    {
+      "citations": [
+        {
+          "anchor": "computational hiding after opening destruction under stated assumptions",
+          "source_id": "threat_model"
+        }
+      ],
+      "decision_refs": [
+        "O-04"
+      ],
+      "id": "NC_HIDING_ASSUMPTION",
+      "obligation_refs": [
+        "OB-K10"
+      ],
+      "owner": "K",
+      "statement": "The randomized-opening commitment provides only computational hiding under explicitly stated assumptions."
     },
     {
       "citations": [
@@ -1300,7 +2234,14 @@
           "source_id": "threat_model"
         }
       ],
+      "decision_refs": [
+        "O-11"
+      ],
       "id": "NC_METADATA_ANONYMITY",
+      "obligation_refs": [
+        "OB-TR01"
+      ],
+      "owner": "TR",
       "statement": "Application E2EE does not by itself hide IP address, timing, size, frequency or stable routing handles."
     },
     {
@@ -1310,8 +2251,32 @@
           "source_id": "threat_model"
         }
       ],
+      "decision_refs": [
+        "O-02"
+      ],
       "id": "NC_REVOCATION_COMPROMISE",
+      "obligation_refs": [
+        "OB-AP01"
+      ],
+      "owner": "AP",
       "statement": "V0 revocation is non-transitive and does not bound a compromised credential or prevent successor-authority laundering."
+    },
+    {
+      "citations": [
+        {
+          "anchor": "a coherent whole-profile rollback may be undetectable without external evidence",
+          "source_id": "threat_model"
+        }
+      ],
+      "decision_refs": [
+        "O-07"
+      ],
+      "id": "NC_ROLLBACK_DETECTION",
+      "obligation_refs": [
+        "OB-RS09"
+      ],
+      "owner": "RS",
+      "statement": "The baseline does not claim detection of a coherent whole-profile rollback without independent evidence."
     },
     {
       "citations": [
@@ -1320,7 +2285,14 @@
           "source_id": "threat_model"
         }
       ],
+      "decision_refs": [
+        "O-03"
+      ],
       "id": "NC_SUPPORTED_ADAPTER",
+      "obligation_refs": [
+        "OB-SS01"
+      ],
+      "owner": "SS",
       "statement": "Bounded Phase B evidence is not a supported secure-session adapter, Nostr envelope or product-integration claim."
     }
   ],
@@ -1332,6 +2304,9 @@
           "source_id": "transcript_profile"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "Canonical signed application-event semantic object; O-11 wire/storage representation remains open.",
       "fields": [
         {
@@ -1342,6 +2317,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Unsigned u16 semantic value fixed to v1 and covered by the application signature transcript.",
           "id": "ap_protocol_version",
           "integrity": [
@@ -1349,6 +2327,9 @@
           ],
           "mutable_by": [
             "authorized_endpoint"
+          ],
+          "obligation_refs": [
+            "OB-K01"
           ],
           "owner": "K",
           "status": "DECIDED",
@@ -1368,6 +2349,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-02"
+          ],
           "description": "Length-framed canonical AP schema bytes; concrete control carriage remains C0.2j/O-07 work.",
           "id": "ap_transition_block",
           "integrity": [
@@ -1377,13 +2361,17 @@
             "application_profile",
             "authorized_endpoint"
           ],
+          "obligation_refs": [
+            "OB-AP01"
+          ],
           "owner": "AP",
           "status": "UNRESOLVED",
           "visible_to": [
             "application_profile",
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1395,6 +2383,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-02"
+          ],
           "description": "Non-zero identifier from a closed AP registry.",
           "id": "application_profile_id",
           "integrity": [
@@ -1403,13 +2394,17 @@
           "mutable_by": [
             "application_profile"
           ],
+          "obligation_refs": [
+            "OB-AP01"
+          ],
           "owner": "AP",
           "status": "DECIDED",
           "visible_to": [
             "application_profile",
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1421,6 +2416,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-02"
+          ],
           "description": "Non-zero AP version selecting one closed schema and policy contract.",
           "id": "application_profile_version",
           "integrity": [
@@ -1429,13 +2427,17 @@
           "mutable_by": [
             "application_profile"
           ],
+          "obligation_refs": [
+            "OB-AP01"
+          ],
           "owner": "AP",
           "status": "DECIDED",
           "visible_to": [
             "application_profile",
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1447,6 +2449,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Strictly increasing non-wrapping u64 sequence for the context-local credential.",
           "id": "author_sequence",
           "integrity": [
@@ -1456,12 +2461,17 @@
             "authorized_endpoint",
             "compromised_credential_holder"
           ],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "DECIDED",
           "visible_to": [
             "authorized_endpoint",
+            "compromised_credential_holder",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1473,6 +2483,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Canonical sorted maximal antichain of full causal-parent references.",
           "id": "causal_parents",
           "integrity": [
@@ -1482,12 +2495,17 @@
             "authorized_endpoint",
             "compromised_credential_holder"
           ],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "DECIDED",
           "visible_to": [
             "authorized_endpoint",
+            "compromised_credential_holder",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1499,13 +2517,19 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Authenticated descriptor reference to content class, length, type, suite, shape, commitment and geometry.",
-          "id": "content_descriptor",
+          "id": "content_descriptor_ref",
           "integrity": [
             "SIGNED_TRANSCRIPT"
           ],
           "mutable_by": [
             "authorized_endpoint"
+          ],
+          "obligation_refs": [
+            "OB-K01"
           ],
           "owner": "K",
           "status": "DECIDED",
@@ -1513,7 +2537,8 @@
             "application_profile",
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1525,6 +2550,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Fresh opaque32 member of the application/case context tuple.",
           "id": "context_identifier",
           "integrity": [
@@ -1533,12 +2561,16 @@
           "mutable_by": [
             "authorized_endpoint"
           ],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "DECIDED",
           "visible_to": [
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1550,6 +2582,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Current opaque32 context-local author identifier; collision-resistant successor construction and exact grant carriage are C0.2j blockers.",
           "id": "credential_identifier",
           "integrity": [
@@ -1559,12 +2594,17 @@
             "authorized_endpoint",
             "compromised_credential_holder"
           ],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "UNRESOLVED",
           "visible_to": [
             "authorized_endpoint",
+            "compromised_credential_holder",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1576,6 +2616,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Presence octet distinguishing absence from a present predecessor.",
           "id": "direct_predecessor_presence",
           "integrity": [
@@ -1585,12 +2628,17 @@
             "authorized_endpoint",
             "compromised_credential_holder"
           ],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "DECIDED",
           "visible_to": [
             "authorized_endpoint",
+            "compromised_credential_holder",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1602,6 +2650,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Full reference to the immediately prior accepted event for the credential when present.",
           "id": "direct_predecessor_reference",
           "integrity": [
@@ -1611,12 +2662,17 @@
             "authorized_endpoint",
             "compromised_credential_holder"
           ],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "DECIDED",
           "visible_to": [
             "authorized_endpoint",
+            "compromised_credential_holder",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1628,12 +2684,18 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Full SHA-256 digest derived from the complete regenerated application signature transcript; carriage is future O-11 data.",
           "id": "event_reference",
           "integrity": [
             "DIGEST_DERIVED"
           ],
           "mutable_by": [],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "DECIDED",
           "visible_to": [
@@ -1651,6 +2713,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Closed u8 retention-role discriminant: ordinary transition or logical-removal directive.",
           "id": "event_role",
           "integrity": [
@@ -1660,13 +2725,17 @@
             "application_profile",
             "authorized_endpoint"
           ],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "DECIDED",
           "visible_to": [
             "application_profile",
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1678,6 +2747,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-02"
+          ],
           "description": "Non-zero type from the closed AP registry.",
           "id": "event_type_identifier",
           "integrity": [
@@ -1687,13 +2759,17 @@
             "application_profile",
             "authorized_endpoint"
           ],
+          "obligation_refs": [
+            "OB-AP01"
+          ],
           "owner": "AP",
           "status": "UNRESOLVED",
           "visible_to": [
             "application_profile",
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1705,6 +2781,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Full derived reference to the context genesis; complete genesis bytes remain O-07 work.",
           "id": "genesis_reference",
           "integrity": [
@@ -1713,12 +2792,16 @@
           "mutable_by": [
             "authorized_endpoint"
           ],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "UNRESOLVED",
           "visible_to": [
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1730,6 +2813,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "u16 fixed to APPLICATION_EVENT for this transcript profile.",
           "id": "object_kind",
           "integrity": [
@@ -1738,12 +2824,16 @@
           "mutable_by": [
             "authorized_endpoint"
           ],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "DECIDED",
           "visible_to": [
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1755,6 +2845,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Target event reference and target commitment, present only for a logical-removal directive.",
           "id": "removal_tail",
           "integrity": [
@@ -1764,13 +2857,17 @@
             "application_profile",
             "authorized_endpoint"
           ],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "DECIDED",
           "visible_to": [
             "application_profile",
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1782,6 +2879,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-02"
+          ],
           "description": "Non-zero identifier selecting the closed AP schema.",
           "id": "schema_identifier",
           "integrity": [
@@ -1790,13 +2890,17 @@
           "mutable_by": [
             "application_profile"
           ],
+          "obligation_refs": [
+            "OB-AP01"
+          ],
           "owner": "AP",
           "status": "UNRESOLVED",
           "visible_to": [
             "application_profile",
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1808,6 +2912,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-02"
+          ],
           "description": "Non-zero version of the closed AP schema.",
           "id": "schema_version",
           "integrity": [
@@ -1816,13 +2923,17 @@
           "mutable_by": [
             "application_profile"
           ],
+          "obligation_refs": [
+            "OB-AP01"
+          ],
           "owner": "AP",
           "status": "UNRESOLVED",
           "visible_to": [
             "application_profile",
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -1834,6 +2945,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Signature over the regenerated application transcript; exact signature suite and wire carriage remain O-14/O-11 work.",
           "id": "signature",
           "integrity": [
@@ -1843,10 +2957,14 @@
             "authorized_endpoint",
             "compromised_credential_holder"
           ],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "UNRESOLVED",
           "visible_to": [
             "authorized_endpoint",
+            "compromised_credential_holder",
             "kernel",
             "recipient_endpoint"
           ],
@@ -1854,6 +2972,9 @@
         }
       ],
       "id": "application_event",
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "status": "DECIDED"
     },
@@ -1863,6 +2984,9 @@
           "anchor": "This models neither checkpoint",
           "source_id": "decisions"
         }
+      ],
+      "decision_refs": [
+        "O-01"
       ],
       "description": "Symbolic checkpoint and replay-dependency inputs used only to falsify non-substitution and staleness behavior.",
       "fields": [
@@ -1878,6 +3002,9 @@
             }
           ],
           "confidentiality": "UNRESOLVED",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Symbolic set of references named by a checkpoint; not authenticated or accepted by the current model.",
           "id": "checkpoint_evidence_refs",
           "integrity": [
@@ -1885,6 +3012,9 @@
           ],
           "mutable_by": [
             "runtime_profile"
+          ],
+          "obligation_refs": [
+            "OB-K01"
           ],
           "owner": "K",
           "status": "SYMBOLIC",
@@ -1906,6 +3036,9 @@
             }
           ],
           "confidentiality": "UNRESOLVED",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Unvalidated symbolic oracle set identifying dependencies needed for replay.",
           "id": "replay_dependency_refs",
           "integrity": [
@@ -1913,6 +3046,9 @@
           ],
           "mutable_by": [
             "runtime_profile"
+          ],
+          "obligation_refs": [
+            "OB-K01"
           ],
           "owner": "K",
           "status": "SYMBOLIC",
@@ -1924,6 +3060,9 @@
         }
       ],
       "id": "checkpoint_evidence",
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "status": "SYMBOLIC"
     },
@@ -1933,6 +3072,9 @@
           "anchor": "The K transcript contains the descriptor but never the content",
           "source_id": "decisions"
         }
+      ],
+      "decision_refs": [
+        "O-02"
       ],
       "description": "Exact application bytes bound by the descriptor commitment but excluded from the K signature transcript.",
       "fields": [
@@ -1944,6 +3086,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-02"
+          ],
           "description": "Complete bytes required for commitment verification and application interpretation.",
           "id": "content_octets",
           "integrity": [
@@ -1951,6 +3096,9 @@
           ],
           "mutable_by": [
             "authorized_endpoint"
+          ],
+          "obligation_refs": [
+            "OB-AP01"
           ],
           "owner": "AP",
           "status": "DECIDED",
@@ -1965,6 +3113,9 @@
         }
       ],
       "id": "content_bytes",
+      "obligation_refs": [
+        "OB-AP01"
+      ],
       "owner": "AP",
       "status": "DECIDED"
     },
@@ -1974,6 +3125,9 @@
           "anchor": "### 5.2 Content descriptor",
           "source_id": "transcript_profile"
         }
+      ],
+      "decision_refs": [
+        "O-01"
       ],
       "description": "Authenticated descriptor separating content class, availability, commitment binding and retention semantics.",
       "fields": [
@@ -1985,6 +3139,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-02"
+          ],
           "description": "Closed NONE, REQUIRED or DETACHABLE class.",
           "id": "content_class",
           "integrity": [
@@ -1994,13 +3151,17 @@
             "application_profile",
             "authorized_endpoint"
           ],
+          "obligation_refs": [
+            "OB-AP01"
+          ],
           "owner": "AP",
           "status": "DECIDED",
           "visible_to": [
             "application_profile",
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -2012,6 +3173,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Full 32-octet SHA-256 randomized-opening commitment.",
           "id": "content_commitment",
           "integrity": [
@@ -2021,12 +3185,16 @@
           "mutable_by": [
             "authorized_endpoint"
           ],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "DECIDED",
           "visible_to": [
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -2038,20 +3206,28 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Presence plus canonical 16-octet tree geometry when tree shape is selected.",
           "id": "content_geometry",
           "integrity": [
+            "COMMITMENT",
             "SIGNED_TRANSCRIPT"
           ],
           "mutable_by": [
             "authorized_endpoint"
+          ],
+          "obligation_refs": [
+            "OB-K01"
           ],
           "owner": "K",
           "status": "DECIDED",
           "visible_to": [
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -2063,6 +3239,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Exact application content length; remains visible to authorized protocol participants.",
           "id": "content_length",
           "integrity": [
@@ -2072,12 +3251,16 @@
           "mutable_by": [
             "authorized_endpoint"
           ],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "DECIDED",
           "visible_to": [
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -2089,6 +3272,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Single or left-complete chunk-tree shape.",
           "id": "content_shape",
           "integrity": [
@@ -2098,12 +3284,16 @@
           "mutable_by": [
             "authorized_endpoint"
           ],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "DECIDED",
           "visible_to": [
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -2115,6 +3305,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Derived-and-compared u16 commitment suite, exactly 0x0001 for v1.",
           "id": "content_suite_id",
           "integrity": [
@@ -2122,12 +3315,16 @@
             "SIGNED_TRANSCRIPT"
           ],
           "mutable_by": [],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "DECIDED",
           "visible_to": [
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         },
@@ -2139,6 +3336,9 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-02"
+          ],
           "description": "Non-zero closed AP content type for content-bearing classes.",
           "id": "content_type_id",
           "integrity": [
@@ -2149,18 +3349,25 @@
             "application_profile",
             "authorized_endpoint"
           ],
+          "obligation_refs": [
+            "OB-AP01"
+          ],
           "owner": "AP",
           "status": "UNRESOLVED",
           "visible_to": [
             "application_profile",
             "authorized_endpoint",
             "kernel",
-            "recipient_endpoint"
+            "recipient_endpoint",
+            "secure_session_adapter"
           ],
           "wire_presence": "SIGNED_TRANSCRIPT"
         }
       ],
       "id": "content_descriptor",
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "status": "DECIDED"
     },
@@ -2170,6 +3377,9 @@
           "anchor": "O-07 will define the complete genesis semantic inventory",
           "source_id": "transcript_profile"
         }
+      ],
+      "decision_refs": [
+        "O-01"
       ],
       "description": "Future canonical context genesis; only its non-self-referential outer transcript/reference framing is selected.",
       "fields": [
@@ -2181,12 +3391,18 @@
             }
           ],
           "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Full SHA-256 reference derivable only after O-07 fixes the complete canonical genesis transcript.",
           "id": "derived_genesis_reference",
           "integrity": [
             "DIGEST_DERIVED"
           ],
           "mutable_by": [],
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "owner": "K",
           "status": "UNRESOLVED",
           "visible_to": [
@@ -2204,6 +3420,9 @@
             }
           ],
           "confidentiality": "UNRESOLVED",
+          "decision_refs": [
+            "O-01"
+          ],
           "description": "Complete genesis semantic body, including initial authority, remains O-07 work.",
           "id": "genesis_body",
           "integrity": [
@@ -2212,6 +3431,9 @@
           "mutable_by": [
             "application_profile",
             "authorized_endpoint"
+          ],
+          "obligation_refs": [
+            "OB-K01"
           ],
           "owner": "K",
           "status": "UNRESOLVED",
@@ -2225,6 +3447,9 @@
         }
       ],
       "id": "genesis",
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "status": "UNRESOLVED"
     },
@@ -2235,6 +3460,9 @@
           "source_id": "commitment_profile"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "Fresh per-object secret randomizer supplied with exact content to verify its commitment; excluded from the K transcript.",
       "fields": [
         {
@@ -2244,7 +3472,10 @@
               "source_id": "commitment_profile"
             }
           ],
-          "confidentiality": "LOCAL_RUNTIME_PROFILE",
+          "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-07"
+          ],
           "description": "Exactly 32 octets from a supported runtime CSPRNG; loss can strand REQUIRED content and destruction is not proven by logical removal.",
           "id": "opening_randomizer",
           "integrity": [
@@ -2253,6 +3484,9 @@
           "mutable_by": [
             "authorized_endpoint",
             "runtime_profile"
+          ],
+          "obligation_refs": [
+            "OB-RS01"
           ],
           "owner": "RS",
           "status": "DECIDED",
@@ -2267,6 +3501,9 @@
         }
       ],
       "id": "opening",
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "status": "DECIDED"
     }
@@ -2284,8 +3521,14 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-02"
+      ],
       "description": "K-valid non-pending event authorized by AP and applied in canonical replay order.",
       "id": "APPLIED",
+      "obligation_refs": [
+        "OB-AP01"
+      ],
       "owner": "AP",
       "status": "EVIDENCE_ONLY"
     },
@@ -2297,9 +3540,34 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-02"
+      ],
       "description": "Signature/binding evidence is valid but AP authority at the acting prefix is absent.",
       "id": "AUTHENTIC_BUT_UNAUTHORIZED",
+      "obligation_refs": [
+        "OB-AP01"
+      ],
       "owner": "AP",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "Reject malformed geometry, wrong suite/context/opening/content",
+          "source_id": "threat_model"
+        }
+      ],
+      "decision_refs": [
+        "O-04"
+      ],
+      "description": "Supplied content and opening do not reproduce the authenticated commitment.",
+      "id": "COMMITMENT_MISMATCH",
+      "obligation_refs": [
+        "OB-K10"
+      ],
+      "owner": "K",
       "status": "EVIDENCE_ONLY"
     },
     {
@@ -2314,8 +3582,33 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "More than one K-valid binding exists for one identifier; graph evidence remains but AP authority is frozen.",
       "id": "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "Duplicate, missing-parent, stale and same-author",
+          "source_id": "decisions"
+        }
+      ],
+      "decision_refs": [
+        "O-01"
+      ],
+      "description": "The candidate is an already admitted application event and does not apply a second transition.",
+      "id": "DUPLICATE",
+      "obligation_refs": [
+        "OB-K05"
+      ],
       "owner": "K",
       "status": "EVIDENCE_ONLY"
     },
@@ -2327,8 +3620,14 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "One of two or more distinct K-admitted same-author siblings at one sequence.",
       "id": "FORK_EVIDENCE",
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "status": "EVIDENCE_ONLY"
     },
@@ -2340,8 +3639,14 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "Non-sibling event admitted in a context with any same-author fork; operational AP view is empty.",
       "id": "FORK_QUARANTINED",
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "status": "EVIDENCE_ONLY"
     },
@@ -2355,10 +3660,58 @@
         {
           "anchor": "### 6.3 Authorization evaluation",
           "source_id": "identity_analysis"
+        },
+        {
+          "anchor": "| `K` | **Styx application semantic kernel**",
+          "source_id": "responsibility"
         }
+      ],
+      "decision_refs": [
+        "O-01"
       ],
       "description": "Candidate fails structural, canonical, binding, signature or profile validation.",
       "id": "INVALID",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "Content mismatches descriptor, length or opening",
+          "source_id": "threat_model"
+        }
+      ],
+      "decision_refs": [
+        "O-04"
+      ],
+      "description": "Supplied content length conflicts with the authenticated descriptor.",
+      "id": "LENGTH_MISMATCH",
+      "obligation_refs": [
+        "OB-K10"
+      ],
+      "owner": "K",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "Content bytes or opening absent",
+          "source_id": "threat_model"
+        }
+      ],
+      "decision_refs": [
+        "O-04"
+      ],
+      "description": "A presentation lacks the opening required to verify the authenticated commitment.",
+      "id": "OPENING_MISSING",
+      "obligation_refs": [
+        "OB-K10"
+      ],
       "owner": "K",
       "status": "EVIDENCE_ONLY"
     },
@@ -2370,8 +3723,14 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "Event is deferred because it causally descends from at least one pending root.",
       "id": "PENDING_ANCESTOR",
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "status": "EVIDENCE_ONLY"
     },
@@ -2383,8 +3742,14 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "Active REQUIRED event lacks a locally verified opening.",
       "id": "PENDING_OPENING",
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "status": "EVIDENCE_ONLY"
     },
@@ -2396,9 +3761,38 @@
           "source_id": "threat_model"
         }
       ],
+      "decision_refs": [
+        "O-02"
+      ],
       "description": "Event causally follows an AP-authorized revocation of its signing credential.",
       "id": "POST_REVOCATION",
+      "obligation_refs": [
+        "OB-AP01"
+      ],
       "owner": "AP",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "fail closed as `REFERENCE_COLLISION_UNSUPPORTED`",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "| `K` | **Styx application semantic kernel**",
+          "source_id": "responsibility"
+        }
+      ],
+      "decision_refs": [
+        "O-06"
+      ],
+      "description": "Distinct admitted transcripts collide on one event reference; no positive verdict covers continuation.",
+      "id": "REFERENCE_COLLISION_UNSUPPORTED",
+      "obligation_refs": [
+        "OB-K05"
+      ],
+      "owner": "K",
       "status": "EVIDENCE_ONLY"
     },
     {
@@ -2409,8 +3803,14 @@
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-03"
+      ],
       "description": "No production secure-session guarantee follows until one exact supported adapter profile exists.",
       "id": "SESSION_PROFILE_REQUIRED",
+      "obligation_refs": [
+        "OB-SS01"
+      ],
       "owner": "SS",
       "status": "PROFILE_DEPENDENT"
     },
@@ -2422,8 +3822,14 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "description": "At least one symbolic replay dependency is absent from the live admitted graph and retained only as checkpoint evidence.",
       "id": "STALE_EVIDENCE",
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "status": "SYMBOLIC"
     },
@@ -2435,8 +3841,14 @@
           "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-11"
+      ],
       "description": "No transport confidentiality, metadata or delivery guarantee follows until a concrete profile exists.",
       "id": "TRANSPORT_PROFILE_REQUIRED",
+      "obligation_refs": [
+        "OB-TR01"
+      ],
       "owner": "TR",
       "status": "PROFILE_DEPENDENT"
     }
@@ -2448,6 +3860,42 @@
       "PROFILE_DEPENDENT",
       "SECURE_SESSION_PROFILE",
       "UNRESOLVED"
+    ],
+    "decisions": [
+      "O-01",
+      "O-02",
+      "O-03",
+      "O-04",
+      "O-05",
+      "O-06",
+      "O-06a",
+      "O-06b-1",
+      "O-06b-2",
+      "O-06c",
+      "O-07",
+      "O-08",
+      "O-09",
+      "O-10",
+      "O-11",
+      "O-12",
+      "O-13",
+      "O-14",
+      "O-15",
+      "O-16"
+    ],
+    "gated_capabilities": [
+      "corpus",
+      "demo",
+      "destruction_capable_increment",
+      "erasure_claim",
+      "implementation_alignment",
+      "irreversible_effects",
+      "product",
+      "product_readiness",
+      "product_recovery",
+      "profile_succession",
+      "sensitive_use",
+      "time_bearing_profile"
     ],
     "integrity": [
       "COMMITMENT",
@@ -2465,6 +3913,79 @@
       "RS",
       "SS",
       "TR"
+    ],
+    "obligations": [
+      "OB-AP01",
+      "OB-AP02",
+      "OB-AP03",
+      "OB-AP04",
+      "OB-AP05",
+      "OB-AP06",
+      "OB-AP07",
+      "OB-AP08",
+      "OB-AP09",
+      "OB-AP10",
+      "OB-K01",
+      "OB-K02",
+      "OB-K03",
+      "OB-K04",
+      "OB-K05",
+      "OB-K06",
+      "OB-K07",
+      "OB-K08",
+      "OB-K09",
+      "OB-K10",
+      "OB-K11",
+      "OB-K12",
+      "OB-K13",
+      "OB-K14",
+      "OB-K15",
+      "OB-K16",
+      "OB-K17",
+      "OB-K18",
+      "OB-PV01",
+      "OB-PV02",
+      "OB-PV03",
+      "OB-PV04",
+      "OB-PV05",
+      "OB-PV06",
+      "OB-PV07",
+      "OB-PV08",
+      "OB-PV09",
+      "OB-PV10",
+      "OB-PV11",
+      "OB-RS01",
+      "OB-RS02",
+      "OB-RS03",
+      "OB-RS04",
+      "OB-RS05",
+      "OB-RS06",
+      "OB-RS07",
+      "OB-RS08",
+      "OB-RS09",
+      "OB-RS10",
+      "OB-RS11",
+      "OB-RS12",
+      "OB-RS13",
+      "OB-SS01",
+      "OB-SS02",
+      "OB-SS03",
+      "OB-SS04",
+      "OB-SS05",
+      "OB-SS06",
+      "OB-SS07",
+      "OB-SS08",
+      "OB-SS09",
+      "OB-TR01",
+      "OB-TR02",
+      "OB-TR03",
+      "OB-TR04",
+      "OB-TR05",
+      "OB-TR06",
+      "OB-TR07",
+      "OB-TR08",
+      "OB-TR09",
+      "OB-TR10"
     ],
     "statuses": [
       "DECIDED",
@@ -2493,19 +4014,180 @@
       "SYMBOLIC_INPUT"
     ]
   },
+  "residual_risks": [
+    {
+      "citations": [
+        {
+          "anchor": "Checkpoint staleness remains symbolic: only evidence absent from the live admitted graph can be checkpoint-only",
+          "source_id": "responsibility"
+        }
+      ],
+      "decision_refs": [
+        "O-07"
+      ],
+      "id": "RR_CHECKPOINT_STALENESS",
+      "obligation_refs": [
+        "OB-K15"
+      ],
+      "owner": "K",
+      "statement": "A checkpoint-only replay dependency can force a whole projection stale; authentication, freshness and acceptance remain unresolved.",
+      "status": "SYMBOLIC"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "any holder of valid key material a permanent availability-denial",
+          "source_id": "threat_model"
+        }
+      ],
+      "decision_refs": [
+        "O-01",
+        "O-16"
+      ],
+      "id": "RR_FORK_AVAILABILITY",
+      "obligation_refs": [
+        "OB-K07"
+      ],
+      "owner": "K",
+      "statement": "Any holder of valid signing material can create permanent v0 fork quarantine and deny application availability.",
+      "status": "OPEN"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "E2EE does not hide IP addresses, timing, size, frequency or stable routing handles by itself.",
+          "source_id": "threat_model"
+        }
+      ],
+      "decision_refs": [
+        "O-11"
+      ],
+      "id": "RR_METADATA_EXPOSURE",
+      "obligation_refs": [
+        "OB-TR06",
+        "OB-TR10"
+      ],
+      "owner": "TR",
+      "statement": "Encryption alone does not hide IP address, timing, size, frequency or stable routing handles.",
+      "status": "PROFILE_DEPENDENT"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "every visible AP result is provisional under late evidence",
+          "source_id": "responsibility"
+        }
+      ],
+      "decision_refs": [
+        "O-16"
+      ],
+      "id": "RR_NO_FINALITY",
+      "obligation_refs": [
+        "OB-AP09"
+      ],
+      "owner": "AP",
+      "statement": "Every visible application result remains provisional under admissible late evidence; no finality is selected.",
+      "status": "OPEN"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "`REQUIRED` opening can keep its causal subtree pending indefinitely",
+          "source_id": "decisions"
+        }
+      ],
+      "decision_refs": [
+        "O-04",
+        "O-13"
+      ],
+      "id": "RR_OPENING_LOSS",
+      "obligation_refs": [
+        "OB-RS04",
+        "OB-TR05"
+      ],
+      "owner": "RS",
+      "statement": "Permanent loss or withholding of a REQUIRED opening can strand its causal subtree indefinitely.",
+      "status": "OPEN"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "a coherent whole-profile rollback may be undetectable without external evidence",
+          "source_id": "threat_model"
+        }
+      ],
+      "decision_refs": [
+        "O-07"
+      ],
+      "id": "RR_ROLLBACK_LIMIT",
+      "obligation_refs": [
+        "OB-RS08"
+      ],
+      "owner": "RS",
+      "statement": "A coherent whole-profile rollback can remain undetectable without independent profile evidence.",
+      "status": "PROFILE_DEPENDENT"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "| `SS` | **Secure-session adapter** | Session membership, epochs, handshake/Commit policy",
+          "source_id": "responsibility"
+        }
+      ],
+      "decision_refs": [
+        "O-03"
+      ],
+      "id": "RR_SECURE_ADAPTER_ABSENT",
+      "obligation_refs": [
+        "OB-SS01"
+      ],
+      "owner": "SS",
+      "statement": "No supported secure-session adapter is selected; confidentiality and session authentication remain profile-dependent.",
+      "status": "PROFILE_DEPENDENT"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "Styx is experimental, has not completed an independent security audit",
+          "source_id": "threat_model"
+        }
+      ],
+      "decision_refs": [
+        "O-16"
+      ],
+      "id": "RR_UNAUDITED",
+      "obligation_refs": [
+        "OB-PV10"
+      ],
+      "owner": "PV",
+      "statement": "Styx has not completed an independent security audit and is not ready for sensitive use.",
+      "status": "OPEN"
+    }
+  ],
   "review_queries": [
     {
       "citations": [
         {
           "anchor": "### 6.3 Authorization evaluation",
           "source_id": "identity_analysis"
+        },
+        {
+          "anchor": "| `K` | **Styx application semantic kernel**",
+          "source_id": "responsibility"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "id": "RQ_AUTHORIZATION",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "question": "Can any path infer AP authority from binding, signature validity, session membership, delivery or replay position?",
       "record_refs": [
-        "INV_AUTH_NOT_KEY",
         "CE_GRANT_REVOKE_LAUNDERING_ORDER_A",
+        "INV_AUTH_NOT_KEY",
         "validate_and_fold"
       ]
     },
@@ -2516,17 +4198,24 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "id": "RQ_BLOCKERS",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "question": "Does the candidate preserve every ordered blocker and the C0.3 NO-GO verdict without silently promoting an unresolved value?",
       "record_refs": [
         "C0.2j",
         "C0.2k",
+        "C0.3",
         "O-06c",
         "O-07",
         "O-08",
         "O-10",
-        "O-14",
-        "C0.3"
+        "O-14"
       ]
     },
     {
@@ -2540,7 +4229,14 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "id": "RQ_COUNTEREXAMPLES",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "question": "Do the known collision, fork, missing-opening, selective-reveal, checkpoint-stale and grant/revoke counterexamples remain explicit and blocking where required?",
       "record_refs": [
         "CE_CHECKPOINT_STALE",
@@ -2559,7 +4255,14 @@
           "source_id": "threat_model"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "id": "RQ_FIELD_PROTECTION",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "question": "For each field, which layer authenticates or commits it, which profile may encrypt it, and which actors or relay observers can see it?",
       "record_refs": [
         "application_event",
@@ -2581,7 +4284,14 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "id": "RQ_REPLAY",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
       "question": "Do full and incremental replay preserve the same set-relative semantic view under late openings, stale evidence and terminal fork quarantine?",
       "record_refs": [
         "INV_SET_RELATIVE_REPLAY",
@@ -2596,13 +4306,89 @@
           "source_id": "threat_model"
         }
       ],
+      "decision_refs": [
+        "O-13"
+      ],
       "id": "RQ_SCOPE",
+      "obligation_refs": [
+        "OB-PV01"
+      ],
+      "owner": "PV",
       "question": "Is a bounded model result being misrepresented as implementation, interoperability, audit, anonymity, finality or readiness evidence?",
       "record_refs": [
         "NC_AUDIT_READINESS",
         "NC_FINALITY",
         "NC_METADATA_ANONYMITY",
         "NC_SUPPORTED_ADAPTER"
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "English is canonical for external, language-neutral protocol",
+          "source_id": "decisions"
+        }
+      ],
+      "decision_refs": [
+        "O-01"
+      ],
+      "id": "RQ_SOURCE_STALENESS",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
+      "question": "Do exact source bytes and recorded SHA-256 digests still agree, and is every material claim backed by a normative source?",
+      "record_refs": [
+        "INV_SOURCE_AUTHORITY",
+        "decisions",
+        "responsibility",
+        "threat_model"
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "C0.3 verdict: `NO-GO`",
+          "source_id": "decisions"
+        }
+      ],
+      "decision_refs": [
+        "O-01"
+      ],
+      "id": "RQ_STATUS_DISCIPLINE",
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
+      "question": "Did any open, symbolic, profile-dependent or no-go item become selected without a normative decision?",
+      "record_refs": [
+        "C0.3",
+        "INV_C0_3_NO_GO",
+        "NC_SUPPORTED_ADAPTER"
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "Encryption of application content does not",
+          "source_id": "threat_model"
+        }
+      ],
+      "decision_refs": [
+        "O-04",
+        "O-11"
+      ],
+      "id": "RQ_VISIBILITY",
+      "obligation_refs": [
+        "OB-K10",
+        "OB-TR10"
+      ],
+      "owner": "K",
+      "question": "For every field and flow, are observation, mutability, authentication, commitment and confidentiality represented independently?",
+      "record_refs": [
+        "INV_PROTECTION_SEPARATION",
+        "application_event",
+        "transport_publish"
       ]
     }
   ],
@@ -2614,7 +4400,7 @@
       "sha256": "5e6ae97aa0559ae681bf675c11e2bdf339a6fcc0c0421533846bc4feff227a59"
     },
     {
-      "authority": "normative",
+      "authority": "evidence",
       "id": "causal_topology",
       "path": "docs/protocol/styx-app-kernel-v0-causal-topology-analysis.md",
       "sha256": "50318b991faaa748bdd67fea5c17f5204f02f67e95429851d6e54241a10035ac"
@@ -2632,13 +4418,13 @@
       "sha256": "b07ae19118d6a3e7ac831436d080e1cddc6fdb3e87ff5dd73667a6099918129e"
     },
     {
-      "authority": "normative",
+      "authority": "evidence",
       "id": "identity_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-identity-context-analysis.md",
       "sha256": "1c8c2b197fd0f9d996324c555f57ecc47505e8de2759793741a868b093e760aa"
     },
     {
-      "authority": "normative",
+      "authority": "evidence",
       "id": "payload_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md",
       "sha256": "91dd8408b0f6536a9f9a62468ec748e979733006b8326ccafa77741170310c54"
@@ -2686,7 +4472,13 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-02"
+      ],
       "id": "ap_projection",
+      "obligation_refs": [
+        "OB-AP01"
+      ],
       "owner": "AP",
       "precedence": [
         "STALE_EVIDENCE",
@@ -2702,19 +4494,80 @@
         "PARTIALLY_PENDING"
       ],
       "status": "DECIDED",
+      "terminal_states": [
+        "EMPTY_FORK_QUARANTINE"
+      ],
       "transitions": [
         {
           "citations": [
             {
-              "anchor": "each active",
+              "anchor": "state when later evidence or openings become available.",
               "source_id": "decisions"
             }
+          ],
+          "decision_refs": [
+            "O-04",
+            "O-07"
+          ],
+          "from": [
+            "EMPTY_STALE"
+          ],
+          "id": "ap_recover_active",
+          "obligation_refs": [
+            "OB-AP09",
+            "OB-K13"
+          ],
+          "outcome": "APPLIED",
+          "owner": "AP",
+          "status": "DECIDED",
+          "to": "ACTIVE",
+          "trigger": "Live admitted evidence removes every checkpoint-only dependency and no pending root remains."
+        },
+        {
+          "citations": [
+            {
+              "anchor": "state when later evidence or openings become available.",
+              "source_id": "decisions"
+            }
+          ],
+          "decision_refs": [
+            "O-04",
+            "O-07"
+          ],
+          "from": [
+            "EMPTY_STALE"
+          ],
+          "id": "ap_recover_pending",
+          "obligation_refs": [
+            "OB-AP09",
+            "OB-K13"
+          ],
+          "outcome": "PENDING_OPENING",
+          "owner": "AP",
+          "status": "DECIDED",
+          "to": "PARTIALLY_PENDING",
+          "trigger": "Staleness clears but a live missing-opening root remains."
+        },
+        {
+          "citations": [
+            {
+              "anchor": "locally verified opening is a pending root.",
+              "source_id": "decisions"
+            }
+          ],
+          "decision_refs": [
+            "O-02"
           ],
           "from": [
             "ACTIVE"
           ],
           "id": "ap_to_partially_pending",
+          "obligation_refs": [
+            "OB-AP01"
+          ],
           "outcome": "PENDING_OPENING",
+          "owner": "AP",
+          "status": "DECIDED",
           "to": "PARTIALLY_PENDING",
           "trigger": "At least one REQUIRED opening is unverified"
         },
@@ -2725,12 +4578,20 @@
               "source_id": "decisions"
             }
           ],
+          "decision_refs": [
+            "O-02"
+          ],
           "from": [
             "ACTIVE",
             "PARTIALLY_PENDING"
           ],
           "id": "ap_to_stale",
+          "obligation_refs": [
+            "OB-AP01"
+          ],
           "outcome": "STALE_EVIDENCE",
+          "owner": "AP",
+          "status": "DECIDED",
           "to": "EMPTY_STALE",
           "trigger": "A replay dependency is checkpoint-only"
         },
@@ -2741,12 +4602,20 @@
               "source_id": "decisions"
             }
           ],
+          "decision_refs": [
+            "O-02"
+          ],
           "from": [
             "ACTIVE",
             "PARTIALLY_PENDING"
           ],
           "id": "ap_to_terminal_fork",
+          "obligation_refs": [
+            "OB-AP01"
+          ],
           "outcome": "FORK_QUARANTINED",
+          "owner": "AP",
+          "status": "DECIDED",
           "to": "EMPTY_FORK_QUARANTINE",
           "trigger": "Any K-admitted same-author fork exists"
         }
@@ -2759,7 +4628,13 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "id": "k_admission",
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "precedence": [
         "INVALID",
@@ -2769,12 +4644,37 @@
       ],
       "states": [
         "ADMITTED",
+        "CANDIDATE",
         "COLLISION_UNSUPPORTED",
         "FORK_CLASSIFIED",
         "INVALID"
       ],
       "status": "DECIDED",
+      "terminal_states": [],
       "transitions": [
+        {
+          "citations": [
+            {
+              "anchor": "every K-valid event outside that set is folded in unchanged canonical relative",
+              "source_id": "decisions"
+            }
+          ],
+          "decision_refs": [
+            "O-01"
+          ],
+          "from": [
+            "CANDIDATE"
+          ],
+          "id": "k_admit_candidate",
+          "obligation_refs": [
+            "OB-K01"
+          ],
+          "outcome": "APPLIED",
+          "owner": "K",
+          "status": "DECIDED",
+          "to": "ADMITTED",
+          "trigger": "The candidate passes K validity, collision and fork classification."
+        },
         {
           "citations": [
             {
@@ -2784,13 +4684,25 @@
             {
               "anchor": "### 6.3 Authorization evaluation",
               "source_id": "identity_analysis"
+            },
+            {
+              "anchor": "| `K` | **Styx application semantic kernel**",
+              "source_id": "responsibility"
             }
           ],
+          "decision_refs": [
+            "O-01"
+          ],
           "from": [
-            "ADMITTED"
+            "CANDIDATE"
           ],
           "id": "k_reject_invalid",
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "outcome": "INVALID",
+          "owner": "K",
+          "status": "DECIDED",
           "to": "INVALID",
           "trigger": "Canonical, ancestry, binding or signature validation fails"
         },
@@ -2805,11 +4717,19 @@
               "source_id": "decisions"
             }
           ],
+          "decision_refs": [
+            "O-01"
+          ],
           "from": [
-            "ADMITTED"
+            "CANDIDATE"
           ],
           "id": "k_to_collision",
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "outcome": "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+          "owner": "K",
+          "status": "DECIDED",
           "to": "COLLISION_UNSUPPORTED",
           "trigger": "Whole validated set contains multiple K-valid bindings for one identifier"
         },
@@ -2820,11 +4740,19 @@
               "source_id": "decisions"
             }
           ],
+          "decision_refs": [
+            "O-01"
+          ],
           "from": [
-            "ADMITTED"
+            "CANDIDATE"
           ],
           "id": "k_to_fork",
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "outcome": "FORK_EVIDENCE",
+          "owner": "K",
+          "status": "DECIDED",
           "to": "FORK_CLASSIFIED",
           "trigger": "Distinct same-author transcript shares an author sequence"
         }
@@ -2841,7 +4769,13 @@
           "source_id": "decisions"
         }
       ],
+      "decision_refs": [
+        "O-01"
+      ],
       "id": "pending_replay",
+      "obligation_refs": [
+        "OB-K01"
+      ],
       "owner": "K",
       "precedence": [
         "PENDING_OPENING",
@@ -2851,10 +4785,35 @@
       "states": [
         "APPLIED",
         "PENDING_ANCESTOR",
-        "PENDING_OPENING"
+        "PENDING_OPENING",
+        "REPLAY_CANDIDATE"
       ],
       "status": "DECIDED",
+      "terminal_states": [],
       "transitions": [
+        {
+          "citations": [
+            {
+              "anchor": "locally verified opening is a pending root.",
+              "source_id": "decisions"
+            }
+          ],
+          "decision_refs": [
+            "O-04"
+          ],
+          "from": [
+            "REPLAY_CANDIDATE"
+          ],
+          "id": "replay_apply_candidate",
+          "obligation_refs": [
+            "OB-K13"
+          ],
+          "outcome": "APPLIED",
+          "owner": "K",
+          "status": "DECIDED",
+          "to": "APPLIED",
+          "trigger": "No missing REQUIRED opening or pending ancestor blocks this candidate."
+        },
         {
           "citations": [
             {
@@ -2862,11 +4821,19 @@
               "source_id": "decisions"
             }
           ],
+          "decision_refs": [
+            "O-01"
+          ],
           "from": [
-            "APPLIED"
+            "REPLAY_CANDIDATE"
           ],
           "id": "replay_to_pending_descendant",
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "outcome": "PENDING_ANCESTOR",
+          "owner": "K",
+          "status": "DECIDED",
           "to": "PENDING_ANCESTOR",
           "trigger": "Event causally descends from a pending root"
         },
@@ -2877,11 +4844,19 @@
               "source_id": "decisions"
             }
           ],
+          "decision_refs": [
+            "O-01"
+          ],
           "from": [
-            "APPLIED"
+            "REPLAY_CANDIDATE"
           ],
           "id": "replay_to_pending_root",
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "outcome": "PENDING_OPENING",
+          "owner": "K",
+          "status": "DECIDED",
           "to": "PENDING_OPENING",
           "trigger": "Active REQUIRED event has no verified opening"
         },
@@ -2892,12 +4867,20 @@
               "source_id": "decisions"
             }
           ],
+          "decision_refs": [
+            "O-01"
+          ],
           "from": [
             "PENDING_ANCESTOR",
             "PENDING_OPENING"
           ],
           "id": "replay_verified_opening",
+          "obligation_refs": [
+            "OB-K01"
+          ],
           "outcome": "APPLIED",
+          "owner": "K",
+          "status": "DECIDED",
           "to": "APPLIED",
           "trigger": "Monotone verified-opening update releases the event from every remaining pending root"
         }

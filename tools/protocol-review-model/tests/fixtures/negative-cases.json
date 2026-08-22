@@ -13,7 +13,7 @@
     "id": "normative-source-digest-drift",
     "mutation": {
       "operation": "set",
-      "path": "/sources/0/sha256",
+      "path": "/sources/3/sha256",
       "value": "0000000000000000000000000000000000000000000000000000000000000000"
     }
   },
@@ -105,6 +105,223 @@
       "operation": "remove-value",
       "path": "/blockers/2/depends_on",
       "value": "O-07"
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "promote-open-blocker",
+    "mutation": {
+      "operation": "set",
+      "path": "/blockers/0/status",
+      "value": "DECIDED"
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "promote-profile-dependent-flow",
+    "mutation": {
+      "operation": "set",
+      "path": "/flows/6/status",
+      "value": "DECIDED"
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "promote-no-go-invariant",
+    "mutation": {
+      "operation": "set",
+      "path": "/invariants/1/status",
+      "value": "DECIDED"
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "promote-evidence-only-counterexample",
+    "mutation": {
+      "operation": "set",
+      "path": "/counterexamples/0/status",
+      "value": "DECIDED"
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "promote-symbolic-state-model",
+    "mutation": {
+      "operation": "set",
+      "path": "/state_models/0/status",
+      "value": "OPEN"
+    }
+  },
+  {
+    "expected_code": "UNKNOWN_REGISTRY_VALUE",
+    "id": "unknown-flow-status",
+    "mutation": {
+      "operation": "set",
+      "path": "/flows/0/status",
+      "value": "BANANA"
+    }
+  },
+  {
+    "expected_code": "C03_GATE_MISSING",
+    "id": "remove-sensitive-use-gate",
+    "mutation": {
+      "operation": "remove-value",
+      "path": "/blockers/0/blocks",
+      "value": "sensitive_use"
+    }
+  },
+  {
+    "expected_code": "C03_GATE_MISSING",
+    "id": "remove-corpus-path-gate",
+    "mutation": {
+      "operation": "remove-value",
+      "path": "/blockers/2/depends_on",
+      "value": "C0.3_CORPUS_PATH_APPROVAL"
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "claim-unsupported-secure-session-confidentiality",
+    "mutation": {
+      "operation": "set",
+      "path": "/objects/0/fields/0/confidentiality",
+      "value": "SECURE_SESSION_PROFILE"
+    }
+  },
+  {
+    "expected_code": "DUPLICATE_ID",
+    "id": "cross-namespace-id-collision",
+    "mutation": {
+      "operation": "set",
+      "path": "/actors/0/id",
+      "value": "AP"
+    }
+  },
+  {
+    "expected_code": "VISIBILITY_MUTABILITY_MISMATCH",
+    "id": "mutator-not-visible",
+    "mutation": {
+      "operation": "set",
+      "path": "/objects/0/fields/0/mutable_by",
+      "value": [
+        "compromised_credential_holder"
+      ]
+    }
+  },
+  {
+    "expected_code": "CITATION_ANCHOR_INVALID",
+    "id": "short-citation-anchor",
+    "mutation": {
+      "operation": "set",
+      "path": "/actors/0/citations/0/anchor",
+      "value": "short"
+    }
+  },
+  {
+    "expected_code": "CITATION_ANCHOR_MISSING",
+    "id": "absent-citation-anchor",
+    "mutation": {
+      "operation": "set",
+      "path": "/actors/0/citations/0/anchor",
+      "value": "this sufficiently long anchor is absent from the source"
+    }
+  },
+  {
+    "expected_code": "MISSING_CITATION",
+    "id": "missing-record-citation",
+    "mutation": {
+      "operation": "delete",
+      "path": "/actors/0/citations"
+    }
+  },
+  {
+    "expected_code": "SOURCE_MISSING",
+    "id": "missing-source-file",
+    "mutation": {
+      "operation": "set",
+      "path": "/sources/3/path",
+      "value": "docs/protocol/does-not-exist.md"
+    }
+  },
+  {
+    "expected_code": "SOURCE_BOUNDARY",
+    "id": "source-escapes-repository",
+    "mutation": {
+      "operation": "set",
+      "path": "/sources/3/path",
+      "value": "/etc/passwd"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-required-invariant",
+    "mutation": {
+      "operation": "delete",
+      "path": "/invariants/1"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-residual-risk",
+    "mutation": {
+      "operation": "delete",
+      "path": "/residual_risks/0"
+    }
+  },
+  {
+    "expected_code": "BLOCKER_EDGE_MISMATCH",
+    "id": "unreciprocated-blocker-edge",
+    "mutation": {
+      "operation": "set",
+      "path": "/blockers/12/blocks",
+      "value": [
+        "C0.3"
+      ]
+    }
+  },
+  {
+    "expected_code": "DANGLING_REFERENCE",
+    "id": "unknown-obligation-reference",
+    "mutation": {
+      "operation": "set",
+      "path": "/flows/0/obligation_refs/0",
+      "value": "OB-UNKNOWN"
+    }
+  },
+  {
+    "expected_code": "DANGLING_REFERENCE",
+    "id": "unknown-gated-capability",
+    "mutation": {
+      "operation": "set",
+      "path": "/blockers/0/blocks/2",
+      "value": "unregistered_claim"
+    }
+  },
+  {
+    "expected_code": "C03_GATE_MISSING",
+    "id": "remove-c02k-c02j-edge",
+    "mutation": {
+      "operation": "set",
+      "path": "/blockers/1/depends_on",
+      "value": []
+    }
+  },
+  {
+    "expected_code": "C03_GATE_MISSING",
+    "id": "remove-o06c-c02k-edge",
+    "mutation": {
+      "operation": "set",
+      "path": "/blockers/4/depends_on",
+      "value": []
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "weaken-c03-no-go-status",
+    "mutation": {
+      "operation": "set",
+      "path": "/blockers/2/status",
+      "value": "OPEN"
     }
   }
 ]

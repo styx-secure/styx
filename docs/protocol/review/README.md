@@ -34,9 +34,54 @@ complete.
 
 The model separates actors, responsibility layers, objects and fields, wire
 presence, integrity, confidentiality, observers, mutators, flows, outcomes,
-state transitions, invariants, counterexamples, non-claims and blocker edges.
+state transitions, invariants, counterexamples, non-claims, residual risks and
+blocker edges. Decision and obligation identifiers are closed registries rather
+than free text, and each security-relevant record names its responsible layer.
 An explicit `UNRESOLVED`, `SYMBOLIC`, `PROFILE_DEPENDENT` or `EVIDENCE_ONLY`
 state is deliberate; it must not be promoted merely to make a review simpler.
+
+Source authority is explicit per `sources[].authority`. The decision registry,
+the two encoding profiles, the responsibility matrix and the threat model are
+normative. Analysis and falsification reports are evidence: they may support a
+claim but cannot select protocol semantics. Some evidence documents retain
+pre-merge wording because their proposals were ratified by an exact final merge;
+the model records the resulting decision only where a current normative source
+also does so. Any apparent conflict is investigated as drift and never resolved
+by promoting the evidence report.
+
+## Closed registry semantics
+
+The arrays in `registries` are exhaustive and sorted. Their meanings are:
+
+- `statuses`: `DECIDED` is normatively selected; `DERIVED` follows mechanically
+  from normative data; `EVIDENCE_ONLY` is an observation, not authority;
+  `NO_GO` is an active prohibition; `OPEN` has no selected answer;
+  `PROFILE_DEPENDENT` requires a future concrete profile; `SYMBOLIC` is a named
+  model input without selected construction; `UNRESOLVED` is deliberately
+  unspecified.
+- `wire_presence`: `SIGNED_TRANSCRIPT`, `OUT_OF_BAND`, `DERIVED` and
+  `NOT_CARRIED` describe current carriage; `PROFILE_DEPENDENT` and
+  `SYMBOLIC_INPUT` forbid inventing bytes.
+- `integrity`: authentication (`SIGNED_TRANSCRIPT` or
+  `SESSION_AUTHENTICATED`), commitment (`COMMITMENT`) and derivation
+  (`DIGEST_DERIVED`) are independent facts. `NONE`, `PROFILE_DEPENDENT` and
+  `UNRESOLVED` do not imply protection.
+- `confidentiality`: `LOCAL_RUNTIME_PROFILE` concerns local custody only;
+  `SECURE_SESSION_PROFILE` may be used only after a supported adapter is
+  selected; `PROFILE_DEPENDENT`, `UNRESOLVED` and `NONE` are not encryption
+  claims.
+- `layers`, `trust_classes`, `decisions`, `obligations` and
+  `gated_capabilities` are closed reference namespaces. A blocker `blocks`
+  target must resolve either to another blocker or to one of the explicitly
+  named non-record capabilities. Unknown members fail validation.
+
+`visible_to` means an actor may learn the field value at the named semantic
+boundary; it does not mean every transport observer sees it. `mutable_by` means
+an actor can propose or supply that value before validation, not that it may
+alter an admitted record. Every mutator must therefore also be a possible
+observer. A secure-session adapter handles the application plaintext presented
+at its boundary, while a relay observer sees only the separately declared
+transport envelope and metadata.
 
 ## Review-first workflow
 
@@ -74,6 +119,13 @@ normative and derived path. Make the normative decision first. Then:
 
 Do not put timestamps, absolute paths, host names, random values or
 environment-dependent ordering in the model or report.
+
+The commands below are currently a mandatory **manual repository gate**. Issue
+#227 deliberately forbids workflow changes, so no claim is made that GitHub CI
+already invokes this validator. Wiring the same commands into path-aware CI and
+reconciling stale wording in evidence-only source documents require separate,
+approved task contracts. Until that happens, an exact-final run is recorded in
+the PR evidence and absence of that evidence fails closed.
 
 ## Required commands
 
