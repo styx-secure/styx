@@ -379,9 +379,10 @@ outcomes.
 
 ### O-01 — Causal representation
 
-- **Status:** `REOPENED` by the Issue #225 security amendment. The candidate
-  rule below becomes `DECIDED` only when the exact-final C0.2i evidence, two
-  independent model-family reviews and both human gates pass.
+- **Status:** `DECIDED`. Issue #225 reopened this record and PR #226 returned it
+  to `DECIDED` after exact-final C0.2i evidence, two independent model-family
+  reviews and both human gates passed at merge commit
+  `4ab333e29fb12f9839d29160248d89da695e37be`.
 - **Rule:** every non-genesis event SHALL authenticate a strictly increasing,
   non-wrapping per-credential author sequence (zero for the first event and
   incremented by exactly one thereafter), its separate direct author
@@ -451,15 +452,16 @@ outcomes.
   causality, incremental handoffs diverge from full prefix-scoped replay,
   rotation/revocation cannot reject stale authority, or checkpoints cannot
   retain required fork evidence within a supported runtime envelope.
-- **Human ratification:** C0.2c topology approved under Issue #211; the C0.2d
-  executable evidence and prefix-scoped replay clarification remain pending
-  exact-final-HEAD approval under Issue #213.
+- **Human ratification:** C0.2c topology was approved under Issue #211; Issue
+  #225's amended topology and C0.2i evidence completed exact-final review and
+  human ratification in PR #226.
 
 ### O-02 — Author, rotation and authorization binding
 
-- **Status:** `REOPENED` by the Issue #225 security amendment. The candidate
-  split below becomes `DECIDED` only after the exact-final C0.2i gates pass;
-  C0.2j must still replace its bounded v0 authority model.
+- **Status:** `DECIDED`. Issue #225 reopened this record and PR #226 returned it
+  to `DECIDED` after the exact-final C0.2i gates passed at merge commit
+  `4ab333e29fb12f9839d29160248d89da695e37be`. C0.2j must still replace its
+  bounded v0 authority model.
 - **Rule:** every authoring endpoint SHALL use a distinct context-local signing
   credential. Credential binding is a monotone K-level historical fact;
   application authority is a reversible AP-level decision evaluated at the
@@ -517,7 +519,9 @@ outcomes.
   rotation/revocation, a required profile cannot use context-local credentials,
   the `AP → K` split permits an authorization bypass, or an approved anonymous
   profile requires bearer-only authorship.
-- **Human ratification:** pending exact-final-HEAD approval under Issue #209.
+- **Human ratification:** the original C0.2b split was approved under Issue
+  #209; Issue #225's bounded replacement completed exact-final review and human
+  ratification in PR #226.
 
 ### O-03 — Application/case context and genesis binding
 
@@ -564,10 +568,10 @@ outcomes.
 
 ### O-04 — Payload commitment and detachment
 
-- **Status:** `REOPENED` by the Issue #225 security amendment. The candidate
-  C0.2i rule below becomes `DECIDED` only after exact-final evidence and review
-  gates pass. The historical C0.2f evidence remains reproducible but its
-  whole-suffix rule is superseded.
+- **Status:** `DECIDED`. Issue #225 reopened this record and PR #226 returned it
+  to `DECIDED` after exact-final C0.2i evidence and review gates passed at merge
+  commit `4ab333e29fb12f9839d29160248d89da695e37be`. The historical C0.2f evidence
+  remains reproducible but its whole-suffix rule is superseded.
 - **Rule:** every authoritative event authenticates exactly one bounded content
   descriptor. `content_class` is one of `NONE`, `REQUIRED` or `DETACHABLE`.
   For content-bearing classes the descriptor authenticates a closed content-
@@ -690,7 +694,8 @@ outcomes.
   credential identifier before C0.2j; any attempt to lift permanent v0 fork
   quarantine or apply a fork descendant; or any claim that
   revocation bounds compromise before C0.2j/O-16.
-- **Human ratification:** pending exact-final-HEAD approval under Issue #225.
+- **Human ratification:** the amended C0.2i construction completed exact-final
+  review and human ratification under Issue #225 and PR #226.
 
 ### O-05 — Clock placement
 
@@ -823,7 +828,8 @@ outcomes.
   a producer, expose possession at a horizon, admit rollback/equivocation and
   become invalid under late forks or revocations.
 - **Missing evidence:** O-03/O-05 remain decided inputs, while O-01/O-02/O-04
-  are reopened under Issue #225 until C0.2i's exact-final gates pass. O-06a
+  were reopened under Issue #225 until C0.2i's exact-final gates passed and are
+  now `DECIDED` after PR #226's ratification. O-06a
   selects a non-self-referential genesis-reference role and O-06b-1 fixes its outer
   reference derivation, but O-06c evidence and the complete O-07 genesis
   contents are still required before genesis can close;
@@ -1161,11 +1167,11 @@ also be transcript-bound and locally evaluated under the application's policy.
 
 ## 6. Gate for C0.3 and exact next sequence
 
-**C0.3 verdict: `NO-GO`.** The C0.2i candidate replaces the vulnerable C0.2f
+**C0.3 verdict: `NO-GO`.** The ratified C0.2i construction replaces the vulnerable C0.2f
 whole-suffix halt with deterministic pending-subtree replay plus permanent
-whole-context AP fork quarantine. O-01, O-02 and O-04 remain `REOPENED` until
-the exact-final evidence and review gates pass. The v1 report remains immutable
-historical evidence; the amended v2 report is the candidate evidence. C0.2j must
+whole-context AP fork quarantine. O-01, O-02 and O-04 returned to `DECIDED` when
+the exact-final evidence and review gates passed in PR #226. The v1 report remains immutable
+historical evidence; the amended v2 report is the selected bounded evidence. C0.2j must
 then close fork-free authority laundering, conflicting
 credential identity and grant carriage, C0.2k must then amend the commitment
 context, and O-06c must falsify their exact combined bytes. None exists yet.

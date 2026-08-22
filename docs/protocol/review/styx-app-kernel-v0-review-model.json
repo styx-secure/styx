@@ -1,0 +1,2907 @@
+{
+  "$schema": "./styx-app-kernel-v0-review-model.schema.json",
+  "actors": [
+    {
+      "can_act": [
+        "Select versioned AP policy and evaluate prefix-scoped authorization"
+      ],
+      "can_observe": [
+        "K-authenticated historical binding and replay-prefix AP state"
+      ],
+      "citations": [
+        {
+          "anchor": "| `AP` | **Application profile**",
+          "source_id": "responsibility"
+        }
+      ],
+      "description": "Machine-evaluable application policy; not a human operator or a source of K validity.",
+      "id": "application_profile",
+      "trust_class": "APPLICATION"
+    },
+    {
+      "can_act": [
+        "Propose a bounded application transition when AP-authorized",
+        "Supply locally held content and openings"
+      ],
+      "can_observe": [
+        "Authorized plaintext and locally retained application history"
+      ],
+      "citations": [
+        {
+          "anchor": "### A2 — Cryptographically valid but unauthorized actor",
+          "source_id": "threat_model"
+        }
+      ],
+      "description": "Endpoint holding a context-local signing credential; authorization remains a separate AP decision.",
+      "id": "authorized_endpoint",
+      "trust_class": "APPLICATION"
+    },
+    {
+      "can_act": [
+        "Publish validly signed concurrent events",
+        "Withhold openings",
+        "Create permanent v0 fork quarantine"
+      ],
+      "can_observe": [
+        "Plaintext, keys and history available at the compromised endpoint"
+      ],
+      "citations": [
+        {
+          "anchor": "### A4 — Compromised authorized peer",
+          "source_id": "threat_model"
+        }
+      ],
+      "description": "Adversary controlling valid old or current key material; revocation does not bound compromise in v0.",
+      "id": "compromised_credential_holder",
+      "trust_class": "CRYPTOGRAPHIC"
+    },
+    {
+      "can_act": [
+        "Validate transcripts, derive graph facts and classify outcomes",
+        "Fold AP transitions only after K admission"
+      ],
+      "can_observe": [
+        "Authenticated application object fields and supplied verification evidence"
+      ],
+      "citations": [
+        {
+          "anchor": "| `K` | **Styx application semantic kernel**",
+          "source_id": "responsibility"
+        }
+      ],
+      "description": "Language-neutral semantic owner; does not infer roles from key possession or session membership.",
+      "id": "kernel",
+      "trust_class": "APPLICATION"
+    },
+    {
+      "can_act": [
+        "Operate the deployment and perform human workflow under PV rules"
+      ],
+      "can_observe": [
+        "Minimized product-visible workflow and diagnostic state"
+      ],
+      "citations": [
+        {
+          "anchor": "| `PV` | **Product vertical and organizational operations**",
+          "source_id": "responsibility"
+        }
+      ],
+      "description": "Human or organization operating a product vertical; cannot redefine protocol validity.",
+      "id": "product_operator",
+      "trust_class": "HUMAN"
+    },
+    {
+      "can_act": [
+        "Revalidate received application bytes and apply locally authorized transitions"
+      ],
+      "can_observe": [
+        "Plaintext successfully delivered by a supported secure-session profile"
+      ],
+      "citations": [
+        {
+          "anchor": "| `SS → K` |",
+          "source_id": "responsibility"
+        }
+      ],
+      "description": "Receiving endpoint; decryption authenticates a session sender but never proves AP authorization.",
+      "id": "recipient_endpoint",
+      "trust_class": "APPLICATION"
+    },
+    {
+      "can_act": [
+        "Delay, drop, replay, correlate or selectively deliver transport envelopes"
+      ],
+      "can_observe": [
+        "Transport-profile metadata, timing, size, frequency and routing handles"
+      ],
+      "citations": [
+        {
+          "anchor": "### A5 — Hostile or colluding relay and service provider",
+          "source_id": "threat_model"
+        }
+      ],
+      "description": "Untrusted relay/network observer; cannot be treated as evidence of application truth or human receipt.",
+      "id": "relay_observer",
+      "trust_class": "NETWORK"
+    },
+    {
+      "can_act": [
+        "Persist, restore and reconcile state under a declared runtime contract"
+      ],
+      "can_observe": [
+        "Protected local records, transaction metadata and outbox state allowed by RS"
+      ],
+      "citations": [
+        {
+          "anchor": "| `RS` | **Runtime/storage profile**",
+          "source_id": "responsibility"
+        }
+      ],
+      "description": "Runtime/storage owner; durability does not imply publication, receipt or protocol validity.",
+      "id": "runtime_profile",
+      "trust_class": "RUNTIME"
+    },
+    {
+      "can_act": [
+        "Authenticate session members and protect opaque application bytes under one supported profile"
+      ],
+      "can_observe": [
+        "Application bytes presented for encryption and authenticated bytes after decryption"
+      ],
+      "citations": [
+        {
+          "anchor": "| `SS` | **Secure-session adapter**",
+          "source_id": "responsibility"
+        }
+      ],
+      "description": "Secure-session boundary; current Phase B evidence is bounded and is not a supported adapter claim.",
+      "id": "secure_session_adapter",
+      "trust_class": "SESSION"
+    },
+    {
+      "can_act": [
+        "Publish, retry and fetch opaque bounded envelopes under a transport profile"
+      ],
+      "can_observe": [
+        "Routing handles, envelope sizes, relay results and retry state"
+      ],
+      "citations": [
+        {
+          "anchor": "| `TR` | **Transport/routing profile**",
+          "source_id": "responsibility"
+        }
+      ],
+      "description": "Transport/routing owner; relay acknowledgement is not device, application or human receipt.",
+      "id": "transport_profile",
+      "trust_class": "NETWORK"
+    }
+  ],
+  "artifact": {
+    "c03_verdict": "NO_GO",
+    "contract_base_commit": "4ab333e29fb12f9839d29160248d89da695e37be",
+    "format": "styx.review-model.v1",
+    "implementation_claim": false,
+    "language": "en",
+    "normative": false,
+    "profile": "styx.application-kernel.v0-pre-corpus",
+    "security_proof": false
+  },
+  "blockers": [
+    {
+      "blocks": [
+        "C0.2k",
+        "C0.3",
+        "demo",
+        "product",
+        "sensitive_use"
+      ],
+      "citations": [
+        {
+          "anchor": "C0.2j is an unconditional blocker for C0.3, demo and product work",
+          "source_id": "decisions"
+        }
+      ],
+      "depends_on": [],
+      "id": "C0.2j",
+      "reason": "Must replace collision-prone credential identity, define exact K-readable grant evidence, provenance, succession, revocation transitivity and two-sided authority.",
+      "status": "OPEN"
+    },
+    {
+      "blocks": [
+        "O-06c",
+        "C0.3",
+        "demo",
+        "product"
+      ],
+      "citations": [
+        {
+          "anchor": "C0.2k must then amend the commitment",
+          "source_id": "decisions"
+        }
+      ],
+      "depends_on": [
+        "C0.2j"
+      ],
+      "id": "C0.2k",
+      "reason": "Must bind the commitment context to the exact credential and author sequence selected by C0.2j.",
+      "status": "OPEN"
+    },
+    {
+      "blocks": [
+        "corpus",
+        "implementation_alignment"
+      ],
+      "citations": [
+        {
+          "anchor": "**C0.3 verdict: `NO-GO`.**",
+          "source_id": "decisions"
+        }
+      ],
+      "depends_on": [
+        "O-06c",
+        "O-07",
+        "O-08",
+        "O-10",
+        "O-14"
+      ],
+      "id": "C0.3",
+      "reason": "The specification-derived adversarial corpus cannot freeze unresolved normative bytes or outcomes.",
+      "status": "NO_GO"
+    },
+    {
+      "blocks": [
+        "C0.3"
+      ],
+      "citations": [
+        {
+          "anchor": "## 11. O-06c executable handoff",
+          "source_id": "commitment_profile"
+        }
+      ],
+      "depends_on": [
+        "C0.2k"
+      ],
+      "id": "O-06c",
+      "reason": "Must falsify exact combined transcript, commitment, credential and sequence bytes with real SHA-256 vectors and independent encoders.",
+      "status": "OPEN"
+    },
+    {
+      "blocks": [
+        "C0.3"
+      ],
+      "citations": [
+        {
+          "anchor": "### O-07 — Genesis and checkpoint evidence",
+          "source_id": "decisions"
+        }
+      ],
+      "depends_on": [
+        "O-06c"
+      ],
+      "id": "O-07",
+      "reason": "Complete genesis contents and checkpoint authentication, acceptance and substitution boundaries remain open.",
+      "status": "OPEN"
+    },
+    {
+      "blocks": [
+        "C0.3"
+      ],
+      "citations": [
+        {
+          "anchor": "### O-08 — Profile skew, cardinality and activation bounds",
+          "source_id": "decisions"
+        }
+      ],
+      "depends_on": [
+        "O-06c"
+      ],
+      "id": "O-08",
+      "reason": "Active parser, graph, content, frontier and cardinality limits remain unset.",
+      "status": "OPEN"
+    },
+    {
+      "blocks": [
+        "C0.3"
+      ],
+      "citations": [
+        {
+          "anchor": "### O-10 — Stable protocol-error taxonomy",
+          "source_id": "decisions"
+        }
+      ],
+      "depends_on": [
+        "O-06c"
+      ],
+      "id": "O-10",
+      "reason": "Stable wire/API outcome registry and failure mapping remain open.",
+      "status": "OPEN"
+    },
+    {
+      "blocks": [
+        "C0.3"
+      ],
+      "citations": [
+        {
+          "anchor": "### O-14 — Signature-suite registry and credential algorithm binding",
+          "source_id": "decisions"
+        }
+      ],
+      "depends_on": [
+        "O-06c"
+      ],
+      "id": "O-14",
+      "reason": "Exact signature suite, verification boundary and downgrade evidence remain open.",
+      "status": "OPEN"
+    },
+    {
+      "blocks": [
+        "irreversible_effects",
+        "product_recovery"
+      ],
+      "citations": [
+        {
+          "anchor": "### O-16 — Finality and stability",
+          "source_id": "decisions"
+        }
+      ],
+      "depends_on": [],
+      "id": "O-16",
+      "reason": "Finality, recovery and any later-profile escape from terminal fork evidence remain open and do not block transcript-only C0.3.",
+      "status": "OPEN"
+    }
+  ],
+  "counterexamples": [
+    {
+      "blocks": [
+        "O-07"
+      ],
+      "citations": [
+        {
+          "anchor": "pending checkpoint producers, matching and unrelated symbolic checkpoint",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "checkpoint-named transcript material",
+          "source_id": "threat_model"
+        }
+      ],
+      "description": "A replay dependency appears only in symbolic checkpoint evidence and not in the live admitted graph.",
+      "id": "CE_CHECKPOINT_STALE",
+      "result": "The whole projection is STALE_EVIDENCE; checkpoint evidence never substitutes for retained authenticated history.",
+      "status": "EVIDENCE_ONLY",
+      "steps": [
+        "Name a missing reference in checkpoint_evidence",
+        "Name the same reference in replay_dependencies",
+        "Exclude it from graph.admitted"
+      ]
+    },
+    {
+      "blocks": [
+        "C0.2j"
+      ],
+      "citations": [
+        {
+          "anchor": "Credential-identifier collision remains a cheap retroactive authority-freeze",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "Conflicting grants or identifier reuse are not solved here",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "More than one K-valid grant binds one credential identifier in the validated set.",
+      "id": "CE_CREDENTIAL_COLLISION",
+      "result": "All chains under the identifier are graph evidence but apply no AP transition; authority can be frozen cheaply and retroactively.",
+      "status": "EVIDENCE_ONLY",
+      "steps": [
+        "Admit one valid binding",
+        "Admit a second distinct valid binding for the same identifier",
+        "Replay independently of arrival and canonical order"
+      ]
+    },
+    {
+      "blocks": [
+        "O-16"
+      ],
+      "citations": [
+        {
+          "anchor": "whole-context quarantine of independent control work",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "same-author fork permanently quarantines the whole v0 AP context.",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "Any holder of valid key material publishes two different same-author transcripts at one sequence.",
+      "id": "CE_FORK_CONTEXT_QUARANTINE",
+      "result": "Fork siblings are FORK_EVIDENCE and every other admitted event is FORK_QUARANTINED; operational AP state is empty permanently for v0.",
+      "status": "EVIDENCE_ONLY",
+      "steps": [
+        "Admit two distinct valid same-credential events with the same author sequence",
+        "Retain graph and pending diagnostics",
+        "Attempt independent authority or policy progress"
+      ]
+    },
+    {
+      "blocks": [
+        "C0.2j"
+      ],
+      "citations": [
+        {
+          "anchor": "fork-free concurrent grant/revoke authority-laundering counterexample",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "fork-free concurrent grant/revocation",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "A compromised credential concurrently grants a successor while another actor revokes the compromised credential; grant sorts first.",
+      "id": "CE_GRANT_REVOKE_LAUNDERING_ORDER_A",
+      "result": "The successor can remain authorized because revocation is non-transitive and the grant did not causally reference it.",
+      "status": "EVIDENCE_ONLY",
+      "steps": [
+        "Create concurrent GRANT and REVOKE",
+        "Choose references making GRANT sort first",
+        "Exercise successor authority after the revocation"
+      ]
+    },
+    {
+      "blocks": [
+        "C0.2j"
+      ],
+      "citations": [
+        {
+          "anchor": "fork-free concurrent grant/revoke authority-laundering counterexample",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "fork-free concurrent grant/revocation",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "The same concurrent grant/revoke pair is replayed with the opposite canonical order.",
+      "id": "CE_GRANT_REVOKE_LAUNDERING_ORDER_B",
+      "result": "The grant is authentic but unauthorized in this order, proving that grindable ordering can change authority.",
+      "status": "EVIDENCE_ONLY",
+      "steps": [
+        "Create concurrent GRANT and REVOKE",
+        "Choose references making REVOKE sort first",
+        "Observe the successor grant apply no AP transition"
+      ]
+    },
+    {
+      "blocks": [
+        "O-08"
+      ],
+      "citations": [
+        {
+          "anchor": "## 3. Selected construction",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "| Content bytes or opening absent |",
+          "source_id": "threat_model"
+        }
+      ],
+      "description": "A REQUIRED event has no locally verified opening.",
+      "id": "CE_MISSING_REQUIRED_OPENING",
+      "result": "The event is PENDING_OPENING and all causal descendants are PENDING_ANCESTOR, while independent events may progress if the context is fork-free and non-stale.",
+      "status": "EVIDENCE_ONLY",
+      "steps": [
+        "Admit a valid REQUIRED transcript",
+        "Withhold or lose its opening",
+        "Admit both causal descendants and independent events"
+      ]
+    },
+    {
+      "blocks": [
+        "O-08"
+      ],
+      "citations": [
+        {
+          "anchor": "selective opening distribution and convergence",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "selective disclosure can temporarily diverge",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "Two replicas have the same transcripts but different monotone verified-opening sets.",
+      "id": "CE_SELECTIVE_REVEAL",
+      "result": "Their projections may temporarily differ; convergence is claimed only for equal transcript and opening sets.",
+      "status": "EVIDENCE_ONLY",
+      "steps": [
+        "Deliver identical signed transcripts to two replicas",
+        "Supply a valid opening to only one replica",
+        "Compare projections before and after both obtain the same opening set"
+      ]
+    }
+  ],
+  "flows": [
+    {
+      "citations": [
+        {
+          "anchor": "| `AP → K` |",
+          "source_id": "responsibility"
+        }
+      ],
+      "consumers": [
+        "kernel"
+      ],
+      "forbidden_inferences": [
+        "A verification key or successful signature authorizes the transition",
+        "User intent is already a protocol transition"
+      ],
+      "id": "author_application_event",
+      "object_refs": [
+        "application_event",
+        "content_bytes",
+        "opening"
+      ],
+      "observers": [
+        "application_profile",
+        "authorized_endpoint",
+        "kernel"
+      ],
+      "outcomes": [
+        "APPLIED",
+        "AUTHENTIC_BUT_UNAUTHORIZED",
+        "INVALID",
+        "PENDING_OPENING"
+      ],
+      "permitted_actions": [
+        "Construct one canonical bounded transcript under the selected profile",
+        "Sign only after canonical validation and AP authorization inputs are present"
+      ],
+      "preconditions": [
+        "Supported protocol/profile/schema",
+        "Context-local credential binding evidence",
+        "AP authorization evaluated at the acting prefix"
+      ],
+      "producer": "authorized_endpoint",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "### 5.5 Replay and availability",
+          "source_id": "payload_analysis"
+        }
+      ],
+      "consumers": [
+        "kernel"
+      ],
+      "forbidden_inferences": [
+        "Checkpoint possession authenticates or substitutes the missing history",
+        "A locally parseable snapshot is a valid projection"
+      ],
+      "id": "checkpoint_restore",
+      "object_refs": [
+        "checkpoint_evidence"
+      ],
+      "observers": [
+        "kernel",
+        "runtime_profile"
+      ],
+      "outcomes": [
+        "STALE_EVIDENCE"
+      ],
+      "permitted_actions": [
+        "Use symbolic evidence only to detect a missing replay dependency"
+      ],
+      "preconditions": [
+        "Checkpoint acceptance and authentication remain unresolved",
+        "Live admitted history is revalidated independently"
+      ],
+      "producer": "runtime_profile",
+      "status": "SYMBOLIC"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "whole-context quarantine of independent control work",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "same-author fork permanently quarantines the whole v0 AP context.",
+          "source_id": "decisions"
+        }
+      ],
+      "consumers": [
+        "application_profile",
+        "kernel",
+        "product_operator"
+      ],
+      "forbidden_inferences": [
+        "Canonical order chooses a winning sibling",
+        "Revocation, late opening or checkpoint can lift v0 quarantine"
+      ],
+      "id": "fork_quarantine",
+      "object_refs": [
+        "application_event"
+      ],
+      "observers": [
+        "authorized_endpoint",
+        "compromised_credential_holder",
+        "kernel",
+        "recipient_endpoint"
+      ],
+      "outcomes": [
+        "FORK_EVIDENCE",
+        "FORK_QUARANTINED"
+      ],
+      "permitted_actions": [
+        "Preserve graph and pending diagnostics",
+        "Surface terminal context quarantine without AP authority"
+      ],
+      "preconditions": [
+        "Two distinct K-admitted same-author transcripts use one author sequence"
+      ],
+      "producer": "compromised_credential_holder",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "### 5.6 Logical removal",
+          "source_id": "payload_analysis"
+        }
+      ],
+      "consumers": [
+        "kernel",
+        "runtime_profile"
+      ],
+      "forbidden_inferences": [
+        "Logical removal proves physical erasure",
+        "Removal of REQUIRED or NONE content is valid",
+        "Re-presented bytes reactivate removed content"
+      ],
+      "id": "logical_removal",
+      "object_refs": [
+        "application_event",
+        "content_descriptor",
+        "opening"
+      ],
+      "observers": [
+        "application_profile",
+        "authorized_endpoint",
+        "kernel",
+        "recipient_endpoint",
+        "runtime_profile"
+      ],
+      "outcomes": [
+        "APPLIED",
+        "AUTHENTIC_BUT_UNAUTHORIZED",
+        "INVALID"
+      ],
+      "permitted_actions": [
+        "Append an authenticated AP-authorized directive targeting a DETACHABLE commitment",
+        "Retain evidence while requesting runtime deletion"
+      ],
+      "preconditions": [
+        "Control event has content_class NONE",
+        "Target descriptor is DETACHABLE",
+        "AP authorizes the directive at its replay prefix"
+      ],
+      "producer": "authorized_endpoint",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "## 3. Selected construction",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "| Content bytes or opening absent |",
+          "source_id": "threat_model"
+        }
+      ],
+      "consumers": [
+        "application_profile",
+        "kernel"
+      ],
+      "forbidden_inferences": [
+        "Timeout, retry, relay, peer or checkpoint substitutes for an opening",
+        "An independent event after the root is automatically pending"
+      ],
+      "id": "missing_required_opening",
+      "object_refs": [
+        "application_event",
+        "content_descriptor",
+        "opening"
+      ],
+      "observers": [
+        "authorized_endpoint",
+        "kernel",
+        "recipient_endpoint"
+      ],
+      "outcomes": [
+        "PENDING_ANCESTOR",
+        "PENDING_OPENING"
+      ],
+      "permitted_actions": [
+        "Defer the root and exact causal-descendant closure",
+        "Apply independent K-valid events in canonical relative order"
+      ],
+      "preconditions": [
+        "Fork-free and non-stale context",
+        "Active REQUIRED transcript lacks a locally verified opening"
+      ],
+      "producer": "kernel",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "Incremental replay after monotone opening",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "incremental and fresh",
+          "source_id": "decisions"
+        }
+      ],
+      "consumers": [
+        "application_profile",
+        "kernel"
+      ],
+      "forbidden_inferences": [
+        "A prior projected suffix is final",
+        "Arrival order fixes replay position"
+      ],
+      "id": "receive_late_opening",
+      "object_refs": [
+        "application_event",
+        "content_bytes",
+        "opening"
+      ],
+      "observers": [
+        "authorized_endpoint",
+        "kernel",
+        "recipient_endpoint"
+      ],
+      "outcomes": [
+        "APPLIED",
+        "PENDING_ANCESTOR",
+        "PENDING_OPENING"
+      ],
+      "permitted_actions": [
+        "Monotonically add the verified opening",
+        "Recompute pending closure and replay from the earliest affected position"
+      ],
+      "preconditions": [
+        "Opening verifies against the authenticated descriptor and exact content",
+        "Full and incremental semantic views remain equivalent"
+      ],
+      "producer": "recipient_endpoint",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "| `SS → K` |",
+          "source_id": "responsibility"
+        }
+      ],
+      "consumers": [
+        "kernel",
+        "recipient_endpoint"
+      ],
+      "forbidden_inferences": [
+        "Successful decryption proves application authorization or freshness",
+        "Session identity is the application author"
+      ],
+      "id": "secure_session_receive",
+      "object_refs": [
+        "application_event"
+      ],
+      "observers": [
+        "recipient_endpoint",
+        "secure_session_adapter"
+      ],
+      "outcomes": [
+        "APPLIED",
+        "AUTHENTIC_BUT_UNAUTHORIZED",
+        "INVALID"
+      ],
+      "permitted_actions": [
+        "Return authenticated plaintext bytes and typed session attribution",
+        "Re-run K and AP validation independently"
+      ],
+      "preconditions": [
+        "One exact supported secure-session profile",
+        "Session message authentication succeeds"
+      ],
+      "producer": "secure_session_adapter",
+      "status": "PROFILE_DEPENDENT"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "| `AP/K → SS` |",
+          "source_id": "responsibility"
+        }
+      ],
+      "consumers": [
+        "secure_session_adapter"
+      ],
+      "forbidden_inferences": [
+        "Valid application bytes imply valid MLS membership change",
+        "The current repository already supplies a supported product adapter"
+      ],
+      "id": "secure_session_send",
+      "object_refs": [
+        "application_event"
+      ],
+      "observers": [
+        "authorized_endpoint",
+        "runtime_profile",
+        "secure_session_adapter"
+      ],
+      "outcomes": [
+        "SESSION_PROFILE_REQUIRED"
+      ],
+      "permitted_actions": [
+        "Pass one validated opaque application object to the selected session profile"
+      ],
+      "preconditions": [
+        "Application object is K-valid and AP-authorized for production",
+        "Supported adapter profile remains future work"
+      ],
+      "producer": "kernel",
+      "status": "PROFILE_DEPENDENT"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "| `RS/SS → TR` |",
+          "source_id": "responsibility"
+        }
+      ],
+      "consumers": [
+        "relay_observer",
+        "transport_profile"
+      ],
+      "forbidden_inferences": [
+        "Relay OK means device, application or human receipt",
+        "E2EE hides IP address, timing, size, frequency or routing handles"
+      ],
+      "id": "transport_publish",
+      "object_refs": [
+        "application_event"
+      ],
+      "observers": [
+        "relay_observer",
+        "runtime_profile",
+        "transport_profile"
+      ],
+      "outcomes": [
+        "TRANSPORT_PROFILE_REQUIRED"
+      ],
+      "permitted_actions": [
+        "Publish and retry only an opaque bounded envelope",
+        "Expose only typed publication evidence to upper layers"
+      ],
+      "preconditions": [
+        "Supported transport envelope, metadata and routing profile",
+        "Outer observability is explicitly declared"
+      ],
+      "producer": "transport_profile",
+      "status": "PROFILE_DEPENDENT"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "### 6.3 Authorization evaluation",
+          "source_id": "identity_analysis"
+        }
+      ],
+      "consumers": [
+        "application_profile",
+        "kernel"
+      ],
+      "forbidden_inferences": [
+        "K-valid binding implies AP authority",
+        "Revocation removes historical graph evidence"
+      ],
+      "id": "validate_and_fold",
+      "object_refs": [
+        "application_event",
+        "content_descriptor"
+      ],
+      "observers": [
+        "application_profile",
+        "kernel",
+        "recipient_endpoint"
+      ],
+      "outcomes": [
+        "APPLIED",
+        "AUTHENTIC_BUT_UNAUTHORIZED",
+        "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+        "FORK_EVIDENCE",
+        "FORK_QUARANTINED",
+        "INVALID",
+        "PENDING_ANCESTOR",
+        "PENDING_OPENING",
+        "POST_REVOCATION",
+        "STALE_EVIDENCE"
+      ],
+      "permitted_actions": [
+        "Classify K facts before AP authority",
+        "Apply only non-pending events in canonical order when fork-free and non-stale"
+      ],
+      "preconditions": [
+        "Complete validated transcript set",
+        "Monotone locally verified-opening set",
+        "Closed profile inputs"
+      ],
+      "producer": "kernel",
+      "status": "DECIDED"
+    }
+  ],
+  "invariants": [
+    {
+      "citations": [
+        {
+          "anchor": "Key possession, signature validity",
+          "source_id": "decisions"
+        }
+      ],
+      "evidence_refs": [
+        "CE_GRANT_REVOKE_LAUNDERING_ORDER_A",
+        "CE_GRANT_REVOKE_LAUNDERING_ORDER_B"
+      ],
+      "id": "INV_AUTH_NOT_KEY",
+      "object_refs": [
+        "application_event"
+      ],
+      "owner": "AP",
+      "statement": "Cryptographic validity and historical credential binding never imply application authorization.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "**C0.3 verdict: `NO-GO`.**",
+          "source_id": "decisions"
+        }
+      ],
+      "evidence_refs": [
+        "CE_CREDENTIAL_COLLISION",
+        "CE_GRANT_REVOKE_LAUNDERING_ORDER_A"
+      ],
+      "id": "INV_C0_3_NO_GO",
+      "object_refs": [],
+      "owner": "K",
+      "statement": "No transcript-only C0.3 corpus, demo, product implementation or sensitive use is authorized while the declared blockers remain open.",
+      "status": "NO_GO"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "### O-01 — Causal representation",
+          "source_id": "decisions"
+        }
+      ],
+      "evidence_refs": [
+        "causal_report"
+      ],
+      "id": "INV_CAUSALITY_TRANSCRIPT_ONLY",
+      "object_refs": [
+        "application_event"
+      ],
+      "owner": "K",
+      "statement": "K graph admission, ancestry, canonical order, duplicate identity and fork classification depend on authenticated transcripts, not content availability, AP authority or arrival order.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "same-author fork permanently quarantines the whole v0 AP context.",
+          "source_id": "decisions"
+        }
+      ],
+      "evidence_refs": [
+        "CE_FORK_CONTEXT_QUARANTINE"
+      ],
+      "id": "INV_FORK_QUARANTINE",
+      "object_refs": [
+        "application_event"
+      ],
+      "owner": "K",
+      "statement": "Any admitted same-author fork empties the entire v0 operational AP view permanently while retaining diagnostic evidence.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "Checkpoints do not substitute",
+          "source_id": "decisions"
+        }
+      ],
+      "evidence_refs": [
+        "CE_CHECKPOINT_STALE"
+      ],
+      "id": "INV_NO_CHECKPOINT_SUBSTITUTION",
+      "object_refs": [
+        "checkpoint_evidence"
+      ],
+      "owner": "K",
+      "statement": "Checkpoint-named evidence cannot replace a missing live authenticated replay dependency.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "Timeout, retries, time, arrival order",
+          "source_id": "decisions"
+        }
+      ],
+      "evidence_refs": [
+        "CE_MISSING_REQUIRED_OPENING"
+      ],
+      "id": "INV_NO_OPENING_SUBSTITUTION",
+      "object_refs": [
+        "content_bytes",
+        "content_descriptor",
+        "opening"
+      ],
+      "owner": "K",
+      "statement": "No timeout, quorum, relay response, retry or checkpoint substitutes for a missing or non-verifying REQUIRED opening.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "including independent events that sort later",
+          "source_id": "decisions"
+        }
+      ],
+      "evidence_refs": [
+        "CE_MISSING_REQUIRED_OPENING"
+      ],
+      "id": "INV_PENDING_SELECTIVE_PROGRESS",
+      "object_refs": [
+        "application_event",
+        "opening"
+      ],
+      "owner": "K",
+      "statement": "In a fork-free non-stale context, missing REQUIRED content defers only its root and causal descendants; independent events still fold in canonical relative order.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "The model distinguishes the following properties rather than using “secure” as",
+          "source_id": "threat_model"
+        }
+      ],
+      "evidence_refs": [],
+      "id": "INV_PROTECTION_SEPARATION",
+      "object_refs": [
+        "application_event",
+        "content_bytes",
+        "content_descriptor",
+        "opening"
+      ],
+      "owner": "K",
+      "statement": "Authentication, application authorization, commitment binding, confidentiality, availability, unlinkability and erasure are separate properties and may not substitute for one another.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "Incremental replay after monotone opening",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "incremental and fresh",
+          "source_id": "decisions"
+        }
+      ],
+      "evidence_refs": [
+        "CE_SELECTIVE_REVEAL"
+      ],
+      "id": "INV_SET_RELATIVE_REPLAY",
+      "object_refs": [
+        "application_event",
+        "opening"
+      ],
+      "owner": "K",
+      "statement": "Replicas converge only relative to the same authenticated transcript set and monotone verified-opening set; full and incremental replay must agree.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "# Styx application-event semantic kernel — v0 decision registry",
+          "source_id": "decisions"
+        }
+      ],
+      "evidence_refs": [],
+      "id": "INV_SOURCE_AUTHORITY",
+      "object_refs": [],
+      "owner": "K",
+      "statement": "This JSON artifact is derived and never overrides its exact cited English normative sources.",
+      "status": "DERIVED"
+    }
+  ],
+  "layers": [
+    {
+      "citations": [
+        {
+          "anchor": "| `AP` | **Application profile**",
+          "source_id": "responsibility"
+        }
+      ],
+      "does_not_own": [
+        "Kernel validity",
+        "Runtime atomicity",
+        "Secure-session cryptography",
+        "Transport truth"
+      ],
+      "id": "AP",
+      "name": "Application profile",
+      "owns": [
+        "Roles and authorization",
+        "Versioned application schemas",
+        "Conflict and retention policy"
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "| `K` | **Styx application semantic kernel**",
+          "source_id": "responsibility"
+        }
+      ],
+      "does_not_own": [
+        "Human workflow",
+        "Key custody",
+        "Routing",
+        "Session membership"
+      ],
+      "id": "K",
+      "name": "Application semantic kernel",
+      "owns": [
+        "Authenticated application-object semantics",
+        "Causality and deterministic replay",
+        "Fork and pending classification"
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "| `PV` | **Product vertical and organizational operations**",
+          "source_id": "responsibility"
+        }
+      ],
+      "does_not_own": [
+        "Cryptographic guarantees",
+        "Protocol validity"
+      ],
+      "id": "PV",
+      "name": "Product vertical and organizational operations",
+      "owns": [
+        "Human workflow and safeguarding",
+        "Operational readiness and incident response",
+        "User-visible truthful states"
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "| `RS` | **Runtime/storage profile**",
+          "source_id": "responsibility"
+        }
+      ],
+      "does_not_own": [
+        "Application meaning",
+        "Remote delivery truth"
+      ],
+      "id": "RS",
+      "name": "Runtime/storage profile",
+      "owns": [
+        "Atomic durable state",
+        "Crash recovery and rollback boundary",
+        "Key custody and release provenance"
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "| `SS` | **Secure-session adapter**",
+          "source_id": "responsibility"
+        }
+      ],
+      "does_not_own": [
+        "Application authorization",
+        "Application causal order",
+        "Business workflow"
+      ],
+      "id": "SS",
+      "name": "Secure-session adapter",
+      "owns": [
+        "Authenticated confidential session payloads",
+        "Epoch and membership policy",
+        "Session-secret lifecycle"
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "| `TR` | **Transport/routing profile**",
+          "source_id": "responsibility"
+        }
+      ],
+      "does_not_own": [
+        "Application truth",
+        "Human receipt",
+        "Protocol authorization"
+      ],
+      "id": "TR",
+      "name": "Transport/routing profile",
+      "owns": [
+        "Envelope and routing semantics",
+        "Publication, retry and failover",
+        "Outer metadata and network bounds"
+      ]
+    }
+  ],
+  "non_claims": [
+    {
+      "citations": [
+        {
+          "anchor": "Styx is experimental, has not completed an independent security audit",
+          "source_id": "threat_model"
+        }
+      ],
+      "id": "NC_AUDIT_READINESS",
+      "statement": "No completed independent Styx audit, production readiness or suitability for sensitive, high-risk or life-critical use is claimed."
+    },
+    {
+      "citations": [
+        {
+          "anchor": "44-octet commitment context deliberately does not prevent cross-credential",
+          "source_id": "decisions"
+        }
+      ],
+      "id": "NC_COMMITMENT_COPY",
+      "statement": "The current commitment context does not prevent declared cross-credential or same-credential cross-sequence descriptor copy; C0.2k owns repair."
+    },
+    {
+      "citations": [
+        {
+          "anchor": "No finality exists",
+          "source_id": "decisions"
+        }
+      ],
+      "id": "NC_FINALITY",
+      "statement": "No replay position, checkpoint or visible AP result authorizes an irreversible effect."
+    },
+    {
+      "citations": [
+        {
+          "anchor": "This models neither checkpoint",
+          "source_id": "decisions"
+        }
+      ],
+      "id": "NC_GENESIS_CHECKPOINT",
+      "statement": "Genesis contents and checkpoint authentication, acceptance, substitution and producer authority remain unresolved."
+    },
+    {
+      "citations": [
+        {
+          "anchor": "## 7. Metadata and unlinkability model",
+          "source_id": "threat_model"
+        }
+      ],
+      "id": "NC_METADATA_ANONYMITY",
+      "statement": "Application E2EE does not by itself hide IP address, timing, size, frequency or stable routing handles."
+    },
+    {
+      "citations": [
+        {
+          "anchor": "C0.2j is mandatory.",
+          "source_id": "threat_model"
+        }
+      ],
+      "id": "NC_REVOCATION_COMPROMISE",
+      "statement": "V0 revocation is non-transitive and does not bound a compromised credential or prevent successor-authority laundering."
+    },
+    {
+      "citations": [
+        {
+          "anchor": "Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile",
+          "source_id": "threat_model"
+        }
+      ],
+      "id": "NC_SUPPORTED_ADAPTER",
+      "statement": "Bounded Phase B evidence is not a supported secure-session adapter, Nostr envelope or product-integration claim."
+    }
+  ],
+  "objects": [
+    {
+      "citations": [
+        {
+          "anchor": "## 5. Application-event signature transcript",
+          "source_id": "transcript_profile"
+        }
+      ],
+      "description": "Canonical signed application-event semantic object; O-11 wire/storage representation remains open.",
+      "fields": [
+        {
+          "citations": [
+            {
+              "anchor": "| 1 | Styx protocol version |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Unsigned u16 semantic value fixed to v1 and covered by the application signature transcript.",
+          "id": "ap_protocol_version",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint"
+          ],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint",
+            "secure_session_adapter"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 10 | AP transition block |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Length-framed canonical AP schema bytes; concrete control carriage remains C0.2j/O-07 work.",
+          "id": "ap_transition_block",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "application_profile",
+            "authorized_endpoint"
+          ],
+          "owner": "AP",
+          "status": "UNRESOLVED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 2 | application-profile identifier |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Non-zero identifier from a closed AP registry.",
+          "id": "application_profile_id",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "application_profile"
+          ],
+          "owner": "AP",
+          "status": "DECIDED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 3 | application-profile version |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Non-zero AP version selecting one closed schema and policy contract.",
+          "id": "application_profile_version",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "application_profile"
+          ],
+          "owner": "AP",
+          "status": "DECIDED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 12 | author sequence |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Strictly increasing non-wrapping u64 sequence for the context-local credential.",
+          "id": "author_sequence",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint",
+            "compromised_credential_holder"
+          ],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 15 | causal-parent count and frontier |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Canonical sorted maximal antichain of full causal-parent references.",
+          "id": "causal_parents",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint",
+            "compromised_credential_holder"
+          ],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 17 | content descriptor |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Authenticated descriptor reference to content class, length, type, suite, shape, commitment and geometry.",
+          "id": "content_descriptor",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint"
+          ],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 4 | context identifier |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Fresh opaque32 member of the application/case context tuple.",
+          "id": "context_identifier",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint"
+          ],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 11 | credential identifier |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Current opaque32 context-local author identifier; collision-resistant successor construction and exact grant carriage are C0.2j blockers.",
+          "id": "credential_identifier",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint",
+            "compromised_credential_holder"
+          ],
+          "owner": "K",
+          "status": "UNRESOLVED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 13 | direct-predecessor presence |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Presence octet distinguishing absence from a present predecessor.",
+          "id": "direct_predecessor_presence",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint",
+            "compromised_credential_holder"
+          ],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 14 | direct predecessor |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Full reference to the immediately prior accepted event for the credential when present.",
+          "id": "direct_predecessor_reference",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint",
+            "compromised_credential_holder"
+          ],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "event_reference = H(D_EVENT_REF",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Full SHA-256 digest derived from the complete regenerated application signature transcript; carriage is future O-11 data.",
+          "id": "event_reference",
+          "integrity": [
+            "DIGEST_DERIVED"
+          ],
+          "mutable_by": [],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "DERIVED"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 6 | event role |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Closed u8 retention-role discriminant: ordinary transition or logical-removal directive.",
+          "id": "event_role",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "application_profile",
+            "authorized_endpoint"
+          ],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 7 | event type identifier |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Non-zero type from the closed AP registry.",
+          "id": "event_type_identifier",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "application_profile",
+            "authorized_endpoint"
+          ],
+          "owner": "AP",
+          "status": "UNRESOLVED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 16 | genesis reference |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Full derived reference to the context genesis; complete genesis bytes remain O-07 work.",
+          "id": "genesis_reference",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint"
+          ],
+          "owner": "K",
+          "status": "UNRESOLVED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 5 | object kind |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "u16 fixed to APPLICATION_EVENT for this transcript profile.",
+          "id": "object_kind",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint"
+          ],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "### 5.3 Logical-removal tail",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Target event reference and target commitment, present only for a logical-removal directive.",
+          "id": "removal_tail",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "application_profile",
+            "authorized_endpoint"
+          ],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 8 | schema identifier |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Non-zero identifier selecting the closed AP schema.",
+          "id": "schema_identifier",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "application_profile"
+          ],
+          "owner": "AP",
+          "status": "UNRESOLVED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "| 9 | schema version |",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Non-zero version of the closed AP schema.",
+          "id": "schema_version",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "application_profile"
+          ],
+          "owner": "AP",
+          "status": "UNRESOLVED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "Signature bytes and a carried reference are not inputs.",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Signature over the regenerated application transcript; exact signature suite and wire carriage remain O-14/O-11 work.",
+          "id": "signature",
+          "integrity": [
+            "PROFILE_DEPENDENT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint",
+            "compromised_credential_holder"
+          ],
+          "owner": "K",
+          "status": "UNRESOLVED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "PROFILE_DEPENDENT"
+        }
+      ],
+      "id": "application_event",
+      "owner": "K",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "This models neither checkpoint",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "Symbolic checkpoint and replay-dependency inputs used only to falsify non-substitution and staleness behavior.",
+      "fields": [
+        {
+          "citations": [
+            {
+              "anchor": "checkpoint_evidence",
+              "source_id": "pending_report"
+            },
+            {
+              "anchor": "### O-07 — Genesis and checkpoint evidence",
+              "source_id": "decisions"
+            }
+          ],
+          "confidentiality": "UNRESOLVED",
+          "description": "Symbolic set of references named by a checkpoint; not authenticated or accepted by the current model.",
+          "id": "checkpoint_evidence_refs",
+          "integrity": [
+            "UNRESOLVED"
+          ],
+          "mutable_by": [
+            "runtime_profile"
+          ],
+          "owner": "K",
+          "status": "SYMBOLIC",
+          "visible_to": [
+            "kernel",
+            "runtime_profile"
+          ],
+          "wire_presence": "SYMBOLIC_INPUT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "replay_dependencies",
+              "source_id": "pending_report"
+            },
+            {
+              "anchor": "### O-07 — Genesis and checkpoint evidence",
+              "source_id": "decisions"
+            }
+          ],
+          "confidentiality": "UNRESOLVED",
+          "description": "Unvalidated symbolic oracle set identifying dependencies needed for replay.",
+          "id": "replay_dependency_refs",
+          "integrity": [
+            "UNRESOLVED"
+          ],
+          "mutable_by": [
+            "runtime_profile"
+          ],
+          "owner": "K",
+          "status": "SYMBOLIC",
+          "visible_to": [
+            "kernel",
+            "runtime_profile"
+          ],
+          "wire_presence": "SYMBOLIC_INPUT"
+        }
+      ],
+      "id": "checkpoint_evidence",
+      "owner": "K",
+      "status": "SYMBOLIC"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "The K transcript contains the descriptor but never the content",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "Exact application bytes bound by the descriptor commitment but excluded from the K signature transcript.",
+      "fields": [
+        {
+          "citations": [
+            {
+              "anchor": "exact K-boundary application octets",
+              "source_id": "decisions"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Complete bytes required for commitment verification and application interpretation.",
+          "id": "content_octets",
+          "integrity": [
+            "COMMITMENT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint"
+          ],
+          "owner": "AP",
+          "status": "DECIDED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint",
+            "secure_session_adapter"
+          ],
+          "wire_presence": "OUT_OF_BAND"
+        }
+      ],
+      "id": "content_bytes",
+      "owner": "AP",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "### 5.2 Content descriptor",
+          "source_id": "transcript_profile"
+        }
+      ],
+      "description": "Authenticated descriptor separating content class, availability, commitment binding and retention semantics.",
+      "fields": [
+        {
+          "citations": [
+            {
+              "anchor": "content_class:u8 || exact_content_length:u64",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Closed NONE, REQUIRED or DETACHABLE class.",
+          "id": "content_class",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "application_profile",
+            "authorized_endpoint"
+          ],
+          "owner": "AP",
+          "status": "DECIDED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "commitment_value = SHA256",
+              "source_id": "commitment_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Full 32-octet SHA-256 randomized-opening commitment.",
+          "id": "content_commitment",
+          "integrity": [
+            "COMMITMENT",
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint"
+          ],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "chunk_geometry_presence:u8",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Presence plus canonical 16-octet tree geometry when tree shape is selected.",
+          "id": "content_geometry",
+          "integrity": [
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint"
+          ],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "exact_content_length:u64",
+              "source_id": "commitment_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Exact application content length; remains visible to authorized protocol participants.",
+          "id": "content_length",
+          "integrity": [
+            "COMMITMENT",
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint"
+          ],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "commitment_shape:u8",
+              "source_id": "commitment_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Single or left-complete chunk-tree shape.",
+          "id": "content_shape",
+          "integrity": [
+            "COMMITMENT",
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint"
+          ],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "Suite identifier",
+              "source_id": "commitment_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Derived-and-compared u16 commitment suite, exactly 0x0001 for v1.",
+          "id": "content_suite_id",
+          "integrity": [
+            "COMMITMENT",
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [],
+          "owner": "K",
+          "status": "DECIDED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "content_type_id:u32",
+              "source_id": "commitment_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Non-zero closed AP content type for content-bearing classes.",
+          "id": "content_type_id",
+          "integrity": [
+            "COMMITMENT",
+            "SIGNED_TRANSCRIPT"
+          ],
+          "mutable_by": [
+            "application_profile",
+            "authorized_endpoint"
+          ],
+          "owner": "AP",
+          "status": "UNRESOLVED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "SIGNED_TRANSCRIPT"
+        }
+      ],
+      "id": "content_descriptor",
+      "owner": "K",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "O-07 will define the complete genesis semantic inventory",
+          "source_id": "transcript_profile"
+        }
+      ],
+      "description": "Future canonical context genesis; only its non-self-referential outer transcript/reference framing is selected.",
+      "fields": [
+        {
+          "citations": [
+            {
+              "anchor": "genesis_reference = H(D_GENESIS_REF",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "description": "Full SHA-256 reference derivable only after O-07 fixes the complete canonical genesis transcript.",
+          "id": "derived_genesis_reference",
+          "integrity": [
+            "DIGEST_DERIVED"
+          ],
+          "mutable_by": [],
+          "owner": "K",
+          "status": "UNRESOLVED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "DERIVED"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "does not define its body fields or internal bytes",
+              "source_id": "transcript_profile"
+            }
+          ],
+          "confidentiality": "UNRESOLVED",
+          "description": "Complete genesis semantic body, including initial authority, remains O-07 work.",
+          "id": "genesis_body",
+          "integrity": [
+            "UNRESOLVED"
+          ],
+          "mutable_by": [
+            "application_profile",
+            "authorized_endpoint"
+          ],
+          "owner": "K",
+          "status": "UNRESOLVED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint"
+          ],
+          "wire_presence": "PROFILE_DEPENDENT"
+        }
+      ],
+      "id": "genesis",
+      "owner": "K",
+      "status": "UNRESOLVED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "Opening randomizer",
+          "source_id": "commitment_profile"
+        }
+      ],
+      "description": "Fresh per-object secret randomizer supplied with exact content to verify its commitment; excluded from the K transcript.",
+      "fields": [
+        {
+          "citations": [
+            {
+              "anchor": "Opening randomizer | exactly 32 octets",
+              "source_id": "commitment_profile"
+            }
+          ],
+          "confidentiality": "LOCAL_RUNTIME_PROFILE",
+          "description": "Exactly 32 octets from a supported runtime CSPRNG; loss can strand REQUIRED content and destruction is not proven by logical removal.",
+          "id": "opening_randomizer",
+          "integrity": [
+            "COMMITMENT"
+          ],
+          "mutable_by": [
+            "authorized_endpoint",
+            "runtime_profile"
+          ],
+          "owner": "RS",
+          "status": "DECIDED",
+          "visible_to": [
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint",
+            "runtime_profile",
+            "secure_session_adapter"
+          ],
+          "wire_presence": "OUT_OF_BAND"
+        }
+      ],
+      "id": "opening",
+      "owner": "K",
+      "status": "DECIDED"
+    }
+  ],
+  "outcomes": [
+    {
+      "applies_transition": true,
+      "citations": [
+        {
+          "anchor": "typed presentation",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "every K-valid event outside that set is folded",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "K-valid non-pending event authorized by AP and applied in canonical replay order.",
+      "id": "APPLIED",
+      "owner": "AP",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "`AUTHENTIC_BUT_UNAUTHORIZED`",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "Signature/binding evidence is valid but AP authority at the acting prefix is absent.",
+      "id": "AUTHENTIC_BUT_UNAUTHORIZED",
+      "owner": "AP",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "Credential-identifier collision remains a cheap retroactive authority-freeze",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "Conflicting grants or identifier reuse are not solved here",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "More than one K-valid binding exists for one identifier; graph evidence remains but AP authority is frozen.",
+      "id": "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+      "owner": "K",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "siblings remain authenticated `FORK_EVIDENCE`",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "One of two or more distinct K-admitted same-author siblings at one sequence.",
+      "id": "FORK_EVIDENCE",
+      "owner": "K",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "every other admitted event is",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "Non-sibling event admitted in a context with any same-author fork; operational AP view is empty.",
+      "id": "FORK_QUARANTINED",
+      "owner": "K",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "terminal invalid binding ancestry",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "### 6.3 Authorization evaluation",
+          "source_id": "identity_analysis"
+        }
+      ],
+      "description": "Candidate fails structural, canonical, binding, signature or profile validation.",
+      "id": "INVALID",
+      "owner": "K",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "descendants `PENDING_ANCESTOR`",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "Event is deferred because it causally descends from at least one pending root.",
+      "id": "PENDING_ANCESTOR",
+      "owner": "K",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "report model outcome `PENDING_OPENING`",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "Active REQUIRED event lacks a locally verified opening.",
+      "id": "PENDING_OPENING",
+      "owner": "K",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "`POST_REVOCATION` and authentic-but-unauthorized",
+          "source_id": "threat_model"
+        }
+      ],
+      "description": "Event causally follows an AP-authorized revocation of its signing credential.",
+      "id": "POST_REVOCATION",
+      "owner": "AP",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "Supported adapter future work",
+          "source_id": "responsibility"
+        }
+      ],
+      "description": "No production secure-session guarantee follows until one exact supported adapter profile exists.",
+      "id": "SESSION_PROFILE_REQUIRED",
+      "owner": "SS",
+      "status": "PROFILE_DEPENDENT"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "`STALE_EVIDENCE` has higher precedence.",
+          "source_id": "decisions"
+        }
+      ],
+      "description": "At least one symbolic replay dependency is absent from the live admitted graph and retained only as checkpoint evidence.",
+      "id": "STALE_EVIDENCE",
+      "owner": "K",
+      "status": "SYMBOLIC"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "Supported Marmot/Nostr adapter future work",
+          "source_id": "responsibility"
+        }
+      ],
+      "description": "No transport confidentiality, metadata or delivery guarantee follows until a concrete profile exists.",
+      "id": "TRANSPORT_PROFILE_REQUIRED",
+      "owner": "TR",
+      "status": "PROFILE_DEPENDENT"
+    }
+  ],
+  "registries": {
+    "confidentiality": [
+      "LOCAL_RUNTIME_PROFILE",
+      "NONE",
+      "PROFILE_DEPENDENT",
+      "SECURE_SESSION_PROFILE",
+      "UNRESOLVED"
+    ],
+    "integrity": [
+      "COMMITMENT",
+      "DIGEST_DERIVED",
+      "NONE",
+      "PROFILE_DEPENDENT",
+      "SESSION_AUTHENTICATED",
+      "SIGNED_TRANSCRIPT",
+      "UNRESOLVED"
+    ],
+    "layers": [
+      "AP",
+      "K",
+      "PV",
+      "RS",
+      "SS",
+      "TR"
+    ],
+    "statuses": [
+      "DECIDED",
+      "DERIVED",
+      "EVIDENCE_ONLY",
+      "NO_GO",
+      "OPEN",
+      "PROFILE_DEPENDENT",
+      "SYMBOLIC",
+      "UNRESOLVED"
+    ],
+    "trust_classes": [
+      "APPLICATION",
+      "CRYPTOGRAPHIC",
+      "HUMAN",
+      "NETWORK",
+      "RUNTIME",
+      "SESSION"
+    ],
+    "wire_presence": [
+      "DERIVED",
+      "NOT_CARRIED",
+      "OUT_OF_BAND",
+      "PROFILE_DEPENDENT",
+      "SIGNED_TRANSCRIPT",
+      "SYMBOLIC_INPUT"
+    ]
+  },
+  "review_queries": [
+    {
+      "citations": [
+        {
+          "anchor": "### 6.3 Authorization evaluation",
+          "source_id": "identity_analysis"
+        }
+      ],
+      "id": "RQ_AUTHORIZATION",
+      "question": "Can any path infer AP authority from binding, signature validity, session membership, delivery or replay position?",
+      "record_refs": [
+        "INV_AUTH_NOT_KEY",
+        "CE_GRANT_REVOKE_LAUNDERING_ORDER_A",
+        "validate_and_fold"
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "## 6. Gate for C0.3 and exact next sequence",
+          "source_id": "decisions"
+        }
+      ],
+      "id": "RQ_BLOCKERS",
+      "question": "Does the candidate preserve every ordered blocker and the C0.3 NO-GO verdict without silently promoting an unresolved value?",
+      "record_refs": [
+        "C0.2j",
+        "C0.2k",
+        "O-06c",
+        "O-07",
+        "O-08",
+        "O-10",
+        "O-14",
+        "C0.3"
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "## 7. Residual risks and non-claims",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "### O-04 — Payload commitment and detachment",
+          "source_id": "decisions"
+        }
+      ],
+      "id": "RQ_COUNTEREXAMPLES",
+      "question": "Do the known collision, fork, missing-opening, selective-reveal, checkpoint-stale and grant/revoke counterexamples remain explicit and blocking where required?",
+      "record_refs": [
+        "CE_CHECKPOINT_STALE",
+        "CE_CREDENTIAL_COLLISION",
+        "CE_FORK_CONTEXT_QUARANTINE",
+        "CE_GRANT_REVOKE_LAUNDERING_ORDER_A",
+        "CE_GRANT_REVOKE_LAUNDERING_ORDER_B",
+        "CE_MISSING_REQUIRED_OPENING",
+        "CE_SELECTIVE_REVEAL"
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "## 2. Protected assets and properties",
+          "source_id": "threat_model"
+        }
+      ],
+      "id": "RQ_FIELD_PROTECTION",
+      "question": "For each field, which layer authenticates or commits it, which profile may encrypt it, and which actors or relay observers can see it?",
+      "record_refs": [
+        "application_event",
+        "content_bytes",
+        "content_descriptor",
+        "opening",
+        "secure_session_send",
+        "transport_publish"
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "## 3. Selected construction",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "### O-04 — Payload commitment and detachment",
+          "source_id": "decisions"
+        }
+      ],
+      "id": "RQ_REPLAY",
+      "question": "Do full and incremental replay preserve the same set-relative semantic view under late openings, stale evidence and terminal fork quarantine?",
+      "record_refs": [
+        "INV_SET_RELATIVE_REPLAY",
+        "pending_replay",
+        "receive_late_opening"
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "## 10. Current evidence and non-claims",
+          "source_id": "threat_model"
+        }
+      ],
+      "id": "RQ_SCOPE",
+      "question": "Is a bounded model result being misrepresented as implementation, interoperability, audit, anonymity, finality or readiness evidence?",
+      "record_refs": [
+        "NC_AUDIT_READINESS",
+        "NC_FINALITY",
+        "NC_METADATA_ANONYMITY",
+        "NC_SUPPORTED_ADAPTER"
+      ]
+    }
+  ],
+  "sources": [
+    {
+      "authority": "evidence",
+      "id": "causal_report",
+      "path": "docs/protocol/styx-app-kernel-v0-causal-falsification-report.md",
+      "sha256": "5e6ae97aa0559ae681bf675c11e2bdf339a6fcc0c0421533846bc4feff227a59"
+    },
+    {
+      "authority": "normative",
+      "id": "causal_topology",
+      "path": "docs/protocol/styx-app-kernel-v0-causal-topology-analysis.md",
+      "sha256": "50318b991faaa748bdd67fea5c17f5204f02f67e95429851d6e54241a10035ac"
+    },
+    {
+      "authority": "normative",
+      "id": "commitment_profile",
+      "path": "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
+      "sha256": "e25e247da502e535929f4cd3618daf531b253388aa41af3506e05711166c6327"
+    },
+    {
+      "authority": "normative",
+      "id": "decisions",
+      "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
+      "sha256": "b07ae19118d6a3e7ac831436d080e1cddc6fdb3e87ff5dd73667a6099918129e"
+    },
+    {
+      "authority": "normative",
+      "id": "identity_analysis",
+      "path": "docs/protocol/styx-app-kernel-v0-identity-context-analysis.md",
+      "sha256": "1c8c2b197fd0f9d996324c555f57ecc47505e8de2759793741a868b093e760aa"
+    },
+    {
+      "authority": "normative",
+      "id": "payload_analysis",
+      "path": "docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md",
+      "sha256": "91dd8408b0f6536a9f9a62468ec748e979733006b8326ccafa77741170310c54"
+    },
+    {
+      "authority": "evidence",
+      "id": "payload_report",
+      "path": "docs/protocol/styx-app-kernel-v0-payload-state-falsification-report.md",
+      "sha256": "42856485d759c4b6a2ded1cb31abfaffc982ae4010e3c550437f5319c03732ea"
+    },
+    {
+      "authority": "evidence",
+      "id": "pending_report",
+      "path": "docs/protocol/styx-app-kernel-v0-pending-subtree-falsification-report.md",
+      "sha256": "1934a1bc0ff58ab285b8b0575c57f82165b69594fe1c24b5b6c2c281da9961a6"
+    },
+    {
+      "authority": "normative",
+      "id": "responsibility",
+      "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
+      "sha256": "fc2224ba84c390b40123f5c5ebfc1f5651499027249f9fe023cc94d5cb399093"
+    },
+    {
+      "authority": "normative",
+      "id": "threat_model",
+      "path": "docs/security/STYX-THREAT-MODEL.md",
+      "sha256": "ef3cebc2c009e38524330997befc3ab7e6e4f2c33eb10e51eccd90885caabfb5"
+    },
+    {
+      "authority": "normative",
+      "id": "transcript_profile",
+      "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
+      "sha256": "ff130a4622e62b4c277ebbb5811bfce9c1b7efbf9d55abf98773e98939edca76"
+    }
+  ],
+  "state_models": [
+    {
+      "citations": [
+        {
+          "anchor": "## 3. Selected construction",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "### O-04 — Payload commitment and detachment",
+          "source_id": "decisions"
+        }
+      ],
+      "id": "ap_projection",
+      "owner": "AP",
+      "precedence": [
+        "STALE_EVIDENCE",
+        "FORK_QUARANTINED",
+        "PENDING_OPENING",
+        "PENDING_ANCESTOR",
+        "APPLIED"
+      ],
+      "states": [
+        "ACTIVE",
+        "EMPTY_FORK_QUARANTINE",
+        "EMPTY_STALE",
+        "PARTIALLY_PENDING"
+      ],
+      "status": "DECIDED",
+      "transitions": [
+        {
+          "citations": [
+            {
+              "anchor": "each active",
+              "source_id": "decisions"
+            }
+          ],
+          "from": [
+            "ACTIVE"
+          ],
+          "id": "ap_to_partially_pending",
+          "outcome": "PENDING_OPENING",
+          "to": "PARTIALLY_PENDING",
+          "trigger": "At least one REQUIRED opening is unverified"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "`STALE_EVIDENCE` has higher precedence.",
+              "source_id": "decisions"
+            }
+          ],
+          "from": [
+            "ACTIVE",
+            "PARTIALLY_PENDING"
+          ],
+          "id": "ap_to_stale",
+          "outcome": "STALE_EVIDENCE",
+          "to": "EMPTY_STALE",
+          "trigger": "A replay dependency is checkpoint-only"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "same-author fork permanently quarantines",
+              "source_id": "decisions"
+            }
+          ],
+          "from": [
+            "ACTIVE",
+            "PARTIALLY_PENDING"
+          ],
+          "id": "ap_to_terminal_fork",
+          "outcome": "FORK_QUARANTINED",
+          "to": "EMPTY_FORK_QUARANTINE",
+          "trigger": "Any K-admitted same-author fork exists"
+        }
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "### O-01 — Causal representation",
+          "source_id": "decisions"
+        }
+      ],
+      "id": "k_admission",
+      "owner": "K",
+      "precedence": [
+        "INVALID",
+        "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+        "FORK_EVIDENCE",
+        "ADMITTED"
+      ],
+      "states": [
+        "ADMITTED",
+        "COLLISION_UNSUPPORTED",
+        "FORK_CLASSIFIED",
+        "INVALID"
+      ],
+      "status": "DECIDED",
+      "transitions": [
+        {
+          "citations": [
+            {
+              "anchor": "terminal invalid binding ancestry",
+              "source_id": "pending_report"
+            },
+            {
+              "anchor": "### 6.3 Authorization evaluation",
+              "source_id": "identity_analysis"
+            }
+          ],
+          "from": [
+            "ADMITTED"
+          ],
+          "id": "k_reject_invalid",
+          "outcome": "INVALID",
+          "to": "INVALID",
+          "trigger": "Canonical, ancestry, binding or signature validation fails"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "Credential-identifier collision remains a cheap retroactive authority-freeze",
+              "source_id": "pending_report"
+            },
+            {
+              "anchor": "Conflicting grants or identifier reuse are not solved here",
+              "source_id": "decisions"
+            }
+          ],
+          "from": [
+            "ADMITTED"
+          ],
+          "id": "k_to_collision",
+          "outcome": "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+          "to": "COLLISION_UNSUPPORTED",
+          "trigger": "Whole validated set contains multiple K-valid bindings for one identifier"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "siblings remain authenticated `FORK_EVIDENCE`",
+              "source_id": "decisions"
+            }
+          ],
+          "from": [
+            "ADMITTED"
+          ],
+          "id": "k_to_fork",
+          "outcome": "FORK_EVIDENCE",
+          "to": "FORK_CLASSIFIED",
+          "trigger": "Distinct same-author transcript shares an author sequence"
+        }
+      ]
+    },
+    {
+      "citations": [
+        {
+          "anchor": "Incremental replay after monotone opening",
+          "source_id": "pending_report"
+        },
+        {
+          "anchor": "### O-04 — Payload commitment and detachment",
+          "source_id": "decisions"
+        }
+      ],
+      "id": "pending_replay",
+      "owner": "K",
+      "precedence": [
+        "PENDING_OPENING",
+        "PENDING_ANCESTOR",
+        "APPLIED"
+      ],
+      "states": [
+        "APPLIED",
+        "PENDING_ANCESTOR",
+        "PENDING_OPENING"
+      ],
+      "status": "DECIDED",
+      "transitions": [
+        {
+          "citations": [
+            {
+              "anchor": "descendants `PENDING_ANCESTOR`",
+              "source_id": "decisions"
+            }
+          ],
+          "from": [
+            "APPLIED"
+          ],
+          "id": "replay_to_pending_descendant",
+          "outcome": "PENDING_ANCESTOR",
+          "to": "PENDING_ANCESTOR",
+          "trigger": "Event causally descends from a pending root"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "report model outcome `PENDING_OPENING`",
+              "source_id": "decisions"
+            }
+          ],
+          "from": [
+            "APPLIED"
+          ],
+          "id": "replay_to_pending_root",
+          "outcome": "PENDING_OPENING",
+          "to": "PENDING_OPENING",
+          "trigger": "Active REQUIRED event has no verified opening"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "Adding a verified opening removes that reason",
+              "source_id": "decisions"
+            }
+          ],
+          "from": [
+            "PENDING_ANCESTOR",
+            "PENDING_OPENING"
+          ],
+          "id": "replay_verified_opening",
+          "outcome": "APPLIED",
+          "to": "APPLIED",
+          "trigger": "Monotone verified-opening update releases the event from every remaining pending root"
+        }
+      ]
+    }
+  ]
+}
