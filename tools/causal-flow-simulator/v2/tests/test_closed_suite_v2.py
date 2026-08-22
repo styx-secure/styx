@@ -27,6 +27,7 @@ class ClosedSuiteTests(unittest.TestCase):
         self.assertEqual(set(registry["c0_2i_families"]), C0_2I_FAMILIES)
         self.assertTrue(registry["complete_and_non_empty"])
         self.assertEqual(report["verdict"], "NO_COUNTEREXAMPLE_WITHIN_BOUNDS")
+        self.assertEqual(report["instrumentation"]["earliest_replay_boundary"], 0)
 
     def test_every_family_and_obligation_has_a_directed_check(self) -> None:
         report, _ = build_report()

@@ -110,6 +110,7 @@ class Suite:
         self.max_pending_roots = 0
         self.max_pending_descendants = 0
         self.max_replayed_work = 0
+        self.earliest_replay_boundary: int | None = None
 
     def observe(self, projection) -> None:
         self.max_pending_roots = max(
@@ -121,6 +122,13 @@ class Suite:
         self.max_replayed_work = max(
             self.max_replayed_work, projection.metrics.replayed_event_work
         )
+        boundary = projection.metrics.earliest_replay_boundary
+        if boundary is not None:
+            self.earliest_replay_boundary = (
+                boundary
+                if self.earliest_replay_boundary is None
+                else min(self.earliest_replay_boundary, boundary)
+            )
 
     def check(
         self,

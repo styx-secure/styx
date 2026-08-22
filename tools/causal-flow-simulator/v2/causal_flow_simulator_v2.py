@@ -63,7 +63,7 @@ def build_report() -> tuple[dict[str, object], bool]:
             "maximum_pending_roots": suite.max_pending_roots,
             "maximum_pending_descendants": suite.max_pending_descendants,
             "maximum_replayed_event_work": suite.max_replayed_work,
-            "earliest_replay_boundary": 0,
+            "earliest_replay_boundary": suite.earliest_replay_boundary,
         },
         "invariants": sorted(suite.results, key=lambda item: item["id"]),
         "smallest_failing_trace": failures[0] if failures else None,
