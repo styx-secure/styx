@@ -249,7 +249,7 @@
     "mutation": {
       "operation": "set",
       "path": "/sources/3/path",
-      "value": "/etc/passwd"
+      "value": "docs/../../../../../../../../etc/passwd"
     }
   },
   {
@@ -322,6 +322,83 @@
       "operation": "set",
       "path": "/blockers/2/status",
       "value": "OPEN"
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "promote-evidence-source-to-normative",
+    "mutation": {
+      "operation": "set",
+      "path": "/sources/0/authority",
+      "value": "normative"
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "promote-unresolved-content-type",
+    "mutation": {
+      "operation": "set",
+      "path": "/objects/3/fields/6/status",
+      "value": "DECIDED"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-required-flow",
+    "mutation": {
+      "operation": "delete",
+      "path": "/flows/0"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-required-blocker",
+    "mutation": {
+      "operation": "delete",
+      "path": "/blockers/8"
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "change-contract-base-commit",
+    "mutation": {
+      "operation": "set",
+      "path": "/artifact/contract_base_commit",
+      "value": "0000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "promote-symbolic-outcome",
+    "mutation": {
+      "operation": "set",
+      "path": "/outcomes/15/status",
+      "value": "DECIDED"
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "promote-open-residual-risk",
+    "mutation": {
+      "operation": "set",
+      "path": "/residual_risks/1/status",
+      "value": "DECIDED"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-pinned-object-field",
+    "mutation": {
+      "operation": "delete",
+      "path": "/objects/0/fields/0"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-pinned-state-transition",
+    "mutation": {
+      "operation": "delete",
+      "path": "/state_models/0/transitions/0"
     }
   }
 ]

@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+sys.dont_write_bytecode = True
+
 
 EXPECTED_REGISTRIES = {
     "confidentiality": [
@@ -103,6 +105,50 @@ EXPECTED_REGISTRIES = {
     ],
 }
 
+EXPECTED_SOURCE_RECORDS = {
+    "causal_report": (
+        "docs/protocol/styx-app-kernel-v0-causal-falsification-report.md",
+        "evidence",
+    ),
+    "causal_topology": (
+        "docs/protocol/styx-app-kernel-v0-causal-topology-analysis.md",
+        "evidence",
+    ),
+    "commitment_profile": (
+        "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
+        "normative",
+    ),
+    "decisions": (
+        "docs/protocol/styx-app-kernel-v0-decisions.md",
+        "normative",
+    ),
+    "identity_analysis": (
+        "docs/protocol/styx-app-kernel-v0-identity-context-analysis.md",
+        "evidence",
+    ),
+    "payload_analysis": (
+        "docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md",
+        "evidence",
+    ),
+    "payload_report": (
+        "docs/protocol/styx-app-kernel-v0-payload-state-falsification-report.md",
+        "evidence",
+    ),
+    "pending_report": (
+        "docs/protocol/styx-app-kernel-v0-pending-subtree-falsification-report.md",
+        "evidence",
+    ),
+    "responsibility": (
+        "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
+        "normative",
+    ),
+    "threat_model": ("docs/security/STYX-THREAT-MODEL.md", "normative"),
+    "transcript_profile": (
+        "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
+        "normative",
+    ),
+}
+
 REQUIRED_COUNTEREXAMPLES = {
     "CE_CHECKPOINT_STALE",
     "CE_CREDENTIAL_COLLISION",
@@ -175,6 +221,8 @@ REQUIRED_C03_DEPENDENCIES = {
     "O-14",
 }
 
+CONTRACT_BASE_COMMIT = "4ab333e29fb12f9839d29160248d89da695e37be"
+
 EXPECTED_STATUS_BY_COLLECTION = {
     "blockers": {
         "C0.2j": "OPEN",
@@ -227,10 +275,126 @@ EXPECTED_STATUS_BY_COLLECTION = {
         "genesis": "UNRESOLVED",
         "opening": "DECIDED",
     },
+    "outcomes": {
+        "APPLIED": "EVIDENCE_ONLY",
+        "AUTHENTIC_BUT_UNAUTHORIZED": "EVIDENCE_ONLY",
+        "COMMITMENT_MISMATCH": "EVIDENCE_ONLY",
+        "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED": "EVIDENCE_ONLY",
+        "DUPLICATE": "EVIDENCE_ONLY",
+        "FORK_EVIDENCE": "EVIDENCE_ONLY",
+        "FORK_QUARANTINED": "EVIDENCE_ONLY",
+        "INVALID": "EVIDENCE_ONLY",
+        "LENGTH_MISMATCH": "EVIDENCE_ONLY",
+        "OPENING_MISSING": "EVIDENCE_ONLY",
+        "PENDING_ANCESTOR": "EVIDENCE_ONLY",
+        "PENDING_OPENING": "EVIDENCE_ONLY",
+        "POST_REVOCATION": "EVIDENCE_ONLY",
+        "REFERENCE_COLLISION_UNSUPPORTED": "EVIDENCE_ONLY",
+        "SESSION_PROFILE_REQUIRED": "PROFILE_DEPENDENT",
+        "STALE_EVIDENCE": "SYMBOLIC",
+        "TRANSPORT_PROFILE_REQUIRED": "PROFILE_DEPENDENT",
+    },
+    "residual_risks": {
+        "RR_CHECKPOINT_STALENESS": "SYMBOLIC",
+        "RR_FORK_AVAILABILITY": "OPEN",
+        "RR_METADATA_EXPOSURE": "PROFILE_DEPENDENT",
+        "RR_NO_FINALITY": "OPEN",
+        "RR_OPENING_LOSS": "OPEN",
+        "RR_ROLLBACK_LIMIT": "PROFILE_DEPENDENT",
+        "RR_SECURE_ADAPTER_ABSENT": "PROFILE_DEPENDENT",
+        "RR_UNAUDITED": "OPEN",
+    },
     "state_models": {
         "ap_projection": "DECIDED",
         "k_admission": "DECIDED",
         "pending_replay": "DECIDED",
+    },
+}
+
+EXPECTED_FIELD_STATUS = {
+    ("application_event", "ap_protocol_version"): "DECIDED",
+    ("application_event", "ap_transition_block"): "UNRESOLVED",
+    ("application_event", "application_profile_id"): "DECIDED",
+    ("application_event", "application_profile_version"): "DECIDED",
+    ("application_event", "author_sequence"): "DECIDED",
+    ("application_event", "causal_parents"): "DECIDED",
+    ("application_event", "content_descriptor_ref"): "DECIDED",
+    ("application_event", "context_identifier"): "DECIDED",
+    ("application_event", "credential_identifier"): "UNRESOLVED",
+    ("application_event", "direct_predecessor_presence"): "DECIDED",
+    ("application_event", "direct_predecessor_reference"): "DECIDED",
+    ("application_event", "event_reference"): "DECIDED",
+    ("application_event", "event_role"): "DECIDED",
+    ("application_event", "event_type_identifier"): "UNRESOLVED",
+    ("application_event", "genesis_reference"): "UNRESOLVED",
+    ("application_event", "object_kind"): "DECIDED",
+    ("application_event", "removal_tail"): "DECIDED",
+    ("application_event", "schema_identifier"): "UNRESOLVED",
+    ("application_event", "schema_version"): "UNRESOLVED",
+    ("application_event", "signature"): "UNRESOLVED",
+    ("checkpoint_evidence", "checkpoint_evidence_refs"): "SYMBOLIC",
+    ("checkpoint_evidence", "replay_dependency_refs"): "SYMBOLIC",
+    ("content_bytes", "content_octets"): "DECIDED",
+    ("content_descriptor", "content_class"): "DECIDED",
+    ("content_descriptor", "content_commitment"): "DECIDED",
+    ("content_descriptor", "content_geometry"): "DECIDED",
+    ("content_descriptor", "content_length"): "DECIDED",
+    ("content_descriptor", "content_shape"): "DECIDED",
+    ("content_descriptor", "content_suite_id"): "DECIDED",
+    ("content_descriptor", "content_type_id"): "UNRESOLVED",
+    ("genesis", "derived_genesis_reference"): "UNRESOLVED",
+    ("genesis", "genesis_body"): "UNRESOLVED",
+    ("opening", "opening_randomizer"): "DECIDED",
+}
+
+EXPECTED_IDS_BY_COLLECTION = {
+    "actors": {
+        "application_profile",
+        "authorized_endpoint",
+        "compromised_credential_holder",
+        "kernel",
+        "product_operator",
+        "recipient_endpoint",
+        "relay_observer",
+        "runtime_profile",
+        "secure_session_adapter",
+        "transport_profile",
+    },
+    "blockers": set(EXPECTED_STATUS_BY_COLLECTION["blockers"]),
+    "counterexamples": set(EXPECTED_STATUS_BY_COLLECTION["counterexamples"]),
+    "flows": set(EXPECTED_STATUS_BY_COLLECTION["flows"]),
+    "invariants": set(EXPECTED_STATUS_BY_COLLECTION["invariants"]),
+    "layers": set(EXPECTED_REGISTRIES["layers"]),
+    "non_claims": set(REQUIRED_NON_CLAIMS),
+    "objects": set(EXPECTED_STATUS_BY_COLLECTION["objects"]),
+    "outcomes": set(EXPECTED_STATUS_BY_COLLECTION["outcomes"]),
+    "residual_risks": set(EXPECTED_STATUS_BY_COLLECTION["residual_risks"]),
+    "review_queries": set(REQUIRED_REVIEW_QUERIES),
+    "sources": set(EXPECTED_SOURCE_RECORDS),
+    "state_models": set(EXPECTED_STATUS_BY_COLLECTION["state_models"]),
+}
+
+EXPECTED_TRANSITION_IDS = {
+    "ap_projection": {
+        "ap_pending_to_active",
+        "ap_recover_active",
+        "ap_recover_fork_quarantine",
+        "ap_recover_pending",
+        "ap_to_partially_pending",
+        "ap_to_stale",
+        "ap_to_terminal_fork",
+    },
+    "k_admission": {
+        "k_admit_candidate",
+        "k_reject_invalid",
+        "k_to_collision",
+        "k_to_fork",
+    },
+    "pending_replay": {
+        "replay_apply_candidate",
+        "replay_to_pending_descendant",
+        "replay_to_pending_root",
+        "replay_verified_opening",
     },
 }
 
@@ -263,6 +427,7 @@ PROTECTED_UNRESOLVED_FIELDS = {
     ("application_event", "schema_identifier"),
     ("application_event", "schema_version"),
     ("application_event", "signature"),
+    ("content_descriptor", "content_type_id"),
     ("genesis", "derived_genesis_reference"),
     ("genesis", "genesis_body"),
 }
@@ -418,6 +583,16 @@ def _schema_definition_findings(
     }:
         findings.append(
             Finding("SCHEMA_DEFINITION", f"{path}.type", "unsupported schema type")
+        )
+
+    object_keywords = {"additionalProperties", "properties", "required"}
+    if object_keywords.intersection(schema) and schema_type != "object":
+        findings.append(
+            Finding(
+                "SCHEMA_DEFINITION",
+                path,
+                "object keywords require type object",
+            )
         )
 
     if schema_type == "object":
@@ -607,10 +782,12 @@ def validate_schema(model: Any, schema: Any) -> list[Finding]:
     return findings
 
 
-def _unique_ids(records: list[dict[str, Any]], path: str) -> tuple[set[str], list[Finding]]:
+def _unique_ids(records: list[Any], path: str) -> tuple[set[str], list[Finding]]:
     seen: set[str] = set()
     findings: list[Finding] = []
     for index, record in enumerate(records):
+        if not isinstance(record, dict):
+            continue
         record_id = record.get("id")
         if not isinstance(record_id, str):
             continue
@@ -622,8 +799,10 @@ def _unique_ids(records: list[dict[str, Any]], path: str) -> tuple[set[str], lis
     return seen, findings
 
 
-def _require_sorted_ids(records: list[dict[str, Any]], path: str) -> list[Finding]:
-    ids = [record.get("id") for record in records]
+def _require_sorted_ids(records: list[Any], path: str) -> list[Finding]:
+    ids = [record.get("id") for record in records if isinstance(record, dict)]
+    if len(ids) != len(records):
+        return []
     if not all(isinstance(value, str) for value in ids):
         return []
     if ids != sorted(ids):
@@ -669,13 +848,43 @@ def _validate_sources(
             continue
         source_id = source.get("id")
         relative = source.get("path")
+        authority = source.get("authority")
         expected = source.get("sha256")
         path_label = f"$model.sources[{index}]"
         if not isinstance(source_id, str) or not isinstance(relative, str):
             continue
+        expected_record = EXPECTED_SOURCE_RECORDS.get(source_id)
+        if expected_record is not None:
+            expected_path, expected_authority = expected_record
+            if relative != expected_path:
+                findings.append(
+                    Finding(
+                        "DANGLING_REFERENCE",
+                        f"{path_label}.path",
+                        f"{source_id} must use {expected_path}",
+                    )
+                )
+            if authority != expected_authority:
+                findings.append(
+                    Finding(
+                        "FORBIDDEN_STATUS_PROMOTION",
+                        f"{path_label}.authority",
+                        f"{source_id} must remain {expected_authority}",
+                    )
+                )
         if relative in paths_seen:
             findings.append(Finding("DUPLICATE_ID", f"{path_label}.path", relative))
         paths_seen.add(relative)
+        relative_path = Path(relative)
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            findings.append(
+                Finding(
+                    "SOURCE_BOUNDARY",
+                    f"{path_label}.path",
+                    "source path must be repository-relative without traversal",
+                )
+            )
+            continue
         candidate = repo_root / relative
         try:
             resolved = candidate.resolve(strict=True)
@@ -831,6 +1040,8 @@ def _validate_blocker_dag(blockers: dict[str, dict[str, Any]]) -> list[Finding]:
 def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
     findings: list[Finding] = []
     artifact = model.get("artifact", {})
+    if not isinstance(artifact, dict):
+        return findings
     if artifact.get("normative") is not False:
         findings.append(
             Finding(
@@ -871,6 +1082,14 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
                 "must be exactly 40 lowercase hexadecimal characters",
             )
         )
+    elif artifact.get("contract_base_commit") != CONTRACT_BASE_COMMIT:
+        findings.append(
+            Finding(
+                "FORBIDDEN_STATUS_PROMOTION",
+                "$model.artifact.contract_base_commit",
+                f"must remain {CONTRACT_BASE_COMMIT}",
+            )
+        )
 
     registries = model.get("registries", {})
     if registries != EXPECTED_REGISTRIES:
@@ -894,24 +1113,63 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
         findings.extend(duplicate_findings)
         findings.extend(_require_sorted_ids(records, f"$model.{name}"))
 
+    for collection, expected_ids in EXPECTED_IDS_BY_COLLECTION.items():
+        actual_ids = id_sets.get(collection, set())
+        if actual_ids != expected_ids:
+            missing = sorted(expected_ids - actual_ids)
+            unexpected = sorted(actual_ids - expected_ids)
+            findings.append(
+                Finding(
+                    "REQUIRED_RECORD_MISSING",
+                    f"$model.{collection}",
+                    f"missing={missing}; unexpected={unexpected}",
+                )
+            )
+
     for object_index, obj in enumerate(model.get("objects", [])):
         if not isinstance(obj, dict):
             continue
         fields = obj.get("fields", [])
-        _, duplicate_findings = _unique_ids(fields, f"$model.objects[{object_index}].fields")
+        field_ids, duplicate_findings = _unique_ids(
+            fields, f"$model.objects[{object_index}].fields"
+        )
         findings.extend(duplicate_findings)
         findings.extend(_require_sorted_ids(fields, f"$model.objects[{object_index}].fields"))
+        expected_field_ids = {
+            field_id
+            for object_id, field_id in EXPECTED_FIELD_STATUS
+            if object_id == obj.get("id")
+        }
+        if field_ids != expected_field_ids:
+            findings.append(
+                Finding(
+                    "REQUIRED_RECORD_MISSING",
+                    f"$model.objects[{object_index}].fields",
+                    "field inventory differs from the pinned snapshot",
+                )
+            )
     for state_index, state_model in enumerate(model.get("state_models", [])):
         if not isinstance(state_model, dict):
             continue
         transitions = state_model.get("transitions", [])
-        _, duplicate_findings = _unique_ids(
+        transition_ids, duplicate_findings = _unique_ids(
             transitions, f"$model.state_models[{state_index}].transitions"
         )
         findings.extend(duplicate_findings)
         findings.extend(
             _require_sorted_ids(transitions, f"$model.state_models[{state_index}].transitions")
         )
+        expected_transition_ids = EXPECTED_TRANSITION_IDS.get(
+            state_model.get("id"), set()
+        )
+        if transition_ids != expected_transition_ids:
+            findings.append(
+                Finding(
+                    "REQUIRED_RECORD_MISSING",
+                    f"$model.state_models[{state_index}].transitions",
+                    "transition inventory differs from the pinned snapshot",
+                )
+            )
 
     global_ids: dict[str, str] = {}
     for collection in SORTED_RECORD_ARRAYS:
@@ -1099,6 +1357,8 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
                             )
 
     for index, actor in enumerate(model.get("actors", [])):
+        if not isinstance(actor, dict):
+            continue
         if actor.get("owner") not in layers:
             findings.append(
                 Finding(
@@ -1117,6 +1377,8 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
             )
 
     for object_index, obj in enumerate(model.get("objects", [])):
+        if not isinstance(obj, dict):
+            continue
         owner = obj.get("owner")
         if owner not in layers:
             findings.append(
@@ -1135,6 +1397,8 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
                 )
             )
         for field_index, field in enumerate(obj.get("fields", [])):
+            if not isinstance(field, dict):
+                continue
             path = f"$model.objects[{object_index}].fields[{field_index}]"
             if field.get("owner") not in layers:
                 findings.append(
@@ -1150,6 +1414,20 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
                         "UNKNOWN_REGISTRY_VALUE",
                         f"{path}.status",
                         str(field.get("status")),
+                    )
+                )
+            expected_field_status = EXPECTED_FIELD_STATUS.get(
+                (obj.get("id"), field.get("id"))
+            )
+            if (
+                expected_field_status is not None
+                and field.get("status") != expected_field_status
+            ):
+                findings.append(
+                    Finding(
+                        "FORBIDDEN_STATUS_PROMOTION",
+                        f"{path}.status",
+                        f"must remain {expected_field_status}",
                     )
                 )
             if field.get("wire_presence") not in EXPECTED_REGISTRIES["wire_presence"]:
@@ -1232,7 +1510,11 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
 
     if "NC_SUPPORTED_ADAPTER" in _record_map(model, "non_claims"):
         for object_index, obj in enumerate(model.get("objects", [])):
+            if not isinstance(obj, dict):
+                continue
             for field_index, field in enumerate(obj.get("fields", [])):
+                if not isinstance(field, dict):
+                    continue
                 path = f"$model.objects[{object_index}].fields[{field_index}]"
                 if (
                     field.get("confidentiality") == "SECURE_SESSION_PROFILE"
@@ -1248,6 +1530,8 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
                     )
 
     for flow_index, flow in enumerate(model.get("flows", [])):
+        if not isinstance(flow, dict):
+            continue
         path = f"$model.flows[{flow_index}]"
         if flow.get("owner") not in layers:
             findings.append(Finding("DANGLING_REFERENCE", f"{path}.owner", str(flow.get("owner"))))
@@ -1313,6 +1597,8 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
         )
 
     for index, outcome in enumerate(model.get("outcomes", [])):
+        if not isinstance(outcome, dict):
+            continue
         path = f"$model.outcomes[{index}]"
         if outcome.get("owner") not in layers:
             findings.append(
@@ -1332,6 +1618,8 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
             )
 
     for index, invariant in enumerate(model.get("invariants", [])):
+        if not isinstance(invariant, dict):
+            continue
         path = f"$model.invariants[{index}]"
         if invariant.get("owner") not in layers:
             findings.append(
@@ -1360,6 +1648,8 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
                 findings.append(Finding("DANGLING_REFERENCE", f"{path}.evidence_refs", reference))
 
     for index, counterexample in enumerate(model.get("counterexamples", [])):
+        if not isinstance(counterexample, dict):
+            continue
         path = f"$model.counterexamples[{index}]"
         if counterexample.get("owner") not in layers:
             findings.append(
@@ -1388,6 +1678,8 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
 
     for collection in ("blockers", "non_claims", "residual_risks", "review_queries"):
         for index, record in enumerate(model.get(collection, [])):
+            if not isinstance(record, dict):
+                continue
             path = f"$model.{collection}[{index}]"
             if record.get("owner") not in layers:
                 findings.append(
@@ -1400,6 +1692,8 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
                     )
 
     for index, layer in enumerate(model.get("layers", [])):
+        if not isinstance(layer, dict):
+            continue
         if layer.get("owner") != layer.get("id"):
             findings.append(
                 Finding(
@@ -1535,10 +1829,13 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
     all_record_ids |= {
         field.get("id")
         for obj in model.get("objects", [])
+        if isinstance(obj, dict)
         for field in obj.get("fields", [])
         if isinstance(field, dict) and isinstance(field.get("id"), str)
     }
     for index, query in enumerate(model.get("review_queries", [])):
+        if not isinstance(query, dict):
+            continue
         for reference in query.get("record_refs", []):
             if reference not in all_record_ids:
                 findings.append(
@@ -1550,6 +1847,8 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
                 )
 
     for state_index, state_model in enumerate(model.get("state_models", [])):
+        if not isinstance(state_model, dict):
+            continue
         path = f"$model.state_models[{state_index}]"
         if state_model.get("owner") not in layers:
             findings.append(
@@ -1587,6 +1886,8 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
                     )
                 )
         for transition_index, transition in enumerate(state_model.get("transitions", [])):
+            if not isinstance(transition, dict):
+                continue
             transition_path = f"{path}.transitions[{transition_index}]"
             if transition.get("owner") != state_model.get("owner"):
                 findings.append(
@@ -1646,6 +1947,25 @@ def validate(model: Any, schema: Any, repo_root: Path) -> list[Finding]:
     return sorted(findings, key=lambda item: (item.code, item.path, item.message))
 
 
+def validate_model_bytes(model: Any, model_path: Path) -> list[Finding]:
+    expected = (
+        json.dumps(model, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    try:
+        actual = model_path.read_bytes()
+    except OSError as exc:
+        return [Finding("SOURCE_MISSING", "$model", str(exc))]
+    if actual != expected:
+        return [
+            Finding(
+                "NONDETERMINISTIC_ORDER",
+                "$model",
+                "model bytes must be canonical UTF-8 with LF and sorted keys",
+            )
+        ]
+    return []
+
+
 def build_report(model_path: Path, schema_path: Path, model: dict[str, Any]) -> dict[str, Any]:
     return {
         "artifact": model["artifact"]["format"],
@@ -1699,6 +2019,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"protocol-review-model: error: {exc}", file=sys.stderr)
         return 2
     findings = validate(model, schema, args.repo_root)
+    findings.extend(validate_model_bytes(model, args.model))
+    findings.sort(key=lambda item: (item.code, item.path, item.message))
     if findings:
         for finding in findings:
             print(

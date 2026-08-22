@@ -99,6 +99,32 @@ class ProtocolReviewModelTests(unittest.TestCase):
         ).encode("utf-8")
         self.assertEqual(expected, MODEL_PATH.read_bytes())
 
+    def test_cli_rejects_noncanonical_model_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            model_path = Path(directory) / "model.json"
+            output_path = Path(directory) / "report.json"
+            model_path.write_text(json.dumps(self.model), encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "tools/protocol-review-model/validate.py"),
+                    "--repo-root",
+                    str(REPO_ROOT),
+                    "--schema",
+                    str(SCHEMA_PATH),
+                    "--model",
+                    str(model_path),
+                    "--output",
+                    str(output_path),
+                ],
+                check=False,
+                cwd=REPO_ROOT,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("NONDETERMINISTIC_ORDER", result.stderr)
+
     def test_schema_definition_mutations_fail_closed(self) -> None:
         mutations = [
             lambda schema: schema.__setitem__(
@@ -125,6 +151,10 @@ class ProtocolReviewModelTests(unittest.TestCase):
             lambda schema: schema["properties"]["actors"].__setitem__(
                 "items", []
             ),
+            lambda schema: (
+                schema["$defs"]["actor"].pop("type"),
+                schema["$defs"]["actor"].pop("additionalProperties"),
+            ),
         ]
         for index, mutate in enumerate(mutations):
             with self.subTest(index=index):
@@ -143,6 +173,23 @@ class ProtocolReviewModelTests(unittest.TestCase):
     def test_duplicate_json_keys_are_rejected(self) -> None:
         with self.assertRaises(validator.DuplicateKeyError):
             validator.load_json_unique(FIXTURE_ROOT / "duplicate-keys.json")
+
+    def test_schema_invalid_nested_records_fail_without_validator_crash(self) -> None:
+        mutations = [
+            ("actors", 0),
+            ("flows", 0),
+            ("objects", 0),
+            ("outcomes", 0),
+            ("review_queries", 0),
+            ("state_models", 0),
+        ]
+        for collection, index in mutations:
+            with self.subTest(collection=collection):
+                model = copy.deepcopy(self.model)
+                model[collection][index] = "not-an-object"
+                findings = validator.validate(model, self.schema, REPO_ROOT)
+                self.assertTrue(findings)
+                self.assertIn("SCHEMA_MISMATCH", {item.code for item in findings})
 
     def test_cli_rejects_malformed_and_duplicate_json(self) -> None:
         command = [

@@ -49,6 +49,12 @@ the model records the resulting decision only where a current normative source
 also does so. Any apparent conflict is investigated as drift and never resolved
 by promoting the evidence report.
 
+The validator pins the exact source-ID, repository-path and authority tuple for
+every source in this snapshot. Changing an evidence source to `normative`,
+retargeting an ID to a different file, adding or removing a modeled record, or
+changing a selected status therefore fails closed rather than silently changing
+the review boundary.
+
 ## Closed registry semantics
 
 The arrays in `registries` are exhaustive and sorted. Their meanings are:
@@ -169,3 +175,8 @@ availability, audit readiness or production fitness. It cannot detect a
 normative omission shared by all sources. C0.2j, C0.2k, O-06c, O-07, O-08,
 O-10 and O-14 remain blockers for C0.3; demo, product and sensitive-use claims
 remain fail closed.
+
+`counterexamples[].steps` is the one intentionally order-sensitive sequence in
+the model: entries describe the procedural order of an adversarial trace and
+must not be alphabetically sorted. Other arrays documented as registries,
+references or sets remain sorted and duplicate-free.
