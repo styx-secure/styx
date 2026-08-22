@@ -638,13 +638,23 @@ The closed registry additionally covers event/opening interleavings, selective
 disclosure convergence, overlapping roots, delay/withholding, authority and
 control interactions, fork quarantine, fork-free grant/revoke laundering,
 nested-root replay, collision rejection, custody/frontier eligibility and
-checkpoint staleness. Every family has a discriminating directed assertion and
-presence check. A repository-owned deterministic mutation harness kills the
-five required kernel/test mutants; delivery permutations are coverage, not
-independent semantic shapes.
+checkpoint staleness. Every required family has a presence check, and the
+closed assertion registry pins one discriminating assertion
+for every retained C0.2f obligation and the critical fork, stale, ancestry,
+genesis-collision and role-separation claims. Repeated family labels and delivery
+permutations are coverage, not independent semantic shapes. A repository-owned
+deterministic mutation harness kills thirteen required kernel/test mutants,
+including weakened evidence assertions; the registry does not claim that every
+scenario label is a distinct proof obligation.
 Inputs with multiple K-valid bindings for one credential identifier reject
 before positive exploration as `CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED`;
-negative witnesses remain, and no positive verdict covers that class.
+negative witnesses remain, and no positive verdict covers that class. The model
+also supplies symbolic K-readable control kinds, grant subjects, binding
+references and verification keys that the current O-06b-1 transcript does not
+yet carry; these are construction-only inputs, not a runtime claim. A hostile
+party can withhold checkpoint-named transcript material and force fail-closed
+whole-projection staleness, while fork arrival can remain asymmetric between
+replicas until transcript sets converge.
 
 ### C0.2i result
 

@@ -219,9 +219,13 @@ relays may collude. A relay may lie about publication and deletion.
 Relays are never authoritative for application validity, order, membership,
 opening substitution or human delivery. A relay can withhold an opening or
 distribute it selectively, leaving different replicas with different pending
-subtrees until their monotone opening sets converge. Redundancy may improve
-availability while increasing the observer set. A transport profile must
-declare every visible field and its confirmation semantics.
+subtrees until their monotone opening sets converge. A hostile peer or relay can
+also withhold transcript material named only by symbolic checkpoint evidence and
+thereby force whole-projection `STALE_EVIDENCE`; C0.2i detects that condition but
+does not authenticate the checkpoint, prove freshness or restore availability.
+Redundancy may improve availability while increasing the observer set. A
+transport profile must declare every visible field and its confirmation
+semantics.
 
 ### A6 — Network observer
 
@@ -337,9 +341,9 @@ make telemetry or push metadata harmless.
 | --- | --- | --- | --- | --- |
 | A1 malformed-input sender | Event meaning, session/runtime availability | Strict bounded parsing, canonical rejection, stable outcomes and resource tests before state change; O-06b-1/O-06b-2 fix regenerated transcript, commitment and geometry grammars but supply no parser implementation | `OB-K02`–`OB-K04`, `OB-SS08`, `OB-TR01` each at its parser boundary | A conforming parser cannot prevent all bandwidth exhaustion before bytes reach it; the written profiles are not executable evidence. |
 | A2 valid but unauthorized actor | Role authority, case state, retention/export | Separate monotone K binding from reversible context-bound AP authority; classify authentic-but-unauthorized and post-revocation actions | `OB-AP02`; cryptographic binding by `OB-K18` | C0.2j must replace the temporary collision-triggered authority freeze and define exact grant evidence. |
-| A3 malicious peer | Plaintext, causal state, availability, erasure | Detect replay/fork/conflict; keep holes and descendants pending while fork-free; permanently quarantine every forked v0 context; expose selective disclosure, identifier races and delayed replay | `OB-K05`–`OB-K14`, `OB-AP04`, `OB-PV01`/`OB-PV04` | An authorized peer can copy plaintext, keep a subtree pending forever, amplify replay, freeze an identifier or the whole context, grind authority order or lie in signed content. |
+| A3 malicious peer | Plaintext, causal state, availability, erasure | Detect replay/fork/conflict; keep holes and descendants pending while fork-free; permanently quarantine every forked v0 context; expose selective disclosure, identifier races, forced staleness and delayed replay | `OB-K05`–`OB-K14`, `OB-AP04`, `OB-PV01`/`OB-PV04` | An authorized peer can copy plaintext, keep a subtree pending forever, amplify replay, force a symbolic checkpoint-dependent projection stale, freeze an identifier or the whole context, grind authority order or lie in signed content. |
 | A4 compromised authorized peer | Current rights, plaintext and session history | Preserve K evidence; quarantine forks; disclose compromise; treat revoke/rotate as insufficient until C0.2j closes successor provenance and transitivity | `OB-AP02`, `OB-K18`, `OB-SS04`–`OB-SS06`, `OB-PV07` | No retroactive protection for plaintext/keys; concurrent grant can survive revocation; any fork can permanently deny AP availability; no finality. |
-| A5 hostile/colluding relay | Availability, freshness, routing metadata | Verify outer objects, ignore relay order/response as authority, authenticate fetched openings, retry/fail over and measure exposure | `OB-TR01`–`OB-TR06`, `OB-TR10` | Relays can selectively withhold openings and collude over visible metadata; they never substitute for verification. |
+| A5 hostile/colluding relay | Availability, freshness, routing metadata | Verify outer objects, ignore relay order/response as authority, authenticate fetched openings, retry/fail over and measure exposure | `OB-TR01`–`OB-TR06`, `OB-TR10` | Relays can selectively withhold openings or checkpoint-named transcript material, force a projection stale, and collude over visible metadata; they never substitute for verification or freshness. |
 | A6 network observer | Relationship and activity metadata | Use only profile-approved routing/padding/batching/onion measures and validate via traffic capture | `OB-TR06`/`OB-TR07` | No resistance claim against a global passive observer. |
 | A7 hostile origin/release | Plaintext, keys-as-oracles, software integrity | Enforce distribution/profile controls, external verification and explicit unsupported/rollback outcomes | `OB-RS12`, release gate `OB-PV10` | The current PWA cannot make an adversary-controlled first response trustworthy. |
 | A8 XSS/extension | Plaintext operations, UI trust, local metadata | Minimize callable interfaces and third-party code, lock promptly, enforce runtime containment and test browser controls | `OB-RS01`, `OB-RS11`, product copy `OB-PV11` | A privileged hostile caller can use an unlocked client as an oracle. |
@@ -417,7 +421,7 @@ claims about current code.
 | Content mismatches descriptor, length or opening | Never reinterpret corruption as absence or removal | Reject content presentation with a stable typed outcome; retain event validity independently | Application semantic kernel |
 | Content reappears after valid logical removal | Do not silently reactivate or expose it | Distinguish verified removed presentation, unverifiable presentation and substituted presentation; none becomes active | Application semantic kernel and product vertical |
 | Physical destruction requested or caused by runtime pressure | Never infer authority from replay position, timeout, retry/peer count, relay response, quota, eviction or teardown | Quarantine/withhold until O-13 closes; report physical loss as typed durability failure, never removal | Application profile and runtime/storage profile |
-| Fresh replica follows compacted history | Continue causal validation only from permitted retained transcripts and directly verified REQUIRED openings | A symbolic dependency is checkpoint-only only when absent from the live admitted graph; matching absent evidence makes the whole projection stale. This neither authenticates nor accepts a checkpoint | Application semantic kernel and application profile |
+| Fresh replica follows compacted history | Continue causal validation only from permitted retained transcripts and directly verified REQUIRED openings | A symbolic dependency is checkpoint-only only when absent from the live admitted graph; matching absent evidence makes the whole projection stale. A hostile holder can force that fail-closed state by withholding named material. This neither authenticates nor accepts a checkpoint | Application semantic kernel and application profile |
 | Checkpoint material offered for AP-state substitution | Treat the capability as unsupported in v0 | Never trust producer eligibility or AP state; O-07 must first define authentication, authority, acceptance, rollback, equivocation, horizon and late-evidence handling | Application semantic kernel and application profile |
 | Service/relay outage | Preserve local truth and expose unavailable delivery state | Bounded retry, alternate routes and continuity procedure | Transport/routing profile |
 

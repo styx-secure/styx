@@ -71,6 +71,104 @@ MUTANTS = (
         after="""        True,\n""",
         expected_detector="assertion-registry",
     ),
+    Mutant(
+        identifier="M06_CURRENT_PROFILE_SILENTLY_BINDS_IDENTITY",
+        source=KERNEL,
+        before="""    opening_randomizer: str,
+) -> tuple[object, ...]:
+""",
+        after="""    opening_randomizer: str,
+    credential_id: str = "credential",
+    author_sequence: int = 0,
+) -> tuple[object, ...]:
+""",
+        expected_detector="required-suite",
+    ),
+    Mutant(
+        identifier="M07_NON_ANCESTRAL_GRANT_ACCEPTED",
+        source=KERNEL,
+        before="""        and binding.subject_credential == event.credential_id
+        and binding.reference in _ancestors_of(event.reference, admitted)
+""",
+        after="""        and binding.subject_credential == event.credential_id
+""",
+        expected_detector="required-suite",
+    ),
+    Mutant(
+        identifier="M08_STALENESS_HIDES_TERMINAL_FORK",
+        source=KERNEL,
+        before="""    fork_quarantined = bool(graph.forks)
+""",
+        after="""    fork_quarantined = bool(graph.forks) and not stale
+""",
+        expected_detector="required-suite",
+    ),
+    Mutant(
+        identifier="M09_EXPECT_ERROR_CODE_CHECK_TAUTOLOGY",
+        source=SCENARIOS,
+        before="""            observed == code,
+""",
+        after="""            True,
+""",
+        expected_detector="assertion-registry",
+    ),
+    Mutant(
+        identifier="M10_RETIRED_GENESIS_ASSERTION_TAUTOLOGY",
+        source=SCENARIOS,
+        before="""        converged
+        and count == MAX_DELIVERY_PERMUTATIONS
+        and takeover.fork_quarantined
+        and takeover.graph.forks
+        == {"g-succ", "self-revoke", "zz-a0", "zz-a1"}
+        and takeover.outcomes["zz-a2"] is Outcome.FORK_QUARANTINED
+        and takeover.outcomes["zz-evil0"] is Outcome.FORK_QUARANTINED
+        and not takeover.applied_order
+        and not takeover.authorized_credentials,
+""",
+        after="""        True,
+""",
+        expected_detector="assertion-registry",
+    ),
+    Mutant(
+        identifier="M11_AUTHORITY_LAUNDERING_ASSERTION_TAUTOLOGY",
+        source=SCENARIOS,
+        before="""        grant_first_converged
+        and revoke_first_converged
+        and grant_first_count == 6
+        and revoke_first_count == 6
+        and not grant_first_projection.graph.forks
+        and not revoke_first_projection.graph.forks
+        and grant_first_projection.outcomes["a-evil-grant"] is Outcome.APPLIED
+        and grant_first_projection.outcomes["b-evil-action"] is Outcome.APPLIED
+        and grant_first_projection.authorized_credentials == {"evil", "recovery"}
+        and revoke_first_projection.outcomes["z-evil-grant"]
+        is Outcome.AUTHENTIC_BUT_UNAUTHORIZED
+        and revoke_first_projection.outcomes["zz-evil-action"]
+        is Outcome.AUTHENTIC_BUT_UNAUTHORIZED
+        and revoke_first_projection.authorized_credentials == {"recovery"},
+""",
+        after="""        True,
+""",
+        expected_detector="assertion-registry",
+    ),
+    Mutant(
+        identifier="M12_DUPLICATE_GENESIS_BINDING_ACCEPTED",
+        source=KERNEL,
+        before="""    if len(genesis) != len(scenario.genesis_authority):
+""",
+        after="""    if False and len(genesis) != len(scenario.genesis_authority):
+""",
+        expected_detector="required-suite",
+    ),
+    Mutant(
+        identifier="M13_FALSE_CONTROL_ROLE_ACCEPTED",
+        source=KERNEL,
+        before="""    ) or (event.event_role is EventRole.CONTROL and event.kind not in CONTROL_KINDS)
+""",
+        after="""    ) or False
+""",
+        expected_detector="required-suite",
+    ),
 )
 
 REQUIRED_MUTANT_IDS = frozenset(
@@ -80,6 +178,14 @@ REQUIRED_MUTANT_IDS = frozenset(
         "M03_INCREMENTAL_PENDING_DELTA_ONLY",
         "M04_RETAINED_CHECKPOINT_TREATED_AS_CHECKPOINT_ONLY",
         "M05_NAMED_ASSERTION_REPLACED_WITH_TAUTOLOGY",
+        "M06_CURRENT_PROFILE_SILENTLY_BINDS_IDENTITY",
+        "M07_NON_ANCESTRAL_GRANT_ACCEPTED",
+        "M08_STALENESS_HIDES_TERMINAL_FORK",
+        "M09_EXPECT_ERROR_CODE_CHECK_TAUTOLOGY",
+        "M10_RETIRED_GENESIS_ASSERTION_TAUTOLOGY",
+        "M11_AUTHORITY_LAUNDERING_ASSERTION_TAUTOLOGY",
+        "M12_DUPLICATE_GENESIS_BINDING_ACCEPTED",
+        "M13_FALSE_CONTROL_ROLE_ACCEPTED",
     }
 )
 
@@ -98,6 +204,137 @@ ASSERTION_CONTRACTS = {
         and ordinary_fork.outcomes["recovery-policy"] is Outcome.FORK_QUARANTINED
         and not ordinary_fork.authorized_credentials
     """,
+    "copy-nonprotection": """
+        left_application_identity != right_application_identity
+        and profile_parameters == expected_profile_parameters
+        and not {"credential_id", "credential_reference", "author_sequence"}
+        & set(profile_parameters)
+        and copied_a == copied_b
+        and copied_a[0] == CURRENT_CTX_OCTETS
+    """,
+    "retired-genesis-takeover-contained": """
+        converged
+        and count == MAX_DELIVERY_PERMUTATIONS
+        and takeover.fork_quarantined
+        and takeover.graph.forks == {"g-succ", "self-revoke", "zz-a0", "zz-a1"}
+        and takeover.outcomes["zz-a2"] is Outcome.FORK_QUARANTINED
+        and takeover.outcomes["zz-evil0"] is Outcome.FORK_QUARANTINED
+        and not takeover.applied_order
+        and not takeover.authorized_credentials
+    """,
+    "concurrent-grant-revoke-both-reference-orders": """
+        grant_first_converged
+        and revoke_first_converged
+        and grant_first_count == 6
+        and revoke_first_count == 6
+        and not grant_first_projection.graph.forks
+        and not revoke_first_projection.graph.forks
+        and grant_first_projection.outcomes["a-evil-grant"] is Outcome.APPLIED
+        and grant_first_projection.outcomes["b-evil-action"] is Outcome.APPLIED
+        and grant_first_projection.authorized_credentials == {"evil", "recovery"}
+        and revoke_first_projection.outcomes["z-evil-grant"] is Outcome.AUTHENTIC_BUT_UNAUTHORIZED
+        and revoke_first_projection.outcomes["zz-evil-action"] is Outcome.AUTHENTIC_BUT_UNAUTHORIZED
+        and revoke_first_projection.authorized_credentials == {"recovery"}
+    """,
+    "content-class-separation": """
+        none_projection.outcomes["class-none"] is Outcome.APPLIED
+        and required_projection.outcomes["class-required"] is Outcome.PENDING_OPENING
+        and detachable_projection.outcomes["class-detachable"] is Outcome.APPLIED
+    """,
+    "checkpoint-pending-producer": """
+        retained_checkpoint.outcomes["checkpoint-hole"] is Outcome.PENDING_OPENING
+        and not retained_checkpoint.stale_evidence
+        and not frontier_is_producible(checkpoint_hole, ("checkpoint-hole",))
+    """,
+    "incremental-full": """
+        resumed.semantic_view() == fresh.semantic_view()
+        and resumed.metrics.earliest_replay_boundary == 0
+    """,
+    "independent-closure-outside-pending-subtree": """
+        closure_projection.outcomes["closure-hole"] is Outcome.PENDING_OPENING
+        and closure_projection.outcomes["independent-closure"] is Outcome.APPLIED
+        and closure_projection.applied_order == ("independent-closure",)
+    """,
+    "binding-axis-closed": """
+        all_observation_states == set(OpeningObservation)
+    """,
+    "detachable-removal": """
+        removed.removed_targets == {"detachable"}
+    """,
+    "structural-grant-ancestry-invalid": """
+        invalid_binding.outcomes["z-missing-binding"] is Outcome.INVALID
+        and "a-non-ancestor-grant" in invalid_binding.graph.admitted
+        and "z-missing-binding" not in invalid_binding.graph.deferred
+        and "z-missing-binding" not in invalid_binding.applied_order
+    """,
+    "post-removal-presentation": """
+        presentation_states == {
+            PresentationState.REMOVED_PRESENTED_VERIFIED,
+            PresentationState.REMOVED_PRESENTED_UNVERIFIABLE,
+            PresentationState.REMOVED_SUBSTITUTED_REJECTED,
+        }
+        and removed.removed_targets == {"detachable"}
+    """,
+    "custody-frontier": """
+        not frontier_is_producible(_scenario(flood), ("hole-9",))
+        and frontier_is_producible(
+            _scenario(
+                flood,
+                {
+                    item.reference: OpeningObservation.VERIFIED
+                    for item in flood
+                },
+            ),
+            ("hole-9",),
+        )
+    """,
+    "prefix-revocation-reconstructed": """
+        prefix_incremental.semantic_view() == prefix_oracle.semantic_view()
+        and prefix_incremental.outcomes["d-prefix-bob"]
+        is Outcome.AUTHENTIC_BUT_UNAUTHORIZED
+    """,
+    "fork-pending-late-reveal": """
+        pending_before.fork_quarantined
+        and pending_before.pending_roots == {"pending-left"}
+        and pending_before.pending == {"pending-left", "pending-child"}
+        and pending_after.semantic_view() == pending_fresh.semantic_view()
+        and pending_after.fork_quarantined
+        and not pending_after.pending
+        and pending_after.metrics.earliest_replay_boundary is None
+        and pending_after.metrics.replayed_event_work == 0
+    """,
+    "stale-outcome-precedes-but-does-not-hide-terminal-fork": """
+        stale_fork.stale_evidence
+        and stale_fork.fork_quarantined
+        and all(
+            outcome is Outcome.STALE_EVIDENCE
+            for reference, outcome in stale_fork.outcomes.items()
+            if reference in stale_fork.graph.admitted
+        )
+        and not stale_fork.applied_order
+        and not stale_fork.authorized_credentials
+        and not stale_fork.removed_targets
+        and not frontier_is_producible(
+            stale_fork_scenario, ("stale-fork-independent",)
+        )
+    """,
+    "selective-convergence": """
+        selective_a.semantic_view() != selective_b.semantic_view()
+        and converged_a.semantic_view() == selective_b.semantic_view()
+    """,
+    "removal-target-cases": """
+        none_removal.outcomes["remove-none"] is Outcome.REMOVAL_INAPPLICABLE
+        and late_removal.outcomes["late-directive"] is Outcome.REMOVAL_INAPPLICABLE
+        and repeated_removal.outcomes["repeat-remove"] is Outcome.ALREADY_REMOVED
+    """,
+    "bounded-hole-count": """
+        flooded.metrics.pending_roots == MAX_EVENTS
+        and counts == {"admin": MAX_EVENTS}
+    """,
+}
+
+METHOD_PREDICATE_CONTRACTS = {
+    "Suite.expect_error-code-match": "observed == code",
 }
 
 
@@ -118,6 +355,13 @@ def _expected_assertion_dumps() -> dict[str, str]:
             ast.parse(f"({textwrap.dedent(source).strip()})", mode="eval").body
         )
         for identifier, source in ASSERTION_CONTRACTS.items()
+    }
+
+
+def _expected_method_predicate_dumps() -> dict[str, str]:
+    return {
+        identifier: _expression_dump(ast.parse(source, mode="eval").body)
+        for identifier, source in METHOD_PREDICATE_CONTRACTS.items()
     }
 
 
@@ -149,6 +393,37 @@ def assertion_registry_violations(source_path: Path) -> tuple[str, ...]:
         identifier
         for identifier in set(expected) & set(observed)
         if observed[identifier] != expected[identifier]
+    )
+
+    method_observed: dict[str, str] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef) or node.name != "Suite":
+            continue
+        for method in node.body:
+            if not isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            identifier = f"Suite.{method.name}-code-match"
+            if identifier not in METHOD_PREDICATE_CONTRACTS:
+                continue
+            predicates = [
+                call.args[1]
+                for call in ast.walk(method)
+                if isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Attribute)
+                and isinstance(call.func.value, ast.Name)
+                and call.func.value.id == "self"
+                and call.func.attr == "check"
+                and len(call.args) >= 2
+            ]
+            if len(predicates) == 1:
+                method_observed[identifier] = _expression_dump(predicates[0])
+
+    expected_methods = _expected_method_predicate_dumps()
+    violations.update(set(expected_methods) - set(method_observed))
+    violations.update(
+        identifier
+        for identifier in set(expected_methods) & set(method_observed)
+        if method_observed[identifier] != expected_methods[identifier]
     )
     return tuple(sorted(violations))
 

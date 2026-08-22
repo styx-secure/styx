@@ -9,10 +9,10 @@ Model: `styx.pending-subtree-falsification/v2`
 Report schema: `styx.pending-subtree-report/v2`
 
 Machine report SHA-256:
-`ea930ecd272ebf7057b4c59308d6984a0aa5ca981710be74c259c2794bc042fd`
+`d30638f3ce4d737ecb0c0e4346691d7c8af1997526c66551aa3776dcf37ec302`
 
 Mutation report SHA-256:
-`cdcfd71868010ebfc43afe61a1301706c5b53a464064bee52e577749669455f8`
+`9af6b6c1b0f86d0e838314aae645afe6926e920f45660ee6e6acba7c6b3376c9`
 
 Historical v1 machine report SHA-256:
 `8bee78b7bde503597d331bea63bca1548bb3d8f006ea4505854b7973b3a5a3f7`
@@ -27,15 +27,15 @@ Issue: [#225](https://github.com/styx-secure/styx/issues/225)
 
 The isolated dependency-free C0.2i model found no counterexample within its
 declared small-state envelope to the selected pending-subtree construction. The
-required run performed 105 directed invariant evaluations over all 22
-re-encoded C0.2d causal families, all 16 C0.2f obligations and all 39 C0.2i
+required run performed 109 directed invariant evaluations over all 22
+re-encoded C0.2d causal families, all 16 C0.2f obligations and all 41 C0.2i
 hostile families. It explored 1,268 explicitly recorded bounded delivery traces,
 opening/event combinations and typed-axis cases. Delivery permutations are
 coverage of one semantic construction, not independent semantic shapes.
 The closed-registry checks fail if any required family or obligation is absent or
 has no directed assertion. A separate deterministic mutation gate kills all
-five required source mutants, including a named assertion weakened to a
-tautology.
+thirteen required source mutants, including named assertions weakened to
+tautologies.
 
 This result is candidate evidence for returning O-01, O-02 and O-04 to
 `DECIDED` only after the exact-final review and human gates. It
@@ -71,6 +71,12 @@ simulator module. It models:
   from every positive claim; and
 - symbolic current-profile commitment and geometry checks without selecting new
   bytes.
+
+The model additionally supplies symbolic K-readable control kinds, grant
+subjects, binding references and verification keys that the current O-06b-1
+transcript does not yet carry. Those fields make the candidate construction
+falsifiable but are not runtime-carriage, encoding or cryptographic evidence;
+C0.2j owns their exact authenticated representation.
 
 The only static authority input is the O-07 genesis-authority abstraction.
 Opening availability is replica-local. AP authorization, revocation and removal
@@ -188,8 +194,9 @@ The directed suite includes:
   delivery-order combinations;
 - revoked-key, retired-genesis, ordinary-member and dual-equivocation forks;
   whole-context quarantine of independent control work; fork-plus-pending late
-  reveal; empty authority/removal/application views and false producer
-  eligibility under quarantine;
+  reveal; fork-plus-stale precedence with both conditions observable; empty
+  authority/removal/application views and false producer eligibility under
+  quarantine;
 - the fork-free concurrent grant/revoke authority-laundering counterexample in
   both grindable reference orders;
 - same-credential and cross-credential nested `REQUIRED` roots whose pending
@@ -198,13 +205,16 @@ The directed suite includes:
 - delayed reveal, relay withholding, late low-reference siblings and bounded
   multi-hole flooding;
 - authentic-but-unauthorized events, terminal invalid binding ancestry,
-  unauthorized holes and removals, revoked old keys, multiple retained
+  direct non-ancestral grant binding, false `CONTROL` role on an ordinary action,
+  duplicate genesis binding, unauthorized holes and removals, revoked old keys,
+  multiple retained
   revocations, both concurrent-revocation reference orders, revocation behind or
   concurrent with a hole, late authority replay, symbolic rotation/recovery,
   sole-authority self-lockout and grant-behind-hole cases;
 - removal behind a hole, reversible removal authority, `DETACHABLE` removal
   inside a pending subtree, rejection of attempted `REQUIRED` removal, and
-  deterministic `NONE`, non-ancestral late and already-removed targets;
+  deterministic `NONE`, independent symbolic `CLOSURE`, non-ancestral late and
+  already-removed targets;
 - pending checkpoint producers, matching and unrelated symbolic checkpoint
   evidence, retained admitted checkpoint references, custody frontiers and
   retained target-prefix abandonment as a negative design witness;
@@ -214,10 +224,14 @@ The directed suite includes:
 
 The suite separately preserves all sixteen C0.2f obligations under the amended
 fold, including post-removal presentation distinctions and resource checks before
-symbolic expansion. The machine report maps each obligation to its executable
-witness identifiers and separately labels properties that are true only because
-the symbolic vocabulary or search bounds construct them. Those construction-only
-facts are not counted as executable witnesses.
+symbolic expansion. A closed assertion registry pins one discriminating assertion
+for every retained obligation plus the critical fork, stale, ancestry,
+genesis-collision and role-separation claims. The machine report maps each
+obligation to its executable witness identifiers and separately labels properties
+that are true only because the symbolic vocabulary or search bounds construct
+them. Repeated family labels and delivery permutations are coverage, not
+independent semantic shapes; construction-only facts are not counted as
+executable witnesses.
 
 ## 6. Reproducible result
 
@@ -225,7 +239,7 @@ The required environment was Python `3.14.4`. Two v2 required-suite invocations
 were byte-identical and each produced:
 
 ```text
-PENDING SUBTREE FALSIFICATION verdict=NO_COUNTEREXAMPLE_WITHIN_BOUNDS invariants=105 traces=1268
+PENDING SUBTREE FALSIFICATION verdict=NO_COUNTEREXAMPLE_WITHIN_BOUNDS invariants=109 traces=1268
 ```
 
 The report records these explicit bounds:
@@ -258,14 +272,17 @@ The repository-owned mutation harness ran twice with byte-identical canonical
 JSON and reported:
 
 ```text
-C0.2i MUTATION GATE verdict=ALL_REQUIRED_MUTANTS_KILLED killed=5/5
+C0.2i MUTATION GATE verdict=ALL_REQUIRED_MUTANTS_KILLED killed=13/13
 ```
 
 It source-mutates the v2 kernel/scenario tree and kills: non-sibling application
 under fork quarantine, stale-authority copying, pending-only replay-boundary
-selection, retained-evidence misclassification as checkpoint-only, and a named
-security assertion replaced with `True`. The last mutant is caught by an
-independent AST assertion-contract registry rather than by trusting the weakened
+selection, retained-evidence misclassification as checkpoint-only, identity
+inputs added to the current commitment profile, removal of the grant-ancestry
+check, stale state hiding terminal fork quarantine, weakened `expect_error`,
+retired-genesis and laundering assertions, a disabled duplicate-genesis guard,
+and false control-role acceptance. Named security assertions are pinned by an
+independent AST assertion-contract registry rather than trusting the weakened
 test itself. Every mutant is executed twice and non-determinism fails the gate.
 
 ## 7. Residual risks and non-claims
@@ -280,12 +297,19 @@ test itself. Every mutant is executed twice and non-determinism fails the gate.
   provide rollback detection.
 - AP-preserving compaction is unsolved. Checkpoint evidence cannot replace
   retained replay history.
+- A hostile peer or relay can withhold checkpoint-named transcript material and
+  force whole-projection `STALE_EVIDENCE`. The model detects the fail-closed
+  condition but supplies neither freshness nor availability.
 - Credential-identifier collision remains a cheap retroactive authority-freeze
   attack. C0.2j must solve it before C0.3, demo or product work.
 - Any holder of valid signing-key material, including a revoked credential, can
   permanently quarantine the entire v0 AP context. This prevents authority
   expansion but creates an intentional fail-closed availability denial. A
   self-fork is an absolute context lockout, never a self-lockout escape.
+- Fork arrival can be asymmetric between replicas. A replica that has not yet
+  received the second sibling can expose only reversible provisional AP state;
+  once the sibling arrives, terminal quarantine replaces that view. No finality
+  claim follows from the earlier prefix.
 - Fork-free concurrent grant/revoke can leave an attacker-granted successor
   operational in one grindable reference order. V0 revocation is non-transitive
   and does not bound credential compromise. C0.2j must replace the authority
@@ -293,6 +317,9 @@ test itself. Every mutant is executed twice and non-determinism fails the gate.
 - `ROTATE` and `RECOVER` are symbolic authenticated no-ops in this bounded
   model. They cannot resurrect an identifier, but the model also does not prove
   the fresh-credential succession required by O-02.
+- Symbolic K-readable control kinds, grant subjects, binding references and
+  verification keys are model inputs, not current O-06b-1 wire fields. C0.2j
+  must define their authenticated carriage before implementation or C0.3.
 - The current 44-octet commitment context accepts cross-credential descriptor
   copy and same-credential cross-sequence self-copy. C0.2k must bind the exact
   C0.2j credential and author sequence while preserving same-sequence fork

@@ -827,9 +827,15 @@ def _fold_application_from_state(
             continue
 
         if event.kind is EventKind.GRANT:
-            authorized.add(event.subject_credential or "")
+            if not event.subject_credential:
+                outcomes[reference] = Outcome.STRUCTURAL_REJECTION
+                continue
+            authorized.add(event.subject_credential)
         elif event.kind is EventKind.REVOKE:
-            subject = event.subject_credential or ""
+            if not event.subject_credential:
+                outcomes[reference] = Outcome.STRUCTURAL_REJECTION
+                continue
+            subject = event.subject_credential
             authorized.discard(subject)
             revoked.setdefault(subject, set()).add(reference)
         elif event.kind in (EventKind.ROTATE, EventKind.RECOVER):
@@ -870,7 +876,11 @@ def project(scenario: Scenario) -> Projection:
     }
     checkpoint_only = set(scenario.checkpoint_evidence) - set(graph.admitted)
     stale = bool(checkpoint_only & set(scenario.replay_dependencies))
-    fork_quarantined = bool(graph.forks) and not stale
+    # Staleness has outcome precedence, but it must not hide the permanent
+    # terminal quarantine fact from presentation or producer-eligibility
+    # consumers.  A later recovery from symbolic staleness cannot un-fork the
+    # transcript set.
+    fork_quarantined = bool(graph.forks)
     replay_prefix_states: tuple[FoldSnapshot, ...]
     if stale or fork_quarantined:
         outcomes, applied, authorized, removed = _fold_application(

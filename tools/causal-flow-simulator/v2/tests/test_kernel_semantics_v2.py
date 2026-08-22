@@ -15,6 +15,7 @@ from kernel_model_v2 import (  # noqa: E402
     BindingObservation,
     ContentClass,
     EventKind,
+    EventRole,
     MAX_TEXT_BYTES,
     ModelInputError,
     OpeningObservation,
@@ -237,20 +238,21 @@ class PendingSubtreeTests(unittest.TestCase):
         self.assertIs(result.outcomes["a1"], Outcome.STRUCTURAL_REJECTION)
 
     def test_non_ancestral_binding_is_invalid_not_deferred(self) -> None:
-        grant = event("grant", 0, kind=EventKind.GRANT, subject="bob")
+        grant = event("a-grant", 0, kind=EventKind.GRANT, subject="bob")
         invalid = event(
-            "bob", 0, credential="bob", binding_ref="grant"
+            "z-bob", 0, credential="bob", binding_ref="a-grant"
         )
         child = event(
             "bob-child",
             1,
             credential="bob",
-            predecessor="bob",
-            binding_ref="grant",
+            predecessor="z-bob",
+            binding_ref="a-grant",
         )
         result = project(_scenario((grant, invalid, child)))
-        self.assertEqual(set(result.graph.invalid), {"bob", "bob-child"})
-        self.assertIs(result.outcomes["bob"], Outcome.INVALID)
+        self.assertIn("a-grant", result.graph.admitted)
+        self.assertEqual(set(result.graph.invalid), {"z-bob", "bob-child"})
+        self.assertIs(result.outcomes["z-bob"], Outcome.INVALID)
         self.assertIs(result.outcomes["bob-child"], Outcome.INVALID)
 
     def test_subjectless_grant_is_structurally_rejected(self) -> None:
@@ -324,6 +326,55 @@ class AuthorityBoundaryTests(unittest.TestCase):
         self.assertFalse(result.pending)
         self.assertNotIn("invalid", result.graph.admitted)
         self.assertIs(result.outcomes["invalid"], Outcome.STRUCTURAL_REJECTION)
+
+    def test_control_role_on_ordinary_kind_is_structural(self) -> None:
+        invalid = event(
+            "invalid-role",
+            0,
+            kind=EventKind.ACTION,
+            role=EventRole.CONTROL,
+            content=ContentClass.REQUIRED,
+        )
+        result = project(_scenario((invalid,)))
+        self.assertIs(
+            result.outcomes["invalid-role"], Outcome.STRUCTURAL_REJECTION
+        )
+        self.assertFalse(result.pending)
+
+    def test_duplicate_genesis_identifier_rejects_before_projection(self) -> None:
+        with self.assertRaisesRegex(
+            ModelInputError, "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED"
+        ):
+            project(_scenario((), genesis=("admin", "admin")))
+
+    def test_independent_closure_applies_outside_pending_subtree(self) -> None:
+        hole = event("hole", 0, content=ContentClass.REQUIRED)
+        closure = event(
+            "closure", 0, credential="recovery", kind=EventKind.CLOSURE
+        )
+        result = project(
+            _scenario((hole, closure), genesis=("admin", "recovery"))
+        )
+        self.assertIs(result.outcomes["hole"], Outcome.PENDING_OPENING)
+        self.assertIs(result.outcomes["closure"], Outcome.APPLIED)
+
+    def test_stale_outcomes_do_not_hide_terminal_fork_quarantine(self) -> None:
+        left = event("left", 0)
+        right = event("right", 0)
+        independent = event("independent", 0, credential="recovery")
+        scenario = _scenario(
+            (left, right, independent),
+            genesis=("admin", "recovery"),
+            checkpoint_only=("withheld",),
+        )
+        result = project(scenario)
+        self.assertTrue(result.stale_evidence)
+        self.assertTrue(result.fork_quarantined)
+        self.assertEqual(
+            {result.outcomes[reference] for reference in result.graph.admitted},
+            {Outcome.STALE_EVIDENCE},
+        )
+        self.assertFalse(frontier_is_producible(scenario, ("independent",)))
 
     def test_conflicting_grants_reject_independent_of_arrival(self) -> None:
         left = event("left", 0, kind=EventKind.GRANT, subject="bob")

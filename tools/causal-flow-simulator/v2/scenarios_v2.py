@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import replace
+from inspect import signature
 from itertools import product
 from typing import Callable
 
@@ -109,6 +110,8 @@ C0_2I_FAMILIES = frozenset(
         "current-profile-copy-nonprotection",
         "geometry-frozen",
         "checkpoint-staleness-nonclaim",
+        "fork-stale-precedence",
+        "closure-outside-hole",
         "target-prefix-abandonment-rejected",
         "custody-frontier-obligation",
     }
@@ -1185,6 +1188,22 @@ def _exercise_authority_and_control(suite: Suite) -> None:
         family="content-bearing-control-rejected",
         detail="control content is rejected before commitment or AP evaluation",
     )
+    false_control = event(
+        "false-control",
+        0,
+        role=EventRole.CONTROL,
+        kind=EventKind.ACTION,
+        content=ContentClass.REQUIRED,
+    )
+    false_control_projection = suite.evaluate(_scenario((false_control,)))
+    suite.check(
+        "control-role-rejects-ordinary-kind",
+        false_control_projection.outcomes["false-control"]
+        is Outcome.STRUCTURAL_REJECTION
+        and "false-control" not in false_control_projection.pending,
+        family="content-bearing-control-rejected",
+        detail="CONTROL role on an ordinary kind is rejected before it can become a pending root",
+    )
 
     pending_grant = event(
         "pending-grant",
@@ -1209,19 +1228,29 @@ def _exercise_authority_and_control(suite: Suite) -> None:
         detail="the grantee chain is K-valid but causally pending",
     )
 
+    admitted_non_ancestor_grant = event(
+        "a-non-ancestor-grant",
+        0,
+        kind=EventKind.GRANT,
+        subject="eve",
+    )
     missing_binding = event(
-        "missing-binding",
+        "z-missing-binding",
         0,
         credential="eve",
-        binding_ref="pending-grant",
+        binding_ref="a-non-ancestor-grant",
     )
-    invalid_binding = suite.evaluate(_scenario((pending_grant, missing_binding, hole)))
+    invalid_binding = suite.evaluate(
+        _scenario((admitted_non_ancestor_grant, missing_binding))
+    )
     suite.check(
         "structural-grant-ancestry-invalid",
-        invalid_binding.outcomes["missing-binding"] is Outcome.INVALID
-        and "missing-binding" not in invalid_binding.graph.deferred,
+        invalid_binding.outcomes["z-missing-binding"] is Outcome.INVALID
+        and "a-non-ancestor-grant" in invalid_binding.graph.admitted
+        and "z-missing-binding" not in invalid_binding.graph.deferred
+        and "z-missing-binding" not in invalid_binding.applied_order,
         family="authentic-but-unauthorized",
-        detail="a present binding outside causal ancestry is terminal INVALID, not retriable transcript deferral",
+        detail="an already admitted binding outside causal ancestry is terminal INVALID, not retriable transcript deferral",
         obligation="C0.2f-07",
     )
 
@@ -1773,6 +1802,16 @@ def _exercise_collisions(suite: Suite) -> None:
             detail="arrival order cannot select a preferred binding",
         )
 
+    suite.expect_error(
+        "collision-duplicate-genesis-authority",
+        Outcome.CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED.value,
+        lambda: suite.evaluate(
+            _scenario((), genesis=("admin", "admin"))
+        ),
+        family="credential-identifier-collision",
+        detail="the O-07 genesis abstraction cannot bind one identifier twice",
+    )
+
 
 def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
     detachable = event("detachable", 0, content=ContentClass.DETACHABLE)
@@ -1982,6 +2021,33 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         obligation="C0.2f-14",
     )
 
+    closure_hole = event(
+        "closure-hole",
+        0,
+        content=ContentClass.REQUIRED,
+    )
+    independent_closure = event(
+        "independent-closure",
+        0,
+        credential="recovery",
+        kind=EventKind.CLOSURE,
+    )
+    closure_projection = suite.evaluate(
+        _scenario(
+            (closure_hole, independent_closure),
+            genesis=("admin", "recovery"),
+        )
+    )
+    suite.check(
+        "independent-closure-outside-pending-subtree",
+        closure_projection.outcomes["closure-hole"] is Outcome.PENDING_OPENING
+        and closure_projection.outcomes["independent-closure"] is Outcome.APPLIED
+        and closure_projection.applied_order == ("independent-closure",),
+        family="closure-outside-hole",
+        detail="an independent symbolic CLOSURE applies outside a pending REQUIRED subtree",
+        obligation="C0.2f-04",
+    )
+
     stale = suite.evaluate(_scenario((detachable,), checkpoint_only=("revocation-x",)))
     suite.check(
         "checkpoint-whole-stale",
@@ -2008,6 +2074,35 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         is Outcome.APPLIED,
         family="checkpoint-staleness-nonclaim",
         detail="checkpoint evidence never substitutes for a matching replay dependency and unrelated evidence does not stale the projection",
+    )
+    stale_fork_scenario = _scenario(
+        (
+            event("stale-fork-left", 0),
+            event("stale-fork-right", 0),
+            event("stale-fork-independent", 0, credential="recovery"),
+        ),
+        genesis=("admin", "recovery"),
+        checkpoint_only=("withheld-authority-transcript",),
+    )
+    stale_fork = suite.evaluate(stale_fork_scenario)
+    suite.check(
+        "stale-outcome-precedes-but-does-not-hide-terminal-fork",
+        stale_fork.stale_evidence
+        and stale_fork.fork_quarantined
+        and all(
+            outcome is Outcome.STALE_EVIDENCE
+            for reference, outcome in stale_fork.outcomes.items()
+            if reference in stale_fork.graph.admitted
+        )
+        and not stale_fork.applied_order
+        and not stale_fork.authorized_credentials
+        and not stale_fork.removed_targets
+        and not frontier_is_producible(
+            stale_fork_scenario, ("stale-fork-independent",)
+        ),
+        family="fork-stale-precedence",
+        detail="STALE_EVIDENCE owns AP outcomes while the permanent fork quarantine remains visible and producer-ineligible",
+        obligation="C0.2f-12",
     )
     checkpoint_hole = _scenario(
         (event("checkpoint-hole", 0, content=ContentClass.REQUIRED),),
@@ -2117,28 +2212,43 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         detail="missing K transcript ancestry is DEFERRED and distinct from an opening-missing pending root",
     )
 
-    copied_a = current_profile_symbolic_commitment(
-        context_token="ctx",
-        content_type="type",
-        exact_length=4,
-        shape="single",
-        content_symbol="data",
-        opening_randomizer="randomizer",
+    profile_parameters = tuple(
+        signature(current_profile_symbolic_commitment).parameters
     )
-    # Deliberately no credential or sequence arguments exist in this profile.
-    copied_b = current_profile_symbolic_commitment(
-        context_token="ctx",
-        content_type="type",
-        exact_length=4,
-        shape="single",
-        content_symbol="data",
-        opening_randomizer="randomizer",
+    expected_profile_parameters = (
+        "context_token",
+        "content_type",
+        "exact_length",
+        "shape",
+        "content_symbol",
+        "opening_randomizer",
     )
+    left_application_identity = ("credential-a", 0)
+    right_application_identity = ("credential-b", 7)
+    shared_profile_inputs = {
+        "context_token": "ctx",
+        "content_type": "type",
+        "exact_length": 4,
+        "shape": "single",
+        "content_symbol": "data",
+        "opening_randomizer": "randomizer",
+    }
+    copied_a = current_profile_symbolic_commitment(**shared_profile_inputs)
+    copied_b = current_profile_symbolic_commitment(**shared_profile_inputs)
     suite.check(
         "copy-nonprotection",
-        copied_a == copied_b and copied_a[0] == CURRENT_CTX_OCTETS,
+        left_application_identity != right_application_identity
+        and profile_parameters == expected_profile_parameters
+        and not {
+            "credential_id",
+            "credential_reference",
+            "author_sequence",
+        }
+        & set(profile_parameters)
+        and copied_a == copied_b
+        and copied_a[0] == CURRENT_CTX_OCTETS,
         family="current-profile-copy-nonprotection",
-        detail="current 44-octet CTX intentionally accepts cross-credential and cross-sequence descriptor copy",
+        detail="distinct credential/sequence identities are absent from the current 44-octet CTX inputs, so descriptor copy remains accepted",
         obligation="C0.2f-15",
     )
     suite.check(

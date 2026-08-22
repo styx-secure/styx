@@ -273,10 +273,11 @@ remain downstream specification work. A human name, organization mapping,
 Nostr account key, MLS leaf key, routing handle and recovery secret are not
 mandatory credential fields.
 
-The credential identifier is intended to be unique within its context and MUST
-NOT be accepted as an authorization fact outside that context. It is a
-reference, not a secret and not proof of possession. A producer MUST generate a
-fixed-width identifier from fresh, independent output of the declared runtime
+The credential identifier MUST be unique within its context and MUST NOT be
+accepted as an authorization fact outside that context. It is a reference, not
+a secret and not proof of possession. Each profile MUST define a fixed-width,
+bounded generation domain with sufficient collision resistance for its declared
+capacity. A producer MUST use fresh, independent output of the declared runtime
 CSPRNG, reject every collision known in the local context and retry with fresh
 input; CSPRNG failure, retry exhaustion or inability to check the bounded local
 set fails closed. This is only the current bounded collision-resistance and
