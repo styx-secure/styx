@@ -9,10 +9,10 @@ Model: `styx.pending-subtree-falsification/v2`
 Report schema: `styx.pending-subtree-report/v2`
 
 Machine report SHA-256:
-`d30638f3ce4d737ecb0c0e4346691d7c8af1997526c66551aa3776dcf37ec302`
+`fe50e619d8761c59477665714c3d6daa6385e448aa32fa2bfa500f7cf4c15249`
 
 Mutation report SHA-256:
-`9af6b6c1b0f86d0e838314aae645afe6926e920f45660ee6e6acba7c6b3376c9`
+`67469ca08f5bfb71dbfed6f630e335fc21a0613cb2e14ecb4fc6cbb866ed20e0`
 
 Historical v1 machine report SHA-256:
 `8bee78b7bde503597d331bea63bca1548bb3d8f006ea4505854b7973b3a5a3f7`
@@ -28,14 +28,18 @@ Issue: [#225](https://github.com/styx-secure/styx/issues/225)
 The isolated dependency-free C0.2i model found no counterexample within its
 declared small-state envelope to the selected pending-subtree construction. The
 required run performed 109 directed invariant evaluations over all 22
-re-encoded C0.2d causal families, all 16 C0.2f obligations and all 41 C0.2i
-hostile families. It explored 1,268 explicitly recorded bounded delivery traces,
+re-encoded C0.2d causal families, all 16 C0.2f obligations and all 41 registered
+C0.2i family labels. One label is construction-only and two are coverage
+reassertions, as identified in the machine report. It explored 1,268 explicitly
+recorded bounded delivery traces,
 opening/event combinations and typed-axis cases. Delivery permutations are
 coverage of one semantic construction, not independent semantic shapes.
 The closed-registry checks fail if any required family or obligation is absent or
 has no directed assertion. A separate deterministic mutation gate kills all
 thirteen required source mutants, including named assertions weakened to
-tautologies.
+tautologies. Nine mutants are killed by the required executable suite and four
+by the independent AST assertion-contract registry; neither detector class is
+reported as the other.
 
 This result is candidate evidence for returning O-01, O-02 and O-04 to
 `DECIDED` only after the exact-final review and human gates. It
@@ -160,10 +164,12 @@ The v2 positive envelope permits exactly one authenticated binding for each
 credential identifier. A full validated set containing two K-valid binding grant
 events for one identifier, including reuse of a genesis identifier, fails closed
 with `CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED` before positive exploration.
-Ten hostile witnesses cover reverse delivery, grants by a distinct credential,
-pre-chain and post-chain publication, attacker descendants, genesis collision
-and a grant by a causally revoked credential. This is an explicit denial-of-
-service non-claim, not a collision solution.
+Nine hostile credential-collision executions cover reverse delivery, grants by
+a distinct credential, pre-chain and post-chain publication, attacker
+descendants, genesis collision and a grant by a causally revoked credential. A
+separate duplicate-genesis-authority witness brings the total collision family
+count to ten. This is an explicit denial-of-service non-claim, not a collision
+solution.
 
 Fork quarantine prevents the prior fork-descendant authority takeover but does
 not make v0 authority safe. In a fork-free transcript, a compromised credential
@@ -216,8 +222,7 @@ The directed suite includes:
   deterministic `NONE`, independent symbolic `CLOSURE`, non-ancestral late and
   already-removed targets;
 - pending checkpoint producers, matching and unrelated symbolic checkpoint
-  evidence, retained admitted checkpoint references, custody frontiers and
-  retained target-prefix abandonment as a negative design witness;
+  evidence, retained admitted checkpoint references and custody frontiers;
   and
 - current-profile descriptor-copy/self-copy non-protection and unchanged
   symbolic geometry boundaries.
@@ -231,7 +236,10 @@ obligation to its executable witness identifiers and separately labels propertie
 that are true only because the symbolic vocabulary or search bounds construct
 them. Repeated family labels and delivery permutations are coverage, not
 independent semantic shapes; construction-only facts are not counted as
-executable witnesses.
+executable witnesses. Target-prefix abandonment is a construction-only negative
+constraint because v2 has no transition that can produce it. The
+`checkpoint-retained-live` and `late-authority-replay` families are explicitly
+reported as coverage reassertions rather than new semantic obligations.
 
 ## 6. Reproducible result
 
@@ -262,7 +270,9 @@ Observed instrumentation within the suite was:
 | Replayed-event work | 3 |
 
 These are observations inside the falsification envelope, not production limits.
-O-08 owns production resource bounds.
+The replay counters exclude graph derivation, the full fold and prefix-cache
+construction, so they are not production complexity evidence. O-08 owns
+production resource bounds.
 
 The historical v1 required suite also ran twice and remained byte-identical at
 its frozen digest. The v1 source, tests, schema and report remain evidence of the
@@ -275,7 +285,9 @@ JSON and reported:
 C0.2i MUTATION GATE verdict=ALL_REQUIRED_MUTANTS_KILLED killed=13/13
 ```
 
-It source-mutates the v2 kernel/scenario tree and kills: non-sibling application
+The machine report records `required-suite=9`, `assertion-registry=4` and
+`none=0`. The harness source-mutates the v2 kernel/scenario tree and kills:
+non-sibling application
 under fork quarantine, stale-authority copying, pending-only replay-boundary
 selection, retained-evidence misclassification as checkpoint-only, identity
 inputs added to the current commitment profile, removal of the grant-ancestry
@@ -302,6 +314,9 @@ test itself. Every mutant is executed twice and non-determinism fails the gate.
   condition but supplies neither freshness nor availability.
 - Credential-identifier collision remains a cheap retroactive authority-freeze
   attack. C0.2j must solve it before C0.3, demo or product work.
+- Distinct authenticated transcript identities sharing one symbolic reference
+  fail closed as `REFERENCE_COLLISION_UNSUPPORTED`; no positive verdict covers
+  that class.
 - Any holder of valid signing-key material, including a revoked credential, can
   permanently quarantine the entire v0 AP context. This prevents authority
   expansion but creates an intentional fail-closed availability denial. A

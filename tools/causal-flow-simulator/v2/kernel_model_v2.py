@@ -864,6 +864,21 @@ def _fold_application_from_state(
     return outcomes, tuple(applied), frozenset(authorized), frozenset(removed)
 
 
+def _projection_halt_state(
+    graph: GraphView, scenario: Scenario
+) -> tuple[bool, bool]:
+    """Return independent stale and terminal-fork facts for every replay path."""
+
+    checkpoint_only = set(scenario.checkpoint_evidence) - set(graph.admitted)
+    stale = bool(checkpoint_only & set(scenario.replay_dependencies))
+    # Staleness has outcome precedence, but it must not hide the permanent
+    # terminal quarantine fact from presentation or producer-eligibility
+    # consumers. A later recovery from symbolic staleness cannot un-fork the
+    # transcript set.
+    fork_quarantined = bool(graph.forks)
+    return stale, fork_quarantined
+
+
 def project(scenario: Scenario) -> Projection:
     graph, events = derive_graph(scenario)
     roots, pending = _pending_sets(graph, events, scenario.opening_observations)
@@ -874,13 +889,7 @@ def project(scenario: Scenario) -> Projection:
         for reference in graph.admitted
         if events[reference].content_class is ContentClass.REQUIRED
     }
-    checkpoint_only = set(scenario.checkpoint_evidence) - set(graph.admitted)
-    stale = bool(checkpoint_only & set(scenario.replay_dependencies))
-    # Staleness has outcome precedence, but it must not hide the permanent
-    # terminal quarantine fact from presentation or producer-eligibility
-    # consumers.  A later recovery from symbolic staleness cannot un-fork the
-    # transcript set.
-    fork_quarantined = bool(graph.forks)
+    stale, fork_quarantined = _projection_halt_state(graph, scenario)
     replay_prefix_states: tuple[FoldSnapshot, ...]
     if stale or fork_quarantined:
         outcomes, applied, authorized, removed = _fold_application(
@@ -1004,9 +1013,7 @@ def incremental_replay(
         (graph.canonical_order.index(reference) for reference in affected),
         default=None,
     )
-    checkpoint_only = set(updated.checkpoint_evidence) - set(graph.admitted)
-    stale = bool(checkpoint_only & set(updated.replay_dependencies))
-    fork_quarantined = bool(graph.forks) and not stale
+    stale, fork_quarantined = _projection_halt_state(graph, updated)
 
     # Consume the prefix state cached by the prior full projection, then execute
     # only the updated suffix.  The fresh oracle used by the scenario suite is
@@ -1147,6 +1154,35 @@ def current_profile_symbolic_commitment(
         shape,
         content_symbol,
         opening_randomizer,
+    )
+
+
+def current_profile_symbolic_accepts(
+    commitment: tuple[object, ...],
+    *,
+    application_identity: tuple[str, int],
+    context_token: str,
+    content_type: str,
+    exact_length: int,
+    shape: str,
+    content_symbol: str,
+    opening_randomizer: str,
+) -> bool:
+    """Model current-profile verification while exposing the omitted identity.
+
+    The verifier receives the application identity to make cross-identity copy
+    experiments executable, but the frozen 44-octet profile deliberately does
+    not bind it. C0.2k owns the future identity-bound construction.
+    """
+
+    del application_identity
+    return commitment == current_profile_symbolic_commitment(
+        context_token=context_token,
+        content_type=content_type,
+        exact_length=exact_length,
+        shape=shape,
+        content_symbol=content_symbol,
+        opening_randomizer=opening_randomizer,
     )
 
 

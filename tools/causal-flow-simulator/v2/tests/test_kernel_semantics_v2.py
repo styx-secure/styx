@@ -161,6 +161,25 @@ class PendingSubtreeTests(unittest.TestCase):
         self.assertEqual(result.authorized_credentials, frozenset())
         self.assertTrue(result.stale_evidence)
 
+    def test_incremental_replay_preserves_fork_quarantine_under_staleness(self) -> None:
+        left = event("fork-left", 0, content=ContentClass.REQUIRED)
+        right = event("fork-right", 0)
+        prior = _scenario(
+            (left, right),
+            checkpoint_only=("withheld-transcript",),
+        )
+        updated = replace(
+            prior,
+            opening_observations={"fork-left": OpeningObservation.VERIFIED},
+        )
+        incremental = incremental_replay(prior, updated)
+        full = project(updated)
+        self.assertEqual(incremental.semantic_view(), full.semantic_view())
+        self.assertTrue(incremental.stale_evidence)
+        self.assertTrue(incremental.fork_quarantined)
+        self.assertEqual(incremental.applied_order, ())
+        self.assertEqual(incremental.authorized_credentials, frozenset())
+
     def test_live_admitted_reference_is_not_checkpoint_only(self) -> None:
         root = event("root", 0, content=ContentClass.REQUIRED)
         scenario = _scenario((root,), checkpoint_only=("root",))

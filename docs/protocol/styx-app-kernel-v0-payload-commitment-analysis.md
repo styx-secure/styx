@@ -644,8 +644,12 @@ for every retained C0.2f obligation and the critical fork, stale, ancestry,
 genesis-collision and role-separation claims. Repeated family labels and delivery
 permutations are coverage, not independent semantic shapes. A repository-owned
 deterministic mutation harness kills thirteen required kernel/test mutants,
-including weakened evidence assertions; the registry does not claim that every
-scenario label is a distinct proof obligation.
+including weakened evidence assertions: nine are detected by the executable
+required suite and four by the independent AST assertion-contract registry. The
+registry does not claim that every scenario label is a distinct proof
+obligation. Target-prefix abandonment remains a construction-only negative
+constraint, while checkpoint-retained-live and late-authority-replay are
+coverage reassertions rather than new semantic obligations.
 Inputs with multiple K-valid bindings for one credential identifier reject
 before positive exploration as `CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED`;
 negative witnesses remain, and no positive verdict covers that class. The model

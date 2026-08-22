@@ -37,15 +37,9 @@ class ModuleIsolationTests(unittest.TestCase):
 
     def test_v2_module_basenames_are_distinct_from_frozen_v1(self) -> None:
         v1 = {
-            "causal_flow_simulator.py",
-            "model.py",
-            "payload_model.py",
-            "payload_scenarios.py",
-            "scenarios.py",
-            "test_model.py",
-            "test_payload_model.py",
-            "test_scenarios.py",
-            "test_security.py",
+            path.name
+            for path in SIMULATOR_ROOT.rglob("*.py")
+            if not path.resolve().is_relative_to(V2_ROOT)
         }
         v2 = {path.name for path in V2_ROOT.rglob("*.py")}
         self.assertFalse(v1 & v2, v1 & v2)

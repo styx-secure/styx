@@ -74,13 +74,9 @@ MUTANTS = (
     Mutant(
         identifier="M06_CURRENT_PROFILE_SILENTLY_BINDS_IDENTITY",
         source=KERNEL,
-        before="""    opening_randomizer: str,
-) -> tuple[object, ...]:
+        before="""    del application_identity
 """,
-        after="""    opening_randomizer: str,
-    credential_id: str = "credential",
-    author_sequence: int = 0,
-) -> tuple[object, ...]:
+        after="""    commitment = commitment + application_identity
 """,
         expected_detector="required-suite",
     ),
@@ -206,11 +202,9 @@ ASSERTION_CONTRACTS = {
     """,
     "copy-nonprotection": """
         left_application_identity != right_application_identity
-        and profile_parameters == expected_profile_parameters
-        and not {"credential_id", "credential_reference", "author_sequence"}
-        & set(profile_parameters)
-        and copied_a == copied_b
-        and copied_a[0] == CURRENT_CTX_OCTETS
+        and copied_a_accepted
+        and copied_b_accepted
+        and copied_descriptor[0] == CURRENT_CTX_OCTETS
     """,
     "retired-genesis-takeover-contained": """
         converged
@@ -306,6 +300,9 @@ ASSERTION_CONTRACTS = {
     "stale-outcome-precedes-but-does-not-hide-terminal-fork": """
         stale_fork.stale_evidence
         and stale_fork.fork_quarantined
+        and incremental_stale_fork.semantic_view() == stale_fork.semantic_view()
+        and incremental_stale_fork.stale_evidence
+        and incremental_stale_fork.fork_quarantined
         and all(
             outcome is Outcome.STALE_EVIDENCE
             for reference, outcome in stale_fork.outcomes.items()
@@ -321,6 +318,14 @@ ASSERTION_CONTRACTS = {
     "selective-convergence": """
         selective_a.semantic_view() != selective_b.semantic_view()
         and converged_a.semantic_view() == selective_b.semantic_view()
+        and not selective_a.graph.forks
+        and not selective_b.graph.forks
+        and selective_a.graph.forks == selective_b.graph.forks
+    """,
+    "control-role-rejects-ordinary-kind": """
+        false_control_projection.outcomes["false-control"]
+        is Outcome.STRUCTURAL_REJECTION
+        and "false-control" not in false_control_projection.pending
     """,
     "removal-target-cases": """
         none_removal.outcomes["remove-none"] is Outcome.REMOVAL_INAPPLICABLE
@@ -563,6 +568,10 @@ def build_report() -> tuple[dict[str, object], bool]:
         },
         "baseline_assertion_registry_violations": list(baseline_violations),
         "results": sorted(results, key=lambda item: str(item["id"])),
+        "detector_counts": {
+            detector: sum(1 for item in results if item["detector"] == detector)
+            for detector in ("required-suite", "assertion-registry", "none")
+        },
         "deterministic": deterministic,
         "execution_failure": execution_failure,
         "verdict": "ALL_REQUIRED_MUTANTS_KILLED" if passed else "MUTATION_GATE_FAILED",

@@ -17,6 +17,8 @@ from scenarios_v2 import (
     C0_2D_FAMILIES,
     C0_2F_OBLIGATIONS,
     C0_2I_FAMILIES,
+    CONSTRUCTION_ONLY_FAMILIES,
+    COVERAGE_REASSERTION_FAMILIES,
     run_required_suite,
 )
 
@@ -37,7 +39,8 @@ def build_report() -> tuple[dict[str, object], bool]:
     complete = (
         set(suite.obligation_counts) == C0_2F_OBLIGATIONS
         and all(suite.obligation_counts.values())
-        and (C0_2D_FAMILIES | C0_2I_FAMILIES) <= set(suite.family_counts)
+        and (C0_2D_FAMILIES | C0_2I_FAMILIES | {"obligation-registry-v2"})
+        == set(suite.family_counts)
     )
     passed = not failures and complete
     obligation_witnesses = {
@@ -69,6 +72,10 @@ def build_report() -> tuple[dict[str, object], bool]:
         },
         "evidence_accounting": {
             "executable_obligation_witnesses": obligation_witnesses,
+            "construction_only_families": sorted(CONSTRUCTION_ONLY_FAMILIES),
+            "coverage_reassertion_families": sorted(
+                COVERAGE_REASSERTION_FAMILIES
+            ),
             "delivery_permutations_are_independent_semantic_shapes": False,
             "construction_only_properties": [
                 "The Python enum and dataclass definitions close the modeled vocabulary but do not prove a production parser is closed.",
@@ -76,6 +83,7 @@ def build_report() -> tuple[dict[str, object], bool]:
                 "Symbolic cryptographic values are opaque model atoms and do not establish cryptographic security.",
                 "The v2 model supplies symbolic K-readable control kind, grant subject, binding reference, and verification-key facts that the current O-06b-1 transcript does not yet carry; C0.2j owns their exact authenticated carriage.",
                 "CLOSURE is symbolic control evidence only and does not implement checkpoint production, authenticated closure, or finality.",
+                "Target-prefix abandonment has no v2 input or transition and is retained only as a negative design constraint, not an executable protocol witness.",
             ],
             "construction_only_properties_counted_as_executable_witnesses": False,
         },
@@ -96,7 +104,15 @@ def build_report() -> tuple[dict[str, object], bool]:
                     "before positive exploration and are excluded from every "
                     "NO_COUNTEREXAMPLE_WITHIN_BOUNDS claim."
                 ),
-            }
+            },
+            {
+                "code": "REFERENCE_COLLISION_UNSUPPORTED",
+                "reason": (
+                    "Two different authenticated transcript identities with one "
+                    "symbolic reference abort before projection. The model makes "
+                    "no positive continuation claim for that excluded class."
+                ),
+            },
         ],
         "non_claims": [
             "Bounded falsification is not a proof or conformance corpus.",

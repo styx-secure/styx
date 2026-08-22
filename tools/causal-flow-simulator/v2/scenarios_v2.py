@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import replace
-from inspect import signature
 from itertools import product
 from typing import Callable
 
@@ -30,6 +29,7 @@ from kernel_model_v2 import (
     Scenario,
     delivery_orders,
     derive_graph,
+    current_profile_symbolic_accepts,
     current_profile_symbolic_commitment,
     current_symbolic_geometry_is_legal,
     classify_payload_axis,
@@ -115,6 +115,14 @@ C0_2I_FAMILIES = frozenset(
         "target-prefix-abandonment-rejected",
         "custody-frontier-obligation",
     }
+)
+
+# These declared families remain useful coverage labels, but they are not
+# independent executable semantic shapes. The machine report accounts for them
+# separately instead of inflating the executable-evidence claim.
+CONSTRUCTION_ONLY_FAMILIES = frozenset({"target-prefix-abandonment-rejected"})
+COVERAGE_REASSERTION_FAMILIES = frozenset(
+    {"checkpoint-retained-live", "late-authority-replay"}
 )
 
 
@@ -832,11 +840,14 @@ def _exercise_pending_fold(suite: Suite) -> None:
 
     selective_a = suite.evaluate(closed)
     selective_b = suite.evaluate(opened)
-    converged_a = suite.evaluate(opened)
+    converged_a = incremental_replay(closed, opened)
     suite.check(
         "selective-convergence",
         selective_a.semantic_view() != selective_b.semantic_view()
-        and converged_a.semantic_view() == selective_b.semantic_view(),
+        and converged_a.semantic_view() == selective_b.semantic_view()
+        and not selective_a.graph.forks
+        and not selective_b.graph.forks
+        and selective_a.graph.forks == selective_b.graph.forks,
         family="selective-opening-convergence",
         detail="replicas may diverge on availability and converge on equal sets",
         obligation="C0.2f-13",
@@ -1516,7 +1527,7 @@ def _exercise_security_remediation(suite: Suite) -> None:
         and pending_after.metrics.earliest_replay_boundary is None
         and pending_after.metrics.replayed_event_work == 0,
         family="fork-quarantine",
-        detail="opening acquisition changes observable pending sets but never replays or lifts a fixed-transcript fork quarantine",
+        detail="opening acquisition changes observable pending sets, exposes no reusable suffix boundary and never lifts a fixed-transcript fork quarantine",
         obligation="C0.2f-11",
     )
 
@@ -1792,15 +1803,16 @@ def _exercise_collisions(suite: Suite) -> None:
             detail="whole-set collision rejection is order-independent and makes no continuation claim",
         )
         reverse = tuple(reversed(events))
-        suite.expect_error(
-            f"collision-{name}-reverse",
-            Outcome.CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED.value,
-            lambda reverse=reverse: suite.evaluate(
-                _scenario(reverse, genesis=("admin", "peer"))
-            ),
-            family="credential-identifier-collision",
-            detail="arrival order cannot select a preferred binding",
-        )
+        if reverse != events:
+            suite.expect_error(
+                f"collision-{name}-reverse",
+                Outcome.CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED.value,
+                lambda reverse=reverse: suite.evaluate(
+                    _scenario(reverse, genesis=("admin", "peer"))
+                ),
+                family="credential-identifier-collision",
+                detail="arrival order cannot select a preferred binding",
+            )
 
     suite.expect_error(
         "collision-duplicate-genesis-authority",
@@ -2075,20 +2087,32 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         family="checkpoint-staleness-nonclaim",
         detail="checkpoint evidence never substitutes for a matching replay dependency and unrelated evidence does not stale the projection",
     )
-    stale_fork_scenario = _scenario(
+    stale_fork_prior = _scenario(
         (
-            event("stale-fork-left", 0),
+            event("stale-fork-left", 0, content=ContentClass.REQUIRED),
             event("stale-fork-right", 0),
             event("stale-fork-independent", 0, credential="recovery"),
         ),
         genesis=("admin", "recovery"),
         checkpoint_only=("withheld-authority-transcript",),
     )
+    stale_fork_scenario = replace(
+        stale_fork_prior,
+        opening_observations={
+            "stale-fork-left": OpeningObservation.VERIFIED,
+        },
+    )
     stale_fork = suite.evaluate(stale_fork_scenario)
+    incremental_stale_fork = incremental_replay(
+        stale_fork_prior, stale_fork_scenario
+    )
     suite.check(
         "stale-outcome-precedes-but-does-not-hide-terminal-fork",
         stale_fork.stale_evidence
         and stale_fork.fork_quarantined
+        and incremental_stale_fork.semantic_view() == stale_fork.semantic_view()
+        and incremental_stale_fork.stale_evidence
+        and incremental_stale_fork.fork_quarantined
         and all(
             outcome is Outcome.STALE_EVIDENCE
             for reference, outcome in stale_fork.outcomes.items()
@@ -2103,6 +2127,27 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         family="fork-stale-precedence",
         detail="STALE_EVIDENCE owns AP outcomes while the permanent fork quarantine remains visible and producer-ineligible",
         obligation="C0.2f-12",
+    )
+    stale_only_prior = _scenario(
+        (event("stale-only", 0, content=ContentClass.REQUIRED),),
+        checkpoint_only=("withheld-authority-transcript",),
+    )
+    stale_only_updated = replace(
+        stale_only_prior,
+        opening_observations={"stale-only": OpeningObservation.VERIFIED},
+    )
+    stale_only_incremental = incremental_replay(
+        stale_only_prior, stale_only_updated
+    )
+    suite.check(
+        "incremental-full-across-stale-only",
+        stale_only_incremental.semantic_view()
+        == suite.evaluate(stale_only_updated).semantic_view()
+        and stale_only_incremental.stale_evidence
+        and not stale_only_incremental.fork_quarantined,
+        family="pending-incremental-full-equivalence",
+        detail="incremental and full replay agree when checkpoint-only evidence makes the whole projection stale",
+        obligation="C0.2f-03",
     )
     checkpoint_hole = _scenario(
         (event("checkpoint-hole", 0, content=ContentClass.REQUIRED),),
@@ -2212,17 +2257,6 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         detail="missing K transcript ancestry is DEFERRED and distinct from an opening-missing pending root",
     )
 
-    profile_parameters = tuple(
-        signature(current_profile_symbolic_commitment).parameters
-    )
-    expected_profile_parameters = (
-        "context_token",
-        "content_type",
-        "exact_length",
-        "shape",
-        "content_symbol",
-        "opening_randomizer",
-    )
     left_application_identity = ("credential-a", 0)
     right_application_identity = ("credential-b", 7)
     shared_profile_inputs = {
@@ -2233,20 +2267,25 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         "content_symbol": "data",
         "opening_randomizer": "randomizer",
     }
-    copied_a = current_profile_symbolic_commitment(**shared_profile_inputs)
-    copied_b = current_profile_symbolic_commitment(**shared_profile_inputs)
+    copied_descriptor = current_profile_symbolic_commitment(
+        **shared_profile_inputs
+    )
+    copied_a_accepted = current_profile_symbolic_accepts(
+        copied_descriptor,
+        application_identity=left_application_identity,
+        **shared_profile_inputs,
+    )
+    copied_b_accepted = current_profile_symbolic_accepts(
+        copied_descriptor,
+        application_identity=right_application_identity,
+        **shared_profile_inputs,
+    )
     suite.check(
         "copy-nonprotection",
         left_application_identity != right_application_identity
-        and profile_parameters == expected_profile_parameters
-        and not {
-            "credential_id",
-            "credential_reference",
-            "author_sequence",
-        }
-        & set(profile_parameters)
-        and copied_a == copied_b
-        and copied_a[0] == CURRENT_CTX_OCTETS,
+        and copied_a_accepted
+        and copied_b_accepted
+        and copied_descriptor[0] == CURRENT_CTX_OCTETS,
         family="current-profile-copy-nonprotection",
         detail="distinct credential/sequence identities are absent from the current 44-octet CTX inputs, so descriptor copy remains accepted",
         obligation="C0.2f-15",
@@ -2256,7 +2295,8 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
         CURRENT_CTX_OCTETS == 44
         and CURRENT_GEOMETRY_OCTETS == 16
         and current_symbolic_geometry_is_legal(513, 256, 3, 1)
-        and not current_symbolic_geometry_is_legal(512, 256, 1, 256),
+        and not current_symbolic_geometry_is_legal(512, 256, 1, 256)
+        and not current_symbolic_geometry_is_legal(514, 257, 2, 257),
         family="geometry-frozen",
         detail="symbolic v2 does not amend O-06b-2 CTX or geometry",
         obligation="C0.2f-15",
@@ -2265,13 +2305,15 @@ def _exercise_retention_checkpoint_and_bounds(suite: Suite) -> None:
 
 def _close_obligation_registry(suite: Suite) -> None:
     observed_families = set(suite.family_counts)
-    expected_families = C0_2D_FAMILIES | C0_2I_FAMILIES | {"obligation-registry-v2"}
+    expected_families = C0_2D_FAMILIES | C0_2I_FAMILIES
     suite.check(
         "closed-family-registry",
-        expected_families <= observed_families | {"obligation-registry-v2"},
+        expected_families == observed_families
+        and all(suite.family_counts[family] for family in expected_families),
         family="obligation-registry-v2",
         detail=(
             f"missing={sorted(expected_families - observed_families)!r}; "
+            f"unknown={sorted(observed_families - expected_families)!r}; "
             f"empty={sorted(key for key in expected_families if not suite.family_counts[key])!r}"
         ),
     )
