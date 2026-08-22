@@ -1,0 +1,5 @@
+# The validator is standard-library-only and disables bytecode emission itself.
+# Keep interpreter caches out of review evidence if it is imported by another
+# harness before that guard takes effect.
+__pycache__/
+*.py[cod]

@@ -27,9 +27,10 @@
   K-admitted same-author fork a permanent whole-context AP quarantine,
   distinguishes historical K binding from reversible AP authority, and records
   both the fail-closed identifier-collision envelope and the fork-free
-  concurrent grant/revoke authority-laundering counterexample. O-01/O-02/O-04
-  remain reopened until exact-final gates pass; C0.2j, C0.2k and O-06c remain
-  mandatory before C0.3.
+  concurrent grant/revoke authority-laundering counterexample. The exact-final
+  gates completed in PR #226 at merge commit
+  `4ab333e29fb12f9839d29160248d89da695e37be`, returning O-01/O-02/O-04 to
+  `DECIDED`; C0.2j, C0.2k and O-06c remain mandatory before C0.3.
 - **Language:** English is canonical.
 
 Styx is experimental, has not completed an independent security audit, and is
@@ -515,12 +516,12 @@ Current evidence establishes only bounded components:
 - C0.1 characterizes Dart and JavaScript legacy-ledger behavior; it also shows
   why current matches cannot define the protocol;
 - C0.2a through C0.2h selected K-01 through K-11, O-01 through O-05 and O-09
-  within their stated evidence bounds; the Issue #225 amendment reopens
-  O-01/O-02/O-04 until C0.2i's exact-final evidence, independent-review and
-  human gates pass. O-06a inventories the semantic
+  within their stated evidence bounds; Issue #225 and PR #226 returned
+  O-01/O-02/O-04 to `DECIDED` after C0.2i's exact-final evidence,
+  independent-review and human gates passed. O-06a inventories the semantic
   transcript, O-06b-1 selects exact framing/domain/reference bytes and O-06b-2
   selects exact commitment/chunk-tree bytes, all without implementation
-  evidence. The amended C0.2i candidate adds bounded pending-subtree replay,
+  evidence. The ratified bounded C0.2i construction adds pending-subtree replay,
   whole-context fork-quarantine and mutation evidence, plus the temporary
   fail-closed unique-identifier envelope without changing the selected bytes;
   C0.2j, C0.2k and O-06c remain mandatory. O-06, O-07, O-08 and O-10 through

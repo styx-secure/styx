@@ -1,0 +1,992 @@
+{
+  "$defs": {
+    "actor": {
+      "additionalProperties": false,
+      "properties": {
+        "can_act": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "can_observe": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "citations": {
+          "$ref": "#/$defs/citations"
+        },
+        "decision_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "description": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "obligation_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "owner": {
+          "$ref": "#/$defs/id"
+        },
+        "trust_class": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "trust_class",
+        "description",
+        "can_observe",
+        "can_act",
+        "decision_refs",
+        "obligation_refs",
+        "citations"
+      ],
+      "type": "object"
+    },
+    "actorAction": {
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "actor": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "actor",
+        "actions"
+      ],
+      "type": "object"
+    },
+    "anchor": {
+      "minLength": 16,
+      "pattern": "^[^\\r\\n]+$",
+      "type": "string"
+    },
+    "artifact": {
+      "additionalProperties": false,
+      "properties": {
+        "c03_verdict": {
+          "const": "NO_GO"
+        },
+        "contract_base_commit": {
+          "pattern": "^[0-9a-f]{40}$",
+          "type": "string"
+        },
+        "format": {
+          "const": "styx.review-model.v1"
+        },
+        "implementation_claim": {
+          "const": false
+        },
+        "language": {
+          "const": "en"
+        },
+        "normative": {
+          "const": false
+        },
+        "profile": {
+          "const": "styx.application-kernel.v0-pre-corpus"
+        },
+        "security_proof": {
+          "const": false
+        }
+      },
+      "required": [
+        "format",
+        "profile",
+        "language",
+        "contract_base_commit",
+        "normative",
+        "security_proof",
+        "implementation_claim",
+        "c03_verdict"
+      ],
+      "type": "object"
+    },
+    "blocker": {
+      "additionalProperties": false,
+      "properties": {
+        "blocks": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "citations": {
+          "$ref": "#/$defs/citations"
+        },
+        "decision_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "depends_on": {
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "type": "array"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "obligation_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "owner": {
+          "$ref": "#/$defs/id"
+        },
+        "reason": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "status",
+        "depends_on",
+        "blocks",
+        "reason",
+        "decision_refs",
+        "obligation_refs",
+        "citations"
+      ],
+      "type": "object"
+    },
+    "citation": {
+      "additionalProperties": false,
+      "properties": {
+        "anchor": {
+          "$ref": "#/$defs/anchor"
+        },
+        "source_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "source_id",
+        "anchor"
+      ],
+      "type": "object"
+    },
+    "citations": {
+      "items": {
+        "$ref": "#/$defs/citation"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "counterexample": {
+      "additionalProperties": false,
+      "properties": {
+        "blocks": {
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "citations": {
+          "$ref": "#/$defs/citations"
+        },
+        "decision_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "description": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "obligation_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "owner": {
+          "$ref": "#/$defs/id"
+        },
+        "result": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "steps": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "status",
+        "description",
+        "steps",
+        "result",
+        "blocks",
+        "decision_refs",
+        "obligation_refs",
+        "citations"
+      ],
+      "type": "object"
+    },
+    "field": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "$ref": "#/$defs/citations"
+        },
+        "confidentiality": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "decision_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "description": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "integrity": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "mutable_by": {
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "type": "array"
+        },
+        "obligation_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "owner": {
+          "$ref": "#/$defs/id"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "visible_to": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "wire_presence": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "status",
+        "description",
+        "wire_presence",
+        "integrity",
+        "confidentiality",
+        "visible_to",
+        "mutable_by",
+        "decision_refs",
+        "obligation_refs",
+        "citations"
+      ],
+      "type": "object"
+    },
+    "flow": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_actions": {
+          "items": {
+            "$ref": "#/$defs/actorAction"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "citations": {
+          "$ref": "#/$defs/citations"
+        },
+        "consumers": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "decision_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "emitted_evidence": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "forbidden_inferences": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "object_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "obligation_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "observers": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "outcomes": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "owner": {
+          "$ref": "#/$defs/id"
+        },
+        "permitted_actions": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "preconditions": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "producer": {
+          "$ref": "#/$defs/id"
+        },
+        "resulting_state": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "status",
+        "producer",
+        "consumers",
+        "observers",
+        "actor_actions",
+        "object_refs",
+        "preconditions",
+        "emitted_evidence",
+        "permitted_actions",
+        "forbidden_inferences",
+        "outcomes",
+        "resulting_state",
+        "decision_refs",
+        "obligation_refs",
+        "citations"
+      ],
+      "type": "object"
+    },
+    "id": {
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$",
+      "type": "string"
+    },
+    "invariant": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "$ref": "#/$defs/citations"
+        },
+        "decision_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "evidence_refs": {
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "type": "array"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "object_refs": {
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "type": "array"
+        },
+        "obligation_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "owner": {
+          "$ref": "#/$defs/id"
+        },
+        "statement": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "status",
+        "statement",
+        "object_refs",
+        "evidence_refs",
+        "decision_refs",
+        "obligation_refs",
+        "citations"
+      ],
+      "type": "object"
+    },
+    "layer": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "$ref": "#/$defs/citations"
+        },
+        "decision_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "does_not_own": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "forbidden_inferences": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "inputs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "obligation_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "outputs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "owner": {
+          "$ref": "#/$defs/id"
+        },
+        "owns": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "name",
+        "inputs",
+        "outputs",
+        "owns",
+        "does_not_own",
+        "forbidden_inferences",
+        "decision_refs",
+        "obligation_refs",
+        "citations"
+      ],
+      "type": "object"
+    },
+    "nonClaim": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "$ref": "#/$defs/citations"
+        },
+        "decision_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "obligation_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "owner": {
+          "$ref": "#/$defs/id"
+        },
+        "statement": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "statement",
+        "decision_refs",
+        "obligation_refs",
+        "citations"
+      ],
+      "type": "object"
+    },
+    "nonEmptyString": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "nonEmptyStrings": {
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "outcome": {
+      "additionalProperties": false,
+      "properties": {
+        "applies_transition": {
+          "type": "boolean"
+        },
+        "citations": {
+          "$ref": "#/$defs/citations"
+        },
+        "decision_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "description": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "obligation_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "owner": {
+          "$ref": "#/$defs/id"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "status",
+        "applies_transition",
+        "description",
+        "decision_refs",
+        "obligation_refs",
+        "citations"
+      ],
+      "type": "object"
+    },
+    "protocolObject": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "$ref": "#/$defs/citations"
+        },
+        "decision_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "description": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "fields": {
+          "items": {
+            "$ref": "#/$defs/field"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "obligation_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "owner": {
+          "$ref": "#/$defs/id"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "status",
+        "description",
+        "fields",
+        "decision_refs",
+        "obligation_refs",
+        "citations"
+      ],
+      "type": "object"
+    },
+    "registries": {
+      "additionalProperties": false,
+      "properties": {
+        "confidentiality": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "decisions": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "gated_capabilities": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "integrity": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "layers": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "obligations": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "statuses": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "trust_classes": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "wire_presence": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        }
+      },
+      "required": [
+        "layers",
+        "decisions",
+        "gated_capabilities",
+        "obligations",
+        "statuses",
+        "wire_presence",
+        "integrity",
+        "confidentiality",
+        "trust_classes"
+      ],
+      "type": "object"
+    },
+    "residualRisk": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "$ref": "#/$defs/citations"
+        },
+        "decision_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "obligation_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "owner": {
+          "$ref": "#/$defs/id"
+        },
+        "statement": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "status",
+        "statement",
+        "decision_refs",
+        "obligation_refs",
+        "citations"
+      ],
+      "type": "object"
+    },
+    "reviewQuery": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "$ref": "#/$defs/citations"
+        },
+        "decision_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "obligation_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "owner": {
+          "$ref": "#/$defs/id"
+        },
+        "question": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "record_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "question",
+        "record_refs",
+        "decision_refs",
+        "obligation_refs",
+        "citations"
+      ],
+      "type": "object"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "authority": {
+          "enum": [
+            "evidence",
+            "normative"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "path": {
+          "minLength": 1,
+          "pattern": "^docs/",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "path",
+        "sha256",
+        "authority"
+      ],
+      "type": "object"
+    },
+    "stateModel": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "$ref": "#/$defs/citations"
+        },
+        "decision_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "obligation_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "owner": {
+          "$ref": "#/$defs/id"
+        },
+        "precedence": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "states": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "terminal_states": {
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "type": "array"
+        },
+        "transitions": {
+          "items": {
+            "$ref": "#/$defs/transition"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "status",
+        "states",
+        "terminal_states",
+        "precedence",
+        "transitions",
+        "decision_refs",
+        "obligation_refs",
+        "citations"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "enum": [
+        "DECIDED",
+        "DERIVED",
+        "EVIDENCE_ONLY",
+        "NO_GO",
+        "OPEN",
+        "PROFILE_DEPENDENT",
+        "SYMBOLIC",
+        "UNRESOLVED"
+      ],
+      "type": "string"
+    },
+    "transition": {
+      "additionalProperties": false,
+      "properties": {
+        "citations": {
+          "$ref": "#/$defs/citations"
+        },
+        "decision_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "from": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "obligation_refs": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "outcome": {
+          "$ref": "#/$defs/id"
+        },
+        "owner": {
+          "$ref": "#/$defs/id"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "to": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "trigger": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      },
+      "required": [
+        "id",
+        "owner",
+        "status",
+        "from",
+        "trigger",
+        "to",
+        "outcome",
+        "decision_refs",
+        "obligation_refs",
+        "citations"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://styxsecure.org/schemas/styx-app-kernel-review-model-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "./styx-app-kernel-v0-review-model.schema.json"
+    },
+    "actors": {
+      "items": {
+        "$ref": "#/$defs/actor"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "artifact": {
+      "$ref": "#/$defs/artifact"
+    },
+    "blockers": {
+      "items": {
+        "$ref": "#/$defs/blocker"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "counterexamples": {
+      "items": {
+        "$ref": "#/$defs/counterexample"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "flows": {
+      "items": {
+        "$ref": "#/$defs/flow"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "invariants": {
+      "items": {
+        "$ref": "#/$defs/invariant"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "layers": {
+      "items": {
+        "$ref": "#/$defs/layer"
+      },
+      "minItems": 6,
+      "type": "array"
+    },
+    "non_claims": {
+      "items": {
+        "$ref": "#/$defs/nonClaim"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "objects": {
+      "items": {
+        "$ref": "#/$defs/protocolObject"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "outcomes": {
+      "items": {
+        "$ref": "#/$defs/outcome"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "registries": {
+      "$ref": "#/$defs/registries"
+    },
+    "residual_risks": {
+      "items": {
+        "$ref": "#/$defs/residualRisk"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "review_queries": {
+      "items": {
+        "$ref": "#/$defs/reviewQuery"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/source"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "state_models": {
+      "items": {
+        "$ref": "#/$defs/stateModel"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "$schema",
+    "artifact",
+    "registries",
+    "sources",
+    "layers",
+    "actors",
+    "objects",
+    "flows",
+    "state_models",
+    "outcomes",
+    "invariants",
+    "counterexamples",
+    "blockers",
+    "non_claims",
+    "residual_risks",
+    "review_queries"
+  ],
+  "title": "Styx application-kernel machine-readable review model",
+  "type": "object"
+}
