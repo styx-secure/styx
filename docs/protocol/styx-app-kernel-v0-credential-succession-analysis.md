@@ -405,6 +405,11 @@ one slot for every stockpiled May0 descendant. This per-credential
 choice preserves authenticated author-chain locality and avoids inventing a
 global/root selector, at an explicit availability cost.
 
+A `May0 && !Must0` self-lineage reduction consumes no selected slot. A `Must0`
+descendant can nevertheless reduce its own issuer and thereby terminate the
+complete lineage, including itself. This is another explicit sole-authority
+availability limit, not an autonomous recovery mechanism.
+
 Within the common envelope the exact accepted-standing bound is at most one
 selected contested slot per credential, at most six accepted contested
 reductions and at most six distinct accepted target subtrees in total. A selected forked slot can
@@ -436,11 +441,13 @@ effects, runtime capacity, implementation security or sensitive-use readiness.
 
 Reopen C0.2j if executable evidence finds an ordering or delivery divergence,
 a non-`GRANT` can create/rebind a credential, provenance traversal can expand
-authority, a rejected reduction changes contested-slot membership, the DP state
-key diverges from the factorial oracle, a resource ceiling exposes a partial
-authority result, scoped quarantine resurrects a terminated lineage, a supported
-signature suite cannot fit the exact tail/key bound, or an admitted profile
-requires authority semantics outside this closed vocabulary.
+authority, a rejected reduction enters accepted termination, its disclosed
+bounded slot-steering effect exceeds the common envelope or expands operational
+authority, the DP state key diverges from the factorial oracle, a resource
+ceiling exposes a partial authority result, scoped quarantine resurrects a
+terminated lineage, a supported signature suite cannot fit the exact tail/key
+bound, or an admitted profile requires authority semantics outside this closed
+vocabulary.
 
 The O-06b-1 amendment reopens if O-14 requires a different canonical
 verification-key encoding or an event-selected signature algorithm. O-14 still

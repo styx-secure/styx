@@ -532,8 +532,8 @@ outcomes.
   `RECOVER` retains its separate fresh-grant transcript rule: the retired
   credential identifier is an opaque continuity annotation rather than a
   reduction target. K does not resolve that identifier or derive an authority
-  effect from it, so an absent or unrelated value neither invokes R-1 nor changes
-  the fold; the referenced fresh `GRANT` must still be admitted.
+  effect from it, so an unresolvable, unknown or unrelated value neither invokes
+  R-1 nor changes the fold; the referenced fresh `GRANT` must still be admitted.
   Self-rotation is
   structurally rejected in v0. Revocation and any same-author fork terminate
   the target lineage and every grant descendant while independent definitely

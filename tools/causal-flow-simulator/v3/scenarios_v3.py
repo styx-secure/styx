@@ -157,6 +157,7 @@ REQUIRED_WITNESSES = frozenset(
         "non-genesis-causal-target-cleanup",
         "bounded-subtree-amplification",
         "rejected-reduction-slot-steering",
+        "successor-slot-multiplier",
     }
 )
 
@@ -2552,6 +2553,78 @@ def _amended_remediation_checks(suite: Suite, mutation: Mutation) -> None:
             and subtree_projection.max_lineage_depth == MAX_LINEAGE_DEPTH,
             "one accepted reduction can terminate five credentials under the joint six-control envelope",
             "The structural ten-credential envelope still permits at most nine credentials in one non-revoker subtree.",
+        )
+    )
+
+    multiplier_actor = genesis("slot-multiplier-actor", "c0")
+    multiplier_contester = genesis("slot-multiplier-contester", "c1")
+    multiplier_first_target = genesis("slot-multiplier-first-target", "c2")
+    multiplier_second_target = genesis("slot-multiplier-second-target", "c3")
+    multiplier_grant = control(
+        "slot-multiplier-stockpiled-grant",
+        multiplier_actor,
+        Kind.GRANT,
+        grantee_key="c4" * 32,
+    )
+    multiplier_descendant = grant_binding(multiplier_grant)
+    multiplier_contest = control(
+        "slot-multiplier-contest",
+        multiplier_contester,
+        Kind.REVOKE,
+        target_id=multiplier_actor.credential_id,
+    )
+    multiplier_parent_reduction = control(
+        "slot-multiplier-parent-reduction",
+        multiplier_actor,
+        Kind.REVOKE,
+        sequence=1,
+        predecessor=multiplier_grant.reference,
+        target_id=multiplier_first_target.credential_id,
+    )
+    multiplier_descendant_reduction = control(
+        "slot-multiplier-descendant-reduction",
+        multiplier_descendant,
+        Kind.REVOKE,
+        parents=(multiplier_grant.reference,),
+        target_id=multiplier_second_target.credential_id,
+    )
+    multiplier_projection = _project(
+        suite,
+        Scenario(
+            (
+                multiplier_grant,
+                multiplier_contest,
+                multiplier_parent_reduction,
+                multiplier_descendant_reduction,
+            ),
+            (
+                multiplier_actor,
+                multiplier_contester,
+                multiplier_first_target,
+                multiplier_second_target,
+            ),
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-10",
+            "successor-slot-multiplier",
+            multiplier_grant.reference not in multiplier_projection.accepted_controls
+            and multiplier_projection.event_authority.get(multiplier_grant.reference)
+            is AuthorityVerdict.MAY_AUTH
+            and {
+                multiplier_parent_reduction.reference,
+                multiplier_descendant_reduction.reference,
+            }
+            <= multiplier_projection.accepted_controls
+            and multiplier_first_target.credential_id
+            not in multiplier_projection.necessary_terminal_authority
+            and multiplier_second_target.credential_id
+            not in multiplier_projection.necessary_terminal_authority,
+            "one contested credential and one K-valid May0 descendant each consume a distinct accepted reduction slot",
+            "The descendant's rejected expansion does not erase its K binding or merge its credential-local slot with its issuer's slot.",
+            "M07_IGNORE_MAY_REDUCTION",
         )
     )
 

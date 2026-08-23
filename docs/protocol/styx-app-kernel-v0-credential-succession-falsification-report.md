@@ -19,11 +19,11 @@ The canonical outputs at this source state are:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| required witness report | `b34a7ea01994abe95e3523634e50dad03a6eb3a00c4546d4b1eb8e0fd1d0bf5e` |
-| mutation report | `7866097bc58e96f6fd014553ccd0314fd14e8caccc656165b64f1ac969e14eeb` |
+| required witness report | `7e690789259489e5b7ddcc10ed6046904240fae75c68f4eba2ea507d7691d0a4` |
+| mutation report | `de0af570dde02de491b997d44cb73487152325400e51115ff1ba8c98d808522d` |
 
-The suite emits 70 directed assertions across 75 recorded projection runs and
-37 closed witness families. Repeating either command produces byte-identical
+The suite emits 71 directed assertions across 76 recorded projection runs and
+38 closed witness families. Repeating either command produces byte-identical
 JSON:
 
 ```bash
@@ -107,6 +107,7 @@ C0.2j experiment envelope and do not select O-08 product limits.
 | grant/revoke grinding and delivery | attacker-selected references and bounded delivery orders cannot bypass Pass0 `Must0` expansion |
 | bounded contested standing | each actor receives at most one first eligible contested slot; all eligible siblings in it are applied without a reference winner |
 | rejected-reduction slot steering | a later-slot reduction that is ultimately rejected can lower another actor to May0, move that actor's selected contested slot and change accepted-reduction accounting without expanding operational authority |
+| successor slot multiplier | one contested credential and one K-valid May0 descendant can each consume a distinct accepted reduction slot even though the descendant's grant is not accepted as an expansion |
 | may-only reduction | a Pass0 `May0`-only reduction can use the bounded slot; an actor unauthorized in every interpretation cannot |
 | mutual concurrent revocation | both eligible reductions apply; no canonical-order survivor is selected |
 | self- and cross-lineage standing | self-lineage attempts consume no slot while an eligible peer-directed sibling remains selectable |
@@ -204,6 +205,12 @@ authority result to mutate. The mutation harness requires both an observed faili
 witness-to-mutant edge. A mutant is not reported killed merely because some
 unrelated check failed.
 
+`W-BOUND-11` is intentionally evaluated only for the unmutated baseline. It
+proves that the advertised event, control and fork ceilings can coexist in one
+7,484,400-path scenario, but has no mutation edge; repeating that exhaustive
+baseline for every unrelated mutant would add runtime without falsification
+value and is therefore deliberately not counted as a mutant detector.
+
 ## 6. Frozen-interface verification
 
 Before amendment, the exact O-06b-1 section-4 seven-role domain registry hashes
@@ -261,8 +268,9 @@ the logical-removal tail or modify the 44-octet commitment context.
   reductions of independent non-genesis credentials reject unless the actors
   causally observed one another's binding grant. Cleanup therefore depends on an
   authorized issuer path and is not guaranteed.
-- Self-lineage reductions and self-rotation reject; this avoids self-budget
-  laundering but provides no out-of-band recovery.
+- A `May0 && !Must0` self-lineage reduction consumes no slot, while a `Must0`
+  descendant can reduce its issuer and terminate the complete lineage including
+  itself. Self-rotation rejects. Neither rule provides out-of-band recovery.
 - An accepted `ROTATE` retirement does not make its referenced replacement
   operational. A replacement `GRANT` authored by the retiring lineage can be
   K-valid and APPLIED while the retirement terminates both issuer and descendant,

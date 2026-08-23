@@ -1428,7 +1428,7 @@
         },
         {
           "actions": [
-            "Surface permanent typed context quarantine without offering a winner or recovery claim"
+            "Surface permanent typed credential-lineage quarantine without offering a winner or recovery claim"
           ],
           "actor": "product_operator"
         }
@@ -3723,7 +3723,7 @@
             "O-02",
             "O-06b-1"
           ],
-          "description": "Full reference to an already admitted fresh binding GRANT named by RECOVER and present in the recovery event's causal parents.",
+          "description": "Full reference to an already admitted fresh binding GRANT named by RECOVER and present as the recovery event's direct predecessor or a member of its parent frontier.",
           "id": "recovery_grant_reference",
           "integrity": [
             "SIGNED_TRANSCRIPT"
@@ -3794,7 +3794,7 @@
             "O-02",
             "O-06b-1"
           ],
-          "description": "Full reference to an already admitted fresh binding GRANT named by ROTATE and present in the rotation event's causal parents.",
+          "description": "Full reference to an already admitted fresh binding GRANT named by ROTATE and present as the rotation event's direct predecessor or a member of its parent frontier.",
           "id": "replacement_grant_reference",
           "integrity": [
             "SIGNED_TRANSCRIPT"
@@ -3931,7 +3931,7 @@
             "O-02",
             "O-06b-1"
           ],
-          "description": "Full grant-rooted credential identifier targeted by REVOKE, ROTATE or RECOVER; old identifiers are never rebound or resurrected.",
+          "description": "Full credential identifier targeted by REVOKE or ROTATE; it may identify genesis authority or a grant-rooted credential, and old identifiers are never rebound or resurrected. RECOVER carries a separate opaque continuity annotation that is not a reduction target.",
           "id": "target_credential_identifier",
           "integrity": [
             "SIGNED_TRANSCRIPT"
@@ -5728,19 +5728,19 @@
       "authority": "evidence",
       "id": "credential_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-analysis.md",
-      "sha256": "14f1584daa646f05f85806510145e91e8899ecfb32a0c68c270fb7d0444ea5be"
+      "sha256": "bdec3c8db4dc1e3836253ff1c819e114164bbc92a95ab47d94df4937792d25bd"
     },
     {
       "authority": "evidence",
       "id": "credential_report",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-falsification-report.md",
-      "sha256": "3a427143bd74c50e2d16a7867762b10ee1870e8b7611de4fd9453024dca22a9b"
+      "sha256": "6a70b6fdb81d9578f1ba777677d7b86bb8429550f596b94e837c254015a68d0e"
     },
     {
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "9d61d4a8a1c884695f45d7273f9f12773cdf9118663dc1e6584602490c68bf92"
+      "sha256": "0cf9206ec40f6db3bc1662a7573fc04ee55f8adb76f062e3dae986b8a18d238a"
     },
     {
       "authority": "evidence",
@@ -5776,7 +5776,7 @@
       "authority": "normative",
       "id": "responsibility",
       "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
-      "sha256": "b4b74ecab77b86a045b57d1ca270a30c3dba7bedd5e05b1bc66b55144ea581be"
+      "sha256": "020d3d1fd8a042a7f9a923753a0be092fdd198b91bd43b45bb3fa487e737882c"
     },
     {
       "authority": "normative",
