@@ -1,10 +1,10 @@
 # Styx v0 application-event transcript encoding profile — O-06b-1
 
 - **Status:** selected O-06b-1 transcript profile, amended by the selected
-  O-06b-2 commitment profile; executable falsification remains open under
-  O-06c.
-- **Authority:** Issue #221, ADR-0007, ratified K-01 through K-11, O-01 through
-  O-05, O-09 and the O-06a semantic inventory.
+  O-06b-2 commitment profile and the C0.2j credential-control role/tail;
+  executable exact-byte falsification remains open under O-06c.
+- **Authority:** Issues #221 and #233, ADR-0007, ratified K-01 through K-11,
+  O-01 through O-05, O-09 and the O-06a semantic inventory.
 - **Exact evidence base:**
   `4c2fecd0e9a81421b1d74f988572599162ac3095`.
 - **O-06b-2 amendment base:**
@@ -195,7 +195,7 @@ The total order is normative:
 | 3 | application-profile version | `u32`; zero is invalid |
 | 4 | context identifier | `opaque32` |
 | 5 | object kind | `u16`; exactly `0x0001` (`APPLICATION_EVENT`) |
-| 6 | event role | `u8`; `0x00` ordinary AP transition, `0x01` logical-removal directive |
+| 6 | event role class | `u8`; `0x00` ordinary AP transition, `0x01` logical-removal control, `0x02` credential control |
 | 7 | event type identifier | `u32`; closed AP registry; zero is invalid |
 | 8 | schema identifier | `u32`; closed AP registry; zero is invalid |
 | 9 | schema version | `u32`; zero is invalid |
@@ -207,7 +207,7 @@ The total order is normative:
 | 15 | causal-parent count and frontier | `opaque32_vector`; count is field 15's leading `u32` |
 | 16 | genesis reference | `opaque32` |
 | 17 | content descriptor | section 5.2 |
-| 18 | role-specific tail | absent for ordinary events; section 5.3 for logical removal |
+| 18 | role-specific tail | absent for ordinary events; section 5.3 for logical removal and credential control |
 
 The AP transition block is not self-describing. Its authenticated schema fixes
 one bounded canonical field set and total order. Unknown schema, non-canonical
@@ -221,8 +221,10 @@ the separately encoded direct predecessor and genesis reference. Count zero is
 the unique empty frontier and is not absence. A count/length product that
 overflows or exceeds the active O-08 envelope is rejected before allocation.
 
-The event role is the O-06a retention-role discriminant. It is encoded once,
-not duplicated in the role-specific tail. An unknown event role is invalid.
+The event role class is the O-06a K-role discriminant. It is encoded once and
+is not duplicated in the role-specific tail. The credential-control tail has a
+separate closed control-kind octet because several K-readable control shapes
+share role class `0x02`. An unknown role class is invalid.
 Author sequence is zero if and only if direct-predecessor presence is `0x00`;
 every positive author sequence requires presence `0x01`. The predecessor must
 be the immediately prior accepted event for that credential under O-01.
@@ -265,9 +267,11 @@ class, type, suite, shape and commitment are present. Raw content, opening,
 locator, ciphertext, compression and storage metadata never enter this
 transcript.
 
-### 5.3 Logical-removal tail
+### 5.3 Role-specific tails
 
-When `event_role == 0x01`, append exactly:
+#### 5.3.1 Logical-removal control (`event_role == 0x01`)
+
+Append exactly:
 
 ```text
 target_event_reference:opaque32
@@ -276,10 +280,14 @@ target_commitment:opaque_u32
 
 The same role structurally requires `content_class == 0x00` (`NONE`). A
 candidate with `event_role == 0x01` and any content-bearing class is rejected
-before commitment/opening processing, target lookup or AP evaluation. Grant,
-revoke, rotate, policy, closure and future disposition control events likewise
-use `NONE` and a bounded authenticated representation; their exact K-readable
-carriage remains C0.2j work and is not allocated by this profile.
+before commitment/opening processing, target lookup or AP evaluation. This
+role and tail are otherwise byte-frozen by C0.2j.
+
+The C0.2i cross-field sentence in
+`styx-app-kernel-v0-commitment-encoding-profile.md` section 6 is scoped to this
+logical-removal role. C0.2j applies the same `content_class == 0x00` (`NONE`)
+requirement independently to role class `0x02` below without editing that
+byte-frozen section.
 
 The target-commitment container length is exactly 32 octets, derived from the
 suite active for the authenticated protocol version rather than from the
@@ -289,6 +297,57 @@ of a canonical filler are fixed by
 readiness, not structural identity. Authorization, legal hold, quarantine,
 local deletion result, transport acknowledgement, time, quota and retry state
 are derived or excluded exactly as O-04/O-06a require and are not appended.
+
+#### 5.3.2 Credential control (`event_role == 0x02`)
+
+Role class `0x02` structurally requires `content_class == 0x00` (`NONE`). K
+checks that cross-field rule before parsing this tail, resolving a credential
+binding or invoking AP. The tail begins with one closed `control_kind:u8` and
+then exactly the arm selected below:
+
+```text
+0x01 GRANT   || grantee_suite_id:u16
+             || grantee_verification_key:opaque_u32
+0x02 REVOKE  || target_credential_id:opaque32
+0x03 ROTATE  || retiring_credential_id:opaque32
+             || replacement_grant_reference:opaque32
+0x04 RECOVER || retired_credential_id:opaque32
+             || recovery_grant_reference:opaque32
+0x05 POLICY
+0x06 CLOSURE
+```
+
+Every other kind value is invalid. The `GRANT` key container must be non-empty,
+must not exceed the active O-08/O-14 bound and must have one canonical byte
+encoding for the selected suite. `grantee_suite_id` is the grantee's suite,
+not a selector for the carrying event's own signature. It must belong to the
+future closed O-14 registry; unknown or inconsistent values fail closed.
+
+A `GRANT` carries no target or declared subject identifier. Its resulting
+non-genesis credential identifier is the event reference computed in section 6,
+so neither that reference nor any derived subject can appear in its own
+preimage. Common field 11 supplies the issuer credential and common fields 1–4
+supply context/version separation. Only a structurally valid, causally
+available, signature-valid `GRANT` creates the binding from that resulting
+identifier to `(context, issuer, grantee_suite_id,
+grantee_verification_key, grant_reference)`.
+
+`replacement_grant_reference` and `recovery_grant_reference` must name an
+already K-admitted `GRANT` in the same context and must be causally available:
+the referenced grant is either the control event's direct predecessor or a
+member of its causal-parent frontier. The direct predecessor is encoded in its
+own common field and is deliberately excluded from the causal-parent vector, so
+requiring it to appear in both locations would be contradictory. `ROTATE` and
+`RECOVER` create no binding and cannot reuse or resurrect a retired identifier.
+`POLICY` and `CLOSURE` carry no
+additional K-owned credential field; their bounded profile-specific semantics
+remain in the authenticated AP transition block and cannot change K binding.
+
+K derives no control kind, suite, key, target or replacement reference from the
+AP transition block, event-type registry or schema identifier/version. A field
+that appears in the wrong arm, a missing required field, a malformed key
+container, a cross-context/unresolved grant reference or trailing bytes is a
+structural rejection before AP evaluation.
 
 ## 6. Reference derivation
 
@@ -347,9 +406,12 @@ representation.
    In the latter arm, shape and geometry-presence rules select exactly one arm.
    A control role with a content-bearing arm is structurally invalid rather than
    another inverse branch.
-6. The event-role octet uniquely determines absence or presence of the removal
-   tail and, for role `0x01`, requires the already parsed class to be `NONE`.
-   Require exact end of body after the selected tail.
+6. The event-role-class octet uniquely determines an absent tail, the frozen
+   removal tail or the credential-control tail. For roles `0x01` and `0x02`,
+   require the already parsed class to be `NONE`. Within `0x02`, the control-kind
+   octet chooses exactly one fixed arm; every variable key container has its
+   own length and every reference is fixed-width. Require exact end of body
+   after the selected arm.
 
 Each step consumes one unambiguous prefix and leaves one unambiguous suffix.
 Therefore `P(encode(x)) = x` for every O-06b-1-owned valid assignment `x`, so two
@@ -386,7 +448,9 @@ O-06b-1 reopens if a later O-14 selection:
 4. invalidates the runtime or supply-chain basis for the selected reference
    digest; or
 5. demonstrates that a different reference digest is necessary to avoid a
-   material additional primitive or unsafe implementation boundary.
+   material additional primitive or unsafe implementation boundary; or
+6. cannot assign one canonical verification-key octet encoding and enforceable
+   length bound to every admitted `grantee_suite_id` in section 5.3.2.
 
 Merely using an internal hash different from SHA-256 does not alias the event
 reference and is not by itself a reopen reason. O-14 owns its key/signature
@@ -405,6 +469,9 @@ This profile adds rejection sites but does not assign stable codes:
 - inconsistent class/length/commitment/geometry arm;
 - a control role paired with any content-bearing class;
 - removal tail absent, present or malformed for the wrong role; and
+- unknown credential-control kind, wrong-arm field, declared GRANT subject,
+  empty/over-bound/non-canonical key, unresolved or cross-context replacement
+  grant, or control-tail trailing bytes; and
 - carried-suite mismatch or attempted digest fallback.
 
 O-10 may combine outcomes only when safe recovery remains identical. Remote
@@ -418,9 +485,12 @@ Stable 32-octet references still expose equality, graph shape and replay order
 to every authorized observer that can see them. SHA-256 does not make the
 reference unpredictable: any holder of valid signing-key material, including a
 revoked credential, can vary valid inputs and grind its concurrent replay
-position. The current v0 AP fold demonstrably permits a concurrently granted
-successor to survive revocation in one such order. All O-06a prohibitions on treating that position
-as authority, priority, finality or irreversible permission remain in force.
+position. C0.2j therefore computes Pass0 over every bounded admissible causal
+interpretation, admits expansion only from necessary Pass0 authority and
+selects at most the first eligible contested author-sequence slot per actor,
+rather than selecting a reference-order winner. All
+O-06a prohibitions on treating replay position as authority, priority, finality
+or irreversible permission remain in force.
 
 Lengths, parent counts, event type/schema IDs and commitment geometry remain
 authenticated metadata visible inside the protected application object.
@@ -446,7 +516,7 @@ assess exact resolved artifacts rather than inherit this specification choice.
 Reopen O-06b-1 if the written inverse fails; an O-06c counterexample finds an
 alias; O-06b-2 cannot fit canonical suite interiors into the selected framed
 containers; O-07 needs a different outer genesis boundary; O-14 meets a section
-8 predicate; a ratified O-02 credential construction or closed AP registry
+8 predicate; a closed AP registry
 cannot fit the widths in section 5.1; later O-08 evidence makes the profile
 infeasible or could exhaust the `u64` author sequence; SHA-256 is withdrawn or
 materially weakened for this use; or a role/domain must be added, split or
@@ -459,17 +529,18 @@ reinterpreted.
    randomized-opening suite, its preimages and chunk-tree construction.
 2. **C0.2i** supplies isolated pending-subtree replay evidence without changing
    these bytes or the historical v1 evidence.
-3. **C0.2j** selects collision-resistant K credential identity and K-readable
-   grant binding; **C0.2k** then amends the commitment context to bind that
-   identity and author sequence.
+3. **C0.2j is selected:** non-genesis credential identity is its binding
+   `GRANT` event reference; section 5.3.2 supplies exact K-readable grant and
+   succession evidence plus the Pass0/selected-slot authority contract. **C0.2k** next
+   amends the commitment context to bind that identity and author sequence.
 4. **O-06c** implements bounded adversarial falsification of the combined
    construction, emits deterministic work-order/per-stage instrumentation and
    reruns C0.2d/C0.2f/C0.2i unchanged.
 5. Only after O-06c passes independent review and human ratification may O-06
    move to `DECIDED`.
 
-O-06b-1 and O-06b-2 together do not make C0.3 executable. C0.2j, C0.2k and
-O-06c are mandatory in that order. O-07, O-08, O-10 and O-14 remain blockers;
+O-06b-1, O-06b-2 and C0.2j together do not make C0.3 executable. C0.2k and
+O-06c remain mandatory in that order. O-07, O-08, O-10 and O-14 remain blockers;
 O-12 additionally blocks any time-bearing profile. O-11 remains required before
 supported persistence or remote admission, and K-11 remains required before any
 normative corpus file.

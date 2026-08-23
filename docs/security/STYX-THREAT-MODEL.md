@@ -30,7 +30,16 @@
   concurrent grant/revoke authority-laundering counterexample. The exact-final
   gates completed in PR #226 at merge commit
   `4ab333e29fb12f9839d29160248d89da695e37be`, returning O-01/O-02/O-04 to
-  `DECIDED`; C0.2j, C0.2k and O-06c remain mandatory before C0.3.
+  `DECIDED`.
+- **C0.2j amendment:** Issue #233 selects grant-rooted non-genesis credential
+  identifiers, exact K-readable role-`0x02` binding/succession evidence, a
+  bounded Pass0/first-contested-slot authority fold, strict R-1 target
+  availability for ordinary reductions and transitive credential-lineage
+  containment. It replaces the C0.2i collision freeze, canonical-order
+  laundering behavior and whole-context fork quarantine. The fold retains
+  reachable states by dynamic programming and makes authority explicitly
+  unavailable when its state or transition envelope is crossed. C0.2k and
+  O-06c remain mandatory before C0.3.
 - **Language:** English is canonical.
 
 Styx is experimental, has not completed an independent security audit, and is
@@ -84,8 +93,8 @@ the [C0.2a responsibility matrix](../protocol/styx-app-kernel-v0-responsibility-
 | Application event meaning | Integrity and authenticity of every field that affects validation, authorization, causality, ordering or conflict handling | Invalid transcripts and semantics are rejected before authoritative state change; control events are content-free | `OB-K01`–`OB-K04`, `OB-K12`, policy by `OB-AP01` | A valid signature proves key possession, not role authorization, possession at commit time, authorship of copied content or truth. |
 | Payload commitment and retained opening | Binding to one complete payload plus computational hiding after opening destruction under stated assumptions | Reject malformed geometry, wrong suite/context/opening/content and incomplete verification before AP use | `OB-K10`, retention by `OB-K14`/`OB-RS04` | O-06b-2 selects exact bytes but supplies no implementation proof; length/shape remain visible, randomizer custody is operational, complete-object availability is required and SHA-256 assumptions remain explicit. |
 | Application and case context | Domain separation and rejection of cross-context replay | Cross-context objects fail kernel validation | `OB-K08`, requirements from `OB-AP03` | O-03/O-06a select the context tuple/reference role and O-06b-1 fixes the outer reference bytes; O-07 genesis contents remain open. |
-| Author and role authority | Monotone context-bound K credential binding separated from reversible prefix-scoped AP authorization | Invalid binding is rejected; authentic-but-unauthorized and post-revocation actions apply no AP transition; any fork empties operational authority | `OB-AP02`; binding by `OB-K18` | Identifier collisions freeze authority; fork-free concurrent grant/revoke can launder a successor in one grindable order; revocation does not bound compromise in v0. C0.2j must replace both before C0.3 or any demo. |
-| Causal history and state | Transcript-only deterministic validation/order, replay/fork detection and bounded convergence under monotone opening observations | Classified duplicate, pending root/ancestor, applied, stale or permanent fork-quarantine result; independent events proceed outside pending subtrees only while fork-free | `OB-K05`–`OB-K07`, `OB-K13` | Any holder of valid key material can cause permanent v0 context quarantine; digest tiebreaks remain grindable; delayed reveal can amplify replay; no finality exists. |
+| Author and role authority | Monotone context-bound K grant binding separated from reversible bounded AP authorization | Invalid or unresolved binding is rejected; authentic-but-unauthorized and post-revocation actions apply no AP transition; necessary Pass0 authority admits expansion, the first eligible contested slot per actor admits bounded accepted reductions, R-1 constrains direct reduction targets, and revocation/fork termination follows credential provenance; stale or resource-exhausted projection makes authority unavailable | `OB-AP02`; binding/provenance by `OB-K18`/`OB-K19` | One uncontested compromised authority can remove every peer and remain sole producer. Any K-admitted rejected reduction can permanently lower necessary authority for its target subtree without becoming an accepted reduction; R-1 blocks direct omitted-history veto of an unseen grant but not an indirect veto through its visible issuer. Mutual reductions can leave no authority; independently granted same-key aliases survive lineage-local revocation and occupy separate fork namespaces. |
+| Causal history and state | Transcript-only deterministic validation/order, replay/fork detection and bounded convergence under monotone opening observations | Classified duplicate, pending root/ancestor, applied, stale, authority-unavailable or lineage-quarantine result; independent authorized lineages may continue | `OB-K05`–`OB-K07`, `OB-K13`, `OB-K19` | A valid-key holder can terminate its lineage through a fork and amplify replay through delayed evidence; bounded DP replay has state/transition costs and typed exhaustion; no finality exists. |
 | Durable local state | Confidentiality, atomicity, crash safety and rollback behavior within a declared runtime profile | Fail closed on ambiguous persistence; restore/reconcile or require intervention | `OB-RS02`–`OB-RS10` | Browser storage may be evicted; a coherent whole-profile rollback may be undetectable without external evidence. |
 | Session secrets and membership | Confidential authenticated delivery, membership control, forward secrecy and post-compromise recovery within the selected session profile | Reject invalid or unauthorized session transitions; rotate/recover within profile bounds | `OB-SS01`–`OB-SS09` | Phase B proves only the exact pinned isolated profile recorded by its verdict. |
 | Return capabilities and recovery material | Unforgeability, confidentiality, context separation and intentional recovery semantics | Reject invalid/reused context; explain intentional irrecoverability or use the approved recovery route | `OB-AP09`, custody by `OB-RS01` | Loss may be unrecoverable; screenshots, backups and phishing can disclose a capability. |
@@ -149,7 +158,12 @@ or exploit disagreement between clients.
 This adversary is why key possession, session membership and application
 authorization are separate checks. O-02 fixes the semantic credential and
 rotation model; concrete profile grants/bounds and the O-14 signature-suite
-registry remain open.
+registry remain open. C0.2j's M20 rule deliberately keeps every K-admitted
+credential-control event in the authority evidence set even when AP rejects the
+action or the actor is no longer authorized. Consequently, any still-valid
+bound signing key can consume finite control, fork, state and transition budgets;
+AP rejection is not a resource-admission control. O-08 must bound that evidence
+per credential and in total before a production availability claim is possible.
 
 ### A3 — Malicious peer
 
@@ -173,43 +187,68 @@ beyond the unavailable event's causal descendants merely by changing order.
 When later replay discloses the relationship, AP must revise only reversible
 state and must not treat the earlier prefix as final authority. A compromised
 author can keep its own `REQUIRED` subtree pending forever, selectively disclose
-an opening to different replicas, trigger replay amplification by delayed
-reveal, or exploit the temporary C0.2i identifier-collision rule to freeze an
-identifier's AP authority retroactively. The collision race includes a reused
-identifier published against onboarding, rotation or recovery, even by a bound
-or revoked credential; v0 deliberately fails closed rather than selecting one
-binding. Target-prefix abandonment by an old key is rejected as a repair
-because target-prefix authority either enables post-revocation censorship or
-becomes circular behind the pending subtree. Any K-admitted same-author fork,
-including one signed with revoked key material, permanently quarantines the
-whole v0 AP context. Fork siblings and pending sets remain diagnostic evidence,
-but no descendant or independent AP transition applies, operational authority
-is empty and no producer frontier is eligible. This prevents a fork takeover
-but gives any holder of valid key material a permanent availability-denial
-capability. Separately, without a fork, a compromised credential can grind a
-concurrent successor grant before a peer's revocation; v0's non-transitive
-revocation then leaves that successor operational. C0.2j owns both the future
-binding/fork design and a provenance-aware, two-sided authority analysis.
+an opening to different replicas or amplify replay through delayed reveal.
+C0.2j removes the old identifier-collision race by making every non-genesis
+identifier exactly the reference of its binding `GRANT`; non-`GRANT` claims are
+lookup-only and cannot create a binding. It also rejects a canonical-order
+authority winner: Pass0 preserves every bounded reachable authority state before
+contested reductions, admits expansion only from necessary Pass0 authority and
+selects only the first eligible contested author-sequence slot per actor. Every
+eligible sibling in that slot is included. `REVOKE` and retiring `ROTATE`
+targets must already be causally available under R-1; `RECOVER` retains its
+separately authorized bootstrap exemption. Any K-admitted sibling fork
+terminates the forked credential and grant-descendant lineage rather than the
+whole context; independent authorized lineages may continue. Crossing the DP
+state or transition envelope makes authority unavailable, and late evidence
+triggers fresh full replay. These rules prevent bounded successor laundering but
+do not prevent one uncontested compromised authority from causally revoking
+every peer and remaining sole authority, nor guarantee recovery after total
+authority loss. A rejected later-slot or self-lineage reduction cannot become
+an accepted termination, but its K-admitted evidence can permanently remove its
+target and that target's grant descendants from `Must0`. It can thereby make a
+different actor's reductions contested, move that actor's selected slot and
+change accepted-reduction membership without expanding operational authority.
+The first-slot rule therefore bounds accepted reductions, not this cross-actor
+slot-steering or operational availability loss. R-1
+blocks a direct omitted-history veto against an unseen later grant, but a
+compromised actor can still reduce the visible issuer and thereby keep later
+grants rooted there below `Must0`. Within C0.2j this reach is bounded only by the
+shared evidence envelope; O-08 must select enforceable per-credential and total
+admission limits before any production availability claim. This conservative
+effect never confers expansion or operational authority. A revoked credential
+may retain one contested slot for itself plus one for every stockpiled K-valid
+May0 descendant, each able to target a separate bounded subtree; those slots are
+limited only by the same per-credential and context-total O-08 envelope. V0 also
+has no atomic sole-authority rotation or recovery: a pre-provisioned descendant
+remains dependent on its issuer's operational lineage, while compromise or loss
+without independently rooted recovery authority is terminal. Fork slots are scoped by
+`(credential_id, author_sequence)`, so independently granted same-key aliases do
+not share fork quarantine.
 
 ### A4 — Compromised authorized peer
 
 An attacker obtains a currently authorized endpoint, device credential,
 session state or application capability. The attacker may exercise all rights
-that the compromised material permits, may concurrently grant successors whose
-authority survives a peer's revocation in one v0 replay order, and may retain
-any plaintext already available.
+that the compromised material permits and may retain any plaintext already
+available.
 
 Profiles must define compromise response, revocation, rotation, history access
 and post-compromise recovery. Revocation changes AP authority, not historical K
 binding or graph admission. `POST_REVOCATION` and authentic-but-unauthorized
-events remain parent-usable graph evidence but apply no AP transition. However,
-v0 revocation is not transitive through concurrent grant provenance and is not
-a sufficient compromise boundary. A late concurrent event can reversibly
-change an earlier authority decision, so no
-irreversible effect is safe. Profiles must not claim retroactive confidentiality
-for content already exposed. The C0.2i model records rotation/recovery as
-symbolic control evidence only: it never resurrects an old identifier and does
-not yet implement the fresh-credential succession required by O-02.
+events remain parent-usable graph evidence but apply no AP transition. The
+C0.2j fold terminates the revoked or forked credential and every bounded grant
+descendant, and rotation/recovery use separately admitted fresh grants; neither
+can resurrect an old identifier. A late concurrent event still causes fresh
+full replay and can reversibly change visible authority, so no irreversible
+effect is safe. Profiles must not claim retroactive confidentiality for content
+already exposed. Revocation does not revoke an independently granted alias that
+carries the same key bytes, and no quorum or out-of-band remedy is selected for
+takeover by one uncontested authority. An authorized but compromised key may
+also spend the projection's finite control, fork, state and transition budgets:
+M20 intentionally retains all K-admitted control evidence even after AP rejects
+or revokes its actor. Exhaustion is fail-closed for authority, so O-08 must bound
+admission both per credential and across the context rather than relying only on
+the number of accepted controls.
 
 ### A5 — Hostile or colluding relay and service provider
 
@@ -222,8 +261,11 @@ opening substitution or human delivery. A relay can withhold an opening or
 distribute it selectively, leaving different replicas with different pending
 subtrees until their monotone opening sets converge. A hostile peer or relay can
 also withhold transcript material named only by symbolic checkpoint evidence and
-thereby force whole-projection `STALE_EVIDENCE`; C0.2i detects that condition but
-does not authenticate the checkpoint, prove freshness or restore availability.
+  thereby force whole-projection `STALE_EVIDENCE`; C0.2i detects that condition but
+  does not authenticate the checkpoint, prove freshness or restore availability.
+  While this condition holds, accepted controls and every per-event or terminal
+  authority result are unavailable; an empty encoded set must not be interpreted
+  as proof that the context has no authorities.
 Redundancy may improve availability while increasing the observer set. A
 transport profile must declare every visible field and its confirmation
 semantics.
@@ -298,11 +340,11 @@ data, misuse emergency access, correlate reporters or conceal actions.
 
 Least privilege, role separation, independent audit, revocation and high-impact
 authorization are product/organizational obligations. A sole authority can
-self-lock one control branch by withholding an ancestor opening. A self-fork is
-not an escape: it permanently quarantines the whole v0 AP context, including
-independent control and removal work, and no producer remains eligible. The
-operator may also exploit fork-free concurrent grant/revoke ordering to create
-a successor before its own revocation. Styx cannot guarantee handler
+self-lock one control branch by withholding an ancestor opening. A self-fork
+terminates that authority's credential lineage and cannot expand authority;
+independent lineages continue only when definitely authorized. Conversely, one
+uncontested compromised sole authority can causally remove every peer and remain
+the only producer because C0.2j invents no quorum or out-of-band authority. Styx cannot guarantee handler
 independence, lawful processing, availability, finality or protection from
 retaliation.
 
@@ -341,16 +383,16 @@ make telemetry or push metadata harmless.
 | Adversary | Primary assets/properties at risk | Required response and evidence | Sole obligation owners | Residual non-claim |
 | --- | --- | --- | --- | --- |
 | A1 malformed-input sender | Event meaning, session/runtime availability | Strict bounded parsing, canonical rejection, stable outcomes and resource tests before state change; O-06b-1/O-06b-2 fix regenerated transcript, commitment and geometry grammars but supply no parser implementation | `OB-K02`–`OB-K04`, `OB-SS08`, `OB-TR01` each at its parser boundary | A conforming parser cannot prevent all bandwidth exhaustion before bytes reach it; the written profiles are not executable evidence. |
-| A2 valid but unauthorized actor | Role authority, case state, retention/export | Separate monotone K binding from reversible context-bound AP authority; classify authentic-but-unauthorized and post-revocation actions | `OB-AP02`; cryptographic binding by `OB-K18` | C0.2j must replace the temporary collision-triggered authority freeze and define exact grant evidence. |
-| A3 malicious peer | Plaintext, causal state, availability, erasure | Detect replay/fork/conflict; keep holes and descendants pending while fork-free; permanently quarantine every forked v0 context; expose selective disclosure, identifier races, forced staleness and delayed replay | `OB-K05`–`OB-K14`, `OB-AP04`, `OB-PV01`/`OB-PV04` | An authorized peer can copy plaintext, keep a subtree pending forever, amplify replay, force a symbolic checkpoint-dependent projection stale, freeze an identifier or the whole context, grind authority order or lie in signed content. |
-| A4 compromised authorized peer | Current rights, plaintext and session history | Preserve K evidence; quarantine forks; disclose compromise; treat revoke/rotate as insufficient until C0.2j closes successor provenance and transitivity | `OB-AP02`, `OB-K18`, `OB-SS04`–`OB-SS06`, `OB-PV07` | No retroactive protection for plaintext/keys; concurrent grant can survive revocation; any fork can permanently deny AP availability; no finality. |
+| A2 valid but unauthorized actor | Role authority, case state, retention/export | Separate monotone K grant binding from reversible bounded AP authority; classify authentic-but-unauthorized and post-revocation actions; use necessary Pass0 authority for expansion and the first eligible contested slot for reductions | `OB-AP02`; cryptographic binding/provenance by `OB-K18`/`OB-K19` | Valid key possession still creates verifiable historical evidence but never authority; concrete AP roles and O-14 suites remain open. |
+| A3 malicious peer | Plaintext, causal state, availability, erasure | Detect replay/fork/conflict; keep holes and descendants pending; terminate forked credential lineages and descendants; expose selective disclosure, scoped quarantine, forced staleness and delayed replay | `OB-K05`–`OB-K14`, `OB-K19`, `OB-AP04`, `OB-PV01`/`OB-PV04` | An authorized peer can copy plaintext, keep a subtree pending forever, amplify replay, force a symbolic checkpoint-dependent projection stale, terminate its lineage, exploit sole authority or lie in signed content. |
+| A4 compromised authorized peer | Current rights, plaintext and session history | Preserve K evidence; apply transitive provenance termination; require fresh-grant rotation/recovery; disclose compromise and recompute authority by fresh full replay | `OB-AP02`, `OB-K18`, `OB-K19`, `OB-SS04`–`OB-SS06`, `OB-PV07` | No retroactive protection for plaintext/keys; one uncontested authority can remove peers; same-key aliases survive independent grants; no finality. |
 | A5 hostile/colluding relay | Availability, freshness, routing metadata | Verify outer objects, ignore relay order/response as authority, authenticate fetched openings, retry/fail over and measure exposure | `OB-TR01`–`OB-TR06`, `OB-TR10` | Relays can selectively withhold openings or checkpoint-named transcript material, force a projection stale, and collude over visible metadata; they never substitute for verification or freshness. |
 | A6 network observer | Relationship and activity metadata | Use only profile-approved routing/padding/batching/onion measures and validate via traffic capture | `OB-TR06`/`OB-TR07` | No resistance claim against a global passive observer. |
 | A7 hostile origin/release | Plaintext, keys-as-oracles, software integrity | Enforce distribution/profile controls, external verification and explicit unsupported/rollback outcomes | `OB-RS12`, release gate `OB-PV10` | The current PWA cannot make an adversary-controlled first response trustworthy. |
 | A8 XSS/extension | Plaintext operations, UI trust, local metadata | Minimize callable interfaces and third-party code, lock promptly, enforce runtime containment and test browser controls | `OB-RS01`, `OB-RS11`, product copy `OB-PV11` | A privileged hostile caller can use an unlocked client as an oracle. |
 | A9 seized/compromised endpoint | Plaintext, password, local state and recovery material | Distinguish locked/unlocked guarantees, encrypt storage, rotate after compromise and follow incident procedure | `OB-RS01`/`OB-RS02`/`OB-RS11`, `OB-PV07` | Keylogger, screen capture, memory and authorized-recipient leakage remain possible. |
 | A10 fault/eviction/rollback | Durable state, causality, opening availability | Atomic fail-closed persistence, frontier-opening custody, crash reconciliation, runtime probes and bounded rollback evidence | `OB-RS03`–`OB-RS10`, fetch by `OB-TR05` | Permanent opening loss can strand a subtree; coherent rollback can remain undetectable without independent evidence. |
-| A11 malicious operator | Case confidentiality, role authority, audit and erasure | Least privilege, separation of duties, high-impact approval, alternate authority route and truthful pending/provisional/quarantined presentation | `OB-PV01`–`OB-PV06`; machine role semantics `OB-AP02` | A sole authority can strand a subtree, permanently quarantine the context or exploit concurrent grant/revoke; protocol cannot ensure independence, lawful action, availability, finality or prevent off-protocol disclosure. |
+| A11 malicious operator | Case confidentiality, role authority, audit and erasure | Least privilege, separation of duties, high-impact approval, alternate authority route and truthful pending/provisional/quarantined presentation | `OB-PV01`–`OB-PV06`; machine role semantics `OB-AP02` | A sole authority can strand a subtree or remove every peer and retain sole operation; protocol cannot ensure independence, lawful action, availability, finality or prevent off-protocol disclosure. |
 | A12 supply-chain/build adversary | Software/configuration and all plaintext handled by it | Exact provenance, reproducible artifacts, signed/verified updates, rollback control and incident response. O-06b-1/O-06b-2 record WebCrypto SHA-256, exact `@noble/hashes` lock evidence and the Dart reference dependency separately; no fallback or new dependency is selected. | `OB-RS12`, `OB-PV07`/`OB-PV10` | Upstream audit evidence does not transfer across revision, configuration or Styx integration; Dart's declared `crypto` range and package disclaimer are reference-oracle evidence, not production assurance. One-shot WebCrypto requires complete-buffer custody and creates an implementation memory-exposure window that O-08 must bound. |
 | A13 availability adversary | Delivery, access and organizational continuity | Bounds, backoff, failover, offline truth, abuse-aware controls and continuity drills | `OB-TR03`/`OB-TR04`/`OB-TR09`, `OB-PV07`/`OB-PV08` | Styx does not guarantee unstoppable, timely or cost-free delivery. |
 | A14 backup/telemetry/push provider | Local replicas, endpoint mapping and behavioral metadata | Minimize/forbid external signals, declare retention, isolate audit and test notification data flow | `OB-RS13`, `OB-TR08`, `OB-PV04` | Providers may retain allowed metadata and correlate it with external datasets. |
@@ -405,8 +447,8 @@ claims about current code.
 | Valid signature under an unauthorized key | Reject the transition | Product can explain authorization failure without treating it as bad cryptography | Application profile |
 | Object replayed in another case/application | Reject by authenticated context binding | Cross-context negative evidence | Application semantic kernel |
 | Duplicate authenticated object in one context | Idempotent duplicate classification | No duplicate application effect | Application semantic kernel |
-| Missing parent, fork or concurrent operation | Classify under the selected bounded causal model; any admitted fork permanently quarantines the whole v0 AP context | Preserve graph/fork/pending diagnostics but expose no AP transition, operational authority, producer eligibility or recovery claim under quarantine | Application semantic kernel |
-| Holder of valid key material grinds a concurrent event reference | Preserve signature validity and graph/order; quarantine any fork; retain the fork-free grant/revoke laundering counterexample in both orders | Never infer priority, finality or irreversible effects; C0.2j must require authority-expanding actions in every admissible interpretation and check authority-reducing actions against possible authority | Application semantic kernel plus application profile |
+| Missing parent, fork or concurrent operation | Classify under the selected bounded causal model; all siblings at one `(credential_id, author_sequence)` slot form one fork classification that terminates the forked credential lineage and cannot expand authority | Preserve graph/fork/pending diagnostics; independently granted aliases remain separate fork namespaces; independent lineages continue only if definitely authorized; expose no recovery or finality claim | Application semantic kernel plus application profile |
+| Holder of valid key material grinds a concurrent event reference | Preserve signature validity and graph/order; retain every bounded Pass0 reachable state and select reductions only from each actor's first eligible contested author-sequence slot | Never infer priority, finality or irreversible effects from order; make authority unavailable on DP exhaustion and recompute by fresh full replay when evidence changes | Application semantic kernel plus application profile |
 | Semantically conflicting but individually valid operations | Do not infer business truth from total order | Apply the application profile's declared conflict rule or escalate | Application profile |
 | Unauthorized session membership change | Reject before applying the membership transition | Typed session failure and recovery path | Secure-session adapter |
 | Relay duplication, reordering, omission or stale response | Never alter application validity; reconcile within delivery policy | Retry/failover or explicit unavailable/expired state | Transport/routing profile |
@@ -523,21 +565,25 @@ Current evidence establishes only bounded components:
   selects exact commitment/chunk-tree bytes, all without implementation
   evidence. The ratified bounded C0.2i construction adds pending-subtree replay,
   whole-context fork-quarantine and mutation evidence, plus the temporary
-  fail-closed unique-identifier envelope without changing the selected bytes;
-  C0.2j, C0.2k and O-06c remain mandatory. O-06, O-07, O-08 and O-10 through
+  fail-closed unique-identifier envelope without changing the selected bytes.
+  C0.2j selects grant-rooted identity, exact K-readable succession evidence,
+  bounded Pass0/selected-slot authority and lineage containment; C0.2k and O-06c
+  remain mandatory. O-06, O-07, O-08 and O-10 through
   O-16 remain open;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
   described in its final verdict; and
 - existing vault and chat work provides component evidence under its own
   reports and tests.
 
-C0.2i's bounded evidence deliberately leaves hostile boundaries open:
-same-identifier races can freeze authority; any holder of valid key material can
-permanently quarantine the context; fork-free concurrent grant/revoke can leave
-a laundered successor operational; and old-key target-prefix abandonment is
-rejected rather than implemented. Its symbolic `ROTATE`/`RECOVER` events do not
-implement credential succession. None may be presented as bounded compromise,
-safe continuation, availability or finality. C0.2j is mandatory.
+C0.2j's bounded v3 evidence closes the modeled identifier-rebinding and
+concurrent successor-laundering paths and replaces whole-context fork quarantine
+with credential-lineage containment. It deliberately leaves hostile boundaries
+open: one uncontested compromised authority can remove every peer and remain
+sole producer; mutual reductions can leave no operational authority; strict
+target causality can reject independently granted non-genesis mutual cleanup;
+same-key aliases on independent provenance survive; late evidence requires full
+replay; and experiment bounds are not production limits. None may be presented as
+general compromise recovery, guaranteed availability, anonymity or finality.
 
 This threat model does not establish application-protocol conformance,
 supported Marmot/Nostr envelopes, product integration, metadata anonymity,
