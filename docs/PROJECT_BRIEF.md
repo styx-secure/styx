@@ -14,8 +14,10 @@ artifact, not a deployed service.
 
 ## Active protocol-hardening phase
 
-Styx has deliberately paused new product and runtime implementation while the
-language-neutral application protocol is hardened. The active work closes
+Styx has deliberately paused new product and runtime implementation,
+provenance-obscuring cleanup, and public demo, production, anonymity or
+compliance claims while the language-neutral application protocol is hardened.
+The active work closes
 authority, succession, commitment, checkpoint, resource-bound, error and
 signature-suite questions; reconciles the threat model; and produces
 deterministic adversarial and conformance evidence before implementation

@@ -1,6 +1,6 @@
 # Styx application-protocol hardening plan
 
-> **Status:** active planning and ratification phase, 23 August 2026.
+> **Status:** active protocol-hardening and ratification phase, 23 August 2026.
 >
 > This document governs the order of protocol work. It is not a protocol
 > specification, security proof, implementation authorization or readiness
@@ -30,6 +30,9 @@ increments that produce or reconcile:
 - executable adversarial traces, mutation tests and deterministic reports;
 - language-neutral conformance vectors after the corresponding semantics and
   bytes have been ratified;
+- extraction of reference cases and independent oracles from existing
+  implementations into the language-neutral corpus, provided this adds no
+  behavior to those implementations and selects no protocol semantics;
 - review evidence, finding disposition and explicit residual risks.
 
 The following work is paused:
@@ -40,11 +43,21 @@ The following work is paused:
 - cleanup or refactoring that could obscure protocol provenance;
 - demo, production, anonymity, compliance or sensitive-use claims.
 
-An emergency security fix may proceed only under its own approved contract and
-must not select new protocol semantics. Work proven to be disjoint from the
-application protocol may proceed only when its Issue names the disjoint paths,
-dependencies and integration owner. Neither exception silently lifts this
-freeze.
+This freeze binds both execution lanes defined in `AGENTS.md`: Styx contract
+tasks on `task/<issue>-<slug>` and MUCC stories on `task/US-<id>`. A story in
+`specs/05-sprint-plan.md` is not executable during this phase merely because it
+satisfies the ordinary MUCC lane condition; US-001 through US-008 are paused.
+The scope-evidence check does not inspect `task/US-*`, so review must enforce
+this constraint explicitly.
+
+Any human-approved security remediation, emergency or otherwise, may proceed
+under its own approved contract only when it selects no new protocol semantics.
+Routine dependency, CI, licensing or governance maintenance may proceed under
+an approved contract when it changes no protocol artifact. Work claimed to be
+disjoint from the application protocol may proceed only when its Issue names
+the disjoint paths, dependencies and integration owner and an authorized human
+ratifies that determination before execution. Every exception is recorded for
+the exit audit in section 8. Neither exception silently lifts this freeze.
 
 Issue #233 and PR #234 remain isolated experimental work. Their local model and
 simulator changes are preserved as candidate evidence, but are not normative,
@@ -57,13 +70,47 @@ Only an explicit human-ratified exit verdict may end the freeze.
 
 When artifacts disagree, fail closed and use this order:
 
-1. an approved GitHub task contract and its native dependencies;
+1. an approved GitHub task contract, or an executable MUCC story, and its
+   native dependencies, subject to this phase boundary;
 2. repository `AGENTS.md`;
-3. the English decision registry, encoding profiles, responsibility matrix and
-   threat model identified by the review model;
-4. the derived machine-readable review model;
-5. executable scenarios, mutants, generated reports and conformance vectors;
-6. independent review reports and local notes.
+3. this plan for the order and gating of work during this phase;
+4. the ratified English normative sources enumerated below;
+5. tool adapters such as `CLAUDE.md`;
+6. the derived machine-readable review model;
+7. executable scenarios, mutants, generated reports and conformance vectors;
+8. independent review reports, chat and local notes.
+
+An item at rank 1 governs its approved scope but cannot silently supersede a
+native dependency, this freeze or a human gate. Lifting or changing the freeze
+requires an approved amendment to this plan or the exit verdict in section 8.
+Where another active plan conflicts with this plan, this plan governs the order
+of application-protocol work; the other plan continues to govern its disjoint
+domain.
+
+### 3.1 Normative source index
+
+The current application-protocol normative set is enumerated here, independently
+of the derived review model:
+
+- decision registry:
+  `docs/protocol/styx-app-kernel-v0-decisions.md`;
+- transcript encoding profile:
+  `docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md`;
+- commitment encoding profile:
+  `docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md`;
+- responsibility matrix:
+  `docs/protocol/styx-app-kernel-v0-responsibility-matrix.md`;
+- application-protocol threat model:
+  `docs/security/STYX-THREAT-MODEL.md`.
+
+The derived review model at
+`docs/protocol/review/styx-app-kernel-v0-review-model.json` is verified against
+this enumeration; it does not define it. A normative source omitted from the
+model's `sources` map remains normative and makes validation fail. A model entry
+with no ratified normative source is an error, not an addition to the normative
+set. The model schema and operating guide are respectively
+`docs/protocol/review/styx-app-kernel-v0-review-model.schema.json` and
+`docs/protocol/review/README.md`.
 
 The classes have different meanings:
 
@@ -108,10 +155,34 @@ Protocol increments proceed in dependency order:
 
 No later step may be used to fill an unresolved input of an earlier one.
 
+The dependency basis is explicit:
+
+| Step | Required closed inputs | Deferred or repeated work |
+|---|---|---|
+| C0.2j | ratified O-01/O-02/O-03/O-04/O-05/O-09 baseline | none |
+| C0.2k | exact C0.2j credential and sequence semantics | none |
+| O-06c | exact C0.2j/C0.2k bytes and existing O-06b profiles | obligations affected by later O-08 bounds or O-14 suite binding are deferred and rerun after those decisions |
+| remaining blockers | O-06c results plus each decision's own recorded inputs | the threat model and combined hostile cases are rerun after closure |
+| C0.3 | every blocker declared applicable to its exact corpus | no later decision may be guessed or inherited from an implementation |
+
+For visibility, every O-series objective in the current registry is accounted
+for below. Absence from this table is an error in this plan, not evidence that
+an objective is closed.
+
+| Objectives | Registry status | Effect on this phase |
+|---|---|---|
+| O-01 through O-05 | `DECIDED` | preserved inputs; reopen only through their recorded conditions |
+| O-06 | `OPEN` | blocks C0.3 until C0.2j, C0.2k and O-06c complete |
+| O-07, O-08, O-10, O-14 | `OPEN` | block C0.3 |
+| O-09 | `DECIDED` | preserved responsibility split |
+| O-11 | `OPEN` | intentionally deferred; does not block a strictly transcript-only C0.3 corpus |
+| O-12 | `OPEN`, profile-conditional | blocks every profile retaining physical-time claims; inapplicable only when time is omitted |
+| O-13, O-15, O-16 | `OPEN` | do not block a strictly pinned transcript-only C0.3 corpus; block applicable destruction, profile-upgrade, finality and product-readiness claims |
+
 ## 5. Mandatory threat coverage
 
-Every applicable increment states which of these surfaces it changes and how it
-is challenged:
+Every applicable increment states which of these surfaces it changes, which it
+does not change and why, and how each changed surface is challenged:
 
 - authentication versus application authorization;
 - context, credential and author binding;
@@ -126,8 +197,10 @@ is challenged:
 - availability loss caused by fail-closed safety rules.
 
 The threat model must distinguish a malicious peer, compromised credential,
-relay, storage backend, runtime/origin, operator and recipient. A proof against
-one actor must not be presented as protection against another.
+relay, network observer, push provider, storage backend, runtime/origin, client
+publisher, operator and recipient, following the actor taxonomy in
+`docs/platform/application-capability-model.md` section 3. A proof against one
+actor must not be presented as protection against another.
 
 ## 6. Bounded reviewer bundle
 
@@ -137,12 +210,17 @@ minimum bundle for a protocol increment contains:
 1. the exact Issue body and base/final SHAs;
 2. `AGENTS.md`;
 3. this plan;
-4. the changed normative sources and their directly referenced normative
-   dependencies;
-5. the relevant slice of the derived review model and its source/digest map;
+4. the normative source index in section 3.1, the changed normative sources and
+   their directly referenced normative dependencies;
+5. `docs/security/STYX-THREAT-MODEL.md`,
+   `docs/protocol/styx-app-kernel-v0-responsibility-matrix.md`, and the relevant
+   slice of `docs/protocol/review/styx-app-kernel-v0-review-model.json` with its
+   source/digest map;
 6. the changed executable scenarios, mutants and deterministic reports;
 7. the exact diff, required-command results and artifact digests;
-8. prior unresolved findings that affect the increment.
+8. final-SHA provider status for every required check, including scope-evidence
+   status and report; absent, cancelled or unexpectedly skipped is failure;
+9. prior unresolved findings that affect the increment.
 
 The reviewer may inspect the entire repository and public standards when useful.
 The bundle limits mandatory context; it does not forbid investigation. Omitting a
@@ -160,7 +238,10 @@ Every protocol increment requires:
 - deterministic reports generated twice and compared byte for byte;
 - normative-source changes before derived-model changes;
 - explicit disposition and re-verification of every material finding;
-- exact-final independent review for substantial security increments;
+- exact-final independent review for every increment that changes a normative
+  source, ratified byte encoding, authority or revocation rule, or threat model;
+  any other exemption must be justified in its contract and re-verified at the
+  phase exit;
 - human review and ratification through the approved gates.
 
 Silence, timeout, truncation, non-determinism, an unexpected skip or an absent
@@ -174,8 +255,9 @@ The phase may end only when all applicable conditions are true:
 1. every C0.3 blocker is closed, or the final contract excludes it from a
    precisely defined corpus without making the excluded claim;
 2. no unresolved `BLOCKING` or `HIGH` finding remains in the phase scope;
-3. normative sources, the derived model, scenarios, vectors and threat model are
-   mutually consistent at the exact final SHA;
+3. the enumerated normative sources, derived-model source map, scenarios,
+   vectors and threat model are mutually consistent at the exact final SHA; an
+   omitted normative source remains a failure rather than shrinking the set;
 4. required adversarial traces and mutants pass deterministically, with no
    unexplained survivor or cascading failure that hides the intended assertion;
 5. cross-implementation or independent-oracle evidence exists for every claimed
@@ -183,8 +265,13 @@ The phase may end only when all applicable conditions are true:
 6. resource and availability costs of fail-closed behavior are measured and
    stated, not assumed away;
 7. security claims and non-claims name their actors, scope and residual risks;
-8. an independent exact-final review reports no unresolved blocking finding;
+8. an independent exact-final review reports no unresolved blocking finding,
+   with distinct reviewer identity and execution context evidenced as required
+   by `AGENTS.md`;
 9. the authorized humans ratify an explicit `GO`, bounded `GO`, or `NO-GO`.
+10. every exception invoked under section 2 is enumerated with its Issue,
+    ratifying human, touched paths and finding that it selected no protocol
+    semantics; any unreconciled exception is blocking.
 
 A bounded `GO` authorizes only the named corpus or next contract. It does not
 authorize product code, deployment or sensitive use.
@@ -200,7 +287,8 @@ order:
 3. independently testable implementation(s) against the conformance corpus;
 4. supported secure-session adapter and authenticated persistence boundaries;
 5. reliable delivery and runtime profiles;
-6. synthetic Themis/Flegias scenarios, then separately gated field readiness.
+6. synthetic Themis or successor-vertical scenarios, then separately gated
+   field readiness.
 
 The current browser PWA remains one runtime profile, not the protocol authority.
 No post-freeze item is automatically approved by this document.
@@ -220,6 +308,9 @@ Status reports use this table and cite evidence:
 Percentages, when used, must be derived from the declared obligation set and must
 not be interpreted as a probability of security.
 
+A dated status record is produced after each completed increment and carried
+into the section 8 verdict.
+
 ## 11. Current state
 
 At adoption of this plan:
@@ -227,9 +318,18 @@ At adoption of this plan:
 - the review model exists and is useful for bounded inspection;
 - C0.2j is active experimental work under Issue #233 / PR #234;
 - C0.2k and O-06c depend on C0.2j;
-- O-07, O-08, O-10 and O-14 remain open;
+- O-07, O-08, O-10 and O-14 remain open; O-12 remains conditional as described
+  in section 4; O-11, O-13, O-15 and O-16 retain their explicitly bounded
+  non-blocking or downstream-blocking roles;
 - C0.3 remains `NO-GO`;
 - demo, product and sensitive-use claims remain blocked.
+
+The human ratification gate is currently discipline-enforced rather than fully
+server-enforced: the repository governance record at
+`docs/governance/mucc-migration/ruleset-proposal.md` records no required
+approving review and no last-push approval. Until an authorized human verifies
+and applies stronger ruleset controls, every human gate must be evidenced
+explicitly in the relevant Issue and pull request.
 
 This state is intentionally conservative. The freeze ends only through section
 8, not through elapsed time, reviewer consensus or pressure to demonstrate a

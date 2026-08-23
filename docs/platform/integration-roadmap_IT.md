@@ -1,4 +1,4 @@
-<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="a6e21b17b1443ab582dd0bb1c21664b440e05bd5d8bed06d67a48ab6c1e68ca3" -->
+<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="7c65270456a9b13c4b1506e79d49050c176969c8f9432fcc7da1c6c5ee632194" -->
 # Roadmap per integrare le capacità applicative in Styx
 
 [English canonical version](integration-roadmap.md)
@@ -6,9 +6,8 @@
 > **Stato:** proposta esplorativa, non normativa
 > **Base osservata:** `main @ d90931a3f59ce89c1594cad64ce385d58857b305`
 > **Sincronizzazione dei claim pubblici:** il linguaggio su assurance ed
-> esercizio/pilot è allineato al Project Brief a
-> `main @ 4c56cd549f1a6de2cc61da38cc1d9c1909ce04d0`; l'inventario delle capacità
-> resta lo snapshot della base osservata sopra.
+> esercizio/pilot è allineato all'attuale `docs/PROJECT_BRIEF.md`; l'inventario
+> delle capacità resta lo snapshot della base osservata sopra.
 > Questa roadmap propone candidati per future Issue. Non autorizza codice,
 > crittografia, formati persistenti, migrazioni o modifiche al vault.
 
@@ -165,7 +164,8 @@ CI completi.
 **Non include:** dati di prodotto o migrazione.
 
 Questo incremento è già contrattualizzato separatamente e non deve essere
-allargato dalla piattaforma.
+allargato dalla piattaforma. Quel contratto separato è sospeso dall'active
+planning gate finché resta in vigore il freeze di protocol hardening.
 
 ### Incremento B — Product namespace e migrazione
 
@@ -289,7 +289,9 @@ operatore, retention e avvisi di sicurezza.
 
 ### Incremento O — Distribution assurance
 
-Può avanzare in parallelo quando i file non si sovrappongono.
+Può avanzare in parallelo quando i file non si sovrappongono, subordinatamente
+all'active planning gate; è sospeso finché resta in vigore il freeze di protocol
+hardening.
 **Outcome candidato:** verifica della PWA e degli aggiornamenti, manifest di
 release, trasparenza o firme appropriate, confronto indipendente degli
 artefatti e profilo native high-assurance separato.

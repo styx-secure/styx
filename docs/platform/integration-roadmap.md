@@ -6,8 +6,7 @@
 > **Status:** exploratory, non-normative proposal
 > **Observed base:** `main @ d90931a3f59ce89c1594cad64ce385d58857b305`
 > **Public-claims synchronization:** assurance and exercise/pilot wording is
-> aligned with the Project Brief at
-> `main @ 4c56cd549f1a6de2cc61da38cc1d9c1909ce04d0`; the capability inventory
+> aligned with the current `docs/PROJECT_BRIEF.md`; the capability inventory
 > remains the snapshot from the observed base above.
 > This roadmap proposes candidates for future Issues. It does not authorize
 > code, cryptography, persisted formats, migrations, or vault changes.
@@ -165,7 +164,8 @@ with complete tests and CI.
 **Does not include:** product data or migration.
 
 This increment is already contracted separately and must not be broadened by
-the platform effort.
+the platform effort. That separate contract is paused by the active planning
+gate while the protocol-hardening freeze remains in force.
 
 ### Increment B — Product namespace and migration
 
@@ -287,7 +287,9 @@ operator states, retention, and security warnings.
 
 ### Increment O — Distribution assurance
 
-May proceed in parallel when files do not overlap.
+May proceed in parallel when files do not overlap, subject to the active
+planning gate; it is paused while the protocol-hardening freeze remains in
+force.
 **Candidate outcome:** PWA and update verification, release manifest,
 appropriate transparency or signatures, independent artifact comparison, and a
 separate native high-assurance profile.
