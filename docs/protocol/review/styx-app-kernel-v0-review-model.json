@@ -536,7 +536,7 @@
         "OB-K01"
       ],
       "owner": "K",
-      "reason": "Exact signature suite, verification boundary and downgrade evidence remain open.",
+      "reason": "Exact signature suite, one canonical verification-key octet encoding and enforceable bound per admitted suite, verification boundary and downgrade evidence remain open.",
       "status": "OPEN"
     },
     {
@@ -2987,7 +2987,7 @@
         "OB-K19"
       ],
       "owner": "AP",
-      "statement": "C0.2j provides bounded lineage containment but does not stop an uncontested compromised sole authority, revoke independently granted same-key aliases or guarantee recovery after total authority loss."
+      "statement": "C0.2j provides bounded lineage containment but does not stop an uncontested compromised sole authority, revoke independently granted same-key aliases, provide atomic sole-authority rotation or guarantee recovery after sole-authority compromise, loss or total authority loss."
     },
     {
       "citations": [
@@ -5223,7 +5223,7 @@
         "OB-K19"
       ],
       "owner": "AP",
-      "statement": "The first-slot rule bounds accepted contested reductions, and one selected reduction can deactivate the target's bounded descendant subtree. It does not bound operational availability loss: a rejected later-slot or self-lineage reduction can permanently lower Must0 for its target subtree within the shared evidence envelope.",
+      "statement": "The first-slot rule bounds accepted contested reductions, and one selected reduction can deactivate the target's bounded descendant subtree. It does not bound cross-actor slot steering or operational availability loss: a rejected later-slot or self-lineage reduction can permanently lower Must0 for its target subtree, make another actor contested, move that actor's selected slot and change accepted-reduction accounting within the shared evidence envelope. A revoked credential can retain one contested slot for itself plus one per stockpiled K-valid May0 descendant, subject only to O-08 per-credential and context-total limits.",
       "status": "OPEN"
     },
     {
@@ -5728,19 +5728,19 @@
       "authority": "evidence",
       "id": "credential_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-analysis.md",
-      "sha256": "f29472f6680368bf4c71162af2f611fc6e47b03c58a319627cee29658cae1cd7"
+      "sha256": "14f1584daa646f05f85806510145e91e8899ecfb32a0c68c270fb7d0444ea5be"
     },
     {
       "authority": "evidence",
       "id": "credential_report",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-falsification-report.md",
-      "sha256": "c2aff58affc7ed0cb3ace4a092d3b9c4ca66ff8df73c2921eb223e3b62c8b9d5"
+      "sha256": "3a427143bd74c50e2d16a7867762b10ee1870e8b7611de4fd9453024dca22a9b"
     },
     {
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "b89484cb65ea373bea0ff3586ec7b48ca2bc79520aed4b43263d5613ef5d22d2"
+      "sha256": "9d61d4a8a1c884695f45d7273f9f12773cdf9118663dc1e6584602490c68bf92"
     },
     {
       "authority": "evidence",
@@ -5752,7 +5752,7 @@
       "authority": "evidence",
       "id": "identity_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-identity-context-analysis.md",
-      "sha256": "141082ce1be562e69b9e077a9d0a04d741d2aa6dabcc59ff01176977445c5527"
+      "sha256": "ad83a2555dc96b52c089f9ecb97f976452b5661554e7f136ea372b8a6a8db2ba"
     },
     {
       "authority": "evidence",
@@ -5782,7 +5782,7 @@
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "746b30dd48af498aab9e71890f87de2ae6b9c81692c586740ed25aba4629d384"
+      "sha256": "bb0bc4a2fc339bee245518718d6b1e66016346fac07814a90945ce9414623d5e"
     },
     {
       "authority": "normative",

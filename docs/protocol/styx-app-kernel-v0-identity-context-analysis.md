@@ -332,9 +332,11 @@ names or invent permissions. Openings, pending status, removal, retention and
 current AP applicability never alter the authority evidence set, K binding,
 admission, ordering, duplicate identity or forks. The selector is evaluated
 once from Pass 0; final provenance termination uses only accepted reductions.
-An unselected reduction may still conservatively lower `Must0` for a concurrent
-expansion, but cannot steer selected-slot membership. C0.2j selects fresh full
-replay and makes no incremental-authority-cache claim.
+An unselected reduction may still conservatively lower `Must0` for a target
+subtree and can thereby make another actor contested, move that actor's selected
+slot and change accepted-reduction membership. It does not itself enter accepted
+termination or expand operational authority. C0.2j selects fresh full replay and
+makes no incremental-authority-cache claim.
 
 The following do not satisfy `AP` authorization:
 
@@ -585,8 +587,9 @@ human mappings, but this protocol does not promise cryptographic deniability.
 Reopen O-02 if the chosen causal model cannot define rotation/revocation without
 accepting stale authority, if a required profile cannot use context-local
 credentials, if independent evidence shows that the `AP → K` split permits an
-authorization bypass, if rejected evidence can steer selected-slot membership,
-if DP/oracle equivalence or typed resource failure does not hold, or if an
+authorization bypass, if the ratified rejected-evidence slot-steering effect is
+removed, widened beyond its disclosed bounded envelope or allowed to expand
+authority, if DP/oracle equivalence or typed resource failure does not hold, or if an
 acceptable anonymous-return design requires bearer-only authorship rather than
 credential admission.
 

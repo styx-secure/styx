@@ -516,19 +516,24 @@ outcomes.
   A rejected later-slot or self-lineage reduction can still conservatively and
   permanently lower Pass-0 `Must0` for a target and its grant descendants,
   because all K-admitted control evidence remains in every Pass-0 projection.
-  It cannot change selected-slot or accepted-reduction membership and is not an
-  accepted termination. The first-slot rule therefore bounds accepted contested
-  reductions and their accepted target subtrees; it does not bound the separate
-  operational availability loss caused by rejected K-admitted evidence. That
-  reach is bounded in this experiment only by the common event/control/credential
-  envelope and must receive enforceable per-credential admission limits from
-  O-08 before any production availability claim.
+  That lower `Must0` can make another actor's reductions contested, move that
+  actor's lowest eligible contested slot, and reduce the membership of the
+  accepted-reduction set even though the influencing reduction is itself rejected
+  and enters no accepted termination. The first-slot rule therefore bounds
+  accepted contested reductions and their accepted target subtrees; it does not
+  bound this separate cross-actor slot-steering and operational-availability
+  power. Its reach is bounded in this experiment only by the common
+  event/control/credential envelope and must receive enforceable per-credential
+  and context-total admission limits from O-08 before any production availability
+  claim.
   `REVOKE` and the retiring side of `ROTATE` require a non-genesis target's
   binding grant in their authenticated causal ancestry; missing targets are
   unresolved and resolvable non-causal targets are structurally rejected.
   `RECOVER` retains its separate fresh-grant transcript rule: the retired
-  credential identifier is continuity annotation rather than a reduction target
-  and is not subject to R-1, while the referenced fresh `GRANT` must be admitted.
+  credential identifier is an opaque continuity annotation rather than a
+  reduction target. K does not resolve that identifier or derive an authority
+  effect from it, so an absent or unrelated value neither invokes R-1 nor changes
+  the fold; the referenced fresh `GRANT` must still be admitted.
   Self-rotation is
   structurally rejected in v0. Revocation and any same-author fork terminate
   the target lineage and every grant descendant while independent definitely
@@ -536,16 +541,22 @@ outcomes.
   admitted binding grant, create no binding themselves and cannot reuse or
   resurrect an old identifier. Acceptance of a `ROTATE` retirement does not
   confer authority on its replacement: a replacement `GRANT` authored by the
-  retiring lineage can remain K-valid but fail Pass0 `Must0`, leaving no
-  operational replacement. Late evidence triggers fresh full replay; no
-  incremental authority-state handoff is claimed.
+  retiring lineage can be K-valid and APPLIED, yet the accepted retirement
+  removes both issuer and grant descendant from complete-disclosure operational
+  authority. V0 has no atomic sole-authority rotation or recovery: a
+  pre-provisioned descendant can operate only while its issuer remains
+  operational, and retiring the sole issuer also terminates that descendant.
+  Compromise or loss without an independent authorized recovery lineage is
+  terminal. Late evidence triggers fresh full replay; no incremental
+  authority-state handoff is claimed.
   Structural and binding rejection is closed transitively before authority
   evaluation: if a post-discovery R-1, self-rotation or binding failure removes
   an event, every admitted descendant that depends on that event is removed as
-  `STRUCTURAL_REJECTION`, and every event whose actor binding grant is removed is
-  `UNRESOLVED_CREDENTIAL_BINDING`. A reduction whose target binding disappears is
-  `UNRESOLVABLE_CREDENTIAL`. No descendant of rejected graph evidence remains
-  admitted merely because binding discovery ran first.
+  `STRUCTURAL_REJECTION`. An otherwise independent event whose actor binding is
+  unavailable is `UNRESOLVED_CREDENTIAL_BINDING`; dependency rejection takes
+  precedence when both conditions hold. A reduction whose target binding
+  disappears is `UNRESOLVABLE_CREDENTIAL`. No descendant of rejected graph
+  evidence remains admitted merely because binding discovery ran first.
   The factorial linearization is a bounded test oracle. The executable fold uses
   reachable-state DP keyed by processed items, authority, revoked roots and
   forked roots; ordinary-event probes query acting-prefix-compatible states
@@ -587,12 +598,15 @@ outcomes.
   containment can leave no operational authority. A K-valid grant rejected for
   expansion because its issuer is possible but not necessary authority remains
   historical provenance evidence; a descendant may therefore receive its own
-  first contested reduction slot. Under the v3 envelope this permits at most
-  six accepted contested reductions against six distinct subtrees in total,
+  first contested reduction slot. One revoked credential can therefore retain
+  its own slot plus one slot for every stockpiled K-valid May0 descendant, with
+  each slot able to target a distinct provenance subtree. Under the v3 envelope
+  this permits at most six accepted contested reductions against six distinct subtrees in total,
   with up to five siblings concentrated in one forked slot. One reduction can
   terminate five credentials in the executable six-control witness and at most
-  nine structurally under the ten-credential cap. A later rejected slot may
-  still block a concurrent expansion only through conservative Pass-0 `Must0`.
+  nine structurally under the ten-credential cap. A rejected slot may also move
+  another actor's selected contested slot and change accepted-reduction
+  accounting through conservative Pass-0 `Must0`.
   These are denial-of-availability powers, not quorum-safety claims. Same-key
   aliases are visible but independently authorized, independently budgeted and
   independently forked.
@@ -603,8 +617,9 @@ outcomes.
   O-14 owns the exact signature-suite registry and downgrade evidence.
 - **Residual/reopen condition:** reopen if O-01 cannot express safe
   rotation/revocation, a required profile cannot use context-local credentials,
-  the `AP → K` split permits an authorization bypass, a rejected reduction can
-  steer accepted-slot membership, the reachable-state key diverges from its
+  the `AP → K` split permits an authorization bypass, the ratified rejected-
+  reduction slot-steering semantics are removed, widened beyond the disclosed
+  bounded envelope or allowed to expand authority, the reachable-state key diverges from its
   factorial oracle, a resource overflow exposes partial authority, or an
   approved anonymous profile requires bearer-only authorship.
 - **Human ratification:** the original C0.2b split was approved under Issue
@@ -1169,6 +1184,9 @@ outcomes.
 - **Dependent artifact:** O-02 credential-record bytes, application-signature
   verification and C0.3 invalid-signature/cross-suite expectations. O-06 owns
   only the transcript slot/derivation boundary and MUST NOT absorb this choice.
+  O-14 must assign exactly one canonical verification-key octet encoding and an
+  enforceable length bound to every admitted `grantee_suite_id`; inability to do
+  so reopens O-06b-1 rather than permitting per-event negotiation.
   The C0.2f report predates O-14 and therefore does not enumerate it; this
   registry is the current authority for the expanded C0.3 blocker list without
   changing that frozen report or its recorded result.

@@ -11,7 +11,7 @@
 
 The independently authored v3 symbolic model found **no counterexample within
 the declared common envelope** for the selected grant-rooted, Pass0/first-slot,
-provenance-aware construction. All **45/45 required semantic mutants** were
+provenance-aware construction. All **47/47 required semantic mutants** were
 killed. This is bounded negative evidence, not a mathematical proof, production
 implementation, conformance corpus, audit or security certification.
 
@@ -19,11 +19,11 @@ The canonical outputs at this source state are:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| required witness report | `c2328dc7c2fd7c93d52e93d2832395b1a88d9c9934c136158dbde973bf35f41a` |
-| mutation report | `6d18a699ab3a974aaa60c68475d6e2c8b06551dd2d29fc57d6e24c62e1ee833b` |
+| required witness report | `b34a7ea01994abe95e3523634e50dad03a6eb3a00c4546d4b1eb8e0fd1d0bf5e` |
+| mutation report | `7866097bc58e96f6fd014553ccd0314fd14e8caccc656165b64f1ac969e14eeb` |
 
-The suite emits 69 directed assertions across 73 recorded projection runs and
-36 closed witness families. Repeating either command produces byte-identical
+The suite emits 70 directed assertions across 75 recorded projection runs and
+37 closed witness families. Repeating either command produces byte-identical
 JSON:
 
 ```bash
@@ -106,6 +106,7 @@ C0.2j experiment envelope and do not select O-08 product limits.
 | author-chain and frontier canonicality | distinct sequences follow predecessor continuity while sibling forks share one author-sequence slot |
 | grant/revoke grinding and delivery | attacker-selected references and bounded delivery orders cannot bypass Pass0 `Must0` expansion |
 | bounded contested standing | each actor receives at most one first eligible contested slot; all eligible siblings in it are applied without a reference winner |
+| rejected-reduction slot steering | a later-slot reduction that is ultimately rejected can lower another actor to May0, move that actor's selected contested slot and change accepted-reduction accounting without expanding operational authority |
 | may-only reduction | a Pass0 `May0`-only reduction can use the bounded slot; an actor unauthorized in every interpretation cannot |
 | mutual concurrent revocation | both eligible reductions apply; no canonical-order survivor is selected |
 | self- and cross-lineage standing | self-lineage attempts consume no slot while an eligible peer-directed sibling remains selectable |
@@ -193,23 +194,29 @@ M45 factorial order count becomes the production gate
 M46 authority-state overflow is encoded as empty authority
 M47 the DP state key omits authority
 M48 primary-outcome precedence drifts
+M49 a later-slot reduction is hidden from Pass0
+M50 fork containment leaves grant descendants in operational authority
 ```
 
-The mutation harness requires both an observed failing assertion and a declared
+The requested incremental-result-diverges-from-fresh-replay mutant is recorded as
+inapplicable: C0.2j exposes fresh full replay only and has no incremental
+authority result to mutate. The mutation harness requires both an observed failing assertion and a declared
 witness-to-mutant edge. A mutant is not reported killed merely because some
 unrelated check failed.
 
 ## 6. Frozen-interface verification
 
 Before amendment, the exact O-06b-1 section-4 seven-role domain registry hashes
-to:
+to the value below. The extraction rule is the bytes from the `## 4.` heading
+through the byte immediately before the next `## ` heading, followed by exactly
+one LF:
 
 ```text
 5b6bc4041b028ead4821cd7d33bb102255d7df728309e2e8bef232f16c9e3fb3
 ```
 
 The amended document must retain that exact section hash. The byte-frozen
-O-06b-2 section-6 commitment context hashes to:
+O-06b-2 section-6 commitment context uses the same extraction rule and hashes to:
 
 ```text
 14bcde53d5534584e3cd1ba2503a3bb755df112ed0d42485cf9f1bef61b1f7f8
@@ -227,19 +234,27 @@ the logical-removal tail or modify the 44-octet commitment context.
   and does not prove SHA-256 collision/second-preimage security.
 - One uncontested compromised authority can still remove all peers and remain
   sole producer; no quorum or separation-of-duty rule is invented here.
+- V0 has no atomic rotation or recovery for a sole-authority context. A
+  pre-provisioned descendant remains dependent on the issuer's operational
+  lineage; compromise or loss without independently rooted recovery authority is
+  terminal.
 - Mutual reductions or lineage quarantine can leave no operational authority.
 - Revoking one credential does not revoke an independently granted same-key
   alias, and such aliases retain separate credential-local fork namespaces.
 - The first-slot exception deliberately preserves one contested peer-reduction
-  opportunity per actor credential. Independently granted credentials and
-  same-key aliases therefore multiply standing within the common envelope.
+  opportunity per actor credential. A revoked credential can retain its own slot
+  plus one for every stockpiled K-valid May0 descendant; independently granted
+  credentials and same-key aliases multiply standing further within the common
+  envelope.
 - One selected reduction can terminate a bounded descendant subtree: at most
   nine credentials structurally under the ten-credential cap and five in the
   executable six-control witness.
 - A rejected later-slot or excluded self-lineage reduction can permanently lower
   Pass0 `Must0` for its target subtree even though it cannot become an accepted
-  reduction. The accepted first-slot bound is not an operational availability
-  bound; the latter is bounded here only by the common evidence envelope.
+  reduction. It can thereby make another actor's reductions contested, move that
+  actor's selected slot and change accepted-reduction accounting. The accepted
+  first-slot bound is not a bound on this cross-actor availability power; the
+  latter is bounded here only by the common evidence envelope.
 - R-1 prevents direct omitted-history vetoes against unseen later grants, but an
   attacker can indirectly lower `Must0` for future grants by reducing their
   visible issuer. Mutual concurrent
@@ -250,8 +265,9 @@ the logical-removal tail or modify the 44-octet commitment context.
   laundering but provides no out-of-band recovery.
 - An accepted `ROTATE` retirement does not make its referenced replacement
   operational. A replacement `GRANT` authored by the retiring lineage can be
-  K-valid yet fail Pass0 `Must0`, so profiles need an independently authorized
-  recovery path and must not claim atomic authority transfer.
+  K-valid and APPLIED while the retirement terminates both issuer and descendant,
+  so profiles need an independently authorized recovery path and must not claim
+  atomic authority transfer.
 - A valid evidence set beyond a DP state or transition limit makes the entire
   authority projection unavailable until a future profile migration or
   admissible reduction of the evidence set.

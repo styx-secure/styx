@@ -39,15 +39,20 @@ linearization of the same complete K-admitted credential-control evidence:
 
 The bounded exception is deliberately non-recursive. It excludes `May0`-only
 self-lineage reductions, never selects by event reference, and gives each
-credential at most one contested slot. Rejected later-slot reductions do not
-change the selected slot or accepted-reduction membership. They may still make a
-concurrent expansion fail Pass-0 `Must0`; that conservative availability effect
-is required by the all-interpretations rule and is reported rather than hidden.
+credential at most one contested slot. Any K-admitted reduction, including a
+later-slot or self-lineage reduction that is ultimately rejected, can lower
+Pass-0 `Must0` for its target subtree. That can make another actor's reductions
+contested, move that actor's selected slot and reduce accepted-reduction
+membership. The influencing reduction itself remains outside accepted
+termination. This conservative cross-actor availability and accounting effect is
+required by the all-interpretations rule and is reported rather than hidden.
 
 A `REVOKE`, and the retiring side of `ROTATE`, may name a non-genesis target only
 when its binding `GRANT` is in the reduction's authenticated causal ancestry.
 `RECOVER` has its separate fresh-grant transcript rule and is not subjected to
-that target test. Self-rotation is structurally rejected in v0.
+that target test. Its retired identifier is an opaque continuity annotation that
+K does not resolve or use for an authority effect. Self-rotation is structurally
+rejected in v0.
 
 Revocation and fork quarantine terminate the target credential and every
 grant-descendant in its provenance lineage. The scope is that lineage, not the
@@ -136,11 +141,10 @@ and changes no binding, provenance or authority.
 
 Acceptance of the retiring side of `ROTATE` does not imply that its referenced
 replacement is operational. In particular, a replacement `GRANT` authored by
-the lineage being retired can remain a valid K binding while failing Pass0
-`Must0`; the rotation then retires the old lineage without granting producer
-authority to the replacement. Profiles must provide an independently
-authorized recovery path rather than infer atomic authority transfer from an
-accepted `ROTATE`.
+the lineage being retired can be K-valid and APPLIED, but the accepted retirement
+terminates both issuer and grant descendant in complete-disclosure operational
+authority. Profiles must provide an independently authorized recovery path
+rather than infer atomic authority transfer from an accepted `ROTATE`.
 
 All `0x02` events require `content_class == NONE`. This check precedes tail
 parsing, binding lookup and AP evaluation. K never derives the control kind,
@@ -308,11 +312,12 @@ authorized credential can coexist with the old one.
 
 These checks form a transitive rejection closure before authority evaluation.
 If R-1, self-rotation or a binding failure removes an event after binding
-discovery, every admitted descendant that depends on it is structurally rejected;
-an event whose actor binding grant was removed becomes
-`UNRESOLVED_CREDENTIAL_BINDING`, and a reduction whose target binding disappeared
-becomes `UNRESOLVABLE_CREDENTIAL`. This prevents a dependent event from retaining
-K admission only because the invalid ancestor was discovered in an earlier pass.
+discovery, every admitted descendant that depends on it is structurally rejected.
+An otherwise independent event whose actor binding is unavailable becomes
+`UNRESOLVED_CREDENTIAL_BINDING`; dependency rejection wins when both apply. A
+reduction whose target binding disappeared becomes `UNRESOLVABLE_CREDENTIAL`.
+This prevents a dependent event from retaining K admission only because the
+invalid ancestor was discovered in an earlier pass.
 
 A same-author fork is two or more distinct K-valid events at the same
 `(credential_id, author_sequence)` slot. For non-genesis sequence positions the
@@ -384,11 +389,19 @@ independently granted same-key alias survives. These are explicit governance and
 availability limits, not repaired with timestamps, majority, relay observation
 or hidden recovery.
 
+V0 has no atomic rotation or recovery for a sole-authority context. A descendant
+pre-provisioned while the sole issuer is operational can act only while that
+issuer remains operational; retiring the issuer also terminates the descendant.
+Compromise or loss without an independently rooted authorized recovery lineage is
+therefore terminal.
+
 A grant issued by an actor that is `May0` but not `Must0` is rejected as an
 authority expansion, so its descendant never becomes operational merely from
 that grant. Nevertheless the K-valid grant and provenance edge remain historical
-evidence. Each independently bound descendant credential can receive its own
-first contested slot when it is `May0` at that acting prefix. This per-credential
+evidence. Each K-valid descendant credential can receive its own first contested
+slot when it is `May0` at that acting prefix, even when its grant is not accepted
+as an expansion. One revoked credential can therefore retain its own slot plus
+one slot for every stockpiled May0 descendant. This per-credential
 choice preserves authenticated author-chain locality and avoids inventing a
 global/root selector, at an explicit availability cost.
 
@@ -404,8 +417,10 @@ per-credential budget, but never beyond those common-envelope totals.
 
 An unselected later-slot or excluded self-lineage reduction can still
 conservatively and permanently block operations and expansions by lowering
-Pass-0 `Must0` for its target subtree. It cannot choose a different accepted
-reduction or enter accepted-termination accounting. R-1 prevents the same event
+Pass-0 `Must0` for its target subtree. It can thereby make another actor's
+reductions contested, move that actor's selected slot and change accepted-
+reduction membership, while never entering accepted-termination accounting
+itself. R-1 prevents the same event
 from directly naming an unseen later grant, but not from indirectly disabling
 future grants by reducing their visible issuer. The number of accepted
 reductions is therefore not a bound on operational availability loss; within

@@ -113,6 +113,8 @@ REQUIRED_MUTANTS = frozenset(
         "M46_STATE_OVERFLOW_IS_EMPTY_AUTHORITY",
         "M47_STATE_KEY_OMITS_AUTHORITY",
         "M48_OUTCOME_PRECEDENCE_DRIFT",
+        "M49_LATER_SLOT_REDUCTION_HIDDEN_FROM_PASS0",
+        "M50_FORK_LEAVES_DESCENDANT_AUTHORITY",
     }
 )
 
@@ -154,6 +156,7 @@ REQUIRED_WITNESSES = frozenset(
         "outcome-precedence",
         "non-genesis-causal-target-cleanup",
         "bounded-subtree-amplification",
+        "rejected-reduction-slot-steering",
     }
 )
 
@@ -1673,9 +1676,14 @@ def _succession_alias_fork_checks(suite: Suite, mutation: Mutation) -> None:
             and successor_expansion.reference
             not in descendant_projection.accepted_controls
             and c.credential_id not in descendant_projection.terminal_authority
-            and successor.credential_id not in descendant_projection.terminal_authority,
+            and successor.credential_id not in descendant_projection.terminal_authority
+            and successor.credential_id
+            not in descendant_projection.possible_terminal_authority
+            and successor.credential_id
+            not in descendant_projection.necessary_terminal_authority,
             "a fork terminates its grant descendants without resurrecting their causal-prefix reductions",
-            "A descendant keeps only possible destructive standing; it cannot expand authority.",
+            "A causal-prefix reduction may retain possible standing, but the descendant is absent from both complete-disclosure operational authority sets.",
+            "M50_FORK_LEAVES_DESCENDANT_AUTHORITY",
         )
     )
 
@@ -1856,6 +1864,99 @@ def _amended_remediation_checks(suite: Suite, mutation: Mutation) -> None:
             "M34_UNBOUNDED_CONTESTED_REDUCTIONS",
             "M37_REJECTED_REDUCTION_DEGRADES_PASS2",
             "M40_GRINDABLE_CONTESTED_SELECTOR",
+        )
+    )
+
+    steering_actor = genesis("slot-steering-actor", "b6")
+    steering_contester = genesis("slot-steering-contester", "b7")
+    first_target = genesis("slot-steering-first-target", "b8")
+    affected_actor = genesis("slot-steering-affected-actor", "b9")
+    affected_first_target = genesis("slot-steering-affected-first", "ba")
+    affected_second_target = genesis("slot-steering-affected-second", "bb")
+    contest_actor = control(
+        "slot-steering-contest-actor",
+        steering_contester,
+        Kind.REVOKE,
+        target_id=steering_actor.credential_id,
+    )
+    actor_first = control(
+        "slot-steering-actor-first",
+        steering_actor,
+        Kind.REVOKE,
+        target_id=first_target.credential_id,
+    )
+    rejected_later = control(
+        "slot-steering-rejected-later",
+        steering_actor,
+        Kind.REVOKE,
+        sequence=1,
+        predecessor=actor_first.reference,
+        target_id=affected_actor.credential_id,
+    )
+    affected_first = control(
+        "slot-steering-affected-first-reduction",
+        affected_actor,
+        Kind.REVOKE,
+        target_id=affected_first_target.credential_id,
+    )
+    affected_second = control(
+        "slot-steering-affected-second-reduction",
+        affected_actor,
+        Kind.REVOKE,
+        sequence=1,
+        predecessor=affected_first.reference,
+        target_id=affected_second_target.credential_id,
+    )
+    steering_genesis = (
+        steering_actor,
+        steering_contester,
+        first_target,
+        affected_actor,
+        affected_first_target,
+        affected_second_target,
+    )
+    before_steering = _project(
+        suite,
+        Scenario(
+            (contest_actor, actor_first, affected_first, affected_second),
+            steering_genesis,
+        ),
+        mutation,
+    )
+    after_steering = _project(
+        suite,
+        Scenario(
+            (
+                contest_actor,
+                actor_first,
+                rejected_later,
+                affected_first,
+                affected_second,
+            ),
+            steering_genesis,
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-01B",
+            "rejected-reduction-slot-steering",
+            affected_second.reference in before_steering.accepted_controls
+            and before_steering.event_authority.get(affected_second.reference)
+            is AuthorityVerdict.MUST_AUTH
+            and rejected_later.reference not in after_steering.accepted_controls
+            and after_steering.outcomes.get(rejected_later.reference)
+            is Outcome.AUTHENTIC_BUT_UNAUTHORIZED
+            and after_steering.event_authority.get(affected_second.reference)
+            is AuthorityVerdict.MAY_AUTH
+            and affected_second.reference not in after_steering.accepted_controls
+            and affected_second_target.credential_id
+            in after_steering.terminal_authority
+            and affected_second_target.credential_id
+            not in after_steering.necessary_terminal_authority,
+            "one K-admitted later-slot reduction that is ultimately rejected can lower another actor to May0 and move that actor's accepted contested slot",
+            "The effect changes accepted-reduction accounting without expanding operational authority; O-02 and O-08 must disclose and bound it.",
+            "M49_LATER_SLOT_REDUCTION_HIDDEN_FROM_PASS0",
         )
     )
 

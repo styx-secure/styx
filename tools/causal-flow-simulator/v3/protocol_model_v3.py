@@ -790,7 +790,12 @@ def _simulate_order(
     for item in order:
         if isinstance(item, ForkJoin):
             forked.add(item.credential_id)
-            authority -= set(_lineage_descendants(bindings, {item.credential_id}))
+            fork_scope = (
+                frozenset({item.credential_id})
+                if mutation.identifier == "M50_FORK_LEAVES_DESCENDANT_AUTHORITY"
+                else _lineage_descendants(bindings, {item.credential_id})
+            )
+            authority -= set(fork_scope)
             continue
         event = item
         terminated = _lineage_descendants(bindings, revoked | forked)
@@ -802,7 +807,15 @@ def _simulate_order(
             continue
         if event.kind is Kind.GRANT:
             authority.add(event.reference)
-        elif event.kind in REDUCTION_KINDS and event.target_id:
+        elif (
+            event.kind in REDUCTION_KINDS
+            and event.target_id
+            and not (
+                mutation.identifier
+                == "M49_LATER_SLOT_REDUCTION_HIDDEN_FROM_PASS0"
+                and event.sequence > 0
+            )
+        ):
             revoked.add(event.target_id)
             authority -= set(_lineage_descendants(bindings, {event.target_id}))
     return actor_authorized, frozenset(authority)
@@ -821,7 +834,12 @@ def _advance_authority_state(
     forked = set(state.forked)
     if isinstance(item, ForkJoin):
         forked.add(item.credential_id)
-        authority -= set(_lineage_descendants(bindings, {item.credential_id}))
+        fork_scope = (
+            frozenset({item.credential_id})
+            if mutation.identifier == "M50_FORK_LEAVES_DESCENDANT_AUTHORITY"
+            else _lineage_descendants(bindings, {item.credential_id})
+        )
+        authority -= set(fork_scope)
         return (
             AuthorityState(
                 processed=state.processed | {item.reference},
@@ -842,7 +860,15 @@ def _advance_authority_state(
     if actor_ok:
         if item.kind is Kind.GRANT:
             authority.add(item.reference)
-        elif item.kind in REDUCTION_KINDS and item.target_id:
+        elif (
+            item.kind in REDUCTION_KINDS
+            and item.target_id
+            and not (
+                mutation.identifier
+                == "M49_LATER_SLOT_REDUCTION_HIDDEN_FROM_PASS0"
+                and item.sequence > 0
+            )
+        ):
             revoked.add(item.target_id)
             authority -= set(_lineage_descendants(bindings, {item.target_id}))
     if (

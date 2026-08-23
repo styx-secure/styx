@@ -205,14 +205,23 @@ do not prevent one uncontested compromised authority from causally revoking
 every peer and remaining sole authority, nor guarantee recovery after total
 authority loss. A rejected later-slot or self-lineage reduction cannot become
 an accepted termination, but its K-admitted evidence can permanently remove its
-target and that target's grant descendants from `Must0`. The first-slot rule
-therefore bounds accepted reductions, not operational availability loss. R-1
+target and that target's grant descendants from `Must0`. It can thereby make a
+different actor's reductions contested, move that actor's selected slot and
+change accepted-reduction membership without expanding operational authority.
+The first-slot rule therefore bounds accepted reductions, not this cross-actor
+slot-steering or operational availability loss. R-1
 blocks a direct omitted-history veto against an unseen later grant, but a
 compromised actor can still reduce the visible issuer and thereby keep later
 grants rooted there below `Must0`. Within C0.2j this reach is bounded only by the
 shared evidence envelope; O-08 must select enforceable per-credential and total
 admission limits before any production availability claim. This conservative
-effect never confers expansion or operational authority. Fork slots are scoped by
+effect never confers expansion or operational authority. A revoked credential
+may retain one contested slot for itself plus one for every stockpiled K-valid
+May0 descendant, each able to target a separate bounded subtree; those slots are
+limited only by the same per-credential and context-total O-08 envelope. V0 also
+has no atomic sole-authority rotation or recovery: a pre-provisioned descendant
+remains dependent on its issuer's operational lineage, while compromise or loss
+without independently rooted recovery authority is terminal. Fork slots are scoped by
 `(credential_id, author_sequence)`, so independently granted same-key aliases do
 not share fork quarantine.
 
