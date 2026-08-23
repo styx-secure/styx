@@ -29,7 +29,8 @@ increments that produce or reconcile:
 - machine-readable review-model records derived from normative sources;
 - executable adversarial traces, mutation tests and deterministic reports;
 - language-neutral conformance vectors after the corresponding semantics and
-  bytes have been ratified;
+  bytes have been ratified and the K-11 Apache-2.0 path inventory has been
+  separately approved before the first corpus file is created;
 - extraction of reference cases and independent oracles from existing
   implementations into the language-neutral corpus, provided this adds no
   behavior to those implementations and selects no protocol semantics;
@@ -37,7 +38,8 @@ increments that produce or reconcile:
 
 The following work is paused:
 
-- product, SDK, adapter, PWA/UI and Themis/Flegias feature development;
+- product, SDK, adapter, PWA/UI and Themis or successor-vertical feature
+  development;
 - new wire, storage, vault or migration implementation;
 - product activation of the secure-session proof;
 - cleanup or refactoring that could obscure protocol provenance;
@@ -53,11 +55,12 @@ this constraint explicitly.
 Any human-approved security remediation, emergency or otherwise, may proceed
 under its own approved contract only when it selects no new protocol semantics.
 Routine dependency, CI, licensing or governance maintenance may proceed under
-an approved contract when it changes no protocol artifact. Work claimed to be
-disjoint from the application protocol may proceed only when its Issue names
-the disjoint paths, dependencies and integration owner and an authorized human
-ratifies that determination before execution. Every exception is recorded for
-the exit audit in section 8. Neither exception silently lifts this freeze.
+an approved contract only when an authorized human ratifies before execution
+that it changes no protocol artifact. Work claimed to be disjoint from the
+application protocol may proceed only when its Issue names the disjoint paths,
+dependencies and integration owner and an authorized human ratifies that
+determination before execution. Every exception is recorded for the exit audit
+in section 8. Neither exception silently lifts this freeze.
 
 Issue #233 and PR #234 remain isolated experimental work. Their local model and
 simulator changes are preserved as candidate evidence, but are not normative,
@@ -81,8 +84,9 @@ When artifacts disagree, fail closed and use this order:
 8. independent review reports, chat and local notes.
 
 An item at rank 1 governs its approved scope but cannot silently supersede a
-native dependency, this freeze or a human gate. Lifting or changing the freeze
-requires an approved amendment to this plan or the exit verdict in section 8.
+native dependency, this freeze or a human gate. An approved amendment may
+change how the freeze operates; it cannot end it. Ending the freeze requires
+the exit verdict in section 8.
 Where another active plan conflicts with this plan, this plan governs the order
 of application-protocol work; the other plan continues to govern its disjoint
 domain.
@@ -111,6 +115,10 @@ with no ratified normative source is an error, not an addition to the normative
 set. The model schema and operating guide are respectively
 `docs/protocol/review/styx-app-kernel-v0-review-model.schema.json` and
 `docs/protocol/review/README.md`.
+
+The source index and the validator's pinned source tuples are independent
+copies whose equality is review-enforced until a separately approved validator
+can check the plan directly. Any mismatch blocks validation and phase exit.
 
 The classes have different meanings:
 
@@ -148,9 +156,12 @@ Protocol increments proceed in dependency order:
 6. **Synchronize the derived model.** Update it only after normative changes;
    pin provenance and add negative fixtures for each new invariant or failure
    class.
-7. **Produce C0.3.** Generate a specification-derived adversarial corpus and
+7. **Authorize the corpus licensing boundary.** Complete the separate K-11
+   Apache-2.0 exact-path inventory and the required licensing amendments before
+   creating the first C0.3 corpus file.
+8. **Produce C0.3.** Generate a specification-derived adversarial corpus and
    language-neutral vectors only for fully defined semantics and bytes.
-8. **Obtain the phase verdict.** Independent exact-final review and human
+9. **Obtain the phase verdict.** Independent exact-final review and human
    ratification produce `GO`, bounded `GO`, or `NO-GO` with residual risks.
 
 No later step may be used to fill an unresolved input of an earlier one.
@@ -163,11 +174,13 @@ The dependency basis is explicit:
 | C0.2k | exact C0.2j credential and sequence semantics | none |
 | O-06c | exact C0.2j/C0.2k bytes and existing O-06b profiles | obligations affected by later O-08 bounds or O-14 suite binding are deferred and rerun after those decisions |
 | remaining blockers | O-06c results plus each decision's own recorded inputs | the threat model and combined hostile cases are rerun after closure |
-| C0.3 | every blocker declared applicable to its exact corpus | no later decision may be guessed or inherited from an implementation |
+| K-11 corpus boundary | every corpus path and required licensing amendment separately approved | no C0.3 corpus file exists before this gate |
+| C0.3 | every unconditional blocker closed, every conditional blocker disposition justified by the registry, and K-11 complete | no later decision may be guessed or inherited from an implementation |
 
 For visibility, every O-series objective in the current registry is accounted
 for below. Absence from this table is an error in this plan, not evidence that
-an objective is closed.
+an objective is closed. Where the table and the decision registry disagree, the
+registry governs and this plan must be corrected.
 
 | Objectives | Registry status | Effect on this phase |
 |---|---|---|
@@ -252,8 +265,10 @@ grouping coherent work, but review depth and independence are not reduced.
 
 The phase may end only when all applicable conditions are true:
 
-1. every C0.3 blocker is closed, or the final contract excludes it from a
-   precisely defined corpus without making the excluded claim;
+1. every unconditional C0.3 blocker is closed; a conditional blocker may be
+   excluded from a precisely defined corpus only where the decision registry
+   explicitly records that non-blocking condition and the excluded claim is
+   not made; C0.2j, C0.2k and O-06c cannot be excluded;
 2. no unresolved `BLOCKING` or `HIGH` finding remains in the phase scope;
 3. the enumerated normative sources, derived-model source map, scenarios,
    vectors and threat model are mutually consistent at the exact final SHA; an
@@ -272,6 +287,8 @@ The phase may end only when all applicable conditions are true:
 10. every exception invoked under section 2 is enumerated with its Issue,
     ratifying human, touched paths and finding that it selected no protocol
     semantics; any unreconciled exception is blocking.
+11. K-11's exact Apache-2.0 corpus-path inventory and required licensing
+    amendments were approved before the first C0.3 corpus file was created.
 
 A bounded `GO` authorizes only the named corpus or next contract. It does not
 authorize product code, deployment or sensitive use.
@@ -282,7 +299,8 @@ After a passing exit verdict, work resumes through separate contracts in this
 order:
 
 1. C0.3 specification-derived corpus and conformance evidence, if not already
-   included in the exit verdict;
+   included in the exit verdict and only after K-11's separately approved
+   Apache-2.0 path inventory and licensing amendments;
 2. minimum language-neutral application-core interface;
 3. independently testable implementation(s) against the conformance corpus;
 4. supported secure-session adapter and authenticated persistence boundaries;
@@ -317,6 +335,8 @@ At adoption of this plan:
 
 - the review model exists and is useful for bounded inspection;
 - C0.2j is active experimental work under Issue #233 / PR #234;
+- `specs/05-sprint-plan.md` still marks US-001 through US-008 `todo`, but this
+  plan pauses their execution and requires that conflict to be audited at exit;
 - C0.2k and O-06c depend on C0.2j;
 - O-07, O-08, O-10 and O-14 remain open; O-12 remains conditional as described
   in section 4; O-11, O-13, O-15 and O-16 retain their explicitly bounded
@@ -330,6 +350,13 @@ server-enforced: the repository governance record at
 approving review and no last-push approval. Until an authorized human verifies
 and applies stronger ruleset controls, every human gate must be evidenced
 explicitly in the relevant Issue and pull request.
+
+The same discovery limitation applies to the freeze itself: `AGENTS.md` and
+`CLAUDE.md` do not yet link to this plan. Tracking Issue #237 records the
+separately human-gated governance change. Until it lands, every new task or
+story contract and its human review must explicitly verify this freeze before
+execution; the unresolved discovery gap is carried into the section 8 exit
+audit.
 
 This state is intentionally conservative. The freeze ends only through section
 8, not through elapsed time, reviewer consensus or pressure to demonstrate a
