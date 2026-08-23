@@ -11,7 +11,12 @@ import sys
 sys.dont_write_bytecode = True
 
 from protocol_model_v3 import Mutation
-from scenarios_v3 import REQUIRED_MUTANTS, mutation_coverage, run_required_suite
+from scenarios_v3 import (
+    REQUIRED_MUTANTS,
+    declared_mutation_coverage,
+    mutation_coverage,
+    run_required_suite,
+)
 
 
 SCHEMA = "styx-credential-succession-mutation-report/v3"
@@ -19,18 +24,23 @@ SUITE_ID = "c0.2j-required-mutants-v1"
 
 
 def build_report() -> tuple[dict[str, object], bool]:
-    declared = mutation_coverage()
+    declared = declared_mutation_coverage()
+    observed = mutation_coverage()
     results: list[dict[str, object]] = []
     for identifier in sorted(REQUIRED_MUTANTS):
         suite = run_required_suite(Mutation(identifier))
         failed = sorted(item.identifier for item in suite.checks if not item.passed)
         declared_detectors = list(declared[identifier])
-        killed = bool(failed) and bool(set(failed) & set(declared_detectors))
+        observed_detectors = list(observed[identifier])
+        killed = bool(declared_detectors) and set(observed_detectors) == set(
+            declared_detectors
+        )
         results.append(
             {
                 "id": identifier,
                 "killed": killed,
                 "declared_detectors": declared_detectors,
+                "observed_declared_detectors": observed_detectors,
                 "observed_failing_assertions": failed,
             }
         )

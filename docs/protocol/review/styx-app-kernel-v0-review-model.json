@@ -593,11 +593,15 @@
       ],
       "citations": [
         {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
           "anchor": "Two identifiers may visibly bind the same `(suite, key)` pair. This is alias",
           "source_id": "credential_analysis"
         },
         {
-          "anchor": "| alias evidence | independent same-key aliases are visible and independently revoked |",
+          "anchor": "| alias evidence | independent same-key aliases are visible, independently revoked and retain separate credential-local fork namespaces |",
           "source_id": "credential_report"
         }
       ],
@@ -657,6 +661,10 @@
       ],
       "citations": [
         {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
           "anchor": "reference collision fails closed before AP evaluation.",
           "source_id": "credential_analysis"
         }
@@ -685,7 +693,7 @@
       ],
       "citations": [
         {
-          "anchor": "same-author fork permanently terminates the forked credential",
+          "anchor": "permanently terminates the forked credential and the",
           "source_id": "decisions"
         }
       ],
@@ -711,6 +719,10 @@
         "C0.2j"
       ],
       "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
         {
           "anchor": "The accepted-control set contains `REVOKE`/`ROTATE` events satisfying",
           "source_id": "credential_analysis"
@@ -743,6 +755,10 @@
       ],
       "citations": [
         {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
           "anchor": "The accepted-control set contains `REVOKE`/`ROTATE` events satisfying",
           "source_id": "credential_analysis"
         },
@@ -773,6 +789,10 @@
         "C0.2j"
       ],
       "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
         {
           "anchor": "credential_id(g) = event_reference(g)",
           "source_id": "credential_analysis"
@@ -837,6 +857,10 @@
       ],
       "citations": [
         {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
           "anchor": "operational producer. Mutual concurrent revocation can leave no operational",
           "source_id": "credential_analysis"
         },
@@ -899,6 +923,10 @@
         "C0.2j"
       ],
       "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
         {
           "anchor": "It deliberately does not promise quorum governance. One uncontested compromised",
           "source_id": "credential_analysis"
@@ -1016,6 +1044,10 @@
         }
       ],
       "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
         {
           "anchor": "## 5. Total two-sided authority function",
           "source_id": "credential_analysis"
@@ -1152,6 +1184,10 @@
       ],
       "citations": [
         {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
           "anchor": "## 6. Provenance, succession and fork scope",
           "source_id": "credential_analysis"
         }
@@ -1200,7 +1236,7 @@
       "preconditions": [
         "Role-0x02 NONE-class control event",
         "Causally available issuer binding",
-        "Referenced fresh grant is already admitted and a causal parent"
+        "Referenced fresh grant is already admitted and is either the direct predecessor or in the causal-parent frontier"
       ],
       "producer": "kernel",
       "resulting_state": "Historical binding and provenance are monotone while AP authority is recomputed reversibly.",
@@ -1222,7 +1258,7 @@
         },
         {
           "actions": [
-            "Retain authenticated fork evidence and pending diagnostics while emptying the AP view"
+            "Retain authenticated fork evidence and pending diagnostics while removing only the terminated lineage from the AP view"
           ],
           "actor": "kernel"
         },
@@ -1235,11 +1271,11 @@
       ],
       "citations": [
         {
-          "anchor": "A same-author fork is two distinct K-valid events at the same",
+          "anchor": "A same-author fork is two or more distinct K-valid events at the same",
           "source_id": "credential_analysis"
         },
         {
-          "anchor": "same-author fork permanently terminates the forked credential and the",
+          "anchor": "permanently terminates the forked credential and the",
           "source_id": "decisions"
         }
       ],
@@ -1939,7 +1975,7 @@
     {
       "citations": [
         {
-          "anchor": "same-author fork permanently terminates the forked credential",
+          "anchor": "permanently terminates the forked credential and the",
           "source_id": "decisions"
         }
       ],
@@ -1962,6 +1998,14 @@
     },
     {
       "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "#### 5.3.2 Credential control (`event_role == 0x02`)",
+          "source_id": "transcript_profile"
+        },
         {
           "anchor": "## 3. Exact K binding contract",
           "source_id": "credential_analysis"
@@ -1987,6 +2031,10 @@
     },
     {
       "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
         {
           "anchor": "## 6. Provenance, succession and fork scope",
           "source_id": "credential_analysis"
@@ -2032,7 +2080,7 @@
         "OB-K01"
       ],
       "owner": "K",
-      "statement": "Checkpoint-named evidence cannot replace a missing live authenticated replay dependency.",
+      "statement": "Checkpoint-named evidence cannot replace a missing live authenticated replay dependency; while the projection is stale, accepted controls and all per-event or terminal authority outputs are unavailable.",
       "status": "DECIDED"
     },
     {
@@ -2188,6 +2236,10 @@
     {
       "citations": [
         {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
           "anchor": "## 5. Total two-sided authority function",
           "source_id": "credential_analysis"
         }
@@ -2209,7 +2261,7 @@
         "OB-K19"
       ],
       "owner": "AP",
-      "statement": "Expansion, producer eligibility and operational authority require MustAuth in every bounded causal linearization; reduction uses MayAuth, and one replay order never decides terminal authority.",
+      "statement": "Expansion uses per-event MustAuth and reduction uses per-event MayAuth across every bounded causal linearization; possible terminal authority is their set union, necessary terminal authority their set intersection, and operational authority or producer eligibility uses the necessary set. One replay order never decides terminal authority.",
       "status": "DECIDED"
     }
   ],
@@ -2644,6 +2696,10 @@
     },
     {
       "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
         {
           "anchor": "## 8. Security and availability consequences",
           "source_id": "credential_analysis"
@@ -4201,6 +4257,10 @@
       "applies_transition": false,
       "citations": [
         {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
           "anchor": "reference collision fails closed before AP evaluation.",
           "source_id": "credential_analysis"
         }
@@ -4322,6 +4382,10 @@
     {
       "applies_transition": false,
       "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
         {
           "anchor": "grant-rooted credential. Revoking or forking a credential terminates it and the",
           "source_id": "credential_analysis"
@@ -4499,6 +4563,10 @@
     {
       "applies_transition": false,
       "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
         {
           "anchor": "possession never create or replace a binding. A missing/forward binding,",
           "source_id": "credential_analysis"
@@ -4794,6 +4862,10 @@
     {
       "citations": [
         {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
           "anchor": "Two identifiers may visibly bind the same `(suite, key)` pair. This is alias",
           "source_id": "credential_analysis"
         },
@@ -4836,6 +4908,10 @@
     {
       "citations": [
         {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
           "anchor": "It deliberately does not promise quorum governance. One uncontested compromised",
           "source_id": "credential_analysis"
         },
@@ -4859,6 +4935,10 @@
     },
     {
       "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
         {
           "anchor": "operational producer. Mutual concurrent revocation can leave no operational",
           "source_id": "credential_analysis"
@@ -5144,22 +5224,22 @@
       "sha256": "e25e247da502e535929f4cd3618daf531b253388aa41af3506e05711166c6327"
     },
     {
-      "authority": "normative",
+      "authority": "evidence",
       "id": "credential_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-analysis.md",
-      "sha256": "468d14eac1dfe48cbf8f7dcb99fc46829d5831a3310dd56d811c24714b35f146"
+      "sha256": "d6a411fa8b60c9a4342c2ccbd566a1003b3295ef0a84308ab7ba9a83d9bb309d"
     },
     {
       "authority": "evidence",
       "id": "credential_report",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-falsification-report.md",
-      "sha256": "45f60c5b9e95977b779330a9f52a749e1fe651914d4ba73a4163cf70a3e6e790"
+      "sha256": "12b61763d8279bf65c992f8b2eb15c0787ec962c66474f26440096b3c4459ff1"
     },
     {
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "19ff3fff1e6e76fba5e778df89983fd394c956e7e134b43a177b179987de2811"
+      "sha256": "310da9c902821f72f7e31259aef75004bb50c722b1b7096636f311f9672bd709"
     },
     {
       "authority": "evidence",
@@ -5171,7 +5251,7 @@
       "authority": "evidence",
       "id": "identity_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-identity-context-analysis.md",
-      "sha256": "3e198e5233a0500525eb6d3faec4d407003df8639d70af05014b6b382a5b2ec8"
+      "sha256": "5b0083995d4877e23e41c7ce9d56b0571772ce25cc11241ebff4c6ddd426e043"
     },
     {
       "authority": "evidence",
@@ -5195,19 +5275,19 @@
       "authority": "normative",
       "id": "responsibility",
       "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
-      "sha256": "c2a2f397c7a2435fecb31ea51697cbf1ab34c924c1539d04ef9c649eb71da9ee"
+      "sha256": "8ed44241b2f91efa8513884e9dd0bcbf057a7a22339258fefb8d0db7a842054c"
     },
     {
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "dd6ab126b508556c928a108781f688cf2a4ebc5503755d0978975ee15b1e12ee"
+      "sha256": "9ccb7341b13551fd47f20405a1076a9b7c7f1903beaadd2485c2e16fcd821cae"
     },
     {
       "authority": "normative",
       "id": "transcript_profile",
       "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
-      "sha256": "d52a41060916ba2dd6d05f21232e13820d3ca8cab3a66ee83a03e83b284cf4c9"
+      "sha256": "9e9023bc5d6d65235261dd52601256589c8eb675c26469953c8c24402d876c29"
     }
   ],
   "state_models": [
@@ -5302,7 +5382,7 @@
               "source_id": "decisions"
             },
             {
-              "anchor": "same-author fork permanently terminates",
+              "anchor": "permanently terminates the forked credential and the",
               "source_id": "decisions"
             }
           ],
@@ -5399,7 +5479,7 @@
         {
           "citations": [
             {
-              "anchor": "same-author fork permanently terminates",
+              "anchor": "permanently terminates the forked credential and the",
               "source_id": "decisions"
             }
           ],
@@ -5458,6 +5538,10 @@
       "transitions": [
         {
           "citations": [
+            {
+              "anchor": "#### 5.3.2 Credential control (`event_role == 0x02`)",
+              "source_id": "transcript_profile"
+            },
             {
               "anchor": "### 3.2 Binding resolution",
               "source_id": "credential_analysis"
@@ -5538,6 +5622,10 @@
         {
           "citations": [
             {
+              "anchor": "#### 5.3.2 Credential control (`event_role == 0x02`)",
+              "source_id": "transcript_profile"
+            },
+            {
               "anchor": "### 3.2 Binding resolution",
               "source_id": "credential_analysis"
             }
@@ -5560,6 +5648,10 @@
         },
         {
           "citations": [
+            {
+              "anchor": "#### 5.3.2 Credential control (`event_role == 0x02`)",
+              "source_id": "transcript_profile"
+            },
             {
               "anchor": "### 3.2 Binding resolution",
               "source_id": "credential_analysis"

@@ -327,9 +327,13 @@ identifier to `(context, issuer, grantee_suite_id,
 grantee_verification_key, grant_reference)`.
 
 `replacement_grant_reference` and `recovery_grant_reference` must name an
-already K-admitted `GRANT` in the same context and must also be present in the
-control event's causal parents. `ROTATE` and `RECOVER` create no binding and
-cannot reuse or resurrect a retired identifier. `POLICY` and `CLOSURE` carry no
+already K-admitted `GRANT` in the same context and must be causally available:
+the referenced grant is either the control event's direct predecessor or a
+member of its causal-parent frontier. The direct predecessor is encoded in its
+own common field and is deliberately excluded from the causal-parent vector, so
+requiring it to appear in both locations would be contradictory. `ROTATE` and
+`RECOVER` create no binding and cannot reuse or resurrect a retired identifier.
+`POLICY` and `CLOSURE` carry no
 additional K-owned credential field; their bounded profile-specific semantics
 remain in the authenticated AP transition block and cannot change K binding.
 

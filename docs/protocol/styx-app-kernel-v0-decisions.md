@@ -389,8 +389,13 @@ outcomes.
   descends from its credential grant. Transitive reachability over both link
   classes defines happens-before; absence of reachability in either direction
   defines concurrency. Duplicate, missing-parent, stale and same-author
-  fork/equivocation outcomes are classified before AP evaluation. Any K-admitted
-  same-author fork permanently terminates the forked credential and the
+  fork/equivocation outcomes are classified before AP evaluation. A same-author
+  fork consists of two or more distinct K-valid events at the same
+  `(credential_id, author_sequence)` slot. Their common immediately preceding
+  sequence position proves divergence but is not part of the slot identity.
+  One classification covers the complete sibling set at that slot rather than
+  creating pairwise virtual controls. Any K-admitted same-author fork
+  permanently terminates the forked credential and the
   transitive closure of its grant descendants. Fork siblings remain
   authenticated `FORK_EVIDENCE`; events and authority on that lineage are
   `FORK_QUARANTINED`. The graph, ancestry, order and pending sets remain visible
@@ -428,11 +433,14 @@ outcomes.
 - **Rejected alternatives:** fixed/sparse vector; dotted vector; parent DAG
   without an author chain; trusted sequencer, consensus, blockchain, counter
   sum, arrival order or wall time as kernel causality.
-- **Security/privacy:** parent/frontier width and valid sibling fan-out require
-  profile limits. References reveal graph structure to authorized recipients
+- **Security/privacy:** parent/frontier width, valid sibling fan-out and the
+  number of fork slots require separate profile limits. References reveal graph structure to authorized recipients
   but need not enumerate inactive participants. A malicious author can omit an
   observed cross-author parent, and a relay can conceal a branch; signatures
-  make claims attributable but not truthful.
+  make claims attributable but not truthful. Forks are credential-scoped:
+  independently granted same-key aliases remain separate fork namespaces, so a
+  shared-key holder can equivocate under both without creating one cross-alias
+  fork.
 - **Dependent artifact:** author sequence, direct predecessor, canonical parent
   frontier, derived event reference, causal/fork classifications and affected-
   suffix replay semantics. O-04/O-07 define checkpoint/genesis evidence; O-08
@@ -486,6 +494,14 @@ outcomes.
   admitted binding grant, create no binding themselves and cannot reuse or
   resurrect an old identifier. Late evidence triggers fresh full replay; no
   incremental authority-state handoff is claimed.
+  `MayAuth(e)` and `MustAuth(e)` are per-event acting-prefix predicates. The
+  set-valued terminal diagnostics are separately named possible terminal
+  authority (union across interpretations) and necessary terminal authority
+  (intersection), with necessary always a subset of possible. Operational
+  authority and producer eligibility use the necessary set. If a replay
+  dependency is checkpoint-only, `STALE_EVIDENCE` makes every accepted-control,
+  per-event and terminal-authority output unavailable before AP evaluation; an
+  empty representation in that state is not evidence of an empty authority set.
 - **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` distinguish key
   possession from authorization. The C0.2b analysis compares five
   constructions and selects the only candidate that preserves endpoint-specific
@@ -510,7 +526,12 @@ outcomes.
   terminates it. The bounded v3 model prevents concurrent successor laundering
   and scopes forks to provenance lineages, but one uncontested authority can
   still remove every peer and remain sole producer; mutual reductions or fork
-  containment can leave no operational authority.
+  containment can leave no operational authority. A K-valid grant rejected for
+  expansion because its issuer is possible but not necessary authority remains
+  historical provenance evidence; a descendant may therefore retain bounded
+  reduction power in an admissible prefix. This can amplify denial of
+  availability and is not a quorum-safety claim. Same-key aliases are visible
+  but independently authorized and independently forked.
 - **Dependent artifact:** credential identifier, verification-key/algorithm
   binding, grant/state reference and negative vectors. O-01 defines concurrent
   and stale ordering; O-05/O-12 gate physical expiry; O-06 defines references;
@@ -629,7 +650,9 @@ outcomes.
   authentication nor acceptance and leaves the replay-dependency set as an
   unvalidated oracle. Checkpoints do not substitute, and authority-
   event transcripts plus every in-horizon `REQUIRED` opening remain
-  non-releasable replay dependencies.
+  non-releasable replay dependencies. A stale projection exposes no accepted
+  controls, per-event authority, terminal authority, operational authority or
+  producer eligibility; these outputs are unavailable rather than proven empty.
 - **Rationale/evidence:** `PRIV-05` through `PRIV-19` independently analyzed and
   reconciled the design; `HASH-004`, `HASH-005`, `PRIV-01`, `PRIV-03` and
   `PRIV-04` reject boundaryless legacy behavior. The complete decision,

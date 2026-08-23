@@ -24,6 +24,7 @@ EVENT_DOMAIN = b"STYX\x00\x01\x00\x03" + b"\x00" * 8
 
 MAX_EVENTS = 12
 MAX_CONTROL_EVENTS = 6
+MAX_FORK_SLOTS = 6
 MAX_PARENTS = 4
 MAX_CREDENTIALS = 10
 MAX_LINEAGE_DEPTH = 4
@@ -174,12 +175,11 @@ class Mutation:
 
 @dataclass(frozen=True)
 class ForkJoin:
-    """Virtual authority item positioned at the causal join of a fork pair."""
+    """One virtual authority item for a complete same-sequence fork slot."""
 
     reference: str
     credential_id: str
-    left_reference: str
-    right_reference: str
+    sibling_references: tuple[str, ...]
     closure: frozenset[str]
 
 
@@ -193,8 +193,8 @@ class Projection:
     accepted_controls: frozenset[str]
     reduction_standing: Mapping[str, ReductionStanding]
     event_authority: Mapping[str, AuthorityVerdict]
-    may_authority: frozenset[str]
-    must_authority: frozenset[str]
+    possible_terminal_authority: frozenset[str]
+    necessary_terminal_authority: frozenset[str]
     terminal_authority: frozenset[str]
     revoked: frozenset[str]
     terminated: frozenset[str]
@@ -203,6 +203,7 @@ class Projection:
     pending_roots: frozenset[str]
     pending: frozenset[str]
     stale_evidence: bool
+    authority_available: bool
     explored_orders: int
     replayed_event_work: int
     max_lineage_depth: int
@@ -238,8 +239,8 @@ class Projection:
                     for reference, standing in self.reduction_standing.items()
                 )
             ),
-            self.may_authority,
-            self.must_authority,
+            self.possible_terminal_authority,
+            self.necessary_terminal_authority,
             self.terminal_authority,
             self.revoked,
             self.terminated,
@@ -248,6 +249,7 @@ class Projection:
             self.pending_roots,
             self.pending,
             self.stale_evidence,
+            self.authority_available,
         )
 
 
@@ -465,7 +467,9 @@ def _valid_author_chain(
     return True
 
 
-def _valid_control_tail(event: Event, admitted: Mapping[str, Event]) -> bool:
+def _valid_control_tail(
+    event: Event, admitted: Mapping[str, Event], mutation: Mutation
+) -> bool:
     """Validate the closed CREDENTIAL_CONTROL tail before AP evaluation.
 
     `target_reference` names the fresh binding GRANT for ROTATE/RECOVER.  It is
@@ -476,10 +480,16 @@ def _valid_control_tail(event: Event, admitted: Mapping[str, Event]) -> bool:
     if event.kind is Kind.GRANT:
         return (
             event.declared_subject_id is None
-            and event.target_id is None
+            and (
+                event.target_id is None
+                or mutation.identifier == "M19_REGRANT_REVOKED_IDENTIFIER"
+            )
             and event.target_reference is None
             and event.grantee_suite in SUITES
-            and bool(event.grantee_key)
+            and (
+                bool(event.grantee_key)
+                or mutation.identifier == "M18_AP_BYTES_AS_K_BINDING"
+            )
         )
     if event.kind is Kind.REVOKE:
         return (
@@ -517,18 +527,20 @@ def _fork_joins(
     ancestors: Mapping[str, frozenset[str]],
     mutation: Mutation,
 ) -> tuple[tuple[ForkJoin, ...], frozenset[str], frozenset[str]]:
-    """Construct the minimal pairwise causal joins for every valid fork slot."""
+    """Construct one bounded causal join for every same-sequence fork slot.
 
-    slots: dict[tuple[object, ...], list[str]] = {}
+    The author-chain rules make the earliest divergence a same-predecessor pair;
+    later same-sequence events can have different predecessors only below an
+    already forked lineage.  One slot join therefore carries the complete sibling
+    set without quadratic pairwise authority items.
+    """
+
+    slots: dict[tuple[str, int], list[str]] = {}
     for event in admitted.values():
-        slot = (
-            (event.actor_id, event.sequence, event.predecessor)
-            if mutation.identifier == "M29_PREDECESSOR_SLOT_FORK_ONLY"
-            else (event.actor_id, event.sequence)
-        )
+        slot = (event.actor_id, event.sequence)
         slots.setdefault(slot, []).append(event.reference)
 
-    candidates: list[ForkJoin] = []
+    joins: list[ForkJoin] = []
     forked: set[str] = set()
     fork_events: set[str] = set()
     for slot, references in sorted(slots.items(), key=lambda item: repr(item[0])):
@@ -539,36 +551,24 @@ def _fork_joins(
             continue
         forked.add(credential_id)
         fork_events.update(ordered)
-        for index, left in enumerate(ordered):
-            for right in ordered[index + 1 :]:
-                closure = frozenset(
-                    set(ancestors.get(left, frozenset()))
-                    | set(ancestors.get(right, frozenset()))
-                    | {left, right}
-                )
-                candidates.append(
-                    ForkJoin(
-                        reference=(
-                            f"fork:{credential_id}:{sequence}:{left}:{right}"
-                        ),
-                        credential_id=credential_id,
-                        left_reference=left,
-                        right_reference=right,
-                        closure=closure,
-                    )
-                )
-
-    minimal: list[ForkJoin] = []
-    for candidate in candidates:
-        superseded = any(
-            other.credential_id == candidate.credential_id
-            and other.reference != candidate.reference
-            and {other.left_reference, other.right_reference} <= candidate.closure
-            for other in candidates
+        closure: set[str] = set(ordered)
+        for reference in ordered:
+            closure.update(ancestors.get(reference, frozenset()))
+        joins.append(
+            ForkJoin(
+                reference=(
+                    f"fork:{credential_id}:{sequence}:{':'.join(ordered)}"
+                ),
+                credential_id=credential_id,
+                sibling_references=tuple(ordered),
+                closure=frozenset(closure),
+            )
         )
-        if not superseded:
-            minimal.append(candidate)
-    return tuple(sorted(minimal, key=lambda item: item.reference)), frozenset(forked), frozenset(fork_events)
+    return (
+        tuple(sorted(joins, key=lambda item: item.reference)),
+        frozenset(forked),
+        frozenset(fork_events),
+    )
 
 
 def _topological_orders(
@@ -578,8 +578,10 @@ def _topological_orders(
     mutation: Mutation,
 ) -> tuple[tuple[Event | ForkJoin, ...], ...]:
     items: tuple[Event | ForkJoin, ...] = tuple(events) + tuple(joins)
-    if len(items) > MAX_CONTROL_EVENTS:
+    if len(events) > MAX_CONTROL_EVENTS:
         raise ModelInputError("AUTHORITY_BOUND_EXCEEDED", "control event count")
+    if len(joins) > MAX_FORK_SLOTS:
+        raise ModelInputError("AUTHORITY_BOUND_EXCEEDED", "fork slot count")
     controls_by_reference = {event.reference: event for event in events}
     joins_by_reference = {join.reference: join for join in joins}
     predecessors: dict[str, set[str]] = {}
@@ -590,27 +592,26 @@ def _topological_orders(
             else ancestors.get(event.reference, frozenset())
         ) & set(controls_by_reference)
         for join in joins:
-            if {
-                join.left_reference,
-                join.right_reference,
-            } <= set(ancestors.get(event.reference, frozenset())):
+            if set(join.sibling_references) <= set(
+                ancestors.get(event.reference, frozenset())
+            ):
                 required.add(join.reference)
             if (
                 mutation.identifier == "M32_FORK_JOIN_BEFORE_SIBLINGS"
                 and event.reference
-                in {join.left_reference, join.right_reference}
+                in set(join.sibling_references)
             ):
                 required.add(join.reference)
         predecessors[event.reference] = required
     for join in joins:
         required = set(join.closure) & set(controls_by_reference)
         if mutation.identifier == "M32_FORK_JOIN_BEFORE_SIBLINGS":
-            required -= {join.left_reference, join.right_reference}
+            required -= set(join.sibling_references)
         for other in joins:
-            if other.reference != join.reference and {
-                other.left_reference,
-                other.right_reference,
-            } <= join.closure:
+            if (
+                other.reference != join.reference
+                and set(other.sibling_references) <= join.closure
+            ):
                 required.add(other.reference)
         predecessors[join.reference] = required
 
@@ -815,8 +816,10 @@ def _authority_fold(
     else:
         terminated = _lineage_descendants(bindings, revoked | set(forked))
     terminal = frozenset(granted - set(terminated))
-    may_authority = frozenset().union(*terminal_sets) if terminal_sets else frozenset()
-    must_authority = (
+    possible_terminal_authority = (
+        frozenset().union(*terminal_sets) if terminal_sets else frozenset()
+    )
+    necessary_terminal_authority = (
         frozenset.intersection(*terminal_sets) if terminal_sets else frozenset()
     )
     reduction_standing: dict[str, ReductionStanding] = {}
@@ -845,8 +848,8 @@ def _authority_fold(
         frozenset(accepted),
         dict(sorted(reduction_standing.items())),
         dict(sorted(event_authority.items())),
-        may_authority,
-        must_authority,
+        possible_terminal_authority,
+        necessary_terminal_authority,
         frozenset(revoked),
         terminal,
         len(orders),
@@ -961,13 +964,9 @@ def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
                 continue
             if (
                 event.role is Role.CREDENTIAL_CONTROL
-                and not _valid_control_tail(event, admitted)
+                and not _valid_control_tail(event, admitted, mutation)
                 and mutation.identifier
-                not in {
-                    "M13_MALFORMED_TAIL_ACCEPTED",
-                    "M18_AP_BYTES_AS_K_BINDING",
-                    "M19_REGRANT_REVOKED_IDENTIFIER",
-                }
+                != "M13_MALFORMED_TAIL_ACCEPTED"
             ):
                 rejected[event.reference] = Outcome.STRUCTURAL_REJECTION
                 continue
@@ -1112,17 +1111,27 @@ def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
     if mutation.identifier == "M15_CHECKPOINT_SUBSTITUTES" and stale:
         stale = False
 
-    for reference, event in admitted.items():
-        if event.role is not Role.CREDENTIAL_CONTROL:
-            event_authority[reference] = _probe_authority(
-                event,
-                controls,
-                joins,
-                bindings,
-                genesis_authority,
-                ancestors,
-                mutation,
-            )
+    if stale:
+        accepted = frozenset()
+        reduction_standing = {}
+        event_authority = {}
+        may = frozenset()
+        must = frozenset()
+        revoked = frozenset()
+        terminal = frozenset()
+        terminated = frozenset()
+    else:
+        for reference, event in admitted.items():
+            if event.role is not Role.CREDENTIAL_CONTROL:
+                event_authority[reference] = _probe_authority(
+                    event,
+                    controls,
+                    joins,
+                    bindings,
+                    genesis_authority,
+                    ancestors,
+                    mutation,
+                )
 
     outcomes: dict[str, Outcome] = {}
     for reference, event in admitted.items():
@@ -1170,7 +1179,7 @@ def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
         elif (
             event_authority[reference] is AuthorityVerdict.NO_AUTH
             and any(
-                {join.left_reference, join.right_reference}
+                set(join.sibling_references)
                 <= set(ancestors.get(reference, frozenset()))
                 and event.actor_id
                 in _lineage_descendants(bindings, {join.credential_id})
@@ -1190,8 +1199,8 @@ def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
         accepted_controls=accepted,
         reduction_standing=reduction_standing,
         event_authority=dict(sorted(event_authority.items())),
-        may_authority=may,
-        must_authority=must,
+        possible_terminal_authority=may,
+        necessary_terminal_authority=must,
         terminal_authority=terminal,
         revoked=revoked,
         terminated=terminated,
@@ -1200,6 +1209,7 @@ def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
         pending_roots=frozenset(pending_roots),
         pending=frozenset(pending),
         stale_evidence=stale,
+        authority_available=not stale,
         explored_orders=explored,
         replayed_event_work=len(admitted) * explored,
         max_lineage_depth=max_depth,

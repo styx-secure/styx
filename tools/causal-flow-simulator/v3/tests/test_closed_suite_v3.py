@@ -10,7 +10,13 @@ sys.path.insert(0, str(V3_ROOT))
 
 from causal_flow_simulator_v3 import build_report, canonical_bytes  # noqa: E402
 from mutation_harness_v3 import build_report as build_mutation_report  # noqa: E402
-from scenarios_v3 import REQUIRED_MUTANTS, REQUIRED_WITNESSES, run_required_suite  # noqa: E402
+from scenarios_v3 import (  # noqa: E402
+    REQUIRED_MUTANTS,
+    REQUIRED_WITNESSES,
+    declared_mutation_coverage,
+    mutation_coverage,
+    run_required_suite,
+)
 
 
 class ClosedSuiteTests(unittest.TestCase):
@@ -31,6 +37,9 @@ class ClosedSuiteTests(unittest.TestCase):
         self.assertTrue(passed)
         self.assertEqual(report["killed"], len(REQUIRED_MUTANTS))
         self.assertEqual(report["survived"], [])
+
+    def test_every_declared_witness_mutant_edge_is_observed(self) -> None:
+        self.assertEqual(mutation_coverage(), declared_mutation_coverage())
 
 
 if __name__ == "__main__":

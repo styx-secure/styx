@@ -13,7 +13,9 @@ The model exercises:
 - credential-lineage fork quarantine with independent-authority continuation;
 - retained C0.2i pending/no-substitution/checkpoint-stale properties;
 - full-replay convergence under every delivery permutation within the envelope;
-- 24 semantic mutants tied bidirectionally to hostile witnesses.
+- 30 semantic mutants tied bidirectionally to hostile witnesses, with each
+  declared detector executed under its named mutation rather than inferred from
+  unrelated assertion failure.
 
 Run it with:
 

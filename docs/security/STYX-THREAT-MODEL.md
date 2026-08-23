@@ -90,7 +90,7 @@ the [C0.2a responsibility matrix](../protocol/styx-app-kernel-v0-responsibility-
 | Application event meaning | Integrity and authenticity of every field that affects validation, authorization, causality, ordering or conflict handling | Invalid transcripts and semantics are rejected before authoritative state change; control events are content-free | `OB-K01`–`OB-K04`, `OB-K12`, policy by `OB-AP01` | A valid signature proves key possession, not role authorization, possession at commit time, authorship of copied content or truth. |
 | Payload commitment and retained opening | Binding to one complete payload plus computational hiding after opening destruction under stated assumptions | Reject malformed geometry, wrong suite/context/opening/content and incomplete verification before AP use | `OB-K10`, retention by `OB-K14`/`OB-RS04` | O-06b-2 selects exact bytes but supplies no implementation proof; length/shape remain visible, randomizer custody is operational, complete-object availability is required and SHA-256 assumptions remain explicit. |
 | Application and case context | Domain separation and rejection of cross-context replay | Cross-context objects fail kernel validation | `OB-K08`, requirements from `OB-AP03` | O-03/O-06a select the context tuple/reference role and O-06b-1 fixes the outer reference bytes; O-07 genesis contents remain open. |
-| Author and role authority | Monotone context-bound K grant binding separated from reversible set-relative AP authorization | Invalid or unresolved binding is rejected; authentic-but-unauthorized and post-revocation actions apply no AP transition; expansion/operation requires `MustAuth`, reduction uses `MayAuth`, and revocation/fork termination follows credential provenance | `OB-AP02`; binding/provenance by `OB-K18`/`OB-K19` | One uncontested compromised authority can remove every peer and remain sole producer; mutual reductions can leave no authority; independently granted same-key aliases survive lineage-local revocation. |
+| Author and role authority | Monotone context-bound K grant binding separated from reversible set-relative AP authorization | Invalid or unresolved binding is rejected; authentic-but-unauthorized and post-revocation actions apply no AP transition; expansion/operation requires per-event `MustAuth`, reduction uses per-event `MayAuth`, and revocation/fork termination follows credential provenance; checkpoint-only replay dependencies make all authority outputs unavailable | `OB-AP02`; binding/provenance by `OB-K18`/`OB-K19` | One uncontested compromised authority can remove every peer and remain sole producer; a rejected possible-authority grant can retain bounded descendant reduction power; mutual reductions can leave no authority; independently granted same-key aliases survive lineage-local revocation and occupy separate fork namespaces. |
 | Causal history and state | Transcript-only deterministic validation/order, replay/fork detection and bounded convergence under monotone opening observations | Classified duplicate, pending root/ancestor, applied, stale or lineage-quarantine result; independent definitely authorized lineages may continue | `OB-K05`–`OB-K07`, `OB-K13`, `OB-K19` | A valid-key holder can terminate its lineage through a fork and amplify replay through delayed evidence; full set-relative replay has bounded-resource costs; no finality exists. |
 | Durable local state | Confidentiality, atomicity, crash safety and rollback behavior within a declared runtime profile | Fail closed on ambiguous persistence; restore/reconcile or require intervention | `OB-RS02`–`OB-RS10` | Browser storage may be evicted; a coherent whole-profile rollback may be undetectable without external evidence. |
 | Session secrets and membership | Confidential authenticated delivery, membership control, forward secrecy and post-compromise recovery within the selected session profile | Reject invalid or unauthorized session transitions; rotate/recover within profile bounds | `OB-SS01`–`OB-SS09` | Phase B proves only the exact pinned isolated profile recorded by its verdict. |
@@ -188,9 +188,15 @@ require `MustAuth`, while reduction uses `MayAuth`, across the complete bounded
 K-admitted control-evidence set. A same-author fork terminates the forked
 credential and grant-descendant lineage rather than the whole context;
 independent definitely authorized lineages may continue. Late evidence triggers
-fresh full replay. These rules prevent bounded successor laundering but do not
-prevent one uncontested compromised authority from causally revoking every peer
-and remaining sole authority, nor guarantee recovery after total authority loss.
+  fresh full replay. These rules prevent bounded successor laundering but do not
+  prevent one uncontested compromised authority from causally revoking every peer
+  and remaining sole authority, nor guarantee recovery after total authority loss.
+  A K-valid grant rejected because its issuer is possible but not necessary
+  authority remains historical provenance; its descendant can still exercise a
+  reduction in an admissible prefix. This bounded availability attack is
+  explicit and does not confer expansion or operational authority. Fork slots
+  are scoped by `(credential_id, author_sequence)`, so independently granted
+  same-key aliases do not share fork quarantine.
 
 ### A4 — Compromised authorized peer
 
@@ -223,8 +229,11 @@ opening substitution or human delivery. A relay can withhold an opening or
 distribute it selectively, leaving different replicas with different pending
 subtrees until their monotone opening sets converge. A hostile peer or relay can
 also withhold transcript material named only by symbolic checkpoint evidence and
-thereby force whole-projection `STALE_EVIDENCE`; C0.2i detects that condition but
-does not authenticate the checkpoint, prove freshness or restore availability.
+  thereby force whole-projection `STALE_EVIDENCE`; C0.2i detects that condition but
+  does not authenticate the checkpoint, prove freshness or restore availability.
+  While this condition holds, accepted controls and every per-event or terminal
+  authority result are unavailable; an empty encoded set must not be interpreted
+  as proof that the context has no authorities.
 Redundancy may improve availability while increasing the observer set. A
 transport profile must declare every visible field and its confirmation
 semantics.
@@ -406,7 +415,7 @@ claims about current code.
 | Valid signature under an unauthorized key | Reject the transition | Product can explain authorization failure without treating it as bad cryptography | Application profile |
 | Object replayed in another case/application | Reject by authenticated context binding | Cross-context negative evidence | Application semantic kernel |
 | Duplicate authenticated object in one context | Idempotent duplicate classification | No duplicate application effect | Application semantic kernel |
-| Missing parent, fork or concurrent operation | Classify under the selected bounded causal model; a same-author fork terminates the forked credential lineage and cannot expand authority | Preserve graph/fork/pending diagnostics; independent lineages continue only if definitely authorized; expose no recovery or finality claim | Application semantic kernel plus application profile |
+| Missing parent, fork or concurrent operation | Classify under the selected bounded causal model; all siblings at one `(credential_id, author_sequence)` slot form one fork classification that terminates the forked credential lineage and cannot expand authority | Preserve graph/fork/pending diagnostics; independently granted aliases remain separate fork namespaces; independent lineages continue only if definitely authorized; expose no recovery or finality claim | Application semantic kernel plus application profile |
 | Holder of valid key material grinds a concurrent event reference | Preserve signature validity and graph/order; evaluate expansion/operation under `MustAuth` and reduction under `MayAuth` across every bounded causal linearization | Never infer priority, finality or irreversible effects from order; recompute by fresh full replay when evidence changes | Application semantic kernel plus application profile |
 | Semantically conflicting but individually valid operations | Do not infer business truth from total order | Apply the application profile's declared conflict rule or escalate | Application profile |
 | Unauthorized session membership change | Reject before applying the membership transition | Typed session failure and recovery path | Secure-session adapter |

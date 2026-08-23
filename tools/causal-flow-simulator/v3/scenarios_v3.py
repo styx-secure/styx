@@ -16,6 +16,7 @@ from protocol_model_v3 import (
     MAX_CREDENTIALS,
     MAX_DELIVERY_PERMUTATION_WIDTH,
     MAX_EVENTS,
+    MAX_FORK_SLOTS,
     MAX_KEY_OCTETS,
     MAX_LINEAGE_DEPTH,
     MAX_PARENTS,
@@ -50,7 +51,7 @@ def make_event(*args: object, **kwargs: object) -> Event:
 BOUNDS = {
     "events": MAX_EVENTS,
     "control_events": MAX_CONTROL_EVENTS,
-    "authority_items_including_fork_joins": MAX_CONTROL_EVENTS,
+    "fork_slots": MAX_FORK_SLOTS,
     "parents_per_event": MAX_PARENTS,
     "lineage_depth": MAX_LINEAGE_DEPTH,
     "topological_orders": MAX_TOPOLOGICAL_ORDERS,
@@ -406,7 +407,8 @@ def _identifier_checks(suite: Suite, mutation: Mutation) -> None:
         check(
             "W-ID-06",
             "non-grant-binding-spoof",
-            bad.rejected.get(bad_grant.reference) is Outcome.STRUCTURAL_REJECTION,
+            bad.rejected.get(bad_grant.reference) is Outcome.STRUCTURAL_REJECTION
+            and bad_grant.reference not in bad.bindings,
             "K never derives credential bytes from an AP transition block",
             "Missing exact GRANT-tail evidence is structural rejection.",
             "M18_AP_BYTES_AS_K_BINDING",
@@ -613,12 +615,13 @@ def _authority_checks(suite: Suite, mutation: Mutation) -> None:
             is Outcome.AUTHENTIC_BUT_UNAUTHORIZED
             and p.event_authority.get(evil_action.reference)
             is AuthorityVerdict.MAY_AUTH
+            and p.terminal_authority <= p.necessary_terminal_authority
+            and p.necessary_terminal_authority <= p.possible_terminal_authority
             and converged,
             "authority expansion requires MustAuth across every admissible order",
             "Reference grinding and delivery order cannot preserve the laundered successor.",
             "M04_POSSESSION_IMPLIES_AUTHORITY",
             "M05_EXPANSION_USES_MAY",
-            "M08_SINGLE_LINEARIZATION",
             "M17_TERMINAL_SET_TAMPER",
         )
     )
@@ -959,24 +962,44 @@ def _succession_alias_fork_checks(suite: Suite, mutation: Mutation) -> None:
             "regrant-and-recovery-non-resurrection",
             p.rejected.get(regrant_old.reference) is Outcome.STRUCTURAL_REJECTION
             and p.rejected.get(recover_old.reference) is Outcome.STRUCTURAL_REJECTION
+            and p.bindings[old.credential_id].issuer_id == a.credential_id
             and old.credential_id in p.terminated
             and old.credential_id not in p.terminal_authority,
             "revoked identifiers are never re-granted or recovered",
             "Legitimate recovery requires a fresh GRANT reference and lineage.",
-            "M10_RECOVERY_RESURRECTS_REVOKED",
             "M19_REGRANT_REVOKED_IDENTIFIER",
         )
     )
 
     alias_one = control("alias-one", a, Kind.GRANT, grantee_key="aa" * 32)
-    alias_two = control("alias-two", b, Kind.GRANT, grantee_key="aa" * 32)
+    alias_two = control(
+        "alias-two",
+        a,
+        Kind.GRANT,
+        sequence=1,
+        predecessor=alias_one.reference,
+        grantee_key="aa" * 32,
+    )
     alias_one_binding = grant_binding(alias_one)
+    alias_two_binding = grant_binding(alias_two)
+    alias_one_action = make_event(
+        "alias-one-action", alias_one_binding, parents=(alias_one.reference,)
+    )
+    alias_two_action = make_event(
+        "alias-two-action", alias_two_binding, parents=(alias_two.reference,)
+    )
+    alias_equivocation = _project(
+        suite,
+        Scenario(
+            (alias_one, alias_two, alias_one_action, alias_two_action),
+            (a, b),
+        ),
+        mutation,
+    )
     revoke_alias_one = control(
         "revoke-alias-one",
         b,
         Kind.REVOKE,
-        sequence=1,
-        predecessor=alias_two.reference,
         target_id=alias_one_binding.credential_id,
     )
     aliases = _project(
@@ -988,9 +1011,21 @@ def _succession_alias_fork_checks(suite: Suite, mutation: Mutation) -> None:
             "alias-evidence-survival",
             len(aliases.alias_groups) == 1
             and alias_one.reference not in aliases.terminal_authority
-            and alias_two.reference in aliases.terminal_authority,
+            and alias_two.reference in aliases.terminal_authority
+            and {
+                alias_one_action.reference,
+                alias_two_action.reference,
+            } <= {
+                reference
+                for reference, outcome in alias_equivocation.outcomes.items()
+                if outcome is Outcome.APPLIED
+            }
+            and not {
+                alias_one_binding.credential_id,
+                alias_two_binding.credential_id,
+            } & alias_equivocation.forked_credentials,
             "byte-identical keys form visible alias evidence without coupled revocation",
-            "An independently granted alias survives; this containment gap remains explicit.",
+            "One issuer can mint same-key aliases that survive independently and equivocate without credential-scoped fork evidence.",
             "M16_ALIAS_CHANGES_AUTHORITY",
         )
     )
@@ -1457,6 +1492,12 @@ def _pending_checkpoint_removal_checks(suite: Suite, mutation: Mutation) -> None
             "W-CP-01",
             "checkpoint-stale-no-substitution",
             stale.stale_evidence
+            and not stale.authority_available
+            and not stale.accepted_controls
+            and not stale.event_authority
+            and not stale.possible_terminal_authority
+            and not stale.necessary_terminal_authority
+            and not stale.terminal_authority
             and all(value is Outcome.STALE_EVIDENCE for value in stale.outcomes.values()),
             "checkpoint-only evidence is stale and never substitutes for retained history",
             "No freshness, finality or rollback claim follows.",
@@ -1526,7 +1567,6 @@ def _convergence_bounds_checks(suite: Suite, mutation: Mutation) -> None:
             len(views) == 2 and len(set(views)) == 1,
             "fresh full replay converges for every bounded delivery permutation",
             "V3 selects full replay only; no prefix-cache handoff is claimed.",
-            "M17_TERMINAL_SET_TAMPER",
         )
     )
     projection = _project(suite, scenario, mutation)
@@ -1674,17 +1714,20 @@ def _convergence_bounds_checks(suite: Suite, mutation: Mutation) -> None:
         make_event(f"join-flood-{index}", a)
         for index in range(5)
     )
+    join_projection = _project(
+        suite,
+        Scenario(join_siblings, (a,)),
+        mutation,
+    )
     suite.checks.append(
         check(
             "W-BOUND-05",
             "bounded-hostile-flood",
-            _expect_error(
-                Scenario(join_siblings, (a,)),
-                mutation,
-                "AUTHORITY_BOUND_EXCEEDED",
-            ),
-            "virtual fork joins consume the same bounded authority-item budget as controls",
-            "A k-way equivocation fails closed instead of creating unbounded pairwise joins.",
+            join_projection.forked_credentials == {a.credential_id}
+            and len(join_projection.fork_joins) == 1
+            and a.credential_id not in join_projection.terminal_authority,
+            "one bounded virtual join represents a complete same-sequence fork slot",
+            "A k-way equivocation terminates only its lineage without quadratic joins or whole-context failure.",
         )
     )
 
@@ -1726,10 +1769,26 @@ def run_required_suite(mutation: Mutation = Mutation()) -> Suite:
         _BUILD_MUTATION = previous
 
 
-def mutation_coverage() -> Mapping[str, tuple[str, ...]]:
+def declared_mutation_coverage() -> Mapping[str, tuple[str, ...]]:
     suite = run_required_suite()
     coverage: dict[str, list[str]] = {item: [] for item in REQUIRED_MUTANTS}
     for item in suite.checks:
         for mutant in item.kills:
             coverage[mutant].append(item.identifier)
     return {key: tuple(sorted(values)) for key, values in sorted(coverage.items())}
+
+
+def mutation_coverage() -> Mapping[str, tuple[str, ...]]:
+    """Return only witness→mutant edges observed to fail under that mutant."""
+
+    declared = declared_mutation_coverage()
+    observed: dict[str, tuple[str, ...]] = {}
+    for mutant, detectors in declared.items():
+        results = {
+            item.identifier: item.passed
+            for item in run_required_suite(Mutation(mutant)).checks
+        }
+        observed[mutant] = tuple(
+            detector for detector in detectors if not results.get(detector, True)
+        )
+    return observed

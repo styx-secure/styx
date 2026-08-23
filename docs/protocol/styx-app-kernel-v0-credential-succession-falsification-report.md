@@ -11,7 +11,7 @@
 
 The independently authored v3 symbolic model found **no counterexample within
 the declared common envelope** for the selected grant-rooted, two-sided,
-provenance-aware construction. All **24/24 required semantic mutants** were
+provenance-aware construction. All **30/30 required semantic mutants** were
 killed. This is bounded negative evidence, not a mathematical proof, production
 implementation, conformance corpus, audit or security certification.
 
@@ -19,11 +19,11 @@ The canonical outputs at this source state are:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| required witness report | `29cfda5ec83e4502be94c7635be1e592f98d083cf57b1489bf78b2b150b429ed` |
-| mutation report | `4a3cf5e084ca05569a9979bd3536ecb2292fafe86e164eff123238bdfff5bb8a` |
+| required witness report | `5aed33bd8cf668bbc3bfe6900a2ba3fb6aa42119e93543264d9908c347231286` |
+| mutation report | `6e24d347c7568a6d1f6fcb04ee0e6826ecd5c896ac8f17cf6f863d3a5e409ff4` |
 
-The suite emits 31 directed assertions across 35 recorded projection runs and
-22 closed witness families. Repeating either command produces byte-identical
+The suite emits 45 directed assertions across 49 recorded projection runs and
+30 closed witness families. Repeating either command produces byte-identical
 JSON:
 
 ```bash
@@ -67,6 +67,7 @@ V3 deliberately supersedes these v2 assumptions:
 | --- | ---: | ---: |
 | events | 12 | 5 |
 | credential-control events | 6 | 4 |
+| same-sequence fork slots | 6 | 1 |
 | parents per event | 4 | 2 |
 | credential lineage depth | 4 | 2 |
 | topological orders | 720 | 3 |
@@ -94,12 +95,12 @@ These values are experiment bounds and do not select O-08 production limits.
 | multi-hop provenance containment | revoking each ancestor terminates descendants; independent fresh provenance can restore continuity |
 | single compromised authority takeover | one uncontested authority can remove peers and remain sole producer; limitation recorded |
 | re-grant and recovery non-resurrection | old ID cannot be rebound; legitimate recovery uses a fresh independent grant |
-| alias evidence | independent same-key aliases are visible and independently revoked |
+| alias evidence | independent same-key aliases are visible, independently revoked and retain separate credential-local fork namespaces |
 | rotation/recovery and old-key continuation | fresh grant plus retirement; concurrent revoke cannot resurrect the old credential |
 | fork scope and privilege neutrality | one rule before/after grant, revoke, rotate and recovery; role/status cannot expand authority |
 | independent authority continuation | unrelated definitely authorized lineage continues around a fork |
 | pending required content with authority | pending/AP outcome never filters K authority evidence |
-| checkpoint stale/no substitution | missing live dependency stays stale |
+| checkpoint stale/no substitution | missing live dependency stays stale and exposes no authority result |
 | logical removal against credential control | structurally inapplicable; binding and authority unchanged |
 | control tail and content structure | malformed tails and content-bearing controls reject before AP |
 | transport and case-ephemeral neutrality | account, session, Nostr, storage and UI facts are absent from authority |
@@ -139,6 +140,12 @@ M21 genesis credential uses event-reference domain
 M22 content-bearing credential control accepted
 M23 unresolved credential deferred
 M24 terminally revoked actor reduces authority
+M25 distinct-preimage collision selects a winner
+M26 provenance termination follows only direct dependencies
+M27 a credential fork terminates every lineage globally
+M28 author-chain continuity is not enforced
+M32 a virtual fork join is evaluated before its sibling evidence
+M33 ordinary events use terminal rather than acting-prefix authority
 ```
 
 The mutation harness requires both an observed failing assertion and a declared
@@ -175,7 +182,12 @@ the logical-removal tail or modify the 44-octet commitment context.
   sole producer; no quorum or separation-of-duty rule is invented here.
 - Mutual reductions or lineage quarantine can leave no operational authority.
 - Revoking one credential does not revoke an independently granted same-key
-  alias.
+  alias, and such aliases retain separate credential-local fork namespaces.
+- A rejected grant from a possibly-but-not-necessarily authorized issuer cannot
+  expand or operate, but its K-valid descendant may retain bounded reduction
+  standing in an admissible prefix. This can amplify denial of availability.
+- A checkpoint-only replay dependency makes every authority result unavailable;
+  an empty encoded authority set in that state is not evidence of no authority.
 - Grant-rooted identifiers expose their binding grant to authorized observers
   and do not prove unlinkability.
 - No checkpoint freshness, rollback, finality, irreversible effect, anonymity,

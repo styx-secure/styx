@@ -383,7 +383,9 @@ transitive grant descendant; a late ancestor revocation therefore contains a
 concurrently laundered successor regardless of its grindable reference order.
 
 Any K-admitted same-author fork permanently quarantines the forking credential
-and its provenance descendants, independent of role, privilege, arrival or
+and its provenance descendants. The fork slot is exactly
+`(credential_id, author_sequence)` and one classification covers the complete
+sibling set, independent of role, privilege, arrival or
 current revocation state. It cannot expand authority. Independent lineages may
 continue only when their controls satisfy the same two-sided rule. This scoped
 rule improves availability over whole-context quarantine but can still leave no

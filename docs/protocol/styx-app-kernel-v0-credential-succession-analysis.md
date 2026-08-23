@@ -150,12 +150,32 @@ MayAuth(e)  = exists l in L(E): actor(e) is authorized at e's prefix in l
 MustAuth(e) = forall l in L(E): actor(e) is authorized at e's prefix in l
 ```
 
+These are per-event predicates. They are distinct from the set-valued terminal
+results:
+
+```text
+PossibleTerminalAuthority(S)  = union of the terminal authority sets of L(E)
+NecessaryTerminalAuthority(S) = intersection of those terminal authority sets
+```
+
+Therefore `NecessaryTerminalAuthority(S)` is always a subset of
+`PossibleTerminalAuthority(S)`. Operational authority and producer eligibility
+use the necessary set; the possible set is diagnostic and may support only the
+explicit reduction checks below. Neither name denotes authority at an event's
+acting prefix.
+
 The accepted-control set contains `REVOKE`/`ROTATE` events satisfying
 `MayAuth`; every other credential-control event must satisfy `MustAuth`.
 Terminal operational authority is recomputed deterministically from O-07
 initial authority plus accepted grants, minus the transitive provenance closure
 of accepted reduction targets and forked credentials. No chosen linearization
 is the final result.
+
+If any replay dependency exists only as symbolic checkpoint evidence, the whole
+projection is `STALE_EVIDENCE`. In that state no accepted-control set,
+per-event `MayAuth`/`MustAuth`, possible or necessary terminal authority,
+operational authority or producer eligibility is available. Empty outputs in
+the executable evidence mean *unavailable*, not a proven empty authority set.
 
 The implementation may use an equivalent symbolic algorithm only if it emits
 the same complete result. C0.2j selects fresh full replay; it makes no
@@ -175,12 +195,22 @@ neither may re-grant or resurrect an old identifier. If only the reduction is
 accepted, availability can be lost safely. If only the fresh grant is accepted,
 the new independently authorized credential can coexist with the old one.
 
-A same-author fork is two distinct K-valid events at the same
-`(credential_id, author_sequence, direct_predecessor)` slot. It permanently
-quarantines that credential lineage in v0, independent of actor role, control
-kind, arrival or current revocation state. Independent lineages continue only
-when their actions satisfy the same `MustAuth`/`MayAuth` rules. Late evidence
-always triggers fresh full replay.
+A same-author fork is two or more distinct K-valid events at the same
+`(credential_id, author_sequence)` slot. For non-genesis sequence positions the
+siblings have the same immediately preceding sequence position; the direct
+predecessor is evidence used to prove the divergence, not a third component of
+the slot identity. The fold creates one virtual fork join for the complete
+sibling set at that slot, rather than one join per sibling pair. The join
+permanently quarantines that credential lineage in v0, independent of actor
+role, control kind, arrival or current revocation state. Independent lineages
+continue only when their actions satisfy the same `MustAuth`/`MayAuth` rules.
+Late evidence always triggers fresh full replay.
+
+The fork namespace is credential-local. Two independently granted credentials
+that bind the same suite/key bytes are visible aliases but occupy different
+fork namespaces. A holder of the shared private key can therefore equivocate
+under both identifiers without either pair becoming one cross-credential fork.
+This is a measured containment limit, not a claim that aliases are harmless.
 
 ## 7. Bounds and failure behavior
 
@@ -190,6 +220,7 @@ The v3 experiment uses one common envelope for every candidate and witness:
 | --- | ---: |
 | events | 12 |
 | credential-control events | 6 |
+| same-sequence fork slots | 6 |
 | causal parents per event | 4 |
 | credential lineage depth | 4 |
 | admissible topological orders | 720 |
@@ -200,6 +231,12 @@ The v3 experiment uses one common envelope for every candidate and witness:
 These are experiment bounds, not O-08 production limits. Exceeding any bound
 fails closed before authority expansion, producer eligibility or operational
 authority. Unevaluated evidence is never treated as absent.
+
+One fork slot consumes one fork-slot unit regardless of sibling count; siblings
+remain ordinary events and controls for their respective independent bounds.
+This prevents a bounded k-way fork from manufacturing a quadratic number of
+pairwise control items and turning lineage-local quarantine into an accidental
+whole-context failure.
 
 ## 8. Security and availability consequences
 
@@ -215,6 +252,15 @@ authority. A fork or revocation can permanently terminate a lineage, and an
 independently granted same-key alias survives. These are explicit governance and
 availability limits, not repaired with timestamps, majority, relay observation
 or hidden recovery.
+
+A grant issued by an actor that is `MayAuth` but not `MustAuth` is rejected as an
+authority expansion, so its descendant never becomes operational merely from
+that grant. Nevertheless the K-valid grant and provenance edge remain historical
+evidence. A descendant holding a valid credential can consequently contribute a
+reduction when that descendant is possibly authorized in an admissible prefix.
+This is a deliberate consequence of the selected May-reduction rule: it is
+bounded and fail-closed for expansion, but it can amplify denial of availability.
+The model measures it; C0.2j does not claim quorum-safe governance.
 
 Grant-rooted identifiers expose the corresponding grant to authorized
 observers and are not unlinkability evidence. The rules do not establish

@@ -120,7 +120,7 @@ EXPECTED_SOURCE_RECORDS = {
     ),
     "credential_analysis": (
         "docs/protocol/styx-app-kernel-v0-credential-succession-analysis.md",
-        "normative",
+        "evidence",
     ),
     "credential_report": (
         "docs/protocol/styx-app-kernel-v0-credential-succession-falsification-report.md",

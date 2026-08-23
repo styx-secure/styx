@@ -122,6 +122,56 @@ class AuthorityTests(unittest.TestCase):
         self.assertNotIn(revoke_z.reference, value.accepted_controls)
         self.assertIn(z.credential_id, value.terminal_authority)
 
+    def test_stale_history_exposes_no_authority_result(self) -> None:
+        a = genesis("a", "11")
+        event = make_event("stale", a)
+        value = project(
+            Scenario(
+                (event,),
+                (a,),
+                checkpoint_references=("missing-history",),
+                replay_dependencies=("missing-history",),
+            )
+        )
+        self.assertTrue(value.stale_evidence)
+        self.assertFalse(value.authority_available)
+        self.assertFalse(value.terminal_authority)
+        self.assertFalse(value.accepted_controls)
+
+    def test_same_key_aliases_do_not_share_a_fork_namespace(self) -> None:
+        issuer = genesis("issuer", "11")
+        first = control("first-alias", issuer, Kind.GRANT, grantee_key="22" * 32)
+        second = control(
+            "second-alias",
+            issuer,
+            Kind.GRANT,
+            sequence=1,
+            predecessor=first.reference,
+            grantee_key="22" * 32,
+        )
+        first_binding = grant_binding(first)
+        second_binding = grant_binding(second)
+        first_action = make_event(
+            "first-action", first_binding, parents=(first.reference,)
+        )
+        second_action = make_event(
+            "second-action", second_binding, parents=(second.reference,)
+        )
+        value = project(
+            Scenario((first, second, first_action, second_action), (issuer,))
+        )
+        self.assertEqual(len(value.alias_groups), 1)
+        self.assertNotIn(first_binding.credential_id, value.forked_credentials)
+        self.assertNotIn(second_binding.credential_id, value.forked_credentials)
+
+    def test_many_siblings_use_one_bounded_fork_join(self) -> None:
+        a = genesis("a", "11")
+        siblings = tuple(make_event(f"sibling-{index}", a) for index in range(5))
+        value = project(Scenario(siblings, (a,)))
+        self.assertEqual(value.forked_credentials, {a.credential_id})
+        self.assertEqual(len(value.fork_joins), 1)
+        self.assertNotIn(a.credential_id, value.terminal_authority)
+
     def test_author_sequence_requires_exact_same_author_predecessor(self) -> None:
         a = genesis("a", "11")
         y = genesis("y", "22")
