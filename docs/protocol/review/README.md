@@ -55,6 +55,21 @@ retargeting an ID to a different file, adding or removing a modeled record, or
 changing a selected status therefore fails closed rather than silently changing
 the review boundary.
 
+## Bounded review bundle
+
+The active [protocol-hardening plan](../protocol-hardening-plan.md) defines the
+review process. For one protocol increment, mandatory reviewer context is
+bounded to the accepted Issue and SHAs, `AGENTS.md`, the hardening plan, changed
+normative sources and direct dependencies, the relevant model slice, changed
+adversarial evidence, exact diff and test artifacts, and prior unresolved
+findings that affect the increment.
+
+This bundle reduces repeated context loading; it is not a restriction on
+investigation. Reviewers may inspect the whole repository and public standards.
+Omitting a material dependency invalidates the review. A validator pass, model
+query or reviewer consensus remains an aid to falsification, never a security
+verdict or permission to implement unresolved semantics.
+
 ## Closed registry semantics
 
 The arrays in `registries` are exhaustive and sorted. Their meanings are:

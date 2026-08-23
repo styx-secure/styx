@@ -1,4 +1,4 @@
-<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="a61cb86eb02ec0a98265341e76ece4ea81b680aaa4ee27c53e7317302a4c9e80" -->
+<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="a6e21b17b1443ab582dd0bb1c21664b440e05bd5d8bed06d67a48ab6c1e68ca3" -->
 # Roadmap per integrare le capacità applicative in Styx
 
 [English canonical version](integration-roadmap.md)
@@ -11,6 +11,15 @@
 > resta lo snapshot della base osservata sopra.
 > Questa roadmap propone candidati per future Issue. Non autorizza codice,
 > crittografia, formati persistenti, migrazioni o modifiche al vault.
+
+## Gate di pianificazione attivo
+
+Il [piano di hardening del protocollo applicativo](../protocol/protocol-hardening-plan.md)
+congela attualmente le nuove implementazioni di prodotto e runtime. Le decisioni
+di protocollo, la riconciliazione del threat model, le evidenze avversariali e la
+conformità language-neutral hanno priorità finché non passano gli exit gate
+ratificati dagli esseri umani. La Issue #233 / PR #234 resta evidenza
+sperimentale isolata, C0.3 resta `NO-GO` e questa roadmap non aggira il gate.
 
 ## 1. Metodo e legenda
 
@@ -351,6 +360,7 @@ Restano esplicitamente aperti:
 - standard di evidenza e timestamp;
 - policy allegati e sanitizzazione.
 
-La prossima azione utile non è implementarle insieme: è trasformare una
-decisione per volta in Issue approvata, con threat model, non-goal, test e
-rollback.
+L'azione attiva è eseguire il piano di hardening del protocollo nel relativo
+ordine di dipendenza. Ogni decisione continua a diventare una Issue approvata,
+con threat model, non-goal, test e rollback; l'integrazione di prodotto riprende
+solo dopo il verdetto di uscita del piano e tramite contratti separati.

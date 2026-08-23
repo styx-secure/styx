@@ -12,6 +12,15 @@
 > This roadmap proposes candidates for future Issues. It does not authorize
 > code, cryptography, persisted formats, migrations, or vault changes.
 
+## Active planning gate
+
+The [application-protocol hardening plan](../protocol/protocol-hardening-plan.md)
+currently freezes new product and runtime implementation. Protocol decisions,
+threat-model reconciliation, adversarial evidence and language-neutral
+conformance take priority until the plan's human-ratified exit gates pass.
+Issue #233 / PR #234 remain isolated experimental evidence, C0.3 remains
+`NO-GO`, and this roadmap does not bypass that gate.
+
 ## 1. Method and legend
 
 The assessment starts from current code and decisions. The four permitted
@@ -348,6 +357,7 @@ The following remain explicitly open:
 - evidence and timestamp standards;
 - attachment and sanitization policy.
 
-The next useful action is not to implement them together. It is to turn one
-decision at a time into an approved Issue with a threat model, non-goals,
-tests, and rollback.
+The active action is to execute the protocol-hardening plan in dependency order.
+Each decision still becomes an approved Issue with a threat model, non-goals,
+tests and rollback; product integration resumes only after the plan's exit
+verdict and under separate contracts.
