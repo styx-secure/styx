@@ -1,7 +1,8 @@
 """RED witnesses for the amended C0.2j remediation contract.
 
-These tests deliberately describe the required post-remediation behavior.  They
-must fail against candidate ff470f8 before the authority fold is changed.
+These tests deliberately describe the required post-remediation behavior.  The
+suite combines RED regressions with positive controls that prevent a candidate
+repair from weakening an already-satisfied safety property.
 """
 
 from __future__ import annotations
@@ -19,6 +20,62 @@ from scenarios_v3 import control, genesis  # noqa: E402
 
 
 class C02jRemediationRedTests(unittest.TestCase):
+    def test_bounded_standing_does_not_operationalize_rejected_target_successor(
+        self,
+    ) -> None:
+        actor = genesis("actor", "11")
+        revoker = genesis("revoker", "22")
+        first_target = genesis("first-target", "33")
+        second_target = genesis("second-target", "44")
+
+        revoke_actor = control(
+            "revoke-actor", revoker, Kind.REVOKE, target_id=actor.credential_id
+        )
+        first_reduction = control(
+            "actor-reduces-first",
+            actor,
+            Kind.REVOKE,
+            target_id=first_target.credential_id,
+        )
+        second_reduction = control(
+            "actor-reduces-second",
+            actor,
+            Kind.REVOKE,
+            sequence=1,
+            predecessor=first_reduction.reference,
+            target_id=second_target.credential_id,
+        )
+        first_successor_grant = control(
+            "first-target-grants-successor",
+            first_target,
+            Kind.GRANT,
+            grantee_key="55" * 32,
+        )
+        second_successor_grant = control(
+            "second-target-grants-successor",
+            second_target,
+            Kind.GRANT,
+            grantee_key="66" * 32,
+        )
+        first_successor = grant_binding(first_successor_grant)
+        second_successor = grant_binding(second_successor_grant)
+
+        value = project(
+            Scenario(
+                (
+                    revoke_actor,
+                    first_reduction,
+                    second_reduction,
+                    first_successor_grant,
+                    second_successor_grant,
+                ),
+                (actor, revoker, first_target, second_target),
+            )
+        )
+
+        self.assertNotIn(first_successor.credential_id, value.terminal_authority)
+        self.assertNotIn(second_successor.credential_id, value.terminal_authority)
+
     def test_revoked_actor_has_at_most_one_contested_reduction(self) -> None:
         actor = genesis("actor", "11")
         revoker = genesis("revoker", "22")
