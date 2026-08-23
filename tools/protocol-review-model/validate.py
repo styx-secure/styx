@@ -71,7 +71,7 @@ EXPECTED_REGISTRIES = {
     "layers": ["AP", "K", "PV", "RS", "SS", "TR"],
     "obligations": [
         *[f"OB-AP{index:02d}" for index in range(1, 11)],
-        *[f"OB-K{index:02d}" for index in range(1, 19)],
+        *[f"OB-K{index:02d}" for index in range(1, 20)],
         *[f"OB-PV{index:02d}" for index in range(1, 12)],
         *[f"OB-RS{index:02d}" for index in range(1, 14)],
         *[f"OB-SS{index:02d}" for index in range(1, 10)],
@@ -118,12 +118,24 @@ EXPECTED_SOURCE_RECORDS = {
         "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
         "normative",
     ),
+    "credential_analysis": (
+        "docs/protocol/styx-app-kernel-v0-credential-succession-analysis.md",
+        "normative",
+    ),
+    "credential_report": (
+        "docs/protocol/styx-app-kernel-v0-credential-succession-falsification-report.md",
+        "evidence",
+    ),
     "decisions": (
         "docs/protocol/styx-app-kernel-v0-decisions.md",
         "normative",
     ),
     "identity_analysis": (
         "docs/protocol/styx-app-kernel-v0-identity-context-analysis.md",
+        "evidence",
+    ),
+    "identifier_analysis": (
+        "docs/protocol/styx-app-kernel-v0-identifier-derivation-analysis.md",
         "evidence",
     ),
     "payload_analysis": (
@@ -150,13 +162,17 @@ EXPECTED_SOURCE_RECORDS = {
 }
 
 REQUIRED_COUNTEREXAMPLES = {
+    "CE_ALIAS_SURVIVAL",
     "CE_CHECKPOINT_STALE",
     "CE_CREDENTIAL_COLLISION",
     "CE_FORK_CONTEXT_QUARANTINE",
+    "CE_GRANT_ROOTED_BINDING",
     "CE_GRANT_REVOKE_LAUNDERING_ORDER_A",
     "CE_GRANT_REVOKE_LAUNDERING_ORDER_B",
     "CE_MISSING_REQUIRED_OPENING",
+    "CE_MUTUAL_REDUCTION_NO_AUTHORITY",
     "CE_SELECTIVE_REVEAL",
+    "CE_SINGLE_AUTHORITY_TAKEOVER",
 }
 
 REQUIRED_NON_CLAIMS = {
@@ -169,6 +185,7 @@ REQUIRED_NON_CLAIMS = {
     "NC_HIDING_ASSUMPTION",
     "NC_METADATA_ANONYMITY",
     "NC_REVOCATION_COMPROMISE",
+    "NC_SUCCESSION_AVAILABILITY",
     "NC_ROLLBACK_DETECTION",
     "NC_SUPPORTED_ADAPTER",
 }
@@ -192,6 +209,8 @@ REQUIRED_INVARIANTS = {
     "INV_CONTROL_NONE_CLASS",
     "INV_CROSS_CONTEXT_REJECTION",
     "INV_FORK_QUARANTINE",
+    "INV_GRANT_ROOTED_BINDING",
+    "INV_LINEAGE_CONTAINMENT",
     "INV_NO_CHECKPOINT_SUBSTITUTION",
     "INV_NO_OPENING_SUBSTITUTION",
     "INV_PENDING_SELECTIVE_PROGRESS",
@@ -199,6 +218,7 @@ REQUIRED_INVARIANTS = {
     "INV_REPLAY_NO_AUTHORITY",
     "INV_SET_RELATIVE_REPLAY",
     "INV_SOURCE_AUTHORITY",
+    "INV_TWO_SIDED_AUTHORITY",
 }
 
 REQUIRED_RESIDUAL_RISKS = {
@@ -208,7 +228,10 @@ REQUIRED_RESIDUAL_RISKS = {
     "RR_NO_FINALITY",
     "RR_OPENING_LOSS",
     "RR_ROLLBACK_LIMIT",
+    "RR_SAME_KEY_ALIAS",
     "RR_SECURE_ADAPTER_ABSENT",
+    "RR_SINGLE_AUTHORITY_TAKEOVER",
+    "RR_TOTAL_AUTHORITY_LOSS",
     "RR_UNAUDITED",
 }
 
@@ -221,11 +244,11 @@ REQUIRED_C03_DEPENDENCIES = {
     "O-14",
 }
 
-CONTRACT_BASE_COMMIT = "4ab333e29fb12f9839d29160248d89da695e37be"
+CONTRACT_BASE_COMMIT = "f9b7d5f30a3535a709f1466dafac691871e1568e"
 
 EXPECTED_STATUS_BY_COLLECTION = {
     "blockers": {
-        "C0.2j": "OPEN",
+        "C0.2j": "DECIDED",
         "C0.2k": "OPEN",
         "C0.3": "NO_GO",
         "C0.3_CORPUS_PATH_APPROVAL": "OPEN",
@@ -241,8 +264,10 @@ EXPECTED_STATUS_BY_COLLECTION = {
     },
     "counterexamples": {item: "EVIDENCE_ONLY" for item in REQUIRED_COUNTEREXAMPLES},
     "flows": {
+        "authority_evidence_replay": "DECIDED",
         "author_application_event": "DECIDED",
         "checkpoint_restore": "SYMBOLIC",
+        "credential_succession": "DECIDED",
         "fork_quarantine": "DECIDED",
         "logical_removal": "DECIDED",
         "missing_required_opening": "DECIDED",
@@ -259,6 +284,8 @@ EXPECTED_STATUS_BY_COLLECTION = {
         "INV_CONTROL_NONE_CLASS": "DECIDED",
         "INV_CROSS_CONTEXT_REJECTION": "DECIDED",
         "INV_FORK_QUARANTINE": "DECIDED",
+        "INV_GRANT_ROOTED_BINDING": "DECIDED",
+        "INV_LINEAGE_CONTAINMENT": "DECIDED",
         "INV_NO_CHECKPOINT_SUBSTITUTION": "DECIDED",
         "INV_NO_OPENING_SUBSTITUTION": "DECIDED",
         "INV_PENDING_SELECTIVE_PROGRESS": "DECIDED",
@@ -266,6 +293,7 @@ EXPECTED_STATUS_BY_COLLECTION = {
         "INV_REPLAY_NO_AUTHORITY": "DECIDED",
         "INV_SET_RELATIVE_REPLAY": "DECIDED",
         "INV_SOURCE_AUTHORITY": "DERIVED",
+        "INV_TWO_SIDED_AUTHORITY": "DECIDED",
     },
     "objects": {
         "application_event": "DECIDED",
@@ -285,6 +313,7 @@ EXPECTED_STATUS_BY_COLLECTION = {
         "FORK_QUARANTINED": "EVIDENCE_ONLY",
         "INVALID": "EVIDENCE_ONLY",
         "LENGTH_MISMATCH": "EVIDENCE_ONLY",
+        "LINEAGE_QUARANTINED": "EVIDENCE_ONLY",
         "OPENING_MISSING": "EVIDENCE_ONLY",
         "PENDING_ANCESTOR": "EVIDENCE_ONLY",
         "PENDING_OPENING": "EVIDENCE_ONLY",
@@ -293,6 +322,7 @@ EXPECTED_STATUS_BY_COLLECTION = {
         "SESSION_PROFILE_REQUIRED": "PROFILE_DEPENDENT",
         "STALE_EVIDENCE": "SYMBOLIC",
         "TRANSPORT_PROFILE_REQUIRED": "PROFILE_DEPENDENT",
+        "UNRESOLVED_CREDENTIAL_BINDING": "EVIDENCE_ONLY",
     },
     "residual_risks": {
         "RR_CHECKPOINT_STALENESS": "SYMBOLIC",
@@ -301,7 +331,10 @@ EXPECTED_STATUS_BY_COLLECTION = {
         "RR_NO_FINALITY": "OPEN",
         "RR_OPENING_LOSS": "OPEN",
         "RR_ROLLBACK_LIMIT": "PROFILE_DEPENDENT",
+        "RR_SAME_KEY_ALIAS": "OPEN",
         "RR_SECURE_ADAPTER_ABSENT": "PROFILE_DEPENDENT",
+        "RR_SINGLE_AUTHORITY_TAKEOVER": "OPEN",
+        "RR_TOTAL_AUTHORITY_LOSS": "OPEN",
         "RR_UNAUDITED": "OPEN",
     },
     "state_models": {
@@ -320,18 +353,24 @@ EXPECTED_FIELD_STATUS = {
     ("application_event", "causal_parents"): "DECIDED",
     ("application_event", "content_descriptor_ref"): "DECIDED",
     ("application_event", "context_identifier"): "DECIDED",
-    ("application_event", "credential_identifier"): "UNRESOLVED",
+    ("application_event", "credential_control_kind"): "DECIDED",
+    ("application_event", "credential_identifier"): "DECIDED",
     ("application_event", "direct_predecessor_presence"): "DECIDED",
     ("application_event", "direct_predecessor_reference"): "DECIDED",
     ("application_event", "event_reference"): "DECIDED",
     ("application_event", "event_role"): "DECIDED",
     ("application_event", "event_type_identifier"): "UNRESOLVED",
     ("application_event", "genesis_reference"): "UNRESOLVED",
+    ("application_event", "grantee_signature_suite_id"): "DECIDED",
+    ("application_event", "grantee_verification_key"): "DECIDED",
     ("application_event", "object_kind"): "DECIDED",
     ("application_event", "removal_tail"): "DECIDED",
+    ("application_event", "replacement_grant_reference"): "DECIDED",
+    ("application_event", "recovery_grant_reference"): "DECIDED",
     ("application_event", "schema_identifier"): "UNRESOLVED",
     ("application_event", "schema_version"): "UNRESOLVED",
     ("application_event", "signature"): "UNRESOLVED",
+    ("application_event", "target_credential_identifier"): "DECIDED",
     ("checkpoint_evidence", "checkpoint_evidence_refs"): "SYMBOLIC",
     ("checkpoint_evidence", "replay_dependency_refs"): "SYMBOLIC",
     ("content_bytes", "content_octets"): "DECIDED",
@@ -386,7 +425,9 @@ EXPECTED_TRANSITION_IDS = {
     },
     "k_admission": {
         "k_admit_candidate",
+        "k_admit_binding_grant",
         "k_reject_invalid",
+        "k_reject_unresolved_binding",
         "k_to_collision",
         "k_to_fork",
     },
@@ -421,7 +462,6 @@ SCHEMA_DRAFT = "https://json-schema.org/draft/2020-12/schema"
 
 PROTECTED_UNRESOLVED_FIELDS = {
     ("application_event", "ap_transition_block"),
-    ("application_event", "credential_identifier"),
     ("application_event", "event_type_identifier"),
     ("application_event", "genesis_reference"),
     ("application_event", "schema_identifier"),

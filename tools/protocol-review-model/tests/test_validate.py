@@ -40,6 +40,14 @@ def _apply_mutation(document: dict, mutation: dict) -> None:
     elif operation == "append-copy":
         target = parent[int(key)] if isinstance(parent, list) else parent[key]
         target.append(copy.deepcopy(target[mutation["index"]]))
+    elif operation == "append-copy-set":
+        target = parent[int(key)] if isinstance(parent, list) else parent[key]
+        item = copy.deepcopy(target[mutation["index"]])
+        item[mutation["field"]] = mutation["value"]
+        target.append(item)
+    elif operation == "append-value":
+        target = parent[int(key)] if isinstance(parent, list) else parent[key]
+        target.append(copy.deepcopy(mutation["value"]))
     elif operation == "remove-value":
         target = parent[int(key)] if isinstance(parent, list) else parent[key]
         target.remove(mutation["value"])
@@ -247,6 +255,26 @@ class ProtocolReviewModelTests(unittest.TestCase):
             },
             seen_expected_codes,
         )
+
+    def test_additive_inventory_cases_fail_only_the_pinned_equality(self) -> None:
+        additive_ids = {
+            "unexpected-record-set-entry",
+            "unexpected-object-field",
+            "unexpected-state-transition",
+            "unexpected-closed-registry-entry",
+        }
+        cases = {case["id"]: case for case in self.negative_cases}
+        self.assertEqual(additive_ids, additive_ids & cases.keys())
+        for case_id in sorted(additive_ids):
+            with self.subTest(case=case_id):
+                case = cases[case_id]
+                mutated = copy.deepcopy(self.model)
+                _apply_mutation(mutated, case["mutation"])
+                codes = {
+                    finding.code
+                    for finding in validator.validate(mutated, self.schema, REPO_ROOT)
+                }
+                self.assertEqual({case["expected_code"]}, codes)
 
 
 if __name__ == "__main__":
