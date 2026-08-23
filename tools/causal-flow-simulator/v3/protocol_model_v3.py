@@ -29,6 +29,7 @@ MAX_CREDENTIALS = 10
 MAX_LINEAGE_DEPTH = 4
 MAX_TOPOLOGICAL_ORDERS = 720
 MAX_KEY_OCTETS = 64
+MAX_DELIVERY_PERMUTATION_WIDTH = 6
 SUITES = frozenset({"0x0001"})
 
 
@@ -78,6 +79,18 @@ class Outcome(str, Enum):
     )
     REMOVAL_INAPPLICABLE = "REMOVAL_INAPPLICABLE"
     STALE_EVIDENCE = "STALE_EVIDENCE"
+
+
+class ReductionStanding(str, Enum):
+    GENESIS = "GENESIS"
+    ACCEPTED_GRANT = "ACCEPTED_GRANT"
+    POSSIBLE_GRANT = "POSSIBLE_GRANT"
+
+
+class AuthorityVerdict(str, Enum):
+    MUST_AUTH = "MUST_AUTH"
+    MAY_AUTH = "MAY_AUTH"
+    NO_AUTH = "NO_AUTH"
 
 
 CONTROL_KINDS = frozenset(
@@ -160,6 +173,17 @@ class Mutation:
 
 
 @dataclass(frozen=True)
+class ForkJoin:
+    """Virtual authority item positioned at the causal join of a fork pair."""
+
+    reference: str
+    credential_id: str
+    left_reference: str
+    right_reference: str
+    closure: frozenset[str]
+
+
+@dataclass(frozen=True)
 class Projection:
     admitted: tuple[str, ...]
     rejected: Mapping[str, Outcome]
@@ -167,12 +191,15 @@ class Projection:
     bindings: Mapping[str, Binding]
     alias_groups: tuple[tuple[str, ...], ...]
     accepted_controls: frozenset[str]
+    reduction_standing: Mapping[str, ReductionStanding]
+    event_authority: Mapping[str, AuthorityVerdict]
     may_authority: frozenset[str]
     must_authority: frozenset[str]
     terminal_authority: frozenset[str]
     revoked: frozenset[str]
     terminated: frozenset[str]
     forked_credentials: frozenset[str]
+    fork_joins: tuple[str, ...]
     pending_roots: frozenset[str]
     pending: frozenset[str]
     stale_evidence: bool
@@ -197,14 +224,27 @@ class Projection:
                     for key, value in self.bindings.items()
                 )
             ),
+            tuple(
+                sorted(
+                    (reference, verdict.value)
+                    for reference, verdict in self.event_authority.items()
+                )
+            ),
             self.alias_groups,
             self.accepted_controls,
+            tuple(
+                sorted(
+                    (reference, standing.value)
+                    for reference, standing in self.reduction_standing.items()
+                )
+            ),
             self.may_authority,
             self.must_authority,
             self.terminal_authority,
             self.revoked,
             self.terminated,
             self.forked_credentials,
+            self.fork_joins,
             self.pending_roots,
             self.pending,
             self.stale_evidence,
@@ -254,12 +294,15 @@ def event_preimage(event: Event, mutation: Mutation = Mutation()) -> bytes:
 
 def derive_event_reference(event: Event, mutation: Mutation = Mutation()) -> str:
     preimage = event_preimage(event, mutation)
-    domain = (
-        GENESIS_DOMAIN
-        if mutation.identifier == "M21_GENESIS_USES_EVENT_DOMAIN"
-        else EVENT_DOMAIN
-    )
-    return sha256(domain + _frame(preimage)).hexdigest()
+    return sha256(EVENT_DOMAIN + _frame(preimage)).hexdigest()
+
+
+def credential_domains_are_separated(mutation: Mutation = Mutation()) -> bool:
+    """Expose the domain-separation invariant to the hostile model suite."""
+
+    if mutation.identifier == "M21_GENESIS_USES_EVENT_DOMAIN":
+        return False
+    return GENESIS_DOMAIN != EVENT_DOMAIN
 
 
 def make_event(
@@ -284,6 +327,7 @@ def make_event(
     forced_reference: str | None = None,
     claimed_actor_suite: str | None = None,
     claimed_actor_key: str | None = None,
+    mutation: Mutation = Mutation(),
 ) -> Event:
     candidate = Event(
         name=name,
@@ -308,7 +352,8 @@ def make_event(
         ap_applicable=ap_applicable,
     )
     return replace(
-        candidate, reference=forced_reference or derive_event_reference(candidate)
+        candidate,
+        reference=forced_reference or derive_event_reference(candidate, mutation),
     )
 
 
@@ -348,6 +393,78 @@ def _dependencies(event: Event) -> frozenset[str]:
     return frozenset(values)
 
 
+def _causal_ancestors(events: Sequence[Event]) -> Mapping[str, frozenset[str]]:
+    """Return transitive O-01 ancestry over parents and direct predecessors.
+
+    Semantic references such as a ROTATE replacement are deliberately excluded:
+    the transcript profile requires those references to occur in ``parents`` when
+    they are causal. Missing references remain admission failures rather than
+    invented graph vertices.
+    """
+
+    by_reference = {event.reference: event for event in events}
+    ancestors: dict[str, set[str]] = {
+        event.reference: {
+            reference
+            for reference in (*event.parents, event.predecessor)
+            if reference is not None and reference in by_reference
+        }
+        for event in events
+    }
+    changed = True
+    while changed:
+        changed = False
+        for reference, values in ancestors.items():
+            expanded = set(values)
+            for dependency in values:
+                expanded.update(ancestors.get(dependency, ()))
+            if reference in expanded:
+                raise ModelInputError("CYCLIC_CAUSAL_EVIDENCE", reference)
+            if expanded != values:
+                ancestors[reference] = expanded
+                changed = True
+    return {reference: frozenset(values) for reference, values in ancestors.items()}
+
+
+def _valid_author_chain(
+    event: Event,
+    raw_by_reference: Mapping[str, Event],
+    ancestors: Mapping[str, frozenset[str]],
+    genesis_ids: frozenset[str],
+    mutation: Mutation,
+) -> bool:
+    """Enforce O-01 sequence continuity and causal binding availability."""
+
+    if tuple(sorted(set(event.parents))) != event.parents:
+        return False
+    if event.reference in event.parents or event.predecessor in event.parents:
+        return False
+    for index, left in enumerate(event.parents):
+        for right in event.parents[index + 1 :]:
+            if left in ancestors.get(right, ()) or right in ancestors.get(left, ()):
+                return False
+    if event.predecessor is not None and any(
+        parent in ancestors.get(event.predecessor, ()) for parent in event.parents
+    ):
+        return False
+    if mutation.identifier != "M28_NO_AUTHOR_CONTINUITY":
+        if event.sequence == 0 and event.predecessor is not None:
+            return False
+        if event.sequence > 0 and event.predecessor is None:
+            return False
+        if event.predecessor is not None:
+            predecessor = raw_by_reference.get(event.predecessor)
+            if (
+                predecessor is None
+                or predecessor.actor_id != event.actor_id
+                or predecessor.sequence + 1 != event.sequence
+            ):
+                return False
+    if event.actor_id not in genesis_ids:
+        return event.actor_id in ancestors.get(event.reference, frozenset())
+    return True
+
+
 def _valid_control_tail(event: Event, admitted: Mapping[str, Event]) -> bool:
     """Validate the closed CREDENTIAL_CONTROL tail before AP evaluation.
 
@@ -378,7 +495,10 @@ def _valid_control_tail(event: Event, admitted: Mapping[str, Event]) -> bool:
             and replacement is not None
             and replacement.kind is Kind.GRANT
             and replacement.role is Role.CREDENTIAL_CONTROL
-            and replacement.reference in event.parents
+            and (
+                replacement.reference == event.predecessor
+                or replacement.reference in event.parents
+            )
             and event.grantee_suite is None
             and event.grantee_key is None
         )
@@ -392,24 +512,131 @@ def _valid_control_tail(event: Event, admitted: Mapping[str, Event]) -> bool:
     return False
 
 
-def _topological_orders(events: Sequence[Event]) -> tuple[tuple[Event, ...], ...]:
-    if len(events) > MAX_CONTROL_EVENTS:
+def _fork_joins(
+    admitted: Mapping[str, Event],
+    ancestors: Mapping[str, frozenset[str]],
+    mutation: Mutation,
+) -> tuple[tuple[ForkJoin, ...], frozenset[str], frozenset[str]]:
+    """Construct the minimal pairwise causal joins for every valid fork slot."""
+
+    slots: dict[tuple[object, ...], list[str]] = {}
+    for event in admitted.values():
+        slot = (
+            (event.actor_id, event.sequence, event.predecessor)
+            if mutation.identifier == "M29_PREDECESSOR_SLOT_FORK_ONLY"
+            else (event.actor_id, event.sequence)
+        )
+        slots.setdefault(slot, []).append(event.reference)
+
+    candidates: list[ForkJoin] = []
+    forked: set[str] = set()
+    fork_events: set[str] = set()
+    for slot, references in sorted(slots.items(), key=lambda item: repr(item[0])):
+        credential_id = str(slot[0])
+        sequence = int(slot[1])
+        ordered = sorted(set(references))
+        if len(ordered) < 2:
+            continue
+        forked.add(credential_id)
+        fork_events.update(ordered)
+        for index, left in enumerate(ordered):
+            for right in ordered[index + 1 :]:
+                closure = frozenset(
+                    set(ancestors.get(left, frozenset()))
+                    | set(ancestors.get(right, frozenset()))
+                    | {left, right}
+                )
+                candidates.append(
+                    ForkJoin(
+                        reference=(
+                            f"fork:{credential_id}:{sequence}:{left}:{right}"
+                        ),
+                        credential_id=credential_id,
+                        left_reference=left,
+                        right_reference=right,
+                        closure=closure,
+                    )
+                )
+
+    minimal: list[ForkJoin] = []
+    for candidate in candidates:
+        superseded = any(
+            other.credential_id == candidate.credential_id
+            and other.reference != candidate.reference
+            and {other.left_reference, other.right_reference} <= candidate.closure
+            for other in candidates
+        )
+        if not superseded:
+            minimal.append(candidate)
+    return tuple(sorted(minimal, key=lambda item: item.reference)), frozenset(forked), frozenset(fork_events)
+
+
+def _topological_orders(
+    events: Sequence[Event],
+    joins: Sequence[ForkJoin],
+    ancestors: Mapping[str, frozenset[str]],
+    mutation: Mutation,
+) -> tuple[tuple[Event | ForkJoin, ...], ...]:
+    items: tuple[Event | ForkJoin, ...] = tuple(events) + tuple(joins)
+    if len(items) > MAX_CONTROL_EVENTS:
         raise ModelInputError("AUTHORITY_BOUND_EXCEEDED", "control event count")
-    by_reference = {event.reference: event for event in events}
-    orders: list[tuple[Event, ...]] = []
-    for candidate in permutations(events):
-        seen: set[str] = set()
-        valid = True
-        for event in candidate:
-            internal = _dependencies(event) & by_reference.keys()
-            if not internal <= seen:
-                valid = False
-                break
-            seen.add(event.reference)
-        if valid:
-            orders.append(candidate)
-            if len(orders) > MAX_TOPOLOGICAL_ORDERS:
-                raise ModelInputError("AUTHORITY_BOUND_EXCEEDED", "order count")
+    controls_by_reference = {event.reference: event for event in events}
+    joins_by_reference = {join.reference: join for join in joins}
+    predecessors: dict[str, set[str]] = {}
+    for event in events:
+        required = set(
+            _dependencies(event)
+            if mutation.identifier == "M26_DIRECT_DEPENDENCIES_ONLY"
+            else ancestors.get(event.reference, frozenset())
+        ) & set(controls_by_reference)
+        for join in joins:
+            if {
+                join.left_reference,
+                join.right_reference,
+            } <= set(ancestors.get(event.reference, frozenset())):
+                required.add(join.reference)
+            if (
+                mutation.identifier == "M32_FORK_JOIN_BEFORE_SIBLINGS"
+                and event.reference
+                in {join.left_reference, join.right_reference}
+            ):
+                required.add(join.reference)
+        predecessors[event.reference] = required
+    for join in joins:
+        required = set(join.closure) & set(controls_by_reference)
+        if mutation.identifier == "M32_FORK_JOIN_BEFORE_SIBLINGS":
+            required -= {join.left_reference, join.right_reference}
+        for other in joins:
+            if other.reference != join.reference and {
+                other.left_reference,
+                other.right_reference,
+            } <= join.closure:
+                required.add(other.reference)
+        predecessors[join.reference] = required
+
+    by_reference: dict[str, Event | ForkJoin] = {
+        item.reference: item for item in items
+    }
+    orders: list[tuple[Event | ForkJoin, ...]] = []
+
+    def visit(prefix: tuple[Event | ForkJoin, ...], remaining: frozenset[str]) -> None:
+        ready = sorted(
+            reference
+            for reference in remaining
+            if predecessors[reference].isdisjoint(remaining)
+        )
+        if not ready:
+            if not remaining:
+                orders.append(prefix)
+                if len(orders) > MAX_TOPOLOGICAL_ORDERS:
+                    raise ModelInputError(
+                        "AUTHORITY_BOUND_EXCEEDED", "order count"
+                    )
+            return
+        for reference in ready:
+            visit(prefix + (by_reference[reference],), remaining - {reference})
+
+    visit((), frozenset(by_reference))
     if not orders:
         raise ModelInputError("CYCLIC_CONTROL_EVIDENCE", "no topological order")
     return tuple(orders)
@@ -445,17 +672,27 @@ def _lineage_depth(bindings: Mapping[str, Binding], credential_id: str) -> int:
 
 
 def _simulate_order(
-    order: Sequence[Event],
+    order: Sequence[Event | ForkJoin],
     genesis_authority: frozenset[str],
     bindings: Mapping[str, Binding],
-    forked: frozenset[str],
     mutation: Mutation,
 ) -> tuple[Mapping[str, bool], frozenset[str]]:
     authority = set(genesis_authority)
     actor_authorized: dict[str, bool] = {}
     revoked: set[str] = set()
-    for event in order:
-        terminated = _lineage_descendants(bindings, revoked | set(forked))
+    forked: set[str] = set()
+    globally_forked = {
+        item.credential_id for item in order if isinstance(item, ForkJoin)
+    }
+    if mutation.identifier == "M27_GLOBAL_FORK_TERMINATION":
+        forked.update(globally_forked)
+    for item in order:
+        if isinstance(item, ForkJoin):
+            forked.add(item.credential_id)
+            authority -= set(_lineage_descendants(bindings, {item.credential_id}))
+            continue
+        event = item
+        terminated = _lineage_descendants(bindings, revoked | forked)
         actor_ok = event.actor_id in authority and event.actor_id not in terminated
         if mutation.identifier == "M24_REVOKED_REDUCTION_ACCEPTED" and event.kind in REDUCTION_KINDS:
             actor_ok = True
@@ -472,12 +709,16 @@ def _simulate_order(
 
 def _authority_fold(
     controls: Sequence[Event],
+    joins: Sequence[ForkJoin],
     bindings: Mapping[str, Binding],
     genesis_authority: frozenset[str],
     forked: frozenset[str],
+    ancestors: Mapping[str, frozenset[str]],
     mutation: Mutation,
 ) -> tuple[
     frozenset[str],
+    Mapping[str, ReductionStanding],
+    Mapping[str, AuthorityVerdict],
     frozenset[str],
     frozenset[str],
     frozenset[str],
@@ -492,14 +733,14 @@ def _authority_fold(
             and not event.ap_applicable
         )
     )
-    orders = _topological_orders(evidence)
+    orders = _topological_orders(evidence, joins, ancestors, mutation)
     observations: dict[str, list[bool]] = {
         event.reference: [] for event in evidence
     }
     terminal_sets: list[frozenset[str]] = []
     for order in orders:
         actors, terminal = _simulate_order(
-            order, genesis_authority, bindings, forked, mutation
+            order, genesis_authority, bindings, mutation
         )
         terminal_sets.append(terminal)
         for reference, authorized in actors.items():
@@ -518,10 +759,7 @@ def _authority_fold(
         elif event.kind in REDUCTION_KINDS:
             required = (
                 must_events
-                if mutation.identifier in {
-                    "M06_REDUCTION_REQUIRES_MUST",
-                    "M07_IGNORE_MAY_REDUCTION",
-                }
+                if mutation.identifier == "M06_REDUCTION_REQUIRES_MUST"
                 else may_events
             )
             if event.reference in required:
@@ -535,6 +773,18 @@ def _authority_fold(
             if event.reference in required:
                 accepted.add(event.reference)
 
+    if mutation.identifier == "M07_IGNORE_MAY_REDUCTION":
+        accepted = {
+            reference
+            for reference in accepted
+            if (
+                (event := next(item for item in evidence if item.reference == reference)).kind
+                not in REDUCTION_KINDS
+                or bindings[event.actor_id].genesis
+                or bindings[event.actor_id].grant_reference in accepted
+            )
+        }
+
     if mutation.identifier == "M11_CANONICAL_MUTUAL_REVOCATION":
         reductions = sorted(
             event.reference for event in evidence if event.kind in REDUCTION_KINDS
@@ -542,12 +792,12 @@ def _authority_fold(
         accepted -= set(reductions[1:])
 
     if mutation.identifier == "M08_SINGLE_LINEARIZATION":
+        single_observations = _simulate_order(
+            orders[0], genesis_authority, bindings, mutation
+        )[0]
         accepted = {
-            event.reference
-            for event, ok in zip(orders[0], _simulate_order(
-                orders[0], genesis_authority, bindings, forked, mutation
-            )[0].values())
-            if ok
+            event.reference for event in evidence
+            if single_observations.get(event.reference, False)
         }
 
     granted = set(genesis_authority)
@@ -569,14 +819,64 @@ def _authority_fold(
     must_authority = (
         frozenset.intersection(*terminal_sets) if terminal_sets else frozenset()
     )
+    reduction_standing: dict[str, ReductionStanding] = {}
+    for event in evidence:
+        if event.reference not in accepted or event.kind not in REDUCTION_KINDS:
+            continue
+        actor_binding = bindings[event.actor_id]
+        if actor_binding.genesis:
+            standing = ReductionStanding.GENESIS
+        elif actor_binding.grant_reference in accepted:
+            standing = ReductionStanding.ACCEPTED_GRANT
+        else:
+            standing = ReductionStanding.POSSIBLE_GRANT
+        reduction_standing[event.reference] = standing
+    event_authority = {
+        reference: (
+            AuthorityVerdict.MUST_AUTH
+            if reference in must_events
+            else AuthorityVerdict.MAY_AUTH
+            if reference in may_events
+            else AuthorityVerdict.NO_AUTH
+        )
+        for reference in observations
+    }
     return (
         frozenset(accepted),
+        dict(sorted(reduction_standing.items())),
+        dict(sorted(event_authority.items())),
         may_authority,
         must_authority,
         frozenset(revoked),
         terminal,
         len(orders),
     )
+
+
+def _probe_authority(
+    event: Event,
+    controls: Sequence[Event],
+    joins: Sequence[ForkJoin],
+    bindings: Mapping[str, Binding],
+    genesis_authority: frozenset[str],
+    ancestors: Mapping[str, frozenset[str]],
+    mutation: Mutation,
+) -> AuthorityVerdict:
+    """Evaluate one non-control event at its own causal acting prefix."""
+
+    evidence = tuple(controls) + (event,)
+    orders = _topological_orders(evidence, joins, ancestors, mutation)
+    observations: list[bool] = []
+    for order in orders:
+        actor_authorized, _ = _simulate_order(
+            order, genesis_authority, bindings, mutation
+        )
+        observations.append(actor_authorized[event.reference])
+    if observations and all(observations):
+        return AuthorityVerdict.MUST_AUTH
+    if any(observations):
+        return AuthorityVerdict.MAY_AUTH
+    return AuthorityVerdict.NO_AUTH
 
 
 def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
@@ -599,16 +899,20 @@ def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
             duplicate_count += 1
         else:
             reference_collisions.add(event.reference)
-    if reference_collisions:
+    if (
+        reference_collisions
+        and mutation.identifier != "M25_COLLISION_SELECTS_WINNER"
+    ):
         raise ModelInputError(
             "REFERENCE_COLLISION_UNSUPPORTED", ",".join(sorted(reference_collisions))
         )
 
     events = tuple(raw_by_reference.values())
+    ancestors = _causal_ancestors(events)
     rejected: dict[str, Outcome] = {}
     admitted: dict[str, Event] = {}
     bindings: dict[str, Binding] = dict(genesis)
-    remaining = list(events)
+    remaining = sorted(events, key=lambda item: item.reference)
     progress = True
     while progress and remaining:
         progress = False
@@ -624,6 +928,11 @@ def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
                 rejected[event.reference] = Outcome.STRUCTURAL_REJECTION
                 continue
             if event.context_id != scenario.context_id:
+                rejected[event.reference] = Outcome.STRUCTURAL_REJECTION
+                continue
+            if not _valid_author_chain(
+                event, raw_by_reference, ancestors, frozenset(genesis), mutation
+            ):
                 rejected[event.reference] = Outcome.STRUCTURAL_REJECTION
                 continue
             if event.reference in genesis:
@@ -709,6 +1018,7 @@ def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
             elif (
                 mutation.identifier == "M12_NON_GRANT_CREATES_BINDING"
                 and event.target_id
+                and event.target_id not in bindings
             ):
                 bindings[event.target_id] = Binding(
                     event.target_id,
@@ -729,17 +1039,9 @@ def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
     if len(bindings) > MAX_CREDENTIALS:
         raise ModelInputError("AUTHORITY_BOUND_EXCEEDED", "credential count")
 
-    forked: set[str] = set()
-    fork_events: set[str] = set()
-    slots: dict[tuple[str, int, str | None], list[str]] = {}
-    for event in admitted.values():
-        slots.setdefault((event.actor_id, event.sequence, event.predecessor), []).append(
-            event.reference
-        )
-    for (credential_id, _, _), references in slots.items():
-        if len(references) > 1:
-            forked.add(credential_id)
-            fork_events.update(references)
+    joins, forked_ids, fork_event_ids = _fork_joins(admitted, ancestors, mutation)
+    forked = set(forked_ids)
+    fork_events = set(fork_event_ids)
 
     controls = tuple(
         event
@@ -747,8 +1049,23 @@ def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
         if event.role is Role.CREDENTIAL_CONTROL
     )
     genesis_authority = frozenset(genesis)
-    accepted, may, must, revoked, terminal, explored = _authority_fold(
-        controls, bindings, genesis_authority, frozenset(forked), mutation
+    (
+        accepted,
+        reduction_standing,
+        event_authority,
+        may,
+        must,
+        revoked,
+        terminal,
+        explored,
+    ) = _authority_fold(
+        controls,
+        joins,
+        bindings,
+        genesis_authority,
+        frozenset(forked),
+        ancestors,
+        mutation,
     )
     terminated = (
         frozenset(set(revoked) | set(forked))
@@ -773,8 +1090,8 @@ def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
     )
     if mutation.identifier == "M16_ALIAS_CHANGES_AUTHORITY" and alias_groups:
         terminal = frozenset(set(terminal) - set(alias_groups[0]))
-    if mutation.identifier == "M17_INCREMENTAL_DIVERGES" and admitted:
-        terminal = frozenset(set(terminal) | {next(iter(admitted.values())).actor_id})
+    if mutation.identifier == "M17_TERMINAL_SET_TAMPER" and admitted:
+        terminal = frozenset(set(terminal) | {scenario.events[0].actor_id})
 
     pending_roots = {
         event.reference
@@ -795,14 +1112,24 @@ def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
     if mutation.identifier == "M15_CHECKPOINT_SUBSTITUTES" and stale:
         stale = False
 
+    for reference, event in admitted.items():
+        if event.role is not Role.CREDENTIAL_CONTROL:
+            event_authority[reference] = _probe_authority(
+                event,
+                controls,
+                joins,
+                bindings,
+                genesis_authority,
+                ancestors,
+                mutation,
+            )
+
     outcomes: dict[str, Outcome] = {}
     for reference, event in admitted.items():
         if stale:
             outcomes[reference] = Outcome.STALE_EVIDENCE
         elif reference in fork_events:
             outcomes[reference] = Outcome.FORK_EVIDENCE
-        elif event.actor_id in terminated:
-            outcomes[reference] = Outcome.LINEAGE_QUARANTINED
         elif reference in pending_roots:
             outcomes[reference] = Outcome.PENDING_OPENING
         elif reference in pending:
@@ -815,10 +1142,42 @@ def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
                 if reference in accepted
                 else Outcome.AUTHENTIC_BUT_UNAUTHORIZED
             )
-        elif event.actor_id in terminal:
+        elif (
+            mutation.identifier == "M33_TERMINAL_AUTHORITY_FOR_ORDINARY"
+            and event.actor_id in terminated
+        ):
+            outcomes[reference] = Outcome.LINEAGE_QUARANTINED
+        elif (
+            mutation.identifier == "M33_TERMINAL_AUTHORITY_FOR_ORDINARY"
+            and event.actor_id in terminal
+        ):
             outcomes[reference] = Outcome.APPLIED
-        elif event.actor_id in revoked or event.actor_id in terminated:
+        elif event_authority[reference] is AuthorityVerdict.MUST_AUTH:
+            outcomes[reference] = Outcome.APPLIED
+        elif (
+            event_authority[reference] is AuthorityVerdict.NO_AUTH
+            and any(
+                reduction.reference in ancestors.get(reference, frozenset())
+                and reduction.target_id is not None
+                and event.actor_id
+                in _lineage_descendants(bindings, {reduction.target_id})
+                for reduction in controls
+                if reduction.reference in accepted
+                and reduction.kind in REDUCTION_KINDS
+            )
+        ):
             outcomes[reference] = Outcome.POST_REVOCATION
+        elif (
+            event_authority[reference] is AuthorityVerdict.NO_AUTH
+            and any(
+                {join.left_reference, join.right_reference}
+                <= set(ancestors.get(reference, frozenset()))
+                and event.actor_id
+                in _lineage_descendants(bindings, {join.credential_id})
+                for join in joins
+            )
+        ):
+            outcomes[reference] = Outcome.LINEAGE_QUARANTINED
         else:
             outcomes[reference] = Outcome.AUTHENTIC_BUT_UNAUTHORIZED
 
@@ -829,12 +1188,15 @@ def project(scenario: Scenario, mutation: Mutation = Mutation()) -> Projection:
         bindings=dict(sorted(bindings.items())),
         alias_groups=alias_groups,
         accepted_controls=accepted,
+        reduction_standing=reduction_standing,
+        event_authority=dict(sorted(event_authority.items())),
         may_authority=may,
         must_authority=must,
         terminal_authority=terminal,
         revoked=revoked,
         terminated=terminated,
         forked_credentials=frozenset(forked),
+        fork_joins=tuple(join.reference for join in joins),
         pending_roots=frozenset(pending_roots),
         pending=frozenset(pending),
         stale_evidence=stale,
@@ -851,7 +1213,7 @@ def controls_by_ref(events: Sequence[Event]) -> frozenset[str]:
 def delivery_views(
     scenario: Scenario, mutation: Mutation = Mutation()
 ) -> tuple[tuple[object, ...], ...]:
-    if len(scenario.events) > 6:
+    if len(scenario.events) > MAX_DELIVERY_PERMUTATION_WIDTH:
         raise ModelInputError("DELIVERY_BOUND_EXCEEDED", "more than six events")
     views = []
     for order in permutations(scenario.events):

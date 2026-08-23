@@ -48,6 +48,18 @@ class CredentialBindingTests(unittest.TestCase):
         value = project(Scenario((event,), (issuer,)))
         self.assertIs(value.rejected[event.reference], Outcome.STRUCTURAL_REJECTION)
 
+    def test_noncausal_successor_use_rejects_for_every_delivery_order(self) -> None:
+        issuer = genesis("issuer", "11")
+        grant = control("grant", issuer, Kind.GRANT, grantee_key="22" * 32)
+        use = make_event("noncausal-use", grant_binding(grant))
+        for delivery in permutations((grant, use)):
+            with self.subTest(delivery=tuple(event.reference for event in delivery)):
+                value = project(Scenario(delivery, (issuer,)))
+                self.assertIs(
+                    value.rejected[use.reference],
+                    Outcome.STRUCTURAL_REJECTION,
+                )
+
 
 class AuthorityTests(unittest.TestCase):
     def test_mutual_revocation_has_no_winner(self) -> None:
@@ -91,6 +103,66 @@ class AuthorityTests(unittest.TestCase):
         value = project(Scenario((pending, revoke), (a, b)))
         self.assertIn(revoke.reference, value.pending)
         self.assertNotIn(a.credential_id, value.terminal_authority)
+
+    def test_noncontrol_causal_hop_orders_authority_controls(self) -> None:
+        a = genesis("a", "11")
+        y = genesis("y", "22")
+        z = genesis("z", "33")
+        revoke_y = control("a-revokes-y", a, Kind.REVOKE, target_id=y.credential_id)
+        ordinary = make_event("y-ordinary", y, parents=(revoke_y.reference,))
+        revoke_z = control(
+            "y-revokes-z",
+            y,
+            Kind.REVOKE,
+            sequence=1,
+            predecessor=ordinary.reference,
+            target_id=z.credential_id,
+        )
+        value = project(Scenario((revoke_y, ordinary, revoke_z), (a, y, z)))
+        self.assertNotIn(revoke_z.reference, value.accepted_controls)
+        self.assertIn(z.credential_id, value.terminal_authority)
+
+    def test_author_sequence_requires_exact_same_author_predecessor(self) -> None:
+        a = genesis("a", "11")
+        y = genesis("y", "22")
+        z = genesis("z", "33")
+        y_root = make_event("y-root", y)
+        a_root = make_event("a-root", a)
+        gap = control(
+            "gap",
+            y,
+            Kind.REVOKE,
+            sequence=2,
+            predecessor=y_root.reference,
+            target_id=z.credential_id,
+        )
+        cross_author = control(
+            "cross-author",
+            y,
+            Kind.REVOKE,
+            sequence=1,
+            predecessor=a_root.reference,
+            target_id=z.credential_id,
+        )
+        zero_with_predecessor = control(
+            "zero-with-predecessor",
+            y,
+            Kind.REVOKE,
+            predecessor=y_root.reference,
+            target_id=z.credential_id,
+        )
+        value = project(
+            Scenario(
+                (y_root, a_root, gap, cross_author, zero_with_predecessor),
+                (a, y, z),
+            )
+        )
+        for event in (gap, cross_author, zero_with_predecessor):
+            with self.subTest(event=event.reference):
+                self.assertIs(
+                    value.rejected[event.reference],
+                    Outcome.STRUCTURAL_REJECTION,
+                )
 
 
 class BoundsTests(unittest.TestCase):
