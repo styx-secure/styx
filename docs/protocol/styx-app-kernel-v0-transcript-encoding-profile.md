@@ -283,6 +283,12 @@ candidate with `event_role == 0x01` and any content-bearing class is rejected
 before commitment/opening processing, target lookup or AP evaluation. This
 role and tail are otherwise byte-frozen by C0.2j.
 
+The C0.2i cross-field sentence in
+`styx-app-kernel-v0-commitment-encoding-profile.md` section 6 is scoped to this
+logical-removal role. C0.2j applies the same `content_class == 0x00` (`NONE`)
+requirement independently to role class `0x02` below without editing that
+byte-frozen section.
+
 The target-commitment container length is exactly 32 octets, derived from the
 suite active for the authenticated protocol version rather than from the
 directive descriptor or target. The equality/applicability rule and the absence

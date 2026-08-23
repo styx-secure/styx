@@ -5734,7 +5734,7 @@
       "authority": "evidence",
       "id": "credential_report",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-falsification-report.md",
-      "sha256": "6a70b6fdb81d9578f1ba777677d7b86bb8429550f596b94e837c254015a68d0e"
+      "sha256": "d4b8ef188910c299641943366498809785ea981ee2d5b75e9a1c2ca3ae60e1bb"
     },
     {
       "authority": "normative",
@@ -5788,7 +5788,7 @@
       "authority": "normative",
       "id": "transcript_profile",
       "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
-      "sha256": "e3fe3964dbbeaf131de3948d216f92d89b693a14b7323bedf8887940054a5ff2"
+      "sha256": "809c9e7039c42f887d16b7e2b58a3922c10685c673e9385f3706020d85d96ec3"
     }
   ],
   "state_models": [

@@ -211,6 +211,15 @@ proves that the advertised event, control and fork ceilings can coexist in one
 baseline for every unrelated mutant would add runtime without falsification
 value and is therefore deliberately not counted as a mutant detector.
 
+The canonical mapping also shows the wider coverage shape: 9 of 38 witness
+families declare no mutant edge, 15 of 71 directed assertions are insensitive
+to all 47 required mutants, and 3 families (`full-replay-delivery-convergence`,
+`removal-control-inapplicable` and `transport-and-case-ephemeral-neutrality`)
+contain no mutation-sensitive assertion. These checks still evaluate concrete
+baseline properties and cannot inflate a mutant kill: the harness requires the
+observed and declared failing-witness sets to be identical, and every required
+mutant has at least one explicit killing witness.
+
 ## 6. Frozen-interface verification
 
 Before amendment, the exact O-06b-1 section-4 seven-role domain registry hashes
