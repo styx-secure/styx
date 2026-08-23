@@ -20,7 +20,7 @@ from scenarios_v3 import (
 )
 
 
-BASE_SHA = "f9b7d5f30a3535a709f1466dafac691871e1568e"
+BASE_SHA = "8f30f1940e4417fcb47b156b08c2242f405dc09b"
 
 
 def build_report() -> tuple[dict[str, object], bool]:

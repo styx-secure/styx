@@ -3,7 +3,7 @@
 - **Status:** bounded executable evidence for the selected C0.2j candidate;
   independent exact-final review and human ratification remain mandatory.
 - **Issue:** [#233](https://github.com/styx-secure/styx/issues/233)
-- **Exact base:** `f9b7d5f30a3535a709f1466dafac691871e1568e`
+- **Exact base:** `8f30f1940e4417fcb47b156b08c2242f405dc09b`
 - **Model:** `tools/causal-flow-simulator/v3/`
 - **Model identifier:** `styx.credential-succession-falsification/v3`
 

@@ -3,7 +3,7 @@
 - **Status:** selected C0.2j design; bounded executable evidence, independent
   review and human ratification remain required before merge.
 - **Issue:** [#233](https://github.com/styx-secure/styx/issues/233)
-- **Exact base:** `f9b7d5f30a3535a709f1466dafac691871e1568e`
+- **Exact base:** `8f30f1940e4417fcb47b156b08c2242f405dc09b`
 - **Scope:** language-neutral K credential binding, AP operational authority,
   succession and fork containment. This is not production code or a claim that
   a deployed runtime enforces the rules.

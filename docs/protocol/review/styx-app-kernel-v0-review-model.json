@@ -255,7 +255,7 @@
   ],
   "artifact": {
     "c03_verdict": "NO_GO",
-    "contract_base_commit": "f9b7d5f30a3535a709f1466dafac691871e1568e",
+    "contract_base_commit": "8f30f1940e4417fcb47b156b08c2242f405dc09b",
     "format": "styx.review-model.v1",
     "implementation_claim": false,
     "language": "en",
@@ -5147,13 +5147,13 @@
       "authority": "normative",
       "id": "credential_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-analysis.md",
-      "sha256": "9f61fee1f7af2474626c09bb37bd08a21b2fdded07a5ca827178bba2cb5f8c5f"
+      "sha256": "468d14eac1dfe48cbf8f7dcb99fc46829d5831a3310dd56d811c24714b35f146"
     },
     {
       "authority": "evidence",
       "id": "credential_report",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-falsification-report.md",
-      "sha256": "c63ccc005f242800ff256527b203d0d256993632186da51d117399c543a5b241"
+      "sha256": "45f60c5b9e95977b779330a9f52a749e1fe651914d4ba73a4163cf70a3e6e790"
     },
     {
       "authority": "normative",
