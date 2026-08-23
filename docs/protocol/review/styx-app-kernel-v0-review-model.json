@@ -291,7 +291,7 @@
         "OB-K19"
       ],
       "owner": "K",
-      "reason": "Selects grant-rooted credential identity, exact K-readable succession evidence, two-sided set-relative authority and credential-lineage containment; exact-final gates remain procedural before merge.",
+      "reason": "Selects grant-rooted credential identity, exact K-readable succession evidence, bounded Pass0/first-contested-slot authority, R-1 reduction-target availability and credential-lineage containment; exact-final gates remain procedural before merge.",
       "status": "DECIDED"
     },
     {
@@ -626,6 +626,71 @@
     },
     {
       "blocks": [
+        "O-08"
+      ],
+      "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "`REACHABLE_STATE_LIMIT` or `REACHABLE_TRANSITION_LIMIT`",
+          "source_id": "credential_analysis"
+        }
+      ],
+      "decision_refs": [
+        "O-02",
+        "O-08"
+      ],
+      "description": "A bounded control graph would cross the reachable-authority-state or transition envelope during fresh full replay.",
+      "id": "CE_AUTHORITY_PROJECTION_EXHAUSTION",
+      "obligation_refs": [
+        "OB-AP02",
+        "OB-K19"
+      ],
+      "owner": "AP",
+      "result": "The whole projection is AUTHORITY_PROJECTION_UNAVAILABLE with a typed reason; no accepted controls, authority set or producer eligibility are exposed.",
+      "status": "EVIDENCE_ONLY",
+      "steps": [
+        "Admit a structurally bounded hostile control graph",
+        "Set the authority-state or transition envelope below the next DP step",
+        "Observe typed whole-projection unavailability instead of empty or partial authority"
+      ]
+    },
+    {
+      "blocks": [
+        "C0.2j"
+      ],
+      "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "### 5.2 Bounded contested-reduction selection",
+          "source_id": "credential_analysis"
+        }
+      ],
+      "decision_refs": [
+        "O-02"
+      ],
+      "description": "A revoked or only-possibly-authorized credential emits reductions in multiple author-sequence slots while omitting terminating evidence.",
+      "id": "CE_BOUNDED_CONTESTED_STANDING",
+      "obligation_refs": [
+        "OB-AP02",
+        "OB-K19"
+      ],
+      "owner": "AP",
+      "result": "Only every eligible sibling in the actor's first eligible contested slot is accepted; later slots never become accepted reductions.",
+      "status": "EVIDENCE_ONLY",
+      "steps": [
+        "Create multiple May0-only reductions by one actor across distinct author sequences",
+        "Include a forked first eligible slot",
+        "Verify that only that complete first slot consumes contested standing"
+      ]
+    },
+    {
+      "blocks": [
         "O-07"
       ],
       "citations": [
@@ -724,11 +789,11 @@
           "source_id": "decisions"
         },
         {
-          "anchor": "The accepted-control set contains `REVOKE`/`ROTATE` events satisfying",
+          "anchor": "The final accepted-control set is therefore exactly:",
           "source_id": "credential_analysis"
         },
         {
-          "anchor": "| grant/revoke grinding and delivery | attacker-selected grant references on both sides of revoke and all bounded delivery orders cannot bypass `MustAuth` |",
+          "anchor": "| grant/revoke grinding and delivery | attacker-selected references and bounded delivery orders cannot bypass Pass0 `Must0` expansion |",
           "source_id": "credential_report"
         }
       ],
@@ -741,7 +806,7 @@
         "OB-K01"
       ],
       "owner": "K",
-      "result": "The grant issuer is not `MustAuth` at its acting prefix across all interpretations, so the successor gains no terminal operational authority.",
+      "result": "The grant issuer is not Pass0 `Must0` at its acting prefix across all interpretations, so the successor gains no terminal operational authority.",
       "status": "EVIDENCE_ONLY",
       "steps": [
         "Choose references making GRANT sort first",
@@ -759,11 +824,11 @@
           "source_id": "decisions"
         },
         {
-          "anchor": "The accepted-control set contains `REVOKE`/`ROTATE` events satisfying",
+          "anchor": "The final accepted-control set is therefore exactly:",
           "source_id": "credential_analysis"
         },
         {
-          "anchor": "| grant/revoke grinding and delivery | attacker-selected grant references on both sides of revoke and all bounded delivery orders cannot bypass `MustAuth` |",
+          "anchor": "| grant/revoke grinding and delivery | attacker-selected references and bounded delivery orders cannot bypass Pass0 `Must0` expansion |",
           "source_id": "credential_report"
         }
       ],
@@ -865,7 +930,7 @@
           "source_id": "credential_analysis"
         },
         {
-          "anchor": "| mutual concurrent revocation | both reductions apply; no canonical-order survivor is selected |",
+          "anchor": "| mutual concurrent revocation | both eligible reductions apply; no canonical-order survivor is selected |",
           "source_id": "credential_report"
         }
       ],
@@ -879,12 +944,44 @@
         "OB-K19"
       ],
       "owner": "AP",
-      "result": "Both reductions apply under MayAuth; neither actor is resurrected and terminal operational authority can be empty.",
+      "result": "Both reductions apply after Pass0/first-slot evaluation; neither actor is resurrected and terminal operational authority can be empty.",
       "status": "EVIDENCE_ONLY",
       "steps": [
         "Start with two independent authorities",
         "Admit concurrent reciprocal REVOKE events",
         "Evaluate every causal linearization and record the empty terminal set"
+      ]
+    },
+    {
+      "blocks": [
+        "C0.2j"
+      ],
+      "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "A resolvable but non-causal target is `STRUCTURAL_REJECTION`",
+          "source_id": "credential_analysis"
+        }
+      ],
+      "decision_refs": [
+        "O-02"
+      ],
+      "description": "A REVOKE or retiring ROTATE names a valid credential that is not in the control event's causal past.",
+      "id": "CE_NONCAUSAL_REDUCTION_TARGET",
+      "obligation_refs": [
+        "OB-AP02",
+        "OB-K19"
+      ],
+      "owner": "AP",
+      "result": "The control is structurally rejected before authority reduction; later delivery of the target cannot retroactively authorize it.",
+      "status": "EVIDENCE_ONLY",
+      "steps": [
+        "Admit a target credential on a concurrent branch",
+        "Admit a REVOKE or retiring ROTATE that names that target without causally observing it",
+        "Replay after both events are available and require STRUCTURAL_REJECTION"
       ]
     },
     {
@@ -928,6 +1025,38 @@
           "source_id": "decisions"
         },
         {
+          "anchor": "exclude it from the contested pool if its actor belongs to",
+          "source_id": "credential_analysis"
+        }
+      ],
+      "decision_refs": [
+        "O-02"
+      ],
+      "description": "An actor attempts to spend its contested reduction budget against its own credential lineage.",
+      "id": "CE_SELF_LINEAGE_REDUCTION",
+      "obligation_refs": [
+        "OB-AP02",
+        "OB-K19"
+      ],
+      "owner": "AP",
+      "result": "The self-lineage reduction is AUTHENTIC_BUT_UNAUTHORIZED and consumes no contested slot, so it cannot suppress an eligible peer-directed sibling.",
+      "status": "EVIDENCE_ONLY",
+      "steps": [
+        "Create an actor lineage and an independent peer lineage",
+        "Issue a self-lineage reduction before an eligible peer-directed sibling",
+        "Replay all causal orders and verify that the peer-directed first eligible slot remains selectable"
+      ]
+    },
+    {
+      "blocks": [
+        "C0.2j"
+      ],
+      "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
           "anchor": "It deliberately does not promise quorum governance. One uncontested compromised",
           "source_id": "credential_analysis"
         },
@@ -953,6 +1082,39 @@
         "Start with one compromised and multiple honest authorities",
         "Causally revoke each honest authority",
         "Record the surviving authority set and absence of an honest reduction path"
+      ]
+    },
+    {
+      "blocks": [
+        "C0.2j"
+      ],
+      "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "at most five credentials in the executable six-control subtree witness",
+          "source_id": "credential_analysis"
+        }
+      ],
+      "decision_refs": [
+        "O-02",
+        "O-16"
+      ],
+      "description": "One accepted contested reduction targets the root of a bounded five-credential descendant subtree.",
+      "id": "CE_SUBTREE_AMPLIFICATION",
+      "obligation_refs": [
+        "OB-AP02",
+        "OB-K19"
+      ],
+      "owner": "AP",
+      "result": "The whole target subtree becomes inactive, but the effect remains inside the declared credential and transition envelope and cannot expand the actor's first-slot budget.",
+      "status": "EVIDENCE_ONLY",
+      "steps": [
+        "Create a five-credential descendant subtree beneath one target",
+        "Admit one eligible contested reduction of that target",
+        "Verify descendant cleanup, bounded replay and absence of an additional contested slot"
       ]
     }
   ],
@@ -1032,7 +1194,7 @@
       "actor_actions": [
         {
           "actions": [
-            "Evaluate MustAuth for expansion and operation and MayAuth for reduction across every bounded causal linearization"
+            "Retain every bounded Pass0 reachable state, admit expansion only under Must0 and select reductions only from each actor's first eligible contested slot"
           ],
           "actor": "application_profile"
         },
@@ -1063,6 +1225,7 @@
       "emitted_evidence": [
         "APPLIED",
         "AUTHENTIC_BUT_UNAUTHORIZED",
+        "AUTHORITY_PROJECTION_UNAVAILABLE",
         "LINEAGE_QUARANTINED",
         "POST_REVOCATION"
       ],
@@ -1086,13 +1249,14 @@
       "outcomes": [
         "APPLIED",
         "AUTHENTIC_BUT_UNAUTHORIZED",
+        "AUTHORITY_PROJECTION_UNAVAILABLE",
         "LINEAGE_QUARANTINED",
         "POST_REVOCATION"
       ],
       "owner": "AP",
       "permitted_actions": [
-        "Apply only definitely authorized expansions and possibly authorized reductions",
-        "Fail closed on bound overflow"
+        "Apply only Pass0-Must0 expansions and accepted first-slot reductions",
+        "Fail closed with typed whole-projection unavailability on state or transition bound overflow"
       ],
       "preconditions": [
         "Complete bounded K-admitted control-evidence set",
@@ -1100,7 +1264,7 @@
         "Fresh full replay"
       ],
       "producer": "application_profile",
-      "resulting_state": "One deterministic operational-authority set plus lineage termination and typed non-authorized outcomes.",
+      "resulting_state": "One deterministic final authority set plus lineage termination, accepted contested reductions and typed unavailable/non-authorized outcomes.",
       "status": "DECIDED"
     },
     {
@@ -1833,7 +1997,7 @@
       "owner": "K",
       "permitted_actions": [
         "Classify K facts before AP authority",
-        "Compute authority from the complete K-admitted control-evidence set across every bounded causal linearization",
+        "Compute Pass0 reachable authority from the complete K-admitted control-evidence set and apply the bounded first-contested-slot selector",
         "Recompute from a fresh full replay whenever late evidence changes the set"
       ],
       "preconditions": [
@@ -1845,11 +2009,41 @@
         "O-07 initial authority input"
       ],
       "producer": "kernel",
-      "resulting_state": "The projection becomes ACTIVE, PARTIALLY_PENDING, EMPTY_STALE or PARTIALLY_LINEAGE_QUARANTINED according to the referenced state machines; unresolved bindings remain outside AP authority.",
+      "resulting_state": "The projection becomes ACTIVE, AUTHORITY_UNAVAILABLE, PARTIALLY_PENDING, EMPTY_STALE or PARTIALLY_LINEAGE_QUARANTINED according to the referenced state machines; unresolved bindings remain outside AP authority.",
       "status": "DECIDED"
     }
   ],
   "invariants": [
+    {
+      "citations": [
+        {
+          "anchor": "The v3 experiment uses one common envelope for every candidate and witness:",
+          "source_id": "credential_analysis"
+        },
+        {
+          "anchor": "State/transition overflow similarly yields typed",
+          "source_id": "decisions"
+        }
+      ],
+      "decision_refs": [
+        "O-02",
+        "O-16"
+      ],
+      "evidence_refs": [
+        "CE_AUTHORITY_PROJECTION_EXHAUSTION"
+      ],
+      "id": "INV_AUTHORITY_PROJECTION_LIMITS",
+      "object_refs": [
+        "application_event"
+      ],
+      "obligation_refs": [
+        "OB-AP02",
+        "OB-K19"
+      ],
+      "owner": "AP",
+      "statement": "Exceeding any declared credential, control, fork, reachable-state or transition bound makes the whole authority projection unavailable; no empty or partial authority set is substituted.",
+      "status": "DECIDED"
+    },
     {
       "citations": [
         {
@@ -1873,6 +2067,37 @@
       ],
       "owner": "AP",
       "statement": "Cryptographic validity and historical credential binding never imply application authorization.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "only the first eligible author-sequence slot of its actor",
+          "source_id": "credential_analysis"
+        },
+        {
+          "anchor": "selecting at most one first eligible",
+          "source_id": "decisions"
+        }
+      ],
+      "decision_refs": [
+        "O-02",
+        "O-16"
+      ],
+      "evidence_refs": [
+        "CE_BOUNDED_CONTESTED_STANDING",
+        "CE_SUBTREE_AMPLIFICATION"
+      ],
+      "id": "INV_BOUNDED_CONTESTED_STANDING",
+      "object_refs": [
+        "application_event"
+      ],
+      "obligation_refs": [
+        "OB-AP02",
+        "OB-K19"
+      ],
+      "owner": "AP",
+      "statement": "Each actor has at most one eligible contested author-sequence slot; every eligible sibling in that slot is evaluated, self-lineage attempts consume no slot, and one selected target may deactivate only its bounded descendant subtree.",
       "status": "DECIDED"
     },
     {
@@ -1919,6 +2144,35 @@
       ],
       "owner": "K",
       "statement": "K graph admission, ancestry, canonical order, duplicate identity and fork classification depend on authenticated transcripts, not content availability, AP authority or arrival order.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "unresolved and resolvable non-causal targets are structurally rejected",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "A resolvable but non-causal target is `STRUCTURAL_REJECTION`",
+          "source_id": "credential_analysis"
+        }
+      ],
+      "decision_refs": [
+        "O-02"
+      ],
+      "evidence_refs": [
+        "CE_NONCAUSAL_REDUCTION_TARGET"
+      ],
+      "id": "INV_CAUSAL_TARGET_AVAILABILITY",
+      "object_refs": [
+        "application_event"
+      ],
+      "obligation_refs": [
+        "OB-AP02",
+        "OB-K19"
+      ],
+      "owner": "K",
+      "statement": "A REVOKE or retiring ROTATE may reduce only a credential binding in its causal past; unresolved and resolvable non-causal targets are rejected before authority evaluation, while RECOVER remains subject to its separate genesis-rooted rule.",
       "status": "DECIDED"
     },
     {
@@ -1993,7 +2247,7 @@
         "OB-K19"
       ],
       "owner": "K",
-      "statement": "Any admitted same-author fork permanently terminates the forked credential and its grant descendants without expanding authority; independent lineages continue only when definitely authorized.",
+      "statement": "Any admitted same-sequence sibling fork permanently terminates the forked credential and its grant descendants without expanding authority; independent lineages continue only under the same bounded authority fold.",
       "status": "DECIDED"
     },
     {
@@ -2112,6 +2366,35 @@
     {
       "citations": [
         {
+          "anchor": "**Primary outcome precedence:**",
+          "source_id": "decisions"
+        }
+      ],
+      "decision_refs": [
+        "O-01",
+        "O-02"
+      ],
+      "evidence_refs": [
+        "CE_AUTHORITY_PROJECTION_EXHAUSTION",
+        "CE_FORK_CONTEXT_QUARANTINE",
+        "CE_MISSING_REQUIRED_OPENING"
+      ],
+      "id": "INV_OUTCOME_PRECEDENCE",
+      "object_refs": [
+        "application_event"
+      ],
+      "obligation_refs": [
+        "OB-AP02",
+        "OB-K01",
+        "OB-K19"
+      ],
+      "owner": "K",
+      "statement": "Structural/K rejection precedes AP projection; STALE_EVIDENCE precedes AUTHORITY_PROJECTION_UNAVAILABLE; absent those whole-projection states, event-local precedence is FORK_EVIDENCE, PENDING_OPENING, PENDING_ANCESTOR, REMOVAL_INAPPLICABLE, then the applicable credential-control or ordinary-event result, with exactly one primary outcome.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
           "anchor": "including independent events that sort later",
           "source_id": "decisions"
         }
@@ -2182,6 +2465,35 @@
       ],
       "owner": "AP",
       "statement": "Replay position alone confers no authorization, priority or irreversible-effect permission.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "exclude it from the contested pool if its actor belongs to",
+          "source_id": "credential_analysis"
+        },
+        {
+          "anchor": "For `May0 && !Must0`, AP rejects self-lineage targets",
+          "source_id": "decisions"
+        }
+      ],
+      "decision_refs": [
+        "O-02"
+      ],
+      "evidence_refs": [
+        "CE_SELF_LINEAGE_REDUCTION"
+      ],
+      "id": "INV_SELF_LINEAGE_REDUCTION",
+      "object_refs": [
+        "application_event"
+      ],
+      "obligation_refs": [
+        "OB-AP02",
+        "OB-K19"
+      ],
+      "owner": "AP",
+      "statement": "A contested actor cannot reduce its own credential lineage; the attempt is unauthorized and cannot consume or hide that actor's first eligible peer-directed contested slot.",
       "status": "DECIDED"
     },
     {
@@ -2261,7 +2573,7 @@
         "OB-K19"
       ],
       "owner": "AP",
-      "statement": "Expansion uses per-event MustAuth and reduction uses per-event MayAuth across every bounded causal linearization; possible terminal authority is their set union, necessary terminal authority their set intersection, and operational authority or producer eligibility uses the necessary set. One replay order never decides terminal authority.",
+      "statement": "Pass0 retains every bounded reachable authority state, expansion requires Must0, and each actor may accept only eligible reductions from its first contested author-sequence slot. Final authority is recomputed from accepted controls; one replay order never decides authority.",
       "status": "DECIDED"
     }
   ],
@@ -4238,6 +4550,31 @@
       "applies_transition": false,
       "citations": [
         {
+          "anchor": "`AUTHORITY_PROJECTION_UNAVAILABLE` precedes event-local states.",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "`REACHABLE_STATE_LIMIT` or `REACHABLE_TRANSITION_LIMIT`",
+          "source_id": "credential_analysis"
+        }
+      ],
+      "decision_refs": [
+        "O-02",
+        "O-08"
+      ],
+      "description": "The reachable-state or transition envelope was crossed; the whole AP authority projection is unavailable and exposes no partial or empty-authority substitute.",
+      "id": "AUTHORITY_PROJECTION_UNAVAILABLE",
+      "obligation_refs": [
+        "OB-AP02",
+        "OB-K19"
+      ],
+      "owner": "AP",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
           "anchor": "Reject malformed geometry, wrong suite/context/opening/content",
           "source_id": "threat_model"
         }
@@ -4249,6 +4586,30 @@
       "id": "COMMITMENT_MISMATCH",
       "obligation_refs": [
         "OB-K10"
+      ],
+      "owner": "K",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "suite/key mismatch, malformed control tail",
+          "source_id": "credential_analysis"
+        }
+      ],
+      "decision_refs": [
+        "O-02",
+        "O-14"
+      ],
+      "description": "The claimed credential resolves, but the event signature suite or verification-key evidence does not match its authenticated binding grant.",
+      "id": "CREDENTIAL_BINDING_MISMATCH",
+      "obligation_refs": [
+        "OB-K18"
       ],
       "owner": "K",
       "status": "EVIDENCE_ONLY"
@@ -4387,7 +4748,7 @@
           "source_id": "decisions"
         },
         {
-          "anchor": "grant-rooted credential. Revoking or forking a credential terminates it and the",
+          "anchor": "Revoking or forking a credential terminates it and the",
           "source_id": "credential_analysis"
         }
       ],
@@ -4507,6 +4868,29 @@
       "applies_transition": false,
       "citations": [
         {
+          "anchor": "### O-04 — Payload commitment and detachment",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "directive targeting credential-control evidence is structurally inapplicable",
+          "source_id": "credential_analysis"
+        }
+      ],
+      "decision_refs": [
+        "O-04"
+      ],
+      "description": "A valid logical-removal directive targets credential-control evidence and therefore changes no binding, provenance or authority.",
+      "id": "REMOVAL_INAPPLICABLE",
+      "obligation_refs": [
+        "OB-K10"
+      ],
+      "owner": "K",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
           "anchor": "Supported adapter future work",
           "source_id": "responsibility"
         }
@@ -4545,6 +4929,30 @@
       "applies_transition": false,
       "citations": [
         {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "A resolvable but non-causal target is `STRUCTURAL_REJECTION`",
+          "source_id": "credential_analysis"
+        }
+      ],
+      "decision_refs": [
+        "O-02"
+      ],
+      "description": "A candidate fails an exact structural or causal constraint before AP authority projection, including R-1 non-causal reduction targets and self-rotation.",
+      "id": "STRUCTURAL_REJECTION",
+      "obligation_refs": [
+        "OB-K18",
+        "OB-K19"
+      ],
+      "owner": "K",
+      "status": "EVIDENCE_ONLY"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
           "anchor": "Supported Marmot/Nostr adapter future work",
           "source_id": "responsibility"
         }
@@ -4559,6 +4967,29 @@
       ],
       "owner": "TR",
       "status": "PROFILE_DEPENDENT"
+    },
+    {
+      "applies_transition": false,
+      "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "that resolves to no admitted binding is `UNRESOLVABLE_CREDENTIAL`",
+          "source_id": "credential_analysis"
+        }
+      ],
+      "decision_refs": [
+        "O-02"
+      ],
+      "description": "A credential-control target does not resolve to an admitted genesis credential or binding grant; the reduction rejects rather than defers.",
+      "id": "UNRESOLVABLE_CREDENTIAL",
+      "obligation_refs": [
+        "OB-K19"
+      ],
+      "owner": "K",
+      "status": "EVIDENCE_ONLY"
     },
     {
       "applies_transition": false,
@@ -4750,6 +5181,76 @@
     {
       "citations": [
         {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "If live replay dependencies are unavailable, the whole projection is",
+          "source_id": "credential_analysis"
+        }
+      ],
+      "decision_refs": [
+        "O-02",
+        "O-16"
+      ],
+      "id": "RR_AUTHORITY_PROJECTION_EXHAUSTION",
+      "obligation_refs": [
+        "OB-AP02",
+        "OB-K19"
+      ],
+      "owner": "AP",
+      "statement": "A valid evidence set that exceeds a v0 replay bound makes authority unavailable until a future profile migration or admissible evidence reduction; no liveness guarantee follows.",
+      "status": "OPEN"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "Within the common envelope the exact residual bound is at most one selected",
+          "source_id": "credential_analysis"
+        }
+      ],
+      "decision_refs": [
+        "O-02",
+        "O-16"
+      ],
+      "id": "RR_BOUNDED_DESTRUCTIVE_STANDING",
+      "obligation_refs": [
+        "OB-AP02",
+        "OB-K19"
+      ],
+      "owner": "AP",
+      "statement": "The first-slot rule bounds but deliberately preserves one contested peer-reduction opportunity per actor, and one selected reduction can deactivate the target's bounded descendant subtree.",
+      "status": "OPEN"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "### O-02 — Author, rotation and authorization binding",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "A resolvable but non-causal target is `STRUCTURAL_REJECTION`",
+          "source_id": "credential_analysis"
+        }
+      ],
+      "decision_refs": [
+        "O-02"
+      ],
+      "id": "RR_CAUSAL_TARGET_AVAILABILITY",
+      "obligation_refs": [
+        "OB-K19"
+      ],
+      "owner": "K",
+      "statement": "A legitimate reduction cannot target a credential the author has not causally observed; concurrent delivery can therefore delay remediation and no availability guarantee follows.",
+      "status": "OPEN"
+    },
+    {
+      "citations": [
+        {
           "anchor": "Checkpoint staleness remains symbolic: only evidence absent from the live admitted graph can be checkpoint-only",
           "source_id": "responsibility"
         }
@@ -4768,7 +5269,7 @@
     {
       "citations": [
         {
-          "anchor": "full set-relative replay has bounded-resource costs",
+          "anchor": "bounded DP replay has state/transition costs and typed exhaustion",
           "source_id": "threat_model"
         }
       ],
@@ -5227,31 +5728,31 @@
       "authority": "evidence",
       "id": "credential_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-analysis.md",
-      "sha256": "d6a411fa8b60c9a4342c2ccbd566a1003b3295ef0a84308ab7ba9a83d9bb309d"
+      "sha256": "92d515a3929e5bde234ae12a7f5ce5b02f628a510de85dc472a862ca681f9a39"
     },
     {
       "authority": "evidence",
       "id": "credential_report",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-falsification-report.md",
-      "sha256": "12b61763d8279bf65c992f8b2eb15c0787ec962c66474f26440096b3c4459ff1"
+      "sha256": "95728db9606f7b1b4388f08367d041b0f538946cd749d2e2c2d4f3a0e56d5fe3"
     },
     {
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "310da9c902821f72f7e31259aef75004bb50c722b1b7096636f311f9672bd709"
+      "sha256": "43c753f93e536615c4a955b08349fe271edc81681f3c838cf19ae395c870188a"
     },
     {
       "authority": "evidence",
       "id": "identifier_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-identifier-derivation-analysis.md",
-      "sha256": "43363642b81956db08eaf1a0caaf010839b7ce2c62e4251564f6f6c1afc562b8"
+      "sha256": "0c19a44371d0615ba9dad06030e532e0a0d90406c94863a8c438befedc3c64a4"
     },
     {
       "authority": "evidence",
       "id": "identity_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-identity-context-analysis.md",
-      "sha256": "5b0083995d4877e23e41c7ce9d56b0571772ce25cc11241ebff4c6ddd426e043"
+      "sha256": "141082ce1be562e69b9e077a9d0a04d741d2aa6dabcc59ff01176977445c5527"
     },
     {
       "authority": "evidence",
@@ -5275,19 +5776,19 @@
       "authority": "normative",
       "id": "responsibility",
       "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
-      "sha256": "8ed44241b2f91efa8513884e9dd0bcbf057a7a22339258fefb8d0db7a842054c"
+      "sha256": "b4b74ecab77b86a045b57d1ca270a30c3dba7bedd5e05b1bc66b55144ea581be"
     },
     {
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "9ccb7341b13551fd47f20405a1076a9b7c7f1903beaadd2485c2e16fcd821cae"
+      "sha256": "4086385eb8b8630d865e6b6e74b5ed6608aabeaa2bef4c649726f953a950162c"
     },
     {
       "authority": "normative",
       "id": "transcript_profile",
       "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
-      "sha256": "9e9023bc5d6d65235261dd52601256589c8eb675c26469953c8c24402d876c29"
+      "sha256": "e3fe3964dbbeaf131de3948d216f92d89b693a14b7323bedf8887940054a5ff2"
     }
   ],
   "state_models": [
@@ -5312,19 +5813,25 @@
       "owner": "AP",
       "precedence": [
         "STALE_EVIDENCE",
+        "AUTHORITY_PROJECTION_UNAVAILABLE",
+        "FORK_EVIDENCE",
         "LINEAGE_QUARANTINED",
         "PENDING_OPENING",
         "PENDING_ANCESTOR",
+        "REMOVAL_INAPPLICABLE",
         "APPLIED"
       ],
       "states": [
         "ACTIVE",
+        "AUTHORITY_UNAVAILABLE",
         "EMPTY_STALE",
         "PARTIALLY_LINEAGE_QUARANTINED",
         "PARTIALLY_PENDING"
       ],
       "status": "DECIDED",
-      "terminal_states": [],
+      "terminal_states": [
+        "AUTHORITY_UNAVAILABLE"
+      ],
       "transitions": [
         {
           "citations": [
@@ -5428,6 +5935,37 @@
           "status": "DECIDED",
           "to": "PARTIALLY_PENDING",
           "trigger": "Staleness clears but a live missing-opening root remains."
+        },
+        {
+          "citations": [
+            {
+              "anchor": "`AUTHORITY_PROJECTION_UNAVAILABLE` precedes event-local states.",
+              "source_id": "decisions"
+            },
+            {
+              "anchor": "`REACHABLE_STATE_LIMIT` or `REACHABLE_TRANSITION_LIMIT`",
+              "source_id": "credential_analysis"
+            }
+          ],
+          "decision_refs": [
+            "O-02",
+            "O-08"
+          ],
+          "from": [
+            "ACTIVE",
+            "PARTIALLY_LINEAGE_QUARANTINED",
+            "PARTIALLY_PENDING"
+          ],
+          "id": "ap_to_authority_unavailable",
+          "obligation_refs": [
+            "OB-AP02",
+            "OB-K19"
+          ],
+          "outcome": "AUTHORITY_PROJECTION_UNAVAILABLE",
+          "owner": "AP",
+          "status": "DECIDED",
+          "to": "AUTHORITY_UNAVAILABLE",
+          "trigger": "Fresh full replay would cross the selected reachable-state or transition envelope"
         },
         {
           "citations": [

@@ -42,7 +42,7 @@ def build_report() -> tuple[dict[str, object], bool]:
         "replay_strategy": {
             "selected": "FRESH_FULL_REPLAY_ONLY",
             "incremental_reuse": False,
-            "reason": "set-relative authority invalidates the v2 prefix-cache handoff and v3 does not prove a byte-identical complete authority-state boundary",
+            "reason": "bounded multi-state authority projection invalidates the v2 prefix-cache handoff and v3 does not prove a byte-identical complete authority-state boundary",
         },
         "closed_coverage": {
             "required_witnesses": sorted(REQUIRED_WITNESSES),
@@ -98,7 +98,7 @@ def build_report() -> tuple[dict[str, object], bool]:
         "smallest_failing_trace": failures[0] if failures else None,
         "superseded_v2_assertions": [
             "whole-context fork quarantine is replaced by credential-lineage quarantine with independent-authority continuation",
-            "prefix-local grant-before-revoke authority is replaced by all-admissible-interpretation MustAuth expansion",
+            "prefix-local grant-before-revoke authority is replaced by Pass0 Must0 expansion plus bounded first-contested-slot reduction",
             "non-transitive v2 revocation is replaced by bounded provenance termination",
             "ROTATE and RECOVER are no longer modeled as authority-neutral placeholders; they are constrained to fresh-GRANT succession and may never create or resurrect a binding",
             "v2 incremental prefix reuse is not inherited; v3 uses fresh full replay only",

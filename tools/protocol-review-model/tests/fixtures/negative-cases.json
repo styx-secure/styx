@@ -130,7 +130,7 @@
     "id": "promote-no-go-invariant",
     "mutation": {
       "operation": "set",
-      "path": "/invariants/1/status",
+      "path": "/invariants/3/status",
       "value": "DECIDED"
     }
   },
@@ -139,7 +139,7 @@
     "id": "promote-evidence-only-counterexample",
     "mutation": {
       "operation": "set",
-      "path": "/counterexamples/1/status",
+      "path": "/counterexamples/3/status",
       "value": "DECIDED"
     }
   },
@@ -257,7 +257,7 @@
     "id": "missing-required-invariant",
     "mutation": {
       "operation": "delete",
-      "path": "/invariants/1"
+      "path": "/invariants/3"
     }
   },
   {
@@ -265,7 +265,7 @@
     "id": "missing-residual-risk",
     "mutation": {
       "operation": "delete",
-      "path": "/residual_risks/0"
+      "path": "/residual_risks/3"
     }
   },
   {
@@ -372,7 +372,7 @@
     "id": "promote-symbolic-outcome",
     "mutation": {
       "operation": "set",
-      "path": "/outcomes/16/status",
+      "path": "/outcomes/19/status",
       "value": "DECIDED"
     }
   },
@@ -381,7 +381,7 @@
     "id": "promote-open-residual-risk",
     "mutation": {
       "operation": "set",
-      "path": "/residual_risks/1/status",
+      "path": "/residual_risks/4/status",
       "value": "DECIDED"
     }
   },
@@ -432,6 +432,102 @@
       "operation": "append-copy-set",
       "path": "/state_models/0/transitions",
       "value": "unexpected_transition"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-authority-projection-exhaustion-counterexample",
+    "mutation": {
+      "operation": "delete",
+      "path": "/counterexamples/1"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-bounded-standing-counterexample",
+    "mutation": {
+      "operation": "delete",
+      "path": "/counterexamples/2"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-noncausal-target-counterexample",
+    "mutation": {
+      "operation": "delete",
+      "path": "/counterexamples/11"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-self-lineage-counterexample",
+    "mutation": {
+      "operation": "delete",
+      "path": "/counterexamples/13"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-subtree-amplification-counterexample",
+    "mutation": {
+      "operation": "delete",
+      "path": "/counterexamples/15"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-authority-projection-limit-invariant",
+    "mutation": {
+      "operation": "delete",
+      "path": "/invariants/0"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-bounded-standing-invariant",
+    "mutation": {
+      "operation": "delete",
+      "path": "/invariants/2"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-causal-target-invariant",
+    "mutation": {
+      "operation": "delete",
+      "path": "/invariants/5"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-outcome-precedence-invariant",
+    "mutation": {
+      "operation": "delete",
+      "path": "/invariants/13"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-self-lineage-invariant",
+    "mutation": {
+      "operation": "delete",
+      "path": "/invariants/17"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-authority-unavailable-outcome",
+    "mutation": {
+      "operation": "delete",
+      "path": "/outcomes/2"
+    }
+  },
+  {
+    "expected_code": "REQUIRED_RECORD_MISSING",
+    "id": "missing-authority-unavailable-transition",
+    "mutation": {
+      "operation": "delete",
+      "path": "/state_models/0/transitions/4"
     }
   },
   {

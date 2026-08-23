@@ -8,7 +8,8 @@ The model exercises:
 
 - grant-rooted, context-local credential identifiers;
 - exact K-level binding lookup and fail-closed mismatch handling;
-- `MayAuth`/`MustAuth` evaluation over every bounded causal linearization;
+- Pass0 `May0`/`Must0` evaluation over every bounded causal linearization,
+  followed by the first eligible contested reduction slot per actor;
 - transitive provenance containment and non-resurrection;
 - credential-lineage fork quarantine with independent-authority continuation;
 - retained C0.2i pending/no-substitution/checkpoint-stale properties;

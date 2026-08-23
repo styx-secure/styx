@@ -479,8 +479,10 @@ Stable 32-octet references still expose equality, graph shape and replay order
 to every authorized observer that can see them. SHA-256 does not make the
 reference unpredictable: any holder of valid signing-key material, including a
 revoked credential, can vary valid inputs and grind its concurrent replay
-position. C0.2j therefore evaluates expansions over every bounded admissible
-causal interpretation rather than selecting a reference-order winner. All
+position. C0.2j therefore computes Pass0 over every bounded admissible causal
+interpretation, admits expansion only from necessary Pass0 authority and
+selects at most the first eligible contested author-sequence slot per actor,
+rather than selecting a reference-order winner. All
 O-06a prohibitions on treating replay position as authority, priority, finality
 or irreversible permission remain in force.
 
@@ -523,7 +525,7 @@ reinterpreted.
    these bytes or the historical v1 evidence.
 3. **C0.2j is selected:** non-genesis credential identity is its binding
    `GRANT` event reference; section 5.3.2 supplies exact K-readable grant and
-   succession evidence plus the two-sided authority contract. **C0.2k** next
+   succession evidence plus the Pass0/selected-slot authority contract. **C0.2k** next
    amends the commitment context to bind that identity and author sequence.
 4. **O-06c** implements bounded adversarial falsification of the combined
    construction, emits deterministic work-order/per-stage instrumentation and

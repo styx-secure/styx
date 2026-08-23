@@ -2,7 +2,7 @@
 
 The model is intentionally symbolic.  It exercises K admission, grant-rooted
 credential binding, provenance containment, scoped fork quarantine, and the
-two-sided MayAuth/MustAuth authority fold.  It is not a wire implementation,
+bounded Pass0/first-contested-slot authority fold.  It is not a wire implementation,
 cryptographic proof, production limit, or stable error taxonomy.
 """
 
@@ -78,6 +78,7 @@ class Outcome(str, Enum):
     FORK_EVIDENCE = "FORK_EVIDENCE"
     LINEAGE_QUARANTINED = "LINEAGE_QUARANTINED"
     STRUCTURAL_REJECTION = "STRUCTURAL_REJECTION"
+    UNRESOLVED_CREDENTIAL_BINDING = "UNRESOLVED_CREDENTIAL_BINDING"
     UNRESOLVABLE_CREDENTIAL = "UNRESOLVABLE_CREDENTIAL"
     CREDENTIAL_BINDING_MISMATCH = "CREDENTIAL_BINDING_MISMATCH"
     CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED = (
@@ -1376,7 +1377,7 @@ def project(
             if actor_binding is None:
                 if mutation.identifier == "M23_UNRESOLVED_DEFERRED":
                     continue
-                rejected[event.reference] = Outcome.UNRESOLVABLE_CREDENTIAL
+                rejected[event.reference] = Outcome.UNRESOLVED_CREDENTIAL_BINDING
                 continue
             if (
                 actor_binding.suite_id != event.actor_suite
@@ -1431,7 +1432,7 @@ def project(
 
     for event in remaining:
         if mutation.identifier != "M23_UNRESOLVED_DEFERRED":
-            rejected[event.reference] = Outcome.UNRESOLVABLE_CREDENTIAL
+            rejected[event.reference] = Outcome.UNRESOLVED_CREDENTIAL_BINDING
 
     # R-1 is evaluated after binding discovery so a missing target can be
     # distinguished from a resolvable but non-causal target.  RECOVER has its

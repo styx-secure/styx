@@ -314,12 +314,15 @@ It does not establish that the action is allowed.
 
 Credential binding is a monotone K-level historical fact. `AP` evaluates
 reversible authority over the complete finite K-admitted credential-control set.
-For every causal linearization, it evaluates the actor at that event's acting
-prefix. `MayAuth` means authorized in at least one such interpretation;
-`MustAuth` means authorized in every interpretation. Authority expansion,
-producer eligibility and operational authority require `MustAuth`; revocation
-and retirement reductions use `MayAuth`. An actor unauthorized in every
-interpretation cannot reduce authority merely by proving key possession.
+Pass 0 evaluates each actor at the event's acting prefix across every causal
+interpretation. `May0` means authorized in at least one interpretation;
+`Must0` means authorized in every interpretation. Expansion-sensitive controls
+require `Must0`. Reductions with `Must0` are accepted directly; a `May0`-only
+reduction is accepted only from its actor credential's first eligible author-
+sequence slot, and `May0`-only self-lineage reductions are excluded. Every
+eligible sibling in that slot applies as an unordered set. An actor unauthorized
+in every interpretation cannot reduce authority merely by proving key
+possession. No event-reference or arrival-order winner is used.
 
 Binding never implies authority: a grant by a bound but unauthorized issuer can
 establish signature-verification evidence while its grantee remains
@@ -327,7 +330,10 @@ establish signature-verification evidence while its grantee remains
 but applies only the AP-authorized transition; it MUST NOT parse human role
 names or invent permissions. Openings, pending status, removal, retention and
 current AP applicability never alter the authority evidence set, K binding,
-admission, ordering, duplicate identity or forks. C0.2j selects fresh full
+admission, ordering, duplicate identity or forks. The selector is evaluated
+once from Pass 0; final provenance termination uses only accepted reductions.
+An unselected reduction may still conservatively lower `Must0` for a concurrent
+expansion, but cannot steer selected-slot membership. C0.2j selects fresh full
 replay and makes no incremental-authority-cache claim.
 
 The following do not satisfy `AP` authorization:
@@ -355,7 +361,7 @@ Genesis establishes only the initial authority inputs later fixed by O-07. Any
 non-genesis credential is effective only after an authenticated, authorized
 grant transition in the same context. Only a K-valid `GRANT` creates its
 binding; that credential becomes operational only if the grant satisfies
-`MustAuth`. Its immutable provenance parent is the issuer credential. A
+Pass0 `Must0`. Its immutable provenance parent is the issuer credential. A
 credential MUST NOT self-authorize.
 
 Delegation is unsupported unless a profile defines a closed delegation grammar,
@@ -366,14 +372,19 @@ An implementation MUST reject an unknown or unbounded delegation chain.
 
 Rotation creates a fresh binding `GRANT` and a `ROTATE` control that names both
 the fresh admitted grant and the retiring identifier; it does not overwrite a
-key under the old identifier. The grant is an authority expansion evaluated
-under `MustAuth`; retirement is a reduction evaluated under `MayAuth`. If only
-retirement is accepted the system may lose availability but never resurrects
-authority. If only the definitely authorized fresh grant is accepted, the two
-credentials may coexist. `ROTATE` creates no binding. Revocation is
-context-local authenticated history; its AP authorization and effect are
-recomputed under set-relative full replay and cannot be replaced by restoring
-an ambient older credential record.
+key under the old identifier. The grant is expansion-sensitive and requires
+`Must0`; retirement requires `Must0` or the bounded contested-slot rule. The
+retiring non-genesis binding grant must be in the rotation event's authenticated
+causal ancestry. A self-rotation whose actor equals the retiring credential is
+structurally rejected in v0. If only retirement is accepted the system may lose
+availability but never resurrects authority. If only the definitely authorized
+fresh grant is accepted, the two credentials may coexist. `ROTATE` creates no
+binding. Revocation is context-local authenticated history; a non-genesis target
+likewise requires its binding grant in the reduction's causal ancestry. Missing
+targets are unresolved and resolvable non-causal targets are structurally
+rejected rather than deferred. AP authorization and effect are recomputed under
+bounded Pass0/selected-slot full replay and cannot be replaced by restoring an ambient older
+credential record.
 
 An object whose credential has an AP-authorized revocation in its causal past
 remains K-admitted and parent-usable but receives typed AP-fold outcome
@@ -382,13 +393,15 @@ descendants remain graph evidence. Revocation terminates the target and every
 transitive grant descendant; a late ancestor revocation therefore contains a
 concurrently laundered successor regardless of its grindable reference order.
 
-Any K-admitted same-author fork permanently quarantines the forking credential
+Any K-admitted same-sequence sibling fork permanently quarantines the forking credential
 and its provenance descendants. The fork slot is exactly
 `(credential_id, author_sequence)` and one classification covers the complete
 sibling set, independent of role, privilege, arrival or
-current revocation state. It cannot expand authority. Independent lineages may
-continue only when their controls satisfy the same two-sided rule. This scoped
-rule improves availability over whole-context quarantine but can still leave no
+current revocation state. It cannot expand authority. The quarantine applies to
+a fork in any author-sequence slot, not only the selected contested slot;
+eligible siblings in a selected forked slot apply before the join. Independent
+lineages may continue only when their controls satisfy the same Pass-0 and
+bounded-standing rule. This scoped rule improves availability over whole-context quarantine but can still leave no
 operational authority. Late admission always recomputes the full projection;
 arrival order never chooses authority. A physical-time expiry is forbidden
 until O-05/O-12 define its authenticated time semantics. Profiles may instead
@@ -399,10 +412,13 @@ physical-time bound.
 
 Recovery requires a fresh binding `GRANT` plus a `RECOVER` control that names
 that admitted grant and the retired identifier. Both are expansion-sensitive
-and require `MustAuth`; `RECOVER` creates no binding. Recovery MUST NOT re-grant
-or resurrect a revoked identifier, reset context history or silently clone a
-device key. A profile with no independent recovery authority MUST state that
-device or capability loss can be permanent.
+and require `Must0`; `RECOVER` creates no binding. Unlike `REVOKE` and the
+retiring side of `ROTATE`, recovery does not require the retired credential's
+binding grant in its causal ancestry: its independently authorized fresh-grant
+and recovery transcript rule supplies the exact evidence. Recovery MUST NOT
+re-grant or resurrect a revoked identifier, reset context history or silently
+clone a device key. A profile with no independent recovery authority MUST state
+that device or capability loss can be permanent.
 
 An anonymous return capability is fresh, high-entropy and scoped to one context.
 It may admit or recover a context-local credential, but it is not written into
@@ -502,9 +518,9 @@ other.
 | Persistent account key is reused across anonymous cases | Profile activation or admission rejected | `AP` |
 | Stale or revoked credential signs a later action | Unauthorized/revoked result | `AP` after `K` signature validation |
 | Old storage snapshot omits a revocation | Rollback is reported when independent evidence exists; no silent recovery claim | `RS`; `AP` revalidates |
-| Rotation and old-key action are concurrent | Evaluate the fresh grant under `MustAuth`, retirement under `MayAuth`; old lineage remains inert after accepted retirement | `K`, then `AP` |
-| Compromised credential issues a concurrent grant while a peer revokes it | Grant fails `MustAuth`; ancestor revocation terminates every descendant regardless of reference order | `K`, `AP` |
-| Holder of valid or revoked key material creates a same-author fork | Permanently quarantine that credential lineage; independent definitely authorized lineages may continue | `K`, `AP`, `PV`; future recovery O-15/O-16 |
+| Rotation and old-key action are concurrent | Evaluate the fresh grant under Pass0 `Must0`; retirement requires Pass0 `Must0` or the actor's first eligible contested slot; old lineage remains inert after accepted retirement | `K`, then `AP` |
+| Compromised credential issues a concurrent grant while a peer revokes it | Grant fails Pass0 `Must0`; an accepted ancestor revocation terminates every descendant regardless of reference order | `K`, `AP` |
+| Holder of valid or revoked key material creates a same-sequence sibling fork | Permanently quarantine that credential lineage; independent authorized lineages may continue under the same bounded fold | `K`, `AP`, `PV`; future recovery O-15/O-16 |
 | Compromised device uses its still-valid credential | Actions remain attributable and within its current authority; one uncontested authority can still remove peers, so governance/incident response remain required | `AP`, `RS`, `PV` |
 | Malicious organization operator maps a role key to the wrong human | Outside cryptographic proof; operational audit/incident process, while the authenticated credential-to-action record remains available under the retention policy | `PV` |
 | Stolen anonymous return capability is redeemed | Treat as bearer use; establish a new credential and expose the limitation | `AP`, `PV` |
@@ -537,7 +553,7 @@ other.
 
 | Item | Decision | Rejected alternatives | Dependencies retained |
 | --- | --- | --- | --- |
-| O-02 | Grant-rooted context-local endpoint credential plus two-sided AP authority, transitive provenance and lineage-scoped fork quarantine; optional persistent proof and bearer admission/recovery remain separate | Durable account as universal author; MLS sender as author; self-asserted key/role; bearer-only authorship; random identifier freeze; canonical-order authority | O-01 defines causality; O-05/O-12 gate physical expiry; O-06 supplies references/tail; O-07 initial authority; O-08 limits; O-10 errors; O-14 suites |
+| O-02 | Grant-rooted context-local endpoint credential plus Pass-0 authority, per-credential first-contested-slot reduction, strict reduction-target causality, transitive provenance and lineage-scoped fork quarantine; optional persistent proof and bearer admission/recovery remain separate | Durable account as universal author; MLS sender as author; self-asserted key/role; bearer-only authorship; random identifier freeze; canonical-order/global-root selector; recursive standing fixed point | O-01 defines causality; O-05/O-12 gate physical expiry; O-06 supplies references/tail; O-07 initial authority; O-08 limits; O-10 errors; O-14 suites |
 | O-03 | Explicit tuple of protocol version, application-profile ID/version and fresh 32-byte random context ID; genesis and all later objects authenticate the tuple | Ambient/account/org/database ID; MLS/Nostr handle; complete-genesis hash as context ID; raw random value without profile tuple | O-06 defines genesis reference mechanics; O-07 completes genesis; SS/TR/RS profiles bind their own namespaces without reusing the tuple publicly |
 
 ### 10.1 Security and privacy consequences
@@ -551,7 +567,12 @@ within its granted authority. C0.2j prevents a concurrent successor from
 surviving ancestor revocation within the bounded model and scopes fork
 quarantine to that lineage. It does not add quorum: one uncontested authority
 can still remove all peers and remain the sole producer, while mutual reduction
-or fork containment can leave no operational authority.
+or fork containment can leave no operational authority. A possibly authorized
+credential retains at most one contested author-sequence slot; under the common
+envelope all credentials together can terminate at most six distinct bounded
+subtrees, including up to five sibling targets in one forked slot. Rejected
+later-slot evidence may still conservatively block a concurrent expansion
+through Pass-0 `Must0`. These are explicit availability costs.
 
 Random context identifiers prevent semantic derivation from personal data; they
 do not hide a context if exposed as stable metadata. Application signatures
@@ -564,8 +585,10 @@ human mappings, but this protocol does not promise cryptographic deniability.
 Reopen O-02 if the chosen causal model cannot define rotation/revocation without
 accepting stale authority, if a required profile cannot use context-local
 credentials, if independent evidence shows that the `AP → K` split permits an
-authorization bypass, or if an acceptable anonymous-return design requires
-bearer-only authorship rather than credential admission.
+authorization bypass, if rejected evidence can steer selected-slot membership,
+if DP/oracle equivalence or typed resource failure does not hold, or if an
+acceptable anonymous-return design requires bearer-only authorship rather than
+credential admission.
 
 Reopen O-03 if O-06/O-07 cannot provide an unambiguous, substitution-resistant
 and independently verifiable authenticated genesis binding that preserves the

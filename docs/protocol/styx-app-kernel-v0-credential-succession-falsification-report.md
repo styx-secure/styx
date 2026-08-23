@@ -10,8 +10,8 @@
 ## 1. Verdict
 
 The independently authored v3 symbolic model found **no counterexample within
-the declared common envelope** for the selected grant-rooted, two-sided,
-provenance-aware construction. All **30/30 required semantic mutants** were
+the declared common envelope** for the selected grant-rooted, Pass0/first-slot,
+provenance-aware construction. All **45/45 required semantic mutants** were
 killed. This is bounded negative evidence, not a mathematical proof, production
 implementation, conformance corpus, audit or security certification.
 
@@ -19,11 +19,11 @@ The canonical outputs at this source state are:
 
 | Artifact | SHA-256 |
 | --- | --- |
-| required witness report | `5aed33bd8cf668bbc3bfe6900a2ba3fb6aa42119e93543264d9908c347231286` |
-| mutation report | `6e24d347c7568a6d1f6fcb04ee0e6826ecd5c896ac8f17cf6f863d3a5e409ff4` |
+| required witness report | `ed38d4b4b486b81aa86f6cafdb580c88ee78bcc2ea47064fdfe7dad7f182c4ef` |
+| mutation report | `c8968c1854769169f2b4d246e41a254b2422179061fa57182e812555456ea58f` |
 
-The suite emits 45 directed assertions across 49 recorded projection runs and
-30 closed witness families. Repeating either command produces byte-identical
+The suite emits 59 directed assertions across 63 recorded projection runs and
+36 closed witness families. Repeating either command produces byte-identical
 JSON:
 
 ```bash
@@ -54,31 +54,42 @@ properties without modifying historical evidence:
 V3 deliberately supersedes these v2 assumptions:
 
 - whole-context fork quarantine becomes credential-lineage quarantine;
-- prefix-local grant-before-revoke authority becomes `MustAuth` expansion over
-  all admissible interpretations;
+- prefix-local grant-before-revoke authority becomes Pass0 `Must0` expansion
+  over all admissible interpretations plus a bounded first eligible contested
+  reduction slot per actor credential;
 - non-transitive revocation becomes bounded provenance termination;
 - `ROTATE`/`RECOVER` placeholders become fresh-GRANT succession controls; and
 - v2 incremental prefix reuse is not inherited. V3 claims fresh full replay
-  only.
+  only, implemented by reachable-state dynamic programming with the factorial
+  linearization engine retained solely as a bounded oracle.
 
 ## 3. Common search envelope and work
 
-| Dimension | Enforced bound | Maximum observed |
-| --- | ---: | ---: |
-| events | 12 | 5 |
-| credential-control events | 6 | 4 |
-| same-sequence fork slots | 6 | 1 |
-| parents per event | 4 | 2 |
-| credential lineage depth | 4 | 2 |
-| topological orders | 720 | 3 |
-| exhaustive delivery-permutation width | 6 | 3 |
-| credentials | 10 | 5 |
-| verification-key octets | 64 | 32 |
+| Dimension | Enforced bound |
+| --- | ---: |
+| events | 18 |
+| credential-control events | 6 |
+| same-sequence fork slots | 6 |
+| parents per event | 4 |
+| credential lineage depth | 4 |
+| factorial-oracle topological orders | 720 |
+| reachable authority states | 65,536 |
+| reachable authority transitions | 524,288 |
+| exhaustive delivery-permutation width | 6 |
+| credentials | 10 |
+| verification-key octets | 64 |
 
-The model rejects bound overflow before computing any positive authority result.
-`replayed_event_work` is reported as admitted events multiplied by explored
-authority orders; no incremental cache or hidden checkpoint handoff is used.
-These values are experiment bounds and do not select O-08 production limits.
+The largest required witness reached **4,033** authority states, **14,556**
+authority transitions, **14,574** units of replay work, lineage depth **4** and
+represented **7,484,400** complete topological paths. The path count is evidence
+carried by DP state aggregation, not a production acceptance gate.
+
+The model rejects event, control, fork, parent, lineage, credential, key and
+author-sequence overflow before computing any positive authority result. A
+reachable-state or transition overflow instead returns one typed whole-projection
+unavailable result and exposes no partial or empty-authority substitute. No
+incremental cache or hidden checkpoint handoff is used. These values are the
+C0.2j experiment envelope and do not select O-08 product limits.
 
 ## 4. Closed witness coverage
 
@@ -89,23 +100,36 @@ These values are experiment bounds and do not select O-08 production limits.
 | genesis domain separation | genesis credential IDs cannot equal grant event references |
 | non-grant binding spoof | lookup-only use cannot create binding; AP bytes cannot supply K key material |
 | unresolved dangling and forward author | both reject rather than defer or create pending state |
-| grant/revoke grinding and delivery | attacker-selected grant references on both sides of revoke and all bounded delivery orders cannot bypass `MustAuth` |
-| may-only reduction | possible authority can reduce; an actor revoked in every acting-prefix interpretation cannot |
-| mutual concurrent revocation | both reductions apply; no canonical-order survivor is selected |
+| author-chain and frontier canonicality | distinct sequences follow predecessor continuity while sibling forks share one author-sequence slot |
+| grant/revoke grinding and delivery | attacker-selected references and bounded delivery orders cannot bypass Pass0 `Must0` expansion |
+| bounded contested standing | each actor receives at most one first eligible contested slot; all eligible siblings in it are applied without a reference winner |
+| may-only reduction | a Pass0 `May0`-only reduction can use the bounded slot; an actor unauthorized in every interpretation cannot |
+| mutual concurrent revocation | both eligible reductions apply; no canonical-order survivor is selected |
+| self- and cross-lineage standing | self-lineage attempts consume no slot while an eligible peer-directed sibling remains selectable |
+| successor reduction standing | rejected expansion does not erase historical K evidence or create recursive standing |
+| causal-target availability | unresolved and resolvable non-causal reduction targets reject before AP authority evaluation |
+| non-genesis causal-target cleanup | an authorized issuer that observed the binding grant can clean up the non-genesis target |
 | multi-hop provenance containment | revoking each ancestor terminates descendants; independent fresh provenance can restore continuity |
+| bounded subtree amplification | one accepted reduction may terminate a five-credential witness subtree but cannot create another contested slot |
 | single compromised authority takeover | one uncontested authority can remove peers and remain sole producer; limitation recorded |
 | re-grant and recovery non-resurrection | old ID cannot be rebound; legitimate recovery uses a fresh independent grant |
 | alias evidence | independent same-key aliases are visible, independently revoked and retain separate credential-local fork namespaces |
 | rotation/recovery and old-key continuation | fresh grant plus retirement; concurrent revoke cannot resurrect the old credential |
 | fork scope and privilege neutrality | one rule before/after grant, revoke, rotate and recovery; role/status cannot expand authority |
+| fork acknowledgment boundary | a virtual fork join follows all siblings and precedes evidence that acknowledges their complete set |
+| fork after reduction and fork twin | late fork evidence never resurrects a reduced credential or lets a sibling expand authority |
+| forked-descendant containment | lineage quarantine follows bounded provenance descendants rather than the whole context |
 | independent authority continuation | unrelated definitely authorized lineage continues around a fork |
+| ordinary-event prefix authority | ordinary events query compatible Pass0 acting-prefix states without becoming control-order items |
+| outcome precedence | structural, stale, resource-unavailable, fork, pending, lineage and authority results produce exactly one primary outcome |
 | pending required content with authority | pending/AP outcome never filters K authority evidence |
 | checkpoint stale/no substitution | missing live dependency stays stale and exposes no authority result |
 | logical removal against credential control | structurally inapplicable; binding and authority unchanged |
 | control tail and content structure | malformed tails and content-bearing controls reject before AP |
 | transport and case-ephemeral neutrality | account, session, Nostr, storage and UI facts are absent from authority |
 | full-replay delivery convergence | equal authenticated sets produce one semantic view |
-| bounded hostile flood | event/control/parent/order/lineage excess fails closed |
+| bounded hostile flood | event/control/fork/parent/lineage/state/transition excess fails closed with typed results |
+| transitive control causality | causal ancestry, not delivery or event-reference order, controls target availability and prefix authority |
 
 The canonical JSON contains the bidirectional machine-readable mapping from
 each witness family to its assertions/mutants and from every mutant to its
@@ -120,9 +144,9 @@ M01 identifier omits context
 M02 identifier omits algorithm
 M03 identifier omits issuer
 M04 possession implies authority
-M05 expansion uses MayAuth
-M06 reduction requires MustAuth
-M07 MayAuth reduction ignored
+M05 expansion uses Pass0 May0
+M06 reduction requires Pass0 Must0
+M07 May0-only reduction ignored
 M08 one linearization decides authority
 M09 provenance is non-transitive
 M10 recovery resurrects a revoked identifier
@@ -132,7 +156,7 @@ M13 malformed credential-control tail accepted
 M14 fork expands authority
 M15 checkpoint substitutes for retained history
 M16 same-key alias changes K/AP result
-M17 incremental result diverges from fresh replay
+M17 terminal authority set is tampered
 M18 AP bytes supply K binding evidence
 M19 revoked identifier is re-granted
 M20 AP state filters the authority evidence set
@@ -146,6 +170,21 @@ M27 a credential fork terminates every lineage globally
 M28 author-chain continuity is not enforced
 M32 a virtual fork join is evaluated before its sibling evidence
 M33 ordinary events use terminal rather than acting-prefix authority
+M34 contested reductions are unbounded
+M35 a non-causal reduction target is accepted
+M36 recovery incorrectly requires retired-target ancestry
+M37 a rejected reduction is removed from Pass0 before expansion evaluation
+M38 contested standing is recursively seeded to a fixed point
+M39 cross-lineage reductions select a canonical winner
+M40 contested selection is grindable by event reference
+M41 a terminated descendant receives fresh contested standing
+M42 a May0-only self-lineage reduction is accepted
+M43 self-rotation is accepted
+M44 an ordinary authority probe becomes a control-order item
+M45 factorial order count becomes the production gate
+M46 authority-state overflow is encoded as empty authority
+M47 the DP state key omits authority
+M48 primary-outcome precedence drifts
 ```
 
 The mutation harness requires both an observed failing assertion and a declared
@@ -183,9 +222,23 @@ the logical-removal tail or modify the 44-octet commitment context.
 - Mutual reductions or lineage quarantine can leave no operational authority.
 - Revoking one credential does not revoke an independently granted same-key
   alias, and such aliases retain separate credential-local fork namespaces.
-- A rejected grant from a possibly-but-not-necessarily authorized issuer cannot
-  expand or operate, but its K-valid descendant may retain bounded reduction
-  standing in an admissible prefix. This can amplify denial of availability.
+- The first-slot exception deliberately preserves one contested peer-reduction
+  opportunity per actor credential. Independently granted credentials and
+  same-key aliases therefore multiply standing within the common envelope.
+- One selected reduction can terminate a bounded descendant subtree: at most
+  nine credentials structurally under the ten-credential cap and five in the
+  executable six-control witness.
+- A rejected later-slot reduction can conservatively lower Pass0 `Must0` for a
+  concurrent expansion even though it cannot become an accepted reduction.
+- R-1 prevents omitted-history vetoes against later grants, but mutual concurrent
+  reductions of independent non-genesis credentials reject unless the actors
+  causally observed one another's binding grant. Cleanup therefore depends on an
+  authorized issuer path and is not guaranteed.
+- Self-lineage reductions and self-rotation reject; this avoids self-budget
+  laundering but provides no out-of-band recovery.
+- A valid evidence set beyond a DP state or transition limit makes the entire
+  authority projection unavailable until a future profile migration or
+  admissible reduction of the evidence set.
 - A checkpoint-only replay dependency makes every authority result unavailable;
   an empty encoded authority set in that state is not evidence of no authority.
 - Grant-rooted identifiers expose their binding grant to authorized observers

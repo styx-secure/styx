@@ -283,11 +283,16 @@ cross-author parent can grind below a concurrent authority transition and make
 that transition absent from its own evaluation point. Later replay still
 discloses the concurrency, so AP must revise reversible state and cannot treat
 the earlier prefix result as irreversible authority. C0.2j closes the previously
-confirmed laundering witness: an authority-expanding `GRANT` must be authorized
-in every admissible causal linearization, and an accepted ancestor revocation
-terminates every provenance descendant. A ground reference on either side of a
-concurrent revocation cannot select a surviving successor within the bounded
-model. Grinding can also move an
+confirmed laundering witness without selecting one replay-order winner. Pass0
+projects every bounded admissible causal interpretation before contested
+reductions; expansion is admitted only from necessary Pass0 authority. For each
+actor, only the first eligible contested author-sequence slot can contribute
+accepted reductions, and every eligible sibling in that selected slot is
+included. A reduction target must already be causally available under R-1,
+except that `RECOVER` retains its separately authorized bootstrap semantics. An
+accepted ancestor reduction terminates every provenance descendant. A ground
+reference on either side of a concurrent reduction cannot select a surviving
+successor within the bounded model. Grinding can also move an
 event with unavailable `REQUIRED` content across concurrent peers. In a
 fork-free, non-stale context, C0.2i removes replay position from the readiness
 boundary: only that event and its causal descendants enter the pending set,
@@ -300,7 +305,7 @@ O-04 risk.
 The historical C0.2i v2 model preserves the superseded laundering witness in
 both ordering directions. The independent C0.2j v3 model exercises attacker-
 selected references on both sides, every bounded delivery order and the new
-two-sided terminal fold. It also
+Pass0/selected-slot terminal fold. It also
 moves an unavailable-`REQUIRED` event across
 concurrent peers in both directions and verifies that the pending causal
 subtree and opening-triggered replay are order-independent. C0.2j replaces the
@@ -388,7 +393,7 @@ C0.2i supplies a fresh isolated v2 model for pending-subtree replay while
 preserving the historical v1 evidence byte-for-byte. It deliberately fails
 closed on a credential-identifier collision before positive exploration.
 C0.2j selects the binding `GRANT` reference as non-genesis credential identity,
-the exact K tail, provenance, two-sided authority and lineage fork containment;
+the exact K tail, provenance, bounded Pass0/selected-slot authority and lineage fork containment;
 its independent v3 evidence is bounded rather than a production proof. C0.2k
 must bind the content commitment to that exact identity
 and author sequence; the current 44-octet `CTX` does neither and remains a
@@ -426,7 +431,10 @@ holder of valid signing-key material, including a revoked credential, can
 withhold parents, equivocate, reuse randomizers or grind its replay position.
 Grinding can suppress a later-sorting concurrent authority transition from one
 acting-prefix observation, but C0.2j no longer selects that observation as
-terminal expansion authority. It cannot widen
+terminal expansion authority. Its DP projection retains every distinct
+reachable control state keyed by processed controls, authority, revoked
+credentials and forked credentials; crossing the state or transition envelope
+makes authority explicitly unavailable instead of choosing a partial result. It cannot widen
 the C0.2i pending set beyond the unavailable event's causal descendants merely
 by changing order. Later disclosure requires reversible AP repair and does not
 retroactively make an irreversible effect safe; later opening verification

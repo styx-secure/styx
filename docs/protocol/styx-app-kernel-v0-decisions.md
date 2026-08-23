@@ -232,10 +232,11 @@ claim that current code conforms.
   append-only logical-removal transition under AP policy, but physical
   destruction remains gated by O-13 and never follows from replay position.
   A prefix-scoped replay handoff can still differ by position, so C0.2j does not
-  treat any one handoff or order as terminal authority. Expansion, producer
-  eligibility and operational authority require `MustAuth`, reductions use
-  `MayAuth`, and provenance termination is computed across every bounded causal
-  linearization. Grinding can therefore change work and intermediate reversible
+  treat any one handoff or order as terminal authority. Expansion-sensitive
+  controls require Pass-0 `Must0`; reductions require `Must0` or the exact
+  per-credential first-contested-slot rule, and provenance termination is
+  recomputed from the final accepted set across the complete bounded causal
+  evidence. Grinding can therefore change work and intermediate reversible
   observations but cannot select an expansion winner. It can also move a pending root or its
   causal descendants relative to independent events, changing bounded replay
   work but never the pending closure itself. Later disclosure requires revision
@@ -400,8 +401,10 @@ outcomes.
   authenticated `FORK_EVIDENCE`; events and authority on that lineage are
   `FORK_QUARANTINED`. The graph, ancestry, order and pending sets remain visible
   diagnostic evidence. Independent lineages continue only when the C0.2j
-  `MustAuth`/`MayAuth` fold establishes their authority across the complete
-  bounded control-evidence set. `STALE_EVIDENCE` has higher precedence. No
+  Pass-0 plus first-contested-slot fold establishes their authority across the
+  complete bounded control-evidence set. Every same-sequence fork quarantines
+  its actor lineage independently of whether that sequence is the actor's
+  selected contested slot. `STALE_EVIDENCE` has higher precedence. No
   arrival order, canonical winner, checkpoint, later opening or later event can
   lift lineage quarantine or resurrect a terminated identifier. This prevents
   fork-driven authority expansion while reducing unrelated denial of service;
@@ -464,7 +467,7 @@ outcomes.
 ### O-02 — Author, rotation and authorization binding
 
 - **Status:** `DECIDED`. Issue #225/PR #226 supplied the bounded C0.2i model;
-  Issue #233 selects its C0.2j grant-rooted succession and two-sided authority
+  Issue #233 selects its C0.2j grant-rooted succession and bounded Pass0/selected-slot authority
   replacement. Exact-final independent review and human ratification of that
   replacement remain mandatory before merge.
 - **Rule:** every authoring endpoint SHALL use a distinct context-local signing
@@ -485,23 +488,39 @@ outcomes.
   anonymous return capabilities are optional profile inputs, not universal
   authors. Rotation creates a new credential and retires the old one through an
   authorized AP transition; recovery MUST NOT resurrect revoked authority.
-  C0.2j evaluates expansion, producer eligibility and operational authority
-  under `MustAuth` across every bounded causal linearization; reductions use
-  `MayAuth`, but an actor unauthorized in every acting-prefix interpretation
-  cannot reduce authority. Revocation and same-author fork quarantine terminate
+  C0.2j computes Pass-0 `May0(e)`/`Must0(e)` at each event's acting prefix over
+  every admissible causal interpretation. Expansion-sensitive controls require
+  `Must0`. A structurally valid reduction with `Must0` is accepted without a
+  contested budget. For `May0 && !Must0`, AP rejects self-lineage targets and
+  accepts only the eligible reductions in the actor credential's lowest
+  `author_sequence` slot containing eligible contested evidence; every eligible
+  sibling in that slot applies as an unordered set. Later slots and `NoAuth`
+  controls are authentic but unauthorized. The selector is per credential,
+  non-recursive and never uses an event-reference, arrival or global tie-break.
+  A rejected later-slot reduction can still conservatively lower Pass-0 `Must0`
+  for a concurrent expansion, but cannot change selected-slot or accepted-
+  reduction membership.
+  `REVOKE` and the retiring side of `ROTATE` require a non-genesis target's
+  binding grant in their authenticated causal ancestry; missing targets are
+  unresolved and resolvable non-causal targets are structurally rejected.
+  `RECOVER` retains its separate fresh-grant transcript rule. Self-rotation is
+  structurally rejected in v0. Revocation and any same-author fork terminate
   the target lineage and every grant descendant while independent definitely
   authorized lineages may continue. `ROTATE` and `RECOVER` reference a fresh
   admitted binding grant, create no binding themselves and cannot reuse or
   resurrect an old identifier. Late evidence triggers fresh full replay; no
   incremental authority-state handoff is claimed.
-  `MayAuth(e)` and `MustAuth(e)` are per-event acting-prefix predicates. The
-  set-valued terminal diagnostics are separately named possible terminal
-  authority (union across interpretations) and necessary terminal authority
-  (intersection), with necessary always a subset of possible. Operational
-  authority and producer eligibility use the necessary set. If a replay
-  dependency is checkpoint-only, `STALE_EVIDENCE` makes every accepted-control,
-  per-event and terminal-authority output unavailable before AP evaluation; an
-  empty representation in that state is not evidence of an empty authority set.
+  The factorial linearization is a bounded test oracle. The executable fold uses
+  reachable-state DP keyed by processed items, authority, revoked roots and
+  forked roots; ordinary-event probes query acting-prefix-compatible states
+  without becoming authority items. The set-valued Pass-0 diagnostics are
+  possible terminal authority (union) and necessary terminal authority
+  (intersection). Final operational authority is recomputed from the accepted
+  controls plus fork quarantine, never selected from one interpretation. If a
+  replay dependency is checkpoint-only, `STALE_EVIDENCE` makes every authority
+  output unavailable. State/transition overflow similarly yields typed
+  `AUTHORITY_PROJECTION_UNAVAILABLE`; neither state is a proven empty authority
+  set and neither exposes partial producer eligibility.
 - **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` distinguish key
   possession from authorization. The C0.2b analysis compares five
   constructions and selects the only candidate that preserves endpoint-specific
@@ -528,10 +547,16 @@ outcomes.
   still remove every peer and remain sole producer; mutual reductions or fork
   containment can leave no operational authority. A K-valid grant rejected for
   expansion because its issuer is possible but not necessary authority remains
-  historical provenance evidence; a descendant may therefore retain bounded
-  reduction power in an admissible prefix. This can amplify denial of
-  availability and is not a quorum-safety claim. Same-key aliases are visible
-  but independently authorized and independently forked.
+  historical provenance evidence; a descendant may therefore receive its own
+  first contested reduction slot. Under the v3 envelope this permits at most
+  six accepted contested reductions against six distinct subtrees in total,
+  with up to five siblings concentrated in one forked slot. One reduction can
+  terminate five credentials in the executable six-control witness and at most
+  nine structurally under the ten-credential cap. A later rejected slot may
+  still block a concurrent expansion only through conservative Pass-0 `Must0`.
+  These are denial-of-availability powers, not quorum-safety claims. Same-key
+  aliases are visible but independently authorized, independently budgeted and
+  independently forked.
 - **Dependent artifact:** credential identifier, verification-key/algorithm
   binding, grant/state reference and negative vectors. O-01 defines concurrent
   and stale ordering; O-05/O-12 gate physical expiry; O-06 defines references;
@@ -539,8 +564,10 @@ outcomes.
   O-14 owns the exact signature-suite registry and downgrade evidence.
 - **Residual/reopen condition:** reopen if O-01 cannot express safe
   rotation/revocation, a required profile cannot use context-local credentials,
-  the `AP → K` split permits an authorization bypass, or an approved anonymous
-  profile requires bearer-only authorship.
+  the `AP → K` split permits an authorization bypass, a rejected reduction can
+  steer accepted-slot membership, the reachable-state key diverges from its
+  factorial oracle, a resource overflow exposes partial authority, or an
+  approved anonymous profile requires bearer-only authorship.
 - **Human ratification:** the original C0.2b split was approved under Issue
   #209; Issue #225's bounded replacement completed exact-final review and human
   ratification in PR #226. The C0.2j amendment is governed by Issue #233.
@@ -633,7 +660,7 @@ outcomes.
   order, including independent events that sort later. Pending depends only on
   authenticated transcripts, causal descent and the replica's monotone verified-
   opening set; it never consults AP authority, AP outcome or retention. Any
-  admitted same-author fork instead terminates the forked credential lineage
+  admitted same-sequence sibling fork instead terminates the forked credential lineage
   under C0.2j, and checkpoint-only replay dependencies invoke `STALE_EVIDENCE` before AP
   evaluation. Roots
   report model outcome `PENDING_OPENING`, descendants `PENDING_ANCESTOR`.
@@ -653,6 +680,17 @@ outcomes.
   non-releasable replay dependencies. A stale projection exposes no accepted
   controls, per-event authority, terminal authority, operational authority or
   producer eligibility; these outputs are unavailable rather than proven empty.
+- **Primary outcome precedence:** structural/K rejection occurs before an event
+  enters the AP projection. For admitted evidence, whole-projection
+  `STALE_EVIDENCE` precedes a DP resource-unavailable result; absent staleness,
+  `AUTHORITY_PROJECTION_UNAVAILABLE` precedes event-local states. Event-local
+  precedence is `FORK_EVIDENCE`, then `PENDING_OPENING`, then
+  `PENDING_ANCESTOR`, then `REMOVAL_INAPPLICABLE`, then credential-control
+  `APPLIED`/`AUTHENTIC_BUT_UNAUTHORIZED`, then ordinary-event
+  `APPLIED`/`POST_REVOCATION`/`LINEAGE_QUARANTINED`/
+  `AUTHENTIC_BUT_UNAUTHORIZED`. Auxiliary pending, fork and termination sets
+  remain observable even when a higher-precedence primary outcome wins; one
+  event never receives two primary outcomes.
 - **Rationale/evidence:** `PRIV-05` through `PRIV-19` independently analyzed and
   reconciled the design; `HASH-004`, `HASH-005`, `PRIV-01`, `PRIV-03` and
   `PRIV-04` reject boundaryless legacy behavior. The complete decision,
@@ -687,13 +725,13 @@ outcomes.
   ordinary state-bearing data classified as `REQUIRED` still has no authorized
   removal or destruction path in v0. No finality exists, so visible AP results
   remain provisional and cannot authorize irreversible effects. Any admitted
-  same-author fork terminates the forked credential and every grant-descendant
+  same-sequence sibling fork terminates the forked credential and every grant-descendant
   lineage while independent definitely authorized lineages may continue. This
   prevents fork-driven authority expansion without claiming general
   availability: mutual reductions can leave no authority, and one uncontested
   compromised authority can causally remove every peer and remain sole
   producer. Concurrent grant/revocation cannot launder a successor under the
-  bounded C0.2j `MustAuth`/`MayAuth` fold. The current
+  bounded C0.2j Pass0/selected-slot fold. The current
   44-octet commitment context deliberately does not prevent cross-credential
   descriptor copy or same-credential cross-sequence self-copy; C0.2k owns that
   amendment after C0.2j decides exact credential identity.
@@ -810,8 +848,9 @@ outcomes.
   removal under AP policy, but O-13 still gates physical destruction.
   Prefix-scoped handoffs can expose different concurrent authority facts at
   different replay positions. C0.2j prevents any one such position from
-  becoming terminal expansion authority by using `MustAuth`, `MayAuth` and
-  transitive provenance over every bounded admissible interpretation. Grindable
+  becoming terminal expansion authority by retaining every bounded Pass0 state,
+  requiring `Must0` for expansion, selecting at most one first eligible
+  contested slot per actor and applying transitive provenance. Grindable
   placement of a `REQUIRED` event can
   change pending-subtree shape and replay work, but cannot block an independent
   event or authorize a descendant through a hole. AP must repair reversible
@@ -1201,7 +1240,7 @@ also be transcript-bound and locally evaluated under the application's policy.
 **C0.3 verdict: `NO-GO`.** The ratified C0.2i construction replaces the vulnerable C0.2f
 whole-suffix halt with deterministic pending-subtree replay. C0.2j then selects
 grant-rooted credential identity, exact K-readable grant/succession carriage,
-two-sided set-relative authority and lineage-scoped fork containment. O-01,
+  bounded Pass0/selected-slot authority and lineage-scoped fork containment. O-01,
 O-02 and O-04 remain `DECIDED` with those amendments. The v1/v2 reports remain
 immutable historical evidence and the independent v3 report records the
 superseding authority model. C0.2k must next amend the commitment context, and
@@ -1226,7 +1265,7 @@ The smallest safe sequence is:
    subtree model; rerun both whenever their respective inputs change, without
    treating bounded falsification as proof;
 4. preserve C0.2j grant-rooted credential identity, exact K-readable
-   succession evidence and bounded two-sided authority, then execute C0.2k for the credential/sequence-bound
+   succession evidence and bounded Pass0/selected-slot authority, then execute C0.2k for the credential/sequence-bound
    commitment-context amendment, and only then O-06c bounded adversarial
    evidence over the combined construction;
 5. preserve and rerun the completed v2 gate after those changes, then

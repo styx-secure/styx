@@ -152,6 +152,8 @@ REQUIRED_WITNESSES = frozenset(
         "causal-target-availability",
         "self-and-cross-lineage-standing",
         "outcome-precedence",
+        "non-genesis-causal-target-cleanup",
+        "bounded-subtree-amplification",
     }
 )
 
@@ -464,7 +466,8 @@ def _identifier_checks(suite: Suite, mutation: Mutation) -> None:
         check(
             "W-ID-07",
             "unresolvable-dangling-and-forward",
-            u.rejected.get(dangling.reference) is Outcome.UNRESOLVABLE_CREDENTIAL
+            u.rejected.get(dangling.reference)
+            is Outcome.UNRESOLVED_CREDENTIAL_BINDING
             and u.rejected.get(forward.reference) is Outcome.STRUCTURAL_REJECTION,
             "dangling and forward credential references reject rather than defer",
             "Dangling bindings are unresolvable; non-causal future bindings are structurally invalid.",
@@ -642,7 +645,7 @@ def _authority_checks(suite: Suite, mutation: Mutation) -> None:
             and p.terminal_authority <= p.necessary_terminal_authority
             and p.necessary_terminal_authority <= p.possible_terminal_authority
             and converged,
-            "authority expansion requires MustAuth across every admissible order",
+            "authority expansion requires Pass0 Must0 across every admissible order",
             "Reference grinding and delivery order cannot preserve the laundered successor.",
             "M04_POSSESSION_IMPLIES_AUTHORITY",
             "M05_EXPANSION_USES_MAY",
@@ -674,7 +677,7 @@ def _authority_checks(suite: Suite, mutation: Mutation) -> None:
             "W-AUTH-08",
             "grant-revoke-grinding-and-delivery",
             all(ground_results),
-            "attacker-selected GRANT references on both order sides cannot bypass MustAuth",
+            "attacker-selected GRANT references on both order sides cannot bypass Pass0 Must0",
             ", ".join(ground_details),
         )
     )
@@ -769,7 +772,7 @@ def _authority_checks(suite: Suite, mutation: Mutation) -> None:
             not mutual.terminal_authority
             and {a_revokes_c.reference, c_revokes_a.reference}
             <= mutual.accepted_controls,
-            "authority reductions use MayAuth and mutual revocation is non-resurrecting",
+            "eligible contested reductions are selected without a canonical winner and mutual revocation is non-resurrecting",
             "No canonical ordering chooses a winner.",
             "M06_REDUCTION_REQUIRES_MUST",
             "M08_SINGLE_LINEARIZATION",
@@ -788,8 +791,8 @@ def _authority_checks(suite: Suite, mutation: Mutation) -> None:
             "W-AUTH-03",
             "may-only-reduction",
             b.credential_id not in possible.terminal_authority,
-            "a reduction by a MayAuth-only actor remains effective",
-            "Requiring MustAuth for reductions would resurrect authority.",
+            "a May0-only reduction in the actor's first eligible contested slot remains effective",
+            "Requiring Pass0 Must0 for every reduction would resurrect authority.",
             "M06_REDUCTION_REQUIRES_MUST",
         )
     )
@@ -945,7 +948,7 @@ def _authority_checks(suite: Suite, mutation: Mutation) -> None:
             revoked_reduction.reference not in rr.accepted_controls
             and c.credential_id in rr.terminal_authority,
             "an actor revoked in every acting-prefix interpretation cannot reduce authority",
-            "MayAuth does not mean possession after terminal revocation.",
+            "May0 does not mean possession after terminal revocation.",
             "M24_REVOKED_REDUCTION_ACCEPTED",
         )
     )
@@ -1157,7 +1160,7 @@ def _succession_alias_fork_checks(suite: Suite, mutation: Mutation) -> None:
             and {rotate.reference, concurrent_revoke.reference}
             <= rotation_race.accepted_controls,
             "concurrent ROTATE and REVOKE cannot resurrect the retiring credential",
-            "The fresh GRANT remains independently evaluated under MustAuth.",
+            "The fresh GRANT remains independently evaluated under Pass0 Must0.",
         )
     )
 
@@ -1182,7 +1185,7 @@ def _succession_alias_fork_checks(suite: Suite, mutation: Mutation) -> None:
             and independent.credential_id in fork.terminal_authority
             and fork.outcomes.get(independent_action.reference) is Outcome.APPLIED,
             "fork quarantine is credential-lineage scoped and cannot expand authority",
-            "Independent definitely authorized progress survives.",
+            "Independent authorized progress survives under the same bounded fold.",
             "M14_FORK_EXPANDS_AUTHORITY",
         )
     )
@@ -1504,7 +1507,7 @@ def _pending_checkpoint_removal_checks(suite: Suite, mutation: Mutation) -> None
             and {revoke.reference, child.reference} <= p.pending
             and a.credential_id not in p.terminal_authority,
             "K authority evidence is retained even when AP is pending or inapplicable",
-            "No opening, removal or AP outcome filters the set-relative authority set.",
+            "No opening, removal or AP outcome filters the K-admitted authority evidence set.",
             "M20_FILTER_EVIDENCE_BY_AP_STATE",
         )
     )
@@ -1891,6 +1894,131 @@ def _amended_remediation_checks(suite: Suite, mutation: Mutation) -> None:
             "fork evidence has stable primary-outcome precedence over pending content",
             "One event may remain in auxiliary pending sets without changing its primary outcome.",
             "M48_OUTCOME_PRECEDENCE_DRIFT",
+        )
+    )
+
+    left_issuer = genesis("non-genesis-cleanup-left-issuer", "a5")
+    right_issuer = genesis("non-genesis-cleanup-right-issuer", "a6")
+    left_binding = control(
+        "non-genesis-cleanup-left-grant",
+        left_issuer,
+        Kind.GRANT,
+        grantee_key="a7" * 32,
+    )
+    right_binding = control(
+        "non-genesis-cleanup-right-grant",
+        right_issuer,
+        Kind.GRANT,
+        grantee_key="a8" * 32,
+    )
+    left_member = grant_binding(left_binding)
+    right_member = grant_binding(right_binding)
+    left_mutual = control(
+        "non-genesis-left-reduces-right",
+        left_member,
+        Kind.REVOKE,
+        parents=(left_binding.reference,),
+        target_id=right_member.credential_id,
+    )
+    right_mutual = control(
+        "non-genesis-right-reduces-left",
+        right_member,
+        Kind.REVOKE,
+        parents=(right_binding.reference,),
+        target_id=left_member.credential_id,
+    )
+    left_cleanup = control(
+        "non-genesis-left-issuer-cleanup",
+        left_issuer,
+        Kind.REVOKE,
+        sequence=1,
+        predecessor=left_binding.reference,
+        target_id=left_member.credential_id,
+    )
+    right_cleanup = control(
+        "non-genesis-right-issuer-cleanup",
+        right_issuer,
+        Kind.REVOKE,
+        sequence=1,
+        predecessor=right_binding.reference,
+        target_id=right_member.credential_id,
+    )
+    cleanup_projection = _project(
+        suite,
+        Scenario(
+            (
+                left_binding,
+                right_binding,
+                left_mutual,
+                right_mutual,
+                left_cleanup,
+                right_cleanup,
+            ),
+            (left_issuer, right_issuer),
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-08",
+            "non-genesis-causal-target-cleanup",
+            cleanup_projection.rejected.get(left_mutual.reference)
+            is Outcome.STRUCTURAL_REJECTION
+            and cleanup_projection.rejected.get(right_mutual.reference)
+            is Outcome.STRUCTURAL_REJECTION
+            and {left_cleanup.reference, right_cleanup.reference}
+            <= cleanup_projection.accepted_controls
+            and left_member.credential_id
+            not in cleanup_projection.terminal_authority
+            and right_member.credential_id
+            not in cleanup_projection.terminal_authority,
+            "non-causal mutual reductions reject while each direct issuer retains a causal cleanup path",
+            "If an issuer is no longer authorized, C0.2j claims no automatic cleanup.",
+        )
+    )
+
+    subtree_root = genesis("subtree-amplification-root", "a9")
+    subtree_revoker = genesis("subtree-amplification-revoker", "aa")
+    subtree_grants: list[Event] = []
+    subtree_credentials = [subtree_root]
+    subtree_actor = subtree_root
+    for index in range(4):
+        subtree_grant = control(
+            f"subtree-amplification-grant-{index}",
+            subtree_actor,
+            Kind.GRANT,
+            parents=(subtree_grants[-1].reference,) if subtree_grants else (),
+            grantee_key=f"{0xab + index:02x}" * 32,
+        )
+        subtree_grants.append(subtree_grant)
+        subtree_actor = grant_binding(subtree_grant)
+        subtree_credentials.append(subtree_actor)
+    subtree_reduction = control(
+        "subtree-amplification-reduction",
+        subtree_revoker,
+        Kind.REVOKE,
+        target_id=subtree_root.credential_id,
+    )
+    subtree_projection = _project(
+        suite,
+        Scenario((*subtree_grants, subtree_reduction), (subtree_root, subtree_revoker)),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-09",
+            "bounded-subtree-amplification",
+            subtree_reduction.reference in subtree_projection.accepted_controls
+            and len(
+                {
+                    binding.credential_id for binding in subtree_credentials
+                }
+                & subtree_projection.terminated
+            )
+            == 5
+            and subtree_projection.max_lineage_depth == MAX_LINEAGE_DEPTH,
+            "one accepted reduction can terminate five credentials under the joint six-control envelope",
+            "The structural ten-credential envelope still permits at most nine credentials in one non-revoker subtree.",
         )
     )
 
