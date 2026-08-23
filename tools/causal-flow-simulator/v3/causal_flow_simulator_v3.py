@@ -68,6 +68,13 @@ def build_report() -> tuple[dict[str, object], bool]:
                 (projection.authority_transitions for projection in suite.projections),
                 default=0,
             ),
+            "maximum_ordinary_probe_transitions": max(
+                (
+                    projection.ordinary_probe_transitions
+                    for projection in suite.projections
+                ),
+                default=0,
+            ),
             "maximum_replayed_event_work": max(
                 (projection.replayed_event_work for projection in suite.projections),
                 default=0,

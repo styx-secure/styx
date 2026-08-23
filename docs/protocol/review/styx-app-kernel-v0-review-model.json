@@ -976,7 +976,7 @@
         "OB-K19"
       ],
       "owner": "AP",
-      "result": "The control is structurally rejected before authority reduction; later delivery of the target cannot retroactively authorize it.",
+      "result": "The control is structurally rejected before authority reduction; later delivery of the target cannot retroactively authorize it. This closes only the direct unseen-target veto: reducing a visible issuer can still lower Must0 for that issuer's later grant descendants.",
       "status": "EVIDENCE_ONLY",
       "steps": [
         "Admit a target credential on a concurrent branch",
@@ -2097,7 +2097,7 @@
         "OB-K19"
       ],
       "owner": "AP",
-      "statement": "Each actor has at most one eligible contested author-sequence slot; every eligible sibling in that slot is evaluated, self-lineage attempts consume no slot, and one selected target may deactivate only its bounded descendant subtree.",
+      "statement": "Each actor has at most one eligible contested author-sequence slot; every eligible sibling in that slot is evaluated, self-lineage attempts consume no slot, and one accepted reduction may deactivate its bounded descendant subtree. This accepted-standing bound is not an operational-availability bound: rejected K-admitted reductions can still lower Must0 for their target subtrees.",
       "status": "DECIDED"
     },
     {
@@ -2493,7 +2493,7 @@
         "OB-K19"
       ],
       "owner": "AP",
-      "statement": "A contested actor cannot reduce its own credential lineage; the attempt is unauthorized and cannot consume or hide that actor's first eligible peer-directed contested slot.",
+      "statement": "A contested actor cannot reduce its own credential lineage; the attempt is unauthorized and cannot consume or hide that actor's first eligible peer-directed contested slot. Its retained K evidence can nevertheless lower Must0 for that lineage and descendants, so it cannot authorize later activity.",
       "status": "DECIDED"
     },
     {
@@ -2573,7 +2573,7 @@
         "OB-K19"
       ],
       "owner": "AP",
-      "statement": "Pass0 retains every bounded reachable authority state, expansion requires Must0, and each actor may accept only eligible reductions from its first contested author-sequence slot. Final authority is recomputed from accepted controls; one replay order never decides authority.",
+      "statement": "Pass0 retains every bounded reachable authority state, expansion and operational production require Must0, and each actor may accept only eligible reductions from its first contested author-sequence slot. The recomputed accepted-control terminal set is accounting evidence only; necessary terminal authority governs operation after complete disclosure, and one replay order never decides authority.",
       "status": "DECIDED"
     }
   ],
@@ -4679,14 +4679,14 @@
       "applies_transition": false,
       "citations": [
         {
-          "anchor": "`FORK_QUARANTINED`. The graph, ancestry, order and pending sets remain visible",
+          "anchor": "`FORK_QUARANTINED` is a historical evidence-only alias",
           "source_id": "decisions"
         }
       ],
       "decision_refs": [
         "O-01"
       ],
-      "description": "Event on a forked credential lineage; that lineage is non-operational while independent definitely authorized lineages may continue.",
+      "description": "Historical evidence-only alias for LINEAGE_QUARANTINED; it is not a primary v0 outcome.",
       "id": "FORK_QUARANTINED",
       "obligation_refs": [
         "OB-K01"
@@ -5199,7 +5199,7 @@
         "OB-K19"
       ],
       "owner": "AP",
-      "statement": "A valid evidence set that exceeds a v0 replay bound makes authority unavailable until a future profile migration or admissible evidence reduction; no liveness guarantee follows.",
+      "statement": "A valid evidence set that exceeds a v0 replay bound makes authority unavailable until a future profile migration or admissible evidence reduction. Because every K-admitted control remains evidence, any bound valid key can consume this budget even after AP rejection or revocation; O-08 requires per-credential and total admission limits and no liveness guarantee follows.",
       "status": "OPEN"
     },
     {
@@ -5209,7 +5209,7 @@
           "source_id": "decisions"
         },
         {
-          "anchor": "Within the common envelope the exact residual bound is at most one selected",
+          "anchor": "Within the common envelope the exact accepted-standing bound is at most one",
           "source_id": "credential_analysis"
         }
       ],
@@ -5223,7 +5223,7 @@
         "OB-K19"
       ],
       "owner": "AP",
-      "statement": "The first-slot rule bounds but deliberately preserves one contested peer-reduction opportunity per actor, and one selected reduction can deactivate the target's bounded descendant subtree.",
+      "statement": "The first-slot rule bounds accepted contested reductions, and one selected reduction can deactivate the target's bounded descendant subtree. It does not bound operational availability loss: a rejected later-slot or self-lineage reduction can permanently lower Must0 for its target subtree within the shared evidence envelope.",
       "status": "OPEN"
     },
     {
@@ -5245,7 +5245,7 @@
         "OB-K19"
       ],
       "owner": "K",
-      "statement": "A legitimate reduction cannot target a credential the author has not causally observed; concurrent delivery can therefore delay remediation and no availability guarantee follows.",
+      "statement": "A legitimate reduction cannot directly target a credential whose binding grant the author has not causally observed; concurrent delivery can therefore delay remediation. The rule does not prevent an omitted-history actor from reducing a visible issuer and indirectly lowering Must0 for that issuer's future grant descendants, so no availability guarantee follows.",
       "status": "OPEN"
     },
     {
@@ -5728,19 +5728,19 @@
       "authority": "evidence",
       "id": "credential_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-analysis.md",
-      "sha256": "92d515a3929e5bde234ae12a7f5ce5b02f628a510de85dc472a862ca681f9a39"
+      "sha256": "f29472f6680368bf4c71162af2f611fc6e47b03c58a319627cee29658cae1cd7"
     },
     {
       "authority": "evidence",
       "id": "credential_report",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-falsification-report.md",
-      "sha256": "95728db9606f7b1b4388f08367d041b0f538946cd749d2e2c2d4f3a0e56d5fe3"
+      "sha256": "c2aff58affc7ed0cb3ace4a092d3b9c4ca66ff8df73c2921eb223e3b62c8b9d5"
     },
     {
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "43c753f93e536615c4a955b08349fe271edc81681f3c838cf19ae395c870188a"
+      "sha256": "b89484cb65ea373bea0ff3586ec7b48ca2bc79520aed4b43263d5613ef5d22d2"
     },
     {
       "authority": "evidence",
@@ -5782,7 +5782,7 @@
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "4086385eb8b8630d865e6b6e74b5ed6608aabeaa2bef4c649726f953a950162c"
+      "sha256": "746b30dd48af498aab9e71890f87de2ae6b9c81692c586740ed25aba4629d384"
     },
     {
       "authority": "normative",

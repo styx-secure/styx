@@ -93,7 +93,7 @@ the [C0.2a responsibility matrix](../protocol/styx-app-kernel-v0-responsibility-
 | Application event meaning | Integrity and authenticity of every field that affects validation, authorization, causality, ordering or conflict handling | Invalid transcripts and semantics are rejected before authoritative state change; control events are content-free | `OB-K01`–`OB-K04`, `OB-K12`, policy by `OB-AP01` | A valid signature proves key possession, not role authorization, possession at commit time, authorship of copied content or truth. |
 | Payload commitment and retained opening | Binding to one complete payload plus computational hiding after opening destruction under stated assumptions | Reject malformed geometry, wrong suite/context/opening/content and incomplete verification before AP use | `OB-K10`, retention by `OB-K14`/`OB-RS04` | O-06b-2 selects exact bytes but supplies no implementation proof; length/shape remain visible, randomizer custody is operational, complete-object availability is required and SHA-256 assumptions remain explicit. |
 | Application and case context | Domain separation and rejection of cross-context replay | Cross-context objects fail kernel validation | `OB-K08`, requirements from `OB-AP03` | O-03/O-06a select the context tuple/reference role and O-06b-1 fixes the outer reference bytes; O-07 genesis contents remain open. |
-| Author and role authority | Monotone context-bound K grant binding separated from reversible bounded AP authorization | Invalid or unresolved binding is rejected; authentic-but-unauthorized and post-revocation actions apply no AP transition; necessary Pass0 authority admits expansion, the first eligible contested slot per actor admits bounded reductions, R-1 constrains reduction targets, and revocation/fork termination follows credential provenance; stale or resource-exhausted projection makes authority unavailable | `OB-AP02`; binding/provenance by `OB-K18`/`OB-K19` | One uncontested compromised authority can remove every peer and remain sole producer; rejected later-slot evidence can conservatively affect possible Pass0 history but cannot become an accepted reduction; mutual reductions can leave no authority; independently granted same-key aliases survive lineage-local revocation and occupy separate fork namespaces. |
+| Author and role authority | Monotone context-bound K grant binding separated from reversible bounded AP authorization | Invalid or unresolved binding is rejected; authentic-but-unauthorized and post-revocation actions apply no AP transition; necessary Pass0 authority admits expansion, the first eligible contested slot per actor admits bounded accepted reductions, R-1 constrains direct reduction targets, and revocation/fork termination follows credential provenance; stale or resource-exhausted projection makes authority unavailable | `OB-AP02`; binding/provenance by `OB-K18`/`OB-K19` | One uncontested compromised authority can remove every peer and remain sole producer. Any K-admitted rejected reduction can permanently lower necessary authority for its target subtree without becoming an accepted reduction; R-1 blocks direct omitted-history veto of an unseen grant but not an indirect veto through its visible issuer. Mutual reductions can leave no authority; independently granted same-key aliases survive lineage-local revocation and occupy separate fork namespaces. |
 | Causal history and state | Transcript-only deterministic validation/order, replay/fork detection and bounded convergence under monotone opening observations | Classified duplicate, pending root/ancestor, applied, stale, authority-unavailable or lineage-quarantine result; independent authorized lineages may continue | `OB-K05`–`OB-K07`, `OB-K13`, `OB-K19` | A valid-key holder can terminate its lineage through a fork and amplify replay through delayed evidence; bounded DP replay has state/transition costs and typed exhaustion; no finality exists. |
 | Durable local state | Confidentiality, atomicity, crash safety and rollback behavior within a declared runtime profile | Fail closed on ambiguous persistence; restore/reconcile or require intervention | `OB-RS02`–`OB-RS10` | Browser storage may be evicted; a coherent whole-profile rollback may be undetectable without external evidence. |
 | Session secrets and membership | Confidential authenticated delivery, membership control, forward secrecy and post-compromise recovery within the selected session profile | Reject invalid or unauthorized session transitions; rotate/recover within profile bounds | `OB-SS01`–`OB-SS09` | Phase B proves only the exact pinned isolated profile recorded by its verdict. |
@@ -158,7 +158,12 @@ or exploit disagreement between clients.
 This adversary is why key possession, session membership and application
 authorization are separate checks. O-02 fixes the semantic credential and
 rotation model; concrete profile grants/bounds and the O-14 signature-suite
-registry remain open.
+registry remain open. C0.2j's M20 rule deliberately keeps every K-admitted
+credential-control event in the authority evidence set even when AP rejects the
+action or the actor is no longer authorized. Consequently, any still-valid
+bound signing key can consume finite control, fork, state and transition budgets;
+AP rejection is not a resource-admission control. O-08 must bound that evidence
+per credential and in total before a production availability claim is possible.
 
 ### A3 — Malicious peer
 
@@ -198,10 +203,16 @@ state or transition envelope makes authority unavailable, and late evidence
 triggers fresh full replay. These rules prevent bounded successor laundering but
 do not prevent one uncontested compromised authority from causally revoking
 every peer and remaining sole authority, nor guarantee recovery after total
-authority loss. A rejected later-slot reduction cannot become accepted, though
-its K-admitted evidence can conservatively reduce possible Pass0 history for a
-concurrent expansion. This bounded availability effect is explicit and does not
-confer expansion or operational authority. Fork slots are scoped by
+authority loss. A rejected later-slot or self-lineage reduction cannot become
+an accepted termination, but its K-admitted evidence can permanently remove its
+target and that target's grant descendants from `Must0`. The first-slot rule
+therefore bounds accepted reductions, not operational availability loss. R-1
+blocks a direct omitted-history veto against an unseen later grant, but a
+compromised actor can still reduce the visible issuer and thereby keep later
+grants rooted there below `Must0`. Within C0.2j this reach is bounded only by the
+shared evidence envelope; O-08 must select enforceable per-credential and total
+admission limits before any production availability claim. This conservative
+effect never confers expansion or operational authority. Fork slots are scoped by
 `(credential_id, author_sequence)`, so independently granted same-key aliases do
 not share fork quarantine.
 
@@ -223,7 +234,12 @@ full replay and can reversibly change visible authority, so no irreversible
 effect is safe. Profiles must not claim retroactive confidentiality for content
 already exposed. Revocation does not revoke an independently granted alias that
 carries the same key bytes, and no quorum or out-of-band remedy is selected for
-takeover by one uncontested authority.
+takeover by one uncontested authority. An authorized but compromised key may
+also spend the projection's finite control, fork, state and transition budgets:
+M20 intentionally retains all K-admitted control evidence even after AP rejects
+or revokes its actor. Exhaustion is fail-closed for authority, so O-08 must bound
+admission both per credential and across the context rather than relying only on
+the number of accepted controls.
 
 ### A5 — Hostile or colluding relay and service provider
 

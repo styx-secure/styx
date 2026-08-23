@@ -134,6 +134,14 @@ O-06b-1 role class `0x02` carries exactly these K-readable control kinds:
 directive targeting credential-control evidence is structurally inapplicable
 and changes no binding, provenance or authority.
 
+Acceptance of the retiring side of `ROTATE` does not imply that its referenced
+replacement is operational. In particular, a replacement `GRANT` authored by
+the lineage being retired can remain a valid K binding while failing Pass0
+`Must0`; the rotation then retires the old lineage without granting producer
+authority to the replacement. Profiles must provide an independently
+authorized recovery path rather than infer atomic authority transfer from an
+accepted `ROTATE`.
+
 All `0x02` events require `content_class == NONE`. This check precedes tail
 parsing, binding lookup and AP evaluation. K never derives the control kind,
 suite, key or target from the AP transition block or AP registries.
@@ -205,12 +213,15 @@ union the eligible May0-only reductions in each actor's first contested slot
 Terminal authority is recomputed from O-07 initial authority plus accepted
 grants, minus the provenance closure of accepted reduction targets and every
 forked credential. A rejected reduction is never an accepted revocation and
-never creates inherited standing. It can still lower Pass-0 `Must0` for a
-concurrent expansion, because Pass-0 deliberately considers every admissible
-interpretation of all K-admitted control evidence. This is a bounded residual
-availability effect; it cannot change the selected slot or accepted-reduction
-membership and cannot veto a causally later fresh grant because section 6's
-target-availability rule rejects that non-causal reduction.
+never creates inherited standing. Nevertheless, it can permanently lower
+Pass-0 `Must0` for its target and the target's grant descendants because Pass-0
+deliberately considers every admissible interpretation of all K-admitted control
+evidence. The first-slot rule bounds the accepted-reduction set, not this
+separate operational availability effect. R-1 rejects a direct reduction of a
+fresh non-genesis target whose grant was not observed, but one reduction of a
+visible issuer can still lower `Must0` for that issuer and every future grant in
+its provenance subtree. The experiment bounds this reach only through the common
+O-08 handoff envelope; it makes no production availability claim.
 
 ### 5.3 State-space computation and ordinary-event probes
 
@@ -239,9 +250,12 @@ PossibleTerminalAuthority(S)  = union of Pass-0 terminal authority sets
 NecessaryTerminalAuthority(S) = intersection of Pass-0 terminal authority sets
 ```
 
-Operational authority and producer eligibility use the final recomputed
-terminal authority, not a chosen Pass-0 linearization. Possible/necessary sets
-are diagnostic and never replace per-event acting-prefix predicates.
+Operational authority and producer eligibility use the relevant per-event
+acting-prefix `Must0`; after complete disclosure they use
+`NecessaryTerminalAuthority(S)`. The terminal authority recomputed from accepted
+controls records accepted terminations only. It is diagnostic and cannot
+authorize an actor absent from `Must0`. `PossibleTerminalAuthority(S)` likewise
+never substitutes for an acting-prefix predicate.
 
 If live replay dependencies are unavailable, the whole projection is
 `STALE_EVIDENCE`. If the reachable-state or transition ceiling would be crossed,
@@ -267,8 +281,11 @@ without additional target evidence. A non-genesis target is structurally valid
 only when its binding `GRANT` belongs to the reduction's authenticated causal
 ancestry. A resolvable but non-causal target is `STRUCTURAL_REJECTION`; a target
 that resolves to no admitted binding is `UNRESOLVABLE_CREDENTIAL`. Neither case
-is deferred. This prevents a compromised credential from using omitted causal
-history to veto an honest grant created after its revocation.
+is deferred. This prevents a *direct* omitted-history veto against that unseen
+fresh identifier. It does not prevent an indirect veto: a compromised credential
+can omit its own revocation, reduce a visible issuer, and thereby keep future
+grants by that issuer below `Must0`. The hostile witness records that one-slot
+availability loss explicitly.
 
 Strict target availability has a measured cost: mutually concurrent reductions
 between independently granted non-genesis credentials reject when neither actor
@@ -288,6 +305,14 @@ remains authoritative. Neither control creates a binding; neither may re-grant
 or resurrect an old identifier. If only the reduction is accepted, availability
 can be lost safely. If only the fresh grant is accepted, the new independently
 authorized credential can coexist with the old one.
+
+These checks form a transitive rejection closure before authority evaluation.
+If R-1, self-rotation or a binding failure removes an event after binding
+discovery, every admitted descendant that depends on it is structurally rejected;
+an event whose actor binding grant was removed becomes
+`UNRESOLVED_CREDENTIAL_BINDING`, and a reduction whose target binding disappeared
+becomes `UNRESOLVABLE_CREDENTIAL`. This prevents a dependent event from retaining
+K admission only because the invalid ancestor was discovered in an earlier pass.
 
 A same-author fork is two or more distinct K-valid events at the same
 `(credential_id, author_sequence)` slot. For non-genesis sequence positions the
@@ -328,8 +353,8 @@ The v3 experiment uses one common envelope for every candidate and witness:
 | verification-key octets | 64 |
 
 These are experiment bounds, not O-08 production limits. Eighteen events make
-the maxima jointly admissible: six controls plus two ordinary siblings in each
-of six distinct fork slots. The joint witness reaches 4,033 DP states, 14,556
+the maxima jointly admissible as six distinct fork slots, each containing one
+credential-control sibling and two ordinary siblings. The joint witness reaches 4,033 DP states, 14,556
 state transitions and represents 7,484,400 complete causal paths. The 720-order
 ceiling belongs only to the equivalence oracle; it is not a production gate.
 
@@ -367,9 +392,9 @@ first contested slot when it is `May0` at that acting prefix. This per-credentia
 choice preserves authenticated author-chain locality and avoids inventing a
 global/root selector, at an explicit availability cost.
 
-Within the common envelope the exact residual bound is at most one selected
-contested slot per credential, at most six accepted contested reductions and at
-most six distinct target subtrees in total. A selected forked slot can
+Within the common envelope the exact accepted-standing bound is at most one
+selected contested slot per credential, at most six accepted contested
+reductions and at most six distinct accepted target subtrees in total. A selected forked slot can
 concentrate five sibling reductions under one credential, with the sixth control
 event supplying the contesting reduction. One reduction can terminate a whole
 bounded subtree: structurally at most nine credentials under the ten-credential
@@ -377,11 +402,15 @@ cap, and at most five credentials in the executable six-control subtree witness.
 Stockpiled descendants and independently rooted same-key aliases multiply the
 per-credential budget, but never beyond those common-envelope totals.
 
-An unselected later-slot reduction can still conservatively block a concurrent
-expansion by lowering its Pass-0 `Must0`; it cannot choose a different accepted
-reduction or directly terminate its target. The strict causal-target rule
-prevents the same evidence from vetoing a causally later fresh grant. These are
-measured availability powers, not quorum-safe governance claims.
+An unselected later-slot or excluded self-lineage reduction can still
+conservatively and permanently block operations and expansions by lowering
+Pass-0 `Must0` for its target subtree. It cannot choose a different accepted
+reduction or enter accepted-termination accounting. R-1 prevents the same event
+from directly naming an unseen later grant, but not from indirectly disabling
+future grants by reducing their visible issuer. The number of accepted
+reductions is therefore not a bound on operational availability loss; within
+this experiment the latter is bounded only by the shared evidence envelope.
+These are measured availability powers, not quorum-safe governance claims.
 
 Grant-rooted identifiers expose the corresponding grant to authorized
 observers and are not unlinkability evidence. The rules do not establish

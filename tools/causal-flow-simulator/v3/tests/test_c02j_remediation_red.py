@@ -52,6 +52,7 @@ class C02jRemediationRedTests(unittest.TestCase):
         )
         self.assertFalse(value.accepted_controls)
         self.assertFalse(value.terminal_authority)
+        self.assertIsNone(value.operational_terminal_authority)
 
     def test_dp_transition_overflow_is_typed_whole_projection_unavailable(self) -> None:
         authority = genesis("authority", "11")
@@ -71,6 +72,7 @@ class C02jRemediationRedTests(unittest.TestCase):
             value.outcomes[grant.reference],
             Outcome.AUTHORITY_PROJECTION_UNAVAILABLE,
         )
+        self.assertIsNone(value.operational_terminal_authority)
 
     def test_dp_matches_factorial_oracle_within_oracle_envelope(self) -> None:
         actor = genesis("actor", "11")
@@ -304,7 +306,11 @@ class C02jRemediationRedTests(unittest.TestCase):
         )
         old = grant_binding(old_grant)
         revoke_old = control(
-            "revoke-old", revoker, Kind.REVOKE, target_id=old.credential_id
+            "revoke-old",
+            revoker,
+            Kind.REVOKE,
+            parents=(old_grant.reference,),
+            target_id=old.credential_id,
         )
         recovery_grant = control(
             "recovery-grant",
@@ -333,6 +339,84 @@ class C02jRemediationRedTests(unittest.TestCase):
 
         self.assertIn(recovery.reference, value.accepted_controls)
         self.assertIn(recovered.credential_id, value.terminal_authority)
+        self.assertNotIn(old.credential_id, value.terminal_authority)
+
+    def test_post_admission_rejection_propagates_to_dependants(self) -> None:
+        issuer = genesis("issuer", "11")
+        attacker = genesis("attacker", "22")
+        observer = genesis("observer", "33")
+        fresh_grant = control(
+            "fresh-grant", issuer, Kind.GRANT, grantee_key="44" * 32
+        )
+        fresh = grant_binding(fresh_grant)
+        noncausal_reduction = control(
+            "noncausal-reduction",
+            attacker,
+            Kind.REVOKE,
+            target_id=fresh.credential_id,
+        )
+        dependant = make_event(
+            "dependant-on-rejected-reduction",
+            observer,
+            parents=(noncausal_reduction.reference,),
+        )
+
+        value = project(
+            Scenario(
+                (fresh_grant, noncausal_reduction, dependant),
+                (issuer, attacker, observer),
+            )
+        )
+
+        self.assertIs(
+            value.rejected.get(noncausal_reduction.reference),
+            Outcome.STRUCTURAL_REJECTION,
+        )
+        self.assertIs(
+            value.rejected.get(dependant.reference), Outcome.STRUCTURAL_REJECTION
+        )
+        self.assertNotIn(dependant.reference, value.admitted)
+
+    def test_accepted_terminal_accounting_is_not_operational_authority(self) -> None:
+        actor = genesis("accounting-actor", "11")
+        revoker = genesis("accounting-revoker", "22")
+        child_grant = control(
+            "accounting-child-grant", actor, Kind.GRANT, grantee_key="33" * 32
+        )
+        child = grant_binding(child_grant)
+        contest = control(
+            "accounting-contest",
+            revoker,
+            Kind.REVOKE,
+            parents=(child_grant.reference,),
+            target_id=child.credential_id,
+        )
+        rejected_self_reduction = control(
+            "accounting-self-reduction",
+            child,
+            Kind.REVOKE,
+            parents=(child_grant.reference,),
+            target_id=actor.credential_id,
+        )
+        probe = make_event(
+            "accounting-probe",
+            actor,
+            sequence=1,
+            predecessor=child_grant.reference,
+            parents=(contest.reference, rejected_self_reduction.reference),
+        )
+
+        value = project(
+            Scenario(
+                (child_grant, contest, rejected_self_reduction, probe),
+                (actor, revoker),
+            )
+        )
+
+        self.assertIn(actor.credential_id, value.accepted_terminal_authority)
+        self.assertNotIn(actor.credential_id, value.operational_terminal_authority)
+        self.assertIs(value.event_authority[probe.reference], AuthorityVerdict.MAY_AUTH)
+        self.assertIs(value.outcomes[probe.reference], Outcome.AUTHENTIC_BUT_UNAUTHORIZED)
 
     def test_ordinary_probe_does_not_consume_control_budget(self) -> None:
         authority = genesis("authority", "11")

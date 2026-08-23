@@ -399,7 +399,8 @@ outcomes.
   permanently terminates the forked credential and the
   transitive closure of its grant descendants. Fork siblings remain
   authenticated `FORK_EVIDENCE`; events and authority on that lineage are
-  `FORK_QUARANTINED`. The graph, ancestry, order and pending sets remain visible
+  `LINEAGE_QUARANTINED`. `FORK_QUARANTINED` is a historical evidence-only alias,
+  not a primary v0 outcome. The graph, ancestry, order and pending sets remain visible
   diagnostic evidence. Independent lineages continue only when the C0.2j
   Pass-0 plus first-contested-slot fold establishes their authority across the
   complete bounded control-evidence set. Every same-sequence fork quarantines
@@ -488,8 +489,23 @@ outcomes.
   anonymous return capabilities are optional profile inputs, not universal
   authors. Rotation creates a new credential and retires the old one through an
   authorized AP transition; recovery MUST NOT resurrect revoked authority.
+  For a complete validated event set `S`, `E(S)` is every K-admitted
+  `CREDENTIAL_CONTROL` in the live graph, without filtering by AP outcome,
+  content availability, logical removal or checkpoint substitution. One virtual
+  fork join is added for each complete `(credential_id, author_sequence)` sibling
+  set; it is ordered after all siblings and before every event whose authenticated
+  causal past acknowledges the complete set. An admissible interpretation is a
+  topological linearization of `E(S)` plus those joins. Each interpretation starts
+  from O-07 initial authority and scans the items once: an actor is authorized only
+  while present and outside every terminated lineage; authorized `GRANT` adds its
+  grant-rooted identifier; authorized `REVOKE`/`ROTATE` removes the target and all
+  grant descendants; a fork join removes its credential lineage; `RECOVER`,
+  `POLICY` and `CLOSURE` create no generic authority-set member.
   C0.2j computes Pass-0 `May0(e)`/`Must0(e)` at each event's acting prefix over
-  every admissible causal interpretation. Expansion-sensitive controls require
+  all such interpretations. The acting prefix for an ordinary event contains
+  exactly the reachable control/join down-sets containing every item causally
+  before it and no item causally after it; the ordinary event is not itself an
+  authority item. Expansion-sensitive controls require
   `Must0`. A structurally valid reduction with `Must0` is accepted without a
   contested budget. For `May0 && !Must0`, AP rejects self-lineage targets and
   accepts only the eligible reductions in the actor credential's lowest
@@ -497,26 +513,49 @@ outcomes.
   sibling in that slot applies as an unordered set. Later slots and `NoAuth`
   controls are authentic but unauthorized. The selector is per credential,
   non-recursive and never uses an event-reference, arrival or global tie-break.
-  A rejected later-slot reduction can still conservatively lower Pass-0 `Must0`
-  for a concurrent expansion, but cannot change selected-slot or accepted-
-  reduction membership.
+  A rejected later-slot or self-lineage reduction can still conservatively and
+  permanently lower Pass-0 `Must0` for a target and its grant descendants,
+  because all K-admitted control evidence remains in every Pass-0 projection.
+  It cannot change selected-slot or accepted-reduction membership and is not an
+  accepted termination. The first-slot rule therefore bounds accepted contested
+  reductions and their accepted target subtrees; it does not bound the separate
+  operational availability loss caused by rejected K-admitted evidence. That
+  reach is bounded in this experiment only by the common event/control/credential
+  envelope and must receive enforceable per-credential admission limits from
+  O-08 before any production availability claim.
   `REVOKE` and the retiring side of `ROTATE` require a non-genesis target's
   binding grant in their authenticated causal ancestry; missing targets are
   unresolved and resolvable non-causal targets are structurally rejected.
-  `RECOVER` retains its separate fresh-grant transcript rule. Self-rotation is
+  `RECOVER` retains its separate fresh-grant transcript rule: the retired
+  credential identifier is continuity annotation rather than a reduction target
+  and is not subject to R-1, while the referenced fresh `GRANT` must be admitted.
+  Self-rotation is
   structurally rejected in v0. Revocation and any same-author fork terminate
   the target lineage and every grant descendant while independent definitely
   authorized lineages may continue. `ROTATE` and `RECOVER` reference a fresh
   admitted binding grant, create no binding themselves and cannot reuse or
-  resurrect an old identifier. Late evidence triggers fresh full replay; no
+  resurrect an old identifier. Acceptance of a `ROTATE` retirement does not
+  confer authority on its replacement: a replacement `GRANT` authored by the
+  retiring lineage can remain K-valid but fail Pass0 `Must0`, leaving no
+  operational replacement. Late evidence triggers fresh full replay; no
   incremental authority-state handoff is claimed.
+  Structural and binding rejection is closed transitively before authority
+  evaluation: if a post-discovery R-1, self-rotation or binding failure removes
+  an event, every admitted descendant that depends on that event is removed as
+  `STRUCTURAL_REJECTION`, and every event whose actor binding grant is removed is
+  `UNRESOLVED_CREDENTIAL_BINDING`. A reduction whose target binding disappears is
+  `UNRESOLVABLE_CREDENTIAL`. No descendant of rejected graph evidence remains
+  admitted merely because binding discovery ran first.
   The factorial linearization is a bounded test oracle. The executable fold uses
   reachable-state DP keyed by processed items, authority, revoked roots and
   forked roots; ordinary-event probes query acting-prefix-compatible states
-  without becoming authority items. The set-valued Pass-0 diagnostics are
+  without becoming authority items. The set-valued Pass-0 results are
   possible terminal authority (union) and necessary terminal authority
-  (intersection). Final operational authority is recomputed from the accepted
-  controls plus fork quarantine, never selected from one interpretation. If a
+  (intersection). Producer eligibility and operational authority are the
+  relevant event-prefix `Must0` result and, after complete disclosure, necessary
+  terminal authority. The terminal set recomputed from accepted controls plus
+  fork quarantine is termination-accounting evidence only; it MUST NOT authorize
+  an event or producer whose actor is absent from `Must0`. If a
   replay dependency is checkpoint-only, `STALE_EVIDENCE` makes every authority
   output unavailable. State/transition overflow similarly yields typed
   `AUTHORITY_PROJECTION_UNAVAILABLE`; neither state is a proven empty authority

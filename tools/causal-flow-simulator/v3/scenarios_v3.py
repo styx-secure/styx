@@ -835,6 +835,59 @@ def _authority_checks(suite: Suite, mutation: Mutation) -> None:
         )
     )
 
+    revoke_intermediate = control(
+        "c-revokes-intermediate-b",
+        c,
+        Kind.REVOKE,
+        parents=(g_c.reference,),
+        target_id=b_child.credential_id,
+    )
+    blocked_descendant_grant = control(
+        "terminated-descendant-attempts-expansion",
+        c_child,
+        Kind.GRANT,
+        parents=(revoke_intermediate.reference,),
+        grantee_key="26" * 32,
+    )
+    fresh_untainted_grant = control(
+        "independent-authority-regrants-honest-actor",
+        c,
+        Kind.GRANT,
+        sequence=1,
+        predecessor=revoke_intermediate.reference,
+        grantee_key="27" * 32,
+    )
+    fresh_untainted = grant_binding(fresh_untainted_grant)
+    intermediate = _project(
+        suite,
+        Scenario(
+            (
+                g_b,
+                g_c,
+                revoke_intermediate,
+                blocked_descendant_grant,
+                fresh_untainted_grant,
+            ),
+            (a, c),
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-AUTH-04B",
+            "multi-hop-provenance-containment",
+            {b_child.credential_id, c_child.credential_id} <= intermediate.terminated
+            and blocked_descendant_grant.reference
+            not in intermediate.accepted_controls
+            and intermediate.event_authority.get(blocked_descendant_grant.reference)
+            is AuthorityVerdict.NO_AUTH
+            and fresh_untainted_grant.reference in intermediate.accepted_controls
+            and fresh_untainted.credential_id in intermediate.terminal_authority,
+            "revoking an honest intermediate terminates its descendants, blocks one measured expansion, and preserves a fresh untainted re-grant path",
+            "Recovery requires an independently authorized issuer outside the terminated provenance subtree.",
+        )
+    )
+
     before = make_event("a-before-revocation", a)
     revoke_after = control(
         "c-revokes-a-after-action",
@@ -1094,6 +1147,50 @@ def _succession_alias_fork_checks(suite: Suite, mutation: Mutation) -> None:
         )
     )
 
+    retiring_issuer = genesis("retiring-replacement-issuer", "5c")
+    independent_rotator = genesis("retiring-replacement-rotator", "5d")
+    retiring_replacement_grant = control(
+        "retiring-lineage-replacement-grant",
+        retiring_issuer,
+        Kind.GRANT,
+        grantee_key="5e" * 32,
+    )
+    retiring_replacement = grant_binding(retiring_replacement_grant)
+    independent_retirement = control(
+        "independent-retirement-of-replacement-issuer",
+        independent_rotator,
+        Kind.ROTATE,
+        parents=(retiring_replacement_grant.reference,),
+        target_id=retiring_issuer.credential_id,
+        target_reference=retiring_replacement_grant.reference,
+    )
+    non_atomic_rotation = _project(
+        suite,
+        Scenario(
+            (retiring_replacement_grant, independent_retirement),
+            (retiring_issuer, independent_rotator),
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-SUCC-03B",
+            "rotation-recovery-and-old-key-continuation",
+            {
+                retiring_replacement_grant.reference,
+                independent_retirement.reference,
+            }
+            <= non_atomic_rotation.accepted_controls
+            and retiring_issuer.credential_id in non_atomic_rotation.terminated
+            and retiring_replacement.credential_id
+            in non_atomic_rotation.terminated
+            and retiring_replacement.credential_id
+            not in non_atomic_rotation.operational_terminal_authority,
+            "an accepted retirement can terminate a replacement grant authored by the retiring lineage",
+            "ROTATE is not an atomic authority transfer; recovery needs independently authorized replacement provenance.",
+        )
+    )
+
     recovery_grant = control(
         "independent-recovery-grant",
         c,
@@ -1137,6 +1234,75 @@ def _succession_alias_fork_checks(suite: Suite, mutation: Mutation) -> None:
             "Recovery continuity is explicit evidence, not resurrection.",
             "M10_RECOVERY_RESURRECTS_REVOKED",
             "M36_RECOVER_REQUIRES_RETIRED_ANCESTRY",
+        )
+    )
+
+    compromised_issuer = genesis("compromised-recovery-issuer", "57")
+    recovery_guard = genesis("compromised-recovery-guard", "58")
+    retired_for_compromised_recovery = genesis(
+        "compromised-recovery-retired", "59"
+    )
+    compromised_binding_grant = control(
+        "compromised-recovery-binding-grant",
+        compromised_issuer,
+        Kind.GRANT,
+        grantee_key="5a" * 32,
+    )
+    compromised_recovery_actor = grant_binding(compromised_binding_grant)
+    guard_reduces_issuer = control(
+        "compromised-recovery-guard-reduces-issuer",
+        recovery_guard,
+        Kind.REVOKE,
+        target_id=compromised_issuer.credential_id,
+    )
+    tainted_recovery_grant = control(
+        "tainted-recovery-grant",
+        compromised_recovery_actor,
+        Kind.GRANT,
+        parents=(compromised_binding_grant.reference,),
+        grantee_key="5b" * 32,
+    )
+    tainted_recovered = grant_binding(tainted_recovery_grant)
+    tainted_recovery = control(
+        "tainted-recovery",
+        compromised_recovery_actor,
+        Kind.RECOVER,
+        sequence=1,
+        predecessor=tainted_recovery_grant.reference,
+        target_id=retired_for_compromised_recovery.credential_id,
+        target_reference=tainted_recovery_grant.reference,
+    )
+    compromised_recovery_projection = _project(
+        suite,
+        Scenario(
+            (
+                compromised_binding_grant,
+                guard_reduces_issuer,
+                tainted_recovery_grant,
+                tainted_recovery,
+            ),
+            (
+                compromised_issuer,
+                recovery_guard,
+                retired_for_compromised_recovery,
+            ),
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-SUCC-04B",
+            "regrant-and-recovery-non-resurrection",
+            compromised_binding_grant.reference
+            not in compromised_recovery_projection.accepted_controls
+            and tainted_recovery_grant.reference
+            not in compromised_recovery_projection.accepted_controls
+            and tainted_recovery.reference
+            not in compromised_recovery_projection.accepted_controls
+            and tainted_recovered.credential_id
+            not in compromised_recovery_projection.terminal_authority,
+            "recovery rooted in provenance that is only May0 cannot expand operational authority",
+            "The K-visible replacement binding remains diagnostic evidence but confers no AP recovery authority.",
         )
     )
 
@@ -1199,6 +1365,42 @@ def _succession_alias_fork_checks(suite: Suite, mutation: Mutation) -> None:
             and fork.outcomes.get(right.reference) is Outcome.FORK_EVIDENCE,
             "ordinary, privileged, genesis and revoked credentials use one fork rule",
             "A fork remains K evidence; role labels do not alter its scope.",
+        )
+    )
+
+    revoke_before_fork = control(
+        "revoke-before-fork",
+        b,
+        Kind.REVOKE,
+        target_id=a.credential_id,
+    )
+    revoked_fork_left = make_event(
+        "already-revoked-fork-left", a, parents=(revoke_before_fork.reference,)
+    )
+    revoked_fork_right = make_event(
+        "already-revoked-fork-right", a, parents=(revoke_before_fork.reference,)
+    )
+    revoked_fork = _project(
+        suite,
+        Scenario(
+            (revoke_before_fork, revoked_fork_left, revoked_fork_right),
+            (a, b),
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-FORK-02B",
+            "fork-scope-and-privilege-neutrality",
+            revoke_before_fork.reference in revoked_fork.accepted_controls
+            and a.credential_id in revoked_fork.forked_credentials
+            and a.credential_id in revoked_fork.terminated
+            and revoked_fork.outcomes.get(revoked_fork_left.reference)
+            is Outcome.FORK_EVIDENCE
+            and revoked_fork.outcomes.get(revoked_fork_right.reference)
+            is Outcome.FORK_EVIDENCE,
+            "an already revoked credential's later same-sequence fork remains authenticated fork evidence without restoring authority",
+            "Fork classification is independent of current AP authority and cannot resurrect the revoked lineage.",
         )
     )
 
@@ -1619,10 +1821,17 @@ def _amended_remediation_checks(suite: Suite, mutation: Mutation) -> None:
             break
     if second is None:
         raise AssertionError("bounded selector grinding did not find requested side")
+    blocked_expansion = control(
+        "bounded-standing-blocked-expansion",
+        second_target,
+        Kind.GRANT,
+        parents=(second.reference,),
+        grantee_key="83" * 32,
+    )
     bounded = _project(
         suite,
         Scenario(
-            (contest, first, second),
+            (contest, first, second, blocked_expansion),
             (actor, contester, first_target, second_target),
         ),
         mutation,
@@ -1634,9 +1843,16 @@ def _amended_remediation_checks(suite: Suite, mutation: Mutation) -> None:
             first.reference in bounded.accepted_controls
             and second.reference not in bounded.accepted_controls
             and first_target.credential_id not in bounded.terminal_authority
-            and second_target.credential_id in bounded.terminal_authority,
-            "only the first eligible author-chain slot may consume May-only reduction standing",
-            "Later reductions cannot grind their event reference into a second contested authorization.",
+            and second_target.credential_id in bounded.terminal_authority
+            and second_target.credential_id
+            not in bounded.operational_terminal_authority
+            and bounded.event_authority.get(blocked_expansion.reference)
+            is AuthorityVerdict.MAY_AUTH
+            and blocked_expansion.reference not in bounded.accepted_controls
+            and bounded.outcomes.get(blocked_expansion.reference)
+            is Outcome.AUTHENTIC_BUT_UNAUTHORIZED,
+            "only the first eligible slot enters the accepted-reduction set, while one later rejected reduction still blocks one measured honest expansion",
+            "The first-slot bound limits accepted reductions, not the permanent conservative Must0 availability effect of other K-admitted May0 reductions.",
             "M34_UNBOUNDED_CONTESTED_REDUCTIONS",
             "M37_REJECTED_REDUCTION_DEGRADES_PASS2",
             "M40_GRINDABLE_CONTESTED_SELECTOR",
@@ -1645,6 +1861,7 @@ def _amended_remediation_checks(suite: Suite, mutation: Mutation) -> None:
 
     honest = genesis("causal-target-honest", "85")
     compromised = genesis("causal-target-compromised", "86")
+    unknown_target_actor = genesis("causal-target-unknown-actor", "84")
     compromised_revoke = control(
         "causal-target-compromised-revoke",
         honest,
@@ -1668,10 +1885,8 @@ def _amended_remediation_checks(suite: Suite, mutation: Mutation) -> None:
     )
     unresolved = control(
         "causal-target-unresolved-revoke",
-        compromised,
+        unknown_target_actor,
         Kind.REVOKE,
-        sequence=1,
-        predecessor=noncausal.reference,
         target_id="ff" * 32,
     )
     cleanup = control(
@@ -1686,7 +1901,7 @@ def _amended_remediation_checks(suite: Suite, mutation: Mutation) -> None:
         suite,
         Scenario(
             (compromised_revoke, fresh_grant, noncausal, unresolved, cleanup),
-            (honest, compromised),
+            (honest, compromised, unknown_target_actor),
         ),
         mutation,
     )
@@ -1702,6 +1917,56 @@ def _amended_remediation_checks(suite: Suite, mutation: Mutation) -> None:
             "reductions distinguish unknown targets from known but non-causal targets",
             "A causally authorized issuer can still clean up the fresh grant.",
             "M35_NONCAUSAL_TARGET_ACCEPTED",
+        )
+    )
+
+    indirect_honest = genesis("indirect-veto-honest", "90")
+    indirect_compromised = genesis("indirect-veto-compromised", "9a")
+    honest_revokes_compromised = control(
+        "indirect-veto-honest-revokes-compromised",
+        indirect_honest,
+        Kind.REVOKE,
+        target_id=indirect_compromised.credential_id,
+    )
+    honest_future_grant = control(
+        "indirect-veto-honest-future-grant",
+        indirect_honest,
+        Kind.GRANT,
+        sequence=1,
+        predecessor=honest_revokes_compromised.reference,
+        grantee_key="9b" * 32,
+    )
+    honest_future = grant_binding(honest_future_grant)
+    compromised_reduces_issuer = control(
+        "indirect-veto-compromised-reduces-issuer",
+        indirect_compromised,
+        Kind.REVOKE,
+        target_id=indirect_honest.credential_id,
+    )
+    indirect = _project(
+        suite,
+        Scenario(
+            (
+                honest_revokes_compromised,
+                honest_future_grant,
+                compromised_reduces_issuer,
+            ),
+            (indirect_honest, indirect_compromised),
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-02B",
+            "causal-target-availability",
+            compromised_reduces_issuer.reference in indirect.accepted_controls
+            and honest_future_grant.reference not in indirect.accepted_controls
+            and indirect.event_authority.get(honest_future_grant.reference)
+            is AuthorityVerdict.MAY_AUTH
+            and {indirect_honest.credential_id, honest_future.credential_id}
+            <= indirect.terminated,
+            "R-1 blocks a direct unseen-target veto but cannot block one non-acknowledging reduction of a visible issuer and its future descendants",
+            "The omitted-history case consumes one accepted contested slot and leaves the honest future grant bound but operationally unauthorized.",
         )
     )
 
@@ -1725,9 +1990,19 @@ def _amended_remediation_checks(suite: Suite, mutation: Mutation) -> None:
         parents=(child_grant.reference,),
         target_id=root.credential_id,
     )
+    root_probe = make_event(
+        "self-lineage-root-post-disclosure-probe",
+        root,
+        sequence=1,
+        predecessor=child_grant.reference,
+        parents=(terminate_child.reference, self_reduction.reference),
+    )
     self_lineage = _project(
         suite,
-        Scenario((child_grant, terminate_child, self_reduction), (root, revoker)),
+        Scenario(
+            (child_grant, terminate_child, self_reduction, root_probe),
+            (root, revoker),
+        ),
         mutation,
     )
     suite.checks.append(
@@ -1736,9 +2011,14 @@ def _amended_remediation_checks(suite: Suite, mutation: Mutation) -> None:
             "self-and-cross-lineage-standing",
             self_reduction.reference not in self_lineage.accepted_controls
             and root.credential_id in self_lineage.terminal_authority
-            and child.credential_id not in self_lineage.terminal_authority,
-            "May-only authority cannot reduce its own grant lineage",
-            "A terminated child cannot launder authority into an ancestor reduction.",
+            and root.credential_id not in self_lineage.operational_terminal_authority
+            and child.credential_id not in self_lineage.terminal_authority
+            and self_lineage.event_authority.get(root_probe.reference)
+            is AuthorityVerdict.MAY_AUTH
+            and self_lineage.outcomes.get(root_probe.reference)
+            is Outcome.AUTHENTIC_BUT_UNAUTHORIZED,
+            "a self-lineage May0 reduction is not accepted but its K-admitted evidence still removes Must0 from the ancestor",
+            "Self-lineage exclusion prevents accepted destructive standing; it does not restore operational producer eligibility under all-interpretation evidence.",
             "M42_SELF_LINEAGE_MAY_ACCEPTED",
         )
     )
@@ -1894,6 +2174,158 @@ def _amended_remediation_checks(suite: Suite, mutation: Mutation) -> None:
             "fork evidence has stable primary-outcome precedence over pending content",
             "One event may remain in auxiliary pending sets without changing its primary outcome.",
             "M48_OUTCOME_PRECEDENCE_DRIFT",
+        )
+    )
+
+    stale_precedence = _project(
+        suite,
+        Scenario(
+            (pending_fork, fork_twin),
+            (precedence_actor,),
+            checkpoint_references=("checkpoint-only-precedence",),
+            replay_dependencies=("checkpoint-only-precedence",),
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-07B",
+            "outcome-precedence",
+            stale_precedence.stale_evidence
+            and all(
+                outcome is Outcome.STALE_EVIDENCE
+                for outcome in stale_precedence.outcomes.values()
+            ),
+            "whole-projection stale evidence precedes fork and pending states",
+            "Auxiliary fork and pending evidence remains diagnostic but cannot expose authority.",
+        )
+    )
+
+    resource_control = control(
+        "outcome-precedence-resource-control",
+        precedence_actor,
+        Kind.GRANT,
+        grantee_key="a5" * 32,
+    )
+    resource_fork_left = make_event(
+        "outcome-precedence-resource-fork-left",
+        precedence_actor,
+        sequence=1,
+        predecessor=resource_control.reference,
+    )
+    resource_fork_right = make_event(
+        "outcome-precedence-resource-fork-right",
+        precedence_actor,
+        sequence=1,
+        predecessor=resource_control.reference,
+    )
+    try:
+        resource_precedence = project(
+            Scenario(
+                (resource_control, resource_fork_left, resource_fork_right),
+                (precedence_actor,),
+            ),
+            mutation,
+            authority_state_limit=1,
+        )
+    except ModelInputError:
+        resource_precedence = None
+    else:
+        suite.projections.append(resource_precedence)
+    suite.checks.append(
+        check(
+            "W-REMED-07C",
+            "outcome-precedence",
+            resource_precedence is not None
+            and not resource_precedence.authority_available
+            and resource_precedence.authority_unavailable_reason
+            is AuthorityUnavailableReason.REACHABLE_STATE_LIMIT
+            and all(
+                outcome is Outcome.AUTHORITY_PROJECTION_UNAVAILABLE
+                for outcome in resource_precedence.outcomes.values()
+            ),
+            "resource-unavailable authority precedes event-local fork evidence",
+            "No partial fork or producer result escapes a whole-projection bound failure.",
+        )
+    )
+
+    removable_control = control(
+        "outcome-precedence-removable-control",
+        precedence_actor,
+        Kind.POLICY,
+    )
+    pending_removal_root = make_event(
+        "outcome-precedence-removal-root",
+        precedence_actor,
+        sequence=1,
+        predecessor=removable_control.reference,
+        content_class=ContentClass.REQUIRED,
+        opening_verified=False,
+    )
+    removal_actor = genesis("outcome-precedence-removal-actor", "a7")
+    pending_removal = make_event(
+        "outcome-precedence-pending-removal",
+        removal_actor,
+        parents=(pending_removal_root.reference,),
+        role=Role.RETENTION_CONTROL,
+        kind=Kind.REMOVE,
+        target_reference=removable_control.reference,
+    )
+    removal_precedence = _project(
+        suite,
+        Scenario(
+            (removable_control, pending_removal_root, pending_removal),
+            (precedence_actor, removal_actor),
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-07D",
+            "outcome-precedence",
+            pending_removal.reference in removal_precedence.pending
+            and pending_removal.reference not in removal_precedence.pending_roots
+            and removal_precedence.outcomes[pending_removal.reference]
+            is Outcome.PENDING_ANCESTOR,
+            "pending ancestry precedes logical-removal inapplicability",
+            "The retention-control target remains visible while the primary outcome stays unique.",
+        )
+    )
+
+    precedence_revoker = genesis("outcome-precedence-revoker", "a6")
+    precedence_revoke = control(
+        "outcome-precedence-revoke",
+        precedence_revoker,
+        Kind.REVOKE,
+        target_id=precedence_actor.credential_id,
+    )
+    pending_post_revocation = make_event(
+        "outcome-precedence-pending-post-revocation",
+        precedence_actor,
+        parents=(precedence_revoke.reference,),
+        content_class=ContentClass.REQUIRED,
+        opening_verified=False,
+    )
+    post_revocation_precedence = _project(
+        suite,
+        Scenario(
+            (precedence_revoke, pending_post_revocation),
+            (precedence_actor, precedence_revoker),
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-07E",
+            "outcome-precedence",
+            pending_post_revocation.reference
+            in post_revocation_precedence.pending_roots
+            and post_revocation_precedence.outcomes[
+                pending_post_revocation.reference
+            ]
+            is Outcome.PENDING_OPENING,
+            "pending opening precedes ordinary-event post-revocation state",
+            "The accepted revocation remains auxiliary termination evidence while the primary outcome stays unique.",
         )
     )
 
@@ -2248,6 +2680,46 @@ def _convergence_bounds_checks(suite: Suite, mutation: Mutation) -> None:
             "reachable-state DP and factorial oracle agree within the oracle envelope",
             "The comparison covers controls, an ordinary acting-prefix query and the complete semantic projection.",
             "M47_STATE_KEY_OMITS_AUTHORITY",
+        )
+    )
+
+    five_controls = independent_controls[:5]
+    two_way_fork = (
+        make_event("five-control-fork-left", a),
+        make_event("five-control-fork-right", a),
+    )
+    five_control_probe = make_event(
+        "five-control-ordinary-authority-probe", control_actors[5]
+    )
+    try:
+        mixed_budget_projection = project(
+            Scenario(
+                (*five_controls, *two_way_fork, five_control_probe),
+                (*control_actors, a),
+            ),
+            mutation,
+        )
+    except ModelInputError:
+        mixed_budget_projection = None
+    else:
+        suite.projections.append(mixed_budget_projection)
+    suite.checks.append(
+        check(
+            "W-BOUND-06B",
+            "bounded-hostile-flood",
+            mixed_budget_projection is not None
+            and len(mixed_budget_projection.admitted) == 8
+            and len(mixed_budget_projection.accepted_controls) == 5
+            and mixed_budget_projection.forked_credentials == {a.credential_id}
+            and mixed_budget_projection.event_authority.get(
+                five_control_probe.reference
+            )
+            is AuthorityVerdict.MUST_AUTH
+            and mixed_budget_projection.outcomes.get(five_control_probe.reference)
+            is Outcome.APPLIED,
+            "five controls, one two-way ordinary fork and one ordinary authority probe coexist without sharing control or fork budgets",
+            "The ordinary probe contributes measured replay work but consumes neither a control slot nor a fork slot.",
+            "M44_ORDINARY_PROBE_IS_ITEM",
         )
     )
 

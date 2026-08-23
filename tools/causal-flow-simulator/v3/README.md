@@ -10,11 +10,13 @@ The model exercises:
 - exact K-level binding lookup and fail-closed mismatch handling;
 - Pass0 `May0`/`Must0` evaluation over every bounded causal linearization,
   followed by the first eligible contested reduction slot per actor;
+- explicit separation between accepted terminal-accounting evidence and
+  operational authority derived from Pass0 `Must0`/necessary terminal state;
 - transitive provenance containment and non-resurrection;
 - credential-lineage fork quarantine with independent-authority continuation;
 - retained C0.2i pending/no-substitution/checkpoint-stale properties;
 - full-replay convergence under every delivery permutation within the envelope;
-- 30 semantic mutants tied bidirectionally to hostile witnesses, with each
+- 45 semantic mutants tied bidirectionally to hostile witnesses, with each
   declared detector executed under its named mutation rather than inferred from
   unrelated assertion failure.
 

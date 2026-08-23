@@ -245,8 +245,21 @@ class Projection:
     explored_orders: int
     reachable_authority_states: int
     authority_transitions: int
+    ordinary_probe_transitions: int
     replayed_event_work: int
     max_lineage_depth: int
+
+    @property
+    def accepted_terminal_authority(self) -> frozenset[str]:
+        """Accepted-control termination accounting; never producer authority."""
+
+        return self.terminal_authority
+
+    @property
+    def operational_terminal_authority(self) -> frozenset[str] | None:
+        """Necessary authority, or unavailable rather than a substituted empty set."""
+
+        return self.necessary_terminal_authority if self.authority_available else None
 
     def semantic_view(self) -> tuple[object, ...]:
         return (
@@ -1215,12 +1228,13 @@ def _probe_authority(
     engine: str,
     state_limit: int,
     transition_limit: int,
-) -> AuthorityVerdict:
+) -> tuple[AuthorityVerdict, int]:
     """Evaluate one non-control event at its own causal acting prefix."""
 
     if engine == "oracle" or mutation.identifier == "M44_ORDINARY_PROBE_IS_ITEM":
         evidence = tuple(controls) + (event,)
         orders = _topological_orders(evidence, joins, ancestors, mutation)
+        probe_transitions = sum(len(order) for order in orders)
         observations: list[bool] = []
         for order in orders:
             actor_authorized, _ = _simulate_order(
@@ -1238,6 +1252,7 @@ def _probe_authority(
             state_limit,
             transition_limit,
         )
+        probe_transitions = analysis.transitions
         control_references = {control.reference for control in controls}
         acting_ancestors = set(ancestors.get(event.reference, frozenset()))
         required_before = acting_ancestors & control_references
@@ -1271,10 +1286,12 @@ def _probe_authority(
     else:
         raise ModelInputError("UNKNOWN_AUTHORITY_ENGINE", engine)
     if observations and all(observations):
-        return AuthorityVerdict.MUST_AUTH
-    if any(observations):
-        return AuthorityVerdict.MAY_AUTH
-    return AuthorityVerdict.NO_AUTH
+        verdict = AuthorityVerdict.MUST_AUTH
+    elif any(observations):
+        verdict = AuthorityVerdict.MAY_AUTH
+    else:
+        verdict = AuthorityVerdict.NO_AUTH
+    return verdict, probe_transitions
 
 
 def project(
@@ -1432,41 +1449,76 @@ def project(
 
     for event in remaining:
         if mutation.identifier != "M23_UNRESOLVED_DEFERRED":
-            rejected[event.reference] = Outcome.UNRESOLVED_CREDENTIAL_BINDING
+            rejected[event.reference] = (
+                Outcome.UNRESOLVED_CREDENTIAL_BINDING
+                if event.actor_id not in bindings
+                else Outcome.STRUCTURAL_REJECTION
+            )
 
     # R-1 is evaluated after binding discovery so a missing target can be
     # distinguished from a resolvable but non-causal target.  RECOVER has its
     # own transcript rule and is deliberately outside REDUCTION_KINDS.
-    for reference, event in tuple(admitted.items()):
-        target_causality_kind = (
-            event.kind in REDUCTION_KINDS
-            or (
-                mutation.identifier == "M36_RECOVER_REQUIRES_RETIRED_ANCESTRY"
-                and event.kind is Kind.RECOVER
-            )
-        )
-        if target_causality_kind and event.target_id is not None:
-            target_binding = bindings.get(event.target_id)
-            if target_binding is None:
+    changed = True
+    while changed:
+        changed = False
+        for reference, event in tuple(admitted.items()):
+            # A post-admission rejection is still a rejected graph node.  Its
+            # descendants must not retain K admission merely because binding
+            # discovery happened before the R-1/self-rotation checks.
+            if not _dependencies(event) <= admitted.keys():
                 del admitted[reference]
-                rejected[reference] = Outcome.UNRESOLVABLE_CREDENTIAL
+                rejected[reference] = Outcome.STRUCTURAL_REJECTION
+                changed = True
                 continue
+            actor_binding = bindings.get(event.actor_id)
+            if actor_binding is None or (
+                not actor_binding.genesis
+                and actor_binding.grant_reference not in admitted
+            ):
+                del admitted[reference]
+                rejected[reference] = Outcome.UNRESOLVED_CREDENTIAL_BINDING
+                changed = True
+                continue
+            target_causality_kind = (
+                event.kind in REDUCTION_KINDS
+                or (
+                    mutation.identifier == "M36_RECOVER_REQUIRES_RETIRED_ANCESTRY"
+                    and event.kind is Kind.RECOVER
+                )
+            )
+            if target_causality_kind and event.target_id is not None:
+                target_binding = bindings.get(event.target_id)
+                if target_binding is None or (
+                    not target_binding.genesis
+                    and target_binding.grant_reference not in admitted
+                ):
+                    del admitted[reference]
+                    rejected[reference] = Outcome.UNRESOLVABLE_CREDENTIAL
+                    changed = True
+                    continue
+                if (
+                    not target_binding.genesis
+                    and target_binding.grant_reference
+                    not in ancestors.get(event.reference, frozenset())
+                    and mutation.identifier != "M35_NONCAUSAL_TARGET_ACCEPTED"
+                ):
+                    del admitted[reference]
+                    rejected[reference] = Outcome.STRUCTURAL_REJECTION
+                    changed = True
+                    continue
             if (
-                not target_binding.genesis
-                and target_binding.grant_reference
-                not in ancestors.get(event.reference, frozenset())
-                and mutation.identifier != "M35_NONCAUSAL_TARGET_ACCEPTED"
+                event.kind is Kind.ROTATE
+                and event.target_id == event.actor_id
+                and mutation.identifier != "M43_SELF_ROTATION_ACCEPTED"
             ):
                 del admitted[reference]
                 rejected[reference] = Outcome.STRUCTURAL_REJECTION
-                continue
-        if (
-            event.kind is Kind.ROTATE
-            and event.target_id == event.actor_id
-            and mutation.identifier != "M43_SELF_ROTATION_ACCEPTED"
-        ):
-            del admitted[reference]
-            rejected[reference] = Outcome.STRUCTURAL_REJECTION
+                changed = True
+
+        for credential_id, binding in tuple(bindings.items()):
+            if not binding.genesis and binding.grant_reference not in admitted:
+                del bindings[credential_id]
+                changed = True
 
     for credential_id in tuple(bindings):
         _lineage_depth(bindings, credential_id)
@@ -1588,9 +1640,10 @@ def project(
         terminal = frozenset()
         terminated = frozenset()
     else:
+        probe_transition_count = 0
         for reference, event in admitted.items():
             if event.role is not Role.CREDENTIAL_CONTROL:
-                event_authority[reference] = _probe_authority(
+                verdict, probe_transitions = _probe_authority(
                     event,
                     controls,
                     joins,
@@ -1602,6 +1655,10 @@ def project(
                     authority_state_limit,
                     authority_transition_limit,
                 )
+                event_authority[reference] = verdict
+                probe_transition_count += probe_transitions
+    if stale or authority_unavailable_reason is not None:
+        probe_transition_count = 0
 
     outcomes: dict[str, Outcome] = {}
     for reference, event in admitted.items():
@@ -1694,7 +1751,10 @@ def project(
         explored_orders=explored,
         reachable_authority_states=reachable_state_count,
         authority_transitions=authority_transition_count,
-        replayed_event_work=len(admitted) + authority_transition_count,
+        ordinary_probe_transitions=probe_transition_count,
+        replayed_event_work=(
+            len(admitted) + authority_transition_count + probe_transition_count
+        ),
         max_lineage_depth=max_depth,
     )
 
