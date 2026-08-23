@@ -1,4 +1,4 @@
-<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="a61cb86eb02ec0a98265341e76ece4ea81b680aaa4ee27c53e7317302a4c9e80" -->
+<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="7c65270456a9b13c4b1506e79d49050c176969c8f9432fcc7da1c6c5ee632194" -->
 # Roadmap per integrare le capacità applicative in Styx
 
 [English canonical version](integration-roadmap.md)
@@ -6,11 +6,19 @@
 > **Stato:** proposta esplorativa, non normativa
 > **Base osservata:** `main @ d90931a3f59ce89c1594cad64ce385d58857b305`
 > **Sincronizzazione dei claim pubblici:** il linguaggio su assurance ed
-> esercizio/pilot è allineato al Project Brief a
-> `main @ 4c56cd549f1a6de2cc61da38cc1d9c1909ce04d0`; l'inventario delle capacità
-> resta lo snapshot della base osservata sopra.
+> esercizio/pilot è allineato all'attuale `docs/PROJECT_BRIEF.md`; l'inventario
+> delle capacità resta lo snapshot della base osservata sopra.
 > Questa roadmap propone candidati per future Issue. Non autorizza codice,
 > crittografia, formati persistenti, migrazioni o modifiche al vault.
+
+## Gate di pianificazione attivo
+
+Il [piano di hardening del protocollo applicativo](../protocol/protocol-hardening-plan.md)
+congela attualmente le nuove implementazioni di prodotto e runtime. Le decisioni
+di protocollo, la riconciliazione del threat model, le evidenze avversariali e la
+conformità language-neutral hanno priorità finché non passano gli exit gate
+ratificati dagli esseri umani. La Issue #233 / PR #234 resta evidenza
+sperimentale isolata, C0.3 resta `NO-GO` e questa roadmap non aggira il gate.
 
 ## 1. Metodo e legenda
 
@@ -156,7 +164,8 @@ CI completi.
 **Non include:** dati di prodotto o migrazione.
 
 Questo incremento è già contrattualizzato separatamente e non deve essere
-allargato dalla piattaforma.
+allargato dalla piattaforma. Quel contratto separato è sospeso dall'active
+planning gate finché resta in vigore il freeze di protocol hardening.
 
 ### Incremento B — Product namespace e migrazione
 
@@ -280,7 +289,9 @@ operatore, retention e avvisi di sicurezza.
 
 ### Incremento O — Distribution assurance
 
-Può avanzare in parallelo quando i file non si sovrappongono.
+Può avanzare in parallelo quando i file non si sovrappongono, subordinatamente
+all'active planning gate; è sospeso finché resta in vigore il freeze di protocol
+hardening.
 **Outcome candidato:** verifica della PWA e degli aggiornamenti, manifest di
 release, trasparenza o firme appropriate, confronto indipendente degli
 artefatti e profilo native high-assurance separato.
@@ -351,6 +362,7 @@ Restano esplicitamente aperti:
 - standard di evidenza e timestamp;
 - policy allegati e sanitizzazione.
 
-La prossima azione utile non è implementarle insieme: è trasformare una
-decisione per volta in Issue approvata, con threat model, non-goal, test e
-rollback.
+L'azione attiva è eseguire il piano di hardening del protocollo nel relativo
+ordine di dipendenza. Ogni decisione continua a diventare una Issue approvata,
+con threat model, non-goal, test e rollback; l'integrazione di prodotto riprende
+solo dopo il verdetto di uscita del piano e tramite contratti separati.

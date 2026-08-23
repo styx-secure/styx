@@ -11,15 +11,20 @@ When sources disagree, use this order and fail closed:
 
 1. the accepted GitHub task contract and its native dependencies;
 2. repository `AGENTS.md`;
-3. the English decision registry, encoding profiles, responsibility matrix and
-   threat model identified in the model's `sources` array;
-4. the derived JSON review model;
-5. generated validation reports, review reports and local notes.
+3. the protocol-hardening plan for the order and gating of work during the
+   active phase;
+4. the English decision registry, encoding profiles, responsibility matrix and
+   threat model enumerated by the plan's normative source index;
+5. tool adapters such as `CLAUDE.md`;
+6. the derived JSON review model;
+7. generated validation reports, review reports and local notes.
 
-The JSON model must never be used to override, complete or silently select an
-unresolved normative decision. Its source paths, exact byte digests and
-citations make drift visible; they do not prove that a modeled claim is true or
-complete.
+The JSON model must never be used to define the normative set, override,
+complete or silently select an unresolved normative decision. Its source paths,
+exact byte digests and citations make drift visible; they do not prove that a
+modeled claim is true or complete. A normative source omitted from `sources`
+remains normative and makes the model incomplete; an unratified model entry
+cannot add a normative source.
 
 ## Files
 
@@ -54,6 +59,22 @@ every source in this snapshot. Changing an evidence source to `normative`,
 retargeting an ID to a different file, adding or removing a modeled record, or
 changing a selected status therefore fails closed rather than silently changing
 the review boundary.
+
+## Bounded review bundle
+
+The active [protocol-hardening plan](../protocol-hardening-plan.md) defines the
+review process. For one protocol increment, mandatory reviewer context is
+bounded to the accepted Issue and SHAs, `AGENTS.md`, the hardening plan and its
+normative source index, the threat model and responsibility matrix, changed
+normative sources and direct dependencies, the relevant model slice, changed
+adversarial evidence, exact diff and test artifacts, final required-check and
+scope-evidence status, and prior unresolved findings that affect the increment.
+
+This bundle reduces repeated context loading; it is not a restriction on
+investigation. Reviewers may inspect the whole repository and public standards.
+Omitting a material dependency invalidates the review. A validator pass, model
+query or reviewer consensus remains an aid to falsification, never a security
+verdict or permission to implement unresolved semantics.
 
 ## Closed registry semantics
 

@@ -1,6 +1,6 @@
 # Styx project brief
 
-> **Status:** public project and funding brief, 17 August 2026.
+> **Status:** public project and funding brief, updated 23 August 2026.
 >
 > Styx is experimental, has not completed an independent security audit, and
 > is not ready for sensitive, high-risk, or life-critical use. This brief
@@ -11,6 +11,23 @@ Public naming, message hierarchy, and claim boundaries are defined in the
 [Styx public identity guide](BRAND_IDENTITY.md). The corresponding
 [dependency-free landing-page source](../website/README.md) is a review
 artifact, not a deployed service.
+
+## Active protocol-hardening phase
+
+Styx has deliberately paused new product and runtime implementation,
+provenance-obscuring cleanup, and public demo, production, anonymity or
+compliance claims while the language-neutral application protocol is hardened.
+The active work closes
+authority, succession, commitment, checkpoint, resource-bound, error and
+signature-suite questions; reconciles the threat model; and produces
+deterministic adversarial and conformance evidence before implementation
+resumes.
+
+The canonical [protocol-hardening plan](protocol/protocol-hardening-plan.md)
+defines the freeze boundary, authority order, review bundle and exit gates.
+Issue #233 / PR #234 remain isolated experimental evidence and are not treated
+as ratified protocol semantics. C0.3 remains `NO-GO`, and this phase does not
+authorize a demo, product deployment or sensitive use.
 
 ## Mission
 
@@ -170,9 +187,10 @@ persistence, retention/compaction, transport and runtime boundaries.
 
 ## What remains
 
-- define the language-neutral Styx application protocol and adversarial
-  conformance corpus, extract independent Dart cases, and freeze parallel Dart
-  feature development;
+- complete the active protocol-hardening phase, close or explicitly bound every
+  C0.3 blocker, define the language-neutral Styx application protocol and
+  adversarial conformance corpus, extract independent Dart cases, and keep
+  parallel product implementation frozen until the phase exit verdict;
 - turn the completed bounded secure-session proof into a separately versioned,
   supported adapter only after selecting and testing authenticated product
   persistence, retention/compaction, transport and runtime boundaries;
@@ -205,7 +223,7 @@ independent review, exact tests, and human gate.
 
 | Milestone | Concrete output | Completion evidence |
 |---|---|---|
-| 1. Application protocol and conformance | Versioned language-neutral objects, transitions, error rules, adversarial scenarios, and reusable vectors; Dart cases extracted before its feature freeze | Independent implementations execute the applicable corpus; divergences are resolved in the specification rather than hidden in ports |
+| 1. Application protocol and conformance | **Active protocol-hardening freeze:** versioned language-neutral objects, transitions, error rules, adversarial scenarios, and reusable vectors; Dart cases extracted before its feature freeze | The [hardening exit gates](protocol/protocol-hardening-plan.md#8-exit-gates) pass; independent implementations execute the applicable corpus; divergences are resolved in the specification rather than hidden in ports |
 | 2. Secure-session interoperability decision | **Bounded evidence complete:** preserve the staged-commit, identity, KeyPackage, Welcome, traffic, self-update, retained-window and two-candidate convergence proofs; next define a separately supported adapter without relabelling the isolated harness as product code | Reproducible exact-pin evidence and the [final bounded GO](architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md); no general-conformance or product claim |
 | 3. Minimum SDK and reliable delivery | Data-only application interfaces, context separation, persistent outbox, ACK states, retry, idempotency, deduplication, and crash recovery | Tests demonstrate offline recovery and never label relay publication as recipient or human receipt |
 | 4. Anonymous-case capability and Themis alpha | Fresh per-case identity, accountless return capability, text submission and dialogue, operator roles and revocation, retention, and safety UX | Cross-case unlinkability tests under the declared model; end-to-end reporter/operator scenarios without conventional contact details |

@@ -6,11 +6,19 @@
 > **Status:** exploratory, non-normative proposal
 > **Observed base:** `main @ d90931a3f59ce89c1594cad64ce385d58857b305`
 > **Public-claims synchronization:** assurance and exercise/pilot wording is
-> aligned with the Project Brief at
-> `main @ 4c56cd549f1a6de2cc61da38cc1d9c1909ce04d0`; the capability inventory
+> aligned with the current `docs/PROJECT_BRIEF.md`; the capability inventory
 > remains the snapshot from the observed base above.
 > This roadmap proposes candidates for future Issues. It does not authorize
 > code, cryptography, persisted formats, migrations, or vault changes.
+
+## Active planning gate
+
+The [application-protocol hardening plan](../protocol/protocol-hardening-plan.md)
+currently freezes new product and runtime implementation. Protocol decisions,
+threat-model reconciliation, adversarial evidence and language-neutral
+conformance take priority until the plan's human-ratified exit gates pass.
+Issue #233 / PR #234 remain isolated experimental evidence, C0.3 remains
+`NO-GO`, and this roadmap does not bypass that gate.
 
 ## 1. Method and legend
 
@@ -156,7 +164,8 @@ with complete tests and CI.
 **Does not include:** product data or migration.
 
 This increment is already contracted separately and must not be broadened by
-the platform effort.
+the platform effort. That separate contract is paused by the active planning
+gate while the protocol-hardening freeze remains in force.
 
 ### Increment B — Product namespace and migration
 
@@ -278,7 +287,9 @@ operator states, retention, and security warnings.
 
 ### Increment O — Distribution assurance
 
-May proceed in parallel when files do not overlap.
+May proceed in parallel when files do not overlap, subject to the active
+planning gate; it is paused while the protocol-hardening freeze remains in
+force.
 **Candidate outcome:** PWA and update verification, release manifest,
 appropriate transparency or signatures, independent artifact comparison, and a
 separate native high-assurance profile.
@@ -348,6 +359,7 @@ The following remain explicitly open:
 - evidence and timestamp standards;
 - attachment and sanitization policy.
 
-The next useful action is not to implement them together. It is to turn one
-decision at a time into an approved Issue with a threat model, non-goals,
-tests, and rollback.
+The active action is to execute the protocol-hardening plan in dependency order.
+Each decision still becomes an approved Issue with a threat model, non-goals,
+tests and rollback; product integration resumes only after the plan's exit
+verdict and under separate contracts.
