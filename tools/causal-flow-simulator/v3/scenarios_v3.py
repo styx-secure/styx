@@ -7,6 +7,7 @@ from typing import Mapping
 
 from protocol_model_v3 import (
     AuthorityVerdict,
+    AuthorityUnavailableReason,
     Binding,
     ContentClass,
     CONTEXT_ID,
@@ -20,6 +21,8 @@ from protocol_model_v3 import (
     MAX_KEY_OCTETS,
     MAX_LINEAGE_DEPTH,
     MAX_PARENTS,
+    MAX_REACHABLE_AUTHORITY_STATES,
+    MAX_REACHABLE_AUTHORITY_TRANSITIONS,
     MAX_TOPOLOGICAL_ORDERS,
     ModelInputError,
     Mutation,
@@ -55,6 +58,8 @@ BOUNDS = {
     "parents_per_event": MAX_PARENTS,
     "lineage_depth": MAX_LINEAGE_DEPTH,
     "topological_orders": MAX_TOPOLOGICAL_ORDERS,
+    "reachable_authority_states": MAX_REACHABLE_AUTHORITY_STATES,
+    "reachable_authority_transitions": MAX_REACHABLE_AUTHORITY_TRANSITIONS,
     "delivery_permutation_width": MAX_DELIVERY_PERMUTATION_WIDTH,
     "credentials": MAX_CREDENTIALS,
     "verification_key_octets": MAX_KEY_OCTETS,
@@ -93,6 +98,21 @@ REQUIRED_MUTANTS = frozenset(
         "M28_NO_AUTHOR_CONTINUITY",
         "M32_FORK_JOIN_BEFORE_SIBLINGS",
         "M33_TERMINAL_AUTHORITY_FOR_ORDINARY",
+        "M34_UNBOUNDED_CONTESTED_REDUCTIONS",
+        "M35_NONCAUSAL_TARGET_ACCEPTED",
+        "M36_RECOVER_REQUIRES_RETIRED_ANCESTRY",
+        "M37_REJECTED_REDUCTION_DEGRADES_PASS2",
+        "M38_STANDING_FIXED_POINT_SEED",
+        "M39_CROSS_LINEAGE_CANONICAL_WINNER",
+        "M40_GRINDABLE_CONTESTED_SELECTOR",
+        "M41_TERMINATED_DESCENDANT_FRESH_STANDING",
+        "M42_SELF_LINEAGE_MAY_ACCEPTED",
+        "M43_SELF_ROTATION_ACCEPTED",
+        "M44_ORDINARY_PROBE_IS_ITEM",
+        "M45_ORDER_COUNT_IS_GATE",
+        "M46_STATE_OVERFLOW_IS_EMPTY_AUTHORITY",
+        "M47_STATE_KEY_OMITS_AUTHORITY",
+        "M48_OUTCOME_PRECEDENCE_DRIFT",
     }
 )
 
@@ -128,6 +148,10 @@ REQUIRED_WITNESSES = frozenset(
         "unresolvable-dangling-and-forward",
         "non-grant-binding-spoof",
         "control-tail-and-content-structure",
+        "bounded-contested-standing",
+        "causal-target-availability",
+        "self-and-cross-lineage-standing",
+        "outcome-precedence",
     }
 )
 
@@ -934,7 +958,11 @@ def _succession_alias_fork_checks(suite: Suite, mutation: Mutation) -> None:
     grant_old = control("grant-old", a, Kind.GRANT, grantee_key="44" * 32)
     old = grant_binding(grant_old)
     revoke_old = control(
-        "revoke-old", b, Kind.REVOKE, target_id=old.credential_id
+        "revoke-old",
+        b,
+        Kind.REVOKE,
+        parents=(grant_old.reference,),
+        target_id=old.credential_id,
     )
     regrant_old = control(
         "regrant-old-id",
@@ -1000,6 +1028,7 @@ def _succession_alias_fork_checks(suite: Suite, mutation: Mutation) -> None:
         "revoke-alias-one",
         b,
         Kind.REVOKE,
+        parents=(alias_one.reference,),
         target_id=alias_one_binding.credential_id,
     )
     aliases = _project(
@@ -1075,7 +1104,6 @@ def _succession_alias_fork_checks(suite: Suite, mutation: Mutation) -> None:
         Kind.RECOVER,
         sequence=1,
         predecessor=recovery_grant.reference,
-        parents=(revoke_old.reference,),
         target_id=old.credential_id,
         target_reference=recovery_grant.reference,
     )
@@ -1105,6 +1133,7 @@ def _succession_alias_fork_checks(suite: Suite, mutation: Mutation) -> None:
             "recovery uses an independently authorized fresh GRANT and never rebinds the old identifier",
             "Recovery continuity is explicit evidence, not resurrection.",
             "M10_RECOVERY_RESURRECTS_REVOKED",
+            "M36_RECOVER_REQUIRES_RETIRED_ANCESTRY",
         )
     )
 
@@ -1553,6 +1582,319 @@ def _pending_checkpoint_removal_checks(suite: Suite, mutation: Mutation) -> None
     )
 
 
+def _amended_remediation_checks(suite: Suite, mutation: Mutation) -> None:
+    """Executable witnesses for the amended C0.2j standing contract."""
+
+    actor = genesis("bounded-standing-actor", "81")
+    contester = genesis("bounded-standing-contester", "82")
+    first_target = genesis("bounded-standing-first", "83")
+    second_target = genesis("bounded-standing-second", "84")
+    contest = control(
+        "bounded-standing-contest",
+        contester,
+        Kind.REVOKE,
+        target_id=actor.credential_id,
+    )
+    first = control(
+        "bounded-standing-first-reduction",
+        actor,
+        Kind.REVOKE,
+        target_id=first_target.credential_id,
+    )
+    second = None
+    for nonce in range(4096):
+        candidate = control(
+            f"bounded-standing-second-reduction-{nonce}",
+            actor,
+            Kind.REVOKE,
+            sequence=1,
+            predecessor=first.reference,
+            target_id=second_target.credential_id,
+        )
+        if candidate.reference < first.reference:
+            second = candidate
+            break
+    if second is None:
+        raise AssertionError("bounded selector grinding did not find requested side")
+    bounded = _project(
+        suite,
+        Scenario(
+            (contest, first, second),
+            (actor, contester, first_target, second_target),
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-01",
+            "bounded-contested-standing",
+            first.reference in bounded.accepted_controls
+            and second.reference not in bounded.accepted_controls
+            and first_target.credential_id not in bounded.terminal_authority
+            and second_target.credential_id in bounded.terminal_authority,
+            "only the first eligible author-chain slot may consume May-only reduction standing",
+            "Later reductions cannot grind their event reference into a second contested authorization.",
+            "M34_UNBOUNDED_CONTESTED_REDUCTIONS",
+            "M37_REJECTED_REDUCTION_DEGRADES_PASS2",
+            "M40_GRINDABLE_CONTESTED_SELECTOR",
+        )
+    )
+
+    honest = genesis("causal-target-honest", "85")
+    compromised = genesis("causal-target-compromised", "86")
+    compromised_revoke = control(
+        "causal-target-compromised-revoke",
+        honest,
+        Kind.REVOKE,
+        target_id=compromised.credential_id,
+    )
+    fresh_grant = control(
+        "causal-target-fresh-grant",
+        honest,
+        Kind.GRANT,
+        sequence=1,
+        predecessor=compromised_revoke.reference,
+        grantee_key="87" * 32,
+    )
+    fresh = grant_binding(fresh_grant)
+    noncausal = control(
+        "causal-target-noncausal-revoke",
+        compromised,
+        Kind.REVOKE,
+        target_id=fresh.credential_id,
+    )
+    unresolved = control(
+        "causal-target-unresolved-revoke",
+        compromised,
+        Kind.REVOKE,
+        sequence=1,
+        predecessor=noncausal.reference,
+        target_id="ff" * 32,
+    )
+    cleanup = control(
+        "causal-target-authorized-cleanup",
+        honest,
+        Kind.REVOKE,
+        sequence=2,
+        predecessor=fresh_grant.reference,
+        target_id=fresh.credential_id,
+    )
+    causal = _project(
+        suite,
+        Scenario(
+            (compromised_revoke, fresh_grant, noncausal, unresolved, cleanup),
+            (honest, compromised),
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-02",
+            "causal-target-availability",
+            causal.rejected.get(noncausal.reference) is Outcome.STRUCTURAL_REJECTION
+            and causal.rejected.get(unresolved.reference)
+            is Outcome.UNRESOLVABLE_CREDENTIAL
+            and cleanup.reference in causal.accepted_controls
+            and fresh.credential_id not in causal.terminal_authority,
+            "reductions distinguish unknown targets from known but non-causal targets",
+            "A causally authorized issuer can still clean up the fresh grant.",
+            "M35_NONCAUSAL_TARGET_ACCEPTED",
+        )
+    )
+
+    root = genesis("self-lineage-root", "88")
+    revoker = genesis("self-lineage-revoker", "89")
+    child_grant = control(
+        "self-lineage-child-grant", root, Kind.GRANT, grantee_key="8a" * 32
+    )
+    child = grant_binding(child_grant)
+    terminate_child = control(
+        "self-lineage-terminate-child",
+        revoker,
+        Kind.REVOKE,
+        parents=(child_grant.reference,),
+        target_id=child.credential_id,
+    )
+    self_reduction = control(
+        "self-lineage-child-reduces-root",
+        child,
+        Kind.REVOKE,
+        parents=(child_grant.reference,),
+        target_id=root.credential_id,
+    )
+    self_lineage = _project(
+        suite,
+        Scenario((child_grant, terminate_child, self_reduction), (root, revoker)),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-03",
+            "self-and-cross-lineage-standing",
+            self_reduction.reference not in self_lineage.accepted_controls
+            and root.credential_id in self_lineage.terminal_authority
+            and child.credential_id not in self_lineage.terminal_authority,
+            "May-only authority cannot reduce its own grant lineage",
+            "A terminated child cannot launder authority into an ancestor reduction.",
+            "M42_SELF_LINEAGE_MAY_ACCEPTED",
+        )
+    )
+
+    left = genesis("cross-lineage-left", "8b")
+    right = genesis("cross-lineage-right", "8c")
+    left_grant = control(
+        "cross-lineage-left-grant", left, Kind.GRANT, grantee_key="8d" * 32
+    )
+    right_grant = control(
+        "cross-lineage-right-grant", right, Kind.GRANT, grantee_key="8e" * 32
+    )
+    left_child = grant_binding(left_grant)
+    right_child = grant_binding(right_grant)
+    left_reduces_right = control(
+        "cross-lineage-left-reduces-right",
+        left_child,
+        Kind.REVOKE,
+        parents=(left_grant.reference,),
+        target_id=right.credential_id,
+    )
+    right_reduces_left = control(
+        "cross-lineage-right-reduces-left",
+        right_child,
+        Kind.REVOKE,
+        parents=(right_grant.reference,),
+        target_id=left.credential_id,
+    )
+    cross_lineage = _project(
+        suite,
+        Scenario(
+            (left_grant, right_grant, left_reduces_right, right_reduces_left),
+            (left, right),
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-04",
+            "self-and-cross-lineage-standing",
+            {
+                left_reduces_right.reference,
+                right_reduces_left.reference,
+            }
+            <= cross_lineage.accepted_controls
+            and not cross_lineage.terminal_authority,
+            "independent lineages may both exercise cross-lineage May-only reductions",
+            "No global canonical winner silently discards one legitimate reduction.",
+            "M38_STANDING_FIXED_POINT_SEED",
+            "M39_CROSS_LINEAGE_CANONICAL_WINNER",
+        )
+    )
+
+    ancestor = genesis("terminated-descendant-root", "8f")
+    terminator = genesis("terminated-descendant-terminator", "90")
+    innocent = genesis("terminated-descendant-innocent", "a0")
+    descendant_grant = control(
+        "terminated-descendant-grant",
+        ancestor,
+        Kind.GRANT,
+        grantee_key="a1" * 32,
+    )
+    descendant = grant_binding(descendant_grant)
+    terminate_ancestor = control(
+        "terminated-descendant-terminate-root",
+        terminator,
+        Kind.REVOKE,
+        parents=(descendant_grant.reference,),
+        target_id=ancestor.credential_id,
+    )
+    inert_reduction = control(
+        "terminated-descendant-inert-reduction",
+        descendant,
+        Kind.REVOKE,
+        parents=(terminate_ancestor.reference,),
+        target_id=innocent.credential_id,
+    )
+    terminated = _project(
+        suite,
+        Scenario(
+            (descendant_grant, terminate_ancestor, inert_reduction),
+            (ancestor, terminator, innocent),
+        ),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-05",
+            "self-and-cross-lineage-standing",
+            inert_reduction.reference not in terminated.accepted_controls
+            and innocent.credential_id in terminated.terminal_authority
+            and descendant.credential_id not in terminated.terminal_authority,
+            "a terminated descendant never receives fresh reduction standing",
+            "Causal placement after termination cannot resurrect its lineage.",
+            "M41_TERMINATED_DESCENDANT_FRESH_STANDING",
+        )
+    )
+
+    rotating = genesis("self-rotation-root", "a2")
+    replacement_grant = control(
+        "self-rotation-replacement-grant",
+        rotating,
+        Kind.GRANT,
+        grantee_key="a3" * 32,
+    )
+    replacement = grant_binding(replacement_grant)
+    self_rotation = control(
+        "self-rotation-event",
+        rotating,
+        Kind.ROTATE,
+        sequence=1,
+        predecessor=replacement_grant.reference,
+        target_id=rotating.credential_id,
+        target_reference=replacement_grant.reference,
+    )
+    rotation = _project(
+        suite,
+        Scenario((replacement_grant, self_rotation), (rotating,)),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-06",
+            "self-and-cross-lineage-standing",
+            rotation.rejected.get(self_rotation.reference)
+            is Outcome.STRUCTURAL_REJECTION
+            and replacement.credential_id in rotation.terminal_authority,
+            "a credential cannot use ROTATE to target itself",
+            "The explicit replacement grant remains available without self-retirement ambiguity.",
+            "M43_SELF_ROTATION_ACCEPTED",
+        )
+    )
+
+    precedence_actor = genesis("outcome-precedence-actor", "a4")
+    pending_fork = make_event(
+        "outcome-precedence-pending-fork",
+        precedence_actor,
+        content_class=ContentClass.REQUIRED,
+        opening_verified=False,
+    )
+    fork_twin = make_event("outcome-precedence-fork-twin", precedence_actor)
+    precedence = _project(
+        suite,
+        Scenario((pending_fork, fork_twin), (precedence_actor,)),
+        mutation,
+    )
+    suite.checks.append(
+        check(
+            "W-REMED-07",
+            "outcome-precedence",
+            pending_fork.reference in precedence.pending_roots
+            and precedence.outcomes[pending_fork.reference] is Outcome.FORK_EVIDENCE,
+            "fork evidence has stable primary-outcome precedence over pending content",
+            "One event may remain in auxiliary pending sets without changing its primary outcome.",
+            "M48_OUTCOME_PRECEDENCE_DRIFT",
+        )
+    )
+
+
 def _convergence_bounds_checks(suite: Suite, mutation: Mutation) -> None:
     a = genesis("case-ephemeral-a", "a1")
     b = genesis("organization-role-b", "b2")
@@ -1710,6 +2052,98 @@ def _convergence_bounds_checks(suite: Suite, mutation: Mutation) -> None:
         )
     )
 
+    contested_actor = genesis("five-sibling-actor", "91")
+    contesting_actor = genesis("five-sibling-contester", "92")
+    contested_targets = tuple(
+        genesis(f"five-sibling-target-{index}", f"{0x93 + index:02x}")
+        for index in range(5)
+    )
+    contest = control(
+        "five-sibling-contest",
+        contesting_actor,
+        Kind.REVOKE,
+        target_id=contested_actor.credential_id,
+    )
+    contested_siblings = tuple(
+        control(
+            f"five-sibling-reduction-{index}",
+            contested_actor,
+            Kind.REVOKE,
+            target_id=target.credential_id,
+        )
+        for index, target in enumerate(contested_targets)
+    )
+    try:
+        concentration = project(
+            Scenario(
+                (contest, *contested_siblings),
+                (contested_actor, contesting_actor, *contested_targets),
+            ),
+            mutation,
+        )
+    except ModelInputError:
+        concentration = None
+    else:
+        suite.projections.append(concentration)
+    suite.checks.append(
+        check(
+            "W-BOUND-05",
+            "bounded-hostile-flood",
+            concentration is not None
+            and {event.reference for event in contested_siblings}
+            <= concentration.accepted_controls
+            and concentration.explored_orders == 840
+            and concentration.authority_available,
+            "reachable-state DP executes the five-sibling contested-slot bound",
+            "The measured 840 linearizations exceed the factorial oracle cap without becoming the production gate.",
+            "M45_ORDER_COUNT_IS_GATE",
+        )
+    )
+
+    equivalence_scenario = Scenario(
+        (
+            independent_controls[0],
+            independent_controls[1],
+            make_event("dp-oracle-probe", control_actors[2]),
+        ),
+        control_actors,
+    )
+    dp_equivalence = _project(suite, equivalence_scenario, mutation)
+    oracle_equivalence = project(
+        equivalence_scenario, mutation, authority_engine="oracle"
+    )
+    suite.checks.append(
+        check(
+            "W-BOUND-06",
+            "bounded-hostile-flood",
+            dp_equivalence.semantic_view() == oracle_equivalence.semantic_view(),
+            "reachable-state DP and factorial oracle agree within the oracle envelope",
+            "The comparison covers controls, an ordinary acting-prefix query and the complete semantic projection.",
+            "M47_STATE_KEY_OMITS_AUTHORITY",
+        )
+    )
+
+    unavailable = project(
+        Scenario((independent_controls[0],), control_actors),
+        mutation,
+        authority_state_limit=1,
+    )
+    suite.projections.append(unavailable)
+    suite.checks.append(
+        check(
+            "W-BOUND-07",
+            "bounded-hostile-flood",
+            not unavailable.authority_available
+            and unavailable.authority_unavailable_reason
+            is AuthorityUnavailableReason.REACHABLE_STATE_LIMIT
+            and unavailable.outcomes[independent_controls[0].reference]
+            is Outcome.AUTHORITY_PROJECTION_UNAVAILABLE,
+            "authority-state overflow yields one typed whole-projection unavailable result",
+            "The result is distinguishable from both a stale checkpoint and a proven empty authority set.",
+            "M46_STATE_OVERFLOW_IS_EMPTY_AUTHORITY",
+        )
+    )
+
     join_siblings = tuple(
         make_event(f"join-flood-{index}", a)
         for index in range(5)
@@ -1721,7 +2155,7 @@ def _convergence_bounds_checks(suite: Suite, mutation: Mutation) -> None:
     )
     suite.checks.append(
         check(
-            "W-BOUND-05",
+            "W-BOUND-08",
             "bounded-hostile-flood",
             join_projection.forked_credentials == {a.credential_id}
             and len(join_projection.fork_joins) == 1
@@ -1743,11 +2177,94 @@ def _convergence_bounds_checks(suite: Suite, mutation: Mutation) -> None:
         delivery_bound_ok = False
     suite.checks.append(
         check(
-            "W-BOUND-06",
+            "W-BOUND-09",
             "bounded-hostile-flood",
             delivery_bound_ok,
             "delivery-permutation exploration has an explicit independent width bound",
             "The reporting harness cannot silently attempt factorial work beyond its declared envelope.",
+        )
+    )
+
+    ordinary_probe = make_event(
+        "ordinary-probe-outside-authority-items",
+        control_actors[0],
+        sequence=1,
+        predecessor=independent_controls[0].reference,
+    )
+    try:
+        probe_projection = project(
+            Scenario((*independent_controls, ordinary_probe), control_actors),
+            mutation,
+        )
+    except ModelInputError:
+        probe_projection = None
+    else:
+        suite.projections.append(probe_projection)
+    suite.checks.append(
+        check(
+            "W-BOUND-10",
+            "bounded-hostile-flood",
+            probe_projection is not None
+            and probe_projection.authority_available
+            and probe_projection.event_authority.get(ordinary_probe.reference)
+            is AuthorityVerdict.NO_AUTH,
+            "ordinary-event prefix queries do not consume authority-item or order budget",
+            "The probe observes reachable control states without multiplying the authority search space.",
+            "M44_ORDINARY_PROBE_IS_ITEM",
+        )
+    )
+
+    joint_actors = tuple(
+        genesis(f"joint-bound-actor-{index}", f"{0xb0 + index:02x}")
+        for index in range(MAX_CONTROL_EVENTS)
+    )
+    joint_events: list[Event] = []
+    for index, joint_actor in enumerate(joint_actors):
+        joint_events.extend(
+            (
+                control(
+                    f"joint-bound-control-{index}",
+                    joint_actor,
+                    Kind.REVOKE,
+                    target_id=joint_actors[(index + 1) % len(joint_actors)].credential_id,
+                ),
+                make_event(f"joint-bound-fork-left-{index}", joint_actor),
+                make_event(f"joint-bound-fork-right-{index}", joint_actor),
+            )
+        )
+    # This concentration witness proves the declared envelope itself.  It has no
+    # mutation edge, so repeating its deliberately expensive 7.48M-path count
+    # for every unrelated mutant would add runtime without falsification value.
+    joint_projection = (
+        _project(
+            suite,
+            Scenario(tuple(joint_events), joint_actors),
+            mutation,
+        )
+        if mutation.identifier == "NONE"
+        else None
+    )
+    suite.checks.append(
+        check(
+            "W-BOUND-11",
+            "bounded-hostile-flood",
+            mutation.identifier != "NONE"
+            or (
+                joint_projection is not None
+                and len(joint_events) == MAX_EVENTS
+                and sum(
+                    event.role is Role.CREDENTIAL_CONTROL for event in joint_events
+                )
+                == MAX_CONTROL_EVENTS
+                and len(joint_projection.fork_joins) == MAX_FORK_SLOTS
+                and joint_projection.authority_available
+                and joint_projection.reachable_authority_states
+                <= MAX_REACHABLE_AUTHORITY_STATES
+                and joint_projection.authority_transitions
+                <= MAX_REACHABLE_AUTHORITY_TRANSITIONS
+            ),
+            "the event, control and fork-slot maxima are jointly admissible",
+            "One scenario reaches all three advertised ceilings while the reachable-state DP remains inside its typed resource envelope.",
         )
     )
 
@@ -1763,6 +2280,7 @@ def run_required_suite(mutation: Mutation = Mutation()) -> Suite:
         _authority_checks(suite, mutation)
         _succession_alias_fork_checks(suite, mutation)
         _pending_checkpoint_removal_checks(suite, mutation)
+        _amended_remediation_checks(suite, mutation)
         _convergence_bounds_checks(suite, mutation)
         return suite
     finally:

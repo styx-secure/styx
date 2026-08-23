@@ -15,11 +15,154 @@ import unittest
 V3_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(V3_ROOT))
 
-from protocol_model_v3 import Kind, Outcome, Scenario, grant_binding, make_event, project  # noqa: E402
+from protocol_model_v3 import (  # noqa: E402
+    AuthorityVerdict,
+    AuthorityUnavailableReason,
+    Kind,
+    Outcome,
+    Scenario,
+    grant_binding,
+    make_event,
+    project,
+)
 from scenarios_v3 import control, genesis  # noqa: E402
 
 
 class C02jRemediationRedTests(unittest.TestCase):
+    def test_dp_state_overflow_is_typed_whole_projection_unavailable(self) -> None:
+        authority = genesis("authority", "11")
+        target = genesis("target", "22")
+        revoke = control(
+            "revoke", authority, Kind.REVOKE, target_id=target.credential_id
+        )
+
+        value = project(
+            Scenario((revoke,), (authority, target)),
+            authority_state_limit=1,
+        )
+
+        self.assertFalse(value.authority_available)
+        self.assertIs(
+            value.authority_unavailable_reason,
+            AuthorityUnavailableReason.REACHABLE_STATE_LIMIT,
+        )
+        self.assertIs(
+            value.outcomes[revoke.reference],
+            Outcome.AUTHORITY_PROJECTION_UNAVAILABLE,
+        )
+        self.assertFalse(value.accepted_controls)
+        self.assertFalse(value.terminal_authority)
+
+    def test_dp_transition_overflow_is_typed_whole_projection_unavailable(self) -> None:
+        authority = genesis("authority", "11")
+        grant = control("grant", authority, Kind.GRANT, grantee_key="22" * 32)
+
+        value = project(
+            Scenario((grant,), (authority,)),
+            authority_transition_limit=0,
+        )
+
+        self.assertFalse(value.authority_available)
+        self.assertIs(
+            value.authority_unavailable_reason,
+            AuthorityUnavailableReason.REACHABLE_TRANSITION_LIMIT,
+        )
+        self.assertIs(
+            value.outcomes[grant.reference],
+            Outcome.AUTHORITY_PROJECTION_UNAVAILABLE,
+        )
+
+    def test_dp_matches_factorial_oracle_within_oracle_envelope(self) -> None:
+        actor = genesis("actor", "11")
+        revoker = genesis("revoker", "22")
+        target = genesis("target", "33")
+        revoke_actor = control(
+            "revoke-actor", revoker, Kind.REVOKE, target_id=actor.credential_id
+        )
+        actor_reduces_target = control(
+            "actor-reduces-target",
+            actor,
+            Kind.REVOKE,
+            target_id=target.credential_id,
+        )
+        probe = make_event("target-probe", target)
+        scenario = Scenario(
+            (revoke_actor, actor_reduces_target, probe),
+            (actor, revoker, target),
+        )
+
+        dp = project(scenario, authority_engine="dp")
+        oracle = project(scenario, authority_engine="oracle")
+
+        self.assertEqual(dp.semantic_view(), oracle.semantic_view())
+
+    def test_five_sibling_contested_slot_is_executable_without_factorial_cap(
+        self,
+    ) -> None:
+        actor = genesis("actor", "11")
+        revoker = genesis("revoker", "22")
+        targets = tuple(
+            genesis(f"target-{index}", f"{0x30 + index:02x}")
+            for index in range(5)
+        )
+        revoke_actor = control(
+            "revoke-actor", revoker, Kind.REVOKE, target_id=actor.credential_id
+        )
+        siblings = tuple(
+            control(
+                f"actor-reduces-{index}",
+                actor,
+                Kind.REVOKE,
+                target_id=target.credential_id,
+            )
+            for index, target in enumerate(targets)
+        )
+
+        value = project(
+            Scenario((revoke_actor, *siblings), (actor, revoker, *targets))
+        )
+
+        self.assertEqual(
+            {event.reference for event in siblings} & value.accepted_controls,
+            {event.reference for event in siblings},
+        )
+        self.assertTrue(
+            all(
+                value.event_authority[event.reference]
+                is AuthorityVerdict.MAY_AUTH
+                for event in siblings
+            )
+        )
+        self.assertTrue(
+            all(
+                target.credential_id not in value.terminal_authority
+                for target in targets
+            )
+        )
+        self.assertGreater(value.explored_orders, 720)
+
+    def test_self_lineage_must_reduction_cannot_launder_successor(self) -> None:
+        root = genesis("root", "11")
+        grant = control("root-grants-child", root, Kind.GRANT, grantee_key="22" * 32)
+        child = grant_binding(grant)
+        child_reduces_root = control(
+            "child-reduces-root",
+            child,
+            Kind.REVOKE,
+            parents=(grant.reference,),
+            target_id=root.credential_id,
+        )
+
+        value = project(Scenario((grant, child_reduces_root), (root,)))
+
+        self.assertIs(
+            value.event_authority[child_reduces_root.reference],
+            AuthorityVerdict.MUST_AUTH,
+        )
+        self.assertIn(child_reduces_root.reference, value.accepted_controls)
+        self.assertNotIn(root.credential_id, value.terminal_authority)
+        self.assertNotIn(child.credential_id, value.terminal_authority)
+
     def test_bounded_standing_does_not_operationalize_rejected_target_successor(
         self,
     ) -> None:

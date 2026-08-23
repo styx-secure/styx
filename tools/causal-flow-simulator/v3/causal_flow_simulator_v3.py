@@ -57,6 +57,17 @@ def build_report() -> tuple[dict[str, object], bool]:
                 (projection.explored_orders for projection in suite.projections),
                 default=0,
             ),
+            "maximum_reachable_authority_states": max(
+                (
+                    projection.reachable_authority_states
+                    for projection in suite.projections
+                ),
+                default=0,
+            ),
+            "maximum_authority_transitions": max(
+                (projection.authority_transitions for projection in suite.projections),
+                default=0,
+            ),
             "maximum_replayed_event_work": max(
                 (projection.replayed_event_work for projection in suite.projections),
                 default=0,
