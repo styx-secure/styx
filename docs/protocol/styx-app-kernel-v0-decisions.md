@@ -231,14 +231,12 @@ claim that current code conforms.
   irreversible-effect authority. Authenticated prefix state may authorize an
   append-only logical-removal transition under AP policy, but physical
   destruction remains gated by O-13 and never follows from replay position.
-  Because replay handoffs are prefix-scoped, grinding can change
-  whether a concurrent revocation, rotation or policy event is visible at the
-  acting event's own evaluation point. In the current v0 authority fold, a
-  compromised credential can grind a concurrent `GRANT` before its `REVOKE` so
-  that the newly granted successor remains operational after the compromised
-  credential is revoked. C0.2j must replace this non-transitive authority
-  model; neither revocation nor rotation is a sufficient compromise response in
-  v0. Grinding can also move a pending root or its
+  A prefix-scoped replay handoff can still differ by position, so C0.2j does not
+  treat any one handoff or order as terminal authority. Expansion, producer
+  eligibility and operational authority require `MustAuth`, reductions use
+  `MayAuth`, and provenance termination is computed across every bounded causal
+  linearization. Grinding can therefore change work and intermediate reversible
+  observations but cannot select an expansion winner. It can also move a pending root or its
   causal descendants relative to independent events, changing bounded replay
   work but never the pending closure itself. Later disclosure requires revision
   of reversible AP state and never retroactively authorizes an irreversible
@@ -379,10 +377,9 @@ outcomes.
 
 ### O-01 — Causal representation
 
-- **Status:** `DECIDED`. Issue #225 reopened this record and PR #226 returned it
-  to `DECIDED` after exact-final C0.2i evidence, two independent model-family
-  reviews and both human gates passed at merge commit
-  `4ab333e29fb12f9839d29160248d89da695e37be`.
+- **Status:** `DECIDED`. Issue #225/PR #226 supplied the C0.2i baseline; Issue
+  #233 selects the C0.2j credential-lineage fork amendment. Exact-final review
+  and human ratification of that amendment remain mandatory before merge.
 - **Rule:** every non-genesis event SHALL authenticate a strictly increasing,
   non-wrapping per-credential author sequence (zero for the first event and
   incremented by exactly one thereafter), its separate direct author
@@ -393,17 +390,17 @@ outcomes.
   classes defines happens-before; absence of reachability in either direction
   defines concurrency. Duplicate, missing-parent, stale and same-author
   fork/equivocation outcomes are classified before AP evaluation. Any K-admitted
-  same-author fork permanently quarantines the whole v0 AP context. Fork
-  siblings remain authenticated `FORK_EVIDENCE`; every other admitted event is
+  same-author fork permanently terminates the forked credential and the
+  transitive closure of its grant descendants. Fork siblings remain
+  authenticated `FORK_EVIDENCE`; events and authority on that lineage are
   `FORK_QUARANTINED`. The graph, ancestry, order and pending sets remain visible
-  diagnostic evidence, but applied order, operational authority, removals and
-  every AP transition are empty. `STALE_EVIDENCE` has higher precedence. No
+  diagnostic evidence. Independent lineages continue only when the C0.2j
+  `MustAuth`/`MayAuth` fold establishes their authority across the complete
+  bounded control-evidence set. `STALE_EVIDENCE` has higher precedence. No
   arrival order, canonical winner, checkpoint, later opening or later event can
-  lift quarantine for that v0-pinned context. Honest producers cannot extend it
-  and no frontier is producer-eligible. This fails closed against authority
-  takeover at the cost of permanent authenticated denial of availability;
-  C0.2j owns the successor fork namespace and binding rule, while O-15/O-16 own
-  any later-profile recovery/finality mechanism.
+  lift lineage quarantine or resurrect a terminated identifier. This prevents
+  fork-driven authority expansion while reducing unrelated denial of service;
+  O-15/O-16 own any later-profile recovery/finality mechanism.
   Arrival order, relay order, storage order and wall time MUST NOT determine
   causality. Among ready concurrent events, K-06 bytewise event-reference order
   produces the deterministic replay schedule; `AP` alone decides semantic
@@ -458,17 +455,20 @@ outcomes.
 
 ### O-02 — Author, rotation and authorization binding
 
-- **Status:** `DECIDED`. Issue #225 reopened this record and PR #226 returned it
-  to `DECIDED` after the exact-final C0.2i gates passed at merge commit
-  `4ab333e29fb12f9839d29160248d89da695e37be`. C0.2j must still replace its
-  bounded v0 authority model.
+- **Status:** `DECIDED`. Issue #225/PR #226 supplied the bounded C0.2i model;
+  Issue #233 selects its C0.2j grant-rooted succession and two-sided authority
+  replacement. Exact-final independent review and human ratification of that
+  replacement remain mandatory before merge.
 - **Rule:** every authoring endpoint SHALL use a distinct context-local signing
   credential. Credential binding is a monotone K-level historical fact;
   application authority is a reversible AP-level decision evaluated at the
   acting event's replay prefix. Binding never implies authority. Under the
-  current bounded envelope, each non-genesis identifier resolves through one
-  K-valid causal-ancestor grant to one verification key and signature
-  algorithm; O-07 supplies the static genesis-authority abstraction. A grant
+  selected C0.2j envelope, every non-genesis identifier is exactly the
+  O-06b-1 event reference of its K-valid binding `GRANT`; that event's exact
+  role-`0x02` tail carries the grantee suite and key, common field 11 supplies
+  the issuer and the O-03 tuple supplies context. The grant carries no subject
+  identifier and only that grant creates a binding. O-07 supplies the static
+  genesis-authority abstraction. A grant
   signed by a bound but AP-unauthorized credential can bind its grantee for K
   verification while conferring no AP authority. Such actions are
   `AUTHENTIC_BUT_UNAUTHORIZED` and apply no transition. Key possession, signature validity, MLS
@@ -477,14 +477,15 @@ outcomes.
   anonymous return capabilities are optional profile inputs, not universal
   authors. Rotation creates a new credential and retires the old one through an
   authorized AP transition; recovery MUST NOT resurrect revoked authority.
-  C0.2i's bounded v2 model does not implement that still-open succession
-  mechanism: `ROTATE` and `RECOVER` are authenticated symbolic control evidence
-  only and neither mints, rebinds nor re-authorizes an identifier. It retains
-  every applied revocation when classifying causal descendants. C0.2j must
-  select exact credential succession and K-readable grant evidence before a
-  later model can claim executable rotation or recovery semantics.
-  Conflicting grants or identifier reuse are not solved here: C0.2j must define
-  collision-resistant credential identity and exact K-readable grant evidence.
+  C0.2j evaluates expansion, producer eligibility and operational authority
+  under `MustAuth` across every bounded causal linearization; reductions use
+  `MayAuth`, but an actor unauthorized in every acting-prefix interpretation
+  cannot reduce authority. Revocation and same-author fork quarantine terminate
+  the target lineage and every grant descendant while independent definitely
+  authorized lineages may continue. `ROTATE` and `RECOVER` reference a fresh
+  admitted binding grant, create no binding themselves and cannot reuse or
+  resurrect an old identifier. Late evidence triggers fresh full replay; no
+  incremental authority-state handoff is claimed.
 - **Rationale/evidence:** `PRIV-01`, `PRIV-03` and `PRIV-04` distinguish key
   possession from authorization. The C0.2b analysis compares five
   constructions and selects the only candidate that preserves endpoint-specific
@@ -505,11 +506,11 @@ outcomes.
 - **Security/privacy:** context-local credentials limit normal key reuse and
   allow independent device revocation, but do not prevent linkability through
   routing, storage, recovery, notifications or user behavior. A compromised
-  valid credential retains its granted authority until revocation becomes
-  effective and can concurrently grant a successor that remains authorized in
-  one grindable reference order. Revocation is non-transitive in v0 and does
-  not bound compromise. This executable authority-laundering witness is a
-  mandatory C0.2j blocker, not optional hardening.
+  valid credential retains its granted authority until the set-relative fold
+  terminates it. The bounded v3 model prevents concurrent successor laundering
+  and scopes forks to provenance lineages, but one uncontested authority can
+  still remove every peer and remain sole producer; mutual reductions or fork
+  containment can leave no operational authority.
 - **Dependent artifact:** credential identifier, verification-key/algorithm
   binding, grant/state reference and negative vectors. O-01 defines concurrent
   and stale ordering; O-05/O-12 gate physical expiry; O-06 defines references;
@@ -521,7 +522,7 @@ outcomes.
   profile requires bearer-only authorship.
 - **Human ratification:** the original C0.2b split was approved under Issue
   #209; Issue #225's bounded replacement completed exact-final review and human
-  ratification in PR #226.
+  ratification in PR #226. The C0.2j amendment is governed by Issue #233.
 
 ### O-03 — Application/case context and genesis binding
 
@@ -584,11 +585,13 @@ outcomes.
   permit deterministic, transcript-randomized or keyed K commitment modes.
   Production randomizer generation uses the supported runtime CSPRNG and fails
   closed; conformance-vector injection is not a production fallback.
-- **Control-event rule:** `event_role == 0x01` structurally requires
-  `content_class == NONE`. AP grant, revoke, rotate, policy, closure and future
-  disposition events are bounded authenticated transcript data, never hidden
-  `REQUIRED` payload. Their exact K-readable carriage remains a C0.2j/O-07
-  decision; any carriage outside the existing AP block reopens O-06b-1.
+- **Control-event rule:** `event_role == 0x01` (logical removal) and
+  `event_role == 0x02` (credential control) each structurally require
+  `content_class == NONE`, checked before the corresponding tail, binding or AP
+  logic. Grant, revoke, rotate, recover, policy and closure use the exact
+  K-readable role-`0x02` tail selected by C0.2j and are never hidden payload.
+  K binding/target fields come only from that tail; profile-specific policy
+  semantics remain in the authenticated AP block.
 - **Removal rule:** availability, binding, retention and replay readiness are
   separate typed properties. Removal is a later authenticated, AP-authorized
   event targeting the original event reference and commitment; it never
@@ -609,8 +612,8 @@ outcomes.
   order, including independent events that sort later. Pending depends only on
   authenticated transcripts, causal descent and the replica's monotone verified-
   opening set; it never consults AP authority, AP outcome or retention. Any
-  admitted same-author fork instead invokes the whole-context quarantine above,
-  and checkpoint-only replay dependencies invoke `STALE_EVIDENCE` before AP
+  admitted same-author fork instead terminates the forked credential lineage
+  under C0.2j, and checkpoint-only replay dependencies invoke `STALE_EVIDENCE` before AP
   evaluation. Roots
   report model outcome `PENDING_OPENING`, descendants `PENDING_ANCESTOR`.
   Adding a verified opening removes that reason, recomputes the closure and
@@ -661,13 +664,13 @@ outcomes.
   ordinary state-bearing data classified as `REQUIRED` still has no authorized
   removal or destruction path in v0. No finality exists, so visible AP results
   remain provisional and cannot authorize irreversible effects. Any admitted
-  same-author fork permanently quarantines the entire v0 AP context, including
-  causally independent events; this prevents authority expansion but gives any
-  holder of valid key material a permanent availability-denial capability. A
-  self-fork is therefore an absolute context lockout, never an escape from
-  sole-authority self-lockout. Separately, fork-free concurrent grant/revocation
-  can still launder successor authority in one grindable reference order;
-  C0.2j must replace both constructions. The current
+  same-author fork terminates the forked credential and every grant-descendant
+  lineage while independent definitely authorized lineages may continue. This
+  prevents fork-driven authority expansion without claiming general
+  availability: mutual reductions can leave no authority, and one uncontested
+  compromised authority can causally remove every peer and remain sole
+  producer. Concurrent grant/revocation cannot launder a successor under the
+  bounded C0.2j `MustAuth`/`MayAuth` fold. The current
   44-octet commitment context deliberately does not prevent cross-credential
   descriptor copy or same-credential cross-sequence self-copy; C0.2k owns that
   amendment after C0.2j decides exact credential identity.
@@ -754,7 +757,10 @@ outcomes.
   distinct admitted semantic tuples map to distinct framed bytes, provided the
   future AP schema and O-06b-2 commitment interiors are themselves injective.
   It is not a mathematical injectivity claim for SHA-256 and is not executable
-  implementation evidence.
+  implementation evidence. C0.2j amends only field 6 and the role-specific tail:
+  role class `0x02` carries a closed credential-control kind and exact
+  grant/target/succession fields. The seven hash domains, reference suite,
+  logical-removal tail and every other common field remain unchanged.
 - **O-06b-2 selected commitment/chunk-tree profile:**
   `docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md` fixes
   registry `styx.commitment-suite.v1`, suite `0x0001`, full-width SHA-256, a
@@ -780,21 +786,23 @@ outcomes.
   order alone. Authenticated prefix state may authorize append-only logical
   removal under AP policy, but O-13 still gates physical destruction.
   Prefix-scoped handoffs can expose different concurrent authority facts at
-  different replay positions. In v0 this permits a concurrent successor grant
-  to survive revocation in one ordering and keeps C0.2j mandatory. Grindable
+  different replay positions. C0.2j prevents any one such position from
+  becoming terminal expansion authority by using `MustAuth`, `MayAuth` and
+  transitive provenance over every bounded admissible interpretation. Grindable
   placement of a `REQUIRED` event can
   change pending-subtree shape and replay work, but cannot block an independent
   event or authorize a descendant through a hole. AP must repair reversible
   state when later evidence or openings become available.
-- **Missing evidence:** C0.2j must first decide collision-resistant credential
-  identity and exact K-readable grant evidence; C0.2k must then bind that exact
+- **Missing evidence:** C0.2j selects grant-rooted credential identity, exact
+  K-readable grant/succession evidence and bounded v3 falsification. C0.2k must
+  next bind that exact
   credential and author sequence into an amended commitment context. O-06c
   executable negative evidence must target that combined construction. O-07 still owns the complete genesis fields;
   O-14 separately owns the signature-suite
   registry. O-08 owns measured profile maxima and O-10 owns stable error codes.
 - **Dependent artifact:** complete genesis transcript fields and bounded
   adversarial evidence.
-- **Smallest bounded follow-up:** after C0.2j and C0.2k, O-06c adversarially tests framing injectivity,
+- **Smallest bounded follow-up:** after C0.2k, O-06c adversarially tests framing injectivity,
   role/context separation,
   non-circularity, chunk unlinkability, collision handling, grinding-to-handoff
   interaction, pending-subtree/revocation repair, descriptor-copy boundaries
@@ -1168,13 +1176,13 @@ also be transcript-bound and locally evaluated under the application's policy.
 ## 6. Gate for C0.3 and exact next sequence
 
 **C0.3 verdict: `NO-GO`.** The ratified C0.2i construction replaces the vulnerable C0.2f
-whole-suffix halt with deterministic pending-subtree replay plus permanent
-whole-context AP fork quarantine. O-01, O-02 and O-04 returned to `DECIDED` when
-the exact-final evidence and review gates passed in PR #226. The v1 report remains immutable
-historical evidence; the amended v2 report is the selected bounded evidence. C0.2j must
-then close fork-free authority laundering, conflicting
-credential identity and grant carriage, C0.2k must then amend the commitment
-context, and O-06c must falsify their exact combined bytes. None exists yet.
+whole-suffix halt with deterministic pending-subtree replay. C0.2j then selects
+grant-rooted credential identity, exact K-readable grant/succession carriage,
+two-sided set-relative authority and lineage-scoped fork containment. O-01,
+O-02 and O-04 remain `DECIDED` with those amendments. The v1/v2 reports remain
+immutable historical evidence and the independent v3 report records the
+superseding authority model. C0.2k must next amend the commitment context, and
+O-06c must falsify the exact combined bytes; neither exists yet.
 O-06 through O-08, O-10 and O-14
 still contain choices required to derive normative bytes or adversarial
 expectations; O-07 explicitly includes the previously deferred checkpoint-
@@ -1194,8 +1202,8 @@ The smallest safe sequence is:
 3. preserve the immutable v1 evidence and the isolated C0.2i v2 pending-
    subtree model; rerun both whenever their respective inputs change, without
    treating bounded falsification as proof;
-4. execute C0.2j for collision-resistant credential identity and exact
-   K-readable grant evidence, then C0.2k for the credential/sequence-bound
+4. preserve C0.2j grant-rooted credential identity, exact K-readable
+   succession evidence and bounded two-sided authority, then execute C0.2k for the credential/sequence-bound
    commitment-context amendment, and only then O-06c bounded adversarial
    evidence over the combined construction;
 5. preserve and rerun the completed v2 gate after those changes, then
@@ -1212,8 +1220,9 @@ The smallest safe sequence is:
 O-13, O-15 and O-16 do not block transcript-only C0.3 under a strictly pinned
 v0 profile with explicit no-finality semantics. They do block every destruction-
 capable increment, profile upgrade, product-readiness claim and irreversible
-effect. C0.2j is an unconditional blocker for C0.3, demo and product work; C0.2k
-and O-06c follow it in that order.
+effect. C0.2j must complete its exact-final evidence and human gates before
+merge; after that, C0.2k and O-06c remain the ordered blockers for C0.3, demo
+and product work.
 
 No supported Phase B adapter may persist current application-ledger objects
 while this `NO-GO` remains in force.

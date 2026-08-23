@@ -1,6 +1,7 @@
 # Styx application protocol v0: identity and context analysis
 
-Status: C0.2b normative decision analysis for O-02 and O-03
+Status: C0.2b normative decision analysis for O-02 and O-03, amended by the
+selected C0.2j credential-succession contract
 
 Base: `d387c27dc712bffb69f682841cc8e34e756c09d0`
 
@@ -259,7 +260,7 @@ An application profile SHALL define a bounded credential record with at least
 these semantic fields:
 
 - the complete application-context tuple from §5.5;
-- a fresh context-local credential identifier;
+- the context-local credential identifier selected below;
 - one verification key and its algorithm identifier;
 - the credential class (`device`, `case-ephemeral`, `organization-role`, or an
   explicitly defined persistent-profile class);
@@ -268,29 +269,31 @@ these semantic fields:
   when the profile permits it; and
 - profile-defined constraints required to evaluate authorized actions.
 
-The exact field widths, algorithm registry, transition reference and encoding
-remain downstream specification work. A human name, organization mapping,
-Nostr account key, MLS leaf key, routing handle and recovery secret are not
-mandatory credential fields.
+O-14 still owns the exact signature-suite registry, key/signature encodings and
+active key-length bounds. A human name, organization mapping, Nostr account key,
+MLS leaf key, routing handle and recovery secret are not mandatory credential
+fields.
 
-The credential identifier MUST be unique within its context and MUST NOT be
-accepted as an authorization fact outside that context. It is a reference, not
-a secret and not proof of possession. Each profile MUST define a fixed-width,
-bounded generation domain with sufficient collision resistance for its declared
-capacity. A producer MUST use fresh, independent output of the declared runtime
-CSPRNG, reject every collision known in the local context and retry with fresh
-input; CSPRNG failure, retry exhaustion or inability to check the bounded local
-set fails closed. This is only the current bounded collision-resistance and
-local-creation obligation: C0.2j still owns the exact identifier construction,
-width and K-readable binding. The current transcript authenticates the
-identifier but neither the selected verification key nor grant reference as
-part of that identifier. Until C0.2j closes that construction, more than one
-K-valid grant binding one
-identifier is `CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED`: every chain under
-that identifier remains graph evidence but applies no AP transition. K never
-selects one binding by arrival, canonical position, checkpoint or AP authority.
-This is a declared cheap retroactive denial of service, not a uniqueness
-solution, and blocks C0.3, demo and product work.
+For every non-genesis credential, the identifier is exactly the O-06b-1 event
+reference of the one K-valid binding `GRANT`. That grant authenticates the O-03
+context, issuer credential, grantee suite and grantee key in the exact
+credential-control tail, and carries no subject identifier. The resulting
+reference is fixed-width, context-local, collision-resistant under the selected
+SHA-256 assumptions and non-circular because it is absent from its own preimage.
+It is a reference, not a secret, possession proof or authorization fact.
+
+Only the binding `GRANT` creates the monotone K record. Every other event treats
+its credential identifier as a direct lookup key and verifies under the suite
+and key derived from that record. Missing/forward lookup, suite/key mismatch,
+wrong-context evidence and an observed distinct-preimage reference collision
+fail closed before AP evaluation. Byte-identical duplicate grant evidence is
+idempotent. K never chooses a binding by arrival, replay position, checkpoint,
+AP authority or external identity.
+
+O-07 still owns the exact genesis credential construction. It must use a domain
+distinct from the event-reference domain or a structurally disjoint encoding;
+K rejects equality between a genesis credential identifier and a grant event
+reference.
 
 ### 6.2 Signed application object
 
@@ -310,14 +313,22 @@ It does not establish that the action is allowed.
 ### 6.3 Authorization evaluation
 
 Credential binding is a monotone K-level historical fact. `AP` evaluates
-reversible authority at the acting event's canonical replay prefix and returns
-a bounded policy result covering the exact action, context, credential and
-policy version. Binding never implies authority: a grant by a bound but
-unauthorized issuer can establish signature-verification evidence while its
-grantee remains `AUTHENTIC_BUT_UNAUTHORIZED`. `K` verifies binding and preserves
-graph evidence but applies only the AP-authorized transition; it MUST NOT parse
-human role names or invent permissions. Openings, pending status and retention
-never alter K binding, admission, ordering, duplicate identity or forks.
+reversible authority over the complete finite K-admitted credential-control set.
+For every causal linearization, it evaluates the actor at that event's acting
+prefix. `MayAuth` means authorized in at least one such interpretation;
+`MustAuth` means authorized in every interpretation. Authority expansion,
+producer eligibility and operational authority require `MustAuth`; revocation
+and retirement reductions use `MayAuth`. An actor unauthorized in every
+interpretation cannot reduce authority merely by proving key possession.
+
+Binding never implies authority: a grant by a bound but unauthorized issuer can
+establish signature-verification evidence while its grantee remains
+`AUTHENTIC_BUT_UNAUTHORIZED`. `K` verifies binding and preserves graph evidence
+but applies only the AP-authorized transition; it MUST NOT parse human role
+names or invent permissions. Openings, pending status, removal, retention and
+current AP applicability never alter the authority evidence set, K binding,
+admission, ordering, duplicate identity or forks. C0.2j selects fresh full
+replay and makes no incremental-authority-cache claim.
 
 The following do not satisfy `AP` authorization:
 
@@ -342,7 +353,10 @@ does not grant a role and cannot replace the inner application signature.
 
 Genesis establishes only the initial authority inputs later fixed by O-07. Any
 non-genesis credential is effective only after an authenticated, authorized
-grant transition in the same context. A credential MUST NOT self-authorize.
+grant transition in the same context. Only a K-valid `GRANT` creates its
+binding; that credential becomes operational only if the grant satisfies
+`MustAuth`. Its immutable provenance parent is the issuer credential. A
+credential MUST NOT self-authorize.
 
 Delegation is unsupported unless a profile defines a closed delegation grammar,
 maximum depth, allowed action subset, validity bound and revocation semantics.
@@ -350,36 +364,43 @@ An implementation MUST reject an unknown or unbounded delegation chain.
 
 ### 6.6 Rotation, revocation and expiry
 
-Rotation creates a fresh key and credential identifier; it does not overwrite a
-key under the old identifier. An authorized transition grants the replacement
-and retires the old credential according to one atomic profile rule, subject to
-the causal guarantees selected by O-01 and the atomic commit guarantees owned
-by `RS`. Revocation is context-local authenticated history; its AP authorization
-and effect are recomputed under set-relative replay and cannot be replaced by
-restoring an ambient older credential record.
+Rotation creates a fresh binding `GRANT` and a `ROTATE` control that names both
+the fresh admitted grant and the retiring identifier; it does not overwrite a
+key under the old identifier. The grant is an authority expansion evaluated
+under `MustAuth`; retirement is a reduction evaluated under `MayAuth`. If only
+retirement is accepted the system may lose availability but never resurrects
+authority. If only the definitely authorized fresh grant is accepted, the two
+credentials may coexist. `ROTATE` creates no binding. Revocation is
+context-local authenticated history; its AP authorization and effect are
+recomputed under set-relative full replay and cannot be replaced by restoring
+an ambient older credential record.
 
 An object whose credential has an AP-authorized revocation in its causal past
 remains K-admitted and parent-usable but receives typed AP-fold outcome
-`POST_REVOCATION` and applies no transition. Its descendants remain graph
-evidence. Any K-admitted same-author fork permanently quarantines the whole v0
-AP context: no descendant or independent transition applies, operational
-authority is empty and a self-fork is an absolute context lockout rather than a
-recovery path. Separately, a fork-free compromised credential can issue a
-concurrent grant while a peer revokes it; one grindable reference order leaves
-the successor operational because v0 revocation is non-transitive. Concurrent
-rotation or revocation therefore remains unsafe pending the provenance-aware
-C0.2j authority contract; late
-admission can reversibly change projected authority and requires replay, never
-an arrival-order rule. A physical-time expiry is forbidden until O-05/O-12 define
-its authenticated time semantics. Profiles may instead use an explicit
-no-expiry mode, a causal/state bound, or a later approved physical-time bound.
+`POST_REVOCATION` or `LINEAGE_QUARANTINED` and applies no transition. Its
+descendants remain graph evidence. Revocation terminates the target and every
+transitive grant descendant; a late ancestor revocation therefore contains a
+concurrently laundered successor regardless of its grindable reference order.
+
+Any K-admitted same-author fork permanently quarantines the forking credential
+and its provenance descendants, independent of role, privilege, arrival or
+current revocation state. It cannot expand authority. Independent lineages may
+continue only when their controls satisfy the same two-sided rule. This scoped
+rule improves availability over whole-context quarantine but can still leave no
+operational authority. Late admission always recomputes the full projection;
+arrival order never chooses authority. A physical-time expiry is forbidden
+until O-05/O-12 define its authenticated time semantics. Profiles may instead
+use an explicit no-expiry mode, a causal/state bound, or a later approved
+physical-time bound.
 
 ### 6.7 Recovery and anonymous return
 
-Recovery grants a fresh credential through a profile-defined authenticated
-transition. It MUST NOT resurrect a revoked credential, reset context history or
-silently clone a device key. A profile with no recovery MUST state that device or
-capability loss is permanent.
+Recovery requires a fresh binding `GRANT` plus a `RECOVER` control that names
+that admitted grant and the retired identifier. Both are expansion-sensitive
+and require `MustAuth`; `RECOVER` creates no binding. Recovery MUST NOT re-grant
+or resurrect a revoked identifier, reset context history or silently clone a
+device key. A profile with no independent recovery authority MUST state that
+device or capability loss can be permanent.
 
 An anonymous return capability is fresh, high-entropy and scoped to one context.
 It may admit or recover a context-local credential, but it is not written into
@@ -479,16 +500,16 @@ other.
 | Persistent account key is reused across anonymous cases | Profile activation or admission rejected | `AP` |
 | Stale or revoked credential signs a later action | Unauthorized/revoked result | `AP` after `K` signature validation |
 | Old storage snapshot omits a revocation | Rollback is reported when independent evidence exists; no silent recovery claim | `RS`; `AP` revalidates |
-| Rotation and old-key action are concurrent | Preserve the executable non-transitive authority counterexample; no safe outcome claim before C0.2j | `K`, then `AP` |
-| Compromised credential issues a concurrent grant while a peer revokes it | The successor can remain operational in one grindable reference order; C0.2j blocks use | `K`, `AP` |
-| Holder of valid or revoked key material creates a same-author fork | Permanently quarantine the whole v0 AP context; no producer eligibility or recovery claim | `K`, `AP`, `PV`; future recovery O-15/O-16 |
-| Compromised device uses its still-valid credential | Actions and successor grants remain attributable, but revocation does not bound compromise in v0; incident response and context abandonment are required | `AP`, `RS`, `PV` |
+| Rotation and old-key action are concurrent | Evaluate the fresh grant under `MustAuth`, retirement under `MayAuth`; old lineage remains inert after accepted retirement | `K`, then `AP` |
+| Compromised credential issues a concurrent grant while a peer revokes it | Grant fails `MustAuth`; ancestor revocation terminates every descendant regardless of reference order | `K`, `AP` |
+| Holder of valid or revoked key material creates a same-author fork | Permanently quarantine that credential lineage; independent definitely authorized lineages may continue | `K`, `AP`, `PV`; future recovery O-15/O-16 |
+| Compromised device uses its still-valid credential | Actions remain attributable and within its current authority; one uncontested authority can still remove peers, so governance/incident response remain required | `AP`, `RS`, `PV` |
 | Malicious organization operator maps a role key to the wrong human | Outside cryptographic proof; operational audit/incident process, while the authenticated credential-to-action record remains available under the retention policy | `PV` |
 | Stolen anonymous return capability is redeemed | Treat as bearer use; establish a new credential and expose the limitation | `AP`, `PV` |
 | Recovery attempts to restore a revoked key or earlier context history | Reject; recovery cannot reset revocation or context | `AP`, `RS` |
 | Nostr/MLS/account proof validates but application grant is absent | Unauthorized result | `AP` |
 | Context identifier appears in an outer routing envelope | Metadata-profile violation; no anonymity claim | `TR` |
-| A new credential identifier collides with a locally known identifier | Reject creation and retry with fresh independent `RS` input | `AP` |
+| Two distinct valid grant preimages produce one reference | Fail closed as an observed cryptographic collision; never choose by arrival/order | `K` |
 
 ## 9. Resource, denial-of-service and migration bounds
 
@@ -496,8 +517,9 @@ other.
   or registry-bounded lengths before allocation or signature work.
 - Unknown algorithms, profiles, versions, credential classes and grant types
   fail closed.
-- Authorization lookup and revocation checks require a bounded profile strategy;
-  unbounded delegation and attacker-chosen recursive chains are forbidden.
+- Authorization explores every admissible causal interpretation within the
+  declared bound; lineage traversal, controls and orders are bounded and fail
+  closed before any positive authority result.
 - A profile sets maximum active credentials, pending grants, revocations and
   recovery attempts under O-08. This document does not choose those numbers.
 - Historical verification after compaction must preserve the authenticated
@@ -513,7 +535,7 @@ other.
 
 | Item | Decision | Rejected alternatives | Dependencies retained |
 | --- | --- | --- | --- |
-| O-02 | Context-local per-endpoint signing credential plus authenticated AP authorization state; optional persistent proof and bearer admission/recovery remain separate | Durable account as universal author; MLS sender as author; self-asserted key/role; bearer-only authorship | O-01 defines concurrent/stale ordering; O-05/O-12 gate physical expiry; O-06 defines references; O-07 initial authority; O-08 limits; O-10 errors |
+| O-02 | Grant-rooted context-local endpoint credential plus two-sided AP authority, transitive provenance and lineage-scoped fork quarantine; optional persistent proof and bearer admission/recovery remain separate | Durable account as universal author; MLS sender as author; self-asserted key/role; bearer-only authorship; random identifier freeze; canonical-order authority | O-01 defines causality; O-05/O-12 gate physical expiry; O-06 supplies references/tail; O-07 initial authority; O-08 limits; O-10 errors; O-14 suites |
 | O-03 | Explicit tuple of protocol version, application-profile ID/version and fresh 32-byte random context ID; genesis and all later objects authenticate the tuple | Ambient/account/org/database ID; MLS/Nostr handle; complete-genesis hash as context ID; raw random value without profile tuple | O-06 defines genesis reference mechanics; O-07 completes genesis; SS/TR/RS profiles bind their own namespaces without reusing the tuple publicly |
 
 ### 10.1 Security and privacy consequences
@@ -523,10 +545,11 @@ endpoint by default, supports independent revocation and avoids requiring a glob
 identity in anonymous cases. It cannot prevent linkability caused by transport,
 storage, notifications, recovery, user behavior or an implementation that
 violates profile separation. A currently valid compromised credential can act
-within its granted authority and concurrently grant a successor; v0 revocation
-does not transitively remove that successor. Any holder of valid signing-key
-material can instead force permanent whole-context AP quarantine. These are
-mandatory C0.2j availability and authority blockers, not mitigations.
+within its granted authority. C0.2j prevents a concurrent successor from
+surviving ancestor revocation within the bounded model and scopes fork
+quarantine to that lineage. It does not add quorum: one uncontested authority
+can still remove all peers and remain the sole producer, while mutual reduction
+or fork containment can leave no operational authority.
 
 Random context identifiers prevent semantic derivation from personal data; they
 do not hide a context if exposed as stable metadata. Application signatures
@@ -551,13 +574,14 @@ or if cross-profile negative vectors reveal an accepted replay.
 
 ## 11. Downstream transcript and vector inventory
 
-C0.3 must include or derive explicit fields for:
+O-06c/C0.3 must include or derive explicit fields for:
 
 - protocol version and object-kind domain;
 - application-profile identifier and version;
 - 32-byte context identifier;
 - credential identifier;
 - credential verification-key/algorithm binding through authenticated state;
+- the exact role-`0x02` control kind and GRANT/target/replacement arm;
 - genesis reference or commitment;
 - policy/grant version or authenticated state reference needed for the exact
   authorization decision; and
