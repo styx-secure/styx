@@ -1,0 +1,37 @@
+[
+  {
+    "blocker_id": "C0.3",
+    "expected_code": "GATED_CAPABILITY_UNBLOCKED",
+    "id": "remove-transferred-demo-gate",
+    "operation": "remove-block",
+    "value": "demo"
+  },
+  {
+    "blocker_id": "C0.3",
+    "expected_code": "GATED_CAPABILITY_UNBLOCKED",
+    "id": "remove-transferred-product-gate",
+    "operation": "remove-block",
+    "value": "product"
+  },
+  {
+    "blocker_id": "C0.3",
+    "expected_code": "GATED_CAPABILITY_UNBLOCKED",
+    "id": "remove-transferred-sensitive-use-gate",
+    "operation": "remove-block",
+    "value": "sensitive_use"
+  },
+  {
+    "blocker_id": "O-06c",
+    "expected_code": "BLOCKER_EDGE_MISMATCH",
+    "id": "restore-obsolete-direct-demo-gate",
+    "operation": "append-block",
+    "value": "demo"
+  },
+  {
+    "blocker_id": "O-06c",
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "reopen-decided-o06c",
+    "operation": "set-status",
+    "value": "OPEN"
+  }
+]

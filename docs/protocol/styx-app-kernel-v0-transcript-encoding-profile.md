@@ -2,7 +2,8 @@
 
 - **Status:** selected O-06b-1 transcript profile, amended by the selected
   O-06b-2 commitment profile and the C0.2j credential-control role/tail;
-  executable exact-byte falsification remains open under O-06c.
+  O-06c bounded exact-byte falsification completed with the conditions and
+  non-claims recorded by Issue #243.
 - **Authority:** Issues #221 and #233, ADR-0007, ratified K-01 through K-11,
   O-01 through O-05, O-09 and the O-06a semantic inventory.
 - **Exact evidence base:**
@@ -20,8 +21,9 @@ derivation. It deliberately does **not** select payload-commitment or chunk-tree
 internals itself, a signature suite, genesis contents, a wire/storage
 representation, an executable vector or implementation. The exact commitment
 internals are now selected separately by
-`styx-app-kernel-v0-commitment-encoding-profile.md`. O-06 remains `OPEN`;
-O-06c remains mandatory, and C0.3 remains `NO-GO`.
+`styx-app-kernel-v0-commitment-encoding-profile.md`. O-06 and O-06c are
+condition-bearing `DECIDED`; C0.3 remains `NO-GO` and no implementation,
+corpus, demo, product or sensitive-use authority follows.
 
 ## 1. Inputs and bounded claim
 
@@ -536,14 +538,17 @@ reinterpreted.
    big-endian `u64` author sequence to both O-06b-2 leaf and outer commitment
    bodies. The transcript fields themselves and this document's framing remain
    unchanged.
-4. **O-06c** implements bounded adversarial falsification of the combined
-   construction, emits deterministic work-order/per-stage instrumentation and
-   reruns v1, v2, v3 and C0.2k baseline and mutation evidence unchanged.
-5. Only after O-06c passes independent review and human ratification may O-06
-   move to `DECIDED`.
+4. **O-06c is completed as bounded evidence:** the independent Python and
+   JavaScript encoders agree on the selected complete objects; exhaustive,
+   directed-mutant, frozen-section and historical gates pass under the exact
+   envelope recorded in the O-06c report. This is falsification evidence, not a
+   proof or implementation-conformance claim.
+5. O-06 and O-06c are condition-bearing `DECIDED` and must be rerun or reopened
+   when any recorded placeholder owner selects a dependent input or a later
+   counterexample invalidates the bounded verdict.
 
-O-06b-1, O-06b-2, C0.2j and C0.2k together do not make C0.3 executable. O-06c
-remains mandatory over the combined construction. O-07, O-08, O-10 and O-14 remain blockers;
+O-06b-1, O-06b-2, C0.2j, C0.2k and the completed O-06c evidence do not make
+C0.3 executable. O-07, O-08, O-10 and O-14 remain blockers;
 O-12 additionally blocks any time-bearing profile. O-11 remains required before
 supported persistence or remote admission, and K-11 remains required before any
 normative corpus file.

@@ -255,7 +255,7 @@
   ],
   "artifact": {
     "c03_verdict": "NO_GO",
-    "contract_base_commit": "745de6d8954a39ad3a39e9ccc5303ba08fa8508c",
+    "contract_base_commit": "3f439189e0cbe4071f642c693dbb196b477a48ea",
     "format": "styx.review-model.v1",
     "implementation_claim": false,
     "language": "en",
@@ -327,7 +327,10 @@
     {
       "blocks": [
         "corpus",
-        "implementation_alignment"
+        "demo",
+        "implementation_alignment",
+        "product",
+        "sensitive_use"
       ],
       "citations": [
         {
@@ -378,15 +381,16 @@
     },
     {
       "blocks": [
-        "C0.3",
-        "demo",
-        "product",
-        "sensitive_use"
+        "C0.3"
       ],
       "citations": [
         {
-          "anchor": "## 11. O-06c executable handoff",
-          "source_id": "commitment_profile"
+          "anchor": "**O-06c executable evidence:**",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "# Styx O-06c identifier/commitment falsification report",
+          "source_id": "identifier_commitment_report"
         }
       ],
       "decision_refs": [
@@ -400,8 +404,8 @@
         "OB-K01"
       ],
       "owner": "K",
-      "reason": "Must falsify exact combined transcript, commitment, credential and sequence bytes with real SHA-256 vectors and independent encoders.",
-      "status": "OPEN"
+      "reason": "The bounded exact combined transcript, commitment, credential and sequence construction has no counterexample within the declared O-06c envelope; C0.3 remains fail-closed under its own transferred capability gates.",
+      "status": "DECIDED"
     },
     {
       "blocks": [
@@ -2402,6 +2406,34 @@
       "owner": "K",
       "statement": "No timeout, quorum, relay response, retry or checkpoint substitutes for a missing or non-verifying REQUIRED opening.",
       "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "**O-06c executable evidence:**",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "# Styx O-06c identifier/commitment falsification report",
+          "source_id": "identifier_commitment_report"
+        }
+      ],
+      "decision_refs": [
+        "O-06"
+      ],
+      "evidence_refs": [],
+      "id": "INV_O06C_BOUNDED_EVIDENCE",
+      "object_refs": [
+        "application_event",
+        "content_descriptor",
+        "opening"
+      ],
+      "obligation_refs": [
+        "OB-K01"
+      ],
+      "owner": "K",
+      "statement": "Within the declared O-06c exploration envelope, independent encoders, exhaustive octet and scalar mutation, closed detector-set mutation testing, frozen-section verification and historical-evidence replay found no counterexample to the selected combined identifier and commitment construction.",
+      "status": "EVIDENCE_ONLY"
     },
     {
       "citations": [
@@ -5779,7 +5811,7 @@
       "authority": "normative",
       "id": "commitment_profile",
       "path": "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
-      "sha256": "666cf3bbb34375171c5c96d9faf74efb24f5c5c6b4dcac13d080fa7468cc9673"
+      "sha256": "608a83f44d40f5913327f40d4c747a149a3bc104da4d720539895d5c8b825ae5"
     },
     {
       "authority": "evidence",
@@ -5797,13 +5829,19 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "fc25bd660d90767883368f164bf3095837ebd186c578ea7ce938acbda79d5459"
+      "sha256": "ab658e58820cef5e07b47f6955fc11b5b7c46dad89dff8f0a555fdb355a864b4"
     },
     {
       "authority": "evidence",
       "id": "identifier_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-identifier-derivation-analysis.md",
-      "sha256": "0c19a44371d0615ba9dad06030e532e0a0d90406c94863a8c438befedc3c64a4"
+      "sha256": "bff42064ab32cbcb2f5389a3587d3cd603c5ee4cb49110d7fe29361a6628eb99"
+    },
+    {
+      "authority": "evidence",
+      "id": "identifier_commitment_report",
+      "path": "docs/protocol/styx-app-kernel-v0-identifier-commitment-falsification-report.md",
+      "sha256": "339ef1d15a18be8dd04c9c25588ce0862ef9d622f762854e8967572bdca8c575"
     },
     {
       "authority": "evidence",
@@ -5833,19 +5871,19 @@
       "authority": "normative",
       "id": "responsibility",
       "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
-      "sha256": "6653de181073f261d0899437f3dbcf7317f0336a715232266b2f8404dac44a7c"
+      "sha256": "770141d46099f8429e8e0b15e73f62112efc0be24911b32aacfad83a714a3833"
     },
     {
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "45d1f6ad62ef15ee73cb16c4aaea1d2c763ccd31e355a53a616d267cbc939618"
+      "sha256": "239974741f131a6576596d57cff62b345c861f8e67e81b3861ba5d838974d884"
     },
     {
       "authority": "normative",
       "id": "transcript_profile",
       "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
-      "sha256": "4a8b242ca01a7289994a0f9f8e322d5c2dee4c636da80c3ed6638bf9c89df09f"
+      "sha256": "8b377595252444cc579ed0e7b470c2ad5e7c3b63d1260676f4ee67f66de59d4c"
     }
   ],
   "state_models": [

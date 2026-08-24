@@ -1,8 +1,8 @@
 # Styx v0 payload-commitment and chunk-tree profile — O-06b-2
 
 - **Status:** selected O-06b-2 profile, amended by the C0.2k
-  credential/sequence binding; combined executable falsification remains open
-  under O-06c.
+  credential/sequence binding; O-06c bounded combined falsification completed
+  with the conditions and non-claims recorded by Issue #243.
 - **Authority:** Issue #223, ADR-0007, ratified K-01 through K-11, O-01 through
   O-05, O-09, O-06a and O-06b-1.
 - **Exact evidence bases:** original O-06b-2 selection
@@ -17,8 +17,8 @@ roles allocated by O-06b-1. It fixes one hash-only randomized-opening suite and
 one left-complete chunk-tree construction. C0.2k supplies an isolated bounded
 model and adversarial evidence for the context amendment only; it creates no
 product implementation, wire/storage format, conformance claim or production
-authority. O-06 remains `OPEN`; O-06c remains mandatory, and C0.3 remains
-`NO-GO`.
+authority. O-06 and O-06c are condition-bearing `DECIDED`; C0.3 remains
+`NO-GO`, and no corpus, implementation or readiness authority follows.
 
 ## 1. Selected suite and closed agility rule
 
@@ -699,7 +699,8 @@ confer priority or finality, or permit an irreversible external effect.
 - **C0.2j / C0.2k:** C0.2j selects collision-resistant K credential identity
   and grant binding. C0.2k widens `CTX` to bind that exact identity and author
   sequence, rederives all dependent arithmetic and inverses, and supplies
-  bounded model evidence. O-06c must still falsify the combined construction.
+  bounded amendment evidence. O-06c supplies bounded combined falsification;
+  it does not prove implementation conformance or close a placeholder owner.
 - **O-15/O-16:** lifecycle/profile succession and finality/stability remain open;
   v0 is version-pinned and no irreversible-effect claim follows.
 
@@ -710,6 +711,7 @@ is withdrawn/materially weakened, or a future protocol version requires a new
 commitment family. A preference for HMAC triggers the explicit three-part reopen
 and renewed-ratification path in section 9.1; it is never an executor choice.
 
-After this amendment, C0.2k is selected but does not close O-06. O-06c remains
-mandatory over the combined C0.2j/C0.2k construction. K-11 still gates any
-normative corpus file, and C0.3 remains `NO-GO`.
+After Issue #243, O-06 and O-06c are condition-bearing `DECIDED` over the exact
+combined C0.2j/C0.2k construction and declared bounded envelope. K-11 still
+gates any normative corpus file; O-07, O-08, O-10 and O-14 remain open; C0.3
+remains `NO-GO`.

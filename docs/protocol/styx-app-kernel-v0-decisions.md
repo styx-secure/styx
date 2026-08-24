@@ -845,7 +845,8 @@ outcomes.
 
 ### O-06 — Event/content identifier semantics
 
-- **Status:** `OPEN`.
+- **Status:** `DECIDED`, condition-bearing on the exact bounded O-06c evidence
+  and reopen triggers below.
 - **Question:** does bounded executable O-06c evidence falsify the exact
   transcript/reference and commitment/chunk-tree construction selected through
   O-06b-2?
@@ -922,13 +923,23 @@ outcomes.
   rejection of unchanged-opening copy across credential/sequence contexts and
   preserves explicit recomputation, same-slot fork and broader-security
   non-claims. It is not O-06c or product evidence.
-- **Missing evidence:** O-06c executable negative evidence must independently
-  target the combined C0.2j/C0.2k construction. O-07 still owns the complete genesis fields;
+- **O-06c executable evidence:** `NO_COUNTEREXAMPLE_WITHIN_BOUNDS`; canonical
+  report digests are `scope=__O06C_SCOPE_SHA256__`,
+  `frozen=8614f80f1434353ef96a786a93c2736c7a1d09542c9a4f92af808ff2ad9e5c8a`,
+  `machine=0ccc8cdfd9c28411fdc7dbb9d6356ba3b4bb8b87f2c48627437c2a909dd3158a`,
+  `mutation=bc4cb83510cba472fd1814976160a3199734b591aa9e7b21d34c6f098d03a9fe`,
+  `cross-language=8ed61a94432c79efba5da818d6933d7794a6b0dc71f51aed5ae8362ec1f3e450`
+  and
+  `historical=153a64cd660a29f2d90d16cb70e2bb8c45a32627a4f9c34145183d0775c16114`.
+  The exact candidate commit, tree and canonical diff identity are immutable PR
+  #244 evidence, not tracked report inputs. The result is bounded falsification,
+  not proof, implementation conformance or readiness authority.
+- **Remaining evidence owners:** O-07 still owns the complete genesis fields;
   O-14 separately owns the signature-suite
   registry. O-08 owns measured profile maxima and O-10 owns stable error codes.
 - **Dependent artifact:** complete genesis transcript fields and bounded
   adversarial evidence.
-- **Smallest bounded follow-up:** O-06c adversarially tests framing injectivity,
+- **Completed bounded follow-up:** O-06c adversarially tests framing injectivity,
   role/context separation,
   non-circularity, chunk unlinkability, collision handling, grinding-to-handoff
   interaction, pending-subtree/revocation repair, descriptor-copy boundaries
@@ -960,9 +971,10 @@ outcomes.
   contents, O-06b-2's written inverse or assumptions fail, or O-14 cannot
   authenticate these bytes without per-event selection, fallback or a materially
   different digest/runtime basis.
-- **Human ratification:** O-06a, O-06b-1 and O-06b-2 were ratified under Issues
-  #219, #221 and #223. The C0.2k amendment requires exact-final-HEAD acceptance
-  under Issue #239; O-06 remains open after that acceptance.
+- **Human ratification:** O-06a, O-06b-1, O-06b-2 and C0.2k were ratified under
+  Issues #219, #221, #223 and #239. Issue #243 supplies the O-06c executable
+  evidence and requires independent exact-final review and human approval before
+  this condition-bearing `DECIDED` status becomes effective on `main`.
 
 ### O-07 — Genesis and checkpoint evidence
 
@@ -1335,8 +1347,8 @@ grant-rooted credential identity, exact K-readable grant/succession carriage,
 O-02 and O-04 remain `DECIDED` with those amendments. The v1/v2 reports remain
 immutable historical evidence and the independent v3 report records the
 superseding authority model. C0.2k selects the credential/sequence-bound
-commitment context and supplies bounded amendment evidence; O-06c must still
-falsify the exact combined bytes independently.
+commitment context and supplies bounded amendment evidence; O-06c independently
+falsifies the exact combined bytes within its declared envelope.
 O-06 through O-08, O-10 and O-14
 still contain choices required to derive normative bytes or adversarial
 expectations; O-07 explicitly includes the previously deferred checkpoint-
@@ -1377,8 +1389,9 @@ O-13, O-15 and O-16 do not block transcript-only C0.3 under a strictly pinned
 v0 profile with explicit no-finality semantics. They do block every destruction-
 capable increment, profile upgrade, product-readiness claim and irreversible
 effect. C0.2k must complete its exact-final evidence and human gates before
-merge; after that, O-06c remains the next ordered blocker for C0.3, demo and
-product work and sensitive use.
+merge. O-06c is no longer the direct owner of demo, product and sensitive-use
+gates after its exact evidence passes; the `C0.3` `NO-GO` gate itself blocks
+those capabilities together with corpus and implementation alignment.
 
 No supported Phase B adapter may persist current application-ledger objects
 while this `NO-GO` remains in force.

@@ -21,7 +21,10 @@
   event/genesis reference profile. Issue #223 at base
   `cf93e6fa9136a383e125dfee76312bb5ca957455` selects the O-06b-2 SHA-256
   randomized-opening commitment and left-complete chunk-tree profile;
-  executable O-06c falsification remains open.
+  Issue #243 completes bounded O-06c falsification of the exact combined
+  C0.2j/C0.2k construction. O-06/O-06c are condition-bearing `DECIDED`; the
+  result is not proof, implementation conformance or readiness authority and is
+  reopened/rerun for a selected placeholder input or later counterexample.
 - **C0.2i amendment:** Issue #225 replaces the authorization-blind whole-suffix
   halt with transcript-order-preserving pending-subtree replay, makes any
   K-admitted same-author fork a permanent whole-context AP quarantine,
@@ -40,7 +43,8 @@
   reachable states by dynamic programming and makes authority explicitly
   unavailable when its state or transition envelope is crossed. C0.2k selects
   the credential/sequence-bound commitment context with bounded amendment
-  evidence; O-06c remains mandatory before C0.3.
+  evidence. O-06c now supplies bounded combined evidence; C0.3 remains
+  `NO-GO` because O-07/O-08/O-10/O-14 and the corpus-path gate remain open.
 - **Language:** English is canonical.
 
 Styx is experimental, has not completed an independent security audit, and is
@@ -92,7 +96,7 @@ the [C0.2a responsibility matrix](../protocol/styx-app-kernel-v0-responsibility-
 | --- | --- | --- | --- | --- |
 | Application plaintext and attachments | Confidentiality to the recipients selected by an authorized application transition | Authentication failure rejects delivery; compromise invokes rotation and product incident handling | `OB-SS03`, `OB-AP08`, `OB-PV09` | An authorized or compromised endpoint can disclose plaintext; attachment metadata requires separate handling. |
 | Application event meaning | Integrity and authenticity of every field that affects validation, authorization, causality, ordering or conflict handling | Invalid transcripts and semantics are rejected before authoritative state change; control events are content-free | `OB-K01`–`OB-K04`, `OB-K12`, policy by `OB-AP01` | A valid signature proves key possession, not role authorization, possession at commit time, authorship of copied content or truth. |
-| Payload commitment and retained opening | Binding to one complete payload and authenticated credential/author slot plus computational hiding after opening destruction under stated assumptions | Reject malformed geometry, wrong suite/context/credential/sequence/opening/content and incomplete verification before AP use | `OB-K10`, retention by `OB-K14`/`OB-RS04` | C0.2k supplies bounded amendment evidence, not implementation or O-06c proof; a knowledgeable holder can recompute for another slot, length/shape remain visible, randomizer custody is operational, complete-object availability is required and SHA-256 assumptions remain explicit. |
+| Payload commitment and retained opening | Binding to one complete payload and authenticated credential/author slot plus computational hiding after opening destruction under stated assumptions | Reject malformed geometry, wrong suite/context/credential/sequence/opening/content and incomplete verification before AP use | `OB-K10`, retention by `OB-K14`/`OB-RS04` | C0.2k and O-06c supply bounded amendment/combined evidence, not proof or implementation conformance; a knowledgeable holder can recompute for another slot, length/shape remain visible, randomizer custody is operational, complete-object availability is required and SHA-256 assumptions remain explicit. |
 | Application and case context | Domain separation and rejection of cross-context replay | Cross-context objects fail kernel validation | `OB-K08`, requirements from `OB-AP03` | O-03/O-06a select the context tuple/reference role and O-06b-1 fixes the outer reference bytes; O-07 genesis contents remain open. |
 | Author and role authority | Monotone context-bound K grant binding separated from reversible bounded AP authorization | Invalid or unresolved binding is rejected; authentic-but-unauthorized and post-revocation actions apply no AP transition; necessary Pass0 authority admits expansion, the first eligible contested slot per actor admits bounded accepted reductions, R-1 constrains direct reduction targets, and revocation/fork termination follows credential provenance; stale or resource-exhausted projection makes authority unavailable | `OB-AP02`; binding/provenance by `OB-K18`/`OB-K19` | One uncontested compromised authority can remove every peer and remain sole producer. Any K-admitted rejected reduction can permanently lower necessary authority for its target subtree without becoming an accepted reduction; R-1 blocks direct omitted-history veto of an unseen grant but not an indirect veto through its visible issuer. Mutual reductions can leave no authority; independently granted same-key aliases survive lineage-local revocation and occupy separate fork namespaces. |
 | Causal history and state | Transcript-only deterministic validation/order, replay/fork detection and bounded convergence under monotone opening observations | Classified duplicate, pending root/ancestor, applied, stale, authority-unavailable or lineage-quarantine result; independent authorized lineages may continue | `OB-K05`–`OB-K07`, `OB-K13`, `OB-K19` | A valid-key holder can terminate its lineage through a fork and amplify replay through delayed evidence; bounded DP replay has state/transition costs and typed exhaustion; no finality exists. |
@@ -383,7 +387,7 @@ make telemetry or push metadata harmless.
 
 | Adversary | Primary assets/properties at risk | Required response and evidence | Sole obligation owners | Residual non-claim |
 | --- | --- | --- | --- | --- |
-| A1 malformed-input sender | Event meaning, session/runtime availability | Strict bounded parsing, canonical rejection, stable outcomes and resource tests before state change; O-06b-1/O-06b-2/C0.2k fix regenerated transcript, commitment, context and geometry grammars while the isolated C0.2k model probes only its amendment | `OB-K02`–`OB-K04`, `OB-SS08`, `OB-TR01` each at its parser boundary | A conforming parser cannot prevent all bandwidth exhaustion before bytes reach it; bounded model evidence is not a product parser or full O-06c proof. |
+| A1 malformed-input sender | Event meaning, session/runtime availability | Strict bounded parsing, canonical rejection, stable outcomes and resource tests before state change; O-06b-1/O-06b-2/C0.2k fix regenerated transcript, commitment, context and geometry grammars; O-06c challenges complete-object octets, scalars, parser inverses and geometry under an exploration-only envelope | `OB-K02`–`OB-K04`, `OB-SS08`, `OB-TR01` each at its parser boundary | A conforming parser cannot prevent all bandwidth exhaustion before bytes reach it; bounded O-06c evidence is not a product parser, proof or production-bound claim. |
 | A2 valid but unauthorized actor | Role authority, case state, retention/export | Separate monotone K grant binding from reversible bounded AP authority; classify authentic-but-unauthorized and post-revocation actions; use necessary Pass0 authority for expansion and the first eligible contested slot for reductions | `OB-AP02`; cryptographic binding/provenance by `OB-K18`/`OB-K19` | Valid key possession still creates verifiable historical evidence but never authority; concrete AP roles and O-14 suites remain open. |
 | A3 malicious peer | Plaintext, causal state, availability, erasure | Detect replay/fork/conflict; keep holes and descendants pending; terminate forked credential lineages and descendants; expose selective disclosure, scoped quarantine, forced staleness and delayed replay | `OB-K05`–`OB-K14`, `OB-K19`, `OB-AP04`, `OB-PV01`/`OB-PV04` | An authorized peer can copy plaintext, keep a subtree pending forever, amplify replay, force a symbolic checkpoint-dependent projection stale, terminate its lineage, exploit sole authority or lie in signed content. |
 | A4 compromised authorized peer | Current rights, plaintext and session history | Preserve K evidence; apply transitive provenance termination; require fresh-grant rotation/recovery; disclose compromise and recompute authority by fresh full replay | `OB-AP02`, `OB-K18`, `OB-K19`, `OB-SS04`–`OB-SS06`, `OB-PV07` | No retroactive protection for plaintext/keys; one uncontested authority can remove peers; same-key aliases survive independent grants; no finality. |
@@ -570,9 +574,10 @@ Current evidence establishes only bounded components:
   fail-closed unique-identifier envelope without changing the selected bytes.
   C0.2j selects grant-rooted identity, exact K-readable succession evidence,
   bounded Pass0/selected-slot authority and lineage containment; C0.2k selects
-  the 84-octet commitment context and bounded mutation evidence; O-06c remains
-  mandatory. O-06, O-07, O-08 and O-10 through
-  O-16 remain open;
+  the 84-octet commitment context and bounded mutation evidence; Issue #243
+  completes bounded O-06c evidence. O-06/O-06c are condition-bearing
+  `DECIDED`; O-07, O-08 and O-10 through O-16 retain their recorded open,
+  conditional or downstream-blocking roles;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
   described in its final verdict; and
 - existing vault and chat work provides component evidence under its own
