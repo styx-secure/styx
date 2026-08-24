@@ -529,18 +529,21 @@ reinterpreted.
    randomized-opening suite, its preimages and chunk-tree construction.
 2. **C0.2i** supplies isolated pending-subtree replay evidence without changing
    these bytes or the historical v1 evidence.
-3. **C0.2j is selected:** non-genesis credential identity is its binding
-   `GRANT` event reference; section 5.3.2 supplies exact K-readable grant and
-   succession evidence plus the Pass0/selected-slot authority contract. **C0.2k** next
-   amends the commitment context to bind that identity and author sequence.
+3. **C0.2j and C0.2k are selected:** non-genesis credential identity is its
+   binding `GRANT` event reference; section 5.3.2 supplies exact K-readable grant
+   and succession evidence plus the Pass0/selected-slot authority contract.
+   C0.2k appends that exact 32-octet credential identifier and unsigned
+   big-endian `u64` author sequence to both O-06b-2 leaf and outer commitment
+   bodies. The transcript fields themselves and this document's framing remain
+   unchanged.
 4. **O-06c** implements bounded adversarial falsification of the combined
    construction, emits deterministic work-order/per-stage instrumentation and
    reruns C0.2d/C0.2f/C0.2i unchanged.
 5. Only after O-06c passes independent review and human ratification may O-06
    move to `DECIDED`.
 
-O-06b-1, O-06b-2 and C0.2j together do not make C0.3 executable. C0.2k and
-O-06c remain mandatory in that order. O-07, O-08, O-10 and O-14 remain blockers;
+O-06b-1, O-06b-2, C0.2j and C0.2k together do not make C0.3 executable. O-06c
+remains mandatory over the combined construction. O-07, O-08, O-10 and O-14 remain blockers;
 O-12 additionally blocks any time-bearing profile. O-11 remains required before
 supported persistence or remote admission, and K-11 remains required before any
 normative corpus file.

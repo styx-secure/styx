@@ -468,9 +468,8 @@ outcomes.
 ### O-02 — Author, rotation and authorization binding
 
 - **Status:** `DECIDED`. Issue #225/PR #226 supplied the bounded C0.2i model;
-  Issue #233 selects its C0.2j grant-rooted succession and bounded Pass0/selected-slot authority
-  replacement. Exact-final independent review and human ratification of that
-  replacement remain mandatory before merge.
+  Issue #233/PR #234 ratified its C0.2j grant-rooted succession and bounded
+  Pass0/selected-slot authority replacement.
 - **Rule:** every authoring endpoint SHALL use a distinct context-local signing
   credential. Credential binding is a monotone K-level historical fact;
   application authority is a reversible AP-level decision evaluated at the
@@ -785,10 +784,12 @@ outcomes.
   availability: mutual reductions can leave no authority, and one uncontested
   compromised authority can causally remove every peer and remain sole
   producer. Concurrent grant/revocation cannot launder a successor under the
-  bounded C0.2j Pass0/selected-slot fold. The current
-  44-octet commitment context deliberately does not prevent cross-credential
-  descriptor copy or same-credential cross-sequence self-copy; C0.2k owns that
-  amendment after C0.2j decides exact credential identity.
+  bounded C0.2j Pass0/selected-slot fold. C0.2k supersedes the former 44-octet
+  commitment context with one 84-octet grammar that appends the exact C0.2j
+  credential identifier and full author sequence to both leaf and outer
+  commitment bodies. An unchanged commitment/opening therefore fails across
+  either changed field, but knowledgeable recomputation and same-slot fork
+  evidence remain possible and confer no authority or truth claim.
 - **Dependent artifact:** O-06b-1 selects exact domain tags, reference digest,
   descriptor widths and transcript framing; O-06b-2 selects the commitment and
   chunk construction and binds the fresh per-object randomizer into every leaf;
@@ -813,7 +814,8 @@ outcomes.
   quarantine or apply a fork descendant; or any claim that
   revocation bounds compromise before C0.2j/O-16.
 - **Human ratification:** the amended C0.2i construction completed exact-final
-  review and human ratification under Issue #225 and PR #226.
+  review and human ratification under Issue #225 and PR #226; the C0.2j
+  replacement completed them under Issue #233 and PR #234.
 
 ### O-05 — Clock placement
 
@@ -883,8 +885,12 @@ outcomes.
   left-complete binary tree. It fixes 32-octet commitment values and a canonical
   16-octet tree-geometry block. The suite is derived from protocol version;
   negotiation, truncation, fallback and canonical removal-tail filler are
-  forbidden. The written inverse and two-reduction argument state assumptions,
-  not executable proof or implementation authority.
+  forbidden. C0.2k amends its context from 44 to 84 octets by appending the
+  grant-rooted `credential_identifier:opaque32` and unsigned big-endian
+  `author_sequence:u64` to both `B_L` and `B_C`, while leaving `B_N` unchanged.
+  This is a pre-corpus v1 supersession: the 44-octet grammar, fallback and mixed
+  profiles are invalid. The written inverse and two-reduction argument state
+  assumptions, not implementation or O-06c proof authority.
 - **Rationale/evidence:** `ORDER-004`, `PRIV-01`, `PRIV-03` and `PRIV-04` show
   that identifiers and fork inputs cannot remain mutable conveniences. C0.2c
   establishes a non-circular semantic derivation and one purpose per identifier
@@ -909,16 +915,20 @@ outcomes.
   change pending-subtree shape and replay work, but cannot block an independent
   event or authorize a descendant through a hole. AP must repair reversible
   state when later evidence or openings become available.
-- **Missing evidence:** C0.2j selects grant-rooted credential identity, exact
-  K-readable grant/succession evidence and bounded v3 falsification. C0.2k must
-  next bind that exact
-  credential and author sequence into an amended commitment context. O-06c
-  executable negative evidence must target that combined construction. O-07 still owns the complete genesis fields;
+- **C0.2k bounded evidence:**
+  `docs/protocol/styx-app-kernel-v0-commitment-context-falsification-report.md`
+  records the selected 84-octet context, exact dependent arithmetic, 43 passing
+  assertions in 13 witness families and 18/18 killed mutants. It demonstrates
+  rejection of unchanged-opening copy across credential/sequence contexts and
+  preserves explicit recomputation, same-slot fork and broader-security
+  non-claims. It is not O-06c or product evidence.
+- **Missing evidence:** O-06c executable negative evidence must independently
+  target the combined C0.2j/C0.2k construction. O-07 still owns the complete genesis fields;
   O-14 separately owns the signature-suite
   registry. O-08 owns measured profile maxima and O-10 owns stable error codes.
 - **Dependent artifact:** complete genesis transcript fields and bounded
   adversarial evidence.
-- **Smallest bounded follow-up:** after C0.2k, O-06c adversarially tests framing injectivity,
+- **Smallest bounded follow-up:** O-06c adversarially tests framing injectivity,
   role/context separation,
   non-circularity, chunk unlinkability, collision handling, grinding-to-handoff
   interaction, pending-subtree/revocation repair, descriptor-copy boundaries
@@ -932,9 +942,9 @@ outcomes.
   framed genesis contents, O-06b-2's written inverse or assumptions fail, or
   O-14 cannot authenticate these bytes without per-event selection,
   fallback or a materially different digest/runtime basis.
-- **Human ratification:** O-06a and O-06b-1 were ratified under Issues #219 and
-  #221. O-06b-2 awaits exact-final-HEAD acceptance under Issue #223; O-06 itself
-  remains open after that acceptance.
+- **Human ratification:** O-06a, O-06b-1 and O-06b-2 were ratified under Issues
+  #219, #221 and #223. The C0.2k amendment requires exact-final-HEAD acceptance
+  under Issue #239; O-06 remains open after that acceptance.
 
 ### O-07 — Genesis and checkpoint evidence
 
@@ -1300,8 +1310,9 @@ grant-rooted credential identity, exact K-readable grant/succession carriage,
   bounded Pass0/selected-slot authority and lineage-scoped fork containment. O-01,
 O-02 and O-04 remain `DECIDED` with those amendments. The v1/v2 reports remain
 immutable historical evidence and the independent v3 report records the
-superseding authority model. C0.2k must next amend the commitment context, and
-O-06c must falsify the exact combined bytes; neither exists yet.
+superseding authority model. C0.2k selects the credential/sequence-bound
+commitment context and supplies bounded amendment evidence; O-06c must still
+falsify the exact combined bytes independently.
 O-06 through O-08, O-10 and O-14
 still contain choices required to derive normative bytes or adversarial
 expectations; O-07 explicitly includes the previously deferred checkpoint-
@@ -1322,9 +1333,10 @@ The smallest safe sequence is:
    subtree model; rerun both whenever their respective inputs change, without
    treating bounded falsification as proof;
 4. preserve C0.2j grant-rooted credential identity, exact K-readable
-   succession evidence and bounded Pass0/selected-slot authority, then execute C0.2k for the credential/sequence-bound
-   commitment-context amendment, and only then O-06c bounded adversarial
-   evidence over the combined construction;
+   succession evidence and bounded Pass0/selected-slot authority; preserve the
+   C0.2k credential/sequence-bound commitment-context amendment and its bounded
+   evidence; then execute O-06c adversarial evidence over the combined
+   construction;
 5. preserve and rerun the completed v2 gate after those changes, then
    close genesis/checkpoint evidence, cardinality, error and signature-suite
    questions O-07, O-08, O-10 and O-14, plus O-12 for any time-bearing profile,
@@ -1339,9 +1351,9 @@ The smallest safe sequence is:
 O-13, O-15 and O-16 do not block transcript-only C0.3 under a strictly pinned
 v0 profile with explicit no-finality semantics. They do block every destruction-
 capable increment, profile upgrade, product-readiness claim and irreversible
-effect. C0.2j must complete its exact-final evidence and human gates before
-merge; after that, C0.2k and O-06c remain the ordered blockers for C0.3, demo
-and product work.
+effect. C0.2k must complete its exact-final evidence and human gates before
+merge; after that, O-06c remains the next ordered blocker for C0.3, demo and
+product work.
 
 No supported Phase B adapter may persist current application-ledger objects
 while this `NO-GO` remains in force.

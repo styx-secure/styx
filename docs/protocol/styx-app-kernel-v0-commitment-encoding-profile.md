@@ -1,20 +1,24 @@
 # Styx v0 payload-commitment and chunk-tree profile — O-06b-2
 
-- **Status:** selected O-06b-2 profile; executable falsification remains open
+- **Status:** selected O-06b-2 profile, amended by the C0.2k
+  credential/sequence binding; combined executable falsification remains open
   under O-06c.
 - **Authority:** Issue #223, ADR-0007, ratified K-01 through K-11, O-01 through
   O-05, O-09, O-06a and O-06b-1.
-- **Exact evidence base:**
-  `cf93e6fa9136a383e125dfee76312bb5ca957455`.
+- **Exact evidence bases:** original O-06b-2 selection
+  `cf93e6fa9136a383e125dfee76312bb5ca957455`; C0.2k amendment base
+  `745de6d8954a39ad3a39e9ccc5303ba08fa8508c`.
 - **Language:** English is canonical for language-neutral review.
 - **Ratification:** every selection below remains proposed until `maverde73`
   ratifies the exact final PR HEAD after independent and human crypto review.
 
 This document instantiates the payload-commitment, chunk-leaf and interior-node
 roles allocated by O-06b-1. It fixes one hash-only randomized-opening suite and
-one left-complete chunk-tree construction. It creates no implementation, vector,
-wire/storage format, conformance claim or production authority. O-06 remains
-`OPEN`; O-06c remains mandatory, and C0.3 remains `NO-GO`.
+one left-complete chunk-tree construction. C0.2k supplies an isolated bounded
+model and adversarial evidence for the context amendment only; it creates no
+product implementation, wire/storage format, conformance claim or production
+authority. O-06 remains `OPEN`; O-06c remains mandatory, and C0.3 remains
+`NO-GO`.
 
 ## 1. Selected suite and closed agility rule
 
@@ -36,8 +40,18 @@ or attempted fallback fails closed before allocation, hashing, signature work,
 graph traversal or fetch. A consumer never tries several suites until one
 succeeds.
 
-A future suite requires a new ratified protocol/profile version and a new domain
-registry version. It cannot reuse the v1 domains with different semantics.
+The C0.2k amendment is a pre-corpus supersession inside protocol v1 and suite
+`0x0001`: there is no released C0.3 corpus, supported consumer or persisted
+population for the former context grammar, and the ratified dependency order
+required this amendment before O-06c. From this amendment onward, only the
+84-octet section 2 grammar is valid. The former 44-octet grammar is invalid;
+there is no compatibility decoder, fallback, mixed-profile mode or migration
+population.
+
+Any later incompatible change after a corpus or supported consumer exists
+requires a new ratified protocol/profile version, commitment-suite identifier
+and domain-registry version. It cannot reuse the v1 identifiers or domains with
+different semantics.
 
 Primary evidence:
 
@@ -84,17 +98,25 @@ CTX = commitment_suite_id:u16
    || application_profile_id:u32
    || application_profile_version:u32
    || context_identifier:opaque32
+   || credential_identifier:opaque32
+   || author_sequence:u64
 ```
 
-`CTX` is exactly 44 octets. It is the ratified O-03 tuple prefixed by
-`commitment_suite_id`; the suite prefix is required by the C0.2f structural
-correspondence and is not part of the O-03 context. The genesis reference is
-deliberately absent. Compared with the C0.2f symbolic `context_token`, `CTX`
-also adds the ratified O-03 protocol-version member. The symbolic token bundled
-a genesis reference instead; this byte profile tightens that symbolic token to
-the ratified O-03 tuple without weakening any C0.2f invariant because the fresh
-random context identifier already separates contexts and the application
-transcript separately authenticates the genesis reference.
+`CTX` is exactly 84 octets. Its first 44 octets are the ratified O-03 tuple
+prefixed by `commitment_suite_id`; the suite prefix is required by the C0.2f
+structural correspondence and is not part of the O-03 context. C0.2k appends
+exactly common transcript field 11, the 32-octet grant-rooted
+`credential_identifier` selected by C0.2j, followed by common field 12,
+`author_sequence`, as unsigned big-endian `u64`. Sequence zero is structurally
+valid for a credential's first event; later sequencing legality remains owned by
+O-01. Values never wrap and no shorter integer representation is accepted.
+
+The genesis reference is deliberately absent. Compared with the C0.2f symbolic
+`context_token`, `CTX` also carries the ratified O-03 protocol-version member and
+the C0.2j author slot. The symbolic token bundled a genesis reference instead;
+this byte profile tightens that symbolic token to authenticated fields already
+present in the application transcript. O-07 still owns the complete genesis and
+checkpoint evidence contract.
 
 ## 3. Exact preimages
 
@@ -114,8 +136,8 @@ B_L = CTX
 leaf_i = SHA256(D_LEAF || len32(B_L) || B_L)
 ```
 
-The fixed prefix of `B_L` is 92 octets. The complete leaf preimage is therefore
-`112 + leaf_length` octets. `leaf_ordinal` is zero-based and strictly less than
+The fixed prefix of `B_L` is 132 octets. The complete leaf preimage is therefore
+`152 + leaf_length` octets. `leaf_ordinal` is zero-based and strictly less than
 the authenticated chunk count. `leaf_length` MUST equal the number of terminal
 `leaf_octets` exactly.
 
@@ -164,8 +186,8 @@ B_C = CTX
 commitment_value = SHA256(D_COMMIT || len32(B_C) || B_C)
 ```
 
-`B_C` is 121 octets for single shape and 137 octets for tree shape. The complete
-preimage is therefore 141 or 157 octets. The result is all 32 SHA-256 octets.
+`B_C` is 161 octets for single shape and 177 octets for tree shape. The complete
+preimage is therefore 181 or 197 octets. The result is all 32 SHA-256 octets.
 
 `commitment_shape` is `0x00` for `SINGLE` and `0x01` for `TREE`; every other
 value is invalid. Exact content length, shape, geometry, type, context, suite,
@@ -189,10 +211,10 @@ All of these predicates are checked on authenticated transcript values before
 allocation, hashing, signature work, traversal or fetch:
 
 1. `exact_content_length == 0` requires single shape.
-2. Single shape requires `exact_content_length <= 2^32 - 1 - 92`, namely
-   `4294967203`, and within the active O-08 maximum.
+2. Single shape requires `exact_content_length <= 2^32 - 1 - 132`, namely
+   `4294967163`, and within the active O-08 maximum.
 3. Tree shape requires `chunk_size >= 1`,
-   `chunk_size <= 4294967203`, and membership in the authenticated active
+   `chunk_size <= 4294967163`, and membership in the authenticated active
    profile's closed chunk-size set. O-08 selects that set's numeric values.
 4. Tree shape requires `chunk_size < exact_content_length`, equivalently
    `chunk_count >= 2`.
@@ -409,15 +431,15 @@ code and creates no new remote-facing outcome.
 The following inverses are proof devices, not normative O-11 decoders.
 
 `P_L` reads and verifies `D_LEAF`, then `len32`, isolates exactly that body and
-requires end of input. It reads the 92-octet fixed prefix; the remaining
-`len32 - 92` octets are `leaf_octets`, and their number MUST equal
+requires end of input. It reads the 132-octet fixed prefix; the remaining
+`len32 - 132` octets are `leaf_octets`, and their number MUST equal
 `leaf_length`. The split is unique.
 
 `P_N` reads and verifies `D_NODE`, then `len32`, then the four fixed-width fields
 totalling 74 octets, and requires exact end. The inverse is unique.
 
 `P_C` reads and verifies `D_COMMIT`, then `len32`, isolates the body and requires
-end of input. It reads 44-octet `CTX`, `content_type_id:u32`,
+end of input. It reads 84-octet `CTX`, `content_type_id:u32`,
 `exact_content_length:u64` and `commitment_shape:u8`. Shape `0x00` consumes no
 geometry; shape `0x01` consumes exactly 16 geometry octets. It then reads
 `root:32`, `opening_randomizer:32` and exact end. The inverse is unique.
@@ -500,7 +522,8 @@ as strongly as content; O-08 and RS own custody and redundancy numbers.
   have distinct leaf preimages. Equal leaf digests in either case are a
   blocking collision finding under A1.
 - Domain separation prevents leaf/node/commitment/reference/transcript
-  confusion. Context binding prevents cross-context opening reuse.
+  confusion. Context binding prevents unchanged-opening reuse across
+  application contexts, credentials and author sequences.
 - `subtree_leaf_count`, top-level `chunk_count` and the deterministic split rule
   resist subtree grafting and duplicate-last-leaf constructions.
 - A malicious producer can derive/reuse or grind a randomizer. K cannot prove
@@ -519,10 +542,13 @@ as strongly as content; O-08 and RS own custody and redundancy numbers.
   they sort later. The subtree can remain
   pending indefinitely, and delayed reveal can trigger a large reversible
   replay. O-08 owns production bounds.
-- The current 44-octet `CTX` accepts cross-credential descriptor copy and
-  same-credential cross-sequence self-copy. AP MUST NOT infer possession,
-  knowledge, authorship, originality, first submission or truth from successful
-  verification. C0.2k owns the byte-level repair after C0.2j.
+- The superseded 44-octet `CTX` accepted cross-credential descriptor copy and
+  same-credential cross-sequence self-copy. The selected 84-octet grammar makes
+  an unchanged commitment/opening fail under either changed field. A holder who
+  knows content and opening can nevertheless recompute a fresh valid commitment
+  for another context, and same-credential same-sequence siblings remain fork
+  evidence. AP MUST NOT infer possession, knowledge, authorship, originality,
+  first submission, truth or authority from successful verification.
 - No erasure, deletion, post-removal unlinkability, anonymity, compliance,
   interoperability, audit or readiness claim is made.
 
@@ -554,8 +580,8 @@ build an independent bounded corpus/model that attempts at least:
    `REQUIRED` event blocks exactly its causal subtree only while the context is
    fork-free, whereas any admitted fork quarantines the whole v0 AP context;
 10. control-role/`NONE` enforcement before opening or AP work;
-11. current-profile cross-credential and cross-sequence copy as explicit
-    non-protections, then their C0.2k reversal while retaining same-credential,
+11. rejection of the superseded 44-octet grammar and unchanged-opening
+    cross-credential/cross-sequence copy, while retaining same-credential,
     same-sequence equivocation siblings as verifying fork evidence; and
 12. byte-identical reruns of the combined C0.2d/C0.2f v1 and C0.2i v2 required
     suites; and
@@ -614,9 +640,10 @@ confer priority or finality, or permit an irreversible external effect.
   and extension rules remain open.
 - **O-12/O-13/O-14:** no physical time, destruction permission, erasure claim,
   signature suite or key/signature encoding is selected.
-- **C0.2j / C0.2k:** C0.2j first selects collision-resistant K credential
-  identity and grant binding. C0.2k then widens `CTX` to bind that exact identity
-  and author sequence and rederives all dependent arithmetic and inverses.
+- **C0.2j / C0.2k:** C0.2j selects collision-resistant K credential identity
+  and grant binding. C0.2k widens `CTX` to bind that exact identity and author
+  sequence, rederives all dependent arithmetic and inverses, and supplies
+  bounded model evidence. O-06c must still falsify the combined construction.
 - **O-15/O-16:** lifecycle/profile succession and finality/stability remain open;
   v0 is version-pinned and no irreversible-effect claim follows.
 
@@ -627,6 +654,6 @@ is withdrawn/materially weakened, or a future protocol version requires a new
 commitment family. A preference for HMAC triggers the explicit three-part reopen
 and renewed-ratification path in section 9.1; it is never an executor choice.
 
-After this amendment, O-06 remains `OPEN`; C0.2j, C0.2k and O-06c remain
-mandatory in that order. K-11 still gates any normative corpus file, and C0.3
-remains `NO-GO`.
+After this amendment, C0.2k is selected but does not close O-06. O-06c remains
+mandatory over the combined C0.2j/C0.2k construction. K-11 still gates any
+normative corpus file, and C0.3 remains `NO-GO`.
