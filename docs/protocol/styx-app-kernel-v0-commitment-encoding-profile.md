@@ -573,8 +573,9 @@ build an independent bounded corpus/model that attempts at least:
 
 1. framing injectivity for all three preimages and separation across all seven
    v1 roles;
-2. cross-context opening non-transferability and cross/intra-event leaf
-   separation;
+2. cross-context opening non-transferability for grant-rooted credentials only,
+   with genesis-authored credentials retained as an O-07 dependency and
+   explicit non-claim, plus cross/intra-event leaf separation;
 3. single/tree non-aliasing, exclusion of one-leaf tree, and zero-length single
    remaining distinct from `NONE`;
 4. geometry inconsistency rejected before allocation, checked arithmetic and
@@ -585,18 +586,58 @@ build an independent bounded corpus/model that attempts at least:
 8. commitment equality/mismatch, verifier use of authenticated fields only and
    complete-object verification;
 9. grinding in both K-06 ordering directions, including the fork-free
-   concurrent grant/revoke laundering counterexample; an unavailable
-   `REQUIRED` event blocks exactly its causal subtree only while the context is
-   fork-free, whereas any admitted fork quarantines the whole v0 AP context;
+   concurrent grant/revoke laundering counterexample; and, separately, that an
+   unavailable `REQUIRED` event blocks exactly its causal subtree in a
+   fork-free non-stale context, and that an admitted same-author fork has the
+   lineage-scoped effect ratified by C0.2j and recorded under O-01 in
+   `styx-app-kernel-v0-decisions.md`;
 10. control-role/`NONE` enforcement before opening or AP work;
 11. rejection of the superseded 44-octet grammar and unchanged-opening
     cross-credential/cross-sequence copy, while retaining same-credential,
     same-sequence equivocation siblings as verifying fork evidence; and
-12. byte-identical reruns of the combined C0.2d/C0.2f v1 and C0.2i v2 required
-    suites; and
+12. byte-identical reruns of v1, v2, v3 and C0.2k baseline and mutation evidence;
+    and
 13. deterministic work-order instrumentation and per-stage counters for parsing,
     transcript regeneration, hashing, graph construction, opening verification
     and replay, so attacker-controlled work is visible before the final verdict.
+
+The fork effect referenced by item 9 and section 11.1 is the ratified C0.2j
+rule and is deliberately not restated here. Two consequences bound what O-06c
+may assert. In a context not already failed as `STALE_EVIDENCE`, whether any
+authority survives a lineage quarantine is decided by the C0.2j Pass-0 and
+bounded-standing fold over the complete control-evidence set rather than by
+counting authority roots; mutual reduction or containment may
+leave no operational authority even where independent lineages exist. An
+eligible reduction by the forking credential in its selected contested slot is
+evaluated before the fork join and is not reversed by it. O-06c MUST NOT
+assert that an independent lineage always continues, MUST NOT assert a
+whole-context effect, and MUST NOT widen the fork-free precondition on pending
+scope, which remains as ratified.
+
+The six frozen inputs below use one extraction rule. Hash the raw contiguous
+bytes beginning at the first octet of the selected `## N.` heading and ending
+immediately before the first octet of the next `## ` heading. Every stored
+octet in that slice, including all trailing LF octets before the next heading,
+is retained without normalization, insertion, removal or line-ending
+conversion. The rule is defined only where a following `## ` heading exists
+and fails closed otherwise. A selected section containing a line that begins
+`## ` inside a fenced block, with the first `#` at column zero, is not hashable
+by this rule and requires a separately ratified extractor/version before it may
+be pinned.
+
+- O-06b-1 section 4, seven-role registry:
+  `5b6bc4041b028ead4821cd7d33bb102255d7df728309e2e8bef232f16c9e3fb3`;
+- O-06b-2 section 6, logical-removal tail:
+  `14bcde53d5534584e3cd1ba2503a3bb755df112ed0d42485cf9f1bef61b1f7f8`;
+- O-06b-2 section 2, current 84-octet commitment context:
+  `9efff974cbc69ae58a2c2c883347c90129587cf9a7355f046c5b0f437e1234b1`;
+- O-06b-1 section 5, frozen application-event field inventory and role/tail
+  grammar:
+  `f3f074befc0d258345b2e067f97a0eabbb08069591fb30b7c508f2ff56d5d8c1`;
+- O-06b-2 section 3, frozen exact commitment preimages and widths:
+  `4ec776a1bbb8bb044de235ec0a8e34a61158d7d30e33bf1146d1787b6765abf0`;
+- O-06b-2 section 4, frozen inverse/parsing and tree-layout rules:
+  `ce6172a9843a43628fff2f36c70336b5df49e8713b5ea3822f9b6e8e5f57037e`.
 
 ### 11.1 Removal-tail octet-variance property
 
@@ -612,8 +653,13 @@ Where the equality rule is vacuous because the validated target is `NONE` or
   removal effect, target validity, target event reference, target descriptor,
   target binding-observation status, target retention/presentation and
   graph-set causality remain invariant;
-- the full AP projection remains invariant when the directive's own content is
-  `NONE`, `DETACHABLE`, or verified `REQUIRED`;
+- for each fixed ambient validated event set containing `NONE`, retained
+  `DETACHABLE` and verified `REQUIRED` content in events other than the
+  directive, the full AP projection remains invariant between the
+  otherwise-identical `D` and `D'` runs; a role-`0x01` directive is
+  necessarily content-class `NONE` under section 6, and a content-bearing
+  directive is a structural rejection rather than another case of this
+  property;
 - regenerated transcript, event reference, exact duplicate identity and K-06
   ordering input differ, and O-06c explicitly asserts each difference; equality
   of references is a blocking collision finding, never a pass;
@@ -624,13 +670,14 @@ Where the equality rule is vacuous because the validated target is `NONE` or
 - any implementation that collapses `D` and `D'` as the same intent against the
   same target is non-conforming, and O-06c MUST carry this as a directed negative
   case;
-- a directive cannot itself have `REQUIRED` content. When it descends from a
+- A directive is role `0x01` and is therefore necessarily content-class `NONE`
+  under section 6. When it descends from a
   pending root, both tail variants remain in that same pending causal subtree;
   independent events outside the subtree remain applicable only when each
   variant is evaluated in a separate fork-free transcript, and no authority,
   priority, finality or irreversible effect follows; and
 - admitting both variants at the same credential/sequence is same-author
-  equivocation that permanently quarantines the whole v0 AP context, never
+  equivocation with the lineage-scoped effect ratified by C0.2j, never
   deduplication, silent reconciliation or a winning removal.
 
 No octet value may make a directive remove a `NONE`, `REQUIRED` or absent
