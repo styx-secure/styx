@@ -924,7 +924,7 @@ outcomes.
   preserves explicit recomputation, same-slot fork and broader-security
   non-claims. It is not O-06c or product evidence.
 - **O-06c executable evidence:** `NO_COUNTEREXAMPLE_WITHIN_BOUNDS`; canonical
-  report digests are `scope=__O06C_SCOPE_SHA256__`,
+  report digests are `scope=7702c42ce10c63d843188a37ae30258a33332be8d035160d846bd1ae6743afcb`,
   `frozen=8614f80f1434353ef96a786a93c2736c7a1d09542c9a4f92af808ff2ad9e5c8a`,
   `machine=0ccc8cdfd9c28411fdc7dbb9d6356ba3b4bb8b87f2c48627437c2a909dd3158a`,
   `mutation=bc4cb83510cba472fd1814976160a3199734b591aa9e7b21d34c6f098d03a9fe`,
