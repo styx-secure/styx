@@ -5829,7 +5829,7 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "f8816871254de617f0d66cf466f64a0d4bf73a3b823cf30646cc9d61b2cc6496"
+      "sha256": "58eed0725b3c429db49364b72b8b939e2aff40fc719bc1127402363eaa947e64"
     },
     {
       "authority": "evidence",
@@ -5841,7 +5841,7 @@
       "authority": "evidence",
       "id": "identifier_commitment_report",
       "path": "docs/protocol/styx-app-kernel-v0-identifier-commitment-falsification-report.md",
-      "sha256": "3d6a04d0b7cad84a7daa5ecfc2b8efc14d49f1ef43e5c4afd5f4791a35874dcd"
+      "sha256": "f7caa0ab1fe040b86e31952b67a18d5911e1ecca76ee706583caa6ce4058181f"
     },
     {
       "authority": "evidence",

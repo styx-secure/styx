@@ -926,9 +926,9 @@ outcomes.
 - **O-06c executable evidence:** `NO_COUNTEREXAMPLE_WITHIN_BOUNDS`; canonical
   report digests are `scope=b1f6cf5b179674ec4262dca6698c397eb83a6c2d6dce7a133f19cd0e65f31752`,
   `frozen=8614f80f1434353ef96a786a93c2736c7a1d09542c9a4f92af808ff2ad9e5c8a`,
-  `machine=d215dd35093a210e866b39af28a15470e2fac7207b93f2fe69d3e31fba0df979`,
-  `mutation=44403638c43af8cdb30937d766829fa3891d4c327a1054063c99cc1d3053e8ea`,
-  `cross-language=8ed61a94432c79efba5da818d6933d7794a6b0dc71f51aed5ae8362ec1f3e450`
+  `machine=66086343ca3f88caccb709ff3ea01fd50e4917a132e8bbfeafe2c2a1977b770d`,
+  `mutation=466e4642e80e01c7fec3384eef60229c67a2221462c739296a1f40ed93f2859d`,
+  `cross-language=e75e07bcd39ca06bbcb9f23eabca47e0b1e12b711bc238996fa8d88d0286b529`
   and
   `historical=153a64cd660a29f2d90d16cb70e2bb8c45a32627a4f9c34145183d0775c16114`.
   The exact candidate commit, tree and canonical diff identity are immutable PR
