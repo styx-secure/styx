@@ -60,6 +60,26 @@ retargeting an ID to a different file, adding or removing a modeled record, or
 changing a selected status therefore fails closed rather than silently changing
 the review boundary.
 
+The validator also pins the raw schema SHA-256 and the exact selected security
+structure of this snapshot. The latter covers every field protection tuple,
+transition status and edge, state list and precedence list, invariant reference
+pair, blocker edge pair, outcome transition flag and counterexample blocker list.
+Pins are keyed by the already pinned record identifiers and are independent of
+candidate input. Missing or additional identifiers remain inventory failures;
+changes to known values use the stable protection, status, blocker-edge or
+`PINNED_VALUE_DRIFT` finding assigned to that class.
+
+Validation is additive but ordered. The complete schema-definition walk runs
+first and must have no finding before that schema is trusted for instance
+traversal. Instance findings do not suppress domain, provenance, canonical-byte,
+status or blocker checks: malformed subtrees are converted to deterministic
+typed neutral values only for those continuing checks. At the CLI boundary,
+malformed JSON, duplicate keys, non-standard constants, excessive nesting and
+an output path resolving inside the repository are `INPUT_INVALID`; raw schema
+byte drift is `SCHEMA_SNAPSHOT_DRIFT`; and an unexpected caught exception is
+`INTERNAL_ERROR`. A PASS report is written atomically outside the repository,
+and a failed run neither creates nor replaces it.
+
 ## Bounded review bundle
 
 The active [protocol-hardening plan](../protocol-hardening-plan.md) defines the

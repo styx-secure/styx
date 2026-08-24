@@ -538,5 +538,77 @@
       "path": "/registries/statuses",
       "value": "ZZZ_UNKNOWN"
     }
+  },
+  {
+    "expected_code": "MISSING_PROTECTION_METADATA",
+    "id": "pinned-field-owner-drift",
+    "mutation": {
+      "operation": "set",
+      "path": "/objects/0/fields/0/owner",
+      "value": "AP"
+    }
+  },
+  {
+    "expected_code": "PINNED_VALUE_DRIFT",
+    "id": "pinned-state-terminal-states-drift",
+    "mutation": {
+      "operation": "set",
+      "path": "/state_models/0/terminal_states",
+      "value": []
+    }
+  },
+  {
+    "expected_code": "PINNED_VALUE_DRIFT",
+    "id": "pinned-invariant-reference-drift",
+    "mutation": {
+      "operation": "set",
+      "path": "/invariants/0/object_refs",
+      "value": []
+    }
+  },
+  {
+    "expected_code": "BLOCKER_EDGE_MISMATCH",
+    "id": "pinned-blocker-edge-drift",
+    "mutation": {
+      "operation": "set",
+      "path": "/blockers/8/blocks",
+      "value": []
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "pinned-transition-status-demotion",
+    "mutation": {
+      "operation": "set",
+      "path": "/state_models/0/transitions/0/status",
+      "value": "OPEN"
+    }
+  },
+  {
+    "expected_code": "PINNED_VALUE_DRIFT",
+    "id": "pinned-transition-edge-drift",
+    "mutation": {
+      "operation": "set",
+      "path": "/state_models/0/transitions/0/from",
+      "value": []
+    }
+  },
+  {
+    "expected_code": "PINNED_VALUE_DRIFT",
+    "id": "pinned-outcome-transition-drift",
+    "mutation": {
+      "operation": "set",
+      "path": "/outcomes/0/applies_transition",
+      "value": false
+    }
+  },
+  {
+    "expected_code": "PINNED_VALUE_DRIFT",
+    "id": "pinned-counterexample-blocks-drift",
+    "mutation": {
+      "operation": "set",
+      "path": "/counterexamples/0/blocks",
+      "value": []
+    }
   }
 ]
