@@ -4,6 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 
 O06C_ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +58,26 @@ class ProtocolModelTests(unittest.TestCase):
         self.assertEqual(validate_event_body_length((1 << 32) - 21), (1 << 32) - 21)
         with self.assertRaisesRegex(ModelError, "event body framing length"):
             validate_event_body_length((1 << 32) - 20)
+
+        event = make_grant(
+            issuer_credential=ISSUER,
+            context_identifier=CTX_ID,
+            genesis_reference=GENESIS,
+            transition_block=b"shared-framing-ceiling",
+            verification_key=b"shared-framing-key",
+        )
+        with patch(
+            "protocol_model.validate_event_body_length",
+            wraps=validate_event_body_length,
+        ) as validator:
+            transcript = encode_event_transcript(event)
+            self.assertEqual(parse_event_transcript(transcript), event)
+        body_length = len(transcript) - 20
+        self.assertEqual(validator.call_count, 3)
+        self.assertEqual(
+            [call.args for call in validator.call_args_list],
+            [(body_length,), (body_length,), (body_length,)],
+        )
 
     def test_domains_are_closed_and_distinct(self) -> None:
         self.assertEqual(len(DOMAINS), 7)

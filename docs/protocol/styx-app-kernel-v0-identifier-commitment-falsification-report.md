@@ -97,13 +97,16 @@ not create a second authority oracle. The removal-tail family executes the full
 bounded AP projection for `NONE`, `REQUIRED`, absent, non-retained and retained
 `DETACHABLE` targets. The ambient projection is reference-ordered and its
 four-record causal graph contains three real parent edges; both the complete
-rows and the graph projection are pinned. Two distinct directives carrying the same matching
+rows and the graph projection are pinned by fixed independent descriptor and
+edge oracles. Two distinct directives carrying the same matching
 retained-`DETACHABLE` tail execute `REMOVAL_APPLIED`/`LOGICAL_DETACH`, produce
 the same non-vacuous AP projection and differ from every vacuous case. The same
 family spans both K-06 order directions, requires both a true identity-collapse
 detection and two false-positive rejections, and places both actual
 order-spanning tail-variant references and their respective children in one
-shared pending causal subtree while excluding an independent event. The capability
+shared pending causal subtree while excluding an independent event. The pending
+membership assertion is bound directly to the two derived event references,
+not only to their published aliases. The capability
 witness reads the actual derived review-model C0.3 record and checks its exact
 dependency and blocked-capability sets.
 
@@ -142,7 +145,7 @@ not production maxima or availability guarantees.
 | Runtime encoder | the JavaScript side is a partial forward encoder only: it is not the inverse parser, rejection oracle, authority fold or a product implementation; protocol version, object kind and suite identifiers are emitted as fixed constants, so agreement on those fields is not independent evidence | any claim of complete cross-language protocol conformance, parser parity or product integration |
 | Cross-language digest fields | the reported Python/JavaScript derivation hashes cover canonical JSON after the value-equality check and are diagnostic, not a second independent witness | any claim that equal report digests independently prove encoder agreement |
 | Frozen-source envelope | the contract pins six selected normative sections rather than every section of both encoding profiles; the separate scope gate constrains changed paths but does not establish whole-document immutability | any change to an unpinned normative section or expansion of the frozen-source claim |
-| Tool and framing envelope | the evidence pins Python `3.14.4` and Node `24.18.0`; encoder and parser share the same outer-reference framing ceiling, whose exact accept/reject boundary is tested without allocating a near-`u32` object | any portable-toolchain claim or selected production bound that approaches the `u32` framing ceiling |
+| Tool and framing envelope | the evidence pins Python `3.14.4` and Node `24.18.0`; encoder and parser share the same outer-reference framing ceiling, whose exact accept/reject boundary and both call sites are exercised without allocating a near-`u32` object | any portable-toolchain claim or selected production bound that approaches the `u32` framing ceiling |
 
 SHA-256 collision and second-preimage resistance remain assumptions. A supplied
 distinct-preimage/equal-digest condition is rejected rather than treated as a

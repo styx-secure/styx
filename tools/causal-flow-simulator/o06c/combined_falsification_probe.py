@@ -508,7 +508,16 @@ def build_witnesses(
                 (
                     required_target_ref,
                     "REQUIRED",
-                    required_descriptor,
+                    (
+                        "REQUIRED",
+                        15,
+                        7,
+                        SHAPE_TREE,
+                        bytes.fromhex(
+                            "8979512227c047b94e6de73b964b0fcf"
+                            "6707fb79d335776f9e4534eb9fbb7244"
+                        ),
+                    ),
                     True,
                     True,
                     "BOUND",
@@ -518,7 +527,16 @@ def build_witnesses(
                 (
                     detachable_target_ref,
                     "DETACHABLE",
-                    detachable_descriptor,
+                    (
+                        "DETACHABLE",
+                        18,
+                        8,
+                        SHAPE_TREE,
+                        bytes.fromhex(
+                            "ac891eefadcaf98724a6f5d8c102efba"
+                            "6e7ca1db35adc4f714e88006412d4efd"
+                        ),
+                    ),
                     True,
                     True,
                     "BOUND",
@@ -528,7 +546,16 @@ def build_witnesses(
                 (
                     unretained_target_ref,
                     "DETACHABLE",
-                    ambient[3].descriptor,
+                    (
+                        "DETACHABLE",
+                        4,
+                        9,
+                        SHAPE_SINGLE,
+                        bytes.fromhex(
+                            "e1978f3cf933a2a08366c63579a15137"
+                            "5e7410950d1a05ccc05a8b8a0fda6a19"
+                        ),
+                    ),
                     False,
                     False,
                     "BOUND",
@@ -792,11 +819,13 @@ def build_witnesses(
         pending
         == {
             pending_root,
-            pending_ref_a,
-            pending_ref_b,
-            pending_child_a,
-            pending_child_b,
+            ref_a.hex(),
+            ref_b.hex(),
+            f"child:{ref_a.hex()}",
+            f"child:{ref_b.hex()}",
         }
+        and pending_ref_a == ref_a.hex()
+        and pending_ref_b == ref_b.hex()
         and pending_ref_a != pending_ref_b
         and "independent" not in pending
     )
