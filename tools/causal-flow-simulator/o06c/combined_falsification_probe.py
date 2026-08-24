@@ -14,6 +14,7 @@ import sys
 sys.dont_write_bytecode = True
 
 from common import sha256_hex, write_report
+from exhaustive_mutations import run_exhaustive
 from policy_guards import (
     C03_BLOCKED_CAPABILITIES,
     C03_DEPENDENCIES,
@@ -388,6 +389,17 @@ def main(argv: list[str] | None = None) -> int:
         if frozen.get("schema") != "styx-o06c-frozen-section-report/v1" or frozen.get("verdict") != "PASS":
             raise ProbeError("frozen-section report is not PASS")
         witnesses, evidence = build_witnesses()
+        exhaustive = run_exhaustive()
+        witnesses.append(
+            Witness(
+                "W-EXHAUSTIVE-01",
+                "exhaustive-octets",
+                "every selected octet and frozen scalar has only a typed rejection or canonical distinct reassignment",
+                exhaustive["verdict"] == "PASS",
+                ("EXHAUSTIVE_OCTETS", "SCALAR_BOUNDARIES"),
+            )
+        )
+        evidence["exhaustive_mutations"] = exhaustive
         failed = [witness.identifier for witness in witnesses if not witness.passed]
         report = {
             "schema": SCHEMA,

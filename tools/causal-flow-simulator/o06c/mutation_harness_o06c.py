@@ -76,6 +76,12 @@ WITNESS_TO_MUTANTS = {
     "capability-gate": ("M16_C03_CAPABILITY",),
     "frozen-evidence": ("M14_FROZEN_DIGEST",),
     "historical-evidence": ("M15_HISTORICAL_REGISTRY",),
+    "exhaustive-octets": (
+        "M01_TRANSCRIPT_DOMAIN_ROLE", "M02_TRANSCRIPT_LENGTH",
+        "M03_CREDENTIAL_TAIL", "M04_CONTEXT_84", "M05_CREDENTIAL_BINDING",
+        "M06_AUTHOR_SEQUENCE_BINDING", "M07_LEAF_PREIMAGE",
+        "M08_NODE_PREIMAGE", "M09_COMMITMENT_OBJECT", "M10_PARSER_GEOMETRY",
+    ),
 }
 
 
