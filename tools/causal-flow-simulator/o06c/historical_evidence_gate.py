@@ -77,6 +77,14 @@ class HistoricalGateError(ValueError):
     """Historical evidence cannot be reproduced exactly."""
 
 
+def validate_registry(registry: tuple[HistoricalEntry, ...]) -> None:
+    if len(registry) != 7:
+        raise HistoricalGateError("historical registry must contain exactly seven entries")
+    identifiers = [entry.identifier for entry in registry]
+    if len(set(identifiers)) != len(identifiers):
+        raise HistoricalGateError("historical registry identifiers must be unique")
+
+
 def _historical_sources(repo: Path) -> tuple[Path, ...]:
     root = repo / "tools" / "causal-flow-simulator"
     return tuple(
@@ -170,8 +178,7 @@ def _execute_entry(
 
 
 def build_report(repo: Path, staging_root: Path) -> tuple[dict[str, object], bool]:
-    if len(HISTORICAL_REGISTRY) != 7:
-        raise HistoricalGateError("historical registry must contain exactly seven entries")
+    validate_registry(HISTORICAL_REGISTRY)
     staging_root.mkdir(parents=True, exist_ok=False)
     staging_root.chmod(0o755)
     records = [

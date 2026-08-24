@@ -70,6 +70,12 @@ class FrozenSectionError(ValueError):
     """The raw-section extraction rule was not satisfied."""
 
 
+def digest_status(actual: str, expected: str) -> str:
+    """Return the only success state for an exact full-width digest match."""
+
+    return "PASS" if actual == expected else "DIGEST_MISMATCH"
+
+
 def _fence_marker(line: bytes) -> tuple[int, int] | None:
     stripped = line.rstrip(b"\r\n")
     spaces = len(stripped) - len(stripped.lstrip(b" "))
@@ -136,7 +142,7 @@ def build_report(
         try:
             raw = extract_raw_section(document, section.heading_prefix)
             actual = sha256_hex(raw)
-            status = "PASS" if actual == section.expected_sha256 else "DIGEST_MISMATCH"
+            status = digest_status(actual, section.expected_sha256)
         except FrozenSectionError as error:
             raw = b""
             actual = None

@@ -12,11 +12,17 @@ REPO_ROOT = O06C_ROOT.parents[2]
 sys.path.insert(0, str(O06C_ROOT))
 
 from common import canonical_bytes  # noqa: E402
-from historical_evidence_gate import build_report as build_historical  # noqa: E402
+from historical_evidence_gate import (  # noqa: E402
+    HISTORICAL_REGISTRY,
+    HistoricalGateError,
+    build_report as build_historical,
+    validate_registry,
+)
 from verify_frozen_sections import (  # noqa: E402
     BASE_SHA,
     FrozenSectionError,
     build_report as build_frozen,
+    digest_status,
     extract_raw_section,
 )
 
@@ -40,8 +46,16 @@ class FrozenSectionTests(unittest.TestCase):
         with self.assertRaisesRegex(FrozenSectionError, "inside fence"):
             extract_raw_section(document, b"## 4.")
 
+    def test_digest_mismatch_never_passes(self) -> None:
+        self.assertEqual(digest_status("00" * 32, "00" * 32), "PASS")
+        self.assertEqual(digest_status("00" * 32, "01" * 32), "DIGEST_MISMATCH")
+
 
 class HistoricalEvidenceTests(unittest.TestCase):
+    def test_registry_rejects_an_eighth_entry(self) -> None:
+        with self.assertRaisesRegex(HistoricalGateError, "exactly seven"):
+            validate_registry(HISTORICAL_REGISTRY + (HISTORICAL_REGISTRY[0],))
+
     def test_closed_registry_reproduces_from_two_distinct_roots(self) -> None:
         frozen, passed = build_frozen(REPO_ROOT, "HEAD", BASE_SHA)
         self.assertTrue(passed)
