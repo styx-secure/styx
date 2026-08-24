@@ -122,7 +122,7 @@ The standard-library-only evidence lives in:
 Two byte-identical probe runs produced SHA-256:
 
 ```text
-8b1e1206e287e35ea938044c11f9cd1d78a7230d865e42c2626a643b6bbce958
+67b5d837c15353e4b6b54f67fc28cbaad1b05533a50a0e6ba8a62a50859c5b77
 ```
 
 Two byte-identical mutation runs produced SHA-256:
@@ -137,12 +137,16 @@ reproduced.
 
 Work counters have exact units:
 
+- `serialization_invocations`: one canonical preimage serialization;
+- `parse_invocations`: one canonical preimage parse;
+- `inverse_invocations`: one successful parse/inverse validation;
 - `digest_invocations`: one SHA-256 call;
 - `bytes_hashed`: octets supplied to SHA-256;
 - `leaf_visits`: one constructed leaf preimage;
 - `node_visits`: one constructed interior-node preimage.
 
-The deterministic six-leaf sample measured 12 digest invocations, 1,618 bytes
+The deterministic six-leaf round-trip sample measured 12 serializations, 12
+parses, 12 successful inverse validations, 12 digest invocations, 1,618 bytes
 hashed, six leaf visits and five node visits. These measured values describe the
 bounded sample, not an O-08 production maximum.
 

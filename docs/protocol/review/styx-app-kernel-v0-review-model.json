@@ -5773,7 +5773,7 @@
       "authority": "evidence",
       "id": "commitment_context_report",
       "path": "docs/protocol/styx-app-kernel-v0-commitment-context-falsification-report.md",
-      "sha256": "d12fd9411ae5520ff40d5474b7e2936238414c2c27856c7cfecfe9378c2da10b"
+      "sha256": "2bdbd13986674a0d0e8690dd409b9f7877d35e4849cf2a4e34dee1f897facbf5"
     },
     {
       "authority": "normative",

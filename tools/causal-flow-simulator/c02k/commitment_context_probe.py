@@ -25,6 +25,7 @@ from commitment_context_model import (
     PROTOCOL_VERSION,
     SUITE_ID,
     build_commitment,
+    measure_roundtrip_work,
 )
 from scenarios_c02k import REQUIRED_WITNESSES, context, run_required_suite
 
@@ -105,6 +106,7 @@ def build_report() -> tuple[dict[str, object], bool]:
         bytes.fromhex("a5" * 32),
         chunk_size=7,
     )
+    sample_roundtrip_work = measure_roundtrip_work(sample)
     passed = not missing_witnesses and not failing
     return (
         {
@@ -132,16 +134,24 @@ def build_report() -> tuple[dict[str, object], bool]:
                 "max_len32_safe_leaf_or_chunk": MAX_LEAF_OCTETS,
             },
             "work_counter_units": {
+                "serialization_invocations": "one canonical preimage serialization",
+                "parse_invocations": "one canonical preimage parse",
+                "inverse_invocations": "one successful parse/inverse validation",
                 "digest_invocations": "one SHA-256 call",
                 "bytes_hashed": "octets supplied to SHA-256",
                 "leaf_visits": "one constructed leaf preimage",
                 "node_visits": "one constructed interior-node preimage",
             },
             "sample_work": {
-                "digest_invocations": sample.counters.digest_invocations,
-                "bytes_hashed": sample.counters.bytes_hashed,
-                "leaf_visits": sample.counters.leaf_visits,
-                "node_visits": sample.counters.node_visits,
+                "serialization_invocations": (
+                    sample_roundtrip_work.serialization_invocations
+                ),
+                "parse_invocations": sample_roundtrip_work.parse_invocations,
+                "inverse_invocations": sample_roundtrip_work.inverse_invocations,
+                "digest_invocations": sample_roundtrip_work.digest_invocations,
+                "bytes_hashed": sample_roundtrip_work.bytes_hashed,
+                "leaf_visits": sample_roundtrip_work.leaf_visits,
+                "node_visits": sample_roundtrip_work.node_visits,
             },
             "required_witnesses": sorted(REQUIRED_WITNESSES),
             "observed_witnesses": sorted(suite.witnesses),

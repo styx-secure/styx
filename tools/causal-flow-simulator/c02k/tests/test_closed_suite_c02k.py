@@ -52,6 +52,30 @@ class ClosedSuiteTests(unittest.TestCase):
         self.assertTrue(first_passed and second_passed)
         self.assertEqual(canonical_bytes(first), canonical_bytes(second))
         self.assertEqual(json.loads(canonical_bytes(first)), first)
+        self.assertEqual(
+            set(first["work_counter_units"]),
+            {
+                "serialization_invocations",
+                "parse_invocations",
+                "inverse_invocations",
+                "digest_invocations",
+                "bytes_hashed",
+                "leaf_visits",
+                "node_visits",
+            },
+        )
+        self.assertEqual(
+            first["sample_work"],
+            {
+                "serialization_invocations": 12,
+                "parse_invocations": 12,
+                "inverse_invocations": 12,
+                "digest_invocations": 12,
+                "bytes_hashed": 1618,
+                "leaf_visits": 6,
+                "node_visits": 5,
+            },
+        )
 
         first_mutants, first_mutants_passed = build_mutation_report()
         second_mutants, second_mutants_passed = build_mutation_report()
