@@ -1353,7 +1353,7 @@ v0 profile with explicit no-finality semantics. They do block every destruction-
 capable increment, profile upgrade, product-readiness claim and irreversible
 effect. C0.2k must complete its exact-final evidence and human gates before
 merge; after that, O-06c remains the next ordered blocker for C0.3, demo and
-product work.
+product work and sensitive use.
 
 No supported Phase B adapter may persist current application-ledger objects
 while this `NO-GO` remains in force.

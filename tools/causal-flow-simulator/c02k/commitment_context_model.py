@@ -54,6 +54,9 @@ class Mutation:
 
 @dataclass(frozen=True)
 class WorkCounters:
+    parse_invocations: int = 0
+    inverse_invocations: int = 0
+    serialization_invocations: int = 0
     digest_invocations: int = 0
     bytes_hashed: int = 0
     leaf_visits: int = 0
@@ -62,12 +65,18 @@ class WorkCounters:
     def add(
         self,
         *,
+        parse_invocations: int = 0,
+        inverse_invocations: int = 0,
+        serialization_invocations: int = 0,
         digest_invocations: int = 0,
         bytes_hashed: int = 0,
         leaf_visits: int = 0,
         node_visits: int = 0,
     ) -> "WorkCounters":
         return WorkCounters(
+            self.parse_invocations + parse_invocations,
+            self.inverse_invocations + inverse_invocations,
+            self.serialization_invocations + serialization_invocations,
             self.digest_invocations + digest_invocations,
             self.bytes_hashed + bytes_hashed,
             self.leaf_visits + leaf_visits,
@@ -156,6 +165,16 @@ def _u32(value: int) -> bytes:
 def _u64(value: int) -> bytes:
     _require_u64("value", value)
     return value.to_bytes(8, "big")
+
+
+def checked_u64_multiply(left: int, right: int) -> int:
+    """Multiply two u64 values without permitting fixed-width wrap."""
+
+    _require_u64("left", left)
+    _require_u64("right", right)
+    if left and right > MAX_U64 // left:
+        raise ModelInputError("ARITHMETIC_OVERFLOW", "u64 multiplication wraps")
+    return left * right
 
 
 def _legacy_context(context: CommitmentContext) -> bytes:
@@ -380,6 +399,30 @@ def parse_node_preimage(data: bytes, mutation: Mutation = Mutation()) -> dict[st
     }
 
 
+def encode_removal_tail(target_event_reference: bytes, target_commitment: bytes) -> bytes:
+    """Encode the unchanged O-06b-2 logical-removal tail for suite 0x0001."""
+
+    _require_width("target_event_reference", target_event_reference, 32)
+    _require_width("target_commitment", target_commitment, 32)
+    return target_event_reference + _u32(len(target_commitment)) + target_commitment
+
+
+def parse_removal_tail(data: bytes) -> dict[str, bytes]:
+    """Invert the fixed suite-0x0001 logical-removal tail with exact end."""
+
+    if len(data) < 36:
+        raise ModelInputError("REMOVAL_TAIL", "logical-removal tail is truncated")
+    target_length = int.from_bytes(data[32:36], "big")
+    if target_length != 32 or len(data) != 36 + target_length:
+        raise ModelInputError(
+            "REMOVAL_TAIL", "target commitment must be exactly 32 octets"
+        )
+    return {
+        "target_event_reference": data[:32],
+        "target_commitment": data[36:],
+    }
+
+
 def node_preimage_for_mutation(
     subtree_leaf_count: int,
     left: bytes,
@@ -410,6 +453,7 @@ def _tree_root(
     left, left_preimages, counters = _tree_root(leaves[:split], counters, mutation)
     right, right_preimages, counters = _tree_root(leaves[split:], counters, mutation)
     preimage = node_preimage_for_mutation(len(leaves), left, right, mutation)
+    counters = counters.add(serialization_invocations=1)
     digest, counters = _digest(preimage, counters, node=True)
     return digest, left_preimages + right_preimages + (preimage,), counters
 
@@ -430,9 +474,7 @@ def derive_geometry(exact_content_length: int, chunk_size: int) -> Geometry:
     _require_u64("chunk_count", chunk_count)
     if chunk_count < 2:
         raise ModelInputError("CHUNK_COUNT", "tree requires at least two chunks")
-    prefix_product = chunk_size * (chunk_count - 1)
-    if prefix_product > MAX_U64:
-        raise ModelInputError("ARITHMETIC_OVERFLOW", "chunk product wraps u64")
+    prefix_product = checked_u64_multiply(chunk_size, chunk_count - 1)
     final_length = exact_content_length - prefix_product
     if not 1 <= final_length <= chunk_size:
         raise ModelInputError("FINAL_CHUNK", "invalid final chunk length")
@@ -573,6 +615,7 @@ def build_commitment(
             mutation=mutation,
         )
         preimage = frame(D_LEAF, body)
+        counters = counters.add(serialization_invocations=1)
         digest, counters = _digest(preimage, counters, leaf=True)
         leaves.append(digest)
         leaf_preimages.append(preimage)
@@ -589,6 +632,7 @@ def build_commitment(
         mutation,
     )
     commitment_preimage = frame(D_COMMIT, body)
+    counters = counters.add(serialization_invocations=1)
     commitment_value, counters = _digest(commitment_preimage, counters)
     return CommitmentResult(
         commitment_value,
@@ -603,6 +647,25 @@ def build_commitment(
         commitment_preimage,
         counters,
     )
+
+
+def measure_roundtrip_work(result: CommitmentResult) -> WorkCounters:
+    """Parse every canonical preimage and expose bounded round-trip work.
+
+    One parse and one inverse validation are counted for each framed leaf,
+    interior-node and commitment preimage. Serialization counters originate in
+    the producer path; hashing counters originate at each digest invocation.
+    """
+
+    counters = result.counters
+    for preimage in result.leaf_preimages:
+        parse_leaf_preimage(preimage)
+        counters = counters.add(parse_invocations=1, inverse_invocations=1)
+    for preimage in result.node_preimages:
+        parse_node_preimage(preimage)
+        counters = counters.add(parse_invocations=1, inverse_invocations=1)
+    parse_commitment_preimage(result.commitment_preimage)
+    return counters.add(parse_invocations=1, inverse_invocations=1)
 
 
 def verifies(

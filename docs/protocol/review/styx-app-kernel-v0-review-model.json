@@ -378,7 +378,10 @@
     },
     {
       "blocks": [
-        "C0.3"
+        "C0.3",
+        "demo",
+        "product",
+        "sensitive_use"
       ],
       "citations": [
         {
@@ -5770,13 +5773,13 @@
       "authority": "evidence",
       "id": "commitment_context_report",
       "path": "docs/protocol/styx-app-kernel-v0-commitment-context-falsification-report.md",
-      "sha256": "0a30faa4cbc55889b5aa6e1cd73dbb448c72ea1c99925b34a9d3081f93f36dcc"
+      "sha256": "d12fd9411ae5520ff40d5474b7e2936238414c2c27856c7cfecfe9378c2da10b"
     },
     {
       "authority": "normative",
       "id": "commitment_profile",
       "path": "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
-      "sha256": "9f6e003538d79652e14da1ab9ed32b3113e0ad65bd4e3e679c70ab7a77f927da"
+      "sha256": "e7789d79dd31e8b1f7785c81b57b351057db65b540e0bc3a1acce61d33b9296d"
     },
     {
       "authority": "evidence",
@@ -5794,7 +5797,7 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "8c2d8c7b724f393b680e3a80780da6e3b3fb87d516c6ce7721cdefab11356781"
+      "sha256": "fc96b0c8cf22dd8da5ef5b823024f2ea2979d3b3d08530bb091cc7ff04f479a0"
     },
     {
       "authority": "evidence",

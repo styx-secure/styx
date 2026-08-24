@@ -116,7 +116,11 @@ The genesis reference is deliberately absent. Compared with the C0.2f symbolic
 the C0.2j author slot. The symbolic token bundled a genesis reference instead;
 this byte profile tightens that symbolic token to authenticated fields already
 present in the application transcript. O-07 still owns the complete genesis and
-checkpoint evidence contract.
+checkpoint evidence contract. This omission does not weaken a current C0.2f
+invariant: the fresh random context identifier already separates application
+contexts and the application transcript separately authenticates the genesis
+reference. It remains an explicit O-07 dependency, not an implicit commitment
+claim.
 
 ## 3. Exact preimages
 
@@ -529,6 +533,11 @@ as strongly as content; O-08 and RS own custody and redundancy numbers.
 - A malicious producer can derive/reuse or grind a randomizer. K cannot prove
   honest randomness. The signed producer is attributable, but hiding and replay
   position may degrade.
+- The author slot is an input to every leaf and final commitment preimage.
+  Producers therefore cannot finish hashing before that slot is fixed; any retry
+  or recovery that changes it requires complete re-hashing and a fresh
+  randomizer/opening. Reusing the prior opening violates A6. O-08 owns bounded
+  production limits for this availability cost.
 - Randomized openings intentionally remove stable K-level cross-replica content
   deduplication. Storage-level deduplication may reintroduce equality leakage.
 - Chunk-size choice is a profile fingerprint. O-08 owns a closed set to reduce

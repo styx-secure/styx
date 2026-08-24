@@ -28,17 +28,21 @@ from commitment_context_model import (
     ModelInputError,
     Mutation,
     build_commitment,
+    checked_u64_multiply,
     commitment_body,
     commitment_required_for_content_class,
     derived_widths,
     derive_geometry,
     encode_context,
+    encode_removal_tail,
     frame,
     leaf_body,
     leaf_preimage_lengths,
+    measure_roundtrip_work,
     node_preimage,
     node_preimage_for_mutation,
     parse_node_preimage,
+    parse_removal_tail,
     parse_commitment_preimage,
     parse_context,
     parse_leaf_preimage,
@@ -402,14 +406,16 @@ def run_required_suite(mutation: Mutation = Mutation()) -> Suite:
         _passes(lambda: not verifies(base_tree, other_sequence, content, mutation=mutation)),
     )
 
+    sibling_single = build_commitment(base, 9, content, randomizer, mutation=mutation)
     left_reference = sha256(b"left transcript" + base_single.commitment_value).digest()
-    right_reference = sha256(b"right transcript" + base_single.commitment_value).digest()
+    right_reference = sha256(b"right transcript" + sibling_single.commitment_value).digest()
     add(
         "C24-SAME-SLOT-IS-FORK",
         "same-slot-fork-boundary",
         "equal commitment at one credential/sequence does not collapse distinct event references",
         _passes(
-            lambda: left_reference != right_reference
+            lambda: base_single.commitment_value == sibling_single.commitment_value
+            and left_reference != right_reference
             and same_slot_relationship(
                 base.credential_identifier,
                 base.author_sequence,
@@ -459,7 +465,14 @@ def run_required_suite(mutation: Mutation = Mutation()) -> Suite:
         _passes(
             lambda: geometry.chunk_count >= 2
             and 1 <= geometry.final_chunk_length <= geometry.chunk_size
-            and geometry.chunk_size * (geometry.chunk_count - 1) <= MAX_U64
+            and checked_u64_multiply(
+                geometry.chunk_size, geometry.chunk_count - 1
+            )
+            <= MAX_U64
+            and _rejects(
+                lambda: checked_u64_multiply(MAX_U64, 2),
+                "ARITHMETIC_OVERFLOW",
+            )[0]
         ),
     )
     add(
@@ -480,17 +493,39 @@ def run_required_suite(mutation: Mutation = Mutation()) -> Suite:
             )[0]
         ),
     )
+    instrumented_single = build_commitment(base, 9, content, randomizer)
+    instrumented_tree = build_commitment(
+        base, 9, content, randomizer, chunk_size=7
+    )
+    single_roundtrip_work = measure_roundtrip_work(instrumented_single)
+    tree_roundtrip_work = measure_roundtrip_work(instrumented_tree)
     add(
         "C29-WORK-COUNTERS",
         "geometry-and-work-bounds",
-        "measured work uses digest invocations, bytes hashed, leaf visits and node visits",
+        "measured work exposes serialization, parse, inverse and hashing operations",
         _passes(
             lambda: single.counters.digest_invocations == 2
             and single.counters.leaf_visits == 1
             and single.counters.node_visits == 0
+            and single_roundtrip_work.serialization_invocations
+            == len(instrumented_single.leaf_preimages)
+            + len(instrumented_single.node_preimages)
+            + 1
+            and single_roundtrip_work.parse_invocations
+            == single_roundtrip_work.serialization_invocations
+            and single_roundtrip_work.inverse_invocations
+            == single_roundtrip_work.serialization_invocations
             and tree.counters.digest_invocations == 2 * len(tree.leaf_preimages)
             and tree.counters.node_visits == len(tree.leaf_preimages) - 1
             and tree.counters.bytes_hashed > 0
+            and tree_roundtrip_work.serialization_invocations
+            == len(instrumented_tree.leaf_preimages)
+            + len(instrumented_tree.node_preimages)
+            + 1
+            and tree_roundtrip_work.parse_invocations
+            == tree_roundtrip_work.serialization_invocations
+            and tree_roundtrip_work.inverse_invocations
+            == tree_roundtrip_work.serialization_invocations
         ),
     )
     add(
@@ -605,7 +640,6 @@ def run_required_suite(mutation: Mutation = Mutation()) -> Suite:
         "exact-context-and-inverse",
         "every semantically distinct adjacent field reordering rejects or decodes only at fixed positions",
         _passes(reordered_fields_are_distinct_or_rejected),
-        "M03_REORDER_FIELDS",
     )
     add(
         "C37-NEGATIVE-SEQUENCE-REJECTED",
@@ -694,6 +728,11 @@ def run_required_suite(mutation: Mutation = Mutation()) -> Suite:
             == 1
         ),
     )
+    removal_reference = sha256(b"retained target event").digest()
+    removal_tail = encode_removal_tail(
+        removal_reference, base_single.commitment_value
+    )
+    parsed_removal_tail = parse_removal_tail(removal_tail)
     add(
         "C43-COMPLETE-OBJECT-AND-REMOVAL-BOUNDARY",
         "control-and-removal-non-expansion",
@@ -703,6 +742,15 @@ def run_required_suite(mutation: Mutation = Mutation()) -> Suite:
             and successful_verification_claims()
             == {"CONTEXT_BOUND_COMMITMENT"}
             and not commitment_required_for_content_class("NONE")
+            and len(removal_tail) == 68
+            and parsed_removal_tail["target_event_reference"]
+            == removal_reference
+            and parsed_removal_tail["target_commitment"]
+            == base_single.commitment_value
+            and _rejects(
+                lambda: parse_removal_tail(removal_tail + b"\x00"),
+                "REMOVAL_TAIL",
+            )[0]
         ),
     )
 

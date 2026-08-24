@@ -628,5 +628,16 @@
       "path": "/counterexamples/0/blocks",
       "value": []
     }
+  },
+  {
+    "expected_code": "GATED_CAPABILITY_UNBLOCKED",
+    "id": "gated-capability-loses-last-open-gate",
+    "mutation": {
+      "operation": "set",
+      "path": "/blockers/4/blocks",
+      "value": [
+        "C0.3"
+      ]
+    }
   }
 ]

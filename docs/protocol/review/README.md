@@ -127,7 +127,10 @@ The arrays in `registries` are exhaustive and sorted. Their meanings are:
 - `layers`, `trust_classes`, `decisions`, `obligations` and
   `gated_capabilities` are closed reference namespaces. A blocker `blocks`
   target must resolve either to another blocker or to one of the explicitly
-  named non-record capabilities. Unknown members fail validation.
+  named non-record capabilities. Unknown members fail validation. Every gated
+  capability must also retain at least one blocker whose status is not
+  `DECIDED`; otherwise validation fails with `GATED_CAPABILITY_UNBLOCKED`
+  instead of silently promoting the capability when its last gate closes.
 
 `visible_to` means an actor may learn the field value at the named semantic
 boundary; it does not mean every transport observer sees it. `mutable_by` means

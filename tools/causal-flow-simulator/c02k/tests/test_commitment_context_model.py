@@ -24,14 +24,18 @@ from commitment_context_model import (  # noqa: E402
     CommitmentContext,
     ModelInputError,
     build_commitment,
+    checked_u64_multiply,
     derive_geometry,
     encode_context,
+    encode_removal_tail,
     leaf_preimage_lengths,
+    measure_roundtrip_work,
     node_preimage,
     parse_commitment_preimage,
     parse_context,
     parse_leaf_preimage,
     parse_node_preimage,
+    parse_removal_tail,
     verifies,
 )
 from scenarios_c02k import context  # noqa: E402
@@ -135,9 +139,13 @@ class CommitmentContextModelTests(unittest.TestCase):
         self.assertTrue(all(len(item) == NODE_PREIMAGE_OCTETS for item in result.node_preimages))
         self.assertEqual(len(result.commitment_preimage), COMMIT_PREIMAGE_TREE_OCTETS)
         self.assertEqual(result.counters.digest_invocations, 6)
+        self.assertEqual(result.counters.serialization_invocations, 6)
         self.assertEqual(result.counters.leaf_visits, 3)
         self.assertEqual(result.counters.node_visits, 2)
         self.assertEqual(result.counters.bytes_hashed, 850)
+        roundtrip = measure_roundtrip_work(result)
+        self.assertEqual(roundtrip.parse_invocations, 6)
+        self.assertEqual(roundtrip.inverse_invocations, 6)
         self.assertTrue(verifies(result, context(), b"abcdefghi"))
 
         malformed = (
@@ -157,6 +165,23 @@ class CommitmentContextModelTests(unittest.TestCase):
             geometry.final_chunk_length,
             MAX_U64 - MAX_LEAF_OCTETS * (expected_count - 1),
         )
+        with self.assertRaisesRegex(ModelInputError, "ARITHMETIC_OVERFLOW"):
+            checked_u64_multiply(MAX_U64, 2)
+
+    def test_removal_tail_keeps_exact_suite_commitment(self) -> None:
+        target_reference = bytes.fromhex("77" * 32)
+        target_commitment = bytes.fromhex("88" * 32)
+        encoded = encode_removal_tail(target_reference, target_commitment)
+        self.assertEqual(len(encoded), 68)
+        self.assertEqual(
+            parse_removal_tail(encoded),
+            {
+                "target_event_reference": target_reference,
+                "target_commitment": target_commitment,
+            },
+        )
+        with self.assertRaisesRegex(ModelInputError, "REMOVAL_TAIL"):
+            parse_removal_tail(encoded + b"\x00")
 
     def test_unchanged_opening_fails_across_credential_and_sequence(self) -> None:
         result = build_commitment(context(), 9, b"payload", self.RANDOMIZER)

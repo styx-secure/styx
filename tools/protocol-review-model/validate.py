@@ -582,7 +582,7 @@ EXPECTED_BLOCKER_EDGES_DIGEST = {
     "C0.2k": "dcf613a0ba08abc1b75668271ff4d8c4f74e50d90cef3afa62819bc57baef990",
     "C0.3": "f64ad66923791986c1237e587bbe123de31613553d2b8bbf0fc33bc6d6d68962",
     "C0.3_CORPUS_PATH_APPROVAL": "2f46c5b24abdce4302300f7f2d7b1c5ffb49e96b20529d82185df78cfba48f0f",
-    "O-06c": "216def2a5762650aeee985ce998d5670fbefbceb2e297097039a8cbc4796d3a4",
+    "O-06c": "bda42eb5aa5e9d5562d1a041ab149ae88a5b102266b1cc8b24e5439c287e3838",
     "O-07": "221bdcaa5b87211fc802a254c7d341fda0cae735ce4bee6d2be5b45bff4e1486",
     "O-08": "221bdcaa5b87211fc802a254c7d341fda0cae735ce4bee6d2be5b45bff4e1486",
     "O-10": "221bdcaa5b87211fc802a254c7d341fda0cae735ce4bee6d2be5b45bff4e1486",
@@ -2297,6 +2297,27 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
                         f"{blocked_id} does not depend transitively on {blocker_id}",
                     )
                 )
+
+    unresolved_gates_by_capability = {
+        capability: {
+            blocker_id
+            for blocker_id, blocker in blockers.items()
+            if blocker.get("status") != "DECIDED"
+            and capability in blocker.get("blocks", [])
+        }
+        for capability in EXPECTED_REGISTRIES["gated_capabilities"]
+    }
+    for capability, unresolved_gates in sorted(
+        unresolved_gates_by_capability.items()
+    ):
+        if not unresolved_gates:
+            findings.append(
+                Finding(
+                    "GATED_CAPABILITY_UNBLOCKED",
+                    "$model.registries.gated_capabilities",
+                    f"{capability} has no non-DECIDED gate",
+                )
+            )
 
     if not REQUIRED_COUNTEREXAMPLES.issubset(id_sets.get("counterexamples", set())):
         findings.append(

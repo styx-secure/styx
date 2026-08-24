@@ -71,7 +71,7 @@ also require allocating and reviewing `D_BIND`.
 | Family | Exact bytes and inverse | Downgrade, copy and same-slot behavior | Streaming, arithmetic and allocation | Identifier/migration consequence, dependencies and residuals |
 | --- | --- | --- | --- | --- |
 | 44-octet baseline | `old_CTX`; existing fixed-offset inverse | Accepts unchanged copy across credentials and sequences; same-slot behavior is not distinguished | Existing 92-octet leaf prefix and 121/137-octet commitment bodies | No migration, but fails the C0.2k security objective; rejected. |
-| Selected raw-field extension | `old_CTX || credential_identifier:opaque32 || author_sequence:u64`; exactly 84 octets with fixed offsets and exact end | Rejects unchanged cross-credential and cross-sequence copy in both `B_L` and `B_C`; same credential/sequence siblings remain fork evidence | Adds 40 octets to every leaf and final commitment body; 132-octet leaf prefix and 4,294,967,163-octet representational leaf ceiling; no payload-sized allocation is needed to validate a declared length | One-time pre-corpus supersession under protocol/suite v1; no legacy decoder or migration population. O-07/O-08/O-11/O-14 remain open. Lowest complete complexity; does not stop knowledgeable recomputation or prove authority/truth. |
+| Selected raw-field extension | `old_CTX || credential_identifier:opaque32 || author_sequence:u64`; exactly 84 octets with fixed offsets and exact end | Rejects unchanged cross-credential and cross-sequence copy in both `B_L` and `B_C`; same credential/sequence siblings remain fork evidence | Adds 40 octets to every leaf and final commitment body; 132-octet leaf prefix and 4,294,967,163-octet representational leaf ceiling. The author slot must be fixed before any leaf is hashed; changing the slot requires a complete re-hash and a fresh randomizer/opening rather than reuse. No payload-sized allocation is needed to validate a declared length. | One-time pre-corpus supersession under protocol/suite v1; no legacy decoder or migration population. O-07/O-08/O-11/O-14 remain open. Lowest complete complexity; does not stop knowledgeable recomputation or prove authority/truth. |
 | Credential only | `old_CTX || credential_identifier:opaque32`; 76 octets with fixed inverse | Rejects cross-credential copy but accepts cross-sequence copy; same-slot ambiguity remains | Adds 32 octets per leaf/commitment; 124-octet leaf prefix and 4,294,967,171-octet representational ceiling | Would still require a pre-corpus supersession while leaving the stated defect open; rejected. |
 | Sequence only | `old_CTX || author_sequence:u64`; 52 octets with fixed inverse | Rejects cross-sequence copy but accepts equal-sequence cross-credential copy | Adds 8 octets per leaf/commitment; 100-octet leaf prefix and 4,294,967,195-octet representational ceiling | Would still require a pre-corpus supersession while leaving the stated defect open; rejected. |
 | Hash-compressed binding | `old_CTX || SHA256(D_BIND || credential_identifier || author_sequence)`; 76 octets, but inversion yields only a digest and verification requires the original fields | Can detect both unchanged-copy families if recomputed from authenticated fields; same-slot behavior remains fork evidence | Adds one digest invocation and 32 stored octets per leaf/commitment, plus a new domain and implementation path | Adds a primitive/domain dependency and loses direct inverse without reducing any required authenticated input; O-14 review surface grows. No migration benefit; rejected. |
@@ -122,13 +122,13 @@ The standard-library-only evidence lives in:
 Two byte-identical probe runs produced SHA-256:
 
 ```text
-fc170b5e1bd1b5b4b5dc4f561b12371e46f6863863422f07e88615e01b92f1dd
+8b1e1206e287e35ea938044c11f9cd1d78a7230d865e42c2626a643b6bbce958
 ```
 
 Two byte-identical mutation runs produced SHA-256:
 
 ```text
-2bd8fd4bff6f73d79766e2b82d99315bfffc59540e7a7db7406a7fd6a8ce29c0
+5df59ab4e50f216dd1881bb991a795c26a1dba654e3a43d40ffa23b40cc4ed37
 ```
 
 These are candidate-worktree report digests. The final PR records and rechecks
@@ -171,6 +171,11 @@ semantically distinct adjacent-field reorderings. The boundary families also
 cover unknown protocol and suite identifiers, negative and maximum sequences,
 mixed legacy/current bodies, exact interior-node inverse, minimum two-leaf
 trees, and the len32 ceiling without allocating attacker-declared payloads.
+The measured-work witness separately counts canonical preimage serialization,
+parse/inverse validation, digest invocations, bytes hashed and leaf/node visits.
+The removal witness round-trips the unchanged 68-octet suite-`0x0001` removal
+tail and proves that its retained `target_commitment` remains the exact 32-octet
+descriptor commitment rather than a new destruction authority.
 
 ## 6. Mutation evidence
 
@@ -215,6 +220,10 @@ The model deliberately preserves these counterexamples to stronger claims:
   whole-object recomputation; O-11 must revisit them before inclusion proofs.
 - Representable integer ceilings are not supported resource limits. O-08 still
   owns production maxima and denial-of-service envelopes.
+- Because `CTX` includes `author_sequence` inside every `B_L`, the producer must
+  fix the author slot before hashing content. A rejected slot, local race, retry
+  or fork recovery that changes the sequence forces complete re-hashing and a
+  new randomizer/opening; reusing the old opening would violate assumption A6.
 
 ## 8. Assumptions and residual risks
 
@@ -229,6 +238,9 @@ and checkpoint evidence before C0.3. O-08 still owns supported bounds, O-10
 stable errors, O-14 signature suites, O-13 irreversible effects and O-16
 finality. Endpoint compromise, valid-key abuse, unavailable openings,
 randomizer misuse, rollback and denial of service remain residual risks.
+Slot-dependent full re-hashing and fresh-opening redistribution can amplify
+retry and recovery cost; O-08 owns bounded production limits and O-06c must
+retain this operational-availability pressure in the combined model.
 
 ## 9. Disposition and next gate
 
