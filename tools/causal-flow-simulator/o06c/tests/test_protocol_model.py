@@ -41,6 +41,7 @@ from protocol_model import (  # noqa: E402
     parse_leaf_preimage,
     parse_node_preimage,
     u32,
+    validate_event_body_length,
     verify_opening,
 )
 
@@ -52,6 +53,11 @@ RANDOMIZER = bytes.fromhex("44" * 32)
 
 
 class ProtocolModelTests(unittest.TestCase):
+    def test_event_body_framing_ceiling_is_shared_by_encoder_and_parser(self) -> None:
+        self.assertEqual(validate_event_body_length((1 << 32) - 21), (1 << 32) - 21)
+        with self.assertRaisesRegex(ModelError, "event body framing length"):
+            validate_event_body_length((1 << 32) - 20)
+
     def test_domains_are_closed_and_distinct(self) -> None:
         self.assertEqual(len(DOMAINS), 7)
         self.assertEqual(len(set(DOMAINS.values())), 7)

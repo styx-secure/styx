@@ -524,9 +524,16 @@ def encode_event_body(event: EventAssignment, work: WorkCounter | None = None) -
 def encode_event_transcript(event: EventAssignment, work: WorkCounter | None = None) -> bytes:
     work = work or WorkCounter()
     body = encode_event_body(event, work)
+    validate_event_body_length(len(body))
     transcript = DOMAINS["application"] + u32(len(body), "event body length") + body
     work.transcript_regeneration += 1
     return transcript
+
+
+def validate_event_body_length(body_length: int) -> int:
+    """Apply the shared ceiling required by outer event-reference framing."""
+
+    return _bounded(body_length, MAX_U32 - 20, "event body framing length")
 
 
 def _parse_credential_tail(reader: Reader) -> CredentialTail:
@@ -566,8 +573,7 @@ def parse_event_transcript(
     if outer.take(16, "application domain") != DOMAINS["application"]:
         raise ModelError("wrong application domain")
     body_length = outer.integer(4, "event body length")
-    if body_length > MAX_U32 - 20:
-        raise ModelError("event body exceeds reference framing ceiling")
+    validate_event_body_length(body_length)
     body_bytes = outer.take(body_length, "event body")
     outer.finish("event transcript")
 

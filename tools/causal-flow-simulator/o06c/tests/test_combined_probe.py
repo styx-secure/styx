@@ -145,8 +145,26 @@ class CombinedProbeTests(unittest.TestCase):
                     {row["reference"] for row in value["graph_causality"]},
                     expected_graph_references,
                 )
-                self.assertTrue(
-                    all(not row["parents"] for row in value["graph_causality"])
+                self.assertEqual(
+                    [row["reference"] for row in value["graph_causality"]],
+                    sorted(expected_graph_references),
+                )
+                parent_edges = {
+                    row["reference"]: tuple(row["parents"])
+                    for row in value["graph_causality"]
+                }
+                self.assertEqual(sum(bool(parents) for parents in parent_edges.values()), 3)
+                ambient_projection = value["ambient_projection"]
+                self.assertEqual(
+                    [row["reference"] for row in ambient_projection],
+                    sorted(expected_graph_references),
+                )
+                self.assertEqual(
+                    {
+                        row["reference"]: tuple(row["parents"])
+                        for row in ambient_projection
+                    },
+                    parent_edges,
                 )
             self.assertTrue(removal["retained_detachable_applied"])
             self.assertTrue(removal["retained_detachable_projection_equal"])
@@ -155,7 +173,20 @@ class CombinedProbeTests(unittest.TestCase):
             self.assertTrue(removal["k06_order_spanned"])
             self.assertTrue(removal["collapsed_identity_positive_detected"])
             self.assertTrue(removal["collapsed_identity_false_positive_rejected"])
-            self.assertTrue(removal["pending_subtree_equal"])
+            self.assertTrue(removal["pending_subtree_contains_both_tail_variants"])
+            variant_references = removal["tail_variant_references"]
+            self.assertEqual(len(variant_references), 2)
+            self.assertEqual(len(set(variant_references)), 2)
+            self.assertTrue(all(len(reference) == 64 for reference in variant_references))
+            self.assertEqual(removal["pending_subtree_root"], "pending-root")
+            self.assertEqual(
+                set(removal["pending_subtree_members"]),
+                {
+                    "pending-root",
+                    *variant_references,
+                    *(f"child:{reference}" for reference in variant_references),
+                },
+            )
             negative_controls = report["evidence"]["exhaustive_mutations"][
                 "classifier_negative_controls"
             ]

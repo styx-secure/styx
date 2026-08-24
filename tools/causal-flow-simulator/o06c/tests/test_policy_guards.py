@@ -31,6 +31,7 @@ class RemovalProjectionTests(unittest.TestCase):
                 True,
                 "BOUND",
                 "VISIBLE",
+                parents=(none_reference,),
             ),
             RemovalTarget(
                 required_reference,
@@ -51,6 +52,7 @@ class RemovalProjectionTests(unittest.TestCase):
                 False,
                 "BOUND",
                 "WITHHELD",
+                parents=(required_reference,),
             ),
         )
         cases = (
@@ -104,6 +106,14 @@ class RemovalProjectionTests(unittest.TestCase):
                 self.assertEqual(projection.target_descriptor, expected_descriptor)
                 self.assertEqual(projection.target_binding_status, expected_binding)
                 self.assertEqual(projection.graph_causality, expected_graph)
+                self.assertEqual(
+                    [row[0] for row in projection.ambient_projection],
+                    sorted(record.reference for record in ambient),
+                )
+                self.assertEqual(
+                    {row[0]: row[7] for row in projection.ambient_projection},
+                    dict(expected_graph),
+                )
 
     def test_retained_detachable_target_is_logically_removed(self) -> None:
         reference = bytes.fromhex("11" * 32)

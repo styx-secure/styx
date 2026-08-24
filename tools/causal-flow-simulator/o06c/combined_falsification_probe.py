@@ -464,6 +464,7 @@ def build_witnesses(
             True,
             "BOUND",
             "VISIBLE",
+            parents=(none_target_ref,),
         ),
         RemovalTarget(
             detachable_target_ref,
@@ -474,6 +475,7 @@ def build_witnesses(
             True,
             "BOUND",
             "VISIBLE",
+            parents=(required_target_ref,),
         ),
         RemovalTarget(
             unretained_target_ref,
@@ -484,12 +486,26 @@ def build_witnesses(
             False,
             "BOUND",
             "WITHHELD",
+            parents=(detachable_target_ref,),
         ),
     )
     mismatching_tail_a = deterministic("tail-a")
     mismatching_tail_b = deterministic("tail-b")
     expected_graph = tuple(
         sorted((record.reference, record.parents) for record in ambient)
+    )
+    expected_ambient_projection = tuple(
+        (
+            record.reference,
+            record.content_class,
+            record.descriptor,
+            record.retained,
+            record.verified,
+            record.binding_status,
+            record.presentation,
+            record.parents,
+        )
+        for record in sorted(ambient, key=lambda item: item.reference)
     )
     vacuous_targets = (
         (
@@ -564,6 +580,7 @@ def build_witnesses(
         and first.target_descriptor == expected_descriptor
         and first.target_binding_status == expected_binding
         and first.graph_causality == expected_graph
+        and first.ambient_projection == expected_ambient_projection
         for (
             _label,
             target_reference,
@@ -725,17 +742,31 @@ def build_witnesses(
             ),
         )
     )
+    pending_root = "pending-root"
+    pending_ref_a = ref_a.hex()
+    pending_ref_b = ref_b.hex()
+    pending_child_a = f"child:{pending_ref_a}"
+    pending_child_b = f"child:{pending_ref_b}"
     removal_pending_graph = {
-        "pending-root": (),
-        "directive": ("pending-root",),
-        "child": ("directive",),
+        pending_root: (),
+        pending_ref_a: (pending_root,),
+        pending_ref_b: (pending_root,),
+        pending_child_a: (pending_ref_a,),
+        pending_child_b: (pending_ref_b,),
         "independent": (),
     }
-    pending_a = pending_closure(removal_pending_graph, {"pending-root"}, stage_work)
-    pending_b = pending_closure(removal_pending_graph, {"pending-root"}, stage_work)
+    pending = pending_closure(removal_pending_graph, {pending_root}, stage_work)
     pending_invariant = (
-        pending_a == pending_b == {"pending-root", "directive", "child"}
-        and "independent" not in pending_a
+        pending
+        == {
+            pending_root,
+            pending_ref_a,
+            pending_ref_b,
+            pending_child_a,
+            pending_child_b,
+        }
+        and pending_ref_a != pending_ref_b
+        and "independent" not in pending
     )
     add(Witness("W-REMOVAL-01", "removal-tail-variance", "NONE, REQUIRED, absent and non-retained targets retain byte-identical full bounded AP projections across distinct target-commitment tails", ap_invariant, ("AP_PROJECTION_INVARIANCE", "REMOVAL_INAPPLICABLE_OR_DEFERRED")))
     add(Witness("W-REMOVAL-02", "removal-tail-variance", "tail variants change transcript, event identity and K-06 order while their vacuous AP projection remains invariant; both positive and false-positive identity-collapse cases are detected", identity_and_order_variance and collapse_detected and collapse_false_positive_rejected, ("TAIL_BYTES", "EVENT_IDENTITY", "K06_ORDER_VARIANCE", "COLLAPSED_IDENTITY_POSITIVE", "COLLAPSED_IDENTITY_FALSE_POSITIVE_REJECT")))
@@ -819,6 +850,22 @@ def build_witnesses(
                         }
                         for reference, parents in first.graph_causality
                     ],
+                    "ambient_projection": [
+                        {
+                            "reference": row[0].hex(),
+                            "content_class": row[1],
+                            "descriptor": [
+                                value.hex() if isinstance(value, bytes) else value
+                                for value in row[2]
+                            ],
+                            "retained": row[3],
+                            "verified": row[4],
+                            "binding_status": row[5],
+                            "presentation": row[6],
+                            "parents": [parent.hex() for parent in row[7]],
+                        }
+                        for row in first.ambient_projection
+                    ],
                     "target_binding_status": first.target_binding_status,
                     "target_descriptor": (
                         None
@@ -851,7 +898,10 @@ def build_witnesses(
             "k06_order_spanned": identity_and_order_variance,
             "collapsed_identity_positive_detected": collapse_detected,
             "collapsed_identity_false_positive_rejected": collapse_false_positive_rejected,
-            "pending_subtree_equal": pending_invariant,
+            "tail_variant_references": [pending_ref_a, pending_ref_b],
+            "pending_subtree_root": pending_root,
+            "pending_subtree_members": sorted(pending),
+            "pending_subtree_contains_both_tail_variants": pending_invariant,
         },
         "c03_model_record": {
             "status": c03.get("status"),
