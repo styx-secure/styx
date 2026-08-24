@@ -226,6 +226,10 @@ def main(argv: list[str] | None = None) -> int:
             "javascript_derivation_sha256": sha256_hex(javascript_bytes),
             "changed_python_derivation_sha256": sha256_hex(changed_python),
             "changed_javascript_derivation_sha256": sha256_hex(changed_javascript),
+            "derivation_digest_semantics": (
+                "CANONICAL_JSON_AFTER_VALUE_EQUALITY_CHECK"
+            ),
+            "derivation_digests_are_independent_evidence": False,
             "isolation": isolation,
             "grant_non_circular": True,
             "grant_rooted_case_count": len(grant_rooted),

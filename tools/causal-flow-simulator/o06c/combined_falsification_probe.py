@@ -488,30 +488,47 @@ def build_witnesses(
     )
     mismatching_tail_a = deterministic("tail-a")
     mismatching_tail_b = deterministic("tail-b")
+    expected_graph = tuple(
+        sorted((record.reference, record.parents) for record in ambient)
+    )
     vacuous_targets = (
         (
             "NONE",
             none_target_ref,
             ("REMOVAL_INAPPLICABLE", "VALIDATED", "RETAINED", "VISIBLE"),
+            ("NONE", 0),
+            "BOUND",
         ),
         (
             "REQUIRED",
             required_target_ref,
             ("REMOVAL_INAPPLICABLE", "VALIDATED", "RETAINED", "VISIBLE"),
+            required_descriptor,
+            "BOUND",
         ),
         (
             "ABSENT",
             deterministic("removal-target-absent"),
             ("REMOVAL_INAPPLICABLE", "ABSENT", "NOT_RETAINED", "ABSENT"),
+            None,
+            "UNOBSERVED",
         ),
         (
             "NOT_RETAINED",
             unretained_target_ref,
             ("REMOVAL_DEFERRED", "VALIDATED", "NOT_RETAINED", "WITHHELD"),
+            ambient[3].descriptor,
+            "BOUND",
         ),
     )
     projection_pairs = []
-    for label, target_reference, expected_status in vacuous_targets:
+    for (
+        label,
+        target_reference,
+        expected_status,
+        expected_descriptor,
+        expected_binding,
+    ) in vacuous_targets:
         first = project_removal_directive(
             ambient,
             target_reference=target_reference,
@@ -522,7 +539,17 @@ def build_witnesses(
             target_reference=target_reference,
             target_commitment=mismatching_tail_b,
         )
-        projection_pairs.append((label, expected_status, first, second))
+        projection_pairs.append(
+            (
+                label,
+                target_reference,
+                expected_status,
+                expected_descriptor,
+                expected_binding,
+                first,
+                second,
+            )
+        )
     ap_invariant = all(
         first == second
         and first.removal_effect == "NONE"
@@ -533,7 +560,19 @@ def build_witnesses(
             first.target_presentation,
         )
         == expected_status
-        for _label, expected_status, first, second in projection_pairs
+        and first.target_reference == target_reference
+        and first.target_descriptor == expected_descriptor
+        and first.target_binding_status == expected_binding
+        and first.graph_causality == expected_graph
+        for (
+            _label,
+            target_reference,
+            expected_status,
+            expected_descriptor,
+            expected_binding,
+            first,
+            second,
+        ) in projection_pairs
     )
 
     retained_tail = RemovalTail(
@@ -584,7 +623,15 @@ def build_witnesses(
     )
     retained_projection_distinct_from_all_vacuous = all(
         retained_projection_a != first
-        for _label, _expected_status, first, _second in projection_pairs
+        for (
+            _label,
+            _target_reference,
+            _expected_status,
+            _expected_descriptor,
+            _expected_binding,
+            first,
+            _second,
+        ) in projection_pairs
     )
     retained_projection_nonvacuous = (
         encode_event_transcript(retained_directive_a)
@@ -752,16 +799,49 @@ def build_witnesses(
         "removal_tail_variance": {
             "vacuous_target_cases": [
                 label
-                for label, _expected_status, _first, _second in projection_pairs
+                for (
+                    label,
+                    _target_reference,
+                    _expected_status,
+                    _expected_descriptor,
+                    _expected_binding,
+                    _first,
+                    _second,
+                ) in projection_pairs
             ],
             "vacuous_target_statuses": {
                 label: {
                     "classification": first.classification,
+                    "graph_causality": [
+                        {
+                            "reference": reference.hex(),
+                            "parents": [parent.hex() for parent in parents],
+                        }
+                        for reference, parents in first.graph_causality
+                    ],
+                    "target_binding_status": first.target_binding_status,
+                    "target_descriptor": (
+                        None
+                        if first.target_descriptor is None
+                        else [
+                            value.hex() if isinstance(value, bytes) else value
+                            for value in first.target_descriptor
+                        ]
+                    ),
                     "target_validity": first.target_validity,
+                    "target_reference": first.target_reference.hex(),
                     "target_retention": first.target_retention,
                     "target_presentation": first.target_presentation,
                 }
-                for label, _expected_status, first, _second in projection_pairs
+                for (
+                    label,
+                    _target_reference,
+                    _expected_status,
+                    _expected_descriptor,
+                    _expected_binding,
+                    first,
+                    _second,
+                ) in projection_pairs
             },
             "full_ap_projection_equal": ap_invariant,
             "retained_detachable_applied": retained_projection_a.classification == "REMOVAL_APPLIED",

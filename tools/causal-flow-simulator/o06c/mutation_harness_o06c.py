@@ -53,7 +53,7 @@ MUTANTS = (
     Mutant("M16_C03_CAPABILITY", "C0.3 capability-gate retention", "policy_guards.py", '    return declared_blocks', '    return _mutation_trace("M16_C03_CAPABILITY", frozenset())', "C03_CAPABILITY_OPENED"),
     Mutant(
         "M17_REMOVAL_PROJECTION",
-        "pending-authority retention",
+        "AP removal projection",
         "policy_guards.py",
         '    matches = [record for record in ambient if record.reference == target_reference]',
         '    matches = _mutation_trace("M17_REMOVAL_PROJECTION", [])',
@@ -209,7 +209,9 @@ def main(argv: list[str] | None = None) -> int:
         if len(MUTANTS) != 17 or len({item.identifier for item in MUTANTS}) != 17:
             raise HarnessError("closed mutant registry drift")
         mutant_ids = {item.identifier for item in MUTANTS}
-        mutant_classes = {item.mutant_class for item in MUTANTS}
+        mutant_classes = {
+            item.mutant_class for item in MUTANTS if item.contractual_class_member
+        }
         if mutant_classes != EXPECTED_MUTANT_CLASSES:
             raise HarnessError("closed mutant-class registry drift")
         contractual_members = tuple(

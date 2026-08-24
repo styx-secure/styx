@@ -67,8 +67,17 @@ class MutationHarnessTests(unittest.TestCase):
             ]
             self.assertEqual(len(contractual), 16)
             self.assertEqual(
-                [(item["id"], item["subject"]) for item in supplementary],
-                [("M17_REMOVAL_PROJECTION", "AP removal projection")],
+                [
+                    (item["id"], item["class"], item["subject"])
+                    for item in supplementary
+                ],
+                [
+                    (
+                        "M17_REMOVAL_PROJECTION",
+                        "AP removal projection",
+                        "AP removal projection",
+                    )
+                ],
             )
             self.assertTrue(report["witness_coverage"])
             self.assertEqual(

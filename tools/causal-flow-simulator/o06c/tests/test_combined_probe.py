@@ -65,8 +65,20 @@ class CombinedProbeTests(unittest.TestCase):
             )
             removal = report["evidence"]["removal_tail_variance"]
             self.assertTrue(removal["full_ap_projection_equal"])
+            statuses = removal["vacuous_target_statuses"]
             self.assertEqual(
-                removal["vacuous_target_statuses"],
+                {
+                    label: {
+                        key: value[key]
+                        for key in (
+                            "classification",
+                            "target_presentation",
+                            "target_retention",
+                            "target_validity",
+                        )
+                    }
+                    for label, value in statuses.items()
+                },
                 {
                     "ABSENT": {
                         "classification": "REMOVAL_INAPPLICABLE",
@@ -94,6 +106,48 @@ class CombinedProbeTests(unittest.TestCase):
                     },
                 },
             )
+            self.assertEqual(
+                {
+                    label: value["target_binding_status"]
+                    for label, value in statuses.items()
+                },
+                {
+                    "ABSENT": "UNOBSERVED",
+                    "NONE": "BOUND",
+                    "NOT_RETAINED": "BOUND",
+                    "REQUIRED": "BOUND",
+                },
+            )
+            self.assertEqual(statuses["ABSENT"]["target_descriptor"], None)
+            self.assertEqual(statuses["NONE"]["target_descriptor"], ["NONE", 0])
+            self.assertEqual(
+                statuses["REQUIRED"]["target_descriptor"][:4],
+                ["REQUIRED", 15, 7, 1],
+            )
+            self.assertEqual(
+                statuses["NOT_RETAINED"]["target_descriptor"][:4],
+                ["DETACHABLE", 4, 9, 0],
+            )
+            self.assertTrue(
+                all(
+                    len(value["target_reference"]) == 64
+                    for value in statuses.values()
+                )
+            )
+            expected_graph_references = {
+                "4fd47b59542a39f2fd77d09f25b57030480b3c654286e50a79514313b8feb0e7",
+                "5395d84d94565ced79b015e206eb9a0449e4959fb8af9ac3c17308c89236470a",
+                "bd51a9583df6998963570886fe6354695c916989dd5e757dc3f2ccff0f9f2f27",
+                "c6c86e3f6c98f62b32b40ef0d77aee48bb396b092753d505abd4659e54b76516",
+            }
+            for value in statuses.values():
+                self.assertEqual(
+                    {row["reference"] for row in value["graph_causality"]},
+                    expected_graph_references,
+                )
+                self.assertTrue(
+                    all(not row["parents"] for row in value["graph_causality"])
+                )
             self.assertTrue(removal["retained_detachable_applied"])
             self.assertTrue(removal["retained_detachable_projection_equal"])
             self.assertTrue(removal["retained_detachable_differs_from_vacuous"])

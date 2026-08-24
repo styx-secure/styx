@@ -17,10 +17,10 @@
 No counterexample was found within the declared O-06c registry. The frozen
 six-section gate passed, the independent Python and JavaScript encoders agreed
 on complete bytes and full-width SHA-256 values, all required directed witnesses
-passed, all 17 declared source mutants across the 16 contractually closed classes
-were killed by their exact detector sets, all seven historical evidence entries
-reproduced, and exhaustive selected-object mutation produced no third accepted
-disposition.
+passed, all 16 contractual class members plus one supplementary AP-projection
+mutant were killed by their exact detector sets, all seven historical evidence
+entries reproduced, and exhaustive selected-object mutation produced no third
+accepted disposition.
 
 This result supports condition-bearing closure of O-06/O-06c only. It does not
 prove SHA-256, protocol completeness, parser or product implementation
@@ -38,7 +38,7 @@ and are byte-identical across two successful runs at the exact final candidate:
 | Scope | `PASS` | `b1f6cf5b179674ec4262dca6698c397eb83a6c2d6dce7a133f19cd0e65f31752` |
 | Frozen sections | `PASS` (6/6) | `8614f80f1434353ef96a786a93c2736c7a1d09542c9a4f92af808ff2ad9e5c8a` |
 | Combined machine probe | `NO_COUNTEREXAMPLE_WITHIN_BOUNDS` (27 witnesses) | `d215dd35093a210e866b39af28a15470e2fac7207b93f2fe69d3e31fba0df979` |
-| Directed mutation | `ALL_REQUIRED_MUTANTS_KILLED` (17/17 across 16 classes) | `44403638c43af8cdb30937d766829fa3891d4c327a1054063c99cc1d3053e8ea` |
+| Directed mutation | `ALL_REQUIRED_MUTANTS_KILLED` (16 contractual classes + 1 supplementary AP projection; 17/17 killed) | `44403638c43af8cdb30937d766829fa3891d4c327a1054063c99cc1d3053e8ea` |
 | Cross-language | `PASS` (9 events) | `8ed61a94432c79efba5da818d6933d7794a6b0dc71f51aed5ae8362ec1f3e450` |
 | Historical evidence | `PASS` (7/7) | `153a64cd660a29f2d90d16cb70e2bb8c45a32627a4f9c34145183d0775c16114` |
 
@@ -85,8 +85,8 @@ mutant-only coverage and validated against exact mutant/detector pairs; they are
 not mislabelled as executed witness families.
 The first 16 mutants remain the one-to-one members of the 16 contractually
 closed source-mutant classes. `M17_REMOVAL_PROJECTION` is explicitly published
-as a supplementary AP-removal-projection subject, not falsely presented as a
-second member of the pending-authority-retention class.
+as a supplementary AP-removal-projection subject with its contractual-membership
+flag set to false.
 This separation prevents a declared witness-to-mutant relationship from being
 reported as executed evidence when no such relationship ran.
 
@@ -136,7 +136,10 @@ not production maxima or availability guarantees.
 | O-11 | complete-object verification only; no inclusion-proof context | selected inclusion-proof, wire, storage or fetch encoding |
 | O-14 | opaque suite/key bytes; no production signature verification | selected signature registry, key/signature encoding or downgrade rule |
 | AP/C0.3 | arbitrary opaque AP-transition bytes exercise only the frozen outer `opaque_u32` boundary | selected canonical AP-transition schema or semantic injectivity rule |
-| Runtime encoder | the JavaScript side is a partial forward encoder only: it is not the inverse parser, rejection oracle, authority fold or a product implementation | any claim of complete cross-language protocol conformance, parser parity or product integration |
+| Runtime encoder | the JavaScript side is a partial forward encoder only: it is not the inverse parser, rejection oracle, authority fold or a product implementation; protocol version, object kind and suite identifiers are emitted as fixed constants, so agreement on those fields is not independent evidence | any claim of complete cross-language protocol conformance, parser parity or product integration |
+| Cross-language digest fields | the reported Python/JavaScript derivation hashes cover canonical JSON after the value-equality check and are diagnostic, not a second independent witness | any claim that equal report digests independently prove encoder agreement |
+| Frozen-source envelope | the contract pins six selected normative sections rather than every section of both encoding profiles; the separate scope gate constrains changed paths but does not establish whole-document immutability | any change to an unpinned normative section or expansion of the frozen-source claim |
+| Tool and framing envelope | the evidence pins Python `3.14.4` and Node `24.18.0`; the parser applies the outer-reference framing ceiling while the forward transcript encoder does not exercise an object near that allocation boundary | any portable-toolchain claim or selected bound that approaches the `u32` framing ceiling |
 
 SHA-256 collision and second-preimage resistance remain assumptions. A supplied
 distinct-preimage/equal-digest condition is rejected rather than treated as a

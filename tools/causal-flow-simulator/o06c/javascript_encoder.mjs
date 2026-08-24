@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Independent dependency-free JavaScript encoder for O-06c cross-language evidence.
+// Partial forward encoder only: not an inverse parser, rejection oracle, or product implementation.
 
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";

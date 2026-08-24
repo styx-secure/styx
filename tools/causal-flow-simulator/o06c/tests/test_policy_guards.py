@@ -57,22 +57,33 @@ class RemovalProjectionTests(unittest.TestCase):
             (
                 none_reference,
                 ("REMOVAL_INAPPLICABLE", "VALIDATED", "RETAINED", "VISIBLE"),
+                ("NONE", 0),
+                "BOUND",
             ),
             (
                 required_reference,
                 ("REMOVAL_INAPPLICABLE", "VALIDATED", "RETAINED", "VISIBLE"),
+                ("REQUIRED", 3, 1, 0, commitment),
+                "BOUND",
             ),
             (
                 bytes.fromhex("04" * 32),
                 ("REMOVAL_INAPPLICABLE", "ABSENT", "NOT_RETAINED", "ABSENT"),
+                None,
+                "UNOBSERVED",
             ),
             (
                 unretained_reference,
                 ("REMOVAL_DEFERRED", "VALIDATED", "NOT_RETAINED", "WITHHELD"),
+                ("DETACHABLE", 3, 1, 0, commitment),
+                "BOUND",
             ),
         )
+        expected_graph = tuple(
+            sorted((record.reference, record.parents) for record in ambient)
+        )
 
-        for reference, expected_status in cases:
+        for reference, expected_status, expected_descriptor, expected_binding in cases:
             with self.subTest(reference=reference.hex()):
                 projection = project_removal_directive(
                     ambient,
@@ -89,6 +100,10 @@ class RemovalProjectionTests(unittest.TestCase):
                     ),
                     expected_status,
                 )
+                self.assertEqual(projection.target_reference, reference)
+                self.assertEqual(projection.target_descriptor, expected_descriptor)
+                self.assertEqual(projection.target_binding_status, expected_binding)
+                self.assertEqual(projection.graph_causality, expected_graph)
 
     def test_retained_detachable_target_is_logically_removed(self) -> None:
         reference = bytes.fromhex("11" * 32)

@@ -71,6 +71,11 @@ class CrossLanguageTests(unittest.TestCase):
                 report["changed_python_derivation_sha256"],
                 report["changed_javascript_derivation_sha256"],
             )
+            self.assertEqual(
+                report["derivation_digest_semantics"],
+                "CANONICAL_JSON_AFTER_VALUE_EQUALITY_CHECK",
+            )
+            self.assertFalse(report["derivation_digests_are_independent_evidence"])
             self.assertTrue(report["grant_non_circular"])
             self.assertEqual(report["grant_rooted_case_count"], 8)
             self.assertTrue(
