@@ -36,8 +36,8 @@ and are byte-identical across two successful runs at the exact final candidate:
 | --- | --- | --- |
 | Scope | `PASS` | `7702c42ce10c63d843188a37ae30258a33332be8d035160d846bd1ae6743afcb` |
 | Frozen sections | `PASS` (6/6) | `8614f80f1434353ef96a786a93c2736c7a1d09542c9a4f92af808ff2ad9e5c8a` |
-| Combined machine probe | `NO_COUNTEREXAMPLE_WITHIN_BOUNDS` (25 witnesses) | `0ccc8cdfd9c28411fdc7dbb9d6356ba3b4bb8b87f2c48627437c2a909dd3158a` |
-| Directed mutation | `ALL_REQUIRED_MUTANTS_KILLED` (16/16) | `bc4cb83510cba472fd1814976160a3199734b591aa9e7b21d34c6f098d03a9fe` |
+| Combined machine probe | `NO_COUNTEREXAMPLE_WITHIN_BOUNDS` (26 witnesses) | `9336256ca7da3d0930f4023d15d724da816e39eb916daf8209de2350ba5549a8` |
+| Directed mutation | `ALL_REQUIRED_MUTANTS_KILLED` (16/16) | `0c86d3809250445636bc0abbd33a27f26de492ea24a7c97aefc5def8acf9fcf9` |
 | Cross-language | `PASS` (9 events) | `8ed61a94432c79efba5da818d6933d7794a6b0dc71f51aed5ae8362ec1f3e450` |
 | Historical evidence | `PASS` (7/7) | `153a64cd660a29f2d90d16cb70e2bb8c45a32627a4f9c34145183d0775c16114` |
 
@@ -64,6 +64,10 @@ adjacent values and boundaries with checked arithmetic. Every accepted mutation
 is either a typed rejection or a canonical semantic reassignment whose
 independent re-encoding equals the mutated bytes and whose derived identifier
 changes where applicable. There were zero invalid dispositions.
+Four explicit negative controls independently force typed rejection,
+non-canonical acceptance, identity collision and canonical semantic
+reassignment. The classifier must distinguish all four, including both
+forbidden dispositions, before the exhaustive verdict can pass.
 
 The closed source-mutant registry covers transcript domain/role, transcript
 length, credential-control tail, 84-octet context, credential binding, author
@@ -72,15 +76,38 @@ authority `Must0`, pending-authority retention, lineage-scoped fork effect,
 frozen-section enforcement, historical-registry enforcement and C0.3 capability
 retention. A mutant passes only when the mutated path executes and its observed
 non-empty detector set equals the declared set exactly.
+Witness-family coverage and mutant detection are separate closed registries:
+each of the 25 witness families names the directed assertions that actually
+execute it, while each of the 16 mutants names only its observed detector set.
+This separation prevents a declared witness-to-mutant relationship from being
+reported as executed evidence when no such relationship ran.
+
+The C0.2j authority outcomes are recorded as `PINNED_NOT_REDERIVED`. O-06c
+executes the fail-closed boundary guards, including both reachable K-06
+reference-order directions and an injected `Must0`-bypass rejection, but does
+not create a second authority oracle. The removal-tail family executes the full
+bounded AP projection for `NONE`, `REQUIRED`, absent, non-retained and retained
+`DETACHABLE` targets, spans both K-06 order directions, detects an attempted
+identity collapse and preserves the same pending causal subtree across the two
+retained variants. The capability witness reads the actual derived review-model
+C0.3 record and checks its exact dependency and blocked-capability sets.
 
 ## 4. Work and availability observations
 
-The combined probe reports deterministic counters for parsing, inverse,
+The combined probe reports deterministic counters for geometry validation,
+content splitting, parsing, inverse,
 serialization, transcript regeneration, reference/leaf/node/commitment hashing,
 graph construction, opening verification and replay. Its aggregate stage counts
-include 58 parses, 7 inverse operations, 2 serializations, 2 transcript
+include 8 geometry checks, 10 content-split chunks, 58 parses, 7 inverse
+operations, 2 serializations, 2 transcript
 regenerations, 10 leaf hashes, 6 interior-node hashes, 4 commitment hashes,
-4 graph constructions, one opening verification and 2 replay operations.
+16 graph constructions, one opening verification and 6 replay operations.
+
+The geometry witness compares a small inconsistent descriptor, a `MAX_U64`
+inconsistent descriptor and an out-of-envelope chunk size. All three reject
+after equal fixed guard work and before proportional splitting, allocation or
+hashing. The work counter is passed through the guarded operation itself rather
+than inspected as a fresh, unrelated value.
 
 The sequence-change rehash witness recomputes one leaf plus one commitment for
 `SINGLE` (348 hashed octets) and four leaves, three interior nodes and one
@@ -120,3 +147,14 @@ Any report mismatch, counterexample, newly selected placeholder input, changed
 frozen byte, changed hash/runtime basis, missing historical entry or weakened
 C0.3 capability edge reopens O-06/O-06c and blocks C0.3 until the affected
 evidence is rerun and independently ratified.
+
+## 7. Independent-review remediation status
+
+The previous independent exact-HEAD review reported four `MEDIUM`
+evidence-quality findings: tautological pinned-input witnesses, incomplete
+removal-tail projection coverage, a declared but unexecuted witness-to-mutant
+map and a geometry work counter disconnected from the guarded operation. The
+candidate now contains the negative controls, executable AP projection,
+separate closed coverage registries and in-operation work accounting described
+above. These changes remain pending fresh independent review on the final exact
+HEAD; this report does not pre-empt that verdict.
