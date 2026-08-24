@@ -533,8 +533,8 @@ class ProtocolReviewModelTests(unittest.TestCase):
             + "\n"
         ).encode("utf-8")
         self.assertEqual(expected, fixture_path.read_bytes())
-        self.assertEqual(68, len(self.negative_cases))
-        self.assertEqual(68, len({case["id"] for case in self.negative_cases}))
+        self.assertEqual(70, len(self.negative_cases))
+        self.assertEqual(70, len({case["id"] for case in self.negative_cases}))
 
     def test_additive_inventory_cases_fail_only_the_pinned_equality(self) -> None:
         additive_ids = {

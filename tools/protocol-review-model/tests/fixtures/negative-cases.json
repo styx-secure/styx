@@ -118,6 +118,15 @@
   },
   {
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "reopen-selected-c02k",
+    "mutation": {
+      "operation": "set",
+      "path": "/blockers/1/status",
+      "value": "OPEN"
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "promote-profile-dependent-flow",
     "mutation": {
       "operation": "set",
@@ -563,6 +572,15 @@
     "mutation": {
       "operation": "set",
       "path": "/invariants/0/object_refs",
+      "value": []
+    }
+  },
+  {
+    "expected_code": "PINNED_VALUE_DRIFT",
+    "id": "pinned-c02k-binding-evidence-drift",
+    "mutation": {
+      "operation": "set",
+      "path": "/invariants/6/evidence_refs",
       "value": []
     }
   },

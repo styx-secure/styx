@@ -255,7 +255,7 @@
   ],
   "artifact": {
     "c03_verdict": "NO_GO",
-    "contract_base_commit": "8f30f1940e4417fcb47b156b08c2242f405dc09b",
+    "contract_base_commit": "745de6d8954a39ad3a39e9ccc5303ba08fa8508c",
     "format": "styx.review-model.v1",
     "implementation_claim": false,
     "language": "en",
@@ -274,7 +274,7 @@
       ],
       "citations": [
         {
-          "anchor": "C0.2j must complete its exact-final evidence and human gates before",
+          "anchor": "Issue #233/PR #234 ratified its C0.2j grant-rooted succession",
           "source_id": "decisions"
         }
       ],
@@ -291,7 +291,7 @@
         "OB-K19"
       ],
       "owner": "K",
-      "reason": "Selects grant-rooted credential identity, exact K-readable succession evidence, bounded Pass0/first-contested-slot authority, R-1 reduction-target availability and credential-lineage containment; exact-final gates remain procedural before merge.",
+      "reason": "Ratified C0.2j input: grant-rooted credential identity, exact K-readable succession evidence, bounded Pass0/first-contested-slot authority, R-1 reduction-target availability and credential-lineage containment.",
       "status": "DECIDED"
     },
     {
@@ -303,23 +303,26 @@
       ],
       "citations": [
         {
-          "anchor": "C0.2k must next amend the commitment context, and",
+          "anchor": "C0.2k selects the credential/sequence-bound",
           "source_id": "decisions"
         }
       ],
       "decision_refs": [
-        "O-01"
+        "O-01",
+        "O-04",
+        "O-06"
       ],
       "depends_on": [
         "C0.2j"
       ],
       "id": "C0.2k",
       "obligation_refs": [
-        "OB-K01"
+        "OB-K01",
+        "OB-K10"
       ],
       "owner": "K",
-      "reason": "Must bind the commitment context to the exact credential and author sequence selected by C0.2j.",
-      "status": "OPEN"
+      "reason": "Selects one pre-corpus 84-octet commitment context that appends the exact authenticated credential identifier and non-wrapping author sequence to the O-03 tuple, with no 44-octet fallback or mixed interpretation.",
+      "status": "DECIDED"
     },
     {
       "blocks": [
@@ -2178,6 +2181,40 @@
     {
       "citations": [
         {
+          "anchor": "C0.2k supersedes the former 44-octet",
+          "source_id": "decisions"
+        },
+        {
+          "anchor": "The selected construction is:",
+          "source_id": "commitment_context_report"
+        }
+      ],
+      "decision_refs": [
+        "O-01",
+        "O-04",
+        "O-06"
+      ],
+      "evidence_refs": [
+        "commitment_context_report"
+      ],
+      "id": "INV_COMMITMENT_CONTEXT_BINDING",
+      "object_refs": [
+        "application_event",
+        "content_bytes",
+        "content_descriptor",
+        "opening"
+      ],
+      "obligation_refs": [
+        "OB-K01",
+        "OB-K10"
+      ],
+      "owner": "K",
+      "statement": "Every content-bearing leaf and final commitment binds the exact 84-octet O-03, credential-identifier and author-sequence context; an unchanged descriptor, content and opening therefore fail verification after either credential or sequence substitution, without implying event identity, authority, originality or truth.",
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
           "anchor": "Authority-bearing control data is `NONE`-class transcript data",
           "source_id": "decisions"
         }
@@ -2872,19 +2909,30 @@
     {
       "citations": [
         {
-          "anchor": "44-octet commitment context deliberately does not prevent cross-credential",
+          "anchor": "The superseded 44-octet `CTX` accepted cross-credential descriptor copy",
+          "source_id": "commitment_profile"
+        },
+        {
+          "anchor": "A party holding content and opening can recompute a fresh valid commitment",
+          "source_id": "commitment_context_report"
+        },
+        {
+          "anchor": "C0.2k supersedes the former 44-octet",
           "source_id": "decisions"
         }
       ],
       "decision_refs": [
-        "O-01"
+        "O-01",
+        "O-04",
+        "O-06"
       ],
       "id": "NC_COMMITMENT_COPY",
       "obligation_refs": [
-        "OB-K01"
+        "OB-K01",
+        "OB-K10"
       ],
       "owner": "K",
-      "statement": "The current commitment context does not prevent declared cross-credential or same-credential cross-sequence descriptor copy; C0.2k owns repair."
+      "statement": "The current 84-octet context rejects unchanged-opening copy across credentials or author sequences, but it does not prevent knowledgeable recomputation under a new context, distinguish same-credential same-sequence sibling events, or prove authenticity, originality, truth or application authority."
     },
     {
       "citations": [
@@ -4575,7 +4623,7 @@
       "applies_transition": false,
       "citations": [
         {
-          "anchor": "Reject malformed geometry, wrong suite/context/opening/content",
+          "anchor": "Reject malformed geometry, wrong suite/context/credential/sequence/opening/content",
           "source_id": "threat_model"
         }
       ],
@@ -5719,10 +5767,16 @@
       "sha256": "50318b991faaa748bdd67fea5c17f5204f02f67e95429851d6e54241a10035ac"
     },
     {
+      "authority": "evidence",
+      "id": "commitment_context_report",
+      "path": "docs/protocol/styx-app-kernel-v0-commitment-context-falsification-report.md",
+      "sha256": "0a30faa4cbc55889b5aa6e1cd73dbb448c72ea1c99925b34a9d3081f93f36dcc"
+    },
+    {
       "authority": "normative",
       "id": "commitment_profile",
       "path": "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
-      "sha256": "e25e247da502e535929f4cd3618daf531b253388aa41af3506e05711166c6327"
+      "sha256": "9f6e003538d79652e14da1ab9ed32b3113e0ad65bd4e3e679c70ab7a77f927da"
     },
     {
       "authority": "evidence",
@@ -5740,7 +5794,7 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "0cf9206ec40f6db3bc1662a7573fc04ee55f8adb76f062e3dae986b8a18d238a"
+      "sha256": "8c2d8c7b724f393b680e3a80780da6e3b3fb87d516c6ce7721cdefab11356781"
     },
     {
       "authority": "evidence",
@@ -5776,19 +5830,19 @@
       "authority": "normative",
       "id": "responsibility",
       "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
-      "sha256": "020d3d1fd8a042a7f9a923753a0be092fdd198b91bd43b45bb3fa487e737882c"
+      "sha256": "6653de181073f261d0899437f3dbcf7317f0336a715232266b2f8404dac44a7c"
     },
     {
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "bb0bc4a2fc339bee245518718d6b1e66016346fac07814a90945ce9414623d5e"
+      "sha256": "45d1f6ad62ef15ee73cb16c4aaea1d2c763ccd31e355a53a616d267cbc939618"
     },
     {
       "authority": "normative",
       "id": "transcript_profile",
       "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
-      "sha256": "809c9e7039c42f887d16b7e2b58a3922c10685c673e9385f3706020d85d96ec3"
+      "sha256": "7f3399a82b976eaab8bb967aa1d1006f5e280ec141b2f6afdf806f26e2fe6166"
     }
   ],
   "state_models": [
