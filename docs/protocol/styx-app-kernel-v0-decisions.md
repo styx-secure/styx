@@ -924,10 +924,10 @@ outcomes.
   preserves explicit recomputation, same-slot fork and broader-security
   non-claims. It is not O-06c or product evidence.
 - **O-06c executable evidence:** `NO_COUNTEREXAMPLE_WITHIN_BOUNDS`; canonical
-  report digests are `scope=7702c42ce10c63d843188a37ae30258a33332be8d035160d846bd1ae6743afcb`,
+  report digests are `scope=b1f6cf5b179674ec4262dca6698c397eb83a6c2d6dce7a133f19cd0e65f31752`,
   `frozen=8614f80f1434353ef96a786a93c2736c7a1d09542c9a4f92af808ff2ad9e5c8a`,
-  `machine=9336256ca7da3d0930f4023d15d724da816e39eb916daf8209de2350ba5549a8`,
-  `mutation=0c86d3809250445636bc0abbd33a27f26de492ea24a7c97aefc5def8acf9fcf9`,
+  `machine=d215307ea6fbea32b3096a7e7925a875164fc26bc7f7e952a904931ee550acbe`,
+  `mutation=1521983feb2187beaa5b782282565ac089113ecb39e9988b75d36c46c2c0e266`,
   `cross-language=8ed61a94432c79efba5da818d6933d7794a6b0dc71f51aed5ae8362ec1f3e450`
   and
   `historical=153a64cd660a29f2d90d16cb70e2bb8c45a32627a4f9c34145183d0775c16114`.
