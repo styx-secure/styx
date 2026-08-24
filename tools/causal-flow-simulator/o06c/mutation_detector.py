@@ -116,7 +116,7 @@ def detects(mutant: str) -> tuple[object, str, bool]:
     elif mutant == "M11_AUTHORITY_MUST0":
         module = policy
         detector = "MUST0_EXPANSION"
-        detected = policy.both_order_directions_preserve_must0((True, False))
+        detected = policy.reject_any_must0_bypass((False, True))
     elif mutant == "M12_PENDING_RETENTION":
         module = policy
         detector = "K_EVIDENCE_FILTERED"
@@ -148,7 +148,11 @@ def detects(mutant: str) -> tuple[object, str, bool]:
     elif mutant == "M16_C03_CAPABILITY":
         module = policy
         detector = "C03_CAPABILITY_OPENED"
-        detected = policy.c03_blocked_capabilities("NO_GO", policy.C03_DEPENDENCIES) != policy.C03_BLOCKED_CAPABILITIES
+        detected = policy.c03_blocked_capabilities(
+            "NO_GO",
+            policy.C03_DEPENDENCIES,
+            policy.C03_BLOCKED_CAPABILITIES,
+        ) != policy.C03_BLOCKED_CAPABILITIES
     else:
         raise SystemExit(f"unknown mutant: {mutant}")
     executed = mutant in getattr(module, "_MUTATION_PATHS", set())

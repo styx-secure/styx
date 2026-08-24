@@ -12,19 +12,26 @@ sys.path.insert(0, str(O06C_ROOT))
 from protocol_model import (  # noqa: E402
     CONTENT_DETACHABLE,
     CONTENT_NONE,
+    CONTENT_REQUIRED,
+    COMMITMENT_SUITE,
     CONTROL_POLICY,
     CommitmentContext,
     CredentialTail,
     DOMAINS,
     EventAssignment,
+    Geometry,
+    MAX_U64,
     ModelError,
     RemovalTail,
     ROLE_CREDENTIAL,
     ROLE_ORDINARY,
     ROLE_REMOVAL,
     ContentDescriptor,
+    SHAPE_TREE,
+    WorkCounter,
     build_commitment,
     descriptor_from_commitment,
+    encode_content_descriptor,
     encode_event_transcript,
     event_reference,
     make_grant,
@@ -123,6 +130,34 @@ class ProtocolModelTests(unittest.TestCase):
                 b"abcdefghijk",
                 RANDOMIZER,
             )
+
+    def test_geometry_guard_measures_constant_work_before_splitting(self) -> None:
+        small_work = WorkCounter()
+        inflated_work = WorkCounter()
+        common = dict(
+            content_class=CONTENT_REQUIRED,
+            exact_content_length=9,
+            content_type_id=7,
+            commitment_suite_id=COMMITMENT_SUITE,
+            commitment_shape=SHAPE_TREE,
+            commitment_value=bytes.fromhex("99" * 32),
+        )
+        with self.assertRaisesRegex(ModelError, "chunk count"):
+            encode_content_descriptor(
+                ContentDescriptor(**common, geometry=Geometry(1, 2, 1)),
+                small_work,
+            )
+        with self.assertRaisesRegex(ModelError, "chunk count"):
+            encode_content_descriptor(
+                ContentDescriptor(**common, geometry=Geometry(1, MAX_U64, 1)),
+                inflated_work,
+            )
+        self.assertEqual(small_work.geometry_checks, 1)
+        self.assertEqual(inflated_work.geometry_checks, 1)
+        self.assertEqual(small_work.content_split_chunks, 0)
+        self.assertEqual(inflated_work.content_split_chunks, 0)
+        self.assertEqual(small_work.hashed_octets, 0)
+        self.assertEqual(inflated_work.hashed_octets, 0)
 
     def test_application_transcript_binds_descriptor(self) -> None:
         context = CommitmentContext(1, 1, CTX_ID, ISSUER, 0)

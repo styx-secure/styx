@@ -54,12 +54,22 @@ class MutationHarnessTests(unittest.TestCase):
                 self.assertTrue(mutant["mutated_path_executed"])
                 self.assertEqual(mutant["observed_detectors"], mutant["declared_detectors"])
                 self.assertEqual(mutant["disposition"], "EXACT_DECLARED_SET")
-            mapped = {
-                identifier
-                for identifiers in report["witness_to_mutants"].values()
-                for identifier in identifiers
-            }
-            self.assertEqual(mapped, {mutant["id"] for mutant in report["mutants"]})
+            self.assertTrue(report["witness_coverage"])
+            self.assertTrue(
+                all(
+                    coverage["directed_assertions"]
+                    for coverage in report["witness_coverage"].values()
+                )
+            )
+            self.assertEqual(
+                set(report["mutant_to_detectors"]),
+                {mutant["id"] for mutant in report["mutants"]},
+            )
+            for mutant in report["mutants"]:
+                self.assertEqual(
+                    report["mutant_to_detectors"][mutant["id"]],
+                    mutant["declared_detectors"],
+                )
 
 
 if __name__ == "__main__":

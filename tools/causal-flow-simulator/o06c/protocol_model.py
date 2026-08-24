@@ -69,6 +69,8 @@ class WorkCounter:
     opening_verification: int = 0
     replay: int = 0
     hashed_octets: int = 0
+    geometry_checks: int = 0
+    content_split_chunks: int = 0
 
     def record_hash(self, family: str, octets: int) -> None:
         if family == "leaf":
@@ -271,7 +273,16 @@ class Reader:
         self.work.inverse += 1
 
 
-def _validate_geometry(length: int, shape: int, geometry: Geometry | None) -> None:
+def _validate_geometry(
+    length: int,
+    shape: int,
+    geometry: Geometry | None,
+    work: WorkCounter | None = None,
+) -> None:
+    work = work or WorkCounter()
+    # One fixed unit records entry into the constant-work geometry guard.  No
+    # attacker-declared count is iterated or allocated before this guard exits.
+    work.geometry_checks += 1
     _bounded(length, MAX_U64, "exact content length")
     if shape == SHAPE_SINGLE:
         if geometry is not None:
@@ -296,7 +307,10 @@ def _validate_geometry(length: int, shape: int, geometry: Geometry | None) -> No
         raise ModelError("inconsistent final chunk length")
 
 
-def encode_content_descriptor(descriptor: ContentDescriptor) -> bytes:
+def encode_content_descriptor(
+    descriptor: ContentDescriptor, work: WorkCounter | None = None
+) -> bytes:
+    work = work or WorkCounter()
     prefix = u8(descriptor.content_class, "content class") + u64(
         descriptor.exact_content_length, "exact content length"
     )
@@ -325,6 +339,7 @@ def encode_content_descriptor(descriptor: ContentDescriptor) -> bytes:
         descriptor.exact_content_length,
         descriptor.commitment_shape,
         descriptor.geometry,
+        work,
     )
     geometry_presence = descriptor.geometry is not None
     return b"".join(
@@ -390,7 +405,7 @@ def _parse_content_descriptor(reader: Reader) -> ContentDescriptor:
     )
     # The forward encoder is a separate semantic-legality check.  Equality is
     # checked again by the complete transcript inverse below.
-    encode_content_descriptor(descriptor)
+    encode_content_descriptor(descriptor, reader.work)
     return descriptor
 
 
@@ -457,7 +472,7 @@ def encode_event_body(event: EventAssignment, work: WorkCounter | None = None) -
         raise ModelError("causal parent width")
     if event.direct_predecessor in parents:
         raise ModelError("direct predecessor must be excluded from parent vector")
-    content = encode_content_descriptor(event.content)
+    content = encode_content_descriptor(event.content, work)
     if event.event_role == ROLE_ORDINARY:
         if event.tail is not None:
             raise ModelError("ordinary event forbids a tail")
@@ -648,13 +663,18 @@ def event_reference(event: EventAssignment, work: WorkCounter | None = None) -> 
     return framed_hash(DOMAINS["event_reference"], transcript, "reference", work)
 
 
-def _split_content(content: bytes, geometry: Geometry | None) -> tuple[bytes, ...]:
+def _split_content(
+    content: bytes, geometry: Geometry | None, work: WorkCounter
+) -> tuple[bytes, ...]:
     if geometry is None:
+        work.content_split_chunks += 1
         return (content,)
-    return tuple(
+    chunks = tuple(
         content[offset : offset + geometry.chunk_size]
         for offset in range(0, len(content), geometry.chunk_size)
     )
+    work.content_split_chunks += len(chunks)
+    return chunks
 
 
 def _largest_power_below(value: int) -> int:
@@ -688,7 +708,9 @@ def build_commitment(
     randomizer: bytes,
     *,
     chunk_size: int | None = None,
+    work: WorkCounter | None = None,
 ) -> CommitmentObject:
+    work = work or WorkCounter()
     if not isinstance(content, bytes):
         raise ModelError("content must be bytes")
     opaque32(randomizer, "opening randomizer")
@@ -702,9 +724,8 @@ def build_commitment(
         final = len(content) - chunk_size * (count - 1) if count else 0
         geometry = Geometry(chunk_size, count, final)
         shape = SHAPE_TREE
-    _validate_geometry(len(content), shape, geometry)
-    work = WorkCounter()
-    chunks = _split_content(content, geometry)
+    _validate_geometry(len(content), shape, geometry, work)
+    chunks = _split_content(content, geometry, work)
     leaf_preimages = []
     leaf_digests = []
     context_bytes = context.encode()
@@ -851,7 +872,7 @@ def parse_commitment_preimage(
     root = body.take(32, "root")
     randomizer = body.take(32, "opening randomizer")
     body.finish("commitment body")
-    _validate_geometry(exact_length, shape, geometry)
+    _validate_geometry(exact_length, shape, geometry, work)
     return {
         "context": context,
         "content_type_id": content_type,

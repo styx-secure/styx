@@ -185,9 +185,14 @@ def _object_specs() -> tuple[ObjectSpec, ...]:
     return tuple(specs)
 
 
-def _classify(spec: ObjectSpec, mutated: bytes, original_identity: bytes) -> str:
+def _classify_with(
+    spec: ObjectSpec,
+    mutated: bytes,
+    original_identity: bytes,
+    reencode,
+) -> str:
     try:
-        canonical, identity = _reencode(spec.kind, mutated)
+        canonical, identity = reencode(spec.kind, mutated)
     except ModelError:
         return "TYPED_REJECTION"
     if canonical != mutated:
@@ -197,8 +202,66 @@ def _classify(spec: ObjectSpec, mutated: bytes, original_identity: bytes) -> str
     return "CANONICAL_SEMANTIC_REASSIGNMENT"
 
 
+def _classify(spec: ObjectSpec, mutated: bytes, original_identity: bytes) -> str:
+    return _classify_with(spec, mutated, original_identity, _reencode)
+
+
+def _classifier_negative_controls(spec: ObjectSpec) -> dict[str, object]:
+    """Prove that both forbidden accepted dispositions are reachable and fatal.
+
+    The controls inject parser/re-encoder outcomes rather than pretending to
+    produce a SHA-256 collision in the real registry.
+    """
+
+    _, identity = _reencode(spec.kind, spec.encoded)
+
+    def reject(_kind: str, _value: bytes):
+        raise ModelError("negative-control rejection")
+
+    controls = {
+        "typed_rejection": _classify_with(spec, spec.encoded, identity, reject),
+        "noncanonical_acceptance": _classify_with(
+            spec,
+            spec.encoded,
+            identity,
+            lambda _kind, value: (value + b"noncanonical", bytes.fromhex("01" * 32)),
+        ),
+        "identity_collision": _classify_with(
+            spec,
+            spec.encoded,
+            identity,
+            lambda _kind, value: (value, identity),
+        ),
+        "canonical_reassignment": _classify_with(
+            spec,
+            spec.encoded,
+            identity,
+            lambda _kind, value: (value, bytes.fromhex("02" * 32)),
+        ),
+    }
+    expected = {
+        "typed_rejection": "TYPED_REJECTION",
+        "noncanonical_acceptance": "NONCANONICAL_ACCEPTANCE",
+        "identity_collision": "IDENTITY_COLLISION",
+        "canonical_reassignment": "CANONICAL_SEMANTIC_REASSIGNMENT",
+    }
+    return {
+        "observed": controls,
+        "expected": expected,
+        "forbidden_dispositions_exercised": sorted(
+            value
+            for value in controls.values()
+            if value in {"NONCANONICAL_ACCEPTANCE", "IDENTITY_COLLISION"}
+        ),
+        "status": "PASS" if controls == expected else "FAIL",
+    }
+
+
 def run_exhaustive() -> dict[str, object]:
     specs = _object_specs()
+    if not specs:
+        raise ModelError("empty exhaustive object registry")
+    negative_controls = _classifier_negative_controls(specs[0])
     octet_records = []
     scalar_records = []
     invalid = []
@@ -267,5 +330,10 @@ def run_exhaustive() -> dict[str, object]:
         "scalar_mutation_count": len(scalar_records),
         "scalar_mutations": scalar_records,
         "invalid_dispositions": invalid,
-        "verdict": "PASS" if not invalid else "COUNTEREXAMPLE",
+        "classifier_negative_controls": negative_controls,
+        "verdict": (
+            "PASS"
+            if not invalid and negative_controls["status"] == "PASS"
+            else "COUNTEREXAMPLE"
+        ),
     }

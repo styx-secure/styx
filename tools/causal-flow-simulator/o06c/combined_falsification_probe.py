@@ -18,9 +18,12 @@ from exhaustive_mutations import run_exhaustive
 from policy_guards import (
     C03_BLOCKED_CAPABILITIES,
     C03_DEPENDENCIES,
-    both_order_directions_preserve_must0,
+    RemovalTarget,
     c03_blocked_capabilities,
+    detects_collapsed_removal_identity,
     lineage_scoped_quarantine,
+    project_removal_directive,
+    reject_any_must0_bypass,
     retain_k_evidence,
 )
 from protocol_model import (
@@ -61,6 +64,39 @@ from protocol_model import (
 
 SCHEMA = "styx-o06c-combined-falsification-report/v1"
 EXPECTED_SEED = "o06c-v1-deterministic-test-seed"
+
+# This is a coverage registry, not a claim that every directed assertion is a
+# source-mutant detector.  build_witnesses() verifies the registry against the
+# actually executed witness records before a verdict can be emitted.
+WITNESS_ASSERTION_REGISTRY = {
+    "capability-gate": ("W-C03-01",),
+    "closed-agility": ("W-CLOSED-01",),
+    "complete-opening": ("M08",),
+    "control-none": ("W-CONTROL-01",),
+    "domain-separation": ("W-FRAME-02",),
+    "exhaustive-octets": ("W-EXHAUSTIVE-01",),
+    "fork-scope": ("W-FORK-01",),
+    "framing-injectivity": ("W-FRAME-01",),
+    "geometry": ("W-GEOMETRY-01",),
+    "grant-rooted-opening": ("W-BIND-01",),
+    "hash-assumption": ("W-HASH-01",),
+    "leaf-separation": ("W-BIND-02",),
+    "legacy-rejection": ("W-LEGACY-01",),
+    "outer-commitment": ("M09",),
+    "pending-authority": ("W-PENDING-01",),
+    "pinned-authority": ("W-AUTH-08",),
+    "prefix-freeness": ("W-PREFIX-01",),
+    "removal-tail-variance": (
+        "W-REMOVAL-01",
+        "W-REMOVAL-02",
+        "W-REMOVAL-03",
+    ),
+    "same-slot-equivocation": ("W-FORK-05",),
+    "shape-boundary": ("W-SHAPE-01",),
+    "tree-integrity": ("W-TREE-01",),
+    "work-accounting": ("W-WORK-01", "W-WORK-02"),
+    "zero-content": ("W-SHAPE-02",),
+}
 
 
 class ProbeError(ValueError):
@@ -174,7 +210,23 @@ def reject_digest_alias(
         raise ProbeError("HASH_COLLISION_FINDING")
 
 
-def build_witnesses() -> tuple[list[Witness], dict[str, object]]:
+def _c03_record(review_model: dict[str, object]) -> dict[str, object]:
+    blockers = review_model.get("blockers")
+    if not isinstance(blockers, list):
+        raise ProbeError("review model has no blocker registry")
+    matches = [
+        item
+        for item in blockers
+        if isinstance(item, dict) and item.get("id") == "C0.3"
+    ]
+    if len(matches) != 1:
+        raise ProbeError("review model must contain exactly one C0.3 blocker")
+    return matches[0]
+
+
+def build_witnesses(
+    review_model: dict[str, object],
+) -> tuple[list[Witness], dict[str, object]]:
     witnesses: list[Witness] = []
     add = witnesses.append
     credential = deterministic("credential")
@@ -230,12 +282,62 @@ def build_witnesses() -> tuple[list[Witness], dict[str, object]]:
     add(Witness("W-SHAPE-01", "shape-boundary", "SINGLE/TREE do not alias and one-leaf TREE is invalid", shape_ok and one_leaf_rejected, ("SHAPE_BINDING", "TREE_CARDINALITY")))
     add(Witness("W-SHAPE-02", "zero-content", "zero-length content-bearing SINGLE remains distinct from NONE", zero_distinct, ("CONTENT_CLASS",)))
 
-    # 4: geometry rejection occurs before content splitting/hashing.
-    inflated = ContentDescriptor(CONTENT_REQUIRED, 9, 7, COMMITMENT_SUITE, SHAPE_TREE, deterministic("fake-commitment"), Geometry(1, MAX_U64, 1))
-    work_before = WorkCounter().record()
-    geometry_rejected = expect_error(lambda: encode_content_descriptor(inflated), "chunk count")
-    outside_set = expect_error(lambda: build_commitment(context, 7, bytes(130), randomizer, chunk_size=65), "outside test-only")
-    add(Witness("W-GEOMETRY-01", "geometry", "inconsistent and attacker-inflated geometry rejects before proportional work", geometry_rejected and outside_set and sum(work_before.values()) == 0, ("GEOMETRY_CHECK", "PREALLOCATION_REJECT")))
+    # 4: geometry rejection is measured before content splitting/hashing.  A
+    # small inconsistent count and MAX_U64 consume the same fixed guard work.
+    small_geometry_work = WorkCounter()
+    inflated_geometry_work = WorkCounter()
+    outside_set_work = WorkCounter()
+    small_inconsistent = ContentDescriptor(
+        CONTENT_REQUIRED,
+        9,
+        7,
+        COMMITMENT_SUITE,
+        SHAPE_TREE,
+        deterministic("fake-commitment"),
+        Geometry(1, 2, 1),
+    )
+    inflated = replace(
+        small_inconsistent,
+        geometry=Geometry(1, MAX_U64, 1),
+    )
+    small_rejected = expect_error(
+        lambda: encode_content_descriptor(small_inconsistent, small_geometry_work),
+        "chunk count",
+    )
+    geometry_rejected = expect_error(
+        lambda: encode_content_descriptor(inflated, inflated_geometry_work),
+        "chunk count",
+    )
+    outside_set = expect_error(
+        lambda: build_commitment(
+            context,
+            7,
+            bytes(130),
+            randomizer,
+            chunk_size=65,
+            work=outside_set_work,
+        ),
+        "outside test-only",
+    )
+    fixed_guard_work = (
+        small_geometry_work.geometry_checks
+        == inflated_geometry_work.geometry_checks
+        == outside_set_work.geometry_checks
+        == 1
+    )
+    no_proportional_work = all(
+        counter.content_split_chunks == 0
+        and counter.leaf_hashes == 0
+        and counter.node_hashes == 0
+        and counter.commitment_hashes == 0
+        and counter.hashed_octets == 0
+        for counter in (
+            small_geometry_work,
+            inflated_geometry_work,
+            outside_set_work,
+        )
+    )
+    add(Witness("W-GEOMETRY-01", "geometry", "small and MAX_U64 inconsistent geometry plus out-of-envelope chunk size reject after equal fixed guard work and before proportional splitting or hashing", small_rejected and geometry_rejected and outside_set and fixed_guard_work and no_proportional_work, ("GEOMETRY_CHECK", "PREALLOCATION_REJECT", "MEASURED_FIXED_WORK")))
 
     # 5: grafting or duplicate-last-leaf changes the authenticated root.
     grafted_content = content[:4] + b"WXYZ" + content[8:]
@@ -266,7 +368,9 @@ def build_witnesses() -> tuple[list[Witness], dict[str, object]]:
     add(Witness("M08", "complete-opening", "every leaf binds credential and author sequence", equality and mismatch and m08, ("OPENING_VERIFY", "LEAF_CONTEXT")))
     add(Witness("M09", "outer-commitment", "fixed supplied root still binds credential and author sequence", len(set(fixed_root_values)) == 3, ("OUTER_CONTEXT",)))
 
-    # 9: pinned C0.2j outcomes, independent encoded order inputs and pending graph.
+    # 9: independently reach both encoded order directions and exercise guards
+    # around explicitly pinned C0.2j outcomes.  The outcomes are not rederived
+    # by this package and are therefore not counted as executable witnesses.
     pinned = {
         "W-AUTH-08": {"grant_before_revoke": True, "grant_after_revoke": True, "must0_bypass": False},
         "W-PENDING-01": {"k_evidence_retained": True, "ap_filters_k_evidence": False},
@@ -286,21 +390,17 @@ def build_witnesses() -> tuple[list[Witness], dict[str, object]]:
     graph = {"root": (), "child": ("root",), "independent": ()}
     pending = pending_closure(graph, {"root"}, stage_work)
     pending_exact = pending == {"root", "child"}
-    pinned_ok = pinned == {
-        "W-AUTH-08": {"grant_before_revoke": True, "grant_after_revoke": True, "must0_bypass": False},
-        "W-PENDING-01": {"k_evidence_retained": True, "ap_filters_k_evidence": False},
-        "W-FORK-01": {"scope": "credential-lineage", "authority_expansion": False},
-        "W-FORK-04": {"causal_prefix_reduction_retained": True, "target_resurrected": False},
-    }
-    must0_guard = both_order_directions_preserve_must0((True, True))
+    must0_guard = (
+        reject_any_must0_bypass((False, False))
+        and not reject_any_must0_bypass((False, True))
+    )
     retained_evidence = retain_k_evidence(("grant", "revoke"), ap_pending=True)
     scoped_authority = lineage_scoped_quarantine(
         frozenset({"forked", "independent"}), frozenset({"forked"})
     )
-    add(Witness("W-AUTH-08", "pinned-authority", "both K-06 order directions retain the ratified no-Must0-bypass outcome", both_directions and pinned_ok and must0_guard, ("K06_BOTH_DIRECTIONS", "PINNED_C02J")))
-    add(Witness("W-PENDING-01", "pending-authority", "pending is exact causal closure and never filters K evidence", pending_exact and "independent" not in pending and retained_evidence == ("grant", "revoke") and pinned_ok, ("PENDING_CLOSURE", "PINNED_C02J")))
-    add(Witness("W-FORK-01", "fork-scope", "lineage quarantine cannot expand authority", scoped_authority == frozenset({"independent"}) and pinned_ok, ("LINEAGE_SCOPE", "PINNED_C02J")))
-    add(Witness("W-FORK-04", "fork-prefix", "later fork neither voids accepted prefix reduction nor resurrects target", pinned_ok, ("PREFIX_REDUCTION", "PINNED_C02J")))
+    add(Witness("W-AUTH-08", "pinned-authority", "both K-06 reference-order directions are reachable and the fail-closed guard rejects an injected Must0-bypass input; C0.2j outcomes remain pinned, not rederived", both_directions and must0_guard, ("K06_BOTH_DIRECTIONS", "PINNED_INPUT_GUARD")))
+    add(Witness("W-PENDING-01", "pending-authority", "pending is exact causal closure and AP pending state never filters K-admitted evidence", pending_exact and "independent" not in pending and retained_evidence == ("grant", "revoke"), ("PENDING_CLOSURE", "K_EVIDENCE_RETENTION")))
+    add(Witness("W-FORK-01", "fork-scope", "the bounded quarantine guard removes only the named lineage and cannot add or clear unrelated authority", scoped_authority == frozenset({"independent"}), ("LINEAGE_SCOPE",)))
 
     # 10: content-bearing control is rejected structurally before opening work.
     bad_removal = replace(event, event_role=ROLE_REMOVAL, tail=RemovalTail(deterministic("target"), deterministic("target-commitment")))
@@ -318,16 +418,162 @@ def build_witnesses() -> tuple[list[Witness], dict[str, object]]:
     add(Witness("W-LEGACY-01", "legacy-rejection", "44-octet grammar and cross-slot opening copy reject", old_context_rejected and copied_rejected, ("CTX84_REQUIRED", "OPENING_SLOT")))
     add(Witness("W-FORK-05", "same-slot-equivocation", "same-credential/same-sequence siblings remain distinct fork evidence", siblings_are_fork_evidence, ("SAME_SLOT_SIBLINGS",)))
 
-    # 11.1: removal-tail variance changes identity/order but not vacuous AP effect.
-    removal_a = replace(
-        base_event(credential, none_descriptor, transition=b"removal"),
-        event_role=ROLE_REMOVAL,
-        tail=RemovalTail(deterministic("target"), deterministic("tail-a")),
+    # 11.1: evaluate full bounded AP projections for every vacuous target class.
+    none_target_ref = deterministic("removal-target-none")
+    required_target_ref = deterministic("removal-target-required")
+    detachable_target_ref = deterministic("removal-target-detachable")
+    unretained_target_ref = deterministic("removal-target-unretained")
+    required_descriptor = (
+        "REQUIRED",
+        len(content),
+        7,
+        tree.shape,
+        tree.commitment_value,
     )
-    removal_b = replace(removal_a, tail=RemovalTail(removal_a.tail.target_event_reference, deterministic("tail-b")))
-    ref_a, ref_b = event_reference(removal_a), event_reference(removal_b)
-    removal_invariant = ref_a != ref_b and encode_event_transcript(removal_a) != encode_event_transcript(removal_b)
-    add(Witness("W-REMOVAL-01", "removal-tail-variance", "tail variants alter transcript/reference/order input but cannot remove NONE/REQUIRED/absent targets", removal_invariant, ("TAIL_BYTES", "EVENT_IDENTITY", "AP_VACUITY")))
+    detachable_commitment = build_commitment(
+        context, 8, b"detachable-content", randomizer, chunk_size=4
+    )
+    detachable_descriptor = (
+        "DETACHABLE",
+        detachable_commitment.exact_content_length,
+        8,
+        detachable_commitment.shape,
+        detachable_commitment.commitment_value,
+    )
+    ambient = (
+        RemovalTarget(
+            none_target_ref,
+            "NONE",
+            ("NONE", 0),
+            None,
+            True,
+            True,
+            "BOUND",
+            "VISIBLE",
+        ),
+        RemovalTarget(
+            required_target_ref,
+            "REQUIRED",
+            required_descriptor,
+            tree.commitment_value,
+            True,
+            True,
+            "BOUND",
+            "VISIBLE",
+        ),
+        RemovalTarget(
+            detachable_target_ref,
+            "DETACHABLE",
+            detachable_descriptor,
+            detachable_commitment.commitment_value,
+            True,
+            True,
+            "BOUND",
+            "VISIBLE",
+        ),
+        RemovalTarget(
+            unretained_target_ref,
+            "DETACHABLE",
+            ("DETACHABLE", 4, 9, SHAPE_SINGLE, deterministic("unretained-value")),
+            deterministic("unretained-value"),
+            False,
+            False,
+            "BOUND",
+            "WITHHELD",
+        ),
+    )
+    tail_a = deterministic("tail-a")
+    tail_b = deterministic("tail-b")
+    vacuous_targets = (
+        ("NONE", none_target_ref),
+        ("REQUIRED", required_target_ref),
+        ("ABSENT", deterministic("removal-target-absent")),
+        ("NOT_RETAINED", unretained_target_ref),
+    )
+    projection_pairs = []
+    for label, target_reference in vacuous_targets:
+        first = project_removal_directive(
+            ambient,
+            target_reference=target_reference,
+            target_commitment=tail_a,
+        )
+        second = project_removal_directive(
+            ambient,
+            target_reference=target_reference,
+            target_commitment=tail_b,
+        )
+        projection_pairs.append((label, first, second))
+    ap_invariant = all(
+        first == second and first.removal_effect == "NONE"
+        for _label, first, second in projection_pairs
+    )
+
+    removal_variants = []
+    for index in range(512):
+        candidate = replace(
+            base_event(credential, none_descriptor, transition=b"removal"),
+            event_role=ROLE_REMOVAL,
+            tail=RemovalTail(
+                none_target_ref,
+                hashlib.sha256(f"removal-tail:{index}".encode()).digest(),
+            ),
+        )
+        removal_variants.append((candidate, event_reference(candidate)))
+    lower = next((item for item in removal_variants if item[1] < peer), None)
+    higher = next((item for item in removal_variants if item[1] > peer), None)
+    if lower is None or higher is None:
+        raise ProbeError("bounded removal-tail search did not span K-06 peer order")
+    removal_a, ref_a = lower
+    removal_b, ref_b = higher
+    transcript_a = encode_event_transcript(removal_a)
+    transcript_b = encode_event_transcript(removal_b)
+    order_projection_a = project_removal_directive(
+        ambient,
+        target_reference=none_target_ref,
+        target_commitment=removal_a.tail.target_commitment,
+    )
+    order_projection_b = project_removal_directive(
+        ambient,
+        target_reference=none_target_ref,
+        target_commitment=removal_b.tail.target_commitment,
+    )
+    identity_and_order_variance = (
+        transcript_a != transcript_b
+        and ref_a != ref_b
+        and ref_a < peer < ref_b
+        and order_projection_a == order_projection_b
+    )
+    collapsed_key_a = (
+        removal_a.credential_identifier,
+        removal_a.author_sequence,
+        removal_a.tail.target_event_reference,
+    )
+    collapsed_key_b = (
+        removal_b.credential_identifier,
+        removal_b.author_sequence,
+        removal_b.tail.target_event_reference,
+    )
+    collapse_detected = detects_collapsed_removal_identity(
+        ref_a,
+        ref_b,
+        collapsed_key_a,
+        collapsed_key_b,
+    )
+    removal_pending_graph = {
+        "pending-root": (),
+        "directive": ("pending-root",),
+        "child": ("directive",),
+        "independent": (),
+    }
+    pending_a = pending_closure(removal_pending_graph, {"pending-root"}, stage_work)
+    pending_b = pending_closure(removal_pending_graph, {"pending-root"}, stage_work)
+    pending_invariant = (
+        pending_a == pending_b == {"pending-root", "directive", "child"}
+        and "independent" not in pending_a
+    )
+    add(Witness("W-REMOVAL-01", "removal-tail-variance", "NONE, REQUIRED, absent and non-retained targets retain byte-identical full bounded AP projections across distinct target-commitment tails", ap_invariant, ("AP_PROJECTION_INVARIANCE", "REMOVAL_INAPPLICABLE_OR_DEFERRED")))
+    add(Witness("W-REMOVAL-02", "removal-tail-variance", "tail variants change transcript, event identity and K-06 order while their vacuous AP projection remains invariant; collapsing them by intent is detected", identity_and_order_variance and collapse_detected, ("TAIL_BYTES", "EVENT_IDENTITY", "K06_ORDER_VARIANCE", "COLLAPSED_IDENTITY_NEGATIVE")))
+    add(Witness("W-REMOVAL-03", "removal-tail-variance", "both tail variants remain in the same pending causal subtree while the independent event remains outside it", pending_invariant, ("PENDING_SUBTREE_INVARIANCE",)))
 
     # 13: deterministic stage accounting and measured rehash amplification.
     sequence_changed_single = build_commitment(replace(context, author_sequence=1), 7, content, randomizer)
@@ -358,8 +604,15 @@ def build_witnesses() -> tuple[list[Witness], dict[str, object]]:
         "HASH_COLLISION_FINDING",
     )
     add(Witness("W-HASH-01", "hash-assumption", "distinct-preimage/equal-digest injection is classified as a collision finding, never a winner", collision_injection_rejected, ("COLLISION_ASSUMPTION",)))
-    c03_blocked = c03_blocked_capabilities("NO_GO", C03_DEPENDENCIES)
-    add(Witness("W-C03-01", "capability-gate", "C0.3 NO-GO retains exactly five blocked capabilities", c03_blocked == C03_BLOCKED_CAPABILITIES and len(c03_blocked) == 5, ("C03_NO_GO",)))
+    c03 = _c03_record(review_model)
+    c03_dependencies = frozenset(c03.get("depends_on", ()))
+    c03_declared_blocks = frozenset(c03.get("blocks", ()))
+    c03_blocked = c03_blocked_capabilities(
+        str(c03.get("status")),
+        c03_dependencies,
+        c03_declared_blocks,
+    )
+    add(Witness("W-C03-01", "capability-gate", "the actual derived-review-model C0.3 record is NO_GO, retains the exact dependency set and blocks exactly five capabilities", c03_blocked == C03_BLOCKED_CAPABILITIES and len(c03_blocked) == 5, ("C03_MODEL_RECORD", "C03_NO_GO")))
     aggregate = stage_work.record()
     for commitment in (single, tree, sequence_changed_single, sequence_changed_tree):
         for name, value in commitment.work.items():
@@ -371,7 +624,23 @@ def build_witnesses() -> tuple[list[Witness], dict[str, object]]:
     )
     add(Witness("W-WORK-02", "work-accounting", "every required deterministic stage counter is exercised", all(aggregate[name] > 0 for name in required_nonzero), ("STAGE_COVERAGE",)))
     return witnesses, {
-        "pinned_c02j": pinned,
+        "pinned_c02j": {
+            "execution_status": "PINNED_NOT_REDERIVED",
+            "reason": "O-06c executes fail-closed boundary guards but is forbidden to create a second C0.2j authority oracle",
+            "outcomes": pinned,
+        },
+        "removal_tail_variance": {
+            "vacuous_target_cases": [label for label, _first, _second in projection_pairs],
+            "full_ap_projection_equal": ap_invariant,
+            "k06_order_spanned": identity_and_order_variance,
+            "collapsed_identity_negative_detected": collapse_detected,
+            "pending_subtree_equal": pending_invariant,
+        },
+        "c03_model_record": {
+            "status": c03.get("status"),
+            "depends_on": sorted(c03_dependencies),
+            "blocks": sorted(c03_declared_blocks),
+        },
         "work_counters": counters,
         "aggregate_stage_counters": aggregate,
     }
@@ -381,6 +650,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--suite", required=True, choices=("required",))
     parser.add_argument("--frozen-report", required=True, type=Path)
+    parser.add_argument(
+        "--review-model",
+        type=Path,
+        default=(
+            Path(__file__).resolve().parents[3]
+            / "docs/protocol/review/styx-app-kernel-v0-review-model.json"
+        ),
+    )
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
@@ -388,7 +665,11 @@ def main(argv: list[str] | None = None) -> int:
         frozen = json.loads(frozen_bytes)
         if frozen.get("schema") != "styx-o06c-frozen-section-report/v1" or frozen.get("verdict") != "PASS":
             raise ProbeError("frozen-section report is not PASS")
-        witnesses, evidence = build_witnesses()
+        review_model_bytes = args.review_model.read_bytes()
+        review_model = json.loads(review_model_bytes)
+        if not isinstance(review_model, dict):
+            raise ProbeError("review model root must be an object")
+        witnesses, evidence = build_witnesses(review_model)
         exhaustive = run_exhaustive()
         witnesses.append(
             Witness(
@@ -399,12 +680,25 @@ def main(argv: list[str] | None = None) -> int:
                 ("EXHAUSTIVE_OCTETS", "SCALAR_BOUNDARIES"),
             )
         )
+        actual_coverage: dict[str, list[str]] = {}
+        for witness in witnesses:
+            actual_coverage.setdefault(witness.family, []).append(witness.identifier)
+        expected_coverage = {
+            family: list(assertions)
+            for family, assertions in WITNESS_ASSERTION_REGISTRY.items()
+        }
+        if actual_coverage != expected_coverage:
+            raise ProbeError(
+                "executed witness/assertion coverage differs from closed registry"
+            )
+        evidence["witness_coverage"] = expected_coverage
         evidence["exhaustive_mutations"] = exhaustive
         failed = [witness.identifier for witness in witnesses if not witness.passed]
         report = {
             "schema": SCHEMA,
             "suite": "required",
             "frozen_report_sha256": sha256_hex(frozen_bytes),
+            "review_model_sha256": sha256_hex(review_model_bytes),
             "witness_count": len(witnesses),
             "witnesses": [witness.record() for witness in witnesses],
             "evidence": evidence,

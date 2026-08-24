@@ -16,6 +16,7 @@ import tempfile
 sys.dont_write_bytecode = True
 
 from common import sha256_hex, write_report
+from combined_falsification_probe import WITNESS_ASSERTION_REGISTRY
 
 
 SCHEMA = "styx-o06c-mutation-report/v1"
@@ -41,47 +42,23 @@ MUTANTS = (
     Mutant("M07_LEAF_PREIMAGE", "leaf preimage", "protocol_model.py", 'u64(ordinal, "leaf ordinal"),', '_mutation_trace("M07_LEAF_PREIMAGE", bytes(8)),', "LEAF_ORDINAL_ALIAS"),
     Mutant("M08_NODE_PREIMAGE", "interior-node preimage", "protocol_model.py", '+ u64(len(digests), "subtree leaf count")', '+ _mutation_trace("M08_NODE_PREIMAGE", u64(2, "subtree leaf count"))', "NODE_COUNT_DRIFT"),
     Mutant("M09_COMMITMENT_OBJECT", "complete commitment object", "protocol_model.py", '            root,\n            randomizer,', '            _mutation_trace("M09_COMMITMENT_OBJECT", bytes(32)),\n            randomizer,', "COMMITMENT_ROOT_DRIFT"),
-    Mutant("M10_PARSER_GEOMETRY", "parser/inverse geometry", "protocol_model.py", '    _validate_geometry(exact_length, shape, geometry)\n    return {', '    _mutation_trace("M10_PARSER_GEOMETRY", None)\n    return {', "INVALID_GEOMETRY_ACCEPTED"),
-    Mutant("M11_AUTHORITY_MUST0", "authority Must0 expansion", "policy_guards.py", '    return len(results) == 2 and all(results)', '    return _mutation_trace("M11_AUTHORITY_MUST0", True)', "MUST0_EXPANSION"),
+    Mutant("M10_PARSER_GEOMETRY", "parser/inverse geometry", "protocol_model.py", '    _validate_geometry(exact_length, shape, geometry, work)\n    return {', '    _mutation_trace("M10_PARSER_GEOMETRY", None)\n    return {', "INVALID_GEOMETRY_ACCEPTED"),
+    Mutant("M11_AUTHORITY_MUST0", "authority Must0 expansion", "policy_guards.py", '    return len(bypass_observed) == 2 and not any(bypass_observed)', '    return _mutation_trace("M11_AUTHORITY_MUST0", True)', "MUST0_EXPANSION"),
     Mutant("M12_PENDING_RETENTION", "pending-authority retention", "policy_guards.py", '    return evidence', '    return _mutation_trace("M12_PENDING_RETENTION", ())', "K_EVIDENCE_FILTERED"),
     Mutant("M13_LINEAGE_FORK", "lineage-scoped fork effect", "policy_guards.py", '    return authority - forked_lineage', '    return _mutation_trace("M13_LINEAGE_FORK", frozenset())', "UNRELATED_AUTHORITY_LOST"),
     Mutant("M14_FROZEN_DIGEST", "frozen-section digest enforcement", "verify_frozen_sections.py", '    return "PASS" if actual == expected else "DIGEST_MISMATCH"', '    return _mutation_trace("M14_FROZEN_DIGEST", "PASS")', "FROZEN_DIGEST_BYPASS"),
     Mutant("M15_HISTORICAL_REGISTRY", "historical-registry enforcement", "historical_evidence_gate.py", '    if len(registry) != 7:', '    if _mutation_trace("M15_HISTORICAL_REGISTRY", False):', "EIGHTH_HISTORY_ACCEPTED"),
-    Mutant("M16_C03_CAPABILITY", "C0.3 capability-gate retention", "policy_guards.py", '    return C03_BLOCKED_CAPABILITIES', '    return _mutation_trace("M16_C03_CAPABILITY", frozenset())', "C03_CAPABILITY_OPENED"),
+    Mutant("M16_C03_CAPABILITY", "C0.3 capability-gate retention", "policy_guards.py", '    return declared_blocks', '    return _mutation_trace("M16_C03_CAPABILITY", frozenset())', "C03_CAPABILITY_OPENED"),
 )
 
-WITNESS_TO_MUTANTS = {
-    "framing-injectivity": ("M02_TRANSCRIPT_LENGTH", "M03_CREDENTIAL_TAIL"),
-    "domain-separation": ("M01_TRANSCRIPT_DOMAIN_ROLE",),
-    "grant-rooted-opening": ("M04_CONTEXT_84", "M05_CREDENTIAL_BINDING", "M06_AUTHOR_SEQUENCE_BINDING"),
-    "leaf-separation": ("M07_LEAF_PREIMAGE",),
-    "shape-boundary": ("M09_COMMITMENT_OBJECT", "M10_PARSER_GEOMETRY"),
-    "zero-content": ("M09_COMMITMENT_OBJECT",),
-    "geometry": ("M10_PARSER_GEOMETRY",),
-    "tree-integrity": ("M08_NODE_PREIMAGE", "M09_COMMITMENT_OBJECT"),
-    "prefix-freeness": ("M02_TRANSCRIPT_LENGTH",),
-    "closed-agility": ("M04_CONTEXT_84", "M10_PARSER_GEOMETRY"),
-    "complete-opening": ("M05_CREDENTIAL_BINDING", "M06_AUTHOR_SEQUENCE_BINDING"),
-    "outer-commitment": ("M09_COMMITMENT_OBJECT",),
-    "pinned-authority": ("M11_AUTHORITY_MUST0",),
-    "pending-authority": ("M12_PENDING_RETENTION",),
-    "fork-scope": ("M13_LINEAGE_FORK",),
-    "fork-prefix": ("M13_LINEAGE_FORK",),
-    "control-none": ("M03_CREDENTIAL_TAIL",),
-    "legacy-rejection": ("M04_CONTEXT_84",),
-    "same-slot-equivocation": ("M01_TRANSCRIPT_DOMAIN_ROLE",),
-    "removal-tail-variance": ("M01_TRANSCRIPT_DOMAIN_ROLE", "M09_COMMITMENT_OBJECT"),
-    "work-accounting": ("M07_LEAF_PREIMAGE", "M08_NODE_PREIMAGE"),
-    "hash-assumption": ("M09_COMMITMENT_OBJECT",),
-    "capability-gate": ("M16_C03_CAPABILITY",),
-    "frozen-evidence": ("M14_FROZEN_DIGEST",),
-    "historical-evidence": ("M15_HISTORICAL_REGISTRY",),
-    "exhaustive-octets": (
-        "M01_TRANSCRIPT_DOMAIN_ROLE", "M02_TRANSCRIPT_LENGTH",
-        "M03_CREDENTIAL_TAIL", "M04_CONTEXT_84", "M05_CREDENTIAL_BINDING",
-        "M06_AUTHOR_SEQUENCE_BINDING", "M07_LEAF_PREIMAGE",
-        "M08_NODE_PREIMAGE", "M09_COMMITMENT_OBJECT", "M10_PARSER_GEOMETRY",
-    ),
+# Witness coverage and source-mutation coverage are intentionally separate.
+# A witness is an executed directed assertion; a mutant is killed only by the
+# exact detector process below.  No unexecuted witness→mutant relation is
+# reported.
+WITNESS_COVERAGE = {
+    **WITNESS_ASSERTION_REGISTRY,
+    "frozen-evidence": ("M14:FROZEN_DIGEST_BYPASS",),
+    "historical-evidence": ("M15:EIGHTH_HISTORY_ACCEPTED",),
 }
 
 
@@ -193,9 +170,14 @@ def main(argv: list[str] | None = None) -> int:
         if len(MUTANTS) != 16 or len({item.identifier for item in MUTANTS}) != 16:
             raise HarnessError("closed mutant registry drift")
         mutant_ids = {item.identifier for item in MUTANTS}
-        mapped_ids = {identifier for identifiers in WITNESS_TO_MUTANTS.values() for identifier in identifiers}
-        if mapped_ids != mutant_ids or any(not identifiers for identifiers in WITNESS_TO_MUTANTS.values()):
-            raise HarnessError("bidirectional witness/mutant registry drift")
+        if any(not assertions for assertions in WITNESS_COVERAGE.values()):
+            raise HarnessError("empty directed-assertion coverage")
+        mutant_to_detectors = {
+            item.identifier: [item.detector]
+            for item in MUTANTS
+        }
+        if set(mutant_to_detectors) != mutant_ids:
+            raise HarnessError("mutant/detector registry drift")
         with tempfile.TemporaryDirectory(prefix="styx-o06c-mutants-") as directory:
             root = Path(directory)
             records = [execute_mutant(source_root, mutant, root / mutant.identifier.lower()) for mutant in MUTANTS]
@@ -206,10 +188,11 @@ def main(argv: list[str] | None = None) -> int:
             "frozen_report_sha256": sha256_hex(frozen_bytes),
             "registry_size": len(MUTANTS),
             "mutants": records,
-            "witness_to_mutants": {
-                family: list(identifiers)
-                for family, identifiers in sorted(WITNESS_TO_MUTANTS.items())
+            "witness_coverage": {
+                family: {"directed_assertions": list(assertions)}
+                for family, assertions in sorted(WITNESS_COVERAGE.items())
             },
+            "mutant_to_detectors": mutant_to_detectors,
             "killed_count": sum(record["status"] == "KILLED" for record in records),
             "survived": [record["id"] for record in records if record["status"] != "KILLED"],
             "verdict": "ALL_REQUIRED_MUTANTS_KILLED" if killed else "MUTANTS_SURVIVED",
