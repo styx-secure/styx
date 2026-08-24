@@ -492,20 +492,52 @@ def build_witnesses(
     mismatching_tail_a = deterministic("tail-a")
     mismatching_tail_b = deterministic("tail-b")
     expected_graph = tuple(
-        sorted((record.reference, record.parents) for record in ambient)
+        sorted(
+            (
+                (none_target_ref, ()),
+                (required_target_ref, (none_target_ref,)),
+                (detachable_target_ref, (required_target_ref,)),
+                (unretained_target_ref, (detachable_target_ref,)),
+            )
+        )
     )
     expected_ambient_projection = tuple(
-        (
-            record.reference,
-            record.content_class,
-            record.descriptor,
-            record.retained,
-            record.verified,
-            record.binding_status,
-            record.presentation,
-            record.parents,
+        sorted(
+            (
+                (none_target_ref, "NONE", ("NONE", 0), True, True, "BOUND", "VISIBLE", ()),
+                (
+                    required_target_ref,
+                    "REQUIRED",
+                    required_descriptor,
+                    True,
+                    True,
+                    "BOUND",
+                    "VISIBLE",
+                    (none_target_ref,),
+                ),
+                (
+                    detachable_target_ref,
+                    "DETACHABLE",
+                    detachable_descriptor,
+                    True,
+                    True,
+                    "BOUND",
+                    "VISIBLE",
+                    (required_target_ref,),
+                ),
+                (
+                    unretained_target_ref,
+                    "DETACHABLE",
+                    ambient[3].descriptor,
+                    False,
+                    False,
+                    "BOUND",
+                    "WITHHELD",
+                    (detachable_target_ref,),
+                ),
+            ),
+            key=lambda row: row[0],
         )
-        for record in sorted(ambient, key=lambda item: item.reference)
     )
     vacuous_targets = (
         (
