@@ -129,3 +129,23 @@ explicit checkpoint/AP input instead of being emitted as a new live relation.
   causal-ancestor closure for contents and producer-eligibility assessment.
 - O-06/O-07/O-08/O-10/O-11 decisions may require this model and its affected
   invariants to be extended and rerun.
+
+## O-06c exact combined-construction package
+
+`o06c/` is a separate standard-library-only evidence package added by Issue
+#243. It does not import this historical model, `v2/`, `v3/`, `c02k/` or product
+code. It independently models the frozen O-06b-1/O-06b-2/C0.2j/C0.2k byte
+construction, encodes it in Python and dependency-free JavaScript, exercises
+written inverses, runs directed witnesses, challenges complete objects and
+scalars, kills a closed source-mutant registry, verifies the six frozen sections
+and reruns the exact seven-entry historical evidence registry from fresh staged
+copies.
+
+Its six canonical JSON reports are caller-selected external outputs and are
+never tracked as vectors or corpus files. Candidate commit/tree/final-diff
+identity belongs in immutable PR evidence rather than a generated report whose
+digest is recorded in normative text. The package's positive verdict is
+`NO_COUNTEREXAMPLE_WITHIN_BOUNDS`; it is not a proof, conformance suite,
+production implementation, resource bound or readiness authorization. Use the
+exact environment and command block recorded by Issue #243 and the human report
+at `docs/protocol/styx-app-kernel-v0-identifier-commitment-falsification-report.md`.

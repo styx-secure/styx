@@ -61,6 +61,14 @@ commitment/opening copy across credential or sequence contexts is rejected,
 while knowledgeable recomputation, same-slot siblings and all authority,
 originality and truth claims remain outside that result.
 
+The O-06c snapshot adds
+`styx-app-kernel-v0-identifier-commitment-falsification-report.md` as evidence
+for the exact combined O-06b-1/O-06b-2/C0.2j/C0.2k construction. O-06/O-06c are
+condition-bearing `DECIDED`; the evidence is bounded, carries explicit
+placeholder-triggered reruns and opens no capability. Exact candidate identity
+is immutable PR evidence rather than a tracked generated-report input, avoiding
+self-referential digests.
+
 The validator pins the exact source-ID, repository-path and authority tuple for
 every source in this snapshot. Changing an evidence source to `normative`,
 retargeting an ID to a different file, adding or removing a modeled record, or
@@ -224,9 +232,10 @@ The model does not prove protocol security, cryptographic soundness,
 implementation conformance, interoperability, anonymity, erasure, finality,
 availability, audit readiness or production fitness. It cannot detect a
 normative omission shared by all sources. C0.2j is ratified historical input;
-C0.2k selects only its bounded commitment-context amendment. O-06c, O-07,
-O-08, O-10 and O-14 remain blockers for C0.3; demo, product and sensitive-use
-claims remain fail closed.
+C0.2k selects only its bounded commitment-context amendment and O-06c adds
+bounded combined-construction evidence. O-07, O-08, O-10 and O-14 remain open
+blockers for C0.3. While C0.3 is `NO_GO`, C0.3 itself blocks corpus,
+implementation alignment, demo, product and sensitive-use claims.
 
 `counterexamples[].steps` is the one intentionally order-sensitive sequence in
 the model: entries describe the procedural order of an adversarial trace and

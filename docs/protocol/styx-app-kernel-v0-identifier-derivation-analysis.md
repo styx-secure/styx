@@ -395,11 +395,11 @@ closed on a credential-identifier collision before positive exploration.
 C0.2j selects the binding `GRANT` reference as non-genesis credential identity,
 the exact K tail, provenance, bounded Pass0/selected-slot authority and lineage fork containment;
 its independent v3 evidence is bounded rather than a production proof. C0.2k
-must bind the content commitment to that exact identity
-and author sequence; the current 44-octet `CTX` does neither and remains a
-recorded non-protection rather than an inferred guarantee.
+binds the content commitment to that exact identity and author sequence through
+the selected 84-octet `CTX`; the superseded 44-octet `CTX` does neither and
+remains a recorded non-protection rather than an inferred guarantee.
 
-O-06c must then test framing injectivity, absence/emptiness,
+O-06c tests framing injectivity, absence/emptiness,
 cross-role/context separation, non-circularity, cross-event chunk equality,
 parent canonicality, suite binding, unknown-suite rejection, structural versus
 binding failures, collision handling, grinding/prefix-handoff interaction and
@@ -408,8 +408,13 @@ per-stage work counters so an implementation cannot hide attacker-controlled
 parsing, hashing, graph or replay work behind a final verdict. It must rerun
 C0.2d/C0.2f/C0.2i without changing their recorded results
 and must not add `conformance/**` files before the separate K-11 licensing task.
-Only a bounded no-counterexample result plus independent review and human
-ratification may move O-06 to `DECIDED`.
+Issue #243 supplies that bounded no-counterexample result with independent
+Python/JavaScript encoders, a closed 16-class source-mutant registry, complete-
+object octet/scalar mutation, frozen-section checks and exact historical reruns.
+It moves O-06/O-06c to condition-bearing `DECIDED` only after independent
+exact-final review and human ratification. The result is not proof or
+implementation conformance and must be rerun or reopened for any selected
+placeholder input or later counterexample.
 
 ## 10. Security/privacy consequences and residual risk
 
@@ -425,8 +430,8 @@ and O-06b-2 supplies an exact randomized-opening commitment and chunk-tree
 construction, but neither is an implementation proof. SHA-256
 collision/second-preimage resistance, commitment hiding/binding assumptions,
 randomizer custody/misuse, parser safety, runtime capacity and signature-suite
-downgrade remain residual or open. Bounded C0.2i/O-06c evidence
-will not prove absence of counterexamples outside its envelope. A hostile
+downgrade remain residual or open. Bounded C0.2i/O-06c evidence does not prove
+absence of counterexamples outside its envelope. A hostile
 holder of valid signing-key material, including a revoked credential, can
 withhold parents, equivocate, reuse randomizers or grind its replay position.
 Grinding can suppress a later-sorting concurrent authority transition from one
@@ -452,8 +457,9 @@ non-circularity or replay-policy counterexample.
 
 ## 11. C0.3 gate
 
-O-06b-1 plus O-06b-2 and C0.2j do not make C0.3 executable. C0.2k, O-06c,
-O-07, O-08, O-10 and O-14 remain blockers; O-12 additionally blocks any
+O-06b-1 plus O-06b-2 and C0.2j do not make C0.3 executable. C0.2k and O-06c
+are condition-bearing `DECIDED`; O-07, O-08, O-10 and O-14 remain open
+blockers; O-12 additionally blocks any
 time-bearing profile. O-11 does
 not block a transcript-only corpus but must close before supported persistence
 or remote admission. K-11 requires a separate exact-path licensing amendment

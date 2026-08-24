@@ -187,6 +187,13 @@ Protocol increments proceed in dependency order:
    independently supplying all promised context witnesses. These limitations
    do not silently invalidate the selected 84-octet grammar and prose cannot
    convert them into passing evidence.
+   **Completed by Issue #243:** the new isolated package compensates for those
+   historical limits, independently encodes the selected bytes in Python and
+   JavaScript, kills the closed 16-class source-mutant registry, challenges all
+   selected complete-object octets and explicit scalars, and reproduces the
+   frozen six-section and seven-entry historical registries. Its positive
+   verdict is bounded evidence with explicit placeholder-triggered reruns, not
+   proof, conformance, implementation or readiness authority.
 4. **Resolve remaining C0.3 blockers.** Close or precisely scope O-07 genesis
    and checkpoint evidence, O-08 resource bounds, O-10 stable errors and O-14
    signature-suite binding. Resolve O-12 wherever a selected profile carries
@@ -213,7 +220,7 @@ The dependency basis is explicit:
 |---|---|---|
 | C0.2j | ratified O-01/O-02/O-03/O-04/O-05/O-09 baseline | none |
 | C0.2k | exact C0.2j credential and sequence semantics | selected 84-octet context plus bounded model/mutation evidence; exact-final review and human gates complete the increment |
-| O-06c | exact C0.2j/C0.2k bytes and existing O-06b profiles | obligations affected by later O-08 bounds or O-14 suite binding are deferred and rerun after those decisions |
+| O-06c | exact C0.2j/C0.2k bytes and existing O-06b profiles | completed as bounded evidence by Issue #243; obligations affected by later O-07/O-08/O-10/O-14 decisions are rerun or reopened after those decisions |
 | remaining blockers | O-06c results plus each decision's own recorded inputs | the threat model and combined hostile cases are rerun after closure |
 | K-11 corpus boundary | every corpus path and required licensing amendment separately approved | no C0.3 corpus file exists before this gate |
 | C0.3 | every unconditional blocker closed, every conditional blocker disposition justified by the registry, and K-11 complete | no later decision may be guessed or inherited from an implementation |
@@ -226,7 +233,7 @@ registry governs and this plan must be corrected.
 | Objectives | Registry status | Effect on this phase |
 |---|---|---|
 | O-01 through O-05 | `DECIDED` | preserved inputs; reopen only through their recorded conditions |
-| O-06 | `OPEN` | blocks C0.3 until the selected C0.2j/C0.2k inputs pass their gates and O-06c completes |
+| O-06 | condition-bearing `DECIDED` | Issue #243 completed bounded O-06c evidence; recorded placeholder decisions and later counterexamples trigger rerun/reopen |
 | O-07, O-08, O-10, O-14 | `OPEN` | block C0.3 |
 | O-09 | `DECIDED` | preserved responsibility split |
 | O-11 | `OPEN` | intentionally deferred; does not block a strictly transcript-only C0.3 corpus |
@@ -391,7 +398,8 @@ Originating findings are dispositioned as follows:
 
 ## 11. Current state
 
-After C0.2k ratification and the O-06c handoff reconciliation:
+After C0.2k ratification, the O-06c handoff reconciliation and Issue #243's
+bounded executable evidence:
 
 - the review model exists and is useful for bounded inspection;
 - C0.2j and C0.2k are ratified historical inputs; the selected 84-octet
@@ -399,15 +407,18 @@ After C0.2k ratification and the O-06c handoff reconciliation:
   O-06c proof authority;
 - `specs/05-sprint-plan.md` still marks US-001 through US-008 `todo`, but this
   plan pauses their execution and requires that conflict to be audited at exit;
-- O-06c depends on the exact C0.2j/C0.2k construction and is the next ordered
-  executable protocol task. Issue #241 reconciles its normative handoff and
-  records the known v2/C0.2k reproducibility and coverage limitations, but does
-  not implement or close O-06c;
+- O-06 and O-06c are condition-bearing `DECIDED` over the exact combined
+  C0.2j/C0.2k construction and the declared bounded envelope. Issue #241
+  reconciles the handoff; Issue #243 supplies the isolated executable evidence,
+  compensates the recorded v2/C0.2k limitations and preserves every rerun/
+  reopen trigger;
 - O-07, O-08, O-10 and O-14 remain open; O-12 remains conditional as described
   in section 4; O-11, O-13, O-15 and O-16 retain their explicitly bounded
   non-blocking or downstream-blocking roles;
-- C0.3 remains `NO-GO`;
-- demo, product and sensitive-use claims remain blocked.
+- C0.3 remains `NO-GO` and depends exactly on
+  `{C0.3_CORPUS_PATH_APPROVAL,O-06c,O-07,O-08,O-10,O-14}`;
+- while C0.3 is `NO-GO`, C0.3 itself blocks corpus, implementation alignment,
+  demo, product and sensitive use. Closing O-06c opens no capability.
 
 The human ratification gate is currently discipline-enforced rather than fully
 server-enforced: the repository governance record at
