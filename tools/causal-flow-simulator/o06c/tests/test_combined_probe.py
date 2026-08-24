@@ -65,8 +65,13 @@ class CombinedProbeTests(unittest.TestCase):
             )
             removal = report["evidence"]["removal_tail_variance"]
             self.assertTrue(removal["full_ap_projection_equal"])
+            self.assertTrue(removal["retained_detachable_applied"])
+            self.assertTrue(removal["retained_detachable_projection_equal"])
+            self.assertTrue(removal["retained_detachable_differs_from_vacuous"])
+            self.assertTrue(removal["retained_detachable_only_target_changed"])
             self.assertTrue(removal["k06_order_spanned"])
-            self.assertTrue(removal["collapsed_identity_negative_detected"])
+            self.assertTrue(removal["collapsed_identity_positive_detected"])
+            self.assertTrue(removal["collapsed_identity_false_positive_rejected"])
             self.assertTrue(removal["pending_subtree_equal"])
             negative_controls = report["evidence"]["exhaustive_mutations"][
                 "classifier_negative_controls"

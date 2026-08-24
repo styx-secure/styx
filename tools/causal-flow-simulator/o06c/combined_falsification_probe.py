@@ -90,6 +90,7 @@ WITNESS_ASSERTION_REGISTRY = {
         "W-REMOVAL-01",
         "W-REMOVAL-02",
         "W-REMOVAL-03",
+        "W-REMOVAL-04",
     ),
     "same-slot-equivocation": ("W-FORK-05",),
     "shape-boundary": ("W-SHAPE-01",),
@@ -375,7 +376,6 @@ def build_witnesses(
         "W-AUTH-08": {"grant_before_revoke": True, "grant_after_revoke": True, "must0_bypass": False},
         "W-PENDING-01": {"k_evidence_retained": True, "ap_filters_k_evidence": False},
         "W-FORK-01": {"scope": "credential-lineage", "authority_expansion": False},
-        "W-FORK-04": {"causal_prefix_reduction_retained": True, "target_resurrected": False},
     }
     peer = event_reference(base_event(credential, none_descriptor, transition=b"peer"))
     variants = []
@@ -418,7 +418,11 @@ def build_witnesses(
     add(Witness("W-LEGACY-01", "legacy-rejection", "44-octet grammar and cross-slot opening copy reject", old_context_rejected and copied_rejected, ("CTX84_REQUIRED", "OPENING_SLOT")))
     add(Witness("W-FORK-05", "same-slot-equivocation", "same-credential/same-sequence siblings remain distinct fork evidence", siblings_are_fork_evidence, ("SAME_SLOT_SIBLINGS",)))
 
-    # 11.1: evaluate full bounded AP projections for every vacuous target class.
+    # 11.1: evaluate full bounded AP projections for every vacuous target class,
+    # then force the retained-DETACHABLE positive arm and both polarities of the
+    # identity-collapse guard.  The positive arm uses two distinct directive
+    # events carrying the same matching removal tail, so AP invariance is not a
+    # consequence of evaluating only inapplicable inputs.
     none_target_ref = deterministic("removal-target-none")
     required_target_ref = deterministic("removal-target-required")
     detachable_target_ref = deterministic("removal-target-detachable")
@@ -482,8 +486,8 @@ def build_witnesses(
             "WITHHELD",
         ),
     )
-    tail_a = deterministic("tail-a")
-    tail_b = deterministic("tail-b")
+    mismatching_tail_a = deterministic("tail-a")
+    mismatching_tail_b = deterministic("tail-b")
     vacuous_targets = (
         ("NONE", none_target_ref),
         ("REQUIRED", required_target_ref),
@@ -495,17 +499,81 @@ def build_witnesses(
         first = project_removal_directive(
             ambient,
             target_reference=target_reference,
-            target_commitment=tail_a,
+            target_commitment=mismatching_tail_a,
         )
         second = project_removal_directive(
             ambient,
             target_reference=target_reference,
-            target_commitment=tail_b,
+            target_commitment=mismatching_tail_b,
         )
         projection_pairs.append((label, first, second))
     ap_invariant = all(
         first == second and first.removal_effect == "NONE"
         for _label, first, second in projection_pairs
+    )
+
+    retained_tail = RemovalTail(
+        detachable_target_ref,
+        detachable_commitment.commitment_value,
+    )
+    retained_directive_a = replace(
+        base_event(credential, none_descriptor, transition=b"retained-removal-a"),
+        event_role=ROLE_REMOVAL,
+        tail=retained_tail,
+    )
+    retained_directive_b = replace(
+        base_event(credential, none_descriptor, transition=b"retained-removal-b"),
+        event_role=ROLE_REMOVAL,
+        tail=retained_tail,
+    )
+    retained_projection_a = project_removal_directive(
+        ambient,
+        target_reference=retained_directive_a.tail.target_event_reference,
+        target_commitment=retained_directive_a.tail.target_commitment,
+    )
+    retained_projection_b = project_removal_directive(
+        ambient,
+        target_reference=retained_directive_b.tail.target_event_reference,
+        target_commitment=retained_directive_b.tail.target_commitment,
+    )
+    retained_vacuous_projection = project_removal_directive(
+        ambient,
+        target_reference=detachable_target_ref,
+        target_commitment=mismatching_tail_a,
+    )
+    retained_target_projection = next(
+        row
+        for row in retained_projection_a.ambient_projection
+        if row[0] == detachable_target_ref
+    )
+    changed_ambient_rows = tuple(
+        (before, after)
+        for before, after in zip(
+            retained_vacuous_projection.ambient_projection,
+            retained_projection_a.ambient_projection,
+            strict=True,
+        )
+        if before != after
+    )
+    retained_projection_nonvacuous = (
+        encode_event_transcript(retained_directive_a)
+        != encode_event_transcript(retained_directive_b)
+        and event_reference(retained_directive_a)
+        != event_reference(retained_directive_b)
+        and retained_projection_a == retained_projection_b
+        and retained_projection_a.classification == "REMOVAL_APPLIED"
+        and retained_projection_a.removal_effect == "LOGICAL_DETACH"
+        and retained_projection_a.target_validity == "VALIDATED"
+        and retained_projection_a.target_retention == "RETAINED"
+        and retained_projection_a.target_presentation == "REMOVED"
+        and retained_target_projection[6] == "REMOVED"
+        and retained_projection_a != retained_vacuous_projection
+        and len(changed_ambient_rows) == 1
+        and changed_ambient_rows[0][0][0] == detachable_target_ref
+        and changed_ambient_rows[0][0][:6] == changed_ambient_rows[0][1][:6]
+        and changed_ambient_rows[0][0][6] == "VISIBLE"
+        and changed_ambient_rows[0][1][6] == "REMOVED"
+        and changed_ambient_rows[0][0][7:] == changed_ambient_rows[0][1][7:]
     )
 
     removal_variants = []
@@ -559,6 +627,24 @@ def build_witnesses(
         collapsed_key_a,
         collapsed_key_b,
     )
+    collapse_false_positive_rejected = (
+        not detects_collapsed_removal_identity(
+            ref_a,
+            ref_a,
+            collapsed_key_a,
+            collapsed_key_b,
+        )
+        and not detects_collapsed_removal_identity(
+            ref_a,
+            ref_b,
+            collapsed_key_a,
+            (
+                removal_b.credential_identifier,
+                removal_b.author_sequence,
+                deterministic("different-removal-target"),
+            ),
+        )
+    )
     removal_pending_graph = {
         "pending-root": (),
         "directive": ("pending-root",),
@@ -572,8 +658,9 @@ def build_witnesses(
         and "independent" not in pending_a
     )
     add(Witness("W-REMOVAL-01", "removal-tail-variance", "NONE, REQUIRED, absent and non-retained targets retain byte-identical full bounded AP projections across distinct target-commitment tails", ap_invariant, ("AP_PROJECTION_INVARIANCE", "REMOVAL_INAPPLICABLE_OR_DEFERRED")))
-    add(Witness("W-REMOVAL-02", "removal-tail-variance", "tail variants change transcript, event identity and K-06 order while their vacuous AP projection remains invariant; collapsing them by intent is detected", identity_and_order_variance and collapse_detected, ("TAIL_BYTES", "EVENT_IDENTITY", "K06_ORDER_VARIANCE", "COLLAPSED_IDENTITY_NEGATIVE")))
+    add(Witness("W-REMOVAL-02", "removal-tail-variance", "tail variants change transcript, event identity and K-06 order while their vacuous AP projection remains invariant; both positive and false-positive identity-collapse cases are detected", identity_and_order_variance and collapse_detected and collapse_false_positive_rejected, ("TAIL_BYTES", "EVENT_IDENTITY", "K06_ORDER_VARIANCE", "COLLAPSED_IDENTITY_POSITIVE", "COLLAPSED_IDENTITY_FALSE_POSITIVE_REJECT")))
     add(Witness("W-REMOVAL-03", "removal-tail-variance", "both tail variants remain in the same pending causal subtree while the independent event remains outside it", pending_invariant, ("PENDING_SUBTREE_INVARIANCE",)))
+    add(Witness("W-REMOVAL-04", "removal-tail-variance", "two distinct directives with the same matching retained-DETACHABLE tail produce the same non-vacuous AP projection and logically detach only the target", retained_projection_nonvacuous, ("RETAINED_DETACHABLE_APPLIED", "LOGICAL_DETACH", "AP_PROJECTION_POSITIVE_CONTROL")))
 
     # 13: deterministic stage accounting and measured rehash amplification.
     sequence_changed_single = build_commitment(replace(context, author_sequence=1), 7, content, randomizer)
@@ -632,8 +719,13 @@ def build_witnesses(
         "removal_tail_variance": {
             "vacuous_target_cases": [label for label, _first, _second in projection_pairs],
             "full_ap_projection_equal": ap_invariant,
+            "retained_detachable_applied": retained_projection_a.classification == "REMOVAL_APPLIED",
+            "retained_detachable_projection_equal": retained_projection_a == retained_projection_b,
+            "retained_detachable_differs_from_vacuous": retained_projection_a != retained_vacuous_projection,
+            "retained_detachable_only_target_changed": len(changed_ambient_rows) == 1,
             "k06_order_spanned": identity_and_order_variance,
-            "collapsed_identity_negative_detected": collapse_detected,
+            "collapsed_identity_positive_detected": collapse_detected,
+            "collapsed_identity_false_positive_rejected": collapse_false_positive_rejected,
             "pending_subtree_equal": pending_invariant,
         },
         "c03_model_record": {

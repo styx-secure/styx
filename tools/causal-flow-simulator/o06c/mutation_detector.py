@@ -153,6 +153,32 @@ def detects(mutant: str) -> tuple[object, str, bool]:
             policy.C03_DEPENDENCIES,
             policy.C03_BLOCKED_CAPABILITIES,
         ) != policy.C03_BLOCKED_CAPABILITIES
+    elif mutant == "M17_REMOVAL_PROJECTION":
+        module = policy
+        detector = "RETAINED_REMOVAL_NOT_APPLIED"
+        reference = bytes.fromhex("55" * 32)
+        commitment = bytes.fromhex("66" * 32)
+        target = policy.RemovalTarget(
+            reference,
+            "DETACHABLE",
+            ("DETACHABLE", 3, 1, 0, commitment),
+            commitment,
+            True,
+            True,
+            "BOUND",
+            "VISIBLE",
+        )
+        projection = policy.project_removal_directive(
+            (target,),
+            target_reference=reference,
+            target_commitment=commitment,
+        )
+        detected = (
+            projection.classification != "REMOVAL_APPLIED"
+            or projection.removal_effect != "LOGICAL_DETACH"
+            or projection.target_presentation != "REMOVED"
+            or projection.ambient_projection[0][6] != "REMOVED"
+        )
     else:
         raise SystemExit(f"unknown mutant: {mutant}")
     executed = mutant in getattr(module, "_MUTATION_PATHS", set())

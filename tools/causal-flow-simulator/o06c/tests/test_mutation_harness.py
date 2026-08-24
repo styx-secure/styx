@@ -46,8 +46,9 @@ class MutationHarnessTests(unittest.TestCase):
                 self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertEqual(outputs[0].read_bytes(), outputs[1].read_bytes())
             report = json.loads(outputs[0].read_bytes())
-            self.assertEqual(report["registry_size"], 16)
-            self.assertEqual(report["killed_count"], 16)
+            self.assertEqual(report["registry_size"], 17)
+            self.assertEqual(report["mutant_class_count"], 16)
+            self.assertEqual(report["killed_count"], 17)
             self.assertEqual(report["verdict"], "ALL_REQUIRED_MUTANTS_KILLED")
             self.assertFalse(report["survived"])
             for mutant in report["mutants"]:
@@ -55,6 +56,10 @@ class MutationHarnessTests(unittest.TestCase):
                 self.assertEqual(mutant["observed_detectors"], mutant["declared_detectors"])
                 self.assertEqual(mutant["disposition"], "EXACT_DECLARED_SET")
             self.assertTrue(report["witness_coverage"])
+            self.assertEqual(
+                set(report["mutant_only_coverage"]),
+                {"frozen-evidence", "historical-evidence"},
+            )
             self.assertTrue(
                 all(
                     coverage["directed_assertions"]

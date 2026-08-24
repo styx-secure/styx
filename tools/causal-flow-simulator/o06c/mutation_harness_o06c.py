@@ -49,16 +49,42 @@ MUTANTS = (
     Mutant("M14_FROZEN_DIGEST", "frozen-section digest enforcement", "verify_frozen_sections.py", '    return "PASS" if actual == expected else "DIGEST_MISMATCH"', '    return _mutation_trace("M14_FROZEN_DIGEST", "PASS")', "FROZEN_DIGEST_BYPASS"),
     Mutant("M15_HISTORICAL_REGISTRY", "historical-registry enforcement", "historical_evidence_gate.py", '    if len(registry) != 7:', '    if _mutation_trace("M15_HISTORICAL_REGISTRY", False):', "EIGHTH_HISTORY_ACCEPTED"),
     Mutant("M16_C03_CAPABILITY", "C0.3 capability-gate retention", "policy_guards.py", '    return declared_blocks', '    return _mutation_trace("M16_C03_CAPABILITY", frozenset())', "C03_CAPABILITY_OPENED"),
+    Mutant("M17_REMOVAL_PROJECTION", "pending-authority retention", "policy_guards.py", '    matches = [record for record in ambient if record.reference == target_reference]', '    matches = _mutation_trace("M17_REMOVAL_PROJECTION", [])', "RETAINED_REMOVAL_NOT_APPLIED"),
+)
+
+EXPECTED_MUTANT_CLASSES = frozenset(
+    {
+        "transcript domain/role",
+        "transcript length framing",
+        "credential-control tail",
+        "84-octet context",
+        "credential binding",
+        "author-sequence binding",
+        "leaf preimage",
+        "interior-node preimage",
+        "complete commitment object",
+        "parser/inverse geometry",
+        "authority Must0 expansion",
+        "pending-authority retention",
+        "lineage-scoped fork effect",
+        "frozen-section digest enforcement",
+        "historical-registry enforcement",
+        "C0.3 capability-gate retention",
+    }
 )
 
 # Witness coverage and source-mutation coverage are intentionally separate.
 # A witness is an executed directed assertion; a mutant is killed only by the
 # exact detector process below.  No unexecuted witness→mutant relation is
 # reported.
-WITNESS_COVERAGE = {
-    **WITNESS_ASSERTION_REGISTRY,
-    "frozen-evidence": ("M14:FROZEN_DIGEST_BYPASS",),
-    "historical-evidence": ("M15:EIGHTH_HISTORY_ACCEPTED",),
+WITNESS_COVERAGE = WITNESS_ASSERTION_REGISTRY
+
+MUTANT_ONLY_COVERAGE = {
+    "frozen-evidence": ("M14_FROZEN_DIGEST", "FROZEN_DIGEST_BYPASS"),
+    "historical-evidence": (
+        "M15_HISTORICAL_REGISTRY",
+        "EIGHTH_HISTORY_ACCEPTED",
+    ),
 }
 
 
@@ -167,9 +193,12 @@ def main(argv: list[str] | None = None) -> int:
         frozen = json.loads(frozen_bytes)
         if frozen.get("schema") != "styx-o06c-frozen-section-report/v1" or frozen.get("verdict") != "PASS":
             raise HarnessError("frozen-section report is not PASS")
-        if len(MUTANTS) != 16 or len({item.identifier for item in MUTANTS}) != 16:
+        if len(MUTANTS) != 17 or len({item.identifier for item in MUTANTS}) != 17:
             raise HarnessError("closed mutant registry drift")
         mutant_ids = {item.identifier for item in MUTANTS}
+        mutant_classes = {item.mutant_class for item in MUTANTS}
+        if mutant_classes != EXPECTED_MUTANT_CLASSES:
+            raise HarnessError("closed mutant-class registry drift")
         if any(not assertions for assertions in WITNESS_COVERAGE.values()):
             raise HarnessError("empty directed-assertion coverage")
         mutant_to_detectors = {
@@ -178,6 +207,11 @@ def main(argv: list[str] | None = None) -> int:
         }
         if set(mutant_to_detectors) != mutant_ids:
             raise HarnessError("mutant/detector registry drift")
+        for family, (mutant_id, detector) in MUTANT_ONLY_COVERAGE.items():
+            if mutant_id not in mutant_ids:
+                raise HarnessError(f"unknown mutant-only coverage ID: {family}")
+            if mutant_to_detectors[mutant_id] != [detector]:
+                raise HarnessError(f"mutant-only detector drift: {family}")
         with tempfile.TemporaryDirectory(prefix="styx-o06c-mutants-") as directory:
             root = Path(directory)
             records = [execute_mutant(source_root, mutant, root / mutant.identifier.lower()) for mutant in MUTANTS]
@@ -187,10 +221,20 @@ def main(argv: list[str] | None = None) -> int:
             "suite": "required",
             "frozen_report_sha256": sha256_hex(frozen_bytes),
             "registry_size": len(MUTANTS),
+            "mutant_class_count": len(mutant_classes),
             "mutants": records,
             "witness_coverage": {
                 family: {"directed_assertions": list(assertions)}
                 for family, assertions in sorted(WITNESS_COVERAGE.items())
+            },
+            "mutant_only_coverage": {
+                family: {
+                    "mutant_id": mutant_id,
+                    "directed_detector": detector,
+                }
+                for family, (mutant_id, detector) in sorted(
+                    MUTANT_ONLY_COVERAGE.items()
+                )
             },
             "mutant_to_detectors": mutant_to_detectors,
             "killed_count": sum(record["status"] == "KILLED" for record in records),
@@ -201,7 +245,10 @@ def main(argv: list[str] | None = None) -> int:
     except (HarnessError, OSError, ValueError) as error:
         print(f"O-06c mutation harness failure: {error}", file=sys.stderr)
         return 2
-    print(f"O-06c mutation verdict={report['verdict']} killed={report['killed_count']}/16")
+    print(
+        f"O-06c mutation verdict={report['verdict']} "
+        f"killed={report['killed_count']}/{report['registry_size']}"
+    )
     return 0 if killed else 1
 
 

@@ -17,9 +17,10 @@
 No counterexample was found within the declared O-06c registry. The frozen
 six-section gate passed, the independent Python and JavaScript encoders agreed
 on complete bytes and full-width SHA-256 values, all required directed witnesses
-passed, all 16 declared source-mutant classes were killed by their exact detector
-sets, all seven historical evidence entries reproduced, and exhaustive selected-
-object mutation produced no third accepted disposition.
+passed, all 17 declared source mutants across the 16 contractually closed classes
+were killed by their exact detector sets, all seven historical evidence entries
+reproduced, and exhaustive selected-object mutation produced no third accepted
+disposition.
 
 This result supports condition-bearing closure of O-06/O-06c only. It does not
 prove SHA-256, protocol completeness, parser or product implementation
@@ -36,8 +37,8 @@ and are byte-identical across two successful runs at the exact final candidate:
 | --- | --- | --- |
 | Scope | `PASS` | `7702c42ce10c63d843188a37ae30258a33332be8d035160d846bd1ae6743afcb` |
 | Frozen sections | `PASS` (6/6) | `8614f80f1434353ef96a786a93c2736c7a1d09542c9a4f92af808ff2ad9e5c8a` |
-| Combined machine probe | `NO_COUNTEREXAMPLE_WITHIN_BOUNDS` (26 witnesses) | `9336256ca7da3d0930f4023d15d724da816e39eb916daf8209de2350ba5549a8` |
-| Directed mutation | `ALL_REQUIRED_MUTANTS_KILLED` (16/16) | `0c86d3809250445636bc0abbd33a27f26de492ea24a7c97aefc5def8acf9fcf9` |
+| Combined machine probe | `NO_COUNTEREXAMPLE_WITHIN_BOUNDS` (27 witnesses) | `9336256ca7da3d0930f4023d15d724da816e39eb916daf8209de2350ba5549a8` |
+| Directed mutation | `ALL_REQUIRED_MUTANTS_KILLED` (17/17 across 16 classes) | `0c86d3809250445636bc0abbd33a27f26de492ea24a7c97aefc5def8acf9fcf9` |
 | Cross-language | `PASS` (9 events) | `8ed61a94432c79efba5da818d6933d7794a6b0dc71f51aed5ae8362ec1f3e450` |
 | Historical evidence | `PASS` (7/7) | `153a64cd660a29f2d90d16cb70e2bb8c45a32627a4f9c34145183d0775c16114` |
 
@@ -77,8 +78,11 @@ frozen-section enforcement, historical-registry enforcement and C0.3 capability
 retention. A mutant passes only when the mutated path executes and its observed
 non-empty detector set equals the declared set exactly.
 Witness-family coverage and mutant detection are separate closed registries:
-each of the 25 witness families names the directed assertions that actually
-execute it, while each of the 16 mutants names only its observed detector set.
+each of the 23 witness families names the directed assertions that actually
+execute it, while each of the 17 mutants names only its observed detector set.
+Frozen-section and historical-registry enforcement are published separately as
+mutant-only coverage and validated against exact mutant/detector pairs; they are
+not mislabelled as executed witness families.
 This separation prevents a declared witness-to-mutant relationship from being
 reported as executed evidence when no such relationship ran.
 
@@ -87,10 +91,14 @@ executes the fail-closed boundary guards, including both reachable K-06
 reference-order directions and an injected `Must0`-bypass rejection, but does
 not create a second authority oracle. The removal-tail family executes the full
 bounded AP projection for `NONE`, `REQUIRED`, absent, non-retained and retained
-`DETACHABLE` targets, spans both K-06 order directions, detects an attempted
-identity collapse and preserves the same pending causal subtree across the two
-retained variants. The capability witness reads the actual derived review-model
-C0.3 record and checks its exact dependency and blocked-capability sets.
+`DETACHABLE` targets. Two distinct directives carrying the same matching
+retained-`DETACHABLE` tail execute `REMOVAL_APPLIED`/`LOGICAL_DETACH`, produce
+the same non-vacuous AP projection and differ from every vacuous case. The same
+family spans both K-06 order directions, requires both a true identity-collapse
+detection and two false-positive rejections, and preserves the same pending
+causal subtree across the two order-spanning vacuous variants. The capability
+witness reads the actual derived review-model C0.3 record and checks its exact
+dependency and blocked-capability sets.
 
 ## 4. Work and availability observations
 
