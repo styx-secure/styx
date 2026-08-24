@@ -37,8 +37,8 @@ and are byte-identical across two successful runs at the exact final candidate:
 | --- | --- | --- |
 | Scope | `PASS` | `b1f6cf5b179674ec4262dca6698c397eb83a6c2d6dce7a133f19cd0e65f31752` |
 | Frozen sections | `PASS` (6/6) | `8614f80f1434353ef96a786a93c2736c7a1d09542c9a4f92af808ff2ad9e5c8a` |
-| Combined machine probe | `NO_COUNTEREXAMPLE_WITHIN_BOUNDS` (27 witnesses) | `66086343ca3f88caccb709ff3ea01fd50e4917a132e8bbfeafe2c2a1977b770d` |
-| Directed mutation | `ALL_REQUIRED_MUTANTS_KILLED` (16 contractual classes + 1 supplementary AP projection; 17/17 killed) | `466e4642e80e01c7fec3384eef60229c67a2221462c739296a1f40ed93f2859d` |
+| Combined machine probe | `NO_COUNTEREXAMPLE_WITHIN_BOUNDS` (27 witnesses) | `e96a426aae2381dd047c444d1c3f3cab96a3f2d7f522a7a2bd62cc49cd1be650` |
+| Directed mutation | `ALL_REQUIRED_MUTANTS_KILLED` (16 contractual classes + 1 supplementary AP projection; 17/17 killed) | `e8f7870c658c9e19d13f80de019fd506bfebabaa1ab4efaa8b8504ac83b5b0b8` |
 | Cross-language | `PASS` (9 events) | `e75e07bcd39ca06bbcb9f23eabca47e0b1e12b711bc238996fa8d88d0286b529` |
 | Historical evidence | `PASS` (7/7) | `153a64cd660a29f2d90d16cb70e2bb8c45a32627a4f9c34145183d0775c16114` |
 
@@ -95,12 +95,15 @@ executes the fail-closed boundary guards, including both reachable K-06
 reference-order directions and an injected `Must0`-bypass rejection, but does
 not create a second authority oracle. The removal-tail family executes the full
 bounded AP projection for `NONE`, `REQUIRED`, absent, non-retained and retained
-`DETACHABLE` targets. Two distinct directives carrying the same matching
+`DETACHABLE` targets. The ambient projection is reference-ordered and its
+four-record causal graph contains three real parent edges; both the complete
+rows and the graph projection are pinned. Two distinct directives carrying the same matching
 retained-`DETACHABLE` tail execute `REMOVAL_APPLIED`/`LOGICAL_DETACH`, produce
 the same non-vacuous AP projection and differ from every vacuous case. The same
 family spans both K-06 order directions, requires both a true identity-collapse
-detection and two false-positive rejections, and preserves the same pending
-causal subtree across the two order-spanning vacuous variants. The capability
+detection and two false-positive rejections, and places both actual
+order-spanning tail-variant references and their respective children in one
+shared pending causal subtree while excluding an independent event. The capability
 witness reads the actual derived review-model C0.3 record and checks its exact
 dependency and blocked-capability sets.
 
@@ -113,7 +116,7 @@ graph construction, opening verification and replay. Its aggregate stage counts
 include 8 geometry checks, 10 content-split chunks, 58 parses, 7 inverse
 operations, 2 serializations, 2 transcript
 regenerations, 10 leaf hashes, 6 interior-node hashes, 4 commitment hashes,
-16 graph constructions, one opening verification and 6 replay operations.
+14 graph constructions, one opening verification and 4 replay operations.
 
 The geometry witness compares a small inconsistent descriptor, a `MAX_U64`
 inconsistent descriptor and an out-of-envelope chunk size. All three reject
@@ -139,7 +142,7 @@ not production maxima or availability guarantees.
 | Runtime encoder | the JavaScript side is a partial forward encoder only: it is not the inverse parser, rejection oracle, authority fold or a product implementation; protocol version, object kind and suite identifiers are emitted as fixed constants, so agreement on those fields is not independent evidence | any claim of complete cross-language protocol conformance, parser parity or product integration |
 | Cross-language digest fields | the reported Python/JavaScript derivation hashes cover canonical JSON after the value-equality check and are diagnostic, not a second independent witness | any claim that equal report digests independently prove encoder agreement |
 | Frozen-source envelope | the contract pins six selected normative sections rather than every section of both encoding profiles; the separate scope gate constrains changed paths but does not establish whole-document immutability | any change to an unpinned normative section or expansion of the frozen-source claim |
-| Tool and framing envelope | the evidence pins Python `3.14.4` and Node `24.18.0`; the parser applies the outer-reference framing ceiling while the forward transcript encoder does not exercise an object near that allocation boundary | any portable-toolchain claim or selected bound that approaches the `u32` framing ceiling |
+| Tool and framing envelope | the evidence pins Python `3.14.4` and Node `24.18.0`; encoder and parser share the same outer-reference framing ceiling, whose exact accept/reject boundary is tested without allocating a near-`u32` object | any portable-toolchain claim or selected production bound that approaches the `u32` framing ceiling |
 
 SHA-256 collision and second-preimage resistance remain assumptions. A supplied
 distinct-preimage/equal-digest condition is rejected rather than treated as a

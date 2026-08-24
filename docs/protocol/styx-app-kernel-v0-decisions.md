@@ -926,8 +926,8 @@ outcomes.
 - **O-06c executable evidence:** `NO_COUNTEREXAMPLE_WITHIN_BOUNDS`; canonical
   report digests are `scope=b1f6cf5b179674ec4262dca6698c397eb83a6c2d6dce7a133f19cd0e65f31752`,
   `frozen=8614f80f1434353ef96a786a93c2736c7a1d09542c9a4f92af808ff2ad9e5c8a`,
-  `machine=66086343ca3f88caccb709ff3ea01fd50e4917a132e8bbfeafe2c2a1977b770d`,
-  `mutation=466e4642e80e01c7fec3384eef60229c67a2221462c739296a1f40ed93f2859d`,
+  `machine=e96a426aae2381dd047c444d1c3f3cab96a3f2d7f522a7a2bd62cc49cd1be650`,
+  `mutation=e8f7870c658c9e19d13f80de019fd506bfebabaa1ab4efaa8b8504ac83b5b0b8`,
   `cross-language=e75e07bcd39ca06bbcb9f23eabca47e0b1e12b711bc238996fa8d88d0286b529`
   and
   `historical=153a64cd660a29f2d90d16cb70e2bb8c45a32627a4f9c34145183d0775c16114`.
