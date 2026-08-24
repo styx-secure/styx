@@ -542,9 +542,12 @@ def build_witnesses(
         target_commitment=mismatching_tail_a,
     )
     retained_target_projection = next(
-        row
-        for row in retained_projection_a.ambient_projection
-        if row[0] == detachable_target_ref
+        (
+            row
+            for row in retained_projection_a.ambient_projection
+            if row[0] == detachable_target_ref
+        ),
+        None,
     )
     changed_ambient_rows = tuple(
         (before, after)
@@ -566,6 +569,7 @@ def build_witnesses(
         and retained_projection_a.target_validity == "VALIDATED"
         and retained_projection_a.target_retention == "RETAINED"
         and retained_projection_a.target_presentation == "REMOVED"
+        and retained_target_projection is not None
         and retained_target_projection[6] == "REMOVED"
         and retained_projection_a != retained_vacuous_projection
         and len(changed_ambient_rows) == 1
