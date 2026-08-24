@@ -13,6 +13,7 @@ from scope_guard import (  # noqa: E402
     BASE_SHA,
     REGIONS,
     allowed,
+    build_report,
     changed_records,
     enforce_named_regions,
     enforce_validator_ast,
@@ -34,6 +35,12 @@ class ScopeGuardTests(unittest.TestCase):
         )
         self.assertEqual(enforce_validator_ast(REPO_ROOT, BASE_SHA, "HEAD"), [])
         self.assertEqual(len(enforce_named_regions(REPO_ROOT, BASE_SHA, "HEAD")), 2)
+
+    def test_canonical_report_defers_candidate_identity_to_pr_evidence(self) -> None:
+        report = build_report(REPO_ROOT, BASE_SHA, "HEAD")
+        self.assertEqual(report["candidate_identity_location"], "immutable_pr_evidence")
+        self.assertNotIn("candidate_commit", report)
+        self.assertNotIn("candidate_tree", report)
 
     def test_forbidden_paths_always_win(self) -> None:
         self.assertTrue(forbidden("styx-js/src/product.js"))

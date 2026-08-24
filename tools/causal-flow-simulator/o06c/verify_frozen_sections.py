@@ -160,13 +160,14 @@ def build_report(
                 "status": status,
             }
         )
-    tree = _git(repo, "rev-parse", f"{resolved_candidate}^{{tree}}").decode().strip()
     report: dict[str, object] = {
         "schema": REPORT_SCHEMA,
         "mode": "strict",
         "expected_base": BASE_SHA,
-        "candidate_commit": resolved_candidate,
-        "candidate_tree": tree,
+        # Candidate identity belongs in immutable PR evidence.  Keeping it out of
+        # a report whose digest is recorded in a tracked normative document is
+        # what makes that digest non-self-referential.
+        "candidate_identity_location": "immutable_pr_evidence",
         "sections": records,
         "verdict": "PASS" if passed else "FAIL",
     }

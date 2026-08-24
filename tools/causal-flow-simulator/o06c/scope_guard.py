@@ -272,6 +272,33 @@ def enforce_named_regions(repo: Path, base: str, candidate: str) -> dict[str, st
     return digests
 
 
+def build_report(repo: Path, base_argument: str, candidate_argument: str) -> dict[str, object]:
+    base = git(repo, "rev-parse", f"{base_argument}^{{commit}}").decode().strip()
+    candidate = git(repo, "rev-parse", f"{candidate_argument}^{{commit}}").decode().strip()
+    if base_argument != BASE_SHA or base != BASE_SHA:
+        raise ScopeError("contract base mismatch")
+    records = changed_records(repo, base, candidate)
+    enforce_text_artifacts(repo, base, candidate, records)
+    validator_assignments = enforce_validator_ast(repo, base, candidate)
+    new_review_tests = enforce_review_tests(repo, base, candidate, records)
+    region_digests = enforce_named_regions(repo, base, candidate)
+    return {
+        "schema": SCHEMA,
+        "base_commit": base,
+        # The canonical changed relation is stable once the path set is
+        # fixed.  Exact candidate commit/tree/diff identity is recorded in
+        # immutable PR evidence so embedding this report digest in a
+        # tracked normative document cannot create a hash fixed-point.
+        "candidate_identity_location": "immutable_pr_evidence",
+        "changed_relation": records,
+        "changed_endpoint_count": sum(len(record["paths"]) for record in records),
+        "validator_assignments_changed": validator_assignments,
+        "new_review_tests": new_review_tests,
+        "normalized_region_sha256": region_digests,
+        "verdict": "PASS",
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", required=True, type=Path)
@@ -281,32 +308,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     repo = args.repo_root.resolve()
     try:
-        base = git(repo, "rev-parse", f"{args.base}^{{commit}}").decode().strip()
-        candidate = git(repo, "rev-parse", f"{args.candidate}^{{commit}}").decode().strip()
-        if args.base != BASE_SHA or base != BASE_SHA:
-            raise ScopeError("contract base mismatch")
-        records = changed_records(repo, base, candidate)
-        enforce_text_artifacts(repo, base, candidate, records)
-        validator_assignments = enforce_validator_ast(repo, base, candidate)
-        new_review_tests = enforce_review_tests(repo, base, candidate, records)
-        region_digests = enforce_named_regions(repo, base, candidate)
-        report = {
-            "schema": SCHEMA,
-            "base_commit": base,
-            "candidate_commit": candidate,
-            "candidate_tree": git(repo, "rev-parse", f"{candidate}^{{tree}}").decode().strip(),
-            "changed_relation": records,
-            "changed_endpoint_count": sum(len(record["paths"]) for record in records),
-            "validator_assignments_changed": validator_assignments,
-            "new_review_tests": new_review_tests,
-            "normalized_region_sha256": region_digests,
-            "verdict": "PASS",
-        }
+        report = build_report(repo, args.base, args.candidate)
         write_report(args.output, report)
     except (ScopeError, OSError, UnicodeError, subprocess.CalledProcessError, ValueError) as error:
         print(f"O-06c scope failure: {error}", file=sys.stderr)
         return 2
-    print(f"O-06c scope verdict=PASS records={len(records)}")
+    print(
+        "O-06c scope verdict=PASS "
+        f"records={len(report['changed_relation'])}"
+    )
     return 0
 
 

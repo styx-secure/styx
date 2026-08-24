@@ -35,6 +35,9 @@ class FrozenSectionTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(first["verdict"], "PASS")
         self.assertEqual(len(first["sections"]), 6)
+        self.assertEqual(first["candidate_identity_location"], "immutable_pr_evidence")
+        self.assertNotIn("candidate_commit", first)
+        self.assertNotIn("candidate_tree", first)
         self.assertEqual(json.loads(canonical_bytes(first)), first)
 
     def test_extractor_rejects_missing_successor_heading(self) -> None:
