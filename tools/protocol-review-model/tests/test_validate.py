@@ -204,6 +204,9 @@ class ProtocolReviewModelTests(unittest.TestCase):
             lambda schema: schema["properties"]["actors"].__setitem__(
                 "items", []
             ),
+            lambda schema: schema["$defs"]["actor"].__setitem__(
+                "items", {"type": "string"}
+            ),
             lambda schema: schema["properties"]["actors"].pop("items"),
             lambda schema: schema["$defs"].__setitem__("actor", {}),
             lambda schema: schema["$defs"]["actor"].__setitem__("type", ["object"]),
@@ -336,6 +339,19 @@ class ProtocolReviewModelTests(unittest.TestCase):
                 )
                 findings = validator.validate(model, self.schema, REPO_ROOT)
                 self.assertIn("SCHEMA_MISMATCH", {item.code for item in findings})
+
+    def test_non_hashable_dictionary_key_is_typed_and_never_crashes(self) -> None:
+        model = copy.deepcopy(self.model)
+        _apply_mutation(
+            model,
+            {
+                "operation": "set",
+                "path": "/actors/0/citations/0/source_id",
+                "value": {"id": "not-hashable"},
+            },
+        )
+        findings = validator.validate(model, self.schema, REPO_ROOT)
+        self.assertIn("SCHEMA_MISMATCH", {item.code for item in findings})
 
     def test_domain_findings_survive_additive_schema_findings(self) -> None:
         for pointer, expected_code in (

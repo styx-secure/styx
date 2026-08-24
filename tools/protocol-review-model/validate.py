@@ -933,6 +933,15 @@ def _schema_definition_findings(
             )
         )
 
+    if "items" in schema and schema_type != "array":
+        findings.append(
+            Finding(
+                "SCHEMA_DEFINITION",
+                f"{path}.items",
+                "items requires type array",
+            )
+        )
+
     if "items" in schema:
         if not isinstance(schema["items"], dict):
             findings.append(
