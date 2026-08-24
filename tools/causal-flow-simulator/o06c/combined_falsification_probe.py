@@ -13,7 +13,7 @@ import sys
 
 sys.dont_write_bytecode = True
 
-from common import sha256_hex, write_report
+from common import canonical_bytes, sha256_hex, write_report
 from exhaustive_mutations import run_exhaustive
 from policy_guards import (
     C03_BLOCKED_CAPABILITIES,
@@ -698,7 +698,9 @@ def main(argv: list[str] | None = None) -> int:
             "schema": SCHEMA,
             "suite": "required",
             "frozen_report_sha256": sha256_hex(frozen_bytes),
-            "review_model_sha256": sha256_hex(review_model_bytes),
+            "c03_record_sha256": sha256_hex(
+                canonical_bytes(_c03_record(review_model))
+            ),
             "witness_count": len(witnesses),
             "witnesses": [witness.record() for witness in witnesses],
             "evidence": evidence,
