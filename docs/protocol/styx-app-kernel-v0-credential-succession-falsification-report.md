@@ -223,16 +223,18 @@ mutant has at least one explicit killing witness.
 ## 6. Frozen-interface verification
 
 Before amendment, the exact O-06b-1 section-4 seven-role domain registry hashes
-to the value below. The extraction rule is the bytes from the `## 4.` heading
-through the byte immediately before the next `## ` heading, followed by exactly
-one LF:
+to the value below. The extraction rule is the raw contiguous bytes beginning
+at the first octet of the `## 4.` heading and ending immediately before the
+first octet of the next `## ` heading. Every stored trailing LF octet in that
+slice is retained without normalization, insertion or removal:
 
 ```text
 5b6bc4041b028ead4821cd7d33bb102255d7df728309e2e8bef232f16c9e3fb3
 ```
 
 The amended document must retain that exact section hash. The byte-frozen
-O-06b-2 section-6 commitment context uses the same extraction rule and hashes to:
+O-06b-2 section-6 68-octet logical-removal tail uses the same extraction rule
+and hashes to:
 
 ```text
 14bcde53d5534584e3cd1ba2503a3bb755df112ed0d42485cf9f1bef61b1f7f8
@@ -240,7 +242,9 @@ O-06b-2 section-6 commitment context uses the same extraction rule and hashes to
 
 It remains unmodified. C0.2j adds role class `0x02` and its K-owned tail only;
 it does not allocate an eighth hash domain, change the reference suite, alter
-the logical-removal tail or modify the 44-octet commitment context.
+the logical-removal tail or modify the then-current 44-octet commitment
+context. The current commitment context is the separately pinned 84-octet
+O-06b-2 section-2 input selected by C0.2k.
 
 ## 7. Residual risks and non-claims
 

@@ -5779,7 +5779,7 @@
       "authority": "normative",
       "id": "commitment_profile",
       "path": "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
-      "sha256": "e7789d79dd31e8b1f7785c81b57b351057db65b540e0bc3a1acce61d33b9296d"
+      "sha256": "666cf3bbb34375171c5c96d9faf74efb24f5c5c6b4dcac13d080fa7468cc9673"
     },
     {
       "authority": "evidence",
@@ -5791,13 +5791,13 @@
       "authority": "evidence",
       "id": "credential_report",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-falsification-report.md",
-      "sha256": "d4b8ef188910c299641943366498809785ea981ee2d5b75e9a1c2ca3ae60e1bb"
+      "sha256": "1b6b3d032eebeecbfa09cc6982d65733109421c6eb796df5c6bc27ce7a14bfac"
     },
     {
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "fc96b0c8cf22dd8da5ef5b823024f2ea2979d3b3d08530bb091cc7ff04f479a0"
+      "sha256": "fc25bd660d90767883368f164bf3095837ebd186c578ea7ce938acbda79d5459"
     },
     {
       "authority": "evidence",
@@ -5815,7 +5815,7 @@
       "authority": "evidence",
       "id": "payload_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md",
-      "sha256": "91dd8408b0f6536a9f9a62468ec748e979733006b8326ccafa77741170310c54"
+      "sha256": "e2a9f8067f44cf29ec48e1d8bbb6cf44123b8132133b0fcafd5f7417b0664105"
     },
     {
       "authority": "evidence",
@@ -5845,7 +5845,7 @@
       "authority": "normative",
       "id": "transcript_profile",
       "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
-      "sha256": "7f3399a82b976eaab8bb967aa1d1006f5e280ec141b2f6afdf806f26e2fe6166"
+      "sha256": "4a8b242ca01a7289994a0f9f8e322d5c2dee4c636da80c3ed6638bf9c89df09f"
     }
   ],
   "state_models": [

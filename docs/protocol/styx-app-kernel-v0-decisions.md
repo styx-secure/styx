@@ -800,8 +800,8 @@ outcomes.
   gates irreversible effects; O-15 owns profile succession and optional future
   disposition; O-16 owns finality. C0.2i supplied bounded executable evidence
   for pending-subtree replay, typed outcomes, checkpoint non-substitution and
-  fresh reconstruction; dependent semantic changes require rerunning both the
-  preserved v1 evidence and the current v2 gate.
+  fresh reconstruction; dependent semantic changes require rerunning
+  v1, v2, v3 and C0.2k baseline and mutation evidence.
 - **Residual/reopen condition:** reopen on a C0.2i counterexample; an O-06 suite
   unable to meet the bounded binding/privacy contract; a profile requiring
   deterministic, keyed, provably hiding or chunk-partial-redaction semantics;
@@ -810,8 +810,8 @@ outcomes.
   substitution or change to its authentication/authority/acceptance/horizon/
   equivocation/late-admission contract; or an installed legacy population
   requiring migration; any attempt to continue safely through a conflicting
-  credential identifier before C0.2j; any attempt to lift permanent v0 fork
-  quarantine or apply a fork descendant; or any claim that
+  credential identifier before C0.2j; any attempt to lift the ratified C0.2j
+  lineage quarantine or apply a fork descendant; or any claim that
   revocation bounds compromise before C0.2j/O-16.
 - **Human ratification:** the amended C0.2i construction completed exact-final
   review and human ratification under Issue #225 and PR #226; the C0.2j
@@ -932,16 +932,34 @@ outcomes.
   role/context separation,
   non-circularity, chunk unlinkability, collision handling, grinding-to-handoff
   interaction, pending-subtree/revocation repair, descriptor-copy boundaries
-  and bounded work. It reruns both v1/v2 reproducibility, mutates every
+  and bounded work. It reruns v1, v2, v3 and C0.2k baseline and mutation evidence,
+  mutates every
   transcript byte and each `opaque_u32` length by ±1, and includes an independent
   encoder in a second language.
 - **Residual/closure condition:** close only when semantically distinct valid
-  events cannot share framed transcript bytes, references rely on the selected
-  SHA-256 collision/second-preimage assumptions, and every exact field has one
-  unambiguous derivation. Reopen O-06b-1 if O-07 cannot supply injectively
-  framed genesis contents, O-06b-2's written inverse or assumptions fail, or
-  O-14 cannot authenticate these bytes without per-event selection,
-  fallback or a materially different digest/runtime basis.
+  assignments of the fields O-06 owns cannot share framed transcript bytes,
+  given canonical injective AP-transition-block bytes and any fixed genesis
+  reference; references rely on the selected SHA-256 collision and
+  second-preimage assumptions; and every exact field owned by O-06 has one
+  unambiguous derivation. O-06 does not decide, and its closure does not
+  assert, the genesis contents or genesis credential identifier owned by O-07,
+  the supported maxima and closed chunk-size values owned by O-08, the stable
+  outcome codes owned by O-10, the signature suite, canonical
+  verification-key encoding and signature verification owned by O-14, the
+  interior-node context-freedom boundary that O-11 must revisit before any
+  inclusion proof, or the AP-transition-block semantic injectivity owned by AP
+  and C0.3. O-06c MUST use an explicitly labelled placeholder for each of those
+  inputs, MUST record the corresponding non-claim, and MUST be rerun when any of
+  them is later selected. In particular, cross-context non-transferability is
+  established only for grant-rooted credentials, whose identifier transitively
+  binds the genesis reference through their binding `GRANT` transcript; for a
+  genesis-authored credential it remains an O-07 dependency and an explicit
+  non-claim. Any later status change to `DECIDED` uses that existing closed
+  registry value and carries these conditions in this entry; no new status value
+  is created. Reopen O-06b-1 if O-07 cannot supply injectively framed genesis
+  contents, O-06b-2's written inverse or assumptions fail, or O-14 cannot
+  authenticate these bytes without per-event selection, fallback or a materially
+  different digest/runtime basis.
 - **Human ratification:** O-06a, O-06b-1 and O-06b-2 were ratified under Issues
   #219, #221 and #223. The C0.2k amendment requires exact-final-HEAD acceptance
   under Issue #239; O-06 remains open after that acceptance.
@@ -974,12 +992,18 @@ outcomes.
 - **Dependent artifact:** initialization transcript and genesis vectors;
   production checkpoint evidence and negative vectors. The checkpoint portion
   is a suspended gate for O-04 checkpoint-based `DETACHABLE` reconstruction and
-  any `REQUIRED`-content substitution.
+  any `REQUIRED`-content substitution. C0.2d section 6 assigned checkpoint
+  opening/content authentication across dependencies that included O-04; O-04
+  explicitly declines that unresolved share and O-07 remains its owner. This
+  record does not activate a producer, checkpoint signer or possession signal.
+  Possession, production or successful parsing of checkpoint material is not
+  evidence that a consumer revalidated the covered transition contents.
 - **Smallest bounded follow-up:** derive genesis only after its inputs close.
   Separately determine whether any checkpoint substitution model is sound; if
   so, define K authentication/binding with AP authorization inputs, reopen
   O-01/O-04 (and O-02 if a new authority class is introduced), amend the threat
-  model and rerun C0.2f/C0.3. The decision may keep substitution unsupported.
+  model, affect O-08/O-10/O-11, rerun C0.2f under C0.2d section 9's reopen
+  conditions and pass C0.3. The decision may keep substitution unsupported.
 - **Residual/closure condition:** close only when every genesis field is
   necessary, authenticated and independently reproducible and every supported
   checkpoint use has one explicit authenticator, owner, acceptance rule,
@@ -1330,14 +1354,15 @@ The smallest safe sequence is:
 2. preserve the C0.2c O-01 chain/frontier topology, O-05 clock placement and
    O-06 semantic identifier-role separation;
 3. preserve the immutable v1 evidence and the isolated C0.2i v2 pending-
-   subtree model; rerun both whenever their respective inputs change, without
+   subtree model; rerun v1, v2, v3 and C0.2k baseline and mutation evidence whenever
+   their respective inputs change, without
    treating bounded falsification as proof;
 4. preserve C0.2j grant-rooted credential identity, exact K-readable
    succession evidence and bounded Pass0/selected-slot authority; preserve the
    C0.2k credential/sequence-bound commitment-context amendment and its bounded
    evidence; then execute O-06c adversarial evidence over the combined
    construction;
-5. preserve and rerun the completed v2 gate after those changes, then
+5. preserve and rerun the completed v1, v2, v3 and C0.2k baseline and mutation evidence after those changes, then
    close genesis/checkpoint evidence, cardinality, error and signature-suite
    questions O-07, O-08, O-10 and O-14, plus O-12 for any time-bearing profile,
    without product implementation authority; retain O-11 for the later

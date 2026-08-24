@@ -538,7 +538,7 @@ reinterpreted.
    unchanged.
 4. **O-06c** implements bounded adversarial falsification of the combined
    construction, emits deterministic work-order/per-stage instrumentation and
-   reruns C0.2d/C0.2f/C0.2i unchanged.
+   reruns v1, v2, v3 and C0.2k baseline and mutation evidence unchanged.
 5. Only after O-06c passes independent review and human ratification may O-06
    move to `DECIDED`.
 

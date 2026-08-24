@@ -120,6 +120,32 @@ The source index and the validator's pinned source tuples are independent
 copies whose equality is review-enforced until a separately approved validator
 can check the plan directly. Any mismatch blocks validation and phase exit.
 
+Frozen sections use one extraction rule: hash the raw contiguous bytes
+beginning at the first octet of the selected `## N.` heading and ending
+immediately before the first octet of the next `## ` heading. Every stored octet
+in that slice, including all trailing LF octets before the next heading, is
+retained without normalization, insertion, removal or line-ending conversion.
+The rule is defined only where a following `## ` heading exists and fails
+closed otherwise. A selected section containing a line that begins `## ` inside
+a fenced block, with the first `#` at column zero, is not hashable by this rule
+and requires a separately ratified extractor/version before it may be pinned.
+
+The O-06c handoff pins these independently reproduced base-SHA inputs:
+
+- O-06b-1 section 4, seven-role registry:
+  `5b6bc4041b028ead4821cd7d33bb102255d7df728309e2e8bef232f16c9e3fb3`;
+- O-06b-2 section 6, logical-removal tail:
+  `14bcde53d5534584e3cd1ba2503a3bb755df112ed0d42485cf9f1bef61b1f7f8`;
+- O-06b-2 section 2, current 84-octet commitment context:
+  `9efff974cbc69ae58a2c2c883347c90129587cf9a7355f046c5b0f437e1234b1`;
+- O-06b-1 section 5, frozen application-event field inventory and role/tail
+  grammar:
+  `f3f074befc0d258345b2e067f97a0eabbb08069591fb30b7c508f2ff56d5d8c1`;
+- O-06b-2 section 3, frozen exact commitment preimages and widths:
+  `4ec776a1bbb8bb044de235ec0a8e34a61158d7d30e33bf1146d1787b6765abf0`;
+- O-06b-2 section 4, frozen inverse/parsing and tree-layout rules:
+  `ce6172a9843a43628fff2f36c70336b5df49e8713b5ea3822f9b6e8e5f57037e`.
+
 The classes have different meanings:
 
 | Class | Function | May select semantics? |
@@ -146,7 +172,21 @@ Protocol increments proceed in dependency order:
    only after C0.2j fixed exact credential and sequence semantics; require its
    exact-final evidence and human gates before treating it as complete.
 3. **Falsify the combined construction.** Execute O-06c against the exact
-   C0.2j/C0.2k bytes and rules, not an approximation.
+   C0.2j/C0.2k bytes and rules, not an approximation. The current gate reruns
+   v1, v2, v3 and C0.2k baseline and mutation evidence and binds each historical
+   digest to its expected verdict and exit status; two byte-identical failures
+   are failure, not determinism evidence. The identifier-derivation analysis's
+   rerun list is historical and non-exhaustive and is not the current gate.
+   O-06c must repair or independently compensate for two known evidence
+   limitations: the v2 mutation harness is not reproducible from a read-only
+   checkout because its copy preserves unwritable modes, a failed report can
+   contain a random absolute path and its deterministic flag is not trustworthy
+   after abort; and the C0.2k harness has a weaker kill predicate than v3, some
+   claimed context-witness families do not execute the supplied mutant, and the
+   current baseline relies on the M08/M09 mutation helpers rather than
+   independently supplying all promised context witnesses. These limitations
+   do not silently invalidate the selected 84-octet grammar and prose cannot
+   convert them into passing evidence.
 4. **Resolve remaining C0.3 blockers.** Close or precisely scope O-07 genesis
    and checkpoint evidence, O-08 resource bounds, O-10 stable errors and O-14
    signature-suite binding. Resolve O-12 wherever a selected profile carries
@@ -330,18 +370,39 @@ not be interpreted as a probability of security.
 A dated status record is produced after each completed increment and carried
 into the section 8 verdict.
 
+The 2026-08-24 O-06c reconciliation increment under Issue #241 uses the bounded
+section-7 exemption from new hostile witnesses, mutants and executable protocol
+evidence because it changes only contradictory normative prose and derived
+provenance before O-06c can be specified. It changes no wire, persisted or
+runtime behavior and selects no protocol semantic. The exemption remains
+subject to exact-final review, human gates and section-8 re-verification.
+Originating findings are dispositioned as follows:
+
+- **F01:** current whole-context fork wording is replaced by an exact reference
+  to the ratified C0.2j lineage-scoped rule;
+- **F02:** role `0x01` directive content is fixed to `NONE`, while ambient
+  `NONE`/`DETACHABLE`/`REQUIRED` coverage and target-equality scope are stated
+  without impossible directive variants;
+- **F03:** O-06 closure is limited to O-06-owned fields, with unresolved owners,
+  placeholders, non-claims and rerun/reopen triggers retained; and
+- **F09:** the frozen section-6 digest is relabelled as the logical-removal tail,
+  the extraction rule is corrected and the current section-2 84-octet context
+  is pinned separately.
+
 ## 11. Current state
 
-At the C0.2k amendment:
+After C0.2k ratification and the O-06c handoff reconciliation:
 
 - the review model exists and is useful for bounded inspection;
-- C0.2j is ratified historical input; C0.2k is the active bounded amendment
-  under Issue #239 and remains incomplete until exact-final review, CI and human
-  gates pass;
+- C0.2j and C0.2k are ratified historical inputs; the selected 84-octet
+  commitment context and its bounded evidence remain frozen inputs rather than
+  O-06c proof authority;
 - `specs/05-sprint-plan.md` still marks US-001 through US-008 `todo`, but this
   plan pauses their execution and requires that conflict to be audited at exit;
 - O-06c depends on the exact C0.2j/C0.2k construction and is the next ordered
-  protocol task after C0.2k ratification;
+  executable protocol task. Issue #241 reconciles its normative handoff and
+  records the known v2/C0.2k reproducibility and coverage limitations, but does
+  not implement or close O-06c;
 - O-07, O-08, O-10 and O-14 remain open; O-12 remains conditional as described
   in section 4; O-11, O-13, O-15 and O-16 retain their explicitly bounded
   non-blocking or downstream-blocking roles;
