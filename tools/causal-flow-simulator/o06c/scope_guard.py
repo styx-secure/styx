@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -185,9 +186,53 @@ def enforce_validator_ast(repo: Path, base: str, candidate: str) -> list[str]:
 
 def enforce_review_tests(repo: Path, base: str, candidate: str, records: list[dict[str, object]]) -> list[str]:
     existing = git(repo, "ls-tree", "-r", "--name-only", base, REVIEW_TESTS).decode().splitlines()
+    negative_fixture = REVIEW_TESTS + "fixtures/negative-cases.json"
     for path in existing:
+        if path == negative_fixture:
+            continue
         if blob(repo, candidate, path) != blob(repo, base, path):
             raise ScopeError(f"pre-existing validator test/fixture drift: {path}")
+
+    base_negative = json.loads(blob(repo, base, negative_fixture))
+    head_negative_bytes = blob(repo, candidate, negative_fixture)
+    head_negative = json.loads(head_negative_bytes)
+    canonical_head = (
+        json.dumps(head_negative, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    if head_negative_bytes != canonical_head:
+        raise ScopeError("negative fixture is not canonical JSON")
+    if len(base_negative) != 71 or len(head_negative) != 71:
+        raise ScopeError("negative fixture inventory-size drift")
+    base_by_id = {case["id"]: case for case in base_negative}
+    head_by_id = {case["id"]: case for case in head_negative}
+    if len(base_by_id) != 71 or set(base_by_id) != set(head_by_id):
+        raise ScopeError("negative fixture ID drift")
+    legacy_id = "gated-capability-loses-last-open-gate"
+    expected_base = {
+        "expected_code": "GATED_CAPABILITY_UNBLOCKED",
+        "id": legacy_id,
+        "mutation": {
+            "operation": "set",
+            "path": "/blockers/4/blocks",
+            "value": ["C0.3"],
+        },
+    }
+    expected_head = {
+        "expected_code": "GATED_CAPABILITY_UNBLOCKED",
+        "id": legacy_id,
+        "mutation": {
+            "operation": "remove-value",
+            "path": "/blockers/2/blocks",
+            "value": "demo",
+        },
+    }
+    if base_by_id.pop(legacy_id, None) != expected_base:
+        raise ScopeError("unexpected base legacy gate fixture")
+    if head_by_id.pop(legacy_id, None) != expected_head:
+        raise ScopeError("unauthorized replacement gate fixture")
+    if base_by_id != head_by_id:
+        raise ScopeError("unrelated pre-existing negative fixture drift")
+
     new_files = []
     for record in records:
         status = str(record["status"])

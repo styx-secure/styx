@@ -33,7 +33,16 @@ class ScopeGuardTests(unittest.TestCase):
                 for path in record["paths"]
             )
         )
-        self.assertEqual(enforce_validator_ast(REPO_ROOT, BASE_SHA, "HEAD"), [])
+        self.assertEqual(
+            enforce_validator_ast(REPO_ROOT, BASE_SHA, "HEAD"),
+            [
+                "CONTRACT_BASE_COMMIT",
+                "EXPECTED_BLOCKER_EDGES_DIGEST",
+                "EXPECTED_INVARIANT_REFS_DIGEST",
+                "EXPECTED_SOURCE_RECORDS",
+                "EXPECTED_STATUS_BY_COLLECTION",
+            ],
+        )
         self.assertEqual(len(enforce_named_regions(REPO_ROOT, BASE_SHA, "HEAD")), 2)
 
     def test_canonical_report_defers_candidate_identity_to_pr_evidence(self) -> None:
