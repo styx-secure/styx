@@ -54,6 +54,13 @@ the model records the resulting decision only where a current normative source
 also does so. Any apparent conflict is investigated as drift and never resolved
 by promoting the evidence report.
 
+The C0.2k snapshot adds the bounded commitment-context falsification report as
+evidence for the selected 84-octet context. The positive binding invariant and
+the retained `NC_COMMITMENT_COPY` record must be read together: unchanged
+commitment/opening copy across credential or sequence contexts is rejected,
+while knowledgeable recomputation, same-slot siblings and all authority,
+originality and truth claims remain outside that result.
+
 The validator pins the exact source-ID, repository-path and authority tuple for
 every source in this snapshot. Changing an evidence source to `normative`,
 retargeting an ID to a different file, adding or removing a modeled record, or
@@ -120,7 +127,10 @@ The arrays in `registries` are exhaustive and sorted. Their meanings are:
 - `layers`, `trust_classes`, `decisions`, `obligations` and
   `gated_capabilities` are closed reference namespaces. A blocker `blocks`
   target must resolve either to another blocker or to one of the explicitly
-  named non-record capabilities. Unknown members fail validation.
+  named non-record capabilities. Unknown members fail validation. Every gated
+  capability must also retain at least one blocker whose status is not
+  `DECIDED`; otherwise validation fails with `GATED_CAPABILITY_UNBLOCKED`
+  instead of silently promoting the capability when its last gate closes.
 
 `visible_to` means an actor may learn the field value at the named semantic
 boundary; it does not mean every transport observer sees it. `mutable_by` means
@@ -213,9 +223,10 @@ reuse lint
 The model does not prove protocol security, cryptographic soundness,
 implementation conformance, interoperability, anonymity, erasure, finality,
 availability, audit readiness or production fitness. It cannot detect a
-normative omission shared by all sources. C0.2j, C0.2k, O-06c, O-07, O-08,
-O-10 and O-14 remain blockers for C0.3; demo, product and sensitive-use claims
-remain fail closed.
+normative omission shared by all sources. C0.2j is ratified historical input;
+C0.2k selects only its bounded commitment-context amendment. O-06c, O-07,
+O-08, O-10 and O-14 remain blockers for C0.3; demo, product and sensitive-use
+claims remain fail closed.
 
 `counterexamples[].steps` is the one intentionally order-sensitive sequence in
 the model: entries describe the procedural order of an adversarial trace and

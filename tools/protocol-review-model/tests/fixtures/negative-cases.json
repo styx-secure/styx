@@ -118,6 +118,15 @@
   },
   {
     "expected_code": "FORBIDDEN_STATUS_PROMOTION",
+    "id": "reopen-selected-c02k",
+    "mutation": {
+      "operation": "set",
+      "path": "/blockers/1/status",
+      "value": "OPEN"
+    }
+  },
+  {
+    "expected_code": "FORBIDDEN_STATUS_PROMOTION",
     "id": "promote-profile-dependent-flow",
     "mutation": {
       "operation": "set",
@@ -567,6 +576,15 @@
     }
   },
   {
+    "expected_code": "PINNED_VALUE_DRIFT",
+    "id": "pinned-c02k-binding-evidence-drift",
+    "mutation": {
+      "operation": "set",
+      "path": "/invariants/6/evidence_refs",
+      "value": []
+    }
+  },
+  {
     "expected_code": "BLOCKER_EDGE_MISMATCH",
     "id": "pinned-blocker-edge-drift",
     "mutation": {
@@ -609,6 +627,17 @@
       "operation": "set",
       "path": "/counterexamples/0/blocks",
       "value": []
+    }
+  },
+  {
+    "expected_code": "GATED_CAPABILITY_UNBLOCKED",
+    "id": "gated-capability-loses-last-open-gate",
+    "mutation": {
+      "operation": "set",
+      "path": "/blockers/4/blocks",
+      "value": [
+        "C0.3"
+      ]
     }
   }
 ]

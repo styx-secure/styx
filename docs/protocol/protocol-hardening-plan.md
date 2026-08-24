@@ -142,8 +142,9 @@ Protocol increments proceed in dependency order:
 1. **Close authority and succession semantics.** Complete C0.2j or retain an
    explicit `NO-GO`; cover credential identity, binding, grant, revocation,
    rotation, recovery, provenance, forks and bounded evaluation.
-2. **Bind the commitment context.** Execute C0.2k only after C0.2j selects exact
-   credential and sequence semantics.
+2. **Bind the commitment context.** Preserve the C0.2k 84-octet context selected
+   only after C0.2j fixed exact credential and sequence semantics; require its
+   exact-final evidence and human gates before treating it as complete.
 3. **Falsify the combined construction.** Execute O-06c against the exact
    C0.2j/C0.2k bytes and rules, not an approximation.
 4. **Resolve remaining C0.3 blockers.** Close or precisely scope O-07 genesis
@@ -171,7 +172,7 @@ The dependency basis is explicit:
 | Step | Required closed inputs | Deferred or repeated work |
 |---|---|---|
 | C0.2j | ratified O-01/O-02/O-03/O-04/O-05/O-09 baseline | none |
-| C0.2k | exact C0.2j credential and sequence semantics | none |
+| C0.2k | exact C0.2j credential and sequence semantics | selected 84-octet context plus bounded model/mutation evidence; exact-final review and human gates complete the increment |
 | O-06c | exact C0.2j/C0.2k bytes and existing O-06b profiles | obligations affected by later O-08 bounds or O-14 suite binding are deferred and rerun after those decisions |
 | remaining blockers | O-06c results plus each decision's own recorded inputs | the threat model and combined hostile cases are rerun after closure |
 | K-11 corpus boundary | every corpus path and required licensing amendment separately approved | no C0.3 corpus file exists before this gate |
@@ -185,7 +186,7 @@ registry governs and this plan must be corrected.
 | Objectives | Registry status | Effect on this phase |
 |---|---|---|
 | O-01 through O-05 | `DECIDED` | preserved inputs; reopen only through their recorded conditions |
-| O-06 | `OPEN` | blocks C0.3 until C0.2j, C0.2k and O-06c complete |
+| O-06 | `OPEN` | blocks C0.3 until the selected C0.2j/C0.2k inputs pass their gates and O-06c completes |
 | O-07, O-08, O-10, O-14 | `OPEN` | block C0.3 |
 | O-09 | `DECIDED` | preserved responsibility split |
 | O-11 | `OPEN` | intentionally deferred; does not block a strictly transcript-only C0.3 corpus |
@@ -331,13 +332,16 @@ into the section 8 verdict.
 
 ## 11. Current state
 
-At adoption of this plan:
+At the C0.2k amendment:
 
 - the review model exists and is useful for bounded inspection;
-- C0.2j is active experimental work under Issue #233 / PR #234;
+- C0.2j is ratified historical input; C0.2k is the active bounded amendment
+  under Issue #239 and remains incomplete until exact-final review, CI and human
+  gates pass;
 - `specs/05-sprint-plan.md` still marks US-001 through US-008 `todo`, but this
   plan pauses their execution and requires that conflict to be audited at exit;
-- C0.2k and O-06c depend on C0.2j;
+- O-06c depends on the exact C0.2j/C0.2k construction and is the next ordered
+  protocol task after C0.2k ratification;
 - O-07, O-08, O-10 and O-14 remain open; O-12 remains conditional as described
   in section 4; O-11, O-13, O-15 and O-16 retain their explicitly bounded
   non-blocking or downstream-blocking roles;

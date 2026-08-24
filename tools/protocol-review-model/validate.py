@@ -116,6 +116,10 @@ EXPECTED_SOURCE_RECORDS = {
         "docs/protocol/styx-app-kernel-v0-causal-topology-analysis.md",
         "evidence",
     ),
+    "commitment_context_report": (
+        "docs/protocol/styx-app-kernel-v0-commitment-context-falsification-report.md",
+        "evidence",
+    ),
     "commitment_profile": (
         "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
         "normative",
@@ -216,6 +220,7 @@ REQUIRED_INVARIANTS = {
     "INV_C0_3_NO_GO",
     "INV_CAUSALITY_TRANSCRIPT_ONLY",
     "INV_CAUSAL_TARGET_AVAILABILITY",
+    "INV_COMMITMENT_CONTEXT_BINDING",
     "INV_CONTROL_NONE_CLASS",
     "INV_CROSS_CONTEXT_REJECTION",
     "INV_FORK_QUARANTINE",
@@ -259,12 +264,12 @@ REQUIRED_C03_DEPENDENCIES = {
     "O-14",
 }
 
-CONTRACT_BASE_COMMIT = "8f30f1940e4417fcb47b156b08c2242f405dc09b"
+CONTRACT_BASE_COMMIT = "745de6d8954a39ad3a39e9ccc5303ba08fa8508c"
 
 EXPECTED_STATUS_BY_COLLECTION = {
     "blockers": {
         "C0.2j": "DECIDED",
-        "C0.2k": "OPEN",
+        "C0.2k": "DECIDED",
         "C0.3": "NO_GO",
         "C0.3_CORPUS_PATH_APPROVAL": "OPEN",
         "O-06c": "OPEN",
@@ -299,6 +304,7 @@ EXPECTED_STATUS_BY_COLLECTION = {
         "INV_C0_3_NO_GO": "NO_GO",
         "INV_CAUSALITY_TRANSCRIPT_ONLY": "DECIDED",
         "INV_CAUSAL_TARGET_AVAILABILITY": "DECIDED",
+        "INV_COMMITMENT_CONTEXT_BINDING": "DECIDED",
         "INV_CONTROL_NONE_CLASS": "DECIDED",
         "INV_CROSS_CONTEXT_REJECTION": "DECIDED",
         "INV_FORK_QUARANTINE": "DECIDED",
@@ -553,6 +559,7 @@ EXPECTED_INVARIANT_REFS_DIGEST = {
     "INV_C0_3_NO_GO": "1855fe83c4c345d85e99ed91532bce2bea1fc6c48b5b2b824bdeb0c664e69bdc",
     "INV_CAUSALITY_TRANSCRIPT_ONLY": "05118f1b57f43cf1db032e2ce84693e1124b3ad6ab12336c48376245f1f0a63c",
     "INV_CAUSAL_TARGET_AVAILABILITY": "1960e2064b8f84d4fc9629b96635d5ec789da182fdafe287a25176aaaf5ccb89",
+    "INV_COMMITMENT_CONTEXT_BINDING": "cdc22f973d57fc0e8c49e9cff7c5441e6680f4293290b6a109987729baa9a17b",
     "INV_CONTROL_NONE_CLASS": "6c0a4a6e082957fb09aaa6882cfe069c480ed4e3151bcce1831ab33431c71ed0",
     "INV_CROSS_CONTEXT_REJECTION": "618ccf5160f29b1d94a5a52d52ec1992294968cd01e975f7c794be5488df3a45",
     "INV_FORK_QUARANTINE": "d9b93ef44958bd347bcd1326c9e47916f0662b62dd5c94d674ab929325e7c772",
@@ -575,7 +582,7 @@ EXPECTED_BLOCKER_EDGES_DIGEST = {
     "C0.2k": "dcf613a0ba08abc1b75668271ff4d8c4f74e50d90cef3afa62819bc57baef990",
     "C0.3": "f64ad66923791986c1237e587bbe123de31613553d2b8bbf0fc33bc6d6d68962",
     "C0.3_CORPUS_PATH_APPROVAL": "2f46c5b24abdce4302300f7f2d7b1c5ffb49e96b20529d82185df78cfba48f0f",
-    "O-06c": "216def2a5762650aeee985ce998d5670fbefbceb2e297097039a8cbc4796d3a4",
+    "O-06c": "bda42eb5aa5e9d5562d1a041ab149ae88a5b102266b1cc8b24e5439c287e3838",
     "O-07": "221bdcaa5b87211fc802a254c7d341fda0cae735ce4bee6d2be5b45bff4e1486",
     "O-08": "221bdcaa5b87211fc802a254c7d341fda0cae735ce4bee6d2be5b45bff4e1486",
     "O-10": "221bdcaa5b87211fc802a254c7d341fda0cae735ce4bee6d2be5b45bff4e1486",
@@ -2251,7 +2258,7 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
             Finding(
                 "C03_GATE_MISSING",
                 "$model.blockers.C0.2j.blocks",
-                "C0.2j must block C0.2k, C0.3, demo, product and sensitive use",
+                "C0.2j must preserve the dependency and downstream safety gates",
             )
         )
 
@@ -2290,6 +2297,27 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
                         f"{blocked_id} does not depend transitively on {blocker_id}",
                     )
                 )
+
+    unresolved_gates_by_capability = {
+        capability: {
+            blocker_id
+            for blocker_id, blocker in blockers.items()
+            if blocker.get("status") != "DECIDED"
+            and capability in blocker.get("blocks", [])
+        }
+        for capability in EXPECTED_REGISTRIES["gated_capabilities"]
+    }
+    for capability, unresolved_gates in sorted(
+        unresolved_gates_by_capability.items()
+    ):
+        if not unresolved_gates:
+            findings.append(
+                Finding(
+                    "GATED_CAPABILITY_UNBLOCKED",
+                    "$model.registries.gated_capabilities",
+                    f"{capability} has no non-DECIDED gate",
+                )
+            )
 
     if not REQUIRED_COUNTEREXAMPLES.issubset(id_sets.get("counterexamples", set())):
         findings.append(

@@ -505,6 +505,7 @@ class ProtocolReviewModelTests(unittest.TestCase):
                 "DANGLING_REFERENCE",
                 "DUPLICATE_ID",
                 "FORBIDDEN_STATUS_PROMOTION",
+                "GATED_CAPABILITY_UNBLOCKED",
                 "MISSING_CITATION",
                 "MISSING_NORMATIVE_CITATION",
                 "MISSING_PROTECTION_METADATA",
@@ -533,8 +534,8 @@ class ProtocolReviewModelTests(unittest.TestCase):
             + "\n"
         ).encode("utf-8")
         self.assertEqual(expected, fixture_path.read_bytes())
-        self.assertEqual(68, len(self.negative_cases))
-        self.assertEqual(68, len({case["id"] for case in self.negative_cases}))
+        self.assertEqual(71, len(self.negative_cases))
+        self.assertEqual(71, len({case["id"] for case in self.negative_cases}))
 
     def test_additive_inventory_cases_fail_only_the_pinned_equality(self) -> None:
         additive_ids = {
