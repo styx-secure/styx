@@ -65,6 +65,35 @@ class CombinedProbeTests(unittest.TestCase):
             )
             removal = report["evidence"]["removal_tail_variance"]
             self.assertTrue(removal["full_ap_projection_equal"])
+            self.assertEqual(
+                removal["vacuous_target_statuses"],
+                {
+                    "ABSENT": {
+                        "classification": "REMOVAL_INAPPLICABLE",
+                        "target_presentation": "ABSENT",
+                        "target_retention": "NOT_RETAINED",
+                        "target_validity": "ABSENT",
+                    },
+                    "NONE": {
+                        "classification": "REMOVAL_INAPPLICABLE",
+                        "target_presentation": "VISIBLE",
+                        "target_retention": "RETAINED",
+                        "target_validity": "VALIDATED",
+                    },
+                    "NOT_RETAINED": {
+                        "classification": "REMOVAL_DEFERRED",
+                        "target_presentation": "WITHHELD",
+                        "target_retention": "NOT_RETAINED",
+                        "target_validity": "VALIDATED",
+                    },
+                    "REQUIRED": {
+                        "classification": "REMOVAL_INAPPLICABLE",
+                        "target_presentation": "VISIBLE",
+                        "target_retention": "RETAINED",
+                        "target_validity": "VALIDATED",
+                    },
+                },
+            )
             self.assertTrue(removal["retained_detachable_applied"])
             self.assertTrue(removal["retained_detachable_projection_equal"])
             self.assertTrue(removal["retained_detachable_differs_from_vacuous"])

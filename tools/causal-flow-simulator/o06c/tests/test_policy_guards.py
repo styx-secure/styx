@@ -16,6 +16,80 @@ from policy_guards import (  # noqa: E402
 
 
 class RemovalProjectionTests(unittest.TestCase):
+    def test_vacuous_target_classes_have_exact_typed_statuses(self) -> None:
+        none_reference = bytes.fromhex("01" * 32)
+        required_reference = bytes.fromhex("02" * 32)
+        unretained_reference = bytes.fromhex("03" * 32)
+        commitment = bytes.fromhex("22" * 32)
+        ambient = (
+            RemovalTarget(
+                none_reference,
+                "NONE",
+                ("NONE", 0),
+                None,
+                True,
+                True,
+                "BOUND",
+                "VISIBLE",
+            ),
+            RemovalTarget(
+                required_reference,
+                "REQUIRED",
+                ("REQUIRED", 3, 1, 0, commitment),
+                commitment,
+                True,
+                True,
+                "BOUND",
+                "VISIBLE",
+            ),
+            RemovalTarget(
+                unretained_reference,
+                "DETACHABLE",
+                ("DETACHABLE", 3, 1, 0, commitment),
+                commitment,
+                False,
+                False,
+                "BOUND",
+                "WITHHELD",
+            ),
+        )
+        cases = (
+            (
+                none_reference,
+                ("REMOVAL_INAPPLICABLE", "VALIDATED", "RETAINED", "VISIBLE"),
+            ),
+            (
+                required_reference,
+                ("REMOVAL_INAPPLICABLE", "VALIDATED", "RETAINED", "VISIBLE"),
+            ),
+            (
+                bytes.fromhex("04" * 32),
+                ("REMOVAL_INAPPLICABLE", "ABSENT", "NOT_RETAINED", "ABSENT"),
+            ),
+            (
+                unretained_reference,
+                ("REMOVAL_DEFERRED", "VALIDATED", "NOT_RETAINED", "WITHHELD"),
+            ),
+        )
+
+        for reference, expected_status in cases:
+            with self.subTest(reference=reference.hex()):
+                projection = project_removal_directive(
+                    ambient,
+                    target_reference=reference,
+                    target_commitment=bytes.fromhex("23" * 32),
+                )
+                self.assertEqual(projection.removal_effect, "NONE")
+                self.assertEqual(
+                    (
+                        projection.classification,
+                        projection.target_validity,
+                        projection.target_retention,
+                        projection.target_presentation,
+                    ),
+                    expected_status,
+                )
+
     def test_retained_detachable_target_is_logically_removed(self) -> None:
         reference = bytes.fromhex("11" * 32)
         commitment = bytes.fromhex("22" * 32)

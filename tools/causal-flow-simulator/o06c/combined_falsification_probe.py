@@ -489,13 +489,29 @@ def build_witnesses(
     mismatching_tail_a = deterministic("tail-a")
     mismatching_tail_b = deterministic("tail-b")
     vacuous_targets = (
-        ("NONE", none_target_ref),
-        ("REQUIRED", required_target_ref),
-        ("ABSENT", deterministic("removal-target-absent")),
-        ("NOT_RETAINED", unretained_target_ref),
+        (
+            "NONE",
+            none_target_ref,
+            ("REMOVAL_INAPPLICABLE", "VALIDATED", "RETAINED", "VISIBLE"),
+        ),
+        (
+            "REQUIRED",
+            required_target_ref,
+            ("REMOVAL_INAPPLICABLE", "VALIDATED", "RETAINED", "VISIBLE"),
+        ),
+        (
+            "ABSENT",
+            deterministic("removal-target-absent"),
+            ("REMOVAL_INAPPLICABLE", "ABSENT", "NOT_RETAINED", "ABSENT"),
+        ),
+        (
+            "NOT_RETAINED",
+            unretained_target_ref,
+            ("REMOVAL_DEFERRED", "VALIDATED", "NOT_RETAINED", "WITHHELD"),
+        ),
     )
     projection_pairs = []
-    for label, target_reference in vacuous_targets:
+    for label, target_reference, expected_status in vacuous_targets:
         first = project_removal_directive(
             ambient,
             target_reference=target_reference,
@@ -506,10 +522,18 @@ def build_witnesses(
             target_reference=target_reference,
             target_commitment=mismatching_tail_b,
         )
-        projection_pairs.append((label, first, second))
+        projection_pairs.append((label, expected_status, first, second))
     ap_invariant = all(
-        first == second and first.removal_effect == "NONE"
-        for _label, first, second in projection_pairs
+        first == second
+        and first.removal_effect == "NONE"
+        and (
+            first.classification,
+            first.target_validity,
+            first.target_retention,
+            first.target_presentation,
+        )
+        == expected_status
+        for _label, expected_status, first, second in projection_pairs
     )
 
     retained_tail = RemovalTail(
@@ -558,6 +582,10 @@ def build_witnesses(
         )
         if before != after
     )
+    retained_projection_distinct_from_all_vacuous = all(
+        retained_projection_a != first
+        for _label, _expected_status, first, _second in projection_pairs
+    )
     retained_projection_nonvacuous = (
         encode_event_transcript(retained_directive_a)
         != encode_event_transcript(retained_directive_b)
@@ -572,6 +600,7 @@ def build_witnesses(
         and retained_target_projection is not None
         and retained_target_projection[6] == "REMOVED"
         and retained_projection_a != retained_vacuous_projection
+        and retained_projection_distinct_from_all_vacuous
         and len(changed_ambient_rows) == 1
         and changed_ambient_rows[0][0][0] == detachable_target_ref
         and changed_ambient_rows[0][0][:6] == changed_ambient_rows[0][1][:6]
@@ -721,11 +750,23 @@ def build_witnesses(
             "outcomes": pinned,
         },
         "removal_tail_variance": {
-            "vacuous_target_cases": [label for label, _first, _second in projection_pairs],
+            "vacuous_target_cases": [
+                label
+                for label, _expected_status, _first, _second in projection_pairs
+            ],
+            "vacuous_target_statuses": {
+                label: {
+                    "classification": first.classification,
+                    "target_validity": first.target_validity,
+                    "target_retention": first.target_retention,
+                    "target_presentation": first.target_presentation,
+                }
+                for label, _expected_status, first, _second in projection_pairs
+            },
             "full_ap_projection_equal": ap_invariant,
             "retained_detachable_applied": retained_projection_a.classification == "REMOVAL_APPLIED",
             "retained_detachable_projection_equal": retained_projection_a == retained_projection_b,
-            "retained_detachable_differs_from_vacuous": retained_projection_a != retained_vacuous_projection,
+            "retained_detachable_differs_from_vacuous": retained_projection_distinct_from_all_vacuous,
             "retained_detachable_only_target_changed": len(changed_ambient_rows) == 1,
             "k06_order_spanned": identity_and_order_variance,
             "collapsed_identity_positive_detected": collapse_detected,

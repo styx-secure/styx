@@ -30,6 +30,8 @@ class Mutant:
     old: str
     new: str
     detector: str
+    subject: str | None = None
+    contractual_class_member: bool = True
 
 
 MUTANTS = (
@@ -49,7 +51,16 @@ MUTANTS = (
     Mutant("M14_FROZEN_DIGEST", "frozen-section digest enforcement", "verify_frozen_sections.py", '    return "PASS" if actual == expected else "DIGEST_MISMATCH"', '    return _mutation_trace("M14_FROZEN_DIGEST", "PASS")', "FROZEN_DIGEST_BYPASS"),
     Mutant("M15_HISTORICAL_REGISTRY", "historical-registry enforcement", "historical_evidence_gate.py", '    if len(registry) != 7:', '    if _mutation_trace("M15_HISTORICAL_REGISTRY", False):', "EIGHTH_HISTORY_ACCEPTED"),
     Mutant("M16_C03_CAPABILITY", "C0.3 capability-gate retention", "policy_guards.py", '    return declared_blocks', '    return _mutation_trace("M16_C03_CAPABILITY", frozenset())', "C03_CAPABILITY_OPENED"),
-    Mutant("M17_REMOVAL_PROJECTION", "pending-authority retention", "policy_guards.py", '    matches = [record for record in ambient if record.reference == target_reference]', '    matches = _mutation_trace("M17_REMOVAL_PROJECTION", [])', "RETAINED_REMOVAL_NOT_APPLIED"),
+    Mutant(
+        "M17_REMOVAL_PROJECTION",
+        "pending-authority retention",
+        "policy_guards.py",
+        '    matches = [record for record in ambient if record.reference == target_reference]',
+        '    matches = _mutation_trace("M17_REMOVAL_PROJECTION", [])',
+        "RETAINED_REMOVAL_NOT_APPLIED",
+        subject="AP removal projection",
+        contractual_class_member=False,
+    ),
 )
 
 EXPECTED_MUTANT_CLASSES = frozenset(
@@ -166,6 +177,8 @@ def execute_mutant(source_root: Path, mutant: Mutant, stage: Path) -> dict[str, 
     return {
         "id": mutant.identifier,
         "class": mutant.mutant_class,
+        "subject": mutant.subject or mutant.mutant_class,
+        "contractual_class_member": mutant.contractual_class_member,
         "source_path": f"tools/causal-flow-simulator/o06c/{mutant.path}",
         "source_mutation_sha256": sha256_hex(target.read_bytes()),
         "declared_detectors": declared,
@@ -199,6 +212,21 @@ def main(argv: list[str] | None = None) -> int:
         mutant_classes = {item.mutant_class for item in MUTANTS}
         if mutant_classes != EXPECTED_MUTANT_CLASSES:
             raise HarnessError("closed mutant-class registry drift")
+        contractual_members = tuple(
+            item for item in MUTANTS if item.contractual_class_member
+        )
+        if len(contractual_members) != len(EXPECTED_MUTANT_CLASSES):
+            raise HarnessError("contractual mutant-class membership drift")
+        if {
+            item.mutant_class for item in contractual_members
+        } != EXPECTED_MUTANT_CLASSES:
+            raise HarnessError("contractual mutant-class coverage drift")
+        if any(
+            item.subject is None
+            for item in MUTANTS
+            if not item.contractual_class_member
+        ):
+            raise HarnessError("supplementary mutant subject missing")
         if any(not assertions for assertions in WITNESS_COVERAGE.values()):
             raise HarnessError("empty directed-assertion coverage")
         mutant_to_detectors = {

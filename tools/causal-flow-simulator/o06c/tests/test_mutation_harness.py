@@ -55,6 +55,21 @@ class MutationHarnessTests(unittest.TestCase):
                 self.assertTrue(mutant["mutated_path_executed"])
                 self.assertEqual(mutant["observed_detectors"], mutant["declared_detectors"])
                 self.assertEqual(mutant["disposition"], "EXACT_DECLARED_SET")
+            contractual = [
+                mutant
+                for mutant in report["mutants"]
+                if mutant["contractual_class_member"]
+            ]
+            supplementary = [
+                mutant
+                for mutant in report["mutants"]
+                if not mutant["contractual_class_member"]
+            ]
+            self.assertEqual(len(contractual), 16)
+            self.assertEqual(
+                [(item["id"], item["subject"]) for item in supplementary],
+                [("M17_REMOVAL_PROJECTION", "AP removal projection")],
+            )
             self.assertTrue(report["witness_coverage"])
             self.assertEqual(
                 set(report["mutant_only_coverage"]),

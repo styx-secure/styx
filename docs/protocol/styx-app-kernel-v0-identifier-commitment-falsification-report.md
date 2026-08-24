@@ -83,6 +83,10 @@ execute it, while each of the 17 mutants names only its observed detector set.
 Frozen-section and historical-registry enforcement are published separately as
 mutant-only coverage and validated against exact mutant/detector pairs; they are
 not mislabelled as executed witness families.
+The first 16 mutants remain the one-to-one members of the 16 contractually
+closed source-mutant classes. `M17_REMOVAL_PROJECTION` is explicitly published
+as a supplementary AP-removal-projection subject, not falsely presented as a
+second member of the pending-authority-retention class.
 This separation prevents a declared witness-to-mutant relationship from being
 reported as executed evidence when no such relationship ran.
 
@@ -132,6 +136,7 @@ not production maxima or availability guarantees.
 | O-11 | complete-object verification only; no inclusion-proof context | selected inclusion-proof, wire, storage or fetch encoding |
 | O-14 | opaque suite/key bytes; no production signature verification | selected signature registry, key/signature encoding or downgrade rule |
 | AP/C0.3 | arbitrary opaque AP-transition bytes exercise only the frozen outer `opaque_u32` boundary | selected canonical AP-transition schema or semantic injectivity rule |
+| Runtime encoder | the JavaScript side is a partial forward encoder only: it is not the inverse parser, rejection oracle, authority fold or a product implementation | any claim of complete cross-language protocol conformance, parser parity or product integration |
 
 SHA-256 collision and second-preimage resistance remain assumptions. A supplied
 distinct-preimage/equal-digest condition is rejected rather than treated as a
