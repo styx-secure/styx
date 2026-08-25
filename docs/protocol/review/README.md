@@ -69,6 +69,13 @@ placeholder-triggered reruns and opens no capability. Exact candidate identity
 is immutable PR evidence rather than a tracked generated-report input, avoiding
 self-referential digests.
 
+The O-14 snapshot adds `styx-app-kernel-v0-signature-suite-analysis.md` and
+`styx-app-kernel-v0-signature-suite-falsification-report.md` as bounded evidence
+for internal suite `0x0001` and its exact guarded accepted language. O-14 is
+condition-bearing `DECIDED`; this does not establish product/runtime
+conformance, discharge the O-06c placeholder-substitution rerun, authorize C0.3
+or add a security, interoperability, availability or readiness claim.
+
 The validator pins the exact source-ID, repository-path and authority tuple for
 every source in this snapshot. Changing an evidence source to `normative`,
 retargeting an ID to a different file, adding or removing a modeled record, or
@@ -233,7 +240,9 @@ implementation conformance, interoperability, anonymity, erasure, finality,
 availability, audit readiness or production fitness. It cannot detect a
 normative omission shared by all sources. C0.2j is ratified historical input;
 C0.2k selects only its bounded commitment-context amendment and O-06c adds
-bounded combined-construction evidence. O-07, O-08, O-10 and O-14 remain open
+bounded combined-construction evidence. O-14 selects only its bounded guarded
+signature language and remains a condition-bearing C0.3 dependency until its
+separately ratified combined rerun passes. O-07, O-08 and O-10 remain open
 blockers for C0.3. While C0.3 is `NO_GO`, C0.3 itself blocks corpus,
 implementation alignment, demo, product and sensitive-use claims.
 

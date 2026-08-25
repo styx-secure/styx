@@ -694,8 +694,12 @@ confer priority or finality, or permit an irreversible external effect.
 - **O-10:** stable codes and safe outcome combination remain open.
 - **O-11:** wire/storage/opening containers, locators, fetch, inclusion proofs
   and extension rules remain open.
-- **O-12/O-13/O-14:** no physical time, destruction permission, erasure claim,
-  signature suite or key/signature encoding is selected.
+- **O-12/O-13:** no physical time, destruction permission or erasure claim is
+  selected.
+- **O-14:** suite `0x0001` selects prime-order-constrained pure Ed25519 over the
+  unchanged O-06b-1 transcript, with canonical 32-octet keys and 64-octet
+  signatures. It does not change this commitment construction or authorize a
+  product verifier.
 - **C0.2j / C0.2k:** C0.2j selects collision-resistant K credential identity
   and grant binding. C0.2k widens `CTX` to bind that exact identity and author
   sequence, rederives all dependent arithmetic and inverses, and supplies
@@ -713,5 +717,6 @@ and renewed-ratification path in section 9.1; it is never an executor choice.
 
 After Issue #243, O-06 and O-06c are condition-bearing `DECIDED` over the exact
 combined C0.2j/C0.2k construction and declared bounded envelope. K-11 still
-gates any normative corpus file; O-07, O-08, O-10 and O-14 remain open; C0.3
-remains `NO-GO`.
+gates any normative corpus file; O-07, O-08 and O-10 remain open. O-14 is
+condition-bearing `DECIDED`, but its placeholder-substituted O-06c rerun remains
+required before corpus authorization. C0.3 remains `NO-GO`.

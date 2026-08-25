@@ -149,3 +149,21 @@ digest is recorded in normative text. The package's positive verdict is
 production implementation, resource bound or readiness authorization. Use the
 exact environment and command block recorded by Issue #243 and the human report
 at `docs/protocol/styx-app-kernel-v0-identifier-commitment-falsification-report.md`.
+
+## O-14 signature-suite evidence package
+
+`o14/` is an isolated, standard-library-controlled evidence package for Issue
+#246. It defines the closed semantic registry for suite `0x0001`, implements a
+verification-only standard-derived Ed25519 oracle, generates hostile canonical,
+small-order and mixed-order witnesses, records raw Dart/JavaScript/WebCrypto
+behavior, evaluates explicitly enumerated guarded adapters and kills a closed
+source-mutant registry. `scope_guard_o14.py` enforces the exact Issue #246 path
+and named-region contract against its ratified base.
+
+Run the exact commands and temporary-runtime provisioning block in Issue #246.
+Every JSON report is written only to a caller-selected temporary directory and
+must reproduce byte-identically in two fresh worktrees. The positive verdict is
+bounded negative evidence, not a proof, production verifier, conformance suite,
+runtime support claim, interoperability claim or authority to create C0.3.
+Dart/browser adapter evidence and the separately ratified O-06c
+placeholder-substitution rerun remain explicit downstream gates.

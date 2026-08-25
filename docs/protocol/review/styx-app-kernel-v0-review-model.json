@@ -533,6 +533,14 @@
         {
           "anchor": "### O-14 — Signature-suite registry and credential algorithm binding",
           "source_id": "decisions"
+        },
+        {
+          "anchor": "# Styx O-14 signature-suite analysis",
+          "source_id": "signature_suite_analysis"
+        },
+        {
+          "anchor": "# Styx O-14 signature-suite falsification report",
+          "source_id": "signature_suite_report"
         }
       ],
       "decision_refs": [
@@ -546,8 +554,8 @@
         "OB-K01"
       ],
       "owner": "K",
-      "reason": "Exact signature suite, one canonical verification-key octet encoding and enforceable bound per admitted suite, verification boundary and downgrade evidence remain open.",
-      "status": "OPEN"
+      "reason": "CONDITION-BEARING: internal suite 0x0001 fixes the exact prime-order-guarded Ed25519 accepted language and no-fallback dispatch; product/runtime conformance is unclaimed, and a separate human-ratified task must substitute these semantics into O-06c and rerun the complete combined evidence before C0.3 corpus authorization.",
+      "status": "DECIDED"
     },
     {
       "blocks": [
@@ -5811,13 +5819,13 @@
       "authority": "normative",
       "id": "commitment_profile",
       "path": "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
-      "sha256": "608a83f44d40f5913327f40d4c747a149a3bc104da4d720539895d5c8b825ae5"
+      "sha256": "e3455c2493e1bb4bacb0fdf8d189b015624fc701e8ae5c0a20d6829ad9f0d1e2"
     },
     {
       "authority": "evidence",
       "id": "credential_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-credential-succession-analysis.md",
-      "sha256": "bdec3c8db4dc1e3836253ff1c819e114164bbc92a95ab47d94df4937792d25bd"
+      "sha256": "6c85208286495a1b63f2ac1aab1796ec887e777fe68c319cf95852c303c1f4df"
     },
     {
       "authority": "evidence",
@@ -5829,13 +5837,13 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "18a7c4077a6da131250872097315a07d7160f52012ea9e105e44ebf7acf076aa"
+      "sha256": "751fe7a4487e99587e02c2506ccd1bd1edcd775acf404f0473f163352a1b1aaa"
     },
     {
       "authority": "evidence",
       "id": "identifier_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-identifier-derivation-analysis.md",
-      "sha256": "bff42064ab32cbcb2f5389a3587d3cd603c5ee4cb49110d7fe29361a6628eb99"
+      "sha256": "eda312f5553f793d11c649ca1de9bb0e2dd4e45eb7c5c5a4492ba9e0dc6c33ba"
     },
     {
       "authority": "evidence",
@@ -5871,19 +5879,31 @@
       "authority": "normative",
       "id": "responsibility",
       "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
-      "sha256": "abe3b3d6455b3463baf151af6c4ac247d0027cd8287cc8d65cd7c0017dd4bb57"
+      "sha256": "87c168c267083d52a2381e787b3aea973e395665d03659bb91b6c02646e38ac4"
+    },
+    {
+      "authority": "evidence",
+      "id": "signature_suite_analysis",
+      "path": "docs/protocol/styx-app-kernel-v0-signature-suite-analysis.md",
+      "sha256": "a6afacde464a0085d2466fc7f6f2bfa9a32f86b87fb9cfd234f85a5287234eaf"
+    },
+    {
+      "authority": "evidence",
+      "id": "signature_suite_report",
+      "path": "docs/protocol/styx-app-kernel-v0-signature-suite-falsification-report.md",
+      "sha256": "4c918efdbb9e4d6235b61d4000859e6c84f122f2cff09cafb79c05a29b43d825"
     },
     {
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "239974741f131a6576596d57cff62b345c861f8e67e81b3861ba5d838974d884"
+      "sha256": "674d2ddc5f73050651679cc5b693877537b1d51f50a54bee48c1331a8c1ca029"
     },
     {
       "authority": "normative",
       "id": "transcript_profile",
       "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
-      "sha256": "8b377595252444cc579ed0e7b470c2ad5e7c3b63d1260676f4ee67f66de59d4c"
+      "sha256": "3b658b474157bb23868770aacf4b8bad0066c4f5399718d9f9debedfb507b205"
     }
   ],
   "state_models": [

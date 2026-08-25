@@ -449,10 +449,13 @@ terminated lineage, a supported signature suite cannot fit the exact tail/key
 bound, or an admitted profile requires authority semantics outside this closed
 vocabulary.
 
-The O-06b-1 amendment reopens if O-14 requires a different canonical
-verification-key encoding or an event-selected signature algorithm. O-14 still
-owns the suite registry and exact key/signature encodings.
+O-14 selects suite `0x0001` with one canonical 32-octet verification key and
+64-octet signature. Those values fit the existing `u16 suite_id` plus framed
+key tail exactly and need neither event-selected algorithms nor a changed
+O-06b-1 transcript, so this C0.2j reopen predicate is not met.
 
 C0.2k must next bind the selected credential identifier and author sequence into
 the O-06b-2 commitment context. O-06c must then falsify the complete exact-byte
-construction. C0.3 remains `NO-GO`; O-07, O-08, O-10 and O-14 remain open.
+construction. O-14 is condition-bearing `DECIDED`; its placeholder-substituted
+O-06c rerun remains a separately ratified pre-corpus obligation. C0.3 remains
+`NO-GO`; O-07, O-08 and O-10 remain open.
