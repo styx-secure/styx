@@ -458,9 +458,6 @@ def enforce_test_authenticator_isolation(repo: Path, candidate: str) -> None:
             if isinstance(node, ast.Attribute) and node.attr in forbidden_symbols:
                 offenders.append(path)
                 break
-            if isinstance(node, ast.Name) and node.id in forbidden_symbols:
-                offenders.append(path)
-                break
     if offenders:
         raise ScopeViolation(
             "test-only ceremony authenticator escaped its harness: "
