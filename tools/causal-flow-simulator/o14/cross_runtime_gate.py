@@ -27,10 +27,40 @@ NOBLE_VERSION = "2.3.0"
 DART_CRYPTOGRAPHY_VERSION = "2.9.0"
 DART_ARCHIVE_URL = "https://pub.dev/api/archives/cryptography-2.9.0.tar.gz"
 DART_ARCHIVE_SHA256 = "3eda3029d34ec9095a27a198ac9785630fe525c0eb6a49f3d575272f8e792ef0"
+ADAPTER_VECTOR_FIELDS = (
+    "id",
+    "message_hex",
+    "public_key_hex",
+    "signature_hex",
+    "expected_selected",
+)
 
 
 class GateError(RuntimeError):
     pass
+
+
+def adapter_vector(vector: dict[str, object]) -> dict[str, object]:
+    """Project only protocol inputs and the expected decision into adapters."""
+
+    return {field: vector[field] for field in ADAPTER_VECTOR_FIELDS}
+
+
+def public_failure(error: BaseException) -> str:
+    """Return bounded diagnostics without leaking temporary filesystem paths."""
+
+    if isinstance(error, GateError):
+        return str(error)
+    if isinstance(error, subprocess.CalledProcessError):
+        command = error.cmd if isinstance(error.cmd, (list, tuple)) else [error.cmd]
+        executable = Path(str(command[0])).name
+        return f"{executable} failed with exit status {error.returncode}"
+    if isinstance(error, OSError):
+        errno = error.errno if error.errno is not None else "unknown"
+        return f"operating system error (errno={errno})"
+    if isinstance(error, KeyError):
+        return "runtime evidence omitted a required field"
+    return "invalid structured runtime evidence"
 
 
 def run(command: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> str:
@@ -150,7 +180,8 @@ def main(argv: list[str] | None = None) -> int:
     if len(vectors) != EXPECTED_RUNTIME_VECTOR_COUNT:
         raise GateError("runtime-vector inventory drift")
     vectors_path = workspace / "vectors.json"
-    vectors_path.write_bytes(CanonicalJsonReport.encode(vectors))
+    adapter_vectors = [adapter_vector(vector) for vector in vectors]
+    vectors_path.write_bytes(CanonicalJsonReport.encode(adapter_vectors))
 
     node = shutil.which("node")
     if not node:
@@ -251,5 +282,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except (GateError, OSError, subprocess.CalledProcessError, KeyError, ValueError) as error:
-        print(f"O-14 runtime gate failed: {error}", file=sys.stderr)
+        print(f"O-14 runtime gate failed: {public_failure(error)}", file=sys.stderr)
         raise SystemExit(2)

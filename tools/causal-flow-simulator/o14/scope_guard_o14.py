@@ -490,8 +490,19 @@ def normalize_normative(data: bytes, path: str) -> bytes:
             while end < len(lines) and lines[end].startswith("  "):
                 end += 1
             del lines[start:end]
-        _mask_paragraph_containing(
-            lines, ("O-14 signature-suite", "while O-14 fixes"), marker()
+        _mask_exact_variant(
+            lines,
+            (
+                (
+                    "rotation model; concrete profile grants/bounds and the O-14 signature-suite",
+                    "registry remain open. C0.2j's M20 rule deliberately keeps every K-admitted",
+                ),
+                (
+                    "rotation model; concrete profile grants/bounds remain open, while O-14 fixes",
+                    "only the guarded signature language. C0.2j's M20 rule deliberately keeps every K-admitted",
+                ),
+            ),
+            marker(),
         )
         _mask_line(lines, "| A2 valid but unauthorized actor |", marker())
     elif path == "docs/protocol/review/README.md":
@@ -514,9 +525,22 @@ def normalize_normative(data: bytes, path: str) -> bytes:
             if end < len(lines) and not lines[end].strip():
                 end += 1
             del lines[start:end]
-        _mask_paragraph_containing(
+        _mask_exact_variant(
             lines,
-            ("O-07, O-08, O-10 and O-14 remain open", "O-14 selects only its bounded guarded"),
+            (
+                (
+                    "bounded combined-construction evidence. O-07, O-08, O-10 and O-14 remain open",
+                    "blockers for C0.3. While C0.3 is `NO_GO`, C0.3 itself blocks corpus,",
+                    "implementation alignment, demo, product and sensitive-use claims.",
+                ),
+                (
+                    "bounded combined-construction evidence. O-14 selects only its bounded guarded",
+                    "signature language and remains a condition-bearing C0.3 dependency until its",
+                    "separately ratified combined rerun passes. O-07, O-08 and O-10 remain open",
+                    "blockers for C0.3. While C0.3 is `NO_GO`, C0.3 itself blocks corpus,",
+                    "implementation alignment, demo, product and sensitive-use claims.",
+                ),
+            ),
             marker(),
         )
     elif path == "tools/causal-flow-simulator/README.md":

@@ -5885,13 +5885,13 @@
       "authority": "evidence",
       "id": "signature_suite_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-signature-suite-analysis.md",
-      "sha256": "da71fa38a72695210a2e3e29176b07d3d84f317fb98ebde4a2f87881c4c5f4e6"
+      "sha256": "036f27f1eac2c8d8d86d225a51959efa94e0a1f06087e501d1c5b99f5126fec1"
     },
     {
       "authority": "evidence",
       "id": "signature_suite_report",
       "path": "docs/protocol/styx-app-kernel-v0-signature-suite-falsification-report.md",
-      "sha256": "bfc1846242e12f88b6902851ba56ffe5392e9442a654dea47e2d66600851a7ed"
+      "sha256": "033754d425be5b48ab781599bceb0b118a4e1161d13b08b2e5e1b8698c701c40"
     },
     {
       "authority": "normative",

@@ -81,7 +81,9 @@ K processes an application credential signature in this order:
 3. Reject missing, context-inconsistent, inactive, stale-sequence or otherwise
    state-invalid credentials independently of signature mathematics. Historical
    verification of a retired credential may preserve signed evidence, but cannot
-   restore current AP authority.
+   restore current AP authority. Historical-evidence verification is an explicit
+   verifier mode derived from trusted replay context; it is never an event-carried
+   or attacker-selectable field.
 4. Read suite and verification key only from that authenticated binding. Ignore
    event, `GRANT` tail, transport, Nostr, MLS and session algorithm/key hints for
    verification of the carrying event.

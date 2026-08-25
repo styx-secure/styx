@@ -31,7 +31,7 @@ produced byte-identical canonical reports:
 | --- | --- | --- |
 | semantic/oracle probe | `PASS` (53 checks, 29 runtime vectors) | `9556fe7c405a5c5effa7edd3cbcd4ed63c227a7e9340dc0bf26400a42587fd0c` |
 | cross-runtime gate | `PASS` (2 non-oracle compliant adapters) | `51b68d6247c3db87ab5b9ca529d35969163b3c4b7440c4db6f4b13da80204c5c` |
-| mutation gate | `ALL_REQUIRED_MUTANTS_KILLED` (26/26) | `1a8ee16aacf7f241aea3489280a9a9f0da1fcdbd6758bb75c0f299d434c6d429` |
+| mutation gate | `ALL_REQUIRED_MUTANTS_KILLED` (26/26) | `ceba6e2d2df90581b3e48ed226856d38c08338cdeeaec3184f832c39bf5bc90a` |
 
 The final scope-report digest, candidate commit/tree and canonical diff SHA-256
 are immutable PR evidence and are intentionally not self-referential tracked
@@ -80,6 +80,10 @@ Compliant adapters were non-empty and included:
 Raw Noble default, Noble strict, Node WebCrypto and Dart each diverged on at
 least one hostile input. None is silently called conforming. The exact raw
 divergences and every per-vector result are in the cross-runtime report.
+Before runtime dispatch, the gate projects each adapter input to exactly
+`id`, `message_hex`, `public_key_hex`, `signature_hex` and
+`expected_selected`; verification-oracle outputs are never serialized into the
+adapter channel.
 
 Bounded JS/Node remediation is the declared guard-plus-single-verifier
 construction. Dart has no conforming public subgroup-validation surface in the

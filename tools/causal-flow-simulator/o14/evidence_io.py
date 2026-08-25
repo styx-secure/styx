@@ -11,10 +11,24 @@ from typing import Any
 class CanonicalJsonReport:
     """Encode and persist deterministic JSON evidence without runtime metadata."""
 
-    @staticmethod
-    def encode(value: object) -> bytes:
+    @classmethod
+    def _reject_floats(cls, value: object) -> None:
+        if isinstance(value, float):
+            raise ValueError("floating-point values are forbidden in canonical evidence")
+        if isinstance(value, dict):
+            for key, item in value.items():
+                cls._reject_floats(key)
+                cls._reject_floats(item)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                cls._reject_floats(item)
+
+    @classmethod
+    def encode(cls, value: object) -> bytes:
+        cls._reject_floats(value)
         document = json.dumps(
             value,
+            allow_nan=False,
             ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=True,
