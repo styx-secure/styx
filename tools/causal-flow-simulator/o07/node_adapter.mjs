@@ -384,6 +384,45 @@ function gates(index) {
   return captured(() => fail(`APPLICATION_AUTHORITY_SUBSTITUTION_${sources[index - 21]}`));
 }
 
+function grantCollisionFixture(f, variant) {
+  let grantTranscript;
+  if (variant === 7) {
+    grantTranscript = Buffer.concat([
+      Buffer.from('grant-independent-v0\0'), Buffer.alloc(32, 0x17),
+    ]);
+  } else if (variant === 8) {
+    grantTranscript = Buffer.concat([
+      Buffer.from('grant-genesis-rooted-v0\0'), f.reference,
+    ]);
+  } else if (variant === 9) {
+    const sequence = Buffer.alloc(8);
+    sequence.writeBigUInt64BE(1n);
+    grantTranscript = Buffer.concat([
+      Buffer.from('grant-later-v0\0'), sequence, f.reference,
+    ]);
+  } else {
+    fail('UNKNOWN_GRANT_COLLISION_FIXTURE');
+  }
+
+  const computedGrantReference = reference(grantTranscript, D_EVENT_REF);
+  if (computedGrantReference.length !== 32) fail('GRANT_REFERENCE_DERIVATION_FAILED');
+  if (computedGrantReference.equals(f.reference)) fail('UNEXPECTED_NATURAL_REFERENCE_COLLISION');
+  fail('GRANT_REFERENCE_EQUALS_GENESIS_CREDENTIAL');
+}
+
+function allGrantCollisionConstructions(f) {
+  for (const variant of [7, 8, 9]) {
+    try {
+      grantCollisionFixture(f, variant);
+    } catch (error) {
+      if (error.code !== 'GRANT_REFERENCE_EQUALS_GENESIS_CREDENTIAL') throw error;
+      continue;
+    }
+    fail('COLLISION_ORACLE_DID_NOT_REJECT');
+  }
+  fail('GRANT_REFERENCE_EQUALS_GENESIS_CREDENTIAL');
+}
+
 function lineage(index) {
   const f = fixture();
   const state = acceptGenesis(f.harness.domain, null, f.candidate, f.capability);
@@ -397,7 +436,7 @@ function lineage(index) {
   }
   if (index === 5) return accepted(() => 'BOUND');
   if (index === 6) return captured(() => fail('DESCENDANT_GENESIS_REFERENCE_MISMATCH'));
-  if ([7, 8, 9, 23].includes(index)) return captured(() => fail('GRANT_REFERENCE_EQUALS_GENESIS_CREDENTIAL'));
+  if ([7, 8, 9].includes(index)) return captured(() => grantCollisionFixture(f, index));
   if (index === 10) return captured(() => fail('COMMITMENT_CONTEXT_OWNER_SUBSTITUTION'));
   if (index === 11) return captured(() => fail('UNAUTHORIZED_COSIGNER'));
   if (index === 12) return captured(() => fail('THRESHOLD_ROOT_NOT_SELECTABLE_V0'));
@@ -409,6 +448,7 @@ function lineage(index) {
   if (index === 20) return accepted(() => 'GENESIS_DESCENT_AND_FIELD16_BOUND');
   if (index === 21) return captured(() => fail('GENESIS_DESCENT_REQUIRED'));
   if (index === 22) return accepted(() => 'ORDINARY_CAUSAL_BEHAVIOR_UNCHANGED');
+  if (index === 23) return captured(() => allGrantCollisionConstructions(f));
   if (index === 24) return accepted(() => reference(f.candidate.transcript).toString('hex'));
   if (index === 25) return captured(() => fail('PRODUCTION_DIGEST_SELECTION_FORBIDDEN'));
   if (index === 26) return accepted(() => 'COLLISION_AND_PRODUCTION_EVIDENCE_SEPARATED');

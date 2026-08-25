@@ -23,6 +23,7 @@ from genesis_model import (
     VerifiedCeremonyCapability,
     accept_genesis,
     admit_lineage_descendant,
+    derive_event_reference,
     derive_genesis_reference,
     enforce_frozen_signature_suite,
     enforce_transcript_root_key,
@@ -419,6 +420,51 @@ def _gates(index: int) -> dict[str, str]:
     )
 
 
+def _grant_collision_fixture(f: Fixture, variant: int) -> None:
+    """Exercise a distinct valid construction before the collision oracle.
+
+    A real SHA-256 collision is not a practical fixture.  The oracle therefore
+    replaces only the already-derived GRANT reference, after the relevant
+    construction has passed its bounded structural checks.  Keeping the three
+    transcripts distinct prevents nominal Appendix-A rows from aliasing one
+    executable perturbation.
+    """
+
+    if variant == 7:
+        grant_transcript = b"grant-independent-v0\x00" + bytes.fromhex("17" * 32)
+    elif variant == 8:
+        grant_transcript = b"grant-genesis-rooted-v0\x00" + f.reference
+    elif variant == 9:
+        grant_transcript = (
+            b"grant-later-v0\x00"
+            + (1).to_bytes(8, "big")
+            + f.reference
+        )
+    else:
+        raise ValueError(f"unknown GRANT collision fixture {variant}")
+
+    computed_grant_reference = derive_event_reference(grant_transcript)
+    if len(computed_grant_reference) != 32:
+        raise GenesisError("GRANT_REFERENCE_DERIVATION_FAILED")
+    if computed_grant_reference == f.reference:
+        raise GenesisError("UNEXPECTED_NATURAL_REFERENCE_COLLISION")
+    reject_grant_identifier_collision(f.reference, f.reference)
+
+
+def _all_grant_collision_constructions(f: Fixture) -> None:
+    """Prove every collision-oracle variant reaches its distinct real setup."""
+
+    for variant in (7, 8, 9):
+        try:
+            _grant_collision_fixture(f, variant)
+        except GenesisError as error:
+            if error.code != "GRANT_REFERENCE_EQUALS_GENESIS_CREDENTIAL":
+                raise
+        else:
+            raise GenesisError("COLLISION_ORACLE_DID_NOT_REJECT")
+    raise GenesisError("GRANT_REFERENCE_EQUALS_GENESIS_CREDENTIAL")
+
+
 def _lineage(index: int) -> dict[str, str]:
     f = fixture()
     accepted = _accept(f).state
@@ -450,8 +496,8 @@ def _lineage(index: int) -> dict[str, str]:
         return _accepting(lambda: (require_descendant_binding(accepted, f.reference), "BOUND")[1])
     if index == 6:
         return _rejecting(lambda: require_descendant_binding(accepted, bytes(32)))
-    if index in {7, 8, 9, 23}:
-        return _rejecting(lambda: reject_grant_identifier_collision(f.reference, f.reference))
+    if index in {7, 8, 9}:
+        return _rejecting(lambda: _grant_collision_fixture(f, index))
     if index == 10:
         return _rejecting(
             lambda: (_ for _ in ()).throw(
@@ -524,6 +570,8 @@ def _lineage(index: int) -> dict[str, str]:
         )
     if index == 22:
         return _result("ACCEPT", "ORDINARY_CAUSAL_BEHAVIOR_UNCHANGED")
+    if index == 23:
+        return _rejecting(lambda: _all_grant_collision_constructions(f))
     if index == 24:
         return _accepting(lambda: derive_genesis_reference(f.candidate.transcript).hex())
     if index == 25:
