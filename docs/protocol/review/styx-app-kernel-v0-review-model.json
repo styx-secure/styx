@@ -255,7 +255,7 @@
   ],
   "artifact": {
     "c03_verdict": "NO_GO",
-    "contract_base_commit": "3f439189e0cbe4071f642c693dbb196b477a48ea",
+    "contract_base_commit": "86c3f2dbd630e445d737a25c09889de2777ee185",
     "format": "styx.review-model.v1",
     "implementation_claim": false,
     "language": "en",
@@ -428,8 +428,8 @@
         "OB-K01"
       ],
       "owner": "K",
-      "reason": "Complete genesis contents and checkpoint authentication, acceptance and substitution boundaries remain open.",
-      "status": "OPEN"
+      "reason": "Single-root genesis, authenticated external acceptance and the v0 no-checkpoint-substitution boundary are fixed; product ceremony, durable custody and the separate O-14-to-O-06c integration rerun remain gated.",
+      "status": "DECIDED"
     },
     {
       "blocks": [
@@ -709,7 +709,7 @@
     },
     {
       "blocks": [
-        "O-07"
+        "O-08"
       ],
       "citations": [
         {
@@ -717,25 +717,25 @@
           "source_id": "pending_report"
         },
         {
-          "anchor": "checkpoint-named transcript material",
+          "anchor": "Checkpoint-like input is rejected before projection.",
           "source_id": "threat_model"
         }
       ],
       "decision_refs": [
         "O-01"
       ],
-      "description": "A replay dependency appears only in symbolic checkpoint evidence and not in the live admitted graph.",
+      "description": "Historical evidence for the suppress-side rule: the checkpoint-only premise is structurally unreachable in v0 because no checkpoint object or compaction exists.",
       "id": "CE_CHECKPOINT_STALE",
       "obligation_refs": [
         "OB-K01"
       ],
       "owner": "K",
-      "result": "The whole projection is STALE_EVIDENCE; checkpoint evidence never substitutes for retained authenticated history.",
+      "result": "Any attempt to populate checkpoint evidence is rejected before projection; the retained STALE_EVIDENCE implication has no v0-admissible trigger.",
       "status": "EVIDENCE_ONLY",
       "steps": [
-        "Name a missing reference in checkpoint_evidence",
-        "Exclude it from graph.admitted",
-        "Name the same reference in replay_dependencies"
+        "Construct a non-empty live replay-dependency set",
+        "Attempt to name one dependency through checkpoint evidence",
+        "Verify rejection before projection and no STALE_EVIDENCE transition"
       ]
     },
     {
@@ -3014,7 +3014,7 @@
     {
       "citations": [
         {
-          "anchor": "This models neither checkpoint",
+          "anchor": "every grant-side checkpoint use is `UNSUPPORTED`",
           "source_id": "decisions"
         }
       ],
@@ -3026,7 +3026,7 @@
         "OB-K01"
       ],
       "owner": "K",
-      "statement": "Genesis contents and checkpoint authentication, acceptance, substitution and producer authority remain unresolved."
+      "statement": "O-07 selects no checkpoint producer, substitution, reconstruction, freshness, finality or horizon authority and makes checkpoint evidence structurally unavailable in v0; it also makes no product ceremony, durable acceptance, rollback-resistance, recovery or availability claim."
     },
     {
       "citations": [
@@ -3677,7 +3677,7 @@
             "O-03",
             "O-06b-1"
           ],
-          "description": "Full derived reference to the context genesis; complete genesis bytes remain O-07 work.",
+          "description": "Full derived reference to the exact O-07 seven-field genesis transcript; K compares it to immutable accepted context configuration.",
           "id": "genesis_reference",
           "integrity": [
             "SIGNED_TRANSCRIPT"
@@ -3689,7 +3689,7 @@
             "OB-K01"
           ],
           "owner": "K",
-          "status": "UNRESOLVED",
+          "status": "DECIDED",
           "visible_to": [
             "authorized_endpoint",
             "kernel",
@@ -4058,14 +4058,14 @@
     {
       "citations": [
         {
-          "anchor": "This models neither checkpoint",
+          "anchor": "every grant-side checkpoint use is `UNSUPPORTED`",
           "source_id": "decisions"
         }
       ],
       "decision_refs": [
         "O-01"
       ],
-      "description": "Symbolic checkpoint and replay-dependency inputs used only to falsify non-substitution and staleness behavior.",
+      "description": "Retained suppress-side checkpoint relation with no admissible checkpoint input in v0; live replay dependencies remain explicit and non-empty when replay requires evidence.",
       "fields": [
         {
           "citations": [
@@ -4078,28 +4078,26 @@
               "source_id": "decisions"
             }
           ],
-          "confidentiality": "UNRESOLVED",
+          "confidentiality": "NONE",
           "decision_refs": [
             "O-07"
           ],
-          "description": "Symbolic set of references named by a checkpoint; not authenticated or accepted by the current model.",
+          "description": "Structurally empty in v0 because no checkpoint domain, object, producer or compaction operation is admitted.",
           "id": "checkpoint_evidence_refs",
           "integrity": [
-            "UNRESOLVED"
+            "NONE"
           ],
-          "mutable_by": [
-            "runtime_profile"
-          ],
+          "mutable_by": [],
           "obligation_refs": [
             "OB-K01"
           ],
           "owner": "K",
-          "status": "SYMBOLIC",
+          "status": "DECIDED",
           "visible_to": [
             "kernel",
             "runtime_profile"
           ],
-          "wire_presence": "SYMBOLIC_INPUT"
+          "wire_presence": "NOT_CARRIED"
         },
         {
           "citations": [
@@ -4112,28 +4110,26 @@
               "source_id": "decisions"
             }
           ],
-          "confidentiality": "UNRESOLVED",
+          "confidentiality": "PROFILE_DEPENDENT",
           "decision_refs": [
             "O-07"
           ],
-          "description": "Unvalidated symbolic oracle set identifying dependencies needed for replay.",
+          "description": "Derived set of admitted authority transcripts and REQUIRED openings needed by live replay; never populated from checkpoint-like material.",
           "id": "replay_dependency_refs",
           "integrity": [
-            "UNRESOLVED"
+            "SIGNED_TRANSCRIPT"
           ],
-          "mutable_by": [
-            "runtime_profile"
-          ],
+          "mutable_by": [],
           "obligation_refs": [
             "OB-K01"
           ],
           "owner": "K",
-          "status": "SYMBOLIC",
+          "status": "DECIDED",
           "visible_to": [
             "kernel",
             "runtime_profile"
           ],
-          "wire_presence": "SYMBOLIC_INPUT"
+          "wire_presence": "NOT_CARRIED"
         }
       ],
       "id": "checkpoint_evidence",
@@ -4141,7 +4137,7 @@
         "OB-K01"
       ],
       "owner": "K",
-      "status": "SYMBOLIC"
+      "status": "DECIDED"
     },
     {
       "citations": [
@@ -4458,14 +4454,14 @@
     {
       "citations": [
         {
-          "anchor": "O-07 will define the complete genesis semantic inventory",
+          "anchor": "O-07 fixes `T_genesis` as exactly",
           "source_id": "transcript_profile"
         }
       ],
       "decision_refs": [
         "O-01"
       ],
-      "description": "Future canonical context genesis; only its non-self-referential outer transcript/reference framing is selected.",
+      "description": "Canonical single-root context genesis with external acceptance and exact O-06b-1/O-14 transcript, reference and signature boundaries.",
       "fields": [
         {
           "citations": [
@@ -4479,7 +4475,7 @@
             "O-03",
             "O-06b-1"
           ],
-          "description": "Full SHA-256 reference derivable only after O-07 fixes the complete canonical genesis transcript.",
+          "description": "Full SHA-256 reference over the complete canonical seven-field genesis transcript under D_GENESIS_REF.",
           "id": "derived_genesis_reference",
           "integrity": [
             "DIGEST_DERIVED"
@@ -4489,7 +4485,7 @@
             "OB-K01"
           ],
           "owner": "K",
-          "status": "UNRESOLVED",
+          "status": "DECIDED",
           "visible_to": [
             "authorized_endpoint",
             "kernel",
@@ -4500,18 +4496,18 @@
         {
           "citations": [
             {
-              "anchor": "does not define its body fields or internal bytes",
+              "anchor": "where `D_GENESIS_SIG` is `0x0002` and `body` contains exactly",
               "source_id": "transcript_profile"
             }
           ],
-          "confidentiality": "UNRESOLVED",
+          "confidentiality": "PROFILE_DEPENDENT",
           "decision_refs": [
             "O-07"
           ],
-          "description": "Complete genesis semantic body, including initial authority, remains O-07 work.",
+          "description": "Exact seven-field genesis body including the O-03 tuple, O-14 suite/root key and complete canonical AP initial authority/policy block.",
           "id": "genesis_body",
           "integrity": [
-            "UNRESOLVED"
+            "SIGNED_TRANSCRIPT"
           ],
           "mutable_by": [
             "application_profile",
@@ -4521,14 +4517,14 @@
             "OB-K01"
           ],
           "owner": "K",
-          "status": "UNRESOLVED",
+          "status": "DECIDED",
           "visible_to": [
             "application_profile",
             "authorized_endpoint",
             "kernel",
             "recipient_endpoint"
           ],
-          "wire_presence": "PROFILE_DEPENDENT"
+          "wire_presence": "SIGNED_TRANSCRIPT"
         }
       ],
       "id": "genesis",
@@ -4536,7 +4532,165 @@
         "OB-K01"
       ],
       "owner": "K",
-      "status": "UNRESOLVED"
+      "status": "DECIDED"
+    },
+    {
+      "citations": [
+        {
+          "anchor": "### O-07 — Genesis and checkpoint evidence",
+          "source_id": "decisions"
+        }
+      ],
+      "decision_refs": [
+        "O-07"
+      ],
+      "description": "Authenticated out-of-band AP ceremony record required before a replica can accept one context genesis; candidate delivery cannot create or change it.",
+      "fields": [
+        {
+          "citations": [
+            {
+              "anchor": "Candidate delivery, possession",
+              "source_id": "decisions"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-07"
+          ],
+          "description": "Evidence that the ceremony result came through the profile's authenticated channel independently of candidate delivery.",
+          "id": "authenticated_provenance",
+          "integrity": [
+            "PROFILE_DEPENDENT"
+          ],
+          "mutable_by": [
+            "application_profile",
+            "authorized_endpoint"
+          ],
+          "obligation_refs": [
+            "OB-K09"
+          ],
+          "owner": "AP",
+          "status": "DECIDED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint",
+            "runtime_profile"
+          ],
+          "wire_presence": "OUT_OF_BAND"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "the exact O-03 tuple",
+              "source_id": "decisions"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-03",
+            "O-07"
+          ],
+          "description": "Exact protocol/profile/version/context tuple authenticated by the ceremony.",
+          "id": "context_tuple",
+          "integrity": [
+            "PROFILE_DEPENDENT"
+          ],
+          "mutable_by": [
+            "application_profile",
+            "authorized_endpoint"
+          ],
+          "obligation_refs": [
+            "OB-K08"
+          ],
+          "owner": "AP",
+          "status": "DECIDED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint",
+            "runtime_profile"
+          ],
+          "wire_presence": "OUT_OF_BAND"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "expected reference",
+              "source_id": "decisions"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-07"
+          ],
+          "description": "Authenticated expected full-width reference to the complete candidate genesis transcript.",
+          "id": "expected_genesis_reference",
+          "integrity": [
+            "PROFILE_DEPENDENT"
+          ],
+          "mutable_by": [
+            "application_profile",
+            "authorized_endpoint"
+          ],
+          "obligation_refs": [
+            "OB-K08",
+            "OB-K09"
+          ],
+          "owner": "AP",
+          "status": "DECIDED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "kernel",
+            "recipient_endpoint",
+            "runtime_profile"
+          ],
+          "wire_presence": "OUT_OF_BAND"
+        },
+        {
+          "citations": [
+            {
+              "anchor": "explicit authorization",
+              "source_id": "decisions"
+            }
+          ],
+          "confidentiality": "PROFILE_DEPENDENT",
+          "decision_refs": [
+            "O-07"
+          ],
+          "description": "Explicit human or organizational AP decision authorizing this exact root for the context.",
+          "id": "explicit_authorization_decision",
+          "integrity": [
+            "PROFILE_DEPENDENT"
+          ],
+          "mutable_by": [
+            "application_profile",
+            "authorized_endpoint"
+          ],
+          "obligation_refs": [
+            "OB-K09"
+          ],
+          "owner": "AP",
+          "status": "DECIDED",
+          "visible_to": [
+            "application_profile",
+            "authorized_endpoint",
+            "recipient_endpoint",
+            "runtime_profile"
+          ],
+          "wire_presence": "OUT_OF_BAND"
+        }
+      ],
+      "id": "genesis_acceptance_record",
+      "obligation_refs": [
+        "OB-K08",
+        "OB-K09"
+      ],
+      "owner": "AP",
+      "status": "DECIDED"
     },
     {
       "citations": [
@@ -5342,7 +5496,7 @@
     {
       "citations": [
         {
-          "anchor": "Checkpoint staleness remains symbolic: only evidence absent from the live admitted graph can be checkpoint-only",
+          "anchor": "makes it unreachable in v0",
           "source_id": "responsibility"
         }
       ],
@@ -5354,8 +5508,8 @@
         "OB-K15"
       ],
       "owner": "K",
-      "statement": "A checkpoint-only replay dependency can force a whole projection stale; authentication, freshness and acceptance remain unresolved.",
-      "status": "SYMBOLIC"
+      "statement": "The suppress-side implication is retained, but no v0-admissible object can create checkpoint-only evidence; smuggling is rejected before projection. Any future checkpoint or compaction capability reopens O-07 and affected decisions.",
+      "status": "DECIDED"
     },
     {
       "citations": [
@@ -5837,13 +5991,25 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "e7e2468bda4934915ed5795c482e3af5931548804956ef6fff12c074e2a4a8dd"
+      "sha256": "cd1e29b47ccf713b5480cce6967be7bf2172fd538abbc3bf705dc047398f68d5"
+    },
+    {
+      "authority": "evidence",
+      "id": "genesis_checkpoint_analysis",
+      "path": "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-analysis.md",
+      "sha256": "fd5fc333c244c772b2d88f30487f0d0e684ae50d4704879bc4e478c04b861aff"
+    },
+    {
+      "authority": "evidence",
+      "id": "genesis_checkpoint_report",
+      "path": "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-falsification-report.md",
+      "sha256": "67604d49118f0af9bd0b03f880e4f50ac044c23454baf5eef146673047191c70"
     },
     {
       "authority": "evidence",
       "id": "identifier_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-identifier-derivation-analysis.md",
-      "sha256": "eda312f5553f793d11c649ca1de9bb0e2dd4e45eb7c5c5a4492ba9e0dc6c33ba"
+      "sha256": "a2fdef0e9daad20ea62e2f511c29d0b6517b86550b98572e58518039c0d2dec0"
     },
     {
       "authority": "evidence",
@@ -5879,7 +6045,7 @@
       "authority": "normative",
       "id": "responsibility",
       "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
-      "sha256": "87c168c267083d52a2381e787b3aea973e395665d03659bb91b6c02646e38ac4"
+      "sha256": "f34c1f76397dc67ff0880f4fffbbf9bfa0edaf49c93f9c73a76b393f06341b2b"
     },
     {
       "authority": "evidence",
@@ -5897,13 +6063,13 @@
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "674d2ddc5f73050651679cc5b693877537b1d51f50a54bee48c1331a8c1ca029"
+      "sha256": "9378a7d9f534039be749dae89e0a021862d53136ec2eebaf18ac107ab25e415c"
     },
     {
       "authority": "normative",
       "id": "transcript_profile",
       "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
-      "sha256": "3b658b474157bb23868770aacf4b8bad0066c4f5399718d9f9debedfb507b205"
+      "sha256": "ad68985fde0c0d3bcc5916446ff04c7c1a3572f8147c3522fde5b6496166eecf"
     }
   ],
   "state_models": [

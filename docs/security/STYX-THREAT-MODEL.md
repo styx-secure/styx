@@ -44,7 +44,7 @@
   unavailable when its state or transition envelope is crossed. C0.2k selects
   the credential/sequence-bound commitment context with bounded amendment
   evidence. O-06c now supplies bounded combined evidence; C0.3 remains
-  `NO-GO` because O-07/O-08/O-10, O-14's retained combined-rerun condition and
+  `NO-GO` because O-08/O-10, O-07/O-14's retained integration conditions and
   the corpus-path gate remain unresolved.
 - **O-14 amendment:** Issue #246 selects internal suite `0x0001`, pure Ed25519
   over the complete O-06b-1 transcript with canonical 32-octet keys, canonical
@@ -104,7 +104,7 @@ the [C0.2a responsibility matrix](../protocol/styx-app-kernel-v0-responsibility-
 | Application plaintext and attachments | Confidentiality to the recipients selected by an authorized application transition | Authentication failure rejects delivery; compromise invokes rotation and product incident handling | `OB-SS03`, `OB-AP08`, `OB-PV09` | An authorized or compromised endpoint can disclose plaintext; attachment metadata requires separate handling. |
 | Application event meaning | Integrity and authenticity of every field that affects validation, authorization, causality, ordering or conflict handling | Invalid transcripts and semantics are rejected before authoritative state change; control events are content-free | `OB-K01`–`OB-K04`, `OB-K12`, policy by `OB-AP01` | A valid signature proves key possession, not role authorization, possession at commit time, authorship of copied content or truth. |
 | Payload commitment and retained opening | Binding to one complete payload and authenticated credential/author slot plus computational hiding after opening destruction under stated assumptions | Reject malformed geometry, wrong suite/context/credential/sequence/opening/content and incomplete verification before AP use | `OB-K10`, retention by `OB-K14`/`OB-RS04` | C0.2k and O-06c supply bounded amendment/combined evidence, not proof or implementation conformance; a knowledgeable holder can recompute for another slot, length/shape remain visible, randomizer custody is operational, complete-object availability is required and SHA-256 assumptions remain explicit. |
-| Application and case context | Domain separation and rejection of cross-context replay | Cross-context objects fail kernel validation | `OB-K08`, requirements from `OB-AP03` | O-03/O-06a select the context tuple/reference role and O-06b-1 fixes the outer reference bytes; O-07 genesis contents remain open. |
+| Application and case context | Domain separation and rejection of cross-context replay | Cross-context objects fail kernel validation | `OB-K08`, requirements from `OB-AP03` | O-07 fixes a seven-field single-root transcript, authenticated external `R`, immutable accepted tuple/reference and descendant comparison. Product ceremony and durable custody remain later profile work. |
 | Author and role authority | Monotone context-bound K grant binding separated from reversible bounded AP authorization | Invalid or unresolved binding is rejected; authentic-but-unauthorized and post-revocation actions apply no AP transition; necessary Pass0 authority admits expansion, the first eligible contested slot per actor admits bounded accepted reductions, R-1 constrains direct reduction targets, and revocation/fork termination follows credential provenance; stale or resource-exhausted projection makes authority unavailable | `OB-AP02`; binding/provenance by `OB-K18`/`OB-K19` | One uncontested compromised authority can remove every peer and remain sole producer. Any K-admitted rejected reduction can permanently lower necessary authority for its target subtree without becoming an accepted reduction; R-1 blocks direct omitted-history veto of an unseen grant but not an indirect veto through its visible issuer. Mutual reductions can leave no authority; independently granted same-key aliases survive lineage-local revocation and occupy separate fork namespaces. |
 | Causal history and state | Transcript-only deterministic validation/order, replay/fork detection and bounded convergence under monotone opening observations | Classified duplicate, pending root/ancestor, applied, stale, authority-unavailable or lineage-quarantine result; independent authorized lineages may continue | `OB-K05`–`OB-K07`, `OB-K13`, `OB-K19` | A valid-key holder can terminate its lineage through a fork and amplify replay through delayed evidence; bounded DP replay has state/transition costs and typed exhaustion; no finality exists. |
 | Durable local state | Confidentiality, atomicity, crash safety and rollback behavior within a declared runtime profile | Fail closed on ambiguous persistence; restore/reconcile or require intervention | `OB-RS02`–`OB-RS10` | Browser storage may be evicted; a coherent whole-profile rollback may be undetectable without external evidence. |
@@ -138,10 +138,11 @@ a synonym for all of them:
 - **content binding**: supplied content plus its opening recomputes the
   authenticated descriptor commitment; this is separate from event validity
   and does not prove content truth;
-- **reconstructibility**: in v0 a fresh replica derives authoritative AP state
-  from retained events and every directly verified in-horizon `REQUIRED`
-  content/opening, or reports a declared deferred/stale limit. Current
-  checkpoints never substitute for those inputs;
+- **reconstructibility**: in v0 a fresh replica first obtains the identical
+  authenticated out-of-band O-07 ceremony record `R`, accepts the matching
+  signed genesis, then derives authoritative AP state from retained events and
+  every directly verified `REQUIRED` content/opening. V0 has no compaction or
+  checkpoint input; checkpoints never substitute for those inputs;
 - **delivery state**: evidence for a precisely named stage, not a generic
   “sent” flag; and
 - **human and organizational assurance**: procedures, training, independence
@@ -261,6 +262,12 @@ M20 intentionally retains all K-admitted control evidence even after AP rejects
 or revokes its actor. Exhaustion is fail-closed for authority, so O-08 must bound
 admission both per credential and across the context rather than relying only on
 the number of accepted controls.
+An attacker may also deliver a valid self-signed genesis, replay a ceremony
+record from another context or race multiple candidates. None is a selector:
+the acceptor requires an independently authenticated `R`, exact tuple/reference
+match and O-14 verification, fixes one root, and rejects every distinct root and
+its descendants. A compromised ceremony or acceptance store remains outside
+that guarantee.
 
 ### A5 — Hostile or colluding relay and service provider
 
@@ -268,16 +275,14 @@ Can observe connections and envelope metadata, store, omit, duplicate,
 reorder, delay, replay, selectively censor or return stale objects. Multiple
 relays may collude. A relay may lie about publication and deletion.
 
-Relays are never authoritative for application validity, order, membership,
-opening substitution or human delivery. A relay can withhold an opening or
+Relays are never authoritative for genesis selection, application validity,
+order, membership, opening substitution or human delivery. A relay can withhold an opening or
 distribute it selectively, leaving different replicas with different pending
 subtrees until their monotone opening sets converge. A hostile peer or relay can
-also withhold transcript material named only by symbolic checkpoint evidence and
-  thereby force whole-projection `STALE_EVIDENCE`; C0.2i detects that condition but
-  does not authenticate the checkpoint, prove freshness or restore availability.
-  While this condition holds, accepted controls and every per-event or terminal
-  authority result are unavailable; an empty encoded set must not be interpreted
-  as proof that the context has no authorities.
+withhold required live transcript material and deny reconstructibility. It
+cannot populate `checkpoint_evidence_refs`: O-07 admits no checkpoint object or
+compaction in v0, so the historical suppress-side `STALE_EVIDENCE` trigger is
+structurally unreachable. Checkpoint-like input is rejected before projection.
 Redundancy may improve availability while increasing the observer set. A
 transport profile must declare every visible field and its confirmation
 semantics.
@@ -396,9 +401,9 @@ make telemetry or push metadata harmless.
 | --- | --- | --- | --- | --- |
 | A1 malformed-input sender | Event meaning, session/runtime availability | Strict bounded parsing, canonical rejection, stable outcomes and resource tests before state change; O-06b-1/O-06b-2/C0.2k fix regenerated transcript, commitment, context and geometry grammars; O-06c challenges complete-object octets, scalars, parser inverses and geometry under an exploration-only envelope | `OB-K02`–`OB-K04`, `OB-SS08`, `OB-TR01` each at its parser boundary | A conforming parser cannot prevent all bandwidth exhaustion before bytes reach it; bounded O-06c evidence is not a product parser, proof or production-bound claim. |
 | A2 valid but unauthorized actor | Role authority, case state, retention/export | Separate monotone K grant binding from reversible bounded AP authority; classify authentic-but-unauthorized and post-revocation actions; use necessary Pass0 authority for expansion and the first eligible contested slot for reductions; accept only O-14 suite `0x0001` from the authenticated credential binding with exact guards and no fallback | `OB-AP02`; cryptographic binding/provenance by `OB-K18`/`OB-K19` | Valid key possession still creates verifiable historical evidence but never authority; concrete AP roles remain open, and product/runtime conformance to O-14 is unclaimed. |
-| A3 malicious peer | Plaintext, causal state, availability, erasure | Detect replay/fork/conflict; keep holes and descendants pending; terminate forked credential lineages and descendants; expose selective disclosure, scoped quarantine, forced staleness and delayed replay | `OB-K05`–`OB-K14`, `OB-K19`, `OB-AP04`, `OB-PV01`/`OB-PV04` | An authorized peer can copy plaintext, keep a subtree pending forever, amplify replay, force a symbolic checkpoint-dependent projection stale, terminate its lineage, exploit sole authority or lie in signed content. |
+| A3 malicious peer | Plaintext, causal state, availability, erasure | Require authenticated O-07 `R`; reject alternate roots; detect replay/fork/conflict; keep holes and descendants pending; terminate forked credential lineages and descendants; expose selective disclosure, scoped quarantine and delayed replay | `OB-K05`–`OB-K14`, `OB-K19`, `OB-AP04`, `OB-PV01`/`OB-PV04` | An authorized peer can copy plaintext, keep a subtree pending forever, amplify replay, terminate its lineage, exploit sole authority or lie in signed content. Root loss can make the whole context authority-unavailable. |
 | A4 compromised authorized peer | Current rights, plaintext and session history | Preserve K evidence; apply transitive provenance termination; require fresh-grant rotation/recovery; disclose compromise and recompute authority by fresh full replay | `OB-AP02`, `OB-K18`, `OB-K19`, `OB-SS04`–`OB-SS06`, `OB-PV07` | No retroactive protection for plaintext/keys; one uncontested authority can remove peers; same-key aliases survive independent grants; no finality. |
-| A5 hostile/colluding relay | Availability, freshness, routing metadata | Verify outer objects, ignore relay order/response as authority, authenticate fetched openings, retry/fail over and measure exposure | `OB-TR01`–`OB-TR06`, `OB-TR10` | Relays can selectively withhold openings or checkpoint-named transcript material, force a projection stale, and collude over visible metadata; they never substitute for verification or freshness. |
+| A5 hostile/colluding relay | Availability, freshness, routing metadata | Verify outer objects, ignore relay order/response as genesis or application authority, reject checkpoint-like input, authenticate fetched openings, retry/fail over and measure exposure | `OB-TR01`–`OB-TR06`, `OB-TR10` | Relays can selectively withhold genesis, events or openings and collude over visible metadata; they never manufacture `R`, substitute for verification or prove freshness. |
 | A6 network observer | Relationship and activity metadata | Use only profile-approved routing/padding/batching/onion measures and validate via traffic capture | `OB-TR06`/`OB-TR07` | No resistance claim against a global passive observer. |
 | A7 hostile origin/release | Plaintext, keys-as-oracles, software integrity | Enforce distribution/profile controls, external verification and explicit unsupported/rollback outcomes | `OB-RS12`, release gate `OB-PV10` | The current PWA cannot make an adversary-controlled first response trustworthy. |
 | A8 XSS/extension | Plaintext operations, UI trust, local metadata | Minimize callable interfaces and third-party code, lock promptly, enforce runtime containment and test browser controls | `OB-RS01`, `OB-RS11`, product copy `OB-PV11` | A privileged hostile caller can use an unlocked client as an oracle. |
@@ -477,8 +482,8 @@ claims about current code.
 | Existing commitment/opening is presented under another credential or author sequence | Recompute both leaf and outer commitment preimages with the authenticated event slot; the unchanged value must mismatch | Classify the content presentation as a binding mismatch without inferring impersonation, truth or authorization; a newly recomputed valid commitment is a distinct event claim | Application semantic kernel |
 | Content reappears after valid logical removal | Do not silently reactivate or expose it | Distinguish verified removed presentation, unverifiable presentation and substituted presentation; none becomes active | Application semantic kernel and product vertical |
 | Physical destruction requested or caused by runtime pressure | Never infer authority from replay position, timeout, retry/peer count, relay response, quota, eviction or teardown | Quarantine/withhold until O-13 closes; report physical loss as typed durability failure, never removal | Application profile and runtime/storage profile |
-| Fresh replica follows compacted history | Continue causal validation only from permitted retained transcripts and directly verified REQUIRED openings | A symbolic dependency is checkpoint-only only when absent from the live admitted graph; matching absent evidence makes the whole projection stale. A hostile holder can force that fail-closed state by withholding named material. This neither authenticates nor accepts a checkpoint | Application semantic kernel and application profile |
-| Checkpoint material offered for AP-state substitution | Treat the capability as unsupported in v0 | Never trust producer eligibility or AP state; O-07 must first define authentication, authority, acceptance, rollback, equivocation, horizon and late-evidence handling | Application semantic kernel and application profile |
+| Fresh replica is offered compacted history | Reject the unsupported v0 input before projection | Obtain authenticated `R`, matching genesis, retained live transcripts and directly verified REQUIRED openings; no checkpoint or compaction object exists | Application semantic kernel and application profile |
+| Checkpoint material offered for AP-state substitution | Treat the capability as unsupported in v0 | Reject before projection; never trust producer eligibility, possession, horizon or AP state. Any future capability reopens O-01/O-04/O-07, O-02 when it creates producer authority, and the threat model | Application semantic kernel and application profile |
 | Service/relay outage | Preserve local truth and expose unavailable delivery state | Bounded retry, alternate routes and continuity procedure | Transport/routing profile |
 
 ## 7. Metadata and unlinkability model
@@ -583,7 +588,7 @@ Current evidence establishes only bounded components:
   bounded Pass0/selected-slot authority and lineage containment; C0.2k selects
   the 84-octet commitment context and bounded mutation evidence; Issue #243
   completes bounded O-06c evidence. O-06/O-06c are condition-bearing
-  `DECIDED`; O-07, O-08 and O-10 through O-16 retain their recorded open,
+  `DECIDED`; O-07 is bounded `DECIDED`; O-08 and O-10 through O-16 retain their recorded open,
   conditional or downstream-blocking roles;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
   described in its final verdict; and

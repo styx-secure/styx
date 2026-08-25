@@ -167,3 +167,28 @@ bounded negative evidence, not a proof, production verifier, conformance suite,
 runtime support claim, interoperability claim or authority to create C0.3.
 Dart/browser adapter evidence and the separately ratified O-06c
 placeholder-substitution rerun remain explicit downstream gates.
+
+## O-07 genesis and checkpoint-boundary evidence package
+
+`o07/` is the isolated, standard-library-only evidence package for Issue #248.
+It instantiates the frozen O-06b-1 genesis domains and the O-14 `0x0001`
+signature suite with one exact seven-field genesis transcript. It models the
+authenticated out-of-band ceremony record, validates each candidate before
+acceptance, fixes one context root atomically, treats an exact duplicate as
+idempotent, rejects every distinct same-context root and descendant, and keeps
+grant references distinct from the genesis credential identifier.
+
+The package also exercises the v0 checkpoint boundary: ordinary replay retains
+its live authority transcripts and `REQUIRED` openings, while any attempt to
+populate checkpoint evidence is rejected before projection. The Python model
+and dependency-free Node adapter must agree, and the closed source-mutant
+registry must be killed. `scope_guard_o07.py` enforces the exact Issue #248
+paths, validator-literal deltas, copy/rename prohibition and approved normative
+artifacts against the ratified base.
+
+Run the exact deterministic command block in Issue #248. Generated JSON belongs
+only in a caller-selected temporary directory and must reproduce byte-for-byte
+in two fresh worktrees. A positive result is bounded falsification evidence,
+not a proof, product implementation, durable ceremony, recovery mechanism,
+checkpoint capability, availability guarantee, conformance claim or authority
+to begin C0.3.

@@ -66,7 +66,7 @@ The names are descriptive and are not selected domain-tag bytes.
 | Role | Semantic input | Output/use | Relationship |
 | --- | --- | --- | --- |
 | Application-event signature transcript | The complete inventory in §3 for one event | Bytes signed by the event credential | Primary authenticated semantic object |
-| Genesis signature transcript | O-03 tuple plus the bounded O-07 genesis inventory | Bytes signed under the future genesis authority rule | Separate object kind; O-07 still owns genesis contents |
+| Genesis signature transcript | O-03 tuple plus the seven-field O-07 genesis inventory | Bytes signed by the single context-local root under O-14 suite `0x0001` | Separate object kind; exact body fixed by O-07 and the transcript profile |
 | Event reference | The complete regenerated signature transcript, excluding signature bytes and any carried reference | Parent/predecessor reference, exact duplicate key and K-06 concurrent tiebreak | One-way derivation after transcript construction |
 | Genesis reference | The event-reference-role derivation over the complete genesis signature transcript | Authenticated genesis binding carried by later events | Same reference mechanism under a genesis-specific domain; not a second commitment species |
 | Payload commitment | O-04 content, fresh opening and complete binding context | Value authenticated inside the content descriptor | Computed before the event transcript; never contains the event reference |
@@ -110,7 +110,7 @@ A profile must not hide durable authority in `REQUIRED` or `DETACHABLE` content.
 | Direct author-predecessor reference | `INCLUDE` when present | O-01/O-06 | Authenticates the author chain. It is absent only for sequence zero. |
 | Canonical causal-parent count | `INCLUDE` | O-01; bound supplied later by O-08 | Frames the sorted-unique antichain and permits bounds before allocation. End-of-buffer inference is rejected. |
 | Canonical causal-parent references | `INCLUDE` | O-01/O-06 | The bytewise sorted-unique maximal antichain is authenticated. Arrival or insertion order is rejected. |
-| Genesis reference | `INCLUDE` | O-03, semantic form selected in §2; contents remain O-07 | Binds every event to one authenticated genesis without making the random context identifier depend on genesis. |
+| Genesis reference | `INCLUDE` | O-03 and the O-07 seven-field signed genesis transcript | Binds every event to one accepted genesis without making the random context identifier depend on genesis. |
 | O-04 content descriptor | `INCLUDE` | `K/AP` under O-04 | Authenticates class, type, length, suite, shape, value and geometry. Raw content/opening are excluded. |
 | Author-carried event reference/cache hint | `EXCLUDE` | Convenience representation only | A consumer recomputes the reference. A mismatch is an O-11 representation diagnostic, never K semantic invalidity; removing or correcting the hint cannot change admission. |
 | Application-purpose physical time | `EXCLUDE` from K | `AP`, if a later time-bearing profile is approved | O-05 removed physical time from the kernel. Any time claim is committed application content and remains subject to O-12 at that profile boundary. |
@@ -242,7 +242,7 @@ property. This document does not claim it has been met by exact bytes.
 | Boundary | O-06a decision | Remaining owner/work |
 | --- | --- | --- |
 | O-02 / O-06 | Include the grant-rooted credential identifier; derive key and signature algorithm by direct K lookup of its binding GRANT; authenticate closed credential-control arms. Do not let an event choose its own verification algorithm. | O-14 selects suite `0x0001`, canonical 32-octet Ed25519 keys, canonical 64-octet `R || S`, prime-order guards and terminal no-fallback verification. AP/O-02 still own authority. |
-| O-03 / O-06 / O-07 | Later events include a genesis reference derived over the complete genesis signed transcript. It is not the random context identifier and creates no self-reference. | O-07 defines necessary genesis fields and authority; O-06b-1 defines exact reference bytes. |
+| O-03 / O-06 / O-07 | Later events include a genesis reference derived over the complete seven-field signed genesis transcript. It is not the random context identifier and creates no self-reference. | O-07 fixes single-root contents and authenticated external acceptance; O-06b-1 defines exact reference bytes. |
 | O-04 / O-06 | Commitment is computed first from content/opening/context; its descriptor enters the event transcript; the event reference is computed last. The commitment never includes the event reference. | O-06b-1 selects the reference suite and O-06b-2 selects the commitment suite; O-06c falsifies the construction. |
 | O-06 / O-08 | Semantic counts, lengths and geometry slots exist; exact transcript and commitment-geometry widths are fixed by O-06b-1/O-06b-2. | O-08 supplies measured enforceable profile maxima and activation bounds. |
 | O-06 / O-10 | O-06a identifies rejection sites and safe distinctions without assigning stable codes. | O-10 closes the bounded taxonomy after exact fields close. |
@@ -382,8 +382,9 @@ Issue #223 selects suite `styx.commitment-suite.v1/0x0001`: full-width SHA-256,
 a fresh 32-octet randomizer, exact content/leaf/interior-node preimages and a
 left-complete binary chunk tree under the domains allocated by O-06b-1. The
 complete construction, written inverse, assumptions and runtime evidence are in
-`styx-app-kernel-v0-commitment-encoding-profile.md`. It does not define O-07
-checkpoint authority, set O-08 runtime maxima, assign O-10 codes, create a
+`styx-app-kernel-v0-commitment-encoding-profile.md`. O-07 subsequently rejects
+all checkpoint authority/substitution in v0. This document does not set O-08
+runtime maxima, assign O-10 codes, create a
 conformance corpus or authorize production implementation. O-06 remains
 `OPEN` after O-06b-2.
 
@@ -458,7 +459,7 @@ non-circularity or replay-policy counterexample.
 ## 11. C0.3 gate
 
 O-06b-1 plus O-06b-2 and C0.2j do not make C0.3 executable. C0.2k, O-06c and
-O-14 are condition-bearing `DECIDED`; O-07, O-08 and O-10 remain open blockers.
+O-07 and O-14 are condition-bearing `DECIDED`; O-08 and O-10 remain open blockers.
 O-14's unchanged placeholder in O-06c must be replaced by the selected `0x0001`
 semantics and the complete combined evidence rerun under a separate
 human-ratified task before corpus authorization. O-12 additionally blocks any
