@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
+import getpass
+import hashlib
+from pathlib import Path
 import re
+import socket
+import subprocess
 
 
 PROBE_SCHEMA = "styx-o07-genesis-checkpoint-probe/v2"
@@ -16,6 +22,59 @@ _TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 _ABSOLUTE_PATH = re.compile(r"(?:^|\s)(?:/[^\s]+|[A-Za-z]:[\\/][^\s]+)")
 _TIMESTAMP = re.compile(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?")
 _PROCESS_ID = re.compile(r"\b(?:pid|process[-_ ]?id)\s*[:=]?\s*\d+\b", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class ReportHygieneContext:
+    """Repository and runtime identities forbidden in canonical reports."""
+
+    repository_identities: tuple[str, ...]
+    runtime_values: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not self.repository_identities:
+            raise ValueError("report hygiene requires repository identities")
+        if not self.runtime_values:
+            raise ValueError("report hygiene requires runtime identities")
+
+
+def repository_hygiene_context(
+    repo: Path,
+    base: str,
+    candidate: str,
+    *,
+    additional_identities: Iterable[str] = (),
+) -> ReportHygieneContext:
+    """Derive the exact checkout identities used by every report producer."""
+
+    resolved = repo.resolve()
+
+    def git(*arguments: str) -> bytes:
+        return subprocess.run(
+            ["git", "-C", str(resolved), *arguments],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ).stdout
+
+    base_commit = git("rev-parse", f"{base}^{{commit}}").decode().strip()
+    candidate_commit = git("rev-parse", f"{candidate}^{{commit}}").decode().strip()
+    base_tree = git("rev-parse", f"{base_commit}^{{tree}}").decode().strip()
+    candidate_tree = git("rev-parse", f"{candidate_commit}^{{tree}}").decode().strip()
+    full_diff = git("diff", "--binary", "--full-index", base_commit, candidate_commit)
+    diff_identity = hashlib.sha256(full_diff).hexdigest()
+    identities = (
+        base_commit,
+        candidate_commit,
+        base_tree,
+        candidate_tree,
+        diff_identity,
+        *(identity for identity in additional_identities if identity),
+    )
+    return ReportHygieneContext(
+        repository_identities=tuple(dict.fromkeys(identities)),
+        runtime_values=(str(resolved), socket.gethostname(), getpass.getuser()),
+    )
 
 
 def _dict(value: object, keys: set[str], label: str) -> dict[str, object]:
@@ -274,8 +333,7 @@ def _strings(value: object) -> Iterable[str]:
 def validate_canonical_report(
     report: object,
     *,
-    forbidden_identities: Iterable[str] = (),
-    forbidden_runtime_values: Iterable[str] = (),
+    hygiene_context: ReportHygieneContext,
 ) -> dict[str, object]:
     """Validate a closed schema and reject runtime or repository identity leakage."""
 
@@ -287,10 +345,14 @@ def validate_canonical_report(
     _VALIDATORS[schema](report)
 
     identity_needles: set[str] = set()
-    for identity in forbidden_identities:
+    for identity in hygiene_context.repository_identities:
         if identity:
-            identity_needles.update(identity[:length] for length in range(7, len(identity) + 1))
-    runtime_needles = {value for value in forbidden_runtime_values if value}
+            variants = {identity, identity.lower(), identity.upper()}
+            for variant in variants:
+                identity_needles.update(
+                    variant[:length] for length in range(7, len(variant) + 1)
+                )
+    runtime_needles = {value for value in hygiene_context.runtime_values if value}
     for value in _strings(report):
         if _ABSOLUTE_PATH.search(value):
             raise ValueError("canonical report contains an absolute path")

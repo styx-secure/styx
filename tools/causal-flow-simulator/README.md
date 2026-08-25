@@ -130,6 +130,24 @@ explicit checkpoint/AP input instead of being emitted as a new live relation.
 - O-06/O-07/O-08/O-10/O-11 decisions may require this model and its affected
   invariants to be extended and rerun.
 
+## O-07 canonical evidence hygiene
+
+Every O-07 canonical-report producer validates a closed schema with a mandatory
+context derived from the exact Base, candidate, both Git trees, binary/full-index
+diff, repository path, hostname and user before it serializes output. Full
+repository identities and every prefix of seven or more characters are
+forbidden in report keys and values, as are absolute paths, runtime identities,
+timestamps and process identifiers.
+
+The actual final Git bundle does not have a reproducible byte identity across
+independent bundle creation. It is therefore created once for the final package,
+and `o07/verify_final_evidence_hygiene.py` hashes those exact bytes and
+revalidates both worktree copies of all four canonical report families against
+the resulting identity. The verifier also requires canonical JSON bytes and
+byte equality between the two reports of each schema. This post-packaging gate
+does not replace `git bundle verify`, manifest verification or exact Base/HEAD
+checks; all remain separate external evidence.
+
 ## O-06c exact combined-construction package
 
 `o06c/` is a separate standard-library-only evidence package added by Issue

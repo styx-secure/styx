@@ -32,6 +32,7 @@ from scope_guard_o07 import (  # noqa: E402
     enforce_test_authenticator_isolation,
     validate_scope_report,
 )
+from report_schema import ReportHygieneContext  # noqa: E402
 
 
 def _git(repo: Path, *arguments: str) -> bytes:
@@ -210,11 +211,15 @@ class ScopeGuardTests(unittest.TestCase):
             "predecessor_import_count": 0,
             "verdict": "PASS",
         }
-        validate_scope_report(report)
+        context = ReportHygieneContext(
+            ("fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",),
+            ("/tmp/o07-scope-test", "scope-host.invalid", "scope-user"),
+        )
+        validate_scope_report(report, hygiene_context=context)
 
         unknown = dict(report, unexpected="value")
         with self.assertRaises(ValueError):
-            validate_scope_report(unknown)
+            validate_scope_report(unknown, hygiene_context=context)
 
         identity = "0123456789abcdef0123456789abcdef01234567"
         leaked = dict(report)
@@ -222,12 +227,15 @@ class ScopeGuardTests(unittest.TestCase):
             {"status": "M", "paths": [f"docs/protocol/{identity[:7]}.md"]}
         ]
         with self.assertRaisesRegex(ValueError, "repository identity"):
-            validate_scope_report(leaked, repository_identities=(identity,))
+            validate_scope_report(
+                leaked,
+                hygiene_context=ReportHygieneContext((identity,), context.runtime_values),
+            )
 
         absolute = dict(report)
         absolute["changed_relation"] = [{"status": "M", "paths": ["/tmp/leak"]}]
         with self.assertRaises(ValueError):
-            validate_scope_report(absolute)
+            validate_scope_report(absolute, hygiene_context=context)
 
     def test_model_is_an_explicit_normative_artifact(self) -> None:
         self.assertIn(MODEL_PATH, EXPECTED_ARTIFACT_SHA256)

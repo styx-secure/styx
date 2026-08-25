@@ -6,18 +6,21 @@ from __future__ import annotations
 import argparse
 import ast
 import copy
-import getpass
 import hashlib
 import json
 from pathlib import Path
-import socket
 import subprocess
 import sys
 
 
 sys.dont_write_bytecode = True
 
-from report_schema import SCOPE_SCHEMA, validate_canonical_report
+from report_schema import (
+    ReportHygieneContext,
+    SCOPE_SCHEMA,
+    repository_hygiene_context,
+    validate_canonical_report,
+)
 
 BASE_SHA = "86c3f2dbd630e445d737a25c09889de2777ee185"
 COPY_THRESHOLD = 25
@@ -86,12 +89,12 @@ EXPECTED_ARTIFACT_SHA256 = {
     MODEL_PATH: "fc45bf307791ddc0e9a066d18b03557da981f9e7da3bf54f23527b72aa7ab278",
     "docs/protocol/styx-app-kernel-v0-decisions.md": "9d8aac228077e8614f3b63af2cf43327dc26440793ba213f971703f3f3d51ddd",
     "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-analysis.md": "7758c6d0bdbbc1eb2ebbe93fac85c94d056ecaab744c1700de21160f3dc9e63e",
-    "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-falsification-report.md": "18224f689a2c3c0a674d5e620feef22f14e4942225ab6737f503243da502447b",
+    "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-falsification-report.md": "4885dd3ad166ad5042508503001d80d83e94e5fe2170a1f79fb7f72926f5ef62",
     "docs/protocol/styx-app-kernel-v0-identifier-derivation-analysis.md": "a2fdef0e9daad20ea62e2f511c29d0b6517b86550b98572e58518039c0d2dec0",
     "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md": "7d1e10e9d89fbac35082ad823176c58b29835d07b9b4ee4057aa7f02c6230bec",
     "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md": "ad68985fde0c0d3bcc5916446ff04c7c1a3572f8147c3522fde5b6496166eecf",
     "docs/security/STYX-THREAT-MODEL.md": "c6599f136ca222b9e1739c714c9339b4fd181c5af779b776f597e2a65763e5f5",
-    "tools/causal-flow-simulator/README.md": "68153d8581353f942267960e258d70588dafd7eee15df8e4d9f6eab20b756926",
+    "tools/causal-flow-simulator/README.md": "4a42410e1752a68ee8c57e33cbf06b89e7628715fb5834e5da01a4ae15a1a8ec",
 }
 
 
@@ -463,25 +466,12 @@ def enforce_test_authenticator_isolation(repo: Path, candidate: str) -> None:
         )
 
 
-def _repository_identities(repo: Path, base: str, candidate: str) -> tuple[str, ...]:
-    base_tree = _git(repo, "rev-parse", f"{base}^{{tree}}").stdout.decode().strip()
-    candidate_tree = _git(repo, "rev-parse", f"{candidate}^{{tree}}").stdout.decode().strip()
-    full_diff = _git(repo, "diff", "--binary", "--full-index", base, candidate).stdout
-    diff_identity = hashlib.sha256(full_diff).hexdigest()
-    return base, candidate, base_tree, candidate_tree, diff_identity
-
-
 def validate_scope_report(
     report: dict[str, object],
     *,
-    repository_identities: tuple[str, ...] = (),
-    runtime_values: tuple[str, ...] = (),
+    hygiene_context: ReportHygieneContext,
 ) -> dict[str, object]:
-    return validate_canonical_report(
-        report,
-        forbidden_identities=repository_identities,
-        forbidden_runtime_values=runtime_values,
-    )
+    return validate_canonical_report(report, hygiene_context=hygiene_context)
 
 
 def build_report(repo: Path, base_argument: str, candidate_argument: str) -> dict[str, object]:
@@ -510,8 +500,7 @@ def build_report(repo: Path, base_argument: str, candidate_argument: str) -> dic
     }
     validate_scope_report(
         report,
-        repository_identities=_repository_identities(repo, base, candidate),
-        runtime_values=(str(repo.resolve()), socket.gethostname(), getpass.getuser()),
+        hygiene_context=repository_hygiene_context(repo, base, candidate),
     )
     return report
 

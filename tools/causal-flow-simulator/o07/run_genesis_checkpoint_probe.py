@@ -17,11 +17,16 @@ for entry in (O07_ROOT, SIMULATOR_ROOT):
 
 from inventory import validate_inventory  # noqa: E402
 from o14.evidence_io import CanonicalJsonReport, public_failure  # noqa: E402
-from report_schema import PROBE_SCHEMA, validate_canonical_report  # noqa: E402
+from report_schema import (  # noqa: E402
+    PROBE_SCHEMA,
+    repository_hygiene_context,
+    validate_canonical_report,
+)
 from test_helpers.scenario_engine import evaluate_semantic_scenario  # noqa: E402
 
 
 SCHEMA = PROBE_SCHEMA
+BASE_SHA = "86c3f2dbd630e445d737a25c09889de2777ee185"
 
 
 def build_report() -> tuple[dict[str, object], bool]:
@@ -76,7 +81,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         report, passed = build_report()
-        validate_canonical_report(report)
+        hygiene = repository_hygiene_context(args.repo_root, BASE_SHA, "HEAD")
+        validate_canonical_report(report, hygiene_context=hygiene)
         CanonicalJsonReport.store(args.output, report)
     except (OSError, KeyError, ValueError) as error:
         print(f"O-07 probe failed: {public_failure(error)}", file=sys.stderr)

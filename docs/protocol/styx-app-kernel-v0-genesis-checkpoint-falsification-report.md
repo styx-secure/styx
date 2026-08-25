@@ -56,7 +56,7 @@ cosmetic mutant cannot satisfy the gate.
 
 The bounded development run produces:
 
-- O-07 unit suite: 33 tests passed;
+- O-07 unit suite: 39 tests passed;
 - semantic probe: `PASS`, 229/229 semantic instances, with all 58 separate
   gates explicitly retained rather than reported as semantic passes;
 - Python/Node cross-runtime gate: `PASS`, 229/229 exact relations with no skip
@@ -64,10 +64,18 @@ The bounded development run produces:
 - source mutation gate: all seven registered mutants killed and all 229 unique
   mutation relations covered.
 
+Every canonical-report producer derives one mandatory hygiene context from the
+exact Base, candidate, both trees, the binary/full-index diff, repository path,
+hostname and user before serialization. The API has no empty default context.
+The final evidence gate then reads the actual bundle bytes, adds their SHA-256
+to that same identity set and requires exactly two canonical, byte-identical
+reports for each of the probe, cross-runtime, mutation and scope schemas.
+
 Canonical reports deliberately contain no Base, candidate, tree, diff or bundle
 identity. Final identities and SHA-256 values belong only to the immutable
-external evidence package. Two complete fresh-worktree runs and every separate
-gate remain mandatory before O-07 can become effective.
+external evidence package. Two complete fresh-worktree runs, the final bundle
+hygiene gate and every separate gate remain mandatory before O-07 can become
+effective.
 
 ## 6. Residual falsification limits
 

@@ -20,11 +20,16 @@ for entry in (O07_ROOT, SIMULATOR_ROOT):
 
 from inventory import validate_inventory  # noqa: E402
 from o14.evidence_io import CanonicalJsonReport, public_failure  # noqa: E402
-from report_schema import MUTATION_SCHEMA, validate_canonical_report  # noqa: E402
+from report_schema import (  # noqa: E402
+    MUTATION_SCHEMA,
+    repository_hygiene_context,
+    validate_canonical_report,
+)
 from test_helpers.mutation_harness import mutant_still_passes  # noqa: E402
 
 
 SCHEMA = MUTATION_SCHEMA
+BASE_SHA = "86c3f2dbd630e445d737a25c09889de2777ee185"
 
 
 @dataclass(frozen=True)
@@ -184,7 +189,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         report, passed = build_report(args.repo_root.resolve())
-        validate_canonical_report(report)
+        hygiene = repository_hygiene_context(args.repo_root, BASE_SHA, "HEAD")
+        validate_canonical_report(report, hygiene_context=hygiene)
         CanonicalJsonReport.store(args.output, report)
     except (OSError, KeyError, ValueError) as error:
         print(f"O-07 mutations failed: {public_failure(error)}", file=sys.stderr)

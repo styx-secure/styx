@@ -20,11 +20,16 @@ for entry in (O07_ROOT, SIMULATOR_ROOT):
 
 from inventory import validate_inventory  # noqa: E402
 from o14.evidence_io import CanonicalJsonReport, public_failure  # noqa: E402
-from report_schema import CROSS_RUNTIME_SCHEMA, validate_canonical_report  # noqa: E402
+from report_schema import (  # noqa: E402
+    CROSS_RUNTIME_SCHEMA,
+    repository_hygiene_context,
+    validate_canonical_report,
+)
 
 
 SCHEMA = CROSS_RUNTIME_SCHEMA
 INPUT_SCHEMA = "styx-o07-adapter-input/v2"
+BASE_SHA = "86c3f2dbd630e445d737a25c09889de2777ee185"
 
 
 def _adapter_input() -> dict[str, object]:
@@ -168,7 +173,8 @@ def main(argv: list[str] | None = None) -> int:
         report, passed = build_report(
             args.repo_root.resolve(), args.workspace, args.javascript
         )
-        validate_canonical_report(report)
+        hygiene = repository_hygiene_context(args.repo_root, BASE_SHA, "HEAD")
+        validate_canonical_report(report, hygiene_context=hygiene)
         CanonicalJsonReport.store(args.output, report)
     except (OSError, KeyError, ValueError, subprocess.CalledProcessError) as error:
         print(f"O-07 cross-runtime failed: {public_failure(error)}", file=sys.stderr)
