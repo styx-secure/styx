@@ -14,20 +14,27 @@ regenerates the exact transcript, uses real SHA-256 derivation and invokes the
 selected O-14 Ed25519 verifier. An independent Node.js adapter parses, hashes
 and verifies the same candidate bytes without receiving an oracle verdict.
 
-The deterministic probe currently covers 19 named semantic cases. The
-cross-runtime gate covers six positive and negative vectors. The source
-mutation gate performs eleven exact single-site changes and requires a named
-detector to kill every one.
+The versioned inventory has exactly 287 normative atom/scenario relations:
+229 semantic hostile instances and 58 distinct repository, reproducibility,
+external-review or human gates. The deterministic probe executes all 229
+semantic instances. The cross-runtime gate executes the same exact 229
+relations independently in Python and JavaScript. The source mutation gate
+anchors seven real source mutants, one per semantic family, and maps every one
+of the 229 semantic rules to a unique named mutant/detector relation; every
+registered mutant must be killed.
 
 ## 3. Hostile classes exercised
 
 - exact framing, truncation, trailing input, wrong domain and allocation bound;
-- unauthenticated or denied ceremony, wrong reference and wrong O-03 tuple;
+- caller-fabricated, denied or malformed ceremony input; fake, copied,
+  reconstructed, foreign-domain and foreign-Boundary capabilities; wrong
+  reference and wrong O-03 tuple;
 - malformed signature and signature-to-authority substitution;
 - exact duplicate, distinct same-context genesis and rejected descendants;
 - semantic equality between a grant reference and genesis credential identity;
 - non-empty live replay dependencies, checkpoint smuggling and vacuous oracle;
-- alternate delivery order without a root-selection effect.
+- every contract-required candidate/ceremony delivery order and deterministic
+  ambient arrival/relay/storage/wall-clock permutation without root selection.
 
 The grant/reference equality case injects equality only after both reference
 constructions have crossed their structural boundary. Production SHA-256 and
@@ -37,31 +44,35 @@ second-preimage assumptions recorded by O-06.
 
 ## 4. Mutation relation
 
-The source registry removes or changes one of these selected rules at a time:
-reference-domain separation, authenticated provenance, explicit authorization,
-reference matching, tuple matching, signature verification, one-genesis
-fixation, descendant binding, grant/genesis collision rejection, checkpoint
-unreachability and the non-vacuous replay-dependency witness. Every mutation is
-required to execute and to fail its named detector.
+The source registry changes one selected rule in each closed semantic family:
+framing/profile closure, reference-domain separation, local capability-domain
+binding, cross-gate substitution, terminated-lineage admission, checkpoint
+smuggling and hostile-candidate delivery. The 229 inventory relations remain
+distinct even where a family shares one anchored source mutant. Every actual
+registered mutant executes and must fail its named detector; a prose-only or
+cosmetic mutant cannot satisfy the gate.
 
 ## 5. Current bounded result
 
-The development run at branch commit `b9ed187` produced:
+The bounded development run produces:
 
-- unit suite: 10 tests passed;
-- semantic probe: `PASS`, 19/19 cases, deterministic report SHA-256
-  `59b629cd6b6acdaceb3273c3a7f5e52655ea6dc5c5a2532514210ae9247b85f4`;
-- Python/Node cross-runtime gate: `PASS`, 6/6 vectors, deterministic report
-  SHA-256 `f2c4c4f2c773abbc6ff01b825f295a83d3ffbde974cfc18c950c23bd0091909e`;
-- source mutation gate: all 11 required mutants killed.
+- O-07 unit suite: 33 tests passed;
+- semantic probe: `PASS`, 229/229 semantic instances, with all 58 separate
+  gates explicitly retained rather than reported as semantic passes;
+- Python/Node cross-runtime gate: `PASS`, 229/229 exact relations with no skip
+  or oracle input;
+- source mutation gate: all seven registered mutants killed and all 229 unique
+  mutation relations covered.
 
-These are development identities, not final-HEAD evidence. The PR must replace
-or supplement them with two complete fresh-worktree runs and publish every
-final report and diff digest before O-07 can become effective.
+Canonical reports deliberately contain no Base, candidate, tree, diff or bundle
+identity. Final identities and SHA-256 values belong only to the immutable
+external evidence package. Two complete fresh-worktree runs and every separate
+gate remain mandatory before O-07 can become effective.
 
 ## 6. Residual falsification limits
 
-Two independent implementations can share a conceptual error. The AP block's
+Two independent implementations can share a conceptual error. The test
+Boundary is deterministic evidence only, not a production authenticator. The AP block's
 interior grammar is profile-owned and not tested here. Fresh-key non-reuse is a
 creator obligation that an acceptor cannot prove globally. The model fixes an
 abstract atomic acceptance transition but does not prove crash durability or

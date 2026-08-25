@@ -30,32 +30,39 @@ what keeps the construction non-circular.
 
 ## 3. Trust establishment and the five gates
 
-An acceptor obtains a ceremony result `R` through an authenticated channel that
-is independent of candidate delivery. `R` is exactly the O-03 tuple, expected
-genesis reference, explicit authorization decision and authenticated
-provenance. It supplies no separate suite, key or policy block.
+An acceptor presents a ceremony assertion `R` to its own locally configured
+`CeremonyBoundary` through a channel independent of candidate delivery. `R`
+has exactly three semantic bindings: the O-03 tuple, expected genesis reference
+and explicit authorization decision. Authenticated provenance is not a fourth
+caller-supplied field. Successful independent verification causes the local
+Boundary to issue an opaque, non-exportable `VerifiedCeremonyCapability` bound
+to that Boundary, acceptance domain and immutable tuple/reference pair. It
+supplies no separate suite, key or policy block.
 
 | Gate | Owner | Input | Success means | Does not mean |
 | --- | --- | --- | --- | --- |
-| Possession | AP bootstrap | Authenticated delivery of `R` | The acceptor has the intended ceremony statement | Candidate validity or authority |
+| Possession | AP bootstrap | Local Boundary verification and capability issuance | The acceptor independently authenticated the intended ceremony statement | Candidate validity or authority |
 | Cryptographic validity | K | Parsed transcript, root key, O-14 signature | The root key authenticated these exact bytes | AP authorization |
-| Structural binding | K | Recomputed reference and O-03 tuple | Candidate bytes match `R` and the context | Real-world legitimacy |
-| Initial authority | AP | Validated AP block plus explicit decision in `R` | The selected AP authorizes the root | Durability or availability |
+| Structural binding | K | Recomputed reference and capability-bound O-03 tuple | Candidate bytes match the locally verified ceremony and context | Real-world legitimacy |
+| Initial authority | AP | Validated AP block plus capability-bound affirmative decision | The selected AP authorizes the root | Durability or availability |
 | Local acceptance | RS abstract transition | All prior gates | The immutable accepted pair is fixed locally | Crash atomicity or rollback resistance |
 
 PV discloses the trust decision and residual limits; it authorizes nothing.
 Session membership, relay acceptance, signature validity, possession, storage
 presence and UI state cannot substitute for AP authority.
 
-The creator necessarily self-certifies: it creates the tuple, transcript,
-signature, reference and local `R` in one abstract transition. That is usable
-locally but is not evidence for another replica. Every later participant must
-receive the same `R` through its own authenticated ceremony.
+Creator initialization returns separate `CreatorLocalGenesisState`; it never
+creates an acceptor capability. That self-certifying local action is not
+evidence for another replica. Every later participant may receive the same
+semantic ceremony assertion, but its own Boundary must authenticate it and
+issue a fresh local capability. A capability, alias, copy, reconstruction,
+lookalike or foreign-domain/foreign-Boundary handle is never transferable.
 
 ## 4. Acceptance state
 
-The abstract acceptance transition atomically fixes `(R, O-03 tuple,
-genesis_reference)`. K receives the tuple/reference pair as immutable
+The abstract acceptance transition consumes one valid local capability and
+atomically fixes the accepted O-03 tuple and `genesis_reference`. K receives
+the tuple/reference pair as immutable
 configuration and never queries live AP or RS state while validating later
 objects.
 
@@ -63,7 +70,7 @@ objects.
 - a distinct genesis for the same context is rejected;
 - every descendant bound to the rejected genesis is rejected;
 - the accepted projection is unchanged by either rejection;
-- without independently authenticated matching `R`, no candidate is accepted;
+- without a matching capability issued by the local Boundary, no candidate is accepted;
 - arrival, relay, storage, lexical and wall-clock order never select a root.
 
 The first genesis-authored application event uses the genesis reference in both
@@ -100,9 +107,11 @@ root can terminate the complete authority lineage. The context may remain
 permanently authority-unavailable. No automatic recovery, finality or
 availability is promised.
 
-`R` is an external trust anchor, not proof that an organization or person is
-legitimate. A compromised ceremony, product operator, runtime or acceptance
-store can install an attacker root. Exact persistence, trusted-path UX,
+The ceremony Boundary is an abstract trust premise, not proof that an
+organization or person is legitimate. Its production transport, credential,
+trusted path and issuer-held witness remain unselected. A compromised Boundary,
+issuer configuration, product operator, runtime or acceptance store can install
+an attacker root and voids the root-of-trust guarantee. Exact persistence, trusted-path UX,
 rollback-resistant custody and onboarding delivery remain later AP/PV/RS/O-11
 work. A coherent whole-profile rollback can remain undetectable.
 

@@ -997,19 +997,23 @@ outcomes.
 - **Rule:** v0 has one genesis root. `T_genesis` and `genesis_reference` use the
   exact seven-field body and frozen outer derivations in the transcript profile.
   The root credential identifier is exactly `genesis_reference`. An accepting
-  replica requires an authenticated out-of-band ceremony record `R` containing
-  the exact O-03 tuple, expected reference and an explicit authorization
-  decision. It parses to exact end, recomputes the reference, matches the tuple
-  and verifies the O-14 signature before AP use. Candidate delivery, possession,
-  self-signature, transport/session success, runtime/storage/UI state and an
-  unauthenticated digest cannot create or alter `R`. The creator atomically
-  creates its transcript, reference and local `R`; this self-certification is
-  not evidence for another replica.
-- **Acceptance:** abstract acceptance atomically fixes `(R, O-03 tuple,
-  genesis_reference)` for one context. An exact duplicate is idempotent. A
+  replica requires an opaque local `VerifiedCeremonyCapability` issued only by
+  its preconfigured `CeremonyBoundary` after independently authenticating an
+  out-of-band assertion containing the exact O-03 tuple, expected reference and
+  affirmative authorization decision. Provenance is a condition of issuance,
+  not a caller-supplied field. The capability is non-data, non-exportable and
+  bound to one local Boundary and acceptance domain; copies, reconstructions,
+  lookalikes, foreign handles and creator-local state are rejected before
+  candidate parsing. Candidate delivery, possession, self-signature,
+  transport/session success, runtime/storage/UI state and an unauthenticated
+  digest cannot create it. The creator receives separate
+  `CreatorLocalGenesisState`; this self-certification is not evidence for an
+  accepting replica.
+- **Acceptance:** abstract acceptance consumes one valid local capability and
+  atomically fixes the O-03 tuple and `genesis_reference` for one context. An exact duplicate is idempotent. A
   distinct same-context genesis and every descendant bound to it are rejected
-  without changing the accepted projection. A replica without independently
-  authenticated matching `R` accepts no genesis. Arrival, relay, storage,
+  without changing the accepted projection. A replica without an independently
+  issued matching local capability accepts no genesis. Arrival, relay, storage,
   lexical and wall-clock order never select a root.
 - **Checkpoint boundary:** every grant-side checkpoint use is `UNSUPPORTED` in
   v0: no producer, signer, threshold, AP-state substitution, opening/content
@@ -1022,8 +1026,10 @@ outcomes.
   projection; possession or parsing never proves consumer revalidation.
 - **Residual/closure condition:** single-root reduction or equivocation can
   permanently remove all authority. No recovery, freshness, finality,
-  availability, durable rollback resistance, ceremony transport or product
-  activation follows. O-08 owns runtime bounds, O-10 stable outcome codes, and
+  availability, durable rollback resistance, ceremony transport, credential,
+  issuer witness, trusted-path UX or product activation follows. Compromise of
+  the Boundary, its issuer configuration, runtime or accepted-state store voids
+  the root guarantee. O-08 owns runtime bounds, O-10 stable outcome codes, and
   the combined placeholder-substituted O-14-to-O-06c rerun remains separate.
   Any future checkpoint capability reopens O-01/O-04, O-02 when it creates a
   producer-authority class, O-07 and the threat model, affects O-08/O-10/O-11,

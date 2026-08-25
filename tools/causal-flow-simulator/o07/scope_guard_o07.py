@@ -83,15 +83,15 @@ FORBIDDEN_TREES = (
 EXPECTED_ARTIFACT_SHA256 = {
     "docs/protocol/protocol-hardening-plan.md": "f1807c555d147ee55b8bc3bcb960459306c9ed0017f4a2bab51afdf4ec4ee904",
     "docs/protocol/review/README.md": "05ccd3af87bcf43c8fbdc2a622c9a3fbdf02929901e326ffefadb504c59d7a4c",
-    MODEL_PATH: "c13ac6a65b302c087c1e2c0f7336890dc1046f7cba89bf4fe6b5cb25b799aaf0",
-    "docs/protocol/styx-app-kernel-v0-decisions.md": "cd1e29b47ccf713b5480cce6967be7bf2172fd538abbc3bf705dc047398f68d5",
-    "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-analysis.md": "fd5fc333c244c772b2d88f30487f0d0e684ae50d4704879bc4e478c04b861aff",
-    "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-falsification-report.md": "67604d49118f0af9bd0b03f880e4f50ac044c23454baf5eef146673047191c70",
+    MODEL_PATH: "fc45bf307791ddc0e9a066d18b03557da981f9e7da3bf54f23527b72aa7ab278",
+    "docs/protocol/styx-app-kernel-v0-decisions.md": "9d8aac228077e8614f3b63af2cf43327dc26440793ba213f971703f3f3d51ddd",
+    "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-analysis.md": "7758c6d0bdbbc1eb2ebbe93fac85c94d056ecaab744c1700de21160f3dc9e63e",
+    "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-falsification-report.md": "18224f689a2c3c0a674d5e620feef22f14e4942225ab6737f503243da502447b",
     "docs/protocol/styx-app-kernel-v0-identifier-derivation-analysis.md": "a2fdef0e9daad20ea62e2f511c29d0b6517b86550b98572e58518039c0d2dec0",
-    "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md": "f34c1f76397dc67ff0880f4fffbbf9bfa0edaf49c93f9c73a76b393f06341b2b",
+    "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md": "7d1e10e9d89fbac35082ad823176c58b29835d07b9b4ee4057aa7f02c6230bec",
     "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md": "ad68985fde0c0d3bcc5916446ff04c7c1a3572f8147c3522fde5b6496166eecf",
-    "docs/security/STYX-THREAT-MODEL.md": "9378a7d9f534039be749dae89e0a021862d53136ec2eebaf18ac107ab25e415c",
-    "tools/causal-flow-simulator/README.md": "22831ecfd1a0b5c5baa1367fe14b0e2bc1f8fd41b25a1de6261330d5b404a811",
+    "docs/security/STYX-THREAT-MODEL.md": "c6599f136ca222b9e1739c714c9339b4fd181c5af779b776f597e2a65763e5f5",
+    "tools/causal-flow-simulator/README.md": "68153d8581353f942267960e258d70588dafd7eee15df8e4d9f6eab20b756926",
 }
 
 
@@ -273,7 +273,6 @@ def _expected_validator_values(base_values: dict[str, object]) -> dict[str, obje
     ):
         field_status[locator] = "DECIDED"
     for field in (
-        "authenticated_provenance",
         "context_tuple",
         "expected_genesis_reference",
         "explicit_authorization_decision",
@@ -287,7 +286,6 @@ def _expected_validator_values(base_values: dict[str, object]) -> dict[str, obje
             ("checkpoint_evidence", "checkpoint_evidence_refs"): "10a378b1809bbe2ee68902272d4b25bd2a319b59b2ae05b119e93041adf716ca",
             ("checkpoint_evidence", "replay_dependency_refs"): "dc56049d58952c866d9ffd2f9ab1b4be29508175413b898076c68f14e94237bd",
             ("genesis", "genesis_body"): "35db5f5cfde0fd3974c7dad5091ae95a16aa771ac3d382bb767aede8b57a48b5",
-            ("genesis_acceptance_record", "authenticated_provenance"): "05ee23d3b43ecb84653a1e55ca65d1e489ff3769884d88385bd7cd853b03191d",
             ("genesis_acceptance_record", "context_tuple"): "05ee23d3b43ecb84653a1e55ca65d1e489ff3769884d88385bd7cd853b03191d",
             ("genesis_acceptance_record", "expected_genesis_reference"): "05ee23d3b43ecb84653a1e55ca65d1e489ff3769884d88385bd7cd853b03191d",
             ("genesis_acceptance_record", "explicit_authorization_decision"): "425959aafb7d75d7ff918d5f82417f21392cf1e6106bc2bae0257f874197ea39",

@@ -173,18 +173,25 @@ placeholder-substitution rerun remain explicit downstream gates.
 `o07/` is the isolated, standard-library-only evidence package for Issue #248.
 It instantiates the frozen O-06b-1 genesis domains and the O-14 `0x0001`
 signature suite with one exact seven-field genesis transcript. It models the
-authenticated out-of-band ceremony record, validates each candidate before
-acceptance, fixes one context root atomically, treats an exact duplicate as
-idempotent, rejects every distinct same-context root and descendant, and keeps
-grant references distinct from the genesis credential identifier.
+abstract local ceremony Boundary, its opaque domain/Boundary-bound capability
+and mechanically separate creator-local state. It validates each candidate
+only after local capability validation, fixes one context root atomically,
+treats an exact duplicate as idempotent, rejects copied, reconstructed or
+foreign capabilities and every distinct same-context root and descendant, and
+keeps grant references distinct from the genesis credential identifier. The
+deterministic Boundary is test-only; no production ceremony transport,
+credential, witness, trusted path or persistence mechanism is selected.
 
-The package also exercises the v0 checkpoint boundary: ordinary replay retains
+The closed inventory contains 287 exact atom/scenario relations: 229 semantic
+instances executed independently in Python and JavaScript plus 58 separate
+repository, reproducibility, external-review and human gates. The package also exercises the v0 checkpoint boundary: ordinary replay retains
 its live authority transcripts and `REQUIRED` openings, while any attempt to
 populate checkpoint evidence is rejected before projection. The Python model
-and dependency-free Node adapter must agree, and the closed source-mutant
-registry must be killed. `scope_guard_o07.py` enforces the exact Issue #248
-paths, validator-literal deltas, copy/rename prohibition and approved normative
-artifacts against the ratified base.
+and dependency-free Node adapter must agree on all 229 relations, and every
+registered source mutant must be killed. `scope_guard_o07.py` enforces the
+exact Issue #248 paths, validator-literal deltas, copy/rename prohibition,
+predecessor-test integrity, test-authenticator isolation, closed report schemas
+and approved normative artifacts against the ratified base.
 
 Run the exact deterministic command block in Issue #248. Generated JSON belongs
 only in a caller-selected temporary directory and must reproduce byte-for-byte

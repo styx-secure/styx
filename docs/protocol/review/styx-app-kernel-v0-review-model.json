@@ -4544,42 +4544,8 @@
       "decision_refs": [
         "O-07"
       ],
-      "description": "Authenticated out-of-band AP ceremony record required before a replica can accept one context genesis; candidate delivery cannot create or change it.",
+      "description": "Abstract local AP ceremony capability issued by a preconfigured CeremonyBoundary after independent out-of-band authentication; candidate delivery cannot construct, transfer or change it.",
       "fields": [
-        {
-          "citations": [
-            {
-              "anchor": "Candidate delivery, possession",
-              "source_id": "decisions"
-            }
-          ],
-          "confidentiality": "PROFILE_DEPENDENT",
-          "decision_refs": [
-            "O-07"
-          ],
-          "description": "Evidence that the ceremony result came through the profile's authenticated channel independently of candidate delivery.",
-          "id": "authenticated_provenance",
-          "integrity": [
-            "PROFILE_DEPENDENT"
-          ],
-          "mutable_by": [
-            "application_profile",
-            "authorized_endpoint"
-          ],
-          "obligation_refs": [
-            "OB-K09"
-          ],
-          "owner": "AP",
-          "status": "DECIDED",
-          "visible_to": [
-            "application_profile",
-            "authorized_endpoint",
-            "kernel",
-            "recipient_endpoint",
-            "runtime_profile"
-          ],
-          "wire_presence": "OUT_OF_BAND"
-        },
         {
           "citations": [
             {
@@ -4592,7 +4558,7 @@
             "O-03",
             "O-07"
           ],
-          "description": "Exact protocol/profile/version/context tuple authenticated by the ceremony.",
+          "description": "Exact protocol/profile/version/context tuple immutably bound into the locally issued capability after ceremony authentication.",
           "id": "context_tuple",
           "integrity": [
             "PROFILE_DEPENDENT"
@@ -4626,7 +4592,7 @@
           "decision_refs": [
             "O-07"
           ],
-          "description": "Authenticated expected full-width reference to the complete candidate genesis transcript.",
+          "description": "Expected full-width reference immutably bound into the locally issued capability after ceremony authentication.",
           "id": "expected_genesis_reference",
           "integrity": [
             "PROFILE_DEPENDENT"
@@ -4653,7 +4619,7 @@
         {
           "citations": [
             {
-              "anchor": "explicit authorization",
+              "anchor": "affirmative authorization decision",
               "source_id": "decisions"
             }
           ],
@@ -4661,7 +4627,7 @@
           "decision_refs": [
             "O-07"
           ],
-          "description": "Explicit human or organizational AP decision authorizing this exact root for the context.",
+          "description": "Affirmative human or organizational AP decision immutably bound into the locally issued capability; a denied decision issues no capability.",
           "id": "explicit_authorization_decision",
           "integrity": [
             "PROFILE_DEPENDENT"
@@ -5991,19 +5957,19 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "cd1e29b47ccf713b5480cce6967be7bf2172fd538abbc3bf705dc047398f68d5"
+      "sha256": "9d8aac228077e8614f3b63af2cf43327dc26440793ba213f971703f3f3d51ddd"
     },
     {
       "authority": "evidence",
       "id": "genesis_checkpoint_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-analysis.md",
-      "sha256": "fd5fc333c244c772b2d88f30487f0d0e684ae50d4704879bc4e478c04b861aff"
+      "sha256": "7758c6d0bdbbc1eb2ebbe93fac85c94d056ecaab744c1700de21160f3dc9e63e"
     },
     {
       "authority": "evidence",
       "id": "genesis_checkpoint_report",
       "path": "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-falsification-report.md",
-      "sha256": "67604d49118f0af9bd0b03f880e4f50ac044c23454baf5eef146673047191c70"
+      "sha256": "18224f689a2c3c0a674d5e620feef22f14e4942225ab6737f503243da502447b"
     },
     {
       "authority": "evidence",
@@ -6045,7 +6011,7 @@
       "authority": "normative",
       "id": "responsibility",
       "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
-      "sha256": "f34c1f76397dc67ff0880f4fffbbf9bfa0edaf49c93f9c73a76b393f06341b2b"
+      "sha256": "7d1e10e9d89fbac35082ad823176c58b29835d07b9b4ee4057aa7f02c6230bec"
     },
     {
       "authority": "evidence",
@@ -6063,7 +6029,7 @@
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "9378a7d9f534039be749dae89e0a021862d53136ec2eebaf18ac107ab25e415c"
+      "sha256": "c6599f136ca222b9e1739c714c9339b4fd181c5af779b776f597e2a65763e5f5"
     },
     {
       "authority": "normative",
