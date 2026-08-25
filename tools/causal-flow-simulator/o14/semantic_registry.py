@@ -77,17 +77,22 @@ class EventInput:
     transcript: bytes
     signature: bytes
     binding: CredentialBinding | None
+    # Untrusted event-carried attempts to override the credential binding.
     event_suite_override: int | None = None
     event_key_override: bytes | None = None
-    # Trusted verifier-context inputs. These values are never decoded from the
-    # event or transport envelope and remain independently fail-closed.
+    # Adjacent-layer signals. Neither establishes application validity or AP
+    # authority, even when the corresponding transport/session check succeeds.
     transport_valid: bool = False
     session_valid: bool = False
+    # GRANT payload fields. They are never selectors for the carrying event.
     grant_suite_id: int | None = None
     grant_verification_key: bytes | None = None
+    # Trusted AP policy result, evaluated independently after K verification.
     ap_authorized: bool = True
+    # Attacker-declared allocation hints, checked against the actual octets.
     declared_key_length: int | None = None
     declared_signature_length: int | None = None
+    # Trusted caller/verifier mode, never decoded from an event or envelope.
     historical_evidence: bool = False
 
 
