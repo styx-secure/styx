@@ -63,16 +63,232 @@ class GenesisCandidate:
 
 
 @dataclass(frozen=True)
-class CeremonyRecord:
+class CreatorLocalGenesisState:
+    """Self-certifying creator state; never acceptor authority evidence."""
+
+    body: GenesisBody
+    candidate: GenesisCandidate
+    genesis_reference: bytes
+
+
+@dataclass(frozen=True)
+class CeremonyAssertion:
+    """The three semantic values authenticated outside candidate delivery.
+
+    This value is input to a ceremony boundary.  It is deliberately not
+    accepted by ``accept_genesis`` and is not itself proof that the ceremony
+    was authenticated.
+    """
+
     context: ContextTuple
     expected_genesis_reference: bytes
     explicit_authorization_decision: bool
-    authenticated_provenance: bool
+
+
+@dataclass(frozen=True)
+class AcceptedCeremony:
+    """The immutable semantic R binding retained after local verification."""
+
+    context: ContextTuple
+    expected_genesis_reference: bytes
+    explicit_authorization_decision: bool
+
+
+_CAPABILITY_CONSTRUCTION_SEAL = object()
+_DOMAIN_CONSTRUCTION_SEAL = object()
+_TEST_BOUNDARY_ACCESS_SEAL = object()
+
+
+class VerifiedCeremonyCapability:
+    """Opaque, local handle issued by one ceremony boundary for one domain.
+
+    Python object opacity is not an authentication primitive.  The evidence
+    claim assumes the boundary, runtime and accepted-state store are outside
+    the adversary's control, as required by the ratified O-07 contract.
+    """
+
+    __slots__ = (
+        "__boundary_witness",
+        "__domain_witness",
+        "__assertion",
+        "__handle_witness",
+    )
+
+    def __init__(
+        self,
+        construction_seal: object,
+        boundary_witness: object,
+        domain_witness: object,
+        assertion: CeremonyAssertion,
+        handle_witness: object,
+    ) -> None:
+        if construction_seal is not _CAPABILITY_CONSTRUCTION_SEAL:
+            raise GenesisError("CEREMONY_CAPABILITY_CONSTRUCTION_FORBIDDEN")
+        object.__setattr__(self, "_VerifiedCeremonyCapability__boundary_witness", boundary_witness)
+        object.__setattr__(self, "_VerifiedCeremonyCapability__domain_witness", domain_witness)
+        object.__setattr__(self, "_VerifiedCeremonyCapability__assertion", assertion)
+        object.__setattr__(self, "_VerifiedCeremonyCapability__handle_witness", handle_witness)
+
+    def __repr__(self) -> str:
+        return "<VerifiedCeremonyCapability local opaque handle>"
+
+    def __copy__(self):
+        raise TypeError("VerifiedCeremonyCapability cannot be copied")
+
+    def __deepcopy__(self, memo):
+        del memo
+        raise TypeError("VerifiedCeremonyCapability cannot be copied")
+
+    def __reduce__(self):
+        raise TypeError("VerifiedCeremonyCapability cannot be serialized")
+
+    def _binding_for(
+        self,
+        *,
+        boundary_witness: object,
+        domain_witness: object,
+        issued_handles: set[object],
+    ) -> AcceptedCeremony:
+        if self.__domain_witness is not domain_witness:
+            raise GenesisError("FOREIGN_ACCEPTANCE_DOMAIN")
+        if self.__boundary_witness is not boundary_witness:
+            raise GenesisError("FOREIGN_CEREMONY_BOUNDARY")
+        if self.__handle_witness not in issued_handles:
+            raise GenesisError("CEREMONY_CAPABILITY_INVALID")
+        assertion = self.__assertion
+        if not assertion.explicit_authorization_decision:
+            raise GenesisError("ROOT_AUTHORIZATION_REJECTED")
+        return AcceptedCeremony(
+            assertion.context,
+            assertion.expected_genesis_reference,
+            assertion.explicit_authorization_decision,
+        )
+
+
+class _CeremonyBoundary:
+    __slots__ = (
+        "__boundary_witness",
+        "__domain_witness",
+        "__expected_context",
+        "__expected_reference",
+        "__issued_handles",
+    )
+
+    def __init__(
+        self,
+        domain_witness: object,
+        expected_context: ContextTuple,
+        expected_reference: bytes,
+    ) -> None:
+        self.__boundary_witness = object()
+        self.__domain_witness = domain_witness
+        self.__expected_context = expected_context
+        self.__expected_reference = expected_reference
+        self.__issued_handles: set[object] = set()
+
+    def _issue(self, assertion: CeremonyAssertion) -> VerifiedCeremonyCapability:
+        if not assertion.explicit_authorization_decision:
+            raise GenesisError("ROOT_AUTHORIZATION_REJECTED")
+        if len(assertion.expected_genesis_reference) != REFERENCE_OCTETS:
+            raise GenesisError("CEREMONY_REFERENCE_LENGTH")
+        if assertion.context != self.__expected_context:
+            raise GenesisError("CEREMONY_CONTEXT_MISMATCH")
+        if assertion.expected_genesis_reference != self.__expected_reference:
+            raise GenesisError("CEREMONY_REFERENCE_MISMATCH")
+        handle_witness = object()
+        self.__issued_handles.add(handle_witness)
+        return VerifiedCeremonyCapability(
+            _CAPABILITY_CONSTRUCTION_SEAL,
+            self.__boundary_witness,
+            self.__domain_witness,
+            assertion,
+            handle_witness,
+        )
+
+    def validate(self, capability: object) -> AcceptedCeremony:
+        if capability is None:
+            raise GenesisError("VERIFIED_CEREMONY_CAPABILITY_REQUIRED")
+        if not isinstance(capability, VerifiedCeremonyCapability):
+            raise GenesisError("CEREMONY_CAPABILITY_INVALID")
+        return capability._binding_for(
+            boundary_witness=self.__boundary_witness,
+            domain_witness=self.__domain_witness,
+            issued_handles=self.__issued_handles,
+        )
+
+
+class AcceptanceDomain:
+    """One local acceptance domain with a non-replaceable ceremony boundary."""
+
+    __slots__ = ("__domain_witness", "__boundary")
+
+    def __init__(
+        self,
+        construction_seal: object,
+        domain_witness: object,
+        boundary: _CeremonyBoundary,
+    ) -> None:
+        if construction_seal is not _DOMAIN_CONSTRUCTION_SEAL:
+            raise GenesisError("ACCEPTANCE_DOMAIN_CONSTRUCTION_FORBIDDEN")
+        self.__domain_witness = domain_witness
+        self.__boundary = boundary
+
+    def _validate_capability(self, capability: object) -> AcceptedCeremony:
+        return self.__boundary.validate(capability)
+
+    def _test_domain_witness(self, access_seal: object) -> object:
+        if access_seal is not _TEST_BOUNDARY_ACCESS_SEAL:
+            raise GenesisError("TEST_BOUNDARY_ACCESS_FORBIDDEN")
+        return self.__domain_witness
+
+
+class _TestBoundaryController:
+    """Internal issuance controller exposed only through test helper modules."""
+
+    __slots__ = ("__boundary",)
+
+    def __init__(self, boundary: _CeremonyBoundary) -> None:
+        self.__boundary = boundary
+
+    def issue_affirmative(
+        self, context: ContextTuple, expected_genesis_reference: bytes
+    ) -> VerifiedCeremonyCapability:
+        return self.__boundary._issue(
+            CeremonyAssertion(context, expected_genesis_reference, True)
+        )
+
+
+def _new_test_acceptance_domain(
+    expected_context: ContextTuple,
+    expected_genesis_reference: bytes,
+) -> tuple[AcceptanceDomain, _TestBoundaryController]:
+    """Create isolated test state; production ceremony construction is unselected."""
+
+    domain_witness = object()
+    boundary = _CeremonyBoundary(
+        domain_witness, expected_context, expected_genesis_reference
+    )
+    domain = AcceptanceDomain(_DOMAIN_CONSTRUCTION_SEAL, domain_witness, boundary)
+    return domain, _TestBoundaryController(boundary)
+
+
+def _new_test_foreign_boundary_controller(
+    domain: AcceptanceDomain,
+    expected_context: ContextTuple,
+    expected_genesis_reference: bytes,
+) -> _TestBoundaryController:
+    """Create a second test-only Boundary in an existing local domain."""
+
+    domain_witness = domain._test_domain_witness(_TEST_BOUNDARY_ACCESS_SEAL)
+    boundary = _CeremonyBoundary(
+        domain_witness, expected_context, expected_genesis_reference
+    )
+    return _TestBoundaryController(boundary)
 
 
 @dataclass(frozen=True)
 class AcceptedGenesis:
-    ceremony: CeremonyRecord
+    ceremony: AcceptedCeremony
     body: GenesisBody
     transcript: bytes
     signature: bytes
@@ -84,6 +300,15 @@ class AcceptanceResult:
     state: AcceptedGenesis | None
     disposition: str
     changed: bool
+
+
+@dataclass(frozen=True)
+class LineageProjection:
+    """Minimal O-07 lineage state; it does not model profile-owned AP internals."""
+
+    genesis_reference: bytes
+    terminated: bool = False
+    termination_reason: str | None = None
 
 
 def _u16(value: int) -> bytes:
@@ -102,11 +327,42 @@ def _opaque_u32(value: bytes) -> bytes:
     return _u32(len(value)) + value
 
 
-def _validate_body(body: GenesisBody, allowed_profiles: frozenset[int]) -> None:
+def evaluate_body_length_bounds(declared_length: int, runtime_body_limit: int) -> str:
+    """Evaluate declared body length before any body allocation or slice."""
+
+    if not 0 <= declared_length <= 0xFFFFFFFF:
+        raise GenesisError("INTEGER_OUT_OF_RANGE")
+    if declared_length > MAX_BODY_OCTETS:
+        raise GenesisError("GENESIS_BODY_LENGTH")
+    if declared_length > runtime_body_limit:
+        raise GenesisError("GENESIS_BODY_RUNTIME_LIMIT")
+    return "NORMATIVE_BODY_LENGTH_ACCEPTED"
+
+
+def evaluate_ap_block_length_bounds(declared_length: int, runtime_body_limit: int) -> str:
+    """Evaluate declared AP-block length before any AP allocation or slice."""
+
+    if not 0 <= declared_length <= 0xFFFFFFFF:
+        raise GenesisError("INTEGER_OUT_OF_RANGE")
+    if declared_length > MAX_AP_BLOCK_OCTETS:
+        raise GenesisError("INITIAL_AUTHORITY_POLICY_LENGTH")
+    if declared_length > runtime_body_limit:
+        raise GenesisError("INITIAL_AUTHORITY_POLICY_RUNTIME_LIMIT")
+    return "NORMATIVE_AP_BLOCK_LENGTH_ACCEPTED"
+
+
+def _validate_body(
+    body: GenesisBody,
+    allowed_profiles: frozenset[tuple[int, int]],
+) -> None:
     context = body.context
     if context.protocol_version != PROTOCOL_VERSION:
         raise GenesisError("PROTOCOL_VERSION_REJECTED")
-    if context.application_profile_id == 0 or context.application_profile_id not in allowed_profiles:
+    selected_profile = (
+        context.application_profile_id,
+        context.application_profile_version,
+    )
+    if context.application_profile_id == 0 or selected_profile not in allowed_profiles:
         raise GenesisError("APPLICATION_PROFILE_REJECTED")
     if context.application_profile_version == 0:
         raise GenesisError("APPLICATION_PROFILE_VERSION_REJECTED")
@@ -122,7 +378,9 @@ def _validate_body(body: GenesisBody, allowed_profiles: frozenset[int]) -> None:
         raise GenesisError("INITIAL_AUTHORITY_POLICY_LENGTH")
 
 
-def encode_body(body: GenesisBody, *, allowed_profiles: frozenset[int]) -> bytes:
+def encode_body(
+    body: GenesisBody, *, allowed_profiles: frozenset[tuple[int, int]]
+) -> bytes:
     _validate_body(body, allowed_profiles)
     context = body.context
     encoded = b"".join(
@@ -141,7 +399,9 @@ def encode_body(body: GenesisBody, *, allowed_profiles: frozenset[int]) -> bytes
     return encoded
 
 
-def encode_transcript(body: GenesisBody, *, allowed_profiles: frozenset[int]) -> bytes:
+def encode_transcript(
+    body: GenesisBody, *, allowed_profiles: frozenset[tuple[int, int]]
+) -> bytes:
     encoded_body = encode_body(body, allowed_profiles=allowed_profiles)
     return _u16(D_GENESIS_SIG) + _u32(len(encoded_body)) + encoded_body
 
@@ -178,15 +438,14 @@ class _Reader:
 def parse_transcript(
     transcript: bytes,
     *,
-    allowed_profiles: frozenset[int],
+    allowed_profiles: frozenset[tuple[int, int]],
     runtime_body_limit: int,
 ) -> GenesisBody:
     outer = _Reader(transcript)
     if outer.u16("TRUNCATED_GENESIS_DOMAIN") != D_GENESIS_SIG:
         raise GenesisError("GENESIS_DOMAIN_REJECTED")
     body_length = outer.u32("TRUNCATED_GENESIS_BODY_LENGTH")
-    if body_length > MAX_BODY_OCTETS or body_length > runtime_body_limit:
-        raise GenesisError("GENESIS_BODY_LENGTH")
+    evaluate_body_length_bounds(body_length, runtime_body_limit)
     if body_length != len(transcript) - 6:
         raise GenesisError("GENESIS_BODY_LENGTH_MISMATCH")
     body_reader = _Reader(outer.take(body_length, "TRUNCATED_GENESIS_BODY"))
@@ -202,10 +461,11 @@ def parse_transcript(
         length_code="ROOT_KEY_LENGTH",
         truncation_code="TRUNCATED_ROOT_KEY",
     )
-    policy = body_reader.opaque_u32(
-        maximum=min(MAX_AP_BLOCK_OCTETS, runtime_body_limit),
-        length_code="INITIAL_AUTHORITY_POLICY_LENGTH",
-        truncation_code="TRUNCATED_INITIAL_AUTHORITY_POLICY",
+    policy_length = body_reader.u32("INITIAL_AUTHORITY_POLICY_LENGTH")
+    evaluate_ap_block_length_bounds(policy_length, runtime_body_limit)
+    policy = body_reader.take(
+        policy_length,
+        "TRUNCATED_INITIAL_AUTHORITY_POLICY",
     )
     body_reader.exact_end()
     outer.exact_end()
@@ -224,11 +484,43 @@ def derive_event_reference(transcript: bytes) -> bytes:
     return sha256(_u16(D_EVENT_REF) + _u32(len(transcript)) + transcript).digest()
 
 
+def enforce_frozen_signature_suite(
+    transcript_suite: int,
+    *,
+    event_suite: int | None = None,
+    ambient_suite: int | None = None,
+    fallback_requested: bool = False,
+) -> None:
+    if transcript_suite != SIGNATURE_SUITE:
+        raise GenesisError("SIGNATURE_SUITE_REJECTED")
+    if event_suite is not None and event_suite != transcript_suite:
+        raise GenesisError("EVENT_SUITE_SUBSTITUTION_REJECTED")
+    if ambient_suite is not None and ambient_suite != transcript_suite:
+        raise GenesisError("AMBIENT_SUITE_SUBSTITUTION_REJECTED")
+    if fallback_requested:
+        raise GenesisError("SIGNATURE_SUITE_FALLBACK_REJECTED")
+
+
+def enforce_transcript_root_key(
+    transcript_key: bytes,
+    *,
+    event_key: bytes | None = None,
+    ambient_key: bytes | None = None,
+    fallback_requested: bool = False,
+) -> None:
+    if event_key is not None and event_key != transcript_key:
+        raise GenesisError("EVENT_KEY_SUBSTITUTION_REJECTED")
+    if ambient_key is not None and ambient_key != transcript_key:
+        raise GenesisError("AMBIENT_KEY_SUBSTITUTION_REJECTED")
+    if fallback_requested:
+        raise GenesisError("ROOT_KEY_FALLBACK_REJECTED")
+
+
 def make_candidate(
     body: GenesisBody,
     seed: bytes,
     *,
-    allowed_profiles: frozenset[int],
+    allowed_profiles: frozenset[tuple[int, int]],
 ) -> GenesisCandidate:
     transcript = encode_transcript(body, allowed_profiles=allowed_profiles)
     public_key, signature = sign_from_seed(seed, transcript)
@@ -237,17 +529,29 @@ def make_candidate(
     return GenesisCandidate(transcript, signature)
 
 
-def validate_candidate(
-    candidate: GenesisCandidate,
-    ceremony: CeremonyRecord | None,
+def create_local_genesis(
+    body: GenesisBody,
+    seed: bytes,
     *,
-    allowed_profiles: frozenset[int],
+    allowed_profiles: frozenset[tuple[int, int]],
+) -> CreatorLocalGenesisState:
+    candidate = make_candidate(body, seed, allowed_profiles=allowed_profiles)
+    return CreatorLocalGenesisState(
+        body,
+        candidate,
+        derive_genesis_reference(candidate.transcript),
+    )
+
+
+def validate_candidate(
+    domain: AcceptanceDomain,
+    candidate: GenesisCandidate,
+    capability: object,
+    *,
+    allowed_profiles: frozenset[tuple[int, int]],
     runtime_body_limit: int,
-) -> tuple[GenesisBody, bytes]:
-    if ceremony is None or not ceremony.authenticated_provenance:
-        raise GenesisError("AUTHENTICATED_CEREMONY_REQUIRED")
-    if not ceremony.explicit_authorization_decision:
-        raise GenesisError("ROOT_AUTHORIZATION_REJECTED")
+) -> tuple[GenesisBody, bytes, AcceptedCeremony]:
+    ceremony = domain._validate_capability(capability)
     if len(candidate.signature) != SIGNATURE_OCTETS:
         raise GenesisError("GENESIS_SIGNATURE_LENGTH")
     body = parse_transcript(
@@ -262,24 +566,25 @@ def validate_candidate(
         raise GenesisError("GENESIS_CONTEXT_TUPLE_MISMATCH")
     if not selected_verify(candidate.signature, candidate.transcript, body.root_verification_key):
         raise GenesisError("GENESIS_SIGNATURE_INVALID")
-    return body, reference
+    return body, reference, ceremony
 
 
 def accept_genesis(
+    domain: AcceptanceDomain,
     current: AcceptedGenesis | None,
     candidate: GenesisCandidate,
-    ceremony: CeremonyRecord | None,
+    capability: object,
     *,
-    allowed_profiles: frozenset[int],
+    allowed_profiles: frozenset[tuple[int, int]],
     runtime_body_limit: int,
 ) -> AcceptanceResult:
-    body, reference = validate_candidate(
+    body, reference, ceremony = validate_candidate(
+        domain,
         candidate,
-        ceremony,
+        capability,
         allowed_profiles=allowed_profiles,
         runtime_body_limit=runtime_body_limit,
     )
-    assert ceremony is not None
     if current is None:
         accepted = AcceptedGenesis(
             ceremony, body, candidate.transcript, candidate.signature, reference
@@ -306,6 +611,167 @@ def reject_grant_identifier_collision(
 ) -> None:
     if computed_grant_reference == accepted_genesis_reference:
         raise GenesisError("GRANT_REFERENCE_EQUALS_GENESIS_CREDENTIAL")
+
+
+def evaluate_acceptance_gates(
+    *,
+    authenticated_possession: bool,
+    cryptographic_validity: bool,
+    kernel_binding: bool,
+    application_authority: bool,
+    acceptance_transition: bool,
+) -> str:
+    """Require each independently owned gate; no true gate substitutes another."""
+
+    gates = (
+        (authenticated_possession, "AUTHENTICATED_POSSESSION_REQUIRED"),
+        (cryptographic_validity, "CRYPTOGRAPHIC_VALIDITY_REQUIRED"),
+        (kernel_binding, "KERNEL_BINDING_REQUIRED"),
+        (application_authority, "APPLICATION_AUTHORITY_REQUIRED"),
+        (acceptance_transition, "ACCEPTANCE_TRANSITION_REQUIRED"),
+    )
+    for passed, code in gates:
+        if not passed:
+            raise GenesisError(code)
+    return "ALL_INDEPENDENT_GATES_PASSED"
+
+
+_GATE_NAMES = frozenset({"P", "C", "K", "A", "R"})
+_NON_AUTHORITY_FACTS = frozenset(
+    {
+        "PV_DISCLOSURE",
+        "SESSION_IDENTITY",
+        "TRANSPORT_IDENTITY",
+        "RUNTIME_IDENTITY",
+        "STORAGE_ORDER",
+        "UI_STATE",
+        "FIELD_BYTE_EQUALITY",
+        "LOCAL_PREFERENCE",
+        "LEXICAL_ORDER",
+    }
+)
+
+
+def reject_gate_substitution(source_gate: str, target_gate: str) -> None:
+    """Reject one independently named gate being used as another gate's proof."""
+
+    if source_gate not in _GATE_NAMES or target_gate not in _GATE_NAMES:
+        raise GenesisError("UNKNOWN_ACCEPTANCE_GATE")
+    if source_gate == target_gate:
+        raise GenesisError("GATE_SELF_SUBSTITUTION_FIXTURE_INVALID")
+    raise GenesisError(f"GATE_SUBSTITUTION_{source_gate}_FOR_{target_gate}")
+
+
+def reject_application_authority_substitution(source_fact: str) -> None:
+    """Reject ambient/application facts that do not constitute AP authority."""
+
+    if source_fact not in _NON_AUTHORITY_FACTS:
+        raise GenesisError("UNKNOWN_NON_AUTHORITY_FACT")
+    raise GenesisError(f"APPLICATION_AUTHORITY_SUBSTITUTION_{source_fact}")
+
+
+def validate_single_root_shape(
+    *, root_count: int, threshold: int, additional_cosigners: int
+) -> None:
+    if additional_cosigners:
+        raise GenesisError("UNAUTHORIZED_COSIGNER")
+    if threshold != 1:
+        raise GenesisError("THRESHOLD_ROOT_NOT_SELECTABLE_V0")
+    if root_count != 1:
+        raise GenesisError("MULTI_ROOT_NOT_SELECTABLE_V0")
+
+
+def reject_initial_ap_self_reference(
+    initial_authority_policy: bytes, genesis_reference: bytes
+) -> None:
+    if genesis_reference in initial_authority_policy:
+        raise GenesisError("GENESIS_SELF_REFERENCE_FORBIDDEN")
+
+
+def new_lineage_projection(state: AcceptedGenesis) -> LineageProjection:
+    return LineageProjection(state.genesis_reference)
+
+
+def terminate_root_lineage(
+    projection: LineageProjection, *, event_kind: str
+) -> LineageProjection:
+    reasons = {
+        "REVOKE": "ROOT_REVOKED",
+        "ROTATE": "ROOT_ROTATED_NO_SUCCESSOR",
+        "FORK": "ROOT_EQUIVOCATION",
+    }
+    try:
+        reason = reasons[event_kind]
+    except KeyError as error:
+        raise GenesisError("UNKNOWN_ROOT_CONTROL_EVENT") from error
+    if projection.terminated:
+        return projection
+    return LineageProjection(projection.genesis_reference, True, reason)
+
+
+def admit_lineage_descendant(
+    projection: LineageProjection,
+    *,
+    field16_reference: bytes | None,
+    causally_descends: bool,
+) -> str:
+    if projection.terminated:
+        raise GenesisError("DESCENDANT_AFTER_ROOT_TERMINATION")
+    if field16_reference is None:
+        raise GenesisError("GENESIS_AUTHORED_FIELD16_REQUIRED")
+    if field16_reference != projection.genesis_reference:
+        raise GenesisError("DESCENDANT_GENESIS_REFERENCE_MISMATCH")
+    if not causally_descends:
+        raise GenesisError("GENESIS_DESCENT_REQUIRED")
+    return "GENESIS_DESCENT_AND_FIELD16_BOUND"
+
+
+def reject_same_context_root_recovery(projection: LineageProjection) -> None:
+    if not projection.terminated:
+        raise GenesisError("ROOT_RECOVERY_FIXTURE_REQUIRES_TERMINATION")
+    raise GenesisError("SAME_CONTEXT_ROOT_RECOVERY_UNSUPPORTED")
+
+
+_UNSUPPORTED_CHECKPOINT_ASSERTIONS = frozenset(
+    {
+        "PRODUCER_ELIGIBILITY",
+        "SIGNER_AUTHORITY",
+        "THRESHOLD_AUTHORITY",
+        "AP_STATE",
+        "CONTENT_RECONSTRUCTION",
+        "OPENING_RECONSTRUCTION",
+        "FRESHNESS",
+        "FINALITY",
+        "HORIZON_AUTHORITY",
+        "RETENTION_SUMMARY_GRANT_SIDE",
+    }
+)
+_UNREACHABLE_CHECKPOINT_INPUTS = frozenset(
+    {"UNREGISTERED_DOMAIN", "NO_V0_OBJECT", "NO_V0_COMPACTION"}
+)
+
+
+def evaluate_checkpoint_assertion(assertion_kind: str) -> str:
+    if assertion_kind not in _UNSUPPORTED_CHECKPOINT_ASSERTIONS:
+        raise GenesisError("UNKNOWN_CHECKPOINT_ASSERTION")
+    return "CHECKPOINT_ASSERTION_UNSUPPORTED_V0"
+
+
+def evaluate_checkpoint_input_reachability(input_kind: str) -> str:
+    if input_kind not in _UNREACHABLE_CHECKPOINT_INPUTS:
+        raise GenesisError("UNKNOWN_CHECKPOINT_INPUT")
+    return "CHECKPOINT_INPUT_UNREACHABLE_V0"
+
+
+def reject_checkpoint_evidence_smuggling(source: str) -> None:
+    allowed_sources = frozenset(
+        {"STRUCTURAL_MATERIAL", "SIGNED_MATERIAL", "STALENESS_ASSERTION",
+         "ADMITTED_REFERENCE", "RUNTIME_PEER", "RETENTION_SUMMARY",
+         "CALLER_FLAG", "FIXTURE_SYNTHETIC"}
+    )
+    if source not in allowed_sources:
+        raise GenesisError("UNKNOWN_CHECKPOINT_SMUGGLING_SOURCE")
+    raise GenesisError(f"CHECKPOINT_EVIDENCE_SMUGGLING_{source}")
 
 
 def evaluate_checkpoint_boundary(

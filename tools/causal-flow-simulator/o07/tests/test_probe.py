@@ -16,9 +16,12 @@ class ProbeTest(unittest.TestCase):
     def test_required_hostile_inventory_passes(self) -> None:
         report, passed = build_report()
         self.assertTrue(passed)
-        self.assertEqual(report["case_count"], 19)
-        self.assertEqual(report["failed"], [])
-        self.assertEqual(report["verdict"], "PASS")
+        self.assertEqual(report["inventory_relation_count"], 287)
+        self.assertEqual(report["semantic_atom_count"], 229)
+        self.assertEqual(report["external_gate_count"], 58)
+        self.assertEqual(report["failed_semantic_atoms"], [])
+        self.assertEqual(report["semantic_verdict"], "PASS")
+        self.assertEqual(report["final_o07_gate"], "NOT_EVALUATED_BY_THIS_PROBE")
 
 
 if __name__ == "__main__":

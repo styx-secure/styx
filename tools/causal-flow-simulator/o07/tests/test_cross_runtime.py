@@ -23,7 +23,7 @@ class CrossRuntimeTest(unittest.TestCase):
             report, passed = build_report(repo, Path(root) / "runtime", "node")
         self.assertTrue(passed)
         self.assertEqual(report["adapter_count"], 2)
-        self.assertEqual(report["vector_count"], 6)
+        self.assertEqual(report["semantic_atom_count"], 229)
         self.assertEqual(report["failed"], [])
 
 

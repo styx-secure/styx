@@ -17,8 +17,10 @@ class MutationTest(unittest.TestCase):
         repo = Path(__file__).resolve().parents[4]
         report, passed = build_report(repo)
         self.assertTrue(passed)
-        self.assertEqual(report["required_mutant_count"], len(MUTATIONS))
+        self.assertEqual(report["registered_mutant_count"], len(MUTATIONS))
+        self.assertEqual(report["semantic_relation_count"], 229)
         self.assertEqual(report["survived"], [])
+        self.assertEqual(report["uncovered_atoms"], [])
 
 
 if __name__ == "__main__":

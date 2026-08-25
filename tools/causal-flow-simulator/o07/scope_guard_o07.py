@@ -6,22 +6,27 @@ from __future__ import annotations
 import argparse
 import ast
 import copy
+import getpass
 import hashlib
 import json
 from pathlib import Path
+import socket
 import subprocess
 import sys
 
 
 sys.dont_write_bytecode = True
 
+from report_schema import SCOPE_SCHEMA, validate_canonical_report
+
 BASE_SHA = "86c3f2dbd630e445d737a25c09889de2777ee185"
 COPY_THRESHOLD = 25
-REPORT_SCHEMA = "styx-o07-scope-report/v1"
+REPORT_SCHEMA = SCOPE_SCHEMA
 VALIDATOR_PATH = "tools/protocol-review-model/validate.py"
 MODEL_PATH = "docs/protocol/review/styx-app-kernel-v0-review-model.json"
 O07_PREFIX = "tools/causal-flow-simulator/o07/"
 PREDECESSOR_REVIEW_TEST_PREFIX = "tools/protocol-review-model/tests/"
+EXPECTED_PREDECESSOR_TEST_MODULES = 3
 
 ALLOWED_FILES = frozenset(
     {
@@ -375,6 +380,23 @@ def enforce_predecessor_test_integrity(
     if not listing:
         raise ScopeViolation("missing predecessor review-test inventory")
 
+    candidate_listing = _git(
+        repo,
+        "ls-tree",
+        "-r",
+        "--name-only",
+        candidate,
+        "--",
+        PREDECESSOR_REVIEW_TEST_PREFIX,
+    ).stdout.decode().splitlines()
+    candidate_test_modules = [
+        path
+        for path in candidate_listing
+        if path.rsplit("/", 1)[-1].startswith("test_") and path.endswith(".py")
+    ]
+    if len(candidate_test_modules) != EXPECTED_PREDECESSOR_TEST_MODULES:
+        raise ScopeViolation("predecessor review-test module count changed")
+
     observed: dict[str, str] = {}
     for path in sorted(listing):
         base_mode, base_object_id = _tree_entry(repo, base, path)
@@ -403,6 +425,70 @@ def enforce_predecessor_isolation(repo: Path, candidate: str) -> None:
         raise ScopeViolation("O-07 imported outside its package: " + ",".join(sorted(offenders)))
 
 
+def enforce_test_authenticator_isolation(repo: Path, candidate: str) -> None:
+    """Keep the Python test ceremony issuer inside tests and test_helpers."""
+
+    listing = _git(
+        repo, "ls-tree", "-r", "--name-only", candidate, "--", O07_PREFIX
+    ).stdout.decode().splitlines()
+    forbidden_symbols = {
+        "_TestBoundaryController",
+        "_new_test_acceptance_domain",
+        "_new_test_foreign_boundary_controller",
+    }
+    offenders: list[str] = []
+    for path in listing:
+        if not path.endswith(".py"):
+            continue
+        relative = path.removeprefix(O07_PREFIX)
+        if relative.startswith("tests/") or relative.startswith("test_helpers/"):
+            continue
+        tree = ast.parse(_blob(repo, candidate, path).decode("utf-8"), filename=path)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                imported = {alias.name for alias in node.names}
+                if module.endswith("test_helpers.ceremony") or imported & forbidden_symbols:
+                    offenders.append(path)
+                    break
+            if isinstance(node, ast.Import):
+                if any(alias.name.endswith("test_helpers.ceremony") for alias in node.names):
+                    offenders.append(path)
+                    break
+            if isinstance(node, ast.Attribute) and node.attr in forbidden_symbols:
+                offenders.append(path)
+                break
+            if isinstance(node, ast.Name) and node.id in forbidden_symbols:
+                offenders.append(path)
+                break
+    if offenders:
+        raise ScopeViolation(
+            "test-only ceremony authenticator escaped its harness: "
+            + ",".join(sorted(set(offenders)))
+        )
+
+
+def _repository_identities(repo: Path, base: str, candidate: str) -> tuple[str, ...]:
+    base_tree = _git(repo, "rev-parse", f"{base}^{{tree}}").stdout.decode().strip()
+    candidate_tree = _git(repo, "rev-parse", f"{candidate}^{{tree}}").stdout.decode().strip()
+    full_diff = _git(repo, "diff", "--binary", "--full-index", base, candidate).stdout
+    diff_identity = hashlib.sha256(full_diff).hexdigest()
+    return base, candidate, base_tree, candidate_tree, diff_identity
+
+
+def validate_scope_report(
+    report: dict[str, object],
+    *,
+    repository_identities: tuple[str, ...] = (),
+    runtime_values: tuple[str, ...] = (),
+) -> dict[str, object]:
+    return validate_canonical_report(
+        report,
+        forbidden_identities=repository_identities,
+        forbidden_runtime_values=runtime_values,
+    )
+
+
 def build_report(repo: Path, base_argument: str, candidate_argument: str) -> dict[str, object]:
     base = _commit(repo, base_argument)
     candidate = _commit(repo, candidate_argument)
@@ -414,20 +500,25 @@ def build_report(repo: Path, base_argument: str, candidate_argument: str) -> dic
     artifact_digests = enforce_exact_artifacts(repo, candidate)
     predecessor_test_blobs = enforce_predecessor_test_integrity(repo, base, candidate)
     enforce_predecessor_isolation(repo, candidate)
-    return {
+    enforce_test_authenticator_isolation(repo, candidate)
+    report = {
         "schema": REPORT_SCHEMA,
-        "base_commit": base,
-        "candidate_commit": candidate,
         "copy_threshold_percent": COPY_THRESHOLD,
         "changed_relation": relation,
         "changed_endpoint_count": sum(len(item["paths"]) for item in relation),
         "validator_assignments_changed": validator_assignments,
-        "approved_artifact_sha256": artifact_digests,
-        "predecessor_review_test_blobs": predecessor_test_blobs,
-        "byte_identical_o07_base_blobs": [],
-        "predecessor_imports": [],
+        "approved_artifact_count": len(artifact_digests),
+        "predecessor_review_test_count": len(predecessor_test_blobs),
+        "byte_identical_o07_base_blob_count": 0,
+        "predecessor_import_count": 0,
         "verdict": "PASS",
     }
+    validate_scope_report(
+        report,
+        repository_identities=_repository_identities(repo, base, candidate),
+        runtime_values=(str(repo.resolve()), socket.gethostname(), getpass.getuser()),
+    )
+    return report
 
 
 def _store(path: Path, report: dict[str, object]) -> None:

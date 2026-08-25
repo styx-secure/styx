@@ -1,0 +1,1441 @@
+{
+   "relation_count" : 287,
+   "rows" : [
+      {
+         "atom_instance_id" : "A-FRM-000",
+         "requirement" : "canonical seven-field transcript accepts only after all independent gates",
+         "scenario_instance_id" : "S-FRM-000"
+      },
+      {
+         "atom_instance_id" : "A-FRM-001",
+         "requirement" : "omit field 1, protocol version; reject before signature/AP use",
+         "scenario_instance_id" : "S-FRM-001"
+      },
+      {
+         "atom_instance_id" : "A-FRM-002",
+         "requirement" : "omit field 2, AP identifier; reject before signature/AP use",
+         "scenario_instance_id" : "S-FRM-002"
+      },
+      {
+         "atom_instance_id" : "A-FRM-003",
+         "requirement" : "omit field 3, AP version; reject before signature/AP use",
+         "scenario_instance_id" : "S-FRM-003"
+      },
+      {
+         "atom_instance_id" : "A-FRM-004",
+         "requirement" : "omit field 4, context identifier; reject before signature/AP use",
+         "scenario_instance_id" : "S-FRM-004"
+      },
+      {
+         "atom_instance_id" : "A-FRM-005",
+         "requirement" : "omit field 5, signature-suite identifier; reject before signature/AP use",
+         "scenario_instance_id" : "S-FRM-005"
+      },
+      {
+         "atom_instance_id" : "A-FRM-006",
+         "requirement" : "omit field 6, root verification key; reject before signature/AP use",
+         "scenario_instance_id" : "S-FRM-006"
+      },
+      {
+         "atom_instance_id" : "A-FRM-007",
+         "requirement" : "omit field 7, initial AP block; reject before signature/AP use",
+         "scenario_instance_id" : "S-FRM-007"
+      },
+      {
+         "atom_instance_id" : "A-FRM-008",
+         "requirement" : "insert unknown field before field 1; exact-end/canonical-order rejection",
+         "scenario_instance_id" : "S-FRM-008"
+      },
+      {
+         "atom_instance_id" : "A-FRM-009",
+         "requirement" : "insert unknown field between fields 1 and 2; reject",
+         "scenario_instance_id" : "S-FRM-009"
+      },
+      {
+         "atom_instance_id" : "A-FRM-010",
+         "requirement" : "insert unknown field between fields 2 and 3; reject",
+         "scenario_instance_id" : "S-FRM-010"
+      },
+      {
+         "atom_instance_id" : "A-FRM-011",
+         "requirement" : "insert unknown field between fields 3 and 4; reject",
+         "scenario_instance_id" : "S-FRM-011"
+      },
+      {
+         "atom_instance_id" : "A-FRM-012",
+         "requirement" : "insert unknown field between fields 4 and 5; reject",
+         "scenario_instance_id" : "S-FRM-012"
+      },
+      {
+         "atom_instance_id" : "A-FRM-013",
+         "requirement" : "insert unknown field between fields 5 and 6; reject",
+         "scenario_instance_id" : "S-FRM-013"
+      },
+      {
+         "atom_instance_id" : "A-FRM-014",
+         "requirement" : "insert unknown field between fields 6 and 7; reject",
+         "scenario_instance_id" : "S-FRM-014"
+      },
+      {
+         "atom_instance_id" : "A-FRM-015",
+         "requirement" : "insert unknown field after field 7; exact-end rejection",
+         "scenario_instance_id" : "S-FRM-015"
+      },
+      {
+         "atom_instance_id" : "A-FRM-016",
+         "requirement" : "swap adjacent fields 1 and 2; reject non-canonical order",
+         "scenario_instance_id" : "S-FRM-016"
+      },
+      {
+         "atom_instance_id" : "A-FRM-017",
+         "requirement" : "swap adjacent fields 2 and 3; reject non-canonical order",
+         "scenario_instance_id" : "S-FRM-017"
+      },
+      {
+         "atom_instance_id" : "A-FRM-018",
+         "requirement" : "swap adjacent fields 3 and 4; reject non-canonical order",
+         "scenario_instance_id" : "S-FRM-018"
+      },
+      {
+         "atom_instance_id" : "A-FRM-019",
+         "requirement" : "swap adjacent fields 4 and 5; reject non-canonical order",
+         "scenario_instance_id" : "S-FRM-019"
+      },
+      {
+         "atom_instance_id" : "A-FRM-020",
+         "requirement" : "swap adjacent fields 5 and 6; reject non-canonical order",
+         "scenario_instance_id" : "S-FRM-020"
+      },
+      {
+         "atom_instance_id" : "A-FRM-021",
+         "requirement" : "swap adjacent fields 6 and 7; reject non-canonical order",
+         "scenario_instance_id" : "S-FRM-021"
+      },
+      {
+         "atom_instance_id" : "A-FRM-022",
+         "requirement" : "truncate outer domain; reject without partial parse",
+         "scenario_instance_id" : "S-FRM-022"
+      },
+      {
+         "atom_instance_id" : "A-FRM-023",
+         "requirement" : "truncate outer `body_length`; reject without allocation",
+         "scenario_instance_id" : "S-FRM-023"
+      },
+      {
+         "atom_instance_id" : "A-FRM-024",
+         "requirement" : "truncate within field 1; reject",
+         "scenario_instance_id" : "S-FRM-024"
+      },
+      {
+         "atom_instance_id" : "A-FRM-025",
+         "requirement" : "truncate within field 2; reject",
+         "scenario_instance_id" : "S-FRM-025"
+      },
+      {
+         "atom_instance_id" : "A-FRM-026",
+         "requirement" : "truncate within field 3; reject",
+         "scenario_instance_id" : "S-FRM-026"
+      },
+      {
+         "atom_instance_id" : "A-FRM-027",
+         "requirement" : "truncate within field 4; reject",
+         "scenario_instance_id" : "S-FRM-027"
+      },
+      {
+         "atom_instance_id" : "A-FRM-028",
+         "requirement" : "truncate within field 5; reject",
+         "scenario_instance_id" : "S-FRM-028"
+      },
+      {
+         "atom_instance_id" : "A-FRM-029",
+         "requirement" : "truncate within field 6 or its length prefix; reject",
+         "scenario_instance_id" : "S-FRM-029"
+      },
+      {
+         "atom_instance_id" : "A-FRM-030",
+         "requirement" : "truncate within field 7 or its length prefix; reject",
+         "scenario_instance_id" : "S-FRM-030"
+      },
+      {
+         "atom_instance_id" : "A-FRM-031",
+         "requirement" : "truncate signature bytes; signature gate rejects",
+         "scenario_instance_id" : "S-FRM-031"
+      },
+      {
+         "atom_instance_id" : "A-FRM-032",
+         "requirement" : "append byte inside declared body; canonical body rejects",
+         "scenario_instance_id" : "S-FRM-032"
+      },
+      {
+         "atom_instance_id" : "A-FRM-033",
+         "requirement" : "append byte after declared transcript; exact-end rejects",
+         "scenario_instance_id" : "S-FRM-033"
+      },
+      {
+         "atom_instance_id" : "A-FRM-034",
+         "requirement" : "declare body length one less than actual; reject",
+         "scenario_instance_id" : "S-FRM-034"
+      },
+      {
+         "atom_instance_id" : "A-FRM-035",
+         "requirement" : "declare body length one greater than actual; reject",
+         "scenario_instance_id" : "S-FRM-035"
+      },
+      {
+         "atom_instance_id" : "A-FRM-036",
+         "requirement" : "body bound `2^32-22`; arithmetic accepts the normative bound before runtime-envelope evaluation",
+         "scenario_instance_id" : "S-FRM-036"
+      },
+      {
+         "atom_instance_id" : "A-FRM-037",
+         "requirement" : "body bound `2^32-21`; arithmetic accepts the normative bound before runtime-envelope evaluation",
+         "scenario_instance_id" : "S-FRM-037"
+      },
+      {
+         "atom_instance_id" : "A-FRM-038",
+         "requirement" : "body declaration `2^32-20`; normative rejection before slice/allocation",
+         "scenario_instance_id" : "S-FRM-038"
+      },
+      {
+         "atom_instance_id" : "A-FRM-039",
+         "requirement" : "oversized body header under small runtime envelope; runtime rejection before allocation",
+         "scenario_instance_id" : "S-FRM-039"
+      },
+      {
+         "atom_instance_id" : "A-FRM-040",
+         "requirement" : "root-key length zero; reject",
+         "scenario_instance_id" : "S-FRM-040"
+      },
+      {
+         "atom_instance_id" : "A-FRM-041",
+         "requirement" : "root-key length 31; reject",
+         "scenario_instance_id" : "S-FRM-041"
+      },
+      {
+         "atom_instance_id" : "A-FRM-042",
+         "requirement" : "root-key length 33; reject",
+         "scenario_instance_id" : "S-FRM-042"
+      },
+      {
+         "atom_instance_id" : "A-FRM-043",
+         "requirement" : "root-key length `2^32-1`; reject before allocation",
+         "scenario_instance_id" : "S-FRM-043"
+      },
+      {
+         "atom_instance_id" : "A-FRM-044",
+         "requirement" : "AP-block length zero; reject non-empty requirement",
+         "scenario_instance_id" : "S-FRM-044"
+      },
+      {
+         "atom_instance_id" : "A-FRM-045",
+         "requirement" : "declare AP-block length one less than actual; reject",
+         "scenario_instance_id" : "S-FRM-045"
+      },
+      {
+         "atom_instance_id" : "A-FRM-046",
+         "requirement" : "declare AP-block length one greater than actual; reject",
+         "scenario_instance_id" : "S-FRM-046"
+      },
+      {
+         "atom_instance_id" : "A-FRM-047",
+         "requirement" : "AP bound `2^32-106`; arithmetic accepts normative bound before runtime-envelope evaluation",
+         "scenario_instance_id" : "S-FRM-047"
+      },
+      {
+         "atom_instance_id" : "A-FRM-048",
+         "requirement" : "AP bound `2^32-105`; arithmetic accepts normative bound before runtime-envelope evaluation",
+         "scenario_instance_id" : "S-FRM-048"
+      },
+      {
+         "atom_instance_id" : "A-FRM-049",
+         "requirement" : "AP declaration `2^32-104`; normative rejection before slice/allocation",
+         "scenario_instance_id" : "S-FRM-049"
+      },
+      {
+         "atom_instance_id" : "A-FRM-050",
+         "requirement" : "oversized AP header under small runtime envelope; runtime rejection before allocation",
+         "scenario_instance_id" : "S-FRM-050"
+      },
+      {
+         "atom_instance_id" : "A-FRM-051",
+         "requirement" : "AP identifier zero; reject reserved/non-registered value",
+         "scenario_instance_id" : "S-FRM-051"
+      },
+      {
+         "atom_instance_id" : "A-FRM-052",
+         "requirement" : "AP identifier one below registered fixture value; reject closed registry miss",
+         "scenario_instance_id" : "S-FRM-052"
+      },
+      {
+         "atom_instance_id" : "A-FRM-053",
+         "requirement" : "AP identifier one above registered fixture value; reject closed registry miss",
+         "scenario_instance_id" : "S-FRM-053"
+      },
+      {
+         "atom_instance_id" : "A-FRM-054",
+         "requirement" : "AP identifier `2^32-1`; reject closed registry miss without selector behavior",
+         "scenario_instance_id" : "S-FRM-054"
+      },
+      {
+         "atom_instance_id" : "A-FRM-055",
+         "requirement" : "AP version zero; reject",
+         "scenario_instance_id" : "S-FRM-055"
+      },
+      {
+         "atom_instance_id" : "A-FRM-056",
+         "requirement" : "AP version one below authenticated fixture version; reject tuple mismatch",
+         "scenario_instance_id" : "S-FRM-056"
+      },
+      {
+         "atom_instance_id" : "A-FRM-057",
+         "requirement" : "AP version one above authenticated fixture version; reject tuple mismatch",
+         "scenario_instance_id" : "S-FRM-057"
+      },
+      {
+         "atom_instance_id" : "A-FRM-058",
+         "requirement" : "AP version `2^32-1`; reject tuple mismatch without allocation/selector behavior",
+         "scenario_instance_id" : "S-FRM-058"
+      },
+      {
+         "atom_instance_id" : "A-FRM-059",
+         "requirement" : "outer `body_length` zero with a non-empty otherwise canonical body; reject outer-length mismatch before body parse, slice or allocation",
+         "scenario_instance_id" : "S-FRM-059"
+      },
+      {
+         "atom_instance_id" : "A-FRM-060",
+         "requirement" : "outer `body_length` `2^32-1` with a bounded canonical body; normative rejection before slice or allocation",
+         "scenario_instance_id" : "S-FRM-060"
+      },
+      {
+         "atom_instance_id" : "A-FRM-061",
+         "requirement" : "declared initial AP-block `opaque_u32` length `2^32-1` with bounded trailing bytes; normative rejection before AP slice or allocation",
+         "scenario_instance_id" : "S-FRM-061"
+      },
+      {
+         "atom_instance_id" : "A-DOM-001",
+         "requirement" : "sign transcript under `D_GENESIS_REF` instead of `D_GENESIS_SIG`; reject",
+         "scenario_instance_id" : "S-DOM-001"
+      },
+      {
+         "atom_instance_id" : "A-DOM-002",
+         "requirement" : "sign transcript under `D_EVENT_REF`; reject",
+         "scenario_instance_id" : "S-DOM-002"
+      },
+      {
+         "atom_instance_id" : "A-DOM-003",
+         "requirement" : "derive genesis reference under `D_GENESIS_SIG`; mismatch/reject",
+         "scenario_instance_id" : "S-DOM-003"
+      },
+      {
+         "atom_instance_id" : "A-DOM-004",
+         "requirement" : "derive genesis reference under `D_EVENT_REF`; mismatch/reject",
+         "scenario_instance_id" : "S-DOM-004"
+      },
+      {
+         "atom_instance_id" : "A-DOM-005",
+         "requirement" : "replay across Styx protocol version; tuple/version rejection",
+         "scenario_instance_id" : "S-DOM-005"
+      },
+      {
+         "atom_instance_id" : "A-DOM-006",
+         "requirement" : "replay across AP identifier; registry/tuple rejection",
+         "scenario_instance_id" : "S-DOM-006"
+      },
+      {
+         "atom_instance_id" : "A-DOM-007",
+         "requirement" : "replay across AP version; tuple rejection",
+         "scenario_instance_id" : "S-DOM-007"
+      },
+      {
+         "atom_instance_id" : "A-DOM-008",
+         "requirement" : "replay across context identifier; tuple rejection",
+         "scenario_instance_id" : "S-DOM-008"
+      },
+      {
+         "atom_instance_id" : "A-DOM-009",
+         "requirement" : "suite identifier `0x0000`; reserved-suite rejection",
+         "scenario_instance_id" : "S-DOM-009"
+      },
+      {
+         "atom_instance_id" : "A-DOM-010",
+         "requirement" : "suite identifier unknown non-zero value; unknown-suite rejection",
+         "scenario_instance_id" : "S-DOM-010"
+      },
+      {
+         "atom_instance_id" : "A-DOM-011",
+         "requirement" : "event-supplied suite attempts to replace frozen suite; reject/ignore as authority",
+         "scenario_instance_id" : "S-DOM-011"
+      },
+      {
+         "atom_instance_id" : "A-DOM-012",
+         "requirement" : "ambient suite attempts to replace frozen suite; reject/ignore as authority",
+         "scenario_instance_id" : "S-DOM-012"
+      },
+      {
+         "atom_instance_id" : "A-DOM-013",
+         "requirement" : "fallback suite after selected-suite failure; no fallback and reject",
+         "scenario_instance_id" : "S-DOM-013"
+      },
+      {
+         "atom_instance_id" : "A-DOM-014",
+         "requirement" : "event-supplied key attempts to replace transcript root key; reject",
+         "scenario_instance_id" : "S-DOM-014"
+      },
+      {
+         "atom_instance_id" : "A-DOM-015",
+         "requirement" : "ambient key attempts to replace transcript root key; reject",
+         "scenario_instance_id" : "S-DOM-015"
+      },
+      {
+         "atom_instance_id" : "A-DOM-016",
+         "requirement" : "fallback key after selected-key failure; no fallback and reject",
+         "scenario_instance_id" : "S-DOM-016"
+      },
+      {
+         "atom_instance_id" : "A-DOM-017",
+         "requirement" : "non-canonical Ed25519 encoding; reject",
+         "scenario_instance_id" : "S-DOM-017"
+      },
+      {
+         "atom_instance_id" : "A-DOM-018",
+         "requirement" : "small-order/non-prime-order Ed25519 key; reject",
+         "scenario_instance_id" : "S-DOM-018"
+      },
+      {
+         "atom_instance_id" : "A-DOM-019",
+         "requirement" : "same-length altered signature; reject",
+         "scenario_instance_id" : "S-DOM-019"
+      },
+      {
+         "atom_instance_id" : "A-DOM-020",
+         "requirement" : "short signature encoding; reject before verification use",
+         "scenario_instance_id" : "S-DOM-020"
+      },
+      {
+         "atom_instance_id" : "A-DOM-021",
+         "requirement" : "long signature encoding; reject before verification use",
+         "scenario_instance_id" : "S-DOM-021"
+      },
+      {
+         "atom_instance_id" : "A-CER-001",
+         "requirement" : "no ceremony/capability at acceptor; reject",
+         "scenario_instance_id" : "S-CER-001"
+      },
+      {
+         "atom_instance_id" : "A-CER-002",
+         "requirement" : "unauthenticated raw provenance assertion; reject",
+         "scenario_instance_id" : "S-CER-002"
+      },
+      {
+         "atom_instance_id" : "A-CER-003",
+         "requirement" : "explicit authorization decision denied; issue no capability and reject",
+         "scenario_instance_id" : "S-CER-003"
+      },
+      {
+         "atom_instance_id" : "A-CER-004",
+         "requirement" : "capability bound to wrong O-03 tuple; reject before candidate parse",
+         "scenario_instance_id" : "S-CER-004"
+      },
+      {
+         "atom_instance_id" : "A-CER-005",
+         "requirement" : "capability bound to wrong genesis reference; reject before candidate parse",
+         "scenario_instance_id" : "S-CER-005"
+      },
+      {
+         "atom_instance_id" : "A-CER-006",
+         "requirement" : "structural lookalike/fake capability; reject",
+         "scenario_instance_id" : "S-CER-006"
+      },
+      {
+         "atom_instance_id" : "A-CER-007",
+         "requirement" : "direct construction attempt of capability type; impossible or rejected",
+         "scenario_instance_id" : "S-CER-007"
+      },
+      {
+         "atom_instance_id" : "A-CER-008",
+         "requirement" : "capability issued by foreign `AcceptanceDomain`; reject",
+         "scenario_instance_id" : "S-CER-008"
+      },
+      {
+         "atom_instance_id" : "A-CER-009",
+         "requirement" : "capability issued by foreign `CeremonyBoundary` in same process; reject",
+         "scenario_instance_id" : "S-CER-009"
+      },
+      {
+         "atom_instance_id" : "A-CER-010",
+         "requirement" : "`CreatorLocalGenesisState` supplied to acceptor; reject",
+         "scenario_instance_id" : "S-CER-010"
+      },
+      {
+         "atom_instance_id" : "A-CER-011",
+         "requirement" : "direct alias of same handle, same domain and exact binding after acceptance; exact-genesis idempotence only",
+         "scenario_instance_id" : "S-CER-011"
+      },
+      {
+         "atom_instance_id" : "A-CER-012",
+         "requirement" : "same handle presented with changed tuple; reject",
+         "scenario_instance_id" : "S-CER-012"
+      },
+      {
+         "atom_instance_id" : "A-CER-013",
+         "requirement" : "same handle presented with changed reference; reject",
+         "scenario_instance_id" : "S-CER-013"
+      },
+      {
+         "atom_instance_id" : "A-CER-014",
+         "requirement" : "copied capability representation; reject",
+         "scenario_instance_id" : "S-CER-014"
+      },
+      {
+         "atom_instance_id" : "A-CER-015",
+         "requirement" : "reconstructed capability representation; reject",
+         "scenario_instance_id" : "S-CER-015"
+      },
+      {
+         "atom_instance_id" : "A-CER-016",
+         "requirement" : "serialized then deserialized capability; reject",
+         "scenario_instance_id" : "S-CER-016"
+      },
+      {
+         "atom_instance_id" : "A-CER-017",
+         "requirement" : "modified capability/value binding; reject",
+         "scenario_instance_id" : "S-CER-017"
+      },
+      {
+         "atom_instance_id" : "A-CER-018",
+         "requirement" : "capability replay into different O-03 context; reject",
+         "scenario_instance_id" : "S-CER-018"
+      },
+      {
+         "atom_instance_id" : "A-CER-019",
+         "requirement" : "caller supplies/replaces issuer or Boundary; reject API path",
+         "scenario_instance_id" : "S-CER-019"
+      },
+      {
+         "atom_instance_id" : "A-CER-020",
+         "requirement" : "caller supplies verifier configuration; reject API path",
+         "scenario_instance_id" : "S-CER-020"
+      },
+      {
+         "atom_instance_id" : "A-CER-021",
+         "requirement" : "fixture attempts to create authority input; reject outside isolated harness",
+         "scenario_instance_id" : "S-CER-021"
+      },
+      {
+         "atom_instance_id" : "A-CER-022",
+         "requirement" : "environment value attempts to create/modify `R`; reject",
+         "scenario_instance_id" : "S-CER-022"
+      },
+      {
+         "atom_instance_id" : "A-CER-023",
+         "requirement" : "local-file value attempts to create/modify `R`; reject",
+         "scenario_instance_id" : "S-CER-023"
+      },
+      {
+         "atom_instance_id" : "A-CER-024",
+         "requirement" : "candidate delivery attempts to create `R`; reject/no state change",
+         "scenario_instance_id" : "S-CER-024"
+      },
+      {
+         "atom_instance_id" : "A-CER-025",
+         "requirement" : "candidate delivery attempts to modify existing `R`; reject/no state change",
+         "scenario_instance_id" : "S-CER-025"
+      },
+      {
+         "atom_instance_id" : "A-CER-026",
+         "requirement" : "parser success attempts to substitute for local acceptance; reject",
+         "scenario_instance_id" : "S-CER-026"
+      },
+      {
+         "atom_instance_id" : "A-CER-027",
+         "requirement" : "self-signature success attempts to manufacture `R`; reject",
+         "scenario_instance_id" : "S-CER-027"
+      },
+      {
+         "atom_instance_id" : "A-CER-028",
+         "requirement" : "arrival fact attempts to manufacture `R`; reject",
+         "scenario_instance_id" : "S-CER-028"
+      },
+      {
+         "atom_instance_id" : "A-CER-029",
+         "requirement" : "later participant independently verifies identical ceremony and accepts exact genesis",
+         "scenario_instance_id" : "S-CER-029"
+      },
+      {
+         "atom_instance_id" : "A-CER-030",
+         "requirement" : "later participant without local capability; reject",
+         "scenario_instance_id" : "S-CER-030"
+      },
+      {
+         "atom_instance_id" : "A-CER-031",
+         "requirement" : "later participant receives denied ceremony; issue no capability and reject",
+         "scenario_instance_id" : "S-CER-031"
+      },
+      {
+         "atom_instance_id" : "A-CER-032",
+         "requirement" : "later participant ceremony context mismatch; reject",
+         "scenario_instance_id" : "S-CER-032"
+      },
+      {
+         "atom_instance_id" : "A-GAT-001",
+         "requirement" : "`P→C`: possession attempts to satisfy cryptographic validity; reject",
+         "scenario_instance_id" : "S-GAT-001"
+      },
+      {
+         "atom_instance_id" : "A-GAT-002",
+         "requirement" : "`P→K`: possession attempts to satisfy K binding; reject",
+         "scenario_instance_id" : "S-GAT-002"
+      },
+      {
+         "atom_instance_id" : "A-GAT-003",
+         "requirement" : "`P→A`: possession attempts to confer AP authority; reject",
+         "scenario_instance_id" : "S-GAT-003"
+      },
+      {
+         "atom_instance_id" : "A-GAT-004",
+         "requirement" : "`P→R`: possession attempts to establish local acceptance; reject",
+         "scenario_instance_id" : "S-GAT-004"
+      },
+      {
+         "atom_instance_id" : "A-GAT-005",
+         "requirement" : "`C→P`: signature result attempts to manufacture authenticated possession; reject",
+         "scenario_instance_id" : "S-GAT-005"
+      },
+      {
+         "atom_instance_id" : "A-GAT-006",
+         "requirement" : "`C→K`: signature result attempts to bypass K field binding; reject",
+         "scenario_instance_id" : "S-GAT-006"
+      },
+      {
+         "atom_instance_id" : "A-GAT-007",
+         "requirement" : "`C→A`: signature result attempts to confer AP authority; reject",
+         "scenario_instance_id" : "S-GAT-007"
+      },
+      {
+         "atom_instance_id" : "A-GAT-008",
+         "requirement" : "`C→R`: signature result attempts to establish local acceptance; reject",
+         "scenario_instance_id" : "S-GAT-008"
+      },
+      {
+         "atom_instance_id" : "A-GAT-009",
+         "requirement" : "`K→P`: K binding attempts to manufacture authenticated possession; reject",
+         "scenario_instance_id" : "S-GAT-009"
+      },
+      {
+         "atom_instance_id" : "A-GAT-010",
+         "requirement" : "`K→C`: K binding attempts to bypass signature validity; reject",
+         "scenario_instance_id" : "S-GAT-010"
+      },
+      {
+         "atom_instance_id" : "A-GAT-011",
+         "requirement" : "`K→A`: K validity attempts to confer AP authority; reject",
+         "scenario_instance_id" : "S-GAT-011"
+      },
+      {
+         "atom_instance_id" : "A-GAT-012",
+         "requirement" : "`K→R`: K validity attempts to establish local acceptance; reject",
+         "scenario_instance_id" : "S-GAT-012"
+      },
+      {
+         "atom_instance_id" : "A-GAT-013",
+         "requirement" : "`A→P`: AP decision attempts to manufacture authenticated possession; reject",
+         "scenario_instance_id" : "S-GAT-013"
+      },
+      {
+         "atom_instance_id" : "A-GAT-014",
+         "requirement" : "`A→C`: AP decision attempts to bypass signature validity; reject",
+         "scenario_instance_id" : "S-GAT-014"
+      },
+      {
+         "atom_instance_id" : "A-GAT-015",
+         "requirement" : "`A→K`: AP decision attempts to bypass K binding; reject",
+         "scenario_instance_id" : "S-GAT-015"
+      },
+      {
+         "atom_instance_id" : "A-GAT-016",
+         "requirement" : "`A→R`: AP decision without RS acceptance transition; reject/no accepted state",
+         "scenario_instance_id" : "S-GAT-016"
+      },
+      {
+         "atom_instance_id" : "A-GAT-017",
+         "requirement" : "`R→P`: local accepted-state fact attempts to manufacture authenticated possession; reject",
+         "scenario_instance_id" : "S-GAT-017"
+      },
+      {
+         "atom_instance_id" : "A-GAT-018",
+         "requirement" : "`R→C`: RS state attempts to bypass cryptographic validity; reject",
+         "scenario_instance_id" : "S-GAT-018"
+      },
+      {
+         "atom_instance_id" : "A-GAT-019",
+         "requirement" : "`R→K`: RS state attempts to bypass K binding; reject",
+         "scenario_instance_id" : "S-GAT-019"
+      },
+      {
+         "atom_instance_id" : "A-GAT-020",
+         "requirement" : "`R→A`: RS state attempts to confer live AP authority; reject",
+         "scenario_instance_id" : "S-GAT-020"
+      },
+      {
+         "atom_instance_id" : "A-GAT-021",
+         "requirement" : "PV disclosure attempts to confer AP authority; reject",
+         "scenario_instance_id" : "S-GAT-021"
+      },
+      {
+         "atom_instance_id" : "A-GAT-022",
+         "requirement" : "session identity/fact attempts to confer AP authority; reject",
+         "scenario_instance_id" : "S-GAT-022"
+      },
+      {
+         "atom_instance_id" : "A-GAT-023",
+         "requirement" : "transport identity/fact attempts to confer AP authority; reject",
+         "scenario_instance_id" : "S-GAT-023"
+      },
+      {
+         "atom_instance_id" : "A-GAT-024",
+         "requirement" : "runtime identity/fact attempts to confer AP authority; reject",
+         "scenario_instance_id" : "S-GAT-024"
+      },
+      {
+         "atom_instance_id" : "A-GAT-025",
+         "requirement" : "storage identity/order attempts to confer AP authority; reject",
+         "scenario_instance_id" : "S-GAT-025"
+      },
+      {
+         "atom_instance_id" : "A-GAT-026",
+         "requirement" : "UI state or user-interface fact attempts to confer AP authority; reject",
+         "scenario_instance_id" : "S-GAT-026"
+      },
+      {
+         "atom_instance_id" : "A-GAT-027",
+         "requirement" : "field-11/field-16 byte equality attempts to confer AP authority; reject",
+         "scenario_instance_id" : "S-GAT-027"
+      },
+      {
+         "atom_instance_id" : "A-GAT-028",
+         "requirement" : "unauthenticated local preference attempts to select a candidate; reject",
+         "scenario_instance_id" : "S-GAT-028"
+      },
+      {
+         "atom_instance_id" : "A-GAT-029",
+         "requirement" : "lexical ordering attempts to select a candidate; reject",
+         "scenario_instance_id" : "S-GAT-029"
+      },
+      {
+         "atom_instance_id" : "A-LIN-001",
+         "requirement" : "initial AP block embeds candidate credential/reference self-reference; reject",
+         "scenario_instance_id" : "S-LIN-001"
+      },
+      {
+         "atom_instance_id" : "A-LIN-002",
+         "requirement" : "exact duplicate against accepted state; idempotent and no state change",
+         "scenario_instance_id" : "S-LIN-002"
+      },
+      {
+         "atom_instance_id" : "A-LIN-003",
+         "requirement" : "distinct same-context genesis against accepted replica; reject without changing projection over accepted genesis",
+         "scenario_instance_id" : "S-LIN-003"
+      },
+      {
+         "atom_instance_id" : "A-LIN-004",
+         "requirement" : "distinct same-context candidate at replica lacking local capability; reject both candidates/no selector",
+         "scenario_instance_id" : "S-LIN-004"
+      },
+      {
+         "atom_instance_id" : "A-LIN-005",
+         "requirement" : "descendant with exact fixed field-16 genesis reference; accept K binding only",
+         "scenario_instance_id" : "S-LIN-005"
+      },
+      {
+         "atom_instance_id" : "A-LIN-006",
+         "requirement" : "descendant with foreign field-16 genesis reference; reject at K admission",
+         "scenario_instance_id" : "S-LIN-006"
+      },
+      {
+         "atom_instance_id" : "A-LIN-007",
+         "requirement" : "genesis credential ID byte-equals an independently valid `GRANT` reference; reject collision",
+         "scenario_instance_id" : "S-LIN-007"
+      },
+      {
+         "atom_instance_id" : "A-LIN-008",
+         "requirement" : "genesis-rooted `GRANT` computes reference equal to genesis credential ID; reject collision",
+         "scenario_instance_id" : "S-LIN-008"
+      },
+      {
+         "atom_instance_id" : "A-LIN-009",
+         "requirement" : "later `GRANT` would create equality with genesis credential ID; reject collision",
+         "scenario_instance_id" : "S-LIN-009"
+      },
+      {
+         "atom_instance_id" : "A-LIN-010",
+         "requirement" : "C0.2k commitment context uses genesis credential ID; reject owner/domain substitution",
+         "scenario_instance_id" : "S-LIN-010"
+      },
+      {
+         "atom_instance_id" : "A-LIN-011",
+         "requirement" : "unauthorized co-signer added to single-root genesis candidate; reject",
+         "scenario_instance_id" : "S-LIN-011"
+      },
+      {
+         "atom_instance_id" : "A-LIN-012",
+         "requirement" : "threshold-root candidate; `NOT_SELECTABLE_IN_V0` rejection",
+         "scenario_instance_id" : "S-LIN-012"
+      },
+      {
+         "atom_instance_id" : "A-LIN-013",
+         "requirement" : "multi-root/precommitted-set candidate; `NOT_SELECTABLE_IN_V0` rejection",
+         "scenario_instance_id" : "S-LIN-013"
+      },
+      {
+         "atom_instance_id" : "A-LIN-014",
+         "requirement" : "accepted sole root receives valid root `REVOKE`; terminate complete lineage",
+         "scenario_instance_id" : "S-LIN-014"
+      },
+      {
+         "atom_instance_id" : "A-LIN-015",
+         "requirement" : "accepted sole root receives valid root `ROTATE`; terminate complete lineage, no successor",
+         "scenario_instance_id" : "S-LIN-015"
+      },
+      {
+         "atom_instance_id" : "A-LIN-016",
+         "requirement" : "same-sequence root fork/equivocation; terminate complete affected lineage deterministically",
+         "scenario_instance_id" : "S-LIN-016"
+      },
+      {
+         "atom_instance_id" : "A-LIN-017",
+         "requirement" : "descendant after root termination; reject transitively",
+         "scenario_instance_id" : "S-LIN-017"
+      },
+      {
+         "atom_instance_id" : "A-LIN-018",
+         "requirement" : "new ceremony/root attempts recovery in same context; reject, authority unavailable",
+         "scenario_instance_id" : "S-LIN-018"
+      },
+      {
+         "atom_instance_id" : "A-LIN-019",
+         "requirement" : "first genesis-authored event omits required field 16; reject",
+         "scenario_instance_id" : "S-LIN-019"
+      },
+      {
+         "atom_instance_id" : "A-LIN-020",
+         "requirement" : "first genesis-authored event has exact field-16 binding and no binding GRANT; preserve ordinary admission rules",
+         "scenario_instance_id" : "S-LIN-020"
+      },
+      {
+         "atom_instance_id" : "A-LIN-021",
+         "requirement" : "first genesis-authored event does not causally descend from genesis; reject",
+         "scenario_instance_id" : "S-LIN-021"
+      },
+      {
+         "atom_instance_id" : "A-LIN-022",
+         "requirement" : "ordinary non-genesis predecessor/frontier/fork fixture remains byte-for-byte behaviorally unchanged",
+         "scenario_instance_id" : "S-LIN-022"
+      },
+      {
+         "atom_instance_id" : "A-LIN-023",
+         "requirement" : "collision-oracle equality fixture is injected only after both constructions pass their real structural gates",
+         "scenario_instance_id" : "S-LIN-023"
+      },
+      {
+         "atom_instance_id" : "A-LIN-024",
+         "requirement" : "production-path fixture recomputes real O-06 SHA-256 reference derivations without injection",
+         "scenario_instance_id" : "S-LIN-024"
+      },
+      {
+         "atom_instance_id" : "A-LIN-025",
+         "requirement" : "runtime/candidate attempts to select or stub production digest/domain verification; reject",
+         "scenario_instance_id" : "S-LIN-025"
+      },
+      {
+         "atom_instance_id" : "A-LIN-026",
+         "requirement" : "report keeps collision-oracle and production-path evidence distinct and preserves collision/second-preimage non-claim",
+         "scenario_instance_id" : "S-LIN-026"
+      },
+      {
+         "atom_instance_id" : "A-CHK-001",
+         "requirement" : "checkpoint producer-eligibility assertion; `UNSUPPORTED` and cannot affect state",
+         "scenario_instance_id" : "S-CHK-001"
+      },
+      {
+         "atom_instance_id" : "A-CHK-002",
+         "requirement" : "checkpoint signer-authority assertion; `UNSUPPORTED`",
+         "scenario_instance_id" : "S-CHK-002"
+      },
+      {
+         "atom_instance_id" : "A-CHK-003",
+         "requirement" : "checkpoint threshold-authority assertion; `UNSUPPORTED`",
+         "scenario_instance_id" : "S-CHK-003"
+      },
+      {
+         "atom_instance_id" : "A-CHK-004",
+         "requirement" : "checkpoint AP-state substitution; `UNSUPPORTED`",
+         "scenario_instance_id" : "S-CHK-004"
+      },
+      {
+         "atom_instance_id" : "A-CHK-005",
+         "requirement" : "checkpoint content reconstruction; `UNSUPPORTED`",
+         "scenario_instance_id" : "S-CHK-005"
+      },
+      {
+         "atom_instance_id" : "A-CHK-006",
+         "requirement" : "checkpoint opening reconstruction; `UNSUPPORTED`",
+         "scenario_instance_id" : "S-CHK-006"
+      },
+      {
+         "atom_instance_id" : "A-CHK-007",
+         "requirement" : "checkpoint freshness assertion; `UNSUPPORTED`",
+         "scenario_instance_id" : "S-CHK-007"
+      },
+      {
+         "atom_instance_id" : "A-CHK-008",
+         "requirement" : "checkpoint finality assertion; `UNSUPPORTED`",
+         "scenario_instance_id" : "S-CHK-008"
+      },
+      {
+         "atom_instance_id" : "A-CHK-009",
+         "requirement" : "checkpoint horizon authority; `UNSUPPORTED`",
+         "scenario_instance_id" : "S-CHK-009"
+      },
+      {
+         "atom_instance_id" : "A-CHK-010",
+         "requirement" : "authenticated retention summary used grant-side; `UNSUPPORTED`",
+         "scenario_instance_id" : "S-CHK-010"
+      },
+      {
+         "atom_instance_id" : "A-CHK-011",
+         "requirement" : "structurally parsable checkpoint-like material; cannot populate evidence or alter K/AP",
+         "scenario_instance_id" : "S-CHK-011"
+      },
+      {
+         "atom_instance_id" : "A-CHK-012",
+         "requirement" : "signature-valid checkpoint-like material; cannot populate evidence or alter K/AP",
+         "scenario_instance_id" : "S-CHK-012"
+      },
+      {
+         "atom_instance_id" : "A-CHK-013",
+         "requirement" : "unauthenticated staleness assertion; reject before projection",
+         "scenario_instance_id" : "S-CHK-013"
+      },
+      {
+         "atom_instance_id" : "A-CHK-014",
+         "requirement" : "staleness assertion names already admitted reference; no checkpoint-only stale trigger",
+         "scenario_instance_id" : "S-CHK-014"
+      },
+      {
+         "atom_instance_id" : "A-CHK-015",
+         "requirement" : "explicitly non-empty ordinary replay dependencies with empty checkpoint set; `LIVE_REPLAY_REQUIRED`",
+         "scenario_instance_id" : "S-CHK-015"
+      },
+      {
+         "atom_instance_id" : "A-CHK-016",
+         "requirement" : "both checkpoint and replay-dependency sets empty; reject vacuous fixture",
+         "scenario_instance_id" : "S-CHK-016"
+      },
+      {
+         "atom_instance_id" : "A-CHK-017",
+         "requirement" : "no registered checkpoint domain; checkpoint-only input structurally unreachable",
+         "scenario_instance_id" : "S-CHK-017"
+      },
+      {
+         "atom_instance_id" : "A-CHK-018",
+         "requirement" : "no v0 checkpoint object; checkpoint-only input structurally unreachable",
+         "scenario_instance_id" : "S-CHK-018"
+      },
+      {
+         "atom_instance_id" : "A-CHK-019",
+         "requirement" : "no v0 compaction; suppress-side checkpoint-only input structurally unreachable",
+         "scenario_instance_id" : "S-CHK-019"
+      },
+      {
+         "atom_instance_id" : "A-CHK-020",
+         "requirement" : "runtime/peer attempts checkpoint-evidence smuggling; reject before projection",
+         "scenario_instance_id" : "S-CHK-020"
+      },
+      {
+         "atom_instance_id" : "A-CHK-021",
+         "requirement" : "retention-summary attempts checkpoint-evidence smuggling; reject",
+         "scenario_instance_id" : "S-CHK-021"
+      },
+      {
+         "atom_instance_id" : "A-CHK-022",
+         "requirement" : "caller flag attempts checkpoint-evidence smuggling; reject",
+         "scenario_instance_id" : "S-CHK-022"
+      },
+      {
+         "atom_instance_id" : "A-CHK-023",
+         "requirement" : "fixture/synthetic input attempts checkpoint-evidence smuggling; reject",
+         "scenario_instance_id" : "S-CHK-023"
+      },
+      {
+         "atom_instance_id" : "A-CHK-024",
+         "requirement" : "coherent rollback of accepted state/history; preserve explicit non-detection non-claim, never select attacker state by order",
+         "scenario_instance_id" : "S-CHK-024"
+      },
+      {
+         "atom_instance_id" : "A-CHK-025",
+         "requirement" : "required replay evidence withheld/lost; fail closed and make no availability claim",
+         "scenario_instance_id" : "S-CHK-025"
+      },
+      {
+         "atom_instance_id" : "A-CHK-026",
+         "requirement" : "late fork evidence; deterministic lineage termination, no checkpoint suppression",
+         "scenario_instance_id" : "S-CHK-026"
+      },
+      {
+         "atom_instance_id" : "A-CHK-027",
+         "requirement" : "late revocation evidence; deterministic lineage termination, no checkpoint suppression",
+         "scenario_instance_id" : "S-CHK-027"
+      },
+      {
+         "atom_instance_id" : "A-ORD-001",
+         "requirement" : "`G,R`; no acceptance after `G` alone, then exact `G` acceptance",
+         "scenario_instance_id" : "S-ORD-001"
+      },
+      {
+         "atom_instance_id" : "A-ORD-002",
+         "requirement" : "`R,G`; no candidate state after `R` alone, then exact `G` acceptance",
+         "scenario_instance_id" : "S-ORD-002"
+      },
+      {
+         "atom_instance_id" : "A-ORD-003",
+         "requirement" : "`G,X,R`; `R` binding selects `G`, rejects `X`",
+         "scenario_instance_id" : "S-ORD-003"
+      },
+      {
+         "atom_instance_id" : "A-ORD-004",
+         "requirement" : "`G,R,X`; accept `G`, reject later `X` without state change",
+         "scenario_instance_id" : "S-ORD-004"
+      },
+      {
+         "atom_instance_id" : "A-ORD-005",
+         "requirement" : "`X,G,R`; `R` binding selects `G`, rejects `X`",
+         "scenario_instance_id" : "S-ORD-005"
+      },
+      {
+         "atom_instance_id" : "A-ORD-006",
+         "requirement" : "`X,R,G`; reject `X`, then accept `G`",
+         "scenario_instance_id" : "S-ORD-006"
+      },
+      {
+         "atom_instance_id" : "A-ORD-007",
+         "requirement" : "`R,G,X`; accept `G`, reject later `X` without state change",
+         "scenario_instance_id" : "S-ORD-007"
+      },
+      {
+         "atom_instance_id" : "A-ORD-008",
+         "requirement" : "`R,X,G`; reject `X`, then accept `G`",
+         "scenario_instance_id" : "S-ORD-008"
+      },
+      {
+         "atom_instance_id" : "A-ORD-009",
+         "requirement" : "`A,L,S,W`",
+         "scenario_instance_id" : "S-ORD-009"
+      },
+      {
+         "atom_instance_id" : "A-ORD-010",
+         "requirement" : "`A,L,W,S`",
+         "scenario_instance_id" : "S-ORD-010"
+      },
+      {
+         "atom_instance_id" : "A-ORD-011",
+         "requirement" : "`A,S,L,W`",
+         "scenario_instance_id" : "S-ORD-011"
+      },
+      {
+         "atom_instance_id" : "A-ORD-012",
+         "requirement" : "`A,S,W,L`",
+         "scenario_instance_id" : "S-ORD-012"
+      },
+      {
+         "atom_instance_id" : "A-ORD-013",
+         "requirement" : "`A,W,L,S`",
+         "scenario_instance_id" : "S-ORD-013"
+      },
+      {
+         "atom_instance_id" : "A-ORD-014",
+         "requirement" : "`A,W,S,L`",
+         "scenario_instance_id" : "S-ORD-014"
+      },
+      {
+         "atom_instance_id" : "A-ORD-015",
+         "requirement" : "`L,A,S,W`",
+         "scenario_instance_id" : "S-ORD-015"
+      },
+      {
+         "atom_instance_id" : "A-ORD-016",
+         "requirement" : "`L,A,W,S`",
+         "scenario_instance_id" : "S-ORD-016"
+      },
+      {
+         "atom_instance_id" : "A-ORD-017",
+         "requirement" : "`L,S,A,W`",
+         "scenario_instance_id" : "S-ORD-017"
+      },
+      {
+         "atom_instance_id" : "A-ORD-018",
+         "requirement" : "`L,S,W,A`",
+         "scenario_instance_id" : "S-ORD-018"
+      },
+      {
+         "atom_instance_id" : "A-ORD-019",
+         "requirement" : "`L,W,A,S`",
+         "scenario_instance_id" : "S-ORD-019"
+      },
+      {
+         "atom_instance_id" : "A-ORD-020",
+         "requirement" : "`L,W,S,A`",
+         "scenario_instance_id" : "S-ORD-020"
+      },
+      {
+         "atom_instance_id" : "A-ORD-021",
+         "requirement" : "`S,A,L,W`",
+         "scenario_instance_id" : "S-ORD-021"
+      },
+      {
+         "atom_instance_id" : "A-ORD-022",
+         "requirement" : "`S,A,W,L`",
+         "scenario_instance_id" : "S-ORD-022"
+      },
+      {
+         "atom_instance_id" : "A-ORD-023",
+         "requirement" : "`S,L,A,W`",
+         "scenario_instance_id" : "S-ORD-023"
+      },
+      {
+         "atom_instance_id" : "A-ORD-024",
+         "requirement" : "`S,L,W,A`",
+         "scenario_instance_id" : "S-ORD-024"
+      },
+      {
+         "atom_instance_id" : "A-ORD-025",
+         "requirement" : "`S,W,A,L`",
+         "scenario_instance_id" : "S-ORD-025"
+      },
+      {
+         "atom_instance_id" : "A-ORD-026",
+         "requirement" : "`S,W,L,A`",
+         "scenario_instance_id" : "S-ORD-026"
+      },
+      {
+         "atom_instance_id" : "A-ORD-027",
+         "requirement" : "`W,A,L,S`",
+         "scenario_instance_id" : "S-ORD-027"
+      },
+      {
+         "atom_instance_id" : "A-ORD-028",
+         "requirement" : "`W,A,S,L`",
+         "scenario_instance_id" : "S-ORD-028"
+      },
+      {
+         "atom_instance_id" : "A-ORD-029",
+         "requirement" : "`W,L,A,S`",
+         "scenario_instance_id" : "S-ORD-029"
+      },
+      {
+         "atom_instance_id" : "A-ORD-030",
+         "requirement" : "`W,L,S,A`",
+         "scenario_instance_id" : "S-ORD-030"
+      },
+      {
+         "atom_instance_id" : "A-ORD-031",
+         "requirement" : "`W,S,A,L`",
+         "scenario_instance_id" : "S-ORD-031"
+      },
+      {
+         "atom_instance_id" : "A-ORD-032",
+         "requirement" : "`W,S,L,A`",
+         "scenario_instance_id" : "S-ORD-032"
+      },
+      {
+         "atom_instance_id" : "A-EVD-001",
+         "requirement" : "inject absolute path into canonical report; schema/hygiene gate rejects",
+         "scenario_instance_id" : "G-EVD-001"
+      },
+      {
+         "atom_instance_id" : "A-EVD-002",
+         "requirement" : "inject hostname into canonical report; reject",
+         "scenario_instance_id" : "G-EVD-002"
+      },
+      {
+         "atom_instance_id" : "A-EVD-003",
+         "requirement" : "inject username into canonical report; reject",
+         "scenario_instance_id" : "G-EVD-003"
+      },
+      {
+         "atom_instance_id" : "A-EVD-004",
+         "requirement" : "inject timestamp into canonical report; reject",
+         "scenario_instance_id" : "G-EVD-004"
+      },
+      {
+         "atom_instance_id" : "A-EVD-005",
+         "requirement" : "inject process ID into canonical report; reject",
+         "scenario_instance_id" : "G-EVD-005"
+      },
+      {
+         "atom_instance_id" : "A-EVD-006",
+         "requirement" : "vary environment iteration order; canonical bytes remain identical or gate rejects",
+         "scenario_instance_id" : "G-EVD-006"
+      },
+      {
+         "atom_instance_id" : "A-EVD-007",
+         "requirement" : "inject Base identity or any prefix of length at least seven into key/value; reject",
+         "scenario_instance_id" : "G-EVD-007"
+      },
+      {
+         "atom_instance_id" : "A-EVD-008",
+         "requirement" : "inject candidate identity or any prefix of length at least seven; reject",
+         "scenario_instance_id" : "G-EVD-008"
+      },
+      {
+         "atom_instance_id" : "A-EVD-009",
+         "requirement" : "inject tree identity or prefix; reject",
+         "scenario_instance_id" : "G-EVD-009"
+      },
+      {
+         "atom_instance_id" : "A-EVD-010",
+         "requirement" : "inject binary/full-index diff identity or prefix; reject",
+         "scenario_instance_id" : "G-EVD-010"
+      },
+      {
+         "atom_instance_id" : "A-EVD-011",
+         "requirement" : "inject bundle identity or prefix; reject",
+         "scenario_instance_id" : "G-EVD-011"
+      },
+      {
+         "atom_instance_id" : "A-EVD-012",
+         "requirement" : "add unknown canonical-report field; closed schema rejects",
+         "scenario_instance_id" : "G-EVD-012"
+      },
+      {
+         "atom_instance_id" : "A-EVD-013",
+         "requirement" : "changed path outside allowlist or under forbidden path; scope gate rejects",
+         "scenario_instance_id" : "G-EVD-013"
+      },
+      {
+         "atom_instance_id" : "A-EVD-014",
+         "requirement" : "delete/rename source endpoint; scope gate rejects both sides",
+         "scenario_instance_id" : "G-EVD-014"
+      },
+      {
+         "atom_instance_id" : "A-EVD-015",
+         "requirement" : "copy/rename at similarity exactly 25%; scope gate rejects at exact threshold",
+         "scenario_instance_id" : "G-EVD-015"
+      },
+      {
+         "atom_instance_id" : "A-EVD-016",
+         "requirement" : "low-similarity/manual copy below 25% with protected endpoint semantics; source-integrity gate rejects",
+         "scenario_instance_id" : "G-EVD-016"
+      },
+      {
+         "atom_instance_id" : "A-EVD-017",
+         "requirement" : "modify frozen normative section/byte; frozen-section gate rejects",
+         "scenario_instance_id" : "G-EVD-017"
+      },
+      {
+         "atom_instance_id" : "A-EVD-018",
+         "requirement" : "modify validator AST outside exact permitted literal delta; AST gate rejects",
+         "scenario_instance_id" : "G-EVD-018"
+      },
+      {
+         "atom_instance_id" : "A-EVD-019",
+         "requirement" : "delete predecessor scope test; blob-integrity/count gate rejects",
+         "scenario_instance_id" : "G-EVD-019"
+      },
+      {
+         "atom_instance_id" : "A-EVD-020",
+         "requirement" : "skip predecessor assertion/test; blob-integrity/count/command gate rejects",
+         "scenario_instance_id" : "G-EVD-020"
+      },
+      {
+         "atom_instance_id" : "A-EVD-021",
+         "requirement" : "weaken predecessor assertion in place; blob-integrity gate rejects",
+         "scenario_instance_id" : "G-EVD-021"
+      },
+      {
+         "atom_instance_id" : "A-EVD-022",
+         "requirement" : "six historical frozen pins verify unchanged",
+         "scenario_instance_id" : "G-EVD-022"
+      },
+      {
+         "atom_instance_id" : "A-EVD-023",
+         "requirement" : "O-06c required modules run 1 with only ratified historical-scope exception",
+         "scenario_instance_id" : "G-EVD-023"
+      },
+      {
+         "atom_instance_id" : "A-EVD-024",
+         "requirement" : "O-06c required modules run 2 and produce byte-identical report digests",
+         "scenario_instance_id" : "G-EVD-024"
+      },
+      {
+         "atom_instance_id" : "A-EVD-025",
+         "requirement" : "O-14 semantic probe runs twice unchanged and byte-identical",
+         "scenario_instance_id" : "G-EVD-025"
+      },
+      {
+         "atom_instance_id" : "A-EVD-026",
+         "requirement" : "O-14 mutation gate runs twice unchanged and kills every registered mutant",
+         "scenario_instance_id" : "G-EVD-026"
+      },
+      {
+         "atom_instance_id" : "A-EVD-027",
+         "requirement" : "O-14 cross-runtime gate runs twice unchanged and byte-identical",
+         "scenario_instance_id" : "G-EVD-027"
+      },
+      {
+         "atom_instance_id" : "A-EVD-028",
+         "requirement" : "O-14 historical Base scope passes and candidate negative control fails with exactly two ratified errors",
+         "scenario_instance_id" : "G-EVD-028"
+      },
+      {
+         "atom_instance_id" : "A-EVD-029",
+         "requirement" : "stale O-06c/O-14 non-claim is identified as historical, never presented as current substitution evidence",
+         "scenario_instance_id" : "G-EVD-029"
+      },
+      {
+         "atom_instance_id" : "A-EVD-030",
+         "requirement" : "normative prose, responsibility matrix, threat model, review model and executable fixtures agree",
+         "scenario_instance_id" : "G-EVD-030"
+      },
+      {
+         "atom_instance_id" : "A-EVD-031",
+         "requirement" : "O-07 uses existing status vocabulary and only changes after complete evidence",
+         "scenario_instance_id" : "G-EVD-031"
+      },
+      {
+         "atom_instance_id" : "A-EVD-032",
+         "requirement" : "C0.3 exact dependency set remains unchanged and status remains `NO_GO`",
+         "scenario_instance_id" : "G-EVD-032"
+      },
+      {
+         "atom_instance_id" : "A-EVD-033",
+         "requirement" : "`W-C03-01` passes at exact final HEAD",
+         "scenario_instance_id" : "G-EVD-033"
+      },
+      {
+         "atom_instance_id" : "A-EVD-034",
+         "requirement" : "claims lint passes",
+         "scenario_instance_id" : "G-EVD-034"
+      },
+      {
+         "atom_instance_id" : "A-EVD-035",
+         "requirement" : "dual-language translation synchronization passes",
+         "scenario_instance_id" : "G-EVD-035"
+      },
+      {
+         "atom_instance_id" : "A-EVD-036",
+         "requirement" : "REUSE 3.3 passes without modifying `REUSE.toml`",
+         "scenario_instance_id" : "G-EVD-036"
+      },
+      {
+         "atom_instance_id" : "A-EVD-037",
+         "requirement" : "`git diff --check` passes",
+         "scenario_instance_id" : "G-EVD-037"
+      },
+      {
+         "atom_instance_id" : "A-EVD-038",
+         "requirement" : "complete O-07 run 1 from fresh worktree/temp root succeeds",
+         "scenario_instance_id" : "G-EVD-038"
+      },
+      {
+         "atom_instance_id" : "A-EVD-039",
+         "requirement" : "complete O-07 run 2 from distinct fresh worktree/temp root succeeds and is byte-identical",
+         "scenario_instance_id" : "G-EVD-039"
+      },
+      {
+         "atom_instance_id" : "A-EVD-040",
+         "requirement" : "O-06c report families from the two complete runs are byte-identical",
+         "scenario_instance_id" : "G-EVD-040"
+      },
+      {
+         "atom_instance_id" : "A-EVD-041",
+         "requirement" : "O-14 report families from the two complete runs are byte-identical",
+         "scenario_instance_id" : "G-EVD-041"
+      },
+      {
+         "atom_instance_id" : "A-EVD-042",
+         "requirement" : "derived review-model reports from the two complete runs are byte-identical",
+         "scenario_instance_id" : "G-EVD-042"
+      },
+      {
+         "atom_instance_id" : "A-EVD-043",
+         "requirement" : "final raw Issue body hash equals the human-ratified amended contract hash",
+         "scenario_instance_id" : "G-EVD-043"
+      },
+      {
+         "atom_instance_id" : "A-EVD-044",
+         "requirement" : "post-ratification/post-final-commit raw PR response body names exact Issue hash and exact Base/HEAD",
+         "scenario_instance_id" : "G-EVD-044"
+      },
+      {
+         "atom_instance_id" : "A-EVD-045",
+         "requirement" : "Git bundle contains exact Base and final HEAD; binary/full-index diff hash is manifested",
+         "scenario_instance_id" : "G-EVD-045"
+      },
+      {
+         "atom_instance_id" : "A-EVD-046",
+         "requirement" : "evidence manifest hashes every raw artifact and validates without omission",
+         "scenario_instance_id" : "G-EVD-046"
+      },
+      {
+         "atom_instance_id" : "A-EVD-047",
+         "requirement" : "independent Opus 5 exact-final review has auditable identity and no unresolved blocker/high/medium",
+         "scenario_instance_id" : "G-EVD-047"
+      },
+      {
+         "atom_instance_id" : "A-EVD-048",
+         "requirement" : "independent Muse Spark 1.2 Contributor exact-final review has auditable identity and no unresolved blocker/high/medium",
+         "scenario_instance_id" : "G-EVD-048"
+      },
+      {
+         "atom_instance_id" : "A-EVD-049",
+         "requirement" : "`manexada` independently approves exact final HEAD after review",
+         "scenario_instance_id" : "G-EVD-049"
+      },
+      {
+         "atom_instance_id" : "A-EVD-050",
+         "requirement" : "only `maverde73` accepts the final ForgeRelay merge proposal",
+         "scenario_instance_id" : "G-EVD-050"
+      },
+      {
+         "atom_instance_id" : "A-EVD-051",
+         "requirement" : "exact gate/owner/state table names possession, C/K/AP/RS/PV responsibilities without substitution",
+         "scenario_instance_id" : "G-EVD-051"
+      },
+      {
+         "atom_instance_id" : "A-EVD-052",
+         "requirement" : "report closes only exact O-07 portions of `OB-K08` and `OB-K09`",
+         "scenario_instance_id" : "G-EVD-052"
+      },
+      {
+         "atom_instance_id" : "A-EVD-053",
+         "requirement" : "bounded O-01 genesis-descent clarification and retired cross-context non-claim are recorded without altering other causal behavior",
+         "scenario_instance_id" : "G-EVD-053"
+      },
+      {
+         "atom_instance_id" : "A-EVD-054",
+         "requirement" : "threat model names `product_operator`, `runtime_profile` and storage-backend compromise and withholds root guarantee",
+         "scenario_instance_id" : "G-EVD-054"
+      },
+      {
+         "atom_instance_id" : "A-EVD-055",
+         "requirement" : "mutation registry contains at least one distinct anchored mutant/detector relation for every semantic rule atom family",
+         "scenario_instance_id" : "G-EVD-055"
+      },
+      {
+         "atom_instance_id" : "A-EVD-056",
+         "requirement" : "every registered mutant is killed by its named assertion in both complete runs",
+         "scenario_instance_id" : "G-EVD-056"
+      },
+      {
+         "atom_instance_id" : "A-EVD-057",
+         "requirement" : "each forbidden disposition is reached by a distinct negative-control scenario rather than asserted by prose",
+         "scenario_instance_id" : "G-EVD-057"
+      },
+      {
+         "atom_instance_id" : "A-EVD-058",
+         "requirement" : "Python and JavaScript execute the exact same semantic atom/scenario relation with no skips or oracle verdict inputs",
+         "scenario_instance_id" : "G-EVD-058"
+      }
+   ],
+   "schema" : "styx-o07-required-atom-instances/v1"
+}

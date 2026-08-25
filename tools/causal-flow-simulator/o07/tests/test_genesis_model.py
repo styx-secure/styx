@@ -11,24 +11,29 @@ if str(O07_ROOT) not in sys.path:
     sys.path.insert(0, str(O07_ROOT))
 
 from genesis_model import (
-    CeremonyRecord,
+    AcceptanceDomain,
     ContextTuple,
+    CreatorLocalGenesisState,
     GenesisBody,
     GenesisCandidate,
     GenesisError,
     SIGNATURE_SUITE,
     accept_genesis,
+    create_local_genesis,
     derive_genesis_reference,
     encode_transcript,
+    evaluate_ap_block_length_bounds,
+    evaluate_body_length_bounds,
     evaluate_checkpoint_boundary,
     make_candidate,
     parse_transcript,
     reject_grant_identifier_collision,
     require_descendant_binding,
 )
+from test_helpers.ceremony import new_test_ceremony_harness
 
 
-PROFILE_REGISTRY = frozenset({0x10203040})
+PROFILE_REGISTRY = frozenset({(0x10203040, 7)})
 SEED_A = bytes(range(32))
 SEED_B = bytes(reversed(range(32)))
 RUNTIME_LIMIT = 4096
@@ -50,7 +55,8 @@ class GenesisModelTest(unittest.TestCase):
             self.body, SEED_A, allowed_profiles=PROFILE_REGISTRY
         )
         self.reference = derive_genesis_reference(self.candidate.transcript)
-        self.ceremony = CeremonyRecord(self.context, self.reference, True, True)
+        self.harness = new_test_ceremony_harness(self.context, self.reference)
+        self.capability = self.harness.issue_affirmative(self.context, self.reference)
 
     def test_round_trip_and_acceptance(self) -> None:
         decoded = parse_transcript(
@@ -60,18 +66,20 @@ class GenesisModelTest(unittest.TestCase):
         )
         self.assertEqual(decoded, self.body)
         result = accept_genesis(
+            self.harness.domain,
             None,
             self.candidate,
-            self.ceremony,
+            self.capability,
             allowed_profiles=PROFILE_REGISTRY,
             runtime_body_limit=RUNTIME_LIMIT,
         )
         self.assertTrue(result.changed)
         self.assertEqual(result.disposition, "GENESIS_ACCEPTED")
         duplicate = accept_genesis(
+            self.harness.domain,
             result.state,
             self.candidate,
-            self.ceremony,
+            self.capability,
             allowed_profiles=PROFILE_REGISTRY,
             runtime_body_limit=RUNTIME_LIMIT,
         )
@@ -79,29 +87,24 @@ class GenesisModelTest(unittest.TestCase):
         self.assertIs(duplicate.state, result.state)
 
     def test_external_ceremony_is_not_substitutable(self) -> None:
+        foreign_harness = new_test_ceremony_harness(self.context, self.reference)
         hostile = (
             None,
-            replace(self.ceremony, authenticated_provenance=False),
-            replace(self.ceremony, explicit_authorization_decision=False),
-            replace(self.ceremony, expected_genesis_reference=bytes(32)),
-            replace(
-                self.ceremony,
-                context=replace(self.context, context_identifier=bytes.fromhex("43" * 32)),
-            ),
+            object(),
+            foreign_harness.issue_affirmative(self.context, self.reference),
         )
         expected = (
-            "AUTHENTICATED_CEREMONY_REQUIRED",
-            "AUTHENTICATED_CEREMONY_REQUIRED",
-            "ROOT_AUTHORIZATION_REJECTED",
-            "GENESIS_REFERENCE_MISMATCH",
-            "GENESIS_CONTEXT_TUPLE_MISMATCH",
+            "VERIFIED_CEREMONY_CAPABILITY_REQUIRED",
+            "CEREMONY_CAPABILITY_INVALID",
+            "FOREIGN_ACCEPTANCE_DOMAIN",
         )
-        for ceremony, code in zip(hostile, expected, strict=True):
+        for capability, code in zip(hostile, expected, strict=True):
             with self.subTest(code=code), self.assertRaisesRegex(GenesisError, code):
                 accept_genesis(
+                    self.harness.domain,
                     None,
                     self.candidate,
-                    ceremony,
+                    capability,
                     allowed_profiles=PROFILE_REGISTRY,
                     runtime_body_limit=RUNTIME_LIMIT,
                 )
@@ -122,23 +125,54 @@ class GenesisModelTest(unittest.TestCase):
                     runtime_body_limit=RUNTIME_LIMIT,
                 )
 
+    def test_normative_u32_bounds_precede_runtime_and_allocation(self) -> None:
+        from genesis_model import MAX_AP_BLOCK_OCTETS, MAX_BODY_OCTETS
+
+        large_runtime = 0xFFFFFFFF
+        self.assertEqual(
+            evaluate_body_length_bounds(MAX_BODY_OCTETS - 1, large_runtime),
+            "NORMATIVE_BODY_LENGTH_ACCEPTED",
+        )
+        self.assertEqual(
+            evaluate_body_length_bounds(MAX_BODY_OCTETS, large_runtime),
+            "NORMATIVE_BODY_LENGTH_ACCEPTED",
+        )
+        with self.assertRaisesRegex(GenesisError, "GENESIS_BODY_LENGTH"):
+            evaluate_body_length_bounds(MAX_BODY_OCTETS + 1, large_runtime)
+        with self.assertRaisesRegex(GenesisError, "GENESIS_BODY_LENGTH"):
+            evaluate_body_length_bounds(0xFFFFFFFF, large_runtime)
+        self.assertEqual(
+            evaluate_ap_block_length_bounds(MAX_AP_BLOCK_OCTETS - 1, large_runtime),
+            "NORMATIVE_AP_BLOCK_LENGTH_ACCEPTED",
+        )
+        self.assertEqual(
+            evaluate_ap_block_length_bounds(MAX_AP_BLOCK_OCTETS, large_runtime),
+            "NORMATIVE_AP_BLOCK_LENGTH_ACCEPTED",
+        )
+        with self.assertRaisesRegex(GenesisError, "INITIAL_AUTHORITY_POLICY_LENGTH"):
+            evaluate_ap_block_length_bounds(MAX_AP_BLOCK_OCTETS + 1, large_runtime)
+        with self.assertRaisesRegex(GenesisError, "INITIAL_AUTHORITY_POLICY_LENGTH"):
+            evaluate_ap_block_length_bounds(0xFFFFFFFF, large_runtime)
+
     def test_signature_is_checked_before_acceptance(self) -> None:
         changed = bytearray(self.candidate.signature)
         changed[0] ^= 1
         with self.assertRaisesRegex(GenesisError, "GENESIS_SIGNATURE_INVALID"):
             accept_genesis(
+                self.harness.domain,
                 None,
                 replace(self.candidate, signature=bytes(changed)),
-                self.ceremony,
+                self.capability,
                 allowed_profiles=PROFILE_REGISTRY,
                 runtime_body_limit=RUNTIME_LIMIT,
             )
 
     def test_distinct_same_context_does_not_replace_state(self) -> None:
         accepted = accept_genesis(
+            self.harness.domain,
             None,
             self.candidate,
-            self.ceremony,
+            self.capability,
             allowed_profiles=PROFILE_REGISTRY,
             runtime_body_limit=RUNTIME_LIMIT,
         ).state
@@ -150,21 +184,85 @@ class GenesisModelTest(unittest.TestCase):
             initial_authority_policy=b"different-authority",
         )
         other_candidate = make_candidate(other_body, SEED_B, allowed_profiles=PROFILE_REGISTRY)
-        other_ceremony = replace(
-            self.ceremony,
-            expected_genesis_reference=derive_genesis_reference(other_candidate.transcript),
-        )
-        with self.assertRaisesRegex(GenesisError, "DISTINCT_SAME_CONTEXT_GENESIS"):
+        other_reference = derive_genesis_reference(other_candidate.transcript)
+        with self.assertRaisesRegex(GenesisError, "GENESIS_REFERENCE_MISMATCH"):
             accept_genesis(
+                self.harness.domain,
                 accepted,
                 other_candidate,
-                other_ceremony,
+                self.capability,
                 allowed_profiles=PROFILE_REGISTRY,
                 runtime_body_limit=RUNTIME_LIMIT,
             )
         require_descendant_binding(accepted, self.reference)
         with self.assertRaisesRegex(GenesisError, "DESCENDANT_GENESIS_REFERENCE_MISMATCH"):
-            require_descendant_binding(accepted, other_ceremony.expected_genesis_reference)
+            require_descendant_binding(accepted, other_reference)
+
+    def test_domain_and_capability_are_not_caller_constructible_or_transferable(self) -> None:
+        with self.assertRaisesRegex(GenesisError, "ACCEPTANCE_DOMAIN_CONSTRUCTION_FORBIDDEN"):
+            AcceptanceDomain(object(), object(), object())
+        foreign_harness = new_test_ceremony_harness(self.context, self.reference)
+        foreign_capability = foreign_harness.issue_affirmative(self.context, self.reference)
+        with self.assertRaisesRegex(GenesisError, "FOREIGN_ACCEPTANCE_DOMAIN"):
+            accept_genesis(
+                self.harness.domain,
+                None,
+                self.candidate,
+                foreign_capability,
+                allowed_profiles=PROFILE_REGISTRY,
+                runtime_body_limit=RUNTIME_LIMIT,
+            )
+        same_domain_foreign_boundary = self.harness.issue_from_foreign_boundary(
+            self.context, self.reference
+        )
+        with self.assertRaisesRegex(GenesisError, "FOREIGN_CEREMONY_BOUNDARY"):
+            accept_genesis(
+                self.harness.domain,
+                None,
+                self.candidate,
+                same_domain_foreign_boundary,
+                allowed_profiles=PROFILE_REGISTRY,
+                runtime_body_limit=RUNTIME_LIMIT,
+            )
+
+    def test_wrong_ceremony_binding_issues_no_capability(self) -> None:
+        with self.assertRaisesRegex(GenesisError, "CEREMONY_REFERENCE_MISMATCH"):
+            self.harness.issue_affirmative(self.context, bytes(32))
+        with self.assertRaisesRegex(GenesisError, "CEREMONY_CONTEXT_MISMATCH"):
+            self.harness.issue_affirmative(
+                replace(
+                    self.context,
+                    context_identifier=bytes.fromhex("43" * 32),
+                ),
+                self.reference,
+            )
+
+    def test_creator_local_state_is_not_acceptor_authority(self) -> None:
+        creator_state = create_local_genesis(
+            self.body, SEED_A, allowed_profiles=PROFILE_REGISTRY
+        )
+        self.assertIsInstance(creator_state, CreatorLocalGenesisState)
+        self.assertEqual(creator_state.genesis_reference, self.reference)
+        with self.assertRaisesRegex(GenesisError, "CEREMONY_CAPABILITY_INVALID"):
+            accept_genesis(
+                self.harness.domain,
+                None,
+                self.candidate,
+                creator_state,
+                allowed_profiles=PROFILE_REGISTRY,
+                runtime_body_limit=RUNTIME_LIMIT,
+            )
+
+    def test_capability_cannot_be_copied_or_serialized(self) -> None:
+        import copy
+        import pickle
+
+        with self.assertRaises(TypeError):
+            copy.copy(self.capability)
+        with self.assertRaises(TypeError):
+            copy.deepcopy(self.capability)
+        with self.assertRaises(TypeError):
+            pickle.dumps(self.capability)
 
     def test_grant_collision_boundary_uses_injected_post_derivation_value(self) -> None:
         with self.assertRaisesRegex(GenesisError, "GRANT_REFERENCE_EQUALS_GENESIS_CREDENTIAL"):
