@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 from typing import Any
 
 
@@ -50,3 +51,26 @@ def content_sha256(data: bytes) -> str:
     """Return the lowercase SHA-256 identity of exact evidence bytes."""
 
     return hashlib.sha256(data).hexdigest()
+
+
+def public_failure(
+    error: BaseException,
+    *,
+    trusted_types: tuple[type[BaseException], ...] = (),
+) -> str:
+    """Return bounded CLI diagnostics without exposing caller-selected paths."""
+
+    if trusted_types and isinstance(error, trusted_types):
+        return str(error)
+    if isinstance(error, subprocess.CalledProcessError):
+        command = error.cmd if isinstance(error.cmd, (list, tuple)) else [error.cmd]
+        executable = Path(str(command[0])).name
+        return f"{executable} failed with exit status {error.returncode}"
+    if isinstance(error, OSError):
+        errno = error.errno if error.errno is not None else "unknown"
+        return f"operating system error (errno={errno})"
+    if isinstance(error, KeyError):
+        return "structured evidence omitted a required field"
+    if isinstance(error, (UnicodeError, ValueError)):
+        return "invalid structured evidence"
+    return "evidence generation failed"

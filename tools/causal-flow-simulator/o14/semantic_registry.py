@@ -69,6 +69,8 @@ class CredentialBinding:
 
 @dataclass(frozen=True)
 class EventInput:
+    # Event-carried inputs. The transcript regenerates from authenticated event
+    # fields; suite/key selection still comes only from ``binding``.
     context: bytes
     credential_identifier: bytes
     author_sequence: int
@@ -77,6 +79,8 @@ class EventInput:
     binding: CredentialBinding | None
     event_suite_override: int | None = None
     event_key_override: bytes | None = None
+    # Trusted verifier-context inputs. These values are never decoded from the
+    # event or transport envelope and remain independently fail-closed.
     transport_valid: bool = False
     session_valid: bool = False
     grant_suite_id: int | None = None

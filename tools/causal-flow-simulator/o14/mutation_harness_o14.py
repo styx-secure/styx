@@ -9,7 +9,7 @@ import sys
 
 sys.dont_write_bytecode = True
 
-from evidence_io import CanonicalJsonReport
+from evidence_io import CanonicalJsonReport, public_failure
 from scenarios import DECLARED_DETECTORS, REQUIRED_MUTANTS, execute_suite
 from semantic_registry import Mutation
 from source_invariants import evaluate_source_invariants
@@ -95,8 +95,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--suite", required=True, choices=("required",))
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
-    report, passed = build_report(args.repo_root.resolve())
-    CanonicalJsonReport.store(args.output, report)
+    try:
+        report, passed = build_report(args.repo_root.resolve())
+        CanonicalJsonReport.store(args.output, report)
+    except (OSError, KeyError, ValueError) as error:
+        print(f"O-14 mutation harness failed: {public_failure(error)}", file=sys.stderr)
+        return 2
     print(
         f"O-14 MUTANTS verdict={report['verdict']} "
         f"killed={report['killed']} survived={len(report['survived'])}"

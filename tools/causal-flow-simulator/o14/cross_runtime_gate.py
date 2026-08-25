@@ -17,7 +17,7 @@ import urllib.request
 
 sys.dont_write_bytecode = True
 
-from evidence_io import CanonicalJsonReport
+from evidence_io import CanonicalJsonReport, public_failure
 from signature_suite_probe import build_report as build_probe_report
 from scenarios import EXPECTED_RUNTIME_VECTOR_COUNT
 
@@ -44,23 +44,6 @@ def adapter_vector(vector: dict[str, object]) -> dict[str, object]:
     """Project only protocol inputs and the expected decision into adapters."""
 
     return {field: vector[field] for field in ADAPTER_VECTOR_FIELDS}
-
-
-def public_failure(error: BaseException) -> str:
-    """Return bounded diagnostics without leaking temporary filesystem paths."""
-
-    if isinstance(error, GateError):
-        return str(error)
-    if isinstance(error, subprocess.CalledProcessError):
-        command = error.cmd if isinstance(error.cmd, (list, tuple)) else [error.cmd]
-        executable = Path(str(command[0])).name
-        return f"{executable} failed with exit status {error.returncode}"
-    if isinstance(error, OSError):
-        errno = error.errno if error.errno is not None else "unknown"
-        return f"operating system error (errno={errno})"
-    if isinstance(error, KeyError):
-        return "runtime evidence omitted a required field"
-    return "invalid structured runtime evidence"
 
 
 def run(command: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> str:
@@ -282,5 +265,8 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except (GateError, OSError, subprocess.CalledProcessError, KeyError, ValueError) as error:
-        print(f"O-14 runtime gate failed: {public_failure(error)}", file=sys.stderr)
+        print(
+            f"O-14 runtime gate failed: {public_failure(error, trusted_types=(GateError,))}",
+            file=sys.stderr,
+        )
         raise SystemExit(2)

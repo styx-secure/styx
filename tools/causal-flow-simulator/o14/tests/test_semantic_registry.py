@@ -29,7 +29,7 @@ class SemanticRegistryTest(unittest.TestCase):
         self.assertEqual(len(required_witnesses()), EXPECTED_WITNESS_COUNT)
         self.assertFalse([item for item in results if not item["passed"]])
 
-    def test_runtime_inventory_has_both_equation_directions(self) -> None:
+    def test_runtime_inventory_has_required_equation_witnesses(self) -> None:
         identifiers = {item.identifier for item in required_witnesses() if item.runtime}
         self.assertEqual(len(identifiers), EXPECTED_RUNTIME_VECTOR_COUNT)
         self.assertIn("mixed-order-key", identifiers)

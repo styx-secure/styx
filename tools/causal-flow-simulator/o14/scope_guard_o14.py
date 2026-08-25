@@ -13,7 +13,7 @@ import sys
 
 sys.dont_write_bytecode = True
 
-from evidence_io import CanonicalJsonReport, content_sha256
+from evidence_io import CanonicalJsonReport, content_sha256, public_failure
 
 
 BASE_SHA = "94f0a9b2781d45324199e6588629d23babedf746"
@@ -673,7 +673,10 @@ def main(argv: list[str] | None = None) -> int:
         report = build_report(args.repo_root.resolve(), args.base, args.candidate)
         CanonicalJsonReport.store(args.output, report)
     except (ScopeError, OSError, UnicodeError, subprocess.CalledProcessError, ValueError) as error:
-        print(f"O-14 scope failure: {error}", file=sys.stderr)
+        print(
+            f"O-14 scope failure: {public_failure(error, trusted_types=(ScopeError,))}",
+            file=sys.stderr,
+        )
         return 2
     print(f"O-14 scope verdict=PASS records={len(report['changed_relation'])}")
     return 0

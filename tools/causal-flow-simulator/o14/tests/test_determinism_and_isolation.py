@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from evidence_io import CanonicalJsonReport
-from cross_runtime_gate import ADAPTER_VECTOR_FIELDS, adapter_vector, public_failure
+from cross_runtime_gate import ADAPTER_VECTOR_FIELDS, adapter_vector
+from evidence_io import public_failure
 from mutation_harness_o14 import build_report as build_mutation_report
 from signature_suite_probe import build_report as build_probe_report
 
@@ -58,6 +59,32 @@ class DeterminismAndIsolationTest(unittest.TestCase):
         message = public_failure(error)
         self.assertEqual(message, "operating system error (errno=2)")
         self.assertNotIn("/tmp/", message)
+
+    def test_every_evidence_cli_routes_failures_through_public_failure(self) -> None:
+        for name in (
+            "cross_runtime_gate.py",
+            "mutation_harness_o14.py",
+            "scope_guard_o14.py",
+            "signature_suite_probe.py",
+        ):
+            with self.subTest(name=name):
+                tree = ast.parse((ROOT / name).read_bytes(), filename=name)
+                caught_handlers = [
+                    node
+                    for node in ast.walk(tree)
+                    if isinstance(node, ast.ExceptHandler) and node.name == "error"
+                ]
+                self.assertTrue(caught_handlers, name)
+                self.assertTrue(
+                    any(
+                        isinstance(call, ast.Call)
+                        and isinstance(call.func, ast.Name)
+                        and call.func.id == "public_failure"
+                        for handler in caught_handlers
+                        for call in ast.walk(handler)
+                    ),
+                    name,
+                )
 
 
 if __name__ == "__main__":

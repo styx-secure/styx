@@ -107,8 +107,10 @@ effect. O-10 still owns public outcome codes; O-14 uses internal test labels.
 
 The required run used Node `v24.18.0` with OpenSSL `3.5.7`, Dart SDK `3.10.8`
 and the exact artifacts above. Twenty-nine runtime vectors included ordinary,
-malformed, non-canonical, small-order and both directions of mixed-order
-equation separation.
+malformed, non-canonical, small-order and mixed-order equation-separation
+cases. A cofactored-valid/cofactorless-invalid witness exists; the strict
+converse cannot exist because a cofactorless equality remains true after both
+sides are multiplied by the Ed25519 cofactor.
 
 Two non-oracle adapters matched the selected language for every vector:
 

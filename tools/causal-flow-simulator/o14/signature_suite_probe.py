@@ -9,7 +9,7 @@ import sys
 
 sys.dont_write_bytecode = True
 
-from evidence_io import CanonicalJsonReport
+from evidence_io import CanonicalJsonReport, public_failure
 from ed25519_reference import verify as oracle_verify
 from scenarios import (
     EXPECTED_RUNTIME_VECTOR_COUNT,
@@ -97,8 +97,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--suite", required=True, choices=("required",))
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
-    report, passed = build_report()
-    CanonicalJsonReport.store(args.output, report)
+    try:
+        report, passed = build_report()
+        CanonicalJsonReport.store(args.output, report)
+    except (OSError, KeyError, ValueError) as error:
+        print(f"O-14 probe failed: {public_failure(error)}", file=sys.stderr)
+        return 2
     print(f"O-14 PROBE verdict={report['verdict']} vectors={len(report['runtime_vectors'])}")
     return 0 if passed else 1
 
