@@ -435,11 +435,13 @@ written inverse.
 
 ## 8. O-14 compatibility and reopen predicate
 
-O-14 has no ratified candidate set, so this task does not invent one. O-14 must
-authenticate the exact section 5 transcript bytes under the verification key and
-algorithm derived from authenticated credential state. It must not replace the
-signed message with the event reference, add an event-selected algorithm field
-or reinterpret a carried suite hint.
+O-14 selects internal suite `0x0001`,
+`STYX-ED25519-PRIMEORDER-RFC8032-V1`. It authenticates exactly the section 5
+transcript bytes under the canonical 32-octet verification key and suite derived
+from authenticated credential state. It neither replaces the signed message
+with the event reference nor adds an event-selected selector or carried-suite
+fallback. Its canonical 64-octet `R || S`, `S < L`, canonical point decoding and
+prime-order guards belong to O-14 and do not alter this transcript.
 
 O-06b-1 reopens if a later O-14 selection:
 
@@ -457,6 +459,14 @@ O-06b-1 reopens if a later O-14 selection:
 Merely using an internal hash different from SHA-256 does not alias the event
 reference and is not by itself a reopen reason. O-14 owns its key/signature
 encodings, exact registry, downgrade evidence and negative cases.
+
+Issue #246 disposes of the predicates individually: `0x0001` changes neither
+the signed transcript/prehash (1), bounded arbitrary-octet capability (2), nor
+derived-suite placement (3); it leaves SHA-256 reference evidence intact (4),
+requires no different reference digest or material new production primitive for
+the demonstrated guarded adapter (5), and assigns one canonical 32-octet key to
+its sole admitted suite (6). None is met. A later suite or adapter that meets any
+predicate must reopen O-06b-1 under a separate ratified task.
 
 ## 9. Rejection surfaces for O-10
 
@@ -546,9 +556,16 @@ reinterpreted.
 5. O-06 and O-06c are condition-bearing `DECIDED` and must be rerun or reopened
    when any recorded placeholder owner selects a dependent input or a later
    counterexample invalidates the bounded verdict.
+6. **O-14 is condition-bearing `DECIDED`:** suite `0x0001` fixes the exact
+   guarded signature language without changing these bytes. Issue #246 reruns
+   the six existing O-06c modules against their unchanged placeholder only; it
+   does not discharge the placeholder-substitution obligation. Before any C0.3
+   corpus, a separate human-ratified task must integrate the selected semantics
+   into the combined construction and rerun its complete evidence.
 
 O-06b-1, O-06b-2, C0.2j, C0.2k and the completed O-06c evidence do not make
-C0.3 executable. O-07, O-08, O-10 and O-14 remain blockers;
-O-12 additionally blocks any time-bearing profile. O-11 remains required before
-supported persistence or remote admission, and K-11 remains required before any
-normative corpus file.
+C0.3 executable. O-07, O-08 and O-10 remain open blockers; O-14 retains its
+condition-bearing dependency until the separately ratified combined rerun
+passes. O-12 additionally blocks any time-bearing profile. O-11 remains
+required before supported persistence or remote admission, and K-11 remains
+required before any normative corpus file.

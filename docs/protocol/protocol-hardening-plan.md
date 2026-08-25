@@ -195,8 +195,10 @@ Protocol increments proceed in dependency order:
    verdict is bounded evidence with explicit placeholder-triggered reruns, not
    proof, conformance, implementation or readiness authority.
 4. **Resolve remaining C0.3 blockers.** Close or precisely scope O-07 genesis
-   and checkpoint evidence, O-08 resource bounds, O-10 stable errors and O-14
-   signature-suite binding. Resolve O-12 wherever a selected profile carries
+   and checkpoint evidence, O-08 resource bounds and O-10 stable errors. O-14
+   is condition-bearing `DECIDED`; before any corpus authorization, replace its
+   O-06c placeholder with the selected signature semantics and rerun the
+   complete combined evidence. Resolve O-12 wherever a selected profile carries
    time.
 5. **Reconcile the threat model.** Re-run hostile cases against the complete
    selected boundary, including cross-layer assumptions and newly introduced
@@ -234,7 +236,8 @@ registry governs and this plan must be corrected.
 |---|---|---|
 | O-01 through O-05 | `DECIDED` | preserved inputs; reopen only through their recorded conditions |
 | O-06 | condition-bearing `DECIDED` | Issue #243 completed bounded O-06c evidence; recorded placeholder decisions and later counterexamples trigger rerun/reopen |
-| O-07, O-08, O-10, O-14 | `OPEN` | block C0.3 |
+| O-07, O-08, O-10 | `OPEN` | block C0.3 |
+| O-14 | condition-bearing `DECIDED` | closed suite; its retained O-06c placeholder-substitution condition still blocks C0.3 until separately ratified combined evidence passes |
 | O-09 | `DECIDED` | preserved responsibility split |
 | O-11 | `OPEN` | intentionally deferred; does not block a strictly transcript-only C0.3 corpus |
 | O-12 | `OPEN`, profile-conditional | blocks every profile retaining physical-time claims; inapplicable only when time is omitted |
@@ -412,9 +415,11 @@ bounded executable evidence:
   reconciles the handoff; Issue #243 supplies the isolated executable evidence,
   compensates the recorded v2/C0.2k limitations and preserves every rerun/
   reopen trigger;
-- O-07, O-08, O-10 and O-14 remain open; O-12 remains conditional as described
-  in section 4; O-11, O-13, O-15 and O-16 retain their explicitly bounded
-  non-blocking or downstream-blocking roles;
+- O-07, O-08 and O-10 remain open. O-14 is condition-bearing `DECIDED`, with
+  Dart/browser support claims and the separately ratified O-06c
+  placeholder-substitution rerun still gated. O-12 remains conditional as
+  described in section 4; O-11, O-13, O-15 and O-16 retain their explicitly
+  bounded non-blocking or downstream-blocking roles;
 - C0.3 remains `NO-GO` and depends exactly on
   `{C0.3_CORPUS_PATH_APPROVAL,O-06c,O-07,O-08,O-10,O-14}`;
 - while C0.3 is `NO-GO`, C0.3 itself blocks corpus, implementation alignment,

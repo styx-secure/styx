@@ -164,6 +164,14 @@ EXPECTED_SOURCE_RECORDS = {
         "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
         "normative",
     ),
+    "signature_suite_analysis": (
+        "docs/protocol/styx-app-kernel-v0-signature-suite-analysis.md",
+        "evidence",
+    ),
+    "signature_suite_report": (
+        "docs/protocol/styx-app-kernel-v0-signature-suite-falsification-report.md",
+        "evidence",
+    ),
     "threat_model": ("docs/security/STYX-THREAT-MODEL.md", "normative"),
     "transcript_profile": (
         "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
@@ -282,7 +290,7 @@ EXPECTED_STATUS_BY_COLLECTION = {
         "O-10": "OPEN",
         "O-12": "OPEN",
         "O-13": "OPEN",
-        "O-14": "OPEN",
+        "O-14": "DECIDED",
         "O-15": "OPEN",
         "O-16": "OPEN",
     },

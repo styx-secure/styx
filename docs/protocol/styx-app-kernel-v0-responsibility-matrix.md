@@ -1,14 +1,18 @@
 # Styx application protocol v0 — responsibility matrix
 
 - **Status:** C0.2a normative responsibility allocation, amended by
-  C0.2b/C0.2c/C0.2e/C0.2f/C0.2i/C0.2j/C0.2k/O-06c, O-06a, O-06b-1 and O-06b-2 only for decided dependencies;
+  C0.2b/C0.2c/C0.2e/C0.2f/C0.2i/C0.2j/C0.2k/O-06c/O-14, O-06a, O-06b-1 and O-06b-2 only for decided dependencies;
   not a protocol byte specification or implementation claim.
 - **Authority:** Issues #207, #209, #211, #213, #215, #217, #219, #221, #223,
-  #225, #233, #239 and #243,
+  #225, #233, #239, #243 and #246,
   ADR-0007 and `docs/security/STYX-THREAT-MODEL.md`.
 - **O-06c evidence baseline:** Issue #243 supplies isolated bounded combined
   falsification of the exact C0.2j/C0.2k construction; exact candidate identity
   and the six canonical report digests are recorded by the Issue/PR evidence.
+- **O-14 evidence baseline:** Issue #246 selects internal suite `0x0001` and
+  supplies isolated guarded-language, raw-backend, cross-runtime and mutation
+  evidence. It is not product conformance; Dart/browser claims and the
+  placeholder-substituted O-06c rerun remain separate gates.
 - **Decision effect:** C0.2a closes O-09; C0.2b closes O-02/O-03; C0.2c closes
   O-01/O-05 and fixes O-06 semantic roles; exact derivation was then split;
   C0.2e/C0.2f supplied the historical O-04 envelope; Issue #225 and merged PR
@@ -23,8 +27,9 @@
   C0.2k binds both commitment roles to the exact C0.2j credential identifier
   and author sequence without changing the interior-node format. O-06c supplies
   bounded combined falsification, making O-06/O-06c condition-bearing
-  `DECIDED`. O-07, O-08 and O-10 through O-14 remain open within their recorded
-  conditional or downstream roles.
+  `DECIDED`. O-14 selects one downgrade-resistant guarded signature language
+  and is condition-bearing `DECIDED`; O-07, O-08 and O-10 through O-13 remain
+  open within their recorded conditional or downstream roles.
 
 This matrix assigns each known normative obligation to exactly one owning
 layer. Ownership means that the layer defines the rule, its conformance
@@ -115,7 +120,7 @@ but the concrete rule is not yet selected.
 | `OB-K15` | Reject legacy `styx-legacy-c0` objects as v1 and prevent implicit dual acceptance | Versioned object → v1 result or legacy rejection | Decided by registry K-10 |
 | `OB-K16` | Emit stable, bounded protocol outcomes required for safe caller behavior without leaking parser internals | Validation site → stable classified outcome | O-10 open |
 | `OB-K17` | Define physical-time semantics only if retained; never use ambient wall time as unbounded authority | Optional time input → bounded field or absence | O-05 removes kernel time; O-12 remains profile-conditional |
-| `OB-K18` | Resolve each non-genesis credential identifier as the event reference of exactly one causally available K-valid role-`0x02` `GRANT`; take context, issuer, suite and key only from that authenticated grant; treat non-`GRANT` author IDs as lookup keys and expose same-key aliases without merging authority | Whole validated set, causal ancestry and signed transcript/signature → bound author, invalid signature, dangling/forward binding, visible alias or unsupported collision | C0.2j selects grant-rooted binding and exact K-readable tail; O-06c independently exercises grant-rooted derivation; O-14 still owns the closed suite registry and canonical key/signature encodings |
+| `OB-K18` | Resolve each non-genesis credential identifier as the event reference of exactly one causally available K-valid role-`0x02` `GRANT`; take context, issuer, suite and key only from that authenticated grant; treat non-`GRANT` author IDs as lookup keys and expose same-key aliases without merging authority | Whole validated set, causal ancestry and signed transcript/signature → bound author, invalid signature, dangling/forward binding, visible alias or unsupported collision | C0.2j selects grant-rooted binding and exact K-readable tail; O-06c independently exercises grant-rooted derivation; O-14 selects suite `0x0001`, canonical 32-octet keys, canonical 64-octet signatures, prime-order guards and terminal no-fallback verification |
 | `OB-K19` | Build immutable issuer-to-grant provenance, compute bounded transitive termination for revoked or forked credential lineages, require R-1 causal availability for `REVOKE` and retiring-`ROTATE` targets, and present the complete K-admitted control-evidence set to AP without filtering it by AP outcome, content availability, removal or checkpoint substitution | Complete admitted control graph plus fork/reduction targets → provenance graph, terminated lineages, scoped quarantine evidence or typed fail-closed bound result | C0.2j selected with fresh full replay only; `RECOVER` retains its authorized bootstrap exemption. O-06c restates the pinned authority outcomes and re-exercises only their fail-closed boundary guards, without creating a second oracle; O-08 production bounds and O-10 outcomes remain open |
 
 ### 4.2 Application profile (`AP`)
@@ -238,7 +243,7 @@ It prevents a lower-layer success from bypassing an upper-layer security rule.
 | O-11 wire/storage encoding | Owner of each representation: `K` transcript regeneration; `RS` opening custody; `TR` authenticated fetch/envelope | Honest frontier producers must retain and be able to serve every `REQUIRED` opening in the frontier's causal ancestry; a stale or fork-quarantined projection is never producer-eligible; decoders supply surface evidence | Exact containers and fetch protocol remain open; loss stays typed pending/stale and never permits substitution. |
 | O-12 physical-time details | The time-bearing `AP` profile | `RS` and `TR` supply precision/lifetime/linkability evidence | Inapplicable to profiles without time; open for any profile retaining a signed time claim. |
 | O-13 irreversible-effect authorization | `AP` for authorization semantics | `RS` owns execution/custody/typed loss; `PV` owns disclosure/claims; `K` supplies retained evidence | **Open coordinating record.** Quarantine-only interim; gates destruction-capable increments and deletion/erasure/unlinkability claims, not O-04/C0.2f/transcript-only C0.3. |
-| O-14 signature-suite registry | `K` for verification mechanics and registry; `AP` for admitted credential/assurance profiles | `RS` and implementation evidence supply key custody/runtime capability | **Open:** O-02 binds a key and algorithm to each credential; O-06b-1 supplies no signature choice and only defines the compatibility/reopen predicate. Exact algorithms, key/signature encodings and downgrade evidence remain unselected. |
+| O-14 signature-suite registry | `K` for verification mechanics and registry; `AP` for admitted credential/assurance profiles | `RS` and implementation evidence supply key custody/runtime capability | **Condition-bearing `DECIDED`:** internal suite `0x0001` is pure Ed25519 over the exact O-06b-1 transcript with canonical 32/64-octet key/signature encodings, `S < L`, prime-order `A`/`R`, one pinned verifier and no alternate selector/fallback. Product adapters remain unclaimed; Dart/browser evidence and the separately ratified placeholder-substituted O-06c rerun remain gated. |
 | O-15 lifecycle/profile succession | `AP` for version succession and any future disposition semantics; `K` only for authenticated version pinning | `RS`, `TR` and `PV` supply migration, availability and presentation constraints | **Open:** v0 contexts are pinned; no profile-upgrade, abandonment or control-lane mechanism is selected. Blocks product readiness, not transcript-only C0.3 while v0 stays pinned. |
 | O-16 finality/stability | `AP` for semantic finality policy; `K` for evidence classification only | `RS`, `TR` and `PV` supply rollback, delivery and truthful-presentation constraints | **Open:** every visible AP result is provisional under late evidence; no irreversible-effect or finality claim is selected. |
 
@@ -248,9 +253,10 @@ normative obligations. Neither owner may omit the other's validated output.
 O-07 uses the same obligation split: `K` alone owns checkpoint-object
 authentication and binding, while `AP` alone owns any producer authorization
 and acceptance semantics. The row coordinates those outputs without creating
-an aggregate multi-owner rule. O-14 likewise leaves verification mechanics and
-the closed signature registry with `K`, while `AP` alone selects admitted
-credential/assurance profiles under O-02.
+an aggregate multi-owner rule. O-14 selects verification mechanics and the
+closed `0x0001` signature registry under `K`, while `AP` alone selects admitted
+credential/assurance profiles under O-02. A valid `0x0001` result cannot
+substitute for AP authorization.
 
 ## 7. Capability-model coverage
 
@@ -329,11 +335,13 @@ Rejected alternatives are:
 
 Security consequence: a bypass at one layer cannot be legitimized by a success
 signal from another layer. Residual risk: C0.2k supplies bounded commitment-
-context evidence and O-06c supplies bounded combined-construction evidence;
-neither is proof or protocol implementation. Genesis contents, production
-bounds, stable outcomes, signature suites and AP semantic injectivity remain
-owned by O-07/O-08/O-10/O-14/AP and trigger O-06c rerun where applicable. The
-completed C0.2d/C0.2f/C0.2k/O-06c models remain bounded evidence. This allocation
+context evidence, O-06c supplies bounded combined-construction evidence and
+O-14 supplies bounded guarded-signature evidence; none is proof or product
+implementation. Genesis contents, production bounds, stable outcomes and AP
+semantic injectivity remain owned by O-07/O-08/O-10/AP. O-14's selected
+semantics still trigger the separately ratified O-06c placeholder-substitution
+rerun, and Dart/browser conformance remains unclaimed. The completed
+C0.2d/C0.2f/C0.2k/O-06c/O-14 models remain bounded evidence. This allocation
 alone is not executable protocol behavior.
 
 Reopen O-09 only if a future obligation cannot be assigned without violating

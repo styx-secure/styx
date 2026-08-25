@@ -1200,51 +1200,65 @@ outcomes.
 
 ### O-14 — Signature-suite registry and credential algorithm binding
 
-- **Status:** `OPEN`.
+- **Status:** condition-bearing `DECIDED` by Issue #246.
 - **Decision owner:** `K` owns verification semantics and the closed algorithm
   registry; `AP` owns which credential types and assurance profiles it admits.
   This follows the O-02 split-obligation precedent and creates no aggregate
   multi-owner rule: each layer alone owns its stated output.
-- **Question:** which exact signature algorithms, key encodings, registry
-  identifiers and downgrade rules instantiate the O-02 credential binding?
-- **Interim rule:** an application event includes the context-local credential
-  identifier and derives its verification key and algorithm identifier from
-  authenticated credential state. An author-supplied verification key or
-  algorithm selector MUST NOT override that state. Unknown, inconsistent or
-  unsupported algorithms fail closed.
-- **Rationale/evidence:** O-02 already binds one verification key and its
-  algorithm identifier to each credential but explicitly deferred the exact
-  registry. O-06a exposed that no prior open record owned this dependency even
-  though invalid-signature and cross-algorithm vectors are required before
-  C0.3.
+- **Selected registry:** internal Styx `u16` suite `0x0001`,
+  `STYX-ED25519-PRIMEORDER-RFC8032-V1`. `0x0000`, `0xffff`, every unassigned
+  value and every value from another registry are invalid. A future suite needs
+  a separately ratified profile transition; it cannot change `0x0001`.
+- **Exact accepted language:** pure Ed25519 over the complete regenerated
+  O-06b-1 application-event transcript; exactly 32 canonical compressed
+  Edwards octets for `A`; exactly 64 signature octets `R || S`; canonical `R`;
+  little-endian `0 <= S < L`; and both `A` and `R` must be non-small-order,
+  torsion-free prime-order points. After those guards, invoke exactly one pinned
+  RFC 8032 cofactored verifier. On guarded inputs its accepted language equals
+  the cofactorless equation because multiplication by eight is invertible in
+  the prime-order subgroup.
+- **Closed dispatch rule:** resolve suite and key only from the authenticated
+  grant-rooted credential binding. Event, `GRANT`, transport, Nostr, MLS and
+  session hints cannot override it. Reject unknown suite or wrong key/signature
+  length before backend invocation. Verification failure is terminal: no
+  retry, alternate verifier, fallback, batch or aggregate path is admitted.
+- **Rationale/evidence:** the standard-derived oracle, two non-oracle guarded
+  JavaScript/Node adapters, 29 runtime vectors, 53 semantic checks and a closed
+  26-mutant registry agree. Raw Noble, Node WebCrypto and Dart behavior diverge
+  on named non-canonical, mixed-order or small-order witnesses and is not
+  silently promoted to protocol conformance. See the O-14 analysis and
+  falsification report.
 - **Rejected alternatives:** silently treating a language crypto library's
-  defaults as the registry; per-event algorithm negotiation; accepting the same
-  transcript under a second algorithm; letting session or Nostr signature
-  validity stand in for the application credential signature.
+  defaults as the registry; raw RFC-cofactored, ZIP-215, WebCrypto or Dart
+  behavior without the selected guards; fixed P-256 for v0; per-event
+  negotiation; accepting the same transcript under a second algorithm; letting
+  session or Nostr signature validity stand in for the application signature.
 - **Security/privacy:** algorithm confusion or downgrade can turn possession of
-  a different key type into apparent application authorship. Registry choices
-  may also add dependencies and side-channel/supply-chain surfaces.
-- **Missing evidence:** primary-source primitive/profile comparison, exact key
-  and signature encodings, supported-runtime evidence, malformed/cross-suite
-  negative cases, downgrade behavior and independent security review.
+  a different key type into apparent application authorship. A successful
+  signature proves possession for these bytes, not AP authority, identity,
+  truth, originality, priority, finality or effect permission. Runtime choices
+  retain side-channel and supply-chain surfaces.
 - **Dependent artifact:** O-02 credential-record bytes, application-signature
   verification and C0.3 invalid-signature/cross-suite expectations. O-06 owns
   only the transcript slot/derivation boundary and MUST NOT absorb this choice.
-  O-14 must assign exactly one canonical verification-key octet encoding and an
-  enforceable length bound to every admitted `grantee_suite_id`; inability to do
-  so reopens O-06b-1 rather than permitting per-event negotiation.
-  The C0.2f report predates O-14 and therefore does not enumerate it; this
-  registry is the current authority for the expanded C0.3 blocker list without
-  changing that frozen report or its recorded result.
-- **Smallest bounded follow-up:** after O-06a, compare the minimum viable closed
-  signature profiles and their exact runtime/supply-chain evidence under a
-  separately approved security/crypto contract.
-- **Residual/closure condition:** close only when every supported credential has
-  one unambiguous verification algorithm and encoding, unknown/cross-suite
-  inputs fail closed, no silent negotiation/fallback exists and executable
-  negative evidence passes.
-- **Human ratification:** pending final-HEAD acceptance that this ownership gap
-  is explicit and remains open.
+  The existing role-`0x02` `GRANT || suite_id:u16 || key:opaque_u32` framing is
+  unchanged; `0x0001` fixes the framed key length at 32 octets.
+  O-07 retains sole ownership of genesis credential contents and authority, but
+  every admitted genesis binding must select a suite from this same closed
+  registry; absent, unknown or reserved genesis suites fail closed.
+- **Conditions and residual risk:** current products gain no conformance claim.
+  Before Dart support, a separate ratified task must select and audit exact
+  subgroup guards or a conforming pinned verifier and replay all O-14 evidence.
+  Each supported browser/provider needs the same raw and guarded vector matrix.
+  Before any C0.3 corpus is authorized, a separate human-ratified task must
+  replace the unchanged O-14 placeholder in the complete O-06c construction and
+  rerun all combined evidence. Dependency/runtime upgrades reopen adapter
+  evidence. A counterexample or inability to enforce the exact guarded language
+  reopens O-14. Both demonstrated JavaScript adapters share one Noble subgroup
+  guard (`O14-SINGLE-GUARD-DEPENDENCY`), and per-event attacker-controlled `R`
+  validation retains an O-08 availability obligation (`O14-GUARD-COST-O08`).
+- **Human ratification:** pending final-HEAD acceptance of this exact
+  condition-bearing decision and its named residual gates.
 
 ### O-15 — Profile succession and optional disposition
 
@@ -1349,7 +1363,7 @@ immutable historical evidence and the independent v3 report records the
 superseding authority model. C0.2k selects the credential/sequence-bound
 commitment context and supplies bounded amendment evidence; O-06c independently
 falsifies the exact combined bytes within its declared envelope.
-O-06 through O-08, O-10 and O-14
+O-06 through O-08 and O-10
 still contain choices required to derive normative bytes or adversarial
 expectations; O-07 explicitly includes the previously deferred checkpoint-
 authentication contract. O-12 is
@@ -1375,8 +1389,9 @@ The smallest safe sequence is:
    evidence; then execute O-06c adversarial evidence over the combined
    construction;
 5. preserve and rerun the completed v1, v2, v3 and C0.2k baseline and mutation evidence after those changes, then
-   close genesis/checkpoint evidence, cardinality, error and signature-suite
-   questions O-07, O-08, O-10 and O-14, plus O-12 for any time-bearing profile,
+   close genesis/checkpoint evidence, cardinality and error questions O-07,
+   O-08 and O-10, preserve O-14's condition-bearing decision
+   and discharge its separately ratified combined-evidence rerun, plus O-12 for any time-bearing profile,
    without product implementation authority; retain O-11 for the later
    wire/storage decision;
 6. approve the exact Apache-2.0 path inventory for the future corpus;

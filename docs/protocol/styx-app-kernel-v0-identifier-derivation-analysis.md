@@ -103,7 +103,7 @@ A profile must not hide durable authority in `REQUIRED` or `DETACHABLE` content.
 | Effective grant/policy state | `DERIVE` | `AP`, from authenticated replay state under O-02 | An author-carried "current policy" selector is excluded; the order-sensitive concurrent case is constrained in §3.4 and §6. |
 | Credential identifier | `INCLUDE` | O-02 context-local credential state | Names the author binding without embedding a global account or session identity. |
 | Verification key | `DERIVE` | Direct lookup of the K-valid binding `GRANT` whose event reference equals the credential identifier | Repeating an author-supplied key permits substitution. Only that GRANT tail creates a binding; missing/forward lookup, wrong context, suite/key mismatch or observed reference collision fails closed. |
-| Signature algorithm identifier | `DERIVE` | Authenticated credential record; O-14 owns the registry and leaves its exact values open | An author-selected algorithm field could enable downgrade or cross-algorithm ambiguity. Unknown or inconsistent algorithms must fail closed. |
+| Signature algorithm identifier | `DERIVE` | Authenticated binding `GRANT`; O-14 selects only internal Styx suite `0x0001` (`STYX-ED25519-PRIMEORDER-RFC8032-V1`) | An author-selected algorithm field could enable downgrade or cross-algorithm ambiguity. Zero, reserved, unknown, inconsistent, fallback and cross-registry values fail closed before verification. |
 | Signature bytes | `EXCLUDE` | Supplied beside the regenerated transcript | Including the signature in event identity is circular and makes resigning change identity. The signature authenticates, but is not part of, its content. |
 | Author sequence | `INCLUDE` | O-01 | Detects per-credential gaps and equivocation. Arrival order and aggregate counters are rejected. |
 | Direct author-predecessor presence | `INCLUDE` | O-01 | Presence is distinct from a zero or empty reference. Implicit null conventions are rejected. |
@@ -241,7 +241,7 @@ property. This document does not claim it has been met by exact bytes.
 
 | Boundary | O-06a decision | Remaining owner/work |
 | --- | --- | --- |
-| O-02 / O-06 | Include the grant-rooted credential identifier; derive key and signature algorithm by direct K lookup of its binding GRANT; authenticate closed credential-control arms. Do not let an event choose its own verification algorithm. | O-14 owns the exact signature-suite registry, canonical key/signature encodings and downgrade rules. AP/O-02 own authority. |
+| O-02 / O-06 | Include the grant-rooted credential identifier; derive key and signature algorithm by direct K lookup of its binding GRANT; authenticate closed credential-control arms. Do not let an event choose its own verification algorithm. | O-14 selects suite `0x0001`, canonical 32-octet Ed25519 keys, canonical 64-octet `R || S`, prime-order guards and terminal no-fallback verification. AP/O-02 still own authority. |
 | O-03 / O-06 / O-07 | Later events include a genesis reference derived over the complete genesis signed transcript. It is not the random context identifier and creates no self-reference. | O-07 defines necessary genesis fields and authority; O-06b-1 defines exact reference bytes. |
 | O-04 / O-06 | Commitment is computed first from content/opening/context; its descriptor enters the event transcript; the event reference is computed last. The commitment never includes the event reference. | O-06b-1 selects the reference suite and O-06b-2 selects the commitment suite; O-06c falsifies the construction. |
 | O-06 / O-08 | Semantic counts, lengths and geometry slots exist; exact transcript and commitment-geometry widths are fixed by O-06b-1/O-06b-2. | O-08 supplies measured enforceable profile maxima and activation bounds. |
@@ -457,11 +457,13 @@ non-circularity or replay-policy counterexample.
 
 ## 11. C0.3 gate
 
-O-06b-1 plus O-06b-2 and C0.2j do not make C0.3 executable. C0.2k and O-06c
-are condition-bearing `DECIDED`; O-07, O-08, O-10 and O-14 remain open
-blockers; O-12 additionally blocks any
-time-bearing profile. O-11 does
-not block a transcript-only corpus but must close before supported persistence
-or remote admission. K-11 requires a separate exact-path licensing amendment
-before C0.3 creates any normative corpus file. No supported Phase B adapter may
-persist current application-ledger objects while this `NO-GO` remains in force.
+O-06b-1 plus O-06b-2 and C0.2j do not make C0.3 executable. C0.2k, O-06c and
+O-14 are condition-bearing `DECIDED`; O-07, O-08 and O-10 remain open blockers.
+O-14's unchanged placeholder in O-06c must be replaced by the selected `0x0001`
+semantics and the complete combined evidence rerun under a separate
+human-ratified task before corpus authorization. O-12 additionally blocks any
+time-bearing profile. O-11 does not block a transcript-only corpus but must
+close before supported persistence or remote admission. K-11 requires a
+separate exact-path licensing amendment before C0.3 creates any normative corpus
+file. No supported Phase B adapter may persist current application-ledger
+objects while this `NO-GO` remains in force.

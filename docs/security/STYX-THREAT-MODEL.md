@@ -44,7 +44,14 @@
   unavailable when its state or transition envelope is crossed. C0.2k selects
   the credential/sequence-bound commitment context with bounded amendment
   evidence. O-06c now supplies bounded combined evidence; C0.3 remains
-  `NO-GO` because O-07/O-08/O-10/O-14 and the corpus-path gate remain open.
+  `NO-GO` because O-07/O-08/O-10, O-14's retained combined-rerun condition and
+  the corpus-path gate remain unresolved.
+- **O-14 amendment:** Issue #246 selects internal suite `0x0001`, pure Ed25519
+  over the complete O-06b-1 transcript with canonical 32-octet keys, canonical
+  64-octet `R || S`, `S < L`, prime-order guards, one pinned verifier and no
+  fallback. Bounded oracle, guarded-adapter, raw-backend and mutation evidence
+  supports that language. It is not product conformance: Dart/browser support
+  and the placeholder-substituted O-06c combined rerun remain separate gates.
 - **Language:** English is canonical.
 
 Styx is experimental, has not completed an independent security audit, and is
@@ -162,8 +169,8 @@ or exploit disagreement between clients.
 
 This adversary is why key possession, session membership and application
 authorization are separate checks. O-02 fixes the semantic credential and
-rotation model; concrete profile grants/bounds and the O-14 signature-suite
-registry remain open. C0.2j's M20 rule deliberately keeps every K-admitted
+rotation model; concrete profile grants/bounds remain open, while O-14 fixes
+only the guarded signature language. C0.2j's M20 rule deliberately keeps every K-admitted
 credential-control event in the authority evidence set even when AP rejects the
 action or the actor is no longer authorized. Consequently, any still-valid
 bound signing key can consume finite control, fork, state and transition budgets;
@@ -388,7 +395,7 @@ make telemetry or push metadata harmless.
 | Adversary | Primary assets/properties at risk | Required response and evidence | Sole obligation owners | Residual non-claim |
 | --- | --- | --- | --- | --- |
 | A1 malformed-input sender | Event meaning, session/runtime availability | Strict bounded parsing, canonical rejection, stable outcomes and resource tests before state change; O-06b-1/O-06b-2/C0.2k fix regenerated transcript, commitment, context and geometry grammars; O-06c challenges complete-object octets, scalars, parser inverses and geometry under an exploration-only envelope | `OB-K02`–`OB-K04`, `OB-SS08`, `OB-TR01` each at its parser boundary | A conforming parser cannot prevent all bandwidth exhaustion before bytes reach it; bounded O-06c evidence is not a product parser, proof or production-bound claim. |
-| A2 valid but unauthorized actor | Role authority, case state, retention/export | Separate monotone K grant binding from reversible bounded AP authority; classify authentic-but-unauthorized and post-revocation actions; use necessary Pass0 authority for expansion and the first eligible contested slot for reductions | `OB-AP02`; cryptographic binding/provenance by `OB-K18`/`OB-K19` | Valid key possession still creates verifiable historical evidence but never authority; concrete AP roles and O-14 suites remain open. |
+| A2 valid but unauthorized actor | Role authority, case state, retention/export | Separate monotone K grant binding from reversible bounded AP authority; classify authentic-but-unauthorized and post-revocation actions; use necessary Pass0 authority for expansion and the first eligible contested slot for reductions; accept only O-14 suite `0x0001` from the authenticated credential binding with exact guards and no fallback | `OB-AP02`; cryptographic binding/provenance by `OB-K18`/`OB-K19` | Valid key possession still creates verifiable historical evidence but never authority; concrete AP roles remain open, and product/runtime conformance to O-14 is unclaimed. |
 | A3 malicious peer | Plaintext, causal state, availability, erasure | Detect replay/fork/conflict; keep holes and descendants pending; terminate forked credential lineages and descendants; expose selective disclosure, scoped quarantine, forced staleness and delayed replay | `OB-K05`–`OB-K14`, `OB-K19`, `OB-AP04`, `OB-PV01`/`OB-PV04` | An authorized peer can copy plaintext, keep a subtree pending forever, amplify replay, force a symbolic checkpoint-dependent projection stale, terminate its lineage, exploit sole authority or lie in signed content. |
 | A4 compromised authorized peer | Current rights, plaintext and session history | Preserve K evidence; apply transitive provenance termination; require fresh-grant rotation/recovery; disclose compromise and recompute authority by fresh full replay | `OB-AP02`, `OB-K18`, `OB-K19`, `OB-SS04`–`OB-SS06`, `OB-PV07` | No retroactive protection for plaintext/keys; one uncontested authority can remove peers; same-key aliases survive independent grants; no finality. |
 | A5 hostile/colluding relay | Availability, freshness, routing metadata | Verify outer objects, ignore relay order/response as authority, authenticate fetched openings, retry/fail over and measure exposure | `OB-TR01`–`OB-TR06`, `OB-TR10` | Relays can selectively withhold openings or checkpoint-named transcript material, force a projection stale, and collude over visible metadata; they never substitute for verification or freshness. |
