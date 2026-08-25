@@ -28,6 +28,7 @@ from scope_guard_o07 import (  # noqa: E402
     _path_is_forbidden,
     changed_relation,
     enforce_endpoint_types_and_identity,
+    enforce_predecessor_test_integrity,
 )
 
 
@@ -122,6 +123,48 @@ class ScopeGuardTests(unittest.TestCase):
             relation = [{"status": "A", "paths": [str(target.relative_to(repo))]}]
             with self.assertRaisesRegex(ScopeViolation, "byte-identical O-07 Base blob"):
                 enforce_endpoint_types_and_identity(repo, base, candidate, relation)
+
+    def test_predecessor_review_test_deletion_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            _git(repo, "init", "-q")
+            _git(repo, "config", "user.name", "O07 test")
+            _git(repo, "config", "user.email", "o07@example.invalid")
+            test_path = repo / "tools/protocol-review-model/tests/test_existing.py"
+            test_path.parent.mkdir(parents=True)
+            test_path.write_text("def test_existing():\n    assert True\n")
+            _git(repo, "add", ".")
+            _git(repo, "commit", "-qm", "base")
+            base = _git(repo, "rev-parse", "HEAD").decode().strip()
+            test_path.unlink()
+            _git(repo, "add", "-u")
+            _git(repo, "commit", "-qm", "delete predecessor test")
+            candidate = _git(repo, "rev-parse", "HEAD").decode().strip()
+            with self.assertRaisesRegex(
+                ScopeViolation, "predecessor review test deleted"
+            ):
+                enforce_predecessor_test_integrity(repo, base, candidate)
+
+    def test_predecessor_review_test_change_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary)
+            _git(repo, "init", "-q")
+            _git(repo, "config", "user.name", "O07 test")
+            _git(repo, "config", "user.email", "o07@example.invalid")
+            test_path = repo / "tools/protocol-review-model/tests/test_existing.py"
+            test_path.parent.mkdir(parents=True)
+            test_path.write_text("def test_existing():\n    assert True\n")
+            _git(repo, "add", ".")
+            _git(repo, "commit", "-qm", "base")
+            base = _git(repo, "rev-parse", "HEAD").decode().strip()
+            test_path.write_text("def test_existing():\n    return None\n")
+            _git(repo, "add", ".")
+            _git(repo, "commit", "-qm", "weaken predecessor test")
+            candidate = _git(repo, "rev-parse", "HEAD").decode().strip()
+            with self.assertRaisesRegex(
+                ScopeViolation, "predecessor review test changed"
+            ):
+                enforce_predecessor_test_integrity(repo, base, candidate)
 
     def test_model_is_an_explicit_normative_artifact(self) -> None:
         self.assertIn(MODEL_PATH, EXPECTED_ARTIFACT_SHA256)

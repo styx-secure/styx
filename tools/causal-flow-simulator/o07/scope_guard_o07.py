@@ -21,6 +21,7 @@ REPORT_SCHEMA = "styx-o07-scope-report/v1"
 VALIDATOR_PATH = "tools/protocol-review-model/validate.py"
 MODEL_PATH = "docs/protocol/review/styx-app-kernel-v0-review-model.json"
 O07_PREFIX = "tools/causal-flow-simulator/o07/"
+PREDECESSOR_REVIEW_TEST_PREFIX = "tools/protocol-review-model/tests/"
 
 ALLOWED_FILES = frozenset(
     {
@@ -351,6 +352,42 @@ def enforce_exact_artifacts(repo: Path, candidate: str) -> dict[str, str]:
     return observed
 
 
+def enforce_predecessor_test_integrity(
+    repo: Path, base: str, candidate: str
+) -> dict[str, str]:
+    """Require every pre-existing review test blob to remain byte-identical.
+
+    Issue #248 permits additive review tests, but it does not permit an O-07
+    change to delete, skip or weaken a predecessor assertion.  Pinning every
+    tracked Base blob under the predecessor test tree is deliberately stronger
+    than trying to infer whether an arbitrary source edit is a weakening.
+    """
+
+    listing = _git(
+        repo,
+        "ls-tree",
+        "-r",
+        "--name-only",
+        base,
+        "--",
+        PREDECESSOR_REVIEW_TEST_PREFIX,
+    ).stdout.decode().splitlines()
+    if not listing:
+        raise ScopeViolation("missing predecessor review-test inventory")
+
+    observed: dict[str, str] = {}
+    for path in sorted(listing):
+        base_mode, base_object_id = _tree_entry(repo, base, path)
+        try:
+            candidate_mode, candidate_object_id = _tree_entry(repo, candidate, path)
+        except (ScopeViolation, subprocess.CalledProcessError) as error:
+            raise ScopeViolation(f"predecessor review test deleted: {path}") from error
+        if candidate_mode != base_mode or candidate_object_id != base_object_id:
+            raise ScopeViolation(f"predecessor review test changed: {path}")
+        observed[path] = base_object_id
+    return observed
+
+
 def enforce_predecessor_isolation(repo: Path, candidate: str) -> None:
     listing = _git(repo, "ls-tree", "-r", "--name-only", candidate).stdout.decode().splitlines()
     source_suffixes = (".dart", ".js", ".mjs", ".py", ".ts")
@@ -375,6 +412,7 @@ def build_report(repo: Path, base_argument: str, candidate_argument: str) -> dic
     enforce_endpoint_types_and_identity(repo, base, candidate, relation)
     validator_assignments = enforce_validator_delta(repo, base, candidate)
     artifact_digests = enforce_exact_artifacts(repo, candidate)
+    predecessor_test_blobs = enforce_predecessor_test_integrity(repo, base, candidate)
     enforce_predecessor_isolation(repo, candidate)
     return {
         "schema": REPORT_SCHEMA,
@@ -385,6 +423,7 @@ def build_report(repo: Path, base_argument: str, candidate_argument: str) -> dic
         "changed_endpoint_count": sum(len(item["paths"]) for item in relation),
         "validator_assignments_changed": validator_assignments,
         "approved_artifact_sha256": artifact_digests,
+        "predecessor_review_test_blobs": predecessor_test_blobs,
         "byte_identical_o07_base_blobs": [],
         "predecessor_imports": [],
         "verdict": "PASS",
