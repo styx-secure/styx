@@ -36,8 +36,8 @@ class O14ScopeTests(unittest.TestCase):
         self.assertTrue(forbidden("styx-js/src/product.js"))
         self.assertTrue(forbidden("tools/causal-flow-simulator/o14/report.json"))
         self.assertTrue(forbidden("nested/package-lock.json"))
-        self.assertFalse(forbidden("tools/causal-flow-simulator/o14/common.py"))
-        self.assertTrue(allowed("tools/causal-flow-simulator/o14/common.py"))
+        self.assertFalse(forbidden("tools/causal-flow-simulator/o14/evidence_io.py"))
+        self.assertTrue(allowed("tools/causal-flow-simulator/o14/evidence_io.py"))
 
     def test_every_bounded_document_has_a_stable_normalizer(self) -> None:
         for path in sorted(NORMATIVE_BOUNDED):

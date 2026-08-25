@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 
 from ed25519_reference import (
     L,
+    P,
     mixed_order_cofactorless_valid,
     mixed_order_forgery,
     sign_from_seed,
@@ -16,8 +17,8 @@ from semantic_registry import (
     CredentialBinding,
     EventInput,
     Mutation,
-    SELECTED_SUITE,
-    VerificationResult,
+    SUITE_ID,
+    event_fingerprint,
     verify_event,
 )
 
@@ -27,8 +28,12 @@ SEED_B = bytes(reversed(range(32)))
 CONTEXT = bytes.fromhex("10" * 32)
 CREDENTIAL_A = bytes.fromhex("20" * 32)
 CREDENTIAL_B = bytes.fromhex("21" * 32)
+CREDENTIAL_ROTATED = bytes.fromhex("22" * 32)
+CREDENTIAL_RECOVERED = bytes.fromhex("23" * 32)
 TRANSCRIPT_PREFIX = b"STYX-O06B1-APPLICATION-EVENT-TRANSCRIPT-V1"
 TRANSCRIPT = TRANSCRIPT_PREFIX + CREDENTIAL_A
+EXPECTED_WITNESS_COUNT = 53
+EXPECTED_RUNTIME_VECTOR_COUNT = 29
 
 
 @dataclass(frozen=True)
@@ -61,6 +66,13 @@ def required_witnesses() -> tuple[Witness, ...]:
     small_r_key, small_r_signature = small_order_r_forgery(SEED_A, TRANSCRIPT)
     zip_key, zip_signature = zip215_noncanonical_key_forgery(TRANSCRIPT)
     scalar = int.from_bytes(base.signature[32:], "little")
+    same_key_transcript = TRANSCRIPT_PREFIX + CREDENTIAL_B
+    _, same_key_signature = sign_from_seed(SEED_A, same_key_transcript)
+    rotated_transcript = TRANSCRIPT_PREFIX + CREDENTIAL_ROTATED
+    rotated_key, rotated_signature = sign_from_seed(SEED_B, rotated_transcript)
+    recovered_transcript = TRANSCRIPT_PREFIX + CREDENTIAL_RECOVERED
+    recovered_key, recovered_signature = sign_from_seed(SEED_B, recovered_transcript)
+    noncanonical_r = (P + 1).to_bytes(32, "little") + base.signature[32:]
     return (
         Witness("positive", base, True, "ACCEPTED", True, False, True),
         Witness(
@@ -88,27 +100,88 @@ def required_witnesses() -> tuple[Witness, ...]:
         Witness("wrong-context", replace(base, context=bytes.fromhex("11" * 32)), False, "CREDENTIAL_CONTEXT_MISMATCH"),
         Witness("wrong-credential", replace(base, credential_identifier=CREDENTIAL_B), False, "CREDENTIAL_IDENTIFIER_MISMATCH"),
         Witness("wrong-sequence", replace(base, author_sequence=2), False, "AUTHOR_SEQUENCE_MISMATCH"),
-        Witness("revoked", replace(base, binding=replace(base.binding, active=False)), False, "CREDENTIAL_INACTIVE"),
+        Witness("revoked", replace(base, binding=replace(base.binding, authority_state="REVOKED")), False, "CREDENTIAL_INACTIVE"),
+        Witness("rotated-predecessor", replace(base, binding=replace(base.binding, authority_state="ROTATED")), False, "CREDENTIAL_INACTIVE"),
+        Witness("recovered-predecessor", replace(base, binding=replace(base.binding, authority_state="RECOVERY_RETIRED")), False, "CREDENTIAL_INACTIVE"),
+        Witness(
+            "historical-revoked",
+            replace(
+                base,
+                binding=replace(base.binding, authority_state="REVOKED"),
+                historical_evidence=True,
+            ),
+            False,
+            "HISTORICAL_SIGNATURE_VALID_NO_AUTHORITY",
+            False,
+            False,
+            True,
+        ),
+        Witness(
+            "historical-rotated",
+            replace(
+                base,
+                binding=replace(base.binding, authority_state="ROTATED"),
+                historical_evidence=True,
+            ),
+            False,
+            "HISTORICAL_SIGNATURE_VALID_NO_AUTHORITY",
+            False,
+            False,
+            True,
+        ),
+        Witness(
+            "rotation-successor",
+            EventInput(
+                CONTEXT,
+                CREDENTIAL_ROTATED,
+                1,
+                rotated_transcript,
+                rotated_signature,
+                CredentialBinding(
+                    CONTEXT, CREDENTIAL_ROTATED, SUITE_ID, rotated_key
+                ),
+            ),
+            True,
+            "ACCEPTED",
+        ),
+        Witness(
+            "recovery-successor",
+            EventInput(
+                CONTEXT,
+                CREDENTIAL_RECOVERED,
+                1,
+                recovered_transcript,
+                recovered_signature,
+                CredentialBinding(
+                    CONTEXT, CREDENTIAL_RECOVERED, SUITE_ID, recovered_key
+                ),
+            ),
+            True,
+            "ACCEPTED",
+        ),
         Witness("ap-denied", replace(base, ap_authorized=False), False, "AP_UNAUTHORIZED"),
         Witness("altered-transcript", replace(base, transcript=changed_message), False, "SIGNATURE_INVALID", True),
         Witness("other-key", replace(base, binding=replace(base.binding, verification_key=key_b)), False, "SIGNATURE_INVALID", True),
         Witness("other-signature", replace(base, signature=sig_b), False, "SIGNATURE_INVALID", True),
+        Witness("zero-length-key", replace(base, binding=replace(base.binding, verification_key=b"")), False, "PUBLIC_KEY_LENGTH", True, True),
         Witness("truncated-key", replace(base, binding=replace(base.binding, verification_key=base.binding.verification_key[:-1])), False, "PUBLIC_KEY_LENGTH", True, True),
         Witness("extended-key", replace(base, binding=replace(base.binding, verification_key=base.binding.verification_key + b"x")), False, "PUBLIC_KEY_LENGTH", True, True),
         Witness("oversized-declared-key", replace(base, declared_key_length=2**32 - 1), False, "PUBLIC_KEY_LENGTH", False, True),
+        Witness("zero-length-signature", replace(base, signature=b""), False, "SIGNATURE_LENGTH", True, True),
         Witness("truncated-signature", replace(base, signature=base.signature[:-1]), False, "SIGNATURE_LENGTH", True, True),
         Witness("extended-signature", replace(base, signature=base.signature + b"x"), False, "SIGNATURE_LENGTH", True, True),
         Witness("oversized-declared-signature", replace(base, declared_signature_length=2**32 - 1), False, "SIGNATURE_LENGTH", False, True),
         Witness("scalar-equals-l", replace(base, signature=base.signature[:32] + L.to_bytes(32, "little")), False, "NON_CANONICAL_SCALAR", True),
         Witness("scalar-greater-l", replace(base, signature=base.signature[:32] + (L + 1).to_bytes(32, "little")), False, "NON_CANONICAL_SCALAR", True),
         Witness("scalar-plus-l", replace(base, signature=base.signature[:32] + (scalar + L).to_bytes(32, "little")), False, "NON_CANONICAL_SCALAR", True),
-        Witness("bitflip-r", replace(base, signature=bytes([base.signature[0] ^ 1]) + base.signature[1:]), False, "INVALID_POINT_ENCODING", True),
+        Witness("bitflip-r", replace(base, signature=bytes([base.signature[0] ^ 1]) + base.signature[1:]), False, "OFF_CURVE_POINT", True),
+        Witness("noncanonical-r", replace(base, signature=noncanonical_r), False, "NON_CANONICAL_POINT", True),
         Witness("bitflip-s", replace(base, signature=base.signature[:40] + bytes([base.signature[40] ^ 1]) + base.signature[41:]), False, "SIGNATURE_INVALID", True),
-        Witness("reverse-signature", replace(base, signature=base.signature[::-1]), False, "INVALID_POINT_ENCODING", True),
+        Witness("reverse-signature", replace(base, signature=base.signature[::-1]), False, "OFF_CURVE_POINT", True),
         Witness("all-zero-key", replace(base, binding=replace(base.binding, verification_key=bytes(32))), False, "PUBLIC_KEY_NOT_PRIME_ORDER", True),
         Witness("identity-key", replace(base, binding=replace(base.binding, verification_key=b"\x01" + bytes(31))), False, "PUBLIC_KEY_NOT_PRIME_ORDER", True),
-        Witness("noncanonical-key", replace(base, binding=replace(base.binding, verification_key=zip_key), signature=zip_signature), False, "INVALID_POINT_ENCODING", True),
-        Witness("off-curve-key", replace(base, binding=replace(base.binding, verification_key=bytes.fromhex("02" * 32))), False, "INVALID_POINT_ENCODING", True),
+        Witness("noncanonical-key", replace(base, binding=replace(base.binding, verification_key=zip_key), signature=zip_signature), False, "NON_CANONICAL_POINT", True),
+        Witness("off-curve-key", replace(base, binding=replace(base.binding, verification_key=bytes.fromhex("02" * 32))), False, "OFF_CURVE_POINT", True),
         Witness("mixed-order-key", replace(base, binding=replace(base.binding, verification_key=mixed_key), signature=mixed_signature), False, "PUBLIC_KEY_NOT_PRIME_ORDER", True),
         Witness("mixed-order-key-2", replace(base, transcript=TRANSCRIPT + b"-2", binding=replace(base.binding, verification_key=mixed_key_2), signature=mixed_signature_2), False, "PUBLIC_KEY_NOT_PRIME_ORDER", True),
         Witness("mixed-order-cofactorless-valid", replace(base, transcript=TRANSCRIPT + b"-cofactorless-valid", binding=replace(base.binding, verification_key=mixed_valid_key), signature=mixed_valid_signature), False, "PUBLIC_KEY_NOT_PRIME_ORDER", True),
@@ -119,6 +192,18 @@ def required_witnesses() -> tuple[Witness, ...]:
         Witness("transport-substitution", replace(base, signature=changed_signature, transport_valid=True), False, "SIGNATURE_INVALID"),
         Witness("session-substitution", replace(base, signature=changed_signature, session_valid=True), False, "SIGNATURE_INVALID"),
         Witness("same-key-distinct-credential", replace(base, binding=replace(base.binding, credential_identifier=CREDENTIAL_B), credential_identifier=CREDENTIAL_B, transcript=TRANSCRIPT_PREFIX + CREDENTIAL_B), False, "SIGNATURE_INVALID"),
+        Witness(
+            "same-key-distinct-credential-positive",
+            replace(
+                base,
+                binding=replace(base.binding, credential_identifier=CREDENTIAL_B),
+                credential_identifier=CREDENTIAL_B,
+                transcript=same_key_transcript,
+                signature=same_key_signature,
+            ),
+            True,
+            "ACCEPTED",
+        ),
     )
 
 
@@ -155,87 +240,123 @@ REQUIRED_MUTANTS = frozenset(
 
 
 DECLARED_DETECTORS: dict[str, tuple[str, ...]] = {
-    "M_ACCEPT_UNKNOWN_SUITE": ("unknown-suite", "zero-suite", "max-suite"),
-    "M_TRUST_EVENT_SUITE": ("event-suite-override",),
-    "M_TRUST_EVENT_KEY": ("event-key-override",),
-    "M_TRUST_GRANT_FIELDS": ("grant-carrying-override",),
-    "M_RETRY_FALLBACK": ("unknown-suite", "zero-suite", "max-suite"),
-    "M_REMOVE_KEY_LENGTH": ("truncated-key", "extended-key", "oversized-declared-key"),
-    "M_REMOVE_SIGNATURE_LENGTH": ("truncated-signature", "extended-signature", "oversized-declared-signature"),
-    "M_REMOVE_SCALAR_GUARD": (
-        "all-zero-key", "bitflip-r", "identity-key", "mixed-order-key", "mixed-order-key-2", "mixed-order-cofactorless-valid",
-        "noncanonical-key", "off-curve-key", "positive", "reverse-signature",
-        "scalar-equals-l", "scalar-greater-l", "scalar-plus-l", "small-order-r",
+    "M_ACCEPT_MISSING_BINDING": ("missing-binding",),
+    "M_ACCEPT_UNKNOWN_SUITE": ("max-suite", "unknown-suite", "zero-suite"),
+    "M_ALLOWLIST_GUARD": (
+        "all-zero-key", "bitflip-r", "identity-key",
+        "mixed-order-cofactorless-valid", "mixed-order-key", "mixed-order-key-2",
+        "noncanonical-key", "noncanonical-r", "novel-positive", "off-curve-key",
+        "reverse-signature", "scalar-equals-l", "scalar-greater-l",
+        "scalar-plus-l", "small-order-r",
     ),
-    "M_LIBRARY_DEFAULT_ZIP215": (
-        "all-zero-key", "bitflip-r", "identity-key", "mixed-order-key", "mixed-order-key-2", "mixed-order-cofactorless-valid",
-        "noncanonical-key", "off-curve-key", "positive", "reverse-signature",
-        "scalar-equals-l", "scalar-greater-l", "scalar-plus-l", "small-order-r",
-    ),
-    "M_REMOVE_PRIME_ORDER_GUARD": (
-        "all-zero-key", "bitflip-r", "identity-key", "mixed-order-key", "mixed-order-key-2", "mixed-order-cofactorless-valid",
-        "noncanonical-key", "off-curve-key", "positive", "reverse-signature",
-        "scalar-equals-l", "scalar-greater-l", "scalar-plus-l", "small-order-r",
-    ),
-    "M_VERIFY_EVENT_REFERENCE": (
-        "ap-denied", "empty-transcript", "event-key-override",
-        "event-suite-override", "grant-carrying-override",
-        "max-representative-transcript", "novel-positive", "one-octet-transcript", "positive",
-    ),
-    "M_BYPASS_CONTEXT": ("wrong-context",),
-    "M_BYPASS_CREDENTIAL_ID": ("wrong-credential",),
-    "M_BYPASS_SEQUENCE": ("wrong-sequence",),
-    "M_BYPASS_REVOCATION": ("revoked",),
-    "M_TRUST_TRANSPORT": ("transport-substitution",),
-    "M_TRUST_SESSION": ("session-substitution",),
     "M_AP_BEFORE_VERIFY": (
         "all-zero-key", "altered-transcript", "ap-denied", "bitflip-r",
         "bitflip-s", "extended-key", "extended-signature", "identity-key",
-        "max-suite", "missing-binding", "mixed-order-key", "mixed-order-key-2", "mixed-order-cofactorless-valid", "noncanonical-key",
-        "off-curve-key", "other-key", "other-signature",
+        "max-suite", "missing-binding", "mixed-order-cofactorless-valid",
+        "mixed-order-key", "mixed-order-key-2", "noncanonical-key",
+        "noncanonical-r", "off-curve-key", "other-key", "other-signature",
         "oversized-declared-key", "oversized-declared-signature",
-        "reverse-signature", "revoked", "same-key-distinct-credential",
-        "scalar-equals-l", "scalar-greater-l", "scalar-plus-l",
-        "session-substitution", "small-order-r", "transport-substitution",
-        "truncated-key", "truncated-signature", "unknown-suite",
-        "wrong-context", "wrong-credential", "wrong-sequence", "zero-suite",
+        "recovered-predecessor", "reverse-signature", "revoked",
+        "rotated-predecessor", "same-key-distinct-credential", "scalar-equals-l",
+        "scalar-greater-l", "scalar-plus-l", "session-substitution",
+        "small-order-r", "transport-substitution", "truncated-key",
+        "truncated-signature", "unknown-suite", "wrong-context",
+        "wrong-credential", "wrong-sequence", "zero-length-key",
+        "zero-length-signature", "zero-suite",
     ),
-    "M_TREAT_VERIFY_AS_AUTHORIZATION": ("ap-denied",),
-    "M_ACCEPT_MISSING_BINDING": ("missing-binding",),
-    "M_REUSE_SUITE_ID_SEMANTICS": ("suite-id-semantics-immutable",),
-    "M_STATUS_WITHOUT_EVIDENCE": ("decided-requires-evidence",),
+    "M_BATCH_VERIFIER": (
+        "empty-transcript", "event-key-override", "event-suite-override",
+        "grant-carrying-override", "historical-revoked", "historical-rotated",
+        "max-representative-transcript", "novel-positive", "one-octet-transcript",
+        "positive", "recovery-successor", "rotation-successor",
+        "same-key-distinct-credential-positive",
+    ),
+    "M_BYPASS_CONTEXT": ("wrong-context",),
+    "M_BYPASS_CREDENTIAL_ID": ("wrong-credential",),
+    "M_BYPASS_REVOCATION": (
+        "recovered-predecessor", "revoked", "rotated-predecessor",
+    ),
+    "M_BYPASS_SEQUENCE": ("wrong-sequence",),
     "M_C03_DEPENDENCY_DRIFT": ("c03-dependency-set-fixed",),
-    "M_ALLOWLIST_GUARD": ("novel-positive",),
+    "M_LIBRARY_DEFAULT_ZIP215": (
+        "all-zero-key", "bitflip-r", "identity-key",
+        "mixed-order-cofactorless-valid", "mixed-order-key", "mixed-order-key-2",
+        "noncanonical-key", "noncanonical-r", "off-curve-key",
+        "reverse-signature", "scalar-equals-l", "scalar-greater-l",
+        "scalar-plus-l", "small-order-r",
+    ),
     "M_PER_VECTOR_SPECIAL_CASE": ("mixed-order-key-2",),
-    "M_BATCH_VERIFIER": ("positive",),
+    "M_REMOVE_KEY_LENGTH": (
+        "extended-key", "oversized-declared-key", "truncated-key", "zero-length-key",
+    ),
+    "M_REMOVE_PRIME_ORDER_GUARD": (
+        "all-zero-key", "bitflip-r", "identity-key",
+        "mixed-order-cofactorless-valid", "mixed-order-key", "mixed-order-key-2",
+        "noncanonical-key", "noncanonical-r", "off-curve-key",
+        "reverse-signature", "scalar-equals-l", "scalar-greater-l",
+        "scalar-plus-l", "small-order-r",
+    ),
+    "M_REMOVE_SCALAR_GUARD": (
+        "scalar-equals-l", "scalar-greater-l", "scalar-plus-l",
+    ),
+    "M_REMOVE_SIGNATURE_LENGTH": (
+        "extended-signature", "oversized-declared-signature",
+        "truncated-signature", "zero-length-signature",
+    ),
+    "M_RETRY_FALLBACK": ("max-suite", "unknown-suite", "zero-suite"),
+    "M_REUSE_SUITE_ID_SEMANTICS": (
+        "all-zero-key", "bitflip-r", "identity-key",
+        "mixed-order-cofactorless-valid", "mixed-order-key", "mixed-order-key-2",
+        "noncanonical-key", "noncanonical-r", "off-curve-key",
+        "reverse-signature", "scalar-equals-l", "scalar-greater-l",
+        "scalar-plus-l", "small-order-r",
+    ),
+    "M_STATUS_WITHOUT_EVIDENCE": ("decided-requires-evidence",),
+    "M_TREAT_VERIFY_AS_AUTHORIZATION": ("ap-denied",),
+    "M_TRUST_EVENT_KEY": ("event-key-override",),
+    "M_TRUST_EVENT_SUITE": ("event-suite-override",),
+    "M_TRUST_GRANT_FIELDS": ("grant-carrying-override",),
+    "M_TRUST_SESSION": ("session-substitution",),
+    "M_TRUST_TRANSPORT": ("transport-substitution",),
+    "M_VERIFY_EVENT_REFERENCE": (
+        "ap-denied", "empty-transcript", "event-key-override",
+        "event-suite-override", "grant-carrying-override", "historical-revoked",
+        "historical-rotated", "max-representative-transcript", "novel-positive",
+        "one-octet-transcript", "positive", "recovery-successor",
+        "rotation-successor", "same-key-distinct-credential-positive",
+    ),
 }
 
 
 def execute_suite(mutation: Mutation = Mutation()) -> tuple[dict[str, object], ...]:
     results = []
-    for witness in required_witnesses():
-        if mutation.identifier == "M_ALLOWLIST_GUARD" and witness.identifier == "novel-positive":
-            actual = VerificationResult(
-                False, "ALLOWLIST_MISS", 0, False, ("mutant:allowlist-guard",)
-            )
-        elif mutation.identifier == "M_PER_VECTOR_SPECIAL_CASE" and witness.identifier == "mixed-order-key-2":
-            actual = VerificationResult(
-                True,
-                "ACCEPTED",
-                1,
-                True,
-                ("mutant:per-vector-special-case", "verifier:true", "ap:authorized"),
-            )
-        else:
-            actual = verify_event(witness.event, mutation)
-        passed = actual.accepted == witness.expected and (
-            actual.code == witness.expected_code or witness.expected
+    witnesses = required_witnesses()
+    if mutation.identifier == "M_ALLOWLIST_GUARD":
+        allowlisted = frozenset(
+            event_fingerprint(item.event, item.event.binding.verification_key)
+            for item in witnesses
+            if item.identifier != "novel-positive" and item.event.binding is not None
+        )
+        mutation = replace(mutation, allowlist_fingerprints=allowlisted)
+    elif mutation.identifier == "M_PER_VECTOR_SPECIAL_CASE":
+        target = next(item for item in witnesses if item.identifier == "mixed-order-key-2")
+        mutation = replace(
+            mutation,
+            special_case_fingerprint=event_fingerprint(
+                target.event, target.event.binding.verification_key
+            ),
+        )
+    for witness in witnesses:
+        actual = verify_event(witness.event, mutation)
+        passed = (
+            actual.accepted == witness.expected
+            and actual.code == witness.expected_code
         )
         if witness.guard_must_not_run:
             passed = passed and not any(
                 branch.startswith("guard:") for branch in actual.executed_branches
             )
-        if witness.single_verifier_required:
+        if witness.expected or witness.single_verifier_required:
             passed = (
                 passed
                 and actual.verifier_invocations == 1
@@ -255,39 +376,6 @@ def execute_suite(mutation: Mutation = Mutation()) -> tuple[dict[str, object], .
                 "verifier_invocations": actual.verifier_invocations,
                 "ap_exposed": actual.ap_exposed,
                 "executed_branches": list(actual.executed_branches),
-            }
-        )
-    structural = {
-        "suite-id-semantics-immutable": (
-            SELECTED_SUITE.identifier == 1
-            and SELECTED_SUITE.verification_equation.startswith(
-                "canonical-prime-order"
-            )
-            and mutation.identifier != "M_REUSE_SUITE_ID_SEMANTICS"
-        ),
-        "decided-requires-evidence": mutation.identifier != "M_STATUS_WITHOUT_EVIDENCE",
-        "c03-dependency-set-fixed": mutation.identifier != "M_C03_DEPENDENCY_DRIFT",
-    }
-    branch_by_mutant = {
-        "M_REUSE_SUITE_ID_SEMANTICS": "mutant:reuse-suite-id-semantics",
-        "M_STATUS_WITHOUT_EVIDENCE": "mutant:status-without-evidence",
-        "M_C03_DEPENDENCY_DRIFT": "mutant:c03-dependency-drift",
-    }
-    for identifier, passed in structural.items():
-        branch = branch_by_mutant.get(mutation.identifier)
-        results.append(
-            {
-                "id": identifier,
-                "passed": passed,
-                "expected_accept": True,
-                "expected_code": "STRUCTURAL_INVARIANT",
-                "actual_accept": passed,
-                "actual_code": (
-                    "STRUCTURAL_INVARIANT" if passed else "STRUCTURAL_DRIFT"
-                ),
-                "verifier_invocations": 0,
-                "ap_exposed": False,
-                "executed_branches": [branch] if branch and not passed else [],
             }
         )
     return tuple(results)

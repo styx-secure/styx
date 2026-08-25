@@ -1223,7 +1223,7 @@ outcomes.
   length before backend invocation. Verification failure is terminal: no
   retry, alternate verifier, fallback, batch or aggregate path is admitted.
 - **Rationale/evidence:** the standard-derived oracle, two non-oracle guarded
-  JavaScript/Node adapters, 26 runtime vectors, 46 semantic checks and a closed
+  JavaScript/Node adapters, 29 runtime vectors, 53 semantic checks and a closed
   26-mutant registry agree. Raw Noble, Node WebCrypto and Dart behavior diverge
   on named non-canonical, mixed-order or small-order witnesses and is not
   silently promoted to protocol conformance. See the O-14 analysis and
@@ -1243,6 +1243,9 @@ outcomes.
   only the transcript slot/derivation boundary and MUST NOT absorb this choice.
   The existing role-`0x02` `GRANT || suite_id:u16 || key:opaque_u32` framing is
   unchanged; `0x0001` fixes the framed key length at 32 octets.
+  O-07 retains sole ownership of genesis credential contents and authority, but
+  every admitted genesis binding must select a suite from this same closed
+  registry; absent, unknown or reserved genesis suites fail closed.
 - **Conditions and residual risk:** current products gain no conformance claim.
   Before Dart support, a separate ratified task must select and audit exact
   subgroup guards or a conforming pinned verifier and replay all O-14 evidence.
@@ -1251,9 +1254,11 @@ outcomes.
   replace the unchanged O-14 placeholder in the complete O-06c construction and
   rerun all combined evidence. Dependency/runtime upgrades reopen adapter
   evidence. A counterexample or inability to enforce the exact guarded language
-  reopens O-14.
-- **Human ratification:** pending final-HEAD acceptance that this ownership gap
-  is explicit and remains open.
+  reopens O-14. Both demonstrated JavaScript adapters share one Noble subgroup
+  guard (`O14-SINGLE-GUARD-DEPENDENCY`), and per-event attacker-controlled `R`
+  validation retains an O-08 availability obligation (`O14-GUARD-COST-O08`).
+- **Human ratification:** pending final-HEAD acceptance of this exact
+  condition-bearing decision and its named residual gates.
 
 ### O-15 — Profile succession and optional disposition
 
@@ -1384,8 +1389,8 @@ The smallest safe sequence is:
    evidence; then execute O-06c adversarial evidence over the combined
    construction;
 5. preserve and rerun the completed v1, v2, v3 and C0.2k baseline and mutation evidence after those changes, then
-   close genesis/checkpoint evidence, cardinality, error and signature-suite
-   questions O-07, O-08 and O-10, preserve O-14's condition-bearing decision
+   close genesis/checkpoint evidence, cardinality and error questions O-07,
+   O-08 and O-10, preserve O-14's condition-bearing decision
    and discharge its separately ratified combined-evidence rerun, plus O-12 for any time-bearing profile,
    without product implementation authority; retain O-11 for the later
    wire/storage decision;

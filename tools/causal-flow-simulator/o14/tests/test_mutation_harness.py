@@ -17,6 +17,7 @@ class MutationHarnessTest(unittest.TestCase):
         self.assertTrue(all(DECLARED_DETECTORS.values()))
         report, passed = build_report()
         self.assertTrue(passed)
+        self.assertEqual(report["required_mutant_count"], 26)
         self.assertEqual(report["survived"], [])
         for result in report["results"]:
             self.assertTrue(result["mutated_branch_executed"])

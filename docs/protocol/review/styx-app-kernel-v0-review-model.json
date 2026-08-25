@@ -5837,7 +5837,7 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "751fe7a4487e99587e02c2506ccd1bd1edcd775acf404f0473f163352a1b1aaa"
+      "sha256": "e7e2468bda4934915ed5795c482e3af5931548804956ef6fff12c074e2a4a8dd"
     },
     {
       "authority": "evidence",
@@ -5885,13 +5885,13 @@
       "authority": "evidence",
       "id": "signature_suite_analysis",
       "path": "docs/protocol/styx-app-kernel-v0-signature-suite-analysis.md",
-      "sha256": "a6afacde464a0085d2466fc7f6f2bfa9a32f86b87fb9cfd234f85a5287234eaf"
+      "sha256": "da71fa38a72695210a2e3e29176b07d3d84f317fb98ebde4a2f87881c4c5f4e6"
     },
     {
       "authority": "evidence",
       "id": "signature_suite_report",
       "path": "docs/protocol/styx-app-kernel-v0-signature-suite-falsification-report.md",
-      "sha256": "4c918efdbb9e4d6235b61d4000859e6c84f122f2cff09cafb79c05a29b43d825"
+      "sha256": "bfc1846242e12f88b6902851ba56ffe5392e9442a654dea47e2d66600851a7ed"
     },
     {
       "authority": "normative",

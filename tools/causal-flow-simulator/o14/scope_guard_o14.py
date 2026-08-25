@@ -13,7 +13,7 @@ import sys
 
 sys.dont_write_bytecode = True
 
-from common import sha256_hex, write_report
+from evidence_io import CanonicalJsonReport, content_sha256
 
 
 BASE_SHA = "94f0a9b2781d45324199e6588629d23babedf746"
@@ -84,7 +84,7 @@ def allowed(path: str) -> bool:
 
 def changed_records(repo: Path, base: str, candidate: str) -> list[dict[str, object]]:
     raw = git(
-        repo, "diff-tree", "-r", "-M",
+        repo, "diff-tree", "-r", "-M", "-C50%", "--find-copies-harder", "-l0",
         "--name-status", "-z", "--no-commit-id", base, candidate,
     )
     parts = raw.split(b"\0")
@@ -140,6 +140,35 @@ def enforce_text_artifacts(
                 raise ScopeError(f"binary endpoint: {revision}:{path}")
 
 
+def enforce_oracle_isolation(repo: Path, candidate: str) -> list[str]:
+    """Fail if the verification-only reference oracle escapes o14 evidence code."""
+
+    completed = subprocess.run(
+        [
+            "git", "-C", str(repo), "grep", "-l", "-F",
+            "ed25519_reference", candidate, "--", "*.py", "*.js", "*.mjs", "*.dart",
+        ],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if completed.returncode not in {0, 1}:
+        raise ScopeError("unable to inspect verification-only oracle references")
+    references = sorted(
+        line.split(":", 1)[1]
+        for line in completed.stdout.splitlines()
+        if not line.split(":", 1)[1].startswith(
+            "tools/causal-flow-simulator/o14/"
+        )
+    )
+    if references:
+        raise ScopeError(
+            "verification-only oracle referenced outside o14: " + ",".join(references)
+        )
+    return references
+
+
 def assignments(tree: ast.Module) -> tuple[dict[str, ast.expr | None], list[str]]:
     values: dict[str, ast.expr | None] = {}
     other: list[str] = []
@@ -153,9 +182,32 @@ def assignments(tree: ast.Module) -> tuple[dict[str, ast.expr | None], list[str]
     return values, other
 
 
+def _mask_assignment_values(source: str, names: set[str]) -> str:
+    tree = ast.parse(source)
+    values, _ = assignments(tree)
+    spans: list[tuple[int, int, str]] = []
+    encoded_lines = source.splitlines(keepends=True)
+    offsets = [0]
+    for line in encoded_lines:
+        offsets.append(offsets[-1] + len(line))
+    for name in names:
+        node = values.get(name)
+        if node is None or node.end_lineno is None or node.end_col_offset is None:
+            raise ScopeError(f"missing assignment span: {name}")
+        start = offsets[node.lineno - 1] + node.col_offset
+        end = offsets[node.end_lineno - 1] + node.end_col_offset
+        spans.append((start, end, f"@@STYX_O14_{name}@@"))
+    normalized = source
+    for start, end, marker in sorted(spans, reverse=True):
+        normalized = normalized[:start] + marker + normalized[end:]
+    return normalized
+
+
 def enforce_validator_ast(repo: Path, base: str, candidate: str) -> list[str]:
-    base_assign, base_other = assignments(ast.parse(blob(repo, base, VALIDATOR)))
-    head_assign, head_other = assignments(ast.parse(blob(repo, candidate, VALIDATOR)))
+    base_source = blob(repo, base, VALIDATOR).decode("utf-8")
+    head_source = blob(repo, candidate, VALIDATOR).decode("utf-8")
+    base_assign, base_other = assignments(ast.parse(base_source))
+    head_assign, head_other = assignments(ast.parse(head_source))
     if base_other != head_other:
         raise ScopeError("validator control-flow/import/function/class AST drift")
     names = set(base_assign) | set(head_assign)
@@ -168,11 +220,37 @@ def enforce_validator_ast(repo: Path, base: str, candidate: str) -> list[str]:
     expected = {"EXPECTED_SOURCE_RECORDS", "EXPECTED_STATUS_BY_COLLECTION"}
     if set(changed) != expected:
         raise ScopeError("validator assignment delta is not exact: " + ",".join(changed))
+    literal_values: dict[str, object] = {}
+    base_values: dict[str, object] = {}
     for name in changed:
         try:
-            ast.literal_eval(head_assign[name])
+            literal_values[name] = ast.literal_eval(head_assign[name])
+            base_values[name] = ast.literal_eval(base_assign[name])
         except Exception as error:
             raise ScopeError(f"non-literal validator assignment {name}: {error}") from error
+    expected_sources = dict(base_values["EXPECTED_SOURCE_RECORDS"])
+    expected_sources.update(
+        {
+            "signature_suite_analysis": (
+                "docs/protocol/styx-app-kernel-v0-signature-suite-analysis.md",
+                "evidence",
+            ),
+            "signature_suite_report": (
+                "docs/protocol/styx-app-kernel-v0-signature-suite-falsification-report.md",
+                "evidence",
+            ),
+        }
+    )
+    if literal_values["EXPECTED_SOURCE_RECORDS"] != expected_sources:
+        raise ScopeError("validator source-record delta is not the exact two additions")
+    expected_status = copy.deepcopy(base_values["EXPECTED_STATUS_BY_COLLECTION"])
+    expected_status["blockers"]["O-14"] = "DECIDED"
+    if literal_values["EXPECTED_STATUS_BY_COLLECTION"] != expected_status:
+        raise ScopeError("validator status delta is not exactly O-14 OPEN to DECIDED")
+    if _mask_assignment_values(base_source, expected) != _mask_assignment_values(
+        head_source, expected
+    ):
+        raise ScopeError("validator byte drift outside exact assignment values")
     return changed
 
 
@@ -237,6 +315,24 @@ def _mask_line(lines: list[str], prefix: str | tuple[str, ...], marker: str) -> 
     lines[matches[0]] = marker + "\n"
 
 
+def _mask_exact_variant(
+    lines: list[str], variants: tuple[tuple[str, ...], ...], marker: str
+) -> None:
+    """Mask exactly one approved base/candidate text variant and nothing wider."""
+
+    matches: list[tuple[int, int]] = []
+    for variant in variants:
+        expected = [line + "\n" for line in variant]
+        width = len(expected)
+        for start in range(0, len(lines) - width + 1):
+            if lines[start : start + width] == expected:
+                matches.append((start, start + width))
+    if len(matches) != 1:
+        raise ScopeError(f"exact variant selector count drift: {len(matches)}")
+    start, end = matches[0]
+    lines[start:end] = [marker + "\n"]
+
+
 def _mask_paragraph_containing(
     lines: list[str], needle: str | tuple[str, ...], marker: str
 ) -> None:
@@ -265,7 +361,26 @@ def normalize_normative(data: bytes, path: str) -> bytes:
         return value
 
     if path == "docs/protocol/protocol-hardening-plan.md":
-        _mask_block(lines, "4. **Resolve remaining C0.3 blockers.**", marker())
+        _mask_exact_variant(
+            lines,
+            (
+                (
+                    "4. **Resolve remaining C0.3 blockers.** Close or precisely scope O-07 genesis",
+                    "   and checkpoint evidence, O-08 resource bounds, O-10 stable errors and O-14",
+                    "   signature-suite binding. Resolve O-12 wherever a selected profile carries",
+                    "   time.",
+                ),
+                (
+                    "4. **Resolve remaining C0.3 blockers.** Close or precisely scope O-07 genesis",
+                    "   and checkpoint evidence, O-08 resource bounds and O-10 stable errors. O-14",
+                    "   is condition-bearing `DECIDED`; before any corpus authorization, replace its",
+                    "   O-06c placeholder with the selected signature semantics and rerun the",
+                    "   complete combined evidence. Resolve O-12 wherever a selected profile carries",
+                    "   time.",
+                ),
+            ),
+            marker(),
+        )
         _mask_line(lines, "| O-07, O-08, O-10", marker())
         # The split adds a second adjacent row in the candidate.
         candidates = [i for i, line in enumerate(lines) if line.startswith("| O-14 |")]
@@ -273,13 +388,48 @@ def normalize_normative(data: bytes, path: str) -> bytes:
             raise ScopeError("duplicate O-14 objective row")
         if candidates:
             del lines[candidates[0]]
-        _mask_block(lines, ("- O-07, O-08, O-10", "- O-07, O-08 and O-10"), marker())
-        _mask_block(lines, "- C0.3 remains `NO-GO`", marker())
-        _mask_block(lines, "- while C0.3 is `NO-GO`", marker())
+        _mask_exact_variant(
+            lines,
+            (
+                (
+                    "- O-07, O-08, O-10 and O-14 remain open; O-12 remains conditional as described",
+                    "  in section 4; O-11, O-13, O-15 and O-16 retain their explicitly bounded",
+                    "  non-blocking or downstream-blocking roles;",
+                ),
+                (
+                    "- O-07, O-08 and O-10 remain open. O-14 is condition-bearing `DECIDED`, with",
+                    "  Dart/browser support claims and the separately ratified O-06c",
+                    "  placeholder-substitution rerun still gated. O-12 remains conditional as",
+                    "  described in section 4; O-11, O-13, O-15 and O-16 retain their explicitly",
+                    "  bounded non-blocking or downstream-blocking roles;",
+                ),
+            ),
+            marker(),
+        )
     elif path == "docs/protocol/styx-app-kernel-v0-decisions.md":
         _mask_section(lines, "### O-14 — Signature-suite registry and credential algorithm binding", marker())
         _mask_line(lines, ("O-06 through O-08, O-10", "O-06 through O-08 and O-10"), marker())
-        _mask_block(lines, "5. preserve and rerun", marker(), continuation="   ")
+        _mask_exact_variant(
+            lines,
+            (
+                (
+                    "5. preserve and rerun the completed v1, v2, v3 and C0.2k baseline and mutation evidence after those changes, then",
+                    "   close genesis/checkpoint evidence, cardinality, error and signature-suite",
+                    "   questions O-07, O-08, O-10 and O-14, plus O-12 for any time-bearing profile,",
+                    "   without product implementation authority; retain O-11 for the later",
+                    "   wire/storage decision;",
+                ),
+                (
+                    "5. preserve and rerun the completed v1, v2, v3 and C0.2k baseline and mutation evidence after those changes, then",
+                    "   close genesis/checkpoint evidence, cardinality and error questions O-07,",
+                    "   O-08 and O-10, preserve O-14's condition-bearing decision",
+                    "   and discharge its separately ratified combined-evidence rerun, plus O-12 for any time-bearing profile,",
+                    "   without product implementation authority; retain O-11 for the later",
+                    "   wire/storage decision;",
+                ),
+            ),
+            marker(),
+        )
     elif path == "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md":
         _mask_section(lines, "## 12. Remaining ownership and reopen predicates", marker())
     elif path == "docs/protocol/styx-app-kernel-v0-identifier-derivation-analysis.md":
@@ -316,7 +466,21 @@ def normalize_normative(data: bytes, path: str) -> bytes:
             marker(),
         )
     elif path == "docs/security/STYX-THREAT-MODEL.md":
-        _mask_block(lines, "- **C0.2j amendment:**", marker())
+        _mask_exact_variant(
+            lines,
+            (
+                (
+                    "  evidence. O-06c now supplies bounded combined evidence; C0.3 remains",
+                    "  `NO-GO` because O-07/O-08/O-10/O-14 and the corpus-path gate remain open.",
+                ),
+                (
+                    "  evidence. O-06c now supplies bounded combined evidence; C0.3 remains",
+                    "  `NO-GO` because O-07/O-08/O-10, O-14's retained combined-rerun condition and",
+                    "  the corpus-path gate remain unresolved.",
+                ),
+            ),
+            marker(),
+        )
         amendment = [i for i, line in enumerate(lines) if line.startswith("- **O-14 amendment:**")]
         if len(amendment) > 1:
             raise ScopeError("duplicate O-14 threat-model amendment")
@@ -336,6 +500,14 @@ def normalize_normative(data: bytes, path: str) -> bytes:
             raise ScopeError("duplicate O-14 review snapshot")
         if snapshot:
             start = snapshot[0]
+            previous = start - 1
+            while previous >= 0 and not lines[previous].strip():
+                previous -= 1
+            paragraph_start = previous
+            while paragraph_start > 0 and lines[paragraph_start - 1].strip():
+                paragraph_start -= 1
+            if not any("O-06c snapshot adds" in line for line in lines[paragraph_start : previous + 1]):
+                raise ScopeError("O-14 review snapshot is not adjacent to O-06c snapshot")
             end = start + 1
             while end < len(lines) and lines[end].strip():
                 end += 1
@@ -380,7 +552,7 @@ def enforce_named_regions(repo: Path, base: str, candidate: str) -> dict[str, st
         after = normalize_normative(blob(repo, candidate, path), path)
         if before != after:
             raise ScopeError(f"unnamed normative-document drift: {path}")
-        digests[path] = sha256_hex(after)
+        digests[path] = content_sha256(after)
     return digests
 
 
@@ -446,6 +618,7 @@ def build_report(repo: Path, base_argument: str, candidate_argument: str) -> dic
         raise ScopeError("contract base mismatch")
     records = changed_records(repo, base, candidate)
     enforce_text_artifacts(repo, base, candidate, records)
+    oracle_references = enforce_oracle_isolation(repo, candidate)
     validator_assignments = enforce_validator_ast(repo, base, candidate)
     new_review_tests = enforce_review_tests(repo, base, candidate, records)
     region_digests = enforce_named_regions(repo, base, candidate)
@@ -458,6 +631,7 @@ def build_report(repo: Path, base_argument: str, candidate_argument: str) -> dic
         "changed_endpoint_count": sum(len(record["paths"]) for record in records),
         "validator_assignments_changed": validator_assignments,
         "new_review_tests": new_review_tests,
+        "oracle_references_outside_o14": oracle_references,
         "normalized_region_sha256": region_digests,
         "verdict": "PASS",
     }
@@ -473,7 +647,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         report = build_report(args.repo_root.resolve(), args.base, args.candidate)
-        write_report(args.output, report)
+        CanonicalJsonReport.store(args.output, report)
     except (ScopeError, OSError, UnicodeError, subprocess.CalledProcessError, ValueError) as error:
         print(f"O-14 scope failure: {error}", file=sys.stderr)
         return 2

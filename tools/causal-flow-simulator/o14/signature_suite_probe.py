@@ -9,9 +9,14 @@ import sys
 
 sys.dont_write_bytecode = True
 
-from common import write_report
+from evidence_io import CanonicalJsonReport
 from ed25519_reference import verify as oracle_verify
-from scenarios import execute_suite, required_witnesses
+from scenarios import (
+    EXPECTED_RUNTIME_VECTOR_COUNT,
+    EXPECTED_WITNESS_COUNT,
+    execute_suite,
+    required_witnesses,
+)
 from semantic_registry import SELECTED_SUITE
 
 
@@ -20,6 +25,8 @@ SCHEMA = "styx-o14-signature-suite-probe/v1"
 
 def build_report() -> tuple[dict[str, object], bool]:
     semantic_results = execute_suite()
+    if len(semantic_results) != EXPECTED_WITNESS_COUNT:
+        raise ValueError("O-14 semantic witness inventory drift")
     runtime_vectors = []
     for witness in required_witnesses():
         if not witness.runtime:
@@ -57,6 +64,8 @@ def build_report() -> tuple[dict[str, object], bool]:
             }
         )
     failed = [item["id"] for item in semantic_results if not item["passed"]]
+    if len(runtime_vectors) != EXPECTED_RUNTIME_VECTOR_COUNT:
+        raise ValueError("O-14 runtime-vector inventory drift")
     report = {
         "schema": SCHEMA,
         "selected_suite": {
@@ -73,7 +82,9 @@ def build_report() -> tuple[dict[str, object], bool]:
             "registry": {"assigned": [1], "reserved": [0, 65535], "fallback": False},
         },
         "semantic_results": list(semantic_results),
+        "semantic_witness_count": len(semantic_results),
         "runtime_vectors": runtime_vectors,
+        "runtime_vector_count": len(runtime_vectors),
         "failed": failed,
         "verdict": "PASS" if not failed else "FAIL",
     }
@@ -87,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
     report, passed = build_report()
-    write_report(args.output, report)
+    CanonicalJsonReport.store(args.output, report)
     print(f"O-14 PROBE verdict={report['verdict']} vectors={len(report['runtime_vectors'])}")
     return 0 if passed else 1
 

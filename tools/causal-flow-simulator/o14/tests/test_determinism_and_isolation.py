@@ -8,7 +8,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from common import canonical_bytes
+from evidence_io import CanonicalJsonReport
 from mutation_harness_o14 import build_report as build_mutation_report
 from signature_suite_probe import build_report as build_probe_report
 
@@ -17,11 +17,12 @@ class DeterminismAndIsolationTest(unittest.TestCase):
     def test_reports_are_byte_deterministic(self) -> None:
         first, _ = build_probe_report()
         second, _ = build_probe_report()
-        self.assertEqual(canonical_bytes(first), canonical_bytes(second))
+        self.assertEqual(CanonicalJsonReport.encode(first), CanonicalJsonReport.encode(second))
         first_mutations, _ = build_mutation_report()
         second_mutations, _ = build_mutation_report()
         self.assertEqual(
-            canonical_bytes(first_mutations), canonical_bytes(second_mutations)
+            CanonicalJsonReport.encode(first_mutations),
+            CanonicalJsonReport.encode(second_mutations),
         )
 
     def test_python_package_has_no_product_imports(self) -> None:

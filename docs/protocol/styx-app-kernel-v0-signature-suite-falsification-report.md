@@ -11,9 +11,9 @@
 ## 1. Verdict
 
 No counterexample was found in the declared O-14 envelope. The standard-library
-oracle and semantic boundary passed 46 directed checks; 26/26 required mutants
+oracle and semantic boundary passed 53 directed checks; 26/26 required mutants
 were killed with exact non-empty detector-set equality; and two non-oracle
-guarded adapters matched all 26 runtime vectors. Raw backend disagreement was
+guarded adapters matched all 29 runtime vectors. Raw backend disagreement was
 observed and retained rather than counted as success.
 
 This supports only a condition-bearing O-14 decision. It does not prove the
@@ -29,9 +29,9 @@ produced byte-identical canonical reports:
 
 | Report | Result | SHA-256 |
 | --- | --- | --- |
-| semantic/oracle probe | `PASS` (46 checks, 26 runtime vectors) | `1626307993168851b5e0efb3d6c0daddc53aa59a3a8c215b65dea5805edaf5b0` |
-| cross-runtime gate | `PASS` (2 non-oracle compliant adapters) | `5d776b75c7f11eb9cfa25095690f5b81a469d653779a43d489e73c94bcdefe0f` |
-| mutation gate | `ALL_REQUIRED_MUTANTS_KILLED` (26/26) | `c0fa895d06434df70a7ec2329533cf757ae1c5a48dacd3df2fe1869b010d38e7` |
+| semantic/oracle probe | `PASS` (53 checks, 29 runtime vectors) | `9556fe7c405a5c5effa7edd3cbcd4ed63c227a7e9340dc0bf26400a42587fd0c` |
+| cross-runtime gate | `PASS` (2 non-oracle compliant adapters) | `51b68d6247c3db87ab5b9ca529d35969163b3c4b7440c4db6f4b13da80204c5c` |
+| mutation gate | `ALL_REQUIRED_MUTANTS_KILLED` (26/26) | `1a8ee16aacf7f241aea3489280a9a9f0da1fcdbd6758bb75c0f299d434c6d429` |
 
 The final scope-report digest, candidate commit/tree and canonical diff SHA-256
 are immutable PR evidence and are intentionally not self-referential tracked
@@ -46,10 +46,12 @@ only, non-constant-time, confined to the evidence package and forbidden to
 product code. It does not select semantics by itself.
 
 Directed witnesses cover empty, one-octet, representative and bounded-maximum
-transcripts; exact-minus-one/exact/exact-plus-one and attacker-declared oversized
-lengths; canonical and invalid points; `S == L`, `S > L` and `S + L`; mutations
+transcripts; zero/exact-minus-one/exact/exact-plus-one and attacker-declared
+oversized key/signature lengths; canonical and invalid points, including a
+non-canonical `R`; `S == L`, `S > L` and `S + L`; mutations
 of both signature halves; transcript/context/credential/sequence/key/suite
-changes; same-key credential aliases; revocation and AP denial; transport,
+changes; positive and negative same-key credential aliases; revocation,
+rotation, recovery, historical-verification-without-current-authority and AP denial; transport,
 session and carrying-`GRANT` substitution; non-canonical ZIP-215 acceptance;
 cofactored-only mixed-order signatures; cofactorless-valid mixed-order
 signatures; and small-order `R`.
@@ -108,6 +110,12 @@ detectors. They cover:
 - an allow-list guard and per-vector special case; and
 - replacement of the per-event verifier by a batch call.
 
+The status/dependency source mutants alter an in-memory copy loaded from the
+actual review-model source and are rejected by source-backed invariants. The
+suite-reuse, allow-list, per-vector, retry and batch mutants execute distinct
+mutated verification paths; no mutant is killed merely by comparing its own
+identifier or by a fabricated result tuple.
+
 Detector sets must be non-empty and exactly equal to the declared sets. Extra,
 missing, skipped or unexecuted detection fails the gate.
 
@@ -135,6 +143,12 @@ security, correctness of pinned dependencies and runtimes, side-channel and
 supply-chain behavior, absence of browser evidence, Dart nonconformance, and
 the availability cost of rejecting an input another ecosystem accepts. These
 conditions reopen O-14 evidence when their pinned basis changes.
+
+Both measured JavaScript adapters share the same Noble subgroup guard;
+`O14-SINGLE-GUARD-DEPENDENCY` forbids treating their agreement as independent
+guard validation. Per-event subgroup validation of attacker-supplied `R` also
+creates an availability cost; `O14-GUARD-COST-O08` assigns operational limits
+and cost measurement to O-08 without permitting a weaker verification language.
 
 ## 7. C0.3 and decision effect
 

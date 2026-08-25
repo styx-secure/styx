@@ -17,8 +17,9 @@ import urllib.request
 
 sys.dont_write_bytecode = True
 
-from common import canonical_bytes, read_json, write_report
+from evidence_io import CanonicalJsonReport
 from signature_suite_probe import build_report as build_probe_report
+from scenarios import EXPECTED_RUNTIME_VECTOR_COUNT
 
 
 SCHEMA = "styx-o14-cross-runtime-report/v1"
@@ -33,15 +34,21 @@ class GateError(RuntimeError):
 
 
 def run(command: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> str:
-    completed = subprocess.run(
-        command,
-        cwd=cwd,
-        env=env,
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            env=env,
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+    except subprocess.CalledProcessError as error:
+        executable = Path(command[0]).name
+        raise GateError(
+            f"{executable} failed with exit status {error.returncode}"
+        ) from None
     return completed.stdout
 
 
@@ -53,7 +60,7 @@ def download(url: str, destination: Path) -> bytes:
 
 
 def noble_lock_identity(repo: Path) -> dict[str, str]:
-    lock = read_json(repo / "styx-js/package-lock.json")
+    lock = CanonicalJsonReport.load(repo / "styx-js/package-lock.json")
     entry = lock["packages"]["node_modules/@noble/ed25519"]
     if entry["version"] != NOBLE_VERSION:
         raise GateError("unexpected @noble/ed25519 version")
@@ -83,10 +90,7 @@ def provision_noble(repo: Path, workspace: Path) -> tuple[Path, dict[str, str]]:
 
 
 def find_dart() -> str:
-    candidates = [
-        shutil.which("dart"),
-        "/mnt/storage/home-mverde/development/flutter/bin/dart",
-    ]
+    candidates = [os.environ.get("STYX_O14_DART"), shutil.which("dart")]
     for candidate in candidates:
         if candidate and Path(candidate).is_file():
             return str(candidate)
@@ -143,8 +147,10 @@ def main(argv: list[str] | None = None) -> int:
     if not probe_ok:
         raise GateError("semantic probe failed")
     vectors = probe["runtime_vectors"]
+    if len(vectors) != EXPECTED_RUNTIME_VECTOR_COUNT:
+        raise GateError("runtime-vector inventory drift")
     vectors_path = workspace / "vectors.json"
-    vectors_path.write_bytes(canonical_bytes(vectors))
+    vectors_path.write_bytes(CanonicalJsonReport.encode(vectors))
 
     node = shutil.which("node")
     if not node:
@@ -233,9 +239,10 @@ def main(argv: list[str] | None = None) -> int:
         "compliant_adapters": compliant_adapters,
         "raw_divergences": raw_divergences,
         "comparisons": comparisons,
+        "runtime_vector_count": len(comparisons),
         "verdict": "PASS" if passed else "NO_GO",
     }
-    write_report(args.output, report)
+    CanonicalJsonReport.store(args.output, report)
     print(f"O-14 RUNTIME verdict={report['verdict']} compliant={','.join(compliant_adapters)}")
     return 0 if passed else 1
 

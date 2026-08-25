@@ -192,6 +192,23 @@ def selected_verify(signature: bytes, message: bytes, public_key: bytes) -> bool
     return verify(signature, message, public_key, zip215=False, cofactored=True)
 
 
+def verify_with_scalar_reduction(
+    signature: bytes, message: bytes, public_key: bytes
+) -> bool:
+    """Test-only mutant: reduce S modulo L before the pinned equation.
+
+    This models a verifier that omits canonical-scalar enforcement while retaining
+    canonical point decoding and the RFC 8032 cofactored equation.  It is evidence
+    code only and must never be used by product code.
+    """
+
+    if len(signature) != 64:
+        return False
+    scalar = int.from_bytes(signature[32:], "little") % L
+    reduced = signature[:32] + scalar.to_bytes(32, "little")
+    return verify(reduced, message, public_key, zip215=False, cofactored=True)
+
+
 def sign_from_seed(seed: bytes, message: bytes) -> tuple[bytes, bytes]:
     if len(seed) != 32:
         raise ValueError("seed must be 32 octets")

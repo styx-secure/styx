@@ -7,7 +7,12 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scenarios import execute_suite, required_witnesses
+from scenarios import (
+    EXPECTED_RUNTIME_VECTOR_COUNT,
+    EXPECTED_WITNESS_COUNT,
+    execute_suite,
+    required_witnesses,
+)
 from semantic_registry import SELECTED_SUITE
 
 
@@ -21,15 +26,35 @@ class SemanticRegistryTest(unittest.TestCase):
 
     def test_required_suite_passes(self) -> None:
         results = execute_suite()
-        self.assertGreaterEqual(len(required_witnesses()), 40)
+        self.assertEqual(len(required_witnesses()), EXPECTED_WITNESS_COUNT)
         self.assertFalse([item for item in results if not item["passed"]])
 
     def test_runtime_inventory_has_both_equation_directions(self) -> None:
         identifiers = {item.identifier for item in required_witnesses() if item.runtime}
+        self.assertEqual(len(identifiers), EXPECTED_RUNTIME_VECTOR_COUNT)
         self.assertIn("mixed-order-key", identifiers)
         self.assertIn("mixed-order-cofactorless-valid", identifiers)
         self.assertIn("small-order-r", identifiers)
         self.assertIn("noncanonical-key", identifiers)
+        self.assertIn("noncanonical-r", identifiers)
+        self.assertIn("zero-length-key", identifiers)
+        self.assertIn("zero-length-signature", identifiers)
+
+    def test_succession_and_alias_boundaries_are_directed(self) -> None:
+        identifiers = {item.identifier for item in required_witnesses()}
+        self.assertTrue(
+            {
+                "revoked",
+                "rotated-predecessor",
+                "recovered-predecessor",
+                "historical-revoked",
+                "historical-rotated",
+                "rotation-successor",
+                "recovery-successor",
+                "same-key-distinct-credential",
+                "same-key-distinct-credential-positive",
+            }.issubset(identifiers)
+        )
 
 
 if __name__ == "__main__":

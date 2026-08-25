@@ -75,8 +75,13 @@ K processes an application credential signature in this order:
 1. Regenerate the complete O-06b-1 application-event transcript.
 2. Resolve `credential_identifier` through the monotone O-02 map to exactly one
    `(context, issuer, suite_id, verification_key_octets, grant_reference)`.
+   O-07 still selects genesis credential contents and authority, but every
+   genesis credential binding must use this same closed suite registry; an
+   absent, unregistered or reserved genesis suite fails closed.
 3. Reject missing, context-inconsistent, inactive, stale-sequence or otherwise
-   state-invalid credentials independently of signature mathematics.
+   state-invalid credentials independently of signature mathematics. Historical
+   verification of a retired credential may preserve signed evidence, but cannot
+   restore current AP authority.
 4. Read suite and verification key only from that authenticated binding. Ignore
    event, `GRANT` tail, transport, Nostr, MLS and session algorithm/key hints for
    verification of the carrying event.
@@ -99,7 +104,7 @@ effect. O-10 still owns public outcome codes; O-14 uses internal test labels.
 ## 5. Guarded adapters and measured raw disagreement
 
 The required run used Node `v24.18.0` with OpenSSL `3.5.7`, Dart SDK `3.10.8`
-and the exact artifacts above. Twenty-six runtime vectors included ordinary,
+and the exact artifacts above. Twenty-nine runtime vectors included ordinary,
 malformed, non-canonical, small-order and both directions of mixed-order
 equation separation.
 
@@ -110,6 +115,12 @@ Two non-oracle adapters matched the selected language for every vector:
    exactly one `verifyAsync(signature,message,key,{zip215:false})` call.
 2. **Node WebCrypto guarded:** the same Noble guards, then exactly one
    `webcrypto.subtle.verify({name:'Ed25519'},key,signature,message)` call.
+
+These are independent final verifier calls, not independent guard
+implementations: both adapters rely on the same pinned Noble point API. Residual
+risk `O14-SINGLE-GUARD-DEPENDENCY` therefore blocks any claim that adapter
+agreement independently validates the subgroup guard. Changing that guard or
+its dependency reopens the complete evidence.
 
 Raw backends diverged as follows:
 
@@ -134,6 +145,14 @@ matrix is residual obligation `O14-BROWSER-PROVIDER-MATRIX`; each supported
 browser/provider must run the same raw and guarded vectors before a support
 claim. A runtime/dependency upgrade reopens adapter evidence even when the suite
 identifier does not change.
+
+The exact guard performs subgroup work on attacker-supplied `R` before the
+signature establishes authenticity. Public-key checks are cacheable per
+credential; `R` checks are per event. O-14 selects those semantics but no
+operational rate, queue or CPU bound. Residual obligation
+`O14-GUARD-COST-O08` assigns those availability limits and adversarial cost
+measurements to O-08; no implementation may silently relax the guard for
+liveness.
 
 ## 6. Reopen-predicate disposition
 
