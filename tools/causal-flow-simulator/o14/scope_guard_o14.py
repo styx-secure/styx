@@ -84,7 +84,7 @@ def allowed(path: str) -> bool:
 
 def changed_records(repo: Path, base: str, candidate: str) -> list[dict[str, object]]:
     raw = git(
-        repo, "diff-tree", "-r", "-M", "-C", "-l0", "--find-copies-harder",
+        repo, "diff-tree", "-r", "-M",
         "--name-status", "-z", "--no-commit-id", base, candidate,
     )
     parts = raw.split(b"\0")
