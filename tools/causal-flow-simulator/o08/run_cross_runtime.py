@@ -43,12 +43,12 @@ def build_report(javascript: str) -> dict[str, object]:
         "AUTHORITY_WIDTH_STRUCTURAL_CAPACITY", "AUTHORITY_TRANSITION_CAPACITY",
         "DIRECT_EDGE_REPLAY_WORK", "EVENT_SIGNATURE_WORK", "FRESH_REPLAY_WORK_CAPACITY",
     }
-    couplings = [
+    couplings = sorted((
         predicate
         for row in combined_scenarios(envelope, registry)
         for predicate in row["predicates"]
         if predicate["observation"] in coupling_names
-    ]
+    ), key=lambda item: item["observation"])
     request = {
         "schema": "styx-o08-oracle-request/v1", "envelope": envelope,
         "cases": cases, "include_couplings": True,

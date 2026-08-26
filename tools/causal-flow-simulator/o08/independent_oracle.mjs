@@ -65,7 +65,7 @@ function couplingResults(envelope) {
     predicate("DIRECT_EDGE_REPLAY_WORK", value("ANCESTRY_RELATIONS"), value("REPLAYED_EVENT_WORK")),
     predicate("EVENT_SIGNATURE_WORK", value("EVENTS_ADMITTED") * value("SIGNATURE_ATTEMPTS"), value("REPLAYED_EVENT_WORK")),
     predicate("FRESH_REPLAY_WORK_CAPACITY", value("AUTHORITY_TRANSITIONS") * (1n + value("ORDINARY_PREFIX_QUERIES")), value("REPLAYED_EVENT_WORK")),
-  ];
+  ].sort((left, right) => left.observation.localeCompare(right.observation));
 }
 
 function maximumAntichainWidth(predecessorObject) {

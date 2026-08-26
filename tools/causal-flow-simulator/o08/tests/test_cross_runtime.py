@@ -10,7 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from envelope_model import evaluate_observation, materialize_candidate, validate_candidate_set
-from semantic_registry import CANDIDATES_PATH, load_json
+from scenario_generator import combined_scenarios
+from semantic_registry import CANDIDATES_PATH, load_json, load_source_registry
 
 
 class CrossRuntimeTests(unittest.TestCase):
@@ -63,6 +64,31 @@ class CrossRuntimeTests(unittest.TestCase):
         }), 1)
         with self.assertRaises(ValueError):
             maximum_antichain_width({"a": frozenset({"b"}), "b": frozenset({"a"})})
+
+    def test_coupling_oracle_uses_the_same_canonical_order(self):
+        registry = load_source_registry()
+        envelope = materialize_candidate(
+            validate_candidate_set(load_json(CANDIDATES_PATH), registry)[1], registry
+        )
+        names = {
+            "AUTHORITY_WIDTH_STRUCTURAL_CAPACITY",
+            "AUTHORITY_TRANSITION_CAPACITY", "DIRECT_EDGE_REPLAY_WORK",
+            "EVENT_SIGNATURE_WORK", "FRESH_REPLAY_WORK_CAPACITY",
+        }
+        expected = sorted((
+            predicate
+            for row in combined_scenarios(envelope, registry)
+            for predicate in row["predicates"]
+            if predicate["observation"] in names
+        ), key=lambda item: item["observation"])
+        completed = subprocess.run(
+            ["node", str(ROOT / "independent_oracle.mjs")],
+            input=json.dumps({
+                "schema": "styx-o08-oracle-request/v1", "envelope": envelope,
+                "cases": [], "include_couplings": True,
+            }), text=True, capture_output=True, check=True,
+        )
+        self.assertEqual(json.loads(completed.stdout)["couplings"], expected)
 
 
 if __name__ == "__main__":
