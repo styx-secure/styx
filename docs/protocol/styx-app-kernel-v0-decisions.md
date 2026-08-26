@@ -1074,16 +1074,19 @@ outcomes.
 - **Dependent artifact:** O-10 receives 66 safe-recovery handoff rows but still
   owns stable codes. Product/runtime/session/transport profiles remain separate.
 - **Residual/reopen condition:** reopen if complete non-stale evidence within
-  every selected entry dimension other than the three projection-work ceilings,
+  every selected entry dimension other than the three projection-work ceilings
+  (`AUTHORITY_STATES`, `AUTHORITY_TRANSITIONS` and `REPLAYED_EVENT_WORK`),
   and inside the proved region, makes the whole authority projection
   unavailable; if any K-admitted history has reachable states above `B4(P)` or
   transitions above `width(P) * B4(P)`, even when the fold succeeds; if the
   evidence poset differs from the fold poset; if Python and JavaScript disagree
   or understate `B4(P)`; if the C0.2j state key, predecessor relation, permanent-
-  termination semantics or lineage closure changes; or if any selected
-  dimension's meaning, scope, unit, bound or recovery changes. Failure to reject
-  an outside-width trace before DP state insertion also reopens O-08. Grey-zone
-  exhaustion alone does not reopen it because availability is not claimed there.
+  termination semantics or lineage closure changes; if the source inventory
+  gains, removes or merges a dimension; or if any selected dimension's meaning,
+  scope, unit, stage, role, capability assumption, bound, frozen-width status or
+  recovery changes. Failure to reject an outside-width trace before DP state
+  insertion also reopens O-08. Grey-zone exhaustion alone does not reopen it
+  because availability is not claimed there.
 - **Human ratification:** Issue #250 and the Issue #251 partition amendment
   authorized the remediation; the replacement candidate selection and exact-
   final technical human approval are recorded. This bounded decision closes

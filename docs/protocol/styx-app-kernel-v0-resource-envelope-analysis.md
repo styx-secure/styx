@@ -55,7 +55,7 @@ overflow, duplicate, missing and unknown values fail closed.
 | Canonical framing | `FRAMING_OBJECT_OCTETS=8192`; `FRAMING_CONTEXT_OCTETS=16384`; `AP_TRANSITION_BLOCK_OCTETS=4096`; `REFERENCE_OCTETS=32`; `TEXT_FIELD_OCTETS=0`; `SEQUENCE_VALUE=4095` (derived from lifetime); `INTEGER_FIELD_RANGE` is evidence-only with no selected value |
 | Causal admission | `EVENTS_ADMITTED=64`; `EVIDENCE_PER_CREDENTIAL=16`; `CONTEXT_LIFETIME_EVENTS=4096`; `PARENTS_PER_EVENT=8`; `ACTIVE_FRONTIER=16`; `GRAPH_DEPTH=256`; `ANCESTRY_RELATIONS=32768`; `PENDING_ROOTS=16`; `PENDING_DESCENDANTS=128`; `HALTED_REPLAY_SPAN=256` |
 | Credential and authority | `CREDENTIALS=16`; `LINEAGE_DEPTH=8`; `ALIASES_PER_CREDENTIAL=4`; `CONTROL_EVENTS=12`; `FORK_SLOTS=3`; `SIBLINGS_PER_FORK=3`; `AUTHORITY_CONCURRENT_CONTROLS=3`; `AUTHORITY_STATES=256`; `AUTHORITY_TRANSITIONS=512`; `ORDINARY_PREFIX_QUERIES=64`; `REPLAYED_EVENT_WORK=65536`; evidence-only `AUTHORITY_CONTENTION_BOUND=B4(P)` is derived per admitted trace and is not selected |
-| Payload commitment | `CONTENT_EXACT_OCTETS=262144`; `AP_EXPANDED_CONTENT_OCTETS=131072`; `CHUNK_OCTETS={16384}`; `CHUNKS_PER_CONTENT=64`; `TREE_FAN_OUT=2`; `COMMITMENT_VALUE_OCTETS=32`; `RANDOMIZER_OCTETS=32`; `PART_SYMBOL_OCTETS=32`; `RECORDS=128`; `REMOVAL_DIRECTIVES=32` |
+| Payload commitment | `CONTENT_EXACT_OCTETS=262144`; `AP_EXPANDED_CONTENT_OCTETS=131072`; `CHUNK_OCTETS={4096,16384}`; `CHUNKS_PER_CONTENT=64`; `TREE_FAN_OUT=2`; `COMMITMENT_VALUE_OCTETS=32`; `RANDOMIZER_OCTETS=32`; `PART_SYMBOL_OCTETS=32`; `RECORDS=128`; `REMOVAL_DIRECTIVES=32` |
 | Genesis/checkpoint | `CHECKPOINT_REFERENCES=0`; `GENESIS_ATTEMPTS=4`; `GENESIS_BODY_OCTETS=8192`; `GENESIS_POLICY_OCTETS=4096` |
 | Signature verification | `SIGNATURE_ATTEMPTS=64`; `SIGNATURE_OCTETS=64`; `VERIFICATION_KEY_OCTETS=32` |
 | Durability/runtime capability | `DURABLE_REQUIRED_OCTETS=4194304`; `DURABLE_RECORDS=512`; `CUSTODY_REDUNDANCY=1`; `TRANSIENT_MEMORY_CAPABILITY=134217728` |
@@ -120,10 +120,12 @@ if any K-admitted history has reachable states above `B4(P)` or transitions
 above `width(P) * B4(P)`, even when the fold succeeds; if the evidence poset
 differs from the fold poset; if Python and JavaScript disagree or understate
 `B4(P)`; if the C0.2j state key, predecessor relation, permanent-termination
-semantics or lineage closure changes; or if a selected dimension's meaning,
-scope, unit, bound or recovery changes. Failure to reject an outside-width trace
-before DP state insertion also reopens O-08. Grey-zone exhaustion alone does
-not reopen it because availability is not claimed there.
+semantics or lineage closure changes; if the source inventory gains, removes or
+merges a dimension; or if a selected dimension's meaning, scope, unit, stage,
+role, capability assumption, bound, frozen-width status or recovery changes.
+Failure to reject an outside-width trace before DP state insertion also reopens
+O-08. Grey-zone exhaustion alone does not reopen it because availability is not
+claimed there.
 
 Issue-comment `5432143151` records a bounded procedural exception for the
 incomplete Section 8.1 AST assignment guard. Protocol governance/agent-
