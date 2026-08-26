@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import copy
 import subprocess
 import sys
 from pathlib import Path
@@ -11,11 +12,49 @@ sys.path.insert(0, str(ROOT))
 
 from envelope_model import evaluate_observation, materialize_candidate, validate_candidate_set
 from scenario_generator import combined_scenarios
-from run_measurements import structural_evidence
+from run_measurements import _canonical_trace, _load_v3, structural_evidence
+from run_mutations import (
+    _contention_mutation_rows, _partial_contention,
+    _replay_coupling_mutation_row,
+)
 from semantic_registry import CANDIDATES_PATH, load_json, load_source_registry
 
 
 class CrossRuntimeTests(unittest.TestCase):
+    def test_all_named_contention_mutants_are_killed(self):
+        rows = _contention_mutation_rows()
+        self.assertEqual(len(rows), 12)
+        self.assertTrue(all(row["killed"] for row in rows))
+        self.assertEqual(len({row["mutant_id"] for row in rows}), len(rows))
+        self.assertTrue(_replay_coupling_mutation_row()["killed"])
+
+    def test_raw_trace_path_perturbation_fails_closed_in_javascript(self):
+        model, scenarios = _load_v3(ROOT.parents[2])
+        trace = _canonical_trace(_partial_contention(model, scenarios))
+        baseline = {
+            "schema": "styx-o08-oracle-request/v1", "cases": [],
+            "authority_traces": [{
+                "witness_id": "path-negative",
+                "limits": {
+                    "authority_states": 64, "authority_transitions": 128,
+                    "authority_width": 3,
+                },
+                "trace": trace,
+            }],
+        }
+        hostile = copy.deepcopy(baseline)
+        hostile["authority_traces"][0]["trace"]["events"][1]["predecessor"] = None
+        def invoke(request):
+            return json.loads(subprocess.run(
+                ["node", str(ROOT / "independent_oracle.mjs")],
+                input=json.dumps(request), text=True, capture_output=True, check=True,
+            ).stdout)["authority_traces"][0]
+        accepted = invoke(baseline)
+        rejected = invoke(hostile)
+        self.assertEqual(len(accepted["admitted_references"]), 3)
+        self.assertLess(len(rejected["admitted_references"]), 3)
+        self.assertNotEqual(accepted["authority_contention_bound"], rejected["authority_contention_bound"])
+
     def test_python_and_javascript_agree_on_canonical_adversarial_witnesses(self):
         candidate = validate_candidate_set(load_json(CANDIDATES_PATH))[1]
         evidence = structural_evidence(

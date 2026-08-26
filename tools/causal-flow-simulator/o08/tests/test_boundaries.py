@@ -8,8 +8,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from envelope_model import evaluate_observation, materialize_candidate, validate_candidate_set
-from contention_bound import AuthorityItem, evaluate_contention_bound, static_trace_bound
-from scenario_generator import boundary_scenarios
+from scenario_generator import (
+    AuthorityItem, boundary_scenarios, evaluate_contention_bound,
+    static_trace_bound,
+)
 from semantic_registry import CANDIDATES_PATH, ROLE_CAPABILITY, load_json, load_source_registry
 
 

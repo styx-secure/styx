@@ -21,8 +21,10 @@ from envelope_model import (
     CAPABILITY_PROFILE_IDS, CANDIDATE_IDS, candidate_identity, materialize_candidate,
     validate_candidate_set,
 )
-from contention_bound import evaluate_contention_bound, items_from_model, static_trace_bound
-from scenario_generator import boundary_scenarios, combined_scenarios, maximum_antichain_width
+from scenario_generator import (
+    boundary_scenarios, combined_scenarios, evaluate_contention_bound,
+    items_from_model, maximum_antichain_width, static_trace_bound,
+)
 from semantic_registry import CANDIDATES_PATH, canonical_bytes, load_json, load_source_registry
 
 
@@ -231,15 +233,7 @@ def _appendix_witness(model, scenarios, witness_id: str):
     return model.Scenario(tuple(events), tuple(bindings.values())), identity
 
 
-def _authority_evidence(model, scenario):
-    """Derive P only from the frozen model's exact admission result."""
-
-    projection = model.project(
-        scenario, authority_state_limit=1_000_000,
-        authority_transition_limit=10_000_000,
-    )
-    if not projection.authority_available:
-        raise ValueError("reference authority projection unexpectedly exhausted")
+def _contention_inputs(model, scenario, projection):
     raw = {event.reference: event for event in scenario.events}
     ancestors = model._causal_ancestors(scenario.events)
     admitted = {
@@ -259,6 +253,21 @@ def _authority_evidence(model, scenario):
         credential_id: binding.issuer_id
         for credential_id, binding in projection.bindings.items()
     }
+    return predecessors, controls, joins, issuer_by_credential
+
+
+def _authority_evidence(model, scenario):
+    """Derive P only from the frozen model's exact admission result."""
+
+    projection = model.project(
+        scenario, authority_state_limit=1_000_000,
+        authority_transition_limit=10_000_000,
+    )
+    if not projection.authority_available:
+        raise ValueError("reference authority projection unexpectedly exhausted")
+    predecessors, controls, joins, issuer_by_credential = _contention_inputs(
+        model, scenario, projection
+    )
     bound = evaluate_contention_bound(
         items_from_model(model, controls, joins, predecessors),
         issuer_by_credential,
