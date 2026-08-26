@@ -978,50 +978,64 @@ outcomes.
 
 ### O-07 — Genesis and checkpoint evidence
 
-- **Status:** `OPEN`.
+- **Status:** `DECIDED`.
 - **Question:** what exactly is genesis, and what authenticates a checkpoint and
   makes it accepted for each permitted use?
 - **Rationale/evidence:** `EVENT-002` and `EVENT-003` show divergent current
-  initialization and missing deterministic clock injection.
+  initialization. O-03 removes ambient time, O-06b-1 fixes the outer transcript
+  and reference grammar, O-14 fixes signature suite `0x0001`, and Issue #248
+  supplies isolated Python/JavaScript and source-mutation evidence.
 - **Rejected alternatives:** inheriting either current genesis; embedding an
   ambient wall clock; leaving context or initial membership implicit; treating
   C0.2d's trusted synthetic `CheckpointEvidence` input as a production trust
-  rule; allowing a checkpoint to substitute for AP replay in v0.
+  rule; allowing a checkpoint to substitute for AP replay in v0; multi-root,
+  threshold-root or precommitted-root selection in v0.
 - **Security/privacy:** genesis anchors context, initial authority and replay
   separation. Checkpoint acceptance can replace self-verification with trust in
   a producer, expose possession at a horizon, admit rollback/equivocation and
   become invalid under late forks or revocations.
-- **Missing evidence:** O-03/O-05 remain decided inputs, while O-01/O-02/O-04
-  were reopened under Issue #225 until C0.2i's exact-final gates passed and are
-  now `DECIDED` after PR #226's ratification. O-06a
-  selects a non-self-referential genesis-reference role and O-06b-1 fixes its outer
-  reference derivation, but O-06c evidence and the complete O-07 genesis
-  contents are still required before genesis can close;
-  checkpoint authentication, AP-authorized producer/threshold and acceptance rules;
-  anti-rollback/freshness, exact horizon, predecessor/equivocation, profile and
-  suite-version binding, and late-admission recovery. No producer trust model is
-  justified today.
-- **Dependent artifact:** initialization transcript and genesis vectors;
-  production checkpoint evidence and negative vectors. The checkpoint portion
-  is a suspended gate for O-04 checkpoint-based `DETACHABLE` reconstruction and
-  any `REQUIRED`-content substitution. C0.2d section 6 assigned checkpoint
-  opening/content authentication across dependencies that included O-04; O-04
-  explicitly declines that unresolved share and O-07 remains its owner. This
-  record does not activate a producer, checkpoint signer or possession signal.
-  Possession, production or successful parsing of checkpoint material is not
-  evidence that a consumer revalidated the covered transition contents.
-- **Smallest bounded follow-up:** derive genesis only after its inputs close.
-  Separately determine whether any checkpoint substitution model is sound; if
-  so, define K authentication/binding with AP authorization inputs, reopen
-  O-01/O-04 (and O-02 if a new authority class is introduced), amend the threat
-  model, affect O-08/O-10/O-11, rerun C0.2f under C0.2d section 9's reopen
-  conditions and pass C0.3. The decision may keep substitution unsupported.
-- **Residual/closure condition:** close only when every genesis field is
-  necessary, authenticated and independently reproducible and every supported
-  checkpoint use has one explicit authenticator, owner, acceptance rule,
-  rollback/equivocation behavior and late-evidence response. Closing genesis
-  alone MUST NOT silently close the checkpoint portion.
-- **Human ratification:** pending final-HEAD acceptance that this remains open.
+- **Rule:** v0 has one genesis root. `T_genesis` and `genesis_reference` use the
+  exact seven-field body and frozen outer derivations in the transcript profile.
+  The root credential identifier is exactly `genesis_reference`. An accepting
+  replica requires an opaque local `VerifiedCeremonyCapability` issued only by
+  its preconfigured `CeremonyBoundary` after independently authenticating an
+  out-of-band assertion containing the exact O-03 tuple, expected reference and
+  affirmative authorization decision. Provenance is a condition of issuance,
+  not a caller-supplied field. The capability is non-data, non-exportable and
+  bound to one local Boundary and acceptance domain; copies, reconstructions,
+  lookalikes, foreign handles and creator-local state are rejected before
+  candidate parsing. Candidate delivery, possession, self-signature,
+  transport/session success, runtime/storage/UI state and an unauthenticated
+  digest cannot create it. The creator receives separate
+  `CreatorLocalGenesisState`; this self-certification is not evidence for an
+  accepting replica.
+- **Acceptance:** abstract acceptance consumes one valid local capability and
+  atomically fixes the O-03 tuple and `genesis_reference` for one context. An exact duplicate is idempotent. A
+  distinct same-context genesis and every descendant bound to it are rejected
+  without changing the accepted projection. A replica without an independently
+  issued matching local capability accepts no genesis. Arrival, relay, storage,
+  lexical and wall-clock order never select a root.
+- **Checkpoint boundary:** every grant-side checkpoint use is `UNSUPPORTED` in
+  v0: no producer, signer, threshold, AP-state substitution, opening/content
+  reconstruction, freshness, finality or horizon authority exists. The
+  O-02/O-04 suppress-side `checkpoint-only => whole-projection STALE_EVIDENCE`
+  rule is retained verbatim but unreachable: v0 admits no checkpoint object or
+  compaction, therefore `checkpoint_evidence_refs` is structurally empty while
+  `replay_dependency_refs` retains every live authority transcript and REQUIRED
+  opening. Any attempt to populate checkpoint evidence is rejected before
+  projection; possession or parsing never proves consumer revalidation.
+- **Residual/closure condition:** single-root reduction or equivocation can
+  permanently remove all authority. No recovery, freshness, finality,
+  availability, durable rollback resistance, ceremony transport, credential,
+  issuer witness, trusted-path UX or product activation follows. Compromise of
+  the Boundary, its issuer configuration, runtime or accepted-state store voids
+  the root guarantee. O-08 owns runtime bounds, O-10 stable outcome codes, and
+  the combined placeholder-substituted O-14-to-O-06c rerun remains separate.
+  Any future checkpoint capability reopens O-01/O-04, O-02 when it creates a
+  producer-authority class, O-07 and the threat model, affects O-08/O-10/O-11,
+  and reruns C0.2f under C0.2d section 9.
+- **Human ratification:** Issue #248 ratified this bounded construction; final
+  effectiveness still requires exact-final PR review and approval.
 
 ### O-08 — Profile skew, cardinality and activation bounds
 

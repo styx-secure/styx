@@ -365,26 +365,59 @@ event_reference = H(D_EVENT_REF || len32(T_app) || T_app)
 where `D_EVENT_REF` is domain `0x0003`. The result is all 32 digest octets.
 Signature bytes and a carried reference are not inputs.
 
-O-07 will define the complete genesis semantic inventory and transcript body.
-That future transcript `T_genesis` must begin with `D_GENESIS_SIG` (`0x0002`)
-and use this profile's outer `body_length:u32 || body` rule, but this document
-does not define its body fields or internal bytes. As with `T_app`, the future
-genesis `body_length` must not exceed `2^32 - 21`, so the complete transcript
-length remains representable by `len32`. Once O-07 supplies a complete canonical
-`T_genesis`:
+O-07 fixes `T_genesis` as exactly:
+
+```text
+D_GENESIS_SIG || body_length:u32 || body
+```
+
+where `D_GENESIS_SIG` is `0x0002` and `body` contains exactly, in order:
+
+```text
+protocol_version:u16
+application_profile_id:u32
+application_profile_version:u32
+context_identifier:opaque32
+signature_suite_id:u16
+root_verification_key:opaque_u32
+initial_authority_policy:opaque_u32
+```
+
+`protocol_version` is exactly `0x0001`. The application-profile identifier is a
+non-zero value in the authenticated closed AP registry and its version is
+non-zero. The context identifier is the fresh O-03 32-octet value.
+`signature_suite_id` is derive-and-compare data and exactly O-14 suite `0x0001`;
+it is never a selector. The root key container is exactly 32 octets and contains
+one canonical prime-order Ed25519 key under O-14. The initial authority/policy
+block is non-empty and has one complete canonical interior fixed by the selected
+AP identifier/version. It contains all initial authority and policy state and
+cannot acquire ambient defaults. Its root subject is positional: it MUST NOT
+embed the candidate genesis reference or a candidate credential identifier.
+
+Signature bytes, the derived reference, timestamps, transport/session/storage
+identifiers and unregistered extensions are absent. The body parses to exact
+end. `body_length` does not exceed `2^32 - 21`; after the fixed 84-octet body
+overhead the AP block therefore does not exceed `2^32 - 105`. These are
+representational ceilings, not allocation limits; O-08 owns every supported
+smaller runtime bound and requires rejection before allocation.
+
+The reference is:
 
 ```text
 genesis_reference = H(D_GENESIS_REF || len32(T_genesis) || T_genesis)
 ```
 
 where `D_GENESIS_REF` is domain `0x0004`. The result is all 32 digest octets.
-The conditional formula breaks self-reference: the random context identifier
+The construction breaks self-reference: the random context identifier
 does not depend on genesis, the genesis transcript does not contain its own
 reference, and later events contain only the resulting reference.
 
-Because O-07 bytes are not fixed, O-06b-1 does not claim genesis-transcript
-injectivity or unblock O-07 closure. If O-07 cannot instantiate its contents
-without altering this outer boundary, O-06b-1 reopens.
+The written inverse reads the domain and exact body length, consumes the four
+fixed-width O-03 fields, suite, exact-length root-key container and non-empty AP
+block container, then requires exact end. Each valid field assignment therefore
+has one transcript and each valid transcript has one field assignment, assuming
+the AP block's profile-owned interior is itself canonical and injective. O-07
+does not alter the frozen O-06b-1 outer boundary.
 
 ## 7. Written injectivity argument
 
@@ -485,6 +518,10 @@ This profile adds rejection sites but does not assign stable codes:
   empty/over-bound/non-canonical key, unresolved or cross-context replacement
   grant, or control-tail trailing bytes; and
 - carried-suite mismatch or attempted digest fallback.
+- malformed or mismatched genesis ceremony, tuple, reference, signature, root
+  key or initial authority block; distinct same-context genesis; descendant
+  bound to a rejected genesis; grant-reference/genesis-credential equality; or
+  any checkpoint-like input in v0.
 
 O-10 may combine outcomes only when safe recovery remains identical. Remote
 errors remain bounded and opaque under the threat model.
@@ -521,7 +558,8 @@ assess exact resolved artifacts rather than inherit this specification choice.
 | Carry a per-event digest selector and try fallbacks | Downgrade and algorithm-confusion surface. |
 | Use the event reference as the signed message | Changes O-06a and couples signature verification to digest selection. |
 | Fix commitment and chunk interiors here | Hides the most contested O-04-dependent construction inside a framing task; O-06b-2 owns it. |
-| Fix complete genesis bytes here | Preempts O-07 contents and initial authority. |
+| Put the genesis reference, credential identifier or signature in `T_genesis` | Introduces self-reference or makes identity depend on signature bytes. |
+| Multi-root, threshold-root or precommitted-root v0 genesis | Requires a new credential/domain construction and producer authority not selected by O-07. |
 | Treat representable integer ceilings as supported maxima | Preempts O-08 and invites allocation/DoS errors. |
 | Reuse session, Nostr, storage or legacy-ledger identifiers | Violates the ratified identifier-role separation. |
 
@@ -564,7 +602,8 @@ reinterpreted.
    into the combined construction and rerun its complete evidence.
 
 O-06b-1, O-06b-2, C0.2j, C0.2k and the completed O-06c evidence do not make
-C0.3 executable. O-07, O-08 and O-10 remain open blockers; O-14 retains its
+C0.3 executable. O-07 is bounded `DECIDED`; O-08 and O-10 remain open blockers;
+O-14 retains its
 condition-bearing dependency until the separately ratified combined rerun
 passes. O-12 additionally blocks any time-bearing profile. O-11 remains
 required before supported persistence or remote admission, and K-11 remains

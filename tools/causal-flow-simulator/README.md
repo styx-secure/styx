@@ -130,6 +130,33 @@ explicit checkpoint/AP input instead of being emitted as a new live relation.
 - O-06/O-07/O-08/O-10/O-11 decisions may require this model and its affected
   invariants to be extended and rerun.
 
+## O-07 canonical evidence hygiene
+
+The final Git bundle is created once before any O-07 report. Its SHA-256 is
+locked as an external execution input, and every canonical-report producer
+requires both the bundle path and that locked digest. Before serialization each
+producer verifies the exact Base and candidate, both Git trees, the
+binary/full-index diff, the complete bundle and its digest, then validates its
+closed v3 report schema. Full repository identities and every prefix of seven
+or more characters are forbidden in report keys and values, as are absolute
+paths, provenance-labelled runtime identities, timestamps, process identifiers
+and elapsed-time values. Bundle and runtime identities remain in raw external
+logs only.
+
+`o07/verify_final_evidence_hygiene.py` accepts two named, distinct, clean
+checkout roots and two distinct external evidence roots. It validates the exact
+inventory, observations, dispositions and mutant outcomes for all four report
+families, requires byte-identical results between runs, and independently
+regenerates every report in a gate-owned temporary directory before accepting
+the submitted bytes. Anonymous reports, synthetic counts, reused paths,
+same-root runs, dirty checkouts, symlinks and changed bundle bytes fail closed.
+
+The flat final package is checked by `o07/verify_flat_package.py`. Its manifest
+must name exactly every regular artifact and no directory, symlink, special,
+duplicate, missing or extra entry; only after that exact-set check does the tool
+run plain `sha256sum -c`. These gates complement, rather than replace, the raw
+Issue/PR evidence and the complete two-run historical regression artifacts.
+
 ## O-06c exact combined-construction package
 
 `o06c/` is a separate standard-library-only evidence package added by Issue
@@ -167,3 +194,35 @@ bounded negative evidence, not a proof, production verifier, conformance suite,
 runtime support claim, interoperability claim or authority to create C0.3.
 Dart/browser adapter evidence and the separately ratified O-06c
 placeholder-substitution rerun remain explicit downstream gates.
+
+## O-07 genesis and checkpoint-boundary evidence package
+
+`o07/` is the isolated, standard-library-only evidence package for Issue #248.
+It instantiates the frozen O-06b-1 genesis domains and the O-14 `0x0001`
+signature suite with one exact seven-field genesis transcript. It models the
+abstract local ceremony Boundary, its opaque domain/Boundary-bound capability
+and mechanically separate creator-local state. It validates each candidate
+only after local capability validation, fixes one context root atomically,
+treats an exact duplicate as idempotent, rejects copied, reconstructed or
+foreign capabilities and every distinct same-context root and descendant, and
+keeps grant references distinct from the genesis credential identifier. The
+deterministic Boundary is test-only; no production ceremony transport,
+credential, witness, trusted path or persistence mechanism is selected.
+
+The closed inventory contains 287 exact atom/scenario relations: 229 semantic
+instances executed independently in Python and JavaScript plus 58 separate
+repository, reproducibility, external-review and human gates. The package also exercises the v0 checkpoint boundary: ordinary replay retains
+its live authority transcripts and `REQUIRED` openings, while any attempt to
+populate checkpoint evidence is rejected before projection. The Python model
+and dependency-free Node adapter must agree on all 229 relations, and every
+registered source mutant must be killed. `scope_guard_o07.py` enforces the
+exact Issue #248 paths, validator-literal deltas, copy/rename prohibition,
+predecessor-test integrity, test-authenticator isolation, closed report schemas
+and approved normative artifacts against the ratified base.
+
+Run the exact deterministic command block in Issue #248. Generated JSON belongs
+only in a caller-selected temporary directory and must reproduce byte-for-byte
+in two fresh worktrees. A positive result is bounded falsification evidence,
+not a proof, product implementation, durable ceremony, recovery mechanism,
+checkpoint capability, availability guarantee, conformance claim or authority
+to begin C0.3.

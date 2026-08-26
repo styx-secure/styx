@@ -148,6 +148,14 @@ EXPECTED_SOURCE_RECORDS = {
         "docs/protocol/styx-app-kernel-v0-identifier-commitment-falsification-report.md",
         "evidence",
     ),
+    "genesis_checkpoint_analysis": (
+        "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-analysis.md",
+        "evidence",
+    ),
+    "genesis_checkpoint_report": (
+        "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-falsification-report.md",
+        "evidence",
+    ),
     "payload_analysis": (
         "docs/protocol/styx-app-kernel-v0-payload-commitment-analysis.md",
         "evidence",
@@ -276,7 +284,7 @@ REQUIRED_C03_DEPENDENCIES = {
     "O-14",
 }
 
-CONTRACT_BASE_COMMIT = "3f439189e0cbe4071f642c693dbb196b477a48ea"
+CONTRACT_BASE_COMMIT = "86c3f2dbd630e445d737a25c09889de2777ee185"
 
 EXPECTED_STATUS_BY_COLLECTION = {
     "blockers": {
@@ -285,7 +293,7 @@ EXPECTED_STATUS_BY_COLLECTION = {
         "C0.3": "NO_GO",
         "C0.3_CORPUS_PATH_APPROVAL": "OPEN",
         "O-06c": "DECIDED",
-        "O-07": "OPEN",
+        "O-07": "DECIDED",
         "O-08": "OPEN",
         "O-10": "OPEN",
         "O-12": "OPEN",
@@ -353,10 +361,11 @@ EXPECTED_STATUS_BY_COLLECTION = {
     },
     "objects": {
         "application_event": "DECIDED",
-        "checkpoint_evidence": "SYMBOLIC",
+        "checkpoint_evidence": "DECIDED",
         "content_bytes": "DECIDED",
         "content_descriptor": "DECIDED",
-        "genesis": "UNRESOLVED",
+        "genesis": "DECIDED",
+        "genesis_acceptance_record": "DECIDED",
         "opening": "DECIDED",
     },
     "outcomes": {
@@ -389,7 +398,7 @@ EXPECTED_STATUS_BY_COLLECTION = {
         "RR_AUTHORITY_PROJECTION_EXHAUSTION": "OPEN",
         "RR_BOUNDED_DESTRUCTIVE_STANDING": "OPEN",
         "RR_CAUSAL_TARGET_AVAILABILITY": "OPEN",
-        "RR_CHECKPOINT_STALENESS": "SYMBOLIC",
+        "RR_CHECKPOINT_STALENESS": "DECIDED",
         "RR_FORK_AVAILABILITY": "OPEN",
         "RR_METADATA_EXPOSURE": "PROFILE_DEPENDENT",
         "RR_NO_FINALITY": "OPEN",
@@ -424,7 +433,7 @@ EXPECTED_FIELD_STATUS = {
     ("application_event", "event_reference"): "DECIDED",
     ("application_event", "event_role"): "DECIDED",
     ("application_event", "event_type_identifier"): "UNRESOLVED",
-    ("application_event", "genesis_reference"): "UNRESOLVED",
+    ("application_event", "genesis_reference"): "DECIDED",
     ("application_event", "grantee_signature_suite_id"): "DECIDED",
     ("application_event", "grantee_verification_key"): "DECIDED",
     ("application_event", "object_kind"): "DECIDED",
@@ -435,8 +444,8 @@ EXPECTED_FIELD_STATUS = {
     ("application_event", "schema_version"): "UNRESOLVED",
     ("application_event", "signature"): "UNRESOLVED",
     ("application_event", "target_credential_identifier"): "DECIDED",
-    ("checkpoint_evidence", "checkpoint_evidence_refs"): "SYMBOLIC",
-    ("checkpoint_evidence", "replay_dependency_refs"): "SYMBOLIC",
+    ("checkpoint_evidence", "checkpoint_evidence_refs"): "DECIDED",
+    ("checkpoint_evidence", "replay_dependency_refs"): "DECIDED",
     ("content_bytes", "content_octets"): "DECIDED",
     ("content_descriptor", "content_class"): "DECIDED",
     ("content_descriptor", "content_commitment"): "DECIDED",
@@ -445,8 +454,11 @@ EXPECTED_FIELD_STATUS = {
     ("content_descriptor", "content_shape"): "DECIDED",
     ("content_descriptor", "content_suite_id"): "DECIDED",
     ("content_descriptor", "content_type_id"): "UNRESOLVED",
-    ("genesis", "derived_genesis_reference"): "UNRESOLVED",
-    ("genesis", "genesis_body"): "UNRESOLVED",
+    ("genesis", "derived_genesis_reference"): "DECIDED",
+    ("genesis", "genesis_body"): "DECIDED",
+    ("genesis_acceptance_record", "context_tuple"): "DECIDED",
+    ("genesis_acceptance_record", "expected_genesis_reference"): "DECIDED",
+    ("genesis_acceptance_record", "explicit_authorization_decision"): "DECIDED",
     ("opening", "opening_randomizer"): "DECIDED",
 }
 
@@ -540,8 +552,8 @@ EXPECTED_FIELD_SECURITY_DIGEST = {
     ("application_event", "schema_version"): "0bc93f8f8997eb45ec0b1520a704d6fb9f93294a7772f3771eaf660c9ed7b37a",
     ("application_event", "signature"): "d99335723e5383e50b11b6f5c72e06656f804c6a8403fd0c46ce65c18d58148f",
     ("application_event", "target_credential_identifier"): "ef09a263ff778086fb3d4289d121192e211eb3f410aaaebafacffcebe010b168",
-    ("checkpoint_evidence", "checkpoint_evidence_refs"): "3a9cccddd6adee69c49da8572eaf6275ec5a7cd465019ba36067c44393a7a512",
-    ("checkpoint_evidence", "replay_dependency_refs"): "3a9cccddd6adee69c49da8572eaf6275ec5a7cd465019ba36067c44393a7a512",
+    ("checkpoint_evidence", "checkpoint_evidence_refs"): "10a378b1809bbe2ee68902272d4b25bd2a319b59b2ae05b119e93041adf716ca",
+    ("checkpoint_evidence", "replay_dependency_refs"): "dc56049d58952c866d9ffd2f9ab1b4be29508175413b898076c68f14e94237bd",
     ("content_bytes", "content_octets"): "66f393ab0fb494e973621ad615268ccfa42f638218ddc8071a7cf900388645f8",
     ("content_descriptor", "content_class"): "1777b32898466df44ef6bb42921e0d68c76a24cf613611da808249efc1eed213",
     ("content_descriptor", "content_commitment"): "42f35f6ddcf7532e65b3f6323d272106ecd181d947664f2b8a42c3d041eb807c",
@@ -551,7 +563,10 @@ EXPECTED_FIELD_SECURITY_DIGEST = {
     ("content_descriptor", "content_suite_id"): "910aa0277f89d2489a47d8fe5d4565d38a56ca1d907ddeb2e90f8acef32b91df",
     ("content_descriptor", "content_type_id"): "081ff850f3b50b05e51f337eb89504416d6bd2a67243aadb4fcf7558b2f8e856",
     ("genesis", "derived_genesis_reference"): "2b3ce354a9e7e9456c790cb09d077711149de3249003c5bf712e01f851fbddeb",
-    ("genesis", "genesis_body"): "23baf76f9884ccd18b4fb721dd9c83abe06f6496a8afb6be9180f13303f835f0",
+    ("genesis", "genesis_body"): "35db5f5cfde0fd3974c7dad5091ae95a16aa771ac3d382bb767aede8b57a48b5",
+    ("genesis_acceptance_record", "context_tuple"): "05ee23d3b43ecb84653a1e55ca65d1e489ff3769884d88385bd7cd853b03191d",
+    ("genesis_acceptance_record", "expected_genesis_reference"): "05ee23d3b43ecb84653a1e55ca65d1e489ff3769884d88385bd7cd853b03191d",
+    ("genesis_acceptance_record", "explicit_authorization_decision"): "425959aafb7d75d7ff918d5f82417f21392cf1e6106bc2bae0257f874197ea39",
     ("opening", "opening_randomizer"): "c5d1c0fa5eb80f9d32ec3b897108f1d462a5abbe9460b39c5a9c3ec9cca37300",
 }
 
@@ -633,7 +648,7 @@ EXPECTED_COUNTEREXAMPLE_BLOCKS = {
     "CE_ALIAS_SURVIVAL": ["C0.2j"],
     "CE_AUTHORITY_PROJECTION_EXHAUSTION": ["O-08"],
     "CE_BOUNDED_CONTESTED_STANDING": ["C0.2j"],
-    "CE_CHECKPOINT_STALE": ["O-07"],
+    "CE_CHECKPOINT_STALE": ["O-08"],
     "CE_CREDENTIAL_COLLISION": ["C0.2j"],
     "CE_FORK_CONTEXT_QUARANTINE": ["C0.2j", "O-16"],
     "CE_GRANT_REVOKE_LAUNDERING_ORDER_A": ["C0.2j"],
@@ -675,13 +690,10 @@ EXPECTED_SCHEMA_SHA256 = (
 PROTECTED_UNRESOLVED_FIELDS = {
     ("application_event", "ap_transition_block"),
     ("application_event", "event_type_identifier"),
-    ("application_event", "genesis_reference"),
     ("application_event", "schema_identifier"),
     ("application_event", "schema_version"),
     ("application_event", "signature"),
     ("content_descriptor", "content_type_id"),
-    ("genesis", "derived_genesis_reference"),
-    ("genesis", "genesis_body"),
 }
 
 SORTED_RECORD_ARRAYS = (
