@@ -50,6 +50,19 @@ class SchemaTests(unittest.TestCase):
             with self.assertRaises(EnvelopeError):
                 validate_selected(hostile, payload)
 
+    def test_sequence_and_chunk_set_are_derived_and_closed(self):
+        for mutation in ("sequence", "chunk-member", "chunk-order"):
+            payload = copy.deepcopy(load_json(CANDIDATES_PATH))
+            candidate = payload["candidates"][1]
+            if mutation == "sequence":
+                candidate["values"]["SEQUENCE_VALUE"] += 1
+            elif mutation == "chunk-member":
+                candidate["closed_sets"]["CHUNK_OCTETS"].append(32768)
+            else:
+                candidate["closed_sets"]["CHUNK_OCTETS"].reverse()
+            with self.assertRaises(EnvelopeError):
+                validate_candidate_set(payload)
+
     def test_duplicate_member_and_noncanonical_selected_fail(self):
         with tempfile.TemporaryDirectory() as temporary:
             duplicate = Path(temporary) / "duplicate.json"

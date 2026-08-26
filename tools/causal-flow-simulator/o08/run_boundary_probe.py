@@ -30,9 +30,16 @@ def build_report() -> dict[str, object]:
                 "dimension": dimension, "stage": stage, "observed": result.observed,
                 "selected": result.selected, "disposition": result.disposition,
                 "pre_work_rejection": result.disposition != "ACCEPT",
+                "authoritative_state_before": result.authoritative_state_before,
+                "authoritative_state_after": result.authoritative_state_after,
                 "authoritative_state_mutated": result.authoritative_state_mutated,
             })
-    expected = sum(3 * max(1, len(registry.stages[item])) for item in registry.entry_dimensions)
+    expected = sum(
+        (3 * len(envelope["entries"][item]["closed_values"])
+         if item == "CHUNK_OCTETS" else 3)
+        * max(1, len(registry.stages[item]))
+        for item in registry.entry_dimensions
+    )
     if len(rows) != expected:
         raise ValueError("boundary row count mismatch")
     return {"schema": REPORT_SCHEMA, "rows": rows, "verdict": "PASS"}

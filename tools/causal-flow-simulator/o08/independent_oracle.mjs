@@ -2,6 +2,7 @@
 // Dependency-independent JavaScript oracle for the O-08 semantic envelope.
 
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 
 const ROLE_CAPABILITY = "C03_ACTIVATION_CAPABILITY_INPUT";
 const ROLE_POST = "POST_C03_LAYER_PROFILE";
@@ -25,18 +26,31 @@ function evaluate(envelope, item) {
   const entry = envelope.entries[item.dimension];
   if (!entry) throw new Error("unknown dimension");
   if (item.stage !== null && !entry.stages.includes(item.stage)) throw new Error("stage mismatch");
+  const stage = item.stage ?? (entry.stages.length > 0 ? entry.stages[0] : null);
+  const before = createHash("sha256")
+    .update(`O08|PRE|${item.dimension}|${stage ?? ""}`, "utf8").digest("hex");
   if (entry.role === ROLE_POST || entry.role === ROLE_EVIDENCE) {
-    return { ...item, selected: null, disposition: "POST_C03_NOT_EXECUTED", authoritative_state_mutated: false };
+    return {
+      ...item, selected: null, disposition: "POST_C03_NOT_EXECUTED",
+      authoritative_state_before: before, authoritative_state_after: before,
+      authoritative_state_mutated: false,
+    };
   }
   const selected = BigInt(entry.selected_value);
-  const passed = observed < 0n ? false : entry.role === ROLE_CAPABILITY
-    ? observed >= selected
+  const passed = observed < 0n ? false
+    : item.dimension === "ACTIVATION_CAPABILITY_SET" ? observed === selected
+    : item.dimension === "CHUNK_OCTETS" ? entry.closed_values.some((value) => observed === BigInt(value))
+    : entry.role === ROLE_CAPABILITY ? observed >= selected
     : observed <= selected;
+  const after = !passed ? before : createHash("sha256")
+    .update(`O08|POST|${before}|${item.dimension}|${stage ?? ""}|${observed}`, "utf8").digest("hex");
   return {
     ...item,
     selected: entry.selected_value,
-    disposition: passed ? "ACCEPT" : recovery(item.dimension, item.stage, entry.role),
-    authoritative_state_mutated: false,
+    disposition: passed ? "ACCEPT" : recovery(item.dimension, stage, entry.role),
+    authoritative_state_before: before,
+    authoritative_state_after: after,
+    authoritative_state_mutated: before !== after,
   };
 }
 

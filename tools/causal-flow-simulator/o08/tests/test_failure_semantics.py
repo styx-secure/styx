@@ -29,6 +29,20 @@ class FailureSemanticTests(unittest.TestCase):
         result = evaluate_observation(self.envelope, "PENDING_ROOTS", selected + 1, stage="S4_GRAPH_ADMISSION")
         self.assertEqual(result.disposition, "DEPENDENCY_DEFERRED")
 
+    def test_gate_skip_mutant_is_executed_and_exposes_the_hostile_transition(self):
+        selected = self.envelope["entries"]["EVENTS_ADMITTED"]["selected_value"]
+        baseline = evaluate_observation(
+            self.envelope, "EVENTS_ADMITTED", selected + 1, stage="S4_GRAPH_ADMISSION"
+        )
+        mutant = evaluate_observation(
+            self.envelope, "EVENTS_ADMITTED", selected + 1,
+            stage="S4_GRAPH_ADMISSION", mutant="SKIP_GATE",
+        )
+        self.assertNotEqual(baseline.disposition, "ACCEPT")
+        self.assertEqual(mutant.disposition, "ACCEPT")
+        self.assertFalse(baseline.authoritative_state_mutated)
+        self.assertTrue(mutant.authoritative_state_mutated)
+
 
 if __name__ == "__main__":
     unittest.main()

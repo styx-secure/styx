@@ -13,6 +13,7 @@ from canonical_report import store_report
 from envelope_model import evaluate_observation, load_selected_envelope, validate_selected
 from semantic_registry import (
     CANDIDATES_PATH, ROLE_CAPABILITY, SELECTED_PATH, load_json, load_source_registry,
+    recovery_for,
 )
 
 
@@ -29,17 +30,28 @@ def build_report() -> dict[str, object]:
         hostile = max(0, selected - 1) if entry["role"] == ROLE_CAPABILITY else selected + 1
         stage = entry["stages"][0]
         baseline = evaluate_observation(envelope, dimension, hostile, stage=stage)
-        # The named mutant skips the dimension's gate and therefore accepts the hostile case.
-        mutant_disposition = "ACCEPT"
+        intended_failure = recovery_for(dimension, stage, entry["role"])
+        mutant_result = evaluate_observation(
+            envelope, dimension, hostile, stage=stage, mutant="SKIP_GATE"
+        )
+        mutant_disposition = mutant_result.disposition
         killed = baseline.disposition != mutant_disposition
         negative_control = evaluate_observation(envelope, dimension, selected, stage=stage)
-        if not killed or negative_control.disposition != "ACCEPT":
+        if (
+            not killed or baseline.disposition != intended_failure
+            or mutant_result.disposition != "ACCEPT"
+            or not mutant_result.authoritative_state_mutated
+            or negative_control.disposition != "ACCEPT"
+        ):
             raise ValueError(f"mutant was not independently killed: {dimension}")
         rows.append({
             "mutant_id": f"M_SKIP_{dimension}", "dimension": dimension,
             "killing_assertion": "HOSTILE_VALUE_MUST_FAIL_BEFORE_PROTECTED_WORK",
+            "intended_failure": intended_failure,
             "baseline_disposition": baseline.disposition,
             "mutant_disposition": mutant_disposition,
+            "mutant_state_before": mutant_result.authoritative_state_before,
+            "mutant_state_after": mutant_result.authoritative_state_after,
             "negative_control": "ACCEPT", "killed": True,
         })
     return {

@@ -150,6 +150,8 @@ def build_report(repo: Path, base_value: str, candidate_value: str) -> dict[str,
     registry = load_source_registry(repo / O08_PREFIX / "resource-envelope.sources.json")
     return {
         "schema": REPORT_SCHEMA,
+        "guard_role": "PACKAGE_SHAPE_ONLY",
+        "task_scope_authority": False,
         "copy_threshold_percent": COPY_THRESHOLD,
         "changed_relation": rows,
         "dimension_count": len(registry.dimensions),
@@ -178,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, UnicodeError, subprocess.CalledProcessError, ScopeViolation, ValueError) as error:
         print(f"O-08 scope failure: {error}", file=sys.stderr)
         return 2
-    print("O-08 scope verdict=PASS dimensions=67 groups=12 stages=8 anchors=28 entry=53 post=11 evidence=3 handoff=66")
+    print("O-08 scope verdict=PASS role=PACKAGE_SHAPE_ONLY dimensions=67 groups=12 stages=8 anchors=28 entry=52 post=11 evidence=4 handoff=65")
     return 0
 
 

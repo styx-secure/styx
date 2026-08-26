@@ -19,14 +19,14 @@
         "^[A-Z][A-Z0-9_]+$": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["role", "unit", "scope", "stages", "selected_value", "comparison", "integer_range", "enforcement_points", "closed_values", "reopen_predicate"],
+          "required": ["role", "unit", "scope", "stages", "selected_value", "comparison", "integer_range", "enforcement_points", "closed_values", "derivation", "reopen_predicate"],
           "properties": {
             "role": {"enum": ["C03_SEMANTIC_LIMIT", "C03_ACTIVATION_CAPABILITY_INPUT", "C03_EXPLICIT_ZERO_OR_UNSUPPORTED", "POST_C03_LAYER_PROFILE", "EVIDENCE_ONLY"]},
             "unit": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
             "scope": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
             "stages": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^S[0-7]_[A-Z_]+$"}},
             "selected_value": {"type": ["integer", "null"], "minimum": 0},
-            "comparison": {"enum": ["MAXIMUM", "MINIMUM_CAPABILITY", "EXACT_ZERO", "NON_ENTRY"]},
+            "comparison": {"enum": ["MAXIMUM", "MINIMUM_CAPABILITY", "EXACT_ZERO", "EXACT_CLOSED_SET", "EXACT_CLOSED_KEY_SET", "NON_ENTRY"]},
             "integer_range": {
               "oneOf": [
                 {"type": "null"},
@@ -35,6 +35,20 @@
             },
             "enforcement_points": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^BEFORE_S[0-7]_[A-Z_]+_PROTECTED_WORK$"}},
             "closed_values": {"oneOf": [{"type": "null"}, {"type": "array", "items": {"type": "integer", "minimum": 0}, "minItems": 1, "uniqueItems": true}]},
+            "derivation": {
+              "oneOf": [
+                {"type": "null"},
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["kind", "field_domains"],
+                  "properties": {
+                    "kind": {"enum": ["PROFILE_FIXED", "STRUCTURAL_CLOSED_KEY_SET", "CANDIDATE_MEASURED_BOUND"]},
+                    "field_domains": {"type": "array", "items": {"type": "object"}}
+                  }
+                }
+              ]
+            },
             "reopen_predicate": {"type": "string", "minLength": 1}
           }
         }

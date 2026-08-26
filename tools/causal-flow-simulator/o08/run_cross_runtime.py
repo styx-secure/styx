@@ -35,7 +35,9 @@ def build_report(javascript: str) -> dict[str, object]:
             cases.append(item)
             expected.append({
                 **item, "selected": result.selected, "disposition": result.disposition,
-                "authoritative_state_mutated": False,
+                "authoritative_state_before": result.authoritative_state_before,
+                "authoritative_state_after": result.authoritative_state_after,
+                "authoritative_state_mutated": result.authoritative_state_mutated,
             })
     request = {"schema": "styx-o08-oracle-request/v1", "envelope": envelope, "cases": cases}
     completed = subprocess.run(

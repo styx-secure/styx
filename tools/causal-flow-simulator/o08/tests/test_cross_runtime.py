@@ -9,7 +9,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from envelope_model import materialize_candidate, validate_candidate_set
+from envelope_model import evaluate_observation, materialize_candidate, validate_candidate_set
 from semantic_registry import CANDIDATES_PATH, load_json
 
 
@@ -28,6 +28,11 @@ class CrossRuntimeTests(unittest.TestCase):
         response = json.loads(completed.stdout)
         self.assertEqual(response["results"][0]["disposition"], "CONTEXT_CAPACITY_EXHAUSTED")
         self.assertFalse(response["results"][0]["authoritative_state_mutated"])
+        expected = evaluate_observation(
+            envelope, "EVENTS_ADMITTED", selected + 1, stage="S4_GRAPH_ADMISSION"
+        )
+        self.assertEqual(response["results"][0]["authoritative_state_before"], expected.authoritative_state_before)
+        self.assertEqual(response["results"][0]["authoritative_state_after"], expected.authoritative_state_after)
 
     def test_node_oracle_preserves_max_safe_plus_one_as_decimal(self):
         envelope = materialize_candidate(validate_candidate_set(load_json(CANDIDATES_PATH))[1])

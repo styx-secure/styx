@@ -16,7 +16,10 @@ class InventoryTests(unittest.TestCase):
     def test_closed_inventory_counts(self):
         registry = load_source_registry()
         self.assertEqual((len(registry.dimensions), len(registry.anchors)), (67, 28))
-        self.assertEqual((len(registry.entry_dimensions), len(registry.non_entry_dimensions)), (53, 14))
+        self.assertEqual((len(registry.entry_dimensions), len(registry.non_entry_dimensions)), (52, 15))
+        self.assertEqual(len(registry.integer_field_coverage), len({
+            row["field"] for row in registry.integer_field_coverage
+        }))
 
     def test_missing_and_duplicate_dimensions_fail(self):
         source = json.loads(SOURCES_PATH.read_text(encoding="utf-8"))
@@ -26,6 +29,19 @@ class InventoryTests(unittest.TestCase):
             dimensions.pop() if mutation == "missing" else dimensions.append(dimensions[0])
             with tempfile.TemporaryDirectory() as temporary:
                 path = Path(temporary) / "sources.json"
+                path.write_text(json.dumps(value), encoding="utf-8")
+                with self.assertRaises(RegistryError):
+                    load_source_registry(path)
+
+    def test_integer_field_coverage_is_closed_and_has_no_generic_fallback(self):
+        source = json.loads(SOURCES_PATH.read_text(encoding="utf-8"))
+        mutations = []
+        missing = json.loads(json.dumps(source)); missing["integer_field_coverage"].pop(); mutations.append(missing)
+        duplicate = json.loads(json.dumps(source)); duplicate["integer_field_coverage"].append(duplicate["integer_field_coverage"][0]); mutations.append(duplicate)
+        fallback = json.loads(json.dumps(source)); fallback["integer_field_coverage"][0]["dimension"] = "INTEGER_FIELD_RANGE"; mutations.append(fallback)
+        with tempfile.TemporaryDirectory() as temporary:
+            for index, value in enumerate(mutations):
+                path = Path(temporary) / f"coverage-{index}.json"
                 path.write_text(json.dumps(value), encoding="utf-8")
                 with self.assertRaises(RegistryError):
                     load_source_registry(path)

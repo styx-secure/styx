@@ -11,7 +11,7 @@ from semantic_registry import (
     CANDIDATE_SET_SCHEMA,
     ENVELOPE_SCHEMA,
     ENVELOPE_VERSION,
-    FIXED_SEMANTIC_VALUES,
+    FROZEN_CANDIDATE_VALUES,
     ROLE_CAPABILITY,
     ROLE_EVIDENCE,
     ROLE_POST,
@@ -30,6 +30,7 @@ from semantic_registry import (
 PROFILE = "STYX_APP_KERNEL_V0_TRANSCRIPT_ONLY"
 CANDIDATE_IDS = ("conservative", "balanced", "expansive")
 CAPABILITY_PROFILE_IDS = ("conservative", "balanced")
+JAVASCRIPT_SAFE_INTEGER = (1 << 53) - 1
 
 
 class EnvelopeError(ValueError):
@@ -51,6 +52,8 @@ class Evaluation:
     observed: int
     selected: int | None
     disposition: str
+    authoritative_state_before: str
+    authoritative_state_after: str
     authoritative_state_mutated: bool
 
 
@@ -59,6 +62,7 @@ def candidate_identity(candidate: dict[str, Any]) -> str:
         "candidate_id": candidate["id"],
         "envelope_version": ENVELOPE_VERSION,
         "profile": PROFILE,
+        "closed_sets": candidate["closed_sets"],
         "values": candidate["values"],
     }
     return hashlib.sha256(canonical_bytes(payload)).hexdigest()
@@ -85,7 +89,7 @@ def validate_candidate_set(
         raise EnvelopeError("capability-profile set mismatch")
     required_profile_fields = {
         "transient_memory_octets", "durable_required_octets",
-        "durable_records", "custody_redundancy", "activation_capability_set",
+        "durable_records", "custody_redundancy",
     }
     for profile in profiles.values():
         if not isinstance(profile, dict) or set(profile) != required_profile_fields:
@@ -99,26 +103,48 @@ def validate_candidate_set(
     expected = set(registry.entry_dimensions)
     previous: dict[str, int] | None = None
     for candidate in candidates:
-        if not isinstance(candidate, dict) or set(candidate) != {"id", "values"}:
+        if not isinstance(candidate, dict) or set(candidate) != {"id", "closed_sets", "values"}:
             raise EnvelopeError("candidate schema mismatch")
+        closed_sets = candidate["closed_sets"]
+        if not isinstance(closed_sets, dict) or set(closed_sets) != {"CHUNK_OCTETS"}:
+            raise EnvelopeError("candidate closed-set schema mismatch")
+        chunks = closed_sets["CHUNK_OCTETS"]
+        if (
+            not isinstance(chunks, list)
+            or not chunks
+            or any(not isinstance(value, int) or isinstance(value, bool) or value <= 0 for value in chunks)
+            or chunks != sorted(set(chunks))
+        ):
+            raise EnvelopeError("CHUNK_OCTETS must be a sorted positive closed set")
         values = candidate["values"]
         if not isinstance(values, dict) or set(values) != expected:
             raise EnvelopeError(f"candidate dimension set mismatch: {candidate['id']}")
         if any(not isinstance(value, int) or isinstance(value, bool) or value < 0 for value in values.values()):
             raise EnvelopeError("candidate values must be non-negative integers")
-        for dimension, fixed in FIXED_SEMANTIC_VALUES.items():
+        if any(value > JAVASCRIPT_SAFE_INTEGER for value in values.values()):
+            raise EnvelopeError("candidate value exceeds the JavaScript numeric oracle domain")
+        if values["CHUNK_OCTETS"] != chunks[-1]:
+            raise EnvelopeError("CHUNK_OCTETS selected value must equal its closed-set maximum")
+        if values["SEQUENCE_VALUE"] != values["CONTEXT_LIFETIME_EVENTS"] - 1:
+            raise EnvelopeError("SEQUENCE_VALUE derivation mismatch")
+        if values["CONTENT_EXACT_OCTETS"] > chunks[0] * values["CHUNKS_PER_CONTENT"]:
+            raise EnvelopeError("content/chunk geometry mismatch")
+        for dimension, fixed in FROZEN_CANDIDATE_VALUES.items():
             if values[dimension] != fixed:
                 raise EnvelopeError(f"frozen semantic value changed: {dimension}")
         for dimension in ("CHECKPOINT_REFERENCES", "PHYSICAL_TIME_SKEW"):
             if values[dimension] != 0:
                 raise EnvelopeError(f"v0 unsupported value must be zero: {dimension}")
         if previous is not None:
-            for dimension in expected - set(FIXED_SEMANTIC_VALUES) - {
+            for dimension in expected - set(FROZEN_CANDIDATE_VALUES) - {
                 "CHECKPOINT_REFERENCES", "PHYSICAL_TIME_SKEW",
             }:
-                if values[dimension] < previous[dimension]:
-                    raise EnvelopeError(f"candidate order is not monotone: {dimension}")
+                if values[dimension] <= previous[dimension]:
+                    raise EnvelopeError(f"candidate alternatives are not distinct and increasing: {dimension}")
         previous = values
+    expected_chunk_sets = ([4096], [4096, 16384], [4096, 16384, 65536])
+    if tuple(candidate["closed_sets"]["CHUNK_OCTETS"] for candidate in candidates) != expected_chunk_sets:
+        raise EnvelopeError("CHUNK_OCTETS candidate closed sets mismatch")
     return tuple(candidates)
 
 
@@ -127,11 +153,21 @@ def materialize_candidate(
 ) -> dict[str, Any]:
     registry = registry or load_source_registry()
     values = candidate["values"]
+    coverage_by_dimension: dict[str, list[dict[str, int | str]]] = {}
+    for row in registry.integer_field_coverage:
+        if "dimension" in row:
+            coverage_by_dimension.setdefault(str(row["dimension"]), []).append(dict(row))
     entries: dict[str, dict[str, Any]] = {}
     for dimension in registry.dimensions:
         role = registry.roles[dimension]
         selected = values.get(dimension) if role not in {ROLE_POST, ROLE_EVIDENCE} else None
-        if role == ROLE_CAPABILITY:
+        if dimension == "ACTIVATION_CAPABILITY_SET":
+            comparison = "EXACT_CLOSED_KEY_SET"
+            value_range = None
+        elif dimension == "CHUNK_OCTETS":
+            comparison = "EXACT_CLOSED_SET"
+            value_range = None
+        elif role == ROLE_CAPABILITY:
             comparison = "MINIMUM_CAPABILITY"
             value_range: list[int | None] | None = [selected, None]
         elif role == ROLE_ZERO:
@@ -143,6 +179,12 @@ def materialize_candidate(
         else:
             comparison = "MAXIMUM"
             value_range = [0, selected]
+        field_domains = coverage_by_dimension.get(dimension, [])
+        if selected is not None:
+            for domain in field_domains:
+                ceiling = (1 << int(domain["width"])) - 1 - int(domain["reserved"])
+                if selected >= ceiling:
+                    raise EnvelopeError(f"selected value reaches representability ceiling: {dimension}")
         entries[dimension] = {
             "role": role,
             "unit": unit_for(dimension),
@@ -154,7 +196,21 @@ def materialize_candidate(
             "enforcement_points": [
                 f"BEFORE_{stage}_PROTECTED_WORK" for stage in registry.stages[dimension]
             ],
-            "closed_values": [selected] if dimension in FIXED_SEMANTIC_VALUES else None,
+            "closed_values": (
+                candidate["closed_sets"]["CHUNK_OCTETS"]
+                if dimension == "CHUNK_OCTETS"
+                else [selected] if dimension in FROZEN_CANDIDATE_VALUES else None
+            ),
+            "derivation": {
+                "kind": (
+                    "STRUCTURAL_CLOSED_KEY_SET"
+                    if dimension == "ACTIVATION_CAPABILITY_SET"
+                    else "PROFILE_FIXED"
+                    if dimension in FROZEN_CANDIDATE_VALUES
+                    else "CANDIDATE_MEASURED_BOUND"
+                ),
+                "field_domains": field_domains,
+            } if selected is not None else None,
             "reopen_predicate": f"REOPEN_IF_{dimension}_SEMANTICS_OR_BOUND_CHANGES",
         }
     return {
@@ -187,7 +243,8 @@ def validate_selected(
 
 
 def evaluate_observation(
-    envelope: dict[str, Any], dimension: str, observed: int, *, stage: str | None = None
+    envelope: dict[str, Any], dimension: str, observed: int, *, stage: str | None = None,
+    mutant: str | None = None,
 ) -> Evaluation:
     if not isinstance(observed, int) or isinstance(observed, bool):
         raise EnvelopeError("observation must be an integer")
@@ -200,19 +257,39 @@ def evaluate_observation(
     if stage is not None and stage not in stages:
         raise EnvelopeError("stage does not own dimension")
     selected = entry["selected_value"]
+    effective_stage = stage or (stages[0] if stages else None)
+    state_before = hashlib.sha256(
+        f"O08|PRE|{dimension}|{effective_stage or ''}".encode("utf-8")
+    ).hexdigest()
     if role in {ROLE_POST, ROLE_EVIDENCE}:
-        return Evaluation(dimension, stage, observed, None, "POST_C03_NOT_EXECUTED", False)
+        return Evaluation(
+            dimension, effective_stage, observed, None, "POST_C03_NOT_EXECUTED",
+            state_before, state_before, False,
+        )
     if selected is None:
         raise EnvelopeError("entry dimension has no selected value")
     if observed < 0:
         passed = False
+    elif dimension == "ACTIVATION_CAPABILITY_SET":
+        passed = observed == selected
+    elif dimension == "CHUNK_OCTETS":
+        passed = observed in entry["closed_values"]
     elif role == ROLE_CAPABILITY:
         passed = observed >= selected
     else:
         passed = observed <= selected
-    effective_stage = stage or (stages[0] if stages else None)
+    if mutant is not None:
+        if mutant != "SKIP_GATE":
+            raise EnvelopeError("unknown enforcement mutant")
+        passed = True
     disposition = "ACCEPT" if passed else recovery_for(dimension, effective_stage or "", role)
-    return Evaluation(dimension, effective_stage, observed, selected, disposition, False)
+    state_after = state_before if not passed else hashlib.sha256(
+        f"O08|POST|{state_before}|{dimension}|{effective_stage or ''}|{observed}".encode("utf-8")
+    ).hexdigest()
+    return Evaluation(
+        dimension, effective_stage, observed, selected, disposition,
+        state_before, state_after, state_before != state_after,
+    )
 
 
 def boundary_observations(selected: int) -> tuple[int, ...]:

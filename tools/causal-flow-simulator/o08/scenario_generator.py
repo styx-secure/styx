@@ -9,7 +9,7 @@ from semantic_registry import ENTRY_ROLES, ROLE_CAPABILITY, SourceRegistry
 
 
 COMBINED_SCENARIOS = (
-    ("MAX_GRAPH", ("EVENTS_ADMITTED", "PARENTS_PER_EVENT", "ANCESTRY_RELATIONS")),
+    ("MAX_GRAPH", ("CONTEXT_LIFETIME_EVENTS", "PARENTS_PER_EVENT", "ANCESTRY_RELATIONS")),
     ("MAX_AUTHORITY", ("CONTROL_EVENTS", "FORK_SLOTS", "SIBLINGS_PER_FORK", "CREDENTIALS")),
     ("MAX_AUTHORITY_DP", ("AUTHORITY_STATES", "AUTHORITY_TRANSITIONS", "ORDINARY_PREFIX_QUERIES")),
     ("MAX_PENDING", ("PENDING_ROOTS", "PENDING_DESCENDANTS", "HALTED_REPLAY_SPAN")),
@@ -27,6 +27,48 @@ COMBINED_SCENARIOS = (
     ("POST_DIAGNOSTICS", ("CONTENT_EXACT_OCTETS", "DIAGNOSTIC_OCTETS")),
 )
 
+MAX_U64 = (1 << 64) - 1
+
+
+def _checked_add(*values: int) -> int:
+    result = 0
+    for value in values:
+        if value < 0 or result > MAX_U64 - value:
+            raise ValueError("combined addition overflow")
+        result += value
+    return result
+
+
+def _checked_mul(*values: int) -> int:
+    result = 1
+    for value in values:
+        if value < 0 or (value and result > MAX_U64 // value):
+            raise ValueError("combined multiplication overflow")
+        result *= value
+    return result
+
+
+def _predicate(name: str, lhs: int, operator: str, rhs: int) -> dict[str, Any]:
+    passed = lhs <= rhs if operator == "<=" else lhs == rhs
+    return {"observation": name, "lhs": lhs, "operator": operator, "rhs": rhs, "passed": passed}
+
+
+def _selected(envelope: dict[str, Any], dimension: str) -> int:
+    value = envelope["entries"][dimension]["selected_value"]
+    if not isinstance(value, int):
+        raise ValueError(f"entry value unavailable for combined predicate: {dimension}")
+    return value
+
+
+def _transient_components(envelope: dict[str, Any]) -> tuple[int, ...]:
+    return (
+        _checked_add(_selected(envelope, "FRAMING_OBJECT_OCTETS"), _selected(envelope, "GENESIS_BODY_OCTETS")),
+        _selected(envelope, "GENESIS_BODY_OCTETS"),
+        _checked_mul(_selected(envelope, "CHUNKS_PER_CONTENT"), _selected(envelope, "PART_SYMBOL_OCTETS")),
+        _checked_mul(_selected(envelope, "ANCESTRY_RELATIONS"), _selected(envelope, "REFERENCE_OCTETS")),
+        _checked_mul(_selected(envelope, "AUTHORITY_STATES"), 64),
+    )
+
 
 def boundary_scenarios(envelope: dict[str, Any], registry: SourceRegistry) -> list[dict[str, Any]]:
     scenarios: list[dict[str, Any]] = []
@@ -35,25 +77,149 @@ def boundary_scenarios(envelope: dict[str, Any], registry: SourceRegistry) -> li
         selected = entry["selected_value"]
         if not isinstance(selected, int):
             raise ValueError(f"selected value missing: {dimension}")
-        for observed in boundary_observations(selected):
+        boundaries = (
+            tuple(
+                observed
+                for member in entry["closed_values"]
+                for observed in boundary_observations(member)
+            )
+            if dimension == "CHUNK_OCTETS"
+            else boundary_observations(selected)
+        )
+        for observed in boundaries:
             scenarios.append(
                 {
                     "dimension": dimension,
                     "observed": observed,
-                    "relation": "CAPABILITY" if entry["role"] == ROLE_CAPABILITY else "MAXIMUM",
+                    "relation": entry["comparison"],
                 }
             )
     return scenarios
 
 
 def combined_scenarios(envelope: dict[str, Any], registry: SourceRegistry) -> list[dict[str, Any]]:
-    result = []
+    result: list[dict[str, Any]] = []
     for scenario_id, dimensions in COMBINED_SCENARIOS:
         values = {
             dimension: envelope["entries"][dimension]["selected_value"]
             for dimension in dimensions
             if registry.roles[dimension] in ENTRY_ROLES
         }
-        disposition = "EXECUTE" if values else "POST_C03_NOT_EXECUTED"
-        result.append({"scenario_id": scenario_id, "values": values, "disposition": disposition})
+        if not values:
+            result.append({
+                "scenario_id": scenario_id, "values": {}, "predicates": [],
+                "disposition": "POST_C03_NOT_EXECUTED",
+            })
+            continue
+        predicates: list[dict[str, Any]]
+        if scenario_id == "MAX_GRAPH":
+            predicates = [_predicate(
+                "DIRECT_EDGE_CAPACITY",
+                _checked_mul(_selected(envelope, "CONTEXT_LIFETIME_EVENTS"), _selected(envelope, "PARENTS_PER_EVENT")),
+                "<=", _selected(envelope, "ANCESTRY_RELATIONS"),
+            )]
+        elif scenario_id == "MAX_AUTHORITY":
+            predicates = [_predicate(
+                "FORK_SIBLING_CONTROL_CAPACITY",
+                _checked_mul(_selected(envelope, "FORK_SLOTS"), _selected(envelope, "SIBLINGS_PER_FORK")),
+                "<=", _selected(envelope, "CONTROL_EVENTS"),
+            )]
+        elif scenario_id == "MAX_AUTHORITY_DP":
+            predicates = [
+                _predicate(
+                    "AUTHORITY_TRANSITION_CAPACITY", _selected(envelope, "AUTHORITY_TRANSITIONS"), "<=",
+                    _checked_mul(_selected(envelope, "AUTHORITY_STATES"), _selected(envelope, "FORK_SLOTS")),
+                ),
+                _predicate(
+                    "PREFIX_QUERY_CAPACITY", _selected(envelope, "ORDINARY_PREFIX_QUERIES"), "<=",
+                    _selected(envelope, "AUTHORITY_STATES"),
+                ),
+            ]
+        elif scenario_id == "MAX_PENDING":
+            predicates = [_predicate(
+                "PENDING_DESCENDANT_REPLAY_CAPACITY", _selected(envelope, "PENDING_DESCENDANTS"), "<=",
+                _checked_mul(_selected(envelope, "PENDING_ROOTS"), _selected(envelope, "HALTED_REPLAY_SPAN")),
+            )]
+        elif scenario_id == "MAX_CONTENT":
+            chunk_min = min(envelope["entries"]["CHUNK_OCTETS"]["closed_values"])
+            predicates = [
+                _predicate(
+                    "CONTENT_CHUNK_GEOMETRY", _selected(envelope, "CONTENT_EXACT_OCTETS"), "<=",
+                    _checked_mul(chunk_min, _selected(envelope, "CHUNKS_PER_CONTENT")),
+                ),
+                _predicate(
+                    "REMOVAL_RECORD_CAPACITY", _selected(envelope, "REMOVAL_DIRECTIVES"), "<=",
+                    _selected(envelope, "RECORDS"),
+                ),
+            ]
+        elif scenario_id in {"MAX_DURABLE", "MAX_TRANSIENT"}:
+            predicates = [
+                _predicate(
+                    "DURABLE_REFERENCE_ENVELOPE", _checked_mul(
+                        _selected(envelope, "DURABLE_RECORDS"),
+                        _selected(envelope, "REFERENCE_OCTETS"),
+                        _selected(envelope, "CUSTODY_REDUNDANCY"),
+                    ), "<=", _selected(envelope, "DURABLE_REQUIRED_OCTETS"),
+                ),
+                _predicate(
+                    "DURABLE_RECORD_COUNT", _selected(envelope, "RECORDS"), "<=",
+                    _selected(envelope, "DURABLE_RECORDS"),
+                ),
+            ]
+        elif scenario_id == "MAX_GENESIS":
+            predicates = [_predicate(
+                "GENESIS_SIGNATURE_WORK", _checked_mul(
+                    _selected(envelope, "GENESIS_ATTEMPTS"), _selected(envelope, "SIGNATURE_ATTEMPTS")
+                ), "<=", _selected(envelope, "REPLAYED_EVENT_WORK"),
+            )]
+        elif scenario_id == "MAX_ACTORS":
+            predicates = [
+                _predicate(
+                    "ACTOR_CREDENTIAL_ROLE_CAPACITY", _selected(envelope, "ROLE_ASSIGNMENTS"), "<=",
+                    _checked_mul(_selected(envelope, "ACTORS"), _selected(envelope, "CREDENTIALS")),
+                ),
+                _predicate(
+                    "CREDENTIAL_LINEAGE_STATE_CAPACITY", _checked_mul(
+                        _selected(envelope, "CREDENTIALS"), _selected(envelope, "LINEAGE_DEPTH")
+                    ), "<=", _selected(envelope, "AUTHORITY_STATES"),
+                ),
+            ]
+        elif scenario_id == "JOINT_WORK":
+            predicates = [_predicate(
+                "AGGREGATE_TRANSIENT_WORKING_SET", _checked_add(*_transient_components(envelope)), "<=",
+                _selected(envelope, "TRANSIENT_MEMORY_CAPABILITY"),
+            )]
+        elif scenario_id == "MAX_STEERING":
+            predicates = [
+                _predicate(
+                    "EVIDENCE_FORK_STATE_CAPACITY", _checked_mul(
+                        _selected(envelope, "EVIDENCE_PER_CREDENTIAL"), _selected(envelope, "FORK_SLOTS")
+                    ), "<=", _selected(envelope, "AUTHORITY_STATES"),
+                ),
+                _predicate(
+                    "STEERING_TRANSITION_CAPACITY", _selected(envelope, "AUTHORITY_TRANSITIONS"), "<=",
+                    _checked_mul(_selected(envelope, "AUTHORITY_STATES"), _selected(envelope, "FORK_SLOTS")),
+                ),
+            ]
+        elif scenario_id == "MAX_EXPANSION":
+            predicates = [_predicate(
+                "FRAMING_EXPANSION_CONTENT_CAPACITY", _checked_add(
+                    _selected(envelope, "FRAMING_OBJECT_OCTETS"),
+                    _selected(envelope, "AP_EXPANDED_CONTENT_OCTETS"),
+                ), "<=", _selected(envelope, "CONTENT_EXACT_OCTETS"),
+            )]
+        elif scenario_id == "POST_DIAGNOSTICS":
+            predicates = [_predicate(
+                "TRANSCRIPT_CONTENT_WITHIN_TRANSIENT_CAPABILITY",
+                _selected(envelope, "CONTENT_EXACT_OCTETS"), "<=",
+                _selected(envelope, "TRANSIENT_MEMORY_CAPABILITY"),
+            )]
+        else:
+            raise ValueError(f"combined scenario has no executable predicate: {scenario_id}")
+        if not predicates or not all(item["passed"] for item in predicates):
+            raise ValueError(f"combined scenario failed: {scenario_id}")
+        result.append({
+            "scenario_id": scenario_id, "values": values, "predicates": predicates,
+            "disposition": "EXECUTE",
+        })
     return result

@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT))
 
 from envelope_model import evaluate_observation, materialize_candidate, validate_candidate_set
 from semantic_registry import CANDIDATES_PATH, load_json
+from run_measurements import _activation_outcome
 
 
 class ActivationTests(unittest.TestCase):
@@ -30,6 +31,15 @@ class ActivationTests(unittest.TestCase):
             stage="S1_TRANSPORT_ADMISSION",
         )
         self.assertEqual(result.disposition, "POST_C03_NOT_EXECUTED")
+
+    def test_capability_declaration_is_an_exact_four_key_map_not_a_scalar(self):
+        payload = load_json(CANDIDATES_PATH)
+        candidate = validate_candidate_set(payload)[1]
+        profile = payload["capability_profiles"]["balanced"]
+        self.assertNotIn("activation_capability_set", profile)
+        self.assertEqual(_activation_outcome(candidate, profile), "PASS")
+        hostile = dict(profile); hostile["unknown_capability"] = 1
+        self.assertEqual(_activation_outcome(candidate, hostile), "PROFILE_ACTIVATION_UNSUPPORTED")
 
 
 if __name__ == "__main__":

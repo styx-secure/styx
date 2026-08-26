@@ -24,6 +24,12 @@ from semantic_registry import CANDIDATES_PATH, canonical_bytes, load_json, load_
 
 REPORT_SCHEMA = "styx-o08-host-measurement/v1"
 COMPARISON_SCHEMA = "styx-o08-measurement-comparison/v1"
+CAPABILITY_KEYS = {
+    "DURABLE_REQUIRED_OCTETS": "durable_required_octets",
+    "DURABLE_RECORDS": "durable_records",
+    "CUSTODY_REDUNDANCY": "custody_redundancy",
+    "TRANSIENT_MEMORY_CAPABILITY": "transient_memory_octets",
+}
 
 
 def _percentile(values: list[int], fraction: float) -> int:
@@ -43,18 +49,21 @@ def _single(candidate: dict[str, object], profile: dict[str, int]) -> tuple[int,
         "graph_closure_octets": candidate["values"]["ANCESTRY_RELATIONS"] * candidate["values"]["REFERENCE_OCTETS"],
         "authority_dp_octets": candidate["values"]["AUTHORITY_STATES"] * 64,
     }
+    aggregate = sum(counters.values())
+    if aggregate > candidate["values"]["TRANSIENT_MEMORY_CAPABILITY"]:
+        raise ValueError("candidate aggregate transient working set exceeds its envelope")
+    if aggregate > profile["transient_memory_octets"]:
+        raise ValueError("host profile cannot sustain measured aggregate transient working set")
     return retained, counters
 
 
 def _activation_outcome(candidate: dict[str, object], profile: dict[str, int]) -> str:
-    required = {
-        "transient_memory_octets": candidate["values"]["TRANSIENT_MEMORY_CAPABILITY"],
-        "durable_required_octets": candidate["values"]["DURABLE_REQUIRED_OCTETS"],
-        "durable_records": candidate["values"]["DURABLE_RECORDS"],
-        "custody_redundancy": candidate["values"]["CUSTODY_REDUNDANCY"],
-        "activation_capability_set": candidate["values"]["ACTIVATION_CAPABILITY_SET"],
-    }
-    return "PASS" if all(profile[key] >= value for key, value in required.items()) else "PROFILE_ACTIVATION_UNSUPPORTED"
+    if set(profile) != set(CAPABILITY_KEYS.values()):
+        return "PROFILE_ACTIVATION_UNSUPPORTED"
+    return "PASS" if all(
+        profile[profile_key] >= candidate["values"][dimension]
+        for dimension, profile_key in CAPABILITY_KEYS.items()
+    ) else "PROFILE_ACTIVATION_UNSUPPORTED"
 
 
 def measure(candidate_id: str, profile_id: str, cold: int, warm: int) -> dict[str, object]:
@@ -118,6 +127,18 @@ def validate_set(paths: list[Path], selection_head: str) -> dict[str, object]:
         dimension: [candidate["values"][dimension] for candidate in candidates]
         for dimension in load_source_registry().entry_dimensions
     }
+    frozen = {
+        dimension for dimension, values in alternatives.items()
+        if len(set(values)) == 1
+    }
+    expected_frozen = {
+        "REFERENCE_OCTETS", "TEXT_FIELD_OCTETS", "TREE_FAN_OUT",
+        "COMMITMENT_VALUE_OCTETS", "RANDOMIZER_OCTETS", "PART_SYMBOL_OCTETS",
+        "SIGNATURE_OCTETS", "VERIFICATION_KEY_OCTETS", "PROFILE_VERSION_SKEW",
+        "CHECKPOINT_REFERENCES", "PHYSICAL_TIME_SKEW", "ACTIVATION_CAPABILITY_SET",
+    }
+    if frozen != expected_frozen:
+        raise ValueError(f"candidate alternatives are not exact: frozen={sorted(frozen)}")
     return {
         "schema": COMPARISON_SCHEMA,
         "selection_head": selection_head,
@@ -128,7 +149,13 @@ def validate_set(paths: list[Path], selection_head: str) -> dict[str, object]:
             for item, path in sorted(zip(reports, paths), key=lambda pair: (pair[0]["candidate_id"], pair[0]["capability_profile"]))
         ],
         "alternatives": alternatives,
-        "frozen_value_rationale": "Frozen exact-width and unsupported-zero dimensions remain equal across all three compared candidates.",
+        "closed_set_alternatives": {
+            candidate["id"]: candidate["closed_sets"] for candidate in candidates
+        },
+        "frozen_value_rationale": {
+            "dimensions": sorted(frozen),
+            "reason": "Profile-fixed widths, unsupported-zero entries and the structural capability key set are derived rather than selected.",
+        },
         "verdict": "PASS",
     }
 

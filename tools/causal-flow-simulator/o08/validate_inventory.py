@@ -29,6 +29,7 @@ def build_report(repo_root: Path) -> dict[str, object]:
         "dimension_count": len(registry.dimensions),
         "group_count": len(registry.payload["groups"]),
         "anchor_count": len(registry.anchors),
+        "integer_field_coverage_count": len(registry.integer_field_coverage),
         "entry_count": len(registry.entry_dimensions),
         "non_entry_count": len(registry.non_entry_dimensions),
         "role_counts": {key: EXPECTED_ROLE_COUNTS[key] for key in sorted(EXPECTED_ROLE_COUNTS)},

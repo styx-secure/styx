@@ -35,7 +35,7 @@ def build_report() -> dict[str, object]:
                 "scope": scope_for(dimension),
                 "recovery_class": recovery_for(dimension, stage, role),
             })
-    if len(rows) != 66 or counts != EXPECTED_HANDOFF_STAGE_COUNTS:
+    if len(rows) != 65 or counts != EXPECTED_HANDOFF_STAGE_COUNTS:
         raise ValueError("handoff relation mismatch")
     if len({(row["dimension"], row["stage"]) for row in rows}) != len(rows):
         raise ValueError("duplicate handoff relation")
@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError) as error:
         print(f"O-08 handoff failed: {error}", file=sys.stderr)
         return 2
-    print("O-08 HANDOFF verdict=PASS rows=66")
+    print("O-08 HANDOFF verdict=PASS rows=65")
     return 0
 
 

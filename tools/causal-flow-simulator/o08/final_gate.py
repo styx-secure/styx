@@ -4,10 +4,15 @@
 from __future__ import annotations
 
 import argparse
+from hashlib import sha256
+import json
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
 import tempfile
+from urllib.error import HTTPError, URLError
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 sys.dont_write_bytecode = True
 
@@ -17,6 +22,8 @@ from validate_envelope import fetch_provider_object, validate_selection
 
 
 REPORT_SCHEMA = "styx-o08-final-gate-report/v1"
+TASK_ISSUE_URL = "https://api.github.com/repos/styx-secure/styx/issues/250"
+TASK_ISSUE_BODY_SHA256 = "63ce3a7ac0ae44c3ac81275e21186bbf4c9fe04a4d76709f6b2c29e400e19cd9"
 PRODUCERS = (
     ("inventory", "validate_inventory.py", ()),
     ("envelope", "validate_envelope.py", ("--approved-envelope-digest", "{approved}")),
@@ -42,6 +49,69 @@ def _verify_repo(repo: Path, candidate: str) -> None:
         raise ValueError("checkout HEAD mismatch")
     if _git(repo, "status", "--porcelain=v1", "--untracked-files=all"):
         raise ValueError("checkout is not clean")
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        raise HTTPError(req.full_url, code, "redirect forbidden", headers, fp)
+
+
+def _fetch_task_issue_body(output: Path) -> None:
+    request = Request(TASK_ISSUE_URL, headers={"Accept": "application/vnd.github+json"})
+    try:
+        with build_opener(_NoRedirect).open(request, timeout=30) as response:
+            value = json.loads(response.read())
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as error:
+        raise ValueError(f"task Issue fetch failed: {error}") from error
+    if (
+        not isinstance(value, dict) or value.get("url") != TASK_ISSUE_URL
+        or value.get("number") != 250 or not isinstance(value.get("body"), str)
+    ):
+        raise ValueError("task Issue provider identity mismatch")
+    raw = value["body"].encode("utf-8")
+    if sha256(raw).hexdigest() != TASK_ISSUE_BODY_SHA256:
+        raise ValueError("task Issue body is not the ratified contract")
+    output.write_bytes(raw)
+
+
+def _run_trusted_task_scope_guard(
+    repo: Path, base: str, candidate: str, output_root: Path,
+) -> bytes:
+    output_root.mkdir(parents=True)
+    archive = output_root / "agent-enforcement.tar"
+    with archive.open("wb") as stream:
+        completed = subprocess.run(
+            ["git", "-C", str(repo), "archive", "--format=tar", base, "tools/agent-enforcement"],
+            stdout=stream, stderr=subprocess.PIPE, check=False,
+        )
+    if completed.returncode != 0:
+        raise ValueError(f"cannot extract trusted scope guard: {completed.stderr.decode().strip()}")
+    trusted = output_root / "trusted-base"
+    trusted.mkdir()
+    with tarfile.open(archive, "r:") as bundle:
+        bundle.extractall(trusted, filter="data")
+    issue_body = output_root / "issue-250-body.txt"
+    _fetch_task_issue_body(issue_body)
+    report = output_root / "task-scope.json"
+    completed = subprocess.run(
+        [
+            sys.executable, str(trusted / "tools/agent-enforcement/scope_guard.py"),
+            "--issue-number", "250", "--issue-body-file", str(issue_body),
+            "--base-sha", base, "--head-sha", candidate, "--worktree-sha", candidate,
+            "--execution-id", "O08_FINAL_GATE", "--output", str(report), "--repo", str(repo),
+        ],
+        cwd=trusted, capture_output=True, timeout=180,
+    )
+    if completed.returncode != 0 or not report.is_file():
+        raise ValueError(f"trusted task-scope guard failed: {completed.stderr.decode().strip()}")
+    value = json.loads(report.read_bytes())
+    if (
+        value.get("schema") != "styx.task-scope-report/v1"
+        or value.get("verdict") != "PASS"
+        or value.get("issue_body_sha256") != TASK_ISSUE_BODY_SHA256
+    ):
+        raise ValueError("trusted task-scope report mismatch")
+    return report.read_bytes()
 
 
 def _run_all(repo: Path, output_root: Path, values: dict[str, str]) -> dict[str, bytes]:
@@ -94,12 +164,21 @@ def build_report(args: argparse.Namespace) -> dict[str, object]:
         }
         one = _run_all(repo_one, root / "one", values)
         two = _run_all(repo_two, root / "two", values)
+        task_scope_one = _run_trusted_task_scope_guard(
+            repo_one, args.base, args.candidate, root / "task-scope-one"
+        )
+        task_scope_two = _run_trusted_task_scope_guard(
+            repo_two, args.base, args.candidate, root / "task-scope-two"
+        )
     if set(one) != set(two) or any(one[name] != two[name] for name in one):
         raise ValueError("canonical evidence differs across clean checkouts")
+    if task_scope_one != task_scope_two:
+        raise ValueError("trusted task-scope evidence differs across clean checkouts")
     return {
         "schema": REPORT_SCHEMA, "report_families": sorted(one),
         "report_family_count": len(one), "pairwise_byte_equal": True,
-        "selection_verified": True, "verdict": "PASS",
+        "selection_verified": True, "task_scope_verified": True,
+        "task_issue_body_sha256": TASK_ISSUE_BODY_SHA256, "verdict": "PASS",
     }
 
 

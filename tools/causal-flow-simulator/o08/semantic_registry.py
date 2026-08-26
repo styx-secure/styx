@@ -51,16 +51,16 @@ RECOVERY_CLASSES = frozenset(
 )
 
 EXPECTED_ROLE_COUNTS = {
-    ROLE_SEMANTIC: 46,
+    ROLE_SEMANTIC: 45,
     ROLE_CAPABILITY: 5,
     ROLE_ZERO: 2,
     ROLE_POST: 11,
-    ROLE_EVIDENCE: 3,
+    ROLE_EVIDENCE: 4,
 }
 EXPECTED_HANDOFF_STAGE_COUNTS = {
     "S0_PROFILE_ACTIVATION": 9,
     "S1_TRANSPORT_ADMISSION": 0,
-    "S3_KERNEL_STRUCTURAL": 22,
+    "S3_KERNEL_STRUCTURAL": 21,
     "S4_GRAPH_ADMISSION": 10,
     "S5_AUTHORITY_PROJECTION": 15,
     "S6_DURABLE_COMMIT": 10,
@@ -78,6 +78,44 @@ FIXED_SEMANTIC_VALUES = {
     "PROFILE_VERSION_SKEW": 0,
 }
 
+DERIVED_STRUCTURAL_VALUES = {
+    "ACTIVATION_CAPABILITY_SET": 4,
+}
+
+FROZEN_CANDIDATE_VALUES = FIXED_SEMANTIC_VALUES | DERIVED_STRUCTURAL_VALUES
+
+EXPECTED_INTEGER_FIELDS = frozenset({
+    "transcript.outer.body_length", "transcript.protocol_version",
+    "transcript.application_profile_id", "transcript.application_profile_version",
+    "transcript.object_kind", "transcript.event_role_class", "transcript.event_type",
+    "transcript.schema_identifier", "transcript.schema_version",
+    "transcript.ap_transition_block.length", "transcript.author_sequence",
+    "transcript.direct_predecessor_presence", "transcript.causal_parent_vector.count",
+    "transcript.content_descriptor.content_class",
+    "transcript.content_descriptor.exact_content_length",
+    "transcript.commitment_descriptor.content_type_id",
+    "transcript.commitment_descriptor.commitment_suite_id",
+    "transcript.commitment_descriptor.commitment_shape",
+    "transcript.commitment_descriptor.commitment_value.length",
+    "transcript.commitment_descriptor.chunk_geometry_presence",
+    "transcript.commitment_descriptor.chunk_geometry.length",
+    "transcript.removal.target_commitment.length",
+    "transcript.credential_control.control_kind",
+    "transcript.credential_control.grantee_suite_id",
+    "transcript.credential_control.grantee_verification_key.length",
+    "commitment.context.commitment_suite_id", "commitment.context.styx_protocol_version",
+    "commitment.context.application_profile_id",
+    "commitment.context.application_profile_version", "commitment.context.author_sequence",
+    "commitment.content_type_id", "commitment.exact_content_length",
+    "commitment.single_shape.exact_content_length", "commitment.commitment_shape",
+    "commitment.chunk_size", "commitment.chunk_count", "commitment.final_chunk_length",
+    "commitment.leaf_ordinal", "commitment.leaf_length", "commitment.subtree_leaf_count",
+    "genesis.outer.body_length", "genesis.protocol_version",
+    "genesis.application_profile_id", "genesis.application_profile_version",
+    "genesis.signature_suite_id", "genesis.root_verification_key.length",
+    "genesis.initial_authority_policy.length",
+})
+
 DEPENDENCY_DEFERRED_DIMENSIONS = frozenset(
     {"PENDING_ROOTS", "PENDING_DESCENDANTS", "HALTED_REPLAY_SPAN"}
 )
@@ -94,6 +132,7 @@ class SourceRegistry:
     roles: dict[str, str]
     stages: dict[str, tuple[str, ...]]
     anchors: tuple[tuple[str, str], ...]
+    integer_field_coverage: tuple[dict[str, Any], ...]
 
     @property
     def entry_dimensions(self) -> tuple[str, ...]:
@@ -179,9 +218,43 @@ def load_source_registry(path: Path = SOURCES_PATH) -> SourceRegistry:
                 raise RegistryError(f"C0.3 entry uses forbidden handoff stage: {stage}")
             handoff_counts[stage] += 1
     if handoff_counts != EXPECTED_HANDOFF_STAGE_COUNTS:
-        raise RegistryError("66-row handoff stage distribution mismatch")
+        raise RegistryError("65-row handoff stage distribution mismatch")
 
-    return SourceRegistry(payload, tuple(dimensions), roles, stages, tuple(anchors))
+    coverage = payload.get("integer_field_coverage")
+    if not isinstance(coverage, list) or not coverage:
+        raise RegistryError("integer-field coverage relation missing")
+    fields: set[str] = set()
+    for row in coverage:
+        if not isinstance(row, dict) or set(row) not in (
+            {"field", "width", "reserved", "dimension"},
+            {"field", "width", "reserved", "classification"},
+        ):
+            raise RegistryError("integer-field coverage row mismatch")
+        field = row.get("field")
+        width = row.get("width")
+        reserved = row.get("reserved")
+        if not isinstance(field, str) or not field or field in fields:
+            raise RegistryError("duplicate or invalid integer-field coverage")
+        if width not in {8, 16, 32, 64} or not isinstance(reserved, int) or reserved < 0:
+            raise RegistryError(f"invalid integer-field domain: {field}")
+        fields.add(field)
+        if "dimension" in row:
+            dimension = row["dimension"]
+            if dimension not in roles or roles[dimension] != ROLE_SEMANTIC:
+                raise RegistryError(f"integer field lacks semantic owner: {field}")
+            if dimension == "INTEGER_FIELD_RANGE":
+                raise RegistryError("generic integer fallback is forbidden")
+        elif row.get("classification") != "REGISTRY_ONLY_NO_WORK":
+            raise RegistryError(f"invalid integer-field classification: {field}")
+    if fields != EXPECTED_INTEGER_FIELDS:
+        raise RegistryError(
+            f"integer-field coverage set mismatch missing={sorted(EXPECTED_INTEGER_FIELDS - fields)} "
+            f"extra={sorted(fields - EXPECTED_INTEGER_FIELDS)}"
+        )
+
+    return SourceRegistry(
+        payload, tuple(dimensions), roles, stages, tuple(anchors), tuple(coverage)
+    )
 
 
 def unit_for(dimension: str) -> str:

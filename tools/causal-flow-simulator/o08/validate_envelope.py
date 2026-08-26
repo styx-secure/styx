@@ -144,6 +144,8 @@ def build_report(approved_digest: str) -> dict[str, object]:
         "candidate_id": envelope["candidate_id"],
         "candidate_digest": envelope["candidate_digest"],
         "role_counts": {key: counts[key] for key in sorted(counts)},
+        "activation_capability_minimum_count": 4,
+        "activation_capability_closed_key_set_count": 1,
         "verdict": "PASS",
     }
 
