@@ -294,7 +294,7 @@ EXPECTED_STATUS_BY_COLLECTION = {
         "C0.3_CORPUS_PATH_APPROVAL": "OPEN",
         "O-06c": "DECIDED",
         "O-07": "DECIDED",
-        "O-08": "DECIDED",
+        "O-08": "OPEN",
         "O-10": "OPEN",
         "O-12": "OPEN",
         "O-13": "OPEN",

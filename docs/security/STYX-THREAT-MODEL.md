@@ -176,9 +176,10 @@ only the guarded signature language. C0.2j's M20 rule deliberately keeps every K
 credential-control event in the authority evidence set even when AP rejects the
 action or the actor is no longer authorized. Consequently, any still-valid
 bound signing key can consume finite control, fork, state and transition budgets;
-AP rejection is not a resource-admission control. The bounded O-08 conservative
-envelope now limits that evidence per credential and in total for the
-transcript-only C0.3 profile. This is a fail-closed conformance bound, not a
+AP rejection is not a resource-admission control. The ratified O-08 remediation
+therefore compares bounded evidence limits per credential and in total for the
+transcript-only C0.3 profile. No replacement value is authoritative before its
+new human-selection gate. This remains a fail-closed conformance bound, not a
 production availability claim.
 
 ### A3 — Malicious peer
@@ -229,9 +230,8 @@ slot-steering or operational availability loss. R-1
 blocks a direct omitted-history veto against an unseen later grant, but a
 compromised actor can still reduce the visible issuer and thereby keep later
 grants rooted there below `Must0`. Within C0.2j this reach is bounded only by the
-shared evidence envelope; the bounded O-08 conservative profile now selects
-per-credential and context-total admission limits for transcript-only C0.3
-evidence. This conservative
+shared evidence envelope; the O-08 remediation compares per-credential and
+context-total admission limits for transcript-only C0.3 evidence. Any selected
 effect never confers expansion or operational authority. A revoked credential
 may retain one contested slot for itself plus one for every stockpiled K-valid
 May0 descendant, each able to target a separate bounded subtree; those slots are
@@ -423,22 +423,24 @@ make telemetry or push metadata harmless.
 
 ### 3.2 Bounded C0.3 resource envelope
 
-O-08 selects the conservative transcript-only resource envelope documented in
-`docs/protocol/styx-app-kernel-v0-resource-envelope-analysis.md`. Its 53 C0.3
-entry dimensions bound canonical parsing, graph admission, authority
-projection, replay work, commitment material and five abstract activation
-capabilities. Exceeding a selected semantic or capability bound preserves the
+O-08 is undergoing the ratified replacement selection documented in
+`docs/protocol/styx-app-kernel-v0-resource-envelope-analysis.md`. Its 52 C0.3
+entry dimensions cover canonical parsing, graph admission, authority
+projection, replay work, commitment material, four abstract capability minima
+and one structural exact capability-key declaration. Exceeding a candidate
+semantic or capability bound preserves the
 previous authoritative state and fails closed; it never authorizes truncation,
 selection by arrival order, partial replay or an AP authority shortcut.
 
 The envelope does not prove that a browser, native runtime or storage backend
-can sustain those values. Eleven operational/runtime dimensions and three
+can sustain those values. Eleven operational/runtime dimensions and four
 evidence-only dimensions remain outside C0.3 entry semantics. O-08 therefore
 adds no claim of delivery, persistence, recovery, freshness, rollback
 detection, physical eviction resistance, bounded attacker bandwidth or
 continued availability after authority exhaustion. Product profiles must add
 their own smaller enforceable limits and capability evidence without changing
-the selected transcript semantics.
+the ultimately selected transcript semantics. No replacement candidate is
+authoritative before the new measurement and ForgeRelay human-selection gate.
 
 ## 4. Trust assumptions
 
@@ -614,7 +616,8 @@ Current evidence establishes only bounded components:
   bounded Pass0/selected-slot authority and lineage containment; C0.2k selects
   the 84-octet commitment context and bounded mutation evidence; Issue #243
   completes bounded O-06c evidence. O-06/O-06c are condition-bearing
-  `DECIDED`; O-07 and O-08 are bounded `DECIDED`; O-10 through O-16 retain their recorded open,
+  `DECIDED`; O-07 is bounded `DECIDED`; O-08 is under ratified remediation and
+  new human selection; O-10 through O-16 retain their recorded open,
   conditional or downstream-blocking roles;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
   described in its final verdict; and

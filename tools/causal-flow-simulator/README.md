@@ -230,11 +230,12 @@ to begin C0.3.
 ## O-08 bounded resource envelope
 
 `o08/` contains the isolated transcript-only resource-envelope evidence for
-Issue #250. It preserves all 67 discovered dimensions, selects 53 C0.3 entry
-values in the conservative envelope, keeps eleven post-C0.3 and three
-evidence-only dimensions non-authoritative, and hands 66 safe-recovery rows to
+Issue #250. It preserves all 67 discovered dimensions and compares 52 C0.3
+entry values across three candidates, keeps eleven post-C0.3 and four
+evidence-only dimensions non-authoritative, and hands 65 safe-recovery rows to
 O-10 without assigning stable codes. Python and dependency-independent Node
 exercise every boundary; the combined matrix and per-dimension mutants detect
-cross-dimensional amplification and skipped gates. The package is conformance
+cross-dimensional amplification and skipped gates. No candidate is selected
+until the replacement measurement and ForgeRelay gate completes. The package is conformance
 evidence only and makes no product/runtime, persistence, transport, session,
 recovery or availability claim.

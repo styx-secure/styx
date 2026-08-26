@@ -1039,21 +1039,22 @@ outcomes.
 
 ### O-08 — Profile skew, cardinality and activation bounds
 
-- **Status:** bounded `DECIDED` for the transcript-only C0.3 conformance profile.
+- **Status:** `OPEN` during ratified remediation and new human candidate
+  selection; every earlier O-08 selection is superseded and historical only.
 - **Question:** what clock-skew policy, first-profile actor cardinality and
   N-party activation bounds apply?
-- **Selected rule:** the canonical `conservative` envelope at
-  `tools/causal-flow-simulator/o08/resource-envelope.candidate.json` supplies
-  46 semantic maxima, five abstract activation-capability minima and two exact
-  zero/unsupported values. Eleven post-C0.3 and three evidence-only dimensions
-  remain classified but cannot affect C0.3 semantics or authority. Every entry
-  binds an exact unit, scope, stage, comparison, pre-protected-work enforcement
-  point, safe recovery class and reopen predicate.
-- **Rationale/evidence:** three monotone candidates were measured under two
-  capability profiles. Only `conservative` activated under both; wider
-  candidates failed closed under the conservative custody profile. Python and
-  dependency-independent Node agree on every boundary case; the closed 16-row
-  combined matrix passes and all 53 gate-skip mutants are killed.
+- **Ratified remediation rule:** the replacement candidate set supplies 45
+  semantic maxima, four abstract activation-capability minima, one structural
+  exact four-key capability declaration and two exact zero/unsupported values.
+  Eleven post-C0.3 and four evidence-only dimensions remain classified but
+  cannot affect C0.3 semantics or authority. `INTEGER_FIELD_RANGE` is only a
+  representability witness; field-specific limits own work. `SEQUENCE_VALUE`
+  derives from lifetime and `CHUNK_OCTETS` is a closed set.
+- **Pending evidence:** a new clean selection HEAD, six measurements, one
+  comparison report and a new immutable `maverde73` ForgeRelay selection are
+  required before `resource-envelope.candidate.json` may be recreated. Python
+  and dependency-independent Node must then agree on observable pre/post state,
+  all 52 executed gate mutants and the 16 checked composition rows.
 - **Rejected alternatives:** promoting current limits to kernel rules; unbounded
   actors or skew; silent degradation outside tested profiles; selecting a
   wider candidate that excludes the declared conservative capability profile.
@@ -1061,14 +1062,14 @@ outcomes.
   whether a runtime can enforce the profile safely. Excess authority evidence
   makes projection unavailable; it never becomes absent or an empty authority
   set. Physical time and checkpoint evidence are unsupported exact zero.
-- **Dependent artifact:** O-10 receives 66 safe-recovery handoff rows but still
+- **Dependent artifact:** O-10 receives 65 safe-recovery handoff rows but still
   owns stable codes. Product/runtime/session/transport profiles remain separate.
 - **Residual/reopen condition:** reopen on any dimension, unit, scope, stage,
   bound, capability, safe-recovery or frozen-width change; on any valid
   under-bound capability overflow; or on independent-oracle disagreement.
-- **Human ratification:** Issue #250 binds the selected candidate through
-  ForgeRelay provider object `5425570807`; final effectiveness still requires
-  exact-final PR review and approval.
+- **Human ratification:** Issue #250 and the Issue #251 partition amendment
+  authorize remediation only. A new candidate selection and exact-final human
+  gates remain mandatory; C0.3 stays `NO_GO`.
 
 ### O-09 — Kernel/profile responsibility split
 
@@ -1386,7 +1387,7 @@ immutable historical evidence and the independent v3 report records the
 superseding authority model. C0.2k selects the credential/sequence-bound
 commitment context and supplies bounded amendment evidence; O-06c independently
 falsifies the exact combined bytes within its declared envelope.
-O-08 is now bounded `DECIDED`, while O-10 still contains choices required to
+O-08 is under ratified remediation and new human selection, while O-10 still contains choices required to
 derive stable adversarial outcomes. O-07 retains its exact corpus-integration
 condition and O-14 retains its placeholder-substituted O-06c rerun. O-12 is
 additionally blocking for any profile that retains a physical-time claim; it is
