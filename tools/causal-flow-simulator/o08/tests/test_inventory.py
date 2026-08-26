@@ -15,8 +15,8 @@ from semantic_registry import RegistryError, SOURCES_PATH, load_source_registry
 class InventoryTests(unittest.TestCase):
     def test_closed_inventory_counts(self):
         registry = load_source_registry()
-        self.assertEqual((len(registry.dimensions), len(registry.anchors)), (67, 28))
-        self.assertEqual((len(registry.entry_dimensions), len(registry.non_entry_dimensions)), (52, 15))
+        self.assertEqual((len(registry.dimensions), len(registry.anchors)), (68, 28))
+        self.assertEqual((len(registry.entry_dimensions), len(registry.non_entry_dimensions)), (53, 15))
         self.assertEqual(len(registry.integer_field_coverage), len({
             row["field"] for row in registry.integer_field_coverage
         }))

@@ -1043,7 +1043,7 @@ outcomes.
   selection; every earlier O-08 selection is superseded and historical only.
 - **Question:** what clock-skew policy, first-profile actor cardinality and
   N-party activation bounds apply?
-- **Ratified remediation rule:** the replacement candidate set supplies 45
+- **Ratified remediation rule:** the replacement candidate set supplies 46
   semantic maxima, four abstract activation-capability minima, one structural
   exact four-key capability declaration and two exact zero/unsupported values.
   Eleven post-C0.3 and four evidence-only dimensions remain classified but
@@ -1054,7 +1054,8 @@ outcomes.
   comparison report and a new immutable `maverde73` ForgeRelay selection are
   required before `resource-envelope.candidate.json` may be recreated. Python
   and dependency-independent Node must then agree on observable pre/post state,
-  all 52 executed gate mutants and the 16 checked composition rows.
+  all 53 executed gate mutants, the 16 checked composition rows and the exact
+  maximum-antichain witness family against the actual C0.2j fold.
 - **Rejected alternatives:** promoting current limits to kernel rules; unbounded
   actors or skew; silent degradation outside tested profiles; selecting a
   wider candidate that excludes the declared conservative capability profile.
@@ -1062,11 +1063,12 @@ outcomes.
   whether a runtime can enforce the profile safely. Excess authority evidence
   makes projection unavailable; it never becomes absent or an empty authority
   set. Physical time and checkpoint evidence are unsupported exact zero.
-- **Dependent artifact:** O-10 receives 65 safe-recovery handoff rows but still
+- **Dependent artifact:** O-10 receives 66 safe-recovery handoff rows but still
   owns stable codes. Product/runtime/session/transport profiles remain separate.
 - **Residual/reopen condition:** reopen on any dimension, unit, scope, stage,
   bound, capability, safe-recovery or frozen-width change; on any valid
-  under-bound capability overflow; or on independent-oracle disagreement.
+  in-tuple authority exhaustion; on failure to reject an outside-width trace
+  before DP state insertion; or on independent-oracle disagreement.
 - **Human ratification:** Issue #250 and the Issue #251 partition amendment
   authorize remediation only. A new candidate selection and exact-final human
   gates remain mandatory; C0.3 stays `NO_GO`.

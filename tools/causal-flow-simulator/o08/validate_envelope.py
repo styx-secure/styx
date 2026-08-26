@@ -7,6 +7,7 @@ import argparse
 from hashlib import sha256
 import json
 from pathlib import Path
+import re
 import sys
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -23,6 +24,7 @@ ISSUE_URL = "https://api.github.com/repos/styx-secure/styx/issues/250"
 COMMENT_URL_PREFIX = "https://api.github.com/repos/styx-secure/styx/issues/comments/"
 OPERATOR_ID = 141346846
 OPERATOR_LOGIN = "maverde73"
+DIGEST_RE = re.compile(r"[0-9a-f]{64}")
 
 
 class _NoRedirect(HTTPRedirectHandler):
@@ -85,13 +87,26 @@ def _selection_body(value: dict[str, object]) -> dict[str, object]:
         raise ValueError("selection body schema mismatch")
     if payload["status"] != "accepted" or payload["operator"] != OPERATOR_LOGIN:
         raise ValueError("selection was not accepted by required operator")
+    for field in (
+        "candidate_set_sha256", "comparison_report_sha256",
+        "selected_envelope_sha256",
+    ):
+        if not isinstance(payload[field], str) or DIGEST_RE.fullmatch(payload[field]) is None:
+            raise ValueError(f"selection digest invalid: {field}")
+    if (
+        not isinstance(payload["base_sha"], str)
+        or not isinstance(payload["selection_head"], str)
+        or re.fullmatch(r"[0-9a-f]{40}", payload["base_sha"]) is None
+        or re.fullmatch(r"[0-9a-f]{40}", payload["selection_head"]) is None
+    ):
+        raise ValueError("selection commit identity invalid")
     reports = payload["measurement_reports"]
     if not isinstance(reports, list) or len(reports) != 6:
         raise ValueError("exactly six measurement identities required")
     expected_pairs = {
         (candidate, profile)
         for candidate in ("conservative", "balanced", "expansive")
-        for profile in ("conservative", "balanced")
+        for profile in ("HOST_MINIMAL", "HOST_EXTENDED")
     }
     observed_pairs: set[tuple[object, object]] = set()
     for report in reports:
@@ -99,7 +114,7 @@ def _selection_body(value: dict[str, object]) -> dict[str, object]:
             "candidate_id", "capability_profile", "report_sha256"
         }:
             raise ValueError("measurement identity schema mismatch")
-        if not isinstance(report["report_sha256"], str) or len(report["report_sha256"]) != 64:
+        if not isinstance(report["report_sha256"], str) or DIGEST_RE.fullmatch(report["report_sha256"]) is None:
             raise ValueError("measurement digest invalid")
         observed_pairs.add((report["candidate_id"], report["capability_profile"]))
     if observed_pairs != expected_pairs:
@@ -108,11 +123,13 @@ def _selection_body(value: dict[str, object]) -> dict[str, object]:
 
 
 def validate_selection(
-    provider: dict[str, object], *, url: str, object_id: str, base: str, selection_head: str
+    provider: dict[str, object], *, url: str, object_id: str, base: str,
+    selection_head: str, candidate_set_path: Path | None = None,
 ) -> dict[str, object]:
     validate_provider_identity(provider, url, object_id)
     payload = _selection_body(provider)
-    candidate_set_raw = CANDIDATES_PATH.read_bytes()
+    candidate_set_path = candidate_set_path or CANDIDATES_PATH
+    candidate_set_raw = candidate_set_path.read_bytes()
     if payload["base_sha"] != base or base != BASE_SHA:
         raise ValueError("selection Base mismatch")
     if payload["selection_head"] != selection_head or len(selection_head) != 40:
@@ -128,9 +145,8 @@ def validate_selection(
 
 
 def build_report(approved_digest: str) -> dict[str, object]:
-    if len(approved_digest) != 64:
+    if not isinstance(approved_digest, str) or DIGEST_RE.fullmatch(approved_digest) is None:
         raise ValueError("approved envelope digest must be 64 hexadecimal characters")
-    int(approved_digest, 16)
     envelope = validate_selected(load_selected_envelope(), load_json(CANDIDATES_PATH))
     if envelope["candidate_digest"] != approved_digest:
         raise ValueError("selected envelope is not provider-approved")
@@ -178,6 +194,10 @@ def main(argv: list[str] | None = None) -> int:
                 provider, url=args.selection_provider_url,
                 object_id=args.selection_provider_object_id, base=args.base,
                 selection_head=args.selection_head,
+                candidate_set_path=(
+                    args.repo_root
+                    / "tools/causal-flow-simulator/o08/resource-envelope.candidates.json"
+                ).resolve(strict=True),
             )
             print(payload["selected_envelope_sha256"])
             return 0

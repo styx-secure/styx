@@ -13,8 +13,8 @@
     "candidate_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "entries": {
       "type": "object",
-      "minProperties": 67,
-      "maxProperties": 67,
+      "minProperties": 68,
+      "maxProperties": 68,
       "patternProperties": {
         "^[A-Z][A-Z0-9_]+$": {
           "type": "object",

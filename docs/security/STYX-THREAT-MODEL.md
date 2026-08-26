@@ -424,20 +424,25 @@ make telemetry or push metadata harmless.
 ### 3.2 Bounded C0.3 resource envelope
 
 O-08 is undergoing the ratified replacement selection documented in
-`docs/protocol/styx-app-kernel-v0-resource-envelope-analysis.md`. Its 52 C0.3
+`docs/protocol/styx-app-kernel-v0-resource-envelope-analysis.md`. Its 53 C0.3
 entry dimensions cover canonical parsing, graph admission, authority
 projection, replay work, commitment material, four abstract capability minima
 and one structural exact capability-key declaration. Exceeding a candidate
 semantic or capability bound preserves the
 previous authoritative state and fails closed; it never authorizes truncation,
-selection by arrival order, partial replay or an AP authority shortcut.
+selection by arrival order, partial replay or an AP authority shortcut. The
+envelope explicitly bounds the exact maximum antichain of the C0.2j authority
+control poset before DP state insertion: an adversary can otherwise create
+exponential state growth with concurrent, individually valid control evidence
+even when fork and sibling counts remain small.
 
 The envelope does not prove that a browser, native runtime or storage backend
 can sustain those values. Eleven operational/runtime dimensions and four
 evidence-only dimensions remain outside C0.3 entry semantics. O-08 therefore
 adds no claim of delivery, persistence, recovery, freshness, rollback
 detection, physical eviction resistance, bounded attacker bandwidth or
-continued availability after authority exhaustion. Product profiles must add
+continued availability after authority exhaustion or after the selected
+authority-concurrency width is exceeded. Product profiles must add
 their own smaller enforceable limits and capability evidence without changing
 the ultimately selected transcript semantics. No replacement candidate is
 authoritative before the new measurement and ForgeRelay human-selection gate.

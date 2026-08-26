@@ -54,6 +54,63 @@ function evaluate(envelope, item) {
   };
 }
 
+function couplingResults(envelope) {
+  const value = (dimension) => BigInt(envelope.entries[dimension].selected_value);
+  const predicate = (observation, lhs, rhs) => ({
+    observation, lhs: Number(lhs), operator: "<=", rhs: Number(rhs), passed: lhs <= rhs,
+  });
+  return [
+    predicate("AUTHORITY_WIDTH_STRUCTURAL_CAPACITY", value("AUTHORITY_CONCURRENT_CONTROLS"), value("CREDENTIALS") + value("FORK_SLOTS")),
+    predicate("AUTHORITY_TRANSITION_CAPACITY", value("AUTHORITY_TRANSITIONS"), value("AUTHORITY_STATES") * value("AUTHORITY_CONCURRENT_CONTROLS")),
+    predicate("DIRECT_EDGE_REPLAY_WORK", value("ANCESTRY_RELATIONS"), value("REPLAYED_EVENT_WORK")),
+    predicate("EVENT_SIGNATURE_WORK", value("EVENTS_ADMITTED") * value("SIGNATURE_ATTEMPTS"), value("REPLAYED_EVENT_WORK")),
+    predicate("FRESH_REPLAY_WORK_CAPACITY", value("AUTHORITY_TRANSITIONS") * (1n + value("ORDINARY_PREFIX_QUERIES")), value("REPLAYED_EVENT_WORK")),
+  ];
+}
+
+function maximumAntichainWidth(predecessorObject) {
+  const vertices = Object.keys(predecessorObject).sort();
+  const known = new Set(vertices);
+  const closure = new Map();
+  for (const vertex of vertices) {
+    const required = predecessorObject[vertex];
+    if (!Array.isArray(required) || required.some((item) => !known.has(item))) {
+      throw new Error("authority poset references an unknown predecessor");
+    }
+    closure.set(vertex, new Set(required));
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const vertex of vertices) {
+      const expanded = new Set(closure.get(vertex));
+      for (const predecessor of closure.get(vertex)) {
+        for (const ancestor of closure.get(predecessor)) expanded.add(ancestor);
+      }
+      if (expanded.has(vertex)) throw new Error("authority poset is cyclic");
+      if (expanded.size !== closure.get(vertex).size) {
+        closure.set(vertex, expanded);
+        changed = true;
+      }
+    }
+  }
+  const matchedRight = new Map();
+  function augment(left, seen) {
+    for (const right of vertices.filter((vertex) => closure.get(vertex).has(left))) {
+      if (seen.has(right)) continue;
+      seen.add(right);
+      if (!matchedRight.has(right) || augment(matchedRight.get(right), seen)) {
+        matchedRight.set(right, left);
+        return true;
+      }
+    }
+    return false;
+  }
+  let matching = 0;
+  for (const vertex of vertices) if (augment(vertex, new Set())) matching += 1;
+  return vertices.length - matching;
+}
+
 const request = JSON.parse(readFileSync(0, "utf8"));
 if (request.schema !== "styx-o08-oracle-request/v1" || !Array.isArray(request.cases)) {
   throw new Error("request schema mismatch");
@@ -61,6 +118,11 @@ if (request.schema !== "styx-o08-oracle-request/v1" || !Array.isArray(request.ca
 const result = {
   schema: "styx-o08-oracle-response/v1",
   results: request.cases.map((item) => evaluate(request.envelope, item)),
+  couplings: request.include_couplings ? couplingResults(request.envelope) : [],
+  poset_widths: (request.posets ?? []).map((item) => ({
+    witness_id: item.witness_id,
+    exact_width: maximumAntichainWidth(item.predecessors),
+  })),
   verdict: "PASS",
 };
 process.stdout.write(JSON.stringify(result) + "\n");

@@ -63,6 +63,21 @@ class SchemaTests(unittest.TestCase):
             with self.assertRaises(EnvelopeError):
                 validate_candidate_set(payload)
 
+    def test_authority_and_replay_couplings_fail_closed(self):
+        mutations = (
+            ("AUTHORITY_CONCURRENT_CONTROLS", 100),
+            ("AUTHORITY_TRANSITIONS", 10**9),
+            ("ANCESTRY_RELATIONS", 10**9),
+            ("SIGNATURE_ATTEMPTS", 10**9),
+            ("ORDINARY_PREFIX_QUERIES", 10**9),
+        )
+        for dimension, value in mutations:
+            with self.subTest(dimension=dimension):
+                payload = copy.deepcopy(load_json(CANDIDATES_PATH))
+                payload["candidates"][0]["values"][dimension] = value
+                with self.assertRaises(EnvelopeError):
+                    validate_candidate_set(payload)
+
     def test_duplicate_member_and_noncanonical_selected_fail(self):
         with tempfile.TemporaryDirectory() as temporary:
             duplicate = Path(temporary) / "duplicate.json"

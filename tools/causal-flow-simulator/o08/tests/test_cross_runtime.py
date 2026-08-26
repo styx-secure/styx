@@ -51,6 +51,19 @@ class CrossRuntimeTests(unittest.TestCase):
         self.assertEqual(response["results"][0]["observed"], "9007199254740992")
         self.assertEqual(response["results"][0]["disposition"], "CURRENT_OBJECT_OUT_OF_PROFILE")
 
+    def test_exact_maximum_antichain_width(self):
+        from scenario_generator import maximum_antichain_width
+
+        self.assertEqual(maximum_antichain_width({
+            "a": frozenset(), "b": frozenset(), "c": frozenset({"a"}),
+            "d": frozenset({"b"}),
+        }), 2)
+        self.assertEqual(maximum_antichain_width({
+            "a": frozenset(), "b": frozenset({"a"}), "c": frozenset({"b"}),
+        }), 1)
+        with self.assertRaises(ValueError):
+            maximum_antichain_width({"a": frozenset({"b"}), "b": frozenset({"a"})})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -35,7 +35,7 @@ class ActivationTests(unittest.TestCase):
     def test_capability_declaration_is_an_exact_four_key_map_not_a_scalar(self):
         payload = load_json(CANDIDATES_PATH)
         candidate = validate_candidate_set(payload)[1]
-        profile = payload["capability_profiles"]["balanced"]
+        profile = payload["capability_profiles"]["HOST_EXTENDED"]
         self.assertNotIn("activation_capability_set", profile)
         self.assertEqual(_activation_outcome(candidate, profile), "PASS")
         hostile = dict(profile); hostile["unknown_capability"] = 1

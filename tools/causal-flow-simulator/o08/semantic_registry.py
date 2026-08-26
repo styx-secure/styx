@@ -51,7 +51,7 @@ RECOVERY_CLASSES = frozenset(
 )
 
 EXPECTED_ROLE_COUNTS = {
-    ROLE_SEMANTIC: 45,
+    ROLE_SEMANTIC: 46,
     ROLE_CAPABILITY: 5,
     ROLE_ZERO: 2,
     ROLE_POST: 11,
@@ -62,7 +62,7 @@ EXPECTED_HANDOFF_STAGE_COUNTS = {
     "S1_TRANSPORT_ADMISSION": 0,
     "S3_KERNEL_STRUCTURAL": 21,
     "S4_GRAPH_ADMISSION": 10,
-    "S5_AUTHORITY_PROJECTION": 15,
+    "S5_AUTHORITY_PROJECTION": 16,
     "S6_DURABLE_COMMIT": 10,
 }
 
@@ -76,6 +76,7 @@ FIXED_SEMANTIC_VALUES = {
     "SIGNATURE_OCTETS": 64,
     "VERIFICATION_KEY_OCTETS": 32,
     "PROFILE_VERSION_SKEW": 0,
+    "CUSTODY_REDUNDANCY": 1,
 }
 
 DERIVED_STRUCTURAL_VALUES = {
@@ -183,8 +184,8 @@ def load_source_registry(path: Path = SOURCES_PATH) -> SourceRegistry:
         dimensions.extend(group.get("dimensions", ()))
         for source in group.get("sources", ()):
             anchors.append((source["path"], source["anchor"]))
-    if len(dimensions) != 67 or len(set(dimensions)) != 67:
-        raise RegistryError("source inventory must contain 67 unique dimensions")
+    if len(dimensions) != 68 or len(set(dimensions)) != 68:
+        raise RegistryError("source inventory must contain 68 unique dimensions")
     if len(anchors) != 28 or len(set(anchors)) != 28:
         raise RegistryError("source inventory must contain 28 unique anchors")
 
@@ -218,7 +219,7 @@ def load_source_registry(path: Path = SOURCES_PATH) -> SourceRegistry:
                 raise RegistryError(f"C0.3 entry uses forbidden handoff stage: {stage}")
             handoff_counts[stage] += 1
     if handoff_counts != EXPECTED_HANDOFF_STAGE_COUNTS:
-        raise RegistryError("65-row handoff stage distribution mismatch")
+        raise RegistryError("66-row handoff stage distribution mismatch")
 
     coverage = payload.get("integer_field_coverage")
     if not isinstance(coverage, list) or not coverage:
@@ -274,7 +275,7 @@ def scope_for(dimension: str) -> str:
         "FRAMING_OBJECT_OCTETS", "AP_TRANSITION_BLOCK_OCTETS", "REFERENCE_OCTETS",
         "TEXT_FIELD_OCTETS", "PARENTS_PER_EVENT", "CHUNK_OCTETS",
         "CHUNKS_PER_CONTENT", "SIGNATURE_OCTETS", "VERIFICATION_KEY_OCTETS",
-        "GENESIS_BODY_OCTETS", "GENESIS_POLICY_OCTETS",
+        "GENESIS_BODY_OCTETS", "GENESIS_POLICY_OCTETS", "SIGNATURE_ATTEMPTS",
     }:
         return "PER_CANONICAL_OBJECT"
     if dimension in {"EVIDENCE_PER_CREDENTIAL", "ALIASES_PER_CREDENTIAL", "LINEAGE_DEPTH"}:

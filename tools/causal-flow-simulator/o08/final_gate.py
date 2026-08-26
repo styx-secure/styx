@@ -17,13 +17,14 @@ from urllib.request import HTTPRedirectHandler, Request, build_opener
 sys.dont_write_bytecode = True
 
 from canonical_report import store_report
-from semantic_registry import BASE_SHA
+from semantic_registry import BASE_SHA, canonical_bytes
 from validate_envelope import fetch_provider_object, validate_selection
+from run_measurements import validate_set
 
 
 REPORT_SCHEMA = "styx-o08-final-gate-report/v1"
 TASK_ISSUE_URL = "https://api.github.com/repos/styx-secure/styx/issues/250"
-TASK_ISSUE_BODY_SHA256 = "63ce3a7ac0ae44c3ac81275e21186bbf4c9fe04a4d76709f6b2c29e400e19cd9"
+TASK_ISSUE_BODY_SHA256 = "075adf87a26a7377d803cf6fb123537a45f044e53c134065fc6a3b9130cca923"
 PRODUCERS = (
     ("inventory", "validate_inventory.py", ()),
     ("envelope", "validate_envelope.py", ("--approved-envelope-digest", "{approved}")),
@@ -33,6 +34,11 @@ PRODUCERS = (
     ("mutations", "run_mutations.py", ()),
     ("handoff", "generate_handoff.py", ()),
     ("scope", "scope_guard.py", ("--base", "{base}", "--candidate", "{candidate}", "--mode", "strict")),
+    (
+        "structural-measurements", "run_measurements.py",
+        ("--regenerate-structural-set", "--selection-head", "{selection_head}",
+         "--javascript", "{javascript}"),
+    ),
 )
 
 
@@ -130,6 +136,51 @@ def _run_all(repo: Path, output_root: Path, values: dict[str, str]) -> dict[str,
     return reports
 
 
+def _verify_submitted_measurements(
+    args: argparse.Namespace, selection: dict[str, object], repo: Path,
+) -> dict[str, object]:
+    if len(args.measurement_report) != 6:
+        raise ValueError("exactly six submitted measurement reports are required")
+    paths = [path.resolve(strict=True) for path in args.measurement_report]
+    if len(set(paths)) != 6 or any(not path.is_file() or path.is_symlink() for path in paths):
+        raise ValueError("submitted measurement report paths are not six distinct regular files")
+    comparison_path = args.comparison_report.resolve(strict=True)
+    if not comparison_path.is_file() or comparison_path.is_symlink():
+        raise ValueError("comparison report is not a regular file")
+
+    provider_reports = {
+        (item["candidate_id"], item["capability_profile"]): item["report_sha256"]
+        for item in selection["measurement_reports"]
+    }
+    observed_reports: dict[tuple[str, str], str] = {}
+    for path in paths:
+        value = json.loads(path.read_bytes())
+        pair = (value.get("candidate_id"), value.get("capability_profile"))
+        if pair in observed_reports:
+            raise ValueError("duplicate submitted measurement pair")
+        observed_reports[pair] = sha256(path.read_bytes()).hexdigest()
+    if observed_reports != provider_reports:
+        raise ValueError("submitted measurement identities differ from provider decision")
+    if sha256(comparison_path.read_bytes()).hexdigest() != selection["comparison_report_sha256"]:
+        raise ValueError("submitted comparison identity differs from provider decision")
+
+    candidate_set_path = repo / "tools/causal-flow-simulator/o08/resource-envelope.candidates.json"
+    regenerated_comparison = validate_set(
+        repo, paths, args.selection_head, candidate_set_path, args.javascript,
+    )
+    if comparison_path.read_bytes() != canonical_bytes(regenerated_comparison):
+        raise ValueError("submitted comparison is not derivable from the six reports")
+    if regenerated_comparison["selection_head"] != selection["selection_head"]:
+        raise ValueError("comparison selection HEAD mismatch")
+    if regenerated_comparison["candidate_set_sha256"] != selection["candidate_set_sha256"]:
+        raise ValueError("comparison candidate-set digest mismatch")
+    if selection["selected_envelope_sha256"] not in set(
+        regenerated_comparison["candidate_envelope_digests"].values()
+    ):
+        raise ValueError("selected envelope is absent from the comparison")
+    return regenerated_comparison
+
+
 def build_report(args: argparse.Namespace) -> dict[str, object]:
     repo_one = args.repo_one.resolve(strict=True)
     repo_two = args.repo_two.resolve(strict=True)
@@ -153,14 +204,19 @@ def build_report(args: argparse.Namespace) -> dict[str, object]:
     selection = validate_selection(
         provider, url=args.selection_provider_url, object_id=args.selection_provider_object_id,
         base=args.base, selection_head=args.selection_head,
+        candidate_set_path=(
+            repo_one / "tools/causal-flow-simulator/o08/resource-envelope.candidates.json"
+        ),
     )
     if selection["selected_envelope_sha256"] != args.approved_envelope_digest:
         raise ValueError("approved digest mismatch")
+    submitted_comparison = _verify_submitted_measurements(args, selection, repo_one)
     with tempfile.TemporaryDirectory(prefix="styx-o08-final-") as temporary:
         root = Path(temporary)
         values = {
             "approved": args.approved_envelope_digest, "javascript": args.javascript,
             "base": args.base, "candidate": args.candidate,
+            "selection_head": args.selection_head,
         }
         one = _run_all(repo_one, root / "one", values)
         two = _run_all(repo_two, root / "two", values)
@@ -174,6 +230,11 @@ def build_report(args: argparse.Namespace) -> dict[str, object]:
         raise ValueError("canonical evidence differs across clean checkouts")
     if task_scope_one != task_scope_two:
         raise ValueError("trusted task-scope evidence differs across clean checkouts")
+    regenerated_structural = json.loads(one["structural-measurements"])
+    if regenerated_structural.get("structural_identities") != submitted_comparison.get(
+        "deterministic_structural_identities"
+    ):
+        raise ValueError("independently regenerated structural evidence differs from selection evidence")
     return {
         "schema": REPORT_SCHEMA, "report_families": sorted(one),
         "report_family_count": len(one), "pairwise_byte_equal": True,
@@ -195,6 +256,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--selection-provider-object-id", required=True)
     parser.add_argument("--refresh-selection-evidence", action="store_true")
     parser.add_argument("--approved-envelope-digest", required=True)
+    parser.add_argument("--measurement-report", action="append", required=True, type=Path)
+    parser.add_argument("--comparison-report", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
@@ -203,7 +266,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
         print(f"O-08 final gate failed: {error}", file=sys.stderr)
         return 2
-    print("O-08 FINAL_GATE verdict=PASS reports=8")
+    print("O-08 FINAL_GATE verdict=PASS reports=9")
     return 0
 
 

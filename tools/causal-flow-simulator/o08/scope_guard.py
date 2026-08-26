@@ -180,7 +180,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, UnicodeError, subprocess.CalledProcessError, ScopeViolation, ValueError) as error:
         print(f"O-08 scope failure: {error}", file=sys.stderr)
         return 2
-    print("O-08 scope verdict=PASS role=PACKAGE_SHAPE_ONLY dimensions=67 groups=12 stages=8 anchors=28 entry=52 post=11 evidence=4 handoff=65")
+    print("O-08 scope verdict=PASS role=PACKAGE_SHAPE_ONLY dimensions=68 groups=12 stages=8 anchors=28 entry=53 post=11 evidence=4 handoff=66")
     return 0
 
 

@@ -13,7 +13,7 @@ sys.dont_write_bytecode = True
 
 from canonical_report import store_report
 from envelope_model import evaluate_observation, load_selected_envelope, validate_selected
-from scenario_generator import boundary_scenarios
+from scenario_generator import boundary_scenarios, combined_scenarios
 from semantic_registry import CANDIDATES_PATH, SELECTED_PATH, load_json, load_source_registry
 
 
@@ -39,7 +39,20 @@ def build_report(javascript: str) -> dict[str, object]:
                 "authoritative_state_after": result.authoritative_state_after,
                 "authoritative_state_mutated": result.authoritative_state_mutated,
             })
-    request = {"schema": "styx-o08-oracle-request/v1", "envelope": envelope, "cases": cases}
+    coupling_names = {
+        "AUTHORITY_WIDTH_STRUCTURAL_CAPACITY", "AUTHORITY_TRANSITION_CAPACITY",
+        "DIRECT_EDGE_REPLAY_WORK", "EVENT_SIGNATURE_WORK", "FRESH_REPLAY_WORK_CAPACITY",
+    }
+    couplings = [
+        predicate
+        for row in combined_scenarios(envelope, registry)
+        for predicate in row["predicates"]
+        if predicate["observation"] in coupling_names
+    ]
+    request = {
+        "schema": "styx-o08-oracle-request/v1", "envelope": envelope,
+        "cases": cases, "include_couplings": True,
+    }
     completed = subprocess.run(
         [javascript, str(Path(__file__).with_name("independent_oracle.mjs"))],
         input=json.dumps(request, separators=(",", ":")), text=True,
@@ -48,14 +61,20 @@ def build_report(javascript: str) -> dict[str, object]:
     if completed.returncode != 0:
         raise ValueError(f"JavaScript oracle failed: {completed.stderr.strip()}")
     response = json.loads(completed.stdout)
-    if response != {"schema": "styx-o08-oracle-response/v1", "results": expected, "verdict": "PASS"}:
+    if response != {
+        "schema": "styx-o08-oracle-response/v1", "results": expected,
+        "couplings": couplings, "poset_widths": [], "verdict": "PASS",
+    }:
         raise ValueError("Python/JavaScript semantic disagreement")
     rows = [
         {"dimension": item["dimension"], "stage": item["stage"], "observed": item["observed"],
          "disposition": item["disposition"]}
         for item in expected
     ]
-    return {"schema": REPORT_SCHEMA, "case_count": len(rows), "rows": rows, "verdict": "PASS"}
+    return {
+        "schema": REPORT_SCHEMA, "case_count": len(rows), "rows": rows,
+        "coupling_count": len(couplings), "couplings": couplings, "verdict": "PASS",
+    }
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -10,8 +10,8 @@ from semantic_registry import ENTRY_ROLES, ROLE_CAPABILITY, SourceRegistry
 
 COMBINED_SCENARIOS = (
     ("MAX_GRAPH", ("CONTEXT_LIFETIME_EVENTS", "PARENTS_PER_EVENT", "ANCESTRY_RELATIONS")),
-    ("MAX_AUTHORITY", ("CONTROL_EVENTS", "FORK_SLOTS", "SIBLINGS_PER_FORK", "CREDENTIALS")),
-    ("MAX_AUTHORITY_DP", ("AUTHORITY_STATES", "AUTHORITY_TRANSITIONS", "ORDINARY_PREFIX_QUERIES")),
+    ("MAX_AUTHORITY", ("CONTROL_EVENTS", "FORK_SLOTS", "SIBLINGS_PER_FORK", "CREDENTIALS", "AUTHORITY_CONCURRENT_CONTROLS")),
+    ("MAX_AUTHORITY_DP", ("AUTHORITY_CONCURRENT_CONTROLS", "AUTHORITY_STATES", "AUTHORITY_TRANSITIONS", "ORDINARY_PREFIX_QUERIES", "REPLAYED_EVENT_WORK")),
     ("MAX_PENDING", ("PENDING_ROOTS", "PENDING_DESCENDANTS", "HALTED_REPLAY_SPAN")),
     ("MAX_CONTENT", ("RECORDS", "CONTENT_EXACT_OCTETS", "CHUNKS_PER_CONTENT", "REMOVAL_DIRECTIVES")),
     ("MAX_DURABLE", ("DURABLE_REQUIRED_OCTETS", "DURABLE_RECORDS", "CUSTODY_REDUNDANCY")),
@@ -28,6 +28,50 @@ COMBINED_SCENARIOS = (
 )
 
 MAX_U64 = (1 << 64) - 1
+
+
+def maximum_antichain_width(predecessors: dict[str, frozenset[str]]) -> int:
+    """Return the exact width of a finite poset using Dilworth matching.
+
+    ``predecessors`` may contain direct or transitive predecessors.  The
+    transitive closure is computed deterministically before maximum bipartite
+    matching, so the result is independent of input and arrival order.
+    """
+
+    vertices = tuple(sorted(predecessors))
+    if any(not required <= set(vertices) for required in predecessors.values()):
+        raise ValueError("authority poset references an unknown predecessor")
+    closure = {vertex: set(predecessors[vertex]) for vertex in vertices}
+    changed = True
+    while changed:
+        changed = False
+        for vertex in vertices:
+            expanded = set(closure[vertex])
+            for predecessor in tuple(closure[vertex]):
+                expanded.update(closure[predecessor])
+            if vertex in expanded:
+                raise ValueError("authority poset is cyclic")
+            if expanded != closure[vertex]:
+                closure[vertex] = expanded
+                changed = True
+
+    matched_right: dict[str, str] = {}
+
+    def augment(left: str, seen: set[str]) -> bool:
+        for right in sorted(
+            vertex for vertex in vertices if left in closure[vertex]
+        ):
+            if right in seen:
+                continue
+            seen.add(right)
+            incumbent = matched_right.get(right)
+            if incumbent is None or augment(incumbent, seen):
+                matched_right[right] = left
+                return True
+        return False
+
+    matching = sum(augment(vertex, set()) for vertex in vertices)
+    return len(vertices) - matching
 
 
 def _checked_add(*values: int) -> int:
@@ -113,26 +157,43 @@ def combined_scenarios(envelope: dict[str, Any], registry: SourceRegistry) -> li
             continue
         predicates: list[dict[str, Any]]
         if scenario_id == "MAX_GRAPH":
-            predicates = [_predicate(
-                "DIRECT_EDGE_CAPACITY",
-                _checked_mul(_selected(envelope, "CONTEXT_LIFETIME_EVENTS"), _selected(envelope, "PARENTS_PER_EVENT")),
-                "<=", _selected(envelope, "ANCESTRY_RELATIONS"),
-            )]
+            predicates = [
+                _predicate(
+                    "DIRECT_EDGE_CAPACITY",
+                    _checked_mul(_selected(envelope, "CONTEXT_LIFETIME_EVENTS"), _selected(envelope, "PARENTS_PER_EVENT")),
+                    "<=", _selected(envelope, "ANCESTRY_RELATIONS"),
+                ),
+                _predicate(
+                    "DIRECT_EDGE_REPLAY_WORK",
+                    _selected(envelope, "ANCESTRY_RELATIONS"), "<=",
+                    _selected(envelope, "REPLAYED_EVENT_WORK"),
+                ),
+            ]
         elif scenario_id == "MAX_AUTHORITY":
-            predicates = [_predicate(
-                "FORK_SIBLING_CONTROL_CAPACITY",
-                _checked_mul(_selected(envelope, "FORK_SLOTS"), _selected(envelope, "SIBLINGS_PER_FORK")),
-                "<=", _selected(envelope, "CONTROL_EVENTS"),
-            )]
+            predicates = [
+                _predicate(
+                    "FORK_SIBLING_CONTROL_CAPACITY",
+                    _checked_mul(_selected(envelope, "FORK_SLOTS"), _selected(envelope, "SIBLINGS_PER_FORK")),
+                    "<=", _selected(envelope, "CONTROL_EVENTS"),
+                ),
+                _predicate(
+                    "AUTHORITY_WIDTH_STRUCTURAL_CAPACITY",
+                    _selected(envelope, "AUTHORITY_CONCURRENT_CONTROLS"), "<=",
+                    _checked_add(_selected(envelope, "CREDENTIALS"), _selected(envelope, "FORK_SLOTS")),
+                ),
+            ]
         elif scenario_id == "MAX_AUTHORITY_DP":
             predicates = [
                 _predicate(
                     "AUTHORITY_TRANSITION_CAPACITY", _selected(envelope, "AUTHORITY_TRANSITIONS"), "<=",
-                    _checked_mul(_selected(envelope, "AUTHORITY_STATES"), _selected(envelope, "FORK_SLOTS")),
+                    _checked_mul(_selected(envelope, "AUTHORITY_STATES"), _selected(envelope, "AUTHORITY_CONCURRENT_CONTROLS")),
                 ),
                 _predicate(
-                    "PREFIX_QUERY_CAPACITY", _selected(envelope, "ORDINARY_PREFIX_QUERIES"), "<=",
-                    _selected(envelope, "AUTHORITY_STATES"),
+                    "FRESH_REPLAY_WORK_CAPACITY",
+                    _checked_mul(
+                        _selected(envelope, "AUTHORITY_TRANSITIONS"),
+                        _checked_add(1, _selected(envelope, "ORDINARY_PREFIX_QUERIES")),
+                    ), "<=", _selected(envelope, "REPLAYED_EVENT_WORK"),
                 ),
             ]
         elif scenario_id == "MAX_PENDING":
@@ -167,11 +228,18 @@ def combined_scenarios(envelope: dict[str, Any], registry: SourceRegistry) -> li
                 ),
             ]
         elif scenario_id == "MAX_GENESIS":
-            predicates = [_predicate(
-                "GENESIS_SIGNATURE_WORK", _checked_mul(
-                    _selected(envelope, "GENESIS_ATTEMPTS"), _selected(envelope, "SIGNATURE_ATTEMPTS")
-                ), "<=", _selected(envelope, "REPLAYED_EVENT_WORK"),
-            )]
+            predicates = [
+                _predicate(
+                    "GENESIS_SIGNATURE_WORK", _checked_mul(
+                        _selected(envelope, "GENESIS_ATTEMPTS"), _selected(envelope, "SIGNATURE_ATTEMPTS")
+                    ), "<=", _selected(envelope, "REPLAYED_EVENT_WORK"),
+                ),
+                _predicate(
+                    "EVENT_SIGNATURE_WORK", _checked_mul(
+                        _selected(envelope, "EVENTS_ADMITTED"), _selected(envelope, "SIGNATURE_ATTEMPTS")
+                    ), "<=", _selected(envelope, "REPLAYED_EVENT_WORK"),
+                ),
+            ]
         elif scenario_id == "MAX_ACTORS":
             predicates = [
                 _predicate(
@@ -198,7 +266,7 @@ def combined_scenarios(envelope: dict[str, Any], registry: SourceRegistry) -> li
                 ),
                 _predicate(
                     "STEERING_TRANSITION_CAPACITY", _selected(envelope, "AUTHORITY_TRANSITIONS"), "<=",
-                    _checked_mul(_selected(envelope, "AUTHORITY_STATES"), _selected(envelope, "FORK_SLOTS")),
+                    _checked_mul(_selected(envelope, "AUTHORITY_STATES"), _selected(envelope, "AUTHORITY_CONCURRENT_CONTROLS")),
                 ),
             ]
         elif scenario_id == "MAX_EXPANSION":

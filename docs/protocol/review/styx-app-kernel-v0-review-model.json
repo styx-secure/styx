@@ -452,7 +452,7 @@
         "OB-K01"
       ],
       "owner": "K",
-      "reason": "The ratified remediation compares 45 semantic maxima, four activation-capability minima, one structural exact capability-key declaration and two exact-zero values; eleven post-C0.3 and four evidence-only dimensions remain non-entry. A new measurement and human-selection gate is pending, and no product/runtime support follows.",
+      "reason": "The ratified remediation compares 46 semantic maxima, including exact authority-poset antichain width, four activation-capability minima, one structural exact capability-key declaration and two exact-zero values; eleven post-C0.3 and four evidence-only dimensions remain non-entry. A new measurement and human-selection gate is pending, and no product/runtime support follows.",
       "status": "OPEN"
     },
     {
@@ -5957,7 +5957,7 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "09b2b82faa1b267aad16cb6bd816ea1a287565083cd6f2e423d345254ddea0cd"
+      "sha256": "1fc852e4e2d920e128639e484b90f027f2647303cdfad4d1f6385d000a703ee2"
     },
     {
       "authority": "evidence",
@@ -6011,7 +6011,7 @@
       "authority": "normative",
       "id": "responsibility",
       "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
-      "sha256": "64d2c567883add5ebb9de7e6d1fc86ecea0be617a1e567c5067f0141f71673e3"
+      "sha256": "eccc6bba521005833f164f4669fac6f016486ecf57d403958a40979254529297"
     },
     {
       "authority": "evidence",
@@ -6029,7 +6029,7 @@
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "ae48113fc2556f7312915bbb98f47280bcedd9ce4e6558a98da9327c2c7ec024"
+      "sha256": "bd7004f2933751dd51fa7ac718802739e9dfa368815c969a2ae1adda3c0a864c"
     },
     {
       "authority": "normative",

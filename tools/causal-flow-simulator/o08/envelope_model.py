@@ -29,7 +29,7 @@ from semantic_registry import (
 
 PROFILE = "STYX_APP_KERNEL_V0_TRANSCRIPT_ONLY"
 CANDIDATE_IDS = ("conservative", "balanced", "expansive")
-CAPABILITY_PROFILE_IDS = ("conservative", "balanced")
+CAPABILITY_PROFILE_IDS = ("HOST_MINIMAL", "HOST_EXTENDED")
 JAVASCRIPT_SAFE_INTEGER = (1 << 53) - 1
 
 
@@ -129,6 +129,37 @@ def validate_candidate_set(
             raise EnvelopeError("SEQUENCE_VALUE derivation mismatch")
         if values["CONTENT_EXACT_OCTETS"] > chunks[0] * values["CHUNKS_PER_CONTENT"]:
             raise EnvelopeError("content/chunk geometry mismatch")
+        coupling_requirements = (
+            (
+                values["AUTHORITY_CONCURRENT_CONTROLS"],
+                values["CREDENTIALS"] + values["FORK_SLOTS"],
+                "authority width exceeds covered credentials and fork slots",
+            ),
+            (
+                values["AUTHORITY_TRANSITIONS"],
+                values["AUTHORITY_STATES"] * values["AUTHORITY_CONCURRENT_CONTROLS"],
+                "authority transition ceiling exceeds structural state capacity",
+            ),
+            (
+                values["ANCESTRY_RELATIONS"],
+                values["REPLAYED_EVENT_WORK"],
+                "direct causal edges exceed replay-work envelope",
+            ),
+            (
+                values["EVENTS_ADMITTED"] * values["SIGNATURE_ATTEMPTS"],
+                values["REPLAYED_EVENT_WORK"],
+                "per-object signature work exceeds replay-work envelope",
+            ),
+            (
+                values["AUTHORITY_TRANSITIONS"]
+                * (1 + values["ORDINARY_PREFIX_QUERIES"]),
+                values["REPLAYED_EVENT_WORK"],
+                "fresh whole-fold replay work exceeds its envelope",
+            ),
+        )
+        for left, right, message in coupling_requirements:
+            if left > right:
+                raise EnvelopeError(message)
         for dimension, fixed in FROZEN_CANDIDATE_VALUES.items():
             if values[dimension] != fixed:
                 raise EnvelopeError(f"frozen semantic value changed: {dimension}")
