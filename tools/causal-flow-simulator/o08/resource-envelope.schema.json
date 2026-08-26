@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://styxsecure.org/schemas/styx-o08-resource-envelope-v1.json",
+  "title": "Styx O-08 C0.3 resource envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "envelope_version", "profile", "candidate_id", "candidate_digest", "entries"],
+  "properties": {
+    "schema": {"const": "styx-o08-resource-envelope/v1"},
+    "envelope_version": {"const": "styx-app-kernel-v0-resource-envelope/1"},
+    "profile": {"const": "STYX_APP_KERNEL_V0_TRANSCRIPT_ONLY"},
+    "candidate_id": {"enum": ["conservative", "balanced", "expansive"]},
+    "candidate_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "entries": {
+      "type": "object",
+      "minProperties": 67,
+      "maxProperties": 67,
+      "patternProperties": {
+        "^[A-Z][A-Z0-9_]+$": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["role", "unit", "scope", "stages", "selected_value", "comparison", "integer_range", "enforcement_points", "closed_values", "reopen_predicate"],
+          "properties": {
+            "role": {"enum": ["C03_SEMANTIC_LIMIT", "C03_ACTIVATION_CAPABILITY_INPUT", "C03_EXPLICIT_ZERO_OR_UNSUPPORTED", "POST_C03_LAYER_PROFILE", "EVIDENCE_ONLY"]},
+            "unit": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+            "scope": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+            "stages": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^S[0-7]_[A-Z_]+$"}},
+            "selected_value": {"type": ["integer", "null"], "minimum": 0},
+            "comparison": {"enum": ["MAXIMUM", "MINIMUM_CAPABILITY", "EXACT_ZERO", "NON_ENTRY"]},
+            "integer_range": {
+              "oneOf": [
+                {"type": "null"},
+                {"type": "array", "prefixItems": [{"type": "integer", "minimum": 0}, {"type": ["integer", "null"], "minimum": 0}], "minItems": 2, "maxItems": 2}
+              ]
+            },
+            "enforcement_points": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^BEFORE_S[0-7]_[A-Z_]+_PROTECTED_WORK$"}},
+            "closed_values": {"oneOf": [{"type": "null"}, {"type": "array", "items": {"type": "integer", "minimum": 0}, "minItems": 1, "uniqueItems": true}]},
+            "reopen_predicate": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    }
+  }
+}
