@@ -16,9 +16,9 @@ import sys
 sys.dont_write_bytecode = True
 
 from report_schema import (
-    ReportHygieneContext,
+    FinalEvidenceIdentityContext,
     SCOPE_SCHEMA,
-    repository_hygiene_context,
+    final_evidence_hygiene_context,
     validate_canonical_report,
 )
 
@@ -469,12 +469,18 @@ def enforce_test_authenticator_isolation(repo: Path, candidate: str) -> None:
 def validate_scope_report(
     report: dict[str, object],
     *,
-    hygiene_context: ReportHygieneContext,
+    hygiene_context: FinalEvidenceIdentityContext,
 ) -> dict[str, object]:
     return validate_canonical_report(report, hygiene_context=hygiene_context)
 
 
-def build_report(repo: Path, base_argument: str, candidate_argument: str) -> dict[str, object]:
+def build_report(
+    repo: Path,
+    base_argument: str,
+    candidate_argument: str,
+    *,
+    hygiene_context: FinalEvidenceIdentityContext,
+) -> dict[str, object]:
     base = _commit(repo, base_argument)
     candidate = _commit(repo, candidate_argument)
     if base_argument != BASE_SHA or base != BASE_SHA:
@@ -500,7 +506,7 @@ def build_report(repo: Path, base_argument: str, candidate_argument: str) -> dic
     }
     validate_scope_report(
         report,
-        hygiene_context=repository_hygiene_context(repo, base, candidate),
+        hygiene_context=hygiene_context,
     )
     return report
 
@@ -516,15 +522,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--base", required=True)
     parser.add_argument("--candidate", required=True)
     parser.add_argument("--mode", choices=("strict",), default="strict")
+    parser.add_argument("--bundle", required=True, type=Path)
+    parser.add_argument("--bundle-sha256", required=True)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
-        report = build_report(args.repo_root.resolve(), args.base, args.candidate)
+        hygiene = final_evidence_hygiene_context(
+            args.repo_root,
+            args.base,
+            args.candidate,
+            bundle=args.bundle,
+            bundle_sha256=args.bundle_sha256,
+        )
+        report = build_report(
+            args.repo_root.resolve(),
+            args.base,
+            args.candidate,
+            hygiene_context=hygiene,
+        )
         _store(args.output, report)
     except (OSError, UnicodeError, subprocess.CalledProcessError, ScopeViolation, ValueError) as error:
         print(f"O-07 scope failure: {error.__class__.__name__}: {error}", file=sys.stderr)
         return 2
-    print(f"O-07 scope verdict=PASS records={len(report['changed_relation'])}")
+    print(
+        f"O-07 scope verdict=PASS records={len(report['changed_relation'])} "
+        f"bundle_sha256={args.bundle_sha256}"
+    )
     return 0
 
 

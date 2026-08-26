@@ -2,30 +2,36 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
 import getpass
 import hashlib
 from pathlib import Path
 import re
 import socket
+import stat
 import subprocess
 
 
-PROBE_SCHEMA = "styx-o07-genesis-checkpoint-probe/v2"
-CROSS_RUNTIME_SCHEMA = "styx-o07-cross-runtime/v2"
-MUTATION_SCHEMA = "styx-o07-source-mutations/v2"
-SCOPE_SCHEMA = "styx-o07-scope-report/v2"
+PROBE_SCHEMA = "styx-o07-genesis-checkpoint-probe/v3"
+CROSS_RUNTIME_SCHEMA = "styx-o07-cross-runtime/v3"
+MUTATION_SCHEMA = "styx-o07-source-mutations/v3"
+SCOPE_SCHEMA = "styx-o07-scope-report/v3"
 
 _IDENTIFIER = re.compile(r"^[A-Z0-9][A-Z0-9_.:-]*$")
 _TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
 _ABSOLUTE_PATH = re.compile(r"(?:^|\s)(?:/[^\s]+|[A-Za-z]:[\\/][^\s]+)")
 _TIMESTAMP = re.compile(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?")
 _PROCESS_ID = re.compile(r"\b(?:pid|process[-_ ]?id)\s*[:=]?\s*\d+\b", re.IGNORECASE)
+_RUNTIME_MEASUREMENT = re.compile(
+    r"\b(?:elapsed|duration|runtime|execution[-_ ]?time)\s*[:=]\s*"
+    r"(?:\d+(?:\.\d+)?(?:ns|us|µs|ms|s|m|h)?|[^\s,;]+)",
+    re.IGNORECASE,
+)
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
-class ReportHygieneContext:
+class FinalEvidenceIdentityContext:
     """Repository and runtime identities forbidden in canonical reports."""
 
     repository_identities: tuple[str, ...]
@@ -38,40 +44,114 @@ class ReportHygieneContext:
             raise ValueError("report hygiene requires runtime identities")
 
 
-def repository_hygiene_context(
+def _git(repo: Path, *arguments: str) -> bytes:
+    return subprocess.run(
+        ["git", "-C", str(repo), *arguments],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ).stdout
+
+
+def verify_clean_checkout(repo: Path) -> Path:
+    """Require one exact, clean checkout including ignored and submodule state."""
+
+    resolved = repo.resolve(strict=True)
+    top_level = Path(_git(resolved, "rev-parse", "--show-toplevel").decode().strip()).resolve()
+    if top_level != resolved:
+        raise ValueError("repository root is not the checkout top level")
+    status_bytes = _git(
+        resolved,
+        "status",
+        "--porcelain=v2",
+        "--untracked-files=all",
+        "--ignored=matching",
+        "--ignore-submodules=none",
+    )
+    if status_bytes:
+        raise ValueError("checkout is not clean")
+    return resolved
+
+
+def _verified_bundle_identity(
+    repo: Path,
+    bundle: Path,
+    expected_sha256: str,
+    candidate_commit: str,
+) -> str:
+    if _SHA256.fullmatch(expected_sha256) is None:
+        raise ValueError("bundle SHA-256 is not canonical lowercase hex")
+    if bundle.is_symlink():
+        raise ValueError("bundle must not be a symlink")
+    metadata = bundle.stat()
+    if not stat.S_ISREG(metadata.st_mode) or metadata.st_size == 0:
+        raise ValueError("bundle must be a non-empty regular file")
+    bundle_bytes = bundle.read_bytes()
+    observed_sha256 = hashlib.sha256(bundle_bytes).hexdigest()
+    if observed_sha256 != expected_sha256:
+        raise ValueError("bundle SHA-256 mismatch")
+
+    subprocess.run(
+        ["git", "-C", str(repo), "bundle", "verify", str(bundle.resolve())],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    header = bundle_bytes.split(b"\n\n", 1)[0].splitlines()
+    if not header or header[0] not in {b"# v2 git bundle", b"# v3 git bundle"}:
+        raise ValueError("unsupported Git bundle header")
+    if any(line.startswith(b"-") for line in header[1:]):
+        raise ValueError("bundle does not contain complete history")
+    listed_heads = subprocess.run(
+        ["git", "bundle", "list-heads", str(bundle.resolve())],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ).stdout.decode().splitlines()
+    advertised = {line.split()[0] for line in listed_heads if line.split()}
+    if candidate_commit not in advertised:
+        raise ValueError("bundle does not advertise the exact candidate")
+    return observed_sha256
+
+
+def final_evidence_hygiene_context(
     repo: Path,
     base: str,
     candidate: str,
     *,
-    additional_identities: Iterable[str] = (),
-) -> ReportHygieneContext:
-    """Derive the exact checkout identities used by every report producer."""
+    bundle: Path,
+    bundle_sha256: str,
+) -> FinalEvidenceIdentityContext:
+    """Build the mandatory immutable identity context for every O-07 producer."""
 
-    resolved = repo.resolve()
-
-    def git(*arguments: str) -> bytes:
-        return subprocess.run(
-            ["git", "-C", str(resolved), *arguments],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        ).stdout
-
-    base_commit = git("rev-parse", f"{base}^{{commit}}").decode().strip()
-    candidate_commit = git("rev-parse", f"{candidate}^{{commit}}").decode().strip()
-    base_tree = git("rev-parse", f"{base_commit}^{{tree}}").decode().strip()
-    candidate_tree = git("rev-parse", f"{candidate_commit}^{{tree}}").decode().strip()
-    full_diff = git("diff", "--binary", "--full-index", base_commit, candidate_commit)
+    resolved = verify_clean_checkout(repo)
+    base_commit = _git(resolved, "rev-parse", f"{base}^{{commit}}").decode().strip()
+    candidate_commit = _git(resolved, "rev-parse", f"{candidate}^{{commit}}").decode().strip()
+    if subprocess.run(
+        ["git", "-C", str(resolved), "merge-base", "--is-ancestor", base_commit, candidate_commit],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    ).returncode != 0:
+        raise ValueError("Base is not an ancestor of the candidate")
+    base_tree = _git(resolved, "rev-parse", f"{base_commit}^{{tree}}").decode().strip()
+    candidate_tree = _git(resolved, "rev-parse", f"{candidate_commit}^{{tree}}").decode().strip()
+    full_diff = _git(resolved, "diff", "--binary", "--full-index", base_commit, candidate_commit)
     diff_identity = hashlib.sha256(full_diff).hexdigest()
+    bundle_identity = _verified_bundle_identity(
+        resolved,
+        bundle,
+        bundle_sha256,
+        candidate_commit,
+    )
     identities = (
         base_commit,
         candidate_commit,
         base_tree,
         candidate_tree,
         diff_identity,
-        *(identity for identity in additional_identities if identity),
+        bundle_identity,
     )
-    return ReportHygieneContext(
+    return FinalEvidenceIdentityContext(
         repository_identities=tuple(dict.fromkeys(identities)),
         runtime_values=(str(resolved), socket.gethostname(), getpass.getuser()),
     )
@@ -165,12 +245,11 @@ def _validate_probe(report: dict[str, object]) -> None:
     for index, item in enumerate(_list(report["external_gates"], "external_gates")):
         gate = _dict(
             item,
-            {"atom_instance_id", "gate_instance_id", "requirement", "state"},
+            {"atom_instance_id", "gate_instance_id", "state"},
             f"external gate {index}",
         )
         _identifier(gate["atom_instance_id"], f"external gate {index}.atom")
         _identifier(gate["gate_instance_id"], f"external gate {index}.gate")
-        _string(gate["requirement"], f"external gate {index}.requirement")
         _string(gate["state"], f"external gate {index}.state", {"REQUIRED_SEPARATE_GATE"})
     for item in _list(report["failed_semantic_atoms"], "failed_semantic_atoms"):
         _identifier(item, "failed semantic atom")
@@ -333,7 +412,7 @@ def _strings(value: object) -> Iterable[str]:
 def validate_canonical_report(
     report: object,
     *,
-    hygiene_context: ReportHygieneContext,
+    hygiene_context: FinalEvidenceIdentityContext,
 ) -> dict[str, object]:
     """Validate a closed schema and reject runtime or repository identity leakage."""
 
@@ -360,8 +439,20 @@ def validate_canonical_report(
             raise ValueError("canonical report contains a timestamp")
         if _PROCESS_ID.search(value):
             raise ValueError("canonical report contains a process identifier")
+        if _RUNTIME_MEASUREMENT.search(value):
+            raise ValueError("canonical report contains a runtime measurement")
         if any(needle in value for needle in identity_needles):
             raise ValueError("canonical report contains repository identity")
-        if any(needle == value or needle in value for needle in runtime_needles):
-            raise ValueError("canonical report contains runtime identity")
+        for needle in runtime_needles:
+            if value == needle:
+                raise ValueError("canonical report contains runtime identity")
+            labelled = re.compile(
+                r"(?:^|[^A-Za-z0-9_.-])"
+                r"(?:host|hostname|user|username)\s*[:=]\s*"
+                + re.escape(needle)
+                + r"(?:$|[^A-Za-z0-9_.-])",
+                re.IGNORECASE,
+            )
+            if labelled.search(value):
+                raise ValueError("canonical report contains runtime identity")
     return report

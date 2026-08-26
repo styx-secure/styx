@@ -7,6 +7,7 @@ import argparse
 from dataclasses import dataclass
 import importlib.util
 from pathlib import Path
+import subprocess
 import sys
 import types
 
@@ -22,7 +23,7 @@ from inventory import validate_inventory  # noqa: E402
 from o14.evidence_io import CanonicalJsonReport, public_failure  # noqa: E402
 from report_schema import (  # noqa: E402
     MUTATION_SCHEMA,
-    repository_hygiene_context,
+    final_evidence_hygiene_context,
     validate_canonical_report,
 )
 from test_helpers.mutation_harness import mutant_still_passes  # noqa: E402
@@ -185,19 +186,28 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", required=True, type=Path)
     parser.add_argument("--suite", required=True, choices=("required",))
+    parser.add_argument("--bundle", required=True, type=Path)
+    parser.add_argument("--bundle-sha256", required=True)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
         report, passed = build_report(args.repo_root.resolve())
-        hygiene = repository_hygiene_context(args.repo_root, BASE_SHA, "HEAD")
+        hygiene = final_evidence_hygiene_context(
+            args.repo_root,
+            BASE_SHA,
+            "HEAD",
+            bundle=args.bundle,
+            bundle_sha256=args.bundle_sha256,
+        )
         validate_canonical_report(report, hygiene_context=hygiene)
         CanonicalJsonReport.store(args.output, report)
-    except (OSError, KeyError, ValueError) as error:
+    except (OSError, KeyError, ValueError, subprocess.CalledProcessError) as error:
         print(f"O-07 mutations failed: {public_failure(error)}", file=sys.stderr)
         return 2
     print(
         f"O-07 MUTANTS verdict={report['verdict']} "
-        f"mutants={report['registered_mutant_count']} relations={report['semantic_relation_count']}"
+        f"mutants={report['registered_mutant_count']} relations={report['semantic_relation_count']} "
+        f"bundle_sha256={args.bundle_sha256}"
     )
     return 0 if passed else 1
 

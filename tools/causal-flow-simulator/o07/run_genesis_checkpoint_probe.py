@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import subprocess
 import sys
 
 sys.dont_write_bytecode = True
@@ -19,7 +20,7 @@ from inventory import validate_inventory  # noqa: E402
 from o14.evidence_io import CanonicalJsonReport, public_failure  # noqa: E402
 from report_schema import (  # noqa: E402
     PROBE_SCHEMA,
-    repository_hygiene_context,
+    final_evidence_hygiene_context,
     validate_canonical_report,
 )
 from test_helpers.scenario_engine import evaluate_semantic_scenario  # noqa: E402
@@ -54,7 +55,6 @@ def build_report() -> tuple[dict[str, object], bool]:
         {
             "atom_instance_id": entry["atom_instance_id"],
             "gate_instance_id": entry["scenario_instance_id"],
-            "requirement": entry["requirement"],
             "state": "REQUIRED_SEPARATE_GATE",
         }
         for entry in inventory.gate_entries
@@ -77,19 +77,28 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", required=True, type=Path)
     parser.add_argument("--suite", required=True, choices=("required",))
+    parser.add_argument("--bundle", required=True, type=Path)
+    parser.add_argument("--bundle-sha256", required=True)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
         report, passed = build_report()
-        hygiene = repository_hygiene_context(args.repo_root, BASE_SHA, "HEAD")
+        hygiene = final_evidence_hygiene_context(
+            args.repo_root,
+            BASE_SHA,
+            "HEAD",
+            bundle=args.bundle,
+            bundle_sha256=args.bundle_sha256,
+        )
         validate_canonical_report(report, hygiene_context=hygiene)
         CanonicalJsonReport.store(args.output, report)
-    except (OSError, KeyError, ValueError) as error:
+    except (OSError, KeyError, ValueError, subprocess.CalledProcessError) as error:
         print(f"O-07 probe failed: {public_failure(error)}", file=sys.stderr)
         return 2
     print(
         f"O-07 PROBE semantic={report['semantic_verdict']} "
-        f"atoms={report['semantic_atom_count']} external_gates={report['external_gate_count']}"
+        f"atoms={report['semantic_atom_count']} external_gates={report['external_gate_count']} "
+        f"bundle_sha256={args.bundle_sha256}"
     )
     return 0 if passed else 1
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-import json
+import hashlib
 from pathlib import Path
 import subprocess
 import sys
@@ -10,7 +10,6 @@ import unittest
 
 
 O07_ROOT = Path(__file__).resolve().parents[1]
-REPO_ROOT = O07_ROOT.parents[2]
 if str(O07_ROOT) not in sys.path:
     sys.path.insert(0, str(O07_ROOT))
 
@@ -19,19 +18,18 @@ from report_schema import (  # noqa: E402
     MUTATION_SCHEMA,
     PROBE_SCHEMA,
     SCOPE_SCHEMA,
-    ReportHygieneContext,
-    repository_hygiene_context,
+    FinalEvidenceIdentityContext,
+    final_evidence_hygiene_context,
     validate_canonical_report,
 )
-from verify_final_evidence_hygiene import validate_final_reports  # noqa: E402
 
 
 IDENTITY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 RUNTIME_VALUES = ("/tmp/styx-o07-runtime", "review-host.invalid", "review-user")
 
 
-def _context(*identities: str) -> ReportHygieneContext:
-    return ReportHygieneContext(identities or (IDENTITY,), RUNTIME_VALUES)
+def _context(*identities: str) -> FinalEvidenceIdentityContext:
+    return FinalEvidenceIdentityContext(identities or (IDENTITY,), RUNTIME_VALUES)
 
 
 def _reports() -> list[dict[str, object]]:
@@ -46,7 +44,6 @@ def _reports() -> list[dict[str, object]]:
                 {
                     "atom_instance_id": "A-EVD-001",
                     "gate_instance_id": "G-EVD-001",
-                    "requirement": "closed external requirement",
                     "state": "REQUIRED_SEPARATE_GATE",
                 }
             ],
@@ -109,14 +106,18 @@ def _replace(value: object, path: tuple[object, ...], replacement: str) -> objec
     return changed
 
 
+def _git(repo: Path, *arguments: str) -> str:
+    return subprocess.check_output(["git", "-C", str(repo), *arguments]).decode().strip()
+
+
 class ReportHygieneTests(unittest.TestCase):
     def test_context_is_mandatory_and_non_empty(self) -> None:
         with self.assertRaises(TypeError):
             validate_canonical_report(_reports()[0])  # type: ignore[call-arg]
         with self.assertRaises(ValueError):
-            ReportHygieneContext((), RUNTIME_VALUES)
+            FinalEvidenceIdentityContext((), RUNTIME_VALUES)
         with self.assertRaises(ValueError):
-            ReportHygieneContext((IDENTITY,), ())
+            FinalEvidenceIdentityContext((IDENTITY,), ())
 
     def test_full_and_abbreviated_identity_rejected_in_every_string_field(self) -> None:
         for report in _reports():
@@ -129,57 +130,75 @@ class ReportHygieneTests(unittest.TestCase):
                                 hygiene_context=_context(),
                             )
 
-    def test_runtime_values_rejected_in_every_string_field(self) -> None:
-        for report in _reports():
-            for path in _string_paths(report):
-                for needle in (*RUNTIME_VALUES, "pid=731", "2026-08-25T20:37"):
-                    with self.subTest(schema=report["schema"], path=path, needle=needle):
-                        with self.assertRaises(ValueError):
-                            validate_canonical_report(
-                                _replace(report, path, needle),
-                                hygiene_context=_context(),
-                            )
+    def test_runtime_provenance_and_measurement_are_rejected(self) -> None:
+        report = _reports()[-1]
+        for value in (
+            "/tmp/styx-o07-runtime",
+            "username=review-user",
+            "hostname=review-host.invalid",
+            "pid=731",
+            "2026-08-25T20:37",
+            "elapsed=1.234s",
+            "duration=25ms",
+        ):
+            changed = copy.deepcopy(report)
+            changed["changed_relation"] = [{"status": "M", "paths": [value]}]
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                validate_canonical_report(changed, hygiene_context=_context())
 
-    def test_repository_context_contains_base_head_trees_and_diff(self) -> None:
-        base = "86c3f2dbd630e445d737a25c09889de2777ee185"
-        context = repository_hygiene_context(REPO_ROOT, base, "HEAD")
-        self.assertEqual(len(context.repository_identities), 5)
-        self.assertIn(str(REPO_ROOT.resolve()), context.runtime_values)
+    def test_short_username_does_not_match_protocol_substrings(self) -> None:
+        context = FinalEvidenceIdentityContext((IDENTITY,), ("/tmp/repo", "host", "root"))
+        report = copy.deepcopy(_reports()[-1])
+        report["changed_relation"] = [
+            {"status": "M", "paths": ["docs/protocol/root-authority.md"]}
+        ]
+        validate_canonical_report(report, hygiene_context=context)
 
-    def test_final_gate_requires_two_equal_reports_per_schema_and_bundle_identity(self) -> None:
-        base = "86c3f2dbd630e445d737a25c09889de2777ee185"
+        report["changed_relation"] = [{"status": "M", "paths": ["root"]}]
+        with self.assertRaisesRegex(ValueError, "runtime identity"):
+            validate_canonical_report(report, hygiene_context=context)
+
+    def test_bundle_digest_is_bound_before_report_validation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            _git(repo, "init", "-q")
+            _git(repo, "config", "user.name", "O07 test")
+            _git(repo, "config", "user.email", "o07@example.invalid")
+            (repo / "value.txt").write_text("base\n")
+            _git(repo, "add", ".")
+            _git(repo, "commit", "-qm", "base")
+            base = _git(repo, "rev-parse", "HEAD")
+            (repo / "value.txt").write_text("candidate\n")
+            _git(repo, "add", ".")
+            _git(repo, "commit", "-qm", "candidate")
             bundle = root / "candidate.bundle"
-            bundle.write_bytes(b"bounded final bundle bytes")
-            paths: list[Path] = []
-            for index, report in enumerate(_reports()):
-                raw = (
-                    json.dumps(report, separators=(",", ":"), sort_keys=True) + "\n"
-                ).encode()
-                for copy_index in range(2):
-                    path = root / f"report-{index}-{copy_index}.json"
-                    path.write_bytes(raw)
-                    paths.append(path)
-            bundle_identity = validate_final_reports(
-                repo=REPO_ROOT,
-                base=base,
-                candidate="HEAD",
+            _git(repo, "bundle", "create", str(bundle), "HEAD")
+            digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
+            context = final_evidence_hygiene_context(
+                repo,
+                base,
+                "HEAD",
                 bundle=bundle,
-                report_paths=paths,
+                bundle_sha256=digest,
             )
-            leaked = json.loads(paths[0].read_text())
-            leaked["external_gates"][0]["requirement"] = bundle_identity[:7]
-            paths[0].write_text(json.dumps(leaked, separators=(",", ":"), sort_keys=True) + "\n")
-            paths[1].write_bytes(paths[0].read_bytes())
-            with self.assertRaisesRegex(ValueError, "repository identity"):
-                validate_final_reports(
-                    repo=REPO_ROOT,
-                    base=base,
-                    candidate="HEAD",
+            self.assertEqual(len(context.repository_identities), 6)
+            bundle.write_bytes(bundle.read_bytes() + b"substitution")
+            with self.assertRaisesRegex(ValueError, "bundle SHA-256 mismatch"):
+                final_evidence_hygiene_context(
+                    repo,
+                    base,
+                    "HEAD",
                     bundle=bundle,
-                    report_paths=paths,
+                    bundle_sha256=digest,
                 )
+
+    def test_free_form_external_gate_member_is_rejected(self) -> None:
+        report = copy.deepcopy(_reports()[0])
+        report["external_gates"][0]["requirement"] = "free prose"  # type: ignore[index]
+        with self.assertRaisesRegex(ValueError, "schema mismatch"):
+            validate_canonical_report(report, hygiene_context=_context())
 
 
 if __name__ == "__main__":

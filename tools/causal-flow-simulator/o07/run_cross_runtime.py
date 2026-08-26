@@ -22,7 +22,7 @@ from inventory import validate_inventory  # noqa: E402
 from o14.evidence_io import CanonicalJsonReport, public_failure  # noqa: E402
 from report_schema import (  # noqa: E402
     CROSS_RUNTIME_SCHEMA,
-    repository_hygiene_context,
+    final_evidence_hygiene_context,
     validate_canonical_report,
 )
 
@@ -167,13 +167,21 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--suite", required=True, choices=("required",))
     parser.add_argument("--javascript", required=True)
     parser.add_argument("--workspace", required=True, type=Path)
+    parser.add_argument("--bundle", required=True, type=Path)
+    parser.add_argument("--bundle-sha256", required=True)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
         report, passed = build_report(
             args.repo_root.resolve(), args.workspace, args.javascript
         )
-        hygiene = repository_hygiene_context(args.repo_root, BASE_SHA, "HEAD")
+        hygiene = final_evidence_hygiene_context(
+            args.repo_root,
+            BASE_SHA,
+            "HEAD",
+            bundle=args.bundle,
+            bundle_sha256=args.bundle_sha256,
+        )
         validate_canonical_report(report, hygiene_context=hygiene)
         CanonicalJsonReport.store(args.output, report)
     except (OSError, KeyError, ValueError, subprocess.CalledProcessError) as error:
@@ -181,7 +189,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print(
         f"O-07 RUNTIME verdict={report['verdict']} "
-        f"semantic_atoms={report['semantic_atom_count']}"
+        f"semantic_atoms={report['semantic_atom_count']} "
+        f"bundle_sha256={args.bundle_sha256}"
     )
     return 0 if passed else 1
 

@@ -32,7 +32,7 @@ from scope_guard_o07 import (  # noqa: E402
     enforce_test_authenticator_isolation,
     validate_scope_report,
 )
-from report_schema import ReportHygieneContext  # noqa: E402
+from report_schema import FinalEvidenceIdentityContext, SCOPE_SCHEMA  # noqa: E402
 
 
 def _git(repo: Path, *arguments: str) -> bytes:
@@ -200,7 +200,7 @@ class ScopeGuardTests(unittest.TestCase):
 
     def test_scope_report_schema_and_identity_hygiene_fail_closed(self) -> None:
         report = {
-            "schema": "styx-o07-scope-report/v2",
+            "schema": SCOPE_SCHEMA,
             "copy_threshold_percent": 25,
             "changed_relation": [{"status": "M", "paths": ["docs/protocol/a.md"]}],
             "changed_endpoint_count": 1,
@@ -211,7 +211,7 @@ class ScopeGuardTests(unittest.TestCase):
             "predecessor_import_count": 0,
             "verdict": "PASS",
         }
-        context = ReportHygieneContext(
+        context = FinalEvidenceIdentityContext(
             ("fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",),
             ("/tmp/o07-scope-test", "scope-host.invalid", "scope-user"),
         )
@@ -229,7 +229,9 @@ class ScopeGuardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "repository identity"):
             validate_scope_report(
                 leaked,
-                hygiene_context=ReportHygieneContext((identity,), context.runtime_values),
+                hygiene_context=FinalEvidenceIdentityContext(
+                    (identity,), context.runtime_values
+                ),
             )
 
         absolute = dict(report)
