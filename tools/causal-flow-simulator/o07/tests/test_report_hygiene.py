@@ -135,6 +135,8 @@ class ReportHygieneTests(unittest.TestCase):
         report = _reports()[-1]
         for value in (
             "/tmp/styx-o07-runtime",
+            "provenance=/tmp/styx-o07-runtime",
+            r"path=C:\review\workspace",
             "username=review-user",
             "hostname=review-host.invalid",
             "pid=731",

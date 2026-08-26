@@ -19,7 +19,9 @@ SCOPE_SCHEMA = "styx-o07-scope-report/v3"
 
 _IDENTIFIER = re.compile(r"^[A-Z0-9][A-Z0-9_.:-]*$")
 _TOKEN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$")
-_ABSOLUTE_PATH = re.compile(r"(?:^|\s)(?:/[^\s]+|[A-Za-z]:[\\/][^\s]+)")
+_ABSOLUTE_PATH = re.compile(
+    r"(?<![A-Za-z0-9_.-])(?:/[^\s]+|[A-Za-z]:[\\/][^\s]+)"
+)
 _TIMESTAMP = re.compile(r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2})?")
 _PROCESS_ID = re.compile(r"\b(?:pid|process[-_ ]?id)\s*[:=]?\s*\d+\b", re.IGNORECASE)
 _RUNTIME_MEASUREMENT = re.compile(
