@@ -1,15 +1,20 @@
 # O-08 resource-envelope falsification report
 
-Status: remediation evidence in progress for Issue #250. The previous selected
-candidate and its reports are superseded. A positive result remains
-falsification evidence, not proof or product conformance.
+Status: replacement selection evidence completed for Issue #250; final
+two-clean-checkout evidence, exact-HEAD reviews and human gates remain pending.
+A positive result remains falsification evidence, not proof or product
+conformance.
 
 ## Evidence identity
 
 - Base: `ba0525da1dd78c76c5cc60bc2041e2d3bed44bb3`.
-- Selection HEAD: pending the clean replacement implementation commit.
-- Selected envelope digest and provider object: none; a new six-report
-  measurement cycle and immutable ForgeRelay decision are required.
+- Selection HEAD: `16c379fba756516edb173ab3ba722bbf97bfacab`.
+- Candidate-set digest:
+  `12f9e068ca02b965062859fc98d922722e44909efbe819771ab7e3d5aaba040f`.
+- Selected envelope: `balanced`, digest
+  `317206449117fcad351f0338c719085a8eb623605d7768327e27d26fd48256fd`.
+- Provider object: GitHub Issue-comment `5431295833`, created through the
+  `maverde73` ForgeRelay selection request.
 - Python: `3.14.4`; Node: `v24.18.0`.
 
 ## Results
@@ -19,14 +24,14 @@ falsification evidence, not proof or product conformance.
 | Source inventory | PASS: 69 unique dimensions, 12 groups and 28 exact pre-existing anchors |
 | Scope partition | LOCAL PASS: 46 semantic maxima, four capability minima, one structural exact capability-key declaration, two exact-zero entries, eleven post-C0.3 and five evidence-only dimensions |
 | Integer-field coverage | LOCAL PASS: closed field-specific relation; no generic representability fallback |
-| O-08→O-10 handoff | LOCAL PASS: 66 unique rows (`S0=9`, `S3=21`, `S4=10`, `S5=16`, `S6=10`) and no stable code |
-| Boundary probes | IMPLEMENTED: closed-set and scalar adjacent cases with observable pre/post state; final selected run pending |
+| O-08→O-10 handoff | LOCAL PASS: 66 unique rows (`S0=9`, `S3=22`, `S4=10`, `S5=15`, `S6=10`) and no stable code |
+| Boundary probes | SELECTION PASS: closed-set and scalar adjacent cases with observable pre/post state; final exact-HEAD rerun pending |
 | Combined matrix | LOCAL PASS: 16 rows with checked arithmetic; 13 execute and three remain explicitly post-C0.3 |
-| Independent runtimes | IMPLEMENTED: Python/Node state, disposition, coupling and exact maximum-antichain agreement; final selected run pending |
+| Independent runtimes | SELECTION PASS: Python/Node state, disposition, coupling and exact maximum-antichain agreement; final exact-HEAD rerun pending |
 | Structural authority family | LOCAL PASS: exact `B4(P)` dominates the actual C0.2j fold; Python and independent Node cover all six control kinds, non-genesis depth, two/three-sibling and repeated joins, cross-owner substitution, causal cross-edges, W301, W1211 and retained width boundaries |
-| Mutations | IMPLEMENTED: 53 gate-skip mutants, twelve exact-B4 mutations and one weakened replay-coupling mutation are independently killed; final selected run pending |
+| Mutations | SELECTION PASS: 53 gate-skip mutants, twelve exact-B4 mutations and one weakened replay-coupling mutation are independently killed; final exact-HEAD rerun pending |
 | Unit/negative controls | LOCAL PASS: all nine required test modules remain non-empty; replacement suite currently passes |
-| Selection measurements | PENDING: new selection HEAD, six reports, comparison and ForgeRelay decision |
+| Selection measurements | PASS: six reports and comparison validated; `balanced` selected by immutable provider object `5431295833` |
 
 The cross-runtime suite carries values outside JavaScript's exact integer range
 as decimal strings and compares through `BigInt`; selected runtime-oracle values
