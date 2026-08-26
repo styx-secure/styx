@@ -423,8 +423,9 @@ make telemetry or push metadata harmless.
 
 ### 3.2 Bounded C0.3 resource envelope
 
-O-08 is undergoing the ratified replacement selection documented in
-`docs/protocol/styx-app-kernel-v0-resource-envelope-analysis.md`. Its 53 C0.3
+O-08 has completed the provider-bound replacement selection documented in
+`docs/protocol/styx-app-kernel-v0-resource-envelope-analysis.md` and is bounded
+`DECIDED` for the transcript-only entry envelope. Its 53 C0.3
 entry dimensions cover canonical parsing, graph admission, authority
 projection, replay work, commitment material, four abstract capability minima
 and one structural exact capability-key declaration. Exceeding a candidate
@@ -621,8 +622,7 @@ Current evidence establishes only bounded components:
   bounded Pass0/selected-slot authority and lineage containment; C0.2k selects
   the 84-octet commitment context and bounded mutation evidence; Issue #243
   completes bounded O-06c evidence. O-06/O-06c are condition-bearing
-  `DECIDED`; O-07 is bounded `DECIDED`; O-08 is under ratified remediation and
-  new human selection; O-10 through O-16 retain their recorded open,
+  `DECIDED`; O-07 and O-08 are bounded `DECIDED`; O-10 through O-16 retain their recorded open,
   conditional or downstream-blocking roles;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
   described in its final verdict; and

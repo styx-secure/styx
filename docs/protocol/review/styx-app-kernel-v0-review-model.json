@@ -452,8 +452,8 @@
         "OB-K01"
       ],
       "owner": "K",
-      "reason": "The ratified remediation compares 46 semantic maxima, including exact authority-poset antichain width, four activation-capability minima, one structural exact capability-key declaration and two exact-zero values; eleven post-C0.3 and five evidence-only dimensions remain non-entry. The fifth evidence dimension is exact B4(P) over the admitted C0.2j authority poset and is a proof-region metric, not a runtime gate. A new measurement and human-selection gate is pending, and no product/runtime support follows.",
-      "status": "OPEN"
+      "reason": "The provider-bound replacement selection fixes the balanced transcript-only entry envelope after six measurements, deterministic comparison, two-clean-checkout final evidence, independent exact-HEAD reviews and technical human approval. Issue-comment 5432143151 records the bounded procedural exception and fail-closed remediation trigger for the incomplete Section 8.1 AST assignment guard. The envelope contains 46 semantic maxima, four activation-capability minima, one structural exact capability-key declaration and two exact-zero values; eleven post-C0.3 and five evidence-only dimensions remain non-entry. Exact B4(P) remains a proof-region metric rather than a runtime gate. No product/runtime support follows.",
+      "status": "DECIDED"
     },
     {
       "blocks": [
@@ -5939,7 +5939,7 @@
       "authority": "normative",
       "id": "commitment_profile",
       "path": "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
-      "sha256": "814e9eeda7154888005a933a2e067649c4f9f08da4b1ca90a2f45c11cbc3fbb3"
+      "sha256": "acaa58dc5e5c7c8e0a2a10aed2e90aa560d9c9051c0ef75f4d990c7dcdebbde8"
     },
     {
       "authority": "evidence",
@@ -5957,7 +5957,7 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "eed63357230b706c54fd95f9b30f110d7b2a2f468345607c15b7b6564d3666ec"
+      "sha256": "a8b3b597658376e9b46920c5dfc391f3d71ce45c856f1af6576950da88166cf9"
     },
     {
       "authority": "evidence",
@@ -6011,7 +6011,7 @@
       "authority": "normative",
       "id": "responsibility",
       "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
-      "sha256": "cbdbac3ded2c58066a09fdf5a3485f2c72b0f8f3b518fa134e31963cea21b1cc"
+      "sha256": "95678e42c899d2de1ea101ecd89e21951ddd14a127a6740b30c8d98dc49b25bd"
     },
     {
       "authority": "evidence",
@@ -6029,13 +6029,13 @@
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "bd7004f2933751dd51fa7ac718802739e9dfa368815c969a2ae1adda3c0a864c"
+      "sha256": "67c74be996e79d9ed1e67098a94490cea7818e069fb1df24f10da55b03938c29"
     },
     {
       "authority": "normative",
       "id": "transcript_profile",
       "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
-      "sha256": "a9341dc993cf33579298ca4c3fb5085ea35e095d511fa0a1b3f31572eb604c57"
+      "sha256": "13cb1c8b0a64985919e75abb1652c68daffa5c12c8a04047752879e74571cc79"
     }
   ],
   "state_models": [

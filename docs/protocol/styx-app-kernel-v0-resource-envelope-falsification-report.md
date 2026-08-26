@@ -1,38 +1,38 @@
 # O-08 resource-envelope falsification report
 
-Status: replacement final-gate evidence in progress for Issue #250. The prior
-selection is superseded because its selection HEAD contained a cross-runtime
-response-shape mismatch exposed by the final gate. A positive result remains
-falsification evidence, not proof or product conformance.
+Status: bounded closing evidence for Issue #250 after replacement selection,
+cross-runtime response-shape correction, final two-clean-checkout evidence,
+independent exact-HEAD review and technical human approval. A positive result
+remains falsification evidence, not proof or product conformance.
 
 ## Evidence identity
 
 - Base: `ba0525da1dd78c76c5cc60bc2041e2d3bed44bb3`.
 - Superseded selection HEAD: `16c379fba756516edb173ab3ba722bbf97bfacab`.
-- Replacement selection HEAD: pending the clean gate-fix commit.
+- Replacement selection HEAD: `613427c857d8f1f2b80d16b28b2ca9112cf6e96b`.
 - Candidate-set digest:
   `12f9e068ca02b965062859fc98d922722e44909efbe819771ab7e3d5aaba040f`.
-- Superseded selected envelope: `balanced`, digest
+- Replacement selected envelope: `balanced`, digest
   `317206449117fcad351f0338c719085a8eb623605d7768327e27d26fd48256fd`.
-- Superseded provider object: GitHub Issue-comment `5431295833`, created through the
-  `maverde73` ForgeRelay selection request.
+- Replacement provider object: GitHub Issue-comment `5431393925`, created
+  through the `maverde73` ForgeRelay selection request.
 - Python: `3.14.4`; Node: `v24.18.0`.
 
 ## Results
 
 | Evidence family | Result |
 | --- | --- |
-| Source inventory | PASS: 69 unique dimensions, 12 groups and 28 exact pre-existing anchors |
-| Scope partition | LOCAL PASS: 46 semantic maxima, four capability minima, one structural exact capability-key declaration, two exact-zero entries, eleven post-C0.3 and five evidence-only dimensions |
-| Integer-field coverage | LOCAL PASS: closed field-specific relation; no generic representability fallback |
-| O-08→O-10 handoff | LOCAL PASS: 66 unique rows (`S0=9`, `S3=22`, `S4=10`, `S5=15`, `S6=10`) and no stable code |
-| Boundary probes | IMPLEMENTED: closed-set and scalar adjacent cases with observable pre/post state; replacement selected run pending |
-| Combined matrix | LOCAL PASS: 16 rows with checked arithmetic; 13 execute and three remain explicitly post-C0.3 |
-| Independent runtimes | LOCAL PASS after response-shape correction: Python/Node state, disposition, coupling and exact maximum-antichain agreement; replacement selected run pending |
-| Structural authority family | LOCAL PASS: exact `B4(P)` dominates the actual C0.2j fold; Python and independent Node cover all six control kinds, non-genesis depth, two/three-sibling and repeated joins, cross-owner substitution, causal cross-edges, W301, W1211 and retained width boundaries |
-| Mutations | IMPLEMENTED: 53 gate-skip mutants, twelve exact-B4 mutations and one weakened replay-coupling mutation are independently killed; replacement selected run pending |
-| Unit/negative controls | LOCAL PASS: all nine required test modules remain non-empty; replacement suite currently passes |
-| Selection measurements | PENDING replacement six-report cycle, comparison and immutable ForgeRelay decision |
+| Source inventory | FINAL PASS: 69 unique dimensions, 12 groups and 28 exact pre-existing anchors |
+| Scope partition | FINAL PASS: 46 semantic maxima, four capability minima, one structural exact capability-key declaration, two exact-zero entries, eleven post-C0.3 and five evidence-only dimensions |
+| Integer-field coverage | FINAL PASS: closed field-specific relation; no generic representability fallback |
+| O-08→O-10 handoff | FINAL PASS: 66 unique rows (`S0=9`, `S3=21`, `S4=10`, `S5=16`, `S6=10`) and no stable code |
+| Boundary probes | FINAL PASS: closed-set and scalar adjacent cases with observable pre/post state; exact-HEAD rerun passed |
+| Combined matrix | FINAL PASS: 16 rows with checked arithmetic; 13 execute and three remain explicitly post-C0.3 |
+| Independent runtimes | FINAL PASS after response-shape correction: Python/Node state, disposition, coupling and exact maximum-antichain agreement; exact-HEAD rerun passed |
+| Structural authority family | FINAL PASS: exact `B4(P)` dominates the actual C0.2j fold; Python and independent Node cover all six control kinds, non-genesis depth, two/three-sibling and repeated joins, cross-owner substitution, causal cross-edges, W301, W1211 and retained width boundaries |
+| Mutations | FINAL PASS: 53 gate-skip mutants, twelve exact-B4 mutations and one weakened replay-coupling mutation are independently killed; exact-HEAD rerun passed |
+| Unit/negative controls | FINAL PASS: all nine required test modules remain non-empty; replacement suite passes |
+| Selection measurements | PASS: replacement six-report set and comparison validated; `balanced` selected by immutable provider object `5431393925` |
 
 The cross-runtime suite carries values outside JavaScript's exact integer range
 as decimal strings and compares through `BigInt`; selected runtime-oracle values

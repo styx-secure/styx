@@ -718,7 +718,7 @@ and renewed-ratification path in section 9.1; it is never an executor choice.
 
 After Issue #243, O-06 and O-06c are condition-bearing `DECIDED` over the exact
 combined C0.2j/C0.2k construction and declared bounded envelope. K-11 still
-gates any normative corpus file; O-07 is bounded `DECIDED`, O-08 is under
-ratified remediation and new human selection, while O-10 remains open. O-14 is
+gates any normative corpus file; O-07 and O-08 are bounded `DECIDED`, while
+O-10 remains open. O-14 is
 condition-bearing `DECIDED`, but its placeholder-substituted O-06c rerun remains
 required before corpus authorization. C0.3 remains `NO-GO`.

@@ -602,8 +602,7 @@ reinterpreted.
    into the combined construction and rerun its complete evidence.
 
 O-06b-1, O-06b-2, C0.2j, C0.2k and the completed O-06c evidence do not make
-C0.3 executable. O-07 is bounded `DECIDED`; O-08 is under ratified remediation
-and new human selection; O-10 remains open;
+C0.3 executable. O-07 and O-08 are bounded `DECIDED`; O-10 remains open;
 O-14 retains its
 condition-bearing dependency until the separately ratified combined rerun
 passes. O-12 additionally blocks any time-bearing profile. O-11 remains
