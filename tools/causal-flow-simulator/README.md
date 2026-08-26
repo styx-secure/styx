@@ -226,3 +226,15 @@ in two fresh worktrees. A positive result is bounded falsification evidence,
 not a proof, product implementation, durable ceremony, recovery mechanism,
 checkpoint capability, availability guarantee, conformance claim or authority
 to begin C0.3.
+
+## O-08 bounded resource envelope
+
+`o08/` contains the isolated transcript-only resource-envelope evidence for
+Issue #250. It preserves all 67 discovered dimensions, selects 53 C0.3 entry
+values in the conservative envelope, keeps eleven post-C0.3 and three
+evidence-only dimensions non-authoritative, and hands 66 safe-recovery rows to
+O-10 without assigning stable codes. Python and dependency-independent Node
+exercise every boundary; the combined matrix and per-dimension mutants detect
+cross-dimensional amplification and skipped gates. The package is conformance
+evidence only and makes no product/runtime, persistence, transport, session,
+recovery or availability claim.
