@@ -1,37 +1,41 @@
 # Styx application kernel v0 — bounded resource-envelope analysis
 
-Status: O-08 candidate selection completed for Issue #250; final exact-HEAD
-evidence, independent review and human gates remain pending. This document is
+Status: O-08 gate remediation for Issue #250; the first replacement selection
+was invalidated by a final-gate response-shape mismatch and a new selection is
+pending. This document is
 normative only for the transcript-only C0.3 entry profile. It is not a product,
 browser, mobile, transport, secure-session or persistence profile.
 
 ## 1. Remediation identity
 
 - Base: `ba0525da1dd78c76c5cc60bc2041e2d3bed44bb3`.
-- Selection HEAD: `16c379fba756516edb173ab3ba722bbf97bfacab`.
+- Superseded selection HEAD: `16c379fba756516edb173ab3ba722bbf97bfacab`.
+- Replacement selection HEAD: pending the clean gate-fix commit.
 - Candidate-set digest:
   `12f9e068ca02b965062859fc98d922722e44909efbe819771ab7e3d5aaba040f`.
-- Selected candidate: `balanced`; canonical envelope digest:
+- Superseded selected candidate: `balanced`; canonical envelope digest:
   `317206449117fcad351f0338c719085a8eb623605d7768327e27d26fd48256fd`.
-- Selection authority: immutable `maverde73` ForgeRelay decision in GitHub
+- Superseded selection authority: immutable `maverde73` ForgeRelay decision in GitHub
   Issue-comment object `5431295833` at
   `https://api.github.com/repos/styx-secure/styx/issues/comments/5431295833`.
 - Deterministic comparison digest:
   `ec3a5ceee0e1e9e19e04e226604550fe8081fc4c70b5eddaa0883b225431cb9e`.
 
-`tools/causal-flow-simulator/o08/resource-envelope.candidate.json` materializes
-that exact selected envelope. It remains conformance evidence only and is not
-an ambient wire, authorization, checkpoint or storage authority.
+`tools/causal-flow-simulator/o08/resource-envelope.candidate.json` is absent
+until the replacement decision. Once materialized, it remains conformance
+evidence only and is not an ambient wire, authorization, checkpoint or storage
+authority.
 
 ## 2. Decision
 
 Three strictly increasing candidates (`conservative`, `balanced`, `expansive`)
 were measured five cold and five warm times under two declared capability
 profiles. Exact-width, explicit-zero and structurally derived entries are the
-only equal values. `balanced` was selected because both declared capability
-profiles pass its deterministic structural gates while it provides materially
-more operating margin than `conservative`; `expansive` is unsupported by the
-minimal capability profile.
+only equal values. The superseded decision selected `balanced` because both
+declared capability profiles pass its deterministic structural gates while it
+provides materially more operating margin than `conservative`; `expansive` is
+unsupported by the minimal capability profile. The replacement cycle must
+independently reproduce those results rather than inherit that choice.
 
 Deterministic structural evidence is normative selection evidence. Host CPU,
 wall-time and RSS observations are non-normative operational comparisons only;

@@ -196,8 +196,9 @@ Protocol increments proceed in dependency order:
    proof, conformance, implementation or readiness authority.
 4. **Resolve remaining C0.3 blockers.** O-07 fixes single-root genesis and
    rejects checkpoint substitution in v0; O-08 has completed replacement human
-   selection of the bounded transcript-only `balanced` resource envelope and is
-   awaiting final exact-HEAD evidence and gates. Close O-10 stable errors. O-14
+   selection of the bounded transcript-only `balanced` resource envelope, but
+   its final gate exposed an evidence response-shape defect; a clean replacement
+   selection cycle is required. Close O-10 stable errors. O-14
    is condition-bearing `DECIDED`; before any corpus authorization, replace its
    O-06c placeholder with the selected signature semantics and rerun the
    complete combined evidence. Resolve O-12 wherever a selected profile carries
@@ -239,7 +240,7 @@ registry governs and this plan must be corrected.
 | O-01 through O-05 | `DECIDED` | preserved inputs; reopen only through their recorded conditions |
 | O-06 | condition-bearing `DECIDED` | Issue #243 completed bounded O-06c evidence; recorded placeholder decisions and later counterexamples trigger rerun/reopen |
 | O-07 | bounded `DECIDED` | retains the C0.3 dependency edge; exact corpus integration remains gated |
-| O-08 | `OPEN` during final remediation gates | `balanced` is selected; two-clean-checkout evidence, exact-HEAD reviews and human gates remain; no product/runtime claim |
+| O-08 | `OPEN` during final-gate remediation | prior `balanced` selection superseded; replacement cycle and final gates remain; no product/runtime claim |
 | O-10 | `OPEN` | blocks C0.3 |
 | O-14 | condition-bearing `DECIDED` | closed suite; its retained O-06c placeholder-substitution condition still blocks C0.3 until separately ratified combined evidence passes |
 | O-09 | `DECIDED` | preserved responsibility split |
@@ -419,8 +420,9 @@ bounded executable evidence:
   reconciles the handoff; Issue #243 supplies the isolated executable evidence,
   compensates the recorded v2/C0.2k limitations and preserves every rerun/
   reopen trigger;
-- O-07 is bounded `DECIDED`; O-08 has a provider-bound `balanced` selection and
-  remains open through final exact-HEAD evidence and gates; O-10 remains open.
+- O-07 is bounded `DECIDED`; O-08 superseded its first provider-bound selection
+  after a final-gate evidence defect and remains open through replacement
+  selection, final exact-HEAD evidence and gates; O-10 remains open.
   O-14 is condition-bearing `DECIDED`, with
   Dart/browser support claims and the separately ratified O-06c
   placeholder-substitution rerun still gated. O-12 remains conditional as

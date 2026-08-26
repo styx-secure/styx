@@ -63,7 +63,8 @@ def build_report(javascript: str) -> dict[str, object]:
     response = json.loads(completed.stdout)
     if response != {
         "schema": "styx-o08-oracle-response/v1", "results": expected,
-        "couplings": couplings, "poset_widths": [], "verdict": "PASS",
+        "couplings": couplings, "poset_widths": [], "authority_traces": [],
+        "verdict": "PASS",
     }:
         raise ValueError("Python/JavaScript semantic disagreement")
     rows = [

@@ -141,7 +141,9 @@ class CrossRuntimeTests(unittest.TestCase):
                 "cases": [], "include_couplings": True,
             }), text=True, capture_output=True, check=True,
         )
-        self.assertEqual(json.loads(completed.stdout)["couplings"], expected)
+        response = json.loads(completed.stdout)
+        self.assertEqual(response["couplings"], expected)
+        self.assertEqual(response["authority_traces"], [])
 
 
 if __name__ == "__main__":
