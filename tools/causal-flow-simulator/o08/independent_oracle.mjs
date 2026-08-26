@@ -20,16 +20,18 @@ function recovery(dimension, stage, role) {
 }
 
 function evaluate(envelope, item) {
-  if (!Number.isSafeInteger(item.observed)) throw new Error("invalid observation");
+  const observed = typeof item.observed === "string" ? BigInt(item.observed) : BigInt(item.observed);
+  if (typeof item.observed !== "string" && !Number.isSafeInteger(item.observed)) throw new Error("invalid observation");
   const entry = envelope.entries[item.dimension];
   if (!entry) throw new Error("unknown dimension");
   if (item.stage !== null && !entry.stages.includes(item.stage)) throw new Error("stage mismatch");
   if (entry.role === ROLE_POST || entry.role === ROLE_EVIDENCE) {
     return { ...item, selected: null, disposition: "POST_C03_NOT_EXECUTED", authoritative_state_mutated: false };
   }
-  const passed = item.observed < 0 ? false : entry.role === ROLE_CAPABILITY
-    ? item.observed >= entry.selected_value
-    : item.observed <= entry.selected_value;
+  const selected = BigInt(entry.selected_value);
+  const passed = observed < 0n ? false : entry.role === ROLE_CAPABILITY
+    ? observed >= selected
+    : observed <= selected;
   return {
     ...item,
     selected: entry.selected_value,

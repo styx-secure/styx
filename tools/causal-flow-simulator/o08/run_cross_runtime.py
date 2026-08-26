@@ -28,7 +28,9 @@ def build_report(javascript: str) -> dict[str, object]:
     for scenario in boundary_scenarios(envelope, registry):
         dimension = scenario["dimension"]
         for stage in registry.stages[dimension] or (None,):
-            item = {"dimension": dimension, "stage": stage, "observed": scenario["observed"]}
+            observed = scenario["observed"]
+            wire_observed: int | str = str(observed) if abs(observed) > 9_007_199_254_740_991 else observed
+            item = {"dimension": dimension, "stage": stage, "observed": wire_observed}
             result = evaluate_observation(envelope, dimension, scenario["observed"], stage=stage)
             cases.append(item)
             expected.append({
