@@ -151,7 +151,8 @@ def validate_candidate_set(
                 "per-object signature work exceeds replay-work envelope",
             ),
             (
-                values["AUTHORITY_TRANSITIONS"]
+                values["EVENTS_ADMITTED"]
+                + values["AUTHORITY_TRANSITIONS"]
                 * (1 + values["ORDINARY_PREFIX_QUERIES"]),
                 values["REPLAYED_EVENT_WORK"],
                 "fresh whole-fold replay work exceeds its envelope",
@@ -232,17 +233,25 @@ def materialize_candidate(
                 if dimension == "CHUNK_OCTETS"
                 else [selected] if dimension in FROZEN_CANDIDATE_VALUES else None
             ),
-            "derivation": {
-                "kind": (
-                    "STRUCTURAL_CLOSED_KEY_SET"
-                    if dimension == "ACTIVATION_CAPABILITY_SET"
-                    else "PROFILE_FIXED"
-                    if dimension in FROZEN_CANDIDATE_VALUES
-                    else "CANDIDATE_MEASURED_BOUND"
-                ),
-                "field_domains": field_domains,
-            } if selected is not None else None,
-            "reopen_predicate": f"REOPEN_IF_{dimension}_SEMANTICS_OR_BOUND_CHANGES",
+            "derivation": (
+                "exact B4(P) from the model's admitted authority poset"
+                if dimension == "AUTHORITY_CONTENTION_BOUND"
+                else {
+                    "kind": (
+                        "STRUCTURAL_CLOSED_KEY_SET"
+                        if dimension == "ACTIVATION_CAPABILITY_SET"
+                        else "PROFILE_FIXED"
+                        if dimension in FROZEN_CANDIDATE_VALUES
+                        else "CANDIDATE_MEASURED_BOUND"
+                    ),
+                    "field_domains": field_domains,
+                } if selected is not None else None
+            ),
+            "reopen_predicate": (
+                "REOPEN_IF_AUTHORITY_CONTENTION_BOUND_SEMANTICS_OR_METRIC_CHANGES"
+                if dimension == "AUTHORITY_CONTENTION_BOUND"
+                else f"REOPEN_IF_{dimension}_SEMANTICS_OR_BOUND_CHANGES"
+            ),
         }
     return {
         "schema": ENVELOPE_SCHEMA,

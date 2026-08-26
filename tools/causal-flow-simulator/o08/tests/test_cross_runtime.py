@@ -11,10 +11,24 @@ sys.path.insert(0, str(ROOT))
 
 from envelope_model import evaluate_observation, materialize_candidate, validate_candidate_set
 from scenario_generator import combined_scenarios
+from run_measurements import structural_evidence
 from semantic_registry import CANDIDATES_PATH, load_json, load_source_registry
 
 
 class CrossRuntimeTests(unittest.TestCase):
+    def test_python_and_javascript_agree_on_canonical_adversarial_witnesses(self):
+        candidate = validate_candidate_set(load_json(CANDIDATES_PATH))[1]
+        evidence = structural_evidence(
+            ROOT.parents[2], candidate, "0" * 40, "node"
+        )
+        rows = {row["witness_id"]: row for row in evidence["rows"]}
+        self.assertEqual(rows["W301"]["authority_contention_bound"], 3375)
+        self.assertEqual(rows["W301"]["reference_characterization"]["reachable_states"], 301)
+        self.assertEqual(rows["W301"]["reference_characterization"]["transitions"], 708)
+        self.assertEqual(rows["W1211"]["authority_contention_bound"], 8370)
+        self.assertEqual(rows["W1211"]["reference_characterization"]["reachable_states"], 1211)
+        self.assertEqual(rows["W1211"]["reference_characterization"]["transitions"], 2298)
+
     def test_node_oracle_rejects_above_maximum(self):
         envelope = materialize_candidate(validate_candidate_set(load_json(CANDIDATES_PATH))[1])
         selected = envelope["entries"]["EVENTS_ADMITTED"]["selected_value"]

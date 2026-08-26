@@ -190,9 +190,12 @@ def combined_scenarios(envelope: dict[str, Any], registry: SourceRegistry) -> li
                 ),
                 _predicate(
                     "FRESH_REPLAY_WORK_CAPACITY",
-                    _checked_mul(
-                        _selected(envelope, "AUTHORITY_TRANSITIONS"),
-                        _checked_add(1, _selected(envelope, "ORDINARY_PREFIX_QUERIES")),
+                    _checked_add(
+                        _selected(envelope, "EVENTS_ADMITTED"),
+                        _checked_mul(
+                            _selected(envelope, "AUTHORITY_TRANSITIONS"),
+                            _checked_add(1, _selected(envelope, "ORDINARY_PREFIX_QUERIES")),
+                        ),
                     ), "<=", _selected(envelope, "REPLAYED_EVENT_WORK"),
                 ),
             ]

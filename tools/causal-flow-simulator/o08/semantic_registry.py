@@ -55,7 +55,7 @@ EXPECTED_ROLE_COUNTS = {
     ROLE_CAPABILITY: 5,
     ROLE_ZERO: 2,
     ROLE_POST: 11,
-    ROLE_EVIDENCE: 4,
+    ROLE_EVIDENCE: 5,
 }
 EXPECTED_HANDOFF_STAGE_COUNTS = {
     "S0_PROFILE_ACTIVATION": 9,
@@ -184,8 +184,8 @@ def load_source_registry(path: Path = SOURCES_PATH) -> SourceRegistry:
         dimensions.extend(group.get("dimensions", ()))
         for source in group.get("sources", ()):
             anchors.append((source["path"], source["anchor"]))
-    if len(dimensions) != 68 or len(set(dimensions)) != 68:
-        raise RegistryError("source inventory must contain 68 unique dimensions")
+    if len(dimensions) != 69 or len(set(dimensions)) != 69:
+        raise RegistryError("source inventory must contain 69 unique dimensions")
     if len(anchors) != 28 or len(set(anchors)) != 28:
         raise RegistryError("source inventory must contain 28 unique anchors")
 

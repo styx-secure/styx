@@ -21,6 +21,7 @@ from envelope_model import (
     CAPABILITY_PROFILE_IDS, CANDIDATE_IDS, candidate_identity, materialize_candidate,
     validate_candidate_set,
 )
+from contention_bound import evaluate_contention_bound, items_from_model, static_trace_bound
 from scenario_generator import boundary_scenarios, combined_scenarios, maximum_antichain_width
 from semantic_registry import CANDIDATES_PATH, canonical_bytes, load_json, load_source_registry
 
@@ -36,12 +37,6 @@ CAPABILITY_KEYS = {
 }
 STRUCTURAL_SCHEMA = "styx-o08-authority-structural-evidence/v1"
 DIGEST_RE = re.compile(r"[0-9a-f]{64}")
-
-
-def _next_power_of_two(value: int) -> int:
-    if value < 1:
-        raise ValueError("positive value required for ceiling derivation")
-    return 1 << (value - 1).bit_length()
 
 
 def _load_v3(repo_root: Path):
@@ -158,33 +153,100 @@ def _retained_fork_witness(model, scenarios):
     return model.Scenario(tuple(events), tuple(actors))
 
 
-def _authority_poset(model, scenario) -> tuple[dict[str, frozenset[str]], int, int]:
-    """Structurally validate the closed generator family without running DP."""
+APPENDIX_WITNESS_IDENTITIES = {
+    "W301": "68e72021e9f2882c7110dc07aac78faff05e917bc50b2707462f000b61a7e062",
+    "W1211": "5e57b51b54df348adb7768eab9d8f3cedcbed83bac8632a43a19ccba19707ad1",
+}
+APPENDIX_EXPECTED = {
+    "W301": {"fork_joins": 0, "maximum_antichain_width": 3, "reachable_states": 301, "transitions": 708},
+    "W1211": {"fork_joins": 0, "maximum_antichain_width": 3, "reachable_states": 1211, "transitions": 2298},
+}
 
-    model._validate_envelope(scenario)
+
+def _appendix_witness_payload(witness_id: str) -> dict[str, Any]:
+    if witness_id == "W301":
+        credentials = [{"slot": f"G{index}", "type": "GENESIS"} for index in range(3)]
+        events = []
+        for actor in range(3):
+            for sequence in range(4):
+                events.append({
+                    "actor": f"G{actor}", "additional_parents": [], "kind": "REVOKE",
+                    "predecessor": None if sequence == 0 else f"E{actor}-{sequence - 1}",
+                    "sequence": sequence, "slot": f"E{actor}-{sequence}",
+                    "target": f"G{(actor + 1) % 3}",
+                })
+    elif witness_id == "W1211":
+        credentials = (
+            [{"slot": f"G{index}", "type": "GENESIS"} for index in range(6)]
+            + [{"slot": f"S{index}", "type": "GENESIS_SPARE"} for index in range(8)]
+        )
+        events = [
+            {"actor": "G0", "additional_parents": [], "kind": "REVOKE", "predecessor": None, "sequence": 0, "slot": "E0-0", "target": "S1"},
+            {"actor": "G1", "additional_parents": ["E0-0"], "kind": "REVOKE", "predecessor": None, "sequence": 0, "slot": "E1-0", "target": "G2"},
+            {"actor": "G2", "additional_parents": [], "kind": "REVOKE", "predecessor": None, "sequence": 0, "slot": "E2-0", "target": "G3"},
+            {"actor": "G3", "additional_parents": [], "kind": "REVOKE", "predecessor": None, "sequence": 0, "slot": "E3-0", "target": "G0"},
+            {"actor": "G3", "additional_parents": [], "kind": "REVOKE", "predecessor": "E3-0", "sequence": 1, "slot": "E3-1", "target": "S5"},
+            {"actor": "G3", "additional_parents": [], "kind": "REVOKE", "predecessor": "E3-1", "sequence": 2, "slot": "E3-2", "target": "G4"},
+            {"actor": "G4", "additional_parents": ["E1-0"], "kind": "REVOKE", "predecessor": None, "sequence": 0, "slot": "E4-0", "target": "G5"},
+            {"actor": "G4", "additional_parents": [], "kind": "REVOKE", "predecessor": "E4-0", "sequence": 1, "slot": "E4-1", "target": "S3"},
+            {"actor": "G5", "additional_parents": ["E2-0"], "kind": "REVOKE", "predecessor": None, "sequence": 0, "slot": "E5-0", "target": "S0"},
+            {"actor": "G5", "additional_parents": [], "kind": "REVOKE", "predecessor": "E5-0", "sequence": 1, "slot": "E5-1", "target": "G1"},
+            {"actor": "G5", "additional_parents": [], "kind": "REVOKE", "predecessor": "E5-1", "sequence": 2, "slot": "E5-2", "target": "S2"},
+            {"actor": "G5", "additional_parents": [], "kind": "REVOKE", "predecessor": "E5-2", "sequence": 3, "slot": "E5-3", "target": "S4"},
+        ]
+    else:
+        raise ValueError(f"unknown appendix witness: {witness_id}")
+    return {
+        "credentials": credentials, "events": events,
+        "expected": APPENDIX_EXPECTED[witness_id],
+        "schema": "styx-o08-adversarial-trace/v1",
+    }
+
+
+def _appendix_witness(model, scenarios, witness_id: str):
+    payload = _appendix_witness_payload(witness_id)
+    identity = sha256(canonical_bytes(payload).removesuffix(b"\n")).hexdigest()
+    if identity != APPENDIX_WITNESS_IDENTITIES[witness_id]:
+        raise ValueError(f"appendix witness identity drift: {witness_id}")
+    bindings = {
+        row["slot"]: scenarios.genesis(
+            f"o08-{witness_id.lower()}-{row['slot'].lower()}",
+            f"{32 + index:02x}"[-2:],
+        )
+        for index, row in enumerate(payload["credentials"])
+    }
+    references: dict[str, str] = {}
+    events = []
+    for row in payload["events"]:
+        event = scenarios.control(
+            f"o08-{witness_id.lower()}-{row['slot'].lower()}",
+            bindings[row["actor"]], model.Kind[row["kind"]],
+            sequence=row["sequence"],
+            predecessor=references.get(row["predecessor"]),
+            parents=tuple(references[parent] for parent in row["additional_parents"]),
+            target_id=bindings[row["target"]].credential_id,
+        )
+        references[row["slot"]] = event.reference
+        events.append(event)
+    return model.Scenario(tuple(events), tuple(bindings.values())), identity
+
+
+def _authority_evidence(model, scenario):
+    """Derive P only from the frozen model's exact admission result."""
+
+    projection = model.project(
+        scenario, authority_state_limit=1_000_000,
+        authority_transition_limit=10_000_000,
+    )
+    if not projection.authority_available:
+        raise ValueError("reference authority projection unexpectedly exhausted")
     raw = {event.reference: event for event in scenario.events}
-    if len(raw) != len(scenario.events):
-        raise ValueError("structural witness reference collision")
     ancestors = model._causal_ancestors(scenario.events)
-    genesis = {binding.credential_id: binding for binding in scenario.genesis_bindings}
-    admitted: dict[str, Any] = {}
-    for event in sorted(scenario.events, key=lambda item: (item.sequence, item.reference)):
-        if model.derive_event_reference(event) != event.reference:
-            raise ValueError("structural witness reference mismatch")
-        if not model._dependencies(event) <= admitted.keys():
-            raise ValueError("structural witness dependency is not admitted")
-        if not model._valid_author_chain(
-            event, raw, ancestors, frozenset(genesis), model.Mutation()
-        ):
-            raise ValueError("structural witness author chain is invalid")
-        actor = genesis.get(event.actor_id)
-        if actor is None or actor.suite_id != event.actor_suite or actor.verification_key != event.actor_key:
-            raise ValueError("structural witness actor binding mismatch")
-        if event.role is model.Role.CREDENTIAL_CONTROL and not model._valid_control_tail(
-            event, admitted, model.Mutation()
-        ):
-            raise ValueError("structural witness control tail is invalid")
-        admitted[event.reference] = event
+    admitted = {
+        reference: raw[reference]
+        for reference in projection.admitted
+        if reference in raw
+    }
     joins, _, _ = model._fork_joins(admitted, ancestors, model.Mutation())
     controls = tuple(
         event for event in admitted.values()
@@ -193,7 +255,62 @@ def _authority_poset(model, scenario) -> tuple[dict[str, frozenset[str]], int, i
     predecessors = dict(model._authority_predecessors(
         controls, joins, ancestors, model.Mutation()
     ))
-    return predecessors, len(controls), len(joins)
+    issuer_by_credential = {
+        credential_id: binding.issuer_id
+        for credential_id, binding in projection.bindings.items()
+    }
+    bound = evaluate_contention_bound(
+        items_from_model(model, controls, joins, predecessors),
+        issuer_by_credential,
+    )
+    if projection.reachable_authority_states > bound.value:
+        raise ValueError("B4 understates reachable authority states")
+    if projection.authority_transitions > bound.width * bound.value:
+        raise ValueError("B4 width product understates authority transitions")
+    return predecessors, len(controls), len(joins), projection, bound
+
+
+def _canonical_trace(scenario) -> dict[str, Any]:
+    """Serialize only raw trace material; no derived poset or oracle answer."""
+
+    return {
+        "schema": "styx-o08-authority-trace/v1",
+        "context_id": scenario.context_id,
+        "genesis_bindings": [
+            {
+                "credential_id": binding.credential_id,
+                "genesis": binding.genesis,
+                "grant_reference": binding.grant_reference,
+                "issuer_id": binding.issuer_id,
+                "suite_id": binding.suite_id,
+                "verification_key": binding.verification_key,
+            }
+            for binding in scenario.genesis_bindings
+        ],
+        "events": [
+            {
+                "actor_id": event.actor_id,
+                "actor_key": event.actor_key,
+                "actor_suite": event.actor_suite,
+                "content_class": event.content_class.value,
+                "context_id": event.context_id,
+                "declared_subject_id": event.declared_subject_id,
+                "grantee_key": event.grantee_key,
+                "grantee_suite": event.grantee_suite,
+                "kind": event.kind.value,
+                "malformed_tail": event.malformed_tail,
+                "name": event.name,
+                "parents": list(event.parents),
+                "predecessor": event.predecessor,
+                "reference": event.reference,
+                "role": event.role.value,
+                "sequence": event.sequence,
+                "target_id": event.target_id,
+                "target_reference": event.target_reference,
+            }
+            for event in scenario.events
+        ],
+    }
 
 
 def _structural_specs(model, scenarios, candidate: dict[str, Any]):
@@ -229,6 +346,12 @@ def _structural_specs(model, scenarios, candidate: dict[str, Any]):
         ("BOUNDARY_PLUS_ONE", _grant_grid(model, scenarios, width + 1, width + 1, "boundary-plus"), "WIDTH_UNSUPPORTED"),
         ("RETAINED_4033_STATE_WITNESS", _retained_fork_witness(model, scenarios), "WIDTH_UNSUPPORTED"),
     ))
+    for witness_id in ("W301", "W1211"):
+        scenario, _ = _appendix_witness(model, scenarios, witness_id)
+        specs.append((
+            witness_id, scenario,
+            "COVERED" if width >= APPENDIX_EXPECTED[witness_id]["maximum_antichain_width"] else "WIDTH_UNSUPPORTED",
+        ))
     return specs
 
 
@@ -243,17 +366,32 @@ def structural_evidence(
     )
     model.MAX_EVENTS = model.MAX_CONTROL_EVENTS = model.MAX_FORK_SLOTS = model.MAX_CREDENTIALS = 4096
     rows = []
-    posets = []
+    traces = []
     try:
         for witness_id, scenario, expected in _structural_specs(model, scenarios, candidate):
-            predecessors, control_count, join_count = _authority_poset(model, scenario)
+            predecessors, control_count, join_count, reference, bound = _authority_evidence(
+                model, scenario
+            )
             width = maximum_antichain_width(predecessors)
-            posets.append({
+            if width != bound.width:
+                raise ValueError(f"Python width implementations disagree: {witness_id}")
+            if witness_id in APPENDIX_EXPECTED:
+                appendix = APPENDIX_EXPECTED[witness_id]
+                if (
+                    join_count != appendix["fork_joins"]
+                    or width != appendix["maximum_antichain_width"]
+                    or reference.reachable_authority_states != appendix["reachable_states"]
+                    or reference.authority_transitions != appendix["transitions"]
+                ):
+                    raise ValueError(f"appendix witness characterization drift: {witness_id}")
+            traces.append({
                 "witness_id": witness_id,
-                "predecessors": {
-                    reference: sorted(required)
-                    for reference, required in sorted(predecessors.items())
+                "limits": {
+                    "authority_states": candidate["values"]["AUTHORITY_STATES"],
+                    "authority_transitions": candidate["values"]["AUTHORITY_TRANSITIONS"],
+                    "authority_width": candidate["values"]["AUTHORITY_CONCURRENT_CONTROLS"],
                 },
+                "trace": _canonical_trace(scenario),
             })
             selected_width = candidate["values"]["AUTHORITY_CONCURRENT_CONTROLS"]
             if width > selected_width:
@@ -271,34 +409,47 @@ def structural_evidence(
                     authority_state_limit=candidate["values"]["AUTHORITY_STATES"],
                     authority_transition_limit=candidate["values"]["AUTHORITY_TRANSITIONS"],
                 )
-                if not projection.authority_available:
-                    raise ValueError(f"covered structural witness exhausted authority: {witness_id}")
-                if projection.replayed_event_work > candidate["values"]["REPLAYED_EVENT_WORK"]:
-                    raise ValueError(f"covered structural witness exceeded replay work: {witness_id}")
                 observed = {
-                    "disposition": "ACCEPT",
+                    "disposition": (
+                        "ACCEPT" if projection.authority_available
+                        and projection.replayed_event_work <= candidate["values"]["REPLAYED_EVENT_WORK"]
+                        else "AUTHORITY_PROJECTION_UNAVAILABLE"
+                    ),
                     "dp_invoked": True,
                     "reachable_states": projection.reachable_authority_states,
                     "transitions": projection.authority_transitions,
                     "ordinary_prefix_queries": projection.ordinary_probe_transitions,
                     "replayed_event_work": projection.replayed_event_work,
                 }
-            expected_observed = "WIDTH_UNSUPPORTED" if width > selected_width else "COVERED"
-            if expected_observed != expected:
+            retained_expectation = "WIDTH_UNSUPPORTED" if width > selected_width else "COVERED"
+            if retained_expectation != expected:
                 raise ValueError(f"structural witness disposition drift: {witness_id}")
+            proof_region = (
+                width <= selected_width
+                and bound.value <= candidate["values"]["AUTHORITY_STATES"]
+                and width * bound.value <= candidate["values"]["AUTHORITY_TRANSITIONS"]
+            )
+            if proof_region and observed["disposition"] != "ACCEPT":
+                raise ValueError(f"proved-region witness exhausted authority: {witness_id}")
             row = {
                 "witness_id": witness_id,
-                "expected": expected,
+                "retained_expectation": expected,
+                "proof_region": "PROVED" if proof_region else "GREY_OR_OUTSIDE",
                 "authority_controls": control_count,
                 "fork_joins": join_count,
                 "exact_width": width,
+                "admitted_references": list(reference.admitted),
+                **bound.canonical_view(),
                 **observed,
             }
+            if witness_id in APPENDIX_WITNESS_IDENTITIES:
+                row["canonical_witness_sha256"] = APPENDIX_WITNESS_IDENTITIES[witness_id]
+                row["reference_characterization"] = {
+                    "lane": "CANONICAL_ADVERSARIAL_REFERENCE",
+                    "reachable_states": reference.reachable_authority_states,
+                    "transitions": reference.authority_transitions,
+                }
             if witness_id == "RETAINED_4033_STATE_WITNESS":
-                reference = model.project(
-                    scenario, authority_state_limit=100_000,
-                    authority_transition_limit=1_000_000,
-                )
                 characterization = {
                     "lane": "NON_AUTHORITATIVE_REFERENCE_CHARACTERIZATION",
                     "reachable_states": reference.reachable_authority_states,
@@ -319,7 +470,7 @@ def structural_evidence(
             model.MAX_CREDENTIALS,
         ) = original_limits
     oracle_request = {
-        "schema": "styx-o08-oracle-request/v1", "cases": [], "posets": posets,
+        "schema": "styx-o08-oracle-request/v1", "cases": [], "authority_traces": traces,
     }
     completed = subprocess.run(
         [javascript, str(repo_root / "tools/causal-flow-simulator/o08/independent_oracle.mjs")],
@@ -329,37 +480,36 @@ def structural_evidence(
     if completed.returncode != 0:
         raise ValueError(f"independent width oracle failed: {completed.stderr.strip()}")
     oracle = json.loads(completed.stdout)
-    expected_widths = [
-        {"witness_id": row["witness_id"], "exact_width": row["exact_width"]}
-        for row in rows
-    ]
-    if oracle != {
-        "schema": "styx-o08-oracle-response/v1", "results": [],
-        "couplings": [], "poset_widths": expected_widths, "verdict": "PASS",
-    }:
-        raise ValueError("Python/JavaScript maximum-antichain disagreement")
-    covered = [row for row in rows if row["expected"] == "COVERED"]
+    oracle_rows = oracle.get("authority_traces") if isinstance(oracle, dict) else None
+    if (
+        oracle.get("schema") != "styx-o08-oracle-response/v1"
+        or oracle.get("results") != [] or oracle.get("couplings") != []
+        or oracle.get("poset_widths") != [] or oracle.get("verdict") != "PASS"
+        or not isinstance(oracle_rows, list) or len(oracle_rows) != len(rows)
+    ):
+        raise ValueError("invalid independent authority oracle response")
+    by_witness = {row["witness_id"]: row for row in oracle_rows}
+    for row in rows:
+        independent = by_witness.get(row["witness_id"])
+        if independent is None or any(
+            independent.get(field) != row[field]
+            for field in (
+                "admitted_references", "authority_contention_bound",
+                "authority_ideal_count", "contended_actors",
+                "contended_controls", "exact_width", "fork_joins",
+                "proof_region", "static_trace_bound",
+            )
+        ):
+            raise ValueError("Python/JavaScript authority evidence disagreement")
+    covered = [row for row in rows if row["retained_expectation"] == "COVERED"]
     maximum_states = max(row["reachable_states"] for row in covered)
     maximum_transitions = max(row["transitions"] for row in covered)
     maximum_work = max(row["replayed_event_work"] for row in covered)
     values = candidate["values"]
-    structural_margin = (
-        values["AUTHORITY_CONCURRENT_CONTROLS"] * values["CONTROL_EVENTS"]
+    tuple_static_bound = static_trace_bound(
+        values["AUTHORITY_CONCURRENT_CONTROLS"],
+        values["CONTROL_EVENTS"], values["FORK_SLOTS"],
     )
-    derived_states = _next_power_of_two(maximum_states + structural_margin)
-    derived_transitions = _next_power_of_two(maximum_transitions + structural_margin)
-    derived_work = _next_power_of_two(max(
-        maximum_work,
-        values["ANCESTRY_RELATIONS"],
-        values["EVENTS_ADMITTED"] * values["SIGNATURE_ATTEMPTS"],
-        derived_transitions * (1 + values["ORDINARY_PREFIX_QUERIES"]),
-    ))
-    if (
-        values["AUTHORITY_STATES"] != derived_states
-        or values["AUTHORITY_TRANSITIONS"] != derived_transitions
-        or values["REPLAYED_EVENT_WORK"] != derived_work
-    ):
-        raise ValueError("candidate S5 ceilings do not match the ratified structural derivation")
     value = {
         "schema": STRUCTURAL_SCHEMA,
         "candidate_id": candidate["id"],
@@ -368,14 +518,14 @@ def structural_evidence(
         "generator_version": "O08_AUTHORITY_WITNESS_FAMILY_V1",
         "independent_oracle_agreement": True,
         "ceiling_derivation": {
-            "rule": "NEXT_POWER_OF_TWO_AFTER_WIDTH_TIMES_CONTROL_MARGIN",
+            "rule": "EXACT_B4_PROOF_REGION_WITH_EXPLICIT_GREY_ZONE",
             "maximum_observed_states": maximum_states,
             "maximum_observed_transitions": maximum_transitions,
             "maximum_observed_replayed_event_work": maximum_work,
-            "structural_margin": structural_margin,
-            "derived_authority_states": derived_states,
-            "derived_authority_transitions": derived_transitions,
-            "derived_replayed_event_work": derived_work,
+            "tuple_static_contention_bound": tuple_static_bound,
+            "selected_authority_states": values["AUTHORITY_STATES"],
+            "selected_authority_transitions": values["AUTHORITY_TRANSITIONS"],
+            "selected_replayed_event_work": values["REPLAYED_EVENT_WORK"],
         },
         "rows": rows,
         "verdict": "PASS",
