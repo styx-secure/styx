@@ -1046,16 +1046,21 @@ outcomes.
 - **Ratified remediation rule:** the replacement candidate set supplies 46
   semantic maxima, four abstract activation-capability minima, one structural
   exact four-key capability declaration and two exact zero/unsupported values.
-  Eleven post-C0.3 and four evidence-only dimensions remain classified but
+  Eleven post-C0.3 and five evidence-only dimensions remain classified but
   cannot affect C0.3 semantics or authority. `INTEGER_FIELD_RANGE` is only a
   representability witness; field-specific limits own work. `SEQUENCE_VALUE`
-  derives from lifetime and `CHUNK_OCTETS` is a closed set.
+  derives from lifetime and `CHUNK_OCTETS` is a closed set. The fifth evidence
+  dimension, `AUTHORITY_CONTENTION_BOUND`, is exact `B4(P)` over the admitted
+  C0.2j authority poset: it proves a covered region but is not an additional
+  runtime rejection gate; traces outside that proof region remain an explicit
+  fail-closed grey zone under the selected state and transition ceilings.
 - **Pending evidence:** a new clean selection HEAD, six measurements, one
   comparison report and a new immutable `maverde73` ForgeRelay selection are
   required before `resource-envelope.candidate.json` may be recreated. Python
   and dependency-independent Node must then agree on observable pre/post state,
   all 53 executed gate mutants, the 16 checked composition rows and the exact
-  maximum-antichain witness family against the actual C0.2j fold.
+  contention-bound, maximum-antichain and adversarial witness families against
+  the actual C0.2j fold.
 - **Rejected alternatives:** promoting current limits to kernel rules; unbounded
   actors or skew; silent degradation outside tested profiles; selecting a
   wider candidate that excludes the declared conservative capability profile.

@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError) as error:
         print(f"O-08 inventory failed: {error}", file=sys.stderr)
         return 2
-    print("O-08 INVENTORY verdict=PASS dimensions=68 groups=12 anchors=28")
+    print("O-08 INVENTORY verdict=PASS dimensions=69 groups=12 anchors=28")
     return 0
 
 

@@ -48,7 +48,7 @@ overflow, duplicate, missing and unknown values fail closed.
 | --- | --- |
 | Canonical framing | `FRAMING_OBJECT_OCTETS=4096`; `FRAMING_CONTEXT_OCTETS=8192`; `AP_TRANSITION_BLOCK_OCTETS=2048`; `REFERENCE_OCTETS=32`; `TEXT_FIELD_OCTETS=0`; `SEQUENCE_VALUE=1023` (derived from lifetime); `INTEGER_FIELD_RANGE` is evidence-only with no selected value |
 | Causal admission | `EVENTS_ADMITTED=32`; `EVIDENCE_PER_CREDENTIAL=8`; `CONTEXT_LIFETIME_EVENTS=1024`; `PARENTS_PER_EVENT=4`; `ACTIVE_FRONTIER=8`; `GRAPH_DEPTH=64`; `ANCESTRY_RELATIONS=4096`; `PENDING_ROOTS=8`; `PENDING_DESCENDANTS=32`; `HALTED_REPLAY_SPAN=64` |
-| Credential and authority | `CREDENTIALS=8`; `LINEAGE_DEPTH=4`; `ALIASES_PER_CREDENTIAL=2`; `CONTROL_EVENTS=8`; `FORK_SLOTS=2`; `SIBLINGS_PER_FORK=2`; `AUTHORITY_CONCURRENT_CONTROLS=2`; `AUTHORITY_STATES=32`; `AUTHORITY_TRANSITIONS=64`; `ORDINARY_PREFIX_QUERIES=16`; `REPLAYED_EVENT_WORK=4096` |
+| Credential and authority | `CREDENTIALS=8`; `LINEAGE_DEPTH=4`; `ALIASES_PER_CREDENTIAL=2`; `CONTROL_EVENTS=8`; `FORK_SLOTS=2`; `SIBLINGS_PER_FORK=2`; `AUTHORITY_CONCURRENT_CONTROLS=2`; `AUTHORITY_STATES=32`; `AUTHORITY_TRANSITIONS=64`; `ORDINARY_PREFIX_QUERIES=16`; `REPLAYED_EVENT_WORK=4096`; evidence-only `AUTHORITY_CONTENTION_BOUND=B4(P)` is derived per admitted trace and is not selected |
 | Payload commitment | `CONTENT_EXACT_OCTETS=65536`; `AP_EXPANDED_CONTENT_OCTETS=32768`; `CHUNK_OCTETS={4096}`; `CHUNKS_PER_CONTENT=16`; `TREE_FAN_OUT=2`; `COMMITMENT_VALUE_OCTETS=32`; `RANDOMIZER_OCTETS=32`; `PART_SYMBOL_OCTETS=32`; `RECORDS=32`; `REMOVAL_DIRECTIVES=8` |
 | Genesis/checkpoint | `CHECKPOINT_REFERENCES=0`; `GENESIS_ATTEMPTS=2`; `GENESIS_BODY_OCTETS=4096`; `GENESIS_POLICY_OCTETS=2048` |
 | Signature verification | `SIGNATURE_ATTEMPTS=16`; `SIGNATURE_OCTETS=64`; `VERIFICATION_KEY_OCTETS=32` |
@@ -86,10 +86,19 @@ classes and does not collapse cases whose safe recovery differs.
 ## 5. Non-entry dimensions
 
 Eleven transport, delivery, secure-session and renewable operational-budget
-dimensions remain `POST_C03_LAYER_PROFILE`. Four representability/exploration values
+dimensions remain `POST_C03_LAYER_PROFILE`. Five representability/exploration values
 remain `EVIDENCE_ONLY`. Neither class can affect C0.3 semantic validity,
 authority, absence, removal or the selected envelope without the separately
 ratified gate-amendment process.
+
+For every admitted authority trace, the evidence layer computes exact `B4(P)`
+and requires `reachable_states <= B4(P)` and
+`authority_transitions <= width(P) * B4(P)`. A trace is in the proved region
+only when those two derived ceilings fit inside the selected state and
+transition limits. Otherwise the unchanged bounded fold runs in the explicit
+grey zone and fails closed on exhaustion. Fresh replay work additionally
+includes both initial admission and authority/prefix work:
+`EVENTS_ADMITTED + AUTHORITY_TRANSITIONS * (1 + ORDINARY_PREFIX_QUERIES)`.
 
 ## 6. Reopen predicates and non-claims
 

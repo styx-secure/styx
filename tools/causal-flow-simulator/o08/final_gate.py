@@ -24,7 +24,7 @@ from run_measurements import validate_set
 
 REPORT_SCHEMA = "styx-o08-final-gate-report/v1"
 TASK_ISSUE_URL = "https://api.github.com/repos/styx-secure/styx/issues/250"
-TASK_ISSUE_BODY_SHA256 = "075adf87a26a7377d803cf6fb123537a45f044e53c134065fc6a3b9130cca923"
+TASK_ISSUE_BODY_SHA256 = "747b466bfa1542e97c2d48c6b90e716d23677384520da30b7cad8ec2b8970f29"
 PRODUCERS = (
     ("inventory", "validate_inventory.py", ()),
     ("envelope", "validate_envelope.py", ("--approved-envelope-digest", "{approved}")),

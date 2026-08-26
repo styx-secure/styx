@@ -16,15 +16,15 @@ falsification evidence, not proof or product conformance.
 
 | Evidence family | Result |
 | --- | --- |
-| Source inventory | PASS: 68 unique dimensions, 12 groups and 28 exact pre-existing anchors |
-| Scope partition | LOCAL PASS: 46 semantic maxima, four capability minima, one structural exact capability-key declaration, two exact-zero entries, eleven post-C0.3 and four evidence-only dimensions |
+| Source inventory | PASS: 69 unique dimensions, 12 groups and 28 exact pre-existing anchors |
+| Scope partition | LOCAL PASS: 46 semantic maxima, four capability minima, one structural exact capability-key declaration, two exact-zero entries, eleven post-C0.3 and five evidence-only dimensions |
 | Integer-field coverage | LOCAL PASS: closed field-specific relation; no generic representability fallback |
 | O-08→O-10 handoff | LOCAL PASS: 66 unique rows (`S0=9`, `S3=21`, `S4=10`, `S5=16`, `S6=10`) and no stable code |
 | Boundary probes | IMPLEMENTED: closed-set and scalar adjacent cases with observable pre/post state; final selected run pending |
 | Combined matrix | LOCAL PASS: 16 rows with checked arithmetic; 13 execute and three remain explicitly post-C0.3 |
 | Independent runtimes | IMPLEMENTED: Python/Node state, disposition, coupling and exact maximum-antichain agreement; final selected run pending |
-| Structural authority family | LOCAL PASS: actual C0.2j fold covers GRANT grids, chained controls, cyclic revoke, mixed controls, fork/join concentration and width boundaries; the retained witness remains 4,033 states/14,556 transitions and is rejected pre-DP by all candidates |
-| Mutations | IMPLEMENTED: 53 executed gate-skip mutants with intended-failure and passing controls; final selected run pending |
+| Structural authority family | LOCAL PASS: exact `B4(P)` dominates the actual C0.2j fold; Python and independent Node cover all six control kinds, non-genesis depth, two/three-sibling and repeated joins, cross-owner substitution, causal cross-edges, W301, W1211 and retained width boundaries |
+| Mutations | IMPLEMENTED: 53 gate-skip mutants, twelve exact-B4 mutations and one weakened replay-coupling mutation are independently killed; final selected run pending |
 | Unit/negative controls | LOCAL PASS: all nine required test modules remain non-empty; replacement suite currently passes |
 | Selection measurements | PENDING: new selection HEAD, six reports, comparison and ForgeRelay decision |
 
@@ -36,8 +36,8 @@ themselves remain below `2^53-1`.
 
 The model exercises scalar underflow/overflow, signed conversion, nested and
 cumulative geometry, many-small-object floods, valid credential and signature
-work floods, fork/alias/lineage steering, exact authority-poset antichain width,
-authority state/transition exhaustion,
+work floods, fork/alias/lineage steering, exact authority-poset antichain width
+and `B4(P)`, descendant/fork-join killer closure, authority state/transition exhaustion,
 pending-root amplification, missing-opening replay spans, abstract
 storage/custody insufficiency, profile skew, capability downgrade and jointly
 maximal traces. Failure precedes protected work and never leaves partial

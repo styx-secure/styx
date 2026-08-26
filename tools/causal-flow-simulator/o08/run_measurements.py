@@ -7,6 +7,7 @@ import argparse
 from hashlib import sha256
 import json
 from pathlib import Path
+import random
 import resource
 import re
 import statistics
@@ -155,6 +156,116 @@ def _retained_fork_witness(model, scenarios):
     return model.Scenario(tuple(events), tuple(actors))
 
 
+def _seeded_delivery(model, scenario, seed: int):
+    """Return one deterministic hostile delivery order for a fixed trace."""
+
+    events = list(scenario.events)
+    random.Random(seed).shuffle(events)
+    return model.Scenario(tuple(events), scenario.genesis_bindings)
+
+
+def _succession_witness(model, scenarios, kind, label: str):
+    retired, issuer = _actors(scenarios, 2, label)
+    replacement_grant = scenarios.control(
+        f"o08-{label}-replacement", issuer, model.Kind.GRANT,
+        grantee_key="d1" * 32,
+    )
+    succession = scenarios.control(
+        f"o08-{label}-{kind.value.lower()}", issuer, kind,
+        sequence=1, predecessor=replacement_grant.reference,
+        target_id=retired.credential_id,
+        target_reference=replacement_grant.reference,
+    )
+    return _seeded_delivery(
+        model,
+        model.Scenario((replacement_grant, succession), (retired, issuer)),
+        0xC03B4001 if kind is model.Kind.ROTATE else 0xC03B4002,
+    )
+
+
+def _deep_lineage_policy_closure(model, scenarios):
+    root = _actors(scenarios, 1, "deep-lineage")[0]
+    child_grant = scenarios.control(
+        "o08-deep-lineage-child", root, model.Kind.GRANT,
+        grantee_key="d2" * 32,
+    )
+    child = model.grant_binding(child_grant)
+    grandchild_grant = scenarios.control(
+        "o08-deep-lineage-grandchild", child, model.Kind.GRANT,
+        parents=(child_grant.reference,), grantee_key="d3" * 32,
+    )
+    grandchild = model.grant_binding(grandchild_grant)
+    policy = scenarios.control(
+        "o08-deep-lineage-policy", grandchild, model.Kind.POLICY,
+        parents=(grandchild_grant.reference,),
+    )
+    closure = scenarios.control(
+        "o08-deep-lineage-closure", grandchild, model.Kind.CLOSURE,
+        sequence=1, predecessor=policy.reference,
+    )
+    return _seeded_delivery(
+        model,
+        model.Scenario(
+            (child_grant, grandchild_grant, policy, closure), (root,),
+        ),
+        0xC03B4003,
+    )
+
+
+def _repeated_join_witness(model, scenarios):
+    actor = _actors(scenarios, 1, "repeated-join")[0]
+    start = scenarios.control(
+        "o08-repeated-join-start", actor, model.Kind.POLICY,
+    )
+    first = tuple(
+        scenarios.make_event(
+            f"o08-repeated-join-first-{index}", actor,
+            sequence=1, predecessor=start.reference,
+            declared_subject_id=f"first-{index}",
+        )
+        for index in range(3)
+    )
+    resume = scenarios.control(
+        "o08-repeated-join-resume", actor, model.Kind.CLOSURE,
+        sequence=2, predecessor=first[0].reference,
+        parents=tuple(event.reference for event in first[1:]),
+    )
+    second = tuple(
+        scenarios.make_event(
+            f"o08-repeated-join-second-{index}", actor,
+            sequence=3, predecessor=resume.reference,
+            declared_subject_id=f"second-{index}",
+        )
+        for index in range(2)
+    )
+    return _seeded_delivery(
+        model,
+        model.Scenario((start, *first, resume, *second), (actor,)),
+        0xC03B4004,
+    )
+
+
+def _cross_owner_substitution_witness(model, scenarios):
+    left, right = _actors(scenarios, 2, "cross-owner")
+    left_policy = scenarios.control(
+        "o08-cross-owner-left-policy", left, model.Kind.POLICY,
+    )
+    right_closure = scenarios.control(
+        "o08-cross-owner-right-closure", right, model.Kind.CLOSURE,
+        parents=(left_policy.reference,),
+    )
+    forged = scenarios.make_event(
+        "o08-cross-owner-substitution", left,
+        role=model.Role.CREDENTIAL_CONTROL, kind=model.Kind.POLICY,
+        claimed_actor_key=right.verification_key,
+    )
+    return _seeded_delivery(
+        model,
+        model.Scenario((left_policy, right_closure, forged), (left, right)),
+        0xC03B4005,
+    )
+
+
 APPENDIX_WITNESS_IDENTITIES = {
     "W301": "68e72021e9f2882c7110dc07aac78faff05e917bc50b2707462f000b61a7e062",
     "W1211": "5e57b51b54df348adb7768eab9d8f3cedcbed83bac8632a43a19ccba19707ad1",
@@ -276,7 +387,7 @@ def _authority_evidence(model, scenario):
         raise ValueError("B4 understates reachable authority states")
     if projection.authority_transitions > bound.width * bound.value:
         raise ValueError("B4 width product understates authority transitions")
-    return predecessors, len(controls), len(joins), projection, bound
+    return predecessors, controls, joins, projection, bound
 
 
 def _canonical_trace(scenario) -> dict[str, Any]:
@@ -354,6 +465,11 @@ def _structural_specs(model, scenarios, candidate: dict[str, Any]):
         ("BOUNDARY", _grant_grid(model, scenarios, width, width, "boundary"), "COVERED"),
         ("BOUNDARY_PLUS_ONE", _grant_grid(model, scenarios, width + 1, width + 1, "boundary-plus"), "WIDTH_UNSUPPORTED"),
         ("RETAINED_4033_STATE_WITNESS", _retained_fork_witness(model, scenarios), "WIDTH_UNSUPPORTED"),
+        ("SEEDED_ROTATE_FRESH_REPLACEMENT", _succession_witness(model, scenarios, model.Kind.ROTATE, "rotate"), "COVERED"),
+        ("SEEDED_RECOVER_FRESH_REPLACEMENT", _succession_witness(model, scenarios, model.Kind.RECOVER, "recover"), "COVERED"),
+        ("SEEDED_NON_GENESIS_DEEP_LINEAGE", _deep_lineage_policy_closure(model, scenarios), "COVERED"),
+        ("SEEDED_THREE_SIBLING_REPEATED_JOINS", _repeated_join_witness(model, scenarios), "COVERED"),
+        ("SEEDED_CROSS_OWNER_AND_CAUSAL_EDGE", _cross_owner_substitution_witness(model, scenarios), "COVERED"),
     ))
     for witness_id in ("W301", "W1211"):
         scenario, _ = _appendix_witness(model, scenarios, witness_id)
@@ -376,11 +492,61 @@ def structural_evidence(
     model.MAX_EVENTS = model.MAX_CONTROL_EVENTS = model.MAX_FORK_SLOTS = model.MAX_CREDENTIALS = 4096
     rows = []
     traces = []
+    coverage = {
+        "admitted_control_kinds": set(),
+        "causal_cross_owner_edge": False,
+        "cross_owner_substitution_rejected": False,
+        "maximum_lineage_depth": 0,
+        "maximum_siblings_per_join": 0,
+        "repeated_join_trace": False,
+    }
     try:
         for witness_id, scenario, expected in _structural_specs(model, scenarios, candidate):
-            predecessors, control_count, join_count, reference, bound = _authority_evidence(
+            predecessors, controls, joins, reference, bound = _authority_evidence(
                 model, scenario
             )
+            control_count = len(controls)
+            join_count = len(joins)
+            coverage["admitted_control_kinds"].update(
+                event.kind.value for event in controls
+            )
+            raw = {event.reference: event for event in scenario.events}
+            for event in controls:
+                if any(
+                    parent in raw and raw[parent].actor_id != event.actor_id
+                    for parent in event.parents
+                ):
+                    coverage["causal_cross_owner_edge"] = True
+            if witness_id == "SEEDED_CROSS_OWNER_AND_CAUSAL_EDGE":
+                forged = next(
+                    event for event in scenario.events
+                    if event.name == "o08-cross-owner-substitution"
+                )
+                coverage["cross_owner_substitution_rejected"] = (
+                    forged.reference not in reference.admitted
+                )
+            for credential_id in reference.bindings:
+                depth = 0
+                cursor = credential_id
+                seen = set()
+                while (
+                    cursor in reference.bindings
+                    and reference.bindings[cursor].issuer_id is not None
+                ):
+                    if cursor in seen:
+                        raise ValueError("lineage cycle in admitted structural witness")
+                    seen.add(cursor)
+                    depth += 1
+                    cursor = reference.bindings[cursor].issuer_id
+                coverage["maximum_lineage_depth"] = max(
+                    coverage["maximum_lineage_depth"], depth
+                )
+            coverage["maximum_siblings_per_join"] = max(
+                coverage["maximum_siblings_per_join"],
+                max((len(join.sibling_references) for join in joins), default=0),
+            )
+            if witness_id == "SEEDED_THREE_SIBLING_REPEATED_JOINS":
+                coverage["repeated_join_trace"] = join_count >= 2
             width = maximum_antichain_width(predecessors)
             if width != bound.width:
                 raise ValueError(f"Python width implementations disagree: {witness_id}")
@@ -478,6 +644,19 @@ def structural_evidence(
             model.MAX_EVENTS, model.MAX_CONTROL_EVENTS, model.MAX_FORK_SLOTS,
             model.MAX_CREDENTIALS,
         ) = original_limits
+    required_kinds = {
+        "REVOKE", "ROTATE", "GRANT", "RECOVER", "POLICY", "CLOSURE",
+    }
+    if coverage["admitted_control_kinds"] != required_kinds:
+        raise ValueError("adversarial control-kind coverage is incomplete")
+    if (
+        coverage["maximum_lineage_depth"] < 2
+        or coverage["maximum_siblings_per_join"] < 3
+        or not coverage["repeated_join_trace"]
+        or not coverage["causal_cross_owner_edge"]
+        or not coverage["cross_owner_substitution_rejected"]
+    ):
+        raise ValueError("adversarial structural coverage is incomplete")
     oracle_request = {
         "schema": "styx-o08-oracle-request/v1", "cases": [], "authority_traces": traces,
     }
@@ -526,6 +705,11 @@ def structural_evidence(
         "implementation_head": implementation_head,
         "generator_version": "O08_AUTHORITY_WITNESS_FAMILY_V1",
         "independent_oracle_agreement": True,
+        "adversarial_coverage": {
+            **coverage,
+            "admitted_control_kinds": sorted(coverage["admitted_control_kinds"]),
+            "deterministic_seed_family": "O08_C03_B4_SEED_V1",
+        },
         "ceiling_derivation": {
             "rule": "EXACT_B4_PROOF_REGION_WITH_EXPLICIT_GREY_ZONE",
             "maximum_observed_states": maximum_states,
