@@ -86,7 +86,7 @@ FORBIDDEN_TREES = (
 EXPECTED_ARTIFACT_SHA256 = {
     "docs/protocol/protocol-hardening-plan.md": "f1807c555d147ee55b8bc3bcb960459306c9ed0017f4a2bab51afdf4ec4ee904",
     "docs/protocol/review/README.md": "05ccd3af87bcf43c8fbdc2a622c9a3fbdf02929901e326ffefadb504c59d7a4c",
-    MODEL_PATH: "9984ff007f10d24811bc3dae211825cbeae20134ab713d48223d806d13c907a2",
+    MODEL_PATH: "dbffb822925df820c43c4e57ef80f8d3b6c42ba4e5d32d10b0e10370707644a7",
     "docs/protocol/styx-app-kernel-v0-decisions.md": "9d8aac228077e8614f3b63af2cf43327dc26440793ba213f971703f3f3d51ddd",
     "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-analysis.md": "7758c6d0bdbbc1eb2ebbe93fac85c94d056ecaab744c1700de21160f3dc9e63e",
     "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-falsification-report.md": "c3f96e79dcf8d7f5d96d5a7165b7b8b7ca4fd08c19a64317c16223e4e59208e0",
