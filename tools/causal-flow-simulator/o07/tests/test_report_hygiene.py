@@ -21,6 +21,7 @@ from report_schema import (  # noqa: E402
     FinalEvidenceIdentityContext,
     final_evidence_hygiene_context,
     validate_canonical_report,
+    verify_clean_checkout,
 )
 
 
@@ -193,6 +194,84 @@ class ReportHygieneTests(unittest.TestCase):
                     bundle=bundle,
                     bundle_sha256=digest,
                 )
+
+    def test_checkout_hygiene_rejects_every_git_dirty_class(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+            _git(repo, "init", "-q")
+            _git(repo, "config", "user.name", "O07 test")
+            _git(repo, "config", "user.email", "o07@example.invalid")
+            (repo / ".gitignore").write_text("ignored.txt\n")
+            tracked = repo / "tracked.txt"
+            tracked.write_text("clean\n")
+            _git(repo, "add", ".")
+            _git(repo, "commit", "-qm", "base")
+            self.assertEqual(verify_clean_checkout(repo), repo.resolve())
+
+            tracked.write_text("unstaged\n")
+            with self.assertRaisesRegex(ValueError, "not clean"):
+                verify_clean_checkout(repo)
+            _git(repo, "restore", "tracked.txt")
+
+            tracked.write_text("staged\n")
+            _git(repo, "add", "tracked.txt")
+            with self.assertRaisesRegex(ValueError, "not clean"):
+                verify_clean_checkout(repo)
+            _git(repo, "restore", "--staged", "tracked.txt")
+            _git(repo, "restore", "tracked.txt")
+
+            untracked = repo / "untracked.txt"
+            untracked.write_text("untracked\n")
+            with self.assertRaisesRegex(ValueError, "not clean"):
+                verify_clean_checkout(repo)
+            untracked.unlink()
+
+            ignored = repo / "ignored.txt"
+            ignored.write_text("ignored\n")
+            with self.assertRaisesRegex(ValueError, "not clean"):
+                verify_clean_checkout(repo)
+            ignored.unlink()
+
+    def test_checkout_hygiene_rejects_dirty_submodule(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            child = root / "child"
+            child.mkdir()
+            _git(child, "init", "-q")
+            _git(child, "config", "user.name", "O07 test")
+            _git(child, "config", "user.email", "o07@example.invalid")
+            (child / "value.txt").write_text("clean\n")
+            _git(child, "add", ".")
+            _git(child, "commit", "-qm", "base")
+
+            repo = root / "repo"
+            repo.mkdir()
+            _git(repo, "init", "-q")
+            _git(repo, "config", "user.name", "O07 test")
+            _git(repo, "config", "user.email", "o07@example.invalid")
+            subprocess.run(
+                [
+                    "git",
+                    "-c",
+                    "protocol.file.allow=always",
+                    "-C",
+                    str(repo),
+                    "submodule",
+                    "add",
+                    "-q",
+                    str(child),
+                    "nested",
+                ],
+                check=True,
+            )
+            _git(repo, "commit", "-qam", "add submodule")
+            self.assertEqual(verify_clean_checkout(repo), repo.resolve())
+
+            (repo / "nested/value.txt").write_text("dirty\n")
+            with self.assertRaisesRegex(ValueError, "not clean"):
+                verify_clean_checkout(repo)
 
     def test_free_form_external_gate_member_is_rejected(self) -> None:
         report = copy.deepcopy(_reports()[0])

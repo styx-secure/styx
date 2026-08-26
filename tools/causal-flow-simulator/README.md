@@ -132,21 +132,30 @@ explicit checkpoint/AP input instead of being emitted as a new live relation.
 
 ## O-07 canonical evidence hygiene
 
-Every O-07 canonical-report producer validates a closed schema with a mandatory
-context derived from the exact Base, candidate, both Git trees, binary/full-index
-diff, repository path, hostname and user before it serializes output. Full
-repository identities and every prefix of seven or more characters are
-forbidden in report keys and values, as are absolute paths, runtime identities,
-timestamps and process identifiers.
+The final Git bundle is created once before any O-07 report. Its SHA-256 is
+locked as an external execution input, and every canonical-report producer
+requires both the bundle path and that locked digest. Before serialization each
+producer verifies the exact Base and candidate, both Git trees, the
+binary/full-index diff, the complete bundle and its digest, then validates its
+closed v3 report schema. Full repository identities and every prefix of seven
+or more characters are forbidden in report keys and values, as are absolute
+paths, provenance-labelled runtime identities, timestamps, process identifiers
+and elapsed-time values. Bundle and runtime identities remain in raw external
+logs only.
 
-The actual final Git bundle does not have a reproducible byte identity across
-independent bundle creation. It is therefore created once for the final package,
-and `o07/verify_final_evidence_hygiene.py` hashes those exact bytes and
-revalidates both worktree copies of all four canonical report families against
-the resulting identity. The verifier also requires canonical JSON bytes and
-byte equality between the two reports of each schema. This post-packaging gate
-does not replace `git bundle verify`, manifest verification or exact Base/HEAD
-checks; all remain separate external evidence.
+`o07/verify_final_evidence_hygiene.py` accepts two named, distinct, clean
+checkout roots and two distinct external evidence roots. It validates the exact
+inventory, observations, dispositions and mutant outcomes for all four report
+families, requires byte-identical results between runs, and independently
+regenerates every report in a gate-owned temporary directory before accepting
+the submitted bytes. Anonymous reports, synthetic counts, reused paths,
+same-root runs, dirty checkouts, symlinks and changed bundle bytes fail closed.
+
+The flat final package is checked by `o07/verify_flat_package.py`. Its manifest
+must name exactly every regular artifact and no directory, symlink, special,
+duplicate, missing or extra entry; only after that exact-set check does the tool
+run plain `sha256sum -c`. These gates complement, rather than replace, the raw
+Issue/PR evidence and the complete two-run historical regression artifacts.
 
 ## O-06c exact combined-construction package
 

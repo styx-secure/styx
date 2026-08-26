@@ -89,12 +89,12 @@ EXPECTED_ARTIFACT_SHA256 = {
     MODEL_PATH: "9984ff007f10d24811bc3dae211825cbeae20134ab713d48223d806d13c907a2",
     "docs/protocol/styx-app-kernel-v0-decisions.md": "9d8aac228077e8614f3b63af2cf43327dc26440793ba213f971703f3f3d51ddd",
     "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-analysis.md": "7758c6d0bdbbc1eb2ebbe93fac85c94d056ecaab744c1700de21160f3dc9e63e",
-    "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-falsification-report.md": "4885dd3ad166ad5042508503001d80d83e94e5fe2170a1f79fb7f72926f5ef62",
+    "docs/protocol/styx-app-kernel-v0-genesis-checkpoint-falsification-report.md": "c3f96e79dcf8d7f5d96d5a7165b7b8b7ca4fd08c19a64317c16223e4e59208e0",
     "docs/protocol/styx-app-kernel-v0-identifier-derivation-analysis.md": "a2fdef0e9daad20ea62e2f511c29d0b6517b86550b98572e58518039c0d2dec0",
     "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md": "7d1e10e9d89fbac35082ad823176c58b29835d07b9b4ee4057aa7f02c6230bec",
     "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md": "ad68985fde0c0d3bcc5916446ff04c7c1a3572f8147c3522fde5b6496166eecf",
     "docs/security/STYX-THREAT-MODEL.md": "c6599f136ca222b9e1739c714c9339b4fd181c5af779b776f597e2a65763e5f5",
-    "tools/causal-flow-simulator/README.md": "4a42410e1752a68ee8c57e33cbf06b89e7628715fb5834e5da01a4ae15a1a8ec",
+    "tools/causal-flow-simulator/README.md": "e8cd3cabca3899e928c2a75199c5e496101e798a5a69f03a5d278df9f34faded",
 }
 
 

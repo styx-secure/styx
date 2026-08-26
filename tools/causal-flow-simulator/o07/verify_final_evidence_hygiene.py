@@ -124,7 +124,15 @@ def _validate_run_roots(
         if observed_candidate != expected_candidate or observed_base != expected_base:
             raise ValueError("checkout Base/HEAD mismatch")
         if subprocess.run(
-            ["git", "-C", str(repo), "merge-base", "--is-ancestor", expected_base, expected_candidate],
+            [
+                "git",
+                "-C",
+                str(repo),
+                "merge-base",
+                "--is-ancestor",
+                expected_base,
+                expected_candidate,
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         ).returncode != 0:
@@ -328,16 +336,56 @@ def _regenerate(
     ]
     script = repo / "tools/causal-flow-simulator/o07"
     if family == "probe":
-        command = [sys.executable, str(script / "run_genesis_checkpoint_probe.py"), *common, "--suite", "required", "--output", str(output)]
+        command = [
+            sys.executable,
+            str(script / "run_genesis_checkpoint_probe.py"),
+            *common,
+            "--suite",
+            "required",
+            "--output",
+            str(output),
+        ]
     elif family == "runtime":
         javascript = shutil.which("node")
         if javascript is None:
             raise ValueError("required JavaScript runtime unavailable")
-        command = [sys.executable, str(script / "run_cross_runtime.py"), *common, "--suite", "required", "--javascript", javascript, "--workspace", str(workspace_root / "runtime-workspace"), "--output", str(output)]
+        command = [
+            sys.executable,
+            str(script / "run_cross_runtime.py"),
+            *common,
+            "--suite",
+            "required",
+            "--javascript",
+            javascript,
+            "--workspace",
+            str(workspace_root / "runtime-workspace"),
+            "--output",
+            str(output),
+        ]
     elif family == "mutations":
-        command = [sys.executable, str(script / "run_mutations.py"), *common, "--suite", "required", "--output", str(output)]
+        command = [
+            sys.executable,
+            str(script / "run_mutations.py"),
+            *common,
+            "--suite",
+            "required",
+            "--output",
+            str(output),
+        ]
     elif family == "scope":
-        command = [sys.executable, str(script / "scope_guard_o07.py"), *common, "--base", base, "--candidate", candidate, "--mode", "strict", "--output", str(output)]
+        command = [
+            sys.executable,
+            str(script / "scope_guard_o07.py"),
+            *common,
+            "--base",
+            base,
+            "--candidate",
+            candidate,
+            "--mode",
+            "strict",
+            "--output",
+            str(output),
+        ]
     else:
         raise ValueError("unknown report family")
     subprocess.run(command, cwd=repo, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -432,7 +480,13 @@ def main(argv: list[str] | None = None) -> int:
             run_one=_descriptor(args, "run_one"),
             run_two=_descriptor(args, "run_two"),
         )
-    except (OSError, UnicodeError, ValueError, json.JSONDecodeError, subprocess.CalledProcessError) as error:
+    except (
+        OSError,
+        UnicodeError,
+        ValueError,
+        json.JSONDecodeError,
+        subprocess.CalledProcessError,
+    ) as error:
         print(f"O-07 final evidence hygiene failed: {error}", file=sys.stderr)
         return 2
     print("O-07 FINAL EVIDENCE HYGIENE verdict=PASS reports=8 " f"bundle_sha256={identity}")
