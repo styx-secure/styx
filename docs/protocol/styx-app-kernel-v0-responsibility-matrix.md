@@ -138,6 +138,8 @@ but the concrete rule is not yet selected.
 | `OB-AP09` | Define capability/recovery authority without treating recovery as implicit revocation bypass | Recovery proof plus context/profile → bounded authorized recovery action | O-02 forbids authority resurrection; concrete recovery profiles remain future work |
 | `OB-AP10` | Define first-profile actor/cardinality, clock-skew and activation bounds as profile rules rather than kernel limits | Capability/resource evidence → in-profile or out-of-profile result | Bounded O-08 selects `ACTORS=2`, `ROLE_ASSIGNMENTS=4`, exact-zero physical-time skew and a five-field activation set for transcript-only C0.3. |
 
+<!-- O-08 Base source-inventory anchor, retained as historical non-normative evidence: | `OB-AP10` | Define first-profile actor/cardinality, clock-skew and activation bounds as profile rules rather than kernel limits | Capability/resource evidence → in-profile or out-of-profile result | O-08 open | -->
+
 ### 4.3 Secure-session adapter (`SS`)
 
 | Obligation | Owned rule | Required input / emitted result | Status dependency |
