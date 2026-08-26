@@ -1039,27 +1039,64 @@ outcomes.
 
 ### O-08 — Profile skew, cardinality and activation bounds
 
-- **Status:** `OPEN`.
+- **Status:** bounded `DECIDED` for the transcript-only C0.3 entry envelope;
+  every earlier O-08 selection is superseded and historical only.
 - **Question:** what clock-skew policy, first-profile actor cardinality and
   N-party activation bounds apply?
-- **Rationale/evidence:** `VC-007`, `HLC-002` through `HLC-005`, `HLC-007` and
-  `HLC-008` show that current two-party and clock behavior is not a safe profile
-  definition.
+- **Ratified remediation rule:** the replacement candidate set supplies 46
+  semantic maxima, four abstract activation-capability minima, one structural
+  exact four-key capability declaration and two exact zero/unsupported values.
+  Eleven post-C0.3 and five evidence-only dimensions remain classified but
+  cannot affect C0.3 semantics or authority. `INTEGER_FIELD_RANGE` is only a
+  representability witness; field-specific limits own work. `SEQUENCE_VALUE`
+  derives from lifetime and `CHUNK_OCTETS` is a closed set. The fifth evidence
+  dimension, `AUTHORITY_CONTENTION_BOUND`, is exact `B4(P)` over the admitted
+  C0.2j authority poset: it proves a covered region but is not an additional
+  runtime rejection gate; traces outside that proof region remain an explicit
+  fail-closed grey zone under the selected state and transition ceilings.
+- **Closing evidence:** clean replacement selection HEAD
+  `613427c857d8f1f2b80d16b28b2ca9112cf6e96b`, six measurements, one comparison
+  report and immutable `maverde73` ForgeRelay Issue-comment `5431393925` bind
+  the selected `balanced` envelope digest
+  `317206449117fcad351f0338c719085a8eb623605d7768327e27d26fd48256fd`.
+  Python and dependency-independent Node agree on observable pre/post state,
+  all 53 executed gate mutants, the 16 checked composition rows and the exact
+  contention-bound, maximum-antichain and adversarial witness families against
+  the actual C0.2j fold. The final two-clean-checkout gate and independent
+  exact-HEAD reviews passed without a blocking, high or medium finding.
 - **Rejected alternatives:** promoting current limits to kernel rules; unbounded
-  actors or skew; silent degradation outside tested profiles.
+  actors or skew; silent degradation outside tested profiles; selecting a
+  wider candidate that excludes the declared conservative capability profile.
 - **Security/privacy:** bounds affect denial of service, metadata exposure and
-  whether a runtime can enforce the profile safely.
-- **Missing evidence:** C0.2a assigns activation bounds to the application
-  profile and requires capability/resource envelopes from the other layers.
-  Concrete runtime-envelope and vertical-role capacity measurements are still
-  missing.
-- **Dependent artifact:** first supported profile and any later N-party profile.
-- **Smallest bounded follow-up:** measure the intended runtime/session/transport
-  envelopes, then evaluate explicit exhaustion, skew and denial-of-service
-  cases without leaking profile choices into the kernel.
-- **Residual/closure condition:** close only with enforceable limits and explicit
-  out-of-profile rejection.
-- **Human ratification:** pending final-HEAD acceptance that this remains open.
+  whether a runtime can enforce the profile safely. Excess authority evidence
+  makes projection unavailable; it never becomes absent or an empty authority
+  set. Physical time and checkpoint evidence are unsupported exact zero.
+- **Dependent artifact:** O-10 receives 66 safe-recovery handoff rows but still
+  owns stable codes. Product/runtime/session/transport profiles remain separate.
+- **Residual/reopen condition:** reopen if complete non-stale evidence within
+  every selected entry dimension other than the three projection-work ceilings
+  (`AUTHORITY_STATES`, `AUTHORITY_TRANSITIONS` and `REPLAYED_EVENT_WORK`),
+  and inside the proved region, makes the whole authority projection
+  unavailable; if any K-admitted history has reachable states above `B4(P)` or
+  transitions above `width(P) * B4(P)`, even when the fold succeeds; if the
+  evidence poset differs from the fold poset; if Python and JavaScript disagree
+  or understate `B4(P)`; if the C0.2j state key, predecessor relation, permanent-
+  termination semantics or lineage closure changes; if the source inventory
+  gains, removes or merges a dimension; or if any selected dimension's meaning,
+  scope, unit, stage, role, capability assumption, bound, frozen-width status or
+  recovery changes. Failure to reject an outside-width trace before DP state
+  insertion also reopens O-08. Grey-zone exhaustion alone does not reopen it
+  because availability is not claimed there.
+- **Human ratification:** Issue #250 and the Issue #251 partition amendment
+  authorized the remediation; the replacement candidate selection and exact-
+  final technical human approval are recorded. This bounded decision closes
+  O-08 only. Immutable Issue-comment `5432143151` records the bounded closing
+  exception for the incomplete Section 8.1 AST assignment guard, assigns it to
+  protocol governance/agent-enforcement and requires a full AST allowlist plus
+  the O-14-removal negative test before any later review-model or validator
+  assignment change. Until that remediation, such a change fails closed and
+  reopens this procedural disposition. C0.3 stays `NO_GO` and no product/runtime
+  support follows.
 
 ### O-09 — Kernel/profile responsibility split
 
@@ -1377,10 +1414,10 @@ immutable historical evidence and the independent v3 report records the
 superseding authority model. C0.2k selects the credential/sequence-bound
 commitment context and supplies bounded amendment evidence; O-06c independently
 falsifies the exact combined bytes within its declared envelope.
-O-06 through O-08 and O-10
-still contain choices required to derive normative bytes or adversarial
-expectations; O-07 explicitly includes the previously deferred checkpoint-
-authentication contract. O-12 is
+O-08 is bounded `DECIDED` for the selected transcript-only entry envelope,
+while O-10 still contains choices required to derive stable adversarial
+outcomes. O-07 retains its exact corpus-integration
+condition and O-14 retains its placeholder-substituted O-06c rerun. O-12 is
 additionally blocking for any profile that retains a physical-time claim; it is
 inapplicable only to profiles that omit physical time. O-11 intentionally does
 not block a transcript-only C0.3 corpus. Starting that corpus now would freeze
@@ -1403,8 +1440,8 @@ The smallest safe sequence is:
    evidence; then execute O-06c adversarial evidence over the combined
    construction;
 5. preserve and rerun the completed v1, v2, v3 and C0.2k baseline and mutation evidence after those changes, then
-   close genesis/checkpoint evidence, cardinality and error questions O-07,
-   O-08 and O-10, preserve O-14's condition-bearing decision
+   preserve the closed O-07 genesis/checkpoint and O-08 resource envelopes,
+   close O-10, preserve O-14's condition-bearing decision
    and discharge its separately ratified combined-evidence rerun, plus O-12 for any time-bearing profile,
    without product implementation authority; retain O-11 for the later
    wire/storage decision;

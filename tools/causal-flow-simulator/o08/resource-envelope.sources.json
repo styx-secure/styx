@@ -1,0 +1,306 @@
+{
+  "schema": "styx-o08-resource-envelope-sources/v1",
+  "status": "CANDIDATE_SOURCE_INVENTORY",
+  "repository": "styx-secure/styx",
+  "candidate_head": "ba0525da1dd78c76c5cc60bc2041e2d3bed44bb3",
+  "issue": 250,
+  "rules": {
+    "complete_partition": true,
+    "dimension_may_appear_in_one_group_only": true,
+    "anchor_must_match_exactly_once": true,
+    "numeric_witness_is_not_a_selected_limit": true,
+    "runtime_capability_cannot_narrow_semantic_envelope": true
+  },
+  "enforcement_stages": [
+    "S0_PROFILE_ACTIVATION",
+    "S1_TRANSPORT_ADMISSION",
+    "S2_SESSION_ADMISSION",
+    "S3_KERNEL_STRUCTURAL",
+    "S4_GRAPH_ADMISSION",
+    "S5_AUTHORITY_PROJECTION",
+    "S6_DURABLE_COMMIT",
+    "S7_PRESENTATION"
+  ],
+  "dimension_enforcement_stages": {
+    "FRAMING_OBJECT_OCTETS": ["S3_KERNEL_STRUCTURAL"],
+    "FRAMING_CONTEXT_OCTETS": ["S3_KERNEL_STRUCTURAL"],
+    "AP_TRANSITION_BLOCK_OCTETS": ["S3_KERNEL_STRUCTURAL"],
+    "REFERENCE_OCTETS": ["S3_KERNEL_STRUCTURAL"],
+    "TEXT_FIELD_OCTETS": ["S3_KERNEL_STRUCTURAL"],
+    "INTEGER_FIELD_RANGE": [],
+    "SEQUENCE_VALUE": ["S3_KERNEL_STRUCTURAL"],
+    "EVENTS_ADMITTED": ["S4_GRAPH_ADMISSION"],
+    "EVIDENCE_PER_CREDENTIAL": ["S4_GRAPH_ADMISSION", "S5_AUTHORITY_PROJECTION"],
+    "CONTEXT_LIFETIME_EVENTS": ["S4_GRAPH_ADMISSION", "S6_DURABLE_COMMIT"],
+    "OPERATIONAL_EVENT_RATE": ["S1_TRANSPORT_ADMISSION", "S4_GRAPH_ADMISSION"],
+    "PARENTS_PER_EVENT": ["S4_GRAPH_ADMISSION"],
+    "ACTIVE_FRONTIER": ["S4_GRAPH_ADMISSION"],
+    "GRAPH_DEPTH": ["S4_GRAPH_ADMISSION"],
+    "ANCESTRY_RELATIONS": ["S4_GRAPH_ADMISSION"],
+    "PENDING_ROOTS": ["S4_GRAPH_ADMISSION"],
+    "PENDING_DESCENDANTS": ["S4_GRAPH_ADMISSION"],
+    "HALTED_REPLAY_SPAN": ["S4_GRAPH_ADMISSION", "S6_DURABLE_COMMIT"],
+    "RETRY_WORK": ["S1_TRANSPORT_ADMISSION", "S4_GRAPH_ADMISSION"],
+    "CREDENTIALS": ["S5_AUTHORITY_PROJECTION"],
+    "LINEAGE_DEPTH": ["S5_AUTHORITY_PROJECTION"],
+    "ALIASES_PER_CREDENTIAL": ["S5_AUTHORITY_PROJECTION"],
+    "CONTROL_EVENTS": ["S5_AUTHORITY_PROJECTION"],
+    "FORK_SLOTS": ["S5_AUTHORITY_PROJECTION"],
+    "SIBLINGS_PER_FORK": ["S5_AUTHORITY_PROJECTION"],
+    "AUTHORITY_CONCURRENT_CONTROLS": ["S5_AUTHORITY_PROJECTION"],
+    "AUTHORITY_CONTENTION_BOUND": [],
+    "AUTHORITY_STATES": ["S5_AUTHORITY_PROJECTION"],
+    "AUTHORITY_TRANSITIONS": ["S5_AUTHORITY_PROJECTION"],
+    "ORDINARY_PREFIX_QUERIES": ["S5_AUTHORITY_PROJECTION"],
+    "REPLAYED_EVENT_WORK": ["S5_AUTHORITY_PROJECTION"],
+    "COMPLETE_PATH_COUNT": [],
+    "ORACLE_ORDER_WIDTH": [],
+    "EVIDENCE_EXPLORATION_CASES": [],
+    "CONTENT_EXACT_OCTETS": ["S3_KERNEL_STRUCTURAL", "S6_DURABLE_COMMIT"],
+    "AP_EXPANDED_CONTENT_OCTETS": ["S3_KERNEL_STRUCTURAL"],
+    "CHUNK_OCTETS": ["S3_KERNEL_STRUCTURAL"],
+    "CHUNKS_PER_CONTENT": ["S3_KERNEL_STRUCTURAL"],
+    "TREE_FAN_OUT": ["S3_KERNEL_STRUCTURAL"],
+    "COMMITMENT_VALUE_OCTETS": ["S3_KERNEL_STRUCTURAL"],
+    "RANDOMIZER_OCTETS": ["S3_KERNEL_STRUCTURAL"],
+    "PART_SYMBOL_OCTETS": ["S3_KERNEL_STRUCTURAL"],
+    "RECORDS": ["S6_DURABLE_COMMIT"],
+    "REMOVAL_DIRECTIVES": ["S5_AUTHORITY_PROJECTION", "S6_DURABLE_COMMIT"],
+    "CHECKPOINT_REFERENCES": ["S3_KERNEL_STRUCTURAL", "S6_DURABLE_COMMIT"],
+    "SIGNATURE_ATTEMPTS": ["S3_KERNEL_STRUCTURAL"],
+    "SIGNATURE_OCTETS": ["S3_KERNEL_STRUCTURAL"],
+    "VERIFICATION_KEY_OCTETS": ["S3_KERNEL_STRUCTURAL"],
+    "GENESIS_ATTEMPTS": ["S3_KERNEL_STRUCTURAL", "S6_DURABLE_COMMIT"],
+    "GENESIS_BODY_OCTETS": ["S3_KERNEL_STRUCTURAL"],
+    "GENESIS_POLICY_OCTETS": ["S3_KERNEL_STRUCTURAL", "S5_AUTHORITY_PROJECTION"],
+    "DURABLE_REQUIRED_OCTETS": ["S0_PROFILE_ACTIVATION", "S6_DURABLE_COMMIT"],
+    "DURABLE_RECORDS": ["S0_PROFILE_ACTIVATION", "S6_DURABLE_COMMIT"],
+    "CUSTODY_REDUNDANCY": ["S0_PROFILE_ACTIVATION", "S6_DURABLE_COMMIT"],
+    "TRANSIENT_MEMORY_CAPABILITY": ["S0_PROFILE_ACTIVATION"],
+    "TRANSPORT_ENVELOPE_OCTETS": ["S1_TRANSPORT_ADMISSION"],
+    "TRANSPORT_DESTINATIONS": ["S1_TRANSPORT_ADMISSION"],
+    "OUTBOX_ITEMS": ["S1_TRANSPORT_ADMISSION", "S6_DURABLE_COMMIT"],
+    "DELIVERY_ATTEMPTS": ["S1_TRANSPORT_ADMISSION"],
+    "DIAGNOSTIC_OCTETS": ["S7_PRESENTATION"],
+    "ACTIVATION_CAPABILITY_SET": ["S0_PROFILE_ACTIVATION"],
+    "PROFILE_VERSION_SKEW": ["S0_PROFILE_ACTIVATION"],
+    "ACTORS": ["S0_PROFILE_ACTIVATION", "S5_AUTHORITY_PROJECTION"],
+    "ROLE_ASSIGNMENTS": ["S0_PROFILE_ACTIVATION", "S5_AUTHORITY_PROJECTION"],
+    "SESSION_MEMBERS": ["S2_SESSION_ADMISSION"],
+    "SESSION_PENDING_TRANSITIONS": ["S2_SESSION_ADMISSION", "S6_DURABLE_COMMIT"],
+    "SESSION_REPLAY_WINDOW": ["S2_SESSION_ADMISSION"],
+    "KEY_PACKAGES_PENDING": ["S2_SESSION_ADMISSION", "S6_DURABLE_COMMIT"],
+    "PHYSICAL_TIME_SKEW": ["S0_PROFILE_ACTIVATION"]
+  },
+  "scope_roles": {
+    "C03_SEMANTIC_LIMIT": [
+      "FRAMING_OBJECT_OCTETS", "FRAMING_CONTEXT_OCTETS",
+      "AP_TRANSITION_BLOCK_OCTETS", "REFERENCE_OCTETS", "TEXT_FIELD_OCTETS",
+      "SEQUENCE_VALUE", "EVENTS_ADMITTED",
+      "EVIDENCE_PER_CREDENTIAL", "CONTEXT_LIFETIME_EVENTS", "PARENTS_PER_EVENT",
+      "ACTIVE_FRONTIER", "GRAPH_DEPTH", "ANCESTRY_RELATIONS", "PENDING_ROOTS",
+      "PENDING_DESCENDANTS", "HALTED_REPLAY_SPAN", "CREDENTIALS",
+      "LINEAGE_DEPTH", "ALIASES_PER_CREDENTIAL", "CONTROL_EVENTS", "FORK_SLOTS",
+      "SIBLINGS_PER_FORK", "AUTHORITY_CONCURRENT_CONTROLS", "AUTHORITY_STATES", "AUTHORITY_TRANSITIONS",
+      "ORDINARY_PREFIX_QUERIES", "REPLAYED_EVENT_WORK", "CONTENT_EXACT_OCTETS",
+      "AP_EXPANDED_CONTENT_OCTETS", "CHUNK_OCTETS", "CHUNKS_PER_CONTENT",
+      "TREE_FAN_OUT", "COMMITMENT_VALUE_OCTETS", "RANDOMIZER_OCTETS",
+      "PART_SYMBOL_OCTETS", "RECORDS", "REMOVAL_DIRECTIVES", "GENESIS_ATTEMPTS",
+      "GENESIS_BODY_OCTETS", "GENESIS_POLICY_OCTETS", "SIGNATURE_ATTEMPTS",
+      "SIGNATURE_OCTETS", "VERIFICATION_KEY_OCTETS", "PROFILE_VERSION_SKEW",
+      "ACTORS", "ROLE_ASSIGNMENTS"
+    ],
+    "C03_ACTIVATION_CAPABILITY_INPUT": [
+      "DURABLE_REQUIRED_OCTETS", "DURABLE_RECORDS", "CUSTODY_REDUNDANCY",
+      "TRANSIENT_MEMORY_CAPABILITY", "ACTIVATION_CAPABILITY_SET"
+    ],
+    "C03_EXPLICIT_ZERO_OR_UNSUPPORTED": [
+      "CHECKPOINT_REFERENCES", "PHYSICAL_TIME_SKEW"
+    ],
+    "POST_C03_LAYER_PROFILE": [
+      "OPERATIONAL_EVENT_RATE", "RETRY_WORK", "TRANSPORT_ENVELOPE_OCTETS",
+      "TRANSPORT_DESTINATIONS", "OUTBOX_ITEMS", "DELIVERY_ATTEMPTS",
+      "DIAGNOSTIC_OCTETS", "SESSION_MEMBERS", "SESSION_PENDING_TRANSITIONS",
+      "SESSION_REPLAY_WINDOW", "KEY_PACKAGES_PENDING"
+    ],
+    "EVIDENCE_ONLY": [
+      "COMPLETE_PATH_COUNT", "AUTHORITY_CONTENTION_BOUND", "ORACLE_ORDER_WIDTH", "EVIDENCE_EXPLORATION_CASES",
+      "INTEGER_FIELD_RANGE"
+    ]
+  },
+  "integer_field_coverage": [
+    {"field":"transcript.outer.body_length","width":32,"reserved":20,"dimension":"FRAMING_OBJECT_OCTETS"},
+    {"field":"transcript.protocol_version","width":16,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.application_profile_id","width":32,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.application_profile_version","width":32,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.object_kind","width":16,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.event_role_class","width":8,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.event_type","width":32,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.schema_identifier","width":32,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.schema_version","width":32,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.ap_transition_block.length","width":32,"reserved":0,"dimension":"AP_TRANSITION_BLOCK_OCTETS"},
+    {"field":"transcript.author_sequence","width":64,"reserved":0,"dimension":"SEQUENCE_VALUE"},
+    {"field":"transcript.direct_predecessor_presence","width":8,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.causal_parent_vector.count","width":32,"reserved":0,"dimension":"PARENTS_PER_EVENT"},
+    {"field":"transcript.content_descriptor.content_class","width":8,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.content_descriptor.exact_content_length","width":64,"reserved":0,"dimension":"CONTENT_EXACT_OCTETS"},
+    {"field":"transcript.commitment_descriptor.content_type_id","width":32,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.commitment_descriptor.commitment_suite_id","width":16,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.commitment_descriptor.commitment_shape","width":8,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.commitment_descriptor.commitment_value.length","width":32,"reserved":0,"dimension":"COMMITMENT_VALUE_OCTETS"},
+    {"field":"transcript.commitment_descriptor.chunk_geometry_presence","width":8,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.commitment_descriptor.chunk_geometry.length","width":32,"reserved":0,"dimension":"FRAMING_OBJECT_OCTETS"},
+    {"field":"transcript.removal.target_commitment.length","width":32,"reserved":0,"dimension":"COMMITMENT_VALUE_OCTETS"},
+    {"field":"transcript.credential_control.control_kind","width":8,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.credential_control.grantee_suite_id","width":16,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"transcript.credential_control.grantee_verification_key.length","width":32,"reserved":0,"dimension":"VERIFICATION_KEY_OCTETS"},
+    {"field":"commitment.context.commitment_suite_id","width":16,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"commitment.context.styx_protocol_version","width":16,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"commitment.context.application_profile_id","width":32,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"commitment.context.application_profile_version","width":32,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"commitment.context.author_sequence","width":64,"reserved":0,"dimension":"SEQUENCE_VALUE"},
+    {"field":"commitment.content_type_id","width":32,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"commitment.exact_content_length","width":64,"reserved":0,"dimension":"CONTENT_EXACT_OCTETS"},
+    {"field":"commitment.single_shape.exact_content_length","width":32,"reserved":132,"dimension":"CONTENT_EXACT_OCTETS"},
+    {"field":"commitment.commitment_shape","width":8,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"commitment.chunk_size","width":32,"reserved":0,"dimension":"CHUNK_OCTETS"},
+    {"field":"commitment.chunk_count","width":64,"reserved":0,"dimension":"CHUNKS_PER_CONTENT"},
+    {"field":"commitment.final_chunk_length","width":32,"reserved":0,"dimension":"CHUNK_OCTETS"},
+    {"field":"commitment.leaf_ordinal","width":64,"reserved":0,"dimension":"CHUNKS_PER_CONTENT"},
+    {"field":"commitment.leaf_length","width":32,"reserved":0,"dimension":"CHUNK_OCTETS"},
+    {"field":"commitment.subtree_leaf_count","width":64,"reserved":0,"dimension":"CHUNKS_PER_CONTENT"},
+    {"field":"genesis.outer.body_length","width":32,"reserved":20,"dimension":"GENESIS_BODY_OCTETS"},
+    {"field":"genesis.protocol_version","width":16,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"genesis.application_profile_id","width":32,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"genesis.application_profile_version","width":32,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"genesis.signature_suite_id","width":16,"reserved":0,"classification":"REGISTRY_ONLY_NO_WORK"},
+    {"field":"genesis.root_verification_key.length","width":32,"reserved":0,"dimension":"VERIFICATION_KEY_OCTETS"},
+    {"field":"genesis.initial_authority_policy.length","width":32,"reserved":0,"dimension":"GENESIS_POLICY_OCTETS"}
+  ],
+  "groups": [
+    {
+      "id": "canonical-framing",
+      "enforcement_stages": ["S3_KERNEL_STRUCTURAL"],
+      "dimensions": ["FRAMING_OBJECT_OCTETS", "FRAMING_CONTEXT_OCTETS", "AP_TRANSITION_BLOCK_OCTETS", "REFERENCE_OCTETS", "TEXT_FIELD_OCTETS", "INTEGER_FIELD_RANGE", "SEQUENCE_VALUE"],
+      "sources": [
+        {"path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md", "anchor": "## 3. Exact scalar and framing calculus"},
+        {"path": "docs/protocol/styx-app-kernel-v0-decisions.md", "anchor": "### K-04 — Exact numeric domains and fail-closed arithmetic"}
+      ],
+      "ownership": ["OB-K02", "OB-K03", "OB-K04"]
+    },
+    {
+      "id": "causal-admission",
+      "enforcement_stages": ["S1_TRANSPORT_ADMISSION", "S4_GRAPH_ADMISSION", "S5_AUTHORITY_PROJECTION", "S6_DURABLE_COMMIT"],
+      "dimensions": ["EVENTS_ADMITTED", "EVIDENCE_PER_CREDENTIAL", "CONTEXT_LIFETIME_EVENTS", "OPERATIONAL_EVENT_RATE", "PARENTS_PER_EVENT", "ACTIVE_FRONTIER", "GRAPH_DEPTH", "ANCESTRY_RELATIONS", "PENDING_ROOTS", "PENDING_DESCENDANTS", "HALTED_REPLAY_SPAN", "RETRY_WORK"],
+      "sources": [
+        {"path": "docs/protocol/styx-app-kernel-v0-decisions.md", "anchor": "### O-01 — Causal representation"},
+        {"path": "docs/security/STYX-THREAT-MODEL.md", "anchor": "### A3 — Malicious peer"},
+        {"path": "docs/security/STYX-THREAT-MODEL.md", "anchor": "### A13 — Availability adversary"}
+      ],
+      "ownership": ["OB-K05", "OB-K06", "OB-K07", "OB-K13", "OB-AP10", "OB-TR04", "OB-TR09"]
+    },
+    {
+      "id": "credential-and-authority",
+      "enforcement_stages": ["S5_AUTHORITY_PROJECTION"],
+      "dimensions": ["CREDENTIALS", "LINEAGE_DEPTH", "ALIASES_PER_CREDENTIAL", "CONTROL_EVENTS", "FORK_SLOTS", "SIBLINGS_PER_FORK", "AUTHORITY_CONCURRENT_CONTROLS", "AUTHORITY_STATES", "AUTHORITY_TRANSITIONS", "ORDINARY_PREFIX_QUERIES", "REPLAYED_EVENT_WORK", "AUTHORITY_CONTENTION_BOUND", "COMPLETE_PATH_COUNT"],
+      "sources": [
+        {"path": "docs/protocol/styx-app-kernel-v0-decisions.md", "anchor": "### O-02 — Author, rotation and authorization binding"},
+        {"path": "docs/security/STYX-THREAT-MODEL.md", "anchor": "### A2 — Cryptographically valid but unauthorized actor"}
+      ],
+      "ownership": ["OB-K18", "OB-K19", "OB-AP02", "OB-AP10"]
+    },
+    {
+      "id": "evidence-oracles",
+      "enforcement_stages": [],
+      "dimensions": ["ORACLE_ORDER_WIDTH", "EVIDENCE_EXPLORATION_CASES"],
+      "sources": [
+        {"path": "docs/protocol/styx-app-kernel-v0-decisions.md", "anchor": "## 1. Evidence and interpretation rules"},
+        {"path": "tools/causal-flow-simulator/o06c/javascript_encoder.mjs", "anchor": "// Independent dependency-free JavaScript encoder for O-06c cross-language evidence."}
+      ],
+      "ownership": ["EVIDENCE_ONLY"]
+    },
+    {
+      "id": "payload-commitment",
+      "enforcement_stages": ["S3_KERNEL_STRUCTURAL", "S5_AUTHORITY_PROJECTION", "S6_DURABLE_COMMIT"],
+      "dimensions": ["CONTENT_EXACT_OCTETS", "AP_EXPANDED_CONTENT_OCTETS", "CHUNK_OCTETS", "CHUNKS_PER_CONTENT", "TREE_FAN_OUT", "COMMITMENT_VALUE_OCTETS", "RANDOMIZER_OCTETS", "PART_SYMBOL_OCTETS", "RECORDS", "REMOVAL_DIRECTIVES"],
+      "sources": [
+        {"path": "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md", "anchor": "## 4. Chunk geometry and tree construction"},
+        {"path": "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md", "anchor": "## 12. Remaining ownership and reopen predicates"},
+        {"path": "docs/protocol/styx-app-kernel-v0-decisions.md", "anchor": "### O-04 — Payload commitment and detachment"}
+      ],
+      "ownership": ["OB-K10", "OB-K14", "OB-AP05", "OB-AP08", "OB-RS08"]
+    },
+    {
+      "id": "genesis-and-checkpoint",
+      "enforcement_stages": ["S3_KERNEL_STRUCTURAL", "S5_AUTHORITY_PROJECTION", "S6_DURABLE_COMMIT"],
+      "dimensions": ["CHECKPOINT_REFERENCES", "GENESIS_ATTEMPTS", "GENESIS_BODY_OCTETS", "GENESIS_POLICY_OCTETS"],
+      "sources": [
+        {"path": "docs/protocol/styx-app-kernel-v0-decisions.md", "anchor": "### O-07 — Genesis and checkpoint evidence"},
+        {"path": "tools/causal-flow-simulator/o07/node_adapter.mjs", "anchor": "// Independent dependency-free JavaScript execution of the closed O-07 inventory."}
+      ],
+      "ownership": ["OB-K08", "OB-AP03", "OB-RS03"]
+    },
+    {
+      "id": "signature-verification",
+      "enforcement_stages": ["S3_KERNEL_STRUCTURAL"],
+      "dimensions": ["SIGNATURE_ATTEMPTS", "SIGNATURE_OCTETS", "VERIFICATION_KEY_OCTETS"],
+      "sources": [
+        {"path": "docs/protocol/styx-app-kernel-v0-decisions.md", "anchor": "### O-14 — Signature-suite registry and credential algorithm binding"},
+        {"path": "tools/causal-flow-simulator/o14/node_adapter.mjs", "anchor": "// Exact runtime adapter for O-14 evidence. Never imported by product code."}
+      ],
+      "ownership": ["OB-K02", "OB-K18", "OB-RS01"]
+    },
+    {
+      "id": "durability-and-runtime",
+      "enforcement_stages": ["S0_PROFILE_ACTIVATION", "S6_DURABLE_COMMIT"],
+      "dimensions": ["DURABLE_REQUIRED_OCTETS", "DURABLE_RECORDS", "CUSTODY_REDUNDANCY", "TRANSIENT_MEMORY_CAPABILITY"],
+      "sources": [
+        {"path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md", "anchor": "### 4.4 Runtime/storage profile (`RS`)"},
+        {"path": "docs/security/STYX-THREAT-MODEL.md", "anchor": "### A10 — Storage fault, eviction or rollback source"},
+        {"path": "docs/security/STYX-THREAT-MODEL.md", "anchor": "### A12 — Supply-chain or build adversary"}
+      ],
+      "ownership": ["OB-RS03", "OB-RS04", "OB-RS08", "OB-RS09"]
+    },
+    {
+      "id": "transport-and-delivery",
+      "enforcement_stages": ["S1_TRANSPORT_ADMISSION", "S6_DURABLE_COMMIT", "S7_PRESENTATION"],
+      "dimensions": ["TRANSPORT_ENVELOPE_OCTETS", "TRANSPORT_DESTINATIONS", "OUTBOX_ITEMS", "DELIVERY_ATTEMPTS", "DIAGNOSTIC_OCTETS"],
+      "sources": [
+        {"path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md", "anchor": "### 4.5 Transport/routing profile (`TR`)"},
+        {"path": "docs/security/STYX-THREAT-MODEL.md", "anchor": "### A5 — Hostile or colluding relay and service provider"},
+        {"path": "docs/security/STYX-THREAT-MODEL.md", "anchor": "### A14 — Curious backup, telemetry or notification provider"}
+      ],
+      "ownership": ["OB-RS06", "OB-RS13", "OB-TR01", "OB-TR02", "OB-TR03", "OB-TR04", "OB-TR09", "OB-TR10"]
+    },
+    {
+      "id": "activation-and-profile-skew",
+      "enforcement_stages": ["S0_PROFILE_ACTIVATION", "S5_AUTHORITY_PROJECTION"],
+      "dimensions": ["ACTIVATION_CAPABILITY_SET", "PROFILE_VERSION_SKEW", "ACTORS", "ROLE_ASSIGNMENTS"],
+      "sources": [
+        {"path": "docs/protocol/styx-app-kernel-v0-decisions.md", "anchor": "### O-08 — Profile skew, cardinality and activation bounds"},
+        {"path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md", "anchor": "| `OB-AP10` | Define first-profile actor/cardinality, clock-skew and activation bounds as profile rules rather than kernel limits | Capability/resource evidence → in-profile or out-of-profile result | O-08 open |"}
+      ],
+      "ownership": ["OB-AP02", "OB-AP06", "OB-AP10"]
+    },
+    {
+      "id": "secure-session",
+      "enforcement_stages": ["S2_SESSION_ADMISSION", "S6_DURABLE_COMMIT"],
+      "dimensions": ["SESSION_MEMBERS", "SESSION_PENDING_TRANSITIONS", "SESSION_REPLAY_WINDOW", "KEY_PACKAGES_PENDING"],
+      "sources": [
+        {"path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md", "anchor": "### 4.3 Secure-session adapter (`SS`)"},
+        {"path": "docs/security/STYX-THREAT-MODEL.md", "anchor": "| Session secrets and membership | Confidential authenticated delivery, membership control, forward secrecy and post-compromise recovery within the selected session profile | Reject invalid or unauthorized session transitions; rotate/recover within profile bounds | `OB-SS01`–`OB-SS09` | Phase B proves only the exact pinned isolated profile recorded by its verdict. |"}
+      ],
+      "ownership": ["OB-SS01", "OB-SS02", "OB-SS04", "OB-SS05", "OB-SS09"]
+    },
+    {
+      "id": "physical-time-absence",
+      "enforcement_stages": ["S0_PROFILE_ACTIVATION"],
+      "dimensions": ["PHYSICAL_TIME_SKEW"],
+      "sources": [
+        {"path": "docs/protocol/styx-app-kernel-v0-decisions.md", "anchor": "### O-05 — Clock placement"},
+        {"path": "docs/protocol/styx-app-kernel-v0-decisions.md", "anchor": "### O-12 — Physical-time width, epoch, range and precision privacy"}
+      ],
+      "ownership": ["OB-AP10"]
+    }
+  ]
+}

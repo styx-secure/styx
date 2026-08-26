@@ -686,11 +686,12 @@ confer priority or finality, or permit an irreversible external effect.
 
 ## 12. Remaining ownership and reopen predicates
 
-- **O-07:** genesis/checkpoint contents, authority, acceptance, rollback,
-  equivocation, horizon and late admission remain open. The commitment context
+- **O-07:** bounded single-root genesis is decided; checkpoint grant-side use is
+  unsupported and suppress-side input unreachable in v0. The commitment context
   deliberately excludes genesis reference.
-- **O-08:** every supported maximum, closed chunk-size set, fan-out, memory
-  envelope, custody redundancy and halt envelope remain open.
+- **O-08:** the ratified remediation compares transcript-only supported maxima,
+  the binary fan-out, memory/custody capability minima and replay bounds. This
+  is not a product/runtime profile.
 - **O-10:** stable codes and safe outcome combination remain open.
 - **O-11:** wire/storage/opening containers, locators, fetch, inclusion proofs
   and extension rules remain open.
@@ -717,6 +718,7 @@ and renewed-ratification path in section 9.1; it is never an executor choice.
 
 After Issue #243, O-06 and O-06c are condition-bearing `DECIDED` over the exact
 combined C0.2j/C0.2k construction and declared bounded envelope. K-11 still
-gates any normative corpus file; O-07, O-08 and O-10 remain open. O-14 is
+gates any normative corpus file; O-07 and O-08 are bounded `DECIDED`, while
+O-10 remains open. O-14 is
 condition-bearing `DECIDED`, but its placeholder-substituted O-06c rerun remains
 required before corpus authorization. C0.3 remains `NO-GO`.

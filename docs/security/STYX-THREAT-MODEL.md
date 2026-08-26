@@ -44,7 +44,7 @@
   unavailable when its state or transition envelope is crossed. C0.2k selects
   the credential/sequence-bound commitment context with bounded amendment
   evidence. O-06c now supplies bounded combined evidence; C0.3 remains
-  `NO-GO` because O-08/O-10, O-07/O-14's retained integration conditions and
+  `NO-GO` because O-10, O-07/O-14's retained integration conditions and
   the corpus-path gate remain unresolved.
 - **O-14 amendment:** Issue #246 selects internal suite `0x0001`, pure Ed25519
   over the complete O-06b-1 transcript with canonical 32-octet keys, canonical
@@ -176,8 +176,11 @@ only the guarded signature language. C0.2j's M20 rule deliberately keeps every K
 credential-control event in the authority evidence set even when AP rejects the
 action or the actor is no longer authorized. Consequently, any still-valid
 bound signing key can consume finite control, fork, state and transition budgets;
-AP rejection is not a resource-admission control. O-08 must bound that evidence
-per credential and in total before a production availability claim is possible.
+AP rejection is not a resource-admission control. The ratified O-08 remediation
+therefore compares bounded evidence limits per credential and in total for the
+transcript-only C0.3 profile. No replacement value is authoritative before its
+new human-selection gate. This remains a fail-closed conformance bound, not a
+production availability claim.
 
 ### A3 — Malicious peer
 
@@ -227,12 +230,14 @@ slot-steering or operational availability loss. R-1
 blocks a direct omitted-history veto against an unseen later grant, but a
 compromised actor can still reduce the visible issuer and thereby keep later
 grants rooted there below `Must0`. Within C0.2j this reach is bounded only by the
-shared evidence envelope; O-08 must select enforceable per-credential and total
-admission limits before any production availability claim. This conservative
+shared evidence envelope; the O-08 remediation compares per-credential and
+context-total admission limits for transcript-only C0.3 evidence. Any selected
 effect never confers expansion or operational authority. A revoked credential
 may retain one contested slot for itself plus one for every stockpiled K-valid
 May0 descendant, each able to target a separate bounded subtree; those slots are
-limited only by the same per-credential and context-total O-08 envelope. V0 also
+limited by the same selected per-credential and context-total O-08 envelope.
+Those limits do not guarantee delivery or continued authority availability.
+V0 also
 has no atomic sole-authority rotation or recovery: a pre-provisioned descendant
 remains dependent on its issuer's operational lineage, while compromise or loss
 without independently rooted recovery authority is terminal. Fork slots are scoped by
@@ -260,9 +265,10 @@ carries the same key bytes, and no quorum or out-of-band remedy is selected for
 takeover by one uncontested authority. An authorized but compromised key may
 also spend the projection's finite control, fork, state and transition budgets:
 M20 intentionally retains all K-admitted control evidence even after AP rejects
-or revokes its actor. Exhaustion is fail-closed for authority, so O-08 must bound
-admission both per credential and across the context rather than relying only on
-the number of accepted controls.
+or revokes its actor. Exhaustion is fail-closed for authority. The bounded O-08
+profile therefore limits admission both per credential and across the context
+rather than relying only on the number of accepted controls; O-10 still owns the
+stable externally visible outcome names.
 An attacker may also deliver a valid self-signed genesis, replay a ceremony
 record from another context or race multiple candidates. None is a selector:
 the acceptor requires an independently authenticated `R`, exact tuple/reference
@@ -411,9 +417,36 @@ make telemetry or push metadata harmless.
 | A9 seized/compromised endpoint | Plaintext, password, local state and recovery material | Distinguish locked/unlocked guarantees, encrypt storage, rotate after compromise and follow incident procedure | `OB-RS01`/`OB-RS02`/`OB-RS11`, `OB-PV07` | Keylogger, screen capture, memory and authorized-recipient leakage remain possible. |
 | A10 fault/eviction/rollback | Durable state, causality, opening availability | Atomic fail-closed persistence, frontier-opening custody, crash reconciliation, runtime probes and bounded rollback evidence | `OB-RS03`–`OB-RS10`, fetch by `OB-TR05` | Permanent opening loss can strand a subtree; coherent rollback can remain undetectable without independent evidence. |
 | A11 malicious operator | Case confidentiality, role authority, audit and erasure | Least privilege, separation of duties, high-impact approval, alternate authority route and truthful pending/provisional/quarantined presentation | `OB-PV01`–`OB-PV06`; machine role semantics `OB-AP02` | A sole authority can strand a subtree or remove every peer and retain sole operation; protocol cannot ensure independence, lawful action, availability, finality or prevent off-protocol disclosure. |
-| A12 supply-chain/build adversary | Software/configuration and all plaintext handled by it | Exact provenance, reproducible artifacts, signed/verified updates, rollback control and incident response. O-06b-1/O-06b-2 record WebCrypto SHA-256, exact `@noble/hashes` lock evidence and the Dart reference dependency separately; no fallback or new dependency is selected. | `OB-RS12`, `OB-PV07`/`OB-PV10` | Upstream audit evidence does not transfer across revision, configuration or Styx integration; Dart's declared `crypto` range and package disclaimer are reference-oracle evidence, not production assurance. One-shot WebCrypto requires complete-buffer custody and creates an implementation memory-exposure window that O-08 must bound. |
+| A12 supply-chain/build adversary | Software/configuration and all plaintext handled by it | Exact provenance, reproducible artifacts, signed/verified updates, rollback control and incident response. O-06b-1/O-06b-2 record WebCrypto SHA-256, exact `@noble/hashes` lock evidence and the Dart reference dependency separately; no fallback or new dependency is selected. | `OB-RS12`, `OB-PV07`/`OB-PV10` | Upstream audit evidence does not transfer across revision, configuration or Styx integration; Dart's declared `crypto` range and package disclaimer are reference-oracle evidence, not production assurance. The bounded O-08 transcript envelope limits modeled one-shot custody but does not establish a production memory-exposure guarantee. |
 | A13 availability adversary | Delivery, access and organizational continuity | Bounds, backoff, failover, offline truth, abuse-aware controls and continuity drills | `OB-TR03`/`OB-TR04`/`OB-TR09`, `OB-PV07`/`OB-PV08` | Styx does not guarantee unstoppable, timely or cost-free delivery. |
 | A14 backup/telemetry/push provider | Local replicas, endpoint mapping and behavioral metadata | Minimize/forbid external signals, declare retention, isolate audit and test notification data flow | `OB-RS13`, `OB-TR08`, `OB-PV04` | Providers may retain allowed metadata and correlate it with external datasets. |
+
+### 3.2 Bounded C0.3 resource envelope
+
+O-08 has completed the provider-bound replacement selection documented in
+`docs/protocol/styx-app-kernel-v0-resource-envelope-analysis.md` and is bounded
+`DECIDED` for the transcript-only entry envelope. Its 53 C0.3
+entry dimensions cover canonical parsing, graph admission, authority
+projection, replay work, commitment material, four abstract capability minima
+and one structural exact capability-key declaration. Exceeding a candidate
+semantic or capability bound preserves the
+previous authoritative state and fails closed; it never authorizes truncation,
+selection by arrival order, partial replay or an AP authority shortcut. The
+envelope explicitly bounds the exact maximum antichain of the C0.2j authority
+control poset before DP state insertion: an adversary can otherwise create
+exponential state growth with concurrent, individually valid control evidence
+even when fork and sibling counts remain small.
+
+The envelope does not prove that a browser, native runtime or storage backend
+can sustain those values. Eleven operational/runtime dimensions and four
+evidence-only dimensions remain outside C0.3 entry semantics. O-08 therefore
+adds no claim of delivery, persistence, recovery, freshness, rollback
+detection, physical eviction resistance, bounded attacker bandwidth or
+continued availability after authority exhaustion or after the selected
+authority-concurrency width is exceeded. Product profiles must add
+their own smaller enforceable limits and capability evidence without changing
+the ultimately selected transcript semantics. No replacement candidate is
+authoritative before the new measurement and ForgeRelay human-selection gate.
 
 ## 4. Trust assumptions
 
@@ -589,7 +622,7 @@ Current evidence establishes only bounded components:
   bounded Pass0/selected-slot authority and lineage containment; C0.2k selects
   the 84-octet commitment context and bounded mutation evidence; Issue #243
   completes bounded O-06c evidence. O-06/O-06c are condition-bearing
-  `DECIDED`; O-07 is bounded `DECIDED`; O-08 and O-10 through O-16 retain their recorded open,
+  `DECIDED`; O-07 and O-08 are bounded `DECIDED`; O-10 through O-16 retain their recorded open,
   conditional or downstream-blocking roles;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
   described in its final verdict; and

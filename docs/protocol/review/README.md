@@ -242,8 +242,11 @@ normative omission shared by all sources. C0.2j is ratified historical input;
 C0.2k selects only its bounded commitment-context amendment and O-06c adds
 bounded combined-construction evidence. O-14 selects only its bounded guarded
 signature language and remains a condition-bearing C0.3 dependency until its
-separately ratified combined rerun passes. O-07 is bounded `DECIDED`; O-08 and O-10 remain open
-blockers for C0.3. While C0.3 is `NO_GO`, C0.3 itself blocks corpus,
+separately ratified combined rerun passes. O-07 and O-08 are bounded `DECIDED`;
+O-08 has a replacement provider-bound `balanced` selection after correction of
+its final-gate response shape and completion of two-clean-checkout evidence,
+exact-HEAD reviews and technical human approval; O-10 remains
+an open blocker for C0.3. While C0.3 is `NO_GO`, C0.3 itself blocks corpus,
 implementation alignment, demo, product and sensitive-use claims.
 
 `counterexamples[].steps` is the one intentionally order-sensitive sequence in

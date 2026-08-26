@@ -284,7 +284,7 @@ REQUIRED_C03_DEPENDENCIES = {
     "O-14",
 }
 
-CONTRACT_BASE_COMMIT = "86c3f2dbd630e445d737a25c09889de2777ee185"
+CONTRACT_BASE_COMMIT = "ba0525da1dd78c76c5cc60bc2041e2d3bed44bb3"
 
 EXPECTED_STATUS_BY_COLLECTION = {
     "blockers": {
@@ -294,7 +294,7 @@ EXPECTED_STATUS_BY_COLLECTION = {
         "C0.3_CORPUS_PATH_APPROVAL": "OPEN",
         "O-06c": "DECIDED",
         "O-07": "DECIDED",
-        "O-08": "OPEN",
+        "O-08": "DECIDED",
         "O-10": "OPEN",
         "O-12": "OPEN",
         "O-13": "OPEN",
