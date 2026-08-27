@@ -3,9 +3,9 @@
 - **Stato:** **ACCETTATA E APPLICATA** (2026-07-12).
 - **Decisione umana:** gate GitHub **#40** — GO esplicito del titolare del copyright
   (`@maverde73`, Maurizio Verde) il 2026-07-12.
-- **Implementazione:** Issue GitHub **#41** (Fase A: inventario read-only; Fase B:
-  applicazione), tramite Draft PR dedicata. Mappa esatta: `LICENSING.md` + `REUSE.toml`
-  (REUSE 3.3).
+- **Implementazione:** Issue GitHub **#41** (sei vettori esistenti) e successivo
+  emendamento **#253** (sei path futuri C0.3 interamente sintetici), tramite Draft
+  PR dedicate. Mappa esatta: `LICENSING.md` + `REUSE.toml` (REUSE 3.3).
 - **Contesto normativo:** piano operativo Styx Secure §8 (ADR-0004), §9, §15.
 
 ## Decisione
@@ -13,8 +13,9 @@
 1. **Materiale originale Styx** (codice prodotto, applicazioni, servizi, test, script,
    configurazione, documentazione, tooling di build/verifica): **`AGPL-3.0-or-later`**.
    Testo canonico in `LICENSE` (byte-identico a `LICENSES/AGPL-3.0-or-later.txt`).
-2. **Eccezioni Apache-2.0 — esattamente sei file**, approvati singolarmente dal titolare
-   nella Issue #41 (vettori d'interoperabilità sintetici e congelati):
+2. **Eccezioni Apache-2.0 — esattamente dodici path**, approvati singolarmente dal
+   titolare: sei file nella Issue #41 (vettori d'interoperabilità sintetici e
+   congelati):
    - `styx-js/test/fixtures/vault-crypto-v1/hkdf-v1.json`
    - `styx-js/test/fixtures/vault-crypto-v1/manifest-hmac-v1.json`
    - `styx-js/test/fixtures/vault-crypto-v1/record-v1-bytes.json`
@@ -22,8 +23,20 @@
    - `styx-js/test/fixtures/vault-crypto-v1/wrapper-v1.json`
    - `styx-js/test/fixtures/kdf-kat-vectors.js`
 
+   e sei path futuri nella Issue #253, pre-registrati mentre assenti e riservati
+   esclusivamente a dati C0.3 interamente sintetici generati da Styx:
+   - `conformance/application-protocol/c03/manifest.json`
+   - `conformance/application-protocol/c03/valid-transcript-vectors.json`
+   - `conformance/application-protocol/c03/invalid-transcript-vectors.json`
+   - `conformance/application-protocol/c03/state-machine-scenarios.json`
+   - `conformance/application-protocol/c03/adversarial-mutations.json`
+   - `conformance/application-protocol/c03/expected-traces.json`
+
    Nessun glob di directory è approvato; ogni futura eccezione richiede nuovo
-   inventario, lista esatta, emendamento umano e review indipendente.
+   inventario, lista esatta, emendamento umano e review indipendente. La licenza
+   dei sei path C0.3 si applica solo quando ciascun file esiste come dato
+   interamente sintetico Styx; non sono autorizzati byte di terzi e questo
+   emendamento non crea il corpus né autorizza C0.3.
 3. **Materiale di terzi e vendorizzato:** mantiene **integralmente** le licenze
    originali e le attribuzioni. Classificazione path-per-path del vendor OpenMLS:
    - `patch/lib.rs`: **derivato MIT** (Copyright OpenMLS Authors + modifiche
@@ -82,3 +95,6 @@ verificata dalla history Git). Restano esclusi e mantengono le rispettive licenz
   `docs/legal/2026-07-12-licensing-inventory.md`.
 - **2026-07-12 — Issue #41 Fase B:** applicazione (questa revisione), con review
   indipendente in `docs/legal/2026-07-12-review-open-source-licensing.md`.
+- **2026-08-27 — Issue #253:** emendamento del titolare per sei path futuri C0.3
+  interamente sintetici, pre-registrati mentre assenti; nessun byte di corpus,
+  materiale di terzi o autorizzazione C0.3 introdotti.

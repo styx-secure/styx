@@ -31,7 +31,7 @@ VALIDATOR_PATH = "tools/protocol-review-model/validate.py"
 EXPECTED_BASE_SOURCE_SHA256 = "e3d5ab45ec9a7933e690375661d2303b2b7915bf2f4c22e0f52acf559e3bc192"
 EXPECTED_FUNCTION_SHA256 = "fadc98da71affdc8ec308fe1aa866c4240d211ca38d9b5aa42b61ab27a9ba431"
 EXPECTED_MAIN_SHA256 = "3757e3802088f2f4d8aca18157003bdb7d91eb633f5238b2a65e5920b08802e1"
-EXPECTED_COMPLETE_SHA256 = "3337fb760e4eac172645ce00fdc8f9aa464149454695bcdef3b06615a13e3261"
+EXPECTED_COMPLETE_SHA256 = "a77067d559270c1779353d870c4663705951cea8ce19150c325014726d59629d"
 MAIN_ADDITION = "        findings.extend(validate_o10_outcome_taxonomy(model, args.repo_root))\n"
 ALLOWED_EXACT = frozenset(
     {
@@ -109,6 +109,11 @@ def expected_validator_source(before_source: str, actual_source: str) -> str:
     if before_source.count(status_before) != 1:
         raise ScopeError("O-10 Base status anchor drift")
     expected = before_source.replace(status_before, status_after)
+    gate_before = '        "C0.3_CORPUS_PATH_APPROVAL": "OPEN",\n'
+    gate_after = '        "C0.3_CORPUS_PATH_APPROVAL": "DECIDED",\n'
+    if expected.count(gate_before) != 1:
+        raise ScopeError("C0.3 gate Base status anchor drift")
+    expected = expected.replace(gate_before, gate_after)
     main_anchor = "def main(argv: list[str] | None = None) -> int:\n"
     if expected.count(main_anchor) != 1:
         raise ScopeError("main declaration anchor drift")
@@ -139,7 +144,12 @@ def validate_validator_delta(before_source: str, actual_source: str) -> dict[str
             allowed_assignments={"EXPECTED_STATUS_BY_COLLECTION"},
             allowed_functions={"validate_o10_outcome_taxonomy"},
             allowed_literal_changes={
-                ("EXPECTED_STATUS_BY_COLLECTION", "blockers", "O-10")
+                ("EXPECTED_STATUS_BY_COLLECTION", "blockers", "O-10"),
+                (
+                    "EXPECTED_STATUS_BY_COLLECTION",
+                    "blockers",
+                    "C0.3_CORPUS_PATH_APPROVAL",
+                ),
             },
             allowed_function_call_additions={},
             protected_literal_paths={

@@ -4,6 +4,8 @@ This document is the authoritative, human-readable licensing map of this
 repository. The machine-readable equivalent is [`REUSE.toml`](REUSE.toml)
 (REUSE Specification 3.3). The model was approved by the copyright holder,
 Maurizio Verde, in GitHub Issue #40 and implemented under GitHub Issue #41.
+The exact-path inventory was extended by the copyright holder in Issue #253;
+no default or third-party classification changed.
 
 ## License precedence
 
@@ -12,7 +14,7 @@ Licensing is resolved per exact path, in this closed order of precedence:
 1. **Exact third-party and derivative classifications** (listed below).
    A third-party or derivative classification always wins over any Styx
    default; the AGPL default never overwrites it.
-2. **Exact human-approved Apache-2.0 vector exceptions** (the six files
+2. **Exact human-approved Apache-2.0 data exceptions** (the twelve paths
    listed below, and nothing else).
 3. **`AGPL-3.0-or-later` default** for all remaining original Styx material.
 
@@ -38,11 +40,13 @@ to [`LICENSES/AGPL-3.0-or-later.txt`](LICENSES/AGPL-3.0-or-later.txt).
 
 Documentation is not dual-licensed and no Creative Commons license is used.
 
-## 2. Exact Apache-2.0 exceptions (six files)
+## 2. Exact Apache-2.0 exceptions (twelve paths)
 
-Exactly the following synthetic interoperability vector files are licensed
-under `Apache-2.0` (text in [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt)),
-copyright Maurizio Verde:
+Exactly the following current and future synthetic data paths are approved for
+`Apache-2.0` (text in [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt)),
+copyright Maurizio Verde. No directory glob or unlisted descendant is covered.
+
+### Existing interoperability vectors — Issue #41
 
 ```text
 styx-js/test/fixtures/vault-crypto-v1/hkdf-v1.json
@@ -53,7 +57,7 @@ styx-js/test/fixtures/vault-crypto-v1/wrapper-v1.json
 styx-js/test/fixtures/kdf-kat-vectors.js
 ```
 
-They contain frozen, fully synthetic known-answer vectors intended for
+These files contain frozen, fully synthetic known-answer vectors intended for
 independent interoperability verification. They contain no third-party
 material, no security-review content, no internal planning and no
 implementation source. All other fixtures, tests, documents, plans, reviews
@@ -61,6 +65,26 @@ and specifications — including `styx-js/test/fixtures/vault-crypto-v1/README.m
 `styx-js/test/fixtures/vault-crypto-v1/generate.js` and everything under
 `styx-js/test/fixtures/mls-state-v1/` — remain under the AGPL default or
 their third-party classification.
+
+### Future C0.3 synthetic corpus data — Issue #253
+
+```text
+conformance/application-protocol/c03/manifest.json
+conformance/application-protocol/c03/valid-transcript-vectors.json
+conformance/application-protocol/c03/invalid-transcript-vectors.json
+conformance/application-protocol/c03/state-machine-scenarios.json
+conformance/application-protocol/c03/adversarial-mutations.json
+conformance/application-protocol/c03/expected-traces.json
+```
+
+These six paths are pre-registered while absent. The Apache-2.0 licence
+attaches to each file only when it exists as fully synthetic Styx-generated
+data accepted by the copyright holder. Copied, adapted, transcribed or
+generated third-party/upstream bytes are forbidden. The future
+`manifest.json` must record generator identity, reproduction inputs,
+normative-source digests, generated-file digests, `synthetic: true` and
+`upstreamBytes: "none"`. This approval creates no corpus bytes and does not
+authorize C0.3.
 
 ## 3. Exact third-party and derivative classifications
 
