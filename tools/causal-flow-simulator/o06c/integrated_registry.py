@@ -34,6 +34,8 @@ class WitnessSpec:
     expected_remote_result: str
     expected_ap_exposure: bool
     expected_verifier_invocations: int
+    expected_envelope_checks: int
+    expected_transcript_regenerations: int
     detectors: tuple[str, ...]
     source_family: str
 
@@ -42,8 +44,10 @@ class WitnessSpec:
             "assertion": self.assertion,
             "detectors": list(self.detectors),
             "expected_ap_exposure": self.expected_ap_exposure,
+            "expected_envelope_checks": self.expected_envelope_checks,
             "expected_local_primary": self.expected_local_primary,
             "expected_remote_result": self.expected_remote_result,
+            "expected_transcript_regenerations": self.expected_transcript_regenerations,
             "expected_verifier_invocations": self.expected_verifier_invocations,
             "id": self.identifier,
             "source_family": self.source_family,
@@ -75,6 +79,8 @@ def _witness(
     ap: bool,
     detectors: tuple[str, ...],
     family: str,
+    envelope_checks: int = 9,
+    regenerations: int = 1,
 ) -> WitnessSpec:
     remote = "APPLIED" if primary == "APPLIED" else "OPAQUE_REMOTE_FAILURE"
     return WitnessSpec(
@@ -84,6 +90,8 @@ def _witness(
         remote,
         ap,
         verifier,
+        envelope_checks,
+        regenerations,
         detectors,
         family,
     )
@@ -157,7 +165,7 @@ _FIXED_WITNESSES = (
     _witness("I-K-BITFLIP-TRANSCRIPT", "a signature over a separately mutated complete transcript is invalid", "INVALID", verifier=1, ap=False, detectors=("COMPLETE_TRANSCRIPT_SIGNATURE",), family="signature"),
     _witness("I-K-EVENT-REFERENCE-SIGNATURE", "a valid signature over the event reference cannot replace a transcript signature", "INVALID", verifier=1, ap=False, detectors=("COMPLETE_TRANSCRIPT_SIGNATURE", "NO_REFERENCE_SUBSTITUTION"), family="signature"),
     _witness("I-K-BITFLIP", "bit-flipped signature cannot reach AP", "INVALID", verifier=1, ap=False, detectors=("COMPLETE_TRANSCRIPT_SIGNATURE",), family="signature"),
-    _witness("I-K-CANDIDATE-HISTORICAL", "candidate bytes cannot select trusted historical mode", "STRUCTURAL_REJECTION", verifier=0, ap=False, detectors=("TRUSTED_LOCAL_HISTORICAL",), family="substitution"),
+    _witness("I-K-CANDIDATE-HISTORICAL", "candidate bytes cannot select trusted historical mode", "STRUCTURAL_REJECTION", verifier=0, ap=False, detectors=("TRUSTED_LOCAL_HISTORICAL",), family="substitution", regenerations=0),
     _witness("I-SUB-EVENT-SUITE", "event-carried suite does not select verification", "APPLIED", verifier=1, ap=True, detectors=("BOUND_SELECTOR",), family="substitution"),
     _witness("I-SUB-EVENT-KEY", "event-carried key does not select verification", "APPLIED", verifier=1, ap=True, detectors=("BOUND_SELECTOR",), family="substitution"),
     _witness("I-SUB-GRANT-KEY", "GRANT grantee key does not verify the carrying event", "APPLIED", verifier=1, ap=True, detectors=("BOUND_SELECTOR",), family="substitution"),
@@ -167,6 +175,23 @@ _FIXED_WITNESSES = (
     _witness("I-SUB-MLS", "MLS/session validity cannot substitute for application K", "INVALID", verifier=1, ap=False, detectors=("NO_SESSION_SUBSTITUTION", "MLS_IS_NOT_K"), family="substitution"),
     _witness("I-PRECEDENCE-STRUCTURAL-LENGTH", "structural rejection outranks length mismatch", "STRUCTURAL_REJECTION", verifier=0, ap=False, detectors=("O10_K_PRECEDENCE",), family="precedence"),
     _witness("I-PRECEDENCE-INACTIVE-INVALID", "invalid K outranks inactive authority", "INVALID", verifier=0, ap=False, detectors=("O10_K_PRECEDENCE", "K_FIRST_INACTIVE"), family="precedence"),
+)
+
+
+_ENVELOPE_CANDIDATE_WITNESSES = (
+    _witness("I-O08-CANDIDATE-AP-TRANSITION-4097", "a 4097-octet AP transition is rejected before transcript work", "CURRENT_OBJECT_OUT_OF_PROFILE", verifier=0, ap=False, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate", regenerations=0),
+    _witness("I-O08-CANDIDATE-CHECKPOINT-1", "one checkpoint reference is rejected while the v0 envelope selects zero", "CURRENT_OBJECT_OUT_OF_PROFILE", verifier=0, ap=False, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate", regenerations=0),
+    _witness("I-O08-CANDIDATE-FRAMING-8191", "an 8191-octet framing observation remains within the selected envelope", "APPLIED", verifier=1, ap=True, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate"),
+    _witness("I-O08-CANDIDATE-FRAMING-8192", "an 8192-octet framing observation remains at the selected envelope boundary", "APPLIED", verifier=1, ap=True, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate"),
+    _witness("I-O08-CANDIDATE-FRAMING-8193", "an 8193-octet framing observation is rejected before transcript work", "CURRENT_OBJECT_OUT_OF_PROFILE", verifier=0, ap=False, detectors=("O08_CANDIDATE_BOUND", "O08_SKIP_ENVELOPE_DETECTOR"), family="o08-candidate", regenerations=0),
+    _witness("I-O08-CANDIDATE-FRAMING-DECLARED-8193", "an oversized declared transcript is independently rejected before regeneration", "CURRENT_OBJECT_OUT_OF_PROFILE", verifier=0, ap=False, detectors=("O08_DECLARED_FRAMING_BOUND",), family="o08-candidate", regenerations=0),
+    _witness("I-O08-CANDIDATE-PARENTS-9", "nine causal parents exhaust graph admission capacity", "CONTEXT_CAPACITY_EXHAUSTED", verifier=1, ap=True, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate"),
+    _witness("I-O08-CANDIDATE-PHYSICAL-SKEW-1", "nonzero physical-time skew is profile-activation unsupported", "PROFILE_ACTIVATION_UNSUPPORTED", verifier=0, ap=False, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate", regenerations=0),
+    _witness("I-O08-CANDIDATE-PROFILE-SKEW-1", "a profile-version skew of one is profile-activation unsupported", "PROFILE_ACTIVATION_UNSUPPORTED", verifier=0, ap=False, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate", regenerations=0),
+    _witness("I-O08-CANDIDATE-SEQUENCE-4096", "sequence 4096 is rejected before transcript work", "CURRENT_OBJECT_OUT_OF_PROFILE", verifier=0, ap=False, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate", regenerations=0),
+    _witness("I-O08-CANDIDATE-SIGNATURE-ATTEMPTS-65", "a 65th signature attempt is rejected before transcript work", "CURRENT_OBJECT_OUT_OF_PROFILE", verifier=0, ap=False, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate", regenerations=0),
+    _witness("I-O08-CANDIDATE-SIGNATURE-OCTETS-65", "a 65-octet signature is rejected before verifier work", "LENGTH_MISMATCH", verifier=0, ap=False, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate"),
+    _witness("I-O08-CANDIDATE-PROFILE-INACTIVE", "an inactive profile fails closed before candidate work", "PROFILE_ACTIVATION_UNSUPPORTED", verifier=0, ap=False, detectors=("O08_PROFILE_ACTIVATION",), family="o08-candidate", regenerations=0),
 )
 
 
@@ -200,7 +225,7 @@ _TRANSCRIPT_FIELDS = (
 
 
 def required_witnesses() -> tuple[WitnessSpec, ...]:
-    rows = list(_FIXED_WITNESSES)
+    rows = list((*_FIXED_WITNESSES, *_ENVELOPE_CANDIDATE_WITNESSES))
     for field_name in _TRANSCRIPT_FIELDS:
         rows.append(
             _witness(
@@ -261,11 +286,16 @@ def required_witnesses() -> tuple[WitnessSpec, ...]:
 
 _AP_BEFORE_K_DETECTORS = tuple(
     item.identifier for item in _FIXED_WITNESSES if not item.expected_ap_exposure
+) + tuple(
+    item.identifier
+    for item in _ENVELOPE_CANDIDATE_WITNESSES
+    if not item.expected_ap_exposure
+    and item.expected_local_primary != "PROFILE_ACTIVATION_UNSUPPORTED"
 ) + tuple(f"I-TRANSCRIPT-{field.upper()}" for field in _TRANSCRIPT_FIELDS)
 
 
 _MUTANTS = (
-    MutantSpec("I-M-SKIP-ENVELOPE", "skipping a selected O-08 gate is detected", ("I-O08-HANDOFF-FRAMING_OBJECT_OCTETS-S3_KERNEL_STRUCTURAL",), "work-order"),
+    MutantSpec("I-M-SKIP-ENVELOPE", "skipping a selected O-08 gate is detected on the real candidate path", ("I-O08-CANDIDATE-FRAMING-8193",), "work-order"),
     MutantSpec("I-M-AP-BEFORE-K", "AP exposure before K is detected", _AP_BEFORE_K_DETECTORS, "work-order"),
     MutantSpec("I-M-HASH-BEFORE-BINDING", "hashing before unique binding is detected", ("I-K-MISSING", "I-K-INCOMPLETE", "I-K-AMBIGUOUS"), "work-order"),
     MutantSpec("I-M-TRUST-CANDIDATE-HISTORICAL", "candidate-selected historical mode is detected", ("I-K-CANDIDATE-HISTORICAL",), "substitution"),
@@ -307,6 +337,10 @@ def _validate_witnesses(rows: Iterable[WitnessSpec]) -> None:
             raise RegistryError("failure witness does not collapse remotely")
         if item.expected_verifier_invocations not in {0, 1}:
             raise RegistryError("invalid verifier invocation count")
+        if item.expected_envelope_checks != 9:
+            raise RegistryError("candidate witness does not execute all envelope checks")
+        if item.expected_transcript_regenerations not in {0, 1}:
+            raise RegistryError("invalid transcript regeneration count")
 
 
 def registry_record() -> dict[str, object]:

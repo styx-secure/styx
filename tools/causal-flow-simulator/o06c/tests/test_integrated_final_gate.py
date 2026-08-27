@@ -15,6 +15,7 @@ sys.path.insert(0, str(O06C))
 from integrated_final_gate import (
     FinalGateError,
     _selected_envelope_digest,
+    _validate_integrated_test_module_inventory,
     validate_integrated_reports,
     write_manifest,
 )
@@ -27,6 +28,32 @@ def _encoded(value: dict[str, object]) -> bytes:
 
 
 class IntegratedFinalGateTest(unittest.TestCase):
+    def test_each_exact_integrated_module_collects_tests(self) -> None:
+        _validate_integrated_test_module_inventory(O06C / "tests")
+
+    def test_zero_test_module_fails_closed_without_assert(self) -> None:
+        names = {
+            "test_integrated_cross_runtime.py",
+            "test_integrated_final_gate.py",
+            "test_integrated_model.py",
+            "test_integrated_mutation_harness.py",
+            "test_integrated_probe.py",
+            "test_integrated_registry.py",
+            "test_integrated_scope_guard.py",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in names:
+                (root / name).write_text(
+                    "import unittest\nclass T(unittest.TestCase):\n    def test_one(self): pass\n",
+                    encoding="utf-8",
+                )
+            (root / "test_integrated_probe.py").write_text(
+                "# deliberately contains no tests\n", encoding="utf-8"
+            )
+            with self.assertRaises(FinalGateError):
+                _validate_integrated_test_module_inventory(root)
+
     def test_frozen_envelope_uses_provider_selected_candidate_identity(self) -> None:
         repo = O06C.parents[2]
         payload = json.loads(

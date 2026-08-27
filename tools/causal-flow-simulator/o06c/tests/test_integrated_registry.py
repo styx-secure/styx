@@ -78,6 +78,25 @@ class IntegratedRegistryTest(unittest.TestCase):
         }
         self.assertLessEqual(required, identifiers)
 
+    def test_candidate_path_covers_every_preflight_dimension(self):
+        identifiers = {item.identifier for item in required_witnesses()}
+        required = {
+            "I-O08-CANDIDATE-AP-TRANSITION-4097",
+            "I-O08-CANDIDATE-CHECKPOINT-1",
+            "I-O08-CANDIDATE-FRAMING-8191",
+            "I-O08-CANDIDATE-FRAMING-8192",
+            "I-O08-CANDIDATE-FRAMING-8193",
+            "I-O08-CANDIDATE-FRAMING-DECLARED-8193",
+            "I-O08-CANDIDATE-PARENTS-9",
+            "I-O08-CANDIDATE-PHYSICAL-SKEW-1",
+            "I-O08-CANDIDATE-PROFILE-SKEW-1",
+            "I-O08-CANDIDATE-SEQUENCE-4096",
+            "I-O08-CANDIDATE-SIGNATURE-ATTEMPTS-65",
+            "I-O08-CANDIDATE-SIGNATURE-OCTETS-65",
+            "I-O08-CANDIDATE-PROFILE-INACTIVE",
+        }
+        self.assertLessEqual(required, identifiers)
+
 
 if __name__ == "__main__":
     unittest.main()

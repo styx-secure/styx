@@ -228,11 +228,15 @@ def _evaluate(
     *,
     store: BindingStore | None = None,
     integrated_mutation: IntegratedMutation = IntegratedMutation(),
+    observations: dict[str, int] | None = None,
+    profile_active: bool = True,
 ) -> IntegratedResult:
     return evaluate_candidate(
         candidate,
         store or BindingStore.from_bindings(binding),
         projection,
+        profile_active=profile_active,
+        observations=observations,
         integrated_mutation=integrated_mutation,
     )
 
@@ -493,6 +497,75 @@ def _fixed_result(
         candidate, binding = _sign(_base_event(), authority_state="REVOKED")
         candidate = replace(candidate, signature=bytes(64))
         projection = ProjectionState(historical_evidence=True)
+    elif identifier == "I-O08-CANDIDATE-AP-TRANSITION-4097":
+        candidate, binding = _sign(
+            replace(_base_event(), transition_block=b"x" * 4097)
+        )
+    elif identifier == "I-O08-CANDIDATE-CHECKPOINT-1":
+        return _evaluate(
+            candidate,
+            binding,
+            integrated_mutation=integrated_mutation,
+            observations={"CHECKPOINT_REFERENCES": 1},
+        )
+    elif identifier in {
+        "I-O08-CANDIDATE-FRAMING-8191",
+        "I-O08-CANDIDATE-FRAMING-8192",
+        "I-O08-CANDIDATE-FRAMING-8193",
+    }:
+        observed = int(identifier.rsplit("-", 1)[1])
+        return _evaluate(
+            candidate,
+            binding,
+            integrated_mutation=integrated_mutation,
+            observations={"FRAMING_OBJECT_OCTETS": observed},
+        )
+    elif identifier == "I-O08-CANDIDATE-FRAMING-DECLARED-8193":
+        candidate = replace(candidate, declared_transcript_octets=8193)
+    elif identifier == "I-O08-CANDIDATE-PARENTS-9":
+        assignment = replace(
+            _base_event(sequence=1),
+            causal_parents=tuple(
+                sorted(_bytes(f"parent-{index}") for index in range(9))
+            ),
+        )
+        candidate, binding = _sign(assignment)
+    elif identifier == "I-O08-CANDIDATE-PHYSICAL-SKEW-1":
+        return _evaluate(
+            candidate,
+            binding,
+            integrated_mutation=integrated_mutation,
+            observations={"PHYSICAL_TIME_SKEW": 1},
+        )
+    elif identifier == "I-O08-CANDIDATE-PROFILE-SKEW-1":
+        return _evaluate(
+            candidate,
+            binding,
+            integrated_mutation=integrated_mutation,
+            observations={"PROFILE_VERSION_SKEW": 1},
+        )
+    elif identifier == "I-O08-CANDIDATE-SEQUENCE-4096":
+        candidate, binding = _sign(_base_event(sequence=4096))
+    elif identifier == "I-O08-CANDIDATE-SIGNATURE-ATTEMPTS-65":
+        return _evaluate(
+            candidate,
+            binding,
+            integrated_mutation=integrated_mutation,
+            observations={"SIGNATURE_ATTEMPTS": 65},
+        )
+    elif identifier == "I-O08-CANDIDATE-SIGNATURE-OCTETS-65":
+        candidate = replace(
+            candidate,
+            signature=candidate.signature + b"x",
+            declared_signature_octets=65,
+        )
+    elif identifier == "I-O08-CANDIDATE-PROFILE-INACTIVE":
+        return _evaluate(
+            candidate,
+            binding,
+            integrated_mutation=integrated_mutation,
+            profile_active=False,
+        )
     else:
         raise ProbeError(f"unknown fixed witness: {identifier}")
     return _evaluate(
@@ -619,6 +692,9 @@ def _result_matches(spec, result: IntegratedResult) -> bool:
         and result.remote == spec.expected_remote_result
         and result.ap_exposed == spec.expected_ap_exposure
         and result.verifier_invocations == spec.expected_verifier_invocations
+        and result.work["envelope_checks"] == spec.expected_envelope_checks
+        and result.work["transcript_regenerations"]
+        == spec.expected_transcript_regenerations
         and result.work["transcript_hashes"] == expected_hashes
         and result.work["ap_exposures"] == int(spec.expected_ap_exposure)
     )

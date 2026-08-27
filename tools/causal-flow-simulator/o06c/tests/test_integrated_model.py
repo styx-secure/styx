@@ -14,6 +14,7 @@ from integrated_model import (
     BindingResolution,
     BindingStore,
     CredentialBinding,
+    IntegratedError,
     ProjectionState,
     SignedEventCandidate,
     envelope_boundary_cases,
@@ -198,6 +199,25 @@ class IntegratedModelTest(unittest.TestCase):
             self.assertEqual(
                 evaluate_envelope_handoff(row["dimension"], row["stage"]),
                 row["primary"] if row["dimension"] not in {"SIGNATURE_OCTETS", "VERIFICATION_KEY_OCTETS"} else "LENGTH_MISMATCH",
+            )
+
+    def test_declared_framing_bound_precedes_transcript_regeneration(self):
+        candidate, binding = signed_fixture()
+        result = evaluate_candidate(
+            replace(candidate, declared_transcript_octets=8193),
+            BindingStore.from_bindings(binding),
+        )
+        self.assertEqual(result.primary, "CURRENT_OBJECT_OUT_OF_PROFILE")
+        self.assertEqual(result.work["envelope_checks"], 9)
+        self.assertEqual(result.work["transcript_regenerations"], 0)
+
+    def test_external_observation_cannot_understate_a_derived_value(self):
+        candidate, binding = signed_fixture()
+        with self.assertRaises(IntegratedError):
+            evaluate_candidate(
+                candidate,
+                BindingStore.from_bindings(binding),
+                observations={"FRAMING_OBJECT_OCTETS": 0},
             )
 
     def test_projection_identity_is_stable_shape(self):

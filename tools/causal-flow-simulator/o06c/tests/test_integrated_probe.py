@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 
 O06C = Path(__file__).resolve().parents[1]
@@ -42,6 +43,17 @@ class IntegratedProbeTest(unittest.TestCase):
         payload = canonical_bytes(self.report, allowed_fields=REPORT_FIELDS)
         self.assertTrue(payload.endswith(b"\n"))
         self.assertNotIn(str(Path.cwd()).encode(), payload)
+
+    def test_probe_fails_if_candidate_envelope_classification_is_removed(self):
+        with patch(
+            "integrated_model._classify_envelope_failures",
+            return_value=(False, (), (), ()),
+        ):
+            self.assertEqual(build_report()["verdict"], "FAIL")
+
+    def test_probe_fails_if_every_envelope_observation_is_accepted(self):
+        with patch("integrated_model._envelope_accepts", return_value=True):
+            self.assertEqual(build_report()["verdict"], "FAIL")
 
 
 if __name__ == "__main__":

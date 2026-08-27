@@ -379,12 +379,6 @@ def evaluate_envelope_handoff(
         raise IntegratedError("unknown handoff dimension") from error
     if entry["role"] not in ENTRY_ROLES or stage not in entry["stages"]:
         raise IntegratedError("unknown handoff relation")
-    if (
-        integrated_mutation.enabled("I-M-SKIP-ENVELOPE")
-        and dimension == "FRAMING_OBJECT_OCTETS"
-        and stage == "S3_KERNEL_STRUCTURAL"
-    ):
-        return "APPLIED"
     primary = recovery_for(dimension, stage, entry["role"])
     if dimension in {"SIGNATURE_OCTETS", "VERIFICATION_KEY_OCTETS"}:
         primary = "LENGTH_MISMATCH"
@@ -491,6 +485,8 @@ def _classify_envelope_failures(
     envelope: Mapping[str, object],
     observations: Mapping[str, int],
     work: IntegratedWorkCounter,
+    *,
+    skipped_dimension: str | None = None,
 ) -> tuple[bool, tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
     profile_unsupported = False
     k: list[str] = []
@@ -504,6 +500,8 @@ def _classify_envelope_failures(
         if entry["role"] not in ENTRY_ROLES:
             raise IntegratedError("post-C0.3 observation supplied to integrated model")
         work.envelope_checks += 1
+        if dimension == skipped_dimension:
+            continue
         if _envelope_accepts(entry, observed):
             continue
         for stage in entry["stages"]:
@@ -569,16 +567,29 @@ def evaluate_candidate(
     envelope = envelope or load_selected_envelope()
     merged_observations = _preflight_observations(candidate)
     for dimension, observed in (observations or {}).items():
-        if dimension in merged_observations and merged_observations[dimension] != observed:
-            raise IntegratedError("caller cannot override derived envelope observation")
+        if (
+            not isinstance(observed, int)
+            or isinstance(observed, bool)
+            or observed < 0
+        ):
+            raise IntegratedError("envelope observation is not a non-negative integer")
+        if (
+            dimension in merged_observations
+            and observed < merged_observations[dimension]
+        ):
+            raise IntegratedError("caller cannot understate derived envelope observation")
         merged_observations[dimension] = observed
 
-    if integrated_mutation.enabled("I-M-SKIP-ENVELOPE"):
-        profile_failure, k_failures, s4, s6 = False, (), (), ()
-    else:
-        profile_failure, k_failures, s4, s6 = _classify_envelope_failures(
-            envelope, merged_observations, work
-        )
+    profile_failure, k_failures, s4, s6 = _classify_envelope_failures(
+        envelope,
+        merged_observations,
+        work,
+        skipped_dimension=(
+            "FRAMING_OBJECT_OCTETS"
+            if integrated_mutation.enabled("I-M-SKIP-ENVELOPE")
+            else None
+        ),
+    )
     if not profile_active:
         profile_failure = True
     # Activation is the only outcome that is selected before candidate work.

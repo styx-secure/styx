@@ -37,6 +37,17 @@ SUITES = {
     "o10": "tools/causal-flow-simulator/o10/tests",
     "o14": "tools/causal-flow-simulator/o14/tests",
 }
+INTEGRATED_TEST_MODULES = frozenset(
+    {
+        "test_integrated_cross_runtime.py",
+        "test_integrated_final_gate.py",
+        "test_integrated_model.py",
+        "test_integrated_mutation_harness.py",
+        "test_integrated_probe.py",
+        "test_integrated_registry.py",
+        "test_integrated_scope_guard.py",
+    }
+)
 REPORT_FIELDS = frozenset(
     {
         "integrated_report_count",
@@ -295,7 +306,40 @@ def _unittest_count(output: str) -> int:
     return count
 
 
+def _validate_integrated_test_module_inventory(test_root: Path) -> None:
+    if test_root.is_symlink() or not test_root.is_dir():
+        raise FinalGateError("integrated test root is not a regular directory")
+    modules = {
+        path.name: path
+        for path in test_root.glob("test_integrated_*.py")
+        if path.is_file() and not path.is_symlink()
+    }
+    if set(modules) != INTEGRATED_TEST_MODULES:
+        raise FinalGateError("integrated test module set mismatch")
+    loader_program = (
+        "import pathlib,sys,unittest; "
+        "root=pathlib.Path(sys.argv[1]); name=sys.argv[2]; "
+        "count=unittest.defaultTestLoader.discover(str(root), pattern=name).countTestCases(); "
+        "print(count); raise SystemExit(0 if count > 0 else 1)"
+    )
+    for name in sorted(INTEGRATED_TEST_MODULES):
+        completed = subprocess.run(
+            [sys.executable, "-c", loader_program, str(test_root), name],
+            cwd=test_root.parent,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise FinalGateError(f"integrated test module collected no tests: {name}")
+
+
 def _run_suites(repo: Path, output: Path, env: dict[str, str]) -> dict[str, int]:
+    _validate_integrated_test_module_inventory(
+        repo / "tools/causal-flow-simulator/o06c/tests"
+    )
     counts: dict[str, int] = {}
     for name, directory in SUITES.items():
         text = _run(
@@ -456,8 +500,9 @@ def build_report(args: argparse.Namespace) -> dict[str, object]:
     forbidden = (one, two, *git_roots)
     submitted_one = _require_external_root(args.submitted_one, forbidden)
     submitted_two = _require_external_root(args.submitted_two, forbidden)
-    if submitted_one == submitted_two:
-        raise FinalGateError("submitted evidence roots are not distinct")
+    package = _require_external_root(args.package_dir, forbidden)
+    if len({submitted_one, submitted_two, package}) != 3:
+        raise FinalGateError("submitted and package evidence roots are not distinct")
     verify_bundle(args.bundle, args.bundle_sha256, one, args.candidate)
     verify_provider_evidence(args.issue_rest, args.pr_rest, args.base, args.candidate)
     submitted = (_exact_submitted(submitted_one), _exact_submitted(submitted_two))
@@ -507,7 +552,7 @@ def build_report(args: argparse.Namespace) -> dict[str, object]:
             ["git", "-C", str(one), "diff", "--binary", "--full-index", args.base, args.candidate]
         )
         _populate_package(
-            args.package_dir.resolve(),
+            package,
             args.bundle,
             args.issue_rest,
             args.pr_rest,
@@ -517,7 +562,7 @@ def build_report(args: argparse.Namespace) -> dict[str, object]:
             frozen_roots,
             diff_bytes,
         )
-        artifact_count = len(list(args.package_dir.iterdir())) + 2
+        artifact_count = len(list(package.iterdir())) + 2
         regenerated_count = len(regenerated[0]) + len(frozen_reports[0]) + 1
     return {
         "integrated_report_count": len(INTEGRATED_FILES),
