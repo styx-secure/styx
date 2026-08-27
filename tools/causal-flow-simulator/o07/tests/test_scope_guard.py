@@ -23,6 +23,7 @@ from scope_guard_o07 import (  # noqa: E402
     ScopeViolation,
     VALIDATOR_PATH,
     _assignments,
+    _enforce_ancestry,
     _expected_validator_values,
     _literal,
     _path_is_allowed,
@@ -61,6 +62,9 @@ class ScopeGuardTests(unittest.TestCase):
             self.assertEqual(observed, expected, relative)
 
     def test_validator_historical_delta_and_reusable_ast_guard_are_exact(self) -> None:
+        _enforce_ancestry(REPO_ROOT, BASE_SHA, HISTORICAL_CANDIDATE_SHA)
+        with self.assertRaisesRegex(ScopeViolation, "not descended"):
+            _enforce_ancestry(REPO_ROOT, HISTORICAL_CANDIDATE_SHA, BASE_SHA)
         before = _git(REPO_ROOT, "show", f"{BASE_SHA}:{VALIDATOR_PATH}").decode("utf-8")
         after = _git(
             REPO_ROOT, "show", f"{HISTORICAL_CANDIDATE_SHA}:{VALIDATOR_PATH}"

@@ -115,6 +115,11 @@ def _commit(repo: Path, expression: str) -> str:
     return _git(repo, "rev-parse", f"{expression}^{{commit}}").stdout.decode().strip()
 
 
+def _enforce_ancestry(repo: Path, base: str, candidate: str) -> None:
+    if _git(repo, "merge-base", "--is-ancestor", base, candidate, check=False).returncode:
+        raise ScopeViolation("historical candidate is not descended from its exact base")
+
+
 def _blob(repo: Path, revision: str, path: str) -> bytes:
     return _git(repo, "cat-file", "blob", f"{revision}:{path}").stdout
 
@@ -719,6 +724,7 @@ def build_report(
     candidate = _commit(repo, candidate_argument)
     if base_argument != BASE_SHA or base != BASE_SHA:
         raise ScopeViolation("contract base mismatch")
+    _enforce_ancestry(repo, base, candidate)
     relation = changed_relation(repo, base, candidate)
     enforce_endpoint_types_and_identity(repo, base, candidate, relation)
     validator_assignments = enforce_validator_delta(repo, base, candidate)

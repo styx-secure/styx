@@ -13,9 +13,11 @@ sys.path.insert(0, str(O06C_ROOT))
 from scope_guard import (  # noqa: E402
     BASE_SHA,
     REGIONS,
+    ScopeError,
     allowed,
     build_report,
     changed_records,
+    enforce_ancestry,
     enforce_named_regions,
     enforce_validator_ast,
     forbidden,
@@ -25,6 +27,9 @@ from scope_guard import (  # noqa: E402
 
 class ScopeGuardTests(unittest.TestCase):
     def test_historical_committed_relation_is_in_scope(self) -> None:
+        enforce_ancestry(REPO_ROOT, BASE_SHA, HISTORICAL_CANDIDATE_SHA)
+        with self.assertRaisesRegex(ScopeError, "not descended"):
+            enforce_ancestry(REPO_ROOT, HISTORICAL_CANDIDATE_SHA, BASE_SHA)
         records = changed_records(REPO_ROOT, BASE_SHA, HISTORICAL_CANDIDATE_SHA)
         self.assertTrue(records)
         self.assertTrue(
