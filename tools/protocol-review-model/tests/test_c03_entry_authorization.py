@@ -41,6 +41,18 @@ class C03EntryAuthorizationTests(unittest.TestCase):
         self.assertEqual(
             {"corpus"}, validator.AUTHORIZED_UNBLOCKED_CAPABILITIES
         )
+        invariant = next(
+            item
+            for item in self.model["invariants"]
+            if item["id"] == "INV_C0_3_NO_GO"
+        )
+        self.assertEqual(
+            "Only construction of the separately contracted transcript-only C0.3 "
+            "corpus is authorized; implementation alignment, demo, product "
+            "implementation and sensitive use remain unauthorized while their "
+            "declared blockers remain open.",
+            invariant["statement"],
+        )
 
     def test_restoring_stale_corpus_gate_fails_closed(self) -> None:
         model = copy.deepcopy(self.model)

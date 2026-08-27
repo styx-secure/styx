@@ -189,7 +189,8 @@ persistence, retention/compaction, transport and runtime boundaries.
 ## What remains
 
 - construct the authorized language-neutral Styx application-protocol
-  adversarial corpus and third implementation from the specification, obtain
+  adversarial corpus; then, under a separate approved contract, build a third
+  implementation from the specification, obtain
   the explicit protocol-hardening exit verdict, extract independent Dart cases,
   and keep parallel product implementation frozen until that verdict;
 - turn the completed bounded secure-session proof into a separately versioned,

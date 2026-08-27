@@ -2136,7 +2136,7 @@
         "OB-K01"
       ],
       "owner": "K",
-      "statement": "No transcript-only C0.3 corpus, demo, product implementation or sensitive use is authorized while the declared blockers remain open.",
+      "statement": "Only construction of the separately contracted transcript-only C0.3 corpus is authorized; implementation alignment, demo, product implementation and sensitive use remain unauthorized while their declared blockers remain open.",
       "status": "NO_GO"
     },
     {
@@ -5956,7 +5956,7 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "5be921bf382ed712c4d8e99851bb981666a344834ea7301132014368e33622ab"
+      "sha256": "0e0335a2f727b979c7ff64ffc281663a223fc709e6c25bd8a11350d605c39eed"
     },
     {
       "authority": "evidence",

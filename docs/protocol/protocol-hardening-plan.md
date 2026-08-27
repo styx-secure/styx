@@ -251,7 +251,7 @@ registry governs and this plan must be corrected.
 | O-06 | condition-bearing `DECIDED` | Issue #243 completed bounded O-06c evidence; recorded placeholder decisions and later counterexamples trigger rerun/reopen |
 | O-07 | bounded `DECIDED` | retains its satisfied C0.3 dependency edge; Issue #262 authorizes only exact corpus construction |
 | O-08 | bounded `DECIDED` | replacement `balanced` selection, two-clean-checkout evidence, exact-HEAD reviews and technical human approval complete; Issue #255 carries the separately gated procedural AST-guard remediation; retained C0.3 edge; no product/runtime claim |
-| O-10 | bounded `DECIDED` | 25 trusted-local primaries plus opaque untrusted-remote collapse; final Issue #252 evidence/human gates retained; no wire/API selection |
+| O-10 | bounded `DECIDED` | 25 trusted-local primaries plus opaque untrusted-remote collapse; final Issue #252 evidence and merged PR #257 human gates completed; no wire/API selection |
 | O-14 | condition-bearing `DECIDED` | closed suite; Issue #260 / merged PR #261 completed the separately ratified combined rerun, exact-final evidence, independent review and human gates |
 | O-09 | `DECIDED` | preserved responsibility split |
 | O-11 | `OPEN` | intentionally deferred; does not block a strictly transcript-only C0.3 corpus |

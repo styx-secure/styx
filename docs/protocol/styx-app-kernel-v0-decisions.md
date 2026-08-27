@@ -352,7 +352,7 @@ claim that current code conforms.
   amendment and independent review before bytes are created.
 - **Human ratification:** Issue #253 comment `5436056363` by `maverde73` binds
   the exact six-path inventory and authorizes metadata registration while the
-  files are absent; final-HEAD licensing approval remains required.
+  files are absent; merged PR #258 records the exact-final licensing approval.
 
 ## 3. Explicitly rejected current behavior
 
