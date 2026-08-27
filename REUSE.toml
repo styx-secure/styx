@@ -32,8 +32,8 @@ SPDX-FileCopyrightText = "2026 Maurizio Verde"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 # ---------------------------------------------------------------------------
-# 2) Exact Apache-2.0 exceptions — six synthetic interoperability vector
-#    files, approved by the copyright holder in Issue #41. Nothing else.
+# 2a) Issue #41 Apache-2.0 exceptions — the six exact synthetic
+#     interoperability-vector files in that separately ratified inventory.
 # ---------------------------------------------------------------------------
 
 [[annotations]]
@@ -50,8 +50,8 @@ SPDX-FileCopyrightText = "2026 Maurizio Verde"
 SPDX-License-Identifier = "Apache-2.0"
 
 # ---------------------------------------------------------------------------
-# 2) Exact Apache-2.0 exceptions — six future, fully synthetic C0.3 data
-#    files, pre-registered while absent and approved in Issue #253.
+# 2b) Issue #253 Apache-2.0 exceptions — the six exact future, fully synthetic
+#     C0.3 data files pre-registered while absent in that ratified inventory.
 # ---------------------------------------------------------------------------
 
 [[annotations]]

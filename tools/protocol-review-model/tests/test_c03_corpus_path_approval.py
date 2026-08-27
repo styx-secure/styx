@@ -92,17 +92,44 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
             REPO_ROOT / "tools/protocol-review-model/validate.py"
         ).read_text(encoding="utf-8")
 
+        cls.apache_annotations = _apache_annotations(cls.current_reuse)
+        cls.apache_paths = [
+            path
+            for annotation in cls.apache_annotations
+            for path in annotation["path"]
+        ]
+        cls.wildcard_count = sum(
+            "*" in path or "?" in path or "[" in path
+            for path in cls.apache_paths
+        )
+        cls.duplicate_count = len(cls.apache_paths) - len(set(cls.apache_paths))
+        cls.future_files_present = sum(
+            (REPO_ROOT / path).exists() for path in C03_APACHE_PATHS
+        )
+        cls.third_party_annotations_changed = sum(
+            left != right
+            for left, right in zip(
+                cls.base_reuse["annotations"][2:],
+                cls.current_reuse["annotations"][3:],
+                strict=True,
+            )
+        )
+        cls.c03_gate_status = _blocker(
+            cls.model, "C0.3_CORPUS_PATH_APPROVAL"
+        )["status"]
+        cls.c03_status = _blocker(cls.model, "C0.3")["status"]
+
     @classmethod
     def tearDownClass(cls) -> None:
         print(f"existing_apache_paths={len(EXISTING_APACHE_PATHS)}")
         print(f"c03_apache_paths={len(C03_APACHE_PATHS)}")
-        print(f"total_apache_paths={len(EXISTING_APACHE_PATHS + C03_APACHE_PATHS)}")
-        print("wildcards=0")
-        print("duplicates=0")
-        print("future_files_present=0")
-        print("third_party_annotations_changed=0")
-        print("c03_gate=DECIDED")
-        print("c03=NO_GO")
+        print(f"total_apache_paths={len(cls.apache_paths)}")
+        print(f"wildcards={cls.wildcard_count}")
+        print(f"duplicates={cls.duplicate_count}")
+        print(f"future_files_present={cls.future_files_present}")
+        print(f"third_party_annotations_changed={cls.third_party_annotations_changed}")
+        print(f"c03_gate={cls.c03_gate_status}")
+        print(f"c03={cls.c03_status}")
 
     def test_inventory_digest_and_exact_order(self) -> None:
         inventory = "".join(f"{path}\n" for path in C03_APACHE_PATHS).encode()
@@ -113,12 +140,10 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
         self.assertEqual(list(C03_APACHE_PATHS), apache[1]["path"])
 
     def test_annotations_have_exact_metadata_and_no_globs(self) -> None:
-        apache = _apache_annotations(self.current_reuse)
-        paths = [path for annotation in apache for path in annotation["path"]]
-        self.assertEqual(12, len(paths))
-        self.assertEqual(12, len(set(paths)))
-        self.assertFalse(any("*" in path or "?" in path or "[" in path for path in paths))
-        for annotation in apache:
+        self.assertEqual(12, len(self.apache_paths))
+        self.assertEqual(0, self.duplicate_count)
+        self.assertEqual(0, self.wildcard_count)
+        for annotation in self.apache_annotations:
             with self.subTest(paths=annotation["path"]):
                 self.assertEqual(
                     APACHE_METADATA,
@@ -134,9 +159,12 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
         self.assertEqual(base[2:], current[3:])
 
     def test_future_paths_are_absent_and_no_six_only_header_remains(self) -> None:
-        self.assertFalse(any((REPO_ROOT / path).exists() for path in C03_APACHE_PATHS))
+        self.assertEqual(0, self.future_files_present)
         self.assertNotIn("The six vector files below are the only", self.reuse_text)
+        self.assertNotIn("Nothing else.", self.reuse_text)
         self.assertIn("The twelve paths below are the only approved", self.reuse_text)
+        self.assertIn("# 2a) Issue #41 Apache-2.0 exceptions", self.reuse_text)
+        self.assertIn("# 2b) Issue #253 Apache-2.0 exceptions", self.reuse_text)
 
     def test_licensing_documents_record_the_bounded_approval(self) -> None:
         required = {
