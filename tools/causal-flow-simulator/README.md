@@ -241,3 +241,19 @@ the actual C0.2j DP fold. No candidate is selected
 until the replacement measurement and ForgeRelay gate completes. The package is conformance
 evidence only and makes no product/runtime, persistence, transport, session,
 recovery or availability claim.
+
+## O-10 bounded outcome taxonomy
+
+`o10/` owns the closed trusted-local taxonomy selected by Issue #252. Its
+literal 102-row inventory joins all 36 Base review-model citations to the 66
+frozen O-08 handoff rows. A Python reference and dependency-independent Node
+adapter exercise every primary, precedence edge, overlap, recovery class and
+privacy collapse; mutation evidence must kill every registered mutant. The
+scope guard permits exactly the ratified model anchors, O-10 blocker status,
+validator function and inside-`try` registration. The final gate regenerates
+all reports in two clean `git clone --no-local` checkouts.
+
+This package names local evidence for safe caller behavior. It does not define
+wire values, remote acknowledgements, persistence, recovery success, delivery,
+freshness, rollback protection or product behavior, and does not authorize
+C0.3 by itself.
