@@ -271,6 +271,21 @@ def _python_stage_mutants(repo: Path) -> list[tuple[str, str, bool]]:
                 s6_failures=["DEPENDENCY_DEFERRED"],
             ),
         ),
+        (
+            "PY_STAGE_S6_RESOURCE_SPLIT",
+            '            else "DEPENDENCY_DEFERRED"\n'
+            "        )\n"
+            "        return _outcome(primary, auxiliary)\n"
+            '    return _outcome("APPLIED", auxiliary)\n',
+            '            else "CONTEXT_CAPACITY_EXHAUSTED"\n'
+            "        )\n"
+            "        return _outcome(primary, auxiliary)\n"
+            '    return _outcome("APPLIED", auxiliary)\n',
+            scenario(
+                "mutant-stage-s6-resource-split",
+                s6_failures=["DEPENDENCY_DEFERRED"],
+            ),
+        ),
     )
     results: list[tuple[str, str, bool]] = []
     for identifier, needle, replacement, candidate in specifications:
@@ -323,6 +338,15 @@ def _javascript_mutants(repo: Path, executable: str) -> list[tuple[str, str, boo
             '"NO_ACTION_IDEMPOTENT", "NONE"',
             '"RETRY_AFTER_DEPENDENCY_CHANGE", "NONE"',
             primary_scenario("DUPLICATE", "js-recovery"),
+        ),
+        (
+            "JS_S6_RESOURCE_SPLIT",
+            'if (s6.length) return outcome(s6.includes("CONTEXT_CAPACITY_EXHAUSTED") ? "CONTEXT_CAPACITY_EXHAUSTED" : "DEPENDENCY_DEFERRED", auxiliary);',
+            'if (s6.length) return outcome("CONTEXT_CAPACITY_EXHAUSTED", auxiliary);',
+            {
+                **baseline("js-s6-resource-split"),
+                "s6_failures": ["DEPENDENCY_DEFERRED"],
+            },
         ),
     )
     results: list[tuple[str, str, bool]] = []

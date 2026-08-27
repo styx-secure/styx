@@ -16,7 +16,7 @@ class CrossRuntimeTests(unittest.TestCase):
         node = shutil.which("node")
         self.assertIsNotNone(node)
         report = build_report(ROOT, node or "node")
-        self.assertEqual(report["case_count"], 83)
+        self.assertEqual(report["case_count"], 85)
         self.assertEqual(report["fail_closed_case_count"], 1)
         self.assertEqual(report["verdict"], "PASS")
 

@@ -16,7 +16,7 @@ class MutationTests(unittest.TestCase):
         node = shutil.which("node")
         self.assertIsNotNone(node)
         report = build_report(ROOT, node or "node")
-        self.assertEqual(report["killed_count"], 62)
+        self.assertEqual(report["killed_count"], 64)
         self.assertEqual(report["survivor_count"], 0)
 
 

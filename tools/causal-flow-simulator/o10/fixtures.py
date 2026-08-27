@@ -140,6 +140,22 @@ def cases() -> list[dict[str, Any]]:
                 }
             )
 
+    for reverse in (False, True):
+        suffix = "reverse" if reverse else "forward"
+        scenario = baseline(f"s6-dependency-deferred-{suffix}")
+        scenario["s6_failures"] = ["DEPENDENCY_DEFERRED"]
+        presentation = ["DEPENDENCY_DEFERRED", "candidate"]
+        scenario["delivery_order"] = (
+            list(reversed(presentation)) if reverse else presentation
+        )
+        result.append(
+            {
+                "expected_primary": "DEPENDENCY_DEFERRED",
+                "family": "s6-positive",
+                "input": scenario,
+            }
+        )
+
     for stage in ("s4_failures", "s6_failures"):
         for reverse in (False, True):
             scenario = baseline(f"tie-{stage}-{'reverse' if reverse else 'forward'}")
