@@ -5,11 +5,10 @@
 - **Task:** Issue #260.
 - **Ratified Base:**
   `25be9abc0d8c1bce8821a750616e13d245abc356`.
-- **Candidate status:** integrated candidate evidence passes locally;
-  exact-final two-clean-checkout evidence, independent review and human gates
-  remain pending.
+- **Candidate status:** the exact-final two-clean-checkout technical gate passes;
+  independent review and human gates remain pending.
 - **Verdict:** `NO_COUNTEREXAMPLE_WITHIN_CANDIDATE_BOUNDS`.
-- **C0.3:** `NO_GO` until the exact-final Issue #260 gate and the remaining
+- **C0.3:** `NO_GO` until the Issue #260 review/human gates and the remaining
   authority-set synchronization required by Issue #251 are complete.
 
 This report records bounded falsification evidence. It is not proof, an audit,
@@ -85,10 +84,10 @@ No counterexample was found within the candidate envelope to these properties:
 - untrusted-remote failure does not reveal the local diagnostic class; and
 - JavaScript interchange remains explicitly `TEST_ONLY_NOT_O11`.
 
-## 5. Reproducibility and pending final gate
+## 5. Exact-final reproducibility
 
-The four candidate report families are deterministic in local runs. The latest
-candidate-level canonical digests before normative synchronization were:
+The four canonical report families are deterministic. Diagnostic digests from
+the last pre-final synchronization run were:
 
 ```text
 integrated-probe     aaa3069dfd8f7e39ac20d806235e3c2eda844567bd65ab436c80808530489faa
@@ -97,14 +96,14 @@ integrated-mutations faa13e5050308801d53af2cc0236158b6035438d732e01f2c0a66038327
 integrated-scope     86f7961439287af6cd7b8ba514473c2d5e7a305c0d908bf0c64da56b55cad6b0
 ```
 
-These digests are diagnostic, not exact-final evidence: documentation changes
-alter the candidate identity and scope report. The Issue #260 final gate must
-regenerate all reports twice from distinct clean clones at the final HEAD,
-verify the complete bundle and raw provider evidence, rerun every frozen suite,
-and produce byte-identical package evidence. A preliminary frozen-suite attempt
-reached the O-14 cross-runtime gate and stopped fail-closed because no Dart SDK
-was available in the execution environment. This is an unresolved runtime
-prerequisite, not a green skip or a protocol regression.
+These tracked digests remain diagnostic rather than self-referential final
+identity evidence. The Issue #260 final gate regenerated all reports twice from
+distinct clean clones, verified the complete bundle and raw provider evidence,
+reran every frozen suite with Python 3.14.4, Node 24.18.0 and Dart 3.10.8, and
+produced byte-identical package evidence. It passed with 21 regenerated reports
+and 80 package artifacts; a post-final strict scope rerun also passed. Bundle,
+diff, report and manifest identities remain immutable PR evidence rather than
+tracked inputs.
 
 ## 6. Non-claims and residual risk
 

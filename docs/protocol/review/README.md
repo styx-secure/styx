@@ -78,10 +78,10 @@ or add a security, interoperability, availability or readiness claim.
 
 The Issue #260 snapshot integrates that frozen O-14 language into the complete
 O-06c construction while preserving the frozen O-07 provenance, O-08 envelope
-and O-10 outcome taxonomy. Candidate-level evidence exercises 102
-fixed/transcript witnesses and seven integration-order mutants. The exact-final
-two-clean-checkout gate, independent review and human approvals remain required;
-no product/runtime conformance or C0.3 capability follows from the candidate
+and O-10 outcome taxonomy. Exact-final evidence exercises 102 fixed/transcript
+witnesses and seven integration-order mutants, and the two-clean-checkout
+technical gate passes. Independent review and human approvals remain required;
+no product/runtime conformance or C0.3 capability follows from the technical
 result alone.
 
 The validator pins the exact source-ID, repository-path and authority tuple for

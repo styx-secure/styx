@@ -201,9 +201,9 @@ Protocol increments proceed in dependency order:
    bounded trusted-local taxonomy and opaque remote collapse without selecting
    wire/API codes. O-14 is condition-bearing `DECIDED`; Issue #260 replaces its
    O-06c placeholder with the selected signature semantics and reruns the
-   complete combined evidence. Its candidate-level integrated evidence passes,
-   while exact-final reproducibility, independent review and human gates remain
-   pending. Resolve O-12 wherever a selected profile carries time.
+   complete combined evidence. Its exact-final technical reproducibility gate
+   passes, while independent review and human gates remain pending. Resolve
+   O-12 wherever a selected profile carries time.
    Issue #255 is a bounded procedural predecessor to O-10 only: it pins the
    historical evidence guards to their exact candidate identities and supplies
    the reusable AST allowlist and O-14-removal rejection required by O-08's
@@ -233,7 +233,7 @@ The dependency basis is explicit:
 | C0.2j | ratified O-01/O-02/O-03/O-04/O-05/O-09 baseline | none |
 | C0.2k | exact C0.2j credential and sequence semantics | selected 84-octet context plus bounded model/mutation evidence; exact-final review and human gates complete the increment |
 | O-06c | exact C0.2j/C0.2k bytes and existing O-06b profiles | completed as bounded evidence by Issue #243; obligations affected by later O-07/O-08/O-10/O-14 decisions are rerun or reopened after those decisions |
-| remaining blockers | O-06c results plus each decision's own recorded inputs | Issue #260 reruns the integrated O-14/O-06c hostile cases; exact-final evidence, review and human gates remain |
+| remaining blockers | O-06c results plus each decision's own recorded inputs | Issue #260 reruns the integrated O-14/O-06c hostile cases; exact-final technical evidence passes and review/human gates remain |
 | K-11 corpus boundary | `DECIDED` by the exact Issue #253 six-path amendment; twelve Apache paths total | no C0.3 corpus file exists before this gate and no third-party corpus byte is authorized |
 | C0.3 | every unconditional blocker closed, every conditional blocker disposition justified by the registry, and K-11 complete | no later decision may be guessed or inherited from an implementation |
 

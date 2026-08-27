@@ -940,13 +940,12 @@ outcomes.
   not proof, implementation conformance or readiness authority.
 - **O-14/O-06c integrated rerun:** Issue #260 replaces the historical
   signature placeholder with the frozen O-14 suite while preserving the O-07
-  provenance, O-08 envelope and O-10 taxonomy. Candidate-level evidence passes
+  provenance, O-08 envelope and O-10 taxonomy. Exact-final technical evidence passes
   102 fixed/transcript witnesses, all 69 envelope dispositions and 66 handoff
   rows, 154 boundary observations and seven integration-order mutants. The
-  frozen decision suites remain separate authoritative inputs. Exact-final
-  two-clean-checkout evidence, independent review and human gates remain
-  pending, so this candidate result does not yet discharge the condition or
-  authorize C0.3.
+  frozen decision suites remain separate authoritative inputs. Independent
+  review and human gates remain pending, so this technical result does not yet
+  discharge the condition or authorize C0.3.
 - **Remaining evidence owners:** O-07 still owns the complete genesis fields;
   O-14 separately owns the signature-suite
   registry. O-08 owns measured profile maxima and O-10 owns stable local
@@ -1329,9 +1328,9 @@ outcomes.
   Each supported browser/provider needs the same raw and guarded vector matrix.
   Issue #260 is the separate human-ratified task that replaces the unchanged
   O-14 placeholder in the complete O-06c construction and reruns all combined
-  evidence. Its candidate-level evidence passes, but the exact-final gate,
-  independent review and human approvals remain required before C0.3 corpus
-  authorization. Dependency/runtime upgrades reopen adapter evidence. A
+  evidence. Its exact-final technical gate passes, but independent review and
+  human approvals remain required before C0.3 corpus authorization.
+  Dependency/runtime upgrades reopen adapter evidence. A
   counterexample or inability to enforce the exact guarded language reopens
   O-14. Both demonstrated JavaScript adapters share one Noble subgroup
   guard (`O14-SINGLE-GUARD-DEPENDENCY`), and per-event attacker-controlled `R`

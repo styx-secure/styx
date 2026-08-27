@@ -508,9 +508,9 @@ binding, verifies the regenerated transcript exactly once before AP use and
 preserves the bounded O-10 precedence at every rejection boundary. Its local
 candidate evidence exercises 102 fixed/transcript witnesses, 69 O-08
 dispositions, 66 O-08-to-O-10 handoffs and seven integration-order mutants.
-This is bounded falsification evidence; the exact-final two-clean-checkout gate,
-independent review and human gates remain required before the O-14 integration
-condition is discharged.
+This is bounded falsification evidence. The exact-final two-clean-checkout
+technical gate passes; independent review and human gates remain required
+before the O-14 integration condition is discharged.
 
 ## 9. Rejection surfaces for O-10
 
@@ -609,8 +609,8 @@ reinterpreted.
    guarded signature language without changing these bytes. Issue #260 is the
    separately human-ratified task that replaces the unchanged O-06c placeholder
    with the selected semantics and reruns the complete combined evidence. Its
-   candidate-level integrated evidence passes; exact-final reproducibility,
-   independent review and human approval remain pending.
+   exact-final integrated reproducibility passes; independent review and human
+   approval remain pending.
 
 O-06b-1, O-06b-2, C0.2j, C0.2k and the completed O-06c evidence do not make
 C0.3 executable. O-07, O-08 and O-10 are bounded `DECIDED`; O-14 retains its

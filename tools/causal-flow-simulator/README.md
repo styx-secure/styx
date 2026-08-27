@@ -210,9 +210,9 @@ observations and kills seven integration-order mutants. The frozen O-07, O-08,
 O-10 and O-14 suites remain authoritative and are rerun separately by the final
 gate; the integration harness does not copy or replace their oracles. Its
 JavaScript interchange is `TEST_ONLY_NOT_O11` and selects no wire, storage,
-product or Dart/browser-conformance claim. Exact-final two-clean-checkout
-evidence, independent review and human gates are required before C0.3 can move
-from `NO_GO`.
+product or Dart/browser-conformance claim. The exact-final two-clean-checkout
+technical evidence passes; independent review and human gates are still
+required before C0.3 can move from `NO_GO`.
 
 ## O-07 genesis and checkpoint-boundary evidence package
 

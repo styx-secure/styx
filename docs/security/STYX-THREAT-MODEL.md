@@ -44,8 +44,9 @@
   unavailable when its state or transition envelope is crossed. C0.2k selects
   the credential/sequence-bound commitment context with bounded amendment
   evidence. O-06c now supplies bounded combined evidence; O-07 and the corpus
-  path gate are decided. C0.3 remains `NO-GO` while Issue #260's exact-final
-  O-14-to-O-06c integration evidence and its review/human gates are pending.
+  path gate are decided. Issue #260's exact-final O-14-to-O-06c technical gate
+  passes; C0.3 remains `NO-GO` while its independent review/human gates and the
+  later authority-set synchronization are pending.
 - **O-14 amendment:** Issue #246 selects internal suite `0x0001`, pure Ed25519
   over the complete O-06b-1 transcript with canonical 32-octet keys, canonical
   64-octet `R || S`, `S < L`, prime-order guards, one pinned verifier and no
@@ -53,9 +54,8 @@
   supports that language. It is not product conformance: Dart/browser support
   and the placeholder-substituted O-06c combined rerun remain separate gates.
   Issue #260 performs that rerun without changing O-14, O-06b, O-07, O-08 or
-  O-10 semantics. Candidate-level integrated evidence passes, but the
-  exact-final two-clean-checkout gate, independent review and human approval
-  are still required.
+  O-10 semantics. The exact-final two-clean-checkout technical gate passes;
+  independent review and human approval are still required.
 - **Language:** English is canonical.
 
 Styx is experimental, has not completed an independent security audit, and is
