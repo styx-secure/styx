@@ -129,10 +129,13 @@ claimed there.
 
 Issue-comment `5432143151` records a bounded procedural exception for the
 incomplete Section 8.1 AST assignment guard. Protocol governance/agent-
-enforcement owns the debt. Before any later review-model or validator module-
-assignment change, a separately scoped human-approved task must implement the
-full AST allowlist and explicit O-14-removal negative test; otherwise that
-change fails closed and reopens this disposition.
+enforcement owns the debt. Issue #255 is the separately scoped maintenance
+increment that replaces moving-HEAD historical checks with exact historical
+candidate identities, supplies the reusable full-AST allowlist and exercises
+both an O-10-shaped allowed assignment plus explicit O-14-removal and undeclared-
+change rejection. Its exact-final review and human gate remain authoritative;
+failure of that increment keeps later review-model or validator module-
+assignment changes fail-closed and reopens this procedural disposition.
 
 This decision does not claim a production ceremony, durable storage, physical
 eviction handling, recovery, freshness, rollback detection, finality, delivery,

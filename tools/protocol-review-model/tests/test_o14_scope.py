@@ -7,21 +7,28 @@ import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 O14_ROOT = REPO_ROOT / "tools" / "causal-flow-simulator" / "o14"
+HISTORICAL_CANDIDATE_SHA = "86c3f2dbd630e445d737a25c09889de2777ee185"
 sys.path.insert(0, str(O14_ROOT))
 
 from scope_guard_o14 import (  # noqa: E402
     BASE_SHA,
     NORMATIVE_BOUNDED,
+    ScopeError,
     allowed,
+    blob,
     build_report,
+    enforce_ancestry,
     forbidden,
     normalize_normative,
 )
 
 
 class O14ScopeTests(unittest.TestCase):
-    def test_current_committed_relation_is_in_scope(self) -> None:
-        report = build_report(REPO_ROOT, BASE_SHA, "HEAD")
+    def test_historical_committed_relation_is_in_scope(self) -> None:
+        enforce_ancestry(REPO_ROOT, BASE_SHA, HISTORICAL_CANDIDATE_SHA)
+        with self.assertRaisesRegex(ScopeError, "not descended"):
+            enforce_ancestry(REPO_ROOT, HISTORICAL_CANDIDATE_SHA, BASE_SHA)
+        report = build_report(REPO_ROOT, BASE_SHA, HISTORICAL_CANDIDATE_SHA)
         self.assertEqual(report["verdict"], "PASS")
         self.assertEqual(
             report["validator_assignments_changed"],
@@ -41,7 +48,7 @@ class O14ScopeTests(unittest.TestCase):
 
     def test_every_bounded_document_has_a_stable_normalizer(self) -> None:
         for path in sorted(NORMATIVE_BOUNDED):
-            data = (REPO_ROOT / path).read_bytes()
+            data = blob(REPO_ROOT, HISTORICAL_CANDIDATE_SHA, path)
             self.assertEqual(normalize_normative(data, path), normalize_normative(data, path))
 
 

@@ -65,6 +65,17 @@ def git(repo: Path, *arguments: str) -> bytes:
     return subprocess.check_output(["git", "-C", str(repo), *arguments])
 
 
+def enforce_ancestry(repo: Path, base: str, candidate: str) -> None:
+    result = subprocess.run(
+        ["git", "-C", str(repo), "merge-base", "--is-ancestor", base, candidate],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if result.returncode != 0:
+        raise ScopeError("historical candidate is not descended from its exact base")
+
+
 def forbidden(path: str) -> bool:
     name = path.rsplit("/", 1)[-1]
     if path in FORBIDDEN_EXACT or path.startswith(FORBIDDEN_PREFIXES):
@@ -640,6 +651,7 @@ def build_report(repo: Path, base_argument: str, candidate_argument: str) -> dic
     candidate = git(repo, "rev-parse", f"{candidate_argument}^{{commit}}").decode().strip()
     if base_argument != BASE_SHA or base != BASE_SHA:
         raise ScopeError("contract base mismatch")
+    enforce_ancestry(repo, base, candidate)
     records = changed_records(repo, base, candidate)
     enforce_text_artifacts(repo, base, candidate, records)
     oracle_references = enforce_oracle_isolation(repo, candidate)
