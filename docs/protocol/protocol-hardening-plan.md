@@ -203,6 +203,11 @@ Protocol increments proceed in dependency order:
    O-06c placeholder with the selected signature semantics and rerun the
    complete combined evidence. Resolve O-12 wherever a selected profile carries
    time.
+   Issue #255 is a bounded procedural predecessor to O-10 only: it pins the
+   historical evidence guards to their exact candidate identities and supplies
+   the reusable AST allowlist and O-14-removal rejection required by O-08's
+   recorded exception. It selects no protocol semantics and does not add a C0.3
+   dependency.
 5. **Reconcile the threat model.** Re-run hostile cases against the complete
    selected boundary, including cross-layer assumptions and newly introduced
    trust actors.
@@ -240,7 +245,7 @@ registry governs and this plan must be corrected.
 | O-01 through O-05 | `DECIDED` | preserved inputs; reopen only through their recorded conditions |
 | O-06 | condition-bearing `DECIDED` | Issue #243 completed bounded O-06c evidence; recorded placeholder decisions and later counterexamples trigger rerun/reopen |
 | O-07 | bounded `DECIDED` | retains the C0.3 dependency edge; exact corpus integration remains gated |
-| O-08 | bounded `DECIDED` | replacement `balanced` selection, two-clean-checkout evidence, exact-HEAD reviews and technical human approval complete; retained C0.3 edge; no product/runtime claim |
+| O-08 | bounded `DECIDED` | replacement `balanced` selection, two-clean-checkout evidence, exact-HEAD reviews and technical human approval complete; Issue #255 carries the separately gated procedural AST-guard remediation; retained C0.3 edge; no product/runtime claim |
 | O-10 | `OPEN` | blocks C0.3 |
 | O-14 | condition-bearing `DECIDED` | closed suite; its retained O-06c placeholder-substitution condition still blocks C0.3 until separately ratified combined evidence passes |
 | O-09 | `DECIDED` | preserved responsibility split |
@@ -423,7 +428,9 @@ bounded executable evidence:
 - O-07 and O-08 are bounded `DECIDED`; O-08 has a replacement provider-bound
   `balanced` selection after correcting its final-gate evidence defect and
   completing two-clean-checkout evidence, exact-HEAD reviews and technical
-  human approval; O-10 remains open.
+  human approval; Issue #255 supplies the separately scoped historical-guard and
+  AST-allowlist maintenance required before O-10 validator assignment changes;
+  O-10 remains open.
   O-14 is condition-bearing `DECIDED`, with
   Dart/browser support claims and the separately ratified O-06c
   placeholder-substitution rerun still gated. O-12 remains conditional as

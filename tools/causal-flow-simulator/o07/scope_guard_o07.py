@@ -239,6 +239,240 @@ def _literal(assignments: dict[str, ast.expr | None], name: str) -> object:
         raise ScopeViolation(f"non-literal validator assignment: {name}") from error
 
 
+def _top_level_ast(
+    source: str,
+) -> tuple[dict[tuple[str, str], ast.AST], list[str]]:
+    """Index review-validator AST by stable top-level semantic coordinate."""
+
+    indexed: dict[tuple[str, str], ast.AST] = {}
+    undeclared: list[str] = []
+    for node in ast.parse(source).body:
+        coordinate: tuple[str, str] | None = None
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+        ):
+            coordinate = ("assignment", node.targets[0].id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            coordinate = ("assignment", node.target.id)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            coordinate = ("function", node.name)
+        elif isinstance(node, ast.ClassDef):
+            coordinate = ("class", node.name)
+        if coordinate is None:
+            undeclared.append(ast.dump(node, include_attributes=False))
+            continue
+        if coordinate in indexed:
+            raise ScopeViolation(
+                "duplicate top-level AST coordinate: " + ":".join(coordinate)
+            )
+        indexed[coordinate] = node
+    return indexed, undeclared
+
+
+def _ast_literal(node: ast.AST, name: str) -> object:
+    value: ast.expr | None
+    if isinstance(node, ast.Assign):
+        value = node.value
+    elif isinstance(node, ast.AnnAssign):
+        value = node.value
+    else:
+        raise ScopeViolation(f"protected coordinate is not an assignment: {name}")
+    if value is None:
+        raise ScopeViolation(f"missing assignment value: {name}")
+    try:
+        return ast.literal_eval(value)
+    except Exception as error:
+        raise ScopeViolation(f"non-literal protected assignment: {name}") from error
+
+
+def _literal_path(value: object, path: tuple[str, ...]) -> object:
+    current = value
+    for component in path:
+        if not isinstance(current, dict) or component not in current:
+            raise ScopeViolation(
+                "missing protected literal path: " + "/".join(path)
+            )
+        current = current[component]
+    return current
+
+
+def _changed_literal_paths(
+    before: object,
+    expected: object,
+    prefix: tuple[str, ...],
+) -> set[tuple[str, ...]]:
+    if isinstance(before, dict) and isinstance(expected, dict):
+        changed: set[tuple[str, ...]] = set()
+        for key in set(before) | set(expected):
+            path = (*prefix, str(key))
+            if key not in before or key not in expected:
+                changed.add(path)
+            else:
+                changed.update(_changed_literal_paths(before[key], expected[key], path))
+        return changed
+    return set() if before == expected else {prefix}
+
+
+def _registration_call_name(node: ast.stmt) -> str | None:
+    if not isinstance(node, ast.Expr) or not isinstance(node.value, ast.Call):
+        return None
+    call = node.value
+    if call.args or call.keywords or not isinstance(call.func, ast.Name):
+        return None
+    return call.func.id
+
+
+def _function_metadata(node: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[object, ...]:
+    return (
+        type(node).__name__,
+        node.name,
+        ast.dump(node.args, include_attributes=False),
+        tuple(ast.dump(item, include_attributes=False) for item in node.decorator_list),
+        None if node.returns is None else ast.dump(node.returns, include_attributes=False),
+        node.type_comment,
+        tuple(
+            ast.dump(item, include_attributes=False)
+            for item in getattr(node, "type_params", [])
+        ),
+    )
+
+
+def _enforce_exact_registration_additions(
+    before: ast.AST,
+    expected: ast.AST,
+    function_name: str,
+    allowed_calls: set[str] | frozenset[str],
+) -> None:
+    if not isinstance(before, (ast.FunctionDef, ast.AsyncFunctionDef)) or not isinstance(
+        expected, (ast.FunctionDef, ast.AsyncFunctionDef)
+    ):
+        raise ScopeViolation(f"registration coordinate is not a function: {function_name}")
+    if _function_metadata(before) != _function_metadata(expected):
+        raise ScopeViolation(f"validator registration function drift: {function_name}")
+    if len(expected.body) != len(before.body) + len(allowed_calls):
+        raise ScopeViolation(f"validator registry call drift: {function_name}")
+    for before_statement, expected_statement in zip(before.body, expected.body):
+        if ast.dump(before_statement, include_attributes=False) != ast.dump(
+            expected_statement, include_attributes=False
+        ):
+            raise ScopeViolation(f"validator registry call drift: {function_name}")
+    observed_calls = [
+        _registration_call_name(statement)
+        for statement in expected.body[len(before.body) :]
+    ]
+    if (
+        any(name is None for name in observed_calls)
+        or set(observed_calls) != set(allowed_calls)
+        or len(observed_calls) != len(allowed_calls)
+    ):
+        raise ScopeViolation(f"validator registry call drift: {function_name}")
+
+
+def enforce_declared_validator_ast_delta(
+    before_source: str,
+    actual_source: str,
+    expected_source: str,
+    *,
+    allowed_assignments: set[str] | frozenset[str],
+    allowed_functions: set[str] | frozenset[str],
+    allowed_literal_changes: set[tuple[str, ...]] | frozenset[tuple[str, ...]],
+    allowed_function_call_additions: dict[str, set[str] | frozenset[str]],
+    protected_literal_paths: set[tuple[str, ...]] | frozenset[tuple[str, ...]],
+) -> None:
+    """Enforce one task-declared, exact, fail-closed validator AST delta.
+
+    A later task constructs ``expected_source`` from its frozen Base using only
+    its ratified coordinates.  This guard requires the actual module to equal
+    that complete expected AST and rejects undeclared top-level changes.  A
+    protected literal path cannot be changed even when its containing
+    assignment is otherwise allowed.
+    """
+
+    before, before_undeclared = _top_level_ast(before_source)
+    actual, actual_undeclared = _top_level_ast(actual_source)
+    expected, expected_undeclared = _top_level_ast(expected_source)
+    if ast.dump(ast.parse(actual_source), include_attributes=False) != ast.dump(
+        ast.parse(expected_source), include_attributes=False
+    ):
+        raise ScopeViolation("actual validator differs from declared expected AST")
+    if before_undeclared != expected_undeclared or before_undeclared != actual_undeclared:
+        raise ScopeViolation("undeclared top-level AST drift")
+
+    keys = set(before) | set(expected)
+    changed = {
+        coordinate
+        for coordinate in keys
+        if coordinate not in before
+        or coordinate not in expected
+        or ast.dump(before[coordinate], include_attributes=False)
+        != ast.dump(expected[coordinate], include_attributes=False)
+    }
+    changed_assignments = {name for kind, name in changed if kind == "assignment"}
+    changed_functions = {name for kind, name in changed if kind == "function"}
+    changed_classes = {name for kind, name in changed if kind == "class"}
+    if changed_assignments != set(allowed_assignments):
+        raise ScopeViolation("undeclared validator assignment AST drift")
+    if changed_functions != set(allowed_functions):
+        raise ScopeViolation("undeclared validator function AST drift")
+    if changed_classes:
+        raise ScopeViolation("undeclared validator class AST drift")
+
+    observed_literal_changes: set[tuple[str, ...]] = set()
+    for name in sorted(changed_assignments):
+        coordinate = ("assignment", name)
+        if coordinate not in before or coordinate not in expected:
+            observed_literal_changes.add((name,))
+            continue
+        observed_literal_changes.update(
+            _changed_literal_paths(
+                _ast_literal(before[coordinate], name),
+                _ast_literal(expected[coordinate], name),
+                (name,),
+            )
+        )
+    if observed_literal_changes != set(allowed_literal_changes):
+        raise ScopeViolation("undeclared validator literal AST drift")
+
+    for name in sorted(changed_functions):
+        coordinate = ("function", name)
+        if coordinate not in before:
+            if coordinate not in expected:
+                raise ScopeViolation("missing declared validator function: " + name)
+            continue
+        if coordinate not in expected or name not in allowed_function_call_additions:
+            raise ScopeViolation("undeclared validator function body drift: " + name)
+        _enforce_exact_registration_additions(
+            before[coordinate],
+            expected[coordinate],
+            name,
+            allowed_function_call_additions[name],
+        )
+    if set(allowed_function_call_additions) - changed_functions:
+        raise ScopeViolation("missing declared validator registry change")
+
+    for path in sorted(protected_literal_paths):
+        if len(path) < 2:
+            raise ScopeViolation("protected literal path must name an assignment and key")
+        coordinate = ("assignment", path[0])
+        if coordinate not in before or coordinate not in expected:
+            raise ScopeViolation("missing protected assignment: " + path[0])
+        before_value = _literal_path(
+            _ast_literal(before[coordinate], path[0]), path[1:]
+        )
+        try:
+            expected_value = _literal_path(
+                _ast_literal(expected[coordinate], path[0]), path[1:]
+            )
+        except ScopeViolation as error:
+            raise ScopeViolation(
+                "protected literal path drift: " + "/".join(path)
+            ) from error
+        if expected_value != before_value:
+            raise ScopeViolation("protected literal path drift: " + "/".join(path))
+
+
 def _expected_validator_values(base_values: dict[str, object]) -> dict[str, object]:
     expected: dict[str, object] = {}
     expected["CONTRACT_BASE_COMMIT"] = BASE_SHA

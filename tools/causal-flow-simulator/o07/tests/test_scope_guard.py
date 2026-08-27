@@ -11,6 +11,7 @@ import unittest
 
 O07_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = O07_ROOT.parents[2]
+HISTORICAL_CANDIDATE_SHA = "ba0525da1dd78c76c5cc60bc2041e2d3bed44bb3"
 sys.path.insert(0, str(O07_ROOT))
 
 from scope_guard_o07 import (  # noqa: E402
@@ -27,6 +28,7 @@ from scope_guard_o07 import (  # noqa: E402
     _path_is_allowed,
     _path_is_forbidden,
     changed_relation,
+    enforce_declared_validator_ast_delta,
     enforce_endpoint_types_and_identity,
     enforce_predecessor_test_integrity,
     enforce_test_authenticator_isolation,
@@ -50,15 +52,19 @@ class ScopeGuardTests(unittest.TestCase):
         self.assertTrue(_path_is_forbidden("styx-js/src/product.js"))
         self.assertFalse(_path_is_allowed("docs/unrelated.md"))
 
-    def test_normative_artifact_pins_match_worktree(self) -> None:
+    def test_normative_artifact_pins_match_historical_candidate(self) -> None:
         self.assertEqual(set(EXPECTED_ARTIFACT_SHA256), ALLOWED_FILES - {VALIDATOR_PATH})
         for relative, expected in sorted(EXPECTED_ARTIFACT_SHA256.items()):
-            observed = hashlib.sha256((REPO_ROOT / relative).read_bytes()).hexdigest()
+            observed = hashlib.sha256(
+                _git(REPO_ROOT, "show", f"{HISTORICAL_CANDIDATE_SHA}:{relative}")
+            ).hexdigest()
             self.assertEqual(observed, expected, relative)
 
-    def test_validator_worktree_delta_is_exact(self) -> None:
+    def test_validator_historical_delta_and_reusable_ast_guard_are_exact(self) -> None:
         before = _git(REPO_ROOT, "show", f"{BASE_SHA}:{VALIDATOR_PATH}").decode("utf-8")
-        after = (REPO_ROOT / VALIDATOR_PATH).read_text(encoding="utf-8")
+        after = _git(
+            REPO_ROOT, "show", f"{HISTORICAL_CANDIDATE_SHA}:{VALIDATOR_PATH}"
+        ).decode("utf-8")
         before_assign, before_fixed = _assignments(before)
         after_assign, after_fixed = _assignments(after)
         self.assertEqual(before_fixed, after_fixed)
@@ -85,6 +91,120 @@ class ScopeGuardTests(unittest.TestCase):
         expected = _expected_validator_values(base_values)
         for name in sorted(required):
             self.assertEqual(_literal(after_assign, name), expected[name], name)
+
+        fixture_before = """\
+CONTRACT_BASE_COMMIT = "base-sha"
+EXPECTED_BLOCKER_EDGES_DIGEST = "edges-sha"
+EXPECTED_MODULE_ASSIGNMENTS = {"validator": "existing"}
+EXPECTED_STATUS_BY_COLLECTION = {"blockers": {"O-10": "OPEN", "O-14": "DECIDED"}}
+def validate_existing():
+    return True
+def main():
+    validate_existing()
+"""
+        fixture_expected = """\
+CONTRACT_BASE_COMMIT = "base-sha"
+EXPECTED_BLOCKER_EDGES_DIGEST = "edges-sha"
+EXPECTED_MODULE_ASSIGNMENTS = {"validator": "existing"}
+EXPECTED_STATUS_BY_COLLECTION = {"blockers": {"O-10": "DECIDED", "O-14": "DECIDED"}}
+def validate_existing():
+    return True
+def validate_o10_outcome_taxonomy():
+    return True
+def main():
+    validate_existing()
+    validate_o10_outcome_taxonomy()
+"""
+        allowed_arguments = {
+            "allowed_assignments": {"EXPECTED_STATUS_BY_COLLECTION"},
+            "allowed_functions": {"main", "validate_o10_outcome_taxonomy"},
+            "allowed_literal_changes": {
+                ("EXPECTED_STATUS_BY_COLLECTION", "blockers", "O-10")
+            },
+            "allowed_function_call_additions": {
+                "main": {"validate_o10_outcome_taxonomy"}
+            },
+            "protected_literal_paths": {
+                ("EXPECTED_STATUS_BY_COLLECTION", "blockers", "O-14")
+            },
+        }
+        enforce_declared_validator_ast_delta(
+            fixture_before,
+            fixture_expected,
+            fixture_expected,
+            **allowed_arguments,
+        )
+
+        def assert_rejected(
+            expected: str,
+            pattern: str,
+            *,
+            actual: str | None = None,
+        ) -> None:
+            with self.assertRaisesRegex(ScopeViolation, pattern):
+                enforce_declared_validator_ast_delta(
+                    fixture_before,
+                    expected if actual is None else actual,
+                    expected,
+                    **allowed_arguments,
+                )
+
+        assert_rejected("import os\n" + fixture_expected, "undeclared top-level AST")
+        assert_rejected(fixture_expected + "EXTRA = 1\n", "assignment AST drift")
+        assert_rejected(
+            fixture_expected.replace('CONTRACT_BASE_COMMIT = "base-sha"\n', ""),
+            "assignment AST drift",
+        )
+        for old, new in (
+            ('CONTRACT_BASE_COMMIT = "base-sha"', 'CONTRACT_BASE_COMMIT = "other"'),
+            (
+                'EXPECTED_BLOCKER_EDGES_DIGEST = "edges-sha"',
+                'EXPECTED_BLOCKER_EDGES_DIGEST = "other"',
+            ),
+            ('{"validator": "existing"}', '{"validator": "other"}'),
+        ):
+            assert_rejected(
+                fixture_expected.replace(old, new),
+                "assignment AST drift",
+            )
+        assert_rejected(
+            fixture_expected + "validate_existing()\n",
+            "undeclared top-level AST",
+        )
+        assert_rejected(
+            fixture_expected + "def extra():\n    return True\n",
+            "function AST drift",
+        )
+        assert_rejected(
+            fixture_expected.replace("def validate_existing():\n    return True\n", ""),
+            "function AST drift",
+        )
+        assert_rejected(
+            fixture_expected + "class Extra:\n    pass\n",
+            "class AST drift",
+        )
+        assert_rejected(
+            fixture_expected.replace(
+                "    validate_o10_outcome_taxonomy()\n",
+                "    validate_other()\n",
+            ),
+            "registry call drift",
+        )
+        for o14_drift in (
+            fixture_expected.replace(', "O-14": "DECIDED"', ""),
+            fixture_expected.replace('"O-14": "DECIDED"', '"O-14": "OPEN"'),
+        ):
+            assert_rejected(o14_drift, "literal AST drift|protected literal path drift")
+
+        body_drift = fixture_expected.replace(
+            "def validate_o10_outcome_taxonomy():\n    return True",
+            "def validate_o10_outcome_taxonomy():\n    return False",
+        )
+        assert_rejected(
+            fixture_expected,
+            "declared expected AST",
+            actual=body_drift,
+        )
 
     def test_copy_relation_is_rejected_at_ratified_threshold(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

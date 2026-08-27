@@ -7,6 +7,7 @@ import unittest
 
 O06C_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = O06C_ROOT.parents[2]
+HISTORICAL_CANDIDATE_SHA = "94f0a9b2781d45324199e6588629d23babedf746"
 sys.path.insert(0, str(O06C_ROOT))
 
 from scope_guard import (  # noqa: E402
@@ -23,8 +24,8 @@ from scope_guard import (  # noqa: E402
 
 
 class ScopeGuardTests(unittest.TestCase):
-    def test_current_committed_relation_is_in_scope(self) -> None:
-        records = changed_records(REPO_ROOT, BASE_SHA, "HEAD")
+    def test_historical_committed_relation_is_in_scope(self) -> None:
+        records = changed_records(REPO_ROOT, BASE_SHA, HISTORICAL_CANDIDATE_SHA)
         self.assertTrue(records)
         self.assertTrue(
             all(
@@ -34,7 +35,7 @@ class ScopeGuardTests(unittest.TestCase):
             )
         )
         self.assertEqual(
-            enforce_validator_ast(REPO_ROOT, BASE_SHA, "HEAD"),
+            enforce_validator_ast(REPO_ROOT, BASE_SHA, HISTORICAL_CANDIDATE_SHA),
             [
                 "CONTRACT_BASE_COMMIT",
                 "EXPECTED_BLOCKER_EDGES_DIGEST",
@@ -43,10 +44,17 @@ class ScopeGuardTests(unittest.TestCase):
                 "EXPECTED_STATUS_BY_COLLECTION",
             ],
         )
-        self.assertEqual(len(enforce_named_regions(REPO_ROOT, BASE_SHA, "HEAD")), 2)
+        self.assertEqual(
+            len(
+                enforce_named_regions(
+                    REPO_ROOT, BASE_SHA, HISTORICAL_CANDIDATE_SHA
+                )
+            ),
+            2,
+        )
 
     def test_canonical_report_defers_candidate_identity_to_pr_evidence(self) -> None:
-        report = build_report(REPO_ROOT, BASE_SHA, "HEAD")
+        report = build_report(REPO_ROOT, BASE_SHA, HISTORICAL_CANDIDATE_SHA)
         self.assertEqual(report["candidate_identity_location"], "immutable_pr_evidence")
         self.assertNotIn("candidate_commit", report)
         self.assertNotIn("candidate_tree", report)
