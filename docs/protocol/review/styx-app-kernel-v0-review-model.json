@@ -477,7 +477,7 @@
       ],
       "owner": "K",
       "reason": "Stable wire/API outcome registry and failure mapping remain open.",
-      "status": "OPEN"
+      "status": "DECIDED"
     },
     {
       "blocks": [
@@ -4742,7 +4742,7 @@
       "applies_transition": false,
       "citations": [
         {
-          "anchor": "`AUTHENTIC_BUT_UNAUTHORIZED`",
+          "anchor": "`AUTHENTIC_BUT_UNAUTHORIZED` and apply no transition.",
           "source_id": "decisions"
         }
       ],
@@ -5102,7 +5102,7 @@
       "applies_transition": false,
       "citations": [
         {
-          "anchor": "Supported adapter future work",
+          "anchor": "`OB-SS01` | Authenticate session members and bind the exact session profile",
           "source_id": "responsibility"
         }
       ],
@@ -5957,7 +5957,7 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "59d245f880b5236ced00deda6bac1f760ebe9ad7156a5ea75334f0332f4b4ed0"
+      "sha256": "094fdf010122aa6f2aa4da6c5a6909127cd4d161dc3eed644fddd65de954b0f2"
     },
     {
       "authority": "evidence",
@@ -6011,7 +6011,7 @@
       "authority": "normative",
       "id": "responsibility",
       "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
-      "sha256": "95678e42c899d2de1ea101ecd89e21951ddd14a127a6740b30c8d98dc49b25bd"
+      "sha256": "5ee770672fd8cb5aa204525da6fc77e66f9937578ca9cb20763d1769c029bcfe"
     },
     {
       "authority": "evidence",
@@ -6029,7 +6029,7 @@
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "67c74be996e79d9ed1e67098a94490cea7818e069fb1df24f10da55b03938c29"
+      "sha256": "91d65f46d360cb635af171c688f523aef3ae857dac36c8cc728d97a5fa245aaf"
     },
     {
       "authority": "normative",

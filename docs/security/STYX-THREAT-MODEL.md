@@ -44,7 +44,7 @@
   unavailable when its state or transition envelope is crossed. C0.2k selects
   the credential/sequence-bound commitment context with bounded amendment
   evidence. O-06c now supplies bounded combined evidence; C0.3 remains
-  `NO-GO` because O-10, O-07/O-14's retained integration conditions and
+  `NO-GO` because O-07/O-14's retained integration conditions and
   the corpus-path gate remain unresolved.
 - **O-14 amendment:** Issue #246 selects internal suite `0x0001`, pure Ed25519
   over the complete O-06b-1 transcript with canonical 32-octet keys, canonical
@@ -235,7 +235,7 @@ context-total admission limits for transcript-only C0.3 evidence. Any selected
 effect never confers expansion or operational authority. A revoked credential
 may retain one contested slot for itself plus one for every stockpiled K-valid
 May0 descendant, each able to target a separate bounded subtree; those slots are
-limited by the same selected per-credential and context-total O-08 envelope.
+  limited by the same selected per-credential and context-total O-08 envelope.
 Those limits do not guarantee delivery or continued authority availability.
 V0 also
 has no atomic sole-authority rotation or recovery: a pre-provisioned descendant
@@ -438,7 +438,7 @@ exponential state growth with concurrent, individually valid control evidence
 even when fork and sibling counts remain small.
 
 The envelope does not prove that a browser, native runtime or storage backend
-can sustain those values. Eleven operational/runtime dimensions and four
+can sustain those values. Eleven operational/runtime dimensions and five
 evidence-only dimensions remain outside C0.3 entry semantics. O-08 therefore
 adds no claim of delivery, persistence, recovery, freshness, rollback
 detection, physical eviction resistance, bounded attacker bandwidth or
@@ -447,6 +447,22 @@ authority-concurrency width is exceeded. Product profiles must add
 their own smaller enforceable limits and capability evidence without changing
 the ultimately selected transcript semantics. No replacement candidate is
 authoritative before the new measurement and ForgeRelay human-selection gate.
+
+### 3.3 Bounded local-outcome and remote-oracle boundary
+
+O-10 is bounded `DECIDED` for the transcript-only C0.3 local outcome model.
+Exactly one primary is selected after stage-ordered validation; lower-priority
+causes remain auxiliary evidence and cannot authorize mutation. Recovery
+classes constrain safe caller behavior but never promise success, treat timeout
+as authenticated state change or permit authority/transcript erasure.
+
+Local distinctions are trusted-boundary data. Every non-`APPLIED` projection
+to an unauthenticated or otherwise untrusted peer, including `DUPLICATE`, is
+the byte-identical class `OPAQUE_REMOTE_FAILURE`. This bounds parser and
+diagnostic oracles but does not remove the existence signal between an applied
+candidate and a replayed authentic candidate. O-10 selects no response code,
+acknowledgement, timing, padding or transport behavior; a future ratified
+secure-session/transport profile owns that residual signal.
 
 ## 4. Trust assumptions
 
@@ -494,7 +510,7 @@ claims about current code.
 
 | Scenario | Required outcome | Detection or recovery expectation | Owning layer or explicit obligation split |
 | --- | --- | --- | --- |
-| Malformed or non-canonical application object | Reject before authoritative state change | Stable classified failure; no parser detail leak beyond the future error policy | Application semantic kernel |
+| Malformed or non-canonical application object | Reject before authoritative state change | One bounded trusted-local O-10 primary; every non-applied untrusted-remote projection is only `OPAQUE_REMOTE_FAILURE` | Application semantic kernel |
 | Valid signature under an unauthorized key | Reject the transition | Product can explain authorization failure without treating it as bad cryptography | Application profile |
 | Object replayed in another case/application | Reject by authenticated context binding | Cross-context negative evidence | Application semantic kernel |
 | Duplicate authenticated object in one context | Idempotent duplicate classification | No duplicate application effect | Application semantic kernel |
@@ -622,7 +638,7 @@ Current evidence establishes only bounded components:
   bounded Pass0/selected-slot authority and lineage containment; C0.2k selects
   the 84-octet commitment context and bounded mutation evidence; Issue #243
   completes bounded O-06c evidence. O-06/O-06c are condition-bearing
-  `DECIDED`; O-07 and O-08 are bounded `DECIDED`; O-10 through O-16 retain their recorded open,
+  `DECIDED`; O-07, O-08 and O-10 are bounded `DECIDED`; O-11 through O-16 retain their recorded open,
   conditional or downstream-blocking roles;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
   described in its final verdict; and

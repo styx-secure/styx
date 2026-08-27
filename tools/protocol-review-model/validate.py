@@ -295,7 +295,7 @@ EXPECTED_STATUS_BY_COLLECTION = {
         "O-06c": "DECIDED",
         "O-07": "DECIDED",
         "O-08": "DECIDED",
-        "O-10": "OPEN",
+        "O-10": "DECIDED",
         "O-12": "OPEN",
         "O-13": "OPEN",
         "O-14": "DECIDED",
@@ -2642,6 +2642,228 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def validate_o10_outcome_taxonomy(
+    model: dict[str, Any], repo_root: Path
+) -> list[Finding]:
+    """Validate the closed O-10 registration and its frozen package artifacts."""
+
+    findings: list[Finding] = []
+    # Frozen predecessor tests intentionally construct a source-only validation
+    # fixture.  O-10 artifact validation is meaningful only where Git object
+    # identity is available; the final gate always supplies that context.
+    if not (repo_root / ".git").exists():
+        return findings
+    expected_artifacts = {
+        "tools/causal-flow-simulator/o10/outcome-taxonomy.json": (
+            "9565280a5e9a8c8035188cb1c652e2bed3c9496ad05ad0883b0acc07befb7e24"
+        ),
+        "tools/causal-flow-simulator/o10/source-inventory.json": (
+            "f2209badb8e142fb08e1402345d496c5d799360c0835394828a2d3c4557e737a"
+        ),
+        "tools/protocol-review-model/tests/fixtures/o10-outcome-taxonomy.json": (
+            "9565280a5e9a8c8035188cb1c652e2bed3c9496ad05ad0883b0acc07befb7e24"
+        ),
+    }
+    artifacts: dict[str, Any] = {}
+    raw_artifacts: dict[str, bytes] = {}
+    for relative, expected_digest in expected_artifacts.items():
+        path = repo_root / relative
+        try:
+            raw = path.read_bytes()
+            value = json.loads(
+                raw.decode("utf-8"),
+                object_pairs_hook=_object_without_duplicates,
+                parse_constant=_reject_nonstandard_constant,
+            )
+        except (OSError, UnicodeDecodeError, ValueError) as exc:
+            findings.append(Finding("O10_ARTIFACT_INVALID", relative, str(exc)))
+            continue
+        canonical = (
+            json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+            + "\n"
+        ).encode("utf-8")
+        if raw != canonical:
+            findings.append(
+                Finding("O10_ARTIFACT_NONCANONICAL", relative, "bytes are not canonical JSON")
+            )
+        if hashlib.sha256(raw).hexdigest() != expected_digest:
+            findings.append(
+                Finding("O10_ARTIFACT_DIGEST", relative, "frozen artifact digest mismatch")
+            )
+        artifacts[relative] = value
+        raw_artifacts[relative] = raw
+
+    taxonomy_path = "tools/causal-flow-simulator/o10/outcome-taxonomy.json"
+    fixture_path = "tools/protocol-review-model/tests/fixtures/o10-outcome-taxonomy.json"
+    inventory_path = "tools/causal-flow-simulator/o10/source-inventory.json"
+    taxonomy = artifacts.get(taxonomy_path)
+    fixture = artifacts.get(fixture_path)
+    inventory = artifacts.get(inventory_path)
+    if taxonomy is not None and fixture is not None and raw_artifacts.get(
+        taxonomy_path
+    ) != raw_artifacts.get(fixture_path):
+        findings.append(
+            Finding("O10_FIXTURE_DRIFT", fixture_path, "fixture differs from taxonomy")
+        )
+
+    primary_ids = {
+        "APPLIED",
+        "AUTHENTIC_BUT_UNAUTHORIZED",
+        "AUTHORITY_PROJECTION_UNAVAILABLE",
+        "COMMITMENT_MISMATCH",
+        "CONTEXT_CAPACITY_EXHAUSTED",
+        "CREDENTIAL_BINDING_MISMATCH",
+        "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+        "CURRENT_OBJECT_OUT_OF_PROFILE",
+        "DEPENDENCY_DEFERRED",
+        "DUPLICATE",
+        "FORK_EVIDENCE",
+        "INVALID",
+        "LENGTH_MISMATCH",
+        "LINEAGE_QUARANTINED",
+        "OPENING_MISSING",
+        "PENDING_ANCESTOR",
+        "PENDING_OPENING",
+        "POST_REVOCATION",
+        "PROFILE_ACTIVATION_UNSUPPORTED",
+        "REFERENCE_COLLISION_UNSUPPORTED",
+        "REMOVAL_INAPPLICABLE",
+        "STALE_EVIDENCE",
+        "STRUCTURAL_REJECTION",
+        "UNRESOLVABLE_CREDENTIAL",
+        "UNRESOLVED_CREDENTIAL_BINDING",
+    }
+    if not isinstance(taxonomy, dict):
+        findings.append(Finding("O10_TAXONOMY_INVALID", taxonomy_path, "root is not an object"))
+    else:
+        records = taxonomy.get("primaries")
+        ids = (
+            [item.get("id") for item in records if isinstance(item, dict)]
+            if isinstance(records, list)
+            else []
+        )
+        if len(ids) != 25 or len(set(ids)) != 25 or set(ids) != primary_ids:
+            findings.append(
+                Finding("O10_PRIMARY_SET", taxonomy_path, "primary registry is not exact")
+            )
+        if taxonomy.get("alias") != {
+            "id": "FORK_QUARANTINED",
+            "primary": "LINEAGE_QUARANTINED",
+        }:
+            findings.append(Finding("O10_ALIAS", taxonomy_path, "alias registration drift"))
+        if taxonomy.get("post_c03_markers") != [
+            "SESSION_PROFILE_REQUIRED",
+            "TRANSPORT_PROFILE_REQUIRED",
+        ]:
+            findings.append(
+                Finding("O10_PROFILE_MARKERS", taxonomy_path, "profile-marker registry drift")
+            )
+        if taxonomy.get("remote_collapse") != "OPAQUE_REMOTE_FAILURE":
+            findings.append(
+                Finding("O10_REMOTE_COLLAPSE", taxonomy_path, "remote collapse drift")
+            )
+
+    if not isinstance(inventory, dict):
+        findings.append(Finding("O10_INVENTORY_INVALID", inventory_path, "root is not an object"))
+    else:
+        rows = inventory.get("rows")
+        row_ids = (
+            [item.get("row_id") for item in rows if isinstance(item, dict)]
+            if isinstance(rows, list)
+            else []
+        )
+        kinds = (
+            [item.get("kind") for item in rows if isinstance(item, dict)]
+            if isinstance(rows, list)
+            else []
+        )
+        if len(row_ids) != 102 or len(set(row_ids)) != 102:
+            findings.append(Finding("O10_INVENTORY_ROWS", inventory_path, "row set is not exact"))
+        if kinds.count("positive") != 99 or kinds.count("negative") != 3:
+            findings.append(
+                Finding("O10_INVENTORY_PARTITION", inventory_path, "99/3 partition drift")
+            )
+        if inventory.get("base") != "d35052dfbf0631c726f250933bc401f424602f31":
+            findings.append(Finding("O10_INVENTORY_BASE", inventory_path, "Base drift"))
+        if inventory.get("handoff_digest") != (
+            "1f35e253bf4ba041c9d949be0d810a9abacddac8c1df979b7e0c018652522dc5"
+        ):
+            findings.append(Finding("O10_HANDOFF_DIGEST", inventory_path, "handoff drift"))
+
+    blockers = {
+        item.get("id"): item
+        for item in model.get("blockers", [])
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    if blockers.get("O-10", {}).get("status") != "DECIDED":
+        findings.append(Finding("O10_STATUS", "blockers/O-10", "status must be DECIDED"))
+    outcomes = model.get("outcomes")
+    outcome_records = outcomes if isinstance(outcomes, list) else []
+    outcome_ids = {
+        item.get("id")
+        for item in outcome_records
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    if len(outcome_records) != 24:
+        findings.append(Finding("O10_MODEL_OUTCOMES", "outcomes", "Base registry must remain 24"))
+    package_only = primary_ids | {
+        "FORK_QUARANTINED",
+        "OPAQUE_REMOTE_FAILURE",
+        "TRANSPORT_PROFILE_REQUIRED",
+    }
+    allowed_existing = {
+        "APPLIED",
+        "AUTHENTIC_BUT_UNAUTHORIZED",
+        "AUTHORITY_PROJECTION_UNAVAILABLE",
+        "COMMITMENT_MISMATCH",
+        "CREDENTIAL_BINDING_MISMATCH",
+        "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+        "DUPLICATE",
+        "FORK_EVIDENCE",
+        "FORK_QUARANTINED",
+        "INVALID",
+        "LENGTH_MISMATCH",
+        "LINEAGE_QUARANTINED",
+        "OPENING_MISSING",
+        "PENDING_ANCESTOR",
+        "PENDING_OPENING",
+        "POST_REVOCATION",
+        "REFERENCE_COLLISION_UNSUPPORTED",
+        "REMOVAL_INAPPLICABLE",
+        "SESSION_PROFILE_REQUIRED",
+        "STALE_EVIDENCE",
+        "STRUCTURAL_REJECTION",
+        "TRANSPORT_PROFILE_REQUIRED",
+        "UNRESOLVABLE_CREDENTIAL",
+        "UNRESOLVED_CREDENTIAL_BINDING",
+    }
+    if (outcome_ids & package_only) - allowed_existing:
+        findings.append(
+            Finding("O10_MODEL_PROLIFERATION", "outcomes", "package-only identifiers registered")
+        )
+    expected_anchors = {
+        "AUTHENTIC_BUT_UNAUTHORIZED": "`AUTHENTIC_BUT_UNAUTHORIZED` and apply no transition.",
+        "SESSION_PROFILE_REQUIRED": "`OB-SS01` | Authenticate session members and bind the exact session profile",
+    }
+    indexed = {
+        item.get("id"): item
+        for item in outcome_records
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    for identifier, expected_anchor in expected_anchors.items():
+        citations = indexed.get(identifier, {}).get("citations")
+        anchors = (
+            [item.get("anchor") for item in citations if isinstance(item, dict)]
+            if isinstance(citations, list)
+            else []
+        )
+        if anchors != [expected_anchor]:
+            findings.append(
+                Finding("O10_CITATION_ANCHOR", f"outcomes/{identifier}", "anchor drift")
+            )
+    return findings
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         args = parse_args(sys.argv[1:] if argv is None else argv)
@@ -2649,6 +2871,7 @@ def main(argv: list[str] | None = None) -> int:
         model = load_json_unique(args.model)
         schema = load_json_unique(args.schema)
         findings = validate(model, schema, args.repo_root)
+        findings.extend(validate_o10_outcome_taxonomy(model, args.repo_root))
         findings.extend(validate_model_bytes(model, args.model))
         findings.extend(validate_schema_bytes(args.schema))
         findings.sort(key=lambda item: (item.code, item.path, item.message))

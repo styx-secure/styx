@@ -936,7 +936,8 @@ outcomes.
   not proof, implementation conformance or readiness authority.
 - **Remaining evidence owners:** O-07 still owns the complete genesis fields;
   O-14 separately owns the signature-suite
-  registry. O-08 owns measured profile maxima and O-10 owns stable error codes.
+  registry. O-08 owns measured profile maxima and O-10 owns stable local
+  outcome classes, not numeric or wire codes.
 - **Dependent artifact:** complete genesis transcript fields and bounded
   adversarial evidence.
 - **Completed bounded follow-up:** O-06c adversarially tests framing injectivity,
@@ -955,7 +956,7 @@ outcomes.
   unambiguous derivation. O-06 does not decide, and its closure does not
   assert, the genesis contents or genesis credential identifier owned by O-07,
   the supported maxima and closed chunk-size values owned by O-08, the stable
-  outcome codes owned by O-10, the signature suite, canonical
+  local outcome classes owned by O-10, the signature suite, canonical
   verification-key encoding and signature verification owned by O-14, the
   interior-node context-freedom boundary that O-11 must revisit before any
   inclusion proof, or the AP-transition-block semantic injectivity owned by AP
@@ -1071,8 +1072,10 @@ outcomes.
   whether a runtime can enforce the profile safely. Excess authority evidence
   makes projection unavailable; it never becomes absent or an empty authority
   set. Physical time and checkpoint evidence are unsupported exact zero.
-- **Dependent artifact:** O-10 receives 66 safe-recovery handoff rows but still
-  owns stable codes. Product/runtime/session/transport profiles remain separate.
+- **Dependent artifact:** O-10 receives 66 safe-recovery handoff rows and owns
+  stable trusted-local classes plus the opaque remote collapse. Numeric and
+  wire codes remain unselected; product/runtime/session/transport profiles stay
+  separate.
 - **Residual/reopen condition:** reopen if complete non-stale evidence within
   every selected entry dimension other than the three projection-work ceilings
   (`AUTHORITY_STATES`, `AUTHORITY_TRANSITIONS` and `REPLAYED_EVENT_WORK`),
@@ -1140,25 +1143,35 @@ outcomes.
 
 ### O-10 — Stable protocol-error taxonomy
 
-- **Status:** `OPEN`.
-- **Question:** is the protocol-error taxonomy closed, and which distinctions
-  are stable?
-- **Rationale/evidence:** `CHAIN-001`, `HLC-004`, `HLC-005`, `VC-002`, `VC-003`
-  and `VC-004` demonstrate outcomes that future consumers must not collapse into
-  generic success or implementation-native failure.
+- **Status:** bounded `DECIDED` for trusted-local transcript-only C0.3
+  outcomes; numeric/wire/API representations remain unselected.
+- **Decision:** the closed registry contains 25 local primaries, one historical
+  alias, two forbidden post-C0.3 markers and one untrusted-remote collapse.
+  Stage and within-stage precedence are deterministic and independent of
+  presentation order. Auxiliary evidence cannot authorize a transition or
+  create a second primary. Every non-`APPLIED` untrusted remote projection,
+  including `DUPLICATE`, is `OPAQUE_REMOTE_FAILURE`.
+- **Rationale/evidence:** all 36 Base outcome citations and all 66 selected O-08
+  handoff rows form a literal 102-row inventory. Python and an independent
+  JavaScript adapter exercise the hostile corpus, recovery rules, precedence,
+  privacy collapse and a closed mutation registry. This is bounded
+  falsification evidence, not proof.
 - **Rejected alternatives:** exception strings as protocol API; one error for
-  states requiring different safe recovery; exposing unstable parser details.
+  states requiring different safe recovery; competing primaries; presentation-
+  order selection; exposing stable local diagnostics to an untrusted peer.
 - **Security/privacy:** error distinctions affect fail-closed recovery and may
-  also become side channels if over-detailed.
-- **Missing evidence:** the complete rejection-site inventory after other fields
-  close.
-- **Dependent artifact:** negative-vector expectations and consumer recovery
-  contract.
-- **Smallest bounded follow-up:** enumerate rejection sites and collapse only
-  distinctions that cannot alter safe caller behavior.
-- **Residual/closure condition:** close only with a bounded stable taxonomy and
-  privacy review of observable errors.
-- **Human ratification:** pending final-HEAD acceptance that this remains open.
+  become side channels. Remote collapse prevents parser/diagnostic distinctions
+  from becoming an unauthenticated oracle, while retaining one explicitly owned
+  applied-versus-opaque residual signal.
+- **Dependent artifact:** C0.3 negative vectors consume the local classes; a
+  later secure-session/transport acknowledgement profile must own any remote
+  representation and the residual existence signal.
+- **Residual/reopen condition:** reopen if safe recovery requires a new local
+  distinction, an existing class changes mutation/retry semantics, a later
+  profile exposes local distinctions remotely, or O-08/O-06c/O-14 changes a
+  mapped source site.
+- **Human ratification:** final-HEAD gates under Issue #252 are required before
+  this bounded decision is operationally closed.
 
 ### O-11 — Wire/storage encoding
 
@@ -1414,9 +1427,9 @@ immutable historical evidence and the independent v3 report records the
 superseding authority model. C0.2k selects the credential/sequence-bound
 commitment context and supplies bounded amendment evidence; O-06c independently
 falsifies the exact combined bytes within its declared envelope.
-O-08 is bounded `DECIDED` for the selected transcript-only entry envelope,
-while O-10 still contains choices required to derive stable adversarial
-outcomes. O-07 retains its exact corpus-integration
+O-08 is bounded `DECIDED` for the selected transcript-only entry envelope and
+O-10 is bounded `DECIDED` for trusted-local outcomes plus the opaque untrusted-
+remote collapse. O-07 retains its exact corpus-integration
 condition and O-14 retains its placeholder-substituted O-06c rerun. O-12 is
 additionally blocking for any profile that retains a physical-time claim; it is
 inapplicable only to profiles that omit physical time. O-11 intentionally does
@@ -1440,8 +1453,8 @@ The smallest safe sequence is:
    evidence; then execute O-06c adversarial evidence over the combined
    construction;
 5. preserve and rerun the completed v1, v2, v3 and C0.2k baseline and mutation evidence after those changes, then
-   preserve the closed O-07 genesis/checkpoint and O-08 resource envelopes,
-   close O-10, preserve O-14's condition-bearing decision
+   preserve the closed O-07 genesis/checkpoint, O-08 resource envelope and
+   O-10 outcome taxonomy, preserve O-14's condition-bearing decision
    and discharge its separately ratified combined-evidence rerun, plus O-12 for any time-bearing profile,
    without product implementation authority; retain O-11 for the later
    wire/storage decision;
