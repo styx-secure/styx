@@ -14,9 +14,11 @@
 # precedence (it uses the default `closest` behaviour) and therefore never
 # outranks an overriding exact classification.
 #
-# Do not add Apache-2.0 paths here. The six vector files below are the only
-# approved exceptions; any addition requires a new inventory, an exact path
-# list, an explicit human amendment to Issue #41 and an independent review.
+# Do not add Apache-2.0 paths here. The twelve paths below are the only approved
+# exceptions, ratified exactly in Issues #41 (six existing vector files) and
+# #253 (six future synthetic C0.3 data files). Any addition requires a new
+# inventory, an exact path list, an explicit human amendment and an independent
+# review; globs and third-party bytes are not approved.
 
 version = 1
 
@@ -30,8 +32,8 @@ SPDX-FileCopyrightText = "2026 Maurizio Verde"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 # ---------------------------------------------------------------------------
-# 2) Exact Apache-2.0 exceptions — six synthetic interoperability vector
-#    files, approved by the copyright holder in Issue #41. Nothing else.
+# 2a) Issue #41 Apache-2.0 exceptions — the six exact synthetic
+#     interoperability-vector files in that separately ratified inventory.
 # ---------------------------------------------------------------------------
 
 [[annotations]]
@@ -42,6 +44,24 @@ path = [
   "styx-js/test/fixtures/vault-crypto-v1/record-v1-json.json",
   "styx-js/test/fixtures/vault-crypto-v1/wrapper-v1.json",
   "styx-js/test/fixtures/kdf-kat-vectors.js",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Maurizio Verde"
+SPDX-License-Identifier = "Apache-2.0"
+
+# ---------------------------------------------------------------------------
+# 2b) Issue #253 Apache-2.0 exceptions — the six exact future, fully synthetic
+#     C0.3 data files pre-registered while absent in that ratified inventory.
+# ---------------------------------------------------------------------------
+
+[[annotations]]
+path = [
+  "conformance/application-protocol/c03/manifest.json",
+  "conformance/application-protocol/c03/valid-transcript-vectors.json",
+  "conformance/application-protocol/c03/invalid-transcript-vectors.json",
+  "conformance/application-protocol/c03/state-machine-scenarios.json",
+  "conformance/application-protocol/c03/adversarial-mutations.json",
+  "conformance/application-protocol/c03/expected-traces.json",
 ]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 Maurizio Verde"

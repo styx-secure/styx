@@ -242,9 +242,10 @@ Styx is **open source**. The licensing model, approved in
 [`LICENSING.md`](LICENSING.md) and [`REUSE.toml`](REUSE.toml), is:
 
 - **Original Styx software and documentation:** [`AGPL-3.0-or-later`](LICENSE).
-- **Six exact interoperability vector files** (five `vault-crypto-v1` known-answer vectors and
-  `kdf-kat-vectors.js`, listed exactly in `LICENSING.md`): `Apache-2.0`, so independent
-  implementations can reuse them freely.
+- **Twelve exact synthetic data paths** (six existing interoperability vectors from Issue #41
+  and six absent, future C0.3 corpus paths pre-registered by Issue #253, all listed exactly in
+  `LICENSING.md`): `Apache-2.0`. The future paths acquire that licence only when populated with
+  fully synthetic Styx-generated data; no corpus bytes or C0.3 capability are created here.
 - **Third-party and vendored material** keeps its upstream licenses and attribution — notably the
   OpenMLS-derived material in `styx-js/vendor/openmls-wasm/` (MIT; that directory also contains
   Styx-authored AGPL scripts and a Styx-modified MIT derivative, classified path by path). See

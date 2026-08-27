@@ -30,7 +30,7 @@ increments that produce or reconcile:
 - executable adversarial traces, mutation tests and deterministic reports;
 - language-neutral conformance vectors after the corresponding semantics and
   bytes have been ratified and the K-11 Apache-2.0 path inventory has been
-  separately approved before the first corpus file is created;
+  separately approved in Issue #253 before the first corpus file is created;
 - extraction of reference cases and independent oracles from existing
   implementations into the language-neutral corpus, provided this adds no
   behavior to those implementations and selects no protocol semantics;
@@ -215,9 +215,10 @@ Protocol increments proceed in dependency order:
 6. **Synchronize the derived model.** Update it only after normative changes;
    pin provenance and add negative fixtures for each new invariant or failure
    class.
-7. **Authorize the corpus licensing boundary.** Complete the separate K-11
-   Apache-2.0 exact-path inventory and the required licensing amendments before
-   creating the first C0.3 corpus file.
+7. **Authorize the corpus licensing boundary — complete in Issue #253.** The
+   exact twelve-path Apache-2.0 inventory now includes six absent future C0.3
+   data paths. This licensing gate creates no corpus byte and does not authorize
+   C0.3.
 8. **Produce C0.3.** Generate a specification-derived adversarial corpus and
    language-neutral vectors only for fully defined semantics and bytes.
 9. **Obtain the phase verdict.** Independent exact-final review and human
@@ -233,7 +234,7 @@ The dependency basis is explicit:
 | C0.2k | exact C0.2j credential and sequence semantics | selected 84-octet context plus bounded model/mutation evidence; exact-final review and human gates complete the increment |
 | O-06c | exact C0.2j/C0.2k bytes and existing O-06b profiles | completed as bounded evidence by Issue #243; obligations affected by later O-07/O-08/O-10/O-14 decisions are rerun or reopened after those decisions |
 | remaining blockers | O-06c results plus each decision's own recorded inputs | the threat model and combined hostile cases are rerun after closure |
-| K-11 corpus boundary | every corpus path and required licensing amendment separately approved | no C0.3 corpus file exists before this gate |
+| K-11 corpus boundary | `DECIDED` by the exact Issue #253 six-path amendment; twelve Apache paths total | no C0.3 corpus file exists before this gate and no third-party corpus byte is authorized |
 | C0.3 | every unconditional blocker closed, every conditional blocker disposition justified by the registry, and K-11 complete | no later decision may be guessed or inherited from an implementation |
 
 For visibility, every O-series objective in the current registry is accounted
@@ -350,7 +351,8 @@ The phase may end only when all applicable conditions are true:
     ratifying human, touched paths and finding that it selected no protocol
     semantics; any unreconciled exception is blocking.
 11. K-11's exact Apache-2.0 corpus-path inventory and required licensing
-    amendments were approved before the first C0.3 corpus file was created.
+    amendments were approved in Issue #253 before the first C0.3 corpus file
+    was created.
 
 A bounded `GO` authorizes only the named corpus or next contract. It does not
 authorize product code, deployment or sensitive use.
@@ -361,8 +363,8 @@ After a passing exit verdict, work resumes through separate contracts in this
 order:
 
 1. C0.3 specification-derived corpus and conformance evidence, if not already
-   included in the exit verdict and only after K-11's separately approved
-   Apache-2.0 path inventory and licensing amendments;
+   included in the exit verdict and only under Issue #253's separately approved
+   Apache-2.0 path inventory and synthetic-only licensing boundary;
 2. minimum language-neutral application-core interface;
 3. independently testable implementation(s) against the conformance corpus;
 4. supported secure-session adapter and authenticated persistence boundaries;
@@ -439,6 +441,8 @@ bounded executable evidence:
   bounded non-blocking or downstream-blocking roles;
 - C0.3 remains `NO-GO` and depends exactly on
   `{C0.3_CORPUS_PATH_APPROVAL,O-06c,O-07,O-08,O-10,O-14}`;
+- `C0.3_CORPUS_PATH_APPROVAL` is bounded `DECIDED` by Issue #253; its six
+  future paths remain absent and no corpus or C0.3 capability follows;
 - while C0.3 is `NO-GO`, C0.3 itself blocks corpus, implementation alignment,
   demo, product and sensitive use. Closing O-06c opens no capability.
 

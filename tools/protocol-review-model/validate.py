@@ -291,7 +291,7 @@ EXPECTED_STATUS_BY_COLLECTION = {
         "C0.2j": "DECIDED",
         "C0.2k": "DECIDED",
         "C0.3": "NO_GO",
-        "C0.3_CORPUS_PATH_APPROVAL": "OPEN",
+        "C0.3_CORPUS_PATH_APPROVAL": "DECIDED",
         "O-06c": "DECIDED",
         "O-07": "DECIDED",
         "O-08": "DECIDED",

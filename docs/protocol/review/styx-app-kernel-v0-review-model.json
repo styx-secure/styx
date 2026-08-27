@@ -377,7 +377,7 @@
       ],
       "owner": "K",
       "reason": "A separate approved task must select the exact Apache-2.0 corpus path inventory before C0.3 creates files.",
-      "status": "OPEN"
+      "status": "DECIDED"
     },
     {
       "blocks": [
@@ -5957,7 +5957,7 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "094fdf010122aa6f2aa4da6c5a6909127cd4d161dc3eed644fddd65de954b0f2"
+      "sha256": "495a57e75297a71d3ca117e2b370c62c5690ce70df61a32d13866149f3ccdaed"
     },
     {
       "authority": "evidence",

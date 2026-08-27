@@ -247,7 +247,10 @@ O-08 has a replacement provider-bound `balanced` selection after correction of
 its final-gate response shape and completion of two-clean-checkout evidence,
 exact-HEAD reviews and technical human approval; O-10 is bounded `DECIDED` for
 trusted-local outcomes and one opaque untrusted-remote collapse, with no
-numeric/wire/API representation selected. While C0.3 is `NO_GO`, C0.3 itself blocks corpus,
+numeric/wire/API representation selected. `C0.3_CORPUS_PATH_APPROVAL` is
+bounded `DECIDED` by Issue #253's exact six-path synthetic-only amendment; the
+paths remain absent and this creates no corpus or C0.3 capability. While C0.3
+is `NO_GO`, C0.3 itself blocks corpus,
 implementation alignment, demo, product and sensitive-use claims.
 
 `counterexamples[].steps` is the one intentionally order-sensitive sequence in
