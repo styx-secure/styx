@@ -204,7 +204,7 @@ observable order is fixed: O-08 preflight; canonical O-06b transcript;
 authenticated O-07 genesis or C0.2j grant binding; one O-14 verifier; AP use;
 O-06c projection; then O-10 local/remote classification.
 
-The candidate evidence contains 102 fixed/transcript witnesses, consumes all
+The candidate evidence contains 115 fixed/transcript/candidate-envelope witnesses, consumes all
 69 O-08 dispositions and 66 O-08-to-O-10 handoffs, emits 154 boundary
 observations and kills seven integration-order mutants. The frozen O-07, O-08,
 O-10 and O-14 suites remain authoritative and are rerun separately by the final

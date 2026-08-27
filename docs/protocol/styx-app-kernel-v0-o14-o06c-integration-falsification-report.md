@@ -44,16 +44,16 @@ The integrated candidate evidence currently exercises:
 
 | Evidence family | Candidate result |
 | --- | ---: |
-| fixed and transcript hostile witnesses | 102 passed |
+| fixed, transcript and candidate-envelope hostile witnesses | 115 passed |
 | O-08 dispositions consumed | 69 of 69 |
 | C0.3-entry dimensions exercised | 53 of 53 |
 | O-08-to-O-10 handoff rows exercised | 66 of 66 |
 | boundary observations | 154 |
 | integration-order mutants | 7 killed, 0 survivors |
-| integrated Python unit tests | 32 passed |
+| integrated Python unit tests | 40 passed |
 | Python/JavaScript runtime traces | 9 events, byte-identical where jointly claimed |
 
-The 102-witness set covers content-free, `REQUIRED` and `DETACHABLE` content;
+The 115-witness set covers content-free, `REQUIRED` and `DETACHABLE` content;
 single and tree commitments; genesis and grant provenance; rotation/recovery
 successors; fresh replay; sequence rollback and gaps; same-key distinct
 credentials; unknown, reserved and maximum suites; key and signature length
@@ -86,18 +86,10 @@ No counterexample was found within the candidate envelope to these properties:
 
 ## 5. Exact-final reproducibility
 
-The four canonical report families are deterministic. Diagnostic digests from
-the last pre-final synchronization run were:
-
-```text
-integrated-probe     aaa3069dfd8f7e39ac20d806235e3c2eda844567bd65ab436c80808530489faa
-integrated-runtime   414f7f1558950b263d0bacd196b1e685a1ef1f322a53c09cb1ce7bace75424d9
-integrated-mutations faa13e5050308801d53af2cc0236158b6035438d732e01f2c0a660383277fe35
-integrated-scope     86f7961439287af6cd7b8ba514473c2d5e7a305c0d908bf0c64da56b55cad6b0
-```
-
-These tracked digests remain diagnostic rather than self-referential final
-identity evidence. The Issue #260 final gate regenerated all reports twice from
+The four canonical report families are deterministic. Their exact digests are
+emitted into the immutable external PR evidence package rather than copied into
+this tracked report, avoiding stale or self-referential identity claims. The
+Issue #260 final gate regenerated all reports twice from
 distinct clean clones, verified the complete bundle and raw provider evidence,
 reran every frozen suite with Python 3.14.4, Node 24.18.0 and Dart 3.10.8, and
 produced byte-identical package evidence. It passed with 21 regenerated reports

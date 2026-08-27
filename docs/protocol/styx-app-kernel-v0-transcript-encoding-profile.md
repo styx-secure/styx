@@ -506,7 +506,7 @@ construction without changing sections 4 or 5. The integrated model resolves
 suite and key only from the authenticated O-07 genesis or C0.2j `GRANT`
 binding, verifies the regenerated transcript exactly once before AP use and
 preserves the bounded O-10 precedence at every rejection boundary. Its local
-candidate evidence exercises 102 fixed/transcript witnesses, 69 O-08
+candidate evidence exercises 115 fixed/transcript/candidate-envelope witnesses, 69 O-08
 dispositions, 66 O-08-to-O-10 handoffs and seven integration-order mutants.
 This is bounded falsification evidence. The exact-final two-clean-checkout
 technical gate passes; independent review and human gates remain required

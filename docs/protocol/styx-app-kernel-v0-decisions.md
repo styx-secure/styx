@@ -941,7 +941,7 @@ outcomes.
 - **O-14/O-06c integrated rerun:** Issue #260 replaces the historical
   signature placeholder with the frozen O-14 suite while preserving the O-07
   provenance, O-08 envelope and O-10 taxonomy. Exact-final technical evidence passes
-  102 fixed/transcript witnesses, all 69 envelope dispositions and 66 handoff
+  115 fixed/transcript/candidate-envelope witnesses, all 69 envelope dispositions and 66 handoff
   rows, 154 boundary observations and seven integration-order mutants. The
   frozen decision suites remain separate authoritative inputs. Independent
   review and human gates remain pending, so this technical result does not yet

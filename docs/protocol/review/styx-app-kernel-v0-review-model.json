@@ -5957,7 +5957,7 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "11e9c51537b4a94de56dab58fde96495c79a366e4a177076172d9d27f67edfdf"
+      "sha256": "9ecb090f0d05ca32992f40279b55643307ee98dcd01a6e43ea42f75e40b5e21d"
     },
     {
       "authority": "evidence",
@@ -6029,13 +6029,13 @@
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "069dfb82d564ef068e0b397b34ae96549565b06d730c198b6a3f654fb445da15"
+      "sha256": "ad25bc1538d0a1d55050808d67f11fac83ceae5360e919ed4531af0dc69d3a01"
     },
     {
       "authority": "normative",
       "id": "transcript_profile",
       "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
-      "sha256": "d5af707a5b0d77f6d098252410b11d860a8b4b060f3b7861bd90a289d95aaded"
+      "sha256": "34a403d0015338dc03e9b0250ef206bc411a4041b2ca4cc02c0b5bdfa5cae808"
     }
   ],
   "state_models": [

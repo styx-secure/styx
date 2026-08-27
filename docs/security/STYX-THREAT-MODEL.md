@@ -643,7 +643,7 @@ Current evidence establishes only bounded components:
   the 84-octet commitment context and bounded mutation evidence; Issue #243
   completes bounded O-06c evidence. O-06/O-06c are condition-bearing
   `DECIDED`; O-07, O-08 and O-10 are bounded `DECIDED`; O-14 is
-  condition-bearing `DECIDED` with only its Issue #260 integrated-evidence gate
+  condition-bearing `DECIDED` with its separately scoped Issue #260 integrated-evidence gate
   pending; O-11 through O-16 retain their recorded open, conditional or
   downstream-blocking roles;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
