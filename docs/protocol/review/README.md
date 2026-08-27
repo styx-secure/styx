@@ -76,6 +76,14 @@ condition-bearing `DECIDED`; this does not establish product/runtime
 conformance, discharge the O-06c placeholder-substitution rerun, authorize C0.3
 or add a security, interoperability, availability or readiness claim.
 
+The Issue #260 snapshot integrates that frozen O-14 language into the complete
+O-06c construction while preserving the frozen O-07 provenance, O-08 envelope
+and O-10 outcome taxonomy. Exact-final evidence exercises 115 fixed/transcript/candidate-envelope
+witnesses and seven integration-order mutants, and the two-clean-checkout
+technical gate passes. Independent review and human approvals remain required;
+no product/runtime conformance or C0.3 capability follows from the technical
+result alone.
+
 The validator pins the exact source-ID, repository-path and authority tuple for
 every source in this snapshot. Changing an evidence source to `normative`,
 retargeting an ID to a different file, adding or removing a modeled record, or
@@ -241,8 +249,8 @@ availability, audit readiness or production fitness. It cannot detect a
 normative omission shared by all sources. C0.2j is ratified historical input;
 C0.2k selects only its bounded commitment-context amendment and O-06c adds
 bounded combined-construction evidence. O-14 selects only its bounded guarded
-signature language and remains a condition-bearing C0.3 dependency until its
-separately ratified combined rerun passes. O-07 and O-08 are bounded `DECIDED`;
+signature language and remains a condition-bearing C0.3 dependency until Issue
+#260's separately ratified exact-final combined rerun passes. O-07 and O-08 are bounded `DECIDED`;
 O-08 has a replacement provider-bound `balanced` selection after correction of
 its final-gate response shape and completion of two-clean-checkout evidence,
 exact-HEAD reviews and technical human approval; O-10 is bounded `DECIDED` for

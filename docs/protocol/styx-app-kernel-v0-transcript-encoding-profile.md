@@ -501,6 +501,17 @@ the demonstrated guarded adapter (5), and assigns one canonical 32-octet key to
 its sole admitted suite (6). None is met. A later suite or adapter that meets any
 predicate must reopen O-06b-1 under a separate ratified task.
 
+Issue #260 substitutes that selected language into the complete O-06c
+construction without changing sections 4 or 5. The integrated model resolves
+suite and key only from the authenticated O-07 genesis or C0.2j `GRANT`
+binding, verifies the regenerated transcript exactly once before AP use and
+preserves the bounded O-10 precedence at every rejection boundary. Its local
+candidate evidence exercises 115 fixed/transcript/candidate-envelope witnesses, 69 O-08
+dispositions, 66 O-08-to-O-10 handoffs and seven integration-order mutants.
+This is bounded falsification evidence. The exact-final two-clean-checkout
+technical gate passes; independent review and human gates remain required
+before the O-14 integration condition is discharged.
+
 ## 9. Rejection surfaces for O-10
 
 This profile adds rejection sites but does not assign stable codes:
@@ -595,16 +606,16 @@ reinterpreted.
    when any recorded placeholder owner selects a dependent input or a later
    counterexample invalidates the bounded verdict.
 6. **O-14 is condition-bearing `DECIDED`:** suite `0x0001` fixes the exact
-   guarded signature language without changing these bytes. Issue #246 reruns
-   the six existing O-06c modules against their unchanged placeholder only; it
-   does not discharge the placeholder-substitution obligation. Before any C0.3
-   corpus, a separate human-ratified task must integrate the selected semantics
-   into the combined construction and rerun its complete evidence.
+   guarded signature language without changing these bytes. Issue #260 is the
+   separately human-ratified task that replaces the unchanged O-06c placeholder
+   with the selected semantics and reruns the complete combined evidence. Its
+   exact-final integrated reproducibility passes; independent review and human
+   approval remain pending.
 
 O-06b-1, O-06b-2, C0.2j, C0.2k and the completed O-06c evidence do not make
-C0.3 executable. O-07 and O-08 are bounded `DECIDED`; O-10 remains open;
-O-14 retains its
-condition-bearing dependency until the separately ratified combined rerun
-passes. O-12 additionally blocks any time-bearing profile. O-11 remains
+C0.3 executable. O-07, O-08 and O-10 are bounded `DECIDED`; O-14 retains its
+condition-bearing dependency until the Issue #260 exact-final combined rerun
+and its review/human gates pass. O-12 additionally blocks any time-bearing
+profile. O-11 remains
 required before supported persistence or remote admission, and K-11 remains
 required before any normative corpus file.

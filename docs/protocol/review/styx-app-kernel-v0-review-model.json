@@ -428,7 +428,7 @@
         "OB-K01"
       ],
       "owner": "K",
-      "reason": "Single-root genesis, authenticated external acceptance and the v0 no-checkpoint-substitution boundary are fixed; product ceremony, durable custody and the separate O-14-to-O-06c integration rerun remain gated.",
+      "reason": "Single-root genesis, authenticated external acceptance and the v0 no-checkpoint-substitution boundary are fixed. Issue #260 integrates that frozen provenance into the O-14/O-06c rerun; its exact-final technical gate passes, product ceremony and durable custody remain non-claims, and independent review/human gates remain pending.",
       "status": "DECIDED"
     },
     {
@@ -554,7 +554,7 @@
         "OB-K01"
       ],
       "owner": "K",
-      "reason": "CONDITION-BEARING: internal suite 0x0001 fixes the exact prime-order-guarded Ed25519 accepted language and no-fallback dispatch; product/runtime conformance is unclaimed, and a separate human-ratified task must substitute these semantics into O-06c and rerun the complete combined evidence before C0.3 corpus authorization.",
+      "reason": "CONDITION-BEARING: internal suite 0x0001 fixes the exact prime-order-guarded Ed25519 accepted language and no-fallback dispatch. Issue #260 is the separate human-ratified O-06c substitution rerun; its exact-final technical gate passes while independent review and human gates remain pending. Product/runtime conformance remains unclaimed.",
       "status": "DECIDED"
     },
     {
@@ -5957,7 +5957,7 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "495a57e75297a71d3ca117e2b370c62c5690ce70df61a32d13866149f3ccdaed"
+      "sha256": "9ecb090f0d05ca32992f40279b55643307ee98dcd01a6e43ea42f75e40b5e21d"
     },
     {
       "authority": "evidence",
@@ -6011,7 +6011,7 @@
       "authority": "normative",
       "id": "responsibility",
       "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
-      "sha256": "5ee770672fd8cb5aa204525da6fc77e66f9937578ca9cb20763d1769c029bcfe"
+      "sha256": "93c238d761682e77586bac3499905b43fc770beac80d811e8c0b21c6adf42062"
     },
     {
       "authority": "evidence",
@@ -6029,13 +6029,13 @@
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "2616eb286772ded9415083272037e66fd359d68c9e90418d7141d2529d052780"
+      "sha256": "ad25bc1538d0a1d55050808d67f11fac83ceae5360e919ed4531af0dc69d3a01"
     },
     {
       "authority": "normative",
       "id": "transcript_profile",
       "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
-      "sha256": "13cb1c8b0a64985919e75abb1652c68daffa5c12c8a04047752879e74571cc79"
+      "sha256": "34a403d0015338dc03e9b0250ef206bc411a4041b2ca4cc02c0b5bdfa5cae808"
     }
   ],
   "state_models": [

@@ -195,6 +195,25 @@ runtime support claim, interoperability claim or authority to create C0.3.
 Dart/browser adapter evidence and the separately ratified O-06c
 placeholder-substitution rerun remain explicit downstream gates.
 
+## O-14/O-06c integrated rerun
+
+`o06c/integrated_*.py` is the Issue #260 evidence layer that replaces the
+historical signature placeholder with the frozen O-14 suite and preserves the
+frozen O-07 provenance, O-08 envelope and O-10 outcome boundaries. Its
+observable order is fixed: O-08 preflight; canonical O-06b transcript;
+authenticated O-07 genesis or C0.2j grant binding; one O-14 verifier; AP use;
+O-06c projection; then O-10 local/remote classification.
+
+The candidate evidence contains 115 fixed/transcript/candidate-envelope witnesses, consumes all
+69 O-08 dispositions and 66 O-08-to-O-10 handoffs, emits 154 boundary
+observations and kills seven integration-order mutants. The frozen O-07, O-08,
+O-10 and O-14 suites remain authoritative and are rerun separately by the final
+gate; the integration harness does not copy or replace their oracles. Its
+JavaScript interchange is `TEST_ONLY_NOT_O11` and selects no wire, storage,
+product or Dart/browser-conformance claim. The exact-final two-clean-checkout
+technical evidence passes; independent review and human gates are still
+required before C0.3 can move from `NO_GO`.
+
 ## O-07 genesis and checkpoint-boundary evidence package
 
 `o07/` is the isolated, standard-library-only evidence package for Issue #248.
