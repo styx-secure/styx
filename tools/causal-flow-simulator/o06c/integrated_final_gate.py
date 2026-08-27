@@ -78,7 +78,10 @@ def _run(
     except subprocess.TimeoutExpired as error:
         raise FinalGateError("required command timed out") from error
     if completed.returncode != 0:
-        raise FinalGateError("required command failed")
+        command_name = Path(command[1] if len(command) > 1 else command[0]).name
+        raise FinalGateError(
+            f"required command failed: {command_name} exit={completed.returncode}"
+        )
     if not allow_empty and not completed.stdout.strip():
         raise FinalGateError("required command produced no status output")
     if re.search(r"OK \(skipped=[1-9]|skipped\s*=\s*[1-9]", completed.stdout):
@@ -327,6 +330,19 @@ def _run_review_and_repository_gates(repo: Path, output: Path, base: str, candid
     return _regular_file(review_path)
 
 
+def _selected_envelope_digest(repo: Path) -> str:
+    envelope_payload = json.loads(
+        (repo / "tools/causal-flow-simulator/o08/resource-envelope.candidate.json").read_bytes()
+    )
+    envelope_digest = envelope_payload.get("candidate_digest")
+    if (
+        not isinstance(envelope_digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", envelope_digest) is None
+    ):
+        raise FinalGateError("frozen O-08 selected-envelope identity is invalid")
+    return envelope_digest
+
+
 def _run_frozen_producers(
     repo: Path,
     output: Path,
@@ -338,9 +354,7 @@ def _run_frozen_producers(
 ) -> dict[str, bytes]:
     output.mkdir()
     python = sys.executable
-    envelope_digest = sha256(
-        (repo / "tools/causal-flow-simulator/o08/resource-envelope.candidate.json").read_bytes()
-    ).hexdigest()
+    envelope_digest = _selected_envelope_digest(repo)
     commands: dict[str, list[str]] = {
         "o07-probe": [python, "tools/causal-flow-simulator/o07/run_genesis_checkpoint_probe.py", "--repo-root", ".", "--suite", "required", "--bundle", str(bundle), "--bundle-sha256", bundle_sha256],
         "o07-runtime": [python, "tools/causal-flow-simulator/o07/run_cross_runtime.py", "--repo-root", ".", "--suite", "required", "--javascript", "node", "--workspace", str(output / "o07-workspace"), "--bundle", str(bundle), "--bundle-sha256", bundle_sha256],

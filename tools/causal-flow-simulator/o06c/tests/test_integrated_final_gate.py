@@ -12,7 +12,12 @@ import unittest
 O06C = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(O06C))
 
-from integrated_final_gate import FinalGateError, validate_integrated_reports, write_manifest
+from integrated_final_gate import (
+    FinalGateError,
+    _selected_envelope_digest,
+    validate_integrated_reports,
+    write_manifest,
+)
 from integrated_mutation_harness import build_report as build_mutations
 from integrated_probe import build_report as build_probe
 
@@ -22,6 +27,13 @@ def _encoded(value: dict[str, object]) -> bytes:
 
 
 class IntegratedFinalGateTest(unittest.TestCase):
+    def test_frozen_envelope_uses_provider_selected_candidate_identity(self) -> None:
+        repo = O06C.parents[2]
+        payload = json.loads(
+            (repo / "tools/causal-flow-simulator/o08/resource-envelope.candidate.json").read_bytes()
+        )
+        self.assertEqual(_selected_envelope_digest(repo), payload["candidate_digest"])
+
     def test_substantive_integrated_counts_are_accepted(self) -> None:
         reports = {
             "probe": _encoded(build_probe()),
