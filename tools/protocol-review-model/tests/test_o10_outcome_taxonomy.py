@@ -16,7 +16,13 @@ validator = load_validator()
 O10_ROOT = REPO_ROOT / "tools/causal-flow-simulator/o10"
 sys.path.insert(0, str(O10_ROOT))
 
-from scope_guard import BASE_SHA, MAIN_ADDITION, ScopeError, validate_validator_delta  # noqa: E402
+from scope_guard import (  # noqa: E402
+    BASE_SHA,
+    MAIN_ADDITION,
+    ScopeError,
+    validate_historical_validator_delta,
+    validate_validator_delta,
+)
 
 
 class O10OutcomeTaxonomyTests(unittest.TestCase):
@@ -30,6 +36,16 @@ class O10OutcomeTaxonomyTests(unittest.TestCase):
         )
         cls.actual_validator = (REPO_ROOT / "tools/protocol-review-model/validate.py").read_text(
             encoding="utf-8"
+        )
+        cls.historical_validator = subprocess.check_output(
+            [
+                "git",
+                "-C",
+                str(REPO_ROOT),
+                "show",
+                "25be9abc0d8c1bce8821a750616e13d245abc356:tools/protocol-review-model/validate.py",
+            ],
+            text=True,
         )
 
     def test_positive_registration_has_no_o10_findings(self) -> None:
@@ -116,9 +132,45 @@ class O10OutcomeTaxonomyTests(unittest.TestCase):
         with self.assertRaises(ScopeError):
             validate_validator_delta(self.base_validator, drift)
 
+    def test_c03_authorization_assignment_drift_is_rejected(self) -> None:
+        drift = self.actual_validator.replace(
+            'AUTHORIZED_UNBLOCKED_CAPABILITIES = {"corpus"}',
+            'AUTHORIZED_UNBLOCKED_CAPABILITIES = {"corpus", "demo"}',
+            1,
+        )
+        with self.assertRaises(ScopeError):
+            validate_validator_delta(self.base_validator, drift)
+
+    def test_c03_blocker_edge_digest_drift_is_rejected(self) -> None:
+        drift = self.actual_validator.replace(
+            '"C0.3": "8c825da422bcc2fe6c330353dcbb1952346ebfdc07f7df9ee65e73d5781931f5"',
+            '"C0.3": "294c90766317a495004a86e300e1c1b6b81de66b377cefe47676b9e67c1f6d14"',
+            1,
+        )
+        with self.assertRaises(ScopeError):
+            validate_validator_delta(self.base_validator, drift)
+
+    def test_c03_authorization_function_drift_is_rejected(self) -> None:
+        drift = self.actual_validator.replace(
+            "and capability not in AUTHORIZED_UNBLOCKED_CAPABILITIES",
+            "or capability not in AUTHORIZED_UNBLOCKED_CAPABILITIES",
+            1,
+        )
+        with self.assertRaises(ScopeError):
+            validate_validator_delta(self.base_validator, drift)
+
     def test_exact_main_and_function_registration_pass(self) -> None:
         hashes = validate_validator_delta(self.base_validator, self.actual_validator)
         self.assertEqual(len(hashes), 3)
+
+    def test_historical_o10_relation_remains_exact(self) -> None:
+        hashes = validate_historical_validator_delta(
+            self.base_validator, self.historical_validator
+        )
+        self.assertEqual(
+            "a77067d559270c1779353d870c4663705951cea8ce19150c325014726d59629d",
+            hashes["complete_source_sha256"],
+        )
 
 
 if __name__ == "__main__":

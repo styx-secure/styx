@@ -45,8 +45,11 @@
   the credential/sequence-bound commitment context with bounded amendment
   evidence. O-06c now supplies bounded combined evidence; O-07 and the corpus
   path gate are decided. Issue #260's exact-final O-14-to-O-06c technical gate
-  passes; C0.3 remains `NO-GO` while its independent review/human gates and the
-  later authority-set synchronization are pending.
+  passes, and merged PR #261 completes its independent review and human gates.
+  Issue #262 performs the final authority-set synchronization and authorizes
+  only construction of the separately contracted specification-derived corpus.
+  C0.3 remains `NO-GO` for implementation alignment, demo, product and
+  sensitive use.
 - **O-14 amendment:** Issue #246 selects internal suite `0x0001`, pure Ed25519
   over the complete O-06b-1 transcript with canonical 32-octet keys, canonical
   64-octet `R || S`, `S < L`, prime-order guards, one pinned verifier and no
@@ -55,7 +58,8 @@
   and the placeholder-substituted O-06c combined rerun remain separate gates.
   Issue #260 performs that rerun without changing O-14, O-06b, O-07, O-08 or
   O-10 semantics. The exact-final two-clean-checkout technical gate passes;
-  independent review and human approval are still required.
+  independent review and human approval completed in merged PR #261 at
+  `490689f0d81980cf942d448c76a54192913b7cde`.
 - **Language:** English is canonical.
 
 Styx is experimental, has not completed an independent security audit, and is
@@ -643,9 +647,10 @@ Current evidence establishes only bounded components:
   the 84-octet commitment context and bounded mutation evidence; Issue #243
   completes bounded O-06c evidence. O-06/O-06c are condition-bearing
   `DECIDED`; O-07, O-08 and O-10 are bounded `DECIDED`; O-14 is
-  condition-bearing `DECIDED` with its separately scoped Issue #260 integrated-evidence gate
-  pending; O-11 through O-16 retain their recorded open, conditional or
-  downstream-blocking roles;
+  condition-bearing `DECIDED` with its separately scoped Issue #260 integrated-
+  evidence gate completed by merged PR #261; Issue #262 authorizes only C0.3
+  corpus construction; O-11 through O-16 retain their recorded open,
+  conditional or downstream-blocking roles;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
   described in its final verdict; and
 - existing vault and chat work provides component evidence under its own

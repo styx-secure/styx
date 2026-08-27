@@ -26,8 +26,9 @@ resumes.
 The canonical [protocol-hardening plan](protocol/protocol-hardening-plan.md)
 defines the freeze boundary, authority order, review bundle and exit gates.
 Issue #233 / PR #234 remain isolated experimental evidence and are not treated
-as ratified protocol semantics. C0.3 remains `NO-GO`, and this phase does not
-authorize a demo, product deployment or sensitive use.
+as ratified protocol semantics. Issue #262 authorizes only construction of the
+separately contracted specification-derived C0.3 corpus. C0.3 remains `NO-GO`
+for implementation alignment, demo, product deployment and sensitive use.
 
 ## Mission
 
@@ -187,10 +188,10 @@ persistence, retention/compaction, transport and runtime boundaries.
 
 ## What remains
 
-- complete the active protocol-hardening phase, close or explicitly bound every
-  C0.3 blocker, define the language-neutral Styx application protocol and
-  adversarial conformance corpus, extract independent Dart cases, and keep
-  parallel product implementation frozen until the phase exit verdict;
+- construct the authorized language-neutral Styx application-protocol
+  adversarial corpus and third implementation from the specification, obtain
+  the explicit protocol-hardening exit verdict, extract independent Dart cases,
+  and keep parallel product implementation frozen until that verdict;
 - turn the completed bounded secure-session proof into a separately versioned,
   supported adapter only after selecting and testing authenticated product
   persistence, retention/compaction, transport and runtime boundaries;

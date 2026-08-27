@@ -18,7 +18,9 @@ one left-complete chunk-tree construction. C0.2k supplies an isolated bounded
 model and adversarial evidence for the context amendment only; it creates no
 product implementation, wire/storage format, conformance claim or production
 authority. O-06 and O-06c are condition-bearing `DECIDED`; C0.3 remains
-`NO-GO`, and no corpus, implementation or readiness authority follows.
+`NO-GO`. Issue #262 authorizes only construction of the separately contracted
+specification-derived corpus; no implementation alignment, demo, product,
+sensitive-use or readiness authority follows.
 
 ## 1. Selected suite and closed agility rule
 
@@ -717,8 +719,10 @@ commitment family. A preference for HMAC triggers the explicit three-part reopen
 and renewed-ratification path in section 9.1; it is never an executor choice.
 
 After Issue #243, O-06 and O-06c are condition-bearing `DECIDED` over the exact
-combined C0.2j/C0.2k construction and declared bounded envelope. K-11 still
-gates any normative corpus file; O-07 and O-08 are bounded `DECIDED`, while
-O-10 remains open. O-14 is
-condition-bearing `DECIDED`, but its placeholder-substituted O-06c rerun remains
-required before corpus authorization. C0.3 remains `NO-GO`.
+combined C0.2j/C0.2k construction and declared bounded envelope. Issue #253 /
+merged PR #258 fixes the synthetic-only Apache-2.0 corpus paths. O-07, O-08 and
+O-10 are bounded `DECIDED`; O-14 is condition-bearing `DECIDED`, and its
+placeholder-substituted O-06c rerun, independent review and human gates
+completed in Issue #260 / merged PR #261. Issue #262 authorizes only corpus
+construction. C0.3 remains `NO-GO` for implementation alignment, demo,
+product and sensitive use.

@@ -9,7 +9,7 @@ C03_DEPENDENCIES = frozenset(
     {"C0.3_CORPUS_PATH_APPROVAL", "O-06c", "O-07", "O-08", "O-10", "O-14"}
 )
 C03_BLOCKED_CAPABILITIES = frozenset(
-    {"corpus", "implementation_alignment", "demo", "product", "sensitive_use"}
+    {"implementation_alignment", "demo", "product", "sensitive_use"}
 )
 
 

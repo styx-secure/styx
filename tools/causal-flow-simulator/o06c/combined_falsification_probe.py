@@ -871,7 +871,7 @@ def build_witnesses(
         c03_dependencies,
         c03_declared_blocks,
     )
-    add(Witness("W-C03-01", "capability-gate", "the actual derived-review-model C0.3 record is NO_GO, retains the exact dependency set and blocks exactly five capabilities", c03_blocked == C03_BLOCKED_CAPABILITIES and len(c03_blocked) == 5, ("C03_MODEL_RECORD", "C03_NO_GO")))
+    add(Witness("W-C03-01", "capability-gate", "the actual derived-review-model C0.3 record is NO_GO, retains the exact dependency set and blocks exactly four capabilities after corpus-entry authorization", c03_blocked == C03_BLOCKED_CAPABILITIES and len(c03_blocked) == 4, ("C03_MODEL_RECORD", "C03_NO_GO")))
     aggregate = stage_work.record()
     for commitment in (single, tree, sequence_changed_single, sequence_changed_tree):
         for name, value in commitment.work.items():

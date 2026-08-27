@@ -11,9 +11,9 @@
 - **O-06b-2 amendment base:**
   `cf93e6fa9136a383e125dfee76312bb5ca957455` under Issue #223.
 - **Language:** English is canonical for language-neutral review.
-- **Ratification:** O-06b-1 was ratified under Issue #221. The O-06b-2
-  amendments remain proposed until `maverde73` ratifies the exact final PR HEAD
-  under Issue #223 after independent and human crypto review.
+- **Ratification:** O-06b-1 was ratified under Issue #221. O-06b-2 completed
+  independent and human crypto review under Issue #223 and merged PR #224 at
+  `468e822d7c7113ccceeea339eede27ec56f12ab3`.
 
 This document fixes exact bytes only for the v0 application-event signature
 transcript, the seven-role domain registry and event/genesis-reference digest
@@ -22,8 +22,9 @@ internals itself, a signature suite, genesis contents, a wire/storage
 representation, an executable vector or implementation. The exact commitment
 internals are now selected separately by
 `styx-app-kernel-v0-commitment-encoding-profile.md`. O-06 and O-06c are
-condition-bearing `DECIDED`; C0.3 remains `NO-GO` and no implementation,
-corpus, demo, product or sensitive-use authority follows.
+condition-bearing `DECIDED`; Issue #262 authorizes only construction of the
+separately contracted specification-derived C0.3 corpus. C0.3 remains `NO-GO`
+for implementation alignment, demo, product and sensitive use.
 
 ## 1. Inputs and bounded claim
 
@@ -509,8 +510,9 @@ preserves the bounded O-10 precedence at every rejection boundary. Its local
 candidate evidence exercises 115 fixed/transcript/candidate-envelope witnesses, 69 O-08
 dispositions, 66 O-08-to-O-10 handoffs and seven integration-order mutants.
 This is bounded falsification evidence. The exact-final two-clean-checkout
-technical gate passes; independent review and human gates remain required
-before the O-14 integration condition is discharged.
+technical gate, independent review and human gates completed in Issue #260 /
+merged PR #261 at `490689f0d81980cf942d448c76a54192913b7cde`; the O-14
+integration condition is discharged.
 
 ## 9. Rejection surfaces for O-10
 
@@ -609,13 +611,14 @@ reinterpreted.
    guarded signature language without changing these bytes. Issue #260 is the
    separately human-ratified task that replaces the unchanged O-06c placeholder
    with the selected semantics and reruns the complete combined evidence. Its
-   exact-final integrated reproducibility passes; independent review and human
-   approval remain pending.
+   exact-final integrated reproducibility, independent review and human
+   approval completed in merged PR #261 at
+   `490689f0d81980cf942d448c76a54192913b7cde`.
 
 O-06b-1, O-06b-2, C0.2j, C0.2k and the completed O-06c evidence do not make
-C0.3 executable. O-07, O-08 and O-10 are bounded `DECIDED`; O-14 retains its
-condition-bearing dependency until the Issue #260 exact-final combined rerun
-and its review/human gates pass. O-12 additionally blocks any time-bearing
-profile. O-11 remains
-required before supported persistence or remote admission, and K-11 remains
-required before any normative corpus file.
+C0.3 a product or implementation authorization. O-07, O-08 and O-10 are
+bounded `DECIDED`; O-14's condition-bearing Issue #260 rerun and its review and
+human gates are complete. Issue #253 / merged PR #258 fixes the synthetic-only
+Apache-2.0 corpus paths, and Issue #262 authorizes only corpus construction.
+O-12 additionally blocks any time-bearing profile. O-11 remains required
+before supported persistence or remote admission.

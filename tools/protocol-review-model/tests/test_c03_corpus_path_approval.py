@@ -48,7 +48,7 @@ HISTORICAL_O10_TEST = (
     / "tools/protocol-review-model/tests/test_o10_outcome_taxonomy.py"
 )
 HISTORICAL_O10_TEST_SHA256 = (
-    "64a89053e22c7e46d2e8e414250519f09db5a135cbe215c0637b46eb2a053ad2"
+    "b329270f6361cedf62fce5f063ce32f77dc4e56b9535c291a1a728f32af823ab"
 )
 
 
@@ -198,7 +198,7 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
     def test_rebased_o10_guard_accepts_the_exact_validator(self) -> None:
         hashes = validate_validator_delta(self.base_validator, self.actual_validator)
         self.assertEqual(
-            "a77067d559270c1779353d870c4663705951cea8ce19150c325014726d59629d",
+            "c4ad483f76afdf5b5c51d1481611fa2fc59b53fda3ec1670d29473ee6d6bf376",
             hashes["complete_source_sha256"],
         )
 
