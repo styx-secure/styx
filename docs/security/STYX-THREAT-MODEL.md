@@ -43,15 +43,19 @@
   reachable states by dynamic programming and makes authority explicitly
   unavailable when its state or transition envelope is crossed. C0.2k selects
   the credential/sequence-bound commitment context with bounded amendment
-  evidence. O-06c now supplies bounded combined evidence; C0.3 remains
-  `NO-GO` because O-07/O-14's retained integration conditions and
-  the corpus-path gate remain unresolved.
+  evidence. O-06c now supplies bounded combined evidence; O-07 and the corpus
+  path gate are decided. C0.3 remains `NO-GO` while Issue #260's exact-final
+  O-14-to-O-06c integration evidence and its review/human gates are pending.
 - **O-14 amendment:** Issue #246 selects internal suite `0x0001`, pure Ed25519
   over the complete O-06b-1 transcript with canonical 32-octet keys, canonical
   64-octet `R || S`, `S < L`, prime-order guards, one pinned verifier and no
   fallback. Bounded oracle, guarded-adapter, raw-backend and mutation evidence
   supports that language. It is not product conformance: Dart/browser support
   and the placeholder-substituted O-06c combined rerun remain separate gates.
+  Issue #260 performs that rerun without changing O-14, O-06b, O-07, O-08 or
+  O-10 semantics. Candidate-level integrated evidence passes, but the
+  exact-final two-clean-checkout gate, independent review and human approval
+  are still required.
 - **Language:** English is canonical.
 
 Styx is experimental, has not completed an independent security audit, and is
@@ -638,8 +642,10 @@ Current evidence establishes only bounded components:
   bounded Pass0/selected-slot authority and lineage containment; C0.2k selects
   the 84-octet commitment context and bounded mutation evidence; Issue #243
   completes bounded O-06c evidence. O-06/O-06c are condition-bearing
-  `DECIDED`; O-07, O-08 and O-10 are bounded `DECIDED`; O-11 through O-16 retain their recorded open,
-  conditional or downstream-blocking roles;
+  `DECIDED`; O-07, O-08 and O-10 are bounded `DECIDED`; O-14 is
+  condition-bearing `DECIDED` with only its Issue #260 integrated-evidence gate
+  pending; O-11 through O-16 retain their recorded open, conditional or
+  downstream-blocking roles;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
   described in its final verdict; and
 - existing vault and chat work provides component evidence under its own
