@@ -222,12 +222,17 @@ def required_witnesses() -> tuple[WitnessSpec, ...]:
     return tuple(rows)
 
 
+_AP_BEFORE_K_DETECTORS = tuple(
+    item.identifier for item in _FIXED_WITNESSES if not item.expected_ap_exposure
+) + tuple(f"I-TRANSCRIPT-{field.upper()}" for field in _TRANSCRIPT_FIELDS)
+
+
 _MUTANTS = (
     MutantSpec("I-M-SKIP-ENVELOPE", "skipping a selected O-08 gate is detected", ("I-O08-HANDOFF-FRAMING_OBJECT_OCTETS-S3_KERNEL_STRUCTURAL",), "work-order"),
-    MutantSpec("I-M-AP-BEFORE-K", "AP exposure before K is detected", ("I-K-BITFLIP", "I-K-MISSING"), "work-order"),
-    MutantSpec("I-M-HASH-BEFORE-BINDING", "hashing before unique binding is detected", ("I-K-MISSING", "I-K-AMBIGUOUS"), "work-order"),
+    MutantSpec("I-M-AP-BEFORE-K", "AP exposure before K is detected", _AP_BEFORE_K_DETECTORS, "work-order"),
+    MutantSpec("I-M-HASH-BEFORE-BINDING", "hashing before unique binding is detected", ("I-K-MISSING", "I-K-INCOMPLETE", "I-K-AMBIGUOUS"), "work-order"),
     MutantSpec("I-M-TRUST-CANDIDATE-HISTORICAL", "candidate-selected historical mode is detected", ("I-K-CANDIDATE-HISTORICAL",), "substitution"),
-    MutantSpec("I-M-FIRST-FAILURE-PRIMARY", "evaluation order cannot replace O-10 precedence", ("I-PRECEDENCE-STRUCTURAL-LENGTH", "I-PRECEDENCE-INACTIVE-INVALID"), "precedence"),
+    MutantSpec("I-M-FIRST-FAILURE-PRIMARY", "evaluation order cannot replace O-10 precedence", ("I-STATE-REVOKED", "I-STATE-ROTATED", "I-STATE-RECOVERY-PREDECESSOR", "I-STATE-QUARANTINED", "I-PRECEDENCE-STRUCTURAL-LENGTH", "I-PRECEDENCE-INACTIVE-INVALID"), "precedence"),
     MutantSpec("I-M-TRUST-EVENT-KEY", "event key cannot replace the resolved key", ("I-SUB-EVENT-KEY",), "substitution"),
     MutantSpec("I-M-RETRY-VERIFIER", "fallback or retry violates the one-verifier rule", ("I-K-UNKNOWN-SUITE",), "signature"),
 )

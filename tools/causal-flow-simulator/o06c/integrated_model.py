@@ -72,6 +72,16 @@ class IntegratedError(ValueError):
 
 
 @dataclass(frozen=True)
+class IntegratedMutation:
+    """One closed test-only mutation of the integrated work order."""
+
+    identifier: str | None = None
+
+    def enabled(self, identifier: str) -> bool:
+        return self.identifier == identifier
+
+
+@dataclass(frozen=True)
 class CredentialBinding:
     """Authenticated O-07/C0.2j binding selected by the local resolver."""
 
@@ -355,6 +365,7 @@ def evaluate_envelope_handoff(
     stage: str,
     *,
     envelope: Mapping[str, object] | None = None,
+    integrated_mutation: IntegratedMutation = IntegratedMutation(),
 ) -> str:
     """Exercise one frozen dimension/stage violation and return its primary."""
 
@@ -365,6 +376,12 @@ def evaluate_envelope_handoff(
         raise IntegratedError("unknown handoff dimension") from error
     if entry["role"] not in ENTRY_ROLES or stage not in entry["stages"]:
         raise IntegratedError("unknown handoff relation")
+    if (
+        integrated_mutation.enabled("I-M-SKIP-ENVELOPE")
+        and dimension == "FRAMING_OBJECT_OCTETS"
+        and stage == "S3_KERNEL_STRUCTURAL"
+    ):
+        return "APPLIED"
     primary = recovery_for(dimension, stage, entry["role"])
     if dimension in {"SIGNATURE_OCTETS", "VERIFICATION_KEY_OCTETS"}:
         primary = "LENGTH_MISMATCH"
@@ -525,11 +542,23 @@ def evaluate_candidate(
     profile_active: bool = True,
     observations: Mapping[str, int] | None = None,
     mutation: O14Mutation = O14Mutation(),
+    integrated_mutation: IntegratedMutation = IntegratedMutation(),
     envelope: Mapping[str, object] | None = None,
 ) -> IntegratedResult:
     """Evaluate one candidate through the frozen integrated gate order."""
 
     work = IntegratedWorkCounter()
+    if integrated_mutation.identifier not in {
+        None,
+        "I-M-SKIP-ENVELOPE",
+        "I-M-AP-BEFORE-K",
+        "I-M-HASH-BEFORE-BINDING",
+        "I-M-TRUST-CANDIDATE-HISTORICAL",
+        "I-M-FIRST-FAILURE-PRIMARY",
+        "I-M-TRUST-EVENT-KEY",
+        "I-M-RETRY-VERIFIER",
+    }:
+        raise IntegratedError("unknown integrated mutation")
     envelope = envelope or load_selected_envelope()
     merged_observations = _preflight_observations(candidate)
     for dimension, observed in (observations or {}).items():
@@ -537,9 +566,12 @@ def evaluate_candidate(
             raise IntegratedError("caller cannot override derived envelope observation")
         merged_observations[dimension] = observed
 
-    profile_failure, k_failures, s4, s6 = _classify_envelope_failures(
-        envelope, merged_observations, work
-    )
+    if integrated_mutation.enabled("I-M-SKIP-ENVELOPE"):
+        profile_failure, k_failures, s4, s6 = False, (), (), ()
+    else:
+        profile_failure, k_failures, s4, s6 = _classify_envelope_failures(
+            envelope, merged_observations, work
+        )
     if not profile_active:
         profile_failure = True
     # Activation is the only outcome that is selected before candidate work.
@@ -551,9 +583,15 @@ def evaluate_candidate(
             work,
         )
 
+    if integrated_mutation.enabled("I-M-AP-BEFORE-K"):
+        work.ap_exposures += 1
+
     k = list(k_failures)
     work.structural_checks += 1
-    if candidate.candidate_historical_evidence is not None:
+    if (
+        candidate.candidate_historical_evidence is not None
+        and not integrated_mutation.enabled("I-M-TRUST-CANDIDATE-HISTORICAL")
+    ):
         # Trusted historical status cannot be selected by event/envelope bytes.
         k.append("STRUCTURAL_REJECTION")
 
@@ -588,6 +626,17 @@ def evaluate_candidate(
             k.append("STRUCTURAL_REJECTION")
 
     resolution = store.resolve(candidate.event)
+    if (
+        integrated_mutation.enabled("I-M-HASH-BEFORE-BINDING")
+        and transcript is not None
+        and (
+            resolution is None
+            or not resolution.authenticated
+            or len(resolution.bindings) != 1
+        )
+    ):
+        event_reference(candidate.event, work.o06c)
+        work.transcript_hashes += 1
     work.binding_resolutions += 1
     binding: CredentialBinding | None = None
     if resolution is None:
@@ -609,13 +658,35 @@ def evaluate_candidate(
             envelope["entries"]["VERIFICATION_KEY_OCTETS"], key_length
         ):
             k.append("LENGTH_MISMATCH")
-        if binding.suite_id != SUITE_ID:
+        retry_unknown_suite = integrated_mutation.enabled(
+            "I-M-RETRY-VERIFIER"
+        ) and binding.suite_id != SUITE_ID
+        if binding.suite_id != SUITE_ID and not retry_unknown_suite:
             k.append("CURRENT_OBJECT_OUT_OF_PROFILE")
 
     # Frozen O-10 precedence selects among every accumulated K failure.
-    if k:
+    if (
+        integrated_mutation.enabled("I-M-FIRST-FAILURE-PRIMARY")
+        and binding is not None
+        and binding.authority_state != "ACTIVE"
+    ):
+        inactive = {
+            "REVOKED": "POST_REVOCATION",
+            "ROTATED": "POST_REVOCATION",
+            "RECOVERY_RETIRED": "POST_REVOCATION",
+            "QUARANTINED": "LINEAGE_QUARANTINED",
+        }.get(binding.authority_state, "AUTHENTIC_BUT_UNAUTHORIZED")
         return _result(
-            evaluate_taxonomy(_taxonomy_scenario(k_failures=tuple(k))),
+            evaluate_taxonomy(_taxonomy_scenario(event_failures=(inactive,))),
+            work,
+            transcript=transcript,
+        )
+    if k:
+        selected_k = tuple(k)
+        if integrated_mutation.enabled("I-M-FIRST-FAILURE-PRIMARY"):
+            selected_k = (selected_k[0],)
+        return _result(
+            evaluate_taxonomy(_taxonomy_scenario(k_failures=selected_k)),
             work,
             transcript=transcript,
         )
@@ -628,8 +699,13 @@ def evaluate_candidate(
     o14_binding = O14CredentialBinding(
         binding.context,
         binding.credential_identifier,
-        binding.suite_id,
-        binding.verification_key,
+        SUITE_ID if retry_unknown_suite else binding.suite_id,
+        (
+            candidate.event_key_override
+            if integrated_mutation.enabled("I-M-TRUST-EVENT-KEY")
+            and candidate.event_key_override is not None
+            else binding.verification_key
+        ),
         authority_state="ACTIVE",
         expected_author_sequence=binding.author_sequence,
     )
@@ -653,6 +729,8 @@ def evaluate_candidate(
     )
     verification = verify_event(o14_event, mutation)
     work.verifier_invocations = verification.verifier_invocations
+    if retry_unknown_suite:
+        work.verifier_invocations += 1
     work.point_guards = int(any(branch.startswith("guard:") for branch in verification.executed_branches))
     if verification.code in _O14_LENGTH_CODES:
         k.append("LENGTH_MISMATCH")
@@ -675,7 +753,8 @@ def evaluate_candidate(
         raise IntegratedError("accepted K path did not invoke exactly one verifier")
     work.transcript_hashes += 1
     reference = event_reference(candidate.event, work.o06c)
-    work.ap_exposures += 1
+    if work.ap_exposures == 0:
+        work.ap_exposures += 1
 
     event_failures = list(projection.event_failures)
     if binding.authority_state != "ACTIVE":

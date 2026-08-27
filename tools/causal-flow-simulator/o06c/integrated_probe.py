@@ -18,6 +18,7 @@ from integrated_model import (
     BindingResolution,
     BindingStore,
     CredentialBinding,
+    IntegratedMutation,
     IntegratedResult,
     ProjectionState,
     SignedEventCandidate,
@@ -204,15 +205,20 @@ def _evaluate(
     projection: ProjectionState = ProjectionState(),
     *,
     store: BindingStore | None = None,
+    integrated_mutation: IntegratedMutation = IntegratedMutation(),
 ) -> IntegratedResult:
     return evaluate_candidate(
         candidate,
         store or BindingStore.from_bindings(binding),
         projection,
+        integrated_mutation=integrated_mutation,
     )
 
 
-def _fixed_result(identifier: str) -> IntegratedResult:
+def _fixed_result(
+    identifier: str,
+    integrated_mutation: IntegratedMutation = IntegratedMutation(),
+) -> IntegratedResult:
     candidate, binding = _sign(_base_event())
     projection = ProjectionState()
     store: BindingStore | None = None
@@ -319,8 +325,8 @@ def _fixed_result(identifier: str) -> IntegratedResult:
     elif identifier == "I-PRECEDENCE-STRUCTURAL-LENGTH":
         candidate = replace(
             candidate,
+            declared_transcript_octets=candidate.declared_transcript_octets + 1,
             supplied_transcript=b"not-the-regenerated-transcript",
-            signature=candidate.signature[:-1],
         )
     elif identifier == "I-PRECEDENCE-INACTIVE-INVALID":
         candidate, binding = _sign(_base_event(), authority_state="REVOKED")
@@ -328,7 +334,13 @@ def _fixed_result(identifier: str) -> IntegratedResult:
         projection = ProjectionState(historical_evidence=True)
     else:
         raise ProbeError(f"unknown fixed witness: {identifier}")
-    return _evaluate(candidate, binding, projection, store=store)
+    return _evaluate(
+        candidate,
+        binding,
+        projection,
+        store=store,
+        integrated_mutation=integrated_mutation,
+    )
 
 
 def _transcript_mutation(field_name: str) -> tuple[EventAssignment, EventAssignment]:
@@ -429,19 +441,25 @@ def _transcript_mutation(field_name: str) -> tuple[EventAssignment, EventAssignm
     return control, changed
 
 
-def _transcript_result(identifier: str) -> IntegratedResult:
+def _transcript_result(
+    identifier: str,
+    integrated_mutation: IntegratedMutation = IntegratedMutation(),
+) -> IntegratedResult:
     field_name = identifier.removeprefix("I-TRANSCRIPT-").lower()
     original, mutated = _transcript_mutation(field_name)
     candidate, binding = _sign(mutated, signature_event=original)
-    return _evaluate(candidate, binding)
+    return _evaluate(candidate, binding, integrated_mutation=integrated_mutation)
 
 
 def _result_matches(spec, result: IntegratedResult) -> bool:
+    expected_hashes = 1 if spec.expected_ap_exposure else 0
     return (
         result.primary == spec.expected_local_primary
         and result.remote == spec.expected_remote_result
         and result.ap_exposed == spec.expected_ap_exposure
         and result.verifier_invocations == spec.expected_verifier_invocations
+        and result.work["transcript_hashes"] == expected_hashes
+        and result.work["ap_exposures"] == int(spec.expected_ap_exposure)
     )
 
 
@@ -492,7 +510,9 @@ def _verify_execution_identity(
     )
 
 
-def build_report() -> dict[str, object]:
+def build_report(
+    integrated_mutation: IntegratedMutation = IntegratedMutation(),
+) -> dict[str, object]:
     specs = required_witnesses()
     fixed = [item for item in specs if item.source_family not in {
         "transcript-substitution", "o08-disposition", "o08-handoff", "o08-boundary"
@@ -500,7 +520,7 @@ def build_report() -> dict[str, object]:
     transcript = [item for item in specs if item.source_family == "transcript-substitution"]
     witness_results = []
     for spec in fixed:
-        actual = _fixed_result(spec.identifier)
+        actual = _fixed_result(spec.identifier, integrated_mutation)
         witness_results.append(
             {
                 "actual_ap_exposure": actual.ap_exposed,
@@ -510,10 +530,11 @@ def build_report() -> dict[str, object]:
                 "detectors": list(spec.detectors),
                 "id": spec.identifier,
                 "passed": _result_matches(spec, actual),
+                "work": actual.work,
             }
         )
     for spec in transcript:
-        actual = _transcript_result(spec.identifier)
+        actual = _transcript_result(spec.identifier, integrated_mutation)
         witness_results.append(
             {
                 "actual_ap_exposure": actual.ap_exposed,
@@ -523,6 +544,7 @@ def build_report() -> dict[str, object]:
                 "detectors": list(spec.detectors),
                 "id": spec.identifier,
                 "passed": _result_matches(spec, actual),
+                "work": actual.work,
             }
         )
 
@@ -556,7 +578,11 @@ def build_report() -> dict[str, object]:
     for row in envelope_handoffs():
         identifier = f"I-O08-HANDOFF-{row['dimension']}-{row['stage']}"
         spec = handoff_specs[identifier]
-        actual = evaluate_envelope_handoff(row["dimension"], row["stage"])
+        actual = evaluate_envelope_handoff(
+            row["dimension"],
+            row["stage"],
+            integrated_mutation=integrated_mutation,
+        )
         handoff_results.append(
             {
                 "actual_local_primary": actual,
