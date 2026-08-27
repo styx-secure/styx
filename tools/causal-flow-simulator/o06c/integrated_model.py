@@ -91,6 +91,7 @@ class CredentialBinding:
     suite_id: int
     verification_key: bytes
     authority_state: str = "ACTIVE"
+    provenance: str = "O07_GENESIS"
 
 
 @dataclass(frozen=True)
@@ -138,6 +139,8 @@ class SignedEventCandidate:
     event: EventAssignment
     signature: bytes
     declared_transcript_octets: int
+    declared_key_octets: int | None = None
+    declared_signature_octets: int | None = None
     event_suite_override: int | None = None
     event_key_override: bytes | None = None
     grant_suite_id: int | None = None
@@ -476,7 +479,11 @@ def _preflight_observations(candidate: SignedEventCandidate) -> dict[str, int]:
         "PROFILE_VERSION_SKEW": 0,
         "SEQUENCE_VALUE": event.author_sequence,
         "SIGNATURE_ATTEMPTS": 1,
-        "SIGNATURE_OCTETS": len(candidate.signature),
+        "SIGNATURE_OCTETS": (
+            len(candidate.signature)
+            if candidate.declared_signature_octets is None
+            else candidate.declared_signature_octets
+        ),
     }
 
 
@@ -647,16 +654,22 @@ def evaluate_candidate(
         k.append("UNRESOLVED_CREDENTIAL_BINDING")
     else:
         binding = resolution.bindings[0]
+        if binding.provenance not in {"O07_GENESIS", "C02J_GRANT"}:
+            k.append("UNRESOLVED_CREDENTIAL_BINDING")
         if (
             binding.context != candidate.event.context_identifier
             or binding.credential_identifier != candidate.event.credential_identifier
             or binding.author_sequence != candidate.event.author_sequence
         ):
             k.append("CREDENTIAL_BINDING_MISMATCH")
-        key_length = len(binding.verification_key)
+        key_length = (
+            len(binding.verification_key)
+            if candidate.declared_key_octets is None
+            else candidate.declared_key_octets
+        )
         if not _envelope_accepts(
             envelope["entries"]["VERIFICATION_KEY_OCTETS"], key_length
-        ):
+        ) or key_length != len(binding.verification_key):
             k.append("LENGTH_MISMATCH")
         retry_unknown_suite = integrated_mutation.enabled(
             "I-M-RETRY-VERIFIER"
@@ -723,8 +736,16 @@ def evaluate_candidate(
         grant_suite_id=candidate.grant_suite_id,
         grant_verification_key=candidate.grant_verification_key,
         ap_authorized=True,
-        declared_key_length=len(binding.verification_key),
-        declared_signature_length=len(candidate.signature),
+        declared_key_length=(
+            len(binding.verification_key)
+            if candidate.declared_key_octets is None
+            else candidate.declared_key_octets
+        ),
+        declared_signature_length=(
+            len(candidate.signature)
+            if candidate.declared_signature_octets is None
+            else candidate.declared_signature_octets
+        ),
         historical_evidence=False,
     )
     verification = verify_event(o14_event, mutation)

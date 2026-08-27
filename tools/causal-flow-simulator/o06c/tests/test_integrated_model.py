@@ -140,6 +140,39 @@ class IntegratedModelTest(unittest.TestCase):
         self.assertEqual(result.primary, "STRUCTURAL_REJECTION")
         self.assertFalse(result.ap_exposed)
 
+    def test_only_authenticated_genesis_or_grant_provenance_reaches_verifier(self):
+        candidate, binding = signed_fixture()
+        for provenance in ("O07_GENESIS", "C02J_GRANT"):
+            result = evaluate_candidate(
+                candidate,
+                BindingStore.from_bindings(replace(binding, provenance=provenance)),
+            )
+            self.assertEqual(result.primary, "APPLIED")
+            self.assertEqual(result.verifier_invocations, 1)
+        rejected = evaluate_candidate(
+            candidate,
+            BindingStore.from_bindings(
+                replace(binding, provenance="UNAUTHENTICATED_EVENT_FIELD")
+            ),
+        )
+        self.assertEqual(rejected.primary, "UNRESOLVED_CREDENTIAL_BINDING")
+        self.assertEqual(rejected.verifier_invocations, 0)
+        self.assertFalse(rejected.ap_exposed)
+
+    def test_declared_key_and_signature_lengths_cannot_lie(self):
+        candidate, binding = signed_fixture()
+        store = BindingStore.from_bindings(binding)
+        key_lie = evaluate_candidate(
+            replace(candidate, declared_key_octets=2**32 - 1), store
+        )
+        signature_lie = evaluate_candidate(
+            replace(candidate, declared_signature_octets=2**32 - 1), store
+        )
+        for result in (key_lie, signature_lie):
+            self.assertEqual(result.primary, "LENGTH_MISMATCH")
+            self.assertEqual(result.verifier_invocations, 0)
+            self.assertFalse(result.ap_exposed)
+
     def test_duplicate_and_ap_denial_use_frozen_o10(self):
         candidate, binding = signed_fixture()
         store = BindingStore.from_bindings(binding)

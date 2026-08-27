@@ -52,9 +52,22 @@ from protocol_model import (
     build_commitment,
     descriptor_from_commitment,
     encode_event_transcript,
+    event_reference,
 )
 from o10.canonical_report import store_report
-from o14.ed25519_reference import L, sign_from_seed
+from o14.ed25519_reference import (
+    L,
+    P,
+    Point,
+    add,
+    decode,
+    encode,
+    mixed_order_cofactorless_valid,
+    mixed_order_forgery,
+    sign_from_seed,
+    small_order_r_forgery,
+    zip215_noncanonical_key_forgery,
+)
 
 
 REPORT_FIELDS = frozenset(
@@ -199,6 +212,15 @@ def _removal_event() -> EventAssignment:
     )
 
 
+def _successor_event(label: str, *, sequence: int = 1) -> EventAssignment:
+    """Build one distinct credential lineage event without changing the grammar."""
+
+    return replace(
+        _base_event(sequence=sequence),
+        credential_identifier=_bytes(label),
+    )
+
+
 def _evaluate(
     candidate: SignedEventCandidate,
     binding: CredentialBinding,
@@ -234,10 +256,33 @@ def _fixed_result(
         "I-POS-CLOSURE": _control_event(CONTROL_CLOSURE),
         "I-POS-CONTENT-NONE": _base_event(),
         "I-POS-CONTENT-REQUIRED-SINGLE": _content_event(CONTENT_REQUIRED, tree=False),
+        "I-POS-CONTENT-REQUIRED-TREE": _content_event(CONTENT_REQUIRED, tree=True),
+        "I-POS-CONTENT-DETACHABLE-SINGLE": _content_event(CONTENT_DETACHABLE, tree=False),
         "I-POS-CONTENT-DETACHABLE-TREE": _content_event(CONTENT_DETACHABLE, tree=True),
+        "I-POS-AUTHORITY-GENESIS": _base_event(),
+        "I-STATE-FRESH-REPLAY": _base_event(),
     }
     if identifier in positive_events:
         candidate, binding = _sign(positive_events[identifier])
+    elif identifier == "I-POS-AUTHORITY-GRANT":
+        candidate, binding = _sign(_successor_event("grant-successor"))
+        binding = replace(binding, provenance="C02J_GRANT")
+    elif identifier in {
+        "I-POS-ROTATION-SUCCESSOR",
+        "I-POS-RECOVERY-SUCCESSOR",
+    }:
+        label = (
+            "rotation-successor"
+            if identifier == "I-POS-ROTATION-SUCCESSOR"
+            else "recovery-successor"
+        )
+        candidate, binding = _sign(
+            _successor_event(label), seed=bytes(reversed(range(32)))
+        )
+        binding = replace(binding, provenance="C02J_GRANT")
+    elif identifier == "I-POS-SAME-KEY-DISTINCT-CREDENTIAL":
+        candidate, binding = _sign(_successor_event("same-key-credential"))
+        binding = replace(binding, provenance="C02J_GRANT")
     elif identifier == "I-STATE-DUPLICATE":
         projection = ProjectionState(duplicate=True)
     elif identifier == "I-STATE-PENDING-OPENING":
@@ -289,26 +334,142 @@ def _fixed_result(
             candidate.event.author_sequence,
         )
         store = BindingStore({key: BindingResolution((mismatched,))})
-    elif identifier == "I-K-UNKNOWN-SUITE":
-        binding = replace(binding, suite_id=2)
-    elif identifier in {"I-K-KEY-31", "I-K-KEY-33"}:
-        size = 31 if identifier.endswith("31") else 33
+    elif identifier == "I-K-PROVENANCE-INVALID":
+        binding = replace(binding, provenance="UNAUTHENTICATED_EVENT_FIELD")
+    elif identifier in {"I-K-SEQUENCE-ROLLBACK", "I-K-SEQUENCE-GAP"}:
+        sequence = 0 if identifier.endswith("ROLLBACK") else 2
+        candidate, binding = _sign(_base_event(sequence=sequence))
+        binding = replace(binding, author_sequence=1)
+        key = (
+            candidate.event.context_identifier,
+            candidate.event.credential_identifier,
+            candidate.event.author_sequence,
+        )
+        store = BindingStore({key: BindingResolution((binding,))})
+    elif identifier == "I-K-SAME-KEY-WRONG-CREDENTIAL":
+        candidate, binding = _sign(
+            _successor_event("same-key-credential"),
+            signature_event=_base_event(),
+        )
+        binding = replace(binding, provenance="C02J_GRANT")
+    elif identifier in {"I-K-UNKNOWN-SUITE", "I-K-ZERO-SUITE", "I-K-MAX-SUITE"}:
+        suite_id = {
+            "I-K-UNKNOWN-SUITE": 2,
+            "I-K-ZERO-SUITE": 0,
+            "I-K-MAX-SUITE": 0xFFFF,
+        }[identifier]
+        binding = replace(binding, suite_id=suite_id)
+    elif identifier in {"I-K-KEY-EMPTY", "I-K-KEY-31", "I-K-KEY-33"}:
+        size = {
+            "I-K-KEY-EMPTY": 0,
+            "I-K-KEY-31": 31,
+            "I-K-KEY-33": 33,
+        }[identifier]
         binding = replace(binding, verification_key=binding.verification_key[:size].ljust(size, b"x"))
-    elif identifier in {"I-K-SIG-63", "I-K-SIG-65"}:
-        size = 63 if identifier.endswith("63") else 65
+    elif identifier == "I-K-KEY-DECLARED-MAX":
+        candidate = replace(candidate, declared_key_octets=2**32 - 1)
+    elif identifier in {"I-K-SIG-EMPTY", "I-K-SIG-63", "I-K-SIG-65"}:
+        size = {
+            "I-K-SIG-EMPTY": 0,
+            "I-K-SIG-63": 63,
+            "I-K-SIG-65": 65,
+        }[identifier]
         candidate = replace(candidate, signature=candidate.signature[:size].ljust(size, b"x"))
-    elif identifier == "I-K-SCALAR-L":
+    elif identifier == "I-K-SIG-DECLARED-MAX":
+        candidate = replace(candidate, declared_signature_octets=2**32 - 1)
+    elif identifier in {"I-K-SCALAR-L", "I-K-SCALAR-GREATER-L", "I-K-SCALAR-PLUS-L"}:
+        scalar = int.from_bytes(candidate.signature[32:], "little")
+        hostile_scalar = {
+            "I-K-SCALAR-L": L,
+            "I-K-SCALAR-GREATER-L": L + 1,
+            "I-K-SCALAR-PLUS-L": scalar + L,
+        }[identifier]
         candidate = replace(
             candidate,
-            signature=candidate.signature[:32] + L.to_bytes(32, "little"),
+            signature=candidate.signature[:32] + hostile_scalar.to_bytes(32, "little"),
         )
-    elif identifier in {"I-K-BITFLIP", "I-SUB-TRANSPORT", "I-SUB-SESSION"}:
+    elif identifier in {
+        "I-K-KEY-ALL-ZERO",
+        "I-K-KEY-IDENTITY",
+        "I-K-KEY-NONCANONICAL",
+        "I-K-KEY-OFF-CURVE",
+        "I-K-KEY-MIXED-ORDER",
+        "I-K-KEY-MIXED-ORDER-COFACTORLESS",
+    }:
+        transcript = encode_event_transcript(candidate.event)
+        if identifier == "I-K-KEY-ALL-ZERO":
+            hostile_key, hostile_signature = bytes(32), candidate.signature
+        elif identifier == "I-K-KEY-IDENTITY":
+            hostile_key, hostile_signature = b"\x01" + bytes(31), candidate.signature
+        elif identifier == "I-K-KEY-NONCANONICAL":
+            hostile_key, hostile_signature = zip215_noncanonical_key_forgery(transcript)
+        elif identifier == "I-K-KEY-OFF-CURVE":
+            hostile_key, hostile_signature = bytes.fromhex("02" * 32), candidate.signature
+        elif identifier == "I-K-KEY-MIXED-ORDER":
+            hostile_key, hostile_signature = mixed_order_forgery(bytes(range(32)), transcript)
+        else:
+            hostile_key, hostile_signature = mixed_order_cofactorless_valid(
+                bytes(range(32)), transcript
+            )
+        binding = replace(binding, verification_key=hostile_key)
+        candidate = replace(candidate, signature=hostile_signature)
+    elif identifier in {
+        "I-K-R-NONCANONICAL",
+        "I-K-R-OFF-CURVE",
+        "I-K-R-SMALL-ORDER",
+        "I-K-R-MIXED-ORDER",
+        "I-K-BITFLIP-R",
+        "I-K-REVERSE-SIGNATURE",
+    }:
+        transcript = encode_event_transcript(candidate.event)
+        if identifier == "I-K-R-NONCANONICAL":
+            hostile_signature = (P + 1).to_bytes(32, "little") + candidate.signature[32:]
+        elif identifier == "I-K-R-OFF-CURVE":
+            hostile_signature = bytes.fromhex("02" * 32) + candidate.signature[32:]
+        elif identifier == "I-K-R-SMALL-ORDER":
+            hostile_key, hostile_signature = small_order_r_forgery(
+                bytes(range(32)), transcript
+            )
+            binding = replace(binding, verification_key=hostile_key)
+        elif identifier == "I-K-R-MIXED-ORDER":
+            r_point = decode(candidate.signature[:32], zip215=False)
+            mixed_r = encode(add(r_point, Point(0, P - 1)))
+            hostile_signature = mixed_r + candidate.signature[32:]
+        elif identifier == "I-K-BITFLIP-R":
+            hostile_signature = bytes([candidate.signature[0] ^ 1]) + candidate.signature[1:]
+        else:
+            hostile_signature = candidate.signature[::-1]
+        candidate = replace(candidate, signature=hostile_signature)
+    elif identifier in {
+        "I-K-BITFLIP",
+        "I-K-BITFLIP-S",
+        "I-SUB-TRANSPORT",
+        "I-SUB-SESSION",
+        "I-SUB-NOSTR",
+        "I-SUB-MLS",
+    }:
         changed = candidate.signature[:40] + bytes([candidate.signature[40] ^ 1]) + candidate.signature[41:]
         candidate = replace(
             candidate,
             signature=changed,
-            transport_valid=identifier == "I-SUB-TRANSPORT",
-            session_valid=identifier == "I-SUB-SESSION",
+            transport_valid=identifier in {"I-SUB-TRANSPORT", "I-SUB-NOSTR"},
+            session_valid=identifier in {"I-SUB-SESSION", "I-SUB-MLS"},
+        )
+    elif identifier == "I-K-BITFLIP-TRANSCRIPT":
+        original = _base_event()
+        changed = replace(original, transition_block=b"ap-transitioo")
+        candidate, binding = _sign(changed, signature_event=original)
+    elif identifier == "I-K-EVENT-REFERENCE-SIGNATURE":
+        event = _base_event()
+        transcript = encode_event_transcript(event)
+        key, signature = sign_from_seed(bytes(range(32)), event_reference(event))
+        candidate = SignedEventCandidate(event, signature, len(transcript))
+        binding = CredentialBinding(
+            event.context_identifier,
+            event.credential_identifier,
+            event.author_sequence,
+            1,
+            key,
         )
     elif identifier == "I-K-CANDIDATE-HISTORICAL":
         candidate = replace(candidate, candidate_historical_evidence=True)
