@@ -9,14 +9,12 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
 
 sys.dont_write_bytecode = True
 
-from integrated_probe import PINNED_INPUTS
 from integrated_registry import required_mutants, required_witnesses
 from o10.canonical_report import store_report
 

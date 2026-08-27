@@ -7,7 +7,7 @@ defines neither product wire bytes nor a production credential resolver.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -28,7 +28,6 @@ from o14 import ed25519_reference as _o14_reference
 sys.modules.setdefault("ed25519_reference", _o14_reference)
 
 from protocol_model import (  # noqa: E402
-    CONTENT_NONE,
     EventAssignment,
     ModelError,
     WorkCounter as TranscriptWorkCounter,
@@ -368,7 +367,6 @@ def evaluate_envelope_handoff(
     stage: str,
     *,
     envelope: Mapping[str, object] | None = None,
-    integrated_mutation: IntegratedMutation = IntegratedMutation(),
 ) -> str:
     """Exercise one frozen dimension/stage violation and return its primary."""
 
@@ -624,9 +622,32 @@ def evaluate_candidate(
     elif candidate.declared_transcript_octets > framing_limit:
         k.append("CURRENT_OBJECT_OUT_OF_PROFILE")
 
+    # Signature carriage is outside the frozen O-06b transcript.  Its exact
+    # v0 length can therefore be rejected before transcript regeneration.
+    declared_signature_octets = (
+        len(candidate.signature)
+        if candidate.declared_signature_octets is None
+        else candidate.declared_signature_octets
+    )
+    if (
+        not isinstance(declared_signature_octets, int)
+        or isinstance(declared_signature_octets, bool)
+        or declared_signature_octets != len(candidate.signature)
+        or declared_signature_octets != 64
+    ):
+        k.append("LENGTH_MISMATCH")
+
     transcript: bytes | None = None
     reference: bytes | None = None
-    if not any(item in {"STRUCTURAL_REJECTION", "CURRENT_OBJECT_OUT_OF_PROFILE"} for item in k):
+    if not any(
+        item
+        in {
+            "LENGTH_MISMATCH",
+            "STRUCTURAL_REJECTION",
+            "CURRENT_OBJECT_OUT_OF_PROFILE",
+        }
+        for item in k
+    ):
         try:
             regenerated = encode_event_transcript(candidate.event, work.o06c)
             work.transcript_regenerations += 1
@@ -809,12 +830,6 @@ def evaluate_candidate(
         )
     )
     return _result(outcome, work, transcript=transcript, reference=reference)
-
-
-def canonical_result_bytes(result: IntegratedResult) -> bytes:
-    return (
-        json.dumps(result.record(), sort_keys=True, separators=(",", ":")) + "\n"
-    ).encode("utf-8")
 
 
 def frozen_projection_identity() -> str:

@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from typing import Iterable
 
 from integrated_model import (
-    EXPECTED_ENVELOPE_ENTRY_COUNT,
-    EXPECTED_HANDOFF_COUNT,
     envelope_boundary_cases,
     envelope_dispositions,
     envelope_handoffs,
@@ -142,10 +140,10 @@ _FIXED_WITNESSES = (
     _witness("I-K-KEY-31", "31-octet key is a length mismatch", "LENGTH_MISMATCH", verifier=0, ap=False, detectors=("KEY_LENGTH",), family="signature"),
     _witness("I-K-KEY-33", "33-octet key is a length mismatch", "LENGTH_MISMATCH", verifier=0, ap=False, detectors=("KEY_LENGTH",), family="signature"),
     _witness("I-K-KEY-DECLARED-MAX", "oversized declared key length is rejected before the verifier", "LENGTH_MISMATCH", verifier=0, ap=False, detectors=("KEY_LENGTH", "DECLARED_LENGTH"), family="signature"),
-    _witness("I-K-SIG-EMPTY", "empty signature is a length mismatch", "LENGTH_MISMATCH", verifier=0, ap=False, detectors=("SIGNATURE_LENGTH",), family="signature"),
-    _witness("I-K-SIG-63", "63-octet signature is a length mismatch", "LENGTH_MISMATCH", verifier=0, ap=False, detectors=("SIGNATURE_LENGTH",), family="signature"),
-    _witness("I-K-SIG-65", "65-octet signature is a length mismatch", "LENGTH_MISMATCH", verifier=0, ap=False, detectors=("SIGNATURE_LENGTH",), family="signature"),
-    _witness("I-K-SIG-DECLARED-MAX", "oversized declared signature length is rejected before the verifier", "LENGTH_MISMATCH", verifier=0, ap=False, detectors=("SIGNATURE_LENGTH", "DECLARED_LENGTH"), family="signature"),
+    _witness("I-K-SIG-EMPTY", "empty signature is a length mismatch before transcript work", "LENGTH_MISMATCH", verifier=0, ap=False, detectors=("SIGNATURE_LENGTH",), family="signature", regenerations=0),
+    _witness("I-K-SIG-63", "63-octet signature is a length mismatch before transcript work", "LENGTH_MISMATCH", verifier=0, ap=False, detectors=("SIGNATURE_LENGTH",), family="signature", regenerations=0),
+    _witness("I-K-SIG-65", "65-octet signature is a length mismatch before transcript work", "LENGTH_MISMATCH", verifier=0, ap=False, detectors=("SIGNATURE_LENGTH",), family="signature", regenerations=0),
+    _witness("I-K-SIG-DECLARED-MAX", "oversized declared signature length is rejected before transcript work", "LENGTH_MISMATCH", verifier=0, ap=False, detectors=("SIGNATURE_LENGTH", "DECLARED_LENGTH"), family="signature", regenerations=0),
     _witness("I-K-SCALAR-L", "S equal to L is invalid before verifier", "INVALID", verifier=0, ap=False, detectors=("SCALAR_CANONICALITY",), family="signature"),
     _witness("I-K-SCALAR-GREATER-L", "S greater than L is invalid before verifier", "INVALID", verifier=0, ap=False, detectors=("SCALAR_CANONICALITY",), family="signature"),
     _witness("I-K-SCALAR-PLUS-L", "a valid S shifted by L is invalid before verifier", "INVALID", verifier=0, ap=False, detectors=("SCALAR_CANONICALITY",), family="signature"),
@@ -190,7 +188,7 @@ _ENVELOPE_CANDIDATE_WITNESSES = (
     _witness("I-O08-CANDIDATE-PROFILE-SKEW-1", "a profile-version skew of one is profile-activation unsupported", "PROFILE_ACTIVATION_UNSUPPORTED", verifier=0, ap=False, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate", regenerations=0),
     _witness("I-O08-CANDIDATE-SEQUENCE-4096", "sequence 4096 is rejected before transcript work", "CURRENT_OBJECT_OUT_OF_PROFILE", verifier=0, ap=False, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate", regenerations=0),
     _witness("I-O08-CANDIDATE-SIGNATURE-ATTEMPTS-65", "a 65th signature attempt is rejected before transcript work", "CURRENT_OBJECT_OUT_OF_PROFILE", verifier=0, ap=False, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate", regenerations=0),
-    _witness("I-O08-CANDIDATE-SIGNATURE-OCTETS-65", "a 65-octet signature is rejected before verifier work", "LENGTH_MISMATCH", verifier=0, ap=False, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate"),
+    _witness("I-O08-CANDIDATE-SIGNATURE-OCTETS-65", "a 65-octet signature is rejected before transcript and verifier work", "LENGTH_MISMATCH", verifier=0, ap=False, detectors=("O08_CANDIDATE_BOUND",), family="o08-candidate", regenerations=0),
     _witness("I-O08-CANDIDATE-PROFILE-INACTIVE", "an inactive profile fails closed before candidate work", "PROFILE_ACTIVATION_UNSUPPORTED", verifier=0, ap=False, detectors=("O08_PROFILE_ACTIVATION",), family="o08-candidate", regenerations=0),
 )
 

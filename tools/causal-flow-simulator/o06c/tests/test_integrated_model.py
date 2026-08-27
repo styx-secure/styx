@@ -92,7 +92,7 @@ class IntegratedModelTest(unittest.TestCase):
         candidate, binding = signed_fixture()
         candidate = replace(
             candidate,
-            supplied_transcript=b"not-the-regenerated-transcript",
+            candidate_historical_evidence=True,
             signature=candidate.signature[:-1],
         )
         result = evaluate_candidate(candidate, BindingStore.from_bindings(binding))
@@ -210,6 +210,19 @@ class IntegratedModelTest(unittest.TestCase):
         self.assertEqual(result.primary, "CURRENT_OBJECT_OUT_OF_PROFILE")
         self.assertEqual(result.work["envelope_checks"], 9)
         self.assertEqual(result.work["transcript_regenerations"], 0)
+
+    def test_signature_length_bound_precedes_transcript_regeneration(self):
+        candidate, binding = signed_fixture()
+        result = evaluate_candidate(
+            replace(candidate, signature=candidate.signature + b"\x00"),
+            BindingStore.from_bindings(binding),
+        )
+        self.assertEqual(result.primary, "LENGTH_MISMATCH")
+        self.assertEqual(result.work["envelope_checks"], 9)
+        self.assertEqual(result.work["transcript_regenerations"], 0)
+        self.assertEqual(result.work["transcript_parses"], 0)
+        self.assertEqual(result.verifier_invocations, 0)
+        self.assertFalse(result.ap_exposed)
 
     def test_external_observation_cannot_understate_a_derived_value(self):
         candidate, binding = signed_fixture()

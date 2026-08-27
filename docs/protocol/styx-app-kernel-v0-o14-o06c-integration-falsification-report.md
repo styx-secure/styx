@@ -50,7 +50,7 @@ The integrated candidate evidence currently exercises:
 | O-08-to-O-10 handoff rows exercised | 66 of 66 |
 | boundary observations | 154 |
 | integration-order mutants | 7 killed, 0 survivors |
-| integrated Python unit tests | 40 passed |
+| integrated Python unit tests | 41 passed |
 | Python/JavaScript runtime traces | 9 events, byte-identical where jointly claimed |
 
 The 115-witness set covers content-free, `REQUIRED` and `DETACHABLE` content;
@@ -66,6 +66,15 @@ boundary. They do not replace the frozen O-14 mutation registry or claim its 26
 mutants as integration-owned evidence. The exact-final gate reruns the frozen
 O-07, O-08, O-10 and O-14 suites separately and fails closed if any inherited
 source, report, command, runtime or second execution is missing.
+
+The O-08 disposition, handoff and boundary rows are integration coverage, not
+an independent oracle for the frozen O-08 policy. Their expected values are
+derived from that frozen policy and are defended independently by the frozen
+O-08 suite. Work counters are ordering observations rather than standalone
+security verdicts; mutant survival and the named expected outcome remain the
+primary discriminators. The four preflight dimensions not encoded by the O-06b
+grammar are conservative caller observations: an observation may increase a
+derived value, but cannot understate it.
 
 ## 4. Properties challenged
 

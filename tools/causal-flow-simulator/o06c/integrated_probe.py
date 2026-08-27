@@ -22,7 +22,6 @@ from integrated_model import (
     IntegratedResult,
     ProjectionState,
     SignedEventCandidate,
-    canonical_result_bytes,
     envelope_boundary_cases,
     envelope_dispositions,
     envelope_handoffs,
@@ -815,11 +814,7 @@ def build_report(
     for row in envelope_handoffs():
         identifier = f"I-O08-HANDOFF-{row['dimension']}-{row['stage']}"
         spec = handoff_specs[identifier]
-        actual = evaluate_envelope_handoff(
-            row["dimension"],
-            row["stage"],
-            integrated_mutation=integrated_mutation,
-        )
+        actual = evaluate_envelope_handoff(row["dimension"], row["stage"])
         handoff_results.append(
             {
                 "actual_local_primary": actual,
