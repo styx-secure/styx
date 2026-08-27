@@ -3,17 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import subprocess
 import sys
 import tempfile
 from collections import Counter
+from copy import deepcopy
 from pathlib import Path
 from typing import Callable
 
 import taxonomy
 from canonical_report import ReportError, canonical_bytes, store_report
-from fixtures import _combine, primary_scenario
+from fixtures import _combine, baseline, primary_scenario
+from inventory import InventoryError, load_literal, validate_inventory_value
 
 
 REPORT_FIELDS = frozenset(
@@ -48,7 +51,14 @@ def _python_mutants() -> list[tuple[str, str, bool]]:
     ):
         order = tuple(getattr(taxonomy, attribute))
         for index, (higher, lower) in enumerate(zip(order, order[1:])):
-            scenario = _combine(f"mutant-{family_name}-{index}", higher, lower, reverse=False)
+            if family_name == "event-edge":
+                scenario = baseline(f"mutant-{family_name}-{index}")
+                scenario["event_failures"] = [higher, lower]
+                scenario["delivery_order"] = [higher, lower]
+            else:
+                scenario = _combine(
+                    f"mutant-{family_name}-{index}", higher, lower, reverse=False
+                )
             expected = taxonomy.evaluate(scenario).as_dict()
             mutated = list(order)
             mutated[index], mutated[index + 1] = mutated[index + 1], mutated[index]
@@ -87,6 +97,209 @@ def _run_node(executable: str, adapter: Path, scenario: dict[str, object]) -> di
     if not isinstance(value, dict):
         raise ValueError("mutated JavaScript output is invalid")
     return value
+
+
+def _run_python_source(
+    executable: str, source: str, scenario: dict[str, object]
+) -> dict[str, object]:
+    with tempfile.TemporaryDirectory(prefix="styx-o10-python-mutant-") as directory:
+        root = Path(directory)
+        (root / "taxonomy.py").write_text(source, encoding="utf-8")
+        completed = subprocess.run(
+            [
+                executable,
+                "-c",
+                (
+                    "import json,sys; from taxonomy import evaluate; "
+                    "print(json.dumps(evaluate(json.load(sys.stdin)).as_dict(), "
+                    "sort_keys=True, separators=(',', ':')))"
+                ),
+            ],
+            cwd=root,
+            input=canonical_bytes(scenario, allowed_fields=frozenset(scenario)),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=20,
+        )
+    if completed.returncode != 0:
+        raise ValueError("mutated Python classifier failed")
+    value = json.loads(completed.stdout)
+    if not isinstance(value, dict):
+        raise ValueError("mutated Python output is invalid")
+    return value
+
+
+def _python_stage_mutants(repo: Path) -> list[tuple[str, str, bool]]:
+    source = (repo / "tools/causal-flow-simulator/o10/taxonomy.py").read_text(
+        encoding="utf-8"
+    )
+    python = sys.executable
+
+    def scenario(identifier: str, **updates: object) -> dict[str, object]:
+        value = baseline(identifier)
+        value.update(updates)
+        return value
+
+    specifications = (
+        (
+            "PY_STAGE_S0_K",
+            '    if scenario["profile_activation_unsupported"]:\n'
+            '        return _outcome("PROFILE_ACTIVATION_UNSUPPORTED", auxiliary)\n'
+            "    primary = _choose(K_PRECEDENCE, set(k_failures))\n"
+            "    if primary is not None:\n"
+            "        return _outcome(primary, auxiliary)\n",
+            "    primary = _choose(K_PRECEDENCE, set(k_failures))\n"
+            "    if primary is not None:\n"
+            "        return _outcome(primary, auxiliary)\n"
+            '    if scenario["profile_activation_unsupported"]:\n'
+            '        return _outcome("PROFILE_ACTIVATION_UNSUPPORTED", auxiliary)\n',
+            scenario(
+                "mutant-stage-s0-k",
+                profile_activation_unsupported=True,
+                k_failures=["STRUCTURAL_REJECTION"],
+            ),
+        ),
+        (
+            "PY_STAGE_K_DUPLICATE",
+            "    primary = _choose(K_PRECEDENCE, set(k_failures))\n"
+            "    if primary is not None:\n"
+            "        return _outcome(primary, auxiliary)\n"
+            '    if scenario["duplicate"]:\n'
+            '        return _outcome("DUPLICATE", auxiliary)\n',
+            '    if scenario["duplicate"]:\n'
+            '        return _outcome("DUPLICATE", auxiliary)\n'
+            "    primary = _choose(K_PRECEDENCE, set(k_failures))\n"
+            "    if primary is not None:\n"
+            "        return _outcome(primary, auxiliary)\n",
+            scenario(
+                "mutant-stage-k-duplicate",
+                k_failures=["INVALID"],
+                duplicate=True,
+            ),
+        ),
+        (
+            "PY_STAGE_DUPLICATE_STALE",
+            '    if scenario["duplicate"]:\n'
+            '        return _outcome("DUPLICATE", auxiliary)\n'
+            '    if scenario["stale_evidence"]:\n'
+            '        return _outcome("STALE_EVIDENCE", auxiliary)\n',
+            '    if scenario["stale_evidence"]:\n'
+            '        return _outcome("STALE_EVIDENCE", auxiliary)\n'
+            '    if scenario["duplicate"]:\n'
+            '        return _outcome("DUPLICATE", auxiliary)\n',
+            scenario(
+                "mutant-stage-duplicate-stale",
+                duplicate=True,
+                stale_evidence=True,
+            ),
+        ),
+        (
+            "PY_STAGE_STALE_S4",
+            '    if scenario["stale_evidence"]:\n'
+            '        return _outcome("STALE_EVIDENCE", auxiliary)\n'
+            "    if s4:\n",
+            "    if False and scenario[\"stale_evidence\"]:\n"
+            '        return _outcome("STALE_EVIDENCE", auxiliary)\n'
+            "    if s4:\n",
+            scenario(
+                "mutant-stage-stale-s4",
+                stale_evidence=True,
+                s4_failures=["CONTEXT_CAPACITY_EXHAUSTED"],
+            ),
+        ),
+        (
+            "PY_STAGE_S4_S5",
+            "    if s4:\n",
+            "    if False and s4:\n",
+            scenario(
+                "mutant-stage-s4-s5",
+                s4_failures=["DEPENDENCY_DEFERRED"],
+                authority_projection_unavailable=True,
+            ),
+        ),
+        (
+            "PY_STAGE_S5_EVENT",
+            '    if scenario["authority_projection_unavailable"]:\n'
+            '        return _outcome("AUTHORITY_PROJECTION_UNAVAILABLE", auxiliary)\n',
+            '    if False and scenario["authority_projection_unavailable"]:\n'
+            '        return _outcome("AUTHORITY_PROJECTION_UNAVAILABLE", auxiliary)\n',
+            scenario(
+                "mutant-stage-s5-event",
+                authority_projection_unavailable=True,
+                event_failures=["FORK_EVIDENCE"],
+            ),
+        ),
+        (
+            "PY_STAGE_EVENT_AUTHORIZATION",
+            "    primary = _choose(EVENT_PRECEDENCE, set(event_failures))\n"
+            "    if primary is not None:\n"
+            "        return _outcome(primary, auxiliary)\n"
+            '    if not scenario["authorized"]:\n'
+            '        return _outcome("AUTHENTIC_BUT_UNAUTHORIZED", auxiliary)\n',
+            '    if not scenario["authorized"]:\n'
+            '        return _outcome("AUTHENTIC_BUT_UNAUTHORIZED", auxiliary)\n'
+            "    primary = _choose(EVENT_PRECEDENCE, set(event_failures))\n"
+            "    if primary is not None:\n"
+            "        return _outcome(primary, auxiliary)\n",
+            scenario(
+                "mutant-stage-event-authorization",
+                event_failures=["LINEAGE_QUARANTINED"],
+                authorized=False,
+            ),
+        ),
+        (
+            "PY_STAGE_AUTHORIZATION_S6",
+            '    if not scenario["authorized"]:\n'
+            '        return _outcome("AUTHENTIC_BUT_UNAUTHORIZED", auxiliary)\n'
+            "    if s6:\n",
+            '    if False and not scenario["authorized"]:\n'
+            '        return _outcome("AUTHENTIC_BUT_UNAUTHORIZED", auxiliary)\n'
+            "    if s6:\n",
+            scenario(
+                "mutant-stage-authorization-s6",
+                authorized=False,
+                s6_failures=["CONTEXT_CAPACITY_EXHAUSTED"],
+            ),
+        ),
+        (
+            "PY_STAGE_S6_APPLIED",
+            "    if s6:\n",
+            "    if False and s6:\n",
+            scenario(
+                "mutant-stage-s6-applied",
+                s6_failures=["DEPENDENCY_DEFERRED"],
+            ),
+        ),
+    )
+    results: list[tuple[str, str, bool]] = []
+    for identifier, needle, replacement, candidate in specifications:
+        if source.count(needle) != 1:
+            raise ValueError(f"Python stage mutation anchor drift: {identifier}")
+        expected = taxonomy.evaluate(candidate).as_dict()
+        mutated = source.replace(needle, replacement)
+        ast.parse(mutated)
+        killed = _run_python_source(python, mutated, candidate) != expected
+        results.append((identifier, "stage-precedence", killed))
+    return results
+
+
+def _base_anchor_mutant(repo: Path) -> tuple[str, str, bool]:
+    literal = load_literal(repo)
+    mutated = deepcopy(literal)
+    row = next(
+        item
+        for item in mutated["rows"]
+        if item["row_id"].startswith("BASE:") and "path" in item["source"]
+    )
+    row["source"]["anchor"] += " [mutated]"
+    try:
+        validate_inventory_value(repo, mutated)
+    except InventoryError:
+        killed = True
+    else:
+        killed = False
+    return ("PY_BASE_SOURCE_ANCHOR", "source-anchor", killed)
 
 
 def _javascript_mutants(repo: Path, executable: str) -> list[tuple[str, str, bool]]:
@@ -129,7 +342,12 @@ def _javascript_mutants(repo: Path, executable: str) -> list[tuple[str, str, boo
 
 
 def build_report(repo: Path, javascript: str) -> dict[str, object]:
-    results = _python_mutants() + _javascript_mutants(repo, javascript)
+    results = (
+        _python_mutants()
+        + _python_stage_mutants(repo)
+        + [_base_anchor_mutant(repo)]
+        + _javascript_mutants(repo, javascript)
+    )
     survivors = sorted(identifier for identifier, _, killed in results if not killed)
     if survivors:
         raise ValueError("surviving mutants: " + ",".join(survivors))

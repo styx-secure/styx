@@ -235,7 +235,7 @@ context-total admission limits for transcript-only C0.3 evidence. Any selected
 effect never confers expansion or operational authority. A revoked credential
 may retain one contested slot for itself plus one for every stockpiled K-valid
 May0 descendant, each able to target a separate bounded subtree; those slots are
-  limited by the same selected per-credential and context-total O-08 envelope.
+limited by the same selected per-credential and context-total O-08 envelope.
 Those limits do not guarantee delivery or continued authority availability.
 V0 also
 has no atomic sole-authority rotation or recovery: a pre-provisioned descendant
@@ -438,7 +438,7 @@ exponential state growth with concurrent, individually valid control evidence
 even when fork and sibling counts remain small.
 
 The envelope does not prove that a browser, native runtime or storage backend
-can sustain those values. Eleven operational/runtime dimensions and five
+can sustain those values. Eleven operational/runtime dimensions and four
 evidence-only dimensions remain outside C0.3 entry semantics. O-08 therefore
 adds no claim of delivery, persistence, recovery, freshness, rollback
 detection, physical eviction resistance, bounded attacker bandwidth or

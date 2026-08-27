@@ -106,3 +106,11 @@ timing, padding, persistence behavior, delivery acknowledgement, recovery
 workflow or UI. It does not make parser internals remotely observable. It does
 not close O-11, O-12, O-13, O-15 or O-16, and does not by itself authorize the
 C0.3 corpus.
+
+Because S4 admission precedes event-local classification, adversarial resource
+pressure can select an S4 primary while a lower event-local cause remains only
+auxiliary evidence. This never authorizes mutation or erases the lower cause,
+but O-10 does not promise that the primary diagnostic alone identifies the
+event-local condition. Reordering those stages would be a new availability and
+diagnostic-policy decision requiring human ratification and renewed
+falsification.

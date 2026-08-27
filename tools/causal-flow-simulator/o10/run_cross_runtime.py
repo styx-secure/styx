@@ -12,11 +12,18 @@ from pathlib import Path
 
 from canonical_report import ReportError, canonical_bytes, store_report
 from fixtures import cases
-from taxonomy import evaluate
+from taxonomy import TrustedBoundaryFailure, evaluate
 
 
 REPORT_FIELDS = frozenset(
-    {"case_count", "family_counts", "fixture_digest", "schema", "verdict"}
+    {
+        "case_count",
+        "fail_closed_case_count",
+        "family_counts",
+        "fixture_digest",
+        "schema",
+        "verdict",
+    }
 )
 
 
@@ -38,6 +45,20 @@ def _node(adapter: Path, executable: str, scenario: dict[str, object]) -> bytes:
     if not isinstance(value, dict):
         raise ValueError("JavaScript output root must be an object")
     return canonical_bytes(value, allowed_fields=frozenset(value))
+
+
+def _node_fails_closed(
+    adapter: Path, executable: str, scenario: dict[str, object]
+) -> bool:
+    completed = subprocess.run(
+        [executable, str(adapter)],
+        input=canonical_bytes(scenario, allowed_fields=frozenset(scenario)),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        timeout=20,
+    )
+    return completed.returncode != 0 and completed.stdout == b""
 
 
 def _validate_static_isolation(adapter: Path) -> None:
@@ -75,8 +96,20 @@ def build_report(repo: Path, javascript: str) -> dict[str, object]:
         if javascript_bytes != python_bytes:
             raise ValueError(f"cross-runtime mismatch: {case['input']['id']}")
         family_counts[case["family"]] += 1
+    unprovable = cases()[0]["input"].copy()
+    unprovable["id"] = "fail-closed-mutation-unprovable"
+    unprovable["mutation_provable"] = False
+    try:
+        evaluate(unprovable)
+    except TrustedBoundaryFailure:
+        pass
+    else:
+        raise ValueError("Python accepted an unprovable mutation disposition")
+    if not _node_fails_closed(adapter, javascript, unprovable):
+        raise ValueError("JavaScript accepted an unprovable mutation disposition")
     return {
         "case_count": len(literal["cases"]),
+        "fail_closed_case_count": 1,
         "family_counts": dict(sorted(family_counts.items())),
         "fixture_digest": hashlib.sha256(literal_path.read_bytes()).hexdigest(),
         "schema": "styx.o10-cross-runtime-report.v1",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -35,6 +36,13 @@ class O10OutcomeTaxonomyTests(unittest.TestCase):
         self.assertEqual(
             validator.validate_o10_outcome_taxonomy(self.model, REPO_ROOT), []
         )
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(
+                validator.validate_o10_outcome_taxonomy(
+                    self.model, Path(directory)
+                ),
+                [],
+            )
 
     def test_o10_status_drift_fails_closed(self) -> None:
         model = copy.deepcopy(self.model)
@@ -43,6 +51,15 @@ class O10OutcomeTaxonomyTests(unittest.TestCase):
             finding.code
             for finding in validator.validate_o10_outcome_taxonomy(model, REPO_ROOT)
         }
+        self.assertIn("O10_STATUS", codes)
+        with tempfile.TemporaryDirectory() as directory:
+            source_only = Path(directory)
+            codes = {
+                finding.code
+                for finding in validator.validate_o10_outcome_taxonomy(
+                    model, source_only
+                )
+            }
         self.assertIn("O10_STATUS", codes)
 
     def test_o14_removal_is_still_rejected_by_core_validator(self) -> None:

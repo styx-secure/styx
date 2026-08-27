@@ -476,7 +476,7 @@
         "OB-K01"
       ],
       "owner": "K",
-      "reason": "Stable wire/API outcome registry and failure mapping remain open.",
+      "reason": "Issue #252 closes the bounded trusted-local transcript outcome registry, deterministic precedence, recovery constraints and opaque untrusted-remote collapse. Stable wire/API codes, product error classes and transport acknowledgements remain explicit non-claims.",
       "status": "DECIDED"
     },
     {
@@ -6029,7 +6029,7 @@
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "91d65f46d360cb635af171c688f523aef3ae857dac36c8cc728d97a5fa245aaf"
+      "sha256": "2616eb286772ded9415083272037e66fd359d68c9e90418d7141d2529d052780"
     },
     {
       "authority": "normative",

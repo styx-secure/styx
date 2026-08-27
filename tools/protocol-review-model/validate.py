@@ -2649,10 +2649,9 @@ def validate_o10_outcome_taxonomy(
 
     findings: list[Finding] = []
     # Frozen predecessor tests intentionally construct a source-only validation
-    # fixture.  O-10 artifact validation is meaningful only where Git object
-    # identity is available; the final gate always supplies that context.
-    if not (repo_root / ".git").exists():
-        return findings
+    # fixture.  Only Git-bound artifact checks are conditional; model-level
+    # registration invariants remain mandatory in every execution context.
+    has_git_identity = (repo_root / ".git").exists()
     expected_artifacts = {
         "tools/causal-flow-simulator/o10/outcome-taxonomy.json": (
             "9565280a5e9a8c8035188cb1c652e2bed3c9496ad05ad0883b0acc07befb7e24"
@@ -2663,7 +2662,7 @@ def validate_o10_outcome_taxonomy(
         "tools/protocol-review-model/tests/fixtures/o10-outcome-taxonomy.json": (
             "9565280a5e9a8c8035188cb1c652e2bed3c9496ad05ad0883b0acc07befb7e24"
         ),
-    }
+    } if has_git_identity else {}
     artifacts: dict[str, Any] = {}
     raw_artifacts: dict[str, bytes] = {}
     for relative, expected_digest in expected_artifacts.items():
@@ -2733,9 +2732,7 @@ def validate_o10_outcome_taxonomy(
         "UNRESOLVABLE_CREDENTIAL",
         "UNRESOLVED_CREDENTIAL_BINDING",
     }
-    if not isinstance(taxonomy, dict):
-        findings.append(Finding("O10_TAXONOMY_INVALID", taxonomy_path, "root is not an object"))
-    else:
+    if isinstance(taxonomy, dict):
         records = taxonomy.get("primaries")
         ids = (
             [item.get("id") for item in records if isinstance(item, dict)]
@@ -2762,10 +2759,10 @@ def validate_o10_outcome_taxonomy(
             findings.append(
                 Finding("O10_REMOTE_COLLAPSE", taxonomy_path, "remote collapse drift")
             )
+    elif has_git_identity:
+        findings.append(Finding("O10_TAXONOMY_INVALID", taxonomy_path, "root is not an object"))
 
-    if not isinstance(inventory, dict):
-        findings.append(Finding("O10_INVENTORY_INVALID", inventory_path, "root is not an object"))
-    else:
+    if isinstance(inventory, dict):
         rows = inventory.get("rows")
         row_ids = (
             [item.get("row_id") for item in rows if isinstance(item, dict)]
@@ -2789,6 +2786,8 @@ def validate_o10_outcome_taxonomy(
             "1f35e253bf4ba041c9d949be0d810a9abacddac8c1df979b7e0c018652522dc5"
         ):
             findings.append(Finding("O10_HANDOFF_DIGEST", inventory_path, "handoff drift"))
+    elif has_git_identity:
+        findings.append(Finding("O10_INVENTORY_INVALID", inventory_path, "root is not an object"))
 
     blockers = {
         item.get("id"): item

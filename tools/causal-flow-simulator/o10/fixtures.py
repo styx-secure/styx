@@ -43,10 +43,10 @@ def primary_scenario(primary: str, identifier: str | None = None) -> dict[str, A
         scenario["s4_failures"] = [primary]
     elif primary == "AUTHORITY_PROJECTION_UNAVAILABLE":
         scenario["authority_projection_unavailable"] = True
-    elif primary in EVENT_PRECEDENCE:
-        scenario["event_failures"] = [primary]
     elif primary == "AUTHENTIC_BUT_UNAUTHORIZED":
         scenario["authorized"] = False
+    elif primary in EVENT_PRECEDENCE:
+        scenario["event_failures"] = [primary]
     else:
         raise ValueError("primary has no fixture construction")
     return scenario
@@ -96,13 +96,47 @@ def cases() -> list[dict[str, Any]]:
     for index, (higher, lower) in enumerate(edges):
         for reverse in (False, True):
             suffix = "reverse" if reverse else "forward"
+            if higher in EVENT_PRECEDENCE and lower in EVENT_PRECEDENCE:
+                scenario = baseline(f"edge-{index:02d}-{suffix}")
+                failures = [higher, lower]
+                scenario["event_failures"] = (
+                    list(reversed(failures)) if reverse else failures
+                )
+                scenario["delivery_order"] = list(scenario["event_failures"])
+            else:
+                scenario = _combine(
+                    f"edge-{index:02d}-{suffix}", higher, lower, reverse=reverse
+                )
             result.append(
                 {
                     "expected_primary": higher,
                     "family": "precedence",
-                    "input": _combine(
-                        f"edge-{index:02d}-{suffix}", higher, lower, reverse=reverse
-                    ),
+                    "input": scenario,
+                }
+            )
+
+    authorization_edges = (
+        ("LINEAGE_QUARANTINED", "AUTHENTIC_BUT_UNAUTHORIZED"),
+        ("AUTHENTIC_BUT_UNAUTHORIZED", "CONTEXT_CAPACITY_EXHAUSTED"),
+    )
+    for index, (higher, lower) in enumerate(authorization_edges, start=len(edges)):
+        for reverse in (False, True):
+            scenario = baseline(
+                f"edge-{index:02d}-{'reverse' if reverse else 'forward'}"
+            )
+            scenario["authorized"] = False
+            if higher == "LINEAGE_QUARANTINED":
+                scenario["event_failures"] = [higher]
+            else:
+                scenario["s6_failures"] = [lower]
+            scenario["delivery_order"] = (
+                [lower, higher] if reverse else [higher, lower]
+            )
+            result.append(
+                {
+                    "expected_primary": higher,
+                    "family": "precedence",
+                    "input": scenario,
                 }
             )
 

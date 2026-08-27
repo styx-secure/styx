@@ -239,8 +239,9 @@ def load_literal(repo: Path) -> dict[str, Any]:
     return value
 
 
-def validate_literal(repo: Path) -> dict[str, Any]:
-    literal = load_literal(repo)
+def validate_inventory_value(repo: Path, literal: dict[str, Any]) -> dict[str, Any]:
+    """Validate an already parsed literal against every ratified input."""
+
     expected = expected_inventory(repo)
     if literal != expected:
         raise InventoryError("literal inventory differs from ratified inputs")
@@ -255,3 +256,7 @@ def validate_literal(repo: Path) -> dict[str, Any]:
         if digest != source["base_digest"]:
             raise InventoryError(f"Base source digest mismatch: {row['row_id']}")
     return literal
+
+
+def validate_literal(repo: Path) -> dict[str, Any]:
+    return validate_inventory_value(repo, load_literal(repo))

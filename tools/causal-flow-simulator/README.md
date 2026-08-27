@@ -231,7 +231,7 @@ to begin C0.3.
 
 `o08/` contains the isolated transcript-only resource-envelope evidence for
 Issue #250. It preserves all 68 discovered dimensions and compares 53 C0.3
-entry values across three candidates, keeps eleven post-C0.3 and five
+entry values across three candidates, keeps eleven post-C0.3 and four
 evidence-only dimensions non-authoritative, and hands 66 safe-recovery rows to
 O-10 without assigning stable codes. Python and dependency-independent Node
 exercise every boundary; the combined matrix and per-dimension mutants detect

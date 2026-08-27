@@ -16,7 +16,7 @@ class HostileFixtureTests(unittest.TestCase):
     def test_checked_in_fixture_corpus_is_literal_and_complete(self) -> None:
         literal = json.loads((O10 / "hostile-scenarios.json").read_bytes())
         self.assertEqual(literal, {"cases": cases(), "schema": "styx.o10-hostile-fixtures.v1"})
-        self.assertEqual(len(literal["cases"]), 79)
+        self.assertEqual(len(literal["cases"]), 83)
 
 
 if __name__ == "__main__":

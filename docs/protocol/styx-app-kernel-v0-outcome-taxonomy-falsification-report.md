@@ -13,11 +13,13 @@ in `styx-app-kernel-v0-outcome-taxonomy.md`.
   registrations;
 - closed taxonomy: 25 primaries, one alias, two post-C0.3 markers and one
   remote collapse;
-- hostile corpus: 79 cases covering every primary, every adjacent precedence
+- hostile corpus: 83 successful cases covering every primary, every adjacent precedence
   edge in both presentation orders, S4/S6 overlaps and privacy perturbations;
 - independent evaluators: Python reference and JavaScript adapter with no
-  shared semantic oracle;
-- mutants: 52 killed, zero survivors, spanning every primary row, precedence,
+  shared semantic oracle, plus one cross-runtime fail-closed case where mutation
+  disposition cannot be proven;
+- mutants: 62 killed, zero survivors, spanning every primary row, every
+  intra-stage and inter-stage precedence boundary, one Base-source anchor,
   recovery and independent JavaScript behavior;
 - repository integration: exact three-coordinate validator delta, frozen
   predecessor packages and a two-clean-checkout regeneration gate.
