@@ -284,6 +284,8 @@ REQUIRED_C03_DEPENDENCIES = {
     "O-14",
 }
 
+AUTHORIZED_UNBLOCKED_CAPABILITIES = {"corpus"}
+
 CONTRACT_BASE_COMMIT = "ba0525da1dd78c76c5cc60bc2041e2d3bed44bb3"
 
 EXPECTED_STATUS_BY_COLLECTION = {
@@ -626,7 +628,7 @@ EXPECTED_INVARIANT_REFS_DIGEST = {
 EXPECTED_BLOCKER_EDGES_DIGEST = {
     "C0.2j": "fd582f88a719a75d14a762a9d2a1f62b1da163d455d1f9e4497f93fbb94c2892",
     "C0.2k": "dcf613a0ba08abc1b75668271ff4d8c4f74e50d90cef3afa62819bc57baef990",
-    "C0.3": "294c90766317a495004a86e300e1c1b6b81de66b377cefe47676b9e67c1f6d14",
+    "C0.3": "8c825da422bcc2fe6c330353dcbb1952346ebfdc07f7df9ee65e73d5781931f5",
     "C0.3_CORPUS_PATH_APPROVAL": "2f46c5b24abdce4302300f7f2d7b1c5ffb49e96b20529d82185df78cfba48f0f",
     "O-06c": "216def2a5762650aeee985ce998d5670fbefbceb2e297097039a8cbc4796d3a4",
     "O-07": "221bdcaa5b87211fc802a254c7d341fda0cae735ce4bee6d2be5b45bff4e1486",
@@ -2353,7 +2355,10 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
     for capability, unresolved_gates in sorted(
         unresolved_gates_by_capability.items()
     ):
-        if not unresolved_gates:
+        if (
+            not unresolved_gates
+            and capability not in AUTHORIZED_UNBLOCKED_CAPABILITIES
+        ):
             findings.append(
                 Finding(
                     "GATED_CAPABILITY_UNBLOCKED",

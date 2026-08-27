@@ -14,14 +14,12 @@ from integrated_scope_guard import ALLOWED_EXACT, BASE_SHA, REPORT_FIELDS, Scope
 from o10.canonical_report import canonical_bytes
 
 
-class IntegratedScopeGuardTest(unittest.TestCase):
-    def test_current_committed_candidate_is_in_scope(self):
-        import subprocess
+HISTORICAL_CANDIDATE_SHA = "490689f0d81980cf942d448c76a54192913b7cde"
 
-        candidate = subprocess.check_output(
-            ["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True
-        ).strip()
-        report = build_report(REPO, BASE_SHA, candidate)
+
+class IntegratedScopeGuardTest(unittest.TestCase):
+    def test_historical_committed_candidate_is_in_scope(self):
+        report = build_report(REPO, BASE_SHA, HISTORICAL_CANDIDATE_SHA)
         self.assertEqual(report["verdict"], "PASS")
         self.assertGreater(report["record_count"], 0)
         canonical_bytes(report, allowed_fields=REPORT_FIELDS)

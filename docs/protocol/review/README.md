@@ -3,7 +3,9 @@
 This directory contains a compact, machine-readable view of the currently
 ratified Styx application-protocol baseline. It exists to make security review
 faster and more systematic. It is not the protocol specification, a security
-proof, implementation evidence or permission to build C0.3.
+proof or implementation evidence. Issue #262 authorizes only construction of
+the separately contracted C0.3 corpus; this derived model does not authorize
+implementation alignment, demo, product or sensitive use.
 
 ## Authority
 
@@ -80,9 +82,9 @@ The Issue #260 snapshot integrates that frozen O-14 language into the complete
 O-06c construction while preserving the frozen O-07 provenance, O-08 envelope
 and O-10 outcome taxonomy. Exact-final evidence exercises 115 fixed/transcript/candidate-envelope
 witnesses and seven integration-order mutants, and the two-clean-checkout
-technical gate passes. Independent review and human approvals remain required;
-no product/runtime conformance or C0.3 capability follows from the technical
-result alone.
+technical gate passes. Independent review and human approvals completed in
+merged PR #261 at `490689f0d81980cf942d448c76a54192913b7cde`; no
+product/runtime conformance follows.
 
 The validator pins the exact source-ID, repository-path and authority tuple for
 every source in this snapshot. Changing an evidence source to `normative`,
@@ -249,8 +251,8 @@ availability, audit readiness or production fitness. It cannot detect a
 normative omission shared by all sources. C0.2j is ratified historical input;
 C0.2k selects only its bounded commitment-context amendment and O-06c adds
 bounded combined-construction evidence. O-14 selects only its bounded guarded
-signature language and remains a condition-bearing C0.3 dependency until Issue
-#260's separately ratified exact-final combined rerun passes. O-07 and O-08 are bounded `DECIDED`;
+signature language; Issue #260 / merged PR #261 completed its separately
+ratified exact-final combined rerun. O-07 and O-08 are bounded `DECIDED`;
 O-08 has a replacement provider-bound `balanced` selection after correction of
 its final-gate response shape and completion of two-clean-checkout evidence,
 exact-HEAD reviews and technical human approval; O-10 is bounded `DECIDED` for
@@ -258,8 +260,9 @@ trusted-local outcomes and one opaque untrusted-remote collapse, with no
 numeric/wire/API representation selected. `C0.3_CORPUS_PATH_APPROVAL` is
 bounded `DECIDED` by Issue #253's exact six-path synthetic-only amendment; the
 paths remain absent and this creates no corpus or C0.3 capability. While C0.3
-is `NO_GO`, C0.3 itself blocks corpus,
-implementation alignment, demo, product and sensitive-use claims.
+is `NO_GO`, Issue #262 removes only the `corpus` blocker after all seven frozen
+Issue #251 entry items are satisfied. C0.3 continues to block implementation
+alignment, demo, product and sensitive-use claims.
 
 `counterexamples[].steps` is the one intentionally order-sensitive sequence in
 the model: entries describe the procedural order of an adversarial trace and

@@ -35,7 +35,7 @@ class O06cCapabilityGateTests(unittest.TestCase):
         o06c = self._blocker(self.model, "O-06c")
         self.assertEqual("NO_GO", c03["status"])
         self.assertEqual(
-            ["corpus", "demo", "implementation_alignment", "product", "sensitive_use"],
+            ["demo", "implementation_alignment", "product", "sensitive_use"],
             c03["blocks"],
         )
         self.assertEqual("DECIDED", o06c["status"])

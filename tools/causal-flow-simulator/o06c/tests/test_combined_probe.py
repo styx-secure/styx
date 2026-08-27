@@ -198,7 +198,6 @@ class CombinedProbeTests(unittest.TestCase):
             self.assertEqual(
                 set(report["evidence"]["c03_model_record"]["blocks"]),
                 {
-                    "corpus",
                     "implementation_alignment",
                     "demo",
                     "product",

@@ -32,6 +32,12 @@ EXPECTED_BASE_SOURCE_SHA256 = "e3d5ab45ec9a7933e690375661d2303b2b7915bf2f4c22e0f
 EXPECTED_FUNCTION_SHA256 = "fadc98da71affdc8ec308fe1aa866c4240d211ca38d9b5aa42b61ab27a9ba431"
 EXPECTED_MAIN_SHA256 = "3757e3802088f2f4d8aca18157003bdb7d91eb633f5238b2a65e5920b08802e1"
 EXPECTED_COMPLETE_SHA256 = "a77067d559270c1779353d870c4663705951cea8ce19150c325014726d59629d"
+EXPECTED_C03_SYNC_COMPLETE_SHA256 = (
+    "c4ad483f76afdf5b5c51d1481611fa2fc59b53fda3ec1670d29473ee6d6bf376"
+)
+EXPECTED_C03_SYNC_VALIDATE_DOMAIN_SHA256 = (
+    "bff89b7b2044d429be024a0cc1b7d1267aba9f8a089f51e138c4b672b04ff8b3"
+)
 MAIN_ADDITION = "        findings.extend(validate_o10_outcome_taxonomy(model, args.repo_root))\n"
 ALLOWED_EXACT = frozenset(
     {
@@ -129,7 +135,9 @@ def expected_validator_source(before_source: str, actual_source: str) -> str:
     return expected
 
 
-def validate_validator_delta(before_source: str, actual_source: str) -> dict[str, str]:
+def validate_historical_validator_delta(
+    before_source: str, actual_source: str
+) -> dict[str, str]:
     expected = expected_validator_source(before_source, actual_source)
     if actual_source.encode("utf-8") != expected.encode("utf-8"):
         raise ScopeError("actual validator bytes differ from complete expected bytes")
@@ -164,6 +172,107 @@ def validate_validator_delta(before_source: str, actual_source: str) -> dict[str
             _function_segment(expected, "validate_o10_outcome_taxonomy").encode("utf-8")
         ).hexdigest(),
         "main_sha256": hashlib.sha256(_function_segment(expected, "main").encode("utf-8")).hexdigest(),
+    }
+
+
+def _replace_once(source: str, before: str, after: str, label: str) -> str:
+    if source.count(before) != 1:
+        raise ScopeError(f"C0.3 synchronization anchor drift: {label}")
+    return source.replace(before, after, 1)
+
+
+def expected_c03_sync_validator_source(
+    before_source: str, actual_source: str
+) -> tuple[str, str]:
+    """Layer the exact Issue #262 delta over the frozen O-10 validator."""
+
+    historical = expected_validator_source(before_source, actual_source)
+    expected = _replace_once(
+        historical,
+        '}\n\nCONTRACT_BASE_COMMIT = "ba0525da1dd78c76c5cc60bc2041e2d3bed44bb3"\n',
+        '}\n\nAUTHORIZED_UNBLOCKED_CAPABILITIES = {"corpus"}\n\n'
+        'CONTRACT_BASE_COMMIT = "ba0525da1dd78c76c5cc60bc2041e2d3bed44bb3"\n',
+        "authorized capability assignment",
+    )
+    expected = _replace_once(
+        expected,
+        '    "C0.3": "294c90766317a495004a86e300e1c1b6b81de66b377cefe47676b9e67c1f6d14",\n',
+        '    "C0.3": "8c825da422bcc2fe6c330353dcbb1952346ebfdc07f7df9ee65e73d5781931f5",\n',
+        "C0.3 blocker-edge digest",
+    )
+    expected = _replace_once(
+        expected,
+        "        if not unresolved_gates:\n",
+        "        if (\n"
+        "            not unresolved_gates\n"
+        "            and capability not in AUTHORIZED_UNBLOCKED_CAPABILITIES\n"
+        "        ):\n",
+        "authorized capability validation",
+    )
+    if (
+        hashlib.sha256(expected.encode("utf-8")).hexdigest()
+        != EXPECTED_C03_SYNC_COMPLETE_SHA256
+    ):
+        raise ScopeError("complete C0.3 synchronization validator digest drift")
+    if (
+        hashlib.sha256(
+            _function_segment(expected, "validate_domain").encode("utf-8")
+        ).hexdigest()
+        != EXPECTED_C03_SYNC_VALIDATE_DOMAIN_SHA256
+    ):
+        raise ScopeError("C0.3 synchronization validate_domain function digest drift")
+    return historical, expected
+
+
+def validate_validator_delta(before_source: str, actual_source: str) -> dict[str, str]:
+    """Validate the exact current validator while preserving frozen O-10 proof."""
+
+    historical, expected = expected_c03_sync_validator_source(
+        before_source, actual_source
+    )
+    if actual_source.encode("utf-8") != expected.encode("utf-8"):
+        raise ScopeError("actual validator bytes differ from C0.3 synchronization bytes")
+
+    historical_validate = _function_segment(historical, "validate_domain")
+    expected_validate = _function_segment(expected, "validate_domain")
+    projection = expected.replace(expected_validate, historical_validate, 1)
+    try:
+        enforce_declared_validator_ast_delta(
+            historical,
+            projection,
+            projection,
+            allowed_assignments={
+                "AUTHORIZED_UNBLOCKED_CAPABILITIES",
+                "EXPECTED_BLOCKER_EDGES_DIGEST",
+            },
+            allowed_functions=set(),
+            allowed_literal_changes={
+                ("AUTHORIZED_UNBLOCKED_CAPABILITIES",),
+                ("EXPECTED_BLOCKER_EDGES_DIGEST", "C0.3"),
+            },
+            allowed_function_call_additions={},
+            protected_literal_paths={
+                ("EXPECTED_STATUS_BY_COLLECTION", "blockers", "O-10"),
+                (
+                    "EXPECTED_STATUS_BY_COLLECTION",
+                    "blockers",
+                    "C0.3_CORPUS_PATH_APPROVAL",
+                ),
+                ("EXPECTED_STATUS_BY_COLLECTION", "blockers", "O-14"),
+            },
+        )
+    except FrozenScopeViolation as exc:
+        raise ScopeError(
+            "frozen O-07 AST guard rejected C0.3 synchronization"
+        ) from exc
+    return {
+        "complete_source_sha256": hashlib.sha256(expected.encode("utf-8")).hexdigest(),
+        "function_sha256": hashlib.sha256(
+            _function_segment(expected, "validate_o10_outcome_taxonomy").encode("utf-8")
+        ).hexdigest(),
+        "main_sha256": hashlib.sha256(
+            _function_segment(expected, "main").encode("utf-8")
+        ).hexdigest(),
     }
 
 
@@ -221,7 +330,7 @@ def build_report(repo: Path, base: str, candidate: str) -> dict[str, Any]:
     if before_validator is None or after_validator is None:
         raise ScopeError("validator blob missing")
     try:
-        hashes = validate_validator_delta(
+        hashes = validate_historical_validator_delta(
             before_validator.decode("utf-8"), after_validator.decode("utf-8")
         )
     except UnicodeDecodeError as exc:

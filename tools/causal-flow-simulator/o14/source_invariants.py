@@ -82,7 +82,7 @@ def evaluate_source_invariants(
         c03.get("status") == "NO_GO"
         and set(c03.get("depends_on", [])) == EXPECTED_C03_DEPENDENCIES
         and set(c03.get("blocks", []))
-        == {"corpus", "demo", "implementation_alignment", "product", "sensitive_use"}
+        == {"demo", "implementation_alignment", "product", "sensitive_use"}
     )
 
     return (

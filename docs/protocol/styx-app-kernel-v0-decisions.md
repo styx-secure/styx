@@ -352,7 +352,7 @@ claim that current code conforms.
   amendment and independent review before bytes are created.
 - **Human ratification:** Issue #253 comment `5436056363` by `maverde73` binds
   the exact six-path inventory and authorizes metadata registration while the
-  files are absent; final-HEAD licensing approval remains required.
+  files are absent; merged PR #258 records the exact-final licensing approval.
 
 ## 3. Explicitly rejected current behavior
 
@@ -943,9 +943,12 @@ outcomes.
   provenance, O-08 envelope and O-10 taxonomy. Exact-final technical evidence passes
   115 fixed/transcript/candidate-envelope witnesses, all 69 envelope dispositions and 66 handoff
   rows, 154 boundary observations and seven integration-order mutants. The
-  frozen decision suites remain separate authoritative inputs. Independent
-  review and human gates remain pending, so this technical result does not yet
-  discharge the condition or authorize C0.3.
+  frozen decision suites remain separate authoritative inputs. Exact-final
+  independent review, `manexada` approval and the `maverde73` merge decision
+  completed in Issue #260 / PR #261 at merge commit
+  `490689f0d81980cf942d448c76a54192913b7cde`; the integrated-rerun condition is
+  discharged. This result does not by itself authorize product, runtime,
+  adapter, demo or sensitive-use work.
 - **Remaining evidence owners:** O-07 still owns the complete genesis fields;
   O-14 separately owns the signature-suite
   registry. O-08 owns measured profile maxima and O-10 owns stable local
@@ -985,9 +988,11 @@ outcomes.
   authenticate these bytes without per-event selection, fallback or a materially
   different digest/runtime basis.
 - **Human ratification:** O-06a, O-06b-1, O-06b-2 and C0.2k were ratified under
-  Issues #219, #221, #223 and #239. Issue #243 supplies the O-06c executable
-  evidence and requires independent exact-final review and human approval before
-  this condition-bearing `DECIDED` status becomes effective on `main`.
+  Issues #219, #221, #223 and #239. Issue #243 / merged PR #244 at
+  `94f0a9b2781d45324199e6588629d23babedf746` supplies the bounded O-06c
+  executable evidence; Issue #260 / merged PR #261 at
+  `490689f0d81980cf942d448c76a54192913b7cde` completes the required O-14
+  integrated rerun and its exact-final review and human gates.
 
 ### O-07 — Genesis and checkpoint evidence
 
@@ -1047,8 +1052,9 @@ outcomes.
   Any future checkpoint capability reopens O-01/O-04, O-02 when it creates a
   producer-authority class, O-07 and the threat model, affects O-08/O-10/O-11,
   and reruns C0.2f under C0.2d section 9.
-- **Human ratification:** Issue #248 ratified this bounded construction; final
-  effectiveness still requires exact-final PR review and approval.
+- **Human ratification:** Issue #248 and merged PR #249 at
+  `ba0525da1dd78c76c5cc60bc2041e2d3bed44bb3` complete exact-final review,
+  human approval and merge of this bounded construction.
 
 ### O-08 — Profile skew, cardinality and activation bounds
 
@@ -1182,8 +1188,9 @@ outcomes.
   distinction, an existing class changes mutation/retry semantics, a later
   profile exposes local distinctions remotely, or O-08/O-06c/O-14 changes a
   mapped source site.
-- **Human ratification:** final-HEAD gates under Issue #252 are required before
-  this bounded decision is operationally closed.
+- **Human ratification:** Issue #252 and merged PR #257 at
+  `4a4ebc4b8fc91e500ecd8002801896dc73d5073f` complete the exact-final review,
+  human gates and merge for this bounded decision.
 
 ### O-11 — Wire/storage encoding
 
@@ -1328,15 +1335,17 @@ outcomes.
   Each supported browser/provider needs the same raw and guarded vector matrix.
   Issue #260 is the separate human-ratified task that replaces the unchanged
   O-14 placeholder in the complete O-06c construction and reruns all combined
-  evidence. Its exact-final technical gate passes, but independent review and
-  human approvals remain required before C0.3 corpus authorization.
+  evidence. Exact-final review and human gates completed in merged PR #261 at
+  `490689f0d81980cf942d448c76a54192913b7cde`.
   Dependency/runtime upgrades reopen adapter evidence. A
   counterexample or inability to enforce the exact guarded language reopens
   O-14. Both demonstrated JavaScript adapters share one Noble subgroup
   guard (`O14-SINGLE-GUARD-DEPENDENCY`), and per-event attacker-controlled `R`
   validation retains an O-08 availability obligation (`O14-GUARD-COST-O08`).
-- **Human ratification:** pending final-HEAD acceptance of this exact
-  condition-bearing decision and its named residual gates.
+- **Human ratification:** Issue #246 and merged PR #247 at
+  `86c3f2dbd630e445d737a25c09889de2777ee185` ratified the condition-bearing
+  decision; Issue #260 / merged PR #261 discharged its integrated-rerun
+  condition without changing the selected suite.
 
 ### O-15 — Profile succession and optional disposition
 
@@ -1443,12 +1452,16 @@ commitment context and supplies bounded amendment evidence; O-06c independently
 falsifies the exact combined bytes within its declared envelope.
 O-08 is bounded `DECIDED` for the selected transcript-only entry envelope and
 O-10 is bounded `DECIDED` for trusted-local outcomes plus the opaque untrusted-
-remote collapse. O-07 retains its exact corpus-integration
-condition and O-14 retains its placeholder-substituted O-06c rerun. O-12 is
-additionally blocking for any profile that retains a physical-time claim; it is
-inapplicable only to profiles that omit physical time. O-11 intentionally does
-not block a transcript-only C0.3 corpus. Starting that corpus now would freeze
-the remaining guesses and create cost pressure on later human decisions.
+remote collapse. O-07 is landed, O-14's placeholder-substituted O-06c rerun is
+discharged, and Issue #253 / merged PR #258 at
+`25be9abc0d8c1bce8821a750616e13d245abc356` fixes the synthetic-only Apache-2.0
+corpus paths. Issue #262 performs the exact-final authority-set synchronization
+required by frozen Issue #251. The seven-item entry set is therefore satisfied
+when this synchronization merges, and construction of the separately
+contracted specification-derived C0.3 corpus is authorized. No corpus byte is
+created here. O-12 is additionally blocking for any profile that retains a
+physical-time claim; it is inapplicable to this transcript-only profile. O-11
+intentionally does not block this corpus.
 
 The smallest safe sequence is:
 
@@ -1472,8 +1485,10 @@ The smallest safe sequence is:
    and discharge its separately ratified combined-evidence rerun, plus O-12 for any time-bearing profile,
    without product implementation authority; retain O-11 for the later
    wire/storage decision;
-6. approve the exact Apache-2.0 path inventory for the future corpus;
-7. execute C0.3: specification-derived adversarial corpus plus a third
+6. preserve the approved exact Apache-2.0 path inventory for the future corpus
+   and the Issue #262 exact authority-set synchronization;
+7. execute the separately contracted C0.3 specification-derived adversarial
+   corpus plus a third
    implementation written only from the specification;
 8. align JavaScript in C0.4; align or freeze the minimum Dart surface only if it
    remains useful as independent evidence.
@@ -1481,10 +1496,11 @@ The smallest safe sequence is:
 O-13, O-15 and O-16 do not block transcript-only C0.3 under a strictly pinned
 v0 profile with explicit no-finality semantics. They do block every destruction-
 capable increment, profile upgrade, product-readiness claim and irreversible
-effect. C0.2k must complete its exact-final evidence and human gates before
-merge. O-06c is no longer the direct owner of demo, product and sensitive-use
-gates after its exact evidence passes; the `C0.3` `NO-GO` gate itself blocks
-those capabilities together with corpus and implementation alignment.
+effect. C0.2k and the integrated O-06c/O-14 rerun have completed their exact-
+final evidence and human gates. The `C0.3` `NO-GO` gate no longer blocks corpus
+construction, but continues to block implementation alignment, demo, product
+and sensitive-use capabilities until corpus completion, independent
+implementation agreement, exit review and an explicit human phase verdict.
 
 No supported Phase B adapter may persist current application-ledger objects
 while this `NO-GO` remains in force.
