@@ -279,6 +279,7 @@ def _project_graph_record(record: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     require(isinstance(presented_reference, str), "graph record lacks reference")
     projected = {
         "kind": record["kind"],
+        "opening": record.get("opening"),
         "presentedReferenceHex": presented_reference,
         "signatureHex": record["signatureHex"],
         "transcriptHex": record["transcriptHex"],
@@ -404,10 +405,20 @@ def _input_schema() -> dict[str, Any]:
     hex_string = {"pattern": "^[0-9a-f]*$", "type": "string"}
     ref = {"maxLength": 64, "minLength": 64, **hex_string}
     def graph_record(kind: str) -> dict[str, Any]:
+        opening = {
+            "additionalProperties": False,
+            "properties": {
+                "contentHex": hex_string,
+                "randomizerHex": ref,
+            },
+            "required": ["contentHex", "randomizerHex"],
+            "type": "object",
+        }
         return {
         "additionalProperties": False,
         "properties": {
             "kind": {"const": kind},
+            "opening": {"anyOf": [{"type": "null"}, opening]},
             "opaqueId": {
                 "pattern": "^item-[0-9a-f]{64}$",
                 "type": "string",
@@ -418,6 +429,7 @@ def _input_schema() -> dict[str, Any]:
         },
         "required": [
             "kind",
+            "opening",
             "opaqueId",
             "presentedReferenceHex",
             "signatureHex",
@@ -566,8 +578,13 @@ conformance with K admission `NOT_EVALUATED`: synthetic local metadata is never
 proof of a genesis/GRANT chain. For each admission graph, it derives the trusted
 root only from the preaccepted genesis transcript and derives non-root keys only
 from admitted GRANT events. Candidate records carry no verification key or
-binding oracle. Application-policy authority is out of scope: K admission is
-not AP authorization and must never be flattened to application success.
+binding oracle. Each graph object also carries `opening`: either the exact raw
+content/randomizer pair supplied to that replica or JSON `null` when no opening
+was supplied. The reader must verify a non-null opening against the authenticated
+commitment; its mere presence is not an oracle. A missing `REQUIRED` opening
+selects the event-local pending rules below, while a valid supplied opening does
+not. Application-policy authority is out of scope: K admission is not AP
+authorization and must never be flattened to application success.
 
 Run `python3 VERIFY.py` before using the package.  The withheld integration map
 is created only after the reader source has been frozen.
@@ -857,6 +874,7 @@ def _validate_graph_record(record: dict[str, Any], *, genesis: bool) -> None:
         set(record)
         == {
             "kind",
+            "opening",
             "opaqueId",
             "presentedReferenceHex",
             "signatureHex",
@@ -875,6 +893,14 @@ def _validate_graph_record(record: dict[str, Any], *, genesis: bool) -> None:
     _hex(record["presentedReferenceHex"], 32, "presentedReferenceHex")
     _hex(record["signatureHex"], 64, "signatureHex")
     _hex(record["transcriptHex"], None, "transcriptHex")
+    opening = record["opening"]
+    if opening is not None:
+        require(
+            set(opening) == {"contentHex", "randomizerHex"},
+            "blind graph opening shape mismatch",
+        )
+        _hex(opening["contentHex"], None, "contentHex")
+        _hex(opening["randomizerHex"], 32, "randomizerHex")
     projected = dict(record)
     projected.pop("opaqueId")
     require(

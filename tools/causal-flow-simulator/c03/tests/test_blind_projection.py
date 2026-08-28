@@ -17,6 +17,8 @@ sys.path.insert(0, str(ROOT))
 from build_blind_projection import (  # noqa: E402
     BlindProjectionError,
     KIT_PATHS,
+    _official_admission_graphs,
+    _project_graph,
     _project_record,
     _public_observation,
     build_integration,
@@ -68,6 +70,25 @@ class BlindProjectionTests(unittest.TestCase):
             self.assertEqual(projected[opaque], public)
             rebuilt = materialize_blind_evaluator_input(public)
             self.assertEqual(_public_observation(rebuilt), _public_observation(official), official["id"])
+
+        projected_graphs = {
+            graph["opaqueGraphId"]: graph for graph in blind["admissionGraphs"]
+        }
+        supplied_openings = 0
+        missing_openings = 0
+        for official in _official_admission_graphs(CORPUS):
+            opaque, public = _project_graph(official["genesis"], official["records"])
+            self.assertEqual(projected_graphs[opaque], public)
+            for source, projected_event in zip(
+                official["records"], public["events"], strict=True
+            ):
+                self.assertEqual(projected_event["opening"], source.get("opening"))
+                if projected_event["opening"] is None:
+                    missing_openings += 1
+                else:
+                    supplied_openings += 1
+        self.assertGreater(supplied_openings, 0)
+        self.assertGreater(missing_openings, 0)
 
     def test_reader_output_contract_is_public_but_contains_no_oracle(self) -> None:
         readme = (self.kit / "README.md").read_text("utf-8")
