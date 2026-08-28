@@ -2575,8 +2575,17 @@ def _validate_c03_corpus_gate(repo_root: Path) -> list[Finding]:
         cached = _C03_GATE_CACHE.get(key)
         if cached is not None:
             return list(cached)
-        names = {path.name for path in corpus.iterdir() if path.is_file()}
-        if names != C03_CORPUS_FILES:
+        entries = list(corpus.rglob("*"))
+        names = {path.name for path in entries}
+        if (
+            names != C03_CORPUS_FILES
+            or any(
+                path.is_symlink()
+                or not path.is_file()
+                or len(path.relative_to(corpus).parts) != 1
+                for path in entries
+            )
+        ):
             raise ValueError("exact six-file corpus set is absent")
         environment = os.environ.copy()
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -2641,23 +2650,23 @@ def _validate_c03_corpus_gate(repo_root: Path) -> list[Finding]:
             mutations = load_json_unique(output_root / "mutations.json")
             if (
                 validation.get("result") != "PASS"
-                or validation.get("validVectors") != 11
-                or validation.get("invalidVectors") != 16
+                or validation.get("validVectors") != 17
+                or validation.get("invalidVectors") != 26
                 or validation.get("scenarios") != 46
-                or validation.get("mutations") != 466
+                or validation.get("mutations") != 476
             ):
                 raise ValueError("corpus validation report mismatch")
             if (
                 cross.get("result") != "PASS"
                 or cross.get("runtimes") != ["javascript", "python"]
-                or cross.get("vectors") != 27
+                or cross.get("vectors") != 43
                 or cross.get("scenarios") != 46
             ):
                 raise ValueError("cross-runtime report mismatch")
             if (
                 mutations.get("result") != "PASS"
                 or mutations.get("runtimes") != ["javascript", "python"]
-                or mutations.get("killed") != 466
+                or mutations.get("killed") != 476
             ):
                 raise ValueError("mutation report mismatch")
     except (OSError, ValueError, subprocess.SubprocessError) as error:

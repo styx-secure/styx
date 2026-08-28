@@ -19,6 +19,7 @@ from corpus_model import (  # noqa: E402
     BASE_SHA,
     BaseReader,
     DOMAINS,
+    NONEXECUTABLE_INVARIANTS,
     ed25519_sign,
     encode_commitment,
     encode_event,
@@ -65,6 +66,7 @@ def _event_fields(
     content: dict[str, Any] | None = None,
     tail: dict[str, Any] | None = None,
     credential: bytes | None = None,
+    context: bytes | None = None,
 ) -> dict[str, Any]:
     fields: dict[str, Any] = {
         "applicationProfileId": 1,
@@ -72,7 +74,7 @@ def _event_fields(
         "authorSequence": sequence,
         "causalParents": sorted(parents or []),
         "content": content or {"class": "NONE", "exactLength": 0},
-        "contextIdentifierHex": synthetic_octets("context-primary", 32).hex(),
+        "contextIdentifierHex": (context or synthetic_octets("context-primary", 32)).hex(),
         "credentialIdentifierHex": (credential or synthetic_octets("credential-root", 32)).hex(),
         "directPredecessorHex": predecessor,
         "eventRole": role,
@@ -289,6 +291,137 @@ def _valid_vectors() -> list[dict[str, Any]]:
         vectors.append(vector)
         previous = vector["eventReferenceHex"]
         sequence += 1
+
+    secondary = _application_vector(
+        "vec-secondary-context-author",
+        _event_fields(
+            "secondary-context-author",
+            credential=synthetic_octets("credential-secondary", 32),
+            context=synthetic_octets("context-secondary", 32),
+        ),
+        "seed/secondary",
+    )
+    vectors.append(secondary)
+
+    single_parent = _application_vector(
+        "vec-parent-single",
+        _event_fields(
+            "parent-single",
+            sequence=sequence,
+            predecessor=previous,
+            parents=[ordinary["eventReferenceHex"]],
+        ),
+        "seed/root",
+    )
+    vectors.append(single_parent)
+    sequence += 1
+    multiple_parents = _application_vector(
+        "vec-parent-multiple",
+        _event_fields(
+            "parent-multiple",
+            sequence=sequence,
+            predecessor=single_parent["eventReferenceHex"],
+            parents=[single["eventReferenceHex"], tree["eventReferenceHex"]],
+        ),
+        "seed/root",
+    )
+    vectors.append(multiple_parents)
+
+    selected_content = synthetic_octets("selected-resource-content", 262144)
+    selected_commitment = encode_commitment(
+        profile_id=1,
+        profile_version=1,
+        context=context,
+        credential=credential,
+        sequence=4095,
+        content_type=2,
+        content=selected_content,
+        randomizer=synthetic_octets("randomizer/selected-resource", 32),
+        chunk_size=4096,
+    )
+    selected_fields = _event_fields(
+        "selected-resource-boundaries",
+        sequence=4095,
+        predecessor=multiple_parents["eventReferenceHex"],
+        parents=[synthetic_octets(f"selected-parent/{index}", 32).hex() for index in range(8)],
+        content={
+            "class": "DETACHABLE",
+            "commitmentHex": selected_commitment["commitmentHex"],
+            "contentType": 2,
+            "exactLength": len(selected_content),
+            "geometry": selected_commitment["geometry"],
+            "shape": "TREE",
+        },
+    )
+    selected_fields["transitionBlockHex"] = synthetic_octets("selected-transition-block", 4096).hex()
+    selected = _application_vector(
+        "vec-selected-resource-boundaries", selected_fields, "seed/root"
+    )
+    selected["opening"] = {
+        "contentHex": selected_content.hex(),
+        "randomizerHex": selected_commitment["randomizerHex"],
+    }
+    vectors.append(selected)
+
+    selected_chunk_content = synthetic_octets("selected-chunk-octets", 32768)
+    selected_chunk_commitment = encode_commitment(
+        profile_id=1,
+        profile_version=1,
+        context=context,
+        credential=credential,
+        sequence=sequence + 1,
+        content_type=2,
+        content=selected_chunk_content,
+        randomizer=synthetic_octets("randomizer/selected-chunk", 32),
+        chunk_size=16384,
+    )
+    selected_chunk = _application_vector(
+        "vec-selected-chunk-octets",
+        _event_fields(
+            "selected-chunk-octets",
+            sequence=sequence + 1,
+            predecessor=multiple_parents["eventReferenceHex"],
+            content={
+                "class": "DETACHABLE",
+                "commitmentHex": selected_chunk_commitment["commitmentHex"],
+                "contentType": 2,
+                "exactLength": len(selected_chunk_content),
+                "geometry": selected_chunk_commitment["geometry"],
+                "shape": "TREE",
+            },
+        ),
+        "seed/root",
+    )
+    selected_chunk["opening"] = {
+        "contentHex": selected_chunk_content.hex(),
+        "randomizerHex": selected_chunk_commitment["randomizerHex"],
+    }
+    vectors.append(selected_chunk)
+
+    max_policy_fields = dict(genesis_fields)
+    max_policy_fields["initialAuthorityPolicyHex"] = synthetic_octets(
+        "selected-genesis-policy", 4096
+    ).hex()
+    max_policy_transcript = encode_genesis(max_policy_fields)
+    _, max_policy_signature = ed25519_sign(root_seed, max_policy_transcript)
+    vectors.append(
+        {
+            "binding": {"verificationKeyHex": root_key.hex()},
+            "citations": vectors[0]["citations"],
+            "fields": max_policy_fields,
+            "genesisReferenceHex": framed_hash(
+                DOMAINS["genesis_reference"], max_policy_transcript
+            ).hex(),
+            "id": "vec-selected-genesis-policy",
+            "kind": "GENESIS",
+            "profile": "STYX_APP_KERNEL_V0_TRANSCRIPT_ONLY",
+            "signatureHex": max_policy_signature.hex(),
+            "signatureSuiteId": 1,
+            "synthetic": True,
+            "testOnly": True,
+            "transcriptHex": max_policy_transcript.hex(),
+        }
+    )
     return sorted(vectors, key=lambda record: record["id"])
 
 
@@ -311,6 +444,8 @@ def _mutated_vector(
 def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
     base = next(item for item in valid if item["id"] == "vec-ordinary-none")
     single = next(item for item in valid if item["id"] == "vec-required-single")
+    multiple_parents = next(item for item in valid if item["id"] == "vec-parent-multiple")
+    final_control = next(item for item in valid if item["id"] == "vec-control-closure")
     values: list[dict[str, Any]] = []
 
     def transcript_mutation(identifier: str, mutation: str, mutate: Any) -> None:
@@ -324,6 +459,21 @@ def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
     transcript_mutation("inv-body-length", "BODY_LENGTH_MISMATCH", lambda raw: raw.__setitem__(19, raw[19] ^ 1))
     transcript_mutation("inv-truncated", "TRUNCATED_BODY", lambda raw: raw.__delitem__(slice(-1, None)))
     transcript_mutation("inv-trailing", "TRAILING_BYTES", lambda raw: raw.extend(b"\x00"))
+
+    overlong_integer = _mutated_vector(
+        base,
+        "inv-noncanonical-integer",
+        "OVERLONG_AUTHOR_SEQUENCE_INTEGER",
+        "S3_KERNEL_STRUCTURAL",
+        "STRUCTURAL_REJECTION",
+    )
+    raw = bytearray.fromhex(overlong_integer["transcriptHex"])
+    transition_length = len(bytes.fromhex(base["fields"]["transitionBlockHex"]))
+    sequence_offset = 20 + 57 + 4 + transition_length + 32
+    raw[16:20] = (int.from_bytes(raw[16:20], "big") + 1).to_bytes(4, "big")
+    raw[sequence_offset:sequence_offset] = b"\x00"
+    overlong_integer["transcriptHex"] = raw.hex()
+    values.append(overlong_integer)
 
     signature = _mutated_vector(base, "inv-signature", "SIGNATURE_SUBSTITUTION", "S3_KERNEL_STRUCTURAL", "INVALID")
     sig = bytearray.fromhex(signature["signatureHex"])
@@ -351,8 +501,182 @@ def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
     missing_opening.pop("opening")
     values.append(missing_opening)
 
+    parent_order = _mutated_vector(
+        multiple_parents,
+        "inv-parent-order",
+        "CAUSAL_PARENT_REORDERING",
+        "S3_KERNEL_STRUCTURAL",
+        "STRUCTURAL_REJECTION",
+    )
+    raw = bytearray.fromhex(parent_order["transcriptHex"])
+    first, second = [bytes.fromhex(value) for value in multiple_parents["fields"]["causalParents"]]
+    position = raw.find(first + second)
+    if position < 0:
+        raise ValueError("canonical parent sequence missing from transcript")
+    raw[position : position + 64] = second + first
+    parent_order["transcriptHex"] = raw.hex()
+    values.append(parent_order)
+
+    def generated_invalid(
+        identifier: str,
+        mutation: str,
+        fields: dict[str, Any],
+        *,
+        stage: str = "S3_KERNEL_STRUCTURAL",
+        outcome: str = "CURRENT_OBJECT_OUT_OF_PROFILE",
+        seed: str = "seed/root",
+        source: str = "vec-ordinary-none",
+    ) -> None:
+        record = _application_vector(identifier, fields, seed)
+        record["mutation"] = mutation
+        record["sourceVectorId"] = source
+        record["expected"] = {
+            "externalEffects": [],
+            "firstFailingStage": stage,
+            "localOutcome": outcome,
+            "stateUnchanged": True,
+        }
+        values.append(record)
+
+    profile_fields = json.loads(json.dumps(base["fields"]))
+    profile_fields["applicationProfileId"] = 2
+    generated_invalid(
+        "inv-profile-substitution",
+        "APPLICATION_PROFILE_SUBSTITUTION",
+        profile_fields,
+        outcome="STRUCTURAL_REJECTION",
+    )
+
+    parent_limit_fields = _event_fields(
+        "resource-parent-count",
+        sequence=final_control["fields"]["authorSequence"] + 1,
+        predecessor=final_control["eventReferenceHex"],
+        parents=[synthetic_octets(f"resource-parent/{index}", 32).hex() for index in range(9)],
+    )
+    generated_invalid(
+        "inv-resource-parent-count",
+        "EXCEED_SELECTED_PARENTS_PER_EVENT",
+        parent_limit_fields,
+        stage="S4_GRAPH_ADMISSION",
+    )
+
+    sequence_fields = _event_fields(
+        "resource-sequence",
+        sequence=4096,
+        predecessor=final_control["eventReferenceHex"],
+    )
+    generated_invalid(
+        "inv-resource-sequence",
+        "EXCEED_SELECTED_SEQUENCE_VALUE",
+        sequence_fields,
+    )
+
+    transition_fields = _event_fields(
+        "resource-transition-block",
+        sequence=final_control["fields"]["authorSequence"] + 1,
+        predecessor=final_control["eventReferenceHex"],
+    )
+    transition_fields["transitionBlockHex"] = synthetic_octets("resource-transition-block", 4097).hex()
+    generated_invalid(
+        "inv-resource-transition-block",
+        "EXCEED_SELECTED_AP_TRANSITION_BLOCK_OCTETS",
+        transition_fields,
+    )
+
+    body_fields = _event_fields(
+        "resource-framing-object",
+        sequence=final_control["fields"]["authorSequence"] + 1,
+        predecessor=final_control["eventReferenceHex"],
+    )
+    body_fields["transitionBlockHex"] = synthetic_octets("resource-framing-object", 8193).hex()
+    generated_invalid(
+        "inv-resource-framing-object",
+        "EXCEED_SELECTED_FRAMING_OBJECT_OCTETS",
+        body_fields,
+    )
+
+    def tree_descriptor(*, chunk_size: int, chunk_count: int, final_length: int, exact_length: int = 1) -> dict[str, Any]:
+        return {
+            "class": "DETACHABLE",
+            "commitmentHex": synthetic_octets("resource-commitment", 32).hex(),
+            "contentType": 2,
+            "exactLength": exact_length,
+            "geometry": {
+                "chunkCount": chunk_count,
+                "chunkSize": chunk_size,
+                "finalChunkLength": final_length,
+            },
+            "shape": "TREE",
+        }
+
+    generated_invalid(
+        "inv-resource-chunk-size",
+        "EXCEED_SELECTED_CHUNK_OCTETS",
+        _event_fields(
+            "resource-chunk-size",
+            sequence=final_control["fields"]["authorSequence"] + 1,
+            predecessor=final_control["eventReferenceHex"],
+            content=tree_descriptor(chunk_size=8192, chunk_count=1, final_length=1),
+        ),
+    )
+    generated_invalid(
+        "inv-resource-chunk-count",
+        "EXCEED_SELECTED_CHUNKS_PER_CONTENT",
+        _event_fields(
+            "resource-chunk-count",
+            sequence=final_control["fields"]["authorSequence"] + 1,
+            predecessor=final_control["eventReferenceHex"],
+            content=tree_descriptor(chunk_size=4096, chunk_count=65, final_length=1),
+        ),
+    )
+    generated_invalid(
+        "inv-resource-content-length",
+        "EXCEED_SELECTED_CONTENT_EXACT_OCTETS",
+        _event_fields(
+            "resource-content-length",
+            sequence=final_control["fields"]["authorSequence"] + 1,
+            predecessor=final_control["eventReferenceHex"],
+            content={
+                "class": "REQUIRED",
+                "commitmentHex": synthetic_octets("resource-content-commitment", 32).hex(),
+                "contentType": 1,
+                "exactLength": 262145,
+                "shape": "SINGLE",
+            },
+        ),
+    )
+
+    genesis = next(item for item in valid if item["id"] == "vec-genesis")
+    genesis_fields = json.loads(json.dumps(genesis["fields"]))
+    genesis_fields["initialAuthorityPolicyHex"] = synthetic_octets("resource-genesis-policy", 4097).hex()
+    genesis_transcript = encode_genesis(genesis_fields)
+    genesis_key, genesis_signature = ed25519_sign(synthetic_octets("seed/root", 32), genesis_transcript)
+    values.append(
+        {
+            "binding": {"verificationKeyHex": genesis_key.hex()},
+            "citations": genesis["citations"],
+            "expected": {
+                "externalEffects": [],
+                "firstFailingStage": "S3_KERNEL_STRUCTURAL",
+                "localOutcome": "CURRENT_OBJECT_OUT_OF_PROFILE",
+                "stateUnchanged": True,
+            },
+            "fields": genesis_fields,
+            "genesisReferenceHex": framed_hash(DOMAINS["genesis_reference"], genesis_transcript).hex(),
+            "id": "inv-resource-genesis-policy",
+            "kind": "GENESIS",
+            "mutation": "EXCEED_SELECTED_GENESIS_POLICY_OCTETS",
+            "profile": "STYX_APP_KERNEL_V0_TRANSCRIPT_ONLY",
+            "signatureHex": genesis_signature.hex(),
+            "signatureSuiteId": 1,
+            "sourceVectorId": "vec-genesis",
+            "synthetic": True,
+            "testOnly": True,
+            "transcriptHex": genesis_transcript.hex(),
+        }
+    )
+
     conditions = [
-        ("inv-resource-bound", "RESOURCE_BOUND_EXCEEDED", "S3_KERNEL_STRUCTURAL", "CURRENT_OBJECT_OUT_OF_PROFILE", {"resourceFailure": "FRAMING_OBJECT_OCTETS"}),
         ("inv-unauthorized", "AUTHORITY_LAUNDERING", "EVENT_LOCAL", "AUTHENTIC_BUT_UNAUTHORIZED", {"authorized": False}),
         ("inv-fork", "SAME_AUTHOR_FORK", "EVENT_LOCAL", "FORK_EVIDENCE", {"fork": True}),
         ("inv-duplicate", "DUPLICATE_REPLAY", "S3_KERNEL_STRUCTURAL", "DUPLICATE", {"duplicate": True}),
@@ -541,7 +865,6 @@ def _mutations(
             },
         )
     )
-    envelope = reader.json("tools/causal-flow-simulator/o08/resource-envelope.candidate.json")
     for dimension in sorted(
         identifier
         for role in (
@@ -551,16 +874,15 @@ def _mutations(
         )
         for identifier in inventory["o08_roles"][role]
     ):
-        entry = envelope["entries"][dimension]
         mutations.append(
             {
-                "detector": "O08_SELECTED_BOUND_CHECK",
-                "expectedOutcome": "PROFILE_ACTIVATION_UNSUPPORTED" if entry["role"] != "C03_SEMANTIC_LIMIT" else "CURRENT_OBJECT_OUT_OF_PROFILE",
-                "expectedStage": entry["stages"][0],
-                "generatedTargetId": f"resource-{dimension}",
+                "detector": "O08_EXACT_DIMENSION_SET",
+                "expectedOutcome": "STRUCTURAL_REJECTION",
+                "expectedStage": "CORPUS_VALIDATION",
+                "generatedTargetId": dimension,
                 "id": f"mutation-o08-{dimension.lower()}",
-                "sourceRecordId": "vec-ordinary-none",
-                "transformation": f"EXCEED_SELECTED_{dimension}",
+                "sourceRecordId": "manifest",
+                "transformation": "REMOVE_SELECTED_O08_DIMENSION",
                 "violatedInvariant": "INV_AUTHORITY_PROJECTION_LIMITS",
             }
         )
@@ -615,14 +937,9 @@ def _coverage(
         for item in scenarios
         if item["steps"][0]["transitionId"] is not None
     }
-    nonexec_invariants = {
-        "INV_C0_3_NO_GO",
-        "INV_PROTECTION_SEPARATION",
-        "INV_SOURCE_AUTHORITY",
-    }
     invariant_rows = []
     for record in model["invariants"]:
-        if record["id"] in nonexec_invariants:
+        if record["id"] in NONEXECUTABLE_INVARIANTS:
             invariant_rows.append(
                 {
                     "branch": "NON_EXECUTABLE_NON_CLAIM",

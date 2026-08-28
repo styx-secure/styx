@@ -20,7 +20,7 @@ class CrossRuntimeTests(unittest.TestCase):
         self.assertEqual(report["result"], "PASS")
         self.assertEqual(report["runtimes"], ["javascript", "python"])
         self.assertEqual(report["scenarios"], 46)
-        self.assertEqual(report["vectors"], 27)
+        self.assertEqual(report["vectors"], 43)
         self.assertRegex(report["reportDigest"], r"^[0-9a-f]{64}$")
 
     def test_cross_report_has_closed_canonical_shape(self) -> None:

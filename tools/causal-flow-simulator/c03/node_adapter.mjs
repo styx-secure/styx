@@ -18,8 +18,21 @@ const DOMAINS = Object.freeze({
 const MAX_U32 = 0xffff_ffffn;
 const MAX_BODY = MAX_U32 - 20n;
 const BASE_SHA = "7768c32d3ddba230bd60f8b5db1b34d4bcb8ec3b";
+const O08_LIMITS = Object.freeze({
+  AP_TRANSITION_BLOCK_OCTETS: 4096,
+  CHUNKS_PER_CONTENT: 64,
+  CONTENT_EXACT_OCTETS: 262144,
+  FRAMING_OBJECT_OCTETS: 8192,
+  GENESIS_BODY_OCTETS: 8192,
+  GENESIS_POLICY_OCTETS: 4096,
+  PARENTS_PER_EVENT: 8,
+  SEQUENCE_VALUE: 4095,
+});
+const O08_CHUNK_OCTETS = new Set([4096, 16384]);
 
-class ProtocolError extends Error {}
+class ProtocolError extends Error {
+  constructor(message, stage = "S3_KERNEL_STRUCTURAL") { super(message); this.stage = stage; }
+}
 const require = (ok, message) => { if (!ok) throw new ProtocolError(message); };
 const hash = (...parts) => createHash("sha256").update(Buffer.concat(parts)).digest();
 const hex = value => Buffer.from(value).toString("hex");
@@ -87,12 +100,14 @@ function parseGenesis(transcript) {
   require(outer.take(16, "domain").equals(DOMAINS.genesisSignature), "WRONG_DOMAIN");
   const bodyLength = outer.integer(4, "body_length");
   require(BigInt(bodyLength) <= MAX_BODY, "GENESIS_BODY_LIMIT");
+  require(bodyLength <= O08_LIMITS.GENESIS_BODY_OCTETS, "GENESIS_BODY_OCTETS_LIMIT");
   const body = new Reader(outer.take(bodyLength, "body")); outer.finish("transcript");
   const protocol = body.integer(2, "protocol");
   const profile = body.integer(4, "profile"); const version = body.integer(4, "profile_version");
   const context = body.take(32, "context"); const suite = body.integer(2, "signature_suite");
   const key = body.opaque("root_key"); const policy = body.opaque("initial_authority_policy"); body.finish("body");
-  require(protocol === 1 && profile > 0 && version > 0 && suite === 1 && key.length === 32 && policy.length > 0, "GENESIS_FIELDS_INVALID");
+  require(policy.length <= O08_LIMITS.GENESIS_POLICY_OCTETS, "GENESIS_POLICY_OCTETS_LIMIT");
+  require(protocol === 1 && profile === 1 && version === 1 && suite === 1 && key.length === 32 && policy.length > 0, "GENESIS_FIELDS_INVALID");
   const fields = { applicationProfileId: profile, applicationProfileVersion: version,
     contextIdentifierHex: hex(context), initialAuthorityPolicyHex: hex(policy), rootVerificationKeyHex: hex(key) };
   require(encodeGenesis(fields).equals(transcript), "NONCANONICAL_REENCODING");
@@ -152,15 +167,19 @@ function encodeEvent(fields) {
 function parseEvent(transcript) {
   const outer = new Reader(transcript); require(outer.take(16, "domain").equals(DOMAINS.application), "WRONG_DOMAIN");
   const bodyLength = outer.integer(4, "body_length"); require(BigInt(bodyLength) <= MAX_BODY, "FRAMING_OBJECT_LIMIT");
+  require(bodyLength <= O08_LIMITS.FRAMING_OBJECT_OCTETS, "FRAMING_OBJECT_OCTETS_LIMIT");
   const body = new Reader(outer.take(bodyLength, "body")); outer.finish("transcript");
   const protocol = body.integer(2, "protocol"), profile = body.integer(4, "profile"), version = body.integer(4, "profile_version");
   const context = body.take(32, "context"), objectKind = body.integer(2, "object_kind"), roleCode = body.integer(1, "role");
   const eventType = body.integer(4, "event_type"), schemaId = body.integer(4, "schema"), schemaVersion = body.integer(4, "schema_version");
-  const transition = body.opaque("transition_block"), credential = body.take(32, "credential"), sequence = body.integer(8, "sequence");
+  const transition = body.opaque("transition_block"); require(transition.length <= O08_LIMITS.AP_TRANSITION_BLOCK_OCTETS, "AP_TRANSITION_BLOCK_OCTETS_LIMIT");
+  const credential = body.take(32, "credential"), sequence = body.integer(8, "sequence"); require(sequence <= O08_LIMITS.SEQUENCE_VALUE, "SEQUENCE_VALUE_LIMIT");
   const presence = body.integer(1, "predecessor_presence"); require([0, 1].includes(presence), "PREDECESSOR_PRESENCE_INVALID");
   const predecessor = presence ? body.take(32, "predecessor") : null; const parentCount = body.integer(4, "parent_count");
-  require(parentCount <= 8, "PARENTS_PER_EVENT_LIMIT"); const parents = Array.from({ length: parentCount }, () => body.take(32, "parent"));
+  if (parentCount > O08_LIMITS.PARENTS_PER_EVENT) throw new ProtocolError("PARENTS_PER_EVENT_LIMIT", "S4_GRAPH_ADMISSION");
+  const parents = Array.from({ length: parentCount }, () => body.take(32, "parent"));
   const genesis = body.take(32, "genesis"), contentClass = body.integer(1, "content_class"), exactLength = body.integer(8, "content_length");
+  require(exactLength <= O08_LIMITS.CONTENT_EXACT_OCTETS, "CONTENT_EXACT_OCTETS_LIMIT");
   const className = ({ 0: "NONE", 1: "REQUIRED", 2: "DETACHABLE" })[contentClass]; require(className !== undefined, "CONTENT_CLASS_UNKNOWN");
   const content = { class: className, exactLength };
   if (contentClass === 0) require(exactLength === 0, "NONE_DESCRIPTOR_INVALID");
@@ -169,7 +188,12 @@ function parseEvent(transcript) {
     const commitment = body.opaque("commitment"), geometryPresence = body.integer(1, "geometry_presence");
     require(suite === 1 && commitment.length === 32 && [0, 1].includes(geometryPresence), "CONTENT_DESCRIPTOR_INVALID");
     let geometry = null;
-    if (geometryPresence) { const encoded = new Reader(body.opaque("geometry")); geometry = { chunkSize: encoded.integer(4, "chunk_size"), chunkCount: encoded.integer(8, "chunk_count"), finalChunkLength: encoded.integer(4, "final_chunk_length") }; encoded.finish("geometry"); }
+    if (geometryPresence) {
+      const encoded = new Reader(body.opaque("geometry")); geometry = { chunkSize: encoded.integer(4, "chunk_size"), chunkCount: encoded.integer(8, "chunk_count"), finalChunkLength: encoded.integer(4, "final_chunk_length") }; encoded.finish("geometry");
+      require(O08_CHUNK_OCTETS.has(geometry.chunkSize), "CHUNK_OCTETS_LIMIT");
+      require(geometry.chunkCount <= O08_LIMITS.CHUNKS_PER_CONTENT, "CHUNKS_PER_CONTENT_LIMIT");
+      require(geometry.finalChunkLength > 0 && geometry.finalChunkLength <= geometry.chunkSize, "FINAL_CHUNK_LENGTH_LIMIT");
+    }
     const shape = ({ 0: "SINGLE", 1: "TREE" })[shapeCode]; require(shape !== undefined && ((shape === "SINGLE") !== (geometry !== null)), "CONTENT_GEOMETRY_INVALID");
     Object.assign(content, { commitmentHex: hex(commitment), contentType, shape }); if (geometry !== null) content.geometry = geometry;
   }
@@ -177,7 +201,7 @@ function parseEvent(transcript) {
   const fields = { applicationProfileId: profile, applicationProfileVersion: version, authorSequence: sequence, causalParents: parents.map(hex), content,
     contextIdentifierHex: hex(context), credentialIdentifierHex: hex(credential), directPredecessorHex: predecessor ? hex(predecessor) : null,
     eventRole: role, eventTypeId: eventType, genesisReferenceHex: hex(genesis), schemaId, schemaVersion, transitionBlockHex: hex(transition) };
-  require(protocol === 1 && objectKind === 1 && Math.min(profile, version, eventType, schemaId, schemaVersion) > 0, "UNSUPPORTED_PROFILE_OR_REGISTRY");
+  require(protocol === 1 && profile === 1 && version === 1 && objectKind === 1 && Math.min(eventType, schemaId, schemaVersion) > 0, "UNSUPPORTED_PROFILE_OR_REGISTRY");
   if (role === "REMOVAL") { const target = body.take(32, "target_event"); fields.tail = { targetCommitmentHex: hex(body.opaque("target_commitment")), targetEventReferenceHex: hex(target) }; }
   else if (role === "CREDENTIAL") {
     const kindCode = body.integer(1, "control_kind"), kind = ({ 1: "GRANT", 2: "REVOKE", 3: "ROTATE", 4: "RECOVER", 5: "POLICY", 6: "CLOSURE" })[kindCode];
@@ -222,7 +246,10 @@ function evaluate(record) {
     if (record.kind === "GENESIS") { fields = parseGenesis(transcript); reference = hex(framedHash(DOMAINS.genesisReference, transcript)); expected = record.genesisReferenceHex; }
     else if (record.kind === "APPLICATION_EVENT") { fields = parseEvent(transcript); reference = hex(framedHash(DOMAINS.eventReference, transcript)); expected = record.eventReferenceHex; }
     else throw new ProtocolError("OBJECT_KIND_UNKNOWN");
-  } catch { return reject("STRUCTURAL_REJECTION", "S3_KERNEL_STRUCTURAL", "REJECTED"); }
+  } catch (error) {
+    if (error instanceof ProtocolError && error.message.endsWith("_LIMIT")) return reject("CURRENT_OBJECT_OUT_OF_PROFILE", error.stage, "REJECTED");
+    return reject("STRUCTURAL_REJECTION", error instanceof ProtocolError ? error.stage : "S3_KERNEL_STRUCTURAL", "REJECTED");
+  }
   if (reference !== expected) return reject("REFERENCE_COLLISION_UNSUPPORTED", "S3_KERNEL_STRUCTURAL");
   try { if (!ed25519Verify(Buffer.from(record.binding.verificationKeyHex, "hex"), Buffer.from(record.signatureHex, "hex"), transcript)) { result.signatureVerification = "REJECTED"; return reject("INVALID", "S3_KERNEL_STRUCTURAL"); } } catch { result.signatureVerification = "REJECTED"; return reject("INVALID", "S3_KERNEL_STRUCTURAL"); }
   result.signatureVerification = "VALID";
@@ -236,7 +263,7 @@ function evaluate(record) {
       result.commitmentVerification = "VALID";
     }
   }
-  const rules = [["resourceFailure", "CURRENT_OBJECT_OUT_OF_PROFILE", "S3_KERNEL_STRUCTURAL"], ["duplicate", "DUPLICATE", "S3_KERNEL_STRUCTURAL"],
+  const rules = [["duplicate", "DUPLICATE", "S3_KERNEL_STRUCTURAL"],
     ["missingDependency", "PENDING_ANCESTOR", "S4_GRAPH_ADMISSION"], ["fork", "FORK_EVIDENCE", "EVENT_LOCAL"], ["postRevocation", "POST_REVOCATION", "EVENT_LOCAL"]];
   for (const [key, outcome, stage] of rules) if (record.conditions?.[key]) return reject(outcome, stage);
   if (record.conditions?.authorized === false) return reject("AUTHENTIC_BUT_UNAUTHORIZED", "EVENT_LOCAL");
@@ -288,6 +315,7 @@ function canonicalValue(value) {
 }
 const canonical = value => `${JSON.stringify(canonicalValue(value))}\n`;
 function loadCanonical(path) { const bytes = readFileSync(path, "utf8"); const value = JSON.parse(bytes); require(canonical(value) === bytes, `NONCANONICAL_JSON:${path}`); return value; }
+function setEqual(left, right) { return left.size === right.size && [...left].every(value => right.has(value)); }
 function parseArgs() { const args = process.argv.slice(2), values = {}; for (let i = 0; i < args.length; i += 2) values[args[i]] = args[i + 1]; for (const key of ["--repo-root", "--corpus", "--output"]) require(values[key], `missing ${key}`); return values; }
 
 function baseJson(repoRoot, path) {
@@ -313,25 +341,31 @@ function mutationReport(args, corpus, valid, invalid, scenarios, expected, model
       const record = vectors.get(mutation.generatedTargetId), observed = evaluate(record);
       detected = observed.localOutcome === mutation.expectedOutcome && observed.stage === mutation.expectedStage;
     } else if (mutation.detector === "INDEPENDENT_EXPECTED_STAGE_MISMATCH") {
-      const record = vectors.get(mutation.generatedTargetId), observed = evaluate(record);
-      detected = observed.stage !== "CORRUPTED_EXPECTED_STAGE";
+      const corrupted = structuredClone(vectors.get(mutation.generatedTargetId));
+      corrupted.expected.firstFailingStage = "CORRUPTED_EXPECTED_STAGE";
+      detected = evaluate(corrupted).stage !== corrupted.expected.firstFailingStage;
     } else if (mutation.detector === "INDEPENDENT_EXPECTED_OUTCOME_MISMATCH") {
-      const record = vectors.get(mutation.generatedTargetId), observed = evaluate(record);
-      detected = observed.localOutcome !== "CORRUPTED_EXPECTED_OUTCOME";
+      const corrupted = structuredClone(vectors.get(mutation.generatedTargetId));
+      corrupted.expected.localOutcome = "CORRUPTED_EXPECTED_OUTCOME";
+      detected = evaluate(corrupted).localOutcome !== corrupted.expected.localOutcome;
     } else if (mutation.detector === "INDEPENDENT_EXPECTED_TRACE_MISMATCH") {
       const scenario = scenarioByTrace.get(mutation.generatedTargetId), computed = computeTrace(scenario, vectors, transitions);
       const corrupted = structuredClone(expectedById.get(mutation.generatedTargetId));
       corrupted.steps[0].localOutcome = "CORRUPTED_EXPECTED_OUTCOME";
       detected = JSON.stringify(canonicalValue(computed)) !== JSON.stringify(canonicalValue(corrupted));
     } else if (mutation.detector === "MANIFEST_DIGEST_MISMATCH") {
-      const row = manifestFiles.get(mutation.generatedTargetId);
-      detected = row !== undefined && row.sha256 === hex(hash(readFileSync(resolve(corpus, row.path)))) && row.sha256 !== "0".repeat(64);
+      const row = structuredClone(manifestFiles.get(mutation.generatedTargetId));
+      row.sha256 = "0".repeat(64);
+      detected = row.sha256 !== hex(hash(readFileSync(resolve(corpus, row.path))));
     } else if (mutation.detector === "O07_EXACT_RELATION_SET") {
-      detected = o07.has(mutation.generatedTargetId) && manifest.coverage.o07.coveredRelationIds.includes(mutation.generatedTargetId);
-    } else if (mutation.detector === "O08_SELECTED_BOUND_CHECK") {
-      detected = mutation.generatedTargetId.startsWith("resource-") && o08.has(mutation.generatedTargetId.slice(9));
+      const target = mutation.generatedTargetId, original = new Set(manifest.coverage.o07.coveredRelationIds), mutated = new Set([...original].filter(value => value !== target));
+      detected = original.has(target) && o07.has(target) && !setEqual(mutated, o07);
+    } else if (mutation.detector === "O08_EXACT_DIMENSION_SET") {
+      const target = mutation.generatedTargetId, original = new Set(manifest.coverage.o08.participatingDimensions), mutated = new Set([...original].filter(value => value !== target));
+      detected = original.has(target) && o08.has(target) && !setEqual(mutated, o08);
     } else if (mutation.detector === "O10_EXACT_SOURCE_ROW_SET") {
-      detected = o10.has(mutation.generatedTargetId) && manifest.coverage.o10.coveredSourceRowIds.includes(mutation.generatedTargetId);
+      const target = mutation.generatedTargetId, original = new Set(manifest.coverage.o10.coveredSourceRowIds), mutated = new Set([...original].filter(value => value !== target));
+      detected = original.has(target) && o10.has(target) && !setEqual(mutated, o10);
     }
     require(detected, `surviving mutation:${mutation.id}`); killed.push(mutation.id);
   }

@@ -87,9 +87,13 @@ def _python_kills(repo_root: Path, corpus: Path) -> dict[str, Any]:
             observed = evaluate_vector(vectors[mutation["generatedTargetId"]])
             detected = observed["localOutcome"] == mutation["expectedOutcome"] and observed["stage"] == mutation["expectedStage"]
         elif detector == "INDEPENDENT_EXPECTED_STAGE_MISMATCH":
-            detected = evaluate_vector(vectors[mutation["generatedTargetId"]])["stage"] != "CORRUPTED_EXPECTED_STAGE"
+            corrupted = deepcopy(vectors[mutation["generatedTargetId"]])
+            corrupted["expected"]["firstFailingStage"] = "CORRUPTED_EXPECTED_STAGE"
+            detected = evaluate_vector(corrupted)["stage"] != corrupted["expected"]["firstFailingStage"]
         elif detector == "INDEPENDENT_EXPECTED_OUTCOME_MISMATCH":
-            detected = evaluate_vector(vectors[mutation["generatedTargetId"]])["localOutcome"] != "CORRUPTED_EXPECTED_OUTCOME"
+            corrupted = deepcopy(vectors[mutation["generatedTargetId"]])
+            corrupted["expected"]["localOutcome"] = "CORRUPTED_EXPECTED_OUTCOME"
+            detected = evaluate_vector(corrupted)["localOutcome"] != corrupted["expected"]["localOutcome"]
         elif detector == "INDEPENDENT_EXPECTED_TRACE_MISMATCH":
             scenario = scenario_by_trace[mutation["generatedTargetId"]]
             computed = _computed_trace(scenario, vectors, transitions)
@@ -97,15 +101,24 @@ def _python_kills(repo_root: Path, corpus: Path) -> dict[str, Any]:
             corrupted["steps"][0]["localOutcome"] = "CORRUPTED_EXPECTED_OUTCOME"
             detected = computed != corrupted
         elif detector == "MANIFEST_DIGEST_MISMATCH":
-            row = manifest_files[mutation["generatedTargetId"]]
-            detected = row["sha256"] == sha256_hex((corpus / row["path"]).read_bytes()) and row["sha256"] != "0" * 64
+            row = deepcopy(manifest_files[mutation["generatedTargetId"]])
+            row["sha256"] = "0" * 64
+            detected = row["sha256"] != sha256_hex((corpus / row["path"]).read_bytes())
         elif detector == "O07_EXACT_RELATION_SET":
-            detected = mutation["generatedTargetId"] in o07 and mutation["generatedTargetId"] in manifest["coverage"]["o07"]["coveredRelationIds"]
-        elif detector == "O08_SELECTED_BOUND_CHECK":
             target = mutation["generatedTargetId"]
-            detected = target.startswith("resource-") and target.removeprefix("resource-") in o08
+            original = set(manifest["coverage"]["o07"]["coveredRelationIds"])
+            mutated = original - {target}
+            detected = target in original and target in o07 and mutated != o07
+        elif detector == "O08_EXACT_DIMENSION_SET":
+            target = mutation["generatedTargetId"]
+            original = set(manifest["coverage"]["o08"]["participatingDimensions"])
+            mutated = original - {target}
+            detected = target in original and target in o08 and mutated != o08
         elif detector == "O10_EXACT_SOURCE_ROW_SET":
-            detected = mutation["generatedTargetId"] in o10 and mutation["generatedTargetId"] in manifest["coverage"]["o10"]["coveredSourceRowIds"]
+            target = mutation["generatedTargetId"]
+            original = set(manifest["coverage"]["o10"]["coveredSourceRowIds"])
+            mutated = original - {target}
+            detected = target in original and target in o10 and mutated != o10
         require(detected, f"surviving Python mutation: {mutation['id']}")
         killed.append(mutation["id"])
     killed.sort()

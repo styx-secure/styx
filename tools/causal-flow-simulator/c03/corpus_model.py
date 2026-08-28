@@ -59,6 +59,24 @@ DOMAINS = {
 }
 MAX_U32 = (1 << 32) - 1
 MAX_U64 = (1 << 64) - 1
+O08_LIMITS = {
+    "AP_TRANSITION_BLOCK_OCTETS": 4096,
+    "CHUNKS_PER_CONTENT": 64,
+    "CONTENT_EXACT_OCTETS": 262144,
+    "FRAMING_OBJECT_OCTETS": 8192,
+    "GENESIS_BODY_OCTETS": 8192,
+    "GENESIS_POLICY_OCTETS": 4096,
+    "PARENTS_PER_EVENT": 8,
+    "SEQUENCE_VALUE": 4095,
+}
+O08_CHUNK_OCTETS = frozenset({4096, 16384})
+NONEXECUTABLE_INVARIANTS = frozenset(
+    {
+        "INV_C0_3_NO_GO",
+        "INV_PROTECTION_SEPARATION",
+        "INV_SOURCE_AUTHORITY",
+    }
+)
 
 
 def _uint(value: int, width: int, label: str) -> bytes:
@@ -123,6 +141,8 @@ def parse_genesis(transcript: bytes) -> dict[str, Any]:
     body_length = outer.integer(4, "body_length")
     if body_length > MAX_U32 - 20:
         raise ProtocolError("GENESIS_BODY_LIMIT")
+    if body_length > O08_LIMITS["GENESIS_BODY_OCTETS"]:
+        raise ProtocolError("GENESIS_BODY_OCTETS_LIMIT")
     body = ByteReader(outer.take(body_length, "body"))
     outer.finish("transcript")
     protocol = body.integer(2, "protocol")
@@ -133,7 +153,9 @@ def parse_genesis(transcript: bytes) -> dict[str, Any]:
     key = body.opaque("root_key")
     policy = body.opaque("initial_authority_policy")
     body.finish("body")
-    if protocol != 1 or profile <= 0 or version <= 0 or suite != 1 or len(key) != 32 or not policy:
+    if len(policy) > O08_LIMITS["GENESIS_POLICY_OCTETS"]:
+        raise ProtocolError("GENESIS_POLICY_OCTETS_LIMIT")
+    if protocol != 1 or profile != 1 or version != 1 or suite != 1 or len(key) != 32 or not policy:
         raise ProtocolError("GENESIS_FIELDS_INVALID")
     fields = {
         "applicationProfileId": profile,
@@ -390,6 +412,8 @@ def parse_event(transcript: bytes) -> dict[str, Any]:
     body_length = outer.integer(4, "body_length")
     if body_length > MAX_U32 - 20:
         raise ProtocolError("FRAMING_OBJECT_LIMIT")
+    if body_length > O08_LIMITS["FRAMING_OBJECT_OCTETS"]:
+        raise ProtocolError("FRAMING_OBJECT_OCTETS_LIMIT")
     body = ByteReader(outer.take(body_length, "body"))
     outer.finish("transcript")
     protocol = body.integer(2, "protocol")
@@ -402,19 +426,25 @@ def parse_event(transcript: bytes) -> dict[str, Any]:
     schema = body.integer(4, "schema")
     schema_version = body.integer(4, "schema_version")
     transition = body.opaque("transition_block")
+    if len(transition) > O08_LIMITS["AP_TRANSITION_BLOCK_OCTETS"]:
+        raise ProtocolError("AP_TRANSITION_BLOCK_OCTETS_LIMIT")
     credential = body.take(32, "credential")
     sequence = body.integer(8, "sequence")
+    if sequence > O08_LIMITS["SEQUENCE_VALUE"]:
+        raise ProtocolError("SEQUENCE_VALUE_LIMIT")
     presence = body.integer(1, "predecessor_presence")
     if presence not in (0, 1):
         raise ProtocolError("PREDECESSOR_PRESENCE_INVALID")
     predecessor = body.take(32, "predecessor") if presence else None
     parent_count = body.integer(4, "parent_count")
-    if parent_count > 8:
-        raise ProtocolError("PARENTS_PER_EVENT_LIMIT")
+    if parent_count > O08_LIMITS["PARENTS_PER_EVENT"]:
+        raise ProtocolError("PARENTS_PER_EVENT_LIMIT", "S4_GRAPH_ADMISSION")
     parents = [body.take(32, "parent") for _ in range(parent_count)]
     genesis = body.take(32, "genesis")
     content_class = body.integer(1, "content_class")
     exact_length = body.integer(8, "content_length")
+    if exact_length > O08_LIMITS["CONTENT_EXACT_OCTETS"]:
+        raise ProtocolError("CONTENT_EXACT_OCTETS_LIMIT")
     content: dict[str, Any] = {
         "class": {0: "NONE", 1: "REQUIRED", 2: "DETACHABLE"}.get(content_class),
         "exactLength": exact_length,
@@ -441,6 +471,12 @@ def parse_event(transcript: bytes) -> dict[str, Any]:
                 "finalChunkLength": encoded_geometry.integer(4, "final_chunk_length"),
             }
             encoded_geometry.finish("geometry")
+            if geometry["chunkSize"] not in O08_CHUNK_OCTETS:
+                raise ProtocolError("CHUNK_OCTETS_LIMIT")
+            if geometry["chunkCount"] > O08_LIMITS["CHUNKS_PER_CONTENT"]:
+                raise ProtocolError("CHUNKS_PER_CONTENT_LIMIT")
+            if not 0 < geometry["finalChunkLength"] <= geometry["chunkSize"]:
+                raise ProtocolError("FINAL_CHUNK_LENGTH_LIMIT")
         shape = {0: "SINGLE", 1: "TREE"}.get(shape_code)
         if shape is None or (shape == "SINGLE") == (geometry is not None):
             raise ProtocolError("CONTENT_GEOMETRY_INVALID")
@@ -470,7 +506,7 @@ def parse_event(transcript: bytes) -> dict[str, Any]:
         "schemaVersion": schema_version,
         "transitionBlockHex": transition.hex(),
     }
-    if protocol != 1 or object_kind != 1 or min(profile, profile_version, event_type, schema, schema_version) <= 0:
+    if protocol != 1 or profile != 1 or profile_version != 1 or object_kind != 1 or min(event_type, schema, schema_version) <= 0:
         raise ProtocolError("UNSUPPORTED_PROFILE_OR_REGISTRY")
     if role == "REMOVAL":
         target_event = body.take(32, "target_event")
@@ -637,7 +673,15 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
             expected_reference = record["eventReferenceHex"]
         else:
             raise ProtocolError("OBJECT_KIND_UNKNOWN")
-    except (ProtocolError, ValueError, KeyError):
+    except ProtocolError as error:
+        if error.code.endswith("_LIMIT"):
+            return reject(
+                "CURRENT_OBJECT_OUT_OF_PROFILE",
+                error.stage,
+                transcript_status="REJECTED",
+            )
+        return reject("STRUCTURAL_REJECTION", error.stage, transcript_status="REJECTED")
+    except (ValueError, KeyError):
         return reject("STRUCTURAL_REJECTION", "S3_KERNEL_STRUCTURAL", transcript_status="REJECTED")
     if reference != expected_reference:
         return reject("REFERENCE_COLLISION_UNSUPPORTED", "S3_KERNEL_STRUCTURAL")
@@ -682,7 +726,6 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
             result["commitmentVerification"] = "VALID"
     conditions = record.get("conditions", {})
     precedence = (
-        ("resourceFailure", "CURRENT_OBJECT_OUT_OF_PROFILE", "S3_KERNEL_STRUCTURAL"),
         ("duplicate", "DUPLICATE", "S3_KERNEL_STRUCTURAL"),
         ("missingDependency", "PENDING_ANCESTOR", "S4_GRAPH_ADMISSION"),
         ("fork", "FORK_EVIDENCE", "EVENT_LOCAL"),

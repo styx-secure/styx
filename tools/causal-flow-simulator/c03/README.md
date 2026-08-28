@@ -8,6 +8,12 @@ The generator reads every normative input from the contract Base commit. The
 Python and Node.js readers independently parse, verify and replay ordinary
 corpus inputs; expected results are compared only after execution. The mutation
 runner requires both implementations to kill the complete closed registry.
+The tracked package currently contains 17 valid and 26 invalid transcript
+vectors, 46 state/flow/counterexample scenarios and 476 mutations. Transcript
+mutants alter bytes or bindings. Coverage, manifest and expected-result mutants
+alter the corresponding submitted evidence and are killed by exact-set,
+digest or independently computed-result comparison; none is a count-only
+assertion.
 
 From the repository root:
 

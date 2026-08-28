@@ -19,6 +19,9 @@ from corpus_model import (  # noqa: E402
     BASE_SHA,
     BaseReader,
     CorpusModelError,
+    NONEXECUTABLE_INVARIANTS,
+    O08_CHUNK_OCTETS,
+    O08_LIMITS,
     evaluate_vector,
     load_local_json,
     sha256_hex,
@@ -119,9 +122,18 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
     model = reader.json("docs/protocol/review/styx-app-kernel-v0-review-model.json")
     source_paths = {source["id"]: source["path"] for source in model["sources"]}
     source_paths.update({source["id"]: source["path"] for source in source_map["direct_sources"]})
-    actual_files = {path.name for path in corpus.iterdir() if path.is_file()}
+    entries = list(corpus.rglob("*"))
+    require(
+        all(
+            not path.is_symlink()
+            and path.is_file()
+            and len(path.relative_to(corpus).parts) == 1
+            for path in entries
+        ),
+        "corpus entries must be regular top-level files",
+    )
+    actual_files = {path.name for path in entries}
     require(actual_files == EXPECTED_FILES, "corpus file set mismatch")
-    require(not any(path.is_symlink() for path in corpus.iterdir()), "corpus symlink forbidden")
     documents: dict[str, dict[str, Any]] = {}
     for name in sorted(EXPECTED_FILES):
         document = load(corpus / name)
@@ -219,17 +231,90 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
 
     coverage = manifest["coverage"]
     require(coverage["reviewModel"] == inventory["expected_review_model_ids"], "review-model coverage mismatch")
-    require(coverage["o07"]["relationCount"] == 287 and len(coverage["o07"]["coveredRelationIds"]) == 287, "O-07 coverage mismatch")
-    require(len(coverage["o08"]["participatingDimensions"]) == 53 and len(coverage["o08"]["excludedDimensions"]) == 16, "O-08 coverage mismatch")
-    require(len(coverage["o10"]["coveredSourceRowIds"]) == 102, "O-10 source coverage mismatch")
+    expected_o07 = {
+        row["atom_instance_id"]
+        for row in reader.json("tools/causal-flow-simulator/o07/required_atom_instances_v1.json")["rows"]
+    }
+    expected_o08 = {
+        identifier
+        for role in (
+            "C03_SEMANTIC_LIMIT",
+            "C03_ACTIVATION_CAPABILITY_INPUT",
+            "C03_EXPLICIT_ZERO_OR_UNSUPPORTED",
+        )
+        for identifier in inventory["o08_roles"][role]
+    }
+    excluded_o08 = set(inventory["o08_roles"]["POST_C03_LAYER_PROFILE"] + inventory["o08_roles"]["EVIDENCE_ONLY"])
+    expected_o10 = {
+        row["row_id"]
+        for row in reader.json("tools/causal-flow-simulator/o10/source-inventory.json")["rows"]
+    }
+    require(
+        coverage["o07"]["relationCount"] == len(expected_o07)
+        and set(coverage["o07"]["coveredRelationIds"]) == expected_o07
+        and len(coverage["o07"]["coveredRelationIds"]) == len(expected_o07),
+        "O-07 coverage mismatch",
+    )
+    require(
+        set(coverage["o08"]["participatingDimensions"]) == expected_o08
+        and len(coverage["o08"]["participatingDimensions"]) == len(expected_o08)
+        and set(coverage["o08"]["excludedDimensions"]) == excluded_o08
+        and len(coverage["o08"]["excludedDimensions"]) == len(excluded_o08),
+        "O-08 coverage mismatch",
+    )
+    require(
+        set(coverage["o10"]["coveredSourceRowIds"]) == expected_o10
+        and len(coverage["o10"]["coveredSourceRowIds"]) == len(expected_o10),
+        "O-10 source coverage mismatch",
+    )
     require({row["id"] for row in coverage["o10"]["outcomes"]} == set(inventory["o10_primaries"] + inventory["o10_post_c03_markers"]), "O-10 outcome coverage mismatch")
-    require(len(coverage["invariants"]) == 23, "invariant coverage mismatch")
+    expected_invariants = {row["id"] for row in model["invariants"]}
+    require(
+        {row["id"] for row in coverage["invariants"]} == expected_invariants
+        and len(coverage["invariants"]) == len(expected_invariants),
+        "invariant coverage mismatch",
+    )
+    require(
+        {
+            row["id"]
+            for row in coverage["invariants"]
+            if row["branch"] == "NON_EXECUTABLE_NON_CLAIM"
+        }
+        == NONEXECUTABLE_INVARIANTS,
+        "invariant branch assignment mismatch",
+    )
     for row in coverage["invariants"]:
         if row["branch"] == "EXECUTABLE_WITNESS":
-            require(set(row["witnessScenarioIds"]) <= scenario_ids, f"unknown invariant witness: {row['id']}")
-            require(set(row["hostileMutationIds"]) <= mutation_ids, f"unknown invariant mutation: {row['id']}")
+            require(
+                bool(row["witnessScenarioIds"])
+                and set(row["witnessScenarioIds"]) <= scenario_ids,
+                f"unknown or empty invariant witness: {row['id']}",
+            )
+            require(
+                bool(row["hostileMutationIds"])
+                and set(row["hostileMutationIds"]) <= mutation_ids,
+                f"unknown or empty invariant mutation: {row['id']}",
+            )
         else:
             require(row["branch"] == "NON_EXECUTABLE_NON_CLAIM", f"invalid invariant branch: {row['id']}")
+            require(isinstance(row.get("reason"), str) and bool(row["reason"]), f"missing invariant non-claim reason: {row['id']}")
+            require(
+                isinstance(row.get("citations"), list)
+                and bool(row["citations"])
+                and all(_citation_valid(reader, source_paths, citation) for citation in row["citations"]),
+                f"stale invariant non-claim citation: {row['id']}",
+            )
+
+    envelope = reader.json("tools/causal-flow-simulator/o08/resource-envelope.candidate.json")
+    selected_limits = {
+        identifier: envelope["entries"][identifier]["selected_value"]
+        for identifier in O08_LIMITS
+    }
+    require(selected_limits == O08_LIMITS, "O-08 selected numeric limits drifted")
+    require(
+        set(envelope["entries"]["CHUNK_OCTETS"]["closed_values"]) == O08_CHUNK_OCTETS,
+        "O-08 selected chunk set drifted",
+    )
 
     return {
         "corpusDigest": sha256(
