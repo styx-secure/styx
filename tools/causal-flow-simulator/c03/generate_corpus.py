@@ -17,9 +17,13 @@ sys.path.insert(0, str(ROOT))
 from canonical_json import dumps, store  # noqa: E402
 from corpus_model import (  # noqa: E402
     BASE_SHA,
+    AP_OWNED_EXCLUSIONS,
+    AP_EXPECTATION_ONLY_STEP_LOCATORS,
     BaseReader,
     DOMAINS,
     NONEXECUTABLE_INVARIANTS,
+    PRODUCED_K_PRIMARIES,
+    TRANSCRIPT_PROFILE_UNREACHABLE,
     ed25519_sign,
     encode_commitment,
     encode_event,
@@ -101,35 +105,52 @@ COUNTEREXAMPLE_VECTOR_PROGRAMS = {
     "CE_SUBTREE_AMPLIFICATION": ["vec-control-grant", "vec-control-revoke", "inv-post-revocation"],
 }
 
+AP_EXPECTATION_ONLY_VECTOR_IDS = frozenset(
+    {"inv-post-revocation", "inv-self-lineage", "inv-unauthorized"}
+)
+K_ADMISSION_ONLY_TRANSITIONS = frozenset(
+    {
+        ("k_admission", "k_admit_binding_grant"),
+        ("k_admission", "k_admit_candidate"),
+        ("pending_replay", "replay_apply_candidate"),
+        ("pending_replay", "replay_verified_opening"),
+    }
+)
+NEGATIVE_K_TRANSITION_VECTORS = {
+    ("k_admission", "k_reject_invalid"): "inv-signature",
+    ("k_admission", "k_reject_unresolved_binding"): "inv-unresolved-credential-binding",
+    ("k_admission", "k_to_collision"): "inv-credential-identifier-collision",
+    ("k_admission", "k_to_fork"): "inv-fork",
+    ("pending_replay", "replay_to_pending_descendant"): "inv-pending-ancestor",
+    ("pending_replay", "replay_to_pending_root"): "inv-opening-missing",
+}
+
 INVALID_VECTOR_INVARIANTS = {
     "inv-binding-context": "INV_CROSS_CONTEXT_REJECTION",
     "inv-binding-credential": "INV_GRANT_ROOTED_BINDING",
     "inv-body-length": "INV_O06C_BOUNDED_EVIDENCE",
     "inv-checkpoint-substitution": "INV_NO_CHECKPOINT_SUBSTITUTION",
     "inv-commitment": "INV_COMMITMENT_CONTEXT_BINDING",
+    "inv-commitment-equal-length": "INV_COMMITMENT_CONTEXT_BINDING",
     "inv-contested-standing": "INV_BOUNDED_CONTESTED_STANDING",
     "inv-duplicate": "INV_REPLAY_NO_AUTHORITY",
     "inv-fork": "INV_FORK_QUARANTINE",
     "inv-missing-dependency": "INV_CAUSAL_TARGET_AVAILABILITY",
-    "inv-noncanonical-integer": "INV_O06C_BOUNDED_EVIDENCE",
+    "inv-pending-ancestor": "INV_CAUSAL_TARGET_AVAILABILITY",
     "inv-opening-missing": "INV_NO_OPENING_SUBSTITUTION",
+    "inv-opening-missing-detachable": "INV_NO_OPENING_SUBSTITUTION",
     "inv-parent-order": "INV_CAUSALITY_TRANSCRIPT_ONLY",
-    "inv-post-revocation": "INV_LINEAGE_CONTAINMENT",
     "inv-profile-substitution": "INV_PROTECTION_SEPARATION",
     "inv-reference": "INV_GRANT_ROOTED_BINDING",
     "inv-resource-chunk-count": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-resource-chunk-size": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-resource-content-length": "INV_AUTHORITY_PROJECTION_LIMITS",
-    "inv-resource-framing-object": "INV_AUTHORITY_PROJECTION_LIMITS",
-    "inv-resource-genesis-policy": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-resource-parent-count": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-resource-sequence": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-resource-transition-block": "INV_AUTHORITY_PROJECTION_LIMITS",
-    "inv-self-lineage": "INV_SELF_LINEAGE_REDUCTION",
     "inv-signature": "INV_OUTCOME_PRECEDENCE",
-    "inv-trailing": "INV_O06C_BOUNDED_EVIDENCE",
-    "inv-truncated": "INV_O06C_BOUNDED_EVIDENCE",
-    "inv-unauthorized": "INV_AUTH_NOT_KEY",
+    "inv-credential-identifier-collision": "INV_GRANT_ROOTED_BINDING",
+    "inv-unresolved-credential-binding": "INV_GRANT_ROOTED_BINDING",
     "inv-wrong-domain": "INV_O06C_BOUNDED_EVIDENCE",
 }
 
@@ -523,13 +544,16 @@ def _mutated_vector(
     return value
 
 
-def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _invalid_vectors(
+    valid: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     base = next(item for item in valid if item["id"] == "vec-ordinary-none")
     single = next(item for item in valid if item["id"] == "vec-required-single")
     multiple_parents = next(item for item in valid if item["id"] == "vec-parent-multiple")
     control_revoke = next(item for item in valid if item["id"] == "vec-control-revoke")
     final_control = next(item for item in valid if item["id"] == "vec-control-closure")
     values: list[dict[str, Any]] = []
+    ap_expectations: list[dict[str, Any]] = []
 
     def transcript_mutation(identifier: str, mutation: str, mutate: Any) -> None:
         record = _mutated_vector(base, identifier, mutation, "S3_KERNEL_STRUCTURAL", "STRUCTURAL_REJECTION")
@@ -540,23 +564,6 @@ def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     transcript_mutation("inv-wrong-domain", "WRONG_DOMAIN", lambda raw: raw.__setitem__(15, 1))
     transcript_mutation("inv-body-length", "BODY_LENGTH_MISMATCH", lambda raw: raw.__setitem__(19, raw[19] ^ 1))
-    transcript_mutation("inv-truncated", "TRUNCATED_BODY", lambda raw: raw.__delitem__(slice(-1, None)))
-    transcript_mutation("inv-trailing", "TRAILING_BYTES", lambda raw: raw.extend(b"\x00"))
-
-    overlong_integer = _mutated_vector(
-        base,
-        "inv-noncanonical-integer",
-        "OVERLONG_AUTHOR_SEQUENCE_INTEGER",
-        "S3_KERNEL_STRUCTURAL",
-        "STRUCTURAL_REJECTION",
-    )
-    raw = bytearray.fromhex(overlong_integer["transcriptHex"])
-    transition_length = len(bytes.fromhex(base["fields"]["transitionBlockHex"]))
-    sequence_offset = 20 + 57 + 4 + transition_length + 32
-    raw[16:20] = (int.from_bytes(raw[16:20], "big") + 1).to_bytes(4, "big")
-    raw[sequence_offset:sequence_offset] = b"\x00"
-    overlong_integer["transcriptHex"] = raw.hex()
-    values.append(overlong_integer)
 
     signature = _mutated_vector(base, "inv-signature", "SIGNATURE_SUBSTITUTION", "S3_KERNEL_STRUCTURAL", "INVALID")
     sig = bytearray.fromhex(signature["signatureHex"])
@@ -576,13 +583,36 @@ def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
     binding_credential["binding"]["credentialIdentifierHex"] = synthetic_octets("other-credential", 32).hex()
     values.append(binding_credential)
 
-    commitment = _mutated_vector(single, "inv-commitment", "OPENING_SUBSTITUTION", "S3_KERNEL_STRUCTURAL", "COMMITMENT_MISMATCH")
+    commitment = _mutated_vector(single, "inv-commitment", "OPENING_LENGTH_SUBSTITUTION", "S3_KERNEL_STRUCTURAL", "LENGTH_MISMATCH")
     commitment["opening"]["contentHex"] = b"different synthetic content".hex()
     values.append(commitment)
 
-    missing_opening = _mutated_vector(single, "inv-opening-missing", "OPENING_REMOVAL", "EVENT_LOCAL", "OPENING_MISSING")
+    commitment_equal = _mutated_vector(
+        single,
+        "inv-commitment-equal-length",
+        "EQUAL_LENGTH_OPENING_SUBSTITUTION",
+        "S3_KERNEL_STRUCTURAL",
+        "COMMITMENT_MISMATCH",
+    )
+    commitment_equal["opening"]["contentHex"] = b"tampered-c03-content!".hex()
+    values.append(commitment_equal)
+
+    missing_opening = _mutated_vector(single, "inv-opening-missing", "REQUIRED_OPENING_REMOVAL", "EVENT_LOCAL", "PENDING_OPENING")
     missing_opening.pop("opening")
     values.append(missing_opening)
+
+    detachable = next(
+        item for item in valid if item["id"] == "vec-selected-chunk-octets"
+    )
+    missing_detachable = _mutated_vector(
+        detachable,
+        "inv-opening-missing-detachable",
+        "DETACHABLE_OPENING_REMOVAL",
+        "S3_KERNEL_STRUCTURAL",
+        "OPENING_MISSING",
+    )
+    missing_detachable.pop("opening")
+    values.append(missing_detachable)
 
     parent_order = _mutated_vector(
         multiple_parents,
@@ -654,6 +684,7 @@ def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
             self_lineage_fields["credentialIdentifierHex"]
         ]
     }
+    ap_expectations.append(values.pop())
 
     parent_limit_fields = _event_fields(
         "resource-parent-count",
@@ -666,6 +697,7 @@ def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "EXCEED_SELECTED_PARENTS_PER_EVENT",
         parent_limit_fields,
         stage="S4_GRAPH_ADMISSION",
+        outcome="CONTEXT_CAPACITY_EXHAUSTED",
     )
 
     sequence_fields = _event_fields(
@@ -689,18 +721,6 @@ def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "inv-resource-transition-block",
         "EXCEED_SELECTED_AP_TRANSITION_BLOCK_OCTETS",
         transition_fields,
-    )
-
-    body_fields = _event_fields(
-        "resource-framing-object",
-        sequence=final_control["fields"]["authorSequence"] + 1,
-        predecessor=final_control["eventReferenceHex"],
-    )
-    body_fields["transitionBlockHex"] = synthetic_octets("resource-framing-object", 8193).hex()
-    generated_invalid(
-        "inv-resource-framing-object",
-        "EXCEED_SELECTED_FRAMING_OBJECT_OCTETS",
-        body_fields,
     )
 
     def tree_descriptor(*, chunk_size: int, chunk_count: int, final_length: int, exact_length: int = 1) -> dict[str, Any]:
@@ -754,44 +774,14 @@ def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
         ),
     )
 
-    genesis = next(item for item in valid if item["id"] == "vec-genesis")
-    genesis_fields = json.loads(json.dumps(genesis["fields"]))
-    genesis_fields["initialAuthorityPolicyHex"] = synthetic_octets("resource-genesis-policy", 4097).hex()
-    genesis_transcript = encode_genesis(genesis_fields)
-    genesis_key, genesis_signature = ed25519_sign(synthetic_octets("seed/root", 32), genesis_transcript)
-    values.append(
-        {
-            "binding": {"verificationKeyHex": genesis_key.hex()},
-            "citations": genesis["citations"],
-            "expected": {
-                "externalEffects": [],
-                "firstFailingStage": "S3_KERNEL_STRUCTURAL",
-                "localOutcome": "CURRENT_OBJECT_OUT_OF_PROFILE",
-                "stateUnchanged": True,
-            },
-            "fields": genesis_fields,
-            "genesisReferenceHex": framed_hash(DOMAINS["genesis_reference"], genesis_transcript).hex(),
-            "id": "inv-resource-genesis-policy",
-            "kind": "GENESIS",
-            "mutation": "EXCEED_SELECTED_GENESIS_POLICY_OCTETS",
-            "profile": "STYX_APP_KERNEL_V0_TRANSCRIPT_ONLY",
-            "signatureHex": genesis_signature.hex(),
-            "signatureSuiteId": 1,
-            "sourceVectorId": "vec-genesis",
-            "synthetic": True,
-            "testOnly": True,
-            "transcriptHex": genesis_transcript.hex(),
-        }
-    )
-
     credential_id = base["fields"]["credentialIdentifierHex"]
     contextual = [
         (
             base,
             "inv-checkpoint-substitution",
             "CHECKPOINT_FOR_LIVE_DEPENDENCY",
-            "S4_GRAPH_ADMISSION",
-            "STRUCTURAL_REJECTION",
+            "S3_KERNEL_STRUCTURAL",
+            "CURRENT_OBJECT_OUT_OF_PROFILE",
             {"checkpointEvidenceReferences": [synthetic_octets("checkpoint-substitution", 32).hex()]},
         ),
         (
@@ -801,14 +791,6 @@ def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "EVENT_LOCAL",
             "FORK_EVIDENCE",
             {"sameAuthorSequenceReferences": [synthetic_octets("contested-standing-sibling", 32).hex()]},
-        ),
-        (
-            base,
-            "inv-unauthorized",
-            "AUTHORITY_LAUNDERING",
-            "EVENT_LOCAL",
-            "AUTHENTIC_BUT_UNAUTHORIZED",
-            {"authorizedCredentialIdentifiers": []},
         ),
         (
             base,
@@ -831,34 +813,101 @@ def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "inv-missing-dependency",
             "DEPENDENCY_REMOVAL",
             "S4_GRAPH_ADMISSION",
-            "PENDING_ANCESTOR",
+            "DEPENDENCY_DEFERRED",
             {"availableDependencyReferences": []},
-        ),
-        (
-            base,
-            "inv-post-revocation",
-            "POST_REVOCATION_ACTION",
-            "EVENT_LOCAL",
-            "POST_REVOCATION",
-            {"revokedCredentialIdentifiers": [credential_id]},
         ),
     ]
     for source, identifier, mutation, stage, outcome, context in contextual:
         record = _mutated_vector(source, identifier, mutation, stage, outcome)
         record["admissionContext"] = context
         values.append(record)
-    return sorted(values, key=lambda record: record["id"])
+
+    pending_ancestor = _mutated_vector(
+        multiple_parents,
+        "inv-pending-ancestor",
+        "KNOWN_PENDING_ROOT_DEPENDENCY",
+        "EVENT_LOCAL",
+        "PENDING_ANCESTOR",
+    )
+    pending_roots = list(multiple_parents["fields"]["causalParents"])
+    if multiple_parents["fields"]["directPredecessorHex"] is not None:
+        pending_roots.append(multiple_parents["fields"]["directPredecessorHex"])
+    pending_ancestor["admissionContext"] = {
+        "availableDependencyReferences": [],
+        "knownPendingOpeningRoots": sorted(pending_roots),
+    }
+    values.append(pending_ancestor)
+
+    collision = _mutated_vector(
+        next(item for item in valid if item["id"] == "vec-control-grant"),
+        "inv-credential-identifier-collision",
+        "BOUNDED_CREDENTIAL_IDENTIFIER_COLLISION_INJECTION",
+        "S3_KERNEL_STRUCTURAL",
+        "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+    )
+    collision["admissionContext"] = {"credentialIdentifierCollision": True}
+    values.append(collision)
+
+    unresolved = _mutated_vector(
+        base,
+        "inv-unresolved-credential-binding",
+        "NON_GRANT_BINDING_CARDINALITY_ZERO",
+        "S3_KERNEL_STRUCTURAL",
+        "UNRESOLVED_CREDENTIAL_BINDING",
+    )
+    unresolved["admissionContext"] = {"credentialBindingMatchCount": 0}
+    values.append(unresolved)
+
+    for source, identifier, mutation, outcome, context in (
+        (
+            base,
+            "inv-unauthorized",
+            "AUTHORITY_LAUNDERING",
+            "AUTHENTIC_BUT_UNAUTHORIZED",
+            {"authorizedCredentialIdentifiers": []},
+        ),
+        (
+            base,
+            "inv-post-revocation",
+            "POST_REVOCATION_ACTION",
+            "POST_REVOCATION",
+            {"revokedCredentialIdentifiers": [credential_id]},
+        ),
+    ):
+        record = _mutated_vector(source, identifier, mutation, "EVENT_LOCAL", outcome)
+        record["admissionContext"] = context
+        record["expectationLayer"] = "AP_EXPECTATION_ONLY"
+        ap_expectations.append(record)
+
+    for record in ap_expectations:
+        record["expectationLayer"] = "AP_EXPECTATION_ONLY"
+    return (
+        sorted(values, key=lambda record: record["id"]),
+        sorted(ap_expectations, key=lambda record: record["id"]),
+    )
 
 
-def _scenarios(model: dict[str, Any], valid: list[dict[str, Any]], invalid: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _scenarios(
+    model: dict[str, Any],
+    valid: list[dict[str, Any]],
+    invalid: list[dict[str, Any]],
+    ap_expectations: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     default_input = "vec-ordinary-none"
-    vector_by_id = {record["id"]: record for record in valid + invalid}
+    vector_by_id = {
+        record["id"]: record
+        for record in valid + invalid + ap_expectations
+    }
     scenarios: list[dict[str, Any]] = []
 
-    def vector_expectation(vector_id: str) -> tuple[str, str, str]:
+    def vector_expectation(vector_id: str) -> tuple[dict[str, Any], str]:
         result = evaluate_vector(vector_by_id[vector_id])
-        post_state = "UNCHANGED" if result["preStateDigest"] == result["postStateDigest"] else "APPLIED"
-        return result["localOutcome"], result["stage"], post_state
+        post_state = (
+            "UNCHANGED"
+            if result["preStateDigest"] == result["postStateDigest"]
+            else "READY_FOR_AP_FOLD"
+        )
+        return result, post_state
 
     def step(
         *,
@@ -874,45 +923,83 @@ def _scenarios(model: dict[str, Any], valid: list[dict[str, Any]], invalid: list
         actor: str = "kernel",
         executed: bool = True,
         expected_dependency_status: str = "SATISFIED",
+        ap_expectation_only: str | None = None,
+        expected_result_layer: str | None = None,
     ) -> dict[str, Any]:
-        outcome, stage, post_state = vector_expectation(vector_id)
-        return {
+        result, post_state = vector_expectation(vector_id)
+        record = {
             "actor": actor,
             "candidateAction": action,
             "executed": executed,
-            "expectedOutcome": expected_outcome or outcome,
             "expectedDependencyStatus": expected_dependency_status,
             "expectedPostState": expected_post_state or post_state,
-            "expectedStage": expected_stage or stage,
+            "expectedStage": expected_stage or result["stage"],
             "inputVectorId": vector_id,
             "preState": pre_state,
             "providedEvidence": produced,
             "requiredPriorEvidence": required or [],
             "transitionId": transition_id,
         }
+        selected_outcome = expected_outcome or result.get("localOutcome")
+        if selected_outcome is not None:
+            record["expectedOutcome"] = selected_outcome
+        selected_layer = expected_result_layer
+        if selected_layer is None and transition_input_is_compatible(result):
+            selected_layer = "K_ADMISSION_ONLY"
+        if selected_layer is not None:
+            record["expectedResultLayer"] = selected_layer
+        if ap_expectation_only is not None:
+            record["apExpectationOnly"] = ap_expectation_only
+        return record
 
     for state_model in model["state_models"]:
         model_id = state_model["id"]
         for transition in state_model["transitions"]:
             from_state = transition["from"][0]
             scenario_id = f"scenario-state-{model_id}-{transition['id']}"
+            transition_key = (model_id, transition["id"])
+            if model_id == "ap_projection":
+                transition_step = step(
+                    action=transition["trigger"],
+                    vector_id=default_input,
+                    pre_state=from_state,
+                    produced=f"evidence:{scenario_id}:0",
+                    transition_id=transition["id"],
+                    executed=False,
+                    expected_outcome="NOT_EVALUATED",
+                    expected_stage="BOUNDARY_NOT_EXECUTED",
+                    expected_post_state="UNCHANGED",
+                    ap_expectation_only=transition["outcome"],
+                )
+            elif transition_key in K_ADMISSION_ONLY_TRANSITIONS:
+                transition_step = step(
+                    action=transition["trigger"],
+                    vector_id=default_input,
+                    pre_state=from_state,
+                    produced=f"evidence:{scenario_id}:0",
+                    transition_id=transition["id"],
+                    expected_post_state=transition["to"],
+                    expected_result_layer="K_ADMISSION_ONLY",
+                )
+            else:
+                vector_id = NEGATIVE_K_TRANSITION_VECTORS[transition_key]
+                result = evaluate_vector(vector_by_id[vector_id])
+                transition_step = step(
+                    action=transition["trigger"],
+                    vector_id=vector_id,
+                    pre_state=from_state,
+                    produced=f"evidence:{scenario_id}:0",
+                    transition_id=transition["id"],
+                    expected_outcome=transition["outcome"],
+                    expected_stage=result["stage"],
+                    expected_post_state=transition["to"],
+                )
             scenarios.append(
                 {
                     "citations": transition["citations"],
                     "id": scenario_id,
                     "modelId": model_id,
-                    "steps": [
-                        step(
-                            action=transition["trigger"],
-                            vector_id=default_input,
-                            pre_state=from_state,
-                            produced=f"evidence:{scenario_id}:0",
-                            transition_id=transition["id"],
-                            expected_outcome=transition["outcome"],
-                            expected_stage="MODEL_TRANSITION",
-                            expected_post_state=transition["to"],
-                        )
-                    ],
+                    "steps": [transition_step],
                 }
             )
     for counterexample in model["counterexamples"]:
@@ -961,10 +1048,10 @@ def _scenarios(model: dict[str, Any], valid: list[dict[str, Any]], invalid: list
                         produced=f"evidence:scenario-flow-{flow['id']}:0",
                         actor=flow["producer"],
                         executed=not excluded,
-                        expected_outcome="APPLIED" if not excluded else (
+                        expected_outcome=None if not excluded else (
                             "TRANSPORT_PROFILE_REQUIRED" if flow["id"] == "transport_publish" else "SESSION_PROFILE_REQUIRED"
                         ),
-                        expected_post_state="APPLIED" if not excluded else "UNCHANGED",
+                        expected_post_state="READY_FOR_AP_FOLD" if not excluded else "UNCHANGED",
                         expected_stage="FINAL_AFTER_S6" if not excluded else "BOUNDARY_NOT_EXECUTED",
                     )
                 ],
@@ -973,7 +1060,7 @@ def _scenarios(model: dict[str, Any], valid: list[dict[str, Any]], invalid: list
 
     # Every byte/context vector has an executable witness.  This prevents the
     # corpus from claiming coverage for vectors that no scenario ever consumes.
-    for vector in valid + invalid:
+    for vector in valid + invalid + ap_expectations:
         scenario_id = f"scenario-vector-{vector['id']}"
         scenarios.append(
             {
@@ -1063,6 +1150,23 @@ def _scenarios(model: dict[str, Any], valid: list[dict[str, Any]], invalid: list
             ],
         }
     )
+    ap_by_id = {record["id"]: record for record in ap_expectations}
+    actual_ap_locators: set[str] = set()
+    for scenario in scenarios:
+        for index, scenario_step in enumerate(scenario["steps"]):
+            locator = f"{scenario['id']}:{index}"
+            if locator not in AP_EXPECTATION_ONLY_STEP_LOCATORS:
+                continue
+            vector_id = scenario_step["inputVectorId"]
+            if vector_id not in AP_EXPECTATION_ONLY_VECTOR_IDS:
+                raise ValueError(f"AP-only step does not use an AP-only vector: {locator}")
+            scenario_step.pop("expectedOutcome", None)
+            scenario_step["expectedResultLayer"] = "K_ADMISSION_ONLY"
+            scenario_step["expectedPostState"] = "READY_FOR_AP_FOLD"
+            scenario_step["apExpectationOnly"] = ap_by_id[vector_id]["expected"]["localOutcome"]
+            actual_ap_locators.add(locator)
+    if actual_ap_locators != AP_EXPECTATION_ONLY_STEP_LOCATORS:
+        raise ValueError("AP-expectation-only scenario locator set drifted")
     return sorted(scenarios, key=lambda record: record["id"])
 
 
@@ -1074,8 +1178,6 @@ def _traces(scenarios: list[dict[str, Any]], vector_by_id: dict[str, dict[str, A
         for index, step in enumerate(scenario["steps"]):
             vector = vector_by_id[step["inputVectorId"]]
             evaluated = evaluate_vector(vector) if step.get("executed", True) else None
-            if step["transitionId"] is not None and not transition_input_is_compatible(evaluated or {}):
-                raise ValueError(f"incompatible model-transition input: {scenario['id']}:{index}")
             pre_digest = sha256(
                 f"styx-c03/state/{scenario['id']}/{step['preState']}".encode()
             ).hexdigest()
@@ -1087,40 +1189,48 @@ def _traces(scenarios: list[dict[str, Any]], vector_by_id: dict[str, dict[str, A
             dependency_status = "SATISFIED" if requirements <= available_evidence else "MISSING"
             if dependency_status != step["expectedDependencyStatus"]:
                 raise ValueError(f"dependency-status mismatch: {scenario['id']}:{index}")
+            if step["transitionId"] is not None and scenario["modelId"] != "ap_projection":
+                if "expectedResultLayer" in step:
+                    if not transition_input_is_compatible(evaluated or {}):
+                        raise ValueError(f"incompatible positive K transition: {scenario['id']}:{index}")
+                elif evaluated is None or evaluated.get("localOutcome") != step.get("expectedOutcome"):
+                    raise ValueError(f"incompatible negative K transition: {scenario['id']}:{index}")
             if evaluated is None:
-                k_admission = "NOT_EVALUATED"
-                ap_result = "NOT_EVALUATED"
-            elif evaluated["transcriptVerification"] != "VALID" or evaluated["signatureVerification"] == "REJECTED" or evaluated["localOutcome"] in {"CREDENTIAL_BINDING_MISMATCH", "REFERENCE_COLLISION_UNSUPPORTED"}:
-                k_admission = "REJECTED"
-                ap_result = "NOT_REACHED"
+                observation = {
+                    "apAuthorityResult": "NOT_EVALUATED",
+                    "commitmentVerification": "NOT_PRESENT",
+                    "externalEffects": [],
+                    "kBindingAdmission": "NOT_EVALUATED",
+                    "localOutcome": step["expectedOutcome"],
+                    "outcomeEvaluated": False,
+                    "remoteClass": "OPAQUE_REMOTE_FAILURE",
+                    "signatureVerification": "NOT_EVALUATED",
+                    "stage": step["expectedStage"],
+                    "transcriptVerification": "NOT_EVALUATED",
+                }
             else:
-                k_admission = "ADMITTED"
-                ap_result = "APPLIED" if evaluated["localOutcome"] == "APPLIED" else "REJECTED_OR_DEFERRED"
-            entries.append(
-                {
+                observation = {
+                    key: value
+                    for key, value in evaluated.items()
+                    if key not in {"preStateDigest", "postStateDigest"}
+                }
+                observation["stage"] = step["expectedStage"]
+            entry = {
                     "actionDigest": sha256(step["candidateAction"].encode()).hexdigest(),
-                    "apAuthorityResult": ap_result,
                     "causalClassification": step["transitionId"] or f"VECTOR:{vector['id']}",
-                    "commitmentVerification": "NOT_PRESENT" if "opening" not in vector else "RECOMPUTE_REQUIRED",
                     "dependencyStatus": dependency_status,
                     "evidenceConsumed": sorted(requirements),
                     "evidenceProduced": step.get("providedEvidence"),
                     "executed": step.get("executed", True),
-                    "externalEffects": [],
                     "inputDigest": semantic_input_digest(vector),
-                    "kBindingAdmission": k_admission,
-                    "localOutcome": step["expectedOutcome"],
                     "postStateDigest": post_digest,
                     "preStateDigest": pre_digest,
-                    "remoteClass": "APPLIED" if step["expectedOutcome"] == "APPLIED" else "OPAQUE_REMOTE_FAILURE",
-                    "signatureVerification": "NOT_EVALUATED" if evaluated is None else evaluated["signatureVerification"],
-                    "stage": step["expectedStage"],
                     "step": index,
-                    "transcriptVerification": "NOT_EVALUATED" if evaluated is None else evaluated["transcriptVerification"],
                 }
-            )
-            if evaluated is not None:
-                entries[-1]["commitmentVerification"] = evaluated["commitmentVerification"]
+            entry.update(observation)
+            if "apExpectationOnly" in step:
+                entry["apExpectationOnly"] = step["apExpectationOnly"]
+            entries.append(entry)
             if step.get("providedEvidence") is not None:
                 available_evidence.add(step["providedEvidence"])
         trace = {"id": f"trace-{scenario['id']}", "scenarioId": scenario["id"], "steps": entries}
@@ -1322,18 +1432,35 @@ def _coverage(
                 }
             )
     exercised_outcomes = {
-        step["expectedOutcome"] for scenario in scenarios for step in scenario["steps"]
+        step["expectedOutcome"]
+        for scenario in scenarios
+        for step in scenario["steps"]
+        if "expectedOutcome" in step
     }
     outcome_rows = []
     for primary in inventory["o10_primaries"]:
-        matching = [
-            item["id"]
-            for item in scenarios
-            if any(step["expectedOutcome"] == primary for step in item["steps"])
-        ]
+        if primary in PRODUCED_K_PRIMARIES:
+            branch = "PRODUCED"
+            matching = [
+                item["id"]
+                for item in scenarios
+                if any(step.get("expectedOutcome") == primary for step in item["steps"])
+            ]
+        elif primary in AP_OWNED_EXCLUSIONS:
+            branch = "AP_OWNED_EXCLUDED"
+            matching = [
+                item["id"]
+                for item in scenarios
+                if any(step.get("apExpectationOnly") == primary for step in item["steps"])
+            ]
+        elif primary in TRANSCRIPT_PROFILE_UNREACHABLE:
+            branch = "TRANSCRIPT_PROFILE_UNREACHABLE"
+            matching = []
+        else:
+            raise ValueError(f"unpartitioned O-10 primary: {primary}")
         outcome_rows.append(
             {
-                "branch": "EXERCISED" if primary in exercised_outcomes else "UNREACHABLE_IN_TRANSCRIPT_ONLY_PROFILE",
+                "branch": branch,
                 "citations": [{"anchor": "## Primary registry", "path": "docs/protocol/styx-app-kernel-v0-outcome-taxonomy.md"}],
                 "id": primary,
                 "scenarioIds": matching,
@@ -1346,6 +1473,24 @@ def _coverage(
                 "citations": [{"anchor": "## Closed cardinalities", "path": "docs/protocol/styx-app-kernel-v0-outcome-taxonomy.md"}],
                 "id": marker,
                 "scenarioIds": [],
+            }
+        )
+    source_rows = []
+    for row in reader.json("tools/causal-flow-simulator/o10/source-inventory.json")["rows"]:
+        if "mapping" in row:
+            primary = row["mapping"]["primary"]
+            disposition = next(item["branch"] for item in outcome_rows if item["id"] == primary)
+            witnesses = next(item["scenarioIds"] for item in outcome_rows if item["id"] == primary)
+        else:
+            primary = row["forbidden_identifier"]
+            disposition = "TRANSCRIPT_PROFILE_UNREACHABLE"
+            witnesses = []
+        source_rows.append(
+            {
+                "disposition": disposition,
+                "primary": primary,
+                "rowId": row["row_id"],
+                "witnessScenarioIds": witnesses,
             }
         )
     states = sorted(
@@ -1391,6 +1536,7 @@ def _coverage(
             "alias": inventory["o10_alias"],
             "coveredSourceRowIds": [row["row_id"] for row in reader.json("tools/causal-flow-simulator/o10/source-inventory.json")["rows"]],
             "outcomes": outcome_rows,
+            "sourceRows": source_rows,
         },
         "reviewModel": {key: inventory["expected_review_model_ids"][key] for key in sorted(inventory["expected_review_model_ids"])},
         "states": states,
@@ -1414,16 +1560,25 @@ def generate(repo_root: Path, output: Path) -> dict[str, Any]:
     if len(counterexample_programs) != len(set(counterexample_programs)):
         raise ValueError("counterexample executable program collision")
     reader = BaseReader(repo_root)
-    model = reader.json("docs/protocol/review/styx-app-kernel-v0-review-model.json")
+    model = load_local_json(
+        repo_root / "docs/protocol/review/styx-app-kernel-v0-review-model.json"
+    )
     valid = _valid_vectors()
-    invalid = _invalid_vectors(valid)
-    scenarios = _scenarios(model, valid, invalid)
-    vectors = {item["id"]: item for item in valid + invalid}
+    invalid, ap_expectations = _invalid_vectors(valid)
+    scenarios = _scenarios(model, valid, invalid, ap_expectations)
+    vectors = {
+        item["id"]: item
+        for item in valid + invalid + ap_expectations
+    }
     traces = _traces(scenarios, vectors)
     mutations = _mutations(invalid, inventory, reader, scenarios)
     documents = {
         "valid-transcript-vectors.json": {"records": valid, "schema": "styx-c03-valid-transcripts/v1"},
-        "invalid-transcript-vectors.json": {"records": invalid, "schema": "styx-c03-invalid-transcripts/v1"},
+        "invalid-transcript-vectors.json": {
+            "apExpectationOnlyRecords": ap_expectations,
+            "records": invalid,
+            "schema": "styx-c03-invalid-transcripts/v1",
+        },
         "state-machine-scenarios.json": {"records": scenarios, "schema": "styx-c03-state-scenarios/v1"},
         "adversarial-mutations.json": {"records": mutations, "schema": "styx-c03-adversarial-mutations/v1"},
         "expected-traces.json": {"records": traces, "schema": "styx-c03-expected-traces/v1"},

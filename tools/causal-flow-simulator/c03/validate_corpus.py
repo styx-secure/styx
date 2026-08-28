@@ -16,12 +16,16 @@ sys.path.insert(0, str(ROOT))
 
 from canonical_json import dumps, load, store  # noqa: E402
 from corpus_model import (  # noqa: E402
+    AP_OWNED_EXCLUSIONS,
+    AP_EXPECTATION_ONLY_STEP_LOCATORS,
     BASE_SHA,
     BaseReader,
     CorpusModelError,
     NONEXECUTABLE_INVARIANTS,
     O08_CHUNK_OCTETS,
     O08_LIMITS,
+    PRODUCED_K_PRIMARIES,
+    TRANSCRIPT_PROFILE_UNREACHABLE,
     evaluate_vector,
     load_local_json,
     semantic_observation_digest,
@@ -180,7 +184,9 @@ def validate_file_manifest(
 def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
     source_map, inventory = validate_base_inputs(repo_root)
     reader = BaseReader(repo_root)
-    model = reader.json("docs/protocol/review/styx-app-kernel-v0-review-model.json")
+    model = load_local_json(
+        repo_root / "docs/protocol/review/styx-app-kernel-v0-review-model.json"
+    )
     source_paths = {source["id"]: source["path"] for source in model["sources"]}
     source_paths.update({source["id"]: source["path"] for source in source_map["direct_sources"]})
     entries = list(corpus.rglob("*"))
@@ -231,12 +237,23 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
     require(manifest["sourceInventory"].get("sources") == expected_sources, "manifest source set mismatch")
 
     valid = _unique_sorted(documents["valid-transcript-vectors.json"]["records"], "valid vectors")
-    invalid = _unique_sorted(documents["invalid-transcript-vectors.json"]["records"], "invalid vectors")
-    vector_ids = {record["id"] for record in valid + invalid}
+    invalid_document = documents["invalid-transcript-vectors.json"]
+    invalid = _unique_sorted(invalid_document["records"], "invalid vectors")
+    ap_expectations = _unique_sorted(
+        invalid_document.get("apExpectationOnlyRecords"),
+        "AP expectation-only vectors",
+    )
+    require(len(valid) == 17 and len(invalid) == 26, "R5 vector cardinality mismatch")
+    require(
+        {record["id"] for record in ap_expectations}
+        == {"inv-post-revocation", "inv-self-lineage", "inv-unauthorized"},
+        "AP expectation-only vector set mismatch",
+    )
+    vector_ids = {record["id"] for record in valid + invalid + ap_expectations}
     for record in valid:
         require(all(_citation_valid(reader, source_paths, citation) for citation in record["citations"]), f"stale citation: {record['id']}")
         result = evaluate_vector(record)
-        require(result["localOutcome"] == "APPLIED", f"valid vector rejected: {record['id']}")
+        require(transition_input_is_compatible(result), f"valid vector rejected: {record['id']}")
     for record in invalid:
         result = evaluate_vector(record)
         expected = record["expected"]
@@ -244,6 +261,17 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
         require(result["stage"] == expected["firstFailingStage"], f"invalid stage mismatch: {record['id']}")
         require(result["preStateDigest"] == result["postStateDigest"], f"invalid vector mutated state: {record['id']}")
         require(result["externalEffects"] == [], f"invalid vector emitted effect: {record['id']}")
+    for record in ap_expectations:
+        require(record.get("expectationLayer") == "AP_EXPECTATION_ONLY", f"AP layer mismatch: {record['id']}")
+        require(
+            record.get("expected", {}).get("localOutcome")
+            in {"AUTHENTIC_BUT_UNAUTHORIZED", "POST_REVOCATION"},
+            f"AP expectation mismatch: {record['id']}",
+        )
+        require(
+            transition_input_is_compatible(evaluate_vector(record)),
+            f"AP-only vector is not K-admitted: {record['id']}",
+        )
 
     transition_index = {
         (state_model["id"], transition["id"]): transition
@@ -279,17 +307,75 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
                 require(key in transition_index, f"unknown model transition: {key}")
                 transition = transition_index[key]
                 require(step["preState"] in transition["from"], f"transition pre-state mismatch: {key}")
-                require(step["expectedPostState"] == transition["to"], f"transition post-state mismatch: {key}")
-                require(step["expectedOutcome"] == transition["outcome"], f"transition outcome mismatch: {key}")
-                require(
-                    transition_input_is_compatible(evaluate_vector(next(record for record in valid + invalid if record["id"] == step["inputVectorId"]))),
-                    f"incompatible transition input: {key}",
+                evaluated = evaluate_vector(
+                    next(
+                        record
+                        for record in valid + invalid + ap_expectations
+                        if record["id"] == step["inputVectorId"]
+                    )
                 )
+                if scenario["modelId"] == "ap_projection":
+                    require(step.get("executed") is False, f"AP transition executed: {key}")
+                    require(step["expectedPostState"] == "UNCHANGED", f"AP transition mutated K state: {key}")
+                    require(step.get("apExpectationOnly") == transition["outcome"], f"AP transition expectation mismatch: {key}")
+                elif transition.get("result_layer") == "K_ADMISSION_ONLY":
+                    require(step["expectedPostState"] == transition["to"], f"transition post-state mismatch: {key}")
+                    require("expectedOutcome" not in step, f"positive K transition has outcome: {key}")
+                    require(step.get("expectedResultLayer") == "K_ADMISSION_ONLY", f"positive K layer mismatch: {key}")
+                    require(transition_input_is_compatible(evaluated), f"incompatible positive transition input: {key}")
+                else:
+                    require(step["expectedPostState"] == transition["to"], f"transition post-state mismatch: {key}")
+                    require(step.get("expectedOutcome") == transition["outcome"], f"transition outcome mismatch: {key}")
+                    require(
+                        evaluated.get("outcomeEvaluated") is True
+                        and evaluated.get("localOutcome") == transition["outcome"]
+                        and evaluated.get("stage") == step["expectedStage"],
+                        f"incompatible negative transition input: {key}",
+                    )
                 exercised_transitions.add(key)
                 reached_states.add((scenario["modelId"], step["preState"]))
-                reached_states.add((scenario["modelId"], step["expectedPostState"]))
+                reached_states.add((scenario["modelId"], transition["to"]))
     require(used_vector_ids == vector_ids, "vector execution coverage mismatch")
     require(exercised_transitions == set(transition_index), "state-transition coverage mismatch")
+    ap_transition_steps = [
+        step
+        for scenario in scenarios
+        if scenario["modelId"] == "ap_projection"
+        for step in scenario["steps"]
+        if "apExpectationOnly" in step
+    ]
+    ap_ordinary_locators = {
+        f"{scenario['id']}:{index}"
+        for scenario in scenarios
+        if scenario["modelId"] != "ap_projection"
+        for index, step in enumerate(scenario["steps"])
+        if "apExpectationOnly" in step
+    }
+    require(len(ap_transition_steps) == 8, "AP transition exclusion cardinality mismatch")
+    require(
+        ap_ordinary_locators == AP_EXPECTATION_ONLY_STEP_LOCATORS,
+        "AP expectation-only step locator mismatch",
+    )
+    require(
+        sum(
+            step.get("expectedPostState") == "READY_FOR_AP_FOLD"
+            and step.get("transitionId") is None
+            and "apExpectationOnly" not in step
+            for scenario in scenarios
+            for step in scenario["steps"]
+        )
+        == 65,
+        "ordinary K-only READY_FOR_AP_FOLD cardinality mismatch",
+    )
+    require(
+        not any(
+            step.get("expectedOutcome") == "APPLIED"
+            and scenario["modelId"] != "ap_projection"
+            for scenario in scenarios
+            for step in scenario["steps"]
+        ),
+        "K-only path emits APPLIED",
+    )
     expected_states = {(state_model["id"], state) for state_model in model["state_models"] for state in state_model["states"]}
     require(reached_states == expected_states, "state coverage mismatch")
 
@@ -345,10 +431,20 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
     require(coverage["o10"]["alias"] == inventory["o10_alias"], "O-10 alias mismatch")
     expected_outcome_rows = []
     for outcome in inventory["o10_primaries"]:
-        matching = [scenario["id"] for scenario in scenarios if any(step["expectedOutcome"] == outcome for step in scenario["steps"])]
+        if outcome in PRODUCED_K_PRIMARIES:
+            branch = "PRODUCED"
+            matching = [scenario["id"] for scenario in scenarios if any(step.get("expectedOutcome") == outcome for step in scenario["steps"])]
+        elif outcome in AP_OWNED_EXCLUSIONS:
+            branch = "AP_OWNED_EXCLUDED"
+            matching = [scenario["id"] for scenario in scenarios if any(step.get("apExpectationOnly") == outcome for step in scenario["steps"])]
+        elif outcome in TRANSCRIPT_PROFILE_UNREACHABLE:
+            branch = "TRANSCRIPT_PROFILE_UNREACHABLE"
+            matching = []
+        else:
+            raise ValidationError(f"unpartitioned O-10 primary: {outcome}")
         expected_outcome_rows.append(
             {
-                "branch": "EXERCISED" if matching else "UNREACHABLE_IN_TRANSCRIPT_ONLY_PROFILE",
+                "branch": branch,
                 "citations": [{"anchor": "## Primary registry", "path": "docs/protocol/styx-app-kernel-v0-outcome-taxonomy.md"}],
                 "id": outcome,
                 "scenarioIds": matching,
@@ -364,6 +460,26 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
         for marker in inventory["o10_post_c03_markers"]
     )
     require(coverage["o10"]["outcomes"] == expected_outcome_rows, "O-10 outcome coverage mismatch")
+    expected_source_rows = []
+    for row in reader.json("tools/causal-flow-simulator/o10/source-inventory.json")["rows"]:
+        if "mapping" in row:
+            primary = row["mapping"]["primary"]
+            outcome_row = next(item for item in expected_outcome_rows if item["id"] == primary)
+            disposition = outcome_row["branch"]
+            witnesses = outcome_row["scenarioIds"]
+        else:
+            primary = row["forbidden_identifier"]
+            disposition = "TRANSCRIPT_PROFILE_UNREACHABLE"
+            witnesses = []
+        expected_source_rows.append(
+            {
+                "disposition": disposition,
+                "primary": primary,
+                "rowId": row["row_id"],
+                "witnessScenarioIds": witnesses,
+            }
+        )
+    require(coverage["o10"].get("sourceRows") == expected_source_rows, "O-10 source-row partition mismatch")
     expected_invariants = {row["id"] for row in model["invariants"]}
     require(
         {row["id"] for row in coverage["invariants"]} == expected_invariants

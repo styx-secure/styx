@@ -17,7 +17,7 @@ const DOMAINS = Object.freeze({
 });
 const MAX_U32 = 0xffff_ffffn;
 const MAX_BODY = MAX_U32 - 20n;
-const BASE_SHA = "7768c32d3ddba230bd60f8b5db1b34d4bcb8ec3b";
+const BASE_SHA = "0fbba871130e4e100558030837e03dd609128976";
 const O08_LIMITS = Object.freeze({
   AP_TRANSITION_BLOCK_OCTETS: 4096,
   CHUNKS_PER_CONTENT: 64,
@@ -29,6 +29,11 @@ const O08_LIMITS = Object.freeze({
   SEQUENCE_VALUE: 4095,
 });
 const O08_CHUNK_OCTETS = new Set([4096, 16384]);
+const PRODUCED_K_PRIMARIES = new Set(["COMMITMENT_MISMATCH", "CONTEXT_CAPACITY_EXHAUSTED", "CREDENTIAL_BINDING_MISMATCH", "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED", "CURRENT_OBJECT_OUT_OF_PROFILE", "DEPENDENCY_DEFERRED", "DUPLICATE", "FORK_EVIDENCE", "INVALID", "LENGTH_MISMATCH", "OPENING_MISSING", "PENDING_ANCESTOR", "PENDING_OPENING", "REFERENCE_COLLISION_UNSUPPORTED", "STRUCTURAL_REJECTION", "UNRESOLVED_CREDENTIAL_BINDING"]);
+const AP_OWNED_EXCLUSIONS = new Set(["APPLIED", "AUTHENTIC_BUT_UNAUTHORIZED", "AUTHORITY_PROJECTION_UNAVAILABLE", "LINEAGE_QUARANTINED", "POST_REVOCATION"]);
+const TRANSCRIPT_PROFILE_UNREACHABLE = new Set(["PROFILE_ACTIVATION_UNSUPPORTED", "REMOVAL_INAPPLICABLE", "STALE_EVIDENCE", "UNRESOLVABLE_CREDENTIAL"]);
+const O10_TAXONOMY = JSON.parse(readFileSync(new URL("../o10/outcome-taxonomy.json", import.meta.url), "utf8"));
+const O10_BY_ID = new Map(O10_TAXONOMY.primaries.map(row => [row.id, row]));
 
 class ProtocolError extends Error {
   constructor(message, stage = "S3_KERNEL_STRUCTURAL") { super(message); this.stage = stage; }
@@ -36,6 +41,14 @@ class ProtocolError extends Error {
 const require = (ok, message) => { if (!ok) throw new ProtocolError(message); };
 const hash = (...parts) => createHash("sha256").update(Buffer.concat(parts)).digest();
 const hex = value => Buffer.from(value).toString("hex");
+function o10Result(primary, stage = undefined) {
+  const row = O10_BY_ID.get(primary);
+  require(row?.owner === "K", `non-K or unknown O-10 primary:${primary}`);
+  const stages = row.stage.split("|");
+  const selected = stage ?? stages[0];
+  require(stages.includes(selected), `O-10 stage mismatch:${primary}:${selected}`);
+  return { localOutcome: primary, remoteClass: O10_TAXONOMY.remote_collapse, stage: selected };
+}
 
 function uint(value, width, label) {
   const number = BigInt(value);
@@ -192,7 +205,12 @@ function parseEvent(transcript) {
       const encoded = new Reader(body.opaque("geometry")); geometry = { chunkSize: encoded.integer(4, "chunk_size"), chunkCount: encoded.integer(8, "chunk_count"), finalChunkLength: encoded.integer(4, "final_chunk_length") }; encoded.finish("geometry");
       require(O08_CHUNK_OCTETS.has(geometry.chunkSize), "CHUNK_OCTETS_LIMIT");
       require(geometry.chunkCount <= O08_LIMITS.CHUNKS_PER_CONTENT, "CHUNKS_PER_CONTENT_LIMIT");
-      require(geometry.finalChunkLength > 0 && geometry.finalChunkLength <= geometry.chunkSize, "FINAL_CHUNK_LENGTH_LIMIT");
+      require(exactLength > 0 && geometry.chunkSize < exactLength && geometry.chunkCount >= 2, "CHUNK_GEOMETRY_INVALID");
+      const expectedCount = 1 + Math.floor((exactLength - 1) / geometry.chunkSize);
+      require(geometry.chunkCount === expectedCount, "CHUNK_GEOMETRY_INVALID");
+      const consumed = geometry.chunkSize * (geometry.chunkCount - 1);
+      require(Number.isSafeInteger(consumed) && consumed < exactLength && geometry.finalChunkLength === exactLength - consumed, "CHUNK_GEOMETRY_INVALID");
+      require(geometry.finalChunkLength > 0 && geometry.finalChunkLength <= geometry.chunkSize, "CHUNK_GEOMETRY_INVALID");
     }
     const shape = ({ 0: "SINGLE", 1: "TREE" })[shapeCode]; require(shape !== undefined && ((shape === "SINGLE") !== (geometry !== null)), "CONTENT_GEOMETRY_INVALID");
     Object.assign(content, { commitmentHex: hex(commitment), contentType, shape }); if (geometry !== null) content.geometry = geometry;
@@ -238,47 +256,64 @@ function ed25519Verify(publicKey, signature, message) {
 
 function evaluate(record) {
   const transcript = Buffer.from(record.transcriptHex, "hex"), state = hex(hash(Buffer.from("styx-c03/evaluation/initial")));
-  const result = { commitmentVerification: "NOT_PRESENT", externalEffects: [], localOutcome: "APPLIED", postStateDigest: null, preStateDigest: state,
-    remoteClass: "APPLIED", signatureVerification: "NOT_EVALUATED", stage: "FINAL_AFTER_S6", transcriptVerification: "VALID" };
-  const reject = (outcome, stage, transcriptStatus = "VALID") => Object.assign(result, { localOutcome: outcome, postStateDigest: state, remoteClass: "OPAQUE_REMOTE_FAILURE", stage, transcriptVerification: transcriptStatus });
+  const result = { apAuthorityResult: "AP_FOLD_NOT_EXECUTED", commitmentVerification: "NOT_PRESENT", externalEffects: [],
+    kBindingAdmission: "ADMITTED", outcomeEvaluated: false, postStateDigest: null, preStateDigest: state,
+    signatureVerification: "NOT_EVALUATED", stage: "FINAL_AFTER_S6", transcriptVerification: "VALID" };
+  const reject = (outcome, stage, transcriptStatus = "VALID", admitted = false) => Object.assign(result, o10Result(outcome, stage), {
+    apAuthorityResult: admitted ? "REJECTED_OR_DEFERRED" : "NOT_REACHED",
+    kBindingAdmission: admitted ? "ADMITTED" : "REJECTED", outcomeEvaluated: true,
+    postStateDigest: state, transcriptVerification: transcriptStatus,
+  });
   let fields, reference, expected;
   try {
     if (record.kind === "GENESIS") { fields = parseGenesis(transcript); reference = hex(framedHash(DOMAINS.genesisReference, transcript)); expected = record.genesisReferenceHex; }
     else if (record.kind === "APPLICATION_EVENT") { fields = parseEvent(transcript); reference = hex(framedHash(DOMAINS.eventReference, transcript)); expected = record.eventReferenceHex; }
     else throw new ProtocolError("OBJECT_KIND_UNKNOWN");
   } catch (error) {
+    if (error instanceof ProtocolError && error.message === "PARENTS_PER_EVENT_LIMIT") return reject("CONTEXT_CAPACITY_EXHAUSTED", error.stage, "REJECTED");
     if (error instanceof ProtocolError && error.message.endsWith("_LIMIT")) return reject("CURRENT_OBJECT_OUT_OF_PROFILE", error.stage, "REJECTED");
     return reject("STRUCTURAL_REJECTION", error instanceof ProtocolError ? error.stage : "S3_KERNEL_STRUCTURAL", "REJECTED");
   }
   if (reference !== expected) return reject("REFERENCE_COLLISION_UNSUPPORTED", "S3_KERNEL_STRUCTURAL");
+  const admission = record.admissionContext ?? {};
+  if (admission === null || Array.isArray(admission) || typeof admission !== "object") return reject("STRUCTURAL_REJECTION", "S3_KERNEL_STRUCTURAL");
+  if ((admission.checkpointEvidenceReferences ?? []).length > 0) return reject("CURRENT_OBJECT_OUT_OF_PROFILE", "S3_KERNEL_STRUCTURAL");
   try { if (!ed25519Verify(Buffer.from(record.binding.verificationKeyHex, "hex"), Buffer.from(record.signatureHex, "hex"), transcript)) { result.signatureVerification = "REJECTED"; return reject("INVALID", "S3_KERNEL_STRUCTURAL"); } } catch { result.signatureVerification = "REJECTED"; return reject("INVALID", "S3_KERNEL_STRUCTURAL"); }
   result.signatureVerification = "VALID";
   if (record.kind === "APPLICATION_EVENT") {
     if (record.binding.contextIdentifierHex !== fields.contextIdentifierHex || record.binding.credentialIdentifierHex !== fields.credentialIdentifierHex) return reject("CREDENTIAL_BINDING_MISMATCH", "S3_KERNEL_STRUCTURAL");
     if (fields.content.class !== "NONE") {
-      if (record.opening === undefined) { result.commitmentVerification = "PENDING"; return reject("OPENING_MISSING", "EVENT_LOCAL"); }
+      if (record.opening === undefined) {
+        result.commitmentVerification = "PENDING";
+        return fields.content.class === "REQUIRED"
+          ? reject("PENDING_OPENING", "EVENT_LOCAL", "VALID", true)
+          : reject("OPENING_MISSING", "S3_KERNEL_STRUCTURAL");
+      }
       const supplied = Buffer.from(record.opening.contentHex, "hex"), randomizer = Buffer.from(record.opening.randomizerHex, "hex");
       const computed = commitment(fields, supplied, randomizer, fields.content.geometry?.chunkSize);
-      if (supplied.length !== fields.content.exactLength || computed.commitmentHex !== fields.content.commitmentHex) { result.commitmentVerification = "REJECTED"; return reject("COMMITMENT_MISMATCH", "S3_KERNEL_STRUCTURAL"); }
+      if (supplied.length !== fields.content.exactLength) { result.commitmentVerification = "REJECTED"; return reject("LENGTH_MISMATCH", "S3_KERNEL_STRUCTURAL"); }
+      if (computed.commitmentHex !== fields.content.commitmentHex) { result.commitmentVerification = "REJECTED"; return reject("COMMITMENT_MISMATCH", "S3_KERNEL_STRUCTURAL"); }
       result.commitmentVerification = "VALID";
     }
   }
-  const admission = record.admissionContext ?? {};
-  if (admission === null || Array.isArray(admission) || typeof admission !== "object") return reject("STRUCTURAL_REJECTION", "S4_GRAPH_ADMISSION");
-  if ((admission.checkpointEvidenceReferences ?? []).length > 0) return reject("STRUCTURAL_REJECTION", "S4_GRAPH_ADMISSION");
-  if ((admission.seenEventReferences ?? []).includes(reference)) return reject("DUPLICATE", "S3_KERNEL_STRUCTURAL");
-  if ((admission.sameAuthorSequenceReferences ?? []).some(candidate => candidate !== reference)) return reject("FORK_EVIDENCE", "EVENT_LOCAL");
+  if ((admission.seenEventReferences ?? []).includes(reference)) return reject("DUPLICATE", "S3_KERNEL_STRUCTURAL", "VALID", true);
+  if ((admission.sameAuthorSequenceReferences ?? []).some(candidate => candidate !== reference)) return reject("FORK_EVIDENCE", "EVENT_LOCAL", "VALID", true);
   if (record.kind === "APPLICATION_EVENT") {
     const dependencies = new Set(fields.causalParents);
     if (fields.directPredecessorHex !== null) dependencies.add(fields.directPredecessorHex);
     const available = new Set(admission.availableDependencyReferences ?? [...dependencies]);
-    if ([...dependencies].some(candidate => !available.has(candidate))) return reject("PENDING_ANCESTOR", "S4_GRAPH_ADMISSION");
-    if ((admission.revokedCredentialIdentifiers ?? []).includes(fields.credentialIdentifierHex)) return reject("POST_REVOCATION", "EVENT_LOCAL");
-    if (admission.authorizedCredentialIdentifiers !== undefined && !admission.authorizedCredentialIdentifiers.includes(fields.credentialIdentifierHex)) return reject("AUTHENTIC_BUT_UNAUTHORIZED", "EVENT_LOCAL");
-    if (fields.eventRole === "CREDENTIAL" && ["REVOKE", "ROTATE"].includes(fields.tail.kind)) {
-      const target = fields.tail.targetCredentialHex ?? fields.tail.retiringCredentialHex;
-      if (target === fields.credentialIdentifierHex) return reject("AUTHENTIC_BUT_UNAUTHORIZED", "EVENT_LOCAL");
+    const missing = [...dependencies].filter(candidate => !available.has(candidate));
+    if (missing.length > 0) {
+      const pending = new Set([...(admission.knownPendingOpeningRoots ?? []), ...(admission.pendingOpeningDescendantReferences ?? [])]);
+      const classifiedPending = missing.every(candidate => pending.has(candidate));
+      return classifiedPending
+        ? reject("PENDING_ANCESTOR", "EVENT_LOCAL", "VALID", true)
+        : reject("DEPENDENCY_DEFERRED", "S4_GRAPH_ADMISSION", "VALID", true);
     }
+    if (admission.credentialIdentifierCollision === true) return reject("CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED", "S3_KERNEL_STRUCTURAL");
+    if (!(fields.eventRole === "CREDENTIAL" && fields.tail?.kind === "GRANT")
+        && admission.credentialBindingMatchCount !== undefined
+        && admission.credentialBindingMatchCount !== 1) return reject("UNRESOLVED_CREDENTIAL_BINDING", "S3_KERNEL_STRUCTURAL");
   }
   result.postStateDigest = hex(hash(Buffer.from(state, "hex"), Buffer.from(reference, "hex"))); return result;
 }
@@ -286,9 +321,10 @@ function evaluate(record) {
 function stateDigest(value) { return hex(hash(Buffer.from(value, "utf8"))); }
 const SEMANTIC_OBSERVATION_FIELDS = Object.freeze([
   "apAuthorityResult", "commitmentVerification", "dependencyStatus", "executed",
-  "externalEffects", "inputDigest", "kBindingAdmission", "localOutcome",
-  "remoteClass", "signatureVerification", "stage", "transcriptVerification",
+  "externalEffects", "inputDigest", "kBindingAdmission", "outcomeEvaluated",
+  "signatureVerification", "stage", "transcriptVerification",
 ]);
+const OPTIONAL_SEMANTIC_OBSERVATION_FIELDS = Object.freeze(["localOutcome", "remoteClass"]);
 const NONSEMANTIC_VECTOR_FIELDS = new Set([
   "citations", "expected", "id", "mutation", "sourceVectorId", "synthetic", "testOnly",
 ]);
@@ -297,11 +333,23 @@ function semanticInputDigest(vector) {
   return hex(hash(Buffer.from(canonical(projection), "utf8")));
 }
 function semanticObservationDigest(steps) {
-  const projection = steps.map(step => Object.fromEntries(SEMANTIC_OBSERVATION_FIELDS.map(field => [field, step[field]])));
+  const projection = steps.map(step => {
+    const observation = Object.fromEntries(SEMANTIC_OBSERVATION_FIELDS.map(field => [field, step[field]]));
+    for (const field of OPTIONAL_SEMANTIC_OBSERVATION_FIELDS) {
+      const present = Object.hasOwn(step, field);
+      observation[`${field}Present`] = present;
+      if (present) observation[field] = step[field];
+    }
+    return observation;
+  });
   return hex(hash(Buffer.from(canonical(projection), "utf8")));
 }
 function transitionInputIsCompatible(observed) {
-  return observed?.localOutcome === "APPLIED" && observed?.stage === "FINAL_AFTER_S6"
+  return observed?.kBindingAdmission === "ADMITTED"
+    && observed?.apAuthorityResult === "AP_FOLD_NOT_EXECUTED"
+    && observed?.outcomeEvaluated === false
+    && !Object.hasOwn(observed ?? {}, "localOutcome")
+    && !Object.hasOwn(observed ?? {}, "remoteClass")
     && observed?.transcriptVerification === "VALID" && observed?.signatureVerification === "VALID";
 }
 
@@ -311,48 +359,46 @@ function computeTrace(scenario, vectors, transitions) {
     const vector = vectors.get(step.inputVectorId); require(vector !== undefined, `unknown vector:${step.inputVectorId}`);
     const executed = step.executed ?? true, observed = executed ? evaluate(vector) : null;
     const preStateDigest = stateDigest(`styx-c03/state/${scenario.id}/${step.preState}`);
-    let localOutcome, stage, postState;
+    let observation, postState;
     if (!executed) {
-      require(scenario.modelId === "flow", `non-flow boundary:${scenario.id}`);
-      localOutcome = scenario.id === "scenario-flow-transport_publish" ? "TRANSPORT_PROFILE_REQUIRED" : "SESSION_PROFILE_REQUIRED";
-      stage = "BOUNDARY_NOT_EXECUTED"; postState = "UNCHANGED";
+      require(["flow", "ap_projection"].includes(scenario.modelId), `invalid boundary:${scenario.id}`);
+      const localOutcome = scenario.modelId === "ap_projection" ? "NOT_EVALUATED"
+        : scenario.id === "scenario-flow-transport_publish" ? "TRANSPORT_PROFILE_REQUIRED" : "SESSION_PROFILE_REQUIRED";
+      observation = { apAuthorityResult: "NOT_EVALUATED", commitmentVerification: "NOT_PRESENT", externalEffects: [],
+        kBindingAdmission: "NOT_EVALUATED", localOutcome, outcomeEvaluated: false, remoteClass: "OPAQUE_REMOTE_FAILURE",
+        signatureVerification: "NOT_EVALUATED", stage: "BOUNDARY_NOT_EXECUTED", transcriptVerification: "NOT_EVALUATED" };
+      postState = "UNCHANGED";
     } else if (step.transitionId !== null) {
-      require(transitionInputIsCompatible(observed), `incompatible transition input:${scenario.id}:${index}`);
       const transition = transitions.get(`${scenario.modelId}:${step.transitionId}`);
       require(transition !== undefined && transition.from.includes(step.preState), `transition mismatch:${scenario.id}:${index}`);
-      localOutcome = transition.outcome; stage = "MODEL_TRANSITION"; postState = transition.to;
+      if (transition.result_layer === "K_ADMISSION_ONLY") {
+        require(transitionInputIsCompatible(observed), `incompatible positive K transition:${scenario.id}:${index}`);
+      } else {
+        require(observed?.outcomeEvaluated === true && observed?.localOutcome === transition.outcome,
+          `incompatible negative K transition:${scenario.id}:${index}`);
+      }
+      observation = Object.fromEntries(Object.entries(observed).filter(([key]) => !["preStateDigest", "postStateDigest"].includes(key)));
+      postState = transition.to;
     } else {
-      localOutcome = observed.localOutcome; stage = observed.stage;
-      postState = observed.preStateDigest === observed.postStateDigest ? "UNCHANGED" : "APPLIED";
+      observation = Object.fromEntries(Object.entries(observed).filter(([key]) => !["preStateDigest", "postStateDigest"].includes(key)));
+      postState = observed.preStateDigest === observed.postStateDigest ? "UNCHANGED" : "READY_FOR_AP_FOLD";
     }
     const postStateDigest = postState === "UNCHANGED" || !executed
       ? preStateDigest : stateDigest(`styx-c03/state/${scenario.id}/${postState}`);
     const requirements = new Set(step.requiredPriorEvidence);
     const dependencyStatus = [...requirements].every(value => availableEvidence.has(value)) ? "SATISFIED" : "MISSING";
     require(dependencyStatus === step.expectedDependencyStatus, `dependency status mismatch:${scenario.id}:${index}`);
-    let kBindingAdmission, apAuthorityResult;
-    if (!executed) {
-      kBindingAdmission = "NOT_EVALUATED"; apAuthorityResult = "NOT_EVALUATED";
-    } else if (observed.transcriptVerification !== "VALID" || observed.signatureVerification === "REJECTED" || ["CREDENTIAL_BINDING_MISMATCH", "REFERENCE_COLLISION_UNSUPPORTED"].includes(observed.localOutcome)) {
-      kBindingAdmission = "REJECTED"; apAuthorityResult = "NOT_REACHED";
-    } else {
-      kBindingAdmission = "ADMITTED"; apAuthorityResult = observed.localOutcome === "APPLIED" ? "APPLIED" : "REJECTED_OR_DEFERRED";
-    }
     const result = {
       actionDigest: hex(hash(Buffer.from(step.candidateAction, "utf8"))),
-      apAuthorityResult,
       causalClassification: step.transitionId ?? `VECTOR:${vector.id}`,
-      commitmentVerification: observed === null ? "NOT_PRESENT" : observed.commitmentVerification,
       dependencyStatus,
       evidenceConsumed: [...requirements].sort(),
       evidenceProduced: step.providedEvidence ?? null,
       executed,
-      externalEffects: [], inputDigest: semanticInputDigest(vector),
-      kBindingAdmission, localOutcome,
-      postStateDigest, preStateDigest, remoteClass: localOutcome === "APPLIED" ? "APPLIED" : "OPAQUE_REMOTE_FAILURE",
-      signatureVerification: observed === null ? "NOT_EVALUATED" : observed.signatureVerification,
-      stage, step: index, transcriptVerification: observed === null ? "NOT_EVALUATED" : observed.transcriptVerification,
+      inputDigest: semanticInputDigest(vector), postStateDigest, preStateDigest, step: index,
     };
+    Object.assign(result, observation);
+    if (Object.hasOwn(step, "apExpectationOnly")) result.apExpectationOnly = step.apExpectationOnly;
     if (step.providedEvidence !== null && step.providedEvidence !== undefined) availableEvidence.add(step.providedEvidence);
     return result;
   });
@@ -385,7 +431,7 @@ function validateFileManifest(corpus, manifest) {
   const expected = names.map(path => ({ path, recordCount: loadCanonical(resolve(corpus, path)).records.length, sha256: hex(hash(readFileSync(resolve(corpus, path)))) }));
   require(JSON.stringify(canonicalValue(manifest.files)) === JSON.stringify(canonicalValue(expected)), "manifest file digests/counts mismatch");
 }
-function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, mutations, valid, invalid) {
+function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, mutations, valid, invalid, apExpectations) {
   const coverage = manifest.coverage;
   const inventory = JSON.parse(readFileSync(resolve(repoRoot, "tools/causal-flow-simulator/c03/corpus-inventory.json"), "utf8"));
   const nonExecutableInvariants = new Set(["INV_C0_3_NO_GO", "INV_SOURCE_AUTHORITY"]);
@@ -394,7 +440,7 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
   require(setEqual(executableInvariantIds, inventoriedInvariantIds), "invariant witness inventory mismatch");
   require(new Set(Object.values(inventory.invariant_witness_vectors)).size === executableInvariantIds.size, "shared inventoried invariant witness vector");
   const scenarioIds = new Set(scenarios.map(row => row.id));
-  const vectorIds = new Set([...valid, ...invalid].map(row => row.id));
+  const vectorIds = new Set([...valid, ...invalid, ...apExpectations].map(row => row.id));
   const usedVectorIds = new Set();
   for (const scenario of scenarios) {
     const available = new Set();
@@ -476,11 +522,30 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
 
   require(JSON.stringify(canonicalValue(coverage.o10.alias)) === JSON.stringify(canonicalValue(inventory.o10_alias)), "O-10 alias mismatch");
   const expectedOutcomes = inventory.o10_primaries.map(outcome => {
-    const matching = scenarios.filter(scenario => scenario.steps.some(step => step.expectedOutcome === outcome)).map(row => row.id);
-    return { branch: matching.length > 0 ? "EXERCISED" : "UNREACHABLE_IN_TRANSCRIPT_ONLY_PROFILE", citations: [{ anchor: "## Primary registry", path: "docs/protocol/styx-app-kernel-v0-outcome-taxonomy.md" }], id: outcome, scenarioIds: matching };
+    let branch, matching;
+    if (PRODUCED_K_PRIMARIES.has(outcome)) {
+      branch = "PRODUCED";
+      matching = scenarios.filter(scenario => scenario.steps.some(step => step.expectedOutcome === outcome)).map(row => row.id);
+    } else if (AP_OWNED_EXCLUSIONS.has(outcome)) {
+      branch = "AP_OWNED_EXCLUDED";
+      matching = scenarios.filter(scenario => scenario.steps.some(step => step.apExpectationOnly === outcome)).map(row => row.id);
+    } else {
+      require(TRANSCRIPT_PROFILE_UNREACHABLE.has(outcome), `unpartitioned O-10 primary:${outcome}`);
+      branch = "TRANSCRIPT_PROFILE_UNREACHABLE"; matching = [];
+    }
+    return { branch, citations: [{ anchor: "## Primary registry", path: "docs/protocol/styx-app-kernel-v0-outcome-taxonomy.md" }], id: outcome, scenarioIds: matching };
   });
   expectedOutcomes.push(...inventory.o10_post_c03_markers.map(marker => ({ branch: "UNREACHABLE_IN_TRANSCRIPT_ONLY_PROFILE", citations: [{ anchor: "## Closed cardinalities", path: "docs/protocol/styx-app-kernel-v0-outcome-taxonomy.md" }], id: marker, scenarioIds: [] })));
   require(JSON.stringify(canonicalValue(coverage.o10.outcomes)) === JSON.stringify(canonicalValue(expectedOutcomes)), "O-10 outcome coverage mismatch");
+  const sourceInventory = baseJson(repoRoot, "tools/causal-flow-simulator/o10/source-inventory.json");
+  const expectedSourceRows = sourceInventory.rows.map(row => {
+    if (row.mapping !== undefined) {
+      const outcome = expectedOutcomes.find(item => item.id === row.mapping.primary);
+      return { disposition: outcome.branch, primary: row.mapping.primary, rowId: row.row_id, witnessScenarioIds: outcome.scenarioIds };
+    }
+    return { disposition: "TRANSCRIPT_PROFILE_UNREACHABLE", primary: row.forbidden_identifier, rowId: row.row_id, witnessScenarioIds: [] };
+  });
+  require(JSON.stringify(canonicalValue(coverage.o10.sourceRows)) === JSON.stringify(canonicalValue(expectedSourceRows)), "O-10 source-row partition mismatch");
 }
 function parseArgs() { const args = process.argv.slice(2), values = {}; for (let i = 0; i < args.length; i += 2) values[args[i]] = args[i + 1]; for (const key of ["--repo-root", "--corpus", "--output"]) require(values[key], `missing ${key}`); return values; }
 
@@ -488,10 +553,10 @@ function baseJson(repoRoot, path) {
   return JSON.parse(execFileSync("git", ["show", `${BASE_SHA}:${path}`], { cwd: repoRoot, encoding: "utf8" }));
 }
 
-function mutationReport(args, corpus, valid, invalid, scenarios, expected, model) {
+function mutationReport(args, corpus, valid, invalid, apExpectations, scenarios, expected, model) {
   const registry = loadCanonical(resolve(corpus, "adversarial-mutations.json")).records;
   const manifest = loadCanonical(resolve(corpus, "manifest.json"));
-  const vectors = new Map([...valid, ...invalid].map(record => [record.id, record]));
+  const vectors = new Map([...valid, ...invalid, ...apExpectations].map(record => [record.id, record]));
   const expectedById = new Map(expected.map(record => [record.id, record]));
   const scenarioByTrace = new Map(scenarios.map(record => [`trace-${record.id}`, record]));
   const transitions = new Map(model.state_models.flatMap(machine => machine.transitions.map(transition => [`${machine.id}:${transition.id}`, transition])));
@@ -555,25 +620,29 @@ function mutationReport(args, corpus, valid, invalid, scenarios, expected, model
 function main() {
   const args = parseArgs(), corpus = resolve(args["--corpus"]);
   const valid = loadCanonical(resolve(corpus, "valid-transcript-vectors.json")).records;
-  const invalid = loadCanonical(resolve(corpus, "invalid-transcript-vectors.json")).records;
-  for (const record of valid) { const observed = evaluate(record); require(observed.localOutcome === "APPLIED", `valid vector rejected:${record.id}:${observed.localOutcome}:${observed.stage}:${observed.commitmentVerification}`); }
+  const invalidDocument = loadCanonical(resolve(corpus, "invalid-transcript-vectors.json"));
+  const invalid = invalidDocument.records, apExpectations = invalidDocument.apExpectationOnlyRecords;
+  for (const record of valid) { const observed = evaluate(record); require(transitionInputIsCompatible(observed), `valid vector rejected:${record.id}:${observed.localOutcome}:${observed.stage}:${observed.commitmentVerification}`); }
   for (const record of invalid) { const observed = evaluate(record); require(observed.localOutcome === record.expected.localOutcome && observed.stage === record.expected.firstFailingStage, `invalid mismatch:${record.id}`); require(observed.preStateDigest === observed.postStateDigest && observed.externalEffects.length === 0, `invalid side effect:${record.id}`); }
+  for (const record of apExpectations) require(transitionInputIsCompatible(evaluate(record)), `AP-only vector rejected:${record.id}`);
   const scenarios = loadCanonical(resolve(corpus, "state-machine-scenarios.json")).records;
   const expected = loadCanonical(resolve(corpus, "expected-traces.json")).records;
   const manifest = loadCanonical(resolve(corpus, "manifest.json"));
   const mutations = loadCanonical(resolve(corpus, "adversarial-mutations.json")).records;
-  const model = baseJson(resolve(args["--repo-root"]), "docs/protocol/review/styx-app-kernel-v0-review-model.json");
-  validateCorpusRelations(resolve(args["--repo-root"]), manifest, model, scenarios, expected, mutations, valid, invalid);
+  const model = JSON.parse(readFileSync(resolve(args["--repo-root"], "docs/protocol/review/styx-app-kernel-v0-review-model.json"), "utf8"));
+  validateCorpusRelations(resolve(args["--repo-root"]), manifest, model, scenarios, expected, mutations, valid, invalid, apExpectations);
   if (args["--mode"] === "mutations") {
-    writeFileSync(resolve(args["--output"]), canonical(mutationReport(args, corpus, valid, invalid, scenarios, expected, model)), { flag: "wx" });
+    writeFileSync(resolve(args["--output"]), canonical(mutationReport(args, corpus, valid, invalid, apExpectations, scenarios, expected, model)), { flag: "wx" });
     return;
   }
   const transitions = new Map(model.state_models.flatMap(machine => machine.transitions.map(transition => [`${machine.id}:${transition.id}`, transition])));
-  const vectors = new Map([...valid, ...invalid].map(record => [record.id, record]));
+  const vectors = new Map([...valid, ...invalid, ...apExpectations].map(record => [record.id, record]));
   const expectedByScenario = new Map(expected.map(record => [record.scenarioId, record]));
+  const computedTraces = [];
   for (const scenario of scenarios) {
     const computed = computeTrace(scenario, vectors, transitions), oracle = expectedByScenario.get(scenario.id);
     require(JSON.stringify(canonicalValue(computed)) === JSON.stringify(canonicalValue(oracle)), `trace mismatch:${scenario.id}`);
+    computedTraces.push(computed);
   }
   require(scenarios.length === expected.length, "unexpected expected trace");
   const o07 = new Set(baseJson(resolve(args["--repo-root"]), "tools/causal-flow-simulator/o07/required_atom_instances_v1.json").rows.map(row => row.atom_instance_id));
@@ -585,7 +654,17 @@ function main() {
   validateFileManifest(corpus, manifest);
   const names = ["adversarial-mutations.json", "expected-traces.json", "invalid-transcript-vectors.json", "manifest.json", "state-machine-scenarios.json", "valid-transcript-vectors.json"];
   const corpusDigest = hex(hash(...names.map(name => readFileSync(resolve(corpus, name)))));
-  const report = { corpusDigest, invalidVectors: invalid.length, result: "PASS", scenarios: scenarios.length,
+  const observations = computedTraces.flatMap(trace => trace.steps.map(step => {
+    const observation = { id: `${trace.scenarioId}:${step.step}`,
+      ...Object.fromEntries(SEMANTIC_OBSERVATION_FIELDS.map(field => [field, step[field]])) };
+    for (const field of OPTIONAL_SEMANTIC_OBSERVATION_FIELDS) {
+      const present = Object.hasOwn(step, field);
+      observation[`${field}Present`] = present;
+      if (present) observation[field] = step[field];
+    }
+    return observation;
+  })).sort((left, right) => left.id.localeCompare(right.id));
+  const report = { corpusDigest, invalidVectors: invalid.length, observations, result: "PASS", scenarios: scenarios.length,
     traceDigest: hex(hash(readFileSync(resolve(corpus, "expected-traces.json")))), validVectors: valid.length };
   writeFileSync(resolve(args["--output"]), canonical(report), { flag: "wx" });
 }

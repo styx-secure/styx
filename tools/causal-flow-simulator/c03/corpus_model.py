@@ -12,7 +12,7 @@ from typing import Any
 from canonical_json import dumps
 
 
-BASE_SHA = "7768c32d3ddba230bd60f8b5db1b34d4bcb8ec3b"
+BASE_SHA = "0fbba871130e4e100558030837e03dd609128976"
 ENTRY_ROLES = frozenset(
     {
         "C03_SEMANTIC_LIMIT",
@@ -72,6 +72,66 @@ O08_LIMITS = {
     "SEQUENCE_VALUE": 4095,
 }
 O08_CHUNK_OCTETS = frozenset({4096, 16384})
+PRODUCED_K_PRIMARIES = frozenset(
+    {
+        "COMMITMENT_MISMATCH",
+        "CONTEXT_CAPACITY_EXHAUSTED",
+        "CREDENTIAL_BINDING_MISMATCH",
+        "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+        "CURRENT_OBJECT_OUT_OF_PROFILE",
+        "DEPENDENCY_DEFERRED",
+        "DUPLICATE",
+        "FORK_EVIDENCE",
+        "INVALID",
+        "LENGTH_MISMATCH",
+        "OPENING_MISSING",
+        "PENDING_ANCESTOR",
+        "PENDING_OPENING",
+        "REFERENCE_COLLISION_UNSUPPORTED",
+        "STRUCTURAL_REJECTION",
+        "UNRESOLVED_CREDENTIAL_BINDING",
+    }
+)
+AP_OWNED_EXCLUSIONS = frozenset(
+    {
+        "APPLIED",
+        "AUTHENTIC_BUT_UNAUTHORIZED",
+        "AUTHORITY_PROJECTION_UNAVAILABLE",
+        "LINEAGE_QUARANTINED",
+        "POST_REVOCATION",
+    }
+)
+TRANSCRIPT_PROFILE_UNREACHABLE = frozenset(
+    {
+        "PROFILE_ACTIVATION_UNSUPPORTED",
+        "REMOVAL_INAPPLICABLE",
+        "STALE_EVIDENCE",
+        "UNRESOLVABLE_CREDENTIAL",
+    }
+)
+AP_EXPECTATION_ONLY_STEP_LOCATORS = frozenset(
+    {
+        "scenario-counterexample-ce_bounded_contested_standing:2",
+        "scenario-counterexample-ce_grant_revoke_laundering_order_a:2",
+        "scenario-counterexample-ce_grant_revoke_laundering_order_b:2",
+        "scenario-counterexample-ce_mutual_reduction_no_authority:1",
+        "scenario-counterexample-ce_mutual_reduction_no_authority:2",
+        "scenario-counterexample-ce_self_lineage_reduction:1",
+        "scenario-counterexample-ce_single_authority_takeover:1",
+        "scenario-counterexample-ce_subtree_amplification:2",
+        "scenario-history-revocation-effect:1",
+        "scenario-history-rotation-effect:1",
+        "scenario-invariant-inv_auth_not_key:0",
+        "scenario-invariant-inv_lineage_containment:0",
+        "scenario-invariant-inv_self_lineage_reduction:0",
+        "scenario-vector-inv-post-revocation:0",
+        "scenario-vector-inv-self-lineage:0",
+        "scenario-vector-inv-unauthorized:0",
+    }
+)
+O10_TAXONOMY_PATH = (
+    Path(__file__).resolve().parents[1] / "o10" / "outcome-taxonomy.json"
+)
 NONEXECUTABLE_INVARIANTS = frozenset(
     {
         "INV_C0_3_NO_GO",
@@ -86,12 +146,12 @@ SEMANTIC_OBSERVATION_FIELDS = (
     "externalEffects",
     "inputDigest",
     "kBindingAdmission",
-    "localOutcome",
-    "remoteClass",
+    "outcomeEvaluated",
     "signatureVerification",
     "stage",
     "transcriptVerification",
 )
+OPTIONAL_SEMANTIC_OBSERVATION_FIELDS = ("localOutcome", "remoteClass")
 NONSEMANTIC_VECTOR_FIELDS = frozenset(
     {"citations", "expected", "id", "mutation", "sourceVectorId", "synthetic", "testOnly"}
 )
@@ -111,10 +171,17 @@ def semantic_input_digest(vector: dict[str, Any]) -> str:
 def semantic_observation_digest(steps: list[dict[str, Any]]) -> str:
     """Hash only computed protocol observations, never scenario identity."""
 
-    projection = [
-        {field: step[field] for field in SEMANTIC_OBSERVATION_FIELDS}
-        for step in steps
-    ]
+    projection = []
+    for step in steps:
+        observation = {
+            field: step[field] for field in SEMANTIC_OBSERVATION_FIELDS
+        }
+        for field in OPTIONAL_SEMANTIC_OBSERVATION_FIELDS:
+            present = field in step
+            observation[f"{field}Present"] = present
+            if present:
+                observation[field] = step[field]
+        projection.append(observation)
     return sha256(dumps(projection)).hexdigest()
 
 
@@ -122,8 +189,11 @@ def transition_input_is_compatible(result: dict[str, Any]) -> bool:
     """A model transition may refine only a fully admitted transcript input."""
 
     return (
-        result.get("localOutcome") == "APPLIED"
-        and result.get("stage") == "FINAL_AFTER_S6"
+        result.get("kBindingAdmission") == "ADMITTED"
+        and result.get("apAuthorityResult") == "AP_FOLD_NOT_EXECUTED"
+        and result.get("outcomeEvaluated") is False
+        and "localOutcome" not in result
+        and "remoteClass" not in result
         and result.get("transcriptVerification") == "VALID"
         and result.get("signatureVerification") == "VALID"
     )
@@ -525,10 +595,25 @@ def parse_event(transcript: bytes) -> dict[str, Any]:
                 raise ProtocolError("CHUNK_OCTETS_LIMIT")
             if geometry["chunkCount"] > O08_LIMITS["CHUNKS_PER_CONTENT"]:
                 raise ProtocolError("CHUNKS_PER_CONTENT_LIMIT")
-            if not 0 < geometry["finalChunkLength"] <= geometry["chunkSize"]:
-                raise ProtocolError("FINAL_CHUNK_LENGTH_LIMIT")
+            chunk_size = geometry["chunkSize"]
+            chunk_count = geometry["chunkCount"]
+            final_length = geometry["finalChunkLength"]
+            if exact_length == 0 or chunk_size >= exact_length or chunk_count < 2:
+                raise ProtocolError("CHUNK_GEOMETRY_INVALID")
+            expected_count = 1 + ((exact_length - 1) // chunk_size)
+            if chunk_count != expected_count:
+                raise ProtocolError("CHUNK_GEOMETRY_INVALID")
+            if chunk_count - 1 > MAX_U64 // chunk_size:
+                raise ProtocolError("CHUNK_GEOMETRY_INVALID")
+            consumed = chunk_size * (chunk_count - 1)
+            if consumed >= exact_length or final_length != exact_length - consumed:
+                raise ProtocolError("CHUNK_GEOMETRY_INVALID")
+            if not 0 < final_length <= chunk_size:
+                raise ProtocolError("CHUNK_GEOMETRY_INVALID")
         shape = {0: "SINGLE", 1: "TREE"}.get(shape_code)
         if shape is None or (shape == "SINGLE") == (geometry is not None):
+            raise ProtocolError("CONTENT_GEOMETRY_INVALID")
+        if shape == "SINGLE" and exact_length > MAX_U32 - 132:
             raise ProtocolError("CONTENT_GEOMETRY_INVALID")
         content.update(
             {
@@ -689,24 +774,34 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
     transcript = bytes.fromhex(record["transcriptHex"])
     state_digest = sha256(b"styx-c03/evaluation/initial").hexdigest()
     result: dict[str, Any] = {
+        "apAuthorityResult": "AP_FOLD_NOT_EXECUTED",
         "commitmentVerification": "NOT_PRESENT",
         "externalEffects": [],
-        "localOutcome": "APPLIED",
+        "kBindingAdmission": "ADMITTED",
+        "outcomeEvaluated": False,
         "postStateDigest": None,
         "preStateDigest": state_digest,
-        "remoteClass": "APPLIED",
         "signatureVerification": "NOT_EVALUATED",
         "stage": "FINAL_AFTER_S6",
         "transcriptVerification": "VALID",
     }
 
-    def reject(outcome: str, stage: str, *, transcript_status: str = "VALID") -> dict[str, Any]:
+    def reject(
+        outcome: str,
+        stage: str | None = None,
+        *,
+        admitted: bool = False,
+        transcript_status: str = "VALID",
+    ) -> dict[str, Any]:
+        result.update(o10_result(outcome, stage))
         result.update(
             {
-                "localOutcome": outcome,
+                "apAuthorityResult": (
+                    "REJECTED_OR_DEFERRED" if admitted else "NOT_REACHED"
+                ),
+                "kBindingAdmission": "ADMITTED" if admitted else "REJECTED",
+                "outcomeEvaluated": True,
                 "postStateDigest": state_digest,
-                "remoteClass": "OPAQUE_REMOTE_FAILURE",
-                "stage": stage,
                 "transcriptVerification": transcript_status,
             }
         )
@@ -724,6 +819,12 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
         else:
             raise ProtocolError("OBJECT_KIND_UNKNOWN")
     except ProtocolError as error:
+        if error.code == "PARENTS_PER_EVENT_LIMIT":
+            return reject(
+                "CONTEXT_CAPACITY_EXHAUSTED",
+                error.stage,
+                transcript_status="REJECTED",
+            )
         if error.code.endswith("_LIMIT"):
             return reject(
                 "CURRENT_OBJECT_OUT_OF_PROFILE",
@@ -735,6 +836,14 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
         return reject("STRUCTURAL_REJECTION", "S3_KERNEL_STRUCTURAL", transcript_status="REJECTED")
     if reference != expected_reference:
         return reject("REFERENCE_COLLISION_UNSUPPORTED", "S3_KERNEL_STRUCTURAL")
+
+    admission = record.get("admissionContext", {})
+    if admission and not isinstance(admission, dict):
+        return reject("STRUCTURAL_REJECTION", "S3_KERNEL_STRUCTURAL")
+    checkpoint_refs = admission.get("checkpointEvidenceReferences", [])
+    if checkpoint_refs:
+        return reject("CURRENT_OBJECT_OUT_OF_PROFILE", "S3_KERNEL_STRUCTURAL")
+
     public_key = bytes.fromhex(record["binding"]["verificationKeyHex"])
     signature = bytes.fromhex(record["signatureHex"])
     if not ed25519_verify(public_key, signature, transcript):
@@ -753,7 +862,9 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
             opening = record.get("opening")
             if opening is None:
                 result["commitmentVerification"] = "PENDING"
-                return reject("OPENING_MISSING", "EVENT_LOCAL")
+                if content["class"] == "REQUIRED":
+                    return reject("PENDING_OPENING", "EVENT_LOCAL", admitted=True)
+                return reject("OPENING_MISSING", "S3_KERNEL_STRUCTURAL")
             supplied = bytes.fromhex(opening["contentHex"])
             randomizer = bytes.fromhex(opening["randomizerHex"])
             commitment = encode_commitment(
@@ -767,42 +878,52 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
                 randomizer=randomizer,
                 chunk_size=(content.get("geometry") or {}).get("chunkSize"),
             )
-            if (
-                len(supplied) != content["exactLength"]
-                or commitment["commitmentHex"] != content["commitmentHex"]
-            ):
+            if len(supplied) != content["exactLength"]:
+                result["commitmentVerification"] = "REJECTED"
+                return reject("LENGTH_MISMATCH", "S3_KERNEL_STRUCTURAL")
+            if commitment["commitmentHex"] != content["commitmentHex"]:
                 result["commitmentVerification"] = "REJECTED"
                 return reject("COMMITMENT_MISMATCH", "S3_KERNEL_STRUCTURAL")
             result["commitmentVerification"] = "VALID"
-    admission = record.get("admissionContext", {})
+
     if admission:
-        if not isinstance(admission, dict):
-            return reject("STRUCTURAL_REJECTION", "S4_GRAPH_ADMISSION")
-        checkpoint_refs = admission.get("checkpointEvidenceReferences", [])
-        if checkpoint_refs:
-            return reject("STRUCTURAL_REJECTION", "S4_GRAPH_ADMISSION")
         if reference in admission.get("seenEventReferences", []):
-            return reject("DUPLICATE", "S3_KERNEL_STRUCTURAL")
+            return reject("DUPLICATE", "S3_KERNEL_STRUCTURAL", admitted=True)
         sibling_refs = admission.get("sameAuthorSequenceReferences", [])
         if any(candidate != reference for candidate in sibling_refs):
-            return reject("FORK_EVIDENCE", "EVENT_LOCAL")
+            return reject("FORK_EVIDENCE", "EVENT_LOCAL", admitted=True)
         if record["kind"] == "APPLICATION_EVENT":
             parents = set(fields["causalParents"])
             if fields["directPredecessorHex"] is not None:
                 parents.add(fields["directPredecessorHex"])
             available = set(admission.get("availableDependencyReferences", parents))
             if not parents <= available:
-                return reject("PENDING_ANCESTOR", "S4_GRAPH_ADMISSION")
-            credential_id = fields["credentialIdentifierHex"]
-            if credential_id in admission.get("revokedCredentialIdentifiers", []):
-                return reject("POST_REVOCATION", "EVENT_LOCAL")
-            authorized = admission.get("authorizedCredentialIdentifiers")
-            if authorized is not None and credential_id not in authorized:
-                return reject("AUTHENTIC_BUT_UNAUTHORIZED", "EVENT_LOCAL")
-            if fields["eventRole"] == "CREDENTIAL" and fields["tail"].get("kind") in {"REVOKE", "ROTATE"}:
-                target = fields["tail"].get("targetCredentialHex") or fields["tail"].get("retiringCredentialHex")
-                if target == credential_id:
-                    return reject("AUTHENTIC_BUT_UNAUTHORIZED", "EVENT_LOCAL")
+                missing = parents - available
+                pending_roots = set(admission.get("knownPendingOpeningRoots", []))
+                pending_descendants = set(
+                    admission.get("pendingOpeningDescendantReferences", [])
+                )
+                outcome = (
+                    "PENDING_ANCESTOR"
+                    if missing <= pending_roots | pending_descendants
+                    else "DEPENDENCY_DEFERRED"
+                )
+                stage = "EVENT_LOCAL" if outcome == "PENDING_ANCESTOR" else "S4_GRAPH_ADMISSION"
+                return reject(outcome, stage, admitted=True)
+
+            if admission.get("credentialIdentifierCollision") is True:
+                return reject(
+                    "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+                    "S3_KERNEL_STRUCTURAL",
+                )
+            if (
+                fields["eventRole"] != "CREDENTIAL"
+                or fields.get("tail", {}).get("kind") != "GRANT"
+            ) and admission.get("credentialBindingMatchCount") not in (None, 1):
+                return reject(
+                    "UNRESOLVED_CREDENTIAL_BINDING",
+                    "S3_KERNEL_STRUCTURAL",
+                )
     result["postStateDigest"] = sha256(
         bytes.fromhex(state_digest) + bytes.fromhex(reference)
     ).hexdigest()
@@ -847,6 +968,34 @@ def load_local_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise CorpusModelError(f"tooling JSON must be an object: {path}")
     return value
+
+
+def o10_result(primary: str, stage: str | None = None) -> dict[str, str]:
+    """Select a K result only from the ratified O-10 registry."""
+
+    taxonomy = load_local_json(O10_TAXONOMY_PATH)
+    rows = {
+        row.get("id"): row
+        for row in taxonomy.get("primaries", [])
+        if isinstance(row, dict)
+    }
+    row = rows.get(primary)
+    if row is None or row.get("owner") != "K":
+        raise CorpusModelError(f"non-K or unknown O-10 primary: {primary}")
+    allowed_stages = str(row.get("stage", "")).split("|")
+    selected_stage = stage or allowed_stages[0]
+    if selected_stage not in allowed_stages:
+        raise CorpusModelError(
+            f"O-10 stage mismatch: {primary}:{selected_stage}"
+        )
+    remote = taxonomy.get("remote_collapse")
+    if not isinstance(remote, str) or not remote:
+        raise CorpusModelError(f"missing O-10 remote collapse: {primary}")
+    return {
+        "localOutcome": primary,
+        "remoteClass": remote,
+        "stage": selected_stage,
+    }
 
 
 def _ids(records: Any, label: str) -> list[str]:

@@ -24,7 +24,7 @@ class ManifestTests(unittest.TestCase):
     def test_tracked_manifest_and_corpus_validate(self) -> None:
         report = validate(REPO, CORPUS)
         self.assertEqual(report["result"], "PASS")
-        self.assertEqual(report["mutations"], 501)
+        self.assertEqual(report["mutations"], 498)
 
     def test_hygiene_rejects_embedded_absolute_paths_but_not_reuse_label(self) -> None:
         for value in ("path=/", "provenance=/tmp/styx", "path=C:\\review", r"path=\\host\share"):
@@ -132,11 +132,13 @@ class ManifestTests(unittest.TestCase):
 
     def test_every_vector_is_executed_and_counterexamples_are_distinct(self) -> None:
         valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
-        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+        invalid_document = load(CORPUS / "invalid-transcript-vectors.json")
+        invalid = invalid_document["records"]
+        ap_expectations = invalid_document["apExpectationOnlyRecords"]
         scenarios = load(CORPUS / "state-machine-scenarios.json")["records"]
         traces = load(CORPUS / "expected-traces.json")["records"]
         used = {step["inputVectorId"] for scenario in scenarios for step in scenario["steps"]}
-        self.assertEqual(used, {row["id"] for row in valid + invalid})
+        self.assertEqual(used, {row["id"] for row in valid + invalid + ap_expectations})
         counterexamples = [row for row in scenarios if "counterexampleId" in row]
         self.assertEqual({len(row["steps"]) for row in counterexamples}, {3})
         observations = {

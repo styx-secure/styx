@@ -18,10 +18,13 @@ from corpus_model import (  # noqa: E402
     BaseReader,
     CorpusModelError,
     evaluate_vector,
+    load_local_json,
     semantic_input_digest,
     semantic_observation_digest,
     transition_input_is_compatible,
     validate_base_inputs,
+    SEMANTIC_OBSERVATION_FIELDS,
+    OPTIONAL_SEMANTIC_OBSERVATION_FIELDS,
 )
 from validate_corpus import validate  # noqa: E402
 
@@ -60,24 +63,66 @@ def _compute_step(
     pre_digest = _digest(f"styx-c03/state/{scenario['id']}/{step['preState']}")
 
     if not executed:
-        require(scenario["modelId"] == "flow", "only a flow may expose a non-executed boundary")
-        flow_id = scenario["id"].removeprefix("scenario-flow-")
-        local_outcome = "TRANSPORT_PROFILE_REQUIRED" if flow_id == "transport_publish" else "SESSION_PROFILE_REQUIRED"
-        stage = "BOUNDARY_NOT_EXECUTED"
+        require(
+            scenario["modelId"] in {"flow", "ap_projection"},
+            "only a flow or AP projection may expose a non-executed boundary",
+        )
+        if scenario["modelId"] == "flow":
+            flow_id = scenario["id"].removeprefix("scenario-flow-")
+            local_outcome = (
+                "TRANSPORT_PROFILE_REQUIRED"
+                if flow_id == "transport_publish"
+                else "SESSION_PROFILE_REQUIRED"
+            )
+        else:
+            local_outcome = "NOT_EVALUATED"
+        observation = {
+            "apAuthorityResult": "NOT_EVALUATED",
+            "commitmentVerification": "NOT_PRESENT",
+            "externalEffects": [],
+            "kBindingAdmission": "NOT_EVALUATED",
+            "localOutcome": local_outcome,
+            "outcomeEvaluated": False,
+            "remoteClass": "OPAQUE_REMOTE_FAILURE",
+            "signatureVerification": "NOT_EVALUATED",
+            "stage": "BOUNDARY_NOT_EXECUTED",
+            "transcriptVerification": "NOT_EVALUATED",
+        }
         post_state = "UNCHANGED"
     elif step["transitionId"] is not None:
-        require(transition_input_is_compatible(evaluated or {}), f"incompatible transition input: {scenario['id']}:{index}")
         transition = transitions.get((scenario["modelId"], step["transitionId"]))
         require(transition is not None, f"unknown transition: {scenario['id']}:{index}")
         require(step["preState"] in transition["from"], f"invalid transition source: {scenario['id']}:{index}")
-        local_outcome = transition["outcome"]
-        stage = "MODEL_TRANSITION"
+        if transition.get("result_layer") == "K_ADMISSION_ONLY":
+            require(
+                transition_input_is_compatible(evaluated or {}),
+                f"incompatible positive K transition: {scenario['id']}:{index}",
+            )
+        else:
+            require(
+                evaluated is not None
+                and evaluated.get("outcomeEvaluated") is True
+                and evaluated.get("localOutcome") == transition["outcome"],
+                f"incompatible negative K transition: {scenario['id']}:{index}",
+            )
+        observation = {
+            key: value
+            for key, value in (evaluated or {}).items()
+            if key not in {"preStateDigest", "postStateDigest"}
+        }
         post_state = transition["to"]
     else:
         require(evaluated is not None, "executed step has no evaluation")
-        local_outcome = evaluated["localOutcome"]
-        stage = evaluated["stage"]
-        post_state = "UNCHANGED" if evaluated["postStateDigest"] == evaluated["preStateDigest"] else "APPLIED"
+        observation = {
+            key: value
+            for key, value in evaluated.items()
+            if key not in {"preStateDigest", "postStateDigest"}
+        }
+        post_state = (
+            "UNCHANGED"
+            if evaluated["postStateDigest"] == evaluated["preStateDigest"]
+            else "READY_FOR_AP_FOLD"
+        )
 
     unchanged = post_state == "UNCHANGED" or not executed
     post_digest = pre_digest if unchanged else _digest(f"styx-c03/state/{scenario['id']}/{post_state}")
@@ -88,36 +133,22 @@ def _compute_step(
         dependency_status == step["expectedDependencyStatus"],
         f"dependency status mismatch: {scenario['id']}:{index}",
     )
-    if evaluated is None:
-        k_admission = "NOT_EVALUATED"
-        ap_result = "NOT_EVALUATED"
-    elif evaluated["transcriptVerification"] != "VALID" or evaluated["signatureVerification"] == "REJECTED" or evaluated["localOutcome"] in {"CREDENTIAL_BINDING_MISMATCH", "REFERENCE_COLLISION_UNSUPPORTED"}:
-        k_admission = "REJECTED"
-        ap_result = "NOT_REACHED"
-    else:
-        k_admission = "ADMITTED"
-        ap_result = "APPLIED" if evaluated["localOutcome"] == "APPLIED" else "REJECTED_OR_DEFERRED"
-    return {
+    result = {
         "actionDigest": sha256(step["candidateAction"].encode()).hexdigest(),
-        "apAuthorityResult": ap_result,
         "causalClassification": step["transitionId"] or f"VECTOR:{vector['id']}",
-        "commitmentVerification": "NOT_PRESENT" if evaluated is None else evaluated["commitmentVerification"],
         "dependencyStatus": dependency_status,
         "evidenceConsumed": sorted(requirements),
         "evidenceProduced": step.get("providedEvidence"),
         "executed": executed,
-        "externalEffects": [],
         "inputDigest": semantic_input_digest(vector),
-        "kBindingAdmission": k_admission,
-        "localOutcome": local_outcome,
         "postStateDigest": post_digest,
         "preStateDigest": pre_digest,
-        "remoteClass": "APPLIED" if local_outcome == "APPLIED" else "OPAQUE_REMOTE_FAILURE",
-        "signatureVerification": "NOT_EVALUATED" if evaluated is None else evaluated["signatureVerification"],
-        "stage": stage,
         "step": index,
-        "transcriptVerification": "NOT_EVALUATED" if evaluated is None else evaluated["transcriptVerification"],
     }
+    result.update(observation)
+    if "apExpectationOnly" in step:
+        result["apExpectationOnly"] = step["apExpectationOnly"]
+    return result
 
 
 def compute_trace(
@@ -150,12 +181,18 @@ def compute_trace(
 def replay(repo_root: Path, corpus: Path) -> dict[str, Any]:
     validate_base_inputs(repo_root)
     validation = validate(repo_root, corpus)
-    reader = BaseReader(repo_root)
-    model = reader.json("docs/protocol/review/styx-app-kernel-v0-review-model.json")
+    model = load_local_json(
+        repo_root / "docs/protocol/review/styx-app-kernel-v0-review-model.json"
+    )
     transitions = _transition_index(model)
     valid = load(corpus / "valid-transcript-vectors.json")["records"]
-    invalid = load(corpus / "invalid-transcript-vectors.json")["records"]
-    vectors = {record["id"]: record for record in valid + invalid}
+    invalid_document = load(corpus / "invalid-transcript-vectors.json")
+    invalid = invalid_document["records"]
+    ap_expectations = invalid_document["apExpectationOnlyRecords"]
+    vectors = {
+        record["id"]: record
+        for record in valid + invalid + ap_expectations
+    }
     scenarios = load(corpus / "state-machine-scenarios.json")["records"]
     expected = load(corpus / "expected-traces.json")["records"]
     expected_by_scenario = {record["scenarioId"]: record for record in expected}
@@ -165,9 +202,23 @@ def replay(repo_root: Path, corpus: Path) -> dict[str, Any]:
         require(trace == expected_by_scenario.get(scenario["id"]), f"trace mismatch: {scenario['id']}")
         computed.append(trace)
     require(len(computed) == len(expected_by_scenario), "unexpected expected trace")
+    observations = []
+    for trace in computed:
+        for step in trace["steps"]:
+            observation = {
+                "id": f"{trace['scenarioId']}:{step['step']}",
+                **{field: step[field] for field in SEMANTIC_OBSERVATION_FIELDS},
+            }
+            for field in OPTIONAL_SEMANTIC_OBSERVATION_FIELDS:
+                present = field in step
+                observation[f"{field}Present"] = present
+                if present:
+                    observation[field] = step[field]
+            observations.append(observation)
     return {
         "corpusDigest": validation["corpusDigest"],
         "invalidVectors": len(invalid),
+        "observations": sorted(observations, key=lambda record: record["id"]),
         "result": "PASS",
         "scenarios": len(computed),
         "traceDigest": sha256(b"".join(

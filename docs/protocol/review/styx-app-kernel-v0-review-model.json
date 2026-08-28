@@ -6342,8 +6342,8 @@
           "obligation_refs": [
             "OB-K18"
           ],
-          "outcome": "APPLIED",
           "owner": "K",
+          "result_layer": "K_ADMISSION_ONLY",
           "status": "DECIDED",
           "to": "BINDING_ADMITTED",
           "trigger": "A structurally valid, causally available and signature-valid GRANT creates one fresh grant-rooted binding without implying AP authority."
@@ -6366,8 +6366,8 @@
           "obligation_refs": [
             "OB-K01"
           ],
-          "outcome": "APPLIED",
           "owner": "K",
+          "result_layer": "K_ADMISSION_ONLY",
           "status": "DECIDED",
           "to": "ADMITTED",
           "trigger": "The candidate passes K validity, collision and fork classification."
@@ -6503,13 +6503,12 @@
       "owner": "K",
       "precedence": [
         "PENDING_OPENING",
-        "PENDING_ANCESTOR",
-        "APPLIED"
+        "PENDING_ANCESTOR"
       ],
       "states": [
-        "APPLIED",
         "PENDING_ANCESTOR",
         "PENDING_OPENING",
+        "READY_FOR_AP_FOLD",
         "REPLAY_CANDIDATE"
       ],
       "status": "DECIDED",
@@ -6532,10 +6531,10 @@
           "obligation_refs": [
             "OB-K13"
           ],
-          "outcome": "APPLIED",
           "owner": "K",
+          "result_layer": "K_ADMISSION_ONLY",
           "status": "DECIDED",
-          "to": "APPLIED",
+          "to": "READY_FOR_AP_FOLD",
           "trigger": "No missing REQUIRED opening or pending ancestor blocks this candidate."
         },
         {
@@ -6602,10 +6601,10 @@
           "obligation_refs": [
             "OB-K01"
           ],
-          "outcome": "APPLIED",
           "owner": "K",
+          "result_layer": "K_ADMISSION_ONLY",
           "status": "DECIDED",
-          "to": "APPLIED",
+          "to": "READY_FOR_AP_FOLD",
           "trigger": "Monotone verified-opening update releases the event from every remaining pending root"
         }
       ]

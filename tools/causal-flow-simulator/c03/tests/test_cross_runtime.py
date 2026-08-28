@@ -14,7 +14,7 @@ CORPUS = REPO / "conformance/application-protocol/c03"
 sys.path.insert(0, str(ROOT))
 
 from canonical_json import dumps, load, store  # noqa: E402
-from corpus_model import BaseReader  # noqa: E402
+from corpus_model import load_local_json  # noqa: E402
 from replay_corpus import _transition_index, compute_trace  # noqa: E402
 from run_cross_runtime import run  # noqa: E402
 
@@ -114,9 +114,13 @@ class CrossRuntimeTests(unittest.TestCase):
             counterexamples = [row for row in scenarios_doc["records"] if "counterexampleId" in row]
             common_vectors = [step["inputVectorId"] for step in counterexamples[0]["steps"]]
             valid = load(target / "valid-transcript-vectors.json")["records"]
-            invalid = load(target / "invalid-transcript-vectors.json")["records"]
-            vectors = {row["id"]: row for row in valid + invalid}
-            model = BaseReader(REPO).json("docs/protocol/review/styx-app-kernel-v0-review-model.json")
+            invalid_document = load(target / "invalid-transcript-vectors.json")
+            invalid = invalid_document["records"]
+            vectors = {
+                row["id"]: row
+                for row in valid + invalid + invalid_document["apExpectationOnlyRecords"]
+            }
+            model = load_local_json(REPO / "docs/protocol/review/styx-app-kernel-v0-review-model.json")
             transitions = _transition_index(model)
             expected_by_scenario = {row["scenarioId"]: row for row in expected_doc["records"]}
             for scenario in counterexamples:
@@ -141,7 +145,12 @@ class CrossRuntimeTests(unittest.TestCase):
             target = Path(directory) / "corpus"
             shutil.copytree(CORPUS, target)
             scenarios = load(target / "state-machine-scenarios.json")
-            transition = next(row for row in scenarios["records"] if row["steps"][0]["transitionId"] is not None)
+            transition = next(
+                row
+                for row in scenarios["records"]
+                if row["modelId"] == "k_admission"
+                and row["steps"][0].get("expectedResultLayer") == "K_ADMISSION_ONLY"
+            )
             transition["steps"][0]["inputVectorId"] = "inv-signature"
             store(target / "state-machine-scenarios.json", scenarios)
             completed = subprocess.run(
@@ -152,7 +161,7 @@ class CrossRuntimeTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(completed.returncode, 2)
-            self.assertIn("incompatible transition input", completed.stderr)
+            self.assertIn("incompatible positive K transition", completed.stderr)
 
 
 if __name__ == "__main__":

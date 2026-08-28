@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from canonical_json import load, store  # noqa: E402
-from corpus_model import BaseReader, CorpusModelError, evaluate_vector, sha256_hex, validate_base_inputs  # noqa: E402
+from corpus_model import BaseReader, CorpusModelError, evaluate_vector, load_local_json, sha256_hex, validate_base_inputs  # noqa: E402
 from replay_corpus import _transition_index, compute_trace  # noqa: E402
 from validate_corpus import (  # noqa: E402
     EXPECTED_FILES,
@@ -58,8 +58,13 @@ def _python_kills(repo_root: Path, corpus: Path) -> dict[str, Any]:
     validate(repo_root, corpus)
     reader = BaseReader(repo_root)
     valid = load(corpus / "valid-transcript-vectors.json")["records"]
-    invalid = load(corpus / "invalid-transcript-vectors.json")["records"]
-    vectors = {record["id"]: record for record in valid + invalid}
+    invalid_document = load(corpus / "invalid-transcript-vectors.json")
+    invalid = invalid_document["records"]
+    ap_expectations = invalid_document["apExpectationOnlyRecords"]
+    vectors = {
+        record["id"]: record
+        for record in valid + invalid + ap_expectations
+    }
     scenarios = load(corpus / "state-machine-scenarios.json")["records"]
     scenario_by_trace = {f"trace-{record['id']}": record for record in scenarios}
     expected = load(corpus / "expected-traces.json")["records"]
@@ -68,7 +73,9 @@ def _python_kills(repo_root: Path, corpus: Path) -> dict[str, Any]:
     manifest = load(corpus / "manifest.json")
     documents = {name: load(corpus / name) for name in EXPECTED_FILES}
     manifest_files = {record["path"]: record for record in manifest["files"]}
-    model = reader.json("docs/protocol/review/styx-app-kernel-v0-review-model.json")
+    model = load_local_json(
+        repo_root / "docs/protocol/review/styx-app-kernel-v0-review-model.json"
+    )
     transitions = _transition_index(model)
     o07 = {
         row["atom_instance_id"]
