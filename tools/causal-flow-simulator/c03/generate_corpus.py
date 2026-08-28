@@ -657,6 +657,13 @@ def _invalid_vectors(
 
     reference = _mutated_vector(base, "inv-reference", "REFERENCE_SUBSTITUTION", "S3_KERNEL_STRUCTURAL", "REFERENCE_COLLISION_UNSUPPORTED")
     reference["eventReferenceHex"] = synthetic_octets("wrong-reference", 32).hex()
+    # A presented-reference mismatch is the unsupported-collision branch only
+    # when the replica has already indexed that presented reference for
+    # different canonical bytes. Keep that state explicit rather than asking
+    # a clean-room reader to infer collision evidence from a bare mismatch.
+    reference["admissionContext"] = {
+        "seenEventReferences": [reference["eventReferenceHex"]]
+    }
     values.append(reference)
 
     binding_context = _mutated_vector(base, "inv-binding-context", "CONTEXT_SUBSTITUTION", "S3_KERNEL_STRUCTURAL", "CREDENTIAL_BINDING_MISMATCH")

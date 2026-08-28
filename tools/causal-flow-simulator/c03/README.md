@@ -67,6 +67,20 @@ JavaScript and that frozen third reader for 68 valid observations and all 26
 K-invalid classifications. The AP transition table is outside this blind
 claim.
 
+The first shape-complete clean-room comparison on Issue #266 is diagnostic,
+not counted final evidence. It exposed four public-input/semantic-contract gaps
+that can be corrected without changing a valid transcript: selected profile
+state was copied from hostile bytes, reference-collision state was not
+observable, missing detachable content was conflated with a missing opening,
+and O-08 stage ownership was underspecified. It also exposed a separate open
+contradiction: `vec-control-rotate` and `vec-control-recover` carry fresh-GRANT
+references that are neither their direct predecessor nor a member of their
+encoded causal-parent frontier, although the frozen transcript profile requires
+one of those signed relations. Local admission metadata cannot repair that
+transcript relation. Those two records must not be treated as corroborated K
+admissions unless a separately authorized resolution preserves the frozen
+contract honestly. No reader output is coerced to hide this finding.
+
 All vector bytes and keys are public deterministic test material. The package
 does not claim a production ceremony, recovery, persistence, transport, wire
 format, implementation alignment, audit, demo readiness or sensitive-use

@@ -73,8 +73,57 @@ class BlindProjectionTests(unittest.TestCase):
         self.assertIn("styx-c03-clean-room-report/v1", readme)
         self.assertIn("localOutcomePresent", readme)
         self.assertIn("geometryPredicate7", readme)
-        self.assertIn("supplies field names and shape only", normalized_readme)
+        self.assertIn(
+            "supplies field names, semantics and closed vocabularies",
+            normalized_readme,
+        )
+        self.assertIn("FINAL_AFTER_S6", readme)
+        self.assertIn("OPAQUE_REMOTE_FAILURE", readme)
+        self.assertIn("PARENTS_PER_EVENT", readme)
+        self.assertIn("Replica-local admission state cannot manufacture", readme)
         self.assertNotIn("case-", readme)
+
+    def test_projection_separates_selected_profile_and_collision_state(self) -> None:
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+        profile_substitution = next(
+            record for record in invalid if record["id"] == "inv-profile-substitution"
+        )
+        _, projected_profile = _project_record(profile_substitution)
+        self.assertEqual(
+            projected_profile["profile"],
+            {
+                "applicationProfileId": 1,
+                "applicationProfileVersion": 1,
+                "commitmentSuiteId": 1,
+                "signatureSuiteId": 1,
+                "styxProtocolVersion": 1,
+            },
+        )
+        self.assertNotEqual(
+            profile_substitution["fields"]["applicationProfileId"],
+            projected_profile["profile"]["applicationProfileId"],
+        )
+
+        reference_substitution = next(
+            record for record in invalid if record["id"] == "inv-reference"
+        )
+        _, projected_reference = _project_record(reference_substitution)
+        self.assertEqual(
+            projected_reference["seenEventReferences"],
+            [reference_substitution["eventReferenceHex"]],
+        )
+
+        # Preserve the independently discovered contradiction as an explicit
+        # diagnostic. These transcript bytes cannot be called K-admissible
+        # under the current fresh-GRANT causal rule; adding local replica state
+        # would not repair the signed relation.
+        for identifier in ("vec-control-rotate", "vec-control-recover"):
+            record = next(value for value in valid if value["id"] == identifier)
+            tail = record["fields"]["tail"]
+            fresh = tail.get("replacementGrantHex", tail.get("recoveryGrantHex"))
+            self.assertNotEqual(fresh, record["fields"]["directPredecessorHex"])
+            self.assertNotIn(fresh, record["fields"]["causalParents"])
 
     def test_validator_fails_closed_on_hidden_or_extra_input(self) -> None:
         bad = self.root / "bad"

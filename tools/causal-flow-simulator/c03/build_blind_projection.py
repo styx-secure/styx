@@ -250,10 +250,12 @@ def _project_record(record: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         "pendingOpeningDescendantReferences": sorted(admission.get("pendingOpeningDescendantReferences", [])),
         "presentedReferenceHex": presented_reference,
         "profile": {
-            "applicationProfileId": fields["applicationProfileId"],
-            "applicationProfileVersion": fields["applicationProfileVersion"],
+            # These are replica-selected active-profile inputs, not values
+            # copied from an untrusted candidate transcript.
+            "applicationProfileId": 1,
+            "applicationProfileVersion": 1,
             "commitmentSuiteId": 1,
-            "signatureSuiteId": record["signatureSuiteId"],
+            "signatureSuiteId": 1,
             "styxProtocolVersion": 1,
         },
         "sameAuthorSequenceReferences": sorted(admission.get("sameAuthorSequenceReferences", [])),
@@ -478,8 +480,82 @@ booleans; every other listed value is a JSON string. If and only if
 member `localOutcome`. If and only if `remoteClassPresent` is true, it
 additionally contains the string member `remoteClass`. No other member is
 permitted. Values are the exact locally observed vocabulary selected by the
-supplied normative sources; this output contract supplies field names and
-shape only, never an expected value for an input.
+supplied normative sources. To make independent output comparable without
+leaking any per-record oracle, the complete value domains are:
+
+```text
+apAuthorityResult:
+  AP_FOLD_NOT_EXECUTED | NOT_REACHED | REJECTED_OR_DEFERRED
+commitmentMatchVerification:
+  NOT_APPLICABLE | NOT_EVALUATED | REJECTED | VALID
+commitmentVerification:
+  NOT_PRESENT | PENDING | REJECTED | VALID
+geometryPredicate1..geometryPredicate7:
+  NOT_APPLICABLE | NOT_EVALUATED | FAIL | PASS
+kBindingAdmission:
+  ADMITTED | REJECTED
+referenceVerification:
+  NOT_REACHED | REJECTED | VALID
+signatureVerification:
+  NOT_EVALUATED | REJECTED | VALID
+stage:
+  EVENT_LOCAL | FINAL_AFTER_S6 | S3_KERNEL_STRUCTURAL | S4_GRAPH_ADMISSION
+suppliedLengthVerification:
+  NOT_APPLICABLE | NOT_EVALUATED | REJECTED | VALID
+transcriptVerification:
+  REJECTED | VALID
+localOutcome:
+  COMMITMENT_MISMATCH | CONTEXT_CAPACITY_EXHAUSTED |
+  CREDENTIAL_BINDING_MISMATCH |
+  CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED |
+  CURRENT_OBJECT_OUT_OF_PROFILE | DEPENDENCY_DEFERRED | DUPLICATE |
+  FORK_EVIDENCE | INVALID | LENGTH_MISMATCH | OPENING_MISSING |
+  PENDING_ANCESTOR | PENDING_OPENING | REFERENCE_COLLISION_UNSUPPORTED |
+  STRUCTURAL_REJECTION | UNRESOLVED_CREDENTIAL_BINDING
+remoteClass:
+  OPAQUE_REMOTE_FAILURE
+```
+
+Evaluation is fail-closed and ordered. Transcript framing is evaluated first;
+if it rejects, reference and signature are not reached. The recomputed
+reference is then compared with `presentedReferenceHex`. A differing presented
+reference selects `REFERENCE_COLLISION_UNSUPPORTED` only when the replica-owned
+`seenEventReferences` also contains that presented value; the public input does
+not ask the reader to invent collision history. Checkpoint exact-zero precedes
+signature or protected work. Signature and claimed binding follow. Content,
+dependency and credential admission follow only when their prerequisites were
+reached.
+
+`profile` is the active profile selected by the receiving replica. Transcript
+fields that disagree with it do not change the selected profile. The selected
+v0 tuple in this kit is protocol/profile/profile-version/signature-suite/
+commitment-suite `1/1/1/1/1`.
+
+For content class `NONE`, commitment match, supplied length and all seven
+geometry predicates are `NOT_APPLICABLE`, while commitment verification is
+`NOT_PRESENT`. For either committed-content class, a missing verified opening
+is not the same as missing detachable content bytes: `REQUIRED` selects
+`PENDING_OPENING` at `EVENT_LOCAL`; `DETACHABLE` without its verified opening
+selects `OPENING_MISSING` at `S3_KERNEL_STRUCTURAL`. Detachability permits later
+content-byte retrieval, not verification without an opening.
+
+O-08 enforcement uses each dimension's source-selected stage rather than a
+generic profile stage. In particular, `PARENTS_PER_EVENT` is enforced at
+`S4_GRAPH_ADMISSION` and selects `CONTEXT_CAPACITY_EXHAUSTED`; structural and
+closed-set envelope dimensions enforced at S3 retain their exact O-10 result.
+
+A `ROTATE` replacement-grant reference or `RECOVER` recovery-grant reference
+must name an already admitted same-context GRANT and must equal either the
+event's direct predecessor or one member of its encoded causal-parent frontier.
+Replica-local admission state cannot manufacture this signed causal relation.
+
+Successful K admission has `stage=FINAL_AFTER_S6`,
+`apAuthorityResult=AP_FOLD_NOT_EXECUTED`, `outcomeEvaluated=false`, and both
+optional result fields absent. Every negative or deferred classification has
+`outcomeEvaluated=true` and both optional fields present. `NOT_REACHED`,
+`NOT_EVALUATED` and `NOT_APPLICABLE` are distinct and must not be substituted.
+This output contract supplies field names, semantics and closed vocabularies,
+never an expected value for an individual input.
 
 The whole document is canonical UTF-8 JSON: keys sorted by Unicode code point,
 no insignificant whitespace and exactly one final LF. Missing, extra or
