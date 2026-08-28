@@ -2587,6 +2587,26 @@ def _validate_c03_corpus_gate(repo_root: Path) -> list[Finding]:
             )
         ):
             raise ValueError("exact six-file corpus set is absent")
+        canonical_counts: dict[str, int] = {}
+        minimum_counts = {
+            "validVectors": 17,
+            "invalidVectors": 26,
+            "scenarios": 114,
+            "mutations": 497,
+        }
+        for label, filename in (
+            ("validVectors", "valid-transcript-vectors.json"),
+            ("invalidVectors", "invalid-transcript-vectors.json"),
+            ("scenarios", "state-machine-scenarios.json"),
+            ("mutations", "adversarial-mutations.json"),
+        ):
+            records = load_json_unique(corpus / filename).get("records")
+            if (
+                not isinstance(records, list)
+                or len(records) < minimum_counts[label]
+            ):
+                raise ValueError(f"canonical {label} coverage is incomplete")
+            canonical_counts[label] = len(records)
         environment = os.environ.copy()
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         environment.pop("PYTHONOPTIMIZE", None)
@@ -2650,23 +2670,27 @@ def _validate_c03_corpus_gate(repo_root: Path) -> list[Finding]:
             mutations = load_json_unique(output_root / "mutations.json")
             if (
                 validation.get("result") != "PASS"
-                or validation.get("validVectors") != 17
-                or validation.get("invalidVectors") != 26
-                or validation.get("scenarios") != 46
-                or validation.get("mutations") != 476
+                or validation.get("validVectors")
+                != canonical_counts["validVectors"]
+                or validation.get("invalidVectors")
+                != canonical_counts["invalidVectors"]
+                or validation.get("scenarios") != canonical_counts["scenarios"]
+                or validation.get("mutations") != canonical_counts["mutations"]
             ):
                 raise ValueError("corpus validation report mismatch")
             if (
                 cross.get("result") != "PASS"
                 or cross.get("runtimes") != ["javascript", "python"]
-                or cross.get("vectors") != 43
-                or cross.get("scenarios") != 46
+                or cross.get("vectors")
+                != canonical_counts["validVectors"]
+                + canonical_counts["invalidVectors"]
+                or cross.get("scenarios") != canonical_counts["scenarios"]
             ):
                 raise ValueError("cross-runtime report mismatch")
             if (
                 mutations.get("result") != "PASS"
                 or mutations.get("runtimes") != ["javascript", "python"]
-                or mutations.get("killed") != 476
+                or mutations.get("killed") != canonical_counts["mutations"]
             ):
                 raise ValueError("mutation report mismatch")
     except (OSError, ValueError, subprocess.SubprocessError) as error:

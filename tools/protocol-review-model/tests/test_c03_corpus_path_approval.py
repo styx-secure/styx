@@ -203,7 +203,7 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
     def test_rebased_o10_guard_accepts_the_exact_validator(self) -> None:
         hashes = validate_validator_delta(self.base_validator, self.actual_validator)
         self.assertEqual(
-            "be9eb2249ff04469f4698f4f4b80d454f3bb196839b8dd0a6b8f5b31722b523d",
+            "c68a449afe5308683486e839906a1b941f37105d0ef014b5953e7fcc31954c6b",
             hashes["complete_source_sha256"],
         )
 
