@@ -15,7 +15,7 @@ class ScopeGuardTests(unittest.TestCase):
     def test_closed_package_sets_and_forbidden_neighbors(self) -> None:
         self.assertEqual(len(CORPUS_FILES), 6)
         self.assertEqual(len(TOOL_FILES), 20)
-        self.assertEqual(len(SYNC_FILES), 6)
+        self.assertEqual(len(SYNC_FILES), 8)
         self.assertTrue(allowed("conformance/application-protocol/c03/manifest.json"))
         self.assertTrue(allowed("tools/causal-flow-simulator/c03/tests/test_scope_guard.py"))
         for path in (
@@ -31,7 +31,7 @@ class ScopeGuardTests(unittest.TestCase):
         corpus_paths = {f"conformance/application-protocol/c03/{name}" for name in CORPUS_FILES}
         tool_paths = {f"tools/causal-flow-simulator/c03/{name}" for name in TOOL_FILES}
         declared = corpus_paths | tool_paths | set(SYNC_FILES)
-        self.assertEqual(len(declared), 32)
+        self.assertEqual(len(declared), 34)
         for endpoint in sorted(declared):
             with self.subTest(endpoint=endpoint):
                 self.assertTrue(allowed(endpoint))

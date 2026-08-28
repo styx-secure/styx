@@ -353,7 +353,7 @@
         "OB-K01"
       ],
       "owner": "K",
-      "reason": "Issue #262 authorizes specification-derived corpus construction only; implementation alignment, demo, product and sensitive use remain blocked until corpus completion, independent implementation agreement, exit review and an explicit human phase verdict.",
+      "reason": "Issue #264 completes the separately contracted synthetic-only corpus construction; implementation alignment, demo, product and sensitive use remain blocked pending implementation agreement, exit review and an explicit human phase verdict.",
       "status": "NO_GO"
     },
     {
@@ -2136,7 +2136,7 @@
         "OB-K01"
       ],
       "owner": "K",
-      "statement": "Only construction of the separately contracted transcript-only C0.3 corpus is authorized; implementation alignment, demo, product implementation and sensitive use remain unauthorized while their declared blockers remain open.",
+      "statement": "The separately contracted transcript-only C0.3 corpus is constructed and validated; implementation alignment, demo, product implementation and sensitive use remain unauthorized while their declared blockers remain open.",
       "status": "NO_GO"
     },
     {

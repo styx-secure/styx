@@ -36,6 +36,8 @@ SYNC_FILES = frozenset({
     "docs/PROJECT_BRIEF.md", "docs/protocol/protocol-hardening-plan.md",
     "docs/protocol/review/README.md", "docs/protocol/review/styx-app-kernel-v0-review-model.json",
     "tools/protocol-review-model/validate.py",
+    "tools/causal-flow-simulator/o10/scope_guard.py",
+    "tools/protocol-review-model/tests/test_c03_corpus_path_approval.py",
     "tools/protocol-review-model/tests/test_c03_entry_authorization.py",
 })
 

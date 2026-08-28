@@ -38,6 +38,21 @@ EXPECTED_C03_SYNC_COMPLETE_SHA256 = (
 EXPECTED_C03_SYNC_VALIDATE_DOMAIN_SHA256 = (
     "bff89b7b2044d429be024a0cc1b7d1267aba9f8a089f51e138c4b672b04ff8b3"
 )
+EXPECTED_C03_CORPUS_COMPLETE_SHA256 = (
+    "207c97e1640984b711f37b20d4b4ac81ffac00e047a13a321f713b17ed8c4941"
+)
+EXPECTED_C03_GATE_CACHE_KEY_SHA256 = (
+    "c19afe3b84d2ee8a5138fdfe03dfe494783cf51f05c3f03a5a388df62cfea2cb"
+)
+EXPECTED_C03_GATE_SHA256 = (
+    "e5211ff5f2860bc7ab5664bccbb9af947fbe37d25df4b435c72bf63e5bdd5f0c"
+)
+EXPECTED_C03_VALIDATE_SHA256 = (
+    "7c4b14bcf740c47fc7f8883e83ee95106b976d56044742a7672a7be70a178a30"
+)
+EXPECTED_C03_OUTPUT_BOUNDARY_SHA256 = (
+    "c0f70c009f0f80e7081292fb835d326dd207e13df0d10249f8781954c41de92a"
+)
 MAIN_ADDITION = "        findings.extend(validate_o10_outcome_taxonomy(model, args.repo_root))\n"
 ALLOWED_EXACT = frozenset(
     {
@@ -227,15 +242,18 @@ def expected_c03_sync_validator_source(
 def validate_validator_delta(before_source: str, actual_source: str) -> dict[str, str]:
     """Validate the exact current validator while preserving frozen O-10 proof."""
 
-    historical, expected = expected_c03_sync_validator_source(
+    historical, synchronized = expected_c03_sync_validator_source(
         before_source, actual_source
     )
-    if actual_source.encode("utf-8") != expected.encode("utf-8"):
-        raise ScopeError("actual validator bytes differ from C0.3 synchronization bytes")
+    actual_digest = hashlib.sha256(actual_source.encode("utf-8")).hexdigest()
+    if actual_digest != EXPECTED_C03_CORPUS_COMPLETE_SHA256:
+        raise ScopeError("actual validator bytes differ from C0.3 corpus-completion bytes")
 
     historical_validate = _function_segment(historical, "validate_domain")
-    expected_validate = _function_segment(expected, "validate_domain")
-    projection = expected.replace(expected_validate, historical_validate, 1)
+    synchronized_validate = _function_segment(synchronized, "validate_domain")
+    projection = synchronized.replace(
+        synchronized_validate, historical_validate, 1
+    )
     try:
         enforce_declared_validator_ast_delta(
             historical,
@@ -265,13 +283,33 @@ def validate_validator_delta(before_source: str, actual_source: str) -> dict[str
         raise ScopeError(
             "frozen O-07 AST guard rejected C0.3 synchronization"
         ) from exc
+
+    expected_functions = {
+        "_c03_gate_cache_key": EXPECTED_C03_GATE_CACHE_KEY_SHA256,
+        "_validate_c03_corpus_gate": EXPECTED_C03_GATE_SHA256,
+        "_validate_output_boundary": EXPECTED_C03_OUTPUT_BOUNDARY_SHA256,
+        "validate": EXPECTED_C03_VALIDATE_SHA256,
+        "validate_domain": EXPECTED_C03_SYNC_VALIDATE_DOMAIN_SHA256,
+        "validate_o10_outcome_taxonomy": EXPECTED_FUNCTION_SHA256,
+    }
+    for name, expected_digest in expected_functions.items():
+        actual_function_digest = hashlib.sha256(
+            _function_segment(actual_source, name).encode("utf-8")
+        ).hexdigest()
+        if actual_function_digest != expected_digest:
+            raise ScopeError(f"C0.3 corpus validator function drift: {name}")
+    if (
+        hashlib.sha256(_function_segment(actual_source, "main").encode("utf-8")).hexdigest()
+        != EXPECTED_MAIN_SHA256
+    ):
+        raise ScopeError("C0.3 corpus validator main function drift")
     return {
-        "complete_source_sha256": hashlib.sha256(expected.encode("utf-8")).hexdigest(),
+        "complete_source_sha256": actual_digest,
         "function_sha256": hashlib.sha256(
-            _function_segment(expected, "validate_o10_outcome_taxonomy").encode("utf-8")
+            _function_segment(actual_source, "validate_o10_outcome_taxonomy").encode("utf-8")
         ).hexdigest(),
         "main_sha256": hashlib.sha256(
-            _function_segment(expected, "main").encode("utf-8")
+            _function_segment(actual_source, "main").encode("utf-8")
         ).hexdigest(),
     }
 

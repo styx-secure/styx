@@ -3,9 +3,9 @@
 This directory contains a compact, machine-readable view of the currently
 ratified Styx application-protocol baseline. It exists to make security review
 faster and more systematic. It is not the protocol specification, a security
-proof or implementation evidence. Issue #262 authorizes only construction of
-the separately contracted C0.3 corpus; this derived model does not authorize
-implementation alignment, demo, product or sensitive use.
+proof or implementation evidence. Issue #264 completes the separately
+contracted, synthetic-only C0.3 corpus; this derived model still does not
+authorize implementation alignment, demo, product or sensitive use.
 
 ## Authority
 
@@ -258,11 +258,11 @@ its final-gate response shape and completion of two-clean-checkout evidence,
 exact-HEAD reviews and technical human approval; O-10 is bounded `DECIDED` for
 trusted-local outcomes and one opaque untrusted-remote collapse, with no
 numeric/wire/API representation selected. `C0.3_CORPUS_PATH_APPROVAL` is
-bounded `DECIDED` by Issue #253's exact six-path synthetic-only amendment; the
-paths remain absent and this creates no corpus or C0.3 capability. While C0.3
-is `NO_GO`, Issue #262 removes only the `corpus` blocker after all seven frozen
-Issue #251 entry items are satisfied. C0.3 continues to block implementation
-alignment, demo, product and sensitive-use claims.
+bounded `DECIDED` by Issue #253's exact six-path synthetic-only amendment. Issue
+#264 now populates exactly those paths and validates the closed corpus through
+independent Python/JavaScript replay and the complete mutation gate. While C0.3
+is `NO_GO`, this records corpus construction only. C0.3 continues to block
+implementation alignment, demo, product and sensitive-use claims.
 
 `counterexamples[].steps` is the one intentionally order-sensitive sequence in
 the model: entries describe the procedural order of an adversarial trace and
