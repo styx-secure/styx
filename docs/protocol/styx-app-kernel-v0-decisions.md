@@ -1441,9 +1441,10 @@ also be transcript-bound and locally evaluated under the application's policy.
 
 ## 6. Gate for C0.3 and exact next sequence
 
-### C0.3 reconciliation decisions R5 and R6
+### C0.3 reconciliation decisions R5 through R7
 
-The Issue #266 pre-execution ratification selects two bounded evidence-layer
+The Issue #266 pre-execution ratification and its exact R7 amendment select
+three bounded evidence-layer
 decisions without executing the application-policy fold or changing the O-08
 and O-10 registries:
 
@@ -1466,6 +1467,27 @@ and O-10 registries:
   `STRUCTURAL_REJECTION`. This resolves the older sentence that classified all
   closed-set failures as structural without changing the accepted 17 transcript
   byte sequences or any O-08/O-10 registry entry.
+- **R7 — connected authority evidence and complete-graph forks.** The 17
+  historical valid fixtures prove transcript, reference, signature and
+  commitment conformance only; their fixture-local metadata cannot create K
+  authority. Connected K admission derives the root solely from the
+  preaccepted exact O-07 genesis and every non-root verification binding solely
+  from an admitted same-context `GRANT`. Corpus format v2 separates transcript
+  conformance, local-negative evidence and connected K admission. A complete
+  bounded graph classifies both same-author/same-sequence siblings as admitted
+  `FORK_EVIDENCE`; both remain authenticated dependencies for K, and a correctly
+  authenticated descendant remains K-admitted. The later AP fold, which C0.3
+  does not execute, owns `LINEAGE_QUARANTINED` for events and authority on that
+  lineage. Duplicate recognition uses admitted references only; a rejected
+  presentation is re-evaluated. `PENDING_OPENING`, `PENDING_ANCESTOR` and
+  `DEPENDENCY_DEFERRED` retain distinct retry boundaries. The closed primary
+  evidence partition is `17/5/3`, and the 102 O-10 source rows partition
+  `25/24/53`, without changing any registered O-10 meaning.
+
+O-06c-frozen commitment-profile §4 remains byte-identical. R6 is recorded in
+this decision and in the later verification section of the commitment profile;
+those later words supersede the contrary historical sentence without repinning
+or weakening frozen-section evidence.
 
 These decisions authorize only the corrected adversarial corpus and evidence
 system. They do not execute O-02/AP policy, establish implementation alignment,

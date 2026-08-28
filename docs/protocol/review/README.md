@@ -259,10 +259,13 @@ exact-HEAD reviews and technical human approval; O-10 is bounded `DECIDED` for
 trusted-local outcomes and one opaque untrusted-remote collapse, with no
 numeric/wire/API representation selected. `C0.3_CORPUS_PATH_APPROVAL` is
 bounded `DECIDED` by Issue #253's exact six-path synthetic-only amendment. Issue
-#264 now populates exactly those paths and validates the closed corpus through
-independent Python/JavaScript replay and the complete mutation gate. While C0.3
-is `NO_GO`, this records corpus construction only. C0.3 continues to block
-implementation alignment, demo, product and sensitive-use claims.
+#264 populated exactly those paths. Issue #266 reconciles the resulting corpus
+with an explicit transcript/local-negative/connected-K evidence split, derives
+connected authority only from accepted genesis and admitted `GRANT` history,
+and requires Python, JavaScript and a fresh oracle-free reader to agree on the
+public transcript/K surface. While C0.3 is `NO_GO`, this records conformance
+evidence only. C0.3 continues to block implementation alignment, demo, product
+and sensitive-use claims.
 
 `counterexamples[].steps` is the one intentionally order-sensitive sequence in
 the model: entries describe the procedural order of an adversarial trace and

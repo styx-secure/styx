@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from hashlib import sha256
 import json
 from pathlib import Path
 import subprocess
-from typing import Any
+from typing import Any, Mapping
 
 from canonical_json import dumps
 
@@ -49,9 +50,11 @@ class ProtocolError(CorpusModelError):
         code: str,
         stage: str = "S3_KERNEL_STRUCTURAL",
         *,
+        admitted: bool = False,
         observations: dict[str, str] | None = None,
     ) -> None:
         super().__init__(code)
+        self.admitted = admitted
         self.code = code
         self.stage = stage
         self.observations = observations or {}
@@ -96,6 +99,7 @@ PRODUCED_K_PRIMARIES = frozenset(
         "PENDING_OPENING",
         "REFERENCE_COLLISION_UNSUPPORTED",
         "STRUCTURAL_REJECTION",
+        "UNRESOLVABLE_CREDENTIAL",
         "UNRESOLVED_CREDENTIAL_BINDING",
     }
 )
@@ -113,7 +117,6 @@ TRANSCRIPT_PROFILE_UNREACHABLE = frozenset(
         "PROFILE_ACTIVATION_UNSUPPORTED",
         "REMOVAL_INAPPLICABLE",
         "STALE_EVIDENCE",
-        "UNRESOLVABLE_CREDENTIAL",
     }
 )
 AP_EXPECTATION_ONLY_STEP_LOCATORS = frozenset(
@@ -182,6 +185,34 @@ def semantic_input_digest(vector: dict[str, Any]) -> str:
         if key not in NONSEMANTIC_VECTOR_FIELDS
     }
     return sha256(dumps(projection)).hexdigest()
+
+
+def semantic_k_graph_input_digest(
+    genesis_record: dict[str, Any],
+    records: list[dict[str, Any]],
+    target_record_id: str,
+) -> str:
+    """Hash one connected K witness without scenario or expected-result data."""
+
+    def project(record: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in record.items()
+            if key not in NONSEMANTIC_VECTOR_FIELDS
+        }
+
+    return sha256(
+        dumps(
+            {
+                "acceptedGenesis": project(genesis_record),
+                "records": sorted(
+                    (project(record) for record in records),
+                    key=lambda record: record["eventReferenceHex"],
+                ),
+                "targetRecordId": target_record_id,
+            }
+        )
+    ).hexdigest()
 
 
 def semantic_observation_digest(steps: list[dict[str, Any]]) -> str:
@@ -277,8 +308,6 @@ def parse_genesis(transcript: bytes) -> dict[str, Any]:
     body_length = outer.integer(4, "body_length")
     if body_length > MAX_U32 - 20:
         raise ProtocolError("GENESIS_BODY_LIMIT")
-    if body_length > O08_LIMITS["GENESIS_BODY_OCTETS"]:
-        raise ProtocolError("GENESIS_BODY_OCTETS_LIMIT")
     body = ByteReader(outer.take(body_length, "body"))
     outer.finish("transcript")
     protocol = body.integer(2, "protocol")
@@ -289,8 +318,6 @@ def parse_genesis(transcript: bytes) -> dict[str, Any]:
     key = body.opaque("root_key")
     policy = body.opaque("initial_authority_policy")
     body.finish("body")
-    if len(policy) > O08_LIMITS["GENESIS_POLICY_OCTETS"]:
-        raise ProtocolError("GENESIS_POLICY_OCTETS_LIMIT")
     if protocol != 1 or profile != 1 or version != 1 or suite != 1 or len(key) != 32 or not policy:
         raise ProtocolError("GENESIS_FIELDS_INVALID")
     fields = {
@@ -303,6 +330,21 @@ def parse_genesis(transcript: bytes) -> dict[str, Any]:
     if encode_genesis(fields) != transcript:
         raise ProtocolError("NONCANONICAL_REENCODING")
     return fields
+
+
+def _genesis_profile_failure(
+    transcript: bytes,
+    fields: Mapping[str, Any],
+) -> ProtocolError | None:
+    """Return the first selected-envelope failure after a valid inverse."""
+
+    body_length = int.from_bytes(transcript[16:20], "big")
+    if body_length > O08_LIMITS["GENESIS_BODY_OCTETS"]:
+        return ProtocolError("GENESIS_BODY_OCTETS_LIMIT")
+    policy_octets = len(bytes.fromhex(str(fields["initialAuthorityPolicyHex"])))
+    if policy_octets > O08_LIMITS["GENESIS_POLICY_OCTETS"]:
+        return ProtocolError("GENESIS_POLICY_OCTETS_LIMIT")
+    return None
 
 
 def encode_commitment(
@@ -611,8 +653,6 @@ def parse_event(transcript: bytes) -> dict[str, Any]:
     body_length = outer.integer(4, "body_length")
     if body_length > MAX_U32 - 20:
         raise ProtocolError("FRAMING_OBJECT_LIMIT")
-    if body_length > O08_LIMITS["FRAMING_OBJECT_OCTETS"]:
-        raise ProtocolError("FRAMING_OBJECT_OCTETS_LIMIT")
     body = ByteReader(outer.take(body_length, "body"))
     outer.finish("transcript")
     protocol = body.integer(2, "protocol")
@@ -625,19 +665,13 @@ def parse_event(transcript: bytes) -> dict[str, Any]:
     schema = body.integer(4, "schema")
     schema_version = body.integer(4, "schema_version")
     transition = body.opaque("transition_block")
-    if len(transition) > O08_LIMITS["AP_TRANSITION_BLOCK_OCTETS"]:
-        raise ProtocolError("AP_TRANSITION_BLOCK_OCTETS_LIMIT")
     credential = body.take(32, "credential")
     sequence = body.integer(8, "sequence")
-    if sequence > O08_LIMITS["SEQUENCE_VALUE"]:
-        raise ProtocolError("SEQUENCE_VALUE_LIMIT")
     presence = body.integer(1, "predecessor_presence")
     if presence not in (0, 1):
         raise ProtocolError("PREDECESSOR_PRESENCE_INVALID")
     predecessor = body.take(32, "predecessor") if presence else None
     parent_count = body.integer(4, "parent_count")
-    if parent_count > O08_LIMITS["PARENTS_PER_EVENT"]:
-        raise ProtocolError("PARENTS_PER_EVENT_LIMIT", "S4_GRAPH_ADMISSION")
     parents = [body.take(32, "parent") for _ in range(parent_count)]
     genesis = body.take(32, "genesis")
     content_class = body.integer(1, "content_class")
@@ -672,12 +706,6 @@ def parse_event(transcript: bytes) -> dict[str, Any]:
         if shape is None or (shape == "SINGLE") == (geometry is not None):
             raise ProtocolError("CONTENT_GEOMETRY_INVALID")
         predicate_results = validate_geometry_predicates(exact_length, shape, geometry)
-        if geometry is not None and geometry["chunkSize"] not in O08_CHUNK_OCTETS:
-            raise ProtocolError("CHUNK_OCTETS_LIMIT", observations=predicate_results)
-        if geometry is not None and geometry["chunkCount"] > O08_LIMITS["CHUNKS_PER_CONTENT"]:
-            raise ProtocolError("CHUNKS_PER_CONTENT_LIMIT", observations=predicate_results)
-        if exact_length > O08_LIMITS["CONTENT_EXACT_OCTETS"]:
-            raise ProtocolError("CONTENT_EXACT_OCTETS_LIMIT", observations=predicate_results)
         content.update(
             {
                 "commitmentHex": commitment.hex(),
@@ -738,6 +766,51 @@ def parse_event(transcript: bytes) -> dict[str, Any]:
     if encode_event(fields) != transcript:
         raise ProtocolError("NONCANONICAL_REENCODING")
     return fields
+
+
+def _event_profile_failures(
+    transcript: bytes,
+    fields: Mapping[str, Any],
+) -> tuple[ProtocolError | None, ProtocolError | None]:
+    """Return first S3 and S4 envelope failures for a valid transcript.
+
+    Parsing establishes canonical written-inverse conformance.  These checks
+    deliberately execute afterwards so an O-08 admission failure cannot be
+    misreported as malformed transcript bytes.  The selected enforcement stage
+    still controls when protected work may begin.
+    """
+
+    body_length = int.from_bytes(transcript[16:20], "big")
+    if body_length > O08_LIMITS["FRAMING_OBJECT_OCTETS"]:
+        return ProtocolError("FRAMING_OBJECT_OCTETS_LIMIT"), None
+    if len(bytes.fromhex(str(fields["transitionBlockHex"]))) > O08_LIMITS[
+        "AP_TRANSITION_BLOCK_OCTETS"
+    ]:
+        return ProtocolError("AP_TRANSITION_BLOCK_OCTETS_LIMIT"), None
+    if int(fields["authorSequence"]) > O08_LIMITS["SEQUENCE_VALUE"]:
+        return ProtocolError("SEQUENCE_VALUE_LIMIT"), None
+    content = fields["content"]
+    geometry = content.get("geometry")
+    observations = content.get("geometryPredicateResults", {})
+    if geometry is not None and geometry["chunkSize"] not in O08_CHUNK_OCTETS:
+        return ProtocolError(
+            "CHUNK_OCTETS_LIMIT", observations=observations
+        ), None
+    if geometry is not None and geometry["chunkCount"] > O08_LIMITS[
+        "CHUNKS_PER_CONTENT"
+    ]:
+        return ProtocolError(
+            "CHUNKS_PER_CONTENT_LIMIT", observations=observations
+        ), None
+    if int(content["exactLength"]) > O08_LIMITS["CONTENT_EXACT_OCTETS"]:
+        return ProtocolError(
+            "CONTENT_EXACT_OCTETS_LIMIT", observations=observations
+        ), None
+    if len(fields["causalParents"]) > O08_LIMITS["PARENTS_PER_EVENT"]:
+        return None, ProtocolError(
+            "PARENTS_PER_EVENT_LIMIT", "S4_GRAPH_ADMISSION"
+        )
+    return None, None
 
 
 # Minimal verification-only Ed25519 implementation. It is deterministic corpus
@@ -815,6 +888,7 @@ def ed25519_sign(seed: bytes, message: bytes) -> tuple[bytes, bytes]:
     return public, encoded_r + scalar.to_bytes(32, "little")
 
 
+@lru_cache(maxsize=4096)
 def ed25519_verify(public: bytes, signature: bytes, message: bytes) -> bool:
     from hashlib import sha512
 
@@ -840,13 +914,14 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
     result: dict[str, Any] = {
         "apAuthorityResult": "AP_FOLD_NOT_EXECUTED",
         "commitmentMatchVerification": "NOT_EVALUATED",
-        "commitmentVerification": "NOT_PRESENT",
+        "commitmentVerification": "NOT_EVALUATED",
         "externalEffects": [],
         **_geometry_observations(),
         "kBindingAdmission": "ADMITTED",
         "outcomeEvaluated": False,
         "postStateDigest": None,
         "preStateDigest": state_digest,
+        "referenceVerification": "NOT_REACHED",
         "signatureVerification": "NOT_EVALUATED",
         "stage": "FINAL_AFTER_S6",
         "suppliedLengthVerification": "NOT_EVALUATED",
@@ -876,9 +951,7 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
         result.update(select_o10_result(candidates))
         result.update(
             {
-                "apAuthorityResult": (
-                    "REJECTED_OR_DEFERRED" if admitted else "NOT_REACHED"
-                ),
+                "apAuthorityResult": "NOT_REACHED",
                 "kBindingAdmission": "ADMITTED" if admitted else "REJECTED",
                 "outcomeEvaluated": True,
                 "postStateDigest": state_digest,
@@ -887,43 +960,67 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
         )
         return result
 
+    s3_profile_failure: ProtocolError | None = None
+    s4_profile_failure: ProtocolError | None = None
     try:
         if record["kind"] == "GENESIS":
             fields = parse_genesis(transcript)
             reference = framed_hash(DOMAINS["genesis_reference"], transcript).hex()
             expected_reference = record["genesisReferenceHex"]
+            s3_profile_failure = _genesis_profile_failure(transcript, fields)
         elif record["kind"] == "APPLICATION_EVENT":
             fields = parse_event(transcript)
             reference = framed_hash(DOMAINS["event_reference"], transcript).hex()
             expected_reference = record["eventReferenceHex"]
+            s3_profile_failure, s4_profile_failure = _event_profile_failures(
+                transcript, fields
+            )
         else:
             raise ProtocolError("OBJECT_KIND_UNKNOWN")
     except ProtocolError as error:
         result.update(error.observations)
-        if error.code == "PARENTS_PER_EVENT_LIMIT":
-            return reject(
-                "CONTEXT_CAPACITY_EXHAUSTED",
-                error.stage,
-                transcript_status="REJECTED",
-            )
-        if error.code.endswith("_LIMIT"):
-            return reject(
-                "CURRENT_OBJECT_OUT_OF_PROFILE",
-                error.stage,
-                transcript_status="REJECTED",
-            )
         return reject("STRUCTURAL_REJECTION", error.stage, transcript_status="REJECTED")
     except (ValueError, KeyError):
         return reject("STRUCTURAL_REJECTION", "S3_KERNEL_STRUCTURAL", transcript_status="REJECTED")
-    if reference != expected_reference:
-        return reject("REFERENCE_COLLISION_UNSUPPORTED", "S3_KERNEL_STRUCTURAL")
+    if record["kind"] == "APPLICATION_EVENT":
+        content = fields["content"]
+        if content["class"] == "NONE":
+            result.update(
+                {f"geometryPredicate{index}": "NOT_APPLICABLE" for index in range(1, 8)}
+            )
+            result["commitmentVerification"] = "NOT_PRESENT"
+            result["suppliedLengthVerification"] = "NOT_APPLICABLE"
+            result["commitmentMatchVerification"] = "NOT_APPLICABLE"
+        else:
+            result.update(content["geometryPredicateResults"])
+    else:
+        result.update(
+            {f"geometryPredicate{index}": "NOT_APPLICABLE" for index in range(1, 8)}
+        )
+        result["commitmentVerification"] = "NOT_PRESENT"
+        result["suppliedLengthVerification"] = "NOT_APPLICABLE"
+        result["commitmentMatchVerification"] = "NOT_APPLICABLE"
 
     admission = record.get("admissionContext", {})
     if admission and not isinstance(admission, dict):
         return reject("STRUCTURAL_REJECTION", "S3_KERNEL_STRUCTURAL")
+    if reference != expected_reference:
+        result["referenceVerification"] = "REJECTED"
+        collision_history = set(admission.get("seenEventReferences", []))
+        return reject(
+            "REFERENCE_COLLISION_UNSUPPORTED"
+            if expected_reference in collision_history
+            else "INVALID",
+            "S3_KERNEL_STRUCTURAL",
+        )
+    result["referenceVerification"] = "VALID"
+
     checkpoint_refs = admission.get("checkpointEvidenceReferences", [])
     if checkpoint_refs:
         return reject("CURRENT_OBJECT_OUT_OF_PROFILE", "S3_KERNEL_STRUCTURAL")
+    if s3_profile_failure is not None:
+        result.update(s3_profile_failure.observations)
+        return reject("CURRENT_OBJECT_OUT_OF_PROFILE", s3_profile_failure.stage)
 
     public_key = bytes.fromhex(record["binding"]["verificationKeyHex"])
     signature = bytes.fromhex(record["signatureHex"])
@@ -938,15 +1035,7 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
             or binding["credentialIdentifierHex"] != fields["credentialIdentifierHex"]
         ):
             return reject("CREDENTIAL_BINDING_MISMATCH", "S3_KERNEL_STRUCTURAL")
-        content = fields["content"]
-        if content["class"] == "NONE":
-            result.update(
-                {f"geometryPredicate{index}": "NOT_APPLICABLE" for index in range(1, 8)}
-            )
-            result["suppliedLengthVerification"] = "NOT_APPLICABLE"
-            result["commitmentMatchVerification"] = "NOT_APPLICABLE"
         if content["class"] != "NONE":
-            result.update(content["geometryPredicateResults"])
             opening = record.get("opening")
             if opening is None:
                 result["commitmentVerification"] = "PENDING"
@@ -985,16 +1074,14 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
                 return reject(failures)
             result["commitmentVerification"] = "VALID"
             result["commitmentMatchVerification"] = "VALID"
-    else:
-        result.update(
-            {f"geometryPredicate{index}": "NOT_APPLICABLE" for index in range(1, 8)}
-        )
-        result["suppliedLengthVerification"] = "NOT_APPLICABLE"
-        result["commitmentMatchVerification"] = "NOT_APPLICABLE"
-
     if admission:
-        if reference in admission.get("seenEventReferences", []):
+        if reference in admission.get("admittedEventReferences", []):
             return reject("DUPLICATE", "S3_KERNEL_STRUCTURAL", admitted=True)
+        if s4_profile_failure is not None:
+            return reject(
+                "CONTEXT_CAPACITY_EXHAUSTED",
+                s4_profile_failure.stage,
+            )
         sibling_refs = admission.get("sameAuthorSequenceReferences", [])
         if any(candidate != reference for candidate in sibling_refs):
             return reject("FORK_EVIDENCE", "EVENT_LOCAL", admitted=True)
@@ -1030,9 +1117,423 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
                     "UNRESOLVED_CREDENTIAL_BINDING",
                     "S3_KERNEL_STRUCTURAL",
                 )
+    if s4_profile_failure is not None:
+        return reject(
+            "CONTEXT_CAPACITY_EXHAUSTED",
+            s4_profile_failure.stage,
+        )
     result["postStateDigest"] = sha256(
         bytes.fromhex(state_digest) + bytes.fromhex(reference)
     ).hexdigest()
+    return result
+
+
+def evaluate_k_admission_scenario(
+    genesis_record: dict[str, Any],
+    records: list[dict[str, Any]],
+    *,
+    known_fork_references: frozenset[str] = frozenset(),
+) -> list[dict[str, Any]]:
+    """Evaluate one connected descendant-admission history.
+
+    ``genesis_record`` identifies a genesis projection that the harness declares
+    preaccepted.  This function verifies its transcript, reference and
+    signature, but deliberately does not model or claim the O-07 ceremony
+    transition which created the replica-owned state.
+    """
+
+    if genesis_record.get("kind") != "GENESIS":
+        raise ProtocolError("PREACCEPTED_GENESIS_KIND_INVALID")
+    genesis_transcript = bytes.fromhex(genesis_record["transcriptHex"])
+    genesis_fields = parse_genesis(genesis_transcript)
+    genesis_reference = framed_hash(
+        DOMAINS["genesis_reference"], genesis_transcript
+    ).hex()
+    if genesis_reference != genesis_record.get("genesisReferenceHex"):
+        raise ProtocolError("PREACCEPTED_GENESIS_REFERENCE_INVALID")
+    genesis_key = bytes.fromhex(genesis_fields["rootVerificationKeyHex"])
+    if not ed25519_verify(
+        genesis_key,
+        bytes.fromhex(genesis_record["signatureHex"]),
+        genesis_transcript,
+    ):
+        raise ProtocolError("PREACCEPTED_GENESIS_SIGNATURE_INVALID")
+
+    context = genesis_fields["contextIdentifierHex"]
+    admitted: dict[str, dict[str, Any]] = {}
+    bindings: dict[str, dict[str, Any]] = {
+        genesis_reference: {
+            "grantReferenceHex": None,
+            "issuerCredentialHex": None,
+            "verificationKeyHex": genesis_fields["rootVerificationKeyHex"],
+        }
+    }
+    observations: list[dict[str, Any]] = []
+
+    def ancestors(reference: str) -> frozenset[str]:
+        values: set[str] = set()
+        frontier = [reference]
+        while frontier:
+            current = frontier.pop()
+            if current in values:
+                continue
+            values.add(current)
+            event = admitted.get(current)
+            if event is None:
+                continue
+            fields = event["fields"]
+            predecessor = fields["directPredecessorHex"]
+            if predecessor is not None:
+                frontier.append(predecessor)
+            frontier.extend(fields["causalParents"])
+        values.discard(reference)
+        return frozenset(values)
+
+    for record in records:
+        if record.get("kind") != "APPLICATION_EVENT":
+            raise ProtocolError("SCENARIO_EVENT_KIND_INVALID")
+        transcript = bytes.fromhex(record["transcriptHex"])
+        fields = parse_event(transcript)
+        reference = framed_hash(DOMAINS["event_reference"], transcript).hex()
+        if reference != record.get("eventReferenceHex"):
+            raise ProtocolError("SCENARIO_EVENT_REFERENCE_INVALID")
+        if fields["contextIdentifierHex"] != context:
+            raise ProtocolError(
+                "CREDENTIAL_BINDING_MISMATCH", "S3_KERNEL_STRUCTURAL"
+            )
+        if fields["genesisReferenceHex"] != genesis_reference:
+            raise ProtocolError(
+                "CREDENTIAL_BINDING_MISMATCH", "S3_KERNEL_STRUCTURAL"
+            )
+
+        actor = fields["credentialIdentifierHex"]
+        binding = bindings.get(actor)
+        if binding is None:
+            raise ProtocolError("UNRESOLVED_CREDENTIAL_BINDING")
+
+        # Re-run the complete transcript/commitment checks with a binding
+        # derived from accepted genesis/GRANT state.  Candidate-carried
+        # ``binding`` and ``admissionContext`` metadata are deliberately not a
+        # trust input for connected K admission.
+        local_record = dict(record)
+        local_record.pop("admissionContext", None)
+        local_record["binding"] = {
+            "contextIdentifierHex": context,
+            "credentialIdentifierHex": actor,
+            "verificationKeyHex": binding["verificationKeyHex"],
+        }
+        local_observation = evaluate_vector(local_record)
+        if not transition_input_is_compatible(local_observation):
+            raise ProtocolError(
+                local_observation.get("localOutcome", "INVALID"),
+                local_observation.get("stage", "S3_KERNEL_STRUCTURAL"),
+                admitted=local_observation.get("kBindingAdmission") == "ADMITTED",
+            )
+        if not ed25519_verify(
+            bytes.fromhex(binding["verificationKeyHex"]),
+            bytes.fromhex(record["signatureHex"]),
+            transcript,
+        ):
+            raise ProtocolError("INVALID")
+
+        predecessor = fields["directPredecessorHex"]
+        parents = tuple(fields["causalParents"])
+        same_slot_references = {
+            admitted_reference
+            for admitted_reference, admitted_record in admitted.items()
+            if admitted_record["fields"]["credentialIdentifierHex"] == actor
+            and admitted_record["fields"]["authorSequence"]
+            == fields["authorSequence"]
+        }
+        if same_slot_references and not (
+            reference in known_fork_references
+            and same_slot_references <= known_fork_references
+        ):
+            raise ProtocolError("FORK_EVIDENCE", "EVENT_LOCAL", admitted=True)
+        dependencies = ({predecessor} if predecessor is not None else set()) | set(parents)
+        if not dependencies <= set(admitted):
+            raise ProtocolError("DEPENDENCY_DEFERRED", "S4_GRAPH_ADMISSION")
+        if fields["authorSequence"] == 0:
+            if predecessor is not None:
+                raise ProtocolError("STRUCTURAL_REJECTION")
+        else:
+            previous = admitted.get(predecessor or "")
+            if (
+                previous is None
+                or previous["fields"]["credentialIdentifierHex"] != actor
+                or previous["fields"]["authorSequence"] + 1
+                != fields["authorSequence"]
+            ):
+                raise ProtocolError("STRUCTURAL_REJECTION")
+        predecessor_ancestors = ancestors(predecessor) if predecessor is not None else frozenset()
+        if any(parent in predecessor_ancestors for parent in parents):
+            raise ProtocolError("STRUCTURAL_REJECTION")
+        for index, left in enumerate(parents):
+            left_ancestors = ancestors(left)
+            for right in parents[index + 1 :]:
+                if right in left_ancestors or left in ancestors(right):
+                    raise ProtocolError("STRUCTURAL_REJECTION")
+        if actor != genesis_reference and binding["grantReferenceHex"] not in ancestors(reference):
+            # ``reference`` is not admitted yet, so use the candidate dependency
+            # closure directly.
+            candidate_ancestors = set(dependencies)
+            for dependency in dependencies:
+                candidate_ancestors.update(ancestors(dependency))
+            if binding["grantReferenceHex"] not in candidate_ancestors:
+                raise ProtocolError("UNRESOLVED_CREDENTIAL_BINDING")
+
+        if fields["eventRole"] == "CREDENTIAL":
+            tail = fields["tail"]
+            kind = tail["kind"]
+            candidate_ancestors = set(dependencies)
+            for dependency in dependencies:
+                candidate_ancestors.update(ancestors(dependency))
+            if kind == "GRANT":
+                if reference == genesis_reference or reference in bindings:
+                    raise ProtocolError("CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED")
+            elif kind == "REVOKE":
+                target = tail["targetCredentialHex"]
+                if target not in bindings:
+                    raise ProtocolError("UNRESOLVABLE_CREDENTIAL")
+                # O-02 permits a control to name the accepted genesis root
+                # directly.  Every non-genesis credential, however, exists
+                # only through its admitted GRANT and that binding must be in
+                # the candidate's authenticated causal ancestry.
+                if target != genesis_reference and target not in candidate_ancestors:
+                    raise ProtocolError("STRUCTURAL_REJECTION")
+            elif kind == "ROTATE":
+                retiring = tail["retiringCredentialHex"]
+                replacement = tail["replacementGrantHex"]
+                if retiring == actor:
+                    raise ProtocolError("STRUCTURAL_REJECTION")
+                if retiring not in bindings:
+                    raise ProtocolError("UNRESOLVABLE_CREDENTIAL")
+                if (
+                    retiring != genesis_reference
+                    and retiring not in candidate_ancestors
+                ):
+                    raise ProtocolError("STRUCTURAL_REJECTION")
+                replacement_event = admitted.get(replacement)
+                if (
+                    replacement_event is None
+                    or replacement_event["fields"].get("tail", {}).get("kind")
+                    != "GRANT"
+                    or (replacement != predecessor and replacement not in parents)
+                ):
+                    raise ProtocolError("STRUCTURAL_REJECTION")
+            elif kind == "RECOVER":
+                recovery = tail["recoveryGrantHex"]
+                recovery_event = admitted.get(recovery)
+                if (
+                    recovery_event is None
+                    or recovery_event["fields"].get("tail", {}).get("kind")
+                    != "GRANT"
+                    or (recovery != predecessor and recovery not in parents)
+                ):
+                    raise ProtocolError("STRUCTURAL_REJECTION")
+
+        admitted[reference] = {**record, "fields": fields}
+        if fields["eventRole"] == "CREDENTIAL" and fields["tail"]["kind"] == "GRANT":
+            bindings[reference] = {
+                "grantReferenceHex": reference,
+                "issuerCredentialHex": actor,
+                "verificationKeyHex": fields["tail"]["granteeVerificationKeyHex"],
+            }
+        observations.append(
+            {
+                "eventReferenceHex": reference,
+                "id": record["id"],
+                **{
+                    key: value
+                    for key, value in local_observation.items()
+                    if key not in {"preStateDigest", "postStateDigest"}
+                },
+                "protocolErrorCode": None,
+            }
+        )
+    return observations
+
+
+def evaluate_k_admission_graph(
+    genesis_record: dict[str, Any],
+    records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Evaluate a complete connected K graph without trusting arrival order.
+
+    This is a bounded conformance oracle.  It repeatedly admits candidates whose
+    authenticated dependencies are already admitted, records exact local
+    rejection, and closes dependency rejection transitively.  It deliberately
+    does not execute AP authority or removal applicability.
+    """
+
+    parsed: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
+    rejected: dict[str, ProtocolError] = {}
+    record_order: dict[str, str] = {}
+    for record in records:
+        transcript = bytes.fromhex(record["transcriptHex"])
+        reference = framed_hash(DOMAINS["event_reference"], transcript).hex()
+        identifier = record["id"]
+        if reference in record_order and record_order[reference] != identifier:
+            raise ProtocolError("REFERENCE_COLLISION_UNSUPPORTED")
+        record_order[reference] = identifier
+        try:
+            fields = parse_event(transcript)
+            if reference != record.get("eventReferenceHex"):
+                raise ProtocolError("SCENARIO_EVENT_REFERENCE_INVALID")
+            parsed[reference] = (record, fields)
+        except ProtocolError as error:
+            rejected[reference] = error
+
+    def dependencies(fields: Mapping[str, Any]) -> set[str]:
+        values = set(fields["causalParents"])
+        if fields["directPredecessorHex"] is not None:
+            values.add(fields["directPredecessorHex"])
+        return values
+
+    forced_forks: set[str] = set()
+    while True:
+        run_rejected = dict(rejected)
+        admitted_records: list[dict[str, Any]] = []
+        admitted_references: set[str] = set()
+        pending = set(parsed) - set(run_rejected)
+        discovered_forks = set(forced_forks)
+        while pending:
+            progress = False
+            for reference in sorted(tuple(pending)):
+                record, fields = parsed[reference]
+                required = dependencies(fields)
+                failed_dependencies = {
+                    value
+                    for value in required & set(run_rejected)
+                    if not (
+                        run_rejected[value].admitted
+                        and run_rejected[value].code == "FORK_EVIDENCE"
+                    )
+                }
+                if failed_dependencies:
+                    dependency_errors = [
+                        run_rejected[value] for value in failed_dependencies
+                    ]
+                    pending_ancestor = any(
+                        error.admitted
+                        and error.code in {"PENDING_ANCESTOR", "PENDING_OPENING"}
+                        for error in dependency_errors
+                    )
+                    run_rejected[reference] = ProtocolError(
+                        "PENDING_ANCESTOR" if pending_ancestor else "DEPENDENCY_DEFERRED",
+                        "EVENT_LOCAL" if pending_ancestor else "S4_GRAPH_ADMISSION",
+                        admitted=pending_ancestor,
+                    )
+                    pending.remove(reference)
+                    progress = True
+                    continue
+                if not required <= admitted_references:
+                    continue
+                try:
+                    evaluate_k_admission_scenario(
+                        genesis_record,
+                        [*admitted_records, record],
+                        known_fork_references=frozenset(forced_forks),
+                    )
+                except ProtocolError as error:
+                    run_rejected[reference] = error
+                    if error.code == "FORK_EVIDENCE":
+                        discovered_forks.add(reference)
+                        discovered_forks.update(
+                            candidate["eventReferenceHex"]
+                            for candidate in admitted_records
+                            if candidate["fields"]["credentialIdentifierHex"]
+                            == fields["credentialIdentifierHex"]
+                            and candidate["fields"]["authorSequence"]
+                            == fields["authorSequence"]
+                        )
+                else:
+                    if reference in forced_forks:
+                        run_rejected[reference] = ProtocolError(
+                            "FORK_EVIDENCE", "EVENT_LOCAL", admitted=True
+                        )
+                    admitted_records.append({**record, "fields": fields})
+                    admitted_references.add(reference)
+                pending.remove(reference)
+                progress = True
+            if progress:
+                continue
+            for reference in sorted(pending):
+                run_rejected[reference] = ProtocolError(
+                    "DEPENDENCY_DEFERRED", "S4_GRAPH_ADMISSION"
+                )
+            pending.clear()
+        if discovered_forks == forced_forks:
+            rejected = run_rejected
+            break
+        forced_forks = discovered_forks
+
+    observations = []
+    for reference, identifier in sorted(record_order.items()):
+        error = rejected.get(reference)
+        observations.append(
+            {
+                "eventReferenceHex": reference,
+                "id": identifier,
+                "kBindingAdmission": (
+                    "ADMITTED" if error is None or error.admitted else "REJECTED"
+                ),
+                "protocolErrorCode": error.code if error else None,
+                "stage": error.stage if error else "FINAL_AFTER_S6",
+            }
+        )
+    return observations
+
+
+def evaluate_transcript_conformance(record: dict[str, Any]) -> dict[str, Any]:
+    """Evaluate one disconnected byte fixture without claiming K admission.
+
+    Historical C0.3 fixtures carry synthetic local context so that negative
+    branches remain reproducible.  When all local checks pass, that context is
+    insufficient to prove a real genesis/GRANT chain; the only honest terminal
+    result is transcript conformance with K left unevaluated.
+    """
+
+    observed = evaluate_vector(record)
+    result = dict(observed)
+    result["apAuthorityResult"] = "NOT_REACHED"
+    result["kBindingAdmission"] = "NOT_EVALUATED"
+    if transition_input_is_compatible(observed):
+        result["postStateDigest"] = result["preStateDigest"]
+        result["stage"] = "TRANSCRIPT_CONFORMANCE_COMPLETE"
+    return result
+
+
+def public_transcript_observation(record: dict[str, Any]) -> dict[str, Any]:
+    """Project one disconnected fixture to the oracle-free public vocabulary."""
+
+    observed = evaluate_transcript_conformance(record)
+    result = {
+        "apAuthorityResult": observed["apAuthorityResult"],
+        "commitmentMatchVerification": observed[
+            "commitmentMatchVerification"
+        ],
+        "commitmentVerification": observed["commitmentVerification"],
+        **{
+            f"geometryPredicate{index}": observed[f"geometryPredicate{index}"]
+            for index in range(1, 8)
+        },
+        "kBindingAdmission": observed["kBindingAdmission"],
+        "localOutcomePresent": "localOutcome" in observed,
+        "outcomeEvaluated": observed["outcomeEvaluated"],
+        "referenceVerification": observed["referenceVerification"],
+        "remoteClassPresent": "remoteClass" in observed,
+        "signatureVerification": observed["signatureVerification"],
+        "stage": observed["stage"],
+        "suppliedLengthVerification": observed[
+            "suppliedLengthVerification"
+        ],
+        "transcriptVerification": observed["transcriptVerification"],
+    }
+    if "localOutcome" in observed:
+        result["localOutcome"] = observed["localOutcome"]
+    if "remoteClass" in observed:
+        result["remoteClass"] = observed["remoteClass"]
     return result
 
 
@@ -1222,7 +1723,7 @@ def validate_sources(repo_root: Path) -> dict[str, Any]:
 def validate_inventory(repo_root: Path) -> dict[str, Any]:
     tool_root = repo_root / "tools/causal-flow-simulator/c03"
     inventory = load_local_json(tool_root / "corpus-inventory.json")
-    if inventory.get("schema") != "styx-c03-corpus-inventory/v1":
+    if inventory.get("schema") != "styx-c03-corpus-inventory/v2":
         raise CorpusModelError("inventory schema mismatch")
     reader = BaseReader(repo_root)
     model = reader.json("docs/protocol/review/styx-app-kernel-v0-review-model.json")
@@ -1297,12 +1798,21 @@ def validate_inventory(repo_root: Path) -> dict[str, Any]:
             raise CorpusModelError(f"empty O-10 row witness set: {row_id}")
         seen_inputs: set[str] = set()
         for witness in witnesses:
-            if not isinstance(witness, dict) or set(witness) != {
-                "inputId",
-                "jointSourceRowIds",
-            }:
+            if not isinstance(witness, dict):
                 raise CorpusModelError(f"malformed O-10 row witness: {row_id}")
-            input_id = witness["inputId"]
+            vector_witness = set(witness) == {"inputId", "jointSourceRowIds"}
+            graph_witness = set(witness) == {
+                "inputKAdmissionRecordId",
+                "inputKAdmissionScenarioId",
+                "jointSourceRowIds",
+            }
+            if not (vector_witness or graph_witness):
+                raise CorpusModelError(f"malformed O-10 row witness: {row_id}")
+            input_id = (
+                witness["inputId"]
+                if vector_witness
+                else f"{witness['inputKAdmissionScenarioId']}:{witness['inputKAdmissionRecordId']}"
+            )
             joint = witness["jointSourceRowIds"]
             if (
                 not isinstance(input_id, str)

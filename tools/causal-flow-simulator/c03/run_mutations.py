@@ -22,6 +22,8 @@ from corpus_model import (  # noqa: E402
     BaseReader,
     CorpusModelError,
     ProtocolError,
+    evaluate_k_admission_graph,
+    evaluate_transcript_conformance,
     evaluate_vector,
     load_local_json,
     o10_result,
@@ -62,8 +64,10 @@ def _computed_trace(
     scenario: dict[str, Any],
     vectors: dict[str, dict[str, Any]],
     transitions: dict[tuple[str, str], dict[str, Any]],
+    k_records: dict[str, dict[str, Any]],
+    k_scenarios: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
-    return compute_trace(scenario, vectors, transitions)
+    return compute_trace(scenario, vectors, transitions, k_records, k_scenarios)
 
 
 def _geometry_predicate_mutant_is_killed(number: int) -> bool:
@@ -90,7 +94,8 @@ def _python_kills(repo_root: Path, corpus: Path) -> dict[str, Any]:
     _, inventory = validate_base_inputs(repo_root)
     validate(repo_root, corpus)
     reader = BaseReader(repo_root)
-    valid = load(corpus / "valid-transcript-vectors.json")["records"]
+    valid_document = load(corpus / "valid-transcript-vectors.json")
+    valid = valid_document["records"]
     invalid_document = load(corpus / "invalid-transcript-vectors.json")
     invalid = invalid_document["records"]
     ap_expectations = invalid_document["apExpectationOnlyRecords"]
@@ -98,11 +103,23 @@ def _python_kills(repo_root: Path, corpus: Path) -> dict[str, Any]:
         record["id"]: record
         for record in valid + invalid + ap_expectations
     }
-    scenarios = load(corpus / "state-machine-scenarios.json")["records"]
+    scenario_document = load(corpus / "state-machine-scenarios.json")
+    scenarios = scenario_document["records"]
+    k_records = {
+        record["id"]: record for record in valid_document["kAdmissionRecords"]
+    }
+    adversarial_document = load(corpus / "adversarial-mutations.json")
+    k_scenarios = {
+        scenario["id"]: scenario
+        for scenario in (
+            scenario_document["kAdmissionScenarios"]
+            + adversarial_document["kAdmissionScenarios"]
+        )
+    }
     scenario_by_trace = {f"trace-{record['id']}": record for record in scenarios}
     expected = load(corpus / "expected-traces.json")["records"]
     expected_by_id = {record["id"]: record for record in expected}
-    mutations = load(corpus / "adversarial-mutations.json")["records"]
+    mutations = adversarial_document["records"]
     manifest = load(corpus / "manifest.json")
     documents = {name: load(corpus / name) for name in EXPECTED_FILES}
     manifest_files = {record["path"]: record for record in manifest["files"]}
@@ -144,20 +161,26 @@ def _python_kills(repo_root: Path, corpus: Path) -> dict[str, Any]:
             detected = evaluate_vector(corrupted)["localOutcome"] != corrupted["expected"]["localOutcome"]
         elif detector == "INDEPENDENT_EXPECTED_TRACE_MISMATCH":
             scenario = scenario_by_trace[mutation["generatedTargetId"]]
-            computed = _computed_trace(scenario, vectors, transitions)
+            computed = _computed_trace(
+                scenario, vectors, transitions, k_records, k_scenarios
+            )
             corrupted = deepcopy(expected_by_id[mutation["generatedTargetId"]])
             corrupted["steps"][0]["localOutcome"] = "INVALID"
             detected = computed != corrupted
         elif detector == "INDEPENDENT_EXPECTED_DEPENDENCY_STATUS_MISMATCH":
             scenario = scenario_by_trace[mutation["generatedTargetId"]]
-            computed = _computed_trace(scenario, vectors, transitions)
+            computed = _computed_trace(
+                scenario, vectors, transitions, k_records, k_scenarios
+            )
             corrupted = deepcopy(expected_by_id[mutation["generatedTargetId"]])
             corrupted["steps"][0]["dependencyStatus"] = "SATISFIED"
             detected = computed != corrupted
         elif detector == "INVARIANT_WITNESS_TRACE_MISMATCH":
             scenario = deepcopy(scenario_by_trace[mutation["generatedTargetId"]])
             scenario["steps"][0]["inputVectorId"] = mutation["replacementVectorId"]
-            detected = _computed_trace(scenario, vectors, transitions) != expected_by_id[mutation["generatedTargetId"]]
+            detected = _computed_trace(
+                scenario, vectors, transitions, k_records, k_scenarios
+            ) != expected_by_id[mutation["generatedTargetId"]]
         elif detector == "MANIFEST_DIGEST_MISMATCH":
             mutated_manifest = deepcopy(manifest)
             row = next(item for item in mutated_manifest["files"] if item["path"] == mutation["generatedTargetId"])
@@ -222,13 +245,29 @@ def _python_kills(repo_root: Path, corpus: Path) -> dict[str, Any]:
                 )
             )
         elif detector == "SOURCE_R5_LAYERING":
-            observed = evaluate_vector(vectors[mutation["generatedTargetId"]])
+            observed = evaluate_transcript_conformance(
+                vectors[mutation["generatedTargetId"]]
+            )
             detected = (
-                transition_input_is_compatible(observed)
-                and observed.get("apAuthorityResult") == "AP_FOLD_NOT_EXECUTED"
+                observed.get("kBindingAdmission") == "NOT_EVALUATED"
+                and observed.get("apAuthorityResult") == "NOT_REACHED"
                 and observed.get("outcomeEvaluated") is False
                 and "localOutcome" not in observed
                 and "remoteClass" not in observed
+            )
+        elif detector == "SOURCE_FORK_DESCENDANT_GRAPH_RETENTION":
+            scenario = k_scenarios[mutation["generatedTargetId"]]
+            observations = evaluate_k_admission_graph(
+                scenario["acceptedGenesisRecord"], scenario["records"]
+            )
+            descendant = next(
+                row
+                for row in observations
+                if row["id"] == "k-hostile-fork-left-descendant"
+            )
+            detected = (
+                descendant["kBindingAdmission"] == "ADMITTED"
+                and descendant["protocolErrorCode"] is None
             )
         require(detected, f"surviving Python mutation: {mutation['id']}")
         killed.append(mutation["id"])

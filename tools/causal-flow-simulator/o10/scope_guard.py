@@ -39,19 +39,22 @@ EXPECTED_C03_SYNC_VALIDATE_DOMAIN_SHA256 = (
     "bff89b7b2044d429be024a0cc1b7d1267aba9f8a089f51e138c4b672b04ff8b3"
 )
 EXPECTED_C03_CORPUS_COMPLETE_SHA256 = (
-    "d09d62b8c2c27af2af12abf7dcc0df6192c826dd671aa114c567f1551628e393"
+    "0e465455b8ba0adca3080332fc366556e86fcb8dc2c54bd9c7077bc75b3f2b53"
 )
 EXPECTED_C03_GATE_CACHE_KEY_SHA256 = (
     "c19afe3b84d2ee8a5138fdfe03dfe494783cf51f05c3f03a5a388df62cfea2cb"
 )
 EXPECTED_C03_GATE_SHA256 = (
-    "2b56f501ac354810de4a94afeaa0b042d6f7378ebd589d937d4ab7d64a496f41"
+    "3a7d944fd839604a81f524d15b2ea96472a4650178b0942fe9b84469590caa17"
 )
 EXPECTED_C03_VALIDATE_SHA256 = (
     "7c4b14bcf740c47fc7f8883e83ee95106b976d56044742a7672a7be70a178a30"
 )
 EXPECTED_C03_OUTPUT_BOUNDARY_SHA256 = (
     "c0f70c009f0f80e7081292fb835d326dd207e13df0d10249f8781954c41de92a"
+)
+EXPECTED_C03_RECONCILED_VALIDATE_DOMAIN_SHA256 = (
+    "1daf2909362505e24bf27b7594ea26f042fcebdb7e2a6c790b6e4ef24353b86d"
 )
 MAIN_ADDITION = "        findings.extend(validate_o10_outcome_taxonomy(model, args.repo_root))\n"
 ALLOWED_EXACT = frozenset(
@@ -289,7 +292,7 @@ def validate_validator_delta(before_source: str, actual_source: str) -> dict[str
         "_validate_c03_corpus_gate": EXPECTED_C03_GATE_SHA256,
         "_validate_output_boundary": EXPECTED_C03_OUTPUT_BOUNDARY_SHA256,
         "validate": EXPECTED_C03_VALIDATE_SHA256,
-        "validate_domain": EXPECTED_C03_SYNC_VALIDATE_DOMAIN_SHA256,
+        "validate_domain": EXPECTED_C03_RECONCILED_VALIDATE_DOMAIN_SHA256,
         "validate_o10_outcome_taxonomy": EXPECTED_FUNCTION_SHA256,
     }
     for name, expected_digest in expected_functions.items():

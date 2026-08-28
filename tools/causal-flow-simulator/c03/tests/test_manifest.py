@@ -17,20 +17,40 @@ sys.path.insert(0, str(ROOT))
 from canonical_json import dumps, load, store  # noqa: E402
 import generate_corpus  # noqa: E402
 from corpus_model import semantic_observation_digest  # noqa: E402
-from validate_corpus import ValidationError, _walk_hygiene, validate  # noqa: E402
+from validate_corpus import SCHEMAS, ValidationError, _walk_hygiene, validate  # noqa: E402
 
 
 class ManifestTests(unittest.TestCase):
     def test_tracked_manifest_and_corpus_validate(self) -> None:
         report = validate(REPO, CORPUS)
         self.assertEqual(report["result"], "PASS")
-        self.assertEqual(report["mutations"], 511)
+        self.assertEqual(report["mutations"], 513)
+
+    def test_every_v1_corpus_schema_identifier_fails_closed(self) -> None:
+        for name in sorted(SCHEMAS):
+            with self.subTest(name=name):
+                temporary, target = self._mutated_corpus()
+                self.addCleanup(temporary.cleanup)
+                document = load(target / name)
+                document["schema"] = document["schema"].replace("/v2", "/v1")
+                store(target / name, document)
+                with self.assertRaisesRegex(ValidationError, "schema mismatch"):
+                    validate(REPO, target)
+
+    def test_v1_manifest_format_version_fails_closed(self) -> None:
+        temporary, target = self._mutated_corpus()
+        self.addCleanup(temporary.cleanup)
+        manifest = load(target / "manifest.json")
+        manifest["corpusFormatVersion"] = 1
+        store(target / "manifest.json", manifest)
+        with self.assertRaisesRegex(ValidationError, "corpus format version mismatch"):
+            validate(REPO, target)
 
     def test_o10_source_rows_have_exact_explicit_witnesses(self) -> None:
         rows = load(CORPUS / "manifest.json")["coverage"]["o10"]["sourceRows"]
         self.assertEqual(len(rows), 102)
         produced = [row for row in rows if row["disposition"] == "PRODUCED"]
-        self.assertEqual(len(produced), 23)
+        self.assertEqual(len(produced), 25)
         self.assertTrue(all(row["witnesses"] for row in produced))
         self.assertTrue(
             all(not row["witnesses"] for row in rows if row["disposition"] != "PRODUCED")
@@ -49,6 +69,21 @@ class ManifestTests(unittest.TestCase):
                 ],
                 "scenarioId": "scenario-vector-inv-resource-chunk-count",
             }],
+        )
+        unresolved = [
+            row
+            for row in produced
+            if row["primary"] == "UNRESOLVABLE_CREDENTIAL"
+        ]
+        self.assertEqual(len(unresolved), 2)
+        self.assertTrue(
+            all(
+                row["witnesses"][0]["scenarioId"]
+                == "k-hostile-revoke-unknown-target"
+                and row["witnesses"][0]["inputKAdmissionRecordId"]
+                == "k-hostile-revoke-unknown-target"
+                for row in unresolved
+            )
         )
 
     def test_generic_same_outcome_cannot_replace_o10_row_witness(self) -> None:
@@ -176,7 +211,12 @@ class ManifestTests(unittest.TestCase):
         ap_expectations = invalid_document["apExpectationOnlyRecords"]
         scenarios = load(CORPUS / "state-machine-scenarios.json")["records"]
         traces = load(CORPUS / "expected-traces.json")["records"]
-        used = {step["inputVectorId"] for scenario in scenarios for step in scenario["steps"]}
+        used = {
+            step["inputVectorId"]
+            for scenario in scenarios
+            for step in scenario["steps"]
+            if "inputVectorId" in step
+        }
         self.assertEqual(used, {row["id"] for row in valid + invalid + ap_expectations})
         counterexamples = [row for row in scenarios if "counterexampleId" in row]
         self.assertEqual({len(row["steps"]) for row in counterexamples}, {3})

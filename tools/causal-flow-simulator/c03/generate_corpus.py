@@ -28,16 +28,40 @@ from corpus_model import (  # noqa: E402
     encode_commitment,
     encode_event,
     encode_genesis,
+    evaluate_k_admission_graph,
+    evaluate_k_admission_scenario,
+    evaluate_transcript_conformance,
     evaluate_vector,
     framed_hash,
     load_local_json,
     semantic_input_digest,
+    semantic_k_graph_input_digest,
     semantic_observation_digest,
     sha256_hex,
     synthetic_octets,
     transition_input_is_compatible,
     validate_base_inputs,
 )
+
+
+CONNECTED_K_TRANSITION_WITNESSES = {
+    ("k_admission", "k_admit_binding_grant"): (
+        "k-admission-grant-rooted-join",
+        "k-join-grant-a",
+    ),
+    ("k_admission", "k_admit_candidate"): (
+        "k-admission-grant-rooted-join",
+        "k-join-actor-a",
+    ),
+    ("pending_replay", "replay_apply_candidate"): (
+        "k-admission-grant-rooted-join",
+        "k-join-root-event",
+    ),
+    ("pending_replay", "replay_verified_opening"): (
+        "k-admission-linear-controls",
+        "k-linear-ordinary",
+    ),
+}
 
 
 CORPUS_FILES = (
@@ -140,6 +164,19 @@ SOURCE_SECURITY_MUTATIONS = (
         "transformation": "FLATTEN_ADMITTED_AP_FOLD_NOT_EXECUTED_TO_SUCCESS",
         "violatedInvariant": "INV_AUTH_NOT_KEY",
     },
+    {
+        "detector": "SOURCE_FORK_DESCENDANT_GRAPH_RETENTION",
+        "generatedTargetId": "k-hostile-connected-same-author-fork",
+        "id": "mutation-source-fork-descendant-dependency-rejection",
+        "sourceAnchor": "The graph, ancestry, order and pending sets remain visible",
+        "sourcePath": "docs/protocol/styx-app-kernel-v0-decisions.md",
+        "sourceRowIds": [
+            "BASE:FORK_EVIDENCE:00",
+            "BASE:LINEAGE_QUARANTINED:00",
+        ],
+        "transformation": "DROP_FORK_SIBLINGS_FROM_K_ADMITTED_DEPENDENCY_GRAPH",
+        "violatedInvariant": "INV_FORK_QUARANTINE",
+    },
 )
 
 # These relations are deliberately semantic and reviewable.  They replace the
@@ -226,6 +263,7 @@ INVALID_VECTOR_INVARIANTS = {
     "inv-parent-order": "INV_CAUSALITY_TRANSCRIPT_ONLY",
     "inv-profile-substitution": "INV_PROTECTION_SEPARATION",
     "inv-reference": "INV_GRANT_ROOTED_BINDING",
+    "inv-rejected-signature-representation": "INV_REPLAY_NO_AUTHORITY",
     "inv-resource-chunk-count": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-resource-chunk-size": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-resource-content-length": "INV_AUTHORITY_PROJECTION_LIMITS",
@@ -254,6 +292,7 @@ def _event_fields(
     tail: dict[str, Any] | None = None,
     credential: bytes | None = None,
     context: bytes | None = None,
+    genesis_reference: bytes | None = None,
 ) -> dict[str, Any]:
     fields: dict[str, Any] = {
         "applicationProfileId": 1,
@@ -266,7 +305,9 @@ def _event_fields(
         "directPredecessorHex": predecessor,
         "eventRole": role,
         "eventTypeId": {"ORDINARY": 1, "REMOVAL": 2, "CREDENTIAL": 3}[role],
-        "genesisReferenceHex": synthetic_octets("genesis-reference", 32).hex(),
+        "genesisReferenceHex": (
+            genesis_reference or synthetic_octets("genesis-reference", 32)
+        ).hex(),
         "schemaId": 1,
         "schemaVersion": 1,
         "transitionBlockHex": synthetic_octets(f"transition/{identifier}", 8).hex(),
@@ -299,7 +340,795 @@ def _application_vector(identifier: str, fields: dict[str, Any], seed_label: str
     }
 
 
-def _valid_vectors() -> list[dict[str, Any]]:
+def _genesis_vector(
+    identifier: str,
+    *,
+    context_label: str,
+    policy_label: str,
+    seed_label: str,
+) -> dict[str, Any]:
+    seed = synthetic_octets(seed_label, 32)
+    public_key, _ = ed25519_sign(seed, b"")
+    fields = {
+        "applicationProfileId": 1,
+        "applicationProfileVersion": 1,
+        "contextIdentifierHex": synthetic_octets(context_label, 32).hex(),
+        "initialAuthorityPolicyHex": synthetic_octets(policy_label, 12).hex(),
+        "rootVerificationKeyHex": public_key.hex(),
+    }
+    transcript = encode_genesis(fields)
+    _, signature = ed25519_sign(seed, transcript)
+    return {
+        "binding": {"verificationKeyHex": public_key.hex()},
+        "citations": [
+            {
+                "anchor": "O-07 fixes `T_genesis` as exactly:",
+                "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
+            }
+        ],
+        "fields": fields,
+        "genesisReferenceHex": framed_hash(
+            DOMAINS["genesis_reference"], transcript
+        ).hex(),
+        "id": identifier,
+        "kind": "GENESIS",
+        "profile": "STYX_APP_KERNEL_V0_TRANSCRIPT_ONLY",
+        "signatureHex": signature.hex(),
+        "signatureSuiteId": 1,
+        "synthetic": True,
+        "testOnly": True,
+        "transcriptHex": transcript.hex(),
+    }
+
+
+def _k_admission_vectors() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build connected K-admission histories distinct from transcript fixtures.
+
+    Genesis acceptance itself remains an O-07 test-boundary premise.  These
+    histories exercise only descendant K admission against a preaccepted,
+    immutable genesis projection; they do not serialize or emulate a ceremony
+    capability.
+    """
+
+    records: list[dict[str, Any]] = []
+    scenarios: list[dict[str, Any]] = []
+
+    def add_root_event(
+        identifier: str,
+        *,
+        context: bytes,
+        genesis_reference: bytes,
+        seed_label: str,
+        sequence: int,
+        predecessor: str | None,
+        role: str = "ORDINARY",
+        parents: list[str] | None = None,
+        content: dict[str, Any] | None = None,
+        tail: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        vector = _application_vector(
+            identifier,
+            _event_fields(
+                identifier,
+                role=role,
+                sequence=sequence,
+                predecessor=predecessor,
+                parents=parents,
+                content=content,
+                tail=tail,
+                credential=genesis_reference,
+                context=context,
+                genesis_reference=genesis_reference,
+            ),
+            seed_label,
+        )
+        records.append(vector)
+        return vector
+
+    # Scenario 1: one fully connected root-authored control history.  Every
+    # control target/fresh grant is an actual earlier admitted GRANT.
+    genesis = _genesis_vector(
+        "k-linear-genesis",
+        context_label="k-linear/context",
+        policy_label="k-linear/policy",
+        seed_label="k-linear/root",
+    )
+    records.append(genesis)
+    context = bytes.fromhex(genesis["fields"]["contextIdentifierHex"])
+    reference = bytes.fromhex(genesis["genesisReferenceHex"])
+    chain: list[dict[str, Any]] = []
+    previous: str | None = None
+    required_content = b"connected-k-required-opening"
+    required_commitment = encode_commitment(
+        profile_id=1,
+        profile_version=1,
+        context=context,
+        credential=reference,
+        sequence=0,
+        content_type=1,
+        content=required_content,
+        randomizer=synthetic_octets("k-linear/required-randomizer", 32),
+    )
+    ordinary = add_root_event(
+        "k-linear-ordinary",
+        context=context,
+        genesis_reference=reference,
+        seed_label="k-linear/root",
+        sequence=0,
+        predecessor=None,
+        content={
+            "class": "REQUIRED",
+            "commitmentHex": required_commitment["commitmentHex"],
+            "contentType": 1,
+            "exactLength": len(required_content),
+            "shape": "SINGLE",
+        },
+    )
+    ordinary["opening"] = {
+        "contentHex": required_content.hex(),
+        "randomizerHex": required_commitment["randomizerHex"],
+    }
+    chain.append(ordinary)
+    previous = ordinary["eventReferenceHex"]
+    grant = add_root_event(
+        "k-linear-grant-revoked",
+        context=context,
+        genesis_reference=reference,
+        seed_label="k-linear/root",
+        sequence=1,
+        predecessor=previous,
+        role="CREDENTIAL",
+        tail={
+            "granteeVerificationKeyHex": ed25519_sign(
+                synthetic_octets("k-linear/revoked", 32), b""
+            )[0].hex(),
+            "kind": "GRANT",
+        },
+    )
+    chain.append(grant)
+    previous = grant["eventReferenceHex"]
+
+    revoke = add_root_event(
+        "k-linear-revoke",
+        context=context,
+        genesis_reference=reference,
+        seed_label="k-linear/root",
+        sequence=2,
+        predecessor=previous,
+        role="CREDENTIAL",
+        tail={
+            "kind": "REVOKE",
+            "targetCredentialHex": chain[-1]["eventReferenceHex"],
+        },
+    )
+    chain.append(revoke)
+    previous = revoke["eventReferenceHex"]
+
+    retiring = add_root_event(
+        "k-linear-grant-retiring",
+        context=context,
+        genesis_reference=reference,
+        seed_label="k-linear/root",
+        sequence=3,
+        predecessor=previous,
+        role="CREDENTIAL",
+        tail={
+            "granteeVerificationKeyHex": ed25519_sign(
+                synthetic_octets("k-linear/retiring", 32), b""
+            )[0].hex(),
+            "kind": "GRANT",
+        },
+    )
+    chain.append(retiring)
+    replacement = add_root_event(
+        "k-linear-grant-replacement",
+        context=context,
+        genesis_reference=reference,
+        seed_label="k-linear/root",
+        sequence=4,
+        predecessor=retiring["eventReferenceHex"],
+        role="CREDENTIAL",
+        tail={
+            "granteeVerificationKeyHex": ed25519_sign(
+                synthetic_octets("k-linear/replacement", 32), b""
+            )[0].hex(),
+            "kind": "GRANT",
+        },
+    )
+    chain.append(replacement)
+    rotate = add_root_event(
+        "k-linear-rotate",
+        context=context,
+        genesis_reference=reference,
+        seed_label="k-linear/root",
+        sequence=5,
+        predecessor=replacement["eventReferenceHex"],
+        role="CREDENTIAL",
+        tail={
+            "kind": "ROTATE",
+            "replacementGrantHex": replacement["eventReferenceHex"],
+            "retiringCredentialHex": retiring["eventReferenceHex"],
+        },
+    )
+    chain.append(rotate)
+    recovery_grant = add_root_event(
+        "k-linear-grant-recovery",
+        context=context,
+        genesis_reference=reference,
+        seed_label="k-linear/root",
+        sequence=6,
+        predecessor=rotate["eventReferenceHex"],
+        role="CREDENTIAL",
+        tail={
+            "granteeVerificationKeyHex": ed25519_sign(
+                synthetic_octets("k-linear/recovery", 32), b""
+            )[0].hex(),
+            "kind": "GRANT",
+        },
+    )
+    chain.append(recovery_grant)
+    recover = add_root_event(
+        "k-linear-recover",
+        context=context,
+        genesis_reference=reference,
+        seed_label="k-linear/root",
+        sequence=7,
+        predecessor=recovery_grant["eventReferenceHex"],
+        role="CREDENTIAL",
+        tail={
+            "kind": "RECOVER",
+            "recoveryGrantHex": recovery_grant["eventReferenceHex"],
+            "retiredCredentialHex": synthetic_octets(
+                "k-linear/retired-annotation", 32
+            ).hex(),
+        },
+    )
+    chain.append(recover)
+    for sequence, identifier, kind in (
+        (8, "k-linear-policy", "POLICY"),
+        (9, "k-linear-closure", "CLOSURE"),
+    ):
+        event = add_root_event(
+            identifier,
+            context=context,
+            genesis_reference=reference,
+            seed_label="k-linear/root",
+            sequence=sequence,
+            predecessor=chain[-1]["eventReferenceHex"],
+            role="CREDENTIAL",
+            tail={"kind": kind},
+        )
+        chain.append(event)
+    scenarios.append(
+        {
+            "acceptedGenesisRecordId": genesis["id"],
+            "id": "k-admission-linear-controls",
+            "recordIds": [event["id"] for event in chain],
+        }
+    )
+
+    # Scenario 2: two grant-rooted authors form incomparable branches which a
+    # root event joins through an exact minimal causal frontier.
+    join_genesis = _genesis_vector(
+        "k-join-genesis",
+        context_label="k-join/context",
+        policy_label="k-join/policy",
+        seed_label="k-join/root",
+    )
+    records.append(join_genesis)
+    join_context = bytes.fromhex(join_genesis["fields"]["contextIdentifierHex"])
+    join_reference = bytes.fromhex(join_genesis["genesisReferenceHex"])
+    actor_rows: list[tuple[dict[str, Any], str]] = []
+    root_previous: str | None = None
+    for sequence, suffix in enumerate(("a", "b")):
+        actor_seed = f"k-join/actor-{suffix}"
+        actor_key, _ = ed25519_sign(synthetic_octets(actor_seed, 32), b"")
+        grant = add_root_event(
+            f"k-join-grant-{suffix}",
+            context=join_context,
+            genesis_reference=join_reference,
+            seed_label="k-join/root",
+            sequence=sequence,
+            predecessor=root_previous,
+            role="CREDENTIAL",
+            tail={
+                "granteeVerificationKeyHex": actor_key.hex(),
+                "kind": "GRANT",
+            },
+        )
+        root_previous = grant["eventReferenceHex"]
+        actor = _application_vector(
+            f"k-join-actor-{suffix}",
+            _event_fields(
+                f"k-join-actor-{suffix}",
+                sequence=0,
+                parents=[grant["eventReferenceHex"]],
+                credential=bytes.fromhex(grant["eventReferenceHex"]),
+                context=join_context,
+                genesis_reference=join_reference,
+            ),
+            actor_seed,
+        )
+        records.append(actor)
+        actor_rows.append((actor, suffix))
+    joined = add_root_event(
+        "k-join-root-event",
+        context=join_context,
+        genesis_reference=join_reference,
+        seed_label="k-join/root",
+        sequence=2,
+        predecessor=root_previous,
+        parents=sorted(actor["eventReferenceHex"] for actor, _ in actor_rows),
+    )
+    scenarios.append(
+        {
+            "acceptedGenesisRecordId": join_genesis["id"],
+            "id": "k-admission-grant-rooted-join",
+            "recordIds": [
+                "k-join-grant-a",
+                "k-join-grant-b",
+                "k-join-actor-a",
+                "k-join-actor-b",
+                joined["id"],
+            ],
+        }
+    )
+
+    # Scenario 3: a non-root actor may address the already accepted genesis
+    # credential directly.  O-02 exempts that root target from the ordinary
+    # non-genesis binding-GRANT ancestry rule; the actor's own authority still
+    # has to derive from its admitted GRANT.
+    actor_a = actor_rows[0][0]
+    revoke_genesis = _application_vector(
+        "k-join-actor-a-revoke-genesis",
+        _event_fields(
+            "k-join-actor-a-revoke-genesis",
+            role="CREDENTIAL",
+            sequence=1,
+            predecessor=actor_a["eventReferenceHex"],
+            credential=bytes.fromhex(
+                actor_a["fields"]["credentialIdentifierHex"]
+            ),
+            context=join_context,
+            genesis_reference=join_reference,
+            tail={
+                "kind": "REVOKE",
+                "targetCredentialHex": join_genesis["genesisReferenceHex"],
+            },
+        ),
+        "k-join/actor-a",
+    )
+    records.append(revoke_genesis)
+    scenarios.append(
+        {
+            "acceptedGenesisRecordId": join_genesis["id"],
+            "id": "k-admission-genesis-revoke-exception",
+            "recordIds": [
+                "k-join-grant-a",
+                "k-join-actor-a",
+                revoke_genesis["id"],
+            ],
+        }
+    )
+    return sorted(records, key=lambda record: record["id"]), scenarios
+
+
+def _k_admission_adversarial_scenarios(
+    legacy_records: list[dict[str, Any]],
+    connected_records: list[dict[str, Any]],
+    connected_scenarios: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build transcript-valid hostile graphs with independent expected output."""
+
+    connected_by_id = {record["id"]: record for record in connected_records}
+    legacy_by_id = {record["id"]: record for record in legacy_records}
+    scenario_by_id = {scenario["id"]: scenario for scenario in connected_scenarios}
+
+    def source(identifier: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        scenario = scenario_by_id[identifier]
+        return (
+            connected_by_id[scenario["acceptedGenesisRecordId"]],
+            [connected_by_id[value] for value in scenario["recordIds"]],
+        )
+
+    def resign(
+        record: dict[str, Any],
+        identifier: str,
+        seed_label: str,
+        mutate: Any,
+    ) -> dict[str, Any]:
+        value = json.loads(json.dumps(record))
+        value["id"] = identifier
+        mutate(value)
+        transcript = encode_event(value["fields"])
+        public, signature = ed25519_sign(
+            synthetic_octets(seed_label, 32), transcript
+        )
+        value["binding"]["contextIdentifierHex"] = value["fields"][
+            "contextIdentifierHex"
+        ]
+        value["binding"]["credentialIdentifierHex"] = value["fields"][
+            "credentialIdentifierHex"
+        ]
+        value["binding"]["verificationKeyHex"] = public.hex()
+        value["eventReferenceHex"] = framed_hash(
+            DOMAINS["event_reference"], transcript
+        ).hex()
+        value["signatureHex"] = signature.hex()
+        value["transcriptHex"] = transcript.hex()
+        return value
+
+    rows: list[dict[str, Any]] = []
+
+    def add(
+        identifier: str,
+        genesis: dict[str, Any],
+        records: list[dict[str, Any]],
+    ) -> None:
+        observations = evaluate_k_admission_graph(genesis, records)
+        rows.append(
+            {
+                "acceptedGenesisRecord": genesis,
+                "expectedObservations": observations,
+                "id": identifier,
+                "records": records,
+            }
+        )
+
+    add(
+        "k-hostile-legacy-transcript-not-admission",
+        legacy_by_id["vec-genesis"],
+        [legacy_by_id["vec-ordinary-none"]],
+    )
+    linear_genesis, linear = source("k-admission-linear-controls")
+    add(
+        "k-hostile-foreign-genesis",
+        linear_genesis,
+        [
+            resign(
+                linear[0],
+                "k-hostile-foreign-genesis-event",
+                "k-linear/root",
+                lambda row: row["fields"].__setitem__(
+                    "genesisReferenceHex", "ab" * 32
+                ),
+            )
+        ],
+    )
+    add(
+        "k-hostile-unknown-credential",
+        linear_genesis,
+        [
+            resign(
+                linear[0],
+                "k-hostile-unknown-credential-event",
+                "k-linear/root",
+                lambda row: row["fields"].__setitem__(
+                    "credentialIdentifierHex", "cd" * 32
+                ),
+            )
+        ],
+    )
+    wrong_key = resign(
+        linear[0],
+        "k-hostile-wrong-bound-key",
+        "k-hostile/wrong-key",
+        lambda row: None,
+    )
+    add("k-hostile-binding-key-substitution", linear_genesis, [wrong_key])
+
+    invalid_revoke = resign(
+        linear[2],
+        "k-hostile-revoke-unknown-target",
+        "k-linear/root",
+        lambda row: row["fields"]["tail"].__setitem__(
+            "targetCredentialHex", "ef" * 32
+        ),
+    )
+    add(
+        "k-hostile-revoke-unknown-target",
+        linear_genesis,
+        [linear[0], linear[1], invalid_revoke],
+    )
+    invalid_descendant = resign(
+        linear[3],
+        "k-hostile-descendant-of-rejected-control",
+        "k-linear/root",
+        lambda row: row["fields"].__setitem__(
+            "directPredecessorHex", invalid_revoke["eventReferenceHex"]
+        ),
+    )
+    add(
+        "k-hostile-transitive-rejection",
+        linear_genesis,
+        [linear[0], linear[1], invalid_revoke, invalid_descendant],
+    )
+    add(
+        "k-hostile-rotate-grant-not-frontier",
+        linear_genesis,
+        [
+            *linear[:5],
+            resign(
+                linear[5],
+                "k-hostile-rotate-grant-not-frontier-event",
+                "k-linear/root",
+                lambda row: row["fields"]["tail"].__setitem__(
+                    "replacementGrantHex", linear[1]["eventReferenceHex"]
+                ),
+            ),
+        ],
+    )
+    add(
+        "k-hostile-recover-grant-not-frontier",
+        linear_genesis,
+        [
+            *linear[:7],
+            resign(
+                linear[7],
+                "k-hostile-recover-grant-not-frontier-event",
+                "k-linear/root",
+                lambda row: row["fields"]["tail"].__setitem__(
+                    "recoveryGrantHex", linear[4]["eventReferenceHex"]
+                ),
+            ),
+        ],
+    )
+    add(
+        "k-hostile-self-rotation",
+        linear_genesis,
+        [
+            *linear[:5],
+            resign(
+                linear[5],
+                "k-hostile-self-rotation-event",
+                "k-linear/root",
+                lambda row: row["fields"]["tail"].__setitem__(
+                    "retiringCredentialHex",
+                    linear_genesis["genesisReferenceHex"],
+                ),
+            ),
+        ],
+    )
+
+    removal = _application_vector(
+        "k-hostile-removal-absent-target-event",
+        _event_fields(
+            "k-hostile-removal-absent-target-event",
+            role="REMOVAL",
+            sequence=1,
+            predecessor=linear[0]["eventReferenceHex"],
+            credential=bytes.fromhex(linear_genesis["genesisReferenceHex"]),
+            context=bytes.fromhex(
+                linear_genesis["fields"]["contextIdentifierHex"]
+            ),
+            genesis_reference=bytes.fromhex(
+                linear_genesis["genesisReferenceHex"]
+            ),
+            tail={
+                "targetCommitmentHex": "ab" * 32,
+                "targetEventReferenceHex": "cd" * 32,
+            },
+        ),
+        "k-linear/root",
+    )
+    add(
+        "k-hostile-removal-target-absence-is-not-k-rejection",
+        linear_genesis,
+        [linear[0], removal],
+    )
+
+    join_genesis, join = source("k-admission-grant-rooted-join")
+    actor_without_grant = resign(
+        join[2],
+        "k-hostile-noncausal-grant-event",
+        "k-join/actor-a",
+        lambda row: row["fields"].__setitem__("causalParents", []),
+    )
+    add(
+        "k-hostile-grant-not-in-actor-ancestry",
+        join_genesis,
+        [join[0], actor_without_grant],
+    )
+
+    # The target credential is globally resolvable (grant-b was admitted) but
+    # is not in actor-a's causal ancestry.  Resolution must not substitute for
+    # the non-genesis target-binding ancestry requirement.
+    noncausal_revoke = _application_vector(
+        "k-hostile-revoke-noncausal-target-event",
+        _event_fields(
+            "k-hostile-revoke-noncausal-target-event",
+            role="CREDENTIAL",
+            sequence=1,
+            predecessor=join[2]["eventReferenceHex"],
+            credential=bytes.fromhex(join[0]["eventReferenceHex"]),
+            context=bytes.fromhex(join_genesis["fields"]["contextIdentifierHex"]),
+            genesis_reference=bytes.fromhex(join_genesis["genesisReferenceHex"]),
+            tail={
+                "kind": "REVOKE",
+                "targetCredentialHex": join[1]["eventReferenceHex"],
+            },
+        ),
+        "k-join/actor-a",
+    )
+    add(
+        "k-hostile-revoke-noncausal-target",
+        join_genesis,
+        [join[0], join[1], join[2], noncausal_revoke],
+    )
+
+    replacement_key, _ = ed25519_sign(
+        synthetic_octets("k-hostile/rotate-replacement", 32), b""
+    )
+    noncausal_replacement = _application_vector(
+        "k-hostile-rotate-noncausal-replacement-grant",
+        _event_fields(
+            "k-hostile-rotate-noncausal-replacement-grant",
+            role="CREDENTIAL",
+            sequence=1,
+            predecessor=join[2]["eventReferenceHex"],
+            credential=bytes.fromhex(join[0]["eventReferenceHex"]),
+            context=bytes.fromhex(join_genesis["fields"]["contextIdentifierHex"]),
+            genesis_reference=bytes.fromhex(join_genesis["genesisReferenceHex"]),
+            tail={
+                "granteeVerificationKeyHex": replacement_key.hex(),
+                "kind": "GRANT",
+            },
+        ),
+        "k-join/actor-a",
+    )
+    noncausal_rotate = _application_vector(
+        "k-hostile-rotate-retiring-noncausal-event",
+        _event_fields(
+            "k-hostile-rotate-retiring-noncausal-event",
+            role="CREDENTIAL",
+            sequence=2,
+            predecessor=noncausal_replacement["eventReferenceHex"],
+            credential=bytes.fromhex(join[0]["eventReferenceHex"]),
+            context=bytes.fromhex(join_genesis["fields"]["contextIdentifierHex"]),
+            genesis_reference=bytes.fromhex(join_genesis["genesisReferenceHex"]),
+            tail={
+                "kind": "ROTATE",
+                "replacementGrantHex": noncausal_replacement["eventReferenceHex"],
+                "retiringCredentialHex": join[1]["eventReferenceHex"],
+            },
+        ),
+        "k-join/actor-a",
+    )
+    add(
+        "k-hostile-rotate-retiring-noncausal",
+        join_genesis,
+        [
+            join[0],
+            join[1],
+            join[2],
+            noncausal_replacement,
+            noncausal_rotate,
+        ],
+    )
+
+    # Connected event-local evidence must remain distinct from transcript
+    # rejection.  A REQUIRED event without its opening is K-admitted but held
+    # pending, and a child of that event is a distinct pending-ancestor case.
+    pending_opening = json.loads(json.dumps(linear[0]))
+    pending_opening["id"] = "k-hostile-required-opening-pending"
+    pending_opening.pop("opening", None)
+    pending_descendant = _application_vector(
+        "k-hostile-pending-ancestor",
+        _event_fields(
+            "k-hostile-pending-ancestor",
+            sequence=1,
+            predecessor=pending_opening["eventReferenceHex"],
+            credential=bytes.fromhex(linear_genesis["genesisReferenceHex"]),
+            context=bytes.fromhex(
+                linear_genesis["fields"]["contextIdentifierHex"]
+            ),
+            genesis_reference=bytes.fromhex(
+                linear_genesis["genesisReferenceHex"]
+            ),
+        ),
+        "k-linear/root",
+    )
+    add(
+        "k-hostile-required-opening-and-pending-ancestor",
+        linear_genesis,
+        [pending_opening, pending_descendant],
+    )
+
+    # Two otherwise valid events occupying the same author/sequence slot are
+    # both retained as authenticated fork evidence.  The graph evaluator reruns
+    # from the preaccepted root after discovering the second sibling, so lexical
+    # or arrival order cannot select a winner.  A correctly authenticated child
+    # of either sibling remains in the admitted K graph: AP, not dependency
+    # admission, owns the later LINEAGE_QUARANTINED disposition.
+    fork_left = _application_vector(
+        "k-hostile-fork-left",
+        _event_fields(
+            "k-hostile-fork-left",
+            sequence=1,
+            predecessor=linear[0]["eventReferenceHex"],
+            credential=bytes.fromhex(linear_genesis["genesisReferenceHex"]),
+            context=bytes.fromhex(
+                linear_genesis["fields"]["contextIdentifierHex"]
+            ),
+            genesis_reference=bytes.fromhex(
+                linear_genesis["genesisReferenceHex"]
+            ),
+        ),
+        "k-linear/root",
+    )
+    fork_right = _application_vector(
+        "k-hostile-fork-right",
+        _event_fields(
+            "k-hostile-fork-right",
+            sequence=1,
+            predecessor=linear[0]["eventReferenceHex"],
+            credential=bytes.fromhex(linear_genesis["genesisReferenceHex"]),
+            context=bytes.fromhex(
+                linear_genesis["fields"]["contextIdentifierHex"]
+            ),
+            genesis_reference=bytes.fromhex(
+                linear_genesis["genesisReferenceHex"]
+            ),
+        ),
+        "k-linear/root",
+    )
+    fork_descendant = _application_vector(
+        "k-hostile-fork-left-descendant",
+        _event_fields(
+            "k-hostile-fork-left-descendant",
+            sequence=2,
+            predecessor=fork_left["eventReferenceHex"],
+            credential=bytes.fromhex(linear_genesis["genesisReferenceHex"]),
+            context=bytes.fromhex(
+                linear_genesis["fields"]["contextIdentifierHex"]
+            ),
+            genesis_reference=bytes.fromhex(
+                linear_genesis["genesisReferenceHex"]
+            ),
+        ),
+        "k-linear/root",
+    )
+    add(
+        "k-hostile-connected-same-author-fork",
+        linear_genesis,
+        [linear[0], fork_left, fork_right, fork_descendant],
+    )
+
+    # PARENTS_PER_EVENT is an S4 capacity decision.  All bytes, reference,
+    # signature and root binding remain valid before the selected envelope
+    # rejects this graph candidate without parsing or signature ambiguity.
+    over_parent_limit = _application_vector(
+        "k-hostile-connected-parent-capacity",
+        _event_fields(
+            "k-hostile-connected-parent-capacity",
+            sequence=10,
+            predecessor=linear[9]["eventReferenceHex"],
+            parents=[record["eventReferenceHex"] for record in linear[:9]],
+            credential=bytes.fromhex(linear_genesis["genesisReferenceHex"]),
+            context=bytes.fromhex(
+                linear_genesis["fields"]["contextIdentifierHex"]
+            ),
+            genesis_reference=bytes.fromhex(
+                linear_genesis["genesisReferenceHex"]
+            ),
+        ),
+        "k-linear/root",
+    )
+    add(
+        "k-hostile-connected-parent-capacity",
+        linear_genesis,
+        [*linear, over_parent_limit],
+    )
+
+    add(
+        "k-hostile-reversed-arrival-is-equivalent",
+        join_genesis,
+        list(reversed(join)),
+    )
+    return sorted(rows, key=lambda row: row["id"])
+
+
+def _valid_vectors(*, legacy_controls: bool = False) -> list[dict[str, Any]]:
     root_seed = synthetic_octets("seed/root", 32)
     root_key, _ = ed25519_sign(root_seed, b"")
     genesis_fields = {
@@ -429,55 +1258,153 @@ def _valid_vectors() -> list[dict[str, Any]]:
     )
     vectors.append(removal)
 
-    grant_key, _ = ed25519_sign(synthetic_octets("seed/grantee", 32), b"")
-    control_specs = [
-        (
-            "grant",
-            {
-                "granteeVerificationKeyHex": grant_key.hex(),
-                "kind": "GRANT",
-            },
-        ),
-        (
-            "revoke",
-            {"kind": "REVOKE", "targetCredentialHex": synthetic_octets("credential-target", 32).hex()},
-        ),
-        (
-            "rotate",
-            {
-                "kind": "ROTATE",
-                "replacementGrantHex": synthetic_octets("replacement-grant", 32).hex(),
-                "retiringCredentialHex": synthetic_octets("credential-retiring", 32).hex(),
-            },
-        ),
-        (
-            "recover",
-            {
-                "kind": "RECOVER",
-                "recoveryGrantHex": synthetic_octets("recovery-grant", 32).hex(),
-                "retiredCredentialHex": synthetic_octets("credential-retired", 32).hex(),
-            },
-        ),
-        ("policy", {"kind": "POLICY"}),
-        ("closure", {"kind": "CLOSURE"}),
-    ]
-    previous = removal["eventReferenceHex"]
-    sequence = 4
-    for name, tail in control_specs:
+    def append_control(
+        identifier: str,
+        *,
+        sequence: int,
+        predecessor: str,
+        tail: dict[str, Any],
+    ) -> dict[str, Any]:
         vector = _application_vector(
-            f"vec-control-{name}",
+            f"vec-control-{identifier}",
             _event_fields(
-                f"control-{name}",
+                f"control-{identifier}",
                 role="CREDENTIAL",
                 sequence=sequence,
-                predecessor=previous,
+                predecessor=predecessor,
                 tail=tail,
             ),
             "seed/root",
         )
         vectors.append(vector)
-        previous = vector["eventReferenceHex"]
-        sequence += 1
+        return vector
+
+    grant_key, _ = ed25519_sign(synthetic_octets("seed/grantee", 32), b"")
+    grant = append_control(
+        "grant",
+        sequence=4,
+        predecessor=removal["eventReferenceHex"],
+        tail={"granteeVerificationKeyHex": grant_key.hex(), "kind": "GRANT"},
+    )
+    if legacy_controls:
+        legacy_specs = (
+            (
+                "revoke",
+                {
+                    "kind": "REVOKE",
+                    "targetCredentialHex": synthetic_octets(
+                        "credential-target", 32
+                    ).hex(),
+                },
+            ),
+            (
+                "rotate",
+                {
+                    "kind": "ROTATE",
+                    "replacementGrantHex": synthetic_octets(
+                        "replacement-grant", 32
+                    ).hex(),
+                    "retiringCredentialHex": synthetic_octets(
+                        "credential-retiring", 32
+                    ).hex(),
+                },
+            ),
+            (
+                "recover",
+                {
+                    "kind": "RECOVER",
+                    "recoveryGrantHex": synthetic_octets("recovery-grant", 32).hex(),
+                    "retiredCredentialHex": synthetic_octets(
+                        "credential-retired", 32
+                    ).hex(),
+                },
+            ),
+            ("policy", {"kind": "POLICY"}),
+            ("closure", {"kind": "CLOSURE"}),
+        )
+        previous = grant["eventReferenceHex"]
+        sequence = 5
+        for identifier, tail in legacy_specs:
+            control = append_control(
+                identifier,
+                sequence=sequence,
+                predecessor=previous,
+                tail=tail,
+            )
+            previous = control["eventReferenceHex"]
+            sequence += 1
+    else:
+        revoke = append_control(
+            "revoke",
+            sequence=5,
+            predecessor=grant["eventReferenceHex"],
+            tail={"kind": "REVOKE", "targetCredentialHex": grant["eventReferenceHex"]},
+        )
+
+        retiring_key, _ = ed25519_sign(
+            synthetic_octets("seed/grantee-rotate-retiring", 32), b""
+        )
+        retiring_grant = append_control(
+            "rotate-retiring-grant",
+            sequence=6,
+            predecessor=revoke["eventReferenceHex"],
+            tail={"granteeVerificationKeyHex": retiring_key.hex(), "kind": "GRANT"},
+        )
+        replacement_key, _ = ed25519_sign(
+            synthetic_octets("seed/grantee-rotate-replacement", 32), b""
+        )
+        replacement_grant = append_control(
+            "rotate-replacement-grant",
+            sequence=7,
+            predecessor=retiring_grant["eventReferenceHex"],
+            tail={"granteeVerificationKeyHex": replacement_key.hex(), "kind": "GRANT"},
+        )
+        rotate = append_control(
+            "rotate",
+            sequence=8,
+            predecessor=replacement_grant["eventReferenceHex"],
+            tail={
+                "kind": "ROTATE",
+                "replacementGrantHex": replacement_grant["eventReferenceHex"],
+                "retiringCredentialHex": retiring_grant["eventReferenceHex"],
+            },
+        )
+
+        recovery_key, _ = ed25519_sign(
+            synthetic_octets("seed/grantee-recovery", 32), b""
+        )
+        recovery_grant = append_control(
+            "recovery-grant",
+            sequence=9,
+            predecessor=rotate["eventReferenceHex"],
+            tail={"granteeVerificationKeyHex": recovery_key.hex(), "kind": "GRANT"},
+        )
+        recover = append_control(
+            "recover",
+            sequence=10,
+            predecessor=recovery_grant["eventReferenceHex"],
+            tail={
+                "kind": "RECOVER",
+                "recoveryGrantHex": recovery_grant["eventReferenceHex"],
+                "retiredCredentialHex": synthetic_octets(
+                    "credential-retired", 32
+                ).hex(),
+            },
+        )
+        policy = append_control(
+            "policy",
+            sequence=11,
+            predecessor=recover["eventReferenceHex"],
+            tail={"kind": "POLICY"},
+        )
+        closure = append_control(
+            "closure",
+            sequence=12,
+            predecessor=policy["eventReferenceHex"],
+            tail={"kind": "CLOSURE"},
+        )
+        previous = closure["eventReferenceHex"]
+        sequence = 13
 
     secondary = _application_vector(
         "vec-secondary-context-author",
@@ -654,6 +1581,16 @@ def _invalid_vectors(
     sig[0] ^= 1
     signature["signatureHex"] = sig.hex()
     values.append(signature)
+
+    rejected_replay = json.loads(json.dumps(signature))
+    rejected_replay["id"] = "inv-rejected-signature-representation"
+    rejected_replay["mutation"] = "REJECTED_SIGNATURE_REPRESENTATION"
+    rejected_replay["sourceVectorId"] = "inv-signature"
+    rejected_replay["admissionContext"] = {
+        "seenEventReferences": [base["eventReferenceHex"]],
+        "admittedEventReferences": [],
+    }
+    values.append(rejected_replay)
 
     reference = _mutated_vector(base, "inv-reference", "REFERENCE_SUBSTITUTION", "S3_KERNEL_STRUCTURAL", "REFERENCE_COLLISION_UNSUPPORTED")
     reference["eventReferenceHex"] = synthetic_octets("wrong-reference", 32).hex()
@@ -907,7 +1844,7 @@ def _invalid_vectors(
             "DUPLICATE_REPLAY",
             "S3_KERNEL_STRUCTURAL",
             "DUPLICATE",
-            {"seenEventReferences": [base["eventReferenceHex"]]},
+            {"admittedEventReferences": [base["eventReferenceHex"]]},
         ),
         (
             multiple_parents,
@@ -993,16 +1930,25 @@ def _scenarios(
     valid: list[dict[str, Any]],
     invalid: list[dict[str, Any]],
     ap_expectations: list[dict[str, Any]],
+    k_records: list[dict[str, Any]],
+    k_scenarios: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     default_input = "vec-ordinary-none"
     vector_by_id = {
         record["id"]: record
         for record in valid + invalid + ap_expectations
     }
+    transcript_ids = {record["id"] for record in valid + ap_expectations}
+    k_by_id = {record["id"]: record for record in k_records}
+    k_scenario_by_id = {scenario["id"]: scenario for scenario in k_scenarios}
     scenarios: list[dict[str, Any]] = []
 
     def vector_expectation(vector_id: str) -> tuple[dict[str, Any], str]:
-        result = evaluate_vector(vector_by_id[vector_id])
+        result = (
+            evaluate_transcript_conformance(vector_by_id[vector_id])
+            if vector_id in transcript_ids
+            else evaluate_vector(vector_by_id[vector_id])
+        )
         post_state = (
             "UNCHANGED"
             if result["preStateDigest"] == result["postStateDigest"]
@@ -1010,10 +1956,27 @@ def _scenarios(
         )
         return result, post_state
 
+    def connected_expectation(
+        scenario_id: str, record_id: str
+    ) -> tuple[dict[str, Any], str]:
+        scenario = k_scenario_by_id[scenario_id]
+        genesis = k_by_id[scenario["acceptedGenesisRecordId"]]
+        records = [k_by_id[identifier] for identifier in scenario["recordIds"]]
+        result = next(
+            observation
+            for observation in evaluate_k_admission_scenario(genesis, records)
+            if observation["id"] == record_id
+        )
+        if not transition_input_is_compatible(result):
+            raise ValueError(
+                f"connected K witness is not admitted: {scenario_id}:{record_id}"
+            )
+        return result, "READY_FOR_AP_FOLD"
+
     def step(
         *,
         action: str,
-        vector_id: str,
+        vector_id: str | None,
         pre_state: str,
         required: list[str] | None = None,
         produced: str | None = None,
@@ -1026,8 +1989,18 @@ def _scenarios(
         expected_dependency_status: str = "SATISFIED",
         ap_expectation_only: str | None = None,
         expected_result_layer: str | None = None,
+        k_scenario_id: str | None = None,
+        k_record_id: str | None = None,
     ) -> dict[str, Any]:
-        result, post_state = vector_expectation(vector_id)
+        connected = k_scenario_id is not None or k_record_id is not None
+        if connected:
+            if vector_id is not None or k_scenario_id is None or k_record_id is None:
+                raise ValueError("connected K witness shape mismatch")
+            result, post_state = connected_expectation(k_scenario_id, k_record_id)
+        else:
+            if vector_id is None:
+                raise ValueError("missing vector witness")
+            result, post_state = vector_expectation(vector_id)
         record = {
             "actor": actor,
             "candidateAction": action,
@@ -1035,12 +2008,26 @@ def _scenarios(
             "expectedDependencyStatus": expected_dependency_status,
             "expectedPostState": expected_post_state or post_state,
             "expectedStage": expected_stage or result["stage"],
-            "inputVectorId": vector_id,
             "preState": pre_state,
             "providedEvidence": produced,
             "requiredPriorEvidence": required or [],
             "transitionId": transition_id,
         }
+        if connected:
+            record["inputKAdmissionRecordId"] = k_record_id
+            record["inputKAdmissionScenarioId"] = k_scenario_id
+            record["evidenceLayer"] = "CONNECTED_K_ADMISSION"
+        else:
+            record["inputVectorId"] = vector_id
+            record["evidenceLayer"] = (
+                "BOUNDARY_NOT_EXECUTED"
+                if not executed
+                else (
+                    "TRANSCRIPT_CONFORMANCE"
+                    if vector_id in transcript_ids
+                    else "LOCAL_NEGATIVE"
+                )
+            )
         selected_outcome = expected_outcome or result.get("localOutcome")
         if selected_outcome is not None:
             record["expectedOutcome"] = selected_outcome
@@ -1073,14 +2060,19 @@ def _scenarios(
                     ap_expectation_only=transition["outcome"],
                 )
             elif transition_key in K_ADMISSION_ONLY_TRANSITIONS:
+                witness_scenario, witness_record = CONNECTED_K_TRANSITION_WITNESSES[
+                    transition_key
+                ]
                 transition_step = step(
                     action=transition["trigger"],
-                    vector_id=default_input,
+                    vector_id=None,
                     pre_state=from_state,
                     produced=f"evidence:{scenario_id}:0",
                     transition_id=transition["id"],
                     expected_post_state=transition["to"],
                     expected_result_layer="K_ADMISSION_ONLY",
+                    k_scenario_id=witness_scenario,
+                    k_record_id=witness_record,
                 )
             else:
                 vector_id = NEGATIVE_K_TRANSITION_VECTORS[transition_key]
@@ -1152,8 +2144,12 @@ def _scenarios(
                         expected_outcome=None if not excluded else (
                             "TRANSPORT_PROFILE_REQUIRED" if flow["id"] == "transport_publish" else "SESSION_PROFILE_REQUIRED"
                         ),
-                        expected_post_state="READY_FOR_AP_FOLD" if not excluded else "UNCHANGED",
-                        expected_stage="FINAL_AFTER_S6" if not excluded else "BOUNDARY_NOT_EXECUTED",
+                        expected_post_state="UNCHANGED",
+                        expected_stage=(
+                            "TRANSCRIPT_CONFORMANCE_COMPLETE"
+                            if not excluded
+                            else "BOUNDARY_NOT_EXECUTED"
+                        ),
                     )
                 ],
             }
@@ -1262,8 +2258,8 @@ def _scenarios(
             if vector_id not in AP_EXPECTATION_ONLY_VECTOR_IDS:
                 raise ValueError(f"AP-only step does not use an AP-only vector: {locator}")
             scenario_step.pop("expectedOutcome", None)
-            scenario_step["expectedResultLayer"] = "K_ADMISSION_ONLY"
-            scenario_step["expectedPostState"] = "READY_FOR_AP_FOLD"
+            scenario_step["expectedResultLayer"] = "TRANSCRIPT_CONFORMANCE_ONLY"
+            scenario_step["expectedPostState"] = "UNCHANGED"
             scenario_step["apExpectationOnly"] = ap_by_id[vector_id]["expected"]["localOutcome"]
             actual_ap_locators.add(locator)
     if actual_ap_locators != AP_EXPECTATION_ONLY_STEP_LOCATORS:
@@ -1271,14 +2267,44 @@ def _scenarios(
     return sorted(scenarios, key=lambda record: record["id"])
 
 
-def _traces(scenarios: list[dict[str, Any]], vector_by_id: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+def _traces(
+    scenarios: list[dict[str, Any]],
+    vector_by_id: dict[str, dict[str, Any]],
+    k_records: list[dict[str, Any]],
+    k_scenarios: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    k_by_id = {record["id"]: record for record in k_records}
+    k_scenario_by_id = {scenario["id"]: scenario for scenario in k_scenarios}
     traces: list[dict[str, Any]] = []
     for scenario in scenarios:
         entries = []
         available_evidence: set[str] = set()
         for index, step in enumerate(scenario["steps"]):
-            vector = vector_by_id[step["inputVectorId"]]
-            evaluated = evaluate_vector(vector) if step.get("executed", True) else None
+            connected = step["evidenceLayer"] == "CONNECTED_K_ADMISSION"
+            vector = None
+            graph_records: list[dict[str, Any]] | None = None
+            graph_genesis: dict[str, Any] | None = None
+            if connected:
+                graph_scenario = k_scenario_by_id[step["inputKAdmissionScenarioId"]]
+                graph_genesis = k_by_id[graph_scenario["acceptedGenesisRecordId"]]
+                graph_records = [
+                    k_by_id[identifier] for identifier in graph_scenario["recordIds"]
+                ]
+                evaluated = next(
+                    observation
+                    for observation in evaluate_k_admission_scenario(
+                        graph_genesis, graph_records
+                    )
+                    if observation["id"] == step["inputKAdmissionRecordId"]
+                )
+            else:
+                vector = vector_by_id[step["inputVectorId"]]
+                if not step.get("executed", True):
+                    evaluated = None
+                elif step["evidenceLayer"] == "TRANSCRIPT_CONFORMANCE":
+                    evaluated = evaluate_transcript_conformance(vector)
+                else:
+                    evaluated = evaluate_vector(vector)
             pre_digest = sha256(
                 f"styx-c03/state/{scenario['id']}/{step['preState']}".encode()
             ).hexdigest()
@@ -1291,7 +2317,7 @@ def _traces(scenarios: list[dict[str, Any]], vector_by_id: dict[str, dict[str, A
             if dependency_status != step["expectedDependencyStatus"]:
                 raise ValueError(f"dependency-status mismatch: {scenario['id']}:{index}")
             if step["transitionId"] is not None and scenario["modelId"] != "ap_projection":
-                if "expectedResultLayer" in step:
+                if step.get("expectedResultLayer") == "K_ADMISSION_ONLY":
                     if not transition_input_is_compatible(evaluated or {}):
                         raise ValueError(f"incompatible positive K transition: {scenario['id']}:{index}")
                 elif evaluated is None or evaluated.get("localOutcome") != step.get("expectedOutcome"):
@@ -1316,17 +2342,39 @@ def _traces(scenarios: list[dict[str, Any]], vector_by_id: dict[str, dict[str, A
                 observation = {
                     key: value
                     for key, value in evaluated.items()
-                    if key not in {"preStateDigest", "postStateDigest"}
+                    if key
+                    not in {
+                        "eventReferenceHex",
+                        "id",
+                        "preStateDigest",
+                        "postStateDigest",
+                        "protocolErrorCode",
+                    }
                 }
                 observation["stage"] = step["expectedStage"]
             entry = {
                     "actionDigest": sha256(step["candidateAction"].encode()).hexdigest(),
-                    "causalClassification": step["transitionId"] or f"VECTOR:{vector['id']}",
+                    "causalClassification": (
+                        step["transitionId"]
+                        or (
+                            f"K_GRAPH:{step['inputKAdmissionScenarioId']}:{step['inputKAdmissionRecordId']}"
+                            if connected
+                            else f"VECTOR:{vector['id']}"
+                        )
+                    ),
                     "dependencyStatus": dependency_status,
                     "evidenceConsumed": sorted(requirements),
                     "evidenceProduced": step.get("providedEvidence"),
                     "executed": step.get("executed", True),
-                    "inputDigest": semantic_input_digest(vector),
+                    "inputDigest": (
+                        semantic_k_graph_input_digest(
+                            graph_genesis,
+                            graph_records,
+                            step["inputKAdmissionRecordId"],
+                        )
+                        if connected
+                        else semantic_input_digest(vector)
+                    ),
                     "postStateDigest": post_digest,
                     "preStateDigest": pre_digest,
                     "step": index,
@@ -1515,7 +2563,12 @@ def _mutations(
 
 
 def _coverage(
-    model: dict[str, Any], inventory: dict[str, Any], scenarios: list[dict[str, Any]], mutations: list[dict[str, Any]], reader: BaseReader
+    model: dict[str, Any],
+    inventory: dict[str, Any],
+    scenarios: list[dict[str, Any]],
+    mutations: list[dict[str, Any]],
+    k_admission_hostile: list[dict[str, Any]],
+    reader: BaseReader,
 ) -> dict[str, Any]:
     scenario_ids = [item["id"] for item in scenarios]
     transition_scenarios = {
@@ -1560,6 +2613,15 @@ def _coverage(
                 for item in scenarios
                 if any(step.get("expectedOutcome") == primary for step in item["steps"])
             ]
+            matching.extend(
+                item["id"]
+                for item in k_admission_hostile
+                if any(
+                    observation.get("protocolErrorCode") == primary
+                    for observation in item["expectedObservations"]
+                )
+            )
+            matching.sort()
         elif primary in AP_OWNED_EXCLUSIONS:
             branch = "AP_OWNED_EXCLUDED"
             matching = [
@@ -1596,13 +2658,14 @@ def _coverage(
         if row_id in produced_witnesses:
             primary = row["mapping"]["primary"]
             disposition = "PRODUCED"
-            witnesses = [
-                {
-                    **witness,
-                    "scenarioId": f"scenario-vector-{witness['inputId']}",
-                }
-                for witness in produced_witnesses[row_id]
-            ]
+            witnesses = []
+            for witness in produced_witnesses[row_id]:
+                scenario_id = (
+                    f"scenario-vector-{witness['inputId']}"
+                    if "inputId" in witness
+                    else witness["inputKAdmissionScenarioId"]
+                )
+                witnesses.append({**witness, "scenarioId": scenario_id})
         elif "mapping" in row and row["mapping"]["primary"] in AP_OWNED_EXCLUSIONS:
             primary = row["mapping"]["primary"]
             disposition = "AP_OWNED_EXCLUDED"
@@ -1693,25 +2756,61 @@ def generate(repo_root: Path, output: Path) -> dict[str, Any]:
     model = load_local_json(
         repo_root / "docs/protocol/review/styx-app-kernel-v0-review-model.json"
     )
-    valid = _valid_vectors()
+    # Preserve the exact Base transcript fixtures as byte-level regressions.
+    # Their historical K-admission claim is deliberately not reused: connected
+    # admission is exercised by the separate graph corpus below.
+    valid = _valid_vectors(legacy_controls=True)
+    k_admission_records, k_admission_scenarios = _k_admission_vectors()
+    k_admission_scenarios = sorted(
+        k_admission_scenarios, key=lambda scenario: scenario["id"]
+    )
+    k_admission_hostile = _k_admission_adversarial_scenarios(
+        valid,
+        k_admission_records,
+        k_admission_scenarios,
+    )
     invalid, ap_expectations = _invalid_vectors(valid)
-    scenarios = _scenarios(model, valid, invalid, ap_expectations)
+    scenarios = _scenarios(
+        model,
+        valid,
+        invalid,
+        ap_expectations,
+        k_admission_records,
+        k_admission_scenarios,
+    )
     vectors = {
         item["id"]: item
         for item in valid + invalid + ap_expectations
     }
-    traces = _traces(scenarios, vectors)
+    traces = _traces(
+        scenarios,
+        vectors,
+        k_admission_records,
+        k_admission_scenarios,
+    )
     mutations = _mutations(invalid, inventory, reader, scenarios)
     documents = {
-        "valid-transcript-vectors.json": {"records": valid, "schema": "styx-c03-valid-transcripts/v1"},
+        "valid-transcript-vectors.json": {
+            "kAdmissionRecords": k_admission_records,
+            "records": valid,
+            "schema": "styx-c03-valid-transcripts/v2",
+        },
         "invalid-transcript-vectors.json": {
             "apExpectationOnlyRecords": ap_expectations,
             "records": invalid,
-            "schema": "styx-c03-invalid-transcripts/v1",
+            "schema": "styx-c03-invalid-transcripts/v2",
         },
-        "state-machine-scenarios.json": {"records": scenarios, "schema": "styx-c03-state-scenarios/v1"},
-        "adversarial-mutations.json": {"records": mutations, "schema": "styx-c03-adversarial-mutations/v1"},
-        "expected-traces.json": {"records": traces, "schema": "styx-c03-expected-traces/v1"},
+        "state-machine-scenarios.json": {
+            "kAdmissionScenarios": k_admission_scenarios,
+            "records": scenarios,
+            "schema": "styx-c03-state-scenarios/v2",
+        },
+        "adversarial-mutations.json": {
+            "kAdmissionScenarios": k_admission_hostile,
+            "records": mutations,
+            "schema": "styx-c03-adversarial-mutations/v2",
+        },
+        "expected-traces.json": {"records": traces, "schema": "styx-c03-expected-traces/v2"},
     }
     output.mkdir(parents=True, exist_ok=True)
     for name, document in documents.items():
@@ -1725,12 +2824,32 @@ def generate(repo_root: Path, output: Path) -> dict[str, Any]:
             "corpusConstruction": "COMPLETE",
             "c03Verdict": "NO_GO",
         },
-        "corpusFormatVersion": 1,
-        "coverage": _coverage(model, inventory, scenarios, mutations, reader),
+        "corpusFormatVersion": 2,
+        "coverage": _coverage(
+            model,
+            inventory,
+            scenarios,
+            mutations,
+            k_admission_hostile,
+            reader,
+        ),
         "files": [
             {
                 "path": name,
                 "recordCount": len(documents[name]["records"]),
+                **(
+                    {
+                        "kAdmissionRecordCount": len(
+                            documents[name].get(
+                                "kAdmissionRecords",
+                                documents[name].get("kAdmissionScenarios", []),
+                            )
+                        )
+                    }
+                    if "kAdmissionRecords" in documents[name]
+                    or "kAdmissionScenarios" in documents[name]
+                    else {}
+                ),
                 "sha256": sha256_hex((output / name).read_bytes()),
             }
             for name in sorted(documents)
@@ -1755,7 +2874,7 @@ def generate(repo_root: Path, output: Path) -> dict[str, Any]:
             "python": ">=3.11",
             "reuse": "6.2.0 / REUSE-3.3",
         },
-        "schema": "styx-c03-corpus-manifest/v1",
+        "schema": "styx-c03-corpus-manifest/v2",
         "sourceInventory": {
             "base": BASE_SHA,
             "corpusInventorySha256": sha256_hex((repo_root / "tools/causal-flow-simulator/c03/corpus-inventory.json").read_bytes()),

@@ -69,6 +69,8 @@
     "BASE:PENDING_OPENING:00": [{"inputId": "inv-opening-missing", "jointSourceRowIds": ["BASE:PENDING_OPENING:00"]}],
     "BASE:REFERENCE_COLLISION_UNSUPPORTED:00": [{"inputId": "inv-reference", "jointSourceRowIds": ["BASE:REFERENCE_COLLISION_UNSUPPORTED:00"]}],
     "BASE:REFERENCE_COLLISION_UNSUPPORTED:01": [{"inputId": "inv-reference", "jointSourceRowIds": ["BASE:REFERENCE_COLLISION_UNSUPPORTED:01"]}],
+    "BASE:UNRESOLVABLE_CREDENTIAL:00": [{"inputKAdmissionRecordId": "k-hostile-revoke-unknown-target", "inputKAdmissionScenarioId": "k-hostile-revoke-unknown-target", "jointSourceRowIds": ["BASE:UNRESOLVABLE_CREDENTIAL:00", "BASE:UNRESOLVABLE_CREDENTIAL:01"]}],
+    "BASE:UNRESOLVABLE_CREDENTIAL:01": [{"inputKAdmissionRecordId": "k-hostile-revoke-unknown-target", "inputKAdmissionScenarioId": "k-hostile-revoke-unknown-target", "jointSourceRowIds": ["BASE:UNRESOLVABLE_CREDENTIAL:00", "BASE:UNRESOLVABLE_CREDENTIAL:01"]}],
     "BASE:UNRESOLVED_CREDENTIAL_BINDING:00": [{"inputId": "inv-unresolved-credential-binding", "jointSourceRowIds": ["BASE:UNRESOLVED_CREDENTIAL_BINDING:00"]}],
     "BASE:UNRESOLVED_CREDENTIAL_BINDING:01": [{"inputId": "inv-unresolved-credential-binding", "jointSourceRowIds": ["BASE:UNRESOLVED_CREDENTIAL_BINDING:01"]}],
     "O08:AP_TRANSITION_BLOCK_OCTETS:S3_KERNEL_STRUCTURAL": [{"inputId": "inv-resource-transition-block", "jointSourceRowIds": ["O08:AP_TRANSITION_BLOCK_OCTETS:S3_KERNEL_STRUCTURAL"]}],
@@ -80,5 +82,5 @@
     "O08:SEQUENCE_VALUE:S3_KERNEL_STRUCTURAL": [{"inputId": "inv-resource-sequence", "jointSourceRowIds": ["O08:SEQUENCE_VALUE:S3_KERNEL_STRUCTURAL"]}]
   },
   "o10_source_row_count": 102,
-  "schema": "styx-c03-corpus-inventory/v1"
+  "schema": "styx-c03-corpus-inventory/v2"
 }

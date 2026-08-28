@@ -25,6 +25,9 @@ class CrossRuntimeTests(unittest.TestCase):
         self.assertEqual(report["result"], "PASS")
         self.assertEqual(report["runtimes"], ["javascript", "python"])
         self.assertEqual(report["scenarios"], len(load(CORPUS / "state-machine-scenarios.json")["records"]))
+        self.assertEqual(report["kAdmissionRecords"], 18)
+        self.assertEqual(report["kAdmissionScenarios"], 3)
+        self.assertEqual(report["kAdmissionHostileScenarios"], 17)
         self.assertEqual(
             report["vectors"],
             len(load(CORPUS / "valid-transcript-vectors.json")["records"])
@@ -36,7 +39,16 @@ class CrossRuntimeTests(unittest.TestCase):
         report = run(REPO, CORPUS)
         self.assertEqual(
             set(report),
-            {"reportDigest", "result", "runtimes", "scenarios", "vectors"},
+            {
+                "kAdmissionHostileScenarios",
+                "kAdmissionRecords",
+                "kAdmissionScenarios",
+                "reportDigest",
+                "result",
+                "runtimes",
+                "scenarios",
+                "vectors",
+            },
         )
         encoded = dumps(report)
         self.assertTrue(encoded.endswith(b"\n"))
@@ -151,7 +163,10 @@ class CrossRuntimeTests(unittest.TestCase):
                 if row["modelId"] == "k_admission"
                 and row["steps"][0].get("expectedResultLayer") == "K_ADMISSION_ONLY"
             )
+            transition["steps"][0]["evidenceLayer"] = "LOCAL_NEGATIVE"
             transition["steps"][0]["inputVectorId"] = "inv-signature"
+            transition["steps"][0].pop("inputKAdmissionScenarioId")
+            transition["steps"][0].pop("inputKAdmissionRecordId")
             store(target / "state-machine-scenarios.json", scenarios)
             completed = subprocess.run(
                 ["node", str(ROOT / "node_adapter.mjs"), "--repo-root", str(REPO),
@@ -161,7 +176,7 @@ class CrossRuntimeTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(completed.returncode, 2)
-            self.assertIn("incompatible positive K transition", completed.stderr)
+            self.assertIn("scenario evidence-layer cardinality mismatch", completed.stderr)
 
 
 if __name__ == "__main__":

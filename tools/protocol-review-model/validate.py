@@ -2618,9 +2618,9 @@ def _validate_c03_corpus_gate(repo_root: Path) -> list[Finding]:
         canonical_counts: dict[str, int] = {}
         expected_counts = {
             "validVectors": 17,
-            "invalidVectors": 26,
-            "scenarios": 118,
-            "mutations": 511,
+            "invalidVectors": 27,
+            "scenarios": 119,
+            "mutations": 513,
         }
         manifest = load_json_unique(corpus / "manifest.json")
         manifest_files = manifest.get("files")

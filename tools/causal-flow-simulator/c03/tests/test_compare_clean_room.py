@@ -64,6 +64,13 @@ class CleanRoomComparisonTests(unittest.TestCase):
         store(
             cls.third,
             {
+                "admissionGraphs": [
+                    {
+                        "observations": row["expectedObservations"],
+                        "opaqueGraphId": row["opaqueGraphId"],
+                    }
+                    for row in integration["admissionGraphs"]
+                ],
                 "observations": [
                     {"opaqueId": row["opaqueId"], **row["expectedPublicObservation"]}
                     for row in integration["records"]
@@ -82,9 +89,12 @@ class CleanRoomComparisonTests(unittest.TestCase):
             self.third, self.freeze, self.reader,
         )
         self.assertEqual(report["result"], "PASS")
-        self.assertEqual(report["records"], 43)
-        self.assertEqual(report["validObservations"], 68)
-        self.assertEqual(report["invalidClassifications"], 26)
+        self.assertEqual(report["records"], 44)
+        self.assertEqual(report["admissionGraphs"], 20)
+        self.assertGreater(report["connectedAdmissions"], 0)
+        self.assertGreater(report["connectedRejections"], 0)
+        self.assertEqual(report["transcriptConformanceChecks"], 68)
+        self.assertEqual(report["invalidClassifications"], 27)
         self.assertEqual(report["runtimes"], ["javascript", "python", "third-clean-room"])
 
     def test_missing_or_extra_reader_output_fails_closed(self) -> None:
@@ -94,6 +104,21 @@ class CleanRoomComparisonTests(unittest.TestCase):
         store(path, document)
         with self.assertRaises(CleanRoomComparisonError):
             compare(self.kit, self.integration, self.python, self.node, path, self.freeze, self.reader)
+
+    def test_record_mismatch_does_not_hide_graph_mismatch(self) -> None:
+        document = load(self.third)
+        document["observations"][0]["signatureVerification"] = "REJECTED"
+        document["admissionGraphs"][0]["observations"][0]["stage"] = "EVENT_LOCAL"
+        path = self.root / "third-two-mismatches.json"
+        store(path, document)
+        report = compare(
+            self.kit, self.integration, self.python, self.node,
+            path, self.freeze, self.reader,
+        )
+        self.assertEqual(report["result"], "FAIL")
+        kinds = {row["kind"] for row in report["mismatches"]}
+        self.assertIn("THIRD_RECORD", kinds)
+        self.assertIn("THIRD_GRAPH", kinds)
 
     def test_reader_byte_drift_fails_closed(self) -> None:
         original = (self.reader / "TOOLCHAIN.md").read_bytes()

@@ -17,14 +17,19 @@ from canonical_json import dumps, load, store  # noqa: E402
 from corpus_model import (  # noqa: E402
     BaseReader,
     CorpusModelError,
+    evaluate_k_admission_graph,
+    evaluate_k_admission_scenario,
+    evaluate_transcript_conformance,
     evaluate_vector,
     load_local_json,
     semantic_input_digest,
+    semantic_k_graph_input_digest,
     semantic_observation_digest,
     transition_input_is_compatible,
     validate_base_inputs,
     SEMANTIC_OBSERVATION_FIELDS,
     OPTIONAL_SEMANTIC_OBSERVATION_FIELDS,
+    public_transcript_observation,
 )
 from validate_corpus import validate  # noqa: E402
 
@@ -54,12 +59,45 @@ def _compute_step(
     scenario: dict[str, Any],
     step: dict[str, Any],
     index: int,
-    vector: dict[str, Any],
+    vector: dict[str, Any] | None,
     transitions: dict[tuple[str, str], dict[str, Any]],
+    k_records: dict[str, dict[str, Any]],
+    k_scenarios: dict[str, dict[str, Any]],
     available_evidence: set[str] | None = None,
 ) -> dict[str, Any]:
     executed = step.get("executed", True)
-    evaluated = evaluate_vector(vector) if executed else None
+    layer = step["evidenceLayer"]
+    input_digest: str
+    input_label: str
+    if not executed:
+        require(vector is not None, "boundary step has no vector")
+        evaluated = None
+        input_digest = semantic_input_digest(vector)
+        input_label = f"VECTOR:{vector['id']}"
+    elif layer == "CONNECTED_K_ADMISSION":
+        scenario_id = step.get("inputKAdmissionScenarioId")
+        target_id = step.get("inputKAdmissionRecordId")
+        connected = k_scenarios.get(scenario_id)
+        require(connected is not None, f"unknown connected K scenario: {scenario_id}")
+        genesis = k_records.get(connected["acceptedGenesisRecordId"])
+        records = [k_records.get(identifier) for identifier in connected["recordIds"]]
+        require(genesis is not None and all(record is not None for record in records), "connected K record missing")
+        typed_records = [record for record in records if record is not None]
+        observations = evaluate_k_admission_scenario(genesis, typed_records)
+        evaluated = next((row for row in observations if row["id"] == target_id), None)
+        require(evaluated is not None, f"unknown connected K target: {target_id}")
+        input_digest = semantic_k_graph_input_digest(genesis, typed_records, target_id)
+        input_label = f"K_GRAPH:{scenario_id}:{target_id}"
+    else:
+        require(vector is not None, f"{layer} step has no vector")
+        if layer == "TRANSCRIPT_CONFORMANCE":
+            evaluated = evaluate_transcript_conformance(vector)
+        elif layer == "LOCAL_NEGATIVE":
+            evaluated = evaluate_vector(vector)
+        else:
+            raise ReplayError(f"unknown evidence layer: {layer}")
+        input_digest = semantic_input_digest(vector)
+        input_label = f"VECTOR:{vector['id']}"
     pre_digest = _digest(f"styx-c03/state/{scenario['id']}/{step['preState']}")
 
     if not executed:
@@ -111,7 +149,13 @@ def _compute_step(
         observation = {
             key: value
             for key, value in (evaluated or {}).items()
-            if key not in {"preStateDigest", "postStateDigest"}
+            if key not in {
+                "eventReferenceHex",
+                "id",
+                "preStateDigest",
+                "postStateDigest",
+                "protocolErrorCode",
+            }
         }
         post_state = transition["to"]
     else:
@@ -119,11 +163,18 @@ def _compute_step(
         observation = {
             key: value
             for key, value in evaluated.items()
-            if key not in {"preStateDigest", "postStateDigest"}
+            if key not in {
+                "eventReferenceHex",
+                "id",
+                "preStateDigest",
+                "postStateDigest",
+                "protocolErrorCode",
+            }
         }
         post_state = (
             "UNCHANGED"
-            if evaluated["postStateDigest"] == evaluated["preStateDigest"]
+            if layer == "TRANSCRIPT_CONFORMANCE"
+            or evaluated["postStateDigest"] == evaluated["preStateDigest"]
             else "READY_FOR_AP_FOLD"
         )
 
@@ -138,12 +189,12 @@ def _compute_step(
     )
     result = {
         "actionDigest": sha256(step["candidateAction"].encode()).hexdigest(),
-        "causalClassification": step["transitionId"] or f"VECTOR:{vector['id']}",
+        "causalClassification": step["transitionId"] or input_label,
         "dependencyStatus": dependency_status,
         "evidenceConsumed": sorted(requirements),
         "evidenceProduced": step.get("providedEvidence"),
         "executed": executed,
-        "inputDigest": semantic_input_digest(vector),
+        "inputDigest": input_digest,
         "postStateDigest": post_digest,
         "preStateDigest": pre_digest,
         "step": index,
@@ -158,7 +209,11 @@ def compute_trace(
     scenario: dict[str, Any],
     vectors: dict[str, dict[str, Any]],
     transitions: dict[tuple[str, str], dict[str, Any]],
+    k_records: dict[str, dict[str, Any]] | None = None,
+    k_scenarios: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    k_records = k_records or {}
+    k_scenarios = k_scenarios or {}
     available_evidence: set[str] = set()
     steps: list[dict[str, Any]] = []
     for index, step in enumerate(scenario["steps"]):
@@ -166,8 +221,10 @@ def compute_trace(
             scenario,
             step,
             index,
-            vectors[step["inputVectorId"]],
+            vectors.get(step.get("inputVectorId")),
             transitions,
+            k_records,
+            k_scenarios,
             available_evidence,
         )
         steps.append(computed)
@@ -188,7 +245,8 @@ def replay(repo_root: Path, corpus: Path) -> dict[str, Any]:
         repo_root / "docs/protocol/review/styx-app-kernel-v0-review-model.json"
     )
     transitions = _transition_index(model)
-    valid = load(corpus / "valid-transcript-vectors.json")["records"]
+    valid_document = load(corpus / "valid-transcript-vectors.json")
+    valid = valid_document["records"]
     invalid_document = load(corpus / "invalid-transcript-vectors.json")
     invalid = invalid_document["records"]
     ap_expectations = invalid_document["apExpectationOnlyRecords"]
@@ -196,12 +254,27 @@ def replay(repo_root: Path, corpus: Path) -> dict[str, Any]:
         record["id"]: record
         for record in valid + invalid + ap_expectations
     }
-    scenarios = load(corpus / "state-machine-scenarios.json")["records"]
+    scenario_document = load(corpus / "state-machine-scenarios.json")
+    scenarios = scenario_document["records"]
+    k_by_id = {
+        record["id"]: record
+        for record in valid_document["kAdmissionRecords"]
+    }
+    k_scenario_by_id = {
+        scenario["id"]: scenario
+        for scenario in scenario_document["kAdmissionScenarios"]
+    }
     expected = load(corpus / "expected-traces.json")["records"]
     expected_by_scenario = {record["scenarioId"]: record for record in expected}
     computed: list[dict[str, Any]] = []
     for scenario in scenarios:
-        trace = compute_trace(scenario, vectors, transitions)
+        trace = compute_trace(
+            scenario,
+            vectors,
+            transitions,
+            k_by_id,
+            k_scenario_by_id,
+        )
         require(trace == expected_by_scenario.get(scenario["id"]), f"trace mismatch: {scenario['id']}")
         computed.append(trace)
     require(len(computed) == len(expected_by_scenario), "unexpected expected trace")
@@ -218,9 +291,44 @@ def replay(repo_root: Path, corpus: Path) -> dict[str, Any]:
                 if present:
                     observation[field] = step[field]
             observations.append(observation)
+    blind_transcript_observations = [
+        {"id": record["id"], **public_transcript_observation(record)}
+        for record in sorted(valid + invalid, key=lambda row: row["id"])
+    ]
+    blind_admission_graphs = []
+    for scenario in scenario_document["kAdmissionScenarios"]:
+        blind_admission_graphs.append(
+            {
+                "id": scenario["id"],
+                "observations": evaluate_k_admission_graph(
+                    k_by_id[scenario["acceptedGenesisRecordId"]],
+                    [k_by_id[identifier] for identifier in scenario["recordIds"]],
+                ),
+            }
+        )
+    adversarial = load(corpus / "adversarial-mutations.json")
+    for scenario in adversarial["kAdmissionScenarios"]:
+        blind_admission_graphs.append(
+            {
+                "id": scenario["id"],
+                "observations": evaluate_k_admission_graph(
+                    scenario["acceptedGenesisRecord"], scenario["records"]
+                ),
+            }
+        )
     return {
+        "blindAdmissionGraphs": sorted(
+            blind_admission_graphs, key=lambda row: row["id"]
+        ),
+        "blindTranscriptObservations": blind_transcript_observations,
         "corpusDigest": validation["corpusDigest"],
         "invalidVectors": len(invalid),
+        "kAdmissionDigest": validation["kAdmissionDigest"],
+        "kAdmissionHostileScenarios": validation[
+            "kAdmissionHostileScenarios"
+        ],
+        "kAdmissionRecords": validation["kAdmissionRecords"],
+        "kAdmissionScenarios": validation["kAdmissionScenarios"],
         "observations": sorted(observations, key=lambda record: record["id"]),
         "result": "PASS",
         "scenarios": len(computed),

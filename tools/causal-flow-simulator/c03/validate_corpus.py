@@ -26,6 +26,9 @@ from corpus_model import (  # noqa: E402
     O08_LIMITS,
     PRODUCED_K_PRIMARIES,
     TRANSCRIPT_PROFILE_UNREACHABLE,
+    evaluate_k_admission_graph,
+    evaluate_k_admission_scenario,
+    evaluate_transcript_conformance,
     evaluate_vector,
     load_local_json,
     semantic_observation_digest,
@@ -46,12 +49,12 @@ EXPECTED_FILES = frozenset(
     }
 )
 SCHEMAS = {
-    "adversarial-mutations.json": "styx-c03-adversarial-mutations/v1",
-    "expected-traces.json": "styx-c03-expected-traces/v1",
-    "invalid-transcript-vectors.json": "styx-c03-invalid-transcripts/v1",
-    "manifest.json": "styx-c03-corpus-manifest/v1",
-    "state-machine-scenarios.json": "styx-c03-state-scenarios/v1",
-    "valid-transcript-vectors.json": "styx-c03-valid-transcripts/v1",
+    "adversarial-mutations.json": "styx-c03-adversarial-mutations/v2",
+    "expected-traces.json": "styx-c03-expected-traces/v2",
+    "invalid-transcript-vectors.json": "styx-c03-invalid-transcripts/v2",
+    "manifest.json": "styx-c03-corpus-manifest/v2",
+    "state-machine-scenarios.json": "styx-c03-state-scenarios/v2",
+    "valid-transcript-vectors.json": "styx-c03-valid-transcripts/v2",
 }
 ABSOLUTE_PATH = re.compile(
     r"(?<![A-Za-z0-9_.-])(?:/(?:[^\s/][^\s]*|(?=$|[\],;}]))|"
@@ -67,6 +70,7 @@ EXPECTED_SOURCE_SECURITY_MUTATION_IDS = frozenset(
         "mutation-source-o10-precedence",
         "mutation-source-r5-flatten-k-admission",
         "mutation-source-r6-classification",
+        "mutation-source-fork-descendant-dependency-rejection",
         *(f"mutation-source-geometry-predicate-{number}" for number in range(1, 8)),
     }
 )
@@ -186,9 +190,20 @@ def validate_file_manifest(
     expected_entries = []
     for name in sorted(EXPECTED_FILES - {"manifest.json"}):
         records = _unique_sorted(documents[name].get("records"), name)
-        expected_entries.append(
-            {"path": name, "recordCount": len(records), "sha256": sha256_hex((corpus / name).read_bytes())}
-        )
+        entry = {
+            "path": name,
+            "recordCount": len(records),
+            "sha256": sha256_hex((corpus / name).read_bytes()),
+        }
+        if "kAdmissionRecords" in documents[name]:
+            entry["kAdmissionRecordCount"] = len(
+                documents[name]["kAdmissionRecords"]
+            )
+        elif "kAdmissionScenarios" in documents[name]:
+            entry["kAdmissionRecordCount"] = len(
+                documents[name]["kAdmissionScenarios"]
+            )
+        expected_entries.append(entry)
     require(manifest.get("files") == expected_entries, "manifest file digests/counts mismatch")
 
 
@@ -221,6 +236,7 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
         documents[name] = document
 
     manifest = documents["manifest.json"]
+    require(manifest.get("corpusFormatVersion") == 2, "corpus format version mismatch")
     require(manifest.get("synthetic") is True and manifest.get("upstreamBytes") == "none", "provenance mismatch")
     require(manifest.get("authority") == {
         "blocks": ["demo", "implementation_alignment", "product", "sensitive_use"],
@@ -254,7 +270,7 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
         invalid_document.get("apExpectationOnlyRecords"),
         "AP expectation-only vectors",
     )
-    require(len(valid) == 17 and len(invalid) == 26, "R5 vector cardinality mismatch")
+    require(len(valid) == 17 and len(invalid) == 27, "R7 vector cardinality mismatch")
     require(
         {record["id"] for record in ap_expectations}
         == {"inv-post-revocation", "inv-self-lineage", "inv-unauthorized"},
@@ -263,8 +279,17 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
     vector_ids = {record["id"] for record in valid + invalid + ap_expectations}
     for record in valid:
         require(all(_citation_valid(reader, source_paths, citation) for citation in record["citations"]), f"stale citation: {record['id']}")
-        result = evaluate_vector(record)
-        require(transition_input_is_compatible(result), f"valid vector rejected: {record['id']}")
+        result = evaluate_transcript_conformance(record)
+        require(
+            result.get("transcriptVerification") == "VALID"
+            and result.get("signatureVerification") == "VALID"
+            and result.get("kBindingAdmission") == "NOT_EVALUATED"
+            and result.get("apAuthorityResult") == "NOT_REACHED"
+            and result.get("outcomeEvaluated") is False
+            and "localOutcome" not in result
+            and "remoteClass" not in result,
+            f"valid transcript fixture rejected or overclaimed: {record['id']}",
+        )
     for record in invalid:
         result = evaluate_vector(record)
         expected = record["expected"]
@@ -280,9 +305,134 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
             f"AP expectation mismatch: {record['id']}",
         )
         require(
-            transition_input_is_compatible(evaluate_vector(record)),
-            f"AP-only vector is not K-admitted: {record['id']}",
+            evaluate_transcript_conformance(record).get("kBindingAdmission")
+            == "NOT_EVALUATED",
+            f"AP-only vector claims disconnected K admission: {record['id']}",
         )
+
+    k_records = _unique_sorted(
+        documents["valid-transcript-vectors.json"].get("kAdmissionRecords"),
+        "connected K-admission records",
+    )
+    k_scenarios = _unique_sorted(
+        documents["state-machine-scenarios.json"].get("kAdmissionScenarios"),
+        "connected K-admission scenarios",
+    )
+    require(
+        len(k_records) == 18 and len(k_scenarios) == 3,
+        "connected K-admission cardinality mismatch",
+    )
+    k_by_id = {record["id"]: record for record in k_records}
+    used_k_records: set[str] = set()
+    k_observations: list[dict[str, Any]] = []
+    for scenario in k_scenarios:
+        genesis_id = scenario.get("acceptedGenesisRecordId")
+        record_ids = scenario.get("recordIds")
+        require(
+            genesis_id in k_by_id
+            and k_by_id[genesis_id].get("kind") == "GENESIS"
+            and isinstance(record_ids, list)
+            and bool(record_ids)
+            and len(record_ids) == len(set(record_ids))
+            and set(record_ids) <= set(k_by_id),
+            f"invalid connected K scenario: {scenario['id']}",
+        )
+        used_k_records.add(genesis_id)
+        used_k_records.update(record_ids)
+        observations = evaluate_k_admission_graph(
+            k_by_id[genesis_id],
+            [k_by_id[identifier] for identifier in reversed(record_ids)],
+        )
+        require(
+            len(observations) == len(record_ids)
+            and all(
+                row["kBindingAdmission"] == "ADMITTED"
+                and row["protocolErrorCode"] is None
+                for row in observations
+            ),
+            f"connected K scenario rejected: {scenario['id']}",
+        )
+        k_observations.append(
+            {"id": scenario["id"], "observations": observations}
+        )
+    require(used_k_records == set(k_by_id), "unexecuted connected K record")
+    require(
+        sum(len(row["observations"]) for row in k_observations) == 18,
+        "positive connected K observation cardinality mismatch",
+    )
+
+    legacy_by_id = {record["id"]: record for record in valid}
+    legacy_observation = evaluate_k_admission_graph(
+        legacy_by_id["vec-genesis"],
+        [legacy_by_id["vec-ordinary-none"]],
+    )[0]
+    require(
+        legacy_observation["kBindingAdmission"] == "REJECTED"
+        and legacy_observation["protocolErrorCode"]
+        == "CREDENTIAL_BINDING_MISMATCH",
+        "legacy transcript fixture incorrectly proves K admission",
+    )
+
+    k_hostile = _unique_sorted(
+        documents["adversarial-mutations.json"].get("kAdmissionScenarios"),
+        "hostile connected K-admission scenarios",
+    )
+    require(len(k_hostile) == 17, "hostile connected K cardinality mismatch")
+    hostile_observations: list[dict[str, Any]] = []
+    observed_error_codes: set[str] = set()
+    for scenario in k_hostile:
+        require(
+            set(scenario)
+            == {
+                "acceptedGenesisRecord",
+                "expectedObservations",
+                "id",
+                "records",
+            }
+            and isinstance(scenario["records"], list)
+            and bool(scenario["records"]),
+            f"invalid hostile connected K scenario: {scenario['id']}",
+        )
+        observations = evaluate_k_admission_graph(
+            scenario["acceptedGenesisRecord"], scenario["records"]
+        )
+        require(
+            observations == scenario["expectedObservations"],
+            f"hostile connected K oracle mismatch: {scenario['id']}",
+        )
+        observed_error_codes.update(
+            row["protocolErrorCode"]
+            for row in observations
+            if row["protocolErrorCode"] is not None
+        )
+        hostile_observations.append(
+            {"id": scenario["id"], "observations": observations}
+        )
+    require(
+        sum(len(row["observations"]) for row in hostile_observations) == 66,
+        "hostile connected K observation cardinality mismatch",
+    )
+    require(
+        {
+            "CREDENTIAL_BINDING_MISMATCH",
+            "INVALID",
+            "STRUCTURAL_REJECTION",
+            "UNRESOLVABLE_CREDENTIAL",
+            "UNRESOLVED_CREDENTIAL_BINDING",
+        }
+        <= observed_error_codes,
+        "hostile connected K class coverage mismatch",
+    )
+    removal_observations = next(
+        row["observations"]
+        for row in hostile_observations
+        if row["id"]
+        == "k-hostile-removal-target-absence-is-not-k-rejection"
+    )
+    require(
+        all(row["kBindingAdmission"] == "ADMITTED" for row in removal_observations),
+        "removal target absence incorrectly rejected by K",
+    )
 
     transition_index = {
         (state_model["id"], transition["id"]): transition
@@ -299,8 +449,38 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
         require(isinstance(scenario.get("steps"), list) and scenario["steps"], f"empty scenario: {scenario['id']}")
         available_evidence: set[str] = set()
         for step in scenario["steps"]:
-            require(step["inputVectorId"] in vector_ids, f"unknown vector reference: {scenario['id']}")
-            used_vector_ids.add(step["inputVectorId"])
+            layer = step.get("evidenceLayer")
+            if layer == "CONNECTED_K_ADMISSION":
+                require(
+                    "inputVectorId" not in step
+                    and step.get("inputKAdmissionScenarioId")
+                    in {row["id"] for row in k_scenarios}
+                    and isinstance(step.get("inputKAdmissionRecordId"), str),
+                    f"invalid connected K step input: {scenario['id']}",
+                )
+                connected = next(
+                    row
+                    for row in k_scenarios
+                    if row["id"] == step["inputKAdmissionScenarioId"]
+                )
+                require(
+                    step["inputKAdmissionRecordId"] in connected["recordIds"],
+                    f"connected K target outside scenario: {scenario['id']}",
+                )
+            else:
+                require(
+                    layer
+                    in {
+                        "BOUNDARY_NOT_EXECUTED",
+                        "LOCAL_NEGATIVE",
+                        "TRANSCRIPT_CONFORMANCE",
+                    }
+                    and step.get("inputVectorId") in vector_ids
+                    and "inputKAdmissionScenarioId" not in step
+                    and "inputKAdmissionRecordId" not in step,
+                    f"invalid vector-backed step input: {scenario['id']}",
+                )
+                used_vector_ids.add(step["inputVectorId"])
             required_evidence = step.get("requiredPriorEvidence")
             require(isinstance(required_evidence, list), f"invalid prior evidence: {scenario['id']}")
             dependency_status = "SATISFIED" if set(required_evidence) <= available_evidence else "MISSING"
@@ -318,13 +498,32 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
                 require(key in transition_index, f"unknown model transition: {key}")
                 transition = transition_index[key]
                 require(step["preState"] in transition["from"], f"transition pre-state mismatch: {key}")
-                evaluated = evaluate_vector(
-                    next(
+                if layer == "CONNECTED_K_ADMISSION":
+                    connected = next(
+                        row
+                        for row in k_scenarios
+                        if row["id"] == step["inputKAdmissionScenarioId"]
+                    )
+                    observations = evaluate_k_admission_scenario(
+                        k_by_id[connected["acceptedGenesisRecordId"]],
+                        [k_by_id[identifier] for identifier in connected["recordIds"]],
+                    )
+                    evaluated = next(
+                        row
+                        for row in observations
+                        if row["id"] == step["inputKAdmissionRecordId"]
+                    )
+                else:
+                    vector = next(
                         record
                         for record in valid + invalid + ap_expectations
                         if record["id"] == step["inputVectorId"]
                     )
-                )
+                    evaluated = (
+                        evaluate_transcript_conformance(vector)
+                        if layer == "TRANSCRIPT_CONFORMANCE"
+                        else evaluate_vector(vector)
+                    )
                 if scenario["modelId"] == "ap_projection":
                     require(step.get("executed") is False, f"AP transition executed: {key}")
                     require(step["expectedPostState"] == "UNCHANGED", f"AP transition mutated K state: {key}")
@@ -368,15 +567,35 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
         "AP expectation-only step locator mismatch",
     )
     require(
-        sum(
+        {
+            layer: sum(
+                step.get("evidenceLayer") == layer
+                for scenario in scenarios
+                for step in scenario["steps"]
+            )
+            for layer in {
+                "BOUNDARY_NOT_EXECUTED",
+                "CONNECTED_K_ADMISSION",
+                "LOCAL_NEGATIVE",
+                "TRANSCRIPT_CONFORMANCE",
+            }
+        }
+        == {
+            "BOUNDARY_NOT_EXECUTED": 11,
+            "CONNECTED_K_ADMISSION": 4,
+            "LOCAL_NEGATIVE": 59,
+            "TRANSCRIPT_CONFORMANCE": 81,
+        },
+        "scenario evidence-layer cardinality mismatch",
+    )
+    require(
+        not any(
             step.get("expectedPostState") == "READY_FOR_AP_FOLD"
-            and step.get("transitionId") is None
-            and "apExpectationOnly" not in step
+            and step.get("evidenceLayer") == "TRANSCRIPT_CONFORMANCE"
             for scenario in scenarios
             for step in scenario["steps"]
-        )
-        == 65,
-        "ordinary K-only READY_FOR_AP_FOLD cardinality mismatch",
+        ),
+        "disconnected transcript fixture mutates K state",
     )
     require(
         not any(
@@ -479,6 +698,15 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
         if outcome in PRODUCED_K_PRIMARIES:
             branch = "PRODUCED"
             matching = [scenario["id"] for scenario in scenarios if any(step.get("expectedOutcome") == outcome for step in scenario["steps"])]
+            matching.extend(
+                scenario["id"]
+                for scenario in k_hostile
+                if any(
+                    observation.get("protocolErrorCode") == outcome
+                    for observation in scenario["expectedObservations"]
+                )
+            )
+            matching.sort()
         elif outcome in AP_OWNED_EXCLUSIONS:
             branch = "AP_OWNED_EXCLUDED"
             matching = [scenario["id"] for scenario in scenarios if any(step.get("apExpectationOnly") == outcome for step in scenario["steps"])]
@@ -515,32 +743,60 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
         if row_id in produced_witnesses:
             primary = row["mapping"]["primary"]
             disposition = "PRODUCED"
-            witnesses = [
-                {
-                    **witness,
-                    "scenarioId": f"scenario-vector-{witness['inputId']}",
-                }
-                for witness in produced_witnesses[row_id]
-            ]
-            for witness in witnesses:
-                input_id = witness["inputId"]
-                require(input_id in vector_by_id, f"unknown O-10 row input: {row_id}")
-                require(
-                    witness["scenarioId"] in scenario_ids
-                    and any(
-                        step["inputVectorId"] == input_id
-                        for step in next(
-                            scenario
-                            for scenario in scenarios
-                            if scenario["id"] == witness["scenarioId"]
-                        )["steps"]
-                    ),
-                    f"missing O-10 row scenario: {row_id}:{input_id}",
+            witnesses = []
+            for witness in produced_witnesses[row_id]:
+                scenario_id = (
+                    f"scenario-vector-{witness['inputId']}"
+                    if "inputId" in witness
+                    else witness["inputKAdmissionScenarioId"]
                 )
-                observed = evaluate_vector(vector_by_id[input_id])
+                witnesses.append({**witness, "scenarioId": scenario_id})
+            for witness in witnesses:
+                if "inputId" in witness:
+                    input_id = witness["inputId"]
+                    require(input_id in vector_by_id, f"unknown O-10 row input: {row_id}")
+                    require(
+                        witness["scenarioId"] in scenario_ids
+                        and any(
+                            step["inputVectorId"] == input_id
+                            for step in next(
+                                scenario
+                                for scenario in scenarios
+                                if scenario["id"] == witness["scenarioId"]
+                            )["steps"]
+                        ),
+                        f"missing O-10 row scenario: {row_id}:{input_id}",
+                    )
+                    observed = evaluate_vector(vector_by_id[input_id])
+                    observed_outcome = observed.get("localOutcome")
+                    observed_stage = observed.get("stage")
+                else:
+                    input_id = witness["inputKAdmissionRecordId"]
+                    scenario = next(
+                        (
+                            item
+                            for item in k_hostile
+                            if item["id"] == witness["inputKAdmissionScenarioId"]
+                        ),
+                        None,
+                    )
+                    require(scenario is not None, f"unknown connected O-10 scenario: {row_id}")
+                    observed = next(
+                        (
+                            item
+                            for item in evaluate_k_admission_graph(
+                                scenario["acceptedGenesisRecord"], scenario["records"]
+                            )
+                            if item["id"] == input_id
+                        ),
+                        None,
+                    )
+                    require(observed is not None, f"unknown connected O-10 record: {row_id}:{input_id}")
+                    observed_outcome = observed.get("protocolErrorCode")
+                    observed_stage = observed.get("stage")
                 require(
-                    observed.get("localOutcome") == primary
-                    and observed.get("stage") == row["mapping"]["stage"],
+                    observed_outcome == primary
+                    and observed_stage == row["mapping"]["stage"],
                     f"O-10 row witness result mismatch: {row_id}:{input_id}",
                 )
         elif "mapping" in row and row["mapping"]["primary"] in AP_OWNED_EXCLUSIONS:
@@ -670,6 +926,17 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
             b"".join((corpus / name).read_bytes() for name in sorted(EXPECTED_FILES))
         ).hexdigest(),
         "invalidVectors": len(invalid),
+        "kAdmissionDigest": sha256(
+            dumps(
+                {
+                    "hostile": hostile_observations,
+                    "positive": k_observations,
+                }
+            )
+        ).hexdigest(),
+        "kAdmissionHostileScenarios": len(k_hostile),
+        "kAdmissionRecords": len(k_records),
+        "kAdmissionScenarios": len(k_scenarios),
         "mutations": len(mutations),
         "result": "PASS",
         "scenarios": len(scenarios),

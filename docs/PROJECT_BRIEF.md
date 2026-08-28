@@ -26,11 +26,14 @@ resumes.
 The canonical [protocol-hardening plan](protocol/protocol-hardening-plan.md)
 defines the freeze boundary, authority order, review bundle and exit gates.
 Issue #233 / PR #234 remain isolated experimental evidence and are not treated
-as ratified protocol semantics. Issue #264 constructs the separately contracted,
-synthetic-only C0.3 conformance corpus with independent Python/JavaScript replay
-and a closed adversarial mutation registry. This completes corpus construction
-only: C0.3 remains `NO-GO` for implementation alignment, demo, product
-deployment and sensitive use.
+as ratified protocol semantics. Issue #264 constructed the first separately
+contracted, synthetic-only C0.3 corpus. Issue #266 is reconciling that corpus
+with layered transcript/K/AP semantics after demonstrating that disconnected
+fixture metadata cannot establish connected K authority. The corrected corpus
+uses independent Python/JavaScript replay, connected authority graphs, a closed
+adversarial mutation registry and an oracle-free clean-room reader exercise.
+This remains protocol evidence only: C0.3 is still `NO-GO` for implementation
+alignment, public demo, product deployment and sensitive use.
 
 ## Mission
 

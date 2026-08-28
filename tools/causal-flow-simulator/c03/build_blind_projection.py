@@ -26,7 +26,8 @@ sys.path.insert(0, str(ROOT))
 from canonical_json import dumps, load, loads, store  # noqa: E402
 from corpus_model import (  # noqa: E402
     CorpusModelError,
-    evaluate_vector,
+    evaluate_k_admission_graph,
+    public_transcript_observation,
     parse_event,
     semantic_input_digest,
 )
@@ -36,10 +37,10 @@ class BlindProjectionError(CorpusModelError):
     """The public kit, reader freeze or withheld integration is invalid."""
 
 
-KIT_SCHEMA = "styx-c03-blind-kit/v1"
-INPUT_SCHEMA = "styx-c03-blind-input/v1"
+KIT_SCHEMA = "styx-c03-blind-kit/v2"
+INPUT_SCHEMA = "styx-c03-blind-input/v2"
 FREEZE_SCHEMA = "styx-c03-reader-freeze/v1"
-INTEGRATION_SCHEMA = "styx-c03-blind-integration/v1"
+INTEGRATION_SCHEMA = "styx-c03-blind-integration/v2"
 
 SOURCE_PATHS = (
     "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
@@ -209,7 +210,9 @@ def _dependencies(record: dict[str, Any]) -> list[str]:
     if predecessor is not None:
         values.add(predecessor)
     admission = record.get("admissionContext", {})
-    if "availableDependencyReferences" in admission:
+    if "admittedEventReferences" in admission:
+        values = set(admission["admittedEventReferences"])
+    elif "availableDependencyReferences" in admission:
         values = set(admission["availableDependencyReferences"])
     return sorted(values)
 
@@ -269,6 +272,68 @@ def _project_record(record: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return opaque_id, {"opaqueId": opaque_id, **projected}
 
 
+def _project_graph_record(record: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    presented_reference = record.get(
+        "eventReferenceHex", record.get("genesisReferenceHex")
+    )
+    require(isinstance(presented_reference, str), "graph record lacks reference")
+    projected = {
+        "kind": record["kind"],
+        "presentedReferenceHex": presented_reference,
+        "signatureHex": record["signatureHex"],
+        "transcriptHex": record["transcriptHex"],
+    }
+    opaque_id = f"item-{_sha(dumps(projected))}"
+    return opaque_id, {"opaqueId": opaque_id, **projected}
+
+
+def _project_graph(
+    genesis: dict[str, Any], records: list[dict[str, Any]]
+) -> tuple[str, dict[str, Any]]:
+    _, projected_genesis = _project_graph_record(genesis)
+    events = [_project_graph_record(record)[1] for record in records]
+    payload = {"acceptedGenesis": projected_genesis, "events": events}
+    opaque_id = f"graph-{_sha(dumps(payload))}"
+    return opaque_id, {"opaqueGraphId": opaque_id, **payload}
+
+
+def _official_admission_graphs(corpus: Path) -> list[dict[str, Any]]:
+    valid_document = load(corpus / "valid-transcript-vectors.json")
+    k_by_id = {
+        record["id"]: record
+        for record in valid_document.get("kAdmissionRecords", [])
+    }
+    scenario_document = load(corpus / "state-machine-scenarios.json")
+    rows: list[dict[str, Any]] = []
+    for scenario in scenario_document.get("kAdmissionScenarios", []):
+        genesis = k_by_id[scenario["acceptedGenesisRecordId"]]
+        events = [k_by_id[identifier] for identifier in scenario["recordIds"]]
+        rows.append(
+            {
+                "expectedObservations": evaluate_k_admission_graph(
+                    genesis, events
+                ),
+                "genesis": genesis,
+                "id": scenario["id"],
+                "records": events,
+                "set": "CONNECTED_POSITIVE",
+            }
+        )
+    adversarial = load(corpus / "adversarial-mutations.json")
+    for scenario in adversarial.get("kAdmissionScenarios", []):
+        rows.append(
+            {
+                "expectedObservations": scenario["expectedObservations"],
+                "genesis": scenario["acceptedGenesisRecord"],
+                "id": scenario["id"],
+                "records": scenario["records"],
+                "set": "CONNECTED_HOSTILE",
+            }
+        )
+    require(len(rows) == 20, "official admission graph cardinality mismatch")
+    return sorted(rows, key=lambda row: row["id"])
+
+
 def materialize_blind_evaluator_input(record: dict[str, Any]) -> dict[str, Any]:
     """Recreate evaluator inputs using only public, replica-owned fields.
 
@@ -300,6 +365,7 @@ def materialize_blind_evaluator_input(record: dict[str, Any]) -> dict[str, Any]:
         }
     admission = {
         "availableDependencyReferences": record["admittedEventReferences"],
+        "admittedEventReferences": record["admittedEventReferences"],
         "checkpointEvidenceReferences": record["checkpointEvidenceReferences"],
         "knownPendingOpeningRoots": record["knownPendingOpeningRoots"],
         "pendingOpeningDescendantReferences": record["pendingOpeningDescendantReferences"],
@@ -337,10 +403,58 @@ def materialize_blind_evaluator_input(record: dict[str, Any]) -> dict[str, Any]:
 def _input_schema() -> dict[str, Any]:
     hex_string = {"pattern": "^[0-9a-f]*$", "type": "string"}
     ref = {"maxLength": 64, "minLength": 64, **hex_string}
+    def graph_record(kind: str) -> dict[str, Any]:
+        return {
+        "additionalProperties": False,
+        "properties": {
+            "kind": {"const": kind},
+            "opaqueId": {
+                "pattern": "^item-[0-9a-f]{64}$",
+                "type": "string",
+            },
+            "presentedReferenceHex": ref,
+            "signatureHex": hex_string,
+            "transcriptHex": hex_string,
+        },
+        "required": [
+            "kind",
+            "opaqueId",
+            "presentedReferenceHex",
+            "signatureHex",
+            "transcriptHex",
+        ],
+        "type": "object",
+        }
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": False,
         "properties": {
+            "admissionGraphs": {
+                "items": {
+                    "additionalProperties": False,
+                    "properties": {
+                        "acceptedGenesis": graph_record("GENESIS"),
+                        "events": {
+                            "items": graph_record("APPLICATION_EVENT"),
+                            "minItems": 1,
+                            "type": "array",
+                        },
+                        "opaqueGraphId": {
+                            "pattern": "^graph-[0-9a-f]{64}$",
+                            "type": "string",
+                        },
+                    },
+                    "required": [
+                        "acceptedGenesis",
+                        "events",
+                        "opaqueGraphId",
+                    ],
+                    "type": "object",
+                },
+                "maxItems": 20,
+                "minItems": 20,
+                "type": "array",
+            },
             "records": {
                 "items": {
                     "additionalProperties": False,
@@ -374,14 +488,19 @@ def _input_schema() -> dict[str, Any]:
                     ],
                     "type": "object",
                 },
-                "maxItems": 43,
-                "minItems": 43,
+                "maxItems": 44,
+                "minItems": 44,
                 "type": "array",
             },
             "schema": {"const": INPUT_SCHEMA},
             "selectedEnvelope": {"type": "object"},
         },
-        "required": ["records", "schema", "selectedEnvelope"],
+        "required": [
+            "admissionGraphs",
+            "records",
+            "schema",
+            "selectedEnvelope",
+        ],
         "title": "Styx C0.3 oracle-free clean-room input",
         "type": "object",
     }
@@ -417,37 +536,47 @@ for name, digest in sums.items():
     if sha256((root / name).read_bytes()).hexdigest() != digest:
         raise SystemExit(f"checksum mismatch: {name}")
 document = json.loads((root / "blind-input.json").read_text("utf-8"))
-if document.get("schema") != "styx-c03-blind-input/v1" or len(document.get("records", [])) != 43:
+if document.get("schema") != "styx-c03-blind-input/v2" or len(document.get("records", [])) != 44 or len(document.get("admissionGraphs", [])) != 20:
     raise SystemExit("blind input cardinality mismatch")
 ids = [record.get("opaqueId") for record in document["records"]]
 if ids != sorted(set(ids)) or not all(re.fullmatch(r"case-[0-9a-f]{64}", value or "") for value in ids):
     raise SystemExit("opaque identifier mismatch")
-print("STYX_C03_BLIND_KIT_OK records=43")
+graph_ids = [graph.get("opaqueGraphId") for graph in document["admissionGraphs"]]
+if graph_ids != sorted(set(graph_ids)) or not all(re.fullmatch(r"graph-[0-9a-f]{64}", value or "") for value in graph_ids):
+    raise SystemExit("opaque graph identifier mismatch")
+print("STYX_C03_BLIND_KIT_OK records=44 admission_graphs=20")
 '''
 
 
 def _readme() -> bytes:
     return b"""# Styx C0.3 blind K-surface kit
 
-This deterministic package contains raw transcript candidates and only the
-replica-owned inputs enumerated by the ratified C0.3 contract.  It contains no
+This deterministic package separates 44 disconnected transcript/local-negative
+fixtures from 20 connected admission graphs: three positive graphs with 18
+observations and 17 hostile graphs with 66 observations.  It contains raw candidates and
+only the replica-owned inputs enumerated by the C0.3 amendment.  It contains no
 expected result, stage, transition, corpus identifier, repository revision or
 integration mapping.
 
 Implement a fresh reader that accepts `--input <file> --output <file>`.  For
-each opaque record it must parse the transcript, recompute the presented
-reference, verify the signature, verify any supplied opening and classify the
-K admission at its exact primary/stage.  Application-policy authority is out of
-scope: K admission is not AP authorization and must never be flattened to an
-application success.
+each disconnected opaque record it must parse the transcript, recompute the
+presented reference, verify the supplied conformance key/opening and classify
+any local negative branch. A successful disconnected record reports transcript
+conformance with K admission `NOT_EVALUATED`: synthetic local metadata is never
+proof of a genesis/GRANT chain. For each admission graph, it derives the trusted
+root only from the preaccepted genesis transcript and derives non-root keys only
+from admitted GRANT events. Candidate records carry no verification key or
+binding oracle. Application-policy authority is out of scope: K admission is
+not AP authorization and must never be flattened to application success.
 
 Run `python3 VERIFY.py` before using the package.  The withheld integration map
 is created only after the reader source has been frozen.
 
 ## Required output contract
 
-The reader output has schema `styx-c03-clean-room-report/v1` and exactly two
-top-level members: `schema` and `observations`. `observations` is a list sorted
+The reader output has schema `styx-c03-clean-room-report/v2` and exactly three
+top-level members: `admissionGraphs`, `schema` and `observations`.
+`observations` is a list sorted
 by `opaqueId`, contains exactly one object for every input record and has no
 duplicates. Each observation contains exactly these members:
 
@@ -485,21 +614,22 @@ leaking any per-record oracle, the complete value domains are:
 
 ```text
 apAuthorityResult:
-  AP_FOLD_NOT_EXECUTED | NOT_REACHED | REJECTED_OR_DEFERRED
+  AP_FOLD_NOT_EXECUTED | NOT_REACHED
 commitmentMatchVerification:
   NOT_APPLICABLE | NOT_EVALUATED | REJECTED | VALID
 commitmentVerification:
-  NOT_PRESENT | PENDING | REJECTED | VALID
+  NOT_EVALUATED | NOT_PRESENT | PENDING | REJECTED | VALID
 geometryPredicate1..geometryPredicate7:
   NOT_APPLICABLE | NOT_EVALUATED | FAIL | PASS
 kBindingAdmission:
-  ADMITTED | REJECTED
+  ADMITTED | NOT_EVALUATED | REJECTED
 referenceVerification:
   NOT_REACHED | REJECTED | VALID
 signatureVerification:
   NOT_EVALUATED | REJECTED | VALID
 stage:
-  EVENT_LOCAL | FINAL_AFTER_S6 | S3_KERNEL_STRUCTURAL | S4_GRAPH_ADMISSION
+  EVENT_LOCAL | FINAL_AFTER_S6 | S3_KERNEL_STRUCTURAL |
+  S4_GRAPH_ADMISSION | TRANSCRIPT_CONFORMANCE_COMPLETE
 suppliedLengthVerification:
   NOT_APPLICABLE | NOT_EVALUATED | REJECTED | VALID
 transcriptVerification:
@@ -516,15 +646,62 @@ remoteClass:
   OPAQUE_REMOTE_FAILURE
 ```
 
+`admissionGraphs` is sorted by `opaqueGraphId` and contains one row for every
+input graph. Each row has exactly `opaqueGraphId` and `observations`.
+Its observations are sorted by `opaqueId`, one per graph event, and contain
+exactly:
+
+```text
+opaqueId
+kBindingAdmission
+protocolErrorCodePresent
+stage
+```
+
+When `protocolErrorCodePresent` is true, `protocolErrorCode` is additionally
+present; otherwise it is absent. The closed error vocabulary is
+`CONTEXT_CAPACITY_EXHAUSTED | CREDENTIAL_BINDING_MISMATCH |
+DEPENDENCY_DEFERRED | FORK_EVIDENCE | INVALID | PENDING_ANCESTOR |
+PENDING_OPENING | STRUCTURAL_REJECTION | UNRESOLVABLE_CREDENTIAL |
+UNRESOLVED_CREDENTIAL_BINDING`. The reader must not consult any
+disconnected-fixture binding while evaluating a graph.
+
 Evaluation is fail-closed and ordered. Transcript framing is evaluated first;
 if it rejects, reference and signature are not reached. The recomputed
 reference is then compared with `presentedReferenceHex`. A differing presented
 reference selects `REFERENCE_COLLISION_UNSUPPORTED` only when the replica-owned
-`seenEventReferences` also contains that presented value; the public input does
-not ask the reader to invent collision history. Checkpoint exact-zero precedes
-signature or protected work. Signature and claimed binding follow. Content,
-dependency and credential admission follow only when their prerequisites were
-reached.
+`seenEventReferences` also contains that presented value; that set is collision
+history only and never proves admission. Checkpoint exact-zero and other S3
+profile checks precede protected work. Signature, claimed binding and reached
+content checks follow. Duplicate classification occurs only after signature
+and binding and only against `admittedEventReferences`. Bytes that were merely
+seen or previously rejected must be evaluated again and retain their original
+rejection unless admitted state has changed. S4 capacity, fork, dependency and
+credential admission follow only when their prerequisites were reached.
+
+The report fields describe reached protocol boundaries, not merely values that
+a decoder happened to extract. A framing, closed-value, written-inverse,
+length, reserved-field or cross-field failure makes
+`transcriptVerification=REJECTED`; reference is `NOT_REACHED`, signature is
+`NOT_EVALUATED`, and protected content predicates that were not reached remain
+`NOT_EVALUATED`. For a canonical genesis or content class `NONE`, the
+content-shape branch is complete immediately after the written inverse and all
+shape-specific fields become `NOT_APPLICABLE` even if a later reference,
+signature, binding or profile check fails. A
+supplied-content length mismatch rejects both supplied-length verification and
+the attempted commitment match; it is not reported as an unattempted match.
+
+`kBindingAdmission` reports only K. Within a connected graph it remains
+`ADMITTED` when transcript and binding admission succeeded even if an
+event-local condition, such as a same-author fork, missing REQUIRED opening or
+pending ancestor, prevents AP folding. A connected failure before K admission
+reports K `REJECTED`. Every disconnected fixture, including a locally negative
+fixture, reports K `NOT_EVALUATED`: the fixture has no connected authority
+history from which K admission could be decided. Every negative or deferred
+result reports `apAuthorityResult=NOT_REACHED`; AP is never executed by this
+kit. A disconnected transcript-conformance success reports K `NOT_EVALUATED`;
+a connected K success reports
+`AP_FOLD_NOT_EXECUTED` because this task never executes AP.
 
 `profile` is the active profile selected by the receiving replica. Transcript
 fields that disagree with it do not change the selected profile. The selected
@@ -541,17 +718,45 @@ content-byte retrieval, not verification without an opening.
 
 O-08 enforcement uses each dimension's source-selected stage rather than a
 generic profile stage. In particular, `PARENTS_PER_EVENT` is enforced at
-`S4_GRAPH_ADMISSION` and selects `CONTEXT_CAPACITY_EXHAUSTED`; structural and
+`S4_GRAPH_ADMISSION`, after transcript/reference/signature/binding, and selects
+`CONTEXT_CAPACITY_EXHAUSTED`; structural and
 closed-set envelope dimensions enforced at S3 retain their exact O-10 result.
+
+A candidate whose authenticated dependency is pending on a verified REQUIRED
+opening reports `PENDING_ANCESTOR` at `EVENT_LOCAL`. A candidate whose
+dependency has been rejected for another reason reports `DEPENDENCY_DEFERRED`
+at `S4_GRAPH_ADMISSION`, preserving the O-10 retry precondition
+`AUTHENTICATED_DEPENDENCY_STATE_CHANGED`; dependency failure is not rewritten
+as transcript corruption. Complete-graph evaluation is arrival-order
+independent. When two otherwise valid candidates occupy the same author and
+sequence slot, both report `FORK_EVIDENCE`; lexical order cannot select one.
 
 A `ROTATE` replacement-grant reference or `RECOVER` recovery-grant reference
 must name an already admitted same-context GRANT and must equal either the
 event's direct predecessor or one member of its encoded causal-parent frontier.
 Replica-local admission state cannot manufacture this signed causal relation.
 
-Successful K admission has `stage=FINAL_AFTER_S6`,
+For every connected candidate, its authenticated genesis reference is compared
+with the graph's preaccepted genesis before credential lookup. A mismatch is
+`CREDENTIAL_BINDING_MISMATCH`; only a candidate in the selected genesis context
+can proceed to credential resolution. Non-root verification bindings then come
+only from admitted same-context GRANT events. A disconnected fixture key or
+credential claim never supplies a connected binding.
+
+REVOKE and the retiring side of ROTATE require their target credential to be
+resolvable in admitted K history. A resolvable non-genesis target must also have
+its binding GRANT in the candidate's authenticated causal ancestry. The
+preaccepted genesis credential is the sole target-binding ancestry exception:
+an otherwise valid REVOKE may name that root directly. This exception neither
+creates a general target-absence rule nor permits non-genesis target
+substitution. Removal-target absence remains AP-owned and does not by itself
+invalidate an otherwise K-valid removal directive.
+
+Successful connected-graph K admission has `stage=FINAL_AFTER_S6`,
 `apAuthorityResult=AP_FOLD_NOT_EXECUTED`, `outcomeEvaluated=false`, and both
-optional result fields absent. Every negative or deferred classification has
+optional result fields absent. Successful disconnected transcript conformance
+has `stage=TRANSCRIPT_CONFORMANCE_COMPLETE` and K `NOT_EVALUATED`. Every
+negative or deferred classification has
 `outcomeEvaluated=true` and both optional fields present. `NOT_REACHED`,
 `NOT_EVALUATED` and `NOT_APPLICABLE` are distinct and must not be substituted.
 This output contract supplies field names, semantics and closed vocabularies,
@@ -647,11 +852,106 @@ def _validate_record(record: dict[str, Any]) -> None:
     require(record["opaqueId"] == f"case-{_sha(dumps(projected))}", "opaque id is not input-derived")
 
 
+def _validate_graph_record(record: dict[str, Any], *, genesis: bool) -> None:
+    require(
+        set(record)
+        == {
+            "kind",
+            "opaqueId",
+            "presentedReferenceHex",
+            "signatureHex",
+            "transcriptHex",
+        },
+        "blind graph record shape mismatch",
+    )
+    require(
+        record["kind"] == ("GENESIS" if genesis else "APPLICATION_EVENT"),
+        "blind graph object kind mismatch",
+    )
+    require(
+        re.fullmatch(r"item-[0-9a-f]{64}", record["opaqueId"]) is not None,
+        "invalid blind graph record id",
+    )
+    _hex(record["presentedReferenceHex"], 32, "presentedReferenceHex")
+    _hex(record["signatureHex"], 64, "signatureHex")
+    _hex(record["transcriptHex"], None, "transcriptHex")
+    projected = dict(record)
+    projected.pop("opaqueId")
+    require(
+        record["opaqueId"] == f"item-{_sha(dumps(projected))}",
+        "blind graph record id is not input-derived",
+    )
+
+
+def _validate_graph(graph: dict[str, Any]) -> None:
+    require(
+        set(graph) == {"acceptedGenesis", "events", "opaqueGraphId"},
+        "blind graph shape mismatch",
+    )
+    require(
+        re.fullmatch(r"graph-[0-9a-f]{64}", graph["opaqueGraphId"])
+        is not None,
+        "invalid blind graph id",
+    )
+    _validate_graph_record(graph["acceptedGenesis"], genesis=True)
+    require(
+        isinstance(graph["events"], list) and bool(graph["events"]),
+        "empty blind graph",
+    )
+    for event in graph["events"]:
+        _validate_graph_record(event, genesis=False)
+    event_ids = [event["opaqueId"] for event in graph["events"]]
+    require(len(event_ids) == len(set(event_ids)), "duplicate blind graph event")
+    projected = dict(graph)
+    projected.pop("opaqueGraphId")
+    require(
+        graph["opaqueGraphId"] == f"graph-{_sha(dumps(projected))}",
+        "blind graph id is not input-derived",
+    )
+
+
 def validate_kit(kit: Path) -> dict[str, Any]:
     files = _regular_files(kit)
     require(set(files) == KIT_PATHS, f"kit path set mismatch: {sorted(set(files) ^ KIT_PATHS)}")
     manifest = load(files["KIT-MANIFEST.json"])
     require(manifest.get("schema") == KIT_SCHEMA, "kit schema mismatch")
+    require(
+        set(manifest)
+        == {
+            "admissionGraphCount",
+            "admissionObservationCount",
+            "connectedHostileGraphCount",
+            "connectedHostileObservationCount",
+            "connectedPositiveGraphCount",
+            "connectedPositiveObservationCount",
+            "invalidRecordCount",
+            "paths",
+            "schema",
+            "sourceCount",
+            "transcriptConformanceRecordCount",
+            "validRecordCount",
+        },
+        "kit manifest shape mismatch",
+    )
+    require(manifest["admissionGraphCount"] == 20, "kit graph count mismatch")
+    require(
+        manifest["admissionObservationCount"] == 84,
+        "kit graph observation count mismatch",
+    )
+    require(
+        manifest["connectedHostileGraphCount"] == 17
+        and manifest["connectedHostileObservationCount"] == 66
+        and manifest["connectedPositiveGraphCount"] == 3
+        and manifest["connectedPositiveObservationCount"] == 18,
+        "kit graph partition mismatch",
+    )
+    require(
+        manifest["transcriptConformanceRecordCount"] == 17
+        and manifest["validRecordCount"] == 17
+        and manifest["invalidRecordCount"] == 27,
+        "kit record partition mismatch",
+    )
+    require(manifest["sourceCount"] == len(SOURCE_PATHS), "kit source count mismatch")
     require(manifest.get("paths") == sorted(KIT_PATHS), "kit manifest path set mismatch")
     sums = _parse_sums(files["SHA256SUMS.txt"].read_bytes())
     require(set(sums) == KIT_PATHS - {"SHA256SUMS.txt"}, "kit checksum path set mismatch")
@@ -663,23 +963,37 @@ def validate_kit(kit: Path) -> dict[str, Any]:
     for name, digest in source_sums.items():
         require(_sha(files[name].read_bytes()) == digest, f"source checksum mismatch: {name}")
     blind = load(files["blind-input.json"])
-    require(set(blind) == {"records", "schema", "selectedEnvelope"}, "blind input shape mismatch")
+    require(
+        set(blind)
+        == {"admissionGraphs", "records", "schema", "selectedEnvelope"},
+        "blind input shape mismatch",
+    )
     require(blind["schema"] == INPUT_SCHEMA, "blind input schema mismatch")
     records = blind["records"]
-    require(isinstance(records, list) and len(records) == 43, "blind input must contain 43 records")
+    require(isinstance(records, list) and len(records) == 44, "blind input must contain 44 records")
     for record in records:
         _validate_record(record)
     identifiers = [record["opaqueId"] for record in records]
     require(identifiers == sorted(set(identifiers)), "opaque ids are not a sorted set")
+    graphs = blind["admissionGraphs"]
+    require(
+        isinstance(graphs, list) and len(graphs) == 20,
+        "blind input must contain 20 admission graphs",
+    )
+    for graph in graphs:
+        _validate_graph(graph)
+    graph_ids = [graph["opaqueGraphId"] for graph in graphs]
+    require(graph_ids == sorted(set(graph_ids)), "opaque graph ids are not sorted")
     envelope = blind["selectedEnvelope"]
     require(set(envelope) == BLIND_ENVELOPE_DIMENSIONS, "blind envelope dimension set mismatch")
     # The selected O-08 dimension names are normative source vocabulary (for
     # example AP_TRANSITION_BLOCK_OCTETS), not hidden corpus metadata.  The
     # no-oracle scan therefore applies to the projected replica records.
-    _scan_value({"records": records})
+    _scan_value({"admissionGraphs": graphs, "records": records})
     require(load(files["blind-input.schema.json"]) == _input_schema(), "blind schema bytes drifted")
     return {
         "kitDigest": _sha(files["SHA256SUMS.txt"].read_bytes()),
+        "admissionGraphs": len(graphs),
         "records": len(records),
         "result": "PASS",
         "sources": len(SOURCE_PATHS),
@@ -691,16 +1005,25 @@ def build_kit(repo_root: Path, corpus: Path, output: Path) -> dict[str, Any]:
     valid = load(corpus / "valid-transcript-vectors.json")["records"]
     invalid_document = load(corpus / "invalid-transcript-vectors.json")
     invalid = invalid_document["records"]
-    require(len(valid) == 17 and len(invalid) == 26, "public corpus cardinality mismatch")
+    require(len(valid) == 17 and len(invalid) == 27, "public corpus cardinality mismatch")
     require(len(invalid_document.get("apExpectationOnlyRecords", [])) == 3, "AP-only partition mismatch")
     projected_pairs = [_project_record(record) for record in valid + invalid]
-    require(len({opaque for opaque, _ in projected_pairs}) == 43, "opaque-id collision")
+    require(len({opaque for opaque, _ in projected_pairs}) == 44, "opaque-id collision")
     for original, (_, projected) in zip(valid + invalid, projected_pairs, strict=True):
         require(
             _public_observation(original)
             == _public_observation(materialize_blind_evaluator_input(projected)),
             f"blind projection requires hidden input: {original['id']}",
         )
+    official_graphs = _official_admission_graphs(corpus)
+    projected_graph_pairs = [
+        _project_graph(row["genesis"], row["records"])
+        for row in official_graphs
+    ]
+    require(
+        len({opaque for opaque, _ in projected_graph_pairs}) == 20,
+        "opaque graph-id collision",
+    )
     envelope = load(repo_root / "tools/causal-flow-simulator/o08/resource-envelope.candidate.json")
     entries = envelope["entries"]
     require(BLIND_ENVELOPE_DIMENSIONS <= set(entries), "selected envelope is incomplete")
@@ -713,7 +1036,17 @@ def build_kit(repo_root: Path, corpus: Path, output: Path) -> dict[str, Any]:
         for identifier in sorted(BLIND_ENVELOPE_DIMENSIONS)
     }
     output.mkdir(parents=True)
-    store(output / "blind-input.json", {"records": [record for _, record in sorted(projected_pairs)], "schema": INPUT_SCHEMA, "selectedEnvelope": selected})
+    store(
+        output / "blind-input.json",
+        {
+            "admissionGraphs": [
+                graph for _, graph in sorted(projected_graph_pairs)
+            ],
+            "records": [record for _, record in sorted(projected_pairs)],
+            "schema": INPUT_SCHEMA,
+            "selectedEnvelope": selected,
+        },
+    )
     store(output / "blind-input.schema.json", _input_schema())
     (output / "README.md").write_bytes(_readme())
     (output / "TOOLCHAIN.md").write_bytes(_toolchain())
@@ -730,11 +1063,17 @@ def build_kit(repo_root: Path, corpus: Path, output: Path) -> dict[str, Any]:
         source_entries.append((f"sources/{source}", data))
     (output / "SOURCE_SHA256SUMS.txt").write_bytes(_sums(source_entries))
     manifest = {
-        "invalidRecordCount": 26,
+        "admissionGraphCount": 20,
+        "admissionObservationCount": 84,
+        "connectedHostileGraphCount": 17,
+        "connectedHostileObservationCount": 66,
+        "connectedPositiveGraphCount": 3,
+        "connectedPositiveObservationCount": 18,
+        "invalidRecordCount": 27,
         "paths": sorted(KIT_PATHS),
         "schema": KIT_SCHEMA,
         "sourceCount": len(SOURCE_PATHS),
-        "validObservationCount": 68,
+        "transcriptConformanceRecordCount": 17,
         "validRecordCount": 17,
     }
     store(output / "KIT-MANIFEST.json", manifest)
@@ -781,29 +1120,7 @@ def validate_reader_freeze(reader_root: Path, manifest_path: Path) -> dict[str, 
 
 
 def _public_observation(record: dict[str, Any]) -> dict[str, Any]:
-    observed = evaluate_vector(record)
-    reference_rejected = observed.get("localOutcome") == "REFERENCE_COLLISION_UNSUPPORTED"
-    reference_not_reached = observed["transcriptVerification"] != "VALID"
-    result = {
-        "apAuthorityResult": observed["apAuthorityResult"],
-        "commitmentMatchVerification": observed["commitmentMatchVerification"],
-        "commitmentVerification": observed["commitmentVerification"],
-        **{f"geometryPredicate{index}": observed[f"geometryPredicate{index}"] for index in range(1, 8)},
-        "kBindingAdmission": observed["kBindingAdmission"],
-        "localOutcomePresent": "localOutcome" in observed,
-        "outcomeEvaluated": observed["outcomeEvaluated"],
-        "referenceVerification": "NOT_REACHED" if reference_not_reached else ("REJECTED" if reference_rejected else "VALID"),
-        "remoteClassPresent": "remoteClass" in observed,
-        "signatureVerification": observed["signatureVerification"],
-        "stage": observed["stage"],
-        "suppliedLengthVerification": observed["suppliedLengthVerification"],
-        "transcriptVerification": observed["transcriptVerification"],
-    }
-    if "localOutcome" in observed:
-        result["localOutcome"] = observed["localOutcome"]
-    if "remoteClass" in observed:
-        result["remoteClass"] = observed["remoteClass"]
-    return result
+    return public_transcript_observation(record)
 
 
 def build_integration(repo_root: Path, corpus: Path, kit: Path, freeze_manifest: Path, output: Path) -> dict[str, Any]:
@@ -823,16 +1140,53 @@ def build_integration(repo_root: Path, corpus: Path, kit: Path, freeze_manifest:
                 "inputDigest": semantic_input_digest(record),
                 "officialId": record["id"],
                 "opaqueId": opaque,
-                "reportObservationId": f"scenario-vector-{record['id']}:0",
+                "reportObservationId": record["id"],
                 "set": "VALID" if record in valid else "INVALID",
             }
         )
-    require(len({row["opaqueId"] for row in rows}) == 43, "integration opaque-id collision")
+    require(len({row["opaqueId"] for row in rows}) == 44, "integration opaque-id collision")
+    graph_rows = []
+    for graph in _official_admission_graphs(corpus):
+        opaque_graph_id, _ = _project_graph(graph["genesis"], graph["records"])
+        opaque_events = {
+            record["id"]: _project_graph_record(record)[0]
+            for record in graph["records"]
+        }
+        expected = []
+        for observation in graph["expectedObservations"]:
+            row = {
+                "kBindingAdmission": observation["kBindingAdmission"],
+                "opaqueId": opaque_events[observation["id"]],
+                "protocolErrorCodePresent": observation["protocolErrorCode"]
+                is not None,
+                "stage": observation["stage"],
+            }
+            if observation["protocolErrorCode"] is not None:
+                row["protocolErrorCode"] = observation["protocolErrorCode"]
+            expected.append(row)
+        graph_rows.append(
+            {
+                "expectedObservations": sorted(
+                    expected, key=lambda row: row["opaqueId"]
+                ),
+                "officialId": graph["id"],
+                "opaqueGraphId": opaque_graph_id,
+                "set": graph["set"],
+            }
+        )
+    require(
+        len(graph_rows) == 20
+        and len({row["opaqueGraphId"] for row in graph_rows}) == 20,
+        "integration admission graph mismatch",
+    )
     output.mkdir(parents=True)
     store(
         output / "integration-map.json",
         {
             "freezeManifestSha256": _sha(freeze_manifest.read_bytes()),
+            "admissionGraphs": sorted(
+                graph_rows, key=lambda row: row["opaqueGraphId"]
+            ),
             "kitDigest": kit_report["kitDigest"],
             "records": sorted(rows, key=lambda row: row["opaqueId"]),
             "schema": INTEGRATION_SCHEMA,
@@ -841,7 +1195,14 @@ def build_integration(repo_root: Path, corpus: Path, kit: Path, freeze_manifest:
     (output / "INTEGRATION-SHA256SUMS.txt").write_bytes(
         _sums([("integration-map.json", (output / "integration-map.json").read_bytes())])
     )
-    return {"integrationDigest": _sha((output / "integration-map.json").read_bytes()), "records": 43, "result": "PASS"}
+    return {
+        "admissionGraphs": 20,
+        "integrationDigest": _sha(
+            (output / "integration-map.json").read_bytes()
+        ),
+        "records": 44,
+        "result": "PASS",
+    }
 
 
 def main(argv: list[str] | None = None) -> int:

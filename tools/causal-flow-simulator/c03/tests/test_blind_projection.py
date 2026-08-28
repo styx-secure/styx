@@ -40,7 +40,8 @@ class BlindProjectionTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_public_kit_is_exact_and_self_verifying(self) -> None:
-        self.assertEqual(self.report["records"], 43)
+        self.assertEqual(self.report["records"], 44)
+        self.assertEqual(self.report["admissionGraphs"], 20)
         self.assertEqual(self.report["sources"], 8)
         self.assertEqual(validate_kit(self.kit), self.report)
         actual = {
@@ -60,7 +61,8 @@ class BlindProjectionTests(unittest.TestCase):
         invalid = invalid_document["records"]
         self.assertEqual(len(invalid_document["apExpectationOnlyRecords"]), 3)
         projected = {record["opaqueId"]: record for record in blind["records"]}
-        self.assertEqual(len(projected), 43)
+        self.assertEqual(len(projected), 44)
+        self.assertEqual(len(blind["admissionGraphs"]), 20)
         for official in valid + invalid:
             opaque, public = _project_record(official)
             self.assertEqual(projected[opaque], public)
@@ -70,7 +72,7 @@ class BlindProjectionTests(unittest.TestCase):
     def test_reader_output_contract_is_public_but_contains_no_oracle(self) -> None:
         readme = (self.kit / "README.md").read_text("utf-8")
         normalized_readme = " ".join(readme.split())
-        self.assertIn("styx-c03-clean-room-report/v1", readme)
+        self.assertIn("styx-c03-clean-room-report/v2", readme)
         self.assertIn("localOutcomePresent", readme)
         self.assertIn("geometryPredicate7", readme)
         self.assertIn(
@@ -81,6 +83,7 @@ class BlindProjectionTests(unittest.TestCase):
         self.assertIn("OPAQUE_REMOTE_FAILURE", readme)
         self.assertIn("PARENTS_PER_EVENT", readme)
         self.assertIn("Replica-local admission state cannot manufacture", readme)
+        self.assertIn("NOT_EVALUATED", readme)
         self.assertNotIn("case-", readme)
 
     def test_projection_separates_selected_profile_and_collision_state(self) -> None:
@@ -146,9 +149,11 @@ class BlindProjectionTests(unittest.TestCase):
         validate_reader_freeze(reader, freeze)
         integration = self.root / "integration"
         report = build_integration(REPO, CORPUS, self.kit, freeze, integration)
-        self.assertEqual(report["records"], 43)
+        self.assertEqual(report["records"], 44)
+        self.assertEqual(report["admissionGraphs"], 20)
         mapping = load(integration / "integration-map.json")
-        self.assertEqual(len(mapping["records"]), 43)
+        self.assertEqual(len(mapping["records"]), 44)
+        self.assertEqual(len(mapping["admissionGraphs"]), 20)
         (reader / "reader").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
         with self.assertRaises(BlindProjectionError):
             validate_reader_freeze(reader, freeze)

@@ -219,9 +219,9 @@ allocation, hashing, signature work, traversal or fetch:
 1. `exact_content_length == 0` requires single shape.
 2. Single shape requires `exact_content_length <= 2^32 - 1 - 132`, namely
    `4294967163`, and within the active O-08 maximum.
-3. Tree shape requires `chunk_size >= 1` and
-   `chunk_size <= 4294967163`. This predicate establishes representability;
-   it does not test membership in the active profile's closed chunk-size set.
+3. Tree shape requires `chunk_size >= 1`,
+   `chunk_size <= 4294967163`, and membership in the authenticated active
+   profile's closed chunk-size set. O-08 selects that set's numeric values.
 4. Tree shape requires `chunk_size < exact_content_length`, equivalently
    `chunk_count >= 2`.
 5. `chunk_count` equals `ceil(exact_content_length / chunk_size)`, computed with
@@ -234,18 +234,11 @@ allocation, hashing, signature work, traversal or fetch:
    the active O-08 maxima. Representable integer ceilings are not supported
    maxima.
 
-Only after predicates 1–7 succeed does K compare `chunk_size` with the
-authenticated O-08 closed set. A well-formed geometry whose chunk size is not
-in that set selects O-10 `CURRENT_OBJECT_OUT_OF_PROFILE` at
-`S3_KERNEL_STRUCTURAL`; malformed geometry selects `STRUCTURAL_REJECTION`.
-Predicate 8 and the closed-set check are profile admission, not additional
-geometry equations.
-
 `final_chunk_length` is intentionally redundant because ratified O-04 requires
 declared final-chunk length. A mismatch is rejected; it is never repaired.
-Descriptor support is therefore a function of the authenticated active AP
-profile and version, consistent with O-06b-1's closed AP registries, while
-descriptor geometry remains independently well formed or malformed.
+`chunk_size` set-membership failure is a structural rejection. Descriptor
+legality is therefore a function of the authenticated active AP profile and
+version, consistent with O-06b-1's closed AP registries.
 
 This byte profile deliberately tightens the C0.2f symbolic legality domain in
 exactly two geometry dimensions:
@@ -438,6 +431,11 @@ A geometry that satisfies predicates 1–7 but uses a chunk size outside the
 authenticated O-08 closed set is not structurally malformed. It is a supported-
 profile admission failure and selects `CURRENT_OBJECT_OUT_OF_PROFILE` as fixed
 by the C0.3 R6 reconciliation.
+
+The contrary sentence retained verbatim in frozen §4 is historical O-06c
+evidence, not the current classification rule. R6 and this later verification
+section supersede that sentence without rewriting the bytes protected by the
+O-06c frozen-section gate.
 
 Binding observations leave the event structurally valid and include missing
 content/opening, supplied-length mismatch, commitment mismatch, target
