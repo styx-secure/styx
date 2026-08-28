@@ -222,16 +222,20 @@ Protocol increments proceed in dependency order:
    exact twelve-path Apache-2.0 inventory now includes six absent future C0.3
    data paths. This licensing gate creates no corpus byte and does not authorize
    C0.3.
-8. **Produce C0.3 — completed by Issue #264.** The six-file, synthetic-only
-   specification-derived corpus covers the closed review model, 17 valid and 26
-   invalid transcript vectors, 46 state/flow/counterexample scenarios and 476
-   adversarial mutations. The vectors include distinct contexts, authors and
-   dependency cardinalities, selected-bound witnesses, over-limit inputs,
-   profile substitution, parent reordering and an overlong fixed-width integer.
-   Coverage, manifest and expected-result mutants alter the submitted evidence
-   before independent detection; they are not count-only assertions.
-   Independent Python and JavaScript replay agree byte for byte. This closes
-   corpus construction only; it does not authorize
+8. **Produce C0.3 — corpus construction complete; exact-final remediation in
+   Issue #264.** The six-file, synthetic-only specification-derived corpus
+   covers the closed review model, 17 valid and 26 invalid transcript vectors,
+   114 state/flow/counterexample/vector/invariant/history scenarios and 497
+   adversarial mutations. Every vector is executed; every counterexample has a
+   distinct three-step program and observation; every executable invariant has
+   a one-to-one semantic witness and hostile substitution. The vectors include
+   distinct contexts, authors and dependency cardinalities, selected-bound
+   witnesses, over-limit inputs, profile substitution, parent reordering and an
+   overlong fixed-width integer. Coverage and manifest mutants are materialized
+   and rejected by the same production corpus validators, but are classified as
+   evidence-integrity checks rather than semantic invariant witnesses.
+   Independent Python and JavaScript replay and relation validation agree byte
+   for byte. This completes corpus construction only; it does not authorize
    implementation alignment, demo, product or sensitive use.
 9. **Obtain the phase verdict.** Independent exact-final review and human
    ratification produce `GO`, bounded `GO`, or `NO-GO` with residual risks.

@@ -20,7 +20,7 @@ class ManifestTests(unittest.TestCase):
     def test_tracked_manifest_and_corpus_validate(self) -> None:
         report = validate(REPO, CORPUS)
         self.assertEqual(report["result"], "PASS")
-        self.assertEqual(report["mutations"], 476)
+        self.assertEqual(report["mutations"], 497)
 
     def test_hygiene_rejects_embedded_absolute_paths_but_not_reuse_label(self) -> None:
         for value in ("path=/", "provenance=/tmp/styx", "path=C:\\review", r"path=\\host\share"):
@@ -91,6 +91,37 @@ class ManifestTests(unittest.TestCase):
         store(target / "manifest.json", manifest)
         with self.assertRaisesRegex(ValidationError, "branch assignment mismatch"):
             validate(REPO, target)
+
+    def test_rotated_invariant_witness_map_fails_semantically(self) -> None:
+        temporary, target = self._mutated_corpus()
+        self.addCleanup(temporary.cleanup)
+        manifest = load(target / "manifest.json")
+        rows = [row for row in manifest["coverage"]["invariants"] if row["branch"] == "EXECUTABLE_WITNESS"]
+        witness_ids = [row["witnessScenarioIds"][0] for row in rows]
+        mutation_ids = [row["hostileMutationIds"][0] for row in rows]
+        for index, row in enumerate(rows):
+            row["witnessScenarioIds"] = [witness_ids[(index + 7) % len(rows)]]
+            row["hostileMutationIds"] = [mutation_ids[(index + 7) % len(rows)]]
+        store(target / "manifest.json", manifest)
+        with self.assertRaisesRegex(ValidationError, "invariant witness semantic mismatch"):
+            validate(REPO, target)
+
+    def test_every_vector_is_executed_and_counterexamples_are_distinct(self) -> None:
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+        scenarios = load(CORPUS / "state-machine-scenarios.json")["records"]
+        traces = load(CORPUS / "expected-traces.json")["records"]
+        used = {step["inputVectorId"] for scenario in scenarios for step in scenario["steps"]}
+        self.assertEqual(used, {row["id"] for row in valid + invalid})
+        counterexamples = [row for row in scenarios if "counterexampleId" in row]
+        self.assertEqual({len(row["steps"]) for row in counterexamples}, {3})
+        observations = {
+            row["observationDigest"]
+            for row in traces
+            if row["scenarioId"].startswith("scenario-counterexample-")
+        }
+        self.assertEqual(len(observations), len(counterexamples))
+        self.assertFalse(any("conditions" in row for row in invalid))
 
 
 if __name__ == "__main__":

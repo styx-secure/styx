@@ -18,7 +18,9 @@ class ReplayTests(unittest.TestCase):
     def test_all_vectors_and_scenarios_replay(self) -> None:
         report = replay(REPO, CORPUS)
         self.assertEqual(report["result"], "PASS")
-        self.assertEqual((report["validVectors"], report["invalidVectors"], report["scenarios"]), (17, 26, 46))
+        self.assertEqual(report["validVectors"], len(load(CORPUS / "valid-transcript-vectors.json")["records"]))
+        self.assertEqual(report["invalidVectors"], len(load(CORPUS / "invalid-transcript-vectors.json")["records"]))
+        self.assertEqual(report["scenarios"], len(load(CORPUS / "state-machine-scenarios.json")["records"]))
         self.assertRegex(report["corpusDigest"], r"^[0-9a-f]{64}$")
         self.assertRegex(report["traceDigest"], r"^[0-9a-f]{64}$")
 
@@ -39,7 +41,8 @@ class ReplayTests(unittest.TestCase):
                 self.assertRegex(step["preStateDigest"], r"^[0-9a-f]{64}$")
                 self.assertRegex(step["postStateDigest"], r"^[0-9a-f]{64}$")
                 step_count += 1
-        self.assertEqual(step_count, 46)
+        self.assertEqual(step_count, sum(len(scenario["steps"]) for scenario in scenarios))
+        self.assertGreater(step_count, len(scenarios))
 
     def test_vectors_cover_identity_parent_and_selected_resource_boundaries(self) -> None:
         valid = load(CORPUS / "valid-transcript-vectors.json")["records"]

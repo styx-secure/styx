@@ -13,7 +13,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from canonical_json import load, store  # noqa: E402
+from canonical_json import dumps, load, store  # noqa: E402
 from corpus_model import BaseReader, CorpusModelError, evaluate_vector, validate_base_inputs  # noqa: E402
 from validate_corpus import validate  # noqa: E402
 
@@ -45,6 +45,7 @@ def _compute_step(
     index: int,
     vector: dict[str, Any],
     transitions: dict[tuple[str, str], dict[str, Any]],
+    available_evidence: set[str] | None = None,
 ) -> dict[str, Any]:
     executed = step.get("executed", True)
     evaluated = evaluate_vector(vector) if executed else None
@@ -71,14 +72,30 @@ def _compute_step(
 
     unchanged = post_state == "UNCHANGED" or not executed
     post_digest = pre_digest if unchanged else _digest(f"styx-c03/state/{scenario['id']}/{post_state}")
+    available = available_evidence or set()
+    requirements = set(step["requiredPriorEvidence"])
+    dependency_status = "SATISFIED" if requirements <= available else "MISSING"
+    if evaluated is None:
+        k_admission = "NOT_EVALUATED"
+        ap_result = "NOT_EVALUATED"
+    elif evaluated["transcriptVerification"] != "VALID" or evaluated["signatureVerification"] == "REJECTED" or evaluated["localOutcome"] in {"CREDENTIAL_BINDING_MISMATCH", "REFERENCE_COLLISION_UNSUPPORTED"}:
+        k_admission = "REJECTED"
+        ap_result = "NOT_REACHED"
+    else:
+        k_admission = "ADMITTED"
+        ap_result = "APPLIED" if evaluated["localOutcome"] == "APPLIED" else "REJECTED_OR_DEFERRED"
     return {
-        "apAuthorityResult": "NOT_EVALUATED" if not executed else "MODEL_SELECTED",
-        "causalClassification": step["transitionId"] or "FLOW_OR_COUNTEREXAMPLE",
+        "actionDigest": sha256(step["candidateAction"].encode()).hexdigest(),
+        "apAuthorityResult": ap_result,
+        "causalClassification": step["transitionId"] or f"VECTOR:{vector['id']}",
         "commitmentVerification": "NOT_PRESENT" if evaluated is None else evaluated["commitmentVerification"],
-        "dependencyStatus": "SATISFIED" if not step["requiredPriorEvidence"] else "REQUIRED",
+        "dependencyStatus": dependency_status,
+        "evidenceConsumed": sorted(requirements),
+        "evidenceProduced": step.get("providedEvidence"),
+        "executed": executed,
         "externalEffects": [],
         "inputDigest": sha256(bytes.fromhex(vector["transcriptHex"])).hexdigest(),
-        "kBindingAdmission": "NOT_EVALUATED" if not executed else "MODEL_SELECTED",
+        "kBindingAdmission": k_admission,
         "localOutcome": local_outcome,
         "postStateDigest": post_digest,
         "preStateDigest": pre_digest,
@@ -88,6 +105,32 @@ def _compute_step(
         "step": index,
         "transcriptVerification": "NOT_EVALUATED" if evaluated is None else evaluated["transcriptVerification"],
     }
+
+
+def compute_trace(
+    scenario: dict[str, Any],
+    vectors: dict[str, dict[str, Any]],
+    transitions: dict[tuple[str, str], dict[str, Any]],
+) -> dict[str, Any]:
+    available_evidence: set[str] = set()
+    steps: list[dict[str, Any]] = []
+    for index, step in enumerate(scenario["steps"]):
+        computed = _compute_step(
+            scenario,
+            step,
+            index,
+            vectors[step["inputVectorId"]],
+            transitions,
+            available_evidence,
+        )
+        steps.append(computed)
+        if step.get("providedEvidence") is not None:
+            available_evidence.add(step["providedEvidence"])
+    trace = {"id": f"trace-{scenario['id']}", "scenarioId": scenario["id"], "steps": steps}
+    trace["observationDigest"] = sha256(
+        dumps({"scenarioId": scenario["id"], "steps": steps})
+    ).hexdigest()
+    return trace
 
 
 def replay(repo_root: Path, corpus: Path) -> dict[str, Any]:
@@ -104,11 +147,7 @@ def replay(repo_root: Path, corpus: Path) -> dict[str, Any]:
     expected_by_scenario = {record["scenarioId"]: record for record in expected}
     computed: list[dict[str, Any]] = []
     for scenario in scenarios:
-        steps = [
-            _compute_step(scenario, step, index, vectors[step["inputVectorId"]], transitions)
-            for index, step in enumerate(scenario["steps"])
-        ]
-        trace = {"id": f"trace-{scenario['id']}", "scenarioId": scenario["id"], "steps": steps}
+        trace = compute_trace(scenario, vectors, transitions)
         require(trace == expected_by_scenario.get(scenario["id"]), f"trace mismatch: {scenario['id']}")
         computed.append(trace)
     require(len(computed) == len(expected_by_scenario), "unexpected expected trace")

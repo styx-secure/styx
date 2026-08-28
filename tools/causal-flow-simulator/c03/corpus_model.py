@@ -73,7 +73,6 @@ O08_CHUNK_OCTETS = frozenset({4096, 16384})
 NONEXECUTABLE_INVARIANTS = frozenset(
     {
         "INV_C0_3_NO_GO",
-        "INV_PROTECTION_SEPARATION",
         "INV_SOURCE_AUTHORITY",
     }
 )
@@ -724,21 +723,35 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
                 result["commitmentVerification"] = "REJECTED"
                 return reject("COMMITMENT_MISMATCH", "S3_KERNEL_STRUCTURAL")
             result["commitmentVerification"] = "VALID"
-    conditions = record.get("conditions", {})
-    precedence = (
-        ("duplicate", "DUPLICATE", "S3_KERNEL_STRUCTURAL"),
-        ("missingDependency", "PENDING_ANCESTOR", "S4_GRAPH_ADMISSION"),
-        ("fork", "FORK_EVIDENCE", "EVENT_LOCAL"),
-        ("postRevocation", "POST_REVOCATION", "EVENT_LOCAL"),
-        ("authorized", "AUTHENTIC_BUT_UNAUTHORIZED", "EVENT_LOCAL"),
-    )
-    for key, outcome, stage in precedence:
-        if key == "authorized":
-            matched = conditions.get(key) is False
-        else:
-            matched = bool(conditions.get(key))
-        if matched:
-            return reject(outcome, stage)
+    admission = record.get("admissionContext", {})
+    if admission:
+        if not isinstance(admission, dict):
+            return reject("STRUCTURAL_REJECTION", "S4_GRAPH_ADMISSION")
+        checkpoint_refs = admission.get("checkpointEvidenceReferences", [])
+        if checkpoint_refs:
+            return reject("STRUCTURAL_REJECTION", "S4_GRAPH_ADMISSION")
+        if reference in admission.get("seenEventReferences", []):
+            return reject("DUPLICATE", "S3_KERNEL_STRUCTURAL")
+        sibling_refs = admission.get("sameAuthorSequenceReferences", [])
+        if any(candidate != reference for candidate in sibling_refs):
+            return reject("FORK_EVIDENCE", "EVENT_LOCAL")
+        if record["kind"] == "APPLICATION_EVENT":
+            parents = set(fields["causalParents"])
+            if fields["directPredecessorHex"] is not None:
+                parents.add(fields["directPredecessorHex"])
+            available = set(admission.get("availableDependencyReferences", parents))
+            if not parents <= available:
+                return reject("PENDING_ANCESTOR", "S4_GRAPH_ADMISSION")
+            credential_id = fields["credentialIdentifierHex"]
+            if credential_id in admission.get("revokedCredentialIdentifiers", []):
+                return reject("POST_REVOCATION", "EVENT_LOCAL")
+            authorized = admission.get("authorizedCredentialIdentifiers")
+            if authorized is not None and credential_id not in authorized:
+                return reject("AUTHENTIC_BUT_UNAUTHORIZED", "EVENT_LOCAL")
+            if fields["eventRole"] == "CREDENTIAL" and fields["tail"].get("kind") in {"REVOKE", "ROTATE"}:
+                target = fields["tail"].get("targetCredentialHex") or fields["tail"].get("retiringCredentialHex")
+                if target == credential_id:
+                    return reject("AUTHENTIC_BUT_UNAUTHORIZED", "EVENT_LOCAL")
     result["postStateDigest"] = sha256(
         bytes.fromhex(state_digest) + bytes.fromhex(reference)
     ).hexdigest()

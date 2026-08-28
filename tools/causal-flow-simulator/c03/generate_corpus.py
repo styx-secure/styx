@@ -51,6 +51,82 @@ COMMON_CITATIONS = [
     },
 ]
 
+# These relations are deliberately semantic and reviewable.  They replace the
+# former positional/modulo joins, which could associate any invariant with any
+# scenario without changing a gate result.  Every executable invariant owns a
+# distinct witness and a distinct hostile mutation.
+INVARIANT_WITNESS_VECTORS = {
+    "INV_AUTHORITY_PROJECTION_LIMITS": "inv-resource-sequence",
+    "INV_AUTH_NOT_KEY": "inv-unauthorized",
+    "INV_BOUNDED_CONTESTED_STANDING": "inv-fork",
+    "INV_CAUSALITY_TRANSCRIPT_ONLY": "inv-parent-order",
+    "INV_CAUSAL_TARGET_AVAILABILITY": "inv-missing-dependency",
+    "INV_COMMITMENT_CONTEXT_BINDING": "inv-commitment",
+    "INV_CONTROL_NONE_CLASS": "vec-control-grant",
+    "INV_CROSS_CONTEXT_REJECTION": "inv-binding-context",
+    "INV_FORK_QUARANTINE": "inv-fork",
+    "INV_GRANT_ROOTED_BINDING": "inv-binding-credential",
+    "INV_LINEAGE_CONTAINMENT": "inv-post-revocation",
+    "INV_NO_CHECKPOINT_SUBSTITUTION": "inv-missing-dependency",
+    "INV_NO_OPENING_SUBSTITUTION": "inv-opening-missing",
+    "INV_O06C_BOUNDED_EVIDENCE": "inv-body-length",
+    "INV_OUTCOME_PRECEDENCE": "inv-signature",
+    "INV_PENDING_SELECTIVE_PROGRESS": "vec-required-single",
+    "INV_PROTECTION_SEPARATION": "inv-profile-substitution",
+    "INV_REPLAY_NO_AUTHORITY": "inv-duplicate",
+    "INV_SELF_LINEAGE_REDUCTION": "inv-unauthorized",
+    "INV_SET_RELATIVE_REPLAY": "vec-secondary-context-author",
+    "INV_TWO_SIDED_AUTHORITY": "vec-control-revoke",
+}
+
+COUNTEREXAMPLE_VECTOR_PROGRAMS = {
+    "CE_ALIAS_SURVIVAL": ["vec-control-grant", "vec-control-revoke", "vec-secondary-context-author"],
+    "CE_AUTHORITY_PROJECTION_EXHAUSTION": ["vec-selected-resource-boundaries", "inv-resource-sequence", "vec-ordinary-none"],
+    "CE_BOUNDED_CONTESTED_STANDING": ["vec-ordinary-none", "inv-fork", "vec-secondary-context-author"],
+    "CE_CHECKPOINT_STALE": ["vec-parent-single", "inv-missing-dependency", "vec-ordinary-none"],
+    "CE_CREDENTIAL_COLLISION": ["vec-control-grant", "inv-reference", "vec-ordinary-none"],
+    "CE_FORK_CONTEXT_QUARANTINE": ["vec-ordinary-none", "inv-fork", "vec-secondary-context-author"],
+    "CE_GRANT_REVOKE_LAUNDERING_ORDER_A": ["vec-control-grant", "vec-control-revoke", "inv-post-revocation"],
+    "CE_GRANT_REVOKE_LAUNDERING_ORDER_B": ["vec-control-revoke", "vec-control-grant", "inv-unauthorized"],
+    "CE_GRANT_ROOTED_BINDING": ["vec-control-grant", "inv-binding-credential", "vec-ordinary-none"],
+    "CE_MISSING_REQUIRED_OPENING": ["vec-required-single", "inv-opening-missing", "vec-secondary-context-author"],
+    "CE_MUTUAL_REDUCTION_NO_AUTHORITY": ["vec-control-revoke", "inv-unauthorized", "inv-post-revocation"],
+    "CE_NONCAUSAL_REDUCTION_TARGET": ["vec-parent-multiple", "inv-missing-dependency", "vec-control-revoke"],
+    "CE_SELECTIVE_REVEAL": ["vec-required-single", "inv-opening-missing", "vec-required-single"],
+    "CE_SELF_LINEAGE_REDUCTION": ["vec-control-revoke", "inv-unauthorized", "vec-secondary-context-author"],
+    "CE_SINGLE_AUTHORITY_TAKEOVER": ["vec-control-revoke", "inv-post-revocation", "vec-control-closure"],
+    "CE_SUBTREE_AMPLIFICATION": ["vec-control-grant", "vec-control-revoke", "inv-post-revocation"],
+}
+
+INVALID_VECTOR_INVARIANTS = {
+    "inv-binding-context": "INV_CROSS_CONTEXT_REJECTION",
+    "inv-binding-credential": "INV_GRANT_ROOTED_BINDING",
+    "inv-body-length": "INV_O06C_BOUNDED_EVIDENCE",
+    "inv-commitment": "INV_COMMITMENT_CONTEXT_BINDING",
+    "inv-duplicate": "INV_REPLAY_NO_AUTHORITY",
+    "inv-fork": "INV_FORK_QUARANTINE",
+    "inv-missing-dependency": "INV_CAUSAL_TARGET_AVAILABILITY",
+    "inv-noncanonical-integer": "INV_O06C_BOUNDED_EVIDENCE",
+    "inv-opening-missing": "INV_NO_OPENING_SUBSTITUTION",
+    "inv-parent-order": "INV_CAUSALITY_TRANSCRIPT_ONLY",
+    "inv-post-revocation": "INV_LINEAGE_CONTAINMENT",
+    "inv-profile-substitution": "INV_PROTECTION_SEPARATION",
+    "inv-reference": "INV_GRANT_ROOTED_BINDING",
+    "inv-resource-chunk-count": "INV_AUTHORITY_PROJECTION_LIMITS",
+    "inv-resource-chunk-size": "INV_AUTHORITY_PROJECTION_LIMITS",
+    "inv-resource-content-length": "INV_AUTHORITY_PROJECTION_LIMITS",
+    "inv-resource-framing-object": "INV_AUTHORITY_PROJECTION_LIMITS",
+    "inv-resource-genesis-policy": "INV_AUTHORITY_PROJECTION_LIMITS",
+    "inv-resource-parent-count": "INV_AUTHORITY_PROJECTION_LIMITS",
+    "inv-resource-sequence": "INV_AUTHORITY_PROJECTION_LIMITS",
+    "inv-resource-transition-block": "INV_AUTHORITY_PROJECTION_LIMITS",
+    "inv-signature": "INV_OUTCOME_PRECEDENCE",
+    "inv-trailing": "INV_O06C_BOUNDED_EVIDENCE",
+    "inv-truncated": "INV_O06C_BOUNDED_EVIDENCE",
+    "inv-unauthorized": "INV_AUTH_NOT_KEY",
+    "inv-wrong-domain": "INV_O06C_BOUNDED_EVIDENCE",
+}
+
 
 def _digest(value: Any) -> str:
     return sha256(dumps(value)).hexdigest()
@@ -676,69 +752,143 @@ def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
         }
     )
 
-    conditions = [
-        ("inv-unauthorized", "AUTHORITY_LAUNDERING", "EVENT_LOCAL", "AUTHENTIC_BUT_UNAUTHORIZED", {"authorized": False}),
-        ("inv-fork", "SAME_AUTHOR_FORK", "EVENT_LOCAL", "FORK_EVIDENCE", {"fork": True}),
-        ("inv-duplicate", "DUPLICATE_REPLAY", "S3_KERNEL_STRUCTURAL", "DUPLICATE", {"duplicate": True}),
-        ("inv-missing-dependency", "DEPENDENCY_REMOVAL", "S4_GRAPH_ADMISSION", "PENDING_ANCESTOR", {"missingDependency": True}),
-        ("inv-post-revocation", "POST_REVOCATION_ACTION", "EVENT_LOCAL", "POST_REVOCATION", {"postRevocation": True}),
+    credential_id = base["fields"]["credentialIdentifierHex"]
+    contextual = [
+        (
+            base,
+            "inv-unauthorized",
+            "AUTHORITY_LAUNDERING",
+            "EVENT_LOCAL",
+            "AUTHENTIC_BUT_UNAUTHORIZED",
+            {"authorizedCredentialIdentifiers": []},
+        ),
+        (
+            base,
+            "inv-fork",
+            "SAME_AUTHOR_FORK",
+            "EVENT_LOCAL",
+            "FORK_EVIDENCE",
+            {"sameAuthorSequenceReferences": [synthetic_octets("hostile-sibling-reference", 32).hex()]},
+        ),
+        (
+            base,
+            "inv-duplicate",
+            "DUPLICATE_REPLAY",
+            "S3_KERNEL_STRUCTURAL",
+            "DUPLICATE",
+            {"seenEventReferences": [base["eventReferenceHex"]]},
+        ),
+        (
+            multiple_parents,
+            "inv-missing-dependency",
+            "DEPENDENCY_REMOVAL",
+            "S4_GRAPH_ADMISSION",
+            "PENDING_ANCESTOR",
+            {"availableDependencyReferences": []},
+        ),
+        (
+            base,
+            "inv-post-revocation",
+            "POST_REVOCATION_ACTION",
+            "EVENT_LOCAL",
+            "POST_REVOCATION",
+            {"revokedCredentialIdentifiers": [credential_id]},
+        ),
     ]
-    for identifier, mutation, stage, outcome, flags in conditions:
-        record = _mutated_vector(base, identifier, mutation, stage, outcome)
-        record["conditions"] = flags
+    for source, identifier, mutation, stage, outcome, context in contextual:
+        record = _mutated_vector(source, identifier, mutation, stage, outcome)
+        record["admissionContext"] = context
         values.append(record)
     return sorted(values, key=lambda record: record["id"])
 
 
 def _scenarios(model: dict[str, Any], valid: list[dict[str, Any]], invalid: list[dict[str, Any]]) -> list[dict[str, Any]]:
     default_input = "vec-ordinary-none"
+    vector_by_id = {record["id"]: record for record in valid + invalid}
     scenarios: list[dict[str, Any]] = []
+
+    def vector_expectation(vector_id: str) -> tuple[str, str, str]:
+        result = evaluate_vector(vector_by_id[vector_id])
+        post_state = "UNCHANGED" if result["preStateDigest"] == result["postStateDigest"] else "APPLIED"
+        return result["localOutcome"], result["stage"], post_state
+
+    def step(
+        *,
+        action: str,
+        vector_id: str,
+        pre_state: str,
+        required: list[str] | None = None,
+        produced: str | None = None,
+        transition_id: str | None = None,
+        expected_outcome: str | None = None,
+        expected_stage: str | None = None,
+        expected_post_state: str | None = None,
+        actor: str = "kernel",
+        executed: bool = True,
+    ) -> dict[str, Any]:
+        outcome, stage, post_state = vector_expectation(vector_id)
+        return {
+            "actor": actor,
+            "candidateAction": action,
+            "executed": executed,
+            "expectedOutcome": expected_outcome or outcome,
+            "expectedPostState": expected_post_state or post_state,
+            "expectedStage": expected_stage or stage,
+            "inputVectorId": vector_id,
+            "preState": pre_state,
+            "providedEvidence": produced,
+            "requiredPriorEvidence": required or [],
+            "transitionId": transition_id,
+        }
+
     for state_model in model["state_models"]:
         model_id = state_model["id"]
         for transition in state_model["transitions"]:
             from_state = transition["from"][0]
+            scenario_id = f"scenario-state-{model_id}-{transition['id']}"
             scenarios.append(
                 {
                     "citations": transition["citations"],
-                    "id": f"scenario-state-{model_id}-{transition['id']}",
+                    "id": scenario_id,
                     "modelId": model_id,
                     "steps": [
-                        {
-                            "actor": "kernel",
-                            "candidateAction": transition["trigger"],
-                            "expectedOutcome": transition["outcome"],
-                            "expectedPostState": transition["to"],
-                            "expectedStage": "MODEL_TRANSITION",
-                            "inputVectorId": default_input,
-                            "preState": from_state,
-                            "requiredPriorEvidence": [],
-                            "transitionId": transition["id"],
-                        }
+                        step(
+                            action=transition["trigger"],
+                            vector_id=default_input,
+                            pre_state=from_state,
+                            produced=f"evidence:{scenario_id}:0",
+                            transition_id=transition["id"],
+                            expected_outcome=transition["outcome"],
+                            expected_stage="MODEL_TRANSITION",
+                            expected_post_state=transition["to"],
+                        )
                     ],
                 }
             )
-    invalid_ids = [item["id"] for item in invalid]
-    for index, counterexample in enumerate(model["counterexamples"]):
-        vector_id = invalid_ids[index % len(invalid_ids)]
+    for counterexample in model["counterexamples"]:
+        scenario_id = f"scenario-counterexample-{counterexample['id'].lower()}"
+        vector_program = COUNTEREXAMPLE_VECTOR_PROGRAMS[counterexample["id"]]
+        evidence: list[str] = []
+        steps: list[dict[str, Any]] = []
+        for index, (action, vector_id) in enumerate(zip(counterexample["steps"], vector_program, strict=True)):
+            produced = f"evidence:{scenario_id}:{index}"
+            steps.append(
+                step(
+                    action=action,
+                    vector_id=vector_id,
+                    pre_state="SYNTHETIC_BASELINE" if index == 0 else f"AFTER_{index - 1}",
+                    required=list(evidence),
+                    produced=produced,
+                )
+            )
+            evidence.append(produced)
         scenarios.append(
             {
                 "citations": counterexample["citations"],
                 "counterexampleId": counterexample["id"],
-                "id": f"scenario-counterexample-{counterexample['id'].lower()}",
+                "id": scenario_id,
                 "modelId": "counterexample",
-                "steps": [
-                    {
-                        "actor": "kernel",
-                        "candidateAction": counterexample["steps"][0],
-                        "expectedOutcome": next(item for item in invalid if item["id"] == vector_id)["expected"]["localOutcome"],
-                        "expectedPostState": "UNCHANGED",
-                        "expectedStage": next(item for item in invalid if item["id"] == vector_id)["expected"]["firstFailingStage"],
-                        "inputVectorId": vector_id,
-                        "preState": "SYNTHETIC_BASELINE",
-                        "requiredPriorEvidence": [],
-                        "transitionId": None,
-                    }
-                ],
+                "steps": steps,
             }
         )
     for flow in model["flows"]:
@@ -754,20 +904,94 @@ def _scenarios(model: dict[str, Any], valid: list[dict[str, Any]], invalid: list
                 "id": f"scenario-flow-{flow['id']}",
                 "modelId": "flow",
                 "steps": [
-                    {
-                        "actor": flow["producer"],
-                        "candidateAction": flow["permitted_actions"][0],
-                        "executed": not excluded,
-                        "expectedOutcome": "APPLIED" if not excluded else (
+                    step(
+                        action=flow["permitted_actions"][0],
+                        vector_id=default_input,
+                        pre_state="FLOW_READY",
+                        produced=f"evidence:scenario-flow-{flow['id']}:0",
+                        actor=flow["producer"],
+                        executed=not excluded,
+                        expected_outcome="APPLIED" if not excluded else (
                             "TRANSPORT_PROFILE_REQUIRED" if flow["id"] == "transport_publish" else "SESSION_PROFILE_REQUIRED"
                         ),
-                        "expectedPostState": "APPLIED" if not excluded else "UNCHANGED",
-                        "expectedStage": "FINAL_AFTER_S6" if not excluded else "BOUNDARY_NOT_EXECUTED",
-                        "inputVectorId": default_input,
-                        "preState": "FLOW_READY",
-                        "requiredPriorEvidence": [],
-                        "transitionId": None,
-                    }
+                        expected_post_state="APPLIED" if not excluded else "UNCHANGED",
+                        expected_stage="FINAL_AFTER_S6" if not excluded else "BOUNDARY_NOT_EXECUTED",
+                    )
+                ],
+            }
+        )
+
+    # Every byte/context vector has an executable witness.  This prevents the
+    # corpus from claiming coverage for vectors that no scenario ever consumes.
+    for vector in valid + invalid:
+        scenario_id = f"scenario-vector-{vector['id']}"
+        scenarios.append(
+            {
+                "citations": vector["citations"],
+                "id": scenario_id,
+                "modelId": "vector",
+                "steps": [
+                    step(
+                        action=f"Evaluate exact vector {vector['id']}",
+                        vector_id=vector["id"],
+                        pre_state="VECTOR_BASELINE",
+                        produced=f"evidence:{scenario_id}:0",
+                    )
+                ],
+                "vectorId": vector["id"],
+            }
+        )
+
+    # Invariant witnesses are intentionally one-to-one.  Shared setup bytes are
+    # allowed, but the asserted invariant, scenario and hostile mutation are not.
+    invariant_by_id = {record["id"]: record for record in model["invariants"]}
+    for invariant_id, vector_id in INVARIANT_WITNESS_VECTORS.items():
+        scenario_id = f"scenario-invariant-{invariant_id.lower()}"
+        scenarios.append(
+            {
+                "citations": invariant_by_id[invariant_id]["citations"],
+                "exercisedInvariantIds": [invariant_id],
+                "id": scenario_id,
+                "modelId": "invariant",
+                "steps": [
+                    step(
+                        action=f"Falsify {invariant_id} with {vector_id}",
+                        vector_id=vector_id,
+                        pre_state="INVARIANT_BASELINE",
+                        produced=f"evidence:{scenario_id}:0",
+                    )
+                ],
+            }
+        )
+
+    # Explicitly exercise history-sensitive replay and sibling classification.
+    for suffix, vector_program in (
+        ("idempotent-replay", ["vec-ordinary-none", "inv-duplicate"]),
+        ("sibling-fork", ["vec-ordinary-none", "inv-fork"]),
+        ("revocation-effect", ["vec-control-revoke", "inv-post-revocation"]),
+        ("rotation-effect", ["vec-control-rotate", "inv-unauthorized"]),
+    ):
+        scenario_id = f"scenario-history-{suffix}"
+        first_evidence = f"evidence:{scenario_id}:0"
+        scenarios.append(
+            {
+                "citations": COMMON_CITATIONS,
+                "id": scenario_id,
+                "modelId": "history",
+                "steps": [
+                    step(
+                        action=f"Establish history for {suffix}",
+                        vector_id=vector_program[0],
+                        pre_state="HISTORY_EMPTY",
+                        produced=first_evidence,
+                    ),
+                    step(
+                        action=f"Exercise history-sensitive {suffix}",
+                        vector_id=vector_program[1],
+                        pre_state="HISTORY_ESTABLISHED",
+                        required=[first_evidence],
+                        produced=f"evidence:{scenario_id}:1",
+                    ),
                 ],
             }
         )
@@ -778,6 +1002,7 @@ def _traces(scenarios: list[dict[str, Any]], vector_by_id: dict[str, dict[str, A
     traces: list[dict[str, Any]] = []
     for scenario in scenarios:
         entries = []
+        available_evidence: set[str] = set()
         for index, step in enumerate(scenario["steps"]):
             vector = vector_by_id[step["inputVectorId"]]
             transcript = bytes.fromhex(vector["transcriptHex"])
@@ -789,15 +1014,30 @@ def _traces(scenarios: list[dict[str, Any]], vector_by_id: dict[str, dict[str, A
             post_digest = pre_digest if unchanged else sha256(
                 f"styx-c03/state/{scenario['id']}/{step['expectedPostState']}".encode()
             ).hexdigest()
+            requirements = set(step["requiredPriorEvidence"])
+            dependency_status = "SATISFIED" if requirements <= available_evidence else "MISSING"
+            if evaluated is None:
+                k_admission = "NOT_EVALUATED"
+                ap_result = "NOT_EVALUATED"
+            elif evaluated["transcriptVerification"] != "VALID" or evaluated["signatureVerification"] == "REJECTED" or evaluated["localOutcome"] in {"CREDENTIAL_BINDING_MISMATCH", "REFERENCE_COLLISION_UNSUPPORTED"}:
+                k_admission = "REJECTED"
+                ap_result = "NOT_REACHED"
+            else:
+                k_admission = "ADMITTED"
+                ap_result = "APPLIED" if evaluated["localOutcome"] == "APPLIED" else "REJECTED_OR_DEFERRED"
             entries.append(
                 {
-                    "apAuthorityResult": "NOT_EVALUATED" if not step.get("executed", True) else "MODEL_SELECTED",
-                    "causalClassification": step["transitionId"] or "FLOW_OR_COUNTEREXAMPLE",
+                    "actionDigest": sha256(step["candidateAction"].encode()).hexdigest(),
+                    "apAuthorityResult": ap_result,
+                    "causalClassification": step["transitionId"] or f"VECTOR:{vector['id']}",
                     "commitmentVerification": "NOT_PRESENT" if "opening" not in vector else "RECOMPUTE_REQUIRED",
-                    "dependencyStatus": "SATISFIED" if not step["requiredPriorEvidence"] else "REQUIRED",
+                    "dependencyStatus": dependency_status,
+                    "evidenceConsumed": sorted(requirements),
+                    "evidenceProduced": step.get("providedEvidence"),
+                    "executed": step.get("executed", True),
                     "externalEffects": [],
                     "inputDigest": sha256(transcript).hexdigest(),
-                    "kBindingAdmission": "NOT_EVALUATED" if not step.get("executed", True) else "MODEL_SELECTED",
+                    "kBindingAdmission": k_admission,
                     "localOutcome": step["expectedOutcome"],
                     "postStateDigest": post_digest,
                     "preStateDigest": pre_digest,
@@ -810,12 +1050,19 @@ def _traces(scenarios: list[dict[str, Any]], vector_by_id: dict[str, dict[str, A
             )
             if evaluated is not None:
                 entries[-1]["commitmentVerification"] = evaluated["commitmentVerification"]
-        traces.append({"id": f"trace-{scenario['id']}", "scenarioId": scenario["id"], "steps": entries})
+            if step.get("providedEvidence") is not None:
+                available_evidence.add(step["providedEvidence"])
+        trace = {"id": f"trace-{scenario['id']}", "scenarioId": scenario["id"], "steps": entries}
+        trace["observationDigest"] = _digest({"scenarioId": scenario["id"], "steps": entries})
+        traces.append(trace)
     return sorted(traces, key=lambda record: record["id"])
 
 
 def _mutations(
-    invalid: list[dict[str, Any]], inventory: dict[str, Any], reader: BaseReader
+    invalid: list[dict[str, Any]],
+    inventory: dict[str, Any],
+    reader: BaseReader,
+    scenarios: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     mutations: list[dict[str, Any]] = []
     for record in invalid:
@@ -828,7 +1075,32 @@ def _mutations(
                 "id": f"mutation-vector-{record['id']}",
                 "sourceRecordId": record["sourceVectorId"],
                 "transformation": record["mutation"],
-                "violatedInvariant": "INV_O06C_BOUNDED_EVIDENCE",
+                "mutationClass": "SEMANTIC_VECTOR",
+                "violatedInvariant": INVALID_VECTOR_INVARIANTS[record["id"]],
+            }
+        )
+
+    # Each executable invariant owns a distinct executable scenario and a
+    # distinct legal-input substitution.  These are the only mutations used as
+    # invariant falsification witnesses by the coverage map.
+    scenario_ids = {record["id"] for record in scenarios}
+    for invariant_id, witness_vector_id in sorted(INVARIANT_WITNESS_VECTORS.items()):
+        scenario_id = f"scenario-invariant-{invariant_id.lower()}"
+        if scenario_id not in scenario_ids:
+            raise ValueError(f"missing invariant scenario: {invariant_id}")
+        replacement = "vec-secondary-context-author" if witness_vector_id != "vec-secondary-context-author" else "vec-ordinary-none"
+        mutations.append(
+            {
+                "detector": "INVARIANT_WITNESS_TRACE_MISMATCH",
+                "expectedOutcome": "STRUCTURAL_REJECTION",
+                "expectedStage": "CORPUS_REPLAY",
+                "generatedTargetId": f"trace-{scenario_id}",
+                "id": f"mutation-invariant-{invariant_id.lower()}",
+                "mutationClass": "SEMANTIC_INVARIANT",
+                "replacementVectorId": replacement,
+                "sourceRecordId": scenario_id,
+                "transformation": "SUBSTITUTE_LEGAL_VECTOR_IN_EXACT_INVARIANT_WITNESS",
+                "violatedInvariant": invariant_id,
             }
         )
     mutations.extend(
@@ -841,6 +1113,7 @@ def _mutations(
                 "id": "mutation-expected-invalid-stage",
                 "sourceRecordId": invalid[0]["id"],
                 "transformation": "CORRUPT_EXPECTED_FIRST_FAILING_STAGE_ONLY",
+                "mutationClass": "EXPECTED_RESULT",
                 "violatedInvariant": "INV_OUTCOME_PRECEDENCE",
             },
             {
@@ -851,6 +1124,7 @@ def _mutations(
                 "id": "mutation-expected-invalid-outcome",
                 "sourceRecordId": invalid[0]["id"],
                 "transformation": "CORRUPT_EXPECTED_LOCAL_OUTCOME_ONLY",
+                "mutationClass": "EXPECTED_RESULT",
                 "violatedInvariant": "INV_OUTCOME_PRECEDENCE",
             },
             {
@@ -861,6 +1135,7 @@ def _mutations(
                 "id": "mutation-expected-trace-outcome",
                 "sourceRecordId": "trace-scenario-flow-author_application_event",
                 "transformation": "CORRUPT_EXPECTED_TRACE_OUTCOME_ONLY",
+                "mutationClass": "EXPECTED_RESULT",
                 "violatedInvariant": "INV_OUTCOME_PRECEDENCE",
             },
         )
@@ -883,6 +1158,7 @@ def _mutations(
                 "id": f"mutation-o08-{dimension.lower()}",
                 "sourceRecordId": "manifest",
                 "transformation": "REMOVE_SELECTED_O08_DIMENSION",
+                "mutationClass": "EVIDENCE_INTEGRITY",
                 "violatedInvariant": "INV_AUTHORITY_PROJECTION_LIMITS",
             }
         )
@@ -896,7 +1172,8 @@ def _mutations(
                 "id": f"mutation-o07-{row['atom_instance_id'].lower()}",
                 "sourceRecordId": row["scenario_instance_id"],
                 "transformation": "REMOVE_REQUIRED_O07_RELATION",
-                "violatedInvariant": "INV_SOURCE_AUTHORITY",
+                "mutationClass": "EVIDENCE_INTEGRITY",
+                "violatedInvariant": "INV_PROTECTION_SEPARATION",
             }
         )
     for row in reader.json("tools/causal-flow-simulator/o10/source-inventory.json")["rows"]:
@@ -909,6 +1186,7 @@ def _mutations(
                 "id": f"mutation-o10-{sha256(row['row_id'].encode()).hexdigest()[:16]}",
                 "sourceRecordId": row["row_id"],
                 "transformation": "REMOVE_REQUIRED_O10_ROW",
+                "mutationClass": "EVIDENCE_INTEGRITY",
                 "violatedInvariant": "INV_OUTCOME_PRECEDENCE",
             }
         )
@@ -922,7 +1200,8 @@ def _mutations(
                 "id": f"mutation-manifest-{target.removesuffix('.json')}",
                 "sourceRecordId": "manifest",
                 "transformation": "CORRUPT_MANIFEST_DIGEST",
-                "violatedInvariant": "INV_SOURCE_AUTHORITY",
+                "mutationClass": "EVIDENCE_INTEGRITY",
+                "violatedInvariant": "INV_O06C_BOUNDED_EVIDENCE",
             }
         )
     return sorted(mutations, key=lambda record: record["id"])
@@ -949,12 +1228,14 @@ def _coverage(
                 }
             )
         else:
+            witness_scenario = f"scenario-invariant-{record['id'].lower()}"
+            hostile_mutation = f"mutation-invariant-{record['id'].lower()}"
             invariant_rows.append(
                 {
                     "branch": "EXECUTABLE_WITNESS",
-                    "hostileMutationIds": [mutations[len(invariant_rows) % len(mutations)]["id"]],
+                    "hostileMutationIds": [hostile_mutation],
                     "id": record["id"],
-                    "witnessScenarioIds": [scenario_ids[len(invariant_rows) % len(scenario_ids)]],
+                    "witnessScenarioIds": [witness_scenario],
                 }
             )
     exercised_outcomes = {
@@ -962,7 +1243,11 @@ def _coverage(
     }
     outcome_rows = []
     for primary in inventory["o10_primaries"]:
-        matching = [item["id"] for item in scenarios if item["steps"][0]["expectedOutcome"] == primary]
+        matching = [
+            item["id"]
+            for item in scenarios
+            if any(step["expectedOutcome"] == primary for step in item["steps"])
+        ]
         outcome_rows.append(
             {
                 "branch": "EXERCISED" if primary in exercised_outcomes else "UNREACHABLE_IN_TRANSCRIPT_ONLY_PROFILE",
@@ -1047,7 +1332,7 @@ def generate(repo_root: Path, output: Path) -> dict[str, Any]:
     scenarios = _scenarios(model, valid, invalid)
     vectors = {item["id"]: item for item in valid + invalid}
     traces = _traces(scenarios, vectors)
-    mutations = _mutations(invalid, inventory, reader)
+    mutations = _mutations(invalid, inventory, reader, scenarios)
     documents = {
         "valid-transcript-vectors.json": {"records": valid, "schema": "styx-c03-valid-transcripts/v1"},
         "invalid-transcript-vectors.json": {"records": invalid, "schema": "styx-c03-invalid-transcripts/v1"},

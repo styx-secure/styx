@@ -18,8 +18,14 @@ sys.path.insert(0, str(ROOT))
 
 from canonical_json import load, store  # noqa: E402
 from corpus_model import BaseReader, CorpusModelError, evaluate_vector, sha256_hex, validate_base_inputs  # noqa: E402
-from replay_corpus import _compute_step, _transition_index  # noqa: E402
-from validate_corpus import validate  # noqa: E402
+from replay_corpus import _transition_index, compute_trace  # noqa: E402
+from validate_corpus import (  # noqa: E402
+    EXPECTED_FILES,
+    ValidationError,
+    validate,
+    validate_file_manifest,
+    validate_source_coverage,
+)
 
 
 class MutationError(CorpusModelError):
@@ -31,19 +37,20 @@ def require(condition: bool, message: str) -> None:
         raise MutationError(message)
 
 
+def _validator_rejects(operation: Any) -> bool:
+    try:
+        operation()
+    except (ValidationError, CorpusModelError, KeyError, TypeError, ValueError):
+        return True
+    return False
+
+
 def _computed_trace(
     scenario: dict[str, Any],
     vectors: dict[str, dict[str, Any]],
     transitions: dict[tuple[str, str], dict[str, Any]],
 ) -> dict[str, Any]:
-    return {
-        "id": f"trace-{scenario['id']}",
-        "scenarioId": scenario["id"],
-        "steps": [
-            _compute_step(scenario, step, index, vectors[step["inputVectorId"]], transitions)
-            for index, step in enumerate(scenario["steps"])
-        ],
-    }
+    return compute_trace(scenario, vectors, transitions)
 
 
 def _python_kills(repo_root: Path, corpus: Path) -> dict[str, Any]:
@@ -59,6 +66,7 @@ def _python_kills(repo_root: Path, corpus: Path) -> dict[str, Any]:
     expected_by_id = {record["id"]: record for record in expected}
     mutations = load(corpus / "adversarial-mutations.json")["records"]
     manifest = load(corpus / "manifest.json")
+    documents = {name: load(corpus / name) for name in EXPECTED_FILES}
     manifest_files = {record["path"]: record for record in manifest["files"]}
     model = reader.json("docs/protocol/review/styx-app-kernel-v0-review-model.json")
     transitions = _transition_index(model)
@@ -88,37 +96,43 @@ def _python_kills(repo_root: Path, corpus: Path) -> dict[str, Any]:
             detected = observed["localOutcome"] == mutation["expectedOutcome"] and observed["stage"] == mutation["expectedStage"]
         elif detector == "INDEPENDENT_EXPECTED_STAGE_MISMATCH":
             corrupted = deepcopy(vectors[mutation["generatedTargetId"]])
-            corrupted["expected"]["firstFailingStage"] = "CORRUPTED_EXPECTED_STAGE"
+            corrupted["expected"]["firstFailingStage"] = "FINAL_AFTER_S6"
             detected = evaluate_vector(corrupted)["stage"] != corrupted["expected"]["firstFailingStage"]
         elif detector == "INDEPENDENT_EXPECTED_OUTCOME_MISMATCH":
             corrupted = deepcopy(vectors[mutation["generatedTargetId"]])
-            corrupted["expected"]["localOutcome"] = "CORRUPTED_EXPECTED_OUTCOME"
+            corrupted["expected"]["localOutcome"] = "APPLIED"
             detected = evaluate_vector(corrupted)["localOutcome"] != corrupted["expected"]["localOutcome"]
         elif detector == "INDEPENDENT_EXPECTED_TRACE_MISMATCH":
             scenario = scenario_by_trace[mutation["generatedTargetId"]]
             computed = _computed_trace(scenario, vectors, transitions)
             corrupted = deepcopy(expected_by_id[mutation["generatedTargetId"]])
-            corrupted["steps"][0]["localOutcome"] = "CORRUPTED_EXPECTED_OUTCOME"
+            corrupted["steps"][0]["localOutcome"] = "INVALID"
             detected = computed != corrupted
+        elif detector == "INVARIANT_WITNESS_TRACE_MISMATCH":
+            scenario = deepcopy(scenario_by_trace[mutation["generatedTargetId"]])
+            scenario["steps"][0]["inputVectorId"] = mutation["replacementVectorId"]
+            detected = _computed_trace(scenario, vectors, transitions) != expected_by_id[mutation["generatedTargetId"]]
         elif detector == "MANIFEST_DIGEST_MISMATCH":
-            row = deepcopy(manifest_files[mutation["generatedTargetId"]])
-            row["sha256"] = "0" * 64
-            detected = row["sha256"] != sha256_hex((corpus / row["path"]).read_bytes())
+            mutated_manifest = deepcopy(manifest)
+            row = next(item for item in mutated_manifest["files"] if item["path"] == mutation["generatedTargetId"])
+            alternatives = [item["sha256"] for item in mutated_manifest["files"] if item["path"] != row["path"]]
+            row["sha256"] = alternatives[0]
+            detected = _validator_rejects(lambda: validate_file_manifest(corpus, documents, mutated_manifest))
         elif detector == "O07_EXACT_RELATION_SET":
             target = mutation["generatedTargetId"]
-            original = set(manifest["coverage"]["o07"]["coveredRelationIds"])
-            mutated = original - {target}
-            detected = target in original and target in o07 and mutated != o07
+            mutated_manifest = deepcopy(manifest)
+            mutated_manifest["coverage"]["o07"]["coveredRelationIds"].remove(target)
+            detected = target in o07 and _validator_rejects(lambda: validate_source_coverage(reader, inventory, mutated_manifest["coverage"]))
         elif detector == "O08_EXACT_DIMENSION_SET":
             target = mutation["generatedTargetId"]
-            original = set(manifest["coverage"]["o08"]["participatingDimensions"])
-            mutated = original - {target}
-            detected = target in original and target in o08 and mutated != o08
+            mutated_manifest = deepcopy(manifest)
+            mutated_manifest["coverage"]["o08"]["participatingDimensions"].remove(target)
+            detected = target in o08 and _validator_rejects(lambda: validate_source_coverage(reader, inventory, mutated_manifest["coverage"]))
         elif detector == "O10_EXACT_SOURCE_ROW_SET":
             target = mutation["generatedTargetId"]
-            original = set(manifest["coverage"]["o10"]["coveredSourceRowIds"])
-            mutated = original - {target}
-            detected = target in original and target in o10 and mutated != o10
+            mutated_manifest = deepcopy(manifest)
+            mutated_manifest["coverage"]["o10"]["coveredSourceRowIds"].remove(target)
+            detected = target in o10 and _validator_rejects(lambda: validate_source_coverage(reader, inventory, mutated_manifest["coverage"]))
         require(detected, f"surviving Python mutation: {mutation['id']}")
         killed.append(mutation["id"])
     killed.sort()

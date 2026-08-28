@@ -18,7 +18,7 @@ class MutationTests(unittest.TestCase):
     def test_both_runtimes_kill_closed_registry(self) -> None:
         report = run(REPO, CORPUS)
         self.assertEqual(report["result"], "PASS")
-        self.assertEqual(report["killed"], 476)
+        self.assertEqual(report["killed"], 497)
         self.assertEqual(report["runtimes"], ["javascript", "python"])
         self.assertRegex(report["killDigest"], r"^[0-9a-f]{64}$")
 
@@ -35,8 +35,13 @@ class MutationTests(unittest.TestCase):
         self.assertEqual(counts["INDEPENDENT_EXPECTED_STAGE_MISMATCH"], 1)
         self.assertEqual(counts["INDEPENDENT_EXPECTED_OUTCOME_MISMATCH"], 1)
         self.assertEqual(counts["INDEPENDENT_EXPECTED_TRACE_MISMATCH"], 1)
+        self.assertEqual(counts["INVARIANT_WITNESS_TRACE_MISMATCH"], 21)
         identifiers = [record["id"] for record in records]
         self.assertEqual(identifiers, sorted(set(identifiers)))
+        semantic = [record for record in records if record.get("mutationClass") == "SEMANTIC_INVARIANT"]
+        self.assertEqual(len(semantic), 21)
+        self.assertEqual(len({record["violatedInvariant"] for record in semantic}), 21)
+        self.assertEqual(len({record["sourceRecordId"] for record in semantic}), 21)
 
 
 if __name__ == "__main__":

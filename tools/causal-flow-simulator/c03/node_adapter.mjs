@@ -263,16 +263,30 @@ function evaluate(record) {
       result.commitmentVerification = "VALID";
     }
   }
-  const rules = [["duplicate", "DUPLICATE", "S3_KERNEL_STRUCTURAL"],
-    ["missingDependency", "PENDING_ANCESTOR", "S4_GRAPH_ADMISSION"], ["fork", "FORK_EVIDENCE", "EVENT_LOCAL"], ["postRevocation", "POST_REVOCATION", "EVENT_LOCAL"]];
-  for (const [key, outcome, stage] of rules) if (record.conditions?.[key]) return reject(outcome, stage);
-  if (record.conditions?.authorized === false) return reject("AUTHENTIC_BUT_UNAUTHORIZED", "EVENT_LOCAL");
+  const admission = record.admissionContext ?? {};
+  if (admission === null || Array.isArray(admission) || typeof admission !== "object") return reject("STRUCTURAL_REJECTION", "S4_GRAPH_ADMISSION");
+  if ((admission.checkpointEvidenceReferences ?? []).length > 0) return reject("STRUCTURAL_REJECTION", "S4_GRAPH_ADMISSION");
+  if ((admission.seenEventReferences ?? []).includes(reference)) return reject("DUPLICATE", "S3_KERNEL_STRUCTURAL");
+  if ((admission.sameAuthorSequenceReferences ?? []).some(candidate => candidate !== reference)) return reject("FORK_EVIDENCE", "EVENT_LOCAL");
+  if (record.kind === "APPLICATION_EVENT") {
+    const dependencies = new Set(fields.causalParents);
+    if (fields.directPredecessorHex !== null) dependencies.add(fields.directPredecessorHex);
+    const available = new Set(admission.availableDependencyReferences ?? [...dependencies]);
+    if ([...dependencies].some(candidate => !available.has(candidate))) return reject("PENDING_ANCESTOR", "S4_GRAPH_ADMISSION");
+    if ((admission.revokedCredentialIdentifiers ?? []).includes(fields.credentialIdentifierHex)) return reject("POST_REVOCATION", "EVENT_LOCAL");
+    if (admission.authorizedCredentialIdentifiers !== undefined && !admission.authorizedCredentialIdentifiers.includes(fields.credentialIdentifierHex)) return reject("AUTHENTIC_BUT_UNAUTHORIZED", "EVENT_LOCAL");
+    if (fields.eventRole === "CREDENTIAL" && ["REVOKE", "ROTATE"].includes(fields.tail.kind)) {
+      const target = fields.tail.targetCredentialHex ?? fields.tail.retiringCredentialHex;
+      if (target === fields.credentialIdentifierHex) return reject("AUTHENTIC_BUT_UNAUTHORIZED", "EVENT_LOCAL");
+    }
+  }
   result.postStateDigest = hex(hash(Buffer.from(state, "hex"), Buffer.from(reference, "hex"))); return result;
 }
 
 function stateDigest(value) { return hex(hash(Buffer.from(value, "utf8"))); }
 
 function computeTrace(scenario, vectors, transitions) {
+  const availableEvidence = new Set();
   const steps = scenario.steps.map((step, index) => {
     const vector = vectors.get(step.inputVectorId); require(vector !== undefined, `unknown vector:${step.inputVectorId}`);
     const executed = step.executed ?? true, observed = executed ? evaluate(vector) : null;
@@ -292,19 +306,35 @@ function computeTrace(scenario, vectors, transitions) {
     }
     const postStateDigest = postState === "UNCHANGED" || !executed
       ? preStateDigest : stateDigest(`styx-c03/state/${scenario.id}/${postState}`);
-    return {
-      apAuthorityResult: executed ? "MODEL_SELECTED" : "NOT_EVALUATED",
-      causalClassification: step.transitionId ?? "FLOW_OR_COUNTEREXAMPLE",
+    const requirements = new Set(step.requiredPriorEvidence);
+    const dependencyStatus = [...requirements].every(value => availableEvidence.has(value)) ? "SATISFIED" : "MISSING";
+    let kBindingAdmission, apAuthorityResult;
+    if (!executed) {
+      kBindingAdmission = "NOT_EVALUATED"; apAuthorityResult = "NOT_EVALUATED";
+    } else if (observed.transcriptVerification !== "VALID" || observed.signatureVerification === "REJECTED" || ["CREDENTIAL_BINDING_MISMATCH", "REFERENCE_COLLISION_UNSUPPORTED"].includes(observed.localOutcome)) {
+      kBindingAdmission = "REJECTED"; apAuthorityResult = "NOT_REACHED";
+    } else {
+      kBindingAdmission = "ADMITTED"; apAuthorityResult = observed.localOutcome === "APPLIED" ? "APPLIED" : "REJECTED_OR_DEFERRED";
+    }
+    const result = {
+      actionDigest: hex(hash(Buffer.from(step.candidateAction, "utf8"))),
+      apAuthorityResult,
+      causalClassification: step.transitionId ?? `VECTOR:${vector.id}`,
       commitmentVerification: observed === null ? "NOT_PRESENT" : observed.commitmentVerification,
-      dependencyStatus: step.requiredPriorEvidence.length === 0 ? "SATISFIED" : "REQUIRED",
+      dependencyStatus,
+      evidenceConsumed: [...requirements].sort(),
+      evidenceProduced: step.providedEvidence ?? null,
+      executed,
       externalEffects: [], inputDigest: hex(hash(Buffer.from(vector.transcriptHex, "hex"))),
-      kBindingAdmission: executed ? "MODEL_SELECTED" : "NOT_EVALUATED", localOutcome,
+      kBindingAdmission, localOutcome,
       postStateDigest, preStateDigest, remoteClass: localOutcome === "APPLIED" ? "APPLIED" : "OPAQUE_REMOTE_FAILURE",
       signatureVerification: observed === null ? "NOT_EVALUATED" : observed.signatureVerification,
       stage, step: index, transcriptVerification: observed === null ? "NOT_EVALUATED" : observed.transcriptVerification,
     };
+    if (step.providedEvidence !== null && step.providedEvidence !== undefined) availableEvidence.add(step.providedEvidence);
+    return result;
   });
-  return { id: `trace-${scenario.id}`, scenarioId: scenario.id, steps };
+  return { id: `trace-${scenario.id}`, observationDigest: hex(hash(Buffer.from(canonical({ scenarioId: scenario.id, steps }), "utf8"))), scenarioId: scenario.id, steps };
 }
 
 function canonicalValue(value) {
@@ -316,6 +346,93 @@ function canonicalValue(value) {
 const canonical = value => `${JSON.stringify(canonicalValue(value))}\n`;
 function loadCanonical(path) { const bytes = readFileSync(path, "utf8"); const value = JSON.parse(bytes); require(canonical(value) === bytes, `NONCANONICAL_JSON:${path}`); return value; }
 function setEqual(left, right) { return left.size === right.size && [...left].every(value => right.has(value)); }
+function validateSourceCoverage(coverage, o07, o08, excludedO08, o10) {
+  require(coverage.o07.relationCount === o07.size && coverage.o07.coveredRelationIds.length === o07.size && setEqual(new Set(coverage.o07.coveredRelationIds), o07), "O-07 coverage mismatch");
+  require(coverage.o08.participatingDimensions.length === o08.size && setEqual(new Set(coverage.o08.participatingDimensions), o08), "O-08 participating coverage mismatch");
+  require(coverage.o08.excludedDimensions.length === excludedO08.size && setEqual(new Set(coverage.o08.excludedDimensions), excludedO08), "O-08 excluded coverage mismatch");
+  require(coverage.o10.coveredSourceRowIds.length === o10.size && setEqual(new Set(coverage.o10.coveredSourceRowIds), o10), "O-10 source coverage mismatch");
+}
+function validateFileManifest(corpus, manifest) {
+  const names = ["adversarial-mutations.json", "expected-traces.json", "invalid-transcript-vectors.json", "state-machine-scenarios.json", "valid-transcript-vectors.json"];
+  const expected = names.map(path => ({ path, recordCount: loadCanonical(resolve(corpus, path)).records.length, sha256: hex(hash(readFileSync(resolve(corpus, path)))) }));
+  require(JSON.stringify(canonicalValue(manifest.files)) === JSON.stringify(canonicalValue(expected)), "manifest file digests/counts mismatch");
+}
+function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, mutations, valid, invalid) {
+  const coverage = manifest.coverage;
+  const scenarioIds = new Set(scenarios.map(row => row.id));
+  const vectorIds = new Set([...valid, ...invalid].map(row => row.id));
+  const usedVectorIds = new Set();
+  for (const scenario of scenarios) {
+    const available = new Set();
+    require(Array.isArray(scenario.steps) && scenario.steps.length > 0, `empty scenario:${scenario.id}`);
+    for (const step of scenario.steps) {
+      require(vectorIds.has(step.inputVectorId), `unknown vector:${scenario.id}:${step.inputVectorId}`);
+      usedVectorIds.add(step.inputVectorId);
+      require(step.requiredPriorEvidence.every(value => available.has(value)), `unsatisfied evidence:${scenario.id}`);
+      require(typeof step.providedEvidence === "string" && step.providedEvidence.length > 0 && !available.has(step.providedEvidence), `invalid produced evidence:${scenario.id}`);
+      available.add(step.providedEvidence);
+    }
+  }
+  require(setEqual(usedVectorIds, vectorIds), "vector execution coverage mismatch");
+
+  const counterexamples = new Map(model.counterexamples.map(row => [row.id, row]));
+  const counterexampleScenarios = scenarios.filter(row => row.counterexampleId !== undefined);
+  require(counterexampleScenarios.length === counterexamples.size && counterexampleScenarios.every(row => counterexamples.has(row.counterexampleId)), "counterexample scenario coverage mismatch");
+  for (const scenario of counterexampleScenarios) {
+    require(scenario.steps.length === 3 && scenario.steps.every(step => step.executed !== false), `counterexample execution mismatch:${scenario.counterexampleId}`);
+    require(JSON.stringify(scenario.steps.map(step => step.candidateAction)) === JSON.stringify(counterexamples.get(scenario.counterexampleId).steps), `counterexample program mismatch:${scenario.counterexampleId}`);
+  }
+  const traceByScenario = new Map(traces.map(row => [row.scenarioId, row]));
+  const observations = counterexampleScenarios.map(row => traceByScenario.get(row.id).observationDigest);
+  require(new Set(observations).size === observations.length, "counterexample observation collision");
+
+  const expectedCounterexamples = model.counterexamples.map(row => ({ id: row.id, scenarioId: `scenario-counterexample-${row.id.toLowerCase()}` }));
+  require(JSON.stringify(canonicalValue(coverage.counterexamples)) === JSON.stringify(canonicalValue(expectedCounterexamples)), "counterexample coverage relation mismatch");
+  const excludedFlows = new Set(["secure_session_receive", "secure_session_send", "transport_publish"]);
+  const expectedFlows = model.flows.map(row => ({ branch: excludedFlows.has(row.id) ? "BOUNDARY_NOT_EXECUTED" : "EXECUTED", id: row.id, scenarioId: `scenario-flow-${row.id}` }));
+  require(JSON.stringify(canonicalValue(coverage.flows)) === JSON.stringify(canonicalValue(expectedFlows)), "flow coverage relation mismatch");
+
+  const mutationById = new Map(mutations.map(row => [row.id, row]));
+  const expectedNonExecutable = new Set(["INV_C0_3_NO_GO", "INV_SOURCE_AUTHORITY"]);
+  const invariantRows = new Map(coverage.invariants.map(row => [row.id, row]));
+  require(invariantRows.size === model.invariants.length && model.invariants.every(row => invariantRows.has(row.id)), "invariant coverage mismatch");
+  const witnesses = new Set(), hostileMutations = new Set();
+  for (const invariant of model.invariants) {
+    const row = invariantRows.get(invariant.id);
+    if (expectedNonExecutable.has(invariant.id)) {
+      require(row.branch === "NON_EXECUTABLE_NON_CLAIM" && Array.isArray(row.citations) && row.citations.length > 0 && typeof row.reason === "string" && row.reason.length > 0, `invalid non-executable invariant:${invariant.id}`);
+      continue;
+    }
+    require(row.branch === "EXECUTABLE_WITNESS" && row.witnessScenarioIds.length === 1 && row.hostileMutationIds.length === 1, `non-atomic invariant evidence:${invariant.id}`);
+    const witnessId = row.witnessScenarioIds[0], mutationId = row.hostileMutationIds[0];
+    require(!witnesses.has(witnessId) && !hostileMutations.has(mutationId), `shared sole invariant evidence:${invariant.id}`);
+    witnesses.add(witnessId); hostileMutations.add(mutationId);
+    const witness = scenarios.find(item => item.id === witnessId), mutation = mutationById.get(mutationId);
+    require(witness?.exercisedInvariantIds?.length === 1 && witness.exercisedInvariantIds[0] === invariant.id, `invariant witness semantic mismatch:${invariant.id}`);
+    require(mutation?.mutationClass === "SEMANTIC_INVARIANT" && mutation.violatedInvariant === invariant.id && mutation.sourceRecordId === witnessId && mutation.generatedTargetId === `trace-${witnessId}`, `invariant mutation semantic mismatch:${invariant.id}`);
+  }
+  require(!mutations.some(row => row.mutationClass?.startsWith("SEMANTIC") && expectedNonExecutable.has(row.violatedInvariant)), "non-executable invariant claimed by mutation");
+
+  const expectedStates = model.state_models.flatMap(machine => machine.states.map(state => `${machine.id}:${state}`)).sort();
+  const expectedTerminal = model.state_models.flatMap(machine => (machine.terminal_states ?? []).map(state => `${machine.id}:${state}`)).sort();
+  const expectedTransitions = model.state_models.flatMap(machine => machine.transitions.map(transition => {
+    const matches = scenarios.filter(scenario => scenario.modelId === machine.id && scenario.steps.some(step => step.transitionId === transition.id));
+    require(matches.length === 1, `transition witness cardinality:${machine.id}:${transition.id}`);
+    return { id: `${machine.id}:${transition.id}`, scenarioId: matches[0].id };
+  })).sort((a, b) => a.id.localeCompare(b.id));
+  require(JSON.stringify(coverage.states) === JSON.stringify(expectedStates), "state coverage relation mismatch");
+  require(JSON.stringify(coverage.terminalStates) === JSON.stringify(expectedTerminal), "terminal-state coverage relation mismatch");
+  require(JSON.stringify(canonicalValue(coverage.transitions)) === JSON.stringify(canonicalValue(expectedTransitions)), "transition coverage relation mismatch");
+
+  const inventory = JSON.parse(readFileSync(resolve(repoRoot, "tools/causal-flow-simulator/c03/corpus-inventory.json"), "utf8"));
+  require(JSON.stringify(canonicalValue(coverage.o10.alias)) === JSON.stringify(canonicalValue(inventory.o10_alias)), "O-10 alias mismatch");
+  const expectedOutcomes = inventory.o10_primaries.map(outcome => {
+    const matching = scenarios.filter(scenario => scenario.steps.some(step => step.expectedOutcome === outcome)).map(row => row.id);
+    return { branch: matching.length > 0 ? "EXERCISED" : "UNREACHABLE_IN_TRANSCRIPT_ONLY_PROFILE", citations: [{ anchor: "## Primary registry", path: "docs/protocol/styx-app-kernel-v0-outcome-taxonomy.md" }], id: outcome, scenarioIds: matching };
+  });
+  expectedOutcomes.push(...inventory.o10_post_c03_markers.map(marker => ({ branch: "UNREACHABLE_IN_TRANSCRIPT_ONLY_PROFILE", citations: [{ anchor: "## Closed cardinalities", path: "docs/protocol/styx-app-kernel-v0-outcome-taxonomy.md" }], id: marker, scenarioIds: [] })));
+  require(JSON.stringify(canonicalValue(coverage.o10.outcomes)) === JSON.stringify(canonicalValue(expectedOutcomes)), "O-10 outcome coverage mismatch");
+}
 function parseArgs() { const args = process.argv.slice(2), values = {}; for (let i = 0; i < args.length; i += 2) values[args[i]] = args[i + 1]; for (const key of ["--repo-root", "--corpus", "--output"]) require(values[key], `missing ${key}`); return values; }
 
 function baseJson(repoRoot, path) {
@@ -332,6 +449,7 @@ function mutationReport(args, corpus, valid, invalid, scenarios, expected, model
   const o07 = new Set(baseJson(resolve(args["--repo-root"]), "tools/causal-flow-simulator/o07/required_atom_instances_v1.json").rows.map(row => row.atom_instance_id));
   const envelope = baseJson(resolve(args["--repo-root"]), "tools/causal-flow-simulator/o08/resource-envelope.candidate.json");
   const o08 = new Set(Object.entries(envelope.entries).filter(([, entry]) => ["C03_SEMANTIC_LIMIT", "C03_ACTIVATION_CAPABILITY_INPUT", "C03_EXPLICIT_ZERO_OR_UNSUPPORTED"].includes(entry.role)).map(([id]) => id));
+  const excludedO08 = new Set(Object.entries(envelope.entries).filter(([, entry]) => ["POST_C03_LAYER_PROFILE", "EVIDENCE_ONLY"].includes(entry.role)).map(([id]) => id));
   const o10 = new Set(baseJson(resolve(args["--repo-root"]), "tools/causal-flow-simulator/o10/source-inventory.json").rows.map(row => row.row_id));
   const manifestFiles = new Map(manifest.files.map(row => [row.path, row]));
   const killed = [];
@@ -342,30 +460,37 @@ function mutationReport(args, corpus, valid, invalid, scenarios, expected, model
       detected = observed.localOutcome === mutation.expectedOutcome && observed.stage === mutation.expectedStage;
     } else if (mutation.detector === "INDEPENDENT_EXPECTED_STAGE_MISMATCH") {
       const corrupted = structuredClone(vectors.get(mutation.generatedTargetId));
-      corrupted.expected.firstFailingStage = "CORRUPTED_EXPECTED_STAGE";
+      corrupted.expected.firstFailingStage = "FINAL_AFTER_S6";
       detected = evaluate(corrupted).stage !== corrupted.expected.firstFailingStage;
     } else if (mutation.detector === "INDEPENDENT_EXPECTED_OUTCOME_MISMATCH") {
       const corrupted = structuredClone(vectors.get(mutation.generatedTargetId));
-      corrupted.expected.localOutcome = "CORRUPTED_EXPECTED_OUTCOME";
+      corrupted.expected.localOutcome = "APPLIED";
       detected = evaluate(corrupted).localOutcome !== corrupted.expected.localOutcome;
     } else if (mutation.detector === "INDEPENDENT_EXPECTED_TRACE_MISMATCH") {
       const scenario = scenarioByTrace.get(mutation.generatedTargetId), computed = computeTrace(scenario, vectors, transitions);
       const corrupted = structuredClone(expectedById.get(mutation.generatedTargetId));
-      corrupted.steps[0].localOutcome = "CORRUPTED_EXPECTED_OUTCOME";
+      corrupted.steps[0].localOutcome = "INVALID";
       detected = JSON.stringify(canonicalValue(computed)) !== JSON.stringify(canonicalValue(corrupted));
+    } else if (mutation.detector === "INVARIANT_WITNESS_TRACE_MISMATCH") {
+      const scenario = structuredClone(scenarioByTrace.get(mutation.generatedTargetId));
+      scenario.steps[0].inputVectorId = mutation.replacementVectorId;
+      detected = JSON.stringify(canonicalValue(computeTrace(scenario, vectors, transitions))) !== JSON.stringify(canonicalValue(expectedById.get(mutation.generatedTargetId)));
     } else if (mutation.detector === "MANIFEST_DIGEST_MISMATCH") {
-      const row = structuredClone(manifestFiles.get(mutation.generatedTargetId));
-      row.sha256 = "0".repeat(64);
-      detected = row.sha256 !== hex(hash(readFileSync(resolve(corpus, row.path))));
+      const mutated = structuredClone(manifest), row = mutated.files.find(item => item.path === mutation.generatedTargetId);
+      row.sha256 = mutated.files.find(item => item.path !== row.path).sha256;
+      try { validateFileManifest(corpus, mutated); } catch { detected = true; }
     } else if (mutation.detector === "O07_EXACT_RELATION_SET") {
-      const target = mutation.generatedTargetId, original = new Set(manifest.coverage.o07.coveredRelationIds), mutated = new Set([...original].filter(value => value !== target));
-      detected = original.has(target) && o07.has(target) && !setEqual(mutated, o07);
+      const target = mutation.generatedTargetId, mutated = structuredClone(manifest);
+      mutated.coverage.o07.coveredRelationIds = mutated.coverage.o07.coveredRelationIds.filter(value => value !== target);
+      try { validateSourceCoverage(mutated.coverage, o07, o08, excludedO08, o10); } catch { detected = o07.has(target); }
     } else if (mutation.detector === "O08_EXACT_DIMENSION_SET") {
-      const target = mutation.generatedTargetId, original = new Set(manifest.coverage.o08.participatingDimensions), mutated = new Set([...original].filter(value => value !== target));
-      detected = original.has(target) && o08.has(target) && !setEqual(mutated, o08);
+      const target = mutation.generatedTargetId, mutated = structuredClone(manifest);
+      mutated.coverage.o08.participatingDimensions = mutated.coverage.o08.participatingDimensions.filter(value => value !== target);
+      try { validateSourceCoverage(mutated.coverage, o07, o08, excludedO08, o10); } catch { detected = o08.has(target); }
     } else if (mutation.detector === "O10_EXACT_SOURCE_ROW_SET") {
-      const target = mutation.generatedTargetId, original = new Set(manifest.coverage.o10.coveredSourceRowIds), mutated = new Set([...original].filter(value => value !== target));
-      detected = original.has(target) && o10.has(target) && !setEqual(mutated, o10);
+      const target = mutation.generatedTargetId, mutated = structuredClone(manifest);
+      mutated.coverage.o10.coveredSourceRowIds = mutated.coverage.o10.coveredSourceRowIds.filter(value => value !== target);
+      try { validateSourceCoverage(mutated.coverage, o07, o08, excludedO08, o10); } catch { detected = o10.has(target); }
     }
     require(detected, `surviving mutation:${mutation.id}`); killed.push(mutation.id);
   }
@@ -381,7 +506,10 @@ function main() {
   for (const record of invalid) { const observed = evaluate(record); require(observed.localOutcome === record.expected.localOutcome && observed.stage === record.expected.firstFailingStage, `invalid mismatch:${record.id}`); require(observed.preStateDigest === observed.postStateDigest && observed.externalEffects.length === 0, `invalid side effect:${record.id}`); }
   const scenarios = loadCanonical(resolve(corpus, "state-machine-scenarios.json")).records;
   const expected = loadCanonical(resolve(corpus, "expected-traces.json")).records;
+  const manifest = loadCanonical(resolve(corpus, "manifest.json"));
+  const mutations = loadCanonical(resolve(corpus, "adversarial-mutations.json")).records;
   const model = baseJson(resolve(args["--repo-root"]), "docs/protocol/review/styx-app-kernel-v0-review-model.json");
+  validateCorpusRelations(resolve(args["--repo-root"]), manifest, model, scenarios, expected, mutations, valid, invalid);
   if (args["--mode"] === "mutations") {
     writeFileSync(resolve(args["--output"]), canonical(mutationReport(args, corpus, valid, invalid, scenarios, expected, model)), { flag: "wx" });
     return;
@@ -394,6 +522,13 @@ function main() {
     require(JSON.stringify(canonicalValue(computed)) === JSON.stringify(canonicalValue(oracle)), `trace mismatch:${scenario.id}`);
   }
   require(scenarios.length === expected.length, "unexpected expected trace");
+  const o07 = new Set(baseJson(resolve(args["--repo-root"]), "tools/causal-flow-simulator/o07/required_atom_instances_v1.json").rows.map(row => row.atom_instance_id));
+  const envelope = baseJson(resolve(args["--repo-root"]), "tools/causal-flow-simulator/o08/resource-envelope.candidate.json");
+  const o08 = new Set(Object.entries(envelope.entries).filter(([, entry]) => ["C03_SEMANTIC_LIMIT", "C03_ACTIVATION_CAPABILITY_INPUT", "C03_EXPLICIT_ZERO_OR_UNSUPPORTED"].includes(entry.role)).map(([id]) => id));
+  const excludedO08 = new Set(Object.entries(envelope.entries).filter(([, entry]) => ["POST_C03_LAYER_PROFILE", "EVIDENCE_ONLY"].includes(entry.role)).map(([id]) => id));
+  const o10 = new Set(baseJson(resolve(args["--repo-root"]), "tools/causal-flow-simulator/o10/source-inventory.json").rows.map(row => row.row_id));
+  validateSourceCoverage(manifest.coverage, o07, o08, excludedO08, o10);
+  validateFileManifest(corpus, manifest);
   const names = ["adversarial-mutations.json", "expected-traces.json", "invalid-transcript-vectors.json", "manifest.json", "state-machine-scenarios.json", "valid-transcript-vectors.json"];
   const corpusDigest = hex(hash(...names.map(name => readFileSync(resolve(corpus, name)))));
   const report = { corpusDigest, invalidVectors: invalid.length, result: "PASS", scenarios: scenarios.length,

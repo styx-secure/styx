@@ -9,11 +9,15 @@ Python and Node.js readers independently parse, verify and replay ordinary
 corpus inputs; expected results are compared only after execution. The mutation
 runner requires both implementations to kill the complete closed registry.
 The tracked package currently contains 17 valid and 26 invalid transcript
-vectors, 46 state/flow/counterexample scenarios and 476 mutations. Transcript
-mutants alter bytes or bindings. Coverage, manifest and expected-result mutants
-alter the corresponding submitted evidence and are killed by exact-set,
-digest or independently computed-result comparison; none is a count-only
-assertion.
+vectors, 114 state/flow/counterexample/vector/invariant/history scenarios and
+497 mutations. Transcript bytes and signatures are evaluated independently in
+Python and JavaScript. The mutation registry separates 26 hostile-input
+mutations, 21 one-to-one invariant-witness substitutions, three legal
+expected-result substitutions, 442 exact source-relation removals and five
+manifest-digest substitutions. Source-relation and manifest mutations are
+materialized and rejected by the same validators used for the unmodified
+corpus; they are evidence-integrity tests and are not credited as semantic
+invariant witnesses.
 
 From the repository root:
 
