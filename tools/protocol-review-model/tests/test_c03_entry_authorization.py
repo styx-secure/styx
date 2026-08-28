@@ -82,6 +82,11 @@ class C03EntryAuthorizationTests(unittest.TestCase):
                     corpus / "manifest.json",
                     self._remove_first_invariant,
                 ),
+                (
+                    "manifest-record-count",
+                    corpus / "manifest.json",
+                    self._increment_first_record_count,
+                ),
                 ("cross-runtime-result", tools / "node_adapter.mjs", None),
                 ("mutation-gate", tools / "run_mutations.py", None),
             )
@@ -105,6 +110,15 @@ class C03EntryAuthorizationTests(unittest.TestCase):
     def _remove_first_invariant(payload: bytes) -> bytes:
         document = json.loads(payload)
         del document["coverage"]["invariants"][0]
+        return (
+            json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            + "\n"
+        ).encode("utf-8")
+
+    @staticmethod
+    def _increment_first_record_count(payload: bytes) -> bytes:
+        document = json.loads(payload)
+        document["files"][0]["recordCount"] += 1
         return (
             json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
             + "\n"

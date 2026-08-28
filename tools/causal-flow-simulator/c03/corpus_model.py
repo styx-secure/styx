@@ -9,6 +9,8 @@ from pathlib import Path
 import subprocess
 from typing import Any
 
+from canonical_json import dumps
+
 
 BASE_SHA = "7768c32d3ddba230bd60f8b5db1b34d4bcb8ec3b"
 ENTRY_ROLES = frozenset(
@@ -76,6 +78,55 @@ NONEXECUTABLE_INVARIANTS = frozenset(
         "INV_SOURCE_AUTHORITY",
     }
 )
+SEMANTIC_OBSERVATION_FIELDS = (
+    "apAuthorityResult",
+    "commitmentVerification",
+    "dependencyStatus",
+    "executed",
+    "externalEffects",
+    "inputDigest",
+    "kBindingAdmission",
+    "localOutcome",
+    "remoteClass",
+    "signatureVerification",
+    "stage",
+    "transcriptVerification",
+)
+NONSEMANTIC_VECTOR_FIELDS = frozenset(
+    {"citations", "expected", "id", "mutation", "sourceVectorId", "synthetic", "testOnly"}
+)
+
+
+def semantic_input_digest(vector: dict[str, Any]) -> str:
+    """Bind the complete candidate input while excluding corpus bookkeeping."""
+
+    projection = {
+        key: value
+        for key, value in vector.items()
+        if key not in NONSEMANTIC_VECTOR_FIELDS
+    }
+    return sha256(dumps(projection)).hexdigest()
+
+
+def semantic_observation_digest(steps: list[dict[str, Any]]) -> str:
+    """Hash only computed protocol observations, never scenario identity."""
+
+    projection = [
+        {field: step[field] for field in SEMANTIC_OBSERVATION_FIELDS}
+        for step in steps
+    ]
+    return sha256(dumps(projection)).hexdigest()
+
+
+def transition_input_is_compatible(result: dict[str, Any]) -> bool:
+    """A model transition may refine only a fully admitted transcript input."""
+
+    return (
+        result.get("localOutcome") == "APPLIED"
+        and result.get("stage") == "FINAL_AFTER_S6"
+        and result.get("transcriptVerification") == "VALID"
+        and result.get("signatureVerification") == "VALID"
+    )
 
 
 def _uint(value: int, width: int, label: str) -> bytes:
@@ -896,6 +947,16 @@ def validate_inventory(repo_root: Path) -> dict[str, Any]:
         actual = _ids(model.get(key), key)
         if len(actual) != count or actual != expected_ids[key]:
             raise CorpusModelError(f"closed review-model set mismatch: {key}")
+
+    invariant_witnesses = inventory.get("invariant_witness_vectors")
+    executable_invariants = set(expected_ids["invariants"]) - NONEXECUTABLE_INVARIANTS
+    if (
+        not isinstance(invariant_witnesses, dict)
+        or set(invariant_witnesses) != executable_invariants
+        or not all(isinstance(value, str) and value for value in invariant_witnesses.values())
+        or len(set(invariant_witnesses.values())) != len(invariant_witnesses)
+    ):
+        raise CorpusModelError("invariant witness-vector relation mismatch")
 
     envelope = reader.json("tools/causal-flow-simulator/o08/resource-envelope.candidate.json")
     entries = envelope.get("entries")

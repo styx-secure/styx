@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 import sys
 import unittest
@@ -11,7 +12,8 @@ CORPUS = REPO / "conformance/application-protocol/c03"
 sys.path.insert(0, str(ROOT))
 
 from canonical_json import load  # noqa: E402
-from replay_corpus import replay  # noqa: E402
+from corpus_model import BaseReader, CorpusModelError  # noqa: E402
+from replay_corpus import _transition_index, compute_trace, replay  # noqa: E402
 
 
 class ReplayTests(unittest.TestCase):
@@ -43,6 +45,28 @@ class ReplayTests(unittest.TestCase):
                 step_count += 1
         self.assertEqual(step_count, sum(len(scenario["steps"]) for scenario in scenarios))
         self.assertGreater(step_count, len(scenarios))
+
+    def test_missing_dependency_is_exercised(self) -> None:
+        traces = load(CORPUS / "expected-traces.json")["records"]
+        missing = [
+            step
+            for trace in traces
+            for step in trace["steps"]
+            if step["dependencyStatus"] == "MISSING"
+        ]
+        self.assertTrue(missing)
+        self.assertTrue(all(step["localOutcome"] == "PENDING_ANCESTOR" for step in missing))
+
+    def test_transition_rejects_an_incompatible_vector(self) -> None:
+        scenarios = load(CORPUS / "state-machine-scenarios.json")["records"]
+        scenario = deepcopy(next(row for row in scenarios if row["steps"][0]["transitionId"] is not None))
+        scenario["steps"][0]["inputVectorId"] = "inv-signature"
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+        vectors = {row["id"]: row for row in valid + invalid}
+        model = BaseReader(REPO).json("docs/protocol/review/styx-app-kernel-v0-review-model.json")
+        with self.assertRaisesRegex(CorpusModelError, "incompatible transition input"):
+            compute_trace(scenario, vectors, _transition_index(model))
 
     def test_vectors_cover_identity_parent_and_selected_resource_boundaries(self) -> None:
         valid = load(CORPUS / "valid-transcript-vectors.json")["records"]

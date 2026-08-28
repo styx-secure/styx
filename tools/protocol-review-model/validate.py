@@ -2590,23 +2590,35 @@ def _validate_c03_corpus_gate(repo_root: Path) -> list[Finding]:
         canonical_counts: dict[str, int] = {}
         minimum_counts = {
             "validVectors": 17,
-            "invalidVectors": 26,
-            "scenarios": 114,
-            "mutations": 497,
+            "invalidVectors": 29,
+            "scenarios": 118,
+            "mutations": 501,
         }
+        manifest = load_json_unique(corpus / "manifest.json")
+        manifest_files = manifest.get("files")
+        if not isinstance(manifest_files, list):
+            raise ValueError("canonical corpus manifest file inventory is missing")
+        manifest_counts = {
+            row.get("path"): row.get("recordCount")
+            for row in manifest_files
+            if isinstance(row, dict)
+        }
+        if set(manifest_counts) != C03_CORPUS_FILES - {"manifest.json"}:
+            raise ValueError("canonical corpus manifest file inventory mismatch")
         for label, filename in (
             ("validVectors", "valid-transcript-vectors.json"),
             ("invalidVectors", "invalid-transcript-vectors.json"),
             ("scenarios", "state-machine-scenarios.json"),
             ("mutations", "adversarial-mutations.json"),
         ):
-            records = load_json_unique(corpus / filename).get("records")
+            record_count = manifest_counts.get(filename)
             if (
-                not isinstance(records, list)
-                or len(records) < minimum_counts[label]
+                isinstance(record_count, bool)
+                or not isinstance(record_count, int)
+                or record_count < minimum_counts[label]
             ):
                 raise ValueError(f"canonical {label} coverage is incomplete")
-            canonical_counts[label] = len(records)
+            canonical_counts[label] = record_count
         environment = os.environ.copy()
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         environment.pop("PYTHONOPTIMIZE", None)

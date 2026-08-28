@@ -284,6 +284,26 @@ function evaluate(record) {
 }
 
 function stateDigest(value) { return hex(hash(Buffer.from(value, "utf8"))); }
+const SEMANTIC_OBSERVATION_FIELDS = Object.freeze([
+  "apAuthorityResult", "commitmentVerification", "dependencyStatus", "executed",
+  "externalEffects", "inputDigest", "kBindingAdmission", "localOutcome",
+  "remoteClass", "signatureVerification", "stage", "transcriptVerification",
+]);
+const NONSEMANTIC_VECTOR_FIELDS = new Set([
+  "citations", "expected", "id", "mutation", "sourceVectorId", "synthetic", "testOnly",
+]);
+function semanticInputDigest(vector) {
+  const projection = Object.fromEntries(Object.entries(vector).filter(([key]) => !NONSEMANTIC_VECTOR_FIELDS.has(key)));
+  return hex(hash(Buffer.from(canonical(projection), "utf8")));
+}
+function semanticObservationDigest(steps) {
+  const projection = steps.map(step => Object.fromEntries(SEMANTIC_OBSERVATION_FIELDS.map(field => [field, step[field]])));
+  return hex(hash(Buffer.from(canonical(projection), "utf8")));
+}
+function transitionInputIsCompatible(observed) {
+  return observed?.localOutcome === "APPLIED" && observed?.stage === "FINAL_AFTER_S6"
+    && observed?.transcriptVerification === "VALID" && observed?.signatureVerification === "VALID";
+}
 
 function computeTrace(scenario, vectors, transitions) {
   const availableEvidence = new Set();
@@ -297,6 +317,7 @@ function computeTrace(scenario, vectors, transitions) {
       localOutcome = scenario.id === "scenario-flow-transport_publish" ? "TRANSPORT_PROFILE_REQUIRED" : "SESSION_PROFILE_REQUIRED";
       stage = "BOUNDARY_NOT_EXECUTED"; postState = "UNCHANGED";
     } else if (step.transitionId !== null) {
+      require(transitionInputIsCompatible(observed), `incompatible transition input:${scenario.id}:${index}`);
       const transition = transitions.get(`${scenario.modelId}:${step.transitionId}`);
       require(transition !== undefined && transition.from.includes(step.preState), `transition mismatch:${scenario.id}:${index}`);
       localOutcome = transition.outcome; stage = "MODEL_TRANSITION"; postState = transition.to;
@@ -308,6 +329,7 @@ function computeTrace(scenario, vectors, transitions) {
       ? preStateDigest : stateDigest(`styx-c03/state/${scenario.id}/${postState}`);
     const requirements = new Set(step.requiredPriorEvidence);
     const dependencyStatus = [...requirements].every(value => availableEvidence.has(value)) ? "SATISFIED" : "MISSING";
+    require(dependencyStatus === step.expectedDependencyStatus, `dependency status mismatch:${scenario.id}:${index}`);
     let kBindingAdmission, apAuthorityResult;
     if (!executed) {
       kBindingAdmission = "NOT_EVALUATED"; apAuthorityResult = "NOT_EVALUATED";
@@ -325,7 +347,7 @@ function computeTrace(scenario, vectors, transitions) {
       evidenceConsumed: [...requirements].sort(),
       evidenceProduced: step.providedEvidence ?? null,
       executed,
-      externalEffects: [], inputDigest: hex(hash(Buffer.from(vector.transcriptHex, "hex"))),
+      externalEffects: [], inputDigest: semanticInputDigest(vector),
       kBindingAdmission, localOutcome,
       postStateDigest, preStateDigest, remoteClass: localOutcome === "APPLIED" ? "APPLIED" : "OPAQUE_REMOTE_FAILURE",
       signatureVerification: observed === null ? "NOT_EVALUATED" : observed.signatureVerification,
@@ -334,7 +356,13 @@ function computeTrace(scenario, vectors, transitions) {
     if (step.providedEvidence !== null && step.providedEvidence !== undefined) availableEvidence.add(step.providedEvidence);
     return result;
   });
-  return { id: `trace-${scenario.id}`, observationDigest: hex(hash(Buffer.from(canonical({ scenarioId: scenario.id, steps }), "utf8"))), scenarioId: scenario.id, steps };
+  return {
+    id: `trace-${scenario.id}`,
+    observationDigest: hex(hash(Buffer.from(canonical({ scenarioId: scenario.id, steps }), "utf8"))),
+    scenarioId: scenario.id,
+    semanticObservationDigest: semanticObservationDigest(steps),
+    steps,
+  };
 }
 
 function canonicalValue(value) {
@@ -359,6 +387,12 @@ function validateFileManifest(corpus, manifest) {
 }
 function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, mutations, valid, invalid) {
   const coverage = manifest.coverage;
+  const inventory = JSON.parse(readFileSync(resolve(repoRoot, "tools/causal-flow-simulator/c03/corpus-inventory.json"), "utf8"));
+  const nonExecutableInvariants = new Set(["INV_C0_3_NO_GO", "INV_SOURCE_AUTHORITY"]);
+  const executableInvariantIds = new Set(model.invariants.map(row => row.id).filter(id => !nonExecutableInvariants.has(id)));
+  const inventoriedInvariantIds = new Set(Object.keys(inventory.invariant_witness_vectors ?? {}));
+  require(setEqual(executableInvariantIds, inventoriedInvariantIds), "invariant witness inventory mismatch");
+  require(new Set(Object.values(inventory.invariant_witness_vectors)).size === executableInvariantIds.size, "shared inventoried invariant witness vector");
   const scenarioIds = new Set(scenarios.map(row => row.id));
   const vectorIds = new Set([...valid, ...invalid].map(row => row.id));
   const usedVectorIds = new Set();
@@ -368,12 +402,21 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
     for (const step of scenario.steps) {
       require(vectorIds.has(step.inputVectorId), `unknown vector:${scenario.id}:${step.inputVectorId}`);
       usedVectorIds.add(step.inputVectorId);
-      require(step.requiredPriorEvidence.every(value => available.has(value)), `unsatisfied evidence:${scenario.id}`);
+      const dependencyStatus = step.requiredPriorEvidence.every(value => available.has(value)) ? "SATISFIED" : "MISSING";
+      require(step.expectedDependencyStatus === dependencyStatus, `dependency expectation mismatch:${scenario.id}`);
       require(typeof step.providedEvidence === "string" && step.providedEvidence.length > 0 && !available.has(step.providedEvidence), `invalid produced evidence:${scenario.id}`);
       available.add(step.providedEvidence);
     }
   }
   require(setEqual(usedVectorIds, vectorIds), "vector execution coverage mismatch");
+
+  for (const trace of traces) {
+    require(
+      trace.observationDigest === hex(hash(Buffer.from(canonical({ scenarioId: trace.scenarioId, steps: trace.steps }), "utf8"))),
+      `trace observation mismatch:${trace.id}`,
+    );
+    require(trace.semanticObservationDigest === semanticObservationDigest(trace.steps), `semantic observation mismatch:${trace.id}`);
+  }
 
   const counterexamples = new Map(model.counterexamples.map(row => [row.id, row]));
   const counterexampleScenarios = scenarios.filter(row => row.counterexampleId !== undefined);
@@ -383,7 +426,7 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
     require(JSON.stringify(scenario.steps.map(step => step.candidateAction)) === JSON.stringify(counterexamples.get(scenario.counterexampleId).steps), `counterexample program mismatch:${scenario.counterexampleId}`);
   }
   const traceByScenario = new Map(traces.map(row => [row.scenarioId, row]));
-  const observations = counterexampleScenarios.map(row => traceByScenario.get(row.id).observationDigest);
+  const observations = counterexampleScenarios.map(row => traceByScenario.get(row.id).semanticObservationDigest);
   require(new Set(observations).size === observations.length, "counterexample observation collision");
 
   const expectedCounterexamples = model.counterexamples.map(row => ({ id: row.id, scenarioId: `scenario-counterexample-${row.id.toLowerCase()}` }));
@@ -393,10 +436,10 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
   require(JSON.stringify(canonicalValue(coverage.flows)) === JSON.stringify(canonicalValue(expectedFlows)), "flow coverage relation mismatch");
 
   const mutationById = new Map(mutations.map(row => [row.id, row]));
-  const expectedNonExecutable = new Set(["INV_C0_3_NO_GO", "INV_SOURCE_AUTHORITY"]);
+  const expectedNonExecutable = nonExecutableInvariants;
   const invariantRows = new Map(coverage.invariants.map(row => [row.id, row]));
   require(invariantRows.size === model.invariants.length && model.invariants.every(row => invariantRows.has(row.id)), "invariant coverage mismatch");
-  const witnesses = new Set(), hostileMutations = new Set();
+  const witnesses = new Set(), hostileMutations = new Set(), witnessVectors = new Set(), witnessObservations = new Set();
   for (const invariant of model.invariants) {
     const row = invariantRows.get(invariant.id);
     if (expectedNonExecutable.has(invariant.id)) {
@@ -409,6 +452,13 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
     witnesses.add(witnessId); hostileMutations.add(mutationId);
     const witness = scenarios.find(item => item.id === witnessId), mutation = mutationById.get(mutationId);
     require(witness?.exercisedInvariantIds?.length === 1 && witness.exercisedInvariantIds[0] === invariant.id, `invariant witness semantic mismatch:${invariant.id}`);
+    const witnessVector = witness.steps[0].inputVectorId;
+    require(witnessVector === inventory.invariant_witness_vectors[invariant.id], `invariant witness-vector mismatch:${invariant.id}`);
+    require(!witnessVectors.has(witnessVector), `shared invariant witness vector:${invariant.id}`);
+    witnessVectors.add(witnessVector);
+    const witnessObservation = traceByScenario.get(witnessId)?.semanticObservationDigest;
+    require(typeof witnessObservation === "string" && !witnessObservations.has(witnessObservation), `shared invariant semantic observation:${invariant.id}`);
+    witnessObservations.add(witnessObservation);
     require(mutation?.mutationClass === "SEMANTIC_INVARIANT" && mutation.violatedInvariant === invariant.id && mutation.sourceRecordId === witnessId && mutation.generatedTargetId === `trace-${witnessId}`, `invariant mutation semantic mismatch:${invariant.id}`);
   }
   require(!mutations.some(row => row.mutationClass?.startsWith("SEMANTIC") && expectedNonExecutable.has(row.violatedInvariant)), "non-executable invariant claimed by mutation");
@@ -424,7 +474,6 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
   require(JSON.stringify(coverage.terminalStates) === JSON.stringify(expectedTerminal), "terminal-state coverage relation mismatch");
   require(JSON.stringify(canonicalValue(coverage.transitions)) === JSON.stringify(canonicalValue(expectedTransitions)), "transition coverage relation mismatch");
 
-  const inventory = JSON.parse(readFileSync(resolve(repoRoot, "tools/causal-flow-simulator/c03/corpus-inventory.json"), "utf8"));
   require(JSON.stringify(canonicalValue(coverage.o10.alias)) === JSON.stringify(canonicalValue(inventory.o10_alias)), "O-10 alias mismatch");
   const expectedOutcomes = inventory.o10_primaries.map(outcome => {
     const matching = scenarios.filter(scenario => scenario.steps.some(step => step.expectedOutcome === outcome)).map(row => row.id);
@@ -470,6 +519,11 @@ function mutationReport(args, corpus, valid, invalid, scenarios, expected, model
       const scenario = scenarioByTrace.get(mutation.generatedTargetId), computed = computeTrace(scenario, vectors, transitions);
       const corrupted = structuredClone(expectedById.get(mutation.generatedTargetId));
       corrupted.steps[0].localOutcome = "INVALID";
+      detected = JSON.stringify(canonicalValue(computed)) !== JSON.stringify(canonicalValue(corrupted));
+    } else if (mutation.detector === "INDEPENDENT_EXPECTED_DEPENDENCY_STATUS_MISMATCH") {
+      const scenario = scenarioByTrace.get(mutation.generatedTargetId), computed = computeTrace(scenario, vectors, transitions);
+      const corrupted = structuredClone(expectedById.get(mutation.generatedTargetId));
+      corrupted.steps[0].dependencyStatus = "SATISFIED";
       detected = JSON.stringify(canonicalValue(computed)) !== JSON.stringify(canonicalValue(corrupted));
     } else if (mutation.detector === "INVARIANT_WITNESS_TRACE_MISMATCH") {
       const scenario = structuredClone(scenarioByTrace.get(mutation.generatedTargetId));

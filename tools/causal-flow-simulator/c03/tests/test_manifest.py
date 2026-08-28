@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from hashlib import sha256
 from pathlib import Path
 import shutil
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,7 +14,9 @@ REPO = ROOT.parents[2]
 CORPUS = REPO / "conformance/application-protocol/c03"
 sys.path.insert(0, str(ROOT))
 
-from canonical_json import load, store  # noqa: E402
+from canonical_json import dumps, load, store  # noqa: E402
+import generate_corpus  # noqa: E402
+from corpus_model import semantic_observation_digest  # noqa: E402
 from validate_corpus import ValidationError, _walk_hygiene, validate  # noqa: E402
 
 
@@ -20,7 +24,7 @@ class ManifestTests(unittest.TestCase):
     def test_tracked_manifest_and_corpus_validate(self) -> None:
         report = validate(REPO, CORPUS)
         self.assertEqual(report["result"], "PASS")
-        self.assertEqual(report["mutations"], 497)
+        self.assertEqual(report["mutations"], 501)
 
     def test_hygiene_rejects_embedded_absolute_paths_but_not_reuse_label(self) -> None:
         for value in ("path=/", "provenance=/tmp/styx", "path=C:\\review", r"path=\\host\share"):
@@ -93,18 +97,38 @@ class ManifestTests(unittest.TestCase):
             validate(REPO, target)
 
     def test_rotated_invariant_witness_map_fails_semantically(self) -> None:
-        temporary, target = self._mutated_corpus()
-        self.addCleanup(temporary.cleanup)
-        manifest = load(target / "manifest.json")
-        rows = [row for row in manifest["coverage"]["invariants"] if row["branch"] == "EXECUTABLE_WITNESS"]
-        witness_ids = [row["witnessScenarioIds"][0] for row in rows]
-        mutation_ids = [row["hostileMutationIds"][0] for row in rows]
-        for index, row in enumerate(rows):
-            row["witnessScenarioIds"] = [witness_ids[(index + 7) % len(rows)]]
-            row["hostileMutationIds"] = [mutation_ids[(index + 7) % len(rows)]]
-        store(target / "manifest.json", manifest)
-        with self.assertRaisesRegex(ValidationError, "invariant witness semantic mismatch"):
-            validate(REPO, target)
+        witness_ids = list(generate_corpus.INVARIANT_WITNESS_VECTORS.values())
+        rotated = {
+            identifier: witness_ids[(index + 1) % len(witness_ids)]
+            for index, identifier in enumerate(generate_corpus.INVARIANT_WITNESS_VECTORS)
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            generate_corpus.INVARIANT_WITNESS_VECTORS, rotated, clear=True
+        ):
+            with self.assertRaisesRegex(ValueError, "curated invariant witness-vector relation drifted"):
+                generate_corpus.generate(REPO, Path(directory) / "generated")
+
+    def test_collapsed_counterexample_programs_fail_before_generation(self) -> None:
+        collapsed = {
+            identifier: ["vec-ordinary-none", "inv-fork", "vec-secondary-context-author"]
+            for identifier in generate_corpus.COUNTEREXAMPLE_VECTOR_PROGRAMS
+        }
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            generate_corpus.COUNTEREXAMPLE_VECTOR_PROGRAMS, collapsed, clear=True
+        ):
+            with self.assertRaisesRegex(ValueError, "counterexample executable program collision"):
+                generate_corpus.generate(REPO, Path(directory) / "generated")
+
+    def test_semantic_observation_excludes_scenario_identity(self) -> None:
+        traces = load(CORPUS / "expected-traces.json")["records"]
+        steps = traces[0]["steps"]
+        first = {"scenarioId": "scenario-a", "steps": steps}
+        second = {"scenarioId": "scenario-b", "steps": steps}
+        self.assertNotEqual(sha256(dumps(first)).hexdigest(), sha256(dumps(second)).hexdigest())
+        self.assertEqual(
+            semantic_observation_digest(first["steps"]),
+            semantic_observation_digest(second["steps"]),
+        )
 
     def test_every_vector_is_executed_and_counterexamples_are_distinct(self) -> None:
         valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
@@ -116,7 +140,7 @@ class ManifestTests(unittest.TestCase):
         counterexamples = [row for row in scenarios if "counterexampleId" in row]
         self.assertEqual({len(row["steps"]) for row in counterexamples}, {3})
         observations = {
-            row["observationDigest"]
+            row["semanticObservationDigest"]
             for row in traces
             if row["scenarioId"].startswith("scenario-counterexample-")
         }

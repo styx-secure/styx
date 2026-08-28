@@ -224,8 +224,8 @@ Protocol increments proceed in dependency order:
    C0.3.
 8. **Produce C0.3 — corpus construction complete; exact-final remediation in
    Issue #264.** The six-file, synthetic-only specification-derived corpus
-   covers the closed review model, 17 valid and 26 invalid transcript vectors,
-   114 state/flow/counterexample/vector/invariant/history scenarios and 497
+   covers the closed review model, 17 valid and 29 invalid transcript vectors,
+   118 state/flow/counterexample/vector/invariant/history/dependency scenarios and 501
    adversarial mutations. Every vector is executed; every counterexample has a
    distinct three-step program and observation; every executable invariant has
    a one-to-one semantic witness and hostile substitution. The vectors include

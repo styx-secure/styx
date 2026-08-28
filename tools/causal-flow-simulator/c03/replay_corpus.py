@@ -14,7 +14,15 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from canonical_json import dumps, load, store  # noqa: E402
-from corpus_model import BaseReader, CorpusModelError, evaluate_vector, validate_base_inputs  # noqa: E402
+from corpus_model import (  # noqa: E402
+    BaseReader,
+    CorpusModelError,
+    evaluate_vector,
+    semantic_input_digest,
+    semantic_observation_digest,
+    transition_input_is_compatible,
+    validate_base_inputs,
+)
 from validate_corpus import validate  # noqa: E402
 
 
@@ -58,6 +66,7 @@ def _compute_step(
         stage = "BOUNDARY_NOT_EXECUTED"
         post_state = "UNCHANGED"
     elif step["transitionId"] is not None:
+        require(transition_input_is_compatible(evaluated or {}), f"incompatible transition input: {scenario['id']}:{index}")
         transition = transitions.get((scenario["modelId"], step["transitionId"]))
         require(transition is not None, f"unknown transition: {scenario['id']}:{index}")
         require(step["preState"] in transition["from"], f"invalid transition source: {scenario['id']}:{index}")
@@ -75,6 +84,10 @@ def _compute_step(
     available = available_evidence or set()
     requirements = set(step["requiredPriorEvidence"])
     dependency_status = "SATISFIED" if requirements <= available else "MISSING"
+    require(
+        dependency_status == step["expectedDependencyStatus"],
+        f"dependency status mismatch: {scenario['id']}:{index}",
+    )
     if evaluated is None:
         k_admission = "NOT_EVALUATED"
         ap_result = "NOT_EVALUATED"
@@ -94,7 +107,7 @@ def _compute_step(
         "evidenceProduced": step.get("providedEvidence"),
         "executed": executed,
         "externalEffects": [],
-        "inputDigest": sha256(bytes.fromhex(vector["transcriptHex"])).hexdigest(),
+        "inputDigest": semantic_input_digest(vector),
         "kBindingAdmission": k_admission,
         "localOutcome": local_outcome,
         "postStateDigest": post_digest,
@@ -130,6 +143,7 @@ def compute_trace(
     trace["observationDigest"] = sha256(
         dumps({"scenarioId": scenario["id"], "steps": steps})
     ).hexdigest()
+    trace["semanticObservationDigest"] = semantic_observation_digest(steps)
     return trace
 
 

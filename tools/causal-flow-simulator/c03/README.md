@@ -8,11 +8,13 @@ The generator reads every normative input from the contract Base commit. The
 Python and Node.js readers independently parse, verify and replay ordinary
 corpus inputs; expected results are compared only after execution. The mutation
 runner requires both implementations to kill the complete closed registry.
-The tracked package currently contains 17 valid and 26 invalid transcript
-vectors, 114 state/flow/counterexample/vector/invariant/history scenarios and
-497 mutations. Transcript bytes and signatures are evaluated independently in
-Python and JavaScript. The mutation registry separates 26 hostile-input
-mutations, 21 one-to-one invariant-witness substitutions, three legal
+The tracked package currently contains 17 valid and 29 invalid transcript
+vectors, 118 state/flow/counterexample/vector/invariant/history/dependency
+scenarios and 501 mutations. Transcript bytes and signatures are evaluated
+independently in Python and JavaScript. Identity-bearing trace digests remain
+separate from semantic-observation digests that exclude scenario bookkeeping.
+The mutation registry separates 29 hostile-input mutations, 21 independently
+pinned one-to-one invariant-witness substitutions, four legal
 expected-result substitutions, 442 exact source-relation removals and five
 manifest-digest substitutions. Source-relation and manifest mutations are
 materialized and rejected by the same validators used for the unmodified

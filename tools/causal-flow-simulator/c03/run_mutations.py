@@ -108,6 +108,12 @@ def _python_kills(repo_root: Path, corpus: Path) -> dict[str, Any]:
             corrupted = deepcopy(expected_by_id[mutation["generatedTargetId"]])
             corrupted["steps"][0]["localOutcome"] = "INVALID"
             detected = computed != corrupted
+        elif detector == "INDEPENDENT_EXPECTED_DEPENDENCY_STATUS_MISMATCH":
+            scenario = scenario_by_trace[mutation["generatedTargetId"]]
+            computed = _computed_trace(scenario, vectors, transitions)
+            corrupted = deepcopy(expected_by_id[mutation["generatedTargetId"]])
+            corrupted["steps"][0]["dependencyStatus"] = "SATISFIED"
+            detected = computed != corrupted
         elif detector == "INVARIANT_WITNESS_TRACE_MISMATCH":
             scenario = deepcopy(scenario_by_trace[mutation["generatedTargetId"]])
             scenario["steps"][0]["inputVectorId"] = mutation["replacementVectorId"]

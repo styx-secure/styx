@@ -27,8 +27,11 @@ from corpus_model import (  # noqa: E402
     evaluate_vector,
     framed_hash,
     load_local_json,
+    semantic_input_digest,
+    semantic_observation_digest,
     sha256_hex,
     synthetic_octets,
+    transition_input_is_compatible,
     validate_base_inputs,
 )
 
@@ -58,7 +61,7 @@ COMMON_CITATIONS = [
 INVARIANT_WITNESS_VECTORS = {
     "INV_AUTHORITY_PROJECTION_LIMITS": "inv-resource-sequence",
     "INV_AUTH_NOT_KEY": "inv-unauthorized",
-    "INV_BOUNDED_CONTESTED_STANDING": "inv-fork",
+    "INV_BOUNDED_CONTESTED_STANDING": "inv-contested-standing",
     "INV_CAUSALITY_TRANSCRIPT_ONLY": "inv-parent-order",
     "INV_CAUSAL_TARGET_AVAILABILITY": "inv-missing-dependency",
     "INV_COMMITMENT_CONTEXT_BINDING": "inv-commitment",
@@ -67,14 +70,14 @@ INVARIANT_WITNESS_VECTORS = {
     "INV_FORK_QUARANTINE": "inv-fork",
     "INV_GRANT_ROOTED_BINDING": "inv-binding-credential",
     "INV_LINEAGE_CONTAINMENT": "inv-post-revocation",
-    "INV_NO_CHECKPOINT_SUBSTITUTION": "inv-missing-dependency",
+    "INV_NO_CHECKPOINT_SUBSTITUTION": "inv-checkpoint-substitution",
     "INV_NO_OPENING_SUBSTITUTION": "inv-opening-missing",
     "INV_O06C_BOUNDED_EVIDENCE": "inv-body-length",
     "INV_OUTCOME_PRECEDENCE": "inv-signature",
     "INV_PENDING_SELECTIVE_PROGRESS": "vec-required-single",
     "INV_PROTECTION_SEPARATION": "inv-profile-substitution",
     "INV_REPLAY_NO_AUTHORITY": "inv-duplicate",
-    "INV_SELF_LINEAGE_REDUCTION": "inv-unauthorized",
+    "INV_SELF_LINEAGE_REDUCTION": "inv-self-lineage",
     "INV_SET_RELATIVE_REPLAY": "vec-secondary-context-author",
     "INV_TWO_SIDED_AUTHORITY": "vec-control-revoke",
 }
@@ -82,18 +85,18 @@ INVARIANT_WITNESS_VECTORS = {
 COUNTEREXAMPLE_VECTOR_PROGRAMS = {
     "CE_ALIAS_SURVIVAL": ["vec-control-grant", "vec-control-revoke", "vec-secondary-context-author"],
     "CE_AUTHORITY_PROJECTION_EXHAUSTION": ["vec-selected-resource-boundaries", "inv-resource-sequence", "vec-ordinary-none"],
-    "CE_BOUNDED_CONTESTED_STANDING": ["vec-ordinary-none", "inv-fork", "vec-secondary-context-author"],
-    "CE_CHECKPOINT_STALE": ["vec-parent-single", "inv-missing-dependency", "vec-ordinary-none"],
+    "CE_BOUNDED_CONTESTED_STANDING": ["vec-control-revoke", "inv-contested-standing", "inv-unauthorized"],
+    "CE_CHECKPOINT_STALE": ["vec-parent-single", "inv-checkpoint-substitution", "vec-ordinary-none"],
     "CE_CREDENTIAL_COLLISION": ["vec-control-grant", "inv-reference", "vec-ordinary-none"],
     "CE_FORK_CONTEXT_QUARANTINE": ["vec-ordinary-none", "inv-fork", "vec-secondary-context-author"],
-    "CE_GRANT_REVOKE_LAUNDERING_ORDER_A": ["vec-control-grant", "vec-control-revoke", "inv-post-revocation"],
+    "CE_GRANT_REVOKE_LAUNDERING_ORDER_A": ["vec-control-grant", "vec-control-revoke", "inv-unauthorized"],
     "CE_GRANT_REVOKE_LAUNDERING_ORDER_B": ["vec-control-revoke", "vec-control-grant", "inv-unauthorized"],
     "CE_GRANT_ROOTED_BINDING": ["vec-control-grant", "inv-binding-credential", "vec-ordinary-none"],
     "CE_MISSING_REQUIRED_OPENING": ["vec-required-single", "inv-opening-missing", "vec-secondary-context-author"],
     "CE_MUTUAL_REDUCTION_NO_AUTHORITY": ["vec-control-revoke", "inv-unauthorized", "inv-post-revocation"],
     "CE_NONCAUSAL_REDUCTION_TARGET": ["vec-parent-multiple", "inv-missing-dependency", "vec-control-revoke"],
     "CE_SELECTIVE_REVEAL": ["vec-required-single", "inv-opening-missing", "vec-required-single"],
-    "CE_SELF_LINEAGE_REDUCTION": ["vec-control-revoke", "inv-unauthorized", "vec-secondary-context-author"],
+    "CE_SELF_LINEAGE_REDUCTION": ["vec-control-revoke", "inv-self-lineage", "vec-secondary-context-author"],
     "CE_SINGLE_AUTHORITY_TAKEOVER": ["vec-control-revoke", "inv-post-revocation", "vec-control-closure"],
     "CE_SUBTREE_AMPLIFICATION": ["vec-control-grant", "vec-control-revoke", "inv-post-revocation"],
 }
@@ -102,7 +105,9 @@ INVALID_VECTOR_INVARIANTS = {
     "inv-binding-context": "INV_CROSS_CONTEXT_REJECTION",
     "inv-binding-credential": "INV_GRANT_ROOTED_BINDING",
     "inv-body-length": "INV_O06C_BOUNDED_EVIDENCE",
+    "inv-checkpoint-substitution": "INV_NO_CHECKPOINT_SUBSTITUTION",
     "inv-commitment": "INV_COMMITMENT_CONTEXT_BINDING",
+    "inv-contested-standing": "INV_BOUNDED_CONTESTED_STANDING",
     "inv-duplicate": "INV_REPLAY_NO_AUTHORITY",
     "inv-fork": "INV_FORK_QUARANTINE",
     "inv-missing-dependency": "INV_CAUSAL_TARGET_AVAILABILITY",
@@ -120,6 +125,7 @@ INVALID_VECTOR_INVARIANTS = {
     "inv-resource-parent-count": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-resource-sequence": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-resource-transition-block": "INV_AUTHORITY_PROJECTION_LIMITS",
+    "inv-self-lineage": "INV_SELF_LINEAGE_REDUCTION",
     "inv-signature": "INV_OUTCOME_PRECEDENCE",
     "inv-trailing": "INV_O06C_BOUNDED_EVIDENCE",
     "inv-truncated": "INV_O06C_BOUNDED_EVIDENCE",
@@ -521,6 +527,7 @@ def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
     base = next(item for item in valid if item["id"] == "vec-ordinary-none")
     single = next(item for item in valid if item["id"] == "vec-required-single")
     multiple_parents = next(item for item in valid if item["id"] == "vec-parent-multiple")
+    control_revoke = next(item for item in valid if item["id"] == "vec-control-revoke")
     final_control = next(item for item in valid if item["id"] == "vec-control-closure")
     values: list[dict[str, Any]] = []
 
@@ -622,6 +629,31 @@ def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
         profile_fields,
         outcome="STRUCTURAL_REJECTION",
     )
+
+    self_lineage_fields = _event_fields(
+        "self-lineage-reduction",
+        role="CREDENTIAL",
+        tail={
+            "kind": "REVOKE",
+            "targetCredentialHex": "00" * 32,
+        },
+    )
+    self_lineage_fields["tail"]["targetCredentialHex"] = self_lineage_fields[
+        "credentialIdentifierHex"
+    ]
+    generated_invalid(
+        "inv-self-lineage",
+        "SELF_LINEAGE_REDUCTION",
+        self_lineage_fields,
+        stage="EVENT_LOCAL",
+        outcome="AUTHENTIC_BUT_UNAUTHORIZED",
+        source="vec-control-revoke",
+    )
+    values[-1]["admissionContext"] = {
+        "authorizedCredentialIdentifiers": [
+            self_lineage_fields["credentialIdentifierHex"]
+        ]
+    }
 
     parent_limit_fields = _event_fields(
         "resource-parent-count",
@@ -756,6 +788,22 @@ def _invalid_vectors(valid: list[dict[str, Any]]) -> list[dict[str, Any]]:
     contextual = [
         (
             base,
+            "inv-checkpoint-substitution",
+            "CHECKPOINT_FOR_LIVE_DEPENDENCY",
+            "S4_GRAPH_ADMISSION",
+            "STRUCTURAL_REJECTION",
+            {"checkpointEvidenceReferences": [synthetic_octets("checkpoint-substitution", 32).hex()]},
+        ),
+        (
+            control_revoke,
+            "inv-contested-standing",
+            "CONTESTED_STANDING_SIBLING_FORK",
+            "EVENT_LOCAL",
+            "FORK_EVIDENCE",
+            {"sameAuthorSequenceReferences": [synthetic_octets("contested-standing-sibling", 32).hex()]},
+        ),
+        (
+            base,
             "inv-unauthorized",
             "AUTHORITY_LAUNDERING",
             "EVENT_LOCAL",
@@ -825,6 +873,7 @@ def _scenarios(model: dict[str, Any], valid: list[dict[str, Any]], invalid: list
         expected_post_state: str | None = None,
         actor: str = "kernel",
         executed: bool = True,
+        expected_dependency_status: str = "SATISFIED",
     ) -> dict[str, Any]:
         outcome, stage, post_state = vector_expectation(vector_id)
         return {
@@ -832,6 +881,7 @@ def _scenarios(model: dict[str, Any], valid: list[dict[str, Any]], invalid: list
             "candidateAction": action,
             "executed": executed,
             "expectedOutcome": expected_outcome or outcome,
+            "expectedDependencyStatus": expected_dependency_status,
             "expectedPostState": expected_post_state or post_state,
             "expectedStage": expected_stage or stage,
             "inputVectorId": vector_id,
@@ -995,6 +1045,24 @@ def _scenarios(model: dict[str, Any], valid: list[dict[str, Any]], invalid: list
                 ],
             }
         )
+
+    scenarios.append(
+        {
+            "citations": COMMON_CITATIONS,
+            "id": "scenario-dependency-missing",
+            "modelId": "dependency",
+            "steps": [
+                step(
+                    action="Reject one candidate whose required prior evidence is absent",
+                    vector_id="inv-missing-dependency",
+                    pre_state="DEPENDENCY_UNAVAILABLE",
+                    required=["evidence:not-produced"],
+                    produced="evidence:scenario-dependency-missing:0",
+                    expected_dependency_status="MISSING",
+                )
+            ],
+        }
+    )
     return sorted(scenarios, key=lambda record: record["id"])
 
 
@@ -1005,8 +1073,9 @@ def _traces(scenarios: list[dict[str, Any]], vector_by_id: dict[str, dict[str, A
         available_evidence: set[str] = set()
         for index, step in enumerate(scenario["steps"]):
             vector = vector_by_id[step["inputVectorId"]]
-            transcript = bytes.fromhex(vector["transcriptHex"])
             evaluated = evaluate_vector(vector) if step.get("executed", True) else None
+            if step["transitionId"] is not None and not transition_input_is_compatible(evaluated or {}):
+                raise ValueError(f"incompatible model-transition input: {scenario['id']}:{index}")
             pre_digest = sha256(
                 f"styx-c03/state/{scenario['id']}/{step['preState']}".encode()
             ).hexdigest()
@@ -1016,6 +1085,8 @@ def _traces(scenarios: list[dict[str, Any]], vector_by_id: dict[str, dict[str, A
             ).hexdigest()
             requirements = set(step["requiredPriorEvidence"])
             dependency_status = "SATISFIED" if requirements <= available_evidence else "MISSING"
+            if dependency_status != step["expectedDependencyStatus"]:
+                raise ValueError(f"dependency-status mismatch: {scenario['id']}:{index}")
             if evaluated is None:
                 k_admission = "NOT_EVALUATED"
                 ap_result = "NOT_EVALUATED"
@@ -1036,7 +1107,7 @@ def _traces(scenarios: list[dict[str, Any]], vector_by_id: dict[str, dict[str, A
                     "evidenceProduced": step.get("providedEvidence"),
                     "executed": step.get("executed", True),
                     "externalEffects": [],
-                    "inputDigest": sha256(transcript).hexdigest(),
+                    "inputDigest": semantic_input_digest(vector),
                     "kBindingAdmission": k_admission,
                     "localOutcome": step["expectedOutcome"],
                     "postStateDigest": post_digest,
@@ -1054,6 +1125,7 @@ def _traces(scenarios: list[dict[str, Any]], vector_by_id: dict[str, dict[str, A
                 available_evidence.add(step["providedEvidence"])
         trace = {"id": f"trace-{scenario['id']}", "scenarioId": scenario["id"], "steps": entries}
         trace["observationDigest"] = _digest({"scenarioId": scenario["id"], "steps": entries})
+        trace["semanticObservationDigest"] = semantic_observation_digest(entries)
         traces.append(trace)
     return sorted(traces, key=lambda record: record["id"])
 
@@ -1137,6 +1209,17 @@ def _mutations(
                 "transformation": "CORRUPT_EXPECTED_TRACE_OUTCOME_ONLY",
                 "mutationClass": "EXPECTED_RESULT",
                 "violatedInvariant": "INV_OUTCOME_PRECEDENCE",
+            },
+            {
+                "detector": "INDEPENDENT_EXPECTED_DEPENDENCY_STATUS_MISMATCH",
+                "expectedOutcome": "STRUCTURAL_REJECTION",
+                "expectedStage": "CORPUS_REPLAY",
+                "generatedTargetId": "trace-scenario-dependency-missing",
+                "id": "mutation-expected-trace-dependency-status",
+                "sourceRecordId": "trace-scenario-dependency-missing",
+                "transformation": "CORRUPT_EXPECTED_DEPENDENCY_STATUS_ONLY",
+                "mutationClass": "EXPECTED_RESULT",
+                "violatedInvariant": "INV_CAUSAL_TARGET_AVAILABILITY",
             },
         )
     )
@@ -1325,6 +1408,11 @@ def _coverage(
 
 def generate(repo_root: Path, output: Path) -> dict[str, Any]:
     source_map, inventory = validate_base_inputs(repo_root)
+    if inventory["invariant_witness_vectors"] != INVARIANT_WITNESS_VECTORS:
+        raise ValueError("curated invariant witness-vector relation drifted")
+    counterexample_programs = [tuple(value) for value in COUNTEREXAMPLE_VECTOR_PROGRAMS.values()]
+    if len(counterexample_programs) != len(set(counterexample_programs)):
+        raise ValueError("counterexample executable program collision")
     reader = BaseReader(repo_root)
     model = reader.json("docs/protocol/review/styx-app-kernel-v0-review-model.json")
     valid = _valid_vectors()

@@ -14,7 +14,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from canonical_json import load, store  # noqa: E402
+from canonical_json import dumps, load, store  # noqa: E402
 from corpus_model import (  # noqa: E402
     BASE_SHA,
     BaseReader,
@@ -24,7 +24,9 @@ from corpus_model import (  # noqa: E402
     O08_LIMITS,
     evaluate_vector,
     load_local_json,
+    semantic_observation_digest,
     sha256_hex,
+    transition_input_is_compatible,
     validate_base_inputs,
 )
 
@@ -262,7 +264,11 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
             used_vector_ids.add(step["inputVectorId"])
             required_evidence = step.get("requiredPriorEvidence")
             require(isinstance(required_evidence, list), f"invalid prior evidence: {scenario['id']}")
-            require(set(required_evidence) <= available_evidence, f"unsatisfied prior evidence: {scenario['id']}")
+            dependency_status = "SATISFIED" if set(required_evidence) <= available_evidence else "MISSING"
+            require(
+                step.get("expectedDependencyStatus") == dependency_status,
+                f"dependency expectation mismatch: {scenario['id']}",
+            )
             produced = step.get("providedEvidence")
             require(isinstance(produced, str) and bool(produced), f"missing produced evidence: {scenario['id']}")
             require(produced not in available_evidence, f"duplicate produced evidence: {scenario['id']}")
@@ -275,6 +281,10 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
                 require(step["preState"] in transition["from"], f"transition pre-state mismatch: {key}")
                 require(step["expectedPostState"] == transition["to"], f"transition post-state mismatch: {key}")
                 require(step["expectedOutcome"] == transition["outcome"], f"transition outcome mismatch: {key}")
+                require(
+                    transition_input_is_compatible(evaluate_vector(next(record for record in valid + invalid if record["id"] == step["inputVectorId"]))),
+                    f"incompatible transition input: {key}",
+                )
                 exercised_transitions.add(key)
                 reached_states.add((scenario["modelId"], step["preState"]))
                 reached_states.add((scenario["modelId"], step["expectedPostState"]))
@@ -288,7 +298,15 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
     for trace in traces:
         require(all(step["externalEffects"] == [] for step in trace["steps"]), f"trace contains external effect: {trace['id']}")
         require(len(trace["steps"]) == len(next(row for row in scenarios if row["id"] == trace["scenarioId"])["steps"]), f"trace step count mismatch: {trace['id']}")
-        require(isinstance(trace.get("observationDigest"), str) and len(trace["observationDigest"]) == 64, f"missing trace observation: {trace['id']}")
+        require(
+            trace.get("observationDigest")
+            == sha256(dumps({"scenarioId": trace["scenarioId"], "steps": trace["steps"]})).hexdigest(),
+            f"trace observation mismatch: {trace['id']}",
+        )
+        require(
+            trace.get("semanticObservationDigest") == semantic_observation_digest(trace["steps"]),
+            f"semantic observation mismatch: {trace['id']}",
+        )
 
     counterexample_by_id = {record["id"]: record for record in model["counterexamples"]}
     counterexample_scenarios = {record["counterexampleId"]: record for record in scenarios if "counterexampleId" in record}
@@ -298,7 +316,7 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
         require([step["candidateAction"] for step in scenario["steps"]] == counterexample_by_id[identifier]["steps"], f"counterexample program mismatch: {identifier}")
         require(all(step.get("executed", True) for step in scenario["steps"]), f"counterexample boundary skipped: {identifier}")
     trace_by_scenario = {record["scenarioId"]: record for record in traces}
-    counterexample_observations = [trace_by_scenario[row["id"]]["observationDigest"] for row in counterexample_scenarios.values()]
+    counterexample_observations = [trace_by_scenario[row["id"]]["semanticObservationDigest"] for row in counterexample_scenarios.values()]
     require(len(counterexample_observations) == len(set(counterexample_observations)), "counterexample observation collision")
 
     mutations = _unique_sorted(documents["adversarial-mutations.json"]["records"], "mutations")
@@ -361,6 +379,15 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
         == NONEXECUTABLE_INVARIANTS,
         "invariant branch assignment mismatch",
     )
+    require(
+        set(inventory["invariant_witness_vectors"])
+        == expected_invariants - NONEXECUTABLE_INVARIANTS
+        and len(set(inventory["invariant_witness_vectors"].values()))
+        == len(inventory["invariant_witness_vectors"]),
+        "invariant witness inventory mismatch",
+    )
+    invariant_vectors: set[str] = set()
+    invariant_observations: set[str] = set()
     for row in coverage["invariants"]:
         if row["branch"] == "EXECUTABLE_WITNESS":
             require(
@@ -376,6 +403,19 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
             require(len(row["witnessScenarioIds"]) == 1 and len(row["hostileMutationIds"]) == 1, f"non-atomic invariant evidence: {row['id']}")
             witness = next(record for record in scenarios if record["id"] == row["witnessScenarioIds"][0])
             require(witness.get("exercisedInvariantIds") == [row["id"]], f"invariant witness semantic mismatch: {row['id']}")
+            witness_vector = witness["steps"][0]["inputVectorId"]
+            require(
+                witness_vector == inventory["invariant_witness_vectors"][row["id"]],
+                f"invariant witness-vector mismatch: {row['id']}",
+            )
+            require(witness_vector not in invariant_vectors, f"shared invariant witness vector: {row['id']}")
+            invariant_vectors.add(witness_vector)
+            witness_observation = trace_by_scenario[witness["id"]]["semanticObservationDigest"]
+            require(
+                witness_observation not in invariant_observations,
+                f"shared invariant semantic observation: {row['id']}",
+            )
+            invariant_observations.add(witness_observation)
             mutation = mutation_by_id[row["hostileMutationIds"][0]]
             require(
                 mutation.get("mutationClass") == "SEMANTIC_INVARIANT"
