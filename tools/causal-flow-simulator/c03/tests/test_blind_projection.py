@@ -67,6 +67,15 @@ class BlindProjectionTests(unittest.TestCase):
             rebuilt = materialize_blind_evaluator_input(public)
             self.assertEqual(_public_observation(rebuilt), _public_observation(official), official["id"])
 
+    def test_reader_output_contract_is_public_but_contains_no_oracle(self) -> None:
+        readme = (self.kit / "README.md").read_text("utf-8")
+        normalized_readme = " ".join(readme.split())
+        self.assertIn("styx-c03-clean-room-report/v1", readme)
+        self.assertIn("localOutcomePresent", readme)
+        self.assertIn("geometryPredicate7", readme)
+        self.assertIn("supplies field names and shape only", normalized_readme)
+        self.assertNotIn("case-", readme)
+
     def test_validator_fails_closed_on_hidden_or_extra_input(self) -> None:
         bad = self.root / "bad"
         shutil.copytree(self.kit, bad)

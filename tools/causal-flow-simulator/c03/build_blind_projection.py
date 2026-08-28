@@ -441,6 +441,49 @@ application success.
 
 Run `python3 VERIFY.py` before using the package.  The withheld integration map
 is created only after the reader source has been frozen.
+
+## Required output contract
+
+The reader output has schema `styx-c03-clean-room-report/v1` and exactly two
+top-level members: `schema` and `observations`. `observations` is a list sorted
+by `opaqueId`, contains exactly one object for every input record and has no
+duplicates. Each observation contains exactly these members:
+
+```text
+opaqueId
+apAuthorityResult
+commitmentMatchVerification
+commitmentVerification
+geometryPredicate1
+geometryPredicate2
+geometryPredicate3
+geometryPredicate4
+geometryPredicate5
+geometryPredicate6
+geometryPredicate7
+kBindingAdmission
+localOutcomePresent
+outcomeEvaluated
+referenceVerification
+remoteClassPresent
+signatureVerification
+stage
+suppliedLengthVerification
+transcriptVerification
+```
+
+`localOutcomePresent`, `outcomeEvaluated` and `remoteClassPresent` are JSON
+booleans; every other listed value is a JSON string. If and only if
+`localOutcomePresent` is true, the object additionally contains the string
+member `localOutcome`. If and only if `remoteClassPresent` is true, it
+additionally contains the string member `remoteClass`. No other member is
+permitted. Values are the exact locally observed vocabulary selected by the
+supplied normative sources; this output contract supplies field names and
+shape only, never an expected value for an input.
+
+The whole document is canonical UTF-8 JSON: keys sorted by Unicode code point,
+no insignificant whitespace and exactly one final LF. Missing, extra or
+duplicate input/output records and unknown output fields fail closed.
 """
 
 
