@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import copy
+import json
+import subprocess
+import tempfile
 import unittest
+from pathlib import Path
 
 from support import MODEL_PATH, REPO_ROOT, SCHEMA_PATH, load_validator
 
@@ -47,12 +51,78 @@ class C03EntryAuthorizationTests(unittest.TestCase):
             if item["id"] == "INV_C0_3_NO_GO"
         )
         self.assertEqual(
-            "Only construction of the separately contracted transcript-only C0.3 "
-            "corpus is authorized; implementation alignment, demo, product "
+            "The separately contracted transcript-only C0.3 corpus is constructed "
+            "and validated; implementation alignment, demo, product "
             "implementation and sensitive use remain unauthorized while their "
             "declared blockers remain open.",
             invariant["statement"],
         )
+
+    def test_corpus_completion_gate_executes_both_runtimes_and_mutations(self) -> None:
+        self.assertEqual([], validator._validate_c03_corpus_gate(REPO_ROOT))
+
+    def test_corpus_completion_gate_rejects_missing_evidence_classes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            clone = Path(directory) / "repo"
+            subprocess.run(
+                ["git", "clone", "--quiet", "--shared", str(REPO_ROOT), str(clone)],
+                check=True,
+            )
+            corpus = clone / "conformance/application-protocol/c03"
+            tools = clone / "tools/causal-flow-simulator/c03"
+            cases = (
+                ("generated-file", corpus / "expected-traces.json", None),
+                (
+                    "generated-digest",
+                    corpus / "valid-transcript-vectors.json",
+                    lambda payload: payload + b" ",
+                ),
+                (
+                    "coverage-row",
+                    corpus / "manifest.json",
+                    self._remove_first_invariant,
+                ),
+                (
+                    "manifest-record-count",
+                    corpus / "manifest.json",
+                    self._increment_first_record_count,
+                ),
+                ("cross-runtime-result", tools / "node_adapter.mjs", None),
+                ("mutation-gate", tools / "run_mutations.py", None),
+            )
+            for label, path, transform in cases:
+                with self.subTest(label=label):
+                    original = path.read_bytes()
+                    try:
+                        if transform is None:
+                            path.unlink()
+                        else:
+                            path.write_bytes(transform(original))
+                        findings = validator._validate_c03_corpus_gate(clone)
+                        self.assertEqual(
+                            {"C03_CORPUS_GATE_MISSING"},
+                            {finding.code for finding in findings},
+                        )
+                    finally:
+                        path.write_bytes(original)
+
+    @staticmethod
+    def _remove_first_invariant(payload: bytes) -> bytes:
+        document = json.loads(payload)
+        del document["coverage"]["invariants"][0]
+        return (
+            json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            + "\n"
+        ).encode("utf-8")
+
+    @staticmethod
+    def _increment_first_record_count(payload: bytes) -> bytes:
+        document = json.loads(payload)
+        document["files"][0]["recordCount"] += 1
+        return (
+            json.dumps(document, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            + "\n"
+        ).encode("utf-8")
 
     def test_restoring_stale_corpus_gate_fails_closed(self) -> None:
         model = copy.deepcopy(self.model)

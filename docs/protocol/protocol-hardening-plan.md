@@ -222,8 +222,21 @@ Protocol increments proceed in dependency order:
    exact twelve-path Apache-2.0 inventory now includes six absent future C0.3
    data paths. This licensing gate creates no corpus byte and does not authorize
    C0.3.
-8. **Produce C0.3.** Generate a specification-derived adversarial corpus and
-   language-neutral vectors only for fully defined semantics and bytes.
+8. **Produce C0.3 — corpus construction complete; exact-final remediation in
+   Issue #264.** The six-file, synthetic-only specification-derived corpus
+   covers the closed review model, 17 valid and 29 invalid transcript vectors,
+   118 state/flow/counterexample/vector/invariant/history/dependency scenarios and 501
+   adversarial mutations. Every vector is executed; every counterexample has a
+   distinct three-step program and observation; every executable invariant has
+   a one-to-one semantic witness and hostile substitution. The vectors include
+   distinct contexts, authors and dependency cardinalities, selected-bound
+   witnesses, over-limit inputs, profile substitution, parent reordering and an
+   overlong fixed-width integer. Coverage and manifest mutants are materialized
+   and rejected by the same production corpus validators, but are classified as
+   evidence-integrity checks rather than semantic invariant witnesses.
+   Independent Python and JavaScript replay and relation validation agree byte
+   for byte. This completes corpus construction only; it does not authorize
+   implementation alignment, demo, product or sensitive use.
 9. **Obtain the phase verdict.** Independent exact-final review and human
    ratification produce `GO`, bounded `GO`, or `NO-GO` with residual risks.
 
@@ -237,8 +250,8 @@ The dependency basis is explicit:
 | C0.2k | exact C0.2j credential and sequence semantics | selected 84-octet context plus bounded model/mutation evidence; exact-final review and human gates complete the increment |
 | O-06c | exact C0.2j/C0.2k bytes and existing O-06b profiles | completed as bounded evidence by Issue #243; obligations affected by later O-07/O-08/O-10/O-14 decisions are rerun or reopened after those decisions |
 | remaining blockers | O-06c results plus each decision's own recorded inputs | Issue #260 / merged PR #261 reruns the integrated O-14/O-06c hostile cases; exact-final technical evidence, independent review and human gates pass |
-| K-11 corpus boundary | `DECIDED` by the exact Issue #253 six-path amendment; twelve Apache paths total | no C0.3 corpus file exists before this gate and no third-party corpus byte is authorized |
-| C0.3 | all seven frozen Issue #251 entry items satisfied by Issue #262; corpus construction only is authorized | no later decision may be guessed or inherited from an implementation; C0.3 remains `NO-GO` for every retained capability gate |
+| K-11 corpus boundary | `DECIDED` by the exact Issue #253 six-path amendment; twelve Apache paths total | Issue #264 populates only the approved synthetic paths; no third-party corpus byte is authorized |
+| C0.3 | all seven frozen Issue #251 entry items satisfied by Issue #262; corpus construction completed by Issue #264 | implementation alignment and the phase verdict remain separate human-gated work; C0.3 remains `NO-GO` for demo, product and sensitive use |
 
 For visibility, every O-series objective in the current registry is accounted
 for below. Absence from this table is an error in this plan, not evidence that
@@ -249,7 +262,7 @@ registry governs and this plan must be corrected.
 |---|---|---|
 | O-01 through O-05 | `DECIDED` | preserved inputs; reopen only through their recorded conditions |
 | O-06 | condition-bearing `DECIDED` | Issue #243 completed bounded O-06c evidence; recorded placeholder decisions and later counterexamples trigger rerun/reopen |
-| O-07 | bounded `DECIDED` | retains its satisfied C0.3 dependency edge; Issue #262 authorizes only exact corpus construction |
+| O-07 | bounded `DECIDED` | retains its satisfied C0.3 dependency edge; Issue #264 exercises it only through the exact transcript-only corpus |
 | O-08 | bounded `DECIDED` | replacement `balanced` selection, two-clean-checkout evidence, exact-HEAD reviews and technical human approval complete; Issue #255 carries the separately gated procedural AST-guard remediation; retained C0.3 edge; no product/runtime claim |
 | O-10 | bounded `DECIDED` | 25 trusted-local primaries plus opaque untrusted-remote collapse; final Issue #252 evidence and merged PR #257 human gates completed; no wire/API selection |
 | O-14 | condition-bearing `DECIDED` | closed suite; Issue #260 / merged PR #261 completed the separately ratified combined rerun, exact-final evidence, independent review and human gates |
@@ -444,13 +457,13 @@ bounded executable evidence:
   bounded non-blocking or downstream-blocking roles;
 - C0.3 remains `NO-GO` and depends exactly on the now-satisfied entry set
   `{C0.3_CORPUS_PATH_APPROVAL,O-06c,O-07,O-08,O-10,O-14}`;
-- `C0.3_CORPUS_PATH_APPROVAL` is bounded `DECIDED` by Issue #253; its six
-  future paths remain absent until the separately contracted corpus task;
-- Issue #262 completes the final authority-set synchronization and authorizes
-  corpus construction only. C0.3 no longer blocks `corpus`, but continues to
-  block implementation alignment, demo, product and sensitive use until corpus
-  completion, independent implementation agreement, exit review and an
-  explicit human phase verdict.
+- `C0.3_CORPUS_PATH_APPROVAL` is bounded `DECIDED` by Issue #253; Issue #264
+  populates exactly its six synthetic-only paths and completes their executable
+  conformance and mutation evidence;
+- Issue #262 completed the final authority-set synchronization and Issue #264
+  completed corpus construction. C0.3 continues to block implementation
+  alignment, demo, product and sensitive use until independent implementation
+  agreement, exit review and an explicit human phase verdict.
 
 The human ratification gate is currently discipline-enforced rather than fully
 server-enforced: the repository governance record at

@@ -158,8 +158,13 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
         self.assertEqual(base[1], current[1])
         self.assertEqual(base[2:], current[3:])
 
-    def test_future_paths_are_absent_and_no_six_only_header_remains(self) -> None:
-        self.assertEqual(0, self.future_files_present)
+    def test_approved_paths_are_exactly_populated_after_issue_264(self) -> None:
+        self.assertEqual(6, self.future_files_present)
+        for path in C03_APACHE_PATHS:
+            with self.subTest(path=path):
+                candidate = REPO_ROOT / path
+                self.assertTrue(candidate.is_file())
+                self.assertFalse(candidate.is_symlink())
         self.assertNotIn("The six vector files below are the only", self.reuse_text)
         self.assertNotIn("Nothing else.", self.reuse_text)
         self.assertIn("The twelve paths below are the only approved", self.reuse_text)
@@ -198,7 +203,7 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
     def test_rebased_o10_guard_accepts_the_exact_validator(self) -> None:
         hashes = validate_validator_delta(self.base_validator, self.actual_validator)
         self.assertEqual(
-            "c4ad483f76afdf5b5c51d1481611fa2fc59b53fda3ec1670d29473ee6d6bf376",
+            "d09d62b8c2c27af2af12abf7dcc0df6192c826dd671aa114c567f1551628e393",
             hashes["complete_source_sha256"],
         )
 

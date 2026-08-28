@@ -26,9 +26,11 @@ resumes.
 The canonical [protocol-hardening plan](protocol/protocol-hardening-plan.md)
 defines the freeze boundary, authority order, review bundle and exit gates.
 Issue #233 / PR #234 remain isolated experimental evidence and are not treated
-as ratified protocol semantics. Issue #262 authorizes only construction of the
-separately contracted specification-derived C0.3 corpus. C0.3 remains `NO-GO`
-for implementation alignment, demo, product deployment and sensitive use.
+as ratified protocol semantics. Issue #264 constructs the separately contracted,
+synthetic-only C0.3 conformance corpus with independent Python/JavaScript replay
+and a closed adversarial mutation registry. This completes corpus construction
+only: C0.3 remains `NO-GO` for implementation alignment, demo, product
+deployment and sensitive use.
 
 ## Mission
 

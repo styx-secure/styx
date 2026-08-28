@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -15,6 +16,18 @@ from pathlib import Path
 from typing import Any
 
 sys.dont_write_bytecode = True
+
+C03_CORPUS_FILES = frozenset(
+    {
+        "adversarial-mutations.json",
+        "expected-traces.json",
+        "invalid-transcript-vectors.json",
+        "manifest.json",
+        "state-machine-scenarios.json",
+        "valid-transcript-vectors.json",
+    }
+)
+_C03_GATE_CACHE: dict[str, tuple["Finding", ...]] = {}
 
 
 EXPECTED_REGISTRIES = {
@@ -2522,6 +2535,189 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
     return findings
 
 
+def _c03_gate_cache_key(repo_root: Path) -> str:
+    """Bind cached evidence to every corpus and C0.3-tool byte."""
+
+    digest = hashlib.sha256()
+    resolved_root = repo_root.resolve(strict=True)
+    root_identity = str(resolved_root).encode("utf-8")
+    digest.update(len(root_identity).to_bytes(4, "big"))
+    digest.update(root_identity)
+    roots = (
+        resolved_root / "conformance/application-protocol/c03",
+        resolved_root / "tools/causal-flow-simulator/c03",
+    )
+    for root in roots:
+        if not root.is_dir() or root.is_symlink():
+            raise ValueError("C0.3 corpus or tooling directory is absent")
+        for path in sorted(root.rglob("*")):
+            if path.is_symlink():
+                raise ValueError("C0.3 corpus or tooling contains a symlink")
+            if not path.is_file():
+                continue
+            relative = path.relative_to(resolved_root).as_posix().encode("utf-8")
+            digest.update(len(relative).to_bytes(4, "big"))
+            digest.update(relative)
+            payload = path.read_bytes()
+            digest.update(len(payload).to_bytes(8, "big"))
+            digest.update(payload)
+    return digest.hexdigest()
+
+
+def _validate_c03_corpus_gate(repo_root: Path) -> list[Finding]:
+    """Require the complete corpus and both independent executable gates."""
+
+    findings: list[Finding] = []
+    corpus = repo_root / "conformance/application-protocol/c03"
+    tools = repo_root / "tools/causal-flow-simulator/c03"
+    try:
+        key = _c03_gate_cache_key(repo_root)
+        cached = _C03_GATE_CACHE.get(key)
+        if cached is not None:
+            return list(cached)
+        entries = list(corpus.rglob("*"))
+        names = {path.name for path in entries}
+        if (
+            names != C03_CORPUS_FILES
+            or any(
+                path.is_symlink()
+                or not path.is_file()
+                or len(path.relative_to(corpus).parts) != 1
+                for path in entries
+            )
+        ):
+            raise ValueError("exact six-file corpus set is absent")
+        canonical_counts: dict[str, int] = {}
+        minimum_counts = {
+            "validVectors": 17,
+            "invalidVectors": 29,
+            "scenarios": 118,
+            "mutations": 501,
+        }
+        manifest = load_json_unique(corpus / "manifest.json")
+        manifest_files = manifest.get("files")
+        if not isinstance(manifest_files, list):
+            raise ValueError("canonical corpus manifest file inventory is missing")
+        manifest_counts = {
+            row.get("path"): row.get("recordCount")
+            for row in manifest_files
+            if isinstance(row, dict)
+        }
+        if set(manifest_counts) != C03_CORPUS_FILES - {"manifest.json"}:
+            raise ValueError("canonical corpus manifest file inventory mismatch")
+        for label, filename in (
+            ("validVectors", "valid-transcript-vectors.json"),
+            ("invalidVectors", "invalid-transcript-vectors.json"),
+            ("scenarios", "state-machine-scenarios.json"),
+            ("mutations", "adversarial-mutations.json"),
+        ):
+            record_count = manifest_counts.get(filename)
+            if (
+                isinstance(record_count, bool)
+                or not isinstance(record_count, int)
+                or record_count < minimum_counts[label]
+            ):
+                raise ValueError(f"canonical {label} coverage is incomplete")
+            canonical_counts[label] = record_count
+        environment = os.environ.copy()
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        environment.pop("PYTHONOPTIMIZE", None)
+        with tempfile.TemporaryDirectory(prefix="styx-c03-model-gate-") as directory:
+            output_root = Path(directory)
+            commands = (
+                (
+                    "validate",
+                    [
+                        sys.executable,
+                        str(tools / "validate_corpus.py"),
+                        "--repo-root",
+                        str(repo_root),
+                        "--corpus",
+                        str(corpus),
+                        "--output",
+                        str(output_root / "validate.json"),
+                    ],
+                ),
+                (
+                    "cross",
+                    [
+                        sys.executable,
+                        str(tools / "run_cross_runtime.py"),
+                        "--repo-root",
+                        str(repo_root),
+                        "--corpus",
+                        str(corpus),
+                        "--output",
+                        str(output_root / "cross.json"),
+                    ],
+                ),
+                (
+                    "mutations",
+                    [
+                        sys.executable,
+                        str(tools / "run_mutations.py"),
+                        "--repo-root",
+                        str(repo_root),
+                        "--corpus",
+                        str(corpus),
+                        "--output",
+                        str(output_root / "mutations.json"),
+                    ],
+                ),
+            )
+            for label, command in commands:
+                completed = subprocess.run(
+                    command,
+                    cwd=repo_root,
+                    env=environment,
+                    check=False,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                if completed.returncode != 0:
+                    raise ValueError(f"{label} gate failed")
+            validation = load_json_unique(output_root / "validate.json")
+            cross = load_json_unique(output_root / "cross.json")
+            mutations = load_json_unique(output_root / "mutations.json")
+            if (
+                validation.get("result") != "PASS"
+                or validation.get("validVectors")
+                != canonical_counts["validVectors"]
+                or validation.get("invalidVectors")
+                != canonical_counts["invalidVectors"]
+                or validation.get("scenarios") != canonical_counts["scenarios"]
+                or validation.get("mutations") != canonical_counts["mutations"]
+            ):
+                raise ValueError("corpus validation report mismatch")
+            if (
+                cross.get("result") != "PASS"
+                or cross.get("runtimes") != ["javascript", "python"]
+                or cross.get("vectors")
+                != canonical_counts["validVectors"]
+                + canonical_counts["invalidVectors"]
+                or cross.get("scenarios") != canonical_counts["scenarios"]
+            ):
+                raise ValueError("cross-runtime report mismatch")
+            if (
+                mutations.get("result") != "PASS"
+                or mutations.get("runtimes") != ["javascript", "python"]
+                or mutations.get("killed") != canonical_counts["mutations"]
+            ):
+                raise ValueError("mutation report mismatch")
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        findings.append(
+            Finding(
+                "C03_CORPUS_GATE_MISSING",
+                "$model.blockers.C0.3",
+                str(error),
+            )
+        )
+    if not findings:
+        _C03_GATE_CACHE[key] = ()
+    return findings
+
+
 def validate(model: Any, schema: Any, repo_root: Path) -> list[Finding]:
     findings = validate_schema_definition(schema)
     if findings:
@@ -2531,6 +2727,7 @@ def validate(model: Any, schema: Any, repo_root: Path) -> list[Finding]:
     if isinstance(safe_model, dict):
         findings.extend(validate_domain(safe_model, repo_root))
         findings.extend(_validate_exact_pins(safe_model))
+        findings.extend(_validate_c03_corpus_gate(repo_root))
     return sorted(findings, key=lambda item: (item.code, item.path, item.message))
 
 
@@ -2631,6 +2828,11 @@ def _validate_output_boundary(repo_root: Path, output: Path) -> None:
     resolved_output = output.resolve(strict=False)
     if resolved_output == root or root in resolved_output.parents:
         raise ValueError("--output must resolve outside --repo-root")
+    existing_parent = resolved_output.parent
+    while not existing_parent.exists() and existing_parent != existing_parent.parent:
+        existing_parent = existing_parent.parent
+    if not existing_parent.is_dir():
+        raise ValueError("--output parent must resolve below a directory")
 
 
 class _InputParser(argparse.ArgumentParser):
