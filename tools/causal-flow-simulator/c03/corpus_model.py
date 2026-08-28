@@ -44,10 +44,17 @@ class CorpusModelError(ValueError):
 class ProtocolError(CorpusModelError):
     """One transcript-only candidate failed at an exact local stage."""
 
-    def __init__(self, code: str, stage: str = "S3_KERNEL_STRUCTURAL") -> None:
+    def __init__(
+        self,
+        code: str,
+        stage: str = "S3_KERNEL_STRUCTURAL",
+        *,
+        observations: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.stage = stage
+        self.observations = observations or {}
 
 
 DOMAINS = {
@@ -140,6 +147,7 @@ NONEXECUTABLE_INVARIANTS = frozenset(
 )
 SEMANTIC_OBSERVATION_FIELDS = (
     "apAuthorityResult",
+    "commitmentMatchVerification",
     "commitmentVerification",
     "dependencyStatus",
     "executed",
@@ -147,8 +155,16 @@ SEMANTIC_OBSERVATION_FIELDS = (
     "inputDigest",
     "kBindingAdmission",
     "outcomeEvaluated",
+    "geometryPredicate1",
+    "geometryPredicate2",
+    "geometryPredicate3",
+    "geometryPredicate4",
+    "geometryPredicate5",
+    "geometryPredicate6",
+    "geometryPredicate7",
     "signatureVerification",
     "stage",
+    "suppliedLengthVerification",
     "transcriptVerification",
 )
 OPTIONAL_SEMANTIC_OBSERVATION_FIELDS = ("localOutcome", "remoteClass")
@@ -523,6 +539,69 @@ class ByteReader:
             raise ProtocolError(f"TRAILING_{label.upper()}")
 
 
+def _geometry_observations() -> dict[str, str]:
+    return {f"geometryPredicate{index}": "NOT_EVALUATED" for index in range(1, 8)}
+
+
+def validate_geometry_predicates(
+    exact_length: int,
+    shape: str,
+    geometry: dict[str, int] | None,
+) -> dict[str, str]:
+    """Evaluate commitment-profile section 4.1 predicates 1-7 in order.
+
+    Closed-set membership and the smaller selected O-08 envelope are checked
+    only after this function succeeds.  This preserves R6's distinction
+    between malformed geometry and a well-formed unsupported chunk size.
+    """
+
+    observations = _geometry_observations()
+
+    def fail(index: int, code: str = "CHUNK_GEOMETRY_INVALID") -> None:
+        observations[f"geometryPredicate{index}"] = "FAIL"
+        raise ProtocolError(code, observations=observations)
+
+    if shape == "SINGLE":
+        observations["geometryPredicate1"] = "PASS"
+        if exact_length > MAX_U32 - 132:
+            fail(2, "CONTENT_GEOMETRY_INVALID")
+        observations["geometryPredicate2"] = "PASS"
+        for index in range(3, 8):
+            observations[f"geometryPredicate{index}"] = "NOT_APPLICABLE"
+        return observations
+
+    if shape != "TREE" or geometry is None:
+        fail(1, "CONTENT_GEOMETRY_INVALID")
+    if exact_length == 0:
+        fail(1)
+    observations["geometryPredicate1"] = "PASS"
+    observations["geometryPredicate2"] = "NOT_APPLICABLE"
+
+    chunk_size = geometry["chunkSize"]
+    chunk_count = geometry["chunkCount"]
+    final_length = geometry["finalChunkLength"]
+    if not 1 <= chunk_size <= MAX_U32 - 132:
+        fail(3)
+    observations["geometryPredicate3"] = "PASS"
+    if chunk_size >= exact_length or chunk_count < 2:
+        fail(4)
+    observations["geometryPredicate4"] = "PASS"
+    expected_count = 1 + ((exact_length - 1) // chunk_size)
+    if chunk_count != expected_count:
+        fail(5)
+    observations["geometryPredicate5"] = "PASS"
+    if chunk_count - 1 > MAX_U64 // chunk_size:
+        fail(6)
+    consumed = chunk_size * (chunk_count - 1)
+    if consumed >= exact_length or final_length != exact_length - consumed:
+        fail(6)
+    observations["geometryPredicate6"] = "PASS"
+    if not 0 < final_length <= chunk_size:
+        fail(7)
+    observations["geometryPredicate7"] = "PASS"
+    return observations
+
+
 def parse_event(transcript: bytes) -> dict[str, Any]:
     """Parse and canonically re-encode a corpus event."""
 
@@ -563,8 +642,6 @@ def parse_event(transcript: bytes) -> dict[str, Any]:
     genesis = body.take(32, "genesis")
     content_class = body.integer(1, "content_class")
     exact_length = body.integer(8, "content_length")
-    if exact_length > O08_LIMITS["CONTENT_EXACT_OCTETS"]:
-        raise ProtocolError("CONTENT_EXACT_OCTETS_LIMIT")
     content: dict[str, Any] = {
         "class": {0: "NONE", 1: "REQUIRED", 2: "DETACHABLE"}.get(content_class),
         "exactLength": exact_length,
@@ -591,34 +668,21 @@ def parse_event(transcript: bytes) -> dict[str, Any]:
                 "finalChunkLength": encoded_geometry.integer(4, "final_chunk_length"),
             }
             encoded_geometry.finish("geometry")
-            if geometry["chunkSize"] not in O08_CHUNK_OCTETS:
-                raise ProtocolError("CHUNK_OCTETS_LIMIT")
-            if geometry["chunkCount"] > O08_LIMITS["CHUNKS_PER_CONTENT"]:
-                raise ProtocolError("CHUNKS_PER_CONTENT_LIMIT")
-            chunk_size = geometry["chunkSize"]
-            chunk_count = geometry["chunkCount"]
-            final_length = geometry["finalChunkLength"]
-            if exact_length == 0 or chunk_size >= exact_length or chunk_count < 2:
-                raise ProtocolError("CHUNK_GEOMETRY_INVALID")
-            expected_count = 1 + ((exact_length - 1) // chunk_size)
-            if chunk_count != expected_count:
-                raise ProtocolError("CHUNK_GEOMETRY_INVALID")
-            if chunk_count - 1 > MAX_U64 // chunk_size:
-                raise ProtocolError("CHUNK_GEOMETRY_INVALID")
-            consumed = chunk_size * (chunk_count - 1)
-            if consumed >= exact_length or final_length != exact_length - consumed:
-                raise ProtocolError("CHUNK_GEOMETRY_INVALID")
-            if not 0 < final_length <= chunk_size:
-                raise ProtocolError("CHUNK_GEOMETRY_INVALID")
         shape = {0: "SINGLE", 1: "TREE"}.get(shape_code)
         if shape is None or (shape == "SINGLE") == (geometry is not None):
             raise ProtocolError("CONTENT_GEOMETRY_INVALID")
-        if shape == "SINGLE" and exact_length > MAX_U32 - 132:
-            raise ProtocolError("CONTENT_GEOMETRY_INVALID")
+        predicate_results = validate_geometry_predicates(exact_length, shape, geometry)
+        if geometry is not None and geometry["chunkSize"] not in O08_CHUNK_OCTETS:
+            raise ProtocolError("CHUNK_OCTETS_LIMIT", observations=predicate_results)
+        if geometry is not None and geometry["chunkCount"] > O08_LIMITS["CHUNKS_PER_CONTENT"]:
+            raise ProtocolError("CHUNKS_PER_CONTENT_LIMIT", observations=predicate_results)
+        if exact_length > O08_LIMITS["CONTENT_EXACT_OCTETS"]:
+            raise ProtocolError("CONTENT_EXACT_OCTETS_LIMIT", observations=predicate_results)
         content.update(
             {
                 "commitmentHex": commitment.hex(),
                 "contentType": content_type,
+                "geometryPredicateResults": predicate_results,
                 "shape": shape,
             }
         )
@@ -775,25 +839,41 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
     state_digest = sha256(b"styx-c03/evaluation/initial").hexdigest()
     result: dict[str, Any] = {
         "apAuthorityResult": "AP_FOLD_NOT_EXECUTED",
+        "commitmentMatchVerification": "NOT_EVALUATED",
         "commitmentVerification": "NOT_PRESENT",
         "externalEffects": [],
+        **_geometry_observations(),
         "kBindingAdmission": "ADMITTED",
         "outcomeEvaluated": False,
         "postStateDigest": None,
         "preStateDigest": state_digest,
         "signatureVerification": "NOT_EVALUATED",
         "stage": "FINAL_AFTER_S6",
+        "suppliedLengthVerification": "NOT_EVALUATED",
         "transcriptVerification": "VALID",
     }
 
     def reject(
-        outcome: str,
+        outcome: str | list[tuple[str, str]],
         stage: str | None = None,
         *,
         admitted: bool = False,
         transcript_status: str = "VALID",
     ) -> dict[str, Any]:
-        result.update(o10_result(outcome, stage))
+        if isinstance(outcome, list):
+            if stage is not None:
+                raise ProtocolError("O-10 candidate set cannot override stage")
+            candidates = outcome
+        else:
+            selected_stage = stage or str(
+                next(
+                    row["stage"]
+                    for row in load_local_json(O10_TAXONOMY_PATH)["primaries"]
+                    if row["id"] == outcome
+                )
+            ).split("|")[0]
+            candidates = [(outcome, selected_stage)]
+        result.update(select_o10_result(candidates))
         result.update(
             {
                 "apAuthorityResult": (
@@ -819,6 +899,7 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
         else:
             raise ProtocolError("OBJECT_KIND_UNKNOWN")
     except ProtocolError as error:
+        result.update(error.observations)
         if error.code == "PARENTS_PER_EVENT_LIMIT":
             return reject(
                 "CONTEXT_CAPACITY_EXHAUSTED",
@@ -858,10 +939,19 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
         ):
             return reject("CREDENTIAL_BINDING_MISMATCH", "S3_KERNEL_STRUCTURAL")
         content = fields["content"]
+        if content["class"] == "NONE":
+            result.update(
+                {f"geometryPredicate{index}": "NOT_APPLICABLE" for index in range(1, 8)}
+            )
+            result["suppliedLengthVerification"] = "NOT_APPLICABLE"
+            result["commitmentMatchVerification"] = "NOT_APPLICABLE"
         if content["class"] != "NONE":
+            result.update(content["geometryPredicateResults"])
             opening = record.get("opening")
             if opening is None:
                 result["commitmentVerification"] = "PENDING"
+                result["suppliedLengthVerification"] = "NOT_EVALUATED"
+                result["commitmentMatchVerification"] = "NOT_EVALUATED"
                 if content["class"] == "REQUIRED":
                     return reject("PENDING_OPENING", "EVENT_LOCAL", admitted=True)
                 return reject("OPENING_MISSING", "S3_KERNEL_STRUCTURAL")
@@ -878,13 +968,29 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
                 randomizer=randomizer,
                 chunk_size=(content.get("geometry") or {}).get("chunkSize"),
             )
+            failures: list[tuple[str, str]] = []
             if len(supplied) != content["exactLength"]:
                 result["commitmentVerification"] = "REJECTED"
-                return reject("LENGTH_MISMATCH", "S3_KERNEL_STRUCTURAL")
+                result["suppliedLengthVerification"] = "REJECTED"
+                failures.append(("LENGTH_MISMATCH", "S3_KERNEL_STRUCTURAL"))
+            else:
+                result["suppliedLengthVerification"] = "VALID"
             if commitment["commitmentHex"] != content["commitmentHex"]:
                 result["commitmentVerification"] = "REJECTED"
-                return reject("COMMITMENT_MISMATCH", "S3_KERNEL_STRUCTURAL")
+                result["commitmentMatchVerification"] = "REJECTED"
+                failures.append(("COMMITMENT_MISMATCH", "S3_KERNEL_STRUCTURAL"))
+            else:
+                result["commitmentMatchVerification"] = "VALID"
+            if failures:
+                return reject(failures)
             result["commitmentVerification"] = "VALID"
+            result["commitmentMatchVerification"] = "VALID"
+    else:
+        result.update(
+            {f"geometryPredicate{index}": "NOT_APPLICABLE" for index in range(1, 8)}
+        )
+        result["suppliedLengthVerification"] = "NOT_APPLICABLE"
+        result["commitmentMatchVerification"] = "NOT_APPLICABLE"
 
     if admission:
         if reference in admission.get("seenEventReferences", []):
@@ -996,6 +1102,37 @@ def o10_result(primary: str, stage: str | None = None) -> dict[str, str]:
         "remoteClass": remote,
         "stage": selected_stage,
     }
+
+
+def select_o10_result(candidates: list[tuple[str, str]]) -> dict[str, str]:
+    """Select one applicable K primary using only the ratified O-10 registry.
+
+    A multi-candidate call is accepted only when the registry publishes one
+    closed precedence list containing every candidate.  This deliberately
+    fails closed instead of inventing fallback precedence in the evaluator.
+    """
+
+    if not candidates:
+        raise CorpusModelError("empty O-10 candidate set")
+    normalized = sorted(set(candidates))
+    results = [o10_result(primary, stage) for primary, stage in normalized]
+    if len(results) == 1:
+        return results[0]
+    taxonomy = load_local_json(O10_TAXONOMY_PATH)
+    identifiers = {result["localOutcome"] for result in results}
+    for key in ("k_precedence", "event_precedence"):
+        precedence = taxonomy.get(key)
+        if (
+            isinstance(precedence, list)
+            and all(isinstance(value, str) for value in precedence)
+            and identifiers <= set(precedence)
+        ):
+            selected = min(results, key=lambda result: precedence.index(result["localOutcome"]))
+            return selected
+    raise CorpusModelError(
+        "O-10 candidates lack one closed precedence relation: "
+        + ",".join(sorted(identifiers))
+    )
 
 
 def _ids(records: Any, label: str) -> list[str]:
@@ -1134,8 +1271,59 @@ def validate_inventory(repo_root: Path) -> dict[str, Any]:
         raise CorpusModelError("O-10 alias mismatch")
 
     o10_sources = reader.json("tools/causal-flow-simulator/o10/source-inventory.json")
-    if len(o10_sources.get("rows", [])) != inventory["o10_source_row_count"]:
+    source_rows = o10_sources.get("rows", [])
+    if len(source_rows) != inventory["o10_source_row_count"]:
         raise CorpusModelError("O-10 source-row cardinality mismatch")
+    source_by_id = {row.get("row_id"): row for row in source_rows}
+    if len(source_by_id) != len(source_rows) or None in source_by_id:
+        raise CorpusModelError("O-10 source-row identifier mismatch")
+    witness_map = inventory.get("o10_produced_source_row_witnesses")
+    if not isinstance(witness_map, dict) or not witness_map:
+        raise CorpusModelError("O-10 produced-row witness map missing")
+    if not set(witness_map) <= set(source_by_id):
+        raise CorpusModelError("O-10 produced-row witness references unknown row")
+    for row_id, witnesses in witness_map.items():
+        source = source_by_id[row_id]
+        mapping = source.get("mapping")
+        if not isinstance(mapping, dict):
+            raise CorpusModelError(f"produced forbidden O-10 row: {row_id}")
+        primary = next(
+            (item for item in taxonomy["primaries"] if item["id"] == mapping["primary"]),
+            None,
+        )
+        if primary is None or primary.get("owner") != "K":
+            raise CorpusModelError(f"produced non-K O-10 row: {row_id}")
+        if not isinstance(witnesses, list) or not witnesses:
+            raise CorpusModelError(f"empty O-10 row witness set: {row_id}")
+        seen_inputs: set[str] = set()
+        for witness in witnesses:
+            if not isinstance(witness, dict) or set(witness) != {
+                "inputId",
+                "jointSourceRowIds",
+            }:
+                raise CorpusModelError(f"malformed O-10 row witness: {row_id}")
+            input_id = witness["inputId"]
+            joint = witness["jointSourceRowIds"]
+            if (
+                not isinstance(input_id, str)
+                or not input_id
+                or input_id in seen_inputs
+                or not isinstance(joint, list)
+                or not joint
+                or row_id not in joint
+                or joint != sorted(set(joint))
+                or not set(joint) <= set(source_by_id)
+            ):
+                raise CorpusModelError(f"invalid O-10 row witness relation: {row_id}")
+            seen_inputs.add(input_id)
+            mapped = [source_by_id[identifier].get("mapping") for identifier in joint]
+            if any(
+                not isinstance(item, dict)
+                or item.get("primary") != mapping.get("primary")
+                or item.get("stage") != mapping.get("stage")
+                for item in mapped
+            ):
+                raise CorpusModelError(f"incompatible joint O-10 witness: {row_id}")
     o07 = reader.json("tools/causal-flow-simulator/o07/required_atom_instances_v1.json")
     if (
         o07.get("relation_count") != inventory["o07_relation_count"]

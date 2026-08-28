@@ -78,14 +78,17 @@ def _compute_step(
             local_outcome = "NOT_EVALUATED"
         observation = {
             "apAuthorityResult": "NOT_EVALUATED",
+            "commitmentMatchVerification": "NOT_EVALUATED",
             "commitmentVerification": "NOT_PRESENT",
             "externalEffects": [],
+            **{f"geometryPredicate{number}": "NOT_EVALUATED" for number in range(1, 8)},
             "kBindingAdmission": "NOT_EVALUATED",
             "localOutcome": local_outcome,
             "outcomeEvaluated": False,
             "remoteClass": "OPAQUE_REMOTE_FAILURE",
             "signatureVerification": "NOT_EVALUATED",
             "stage": "BOUNDARY_NOT_EXECUTED",
+            "suppliedLengthVerification": "NOT_EVALUATED",
             "transcriptVerification": "NOT_EVALUATED",
         }
         post_state = "UNCHANGED"

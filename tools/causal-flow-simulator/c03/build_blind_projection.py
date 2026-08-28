@@ -79,7 +79,15 @@ BLIND_ENVELOPE_DIMENSIONS = frozenset(
 )
 PUBLIC_OBSERVATION_FIELDS = (
     "apAuthorityResult",
+    "commitmentMatchVerification",
     "commitmentVerification",
+    "geometryPredicate1",
+    "geometryPredicate2",
+    "geometryPredicate3",
+    "geometryPredicate4",
+    "geometryPredicate5",
+    "geometryPredicate6",
+    "geometryPredicate7",
     "kBindingAdmission",
     "localOutcomePresent",
     "outcomeEvaluated",
@@ -87,6 +95,7 @@ PUBLIC_OBSERVATION_FIELDS = (
     "remoteClassPresent",
     "signatureVerification",
     "stage",
+    "suppliedLengthVerification",
     "transcriptVerification",
 )
 FORBIDDEN_KEY_PARTS = frozenset(
@@ -658,7 +667,9 @@ def _public_observation(record: dict[str, Any]) -> dict[str, Any]:
     reference_not_reached = observed["transcriptVerification"] != "VALID"
     result = {
         "apAuthorityResult": observed["apAuthorityResult"],
+        "commitmentMatchVerification": observed["commitmentMatchVerification"],
         "commitmentVerification": observed["commitmentVerification"],
+        **{f"geometryPredicate{index}": observed[f"geometryPredicate{index}"] for index in range(1, 8)},
         "kBindingAdmission": observed["kBindingAdmission"],
         "localOutcomePresent": "localOutcome" in observed,
         "outcomeEvaluated": observed["outcomeEvaluated"],
@@ -666,6 +677,7 @@ def _public_observation(record: dict[str, Any]) -> dict[str, Any]:
         "remoteClassPresent": "remoteClass" in observed,
         "signatureVerification": observed["signatureVerification"],
         "stage": observed["stage"],
+        "suppliedLengthVerification": observed["suppliedLengthVerification"],
         "transcriptVerification": observed["transcriptVerification"],
     }
     if "localOutcome" in observed:

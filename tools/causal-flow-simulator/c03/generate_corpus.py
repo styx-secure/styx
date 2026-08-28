@@ -58,6 +58,90 @@ COMMON_CITATIONS = [
     },
 ]
 
+# Closed source-anchored mutations required by Issue #266 R3.  Each entry names
+# the exact Base authority that the detector protects; validators reject stale
+# anchors or source-row identifiers before either runtime may claim a kill.
+SOURCE_SECURITY_MUTATIONS = (
+    {
+        "detector": "SOURCE_O10_CLASS_MEMBERSHIP",
+        "generatedTargetId": "APPLIED",
+        "id": "mutation-source-o10-class-membership",
+        "sourceAnchor": '"id":"APPLIED"',
+        "sourcePath": "tools/causal-flow-simulator/o10/outcome-taxonomy.json",
+        "sourceRowIds": ["BASE:APPLIED:00"],
+        "transformation": "ALLOW_AP_OWNED_PRIMARY_IN_K_SELECTOR",
+        "violatedInvariant": "INV_OUTCOME_PRECEDENCE",
+    },
+    {
+        "detector": "SOURCE_O10_APPLICABILITY",
+        "generatedTargetId": "LENGTH_MISMATCH:EVENT_LOCAL",
+        "id": "mutation-source-o10-applicability",
+        "sourceAnchor": '"id":"LENGTH_MISMATCH"',
+        "sourcePath": "tools/causal-flow-simulator/o10/outcome-taxonomy.json",
+        "sourceRowIds": ["BASE:LENGTH_MISMATCH:00"],
+        "transformation": "ALLOW_PRIMARY_AT_UNREGISTERED_STAGE",
+        "violatedInvariant": "INV_OUTCOME_PRECEDENCE",
+    },
+    {
+        "detector": "SOURCE_O10_PRECEDENCE",
+        "generatedTargetId": "inv-commitment",
+        "id": "mutation-source-o10-precedence",
+        "sourceAnchor": '"k_precedence"',
+        "sourcePath": "tools/causal-flow-simulator/o10/outcome-taxonomy.json",
+        "sourceRowIds": ["BASE:LENGTH_MISMATCH:00", "BASE:COMMITMENT_MISMATCH:00"],
+        "transformation": "SELECT_COMMITMENT_BEFORE_LENGTH",
+        "violatedInvariant": "INV_OUTCOME_PRECEDENCE",
+    },
+    {
+        "detector": "SOURCE_CHECKPOINT_BEFORE_PROTECTED_WORK",
+        "generatedTargetId": "inv-signature",
+        "id": "mutation-source-checkpoint-after-protected-work",
+        "sourceAnchor": "Any attempt to populate checkpoint evidence is rejected before",
+        "sourcePath": "docs/protocol/styx-app-kernel-v0-decisions.md",
+        "sourceRowIds": ["O08:CHECKPOINT_REFERENCES:S3_KERNEL_STRUCTURAL"],
+        "transformation": "MOVE_CHECKPOINT_REJECTION_AFTER_SIGNATURE_OR_COMMITMENT",
+        "violatedInvariant": "INV_NO_CHECKPOINT_SUBSTITUTION",
+    },
+    *(
+        {
+            "detector": "SOURCE_GEOMETRY_PREDICATE",
+            "generatedTargetId": f"geometry-predicate-{number}",
+            "id": f"mutation-source-geometry-predicate-{number}",
+            "predicateNumber": number,
+            "sourceAnchor": "### 4.1 Geometry container",
+            "sourcePath": "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
+            "sourceRowIds": ["BASE:STRUCTURAL_REJECTION:00"],
+            "transformation": (
+                "MAKE_FINAL_CHUNK_UPPER_BOUND_EXCLUSIVE"
+                if number == 7
+                else f"REMOVE_OR_INVERT_GEOMETRY_PREDICATE_{number}"
+            ),
+            "violatedInvariant": "INV_COMMITMENT_CONTEXT_BINDING",
+        }
+        for number in range(1, 8)
+    ),
+    {
+        "detector": "SOURCE_R6_CLASSIFICATION",
+        "generatedTargetId": "inv-resource-chunk-size",
+        "id": "mutation-source-r6-classification",
+        "sourceAnchor": "O08:CHUNK_OCTETS:S3_KERNEL_STRUCTURAL",
+        "sourcePath": "tools/causal-flow-simulator/o10/source-inventory.json",
+        "sourceRowIds": ["O08:CHUNK_OCTETS:S3_KERNEL_STRUCTURAL"],
+        "transformation": "CLASSIFY_WELL_FORMED_UNSUPPORTED_CHUNK_AS_STRUCTURAL",
+        "violatedInvariant": "INV_AUTHORITY_PROJECTION_LIMITS",
+    },
+    {
+        "detector": "SOURCE_R5_LAYERING",
+        "generatedTargetId": "vec-required-single",
+        "id": "mutation-source-r5-flatten-k-admission",
+        "sourceAnchor": "## 6. Gate for C0.3 and exact next sequence",
+        "sourcePath": "docs/protocol/styx-app-kernel-v0-decisions.md",
+        "sourceRowIds": ["BASE:APPLIED:00"],
+        "transformation": "FLATTEN_ADMITTED_AP_FOLD_NOT_EXECUTED_TO_SUCCESS",
+        "violatedInvariant": "INV_AUTH_NOT_KEY",
+    },
+)
+
 # These relations are deliberately semantic and reviewable.  They replace the
 # former positional/modulo joins, which could associate any invariant with any
 # scenario without changing a gate result.  Every executable invariant owns a
@@ -744,7 +828,12 @@ def _invalid_vectors(
             "resource-chunk-size",
             sequence=final_control["fields"]["authorSequence"] + 1,
             predecessor=final_control["eventReferenceHex"],
-            content=tree_descriptor(chunk_size=8192, chunk_count=1, final_length=1),
+            content=tree_descriptor(
+                chunk_size=8192,
+                chunk_count=2,
+                final_length=1,
+                exact_length=8193,
+            ),
         ),
     )
     generated_invalid(
@@ -754,7 +843,12 @@ def _invalid_vectors(
             "resource-chunk-count",
             sequence=final_control["fields"]["authorSequence"] + 1,
             predecessor=final_control["eventReferenceHex"],
-            content=tree_descriptor(chunk_size=4096, chunk_count=65, final_length=1),
+            content=tree_descriptor(
+                chunk_size=4096,
+                chunk_count=65,
+                final_length=1,
+                exact_length=262145,
+            ),
         ),
     )
     generated_invalid(
@@ -1198,14 +1292,17 @@ def _traces(scenarios: list[dict[str, Any]], vector_by_id: dict[str, dict[str, A
             if evaluated is None:
                 observation = {
                     "apAuthorityResult": "NOT_EVALUATED",
+                    "commitmentMatchVerification": "NOT_EVALUATED",
                     "commitmentVerification": "NOT_PRESENT",
                     "externalEffects": [],
+                    **{f"geometryPredicate{number}": "NOT_EVALUATED" for number in range(1, 8)},
                     "kBindingAdmission": "NOT_EVALUATED",
                     "localOutcome": step["expectedOutcome"],
                     "outcomeEvaluated": False,
                     "remoteClass": "OPAQUE_REMOTE_FAILURE",
                     "signatureVerification": "NOT_EVALUATED",
                     "stage": step["expectedStage"],
+                    "suppliedLengthVerification": "NOT_EVALUATED",
                     "transcriptVerification": "NOT_EVALUATED",
                 }
             else:
@@ -1332,6 +1429,16 @@ def _mutations(
                 "violatedInvariant": "INV_CAUSAL_TARGET_AVAILABILITY",
             },
         )
+    )
+    mutations.extend(
+        {
+            **record,
+            "expectedOutcome": "MUTANT_REJECTED",
+            "expectedStage": "SOURCE_MUTATION",
+            "mutationClass": "SOURCE_ANCHORED_SECURITY",
+            "sourceRecordId": record["sourcePath"],
+        }
+        for record in SOURCE_SECURITY_MUTATIONS
     )
     for dimension in sorted(
         identifier
@@ -1476,11 +1583,27 @@ def _coverage(
             }
         )
     source_rows = []
+    produced_witnesses = inventory["o10_produced_source_row_witnesses"]
     for row in reader.json("tools/causal-flow-simulator/o10/source-inventory.json")["rows"]:
-        if "mapping" in row:
+        row_id = row["row_id"]
+        if row_id in produced_witnesses:
             primary = row["mapping"]["primary"]
-            disposition = next(item["branch"] for item in outcome_rows if item["id"] == primary)
-            witnesses = next(item["scenarioIds"] for item in outcome_rows if item["id"] == primary)
+            disposition = "PRODUCED"
+            witnesses = [
+                {
+                    **witness,
+                    "scenarioId": f"scenario-vector-{witness['inputId']}",
+                }
+                for witness in produced_witnesses[row_id]
+            ]
+        elif "mapping" in row and row["mapping"]["primary"] in AP_OWNED_EXCLUSIONS:
+            primary = row["mapping"]["primary"]
+            disposition = "AP_OWNED_EXCLUDED"
+            witnesses = []
+        elif "mapping" in row:
+            primary = row["mapping"]["primary"]
+            disposition = "TRANSCRIPT_PROFILE_UNREACHABLE"
+            witnesses = []
         else:
             primary = row["forbidden_identifier"]
             disposition = "TRANSCRIPT_PROFILE_UNREACHABLE"
@@ -1489,8 +1612,8 @@ def _coverage(
             {
                 "disposition": disposition,
                 "primary": primary,
-                "rowId": row["row_id"],
-                "witnessScenarioIds": witnesses,
+                "rowId": row_id,
+                "witnesses": witnesses,
             }
         )
     states = sorted(

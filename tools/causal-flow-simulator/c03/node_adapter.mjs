@@ -36,7 +36,9 @@ const O10_TAXONOMY = JSON.parse(readFileSync(new URL("../o10/outcome-taxonomy.js
 const O10_BY_ID = new Map(O10_TAXONOMY.primaries.map(row => [row.id, row]));
 
 class ProtocolError extends Error {
-  constructor(message, stage = "S3_KERNEL_STRUCTURAL") { super(message); this.stage = stage; }
+  constructor(message, stage = "S3_KERNEL_STRUCTURAL", observations = {}) {
+    super(message); this.stage = stage; this.observations = observations;
+  }
 }
 const require = (ok, message) => { if (!ok) throw new ProtocolError(message); };
 const hash = (...parts) => createHash("sha256").update(Buffer.concat(parts)).digest();
@@ -48,6 +50,21 @@ function o10Result(primary, stage = undefined) {
   const selected = stage ?? stages[0];
   require(stages.includes(selected), `O-10 stage mismatch:${primary}:${selected}`);
   return { localOutcome: primary, remoteClass: O10_TAXONOMY.remote_collapse, stage: selected };
+}
+function selectO10Result(candidates) {
+  require(Array.isArray(candidates) && candidates.length > 0, "empty O-10 candidate set");
+  const normalized = [...new Map(candidates.map(([primary, stage]) => [`${primary}:${stage}`, [primary, stage]])).values()]
+    .sort((left, right) => `${left[0]}:${left[1]}`.localeCompare(`${right[0]}:${right[1]}`));
+  const results = normalized.map(([primary, stage]) => o10Result(primary, stage));
+  if (results.length === 1) return results[0];
+  const identifiers = new Set(results.map(row => row.localOutcome));
+  for (const key of ["k_precedence", "event_precedence"]) {
+    const precedence = O10_TAXONOMY[key];
+    if (Array.isArray(precedence) && [...identifiers].every(identifier => precedence.includes(identifier))) {
+      return results.toSorted((left, right) => precedence.indexOf(left.localOutcome) - precedence.indexOf(right.localOutcome))[0];
+    }
+  }
+  throw new ProtocolError(`O-10 candidates lack one closed precedence relation:${[...identifiers].sort().join(",")}`);
 }
 
 function uint(value, width, label) {
@@ -92,6 +109,63 @@ class Reader {
   }
   opaque(label) { return this.take(this.integer(4, `${label}_length`), label); }
   finish(label) { require(this.offset === this.data.length, `TRAILING_${label.toUpperCase()}`); }
+}
+
+function geometryObservations() {
+  return Object.fromEntries(Array.from({ length: 7 }, (_, index) => [`geometryPredicate${index + 1}`, "NOT_EVALUATED"]));
+}
+
+function validateGeometryPredicates(exactLength, shape, geometry) {
+  const observations = geometryObservations();
+  const fail = (index, code = "CHUNK_GEOMETRY_INVALID") => {
+    observations[`geometryPredicate${index}`] = "FAIL";
+    throw new ProtocolError(code, "S3_KERNEL_STRUCTURAL", observations);
+  };
+  if (shape === "SINGLE") {
+    observations.geometryPredicate1 = "PASS";
+    if (exactLength > Number(MAX_U32 - 132n)) fail(2, "CONTENT_GEOMETRY_INVALID");
+    observations.geometryPredicate2 = "PASS";
+    for (let index = 3; index <= 7; index += 1) observations[`geometryPredicate${index}`] = "NOT_APPLICABLE";
+    return observations;
+  }
+  if (shape !== "TREE" || geometry === null) fail(1, "CONTENT_GEOMETRY_INVALID");
+  if (exactLength === 0) fail(1);
+  observations.geometryPredicate1 = "PASS";
+  observations.geometryPredicate2 = "NOT_APPLICABLE";
+  const { chunkSize, chunkCount, finalChunkLength } = geometry;
+  if (!(chunkSize >= 1 && chunkSize <= Number(MAX_U32 - 132n))) fail(3);
+  observations.geometryPredicate3 = "PASS";
+  if (chunkSize >= exactLength || chunkCount < 2) fail(4);
+  observations.geometryPredicate4 = "PASS";
+  const expectedCount = 1 + Math.floor((exactLength - 1) / chunkSize);
+  if (chunkCount !== expectedCount) fail(5);
+  observations.geometryPredicate5 = "PASS";
+  const consumed = chunkSize * (chunkCount - 1);
+  if (!Number.isSafeInteger(consumed) || consumed >= exactLength || finalChunkLength !== exactLength - consumed) fail(6);
+  observations.geometryPredicate6 = "PASS";
+  if (!(finalChunkLength > 0 && finalChunkLength <= chunkSize)) fail(7);
+  observations.geometryPredicate7 = "PASS";
+  return observations;
+}
+
+function geometryPredicateMutantIsKilled(number) {
+  const cases = new Map([
+    [1, [0, "TREE", { chunkSize: 1, chunkCount: 2, finalChunkLength: 1 }, "FAIL"]],
+    [2, [Number(MAX_U32 - 131n), "SINGLE", null, "FAIL"]],
+    [3, [8, "TREE", { chunkSize: 0, chunkCount: 2, finalChunkLength: 8 }, "FAIL"]],
+    [4, [8, "TREE", { chunkSize: 8, chunkCount: 2, finalChunkLength: 1 }, "FAIL"]],
+    [5, [9, "TREE", { chunkSize: 4, chunkCount: 2, finalChunkLength: 5 }, "FAIL"]],
+    [6, [9, "TREE", { chunkSize: 4, chunkCount: 3, finalChunkLength: 2 }, "FAIL"]],
+    [7, [8, "TREE", { chunkSize: 4, chunkCount: 2, finalChunkLength: 4 }, "PASS"]],
+  ]);
+  const [exactLength, shape, geometry, expected] = cases.get(number);
+  let observations;
+  try { observations = validateGeometryPredicates(exactLength, shape, geometry); }
+  catch (error) {
+    if (!(error instanceof ProtocolError)) throw error;
+    observations = error.observations;
+  }
+  return observations[`geometryPredicate${number}`] === expected;
 }
 
 function encodeGenesis(fields) {
@@ -192,7 +266,6 @@ function parseEvent(transcript) {
   if (parentCount > O08_LIMITS.PARENTS_PER_EVENT) throw new ProtocolError("PARENTS_PER_EVENT_LIMIT", "S4_GRAPH_ADMISSION");
   const parents = Array.from({ length: parentCount }, () => body.take(32, "parent"));
   const genesis = body.take(32, "genesis"), contentClass = body.integer(1, "content_class"), exactLength = body.integer(8, "content_length");
-  require(exactLength <= O08_LIMITS.CONTENT_EXACT_OCTETS, "CONTENT_EXACT_OCTETS_LIMIT");
   const className = ({ 0: "NONE", 1: "REQUIRED", 2: "DETACHABLE" })[contentClass]; require(className !== undefined, "CONTENT_CLASS_UNKNOWN");
   const content = { class: className, exactLength };
   if (contentClass === 0) require(exactLength === 0, "NONE_DESCRIPTOR_INVALID");
@@ -203,17 +276,13 @@ function parseEvent(transcript) {
     let geometry = null;
     if (geometryPresence) {
       const encoded = new Reader(body.opaque("geometry")); geometry = { chunkSize: encoded.integer(4, "chunk_size"), chunkCount: encoded.integer(8, "chunk_count"), finalChunkLength: encoded.integer(4, "final_chunk_length") }; encoded.finish("geometry");
-      require(O08_CHUNK_OCTETS.has(geometry.chunkSize), "CHUNK_OCTETS_LIMIT");
-      require(geometry.chunkCount <= O08_LIMITS.CHUNKS_PER_CONTENT, "CHUNKS_PER_CONTENT_LIMIT");
-      require(exactLength > 0 && geometry.chunkSize < exactLength && geometry.chunkCount >= 2, "CHUNK_GEOMETRY_INVALID");
-      const expectedCount = 1 + Math.floor((exactLength - 1) / geometry.chunkSize);
-      require(geometry.chunkCount === expectedCount, "CHUNK_GEOMETRY_INVALID");
-      const consumed = geometry.chunkSize * (geometry.chunkCount - 1);
-      require(Number.isSafeInteger(consumed) && consumed < exactLength && geometry.finalChunkLength === exactLength - consumed, "CHUNK_GEOMETRY_INVALID");
-      require(geometry.finalChunkLength > 0 && geometry.finalChunkLength <= geometry.chunkSize, "CHUNK_GEOMETRY_INVALID");
     }
     const shape = ({ 0: "SINGLE", 1: "TREE" })[shapeCode]; require(shape !== undefined && ((shape === "SINGLE") !== (geometry !== null)), "CONTENT_GEOMETRY_INVALID");
-    Object.assign(content, { commitmentHex: hex(commitment), contentType, shape }); if (geometry !== null) content.geometry = geometry;
+    const predicateResults = validateGeometryPredicates(exactLength, shape, geometry);
+    if (geometry !== null && !O08_CHUNK_OCTETS.has(geometry.chunkSize)) throw new ProtocolError("CHUNK_OCTETS_LIMIT", "S3_KERNEL_STRUCTURAL", predicateResults);
+    if (geometry !== null && geometry.chunkCount > O08_LIMITS.CHUNKS_PER_CONTENT) throw new ProtocolError("CHUNKS_PER_CONTENT_LIMIT", "S3_KERNEL_STRUCTURAL", predicateResults);
+    if (exactLength > O08_LIMITS.CONTENT_EXACT_OCTETS) throw new ProtocolError("CONTENT_EXACT_OCTETS_LIMIT", "S3_KERNEL_STRUCTURAL", predicateResults);
+    Object.assign(content, { commitmentHex: hex(commitment), contentType, geometryPredicateResults: predicateResults, shape }); if (geometry !== null) content.geometry = geometry;
   }
   const role = ({ 0: "ORDINARY", 1: "REMOVAL", 2: "CREDENTIAL" })[roleCode];
   const fields = { applicationProfileId: profile, applicationProfileVersion: version, authorSequence: sequence, causalParents: parents.map(hex), content,
@@ -256,10 +325,12 @@ function ed25519Verify(publicKey, signature, message) {
 
 function evaluate(record) {
   const transcript = Buffer.from(record.transcriptHex, "hex"), state = hex(hash(Buffer.from("styx-c03/evaluation/initial")));
-  const result = { apAuthorityResult: "AP_FOLD_NOT_EXECUTED", commitmentVerification: "NOT_PRESENT", externalEffects: [],
+  const result = { apAuthorityResult: "AP_FOLD_NOT_EXECUTED", commitmentMatchVerification: "NOT_EVALUATED", commitmentVerification: "NOT_PRESENT", externalEffects: [], ...geometryObservations(),
     kBindingAdmission: "ADMITTED", outcomeEvaluated: false, postStateDigest: null, preStateDigest: state,
-    signatureVerification: "NOT_EVALUATED", stage: "FINAL_AFTER_S6", transcriptVerification: "VALID" };
-  const reject = (outcome, stage, transcriptStatus = "VALID", admitted = false) => Object.assign(result, o10Result(outcome, stage), {
+    signatureVerification: "NOT_EVALUATED", stage: "FINAL_AFTER_S6", suppliedLengthVerification: "NOT_EVALUATED", transcriptVerification: "VALID" };
+  const reject = (outcome, stage, transcriptStatus = "VALID", admitted = false) => Object.assign(result, selectO10Result(
+    Array.isArray(outcome) ? outcome : [[outcome, stage ?? O10_BY_ID.get(outcome)?.stage.split("|")[0]]],
+  ), {
     apAuthorityResult: admitted ? "REJECTED_OR_DEFERRED" : "NOT_REACHED",
     kBindingAdmission: admitted ? "ADMITTED" : "REJECTED", outcomeEvaluated: true,
     postStateDigest: state, transcriptVerification: transcriptStatus,
@@ -270,6 +341,7 @@ function evaluate(record) {
     else if (record.kind === "APPLICATION_EVENT") { fields = parseEvent(transcript); reference = hex(framedHash(DOMAINS.eventReference, transcript)); expected = record.eventReferenceHex; }
     else throw new ProtocolError("OBJECT_KIND_UNKNOWN");
   } catch (error) {
+    if (error instanceof ProtocolError) Object.assign(result, error.observations);
     if (error instanceof ProtocolError && error.message === "PARENTS_PER_EVENT_LIMIT") return reject("CONTEXT_CAPACITY_EXHAUSTED", error.stage, "REJECTED");
     if (error instanceof ProtocolError && error.message.endsWith("_LIMIT")) return reject("CURRENT_OBJECT_OUT_OF_PROFILE", error.stage, "REJECTED");
     return reject("STRUCTURAL_REJECTION", error instanceof ProtocolError ? error.stage : "S3_KERNEL_STRUCTURAL", "REJECTED");
@@ -282,19 +354,42 @@ function evaluate(record) {
   result.signatureVerification = "VALID";
   if (record.kind === "APPLICATION_EVENT") {
     if (record.binding.contextIdentifierHex !== fields.contextIdentifierHex || record.binding.credentialIdentifierHex !== fields.credentialIdentifierHex) return reject("CREDENTIAL_BINDING_MISMATCH", "S3_KERNEL_STRUCTURAL");
+    if (fields.content.class === "NONE") {
+      for (let index = 1; index <= 7; index += 1) result[`geometryPredicate${index}`] = "NOT_APPLICABLE";
+      result.suppliedLengthVerification = "NOT_APPLICABLE";
+      result.commitmentMatchVerification = "NOT_APPLICABLE";
+    }
     if (fields.content.class !== "NONE") {
+      Object.assign(result, fields.content.geometryPredicateResults);
       if (record.opening === undefined) {
         result.commitmentVerification = "PENDING";
+        result.suppliedLengthVerification = "NOT_EVALUATED";
+        result.commitmentMatchVerification = "NOT_EVALUATED";
         return fields.content.class === "REQUIRED"
           ? reject("PENDING_OPENING", "EVENT_LOCAL", "VALID", true)
           : reject("OPENING_MISSING", "S3_KERNEL_STRUCTURAL");
       }
       const supplied = Buffer.from(record.opening.contentHex, "hex"), randomizer = Buffer.from(record.opening.randomizerHex, "hex");
       const computed = commitment(fields, supplied, randomizer, fields.content.geometry?.chunkSize);
-      if (supplied.length !== fields.content.exactLength) { result.commitmentVerification = "REJECTED"; return reject("LENGTH_MISMATCH", "S3_KERNEL_STRUCTURAL"); }
-      if (computed.commitmentHex !== fields.content.commitmentHex) { result.commitmentVerification = "REJECTED"; return reject("COMMITMENT_MISMATCH", "S3_KERNEL_STRUCTURAL"); }
+      const failures = [];
+      if (supplied.length !== fields.content.exactLength) {
+        result.commitmentVerification = "REJECTED";
+        result.suppliedLengthVerification = "REJECTED";
+        failures.push(["LENGTH_MISMATCH", "S3_KERNEL_STRUCTURAL"]);
+      } else result.suppliedLengthVerification = "VALID";
+      if (computed.commitmentHex !== fields.content.commitmentHex) {
+        result.commitmentVerification = "REJECTED";
+        result.commitmentMatchVerification = "REJECTED";
+        failures.push(["COMMITMENT_MISMATCH", "S3_KERNEL_STRUCTURAL"]);
+      } else result.commitmentMatchVerification = "VALID";
+      if (failures.length > 0) return reject(failures);
       result.commitmentVerification = "VALID";
+      result.commitmentMatchVerification = "VALID";
     }
+  } else {
+    for (let index = 1; index <= 7; index += 1) result[`geometryPredicate${index}`] = "NOT_APPLICABLE";
+    result.suppliedLengthVerification = "NOT_APPLICABLE";
+    result.commitmentMatchVerification = "NOT_APPLICABLE";
   }
   if ((admission.seenEventReferences ?? []).includes(reference)) return reject("DUPLICATE", "S3_KERNEL_STRUCTURAL", "VALID", true);
   if ((admission.sameAuthorSequenceReferences ?? []).some(candidate => candidate !== reference)) return reject("FORK_EVIDENCE", "EVENT_LOCAL", "VALID", true);
@@ -320,9 +415,11 @@ function evaluate(record) {
 
 function stateDigest(value) { return hex(hash(Buffer.from(value, "utf8"))); }
 const SEMANTIC_OBSERVATION_FIELDS = Object.freeze([
-  "apAuthorityResult", "commitmentVerification", "dependencyStatus", "executed",
+  "apAuthorityResult", "commitmentMatchVerification", "commitmentVerification", "dependencyStatus", "executed",
   "externalEffects", "inputDigest", "kBindingAdmission", "outcomeEvaluated",
-  "signatureVerification", "stage", "transcriptVerification",
+  "geometryPredicate1", "geometryPredicate2", "geometryPredicate3", "geometryPredicate4",
+  "geometryPredicate5", "geometryPredicate6", "geometryPredicate7", "signatureVerification",
+  "stage", "suppliedLengthVerification", "transcriptVerification",
 ]);
 const OPTIONAL_SEMANTIC_OBSERVATION_FIELDS = Object.freeze(["localOutcome", "remoteClass"]);
 const NONSEMANTIC_VECTOR_FIELDS = new Set([
@@ -364,9 +461,9 @@ function computeTrace(scenario, vectors, transitions) {
       require(["flow", "ap_projection"].includes(scenario.modelId), `invalid boundary:${scenario.id}`);
       const localOutcome = scenario.modelId === "ap_projection" ? "NOT_EVALUATED"
         : scenario.id === "scenario-flow-transport_publish" ? "TRANSPORT_PROFILE_REQUIRED" : "SESSION_PROFILE_REQUIRED";
-      observation = { apAuthorityResult: "NOT_EVALUATED", commitmentVerification: "NOT_PRESENT", externalEffects: [],
+      observation = { apAuthorityResult: "NOT_EVALUATED", commitmentMatchVerification: "NOT_EVALUATED", commitmentVerification: "NOT_PRESENT", externalEffects: [], ...geometryObservations(),
         kBindingAdmission: "NOT_EVALUATED", localOutcome, outcomeEvaluated: false, remoteClass: "OPAQUE_REMOTE_FAILURE",
-        signatureVerification: "NOT_EVALUATED", stage: "BOUNDARY_NOT_EXECUTED", transcriptVerification: "NOT_EVALUATED" };
+        signatureVerification: "NOT_EVALUATED", stage: "BOUNDARY_NOT_EXECUTED", suppliedLengthVerification: "NOT_EVALUATED", transcriptVerification: "NOT_EVALUATED" };
       postState = "UNCHANGED";
     } else if (step.transitionId !== null) {
       const transition = transitions.get(`${scenario.modelId}:${step.transitionId}`);
@@ -482,6 +579,25 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
   require(JSON.stringify(canonicalValue(coverage.flows)) === JSON.stringify(canonicalValue(expectedFlows)), "flow coverage relation mismatch");
 
   const mutationById = new Map(mutations.map(row => [row.id, row]));
+  const expectedSourceMutationIds = new Set([
+    "mutation-source-checkpoint-after-protected-work",
+    "mutation-source-o10-applicability",
+    "mutation-source-o10-class-membership",
+    "mutation-source-o10-precedence",
+    "mutation-source-r5-flatten-k-admission",
+    "mutation-source-r6-classification",
+    ...Array.from({ length: 7 }, (_, index) => `mutation-source-geometry-predicate-${index + 1}`),
+  ]);
+  const sourceMutations = mutations.filter(row => row.mutationClass === "SOURCE_ANCHORED_SECURITY");
+  require(setEqual(new Set(sourceMutations.map(row => row.id)), expectedSourceMutationIds), "source-anchored mutation set mismatch");
+  const sourceRowIds = new Set(baseJson(repoRoot, "tools/causal-flow-simulator/o10/source-inventory.json").rows.map(row => row.row_id));
+  for (const mutation of sourceMutations) {
+    require(typeof mutation.sourcePath === "string" && typeof mutation.sourceAnchor === "string" && mutation.sourceAnchor.length > 0, `invalid source mutation anchor:${mutation.id}`);
+    require(baseText(repoRoot, mutation.sourcePath).includes(mutation.sourceAnchor), `stale source mutation anchor:${mutation.id}`);
+    require(Array.isArray(mutation.sourceRowIds) && mutation.sourceRowIds.length > 0
+      && new Set(mutation.sourceRowIds).size === mutation.sourceRowIds.length
+      && mutation.sourceRowIds.every(row => sourceRowIds.has(row)), `invalid source mutation rows:${mutation.id}`);
+  }
   const expectedNonExecutable = nonExecutableInvariants;
   const invariantRows = new Map(coverage.invariants.map(row => [row.id, row]));
   require(invariantRows.size === model.invariants.length && model.invariants.every(row => invariantRows.has(row.id)), "invariant coverage mismatch");
@@ -538,12 +654,61 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
   expectedOutcomes.push(...inventory.o10_post_c03_markers.map(marker => ({ branch: "UNREACHABLE_IN_TRANSCRIPT_ONLY_PROFILE", citations: [{ anchor: "## Closed cardinalities", path: "docs/protocol/styx-app-kernel-v0-outcome-taxonomy.md" }], id: marker, scenarioIds: [] })));
   require(JSON.stringify(canonicalValue(coverage.o10.outcomes)) === JSON.stringify(canonicalValue(expectedOutcomes)), "O-10 outcome coverage mismatch");
   const sourceInventory = baseJson(repoRoot, "tools/causal-flow-simulator/o10/source-inventory.json");
-  const expectedSourceRows = sourceInventory.rows.map(row => {
-    if (row.mapping !== undefined) {
-      const outcome = expectedOutcomes.find(item => item.id === row.mapping.primary);
-      return { disposition: outcome.branch, primary: row.mapping.primary, rowId: row.row_id, witnessScenarioIds: outcome.scenarioIds };
+  const sourceById = new Map(sourceInventory.rows.map(row => [row.row_id, row]));
+  const vectorById = new Map([...valid, ...invalid, ...apExpectations].map(row => [row.id, row]));
+  const producedWitnesses = inventory.o10_produced_source_row_witnesses;
+  require(producedWitnesses && typeof producedWitnesses === "object" && !Array.isArray(producedWitnesses)
+    && Object.keys(producedWitnesses).length > 0, "O-10 produced-row witness map missing");
+  for (const [rowId, witnesses] of Object.entries(producedWitnesses)) {
+    const source = sourceById.get(rowId);
+    require(source !== undefined, `O-10 produced-row witness references unknown row:${rowId}`);
+    require(source.mapping !== undefined, `produced forbidden O-10 row:${rowId}`);
+    const primary = inventory.o10_primaries.includes(source.mapping.primary)
+      ? source.mapping.primary : undefined;
+    require(primary !== undefined && !AP_OWNED_EXCLUSIONS.has(primary), `produced non-K O-10 row:${rowId}`);
+    require(Array.isArray(witnesses) && witnesses.length > 0, `empty O-10 row witness set:${rowId}`);
+    const seenInputs = new Set();
+    for (const witness of witnesses) {
+      require(witness && typeof witness === "object" && !Array.isArray(witness)
+        && JSON.stringify(Object.keys(witness).sort()) === JSON.stringify(["inputId", "jointSourceRowIds"]),
+      `malformed O-10 row witness:${rowId}`);
+      require(typeof witness.inputId === "string" && witness.inputId.length > 0
+        && !seenInputs.has(witness.inputId), `invalid O-10 row witness relation:${rowId}`);
+      seenInputs.add(witness.inputId);
+      require(Array.isArray(witness.jointSourceRowIds) && witness.jointSourceRowIds.length > 0
+        && witness.jointSourceRowIds.includes(rowId)
+        && JSON.stringify(witness.jointSourceRowIds) === JSON.stringify([...new Set(witness.jointSourceRowIds)].sort())
+        && witness.jointSourceRowIds.every(identifier => sourceById.has(identifier)),
+      `invalid O-10 row witness relation:${rowId}`);
     }
-    return { disposition: "TRANSCRIPT_PROFILE_UNREACHABLE", primary: row.forbidden_identifier, rowId: row.row_id, witnessScenarioIds: [] };
+  }
+  const expectedSourceRows = sourceInventory.rows.map(row => {
+    let disposition, primary, rowWitnesses = [];
+    if (Object.hasOwn(producedWitnesses, row.row_id)) {
+      disposition = "PRODUCED"; primary = row.mapping.primary;
+      rowWitnesses = producedWitnesses[row.row_id].map(witness => {
+        const scenarioId = `scenario-vector-${witness.inputId}`;
+        const scenario = scenarios.find(item => item.id === scenarioId);
+        require(scenario?.steps.some(step => step.inputVectorId === witness.inputId), `missing O-10 row scenario:${row.row_id}:${witness.inputId}`);
+        const observed = evaluate(vectorById.get(witness.inputId));
+        require(observed.localOutcome === primary && observed.stage === row.mapping.stage, `O-10 row witness result mismatch:${row.row_id}:${witness.inputId}`);
+        require(Array.isArray(witness.jointSourceRowIds) && witness.jointSourceRowIds.length > 0
+          && witness.jointSourceRowIds.includes(row.row_id)
+          && JSON.stringify(witness.jointSourceRowIds) === JSON.stringify([...new Set(witness.jointSourceRowIds)].sort()), `invalid O-10 joint witness:${row.row_id}`);
+        for (const jointId of witness.jointSourceRowIds) {
+          const joint = sourceById.get(jointId)?.mapping;
+          require(joint?.primary === row.mapping.primary && joint?.stage === row.mapping.stage, `incompatible O-10 joint witness:${row.row_id}:${jointId}`);
+        }
+        return { ...witness, scenarioId };
+      });
+    } else if (row.mapping !== undefined && AP_OWNED_EXCLUSIONS.has(row.mapping.primary)) {
+      disposition = "AP_OWNED_EXCLUDED"; primary = row.mapping.primary;
+    } else if (row.mapping !== undefined) {
+      disposition = "TRANSCRIPT_PROFILE_UNREACHABLE"; primary = row.mapping.primary;
+    } else {
+      disposition = "TRANSCRIPT_PROFILE_UNREACHABLE"; primary = row.forbidden_identifier;
+    }
+    return { disposition, primary, rowId: row.row_id, witnesses: rowWitnesses };
   });
   require(JSON.stringify(canonicalValue(coverage.o10.sourceRows)) === JSON.stringify(canonicalValue(expectedSourceRows)), "O-10 source-row partition mismatch");
 }
@@ -551,6 +716,10 @@ function parseArgs() { const args = process.argv.slice(2), values = {}; for (let
 
 function baseJson(repoRoot, path) {
   return JSON.parse(execFileSync("git", ["show", `${BASE_SHA}:${path}`], { cwd: repoRoot, encoding: "utf8" }));
+}
+function baseText(repoRoot, path) {
+  require(typeof path === "string" && !path.startsWith("/") && !path.split(/[\\/]/).includes(".."), `unsafe Base path:${path}`);
+  return execFileSync("git", ["show", `${BASE_SHA}:${path}`], { cwd: repoRoot, encoding: "utf8" });
 }
 
 function mutationReport(args, corpus, valid, invalid, apExpectations, scenarios, expected, model) {
@@ -610,6 +779,38 @@ function mutationReport(args, corpus, valid, invalid, apExpectations, scenarios,
       const target = mutation.generatedTargetId, mutated = structuredClone(manifest);
       mutated.coverage.o10.coveredSourceRowIds = mutated.coverage.o10.coveredSourceRowIds.filter(value => value !== target);
       try { validateSourceCoverage(mutated.coverage, o07, o08, excludedO08, o10); } catch { detected = o10.has(target); }
+    } else if (mutation.detector === "SOURCE_O10_CLASS_MEMBERSHIP") {
+      try { o10Result("APPLIED", "FINAL_AFTER_S6"); } catch { detected = true; }
+    } else if (mutation.detector === "SOURCE_O10_APPLICABILITY") {
+      try { o10Result("LENGTH_MISMATCH", "EVENT_LOCAL"); } catch { detected = true; }
+    } else if (mutation.detector === "SOURCE_O10_PRECEDENCE") {
+      detected = selectO10Result([
+        ["COMMITMENT_MISMATCH", "S3_KERNEL_STRUCTURAL"],
+        ["LENGTH_MISMATCH", "S3_KERNEL_STRUCTURAL"],
+      ]).localOutcome === "LENGTH_MISMATCH";
+    } else if (mutation.detector === "SOURCE_CHECKPOINT_BEFORE_PROTECTED_WORK") {
+      const corrupted = structuredClone(vectors.get(mutation.generatedTargetId));
+      corrupted.admissionContext ??= {};
+      corrupted.admissionContext.checkpointEvidenceReferences = ["00".repeat(32)];
+      const observed = evaluate(corrupted);
+      detected = observed.localOutcome === "CURRENT_OBJECT_OUT_OF_PROFILE"
+        && observed.signatureVerification === "NOT_EVALUATED"
+        && observed.commitmentVerification === "NOT_PRESENT";
+    } else if (mutation.detector === "SOURCE_GEOMETRY_PREDICATE") {
+      detected = geometryPredicateMutantIsKilled(mutation.predicateNumber);
+    } else if (mutation.detector === "SOURCE_R6_CLASSIFICATION") {
+      const observed = evaluate(vectors.get(mutation.generatedTargetId));
+      detected = observed.localOutcome === "CURRENT_OBJECT_OUT_OF_PROFILE"
+        && observed.stage === "S3_KERNEL_STRUCTURAL"
+        && observed.signatureVerification === "NOT_EVALUATED"
+        && [1, 3, 4, 5, 6, 7].every(number => observed[`geometryPredicate${number}`] === "PASS");
+    } else if (mutation.detector === "SOURCE_R5_LAYERING") {
+      const observed = evaluate(vectors.get(mutation.generatedTargetId));
+      detected = transitionInputIsCompatible(observed)
+        && observed.apAuthorityResult === "AP_FOLD_NOT_EXECUTED"
+        && observed.outcomeEvaluated === false
+        && !Object.hasOwn(observed, "localOutcome")
+        && !Object.hasOwn(observed, "remoteClass");
     }
     require(detected, `surviving mutation:${mutation.id}`); killed.push(mutation.id);
   }

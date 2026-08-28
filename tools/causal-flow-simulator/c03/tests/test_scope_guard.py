@@ -14,8 +14,8 @@ from scope_guard import CORPUS_FILES, SYNC_FILES, TOOL_FILES, allowed  # noqa: E
 class ScopeGuardTests(unittest.TestCase):
     def test_closed_package_sets_and_forbidden_neighbors(self) -> None:
         self.assertEqual(len(CORPUS_FILES), 6)
-        self.assertEqual(len(TOOL_FILES), 20)
-        self.assertEqual(len(SYNC_FILES), 8)
+        self.assertEqual(len(TOOL_FILES), 24)
+        self.assertEqual(len(SYNC_FILES), 12)
         self.assertTrue(allowed("conformance/application-protocol/c03/manifest.json"))
         self.assertTrue(allowed("tools/causal-flow-simulator/c03/tests/test_scope_guard.py"))
         for path in (
@@ -31,7 +31,7 @@ class ScopeGuardTests(unittest.TestCase):
         corpus_paths = {f"conformance/application-protocol/c03/{name}" for name in CORPUS_FILES}
         tool_paths = {f"tools/causal-flow-simulator/c03/{name}" for name in TOOL_FILES}
         declared = corpus_paths | tool_paths | set(SYNC_FILES)
-        self.assertEqual(len(declared), 34)
+        self.assertEqual(len(declared), 42)
         for endpoint in sorted(declared):
             with self.subTest(endpoint=endpoint):
                 self.assertTrue(allowed(endpoint))
@@ -42,7 +42,7 @@ class ScopeGuardTests(unittest.TestCase):
     def test_lockfiles_and_sensitive_boundaries_never_match(self) -> None:
         forbidden = {
             "AGENTS.md", "CODEOWNERS", "REUSE.toml",
-            "docs/protocol/styx-app-kernel-v0-decisions.md",
+            "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md",
             "tools/causal-flow-simulator/o06c/integrated_model.py",
             "tools/causal-flow-simulator/o07/genesis_model.py",
             "tools/causal-flow-simulator/o08/envelope_model.py",

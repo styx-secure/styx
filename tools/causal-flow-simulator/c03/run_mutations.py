@@ -17,7 +17,20 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from canonical_json import load, store  # noqa: E402
-from corpus_model import BaseReader, CorpusModelError, evaluate_vector, load_local_json, sha256_hex, validate_base_inputs  # noqa: E402
+from corpus_model import (  # noqa: E402
+    MAX_U32,
+    BaseReader,
+    CorpusModelError,
+    ProtocolError,
+    evaluate_vector,
+    load_local_json,
+    o10_result,
+    select_o10_result,
+    sha256_hex,
+    transition_input_is_compatible,
+    validate_base_inputs,
+    validate_geometry_predicates,
+)
 from replay_corpus import _transition_index, compute_trace  # noqa: E402
 from validate_corpus import (  # noqa: E402
     EXPECTED_FILES,
@@ -51,6 +64,26 @@ def _computed_trace(
     transitions: dict[tuple[str, str], dict[str, Any]],
 ) -> dict[str, Any]:
     return compute_trace(scenario, vectors, transitions)
+
+
+def _geometry_predicate_mutant_is_killed(number: int) -> bool:
+    cases: dict[int, tuple[int, str, dict[str, int] | None, str]] = {
+        1: (0, "TREE", {"chunkSize": 1, "chunkCount": 2, "finalChunkLength": 1}, "FAIL"),
+        2: (MAX_U32 - 131, "SINGLE", None, "FAIL"),
+        3: (8, "TREE", {"chunkSize": 0, "chunkCount": 2, "finalChunkLength": 8}, "FAIL"),
+        4: (8, "TREE", {"chunkSize": 8, "chunkCount": 2, "finalChunkLength": 1}, "FAIL"),
+        5: (9, "TREE", {"chunkSize": 4, "chunkCount": 2, "finalChunkLength": 5}, "FAIL"),
+        6: (9, "TREE", {"chunkSize": 4, "chunkCount": 3, "finalChunkLength": 2}, "FAIL"),
+        # Predicate 7 follows algebraically from 4-6.  The source mutant makes
+        # its inclusive upper boundary exclusive; this exact boundary kills it.
+        7: (8, "TREE", {"chunkSize": 4, "chunkCount": 2, "finalChunkLength": 4}, "PASS"),
+    }
+    exact_length, shape, geometry, expected = cases[number]
+    try:
+        observations = validate_geometry_predicates(exact_length, shape, geometry)
+    except ProtocolError as error:
+        observations = error.observations
+    return observations.get(f"geometryPredicate{number}") == expected
 
 
 def _python_kills(repo_root: Path, corpus: Path) -> dict[str, Any]:
@@ -146,6 +179,57 @@ def _python_kills(repo_root: Path, corpus: Path) -> dict[str, Any]:
             mutated_manifest = deepcopy(manifest)
             mutated_manifest["coverage"]["o10"]["coveredSourceRowIds"].remove(target)
             detected = target in o10 and _validator_rejects(lambda: validate_source_coverage(reader, inventory, mutated_manifest["coverage"]))
+        elif detector == "SOURCE_O10_CLASS_MEMBERSHIP":
+            detected = _validator_rejects(
+                lambda: o10_result("APPLIED", "FINAL_AFTER_S6")
+            )
+        elif detector == "SOURCE_O10_APPLICABILITY":
+            detected = _validator_rejects(
+                lambda: o10_result("LENGTH_MISMATCH", "EVENT_LOCAL")
+            )
+        elif detector == "SOURCE_O10_PRECEDENCE":
+            selected = select_o10_result(
+                [
+                    ("COMMITMENT_MISMATCH", "S3_KERNEL_STRUCTURAL"),
+                    ("LENGTH_MISMATCH", "S3_KERNEL_STRUCTURAL"),
+                ]
+            )
+            detected = selected["localOutcome"] == "LENGTH_MISMATCH"
+        elif detector == "SOURCE_CHECKPOINT_BEFORE_PROTECTED_WORK":
+            corrupted = deepcopy(vectors[mutation["generatedTargetId"]])
+            corrupted.setdefault("admissionContext", {})[
+                "checkpointEvidenceReferences"
+            ] = ["00" * 32]
+            observed = evaluate_vector(corrupted)
+            detected = (
+                observed.get("localOutcome") == "CURRENT_OBJECT_OUT_OF_PROFILE"
+                and observed.get("signatureVerification") == "NOT_EVALUATED"
+                and observed.get("commitmentVerification") == "NOT_PRESENT"
+            )
+        elif detector == "SOURCE_GEOMETRY_PREDICATE":
+            detected = _geometry_predicate_mutant_is_killed(
+                mutation["predicateNumber"]
+            )
+        elif detector == "SOURCE_R6_CLASSIFICATION":
+            observed = evaluate_vector(vectors[mutation["generatedTargetId"]])
+            detected = (
+                observed.get("localOutcome") == "CURRENT_OBJECT_OUT_OF_PROFILE"
+                and observed.get("stage") == "S3_KERNEL_STRUCTURAL"
+                and observed.get("signatureVerification") == "NOT_EVALUATED"
+                and all(
+                    observed.get(f"geometryPredicate{number}") == "PASS"
+                    for number in (1, 3, 4, 5, 6, 7)
+                )
+            )
+        elif detector == "SOURCE_R5_LAYERING":
+            observed = evaluate_vector(vectors[mutation["generatedTargetId"]])
+            detected = (
+                transition_input_is_compatible(observed)
+                and observed.get("apAuthorityResult") == "AP_FOLD_NOT_EXECUTED"
+                and observed.get("outcomeEvaluated") is False
+                and "localOutcome" not in observed
+                and "remoteClass" not in observed
+            )
         require(detected, f"surviving Python mutation: {mutation['id']}")
         killed.append(mutation["id"])
     killed.sort()

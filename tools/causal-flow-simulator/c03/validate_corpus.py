@@ -59,6 +59,17 @@ ABSOLUTE_PATH = re.compile(
 )
 TIMESTAMP = re.compile(r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
 RUNTIME_VALUE = re.compile(r"\b(?:elapsed|duration|runtime|hostname|username|pid)\s*[:=]", re.I)
+EXPECTED_SOURCE_SECURITY_MUTATION_IDS = frozenset(
+    {
+        "mutation-source-checkpoint-after-protected-work",
+        "mutation-source-o10-applicability",
+        "mutation-source-o10-class-membership",
+        "mutation-source-o10-precedence",
+        "mutation-source-r5-flatten-k-admission",
+        "mutation-source-r6-classification",
+        *(f"mutation-source-geometry-predicate-{number}" for number in range(1, 8)),
+    }
+)
 
 
 class ValidationError(CorpusModelError):
@@ -410,6 +421,40 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
     mutation_by_id = {record["id"]: record for record in mutations}
     require(len(mutation_ids) == len(mutations), "mutation identifier collision")
     require({record["sourceVectorId"] for record in invalid} <= vector_ids, "invalid source vector missing")
+    source_mutations = [
+        record
+        for record in mutations
+        if record.get("mutationClass") == "SOURCE_ANCHORED_SECURITY"
+    ]
+    require(
+        {record["id"] for record in source_mutations}
+        == EXPECTED_SOURCE_SECURITY_MUTATION_IDS,
+        "source-anchored mutation set mismatch",
+    )
+    source_row_ids = {
+        row["row_id"]
+        for row in reader.json(
+            "tools/causal-flow-simulator/o10/source-inventory.json"
+        )["rows"]
+    }
+    for mutation in source_mutations:
+        source_path = mutation.get("sourcePath")
+        source_anchor = mutation.get("sourceAnchor")
+        rows = mutation.get("sourceRowIds")
+        require(
+            isinstance(source_path, str)
+            and isinstance(source_anchor, str)
+            and bool(source_anchor)
+            and source_anchor.encode() in reader.read(source_path),
+            f"stale source mutation anchor: {mutation['id']}",
+        )
+        require(
+            isinstance(rows, list)
+            and bool(rows)
+            and len(rows) == len(set(rows))
+            and set(rows) <= source_row_ids,
+            f"invalid source mutation rows: {mutation['id']}",
+        )
 
     coverage = manifest["coverage"]
     require(coverage["reviewModel"] == inventory["expected_review_model_ids"], "review-model coverage mismatch")
@@ -461,12 +506,51 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
     )
     require(coverage["o10"]["outcomes"] == expected_outcome_rows, "O-10 outcome coverage mismatch")
     expected_source_rows = []
+    produced_witnesses = inventory["o10_produced_source_row_witnesses"]
+    vector_by_id = {
+        record["id"]: record for record in valid + invalid + ap_expectations
+    }
     for row in reader.json("tools/causal-flow-simulator/o10/source-inventory.json")["rows"]:
-        if "mapping" in row:
+        row_id = row["row_id"]
+        if row_id in produced_witnesses:
             primary = row["mapping"]["primary"]
-            outcome_row = next(item for item in expected_outcome_rows if item["id"] == primary)
-            disposition = outcome_row["branch"]
-            witnesses = outcome_row["scenarioIds"]
+            disposition = "PRODUCED"
+            witnesses = [
+                {
+                    **witness,
+                    "scenarioId": f"scenario-vector-{witness['inputId']}",
+                }
+                for witness in produced_witnesses[row_id]
+            ]
+            for witness in witnesses:
+                input_id = witness["inputId"]
+                require(input_id in vector_by_id, f"unknown O-10 row input: {row_id}")
+                require(
+                    witness["scenarioId"] in scenario_ids
+                    and any(
+                        step["inputVectorId"] == input_id
+                        for step in next(
+                            scenario
+                            for scenario in scenarios
+                            if scenario["id"] == witness["scenarioId"]
+                        )["steps"]
+                    ),
+                    f"missing O-10 row scenario: {row_id}:{input_id}",
+                )
+                observed = evaluate_vector(vector_by_id[input_id])
+                require(
+                    observed.get("localOutcome") == primary
+                    and observed.get("stage") == row["mapping"]["stage"],
+                    f"O-10 row witness result mismatch: {row_id}:{input_id}",
+                )
+        elif "mapping" in row and row["mapping"]["primary"] in AP_OWNED_EXCLUSIONS:
+            primary = row["mapping"]["primary"]
+            disposition = "AP_OWNED_EXCLUDED"
+            witnesses = []
+        elif "mapping" in row:
+            primary = row["mapping"]["primary"]
+            disposition = "TRANSCRIPT_PROFILE_UNREACHABLE"
+            witnesses = []
         else:
             primary = row["forbidden_identifier"]
             disposition = "TRANSCRIPT_PROFILE_UNREACHABLE"
@@ -475,8 +559,8 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
             {
                 "disposition": disposition,
                 "primary": primary,
-                "rowId": row["row_id"],
-                "witnessScenarioIds": witnesses,
+                "rowId": row_id,
+                "witnesses": witnesses,
             }
         )
     require(coverage["o10"].get("sourceRows") == expected_source_rows, "O-10 source-row partition mismatch")

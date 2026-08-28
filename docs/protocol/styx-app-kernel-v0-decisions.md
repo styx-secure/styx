@@ -1441,6 +1441,36 @@ also be transcript-bound and locally evaluated under the application's policy.
 
 ## 6. Gate for C0.3 and exact next sequence
 
+### C0.3 reconciliation decisions R5 and R6
+
+The Issue #266 pre-execution ratification selects two bounded evidence-layer
+decisions without executing the application-policy fold or changing the O-08
+and O-10 registries:
+
+- **R5 — layered K/AP result.** Successful transcript and binding admission is
+  represented as `kBindingAdmission = ADMITTED`,
+  `apAuthorityResult = AP_FOLD_NOT_EXECUTED` and
+  `outcomeEvaluated = false`. In that exact state `localOutcome` and
+  `remoteClass` are absent. `AP_FOLD_NOT_EXECUTED` is report-only and is not an
+  O-10 primary, wire/API value or success disposition. Positive K transition
+  eligibility uses this complete tuple and state `READY_FOR_AP_FOLD`; it never
+  infers application authorization or `APPLIED`. Negative K transitions retain
+  their exact O-10 primary, stage and remote collapse. AP-owned expectations
+  remain normative but are excluded from transcript-only C0.3 execution.
+- **R6 — closed-set classification after geometry.** Commitment-profile
+  predicates 1–7 establish well-formed geometry with checked arithmetic.
+  Predicate 8 and the authenticated O-08 envelope then establish supported
+  profile admission. A well-formed tree using a chunk size outside
+  `{4096, 16384}` selects `CURRENT_OBJECT_OUT_OF_PROFILE` at
+  `S3_KERNEL_STRUCTURAL`; malformed geometry selects
+  `STRUCTURAL_REJECTION`. This resolves the older sentence that classified all
+  closed-set failures as structural without changing the accepted 17 transcript
+  byte sequences or any O-08/O-10 registry entry.
+
+These decisions authorize only the corrected adversarial corpus and evidence
+system. They do not execute O-02/AP policy, establish implementation alignment,
+or make a product, demo or sensitive-use claim.
+
 **C0.3 verdict: `NO-GO`.** The ratified C0.2i construction replaces the vulnerable C0.2f
 whole-suffix halt with deterministic pending-subtree replay. C0.2j then selects
 grant-rooted credential identity, exact K-readable grant/succession carriage,

@@ -24,7 +24,46 @@ class ManifestTests(unittest.TestCase):
     def test_tracked_manifest_and_corpus_validate(self) -> None:
         report = validate(REPO, CORPUS)
         self.assertEqual(report["result"], "PASS")
-        self.assertEqual(report["mutations"], 498)
+        self.assertEqual(report["mutations"], 511)
+
+    def test_o10_source_rows_have_exact_explicit_witnesses(self) -> None:
+        rows = load(CORPUS / "manifest.json")["coverage"]["o10"]["sourceRows"]
+        self.assertEqual(len(rows), 102)
+        produced = [row for row in rows if row["disposition"] == "PRODUCED"]
+        self.assertEqual(len(produced), 23)
+        self.assertTrue(all(row["witnesses"] for row in produced))
+        self.assertTrue(
+            all(not row["witnesses"] for row in rows if row["disposition"] != "PRODUCED")
+        )
+        chunk_count = next(
+            row for row in produced
+            if row["rowId"] == "O08:CHUNKS_PER_CONTENT:S3_KERNEL_STRUCTURAL"
+        )
+        self.assertEqual(
+            chunk_count["witnesses"],
+            [{
+                "inputId": "inv-resource-chunk-count",
+                "jointSourceRowIds": [
+                    "O08:CHUNKS_PER_CONTENT:S3_KERNEL_STRUCTURAL",
+                    "O08:CONTENT_EXACT_OCTETS:S3_KERNEL_STRUCTURAL",
+                ],
+                "scenarioId": "scenario-vector-inv-resource-chunk-count",
+            }],
+        )
+
+    def test_generic_same_outcome_cannot_replace_o10_row_witness(self) -> None:
+        temporary, target = self._mutated_corpus()
+        self.addCleanup(temporary.cleanup)
+        manifest = load(target / "manifest.json")
+        row = next(
+            item for item in manifest["coverage"]["o10"]["sourceRows"]
+            if item["rowId"] == "O08:CHUNK_OCTETS:S3_KERNEL_STRUCTURAL"
+        )
+        row["witnesses"][0]["inputId"] = "inv-resource-sequence"
+        row["witnesses"][0]["scenarioId"] = "scenario-vector-inv-resource-sequence"
+        store(target / "manifest.json", manifest)
+        with self.assertRaisesRegex(ValidationError, "O-10 source-row partition mismatch"):
+            validate(REPO, target)
 
     def test_hygiene_rejects_embedded_absolute_paths_but_not_reuse_label(self) -> None:
         for value in ("path=/", "provenance=/tmp/styx", "path=C:\\review", r"path=\\host\share"):
