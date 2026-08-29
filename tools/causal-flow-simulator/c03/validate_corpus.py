@@ -448,6 +448,26 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
     }
     scenarios = _unique_sorted(documents["state-machine-scenarios.json"]["records"], "scenarios")
     scenario_ids = {record["id"] for record in scenarios}
+    flow_by_id = {record["id"]: record for record in model["flows"]}
+    flow_scenarios = [
+        scenario for scenario in scenarios if scenario["modelId"] == "flow"
+    ]
+    require(
+        {scenario.get("flowId") for scenario in flow_scenarios}
+        == set(flow_by_id),
+        "flow scenario coverage mismatch",
+    )
+    for scenario in flow_scenarios:
+        flow = flow_by_id[scenario["flowId"]]
+        require(
+            scenario["id"] == f"scenario-flow-{flow['id']}"
+            and scenario["citations"] == flow["citations"]
+            and len(scenario["steps"]) == 1
+            and scenario["steps"][0].get("candidateAction")
+            == flow["permitted_actions"][0]
+            and scenario["steps"][0].get("actor") == flow["producer"],
+            f"flow scenario identity mismatch: {scenario['id']}",
+        )
     transcript_conformance_vector_ids = {
         record["id"] for record in valid + ap_expectations
     }
@@ -460,7 +480,10 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
         require(isinstance(scenario.get("steps"), list) and scenario["steps"], f"empty scenario: {scenario['id']}")
         scenario_is_nonexecuted_boundary = (
             scenario["modelId"] == "ap_projection"
-            or scenario.get("flowId") in NON_EXECUTED_FLOW_IDS
+            or (
+                scenario["modelId"] == "flow"
+                and scenario["flowId"] in NON_EXECUTED_FLOW_IDS
+            )
         )
         available_evidence: set[str] = set()
         for step in scenario["steps"]:
