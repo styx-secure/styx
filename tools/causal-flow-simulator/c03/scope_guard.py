@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT))
 from canonical_json import store  # noqa: E402
 
 
-BASE_SHA = "0fbba871130e4e100558030837e03dd609128976"
+BASE_SHA = "a4fa1286b57b2ee79b3c580fdce0d1fb3bf9cd40"
 COPY_THRESHOLD = 25
 CORPUS_PREFIX = "conformance/application-protocol/c03/"
 TOOL_PREFIX = "tools/causal-flow-simulator/c03/"

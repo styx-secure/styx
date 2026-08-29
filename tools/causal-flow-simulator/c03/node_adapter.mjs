@@ -17,7 +17,7 @@ const DOMAINS = Object.freeze({
 });
 const MAX_U32 = 0xffff_ffffn;
 const MAX_BODY = MAX_U32 - 20n;
-const BASE_SHA = "0fbba871130e4e100558030837e03dd609128976";
+const BASE_SHA = "a4fa1286b57b2ee79b3c580fdce0d1fb3bf9cd40";
 const O08_LIMITS = Object.freeze({
   AP_TRANSITION_BLOCK_OCTETS: 4096,
   CHUNKS_PER_CONTENT: 64,

@@ -1,10 +1,10 @@
 {
-  "base": "0fbba871130e4e100558030837e03dd609128976",
+  "base": "a4fa1286b57b2ee79b3c580fdce0d1fb3bf9cd40",
   "direct_sources": [
     {"anchors": ["## 5. Application-event signature transcript", "event_reference = H(D_EVENT_REF || len32(T_app) || T_app)"], "id": "transcript_profile", "path": "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md", "sha256": "62ae2733753c9dabeae3980eec996de33a7f63146e8d16bdd7d55a441e299dbb"},
     {"anchors": ["## 2. Domains and authenticated commitment context", "commitment_value = SHA256(D_COMMIT || len32(B_C) || B_C)"], "id": "commitment_profile", "path": "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md", "sha256": "f3488bec6b61d92b6f1fc86e06ff101281d4ea51f4aaa5ecb8c4e1dee56584fa"},
     {"anchors": ["### O-01 — Causal representation", "### O-10 — Stable protocol-error taxonomy"], "id": "decisions", "path": "docs/protocol/styx-app-kernel-v0-decisions.md", "sha256": "0e0335a2f727b979c7ff64ffc281663a223fc709e6c25bd8a11350d605c39eed"},
-    {"anchors": ["| `AP` | **Application profile**", "| `K` | **Styx application semantic kernel**"], "id": "responsibility", "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md", "sha256": "fc8cbef3f492fc0004f13c98128b9569f913348ec1e1fd42608cf316fd83e03e"},
+    {"anchors": ["| `AP` | **Application profile**", "| `K` | **Styx application semantic kernel**"], "id": "responsibility", "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md", "sha256": "1f40fde4b8912766eb586d56f4e72f8c040448e74bc3e6503ed25787abbb7e8f"},
     {"anchors": ["## Closed cardinalities", "## Remote privacy boundary"], "id": "outcome_taxonomy_document", "path": "docs/protocol/styx-app-kernel-v0-outcome-taxonomy.md", "sha256": "c50ea442aeb79072d1fef4c95175f53bdde9cf8a395d7e076be67571ba2d3d42"},
     {"anchors": ["\"c03_verdict\": \"NO_GO\"", "\"state_models\""], "id": "review_model", "path": "docs/protocol/review/styx-app-kernel-v0-review-model.json", "sha256": "5f496314cc45497f9c09ac5c58989aed85dc4e94b7d29788c15522a42dcd3191"},
     {"anchors": ["\"$schema\": \"https://json-schema.org/draft/2020-12/schema\"", "\"state_models\": {"], "id": "review_model_schema", "path": "docs/protocol/review/styx-app-kernel-v0-review-model.schema.json", "sha256": "efc83b3c3981296a77bf1b6d5592ccfa4a6137691ec8e078d196c2c740a0e82e"},
