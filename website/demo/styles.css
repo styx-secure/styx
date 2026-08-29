@@ -270,7 +270,7 @@ select:disabled { cursor: not-allowed; opacity: .65; }
 .scenario-list button:hover,
 .scenario-list button[aria-current="true"] { color: var(--river-dark); background: rgba(13, 98, 88, .07); }
 .scenario-list strong { display: block; font-size: .82rem; }
-.scenario-list span { display: block; color: #66736f; font-family: var(--mono); font-size: .58rem; text-transform: uppercase; }
+.scenario-list span { display: block; color: #45534f; font-family: var(--mono); font-size: .58rem; text-transform: uppercase; }
 
 .trace-panel { min-width: 0; padding: clamp(26px, 4vw, 52px); }
 .trace-heading { display: flex; justify-content: space-between; gap: 22px; align-items: start; }
@@ -330,9 +330,11 @@ dd[data-tone="negative"] { color: var(--ember); }
 .trace-provenance { margin-top: 20px; padding: 18px 0; border-top: 1px solid rgba(12, 21, 19, .18); border-bottom: 1px solid rgba(12, 21, 19, .18); }
 .trace-provenance summary { cursor: pointer; font-weight: 750; }
 .trace-provenance dl { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.trace-provenance dt { color: #45534f; }
 .trace-provenance ul { padding-left: 20px; color: #52605c; font-size: .75rem; }
 
 .mutations { background: var(--deep); }
+.mutations .result-count { color: var(--muted); }
 .mutation-layout { display: grid; grid-template-columns: minmax(260px, .55fr) 1fr; gap: 55px; }
 .mutation-list { max-height: 450px; overflow: auto; border-top: 1px solid var(--line); }
 .mutation-list button { color: var(--ink); border-color: var(--line); }

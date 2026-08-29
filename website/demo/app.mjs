@@ -87,9 +87,10 @@ function setOutcome(element, value) {
   element.dataset.tone = outcomeTone(value);
 }
 
-function makeButton(label, metadata, onSelect, current) {
+function makeButton(identity, label, metadata, onSelect, current) {
   const button = document.createElement("button");
   button.type = "button";
+  button.dataset.evidenceId = identity;
   button.setAttribute("aria-current", current ? "true" : "false");
   const strong = document.createElement("strong");
   strong.textContent = label;
@@ -98,6 +99,12 @@ function makeButton(label, metadata, onSelect, current) {
   button.append(strong, span);
   button.addEventListener("click", onSelect);
   return button;
+}
+
+function updateCurrentSelection(container, selectedId) {
+  for (const button of container.querySelectorAll("button[data-evidence-id]")) {
+    button.setAttribute("aria-current", button.dataset.evidenceId === selectedId ? "true" : "false");
+  }
 }
 
 function renderScenarioList() {
@@ -110,6 +117,7 @@ function renderScenarioList() {
     const item = document.createElement("li");
     item.append(
       makeButton(
+        scenario.id,
         labelFromId(scenario.id),
         MODEL_LABELS[scenario.modelId] || scenario.modelId,
         () => selectScenario(scenario),
@@ -192,7 +200,7 @@ function selectScenario(scenario) {
   setText(elements.semanticDigest, scenario.semanticObservationDigest);
   renderCitations();
   renderStep();
-  renderScenarioList();
+  updateCurrentSelection(elements.scenarioList, scenario.id);
 }
 
 function navigate(direction) {
@@ -209,6 +217,7 @@ function renderMutationList() {
     const item = document.createElement("li");
     item.append(
       makeButton(
+        mutation.id,
         mutation.id,
         `${mutation.mutationClass} · ${mutation.violatedInvariant}`,
         () => selectMutation(mutation),
@@ -236,7 +245,7 @@ function selectMutation(mutation) {
   setText(elements.mutationStage, mutation.expectedStage);
   setText(elements.mutationOutcome, mutation.expectedOutcome);
   setText(elements.mutationSource, mutation.sourceRecordId);
-  renderMutationList();
+  updateCurrentSelection(elements.mutationList, mutation.id);
 }
 
 function populateModelFilter() {
@@ -281,7 +290,9 @@ async function loadEvidence() {
     elements.sourceSummary.textContent = `${sourceSummary(data)} · manifest ${shortDigest(data.source.manifestSha256, 16)}`;
     populateModelFilter();
     renderNonClaims();
+    renderScenarioList();
     selectScenario(data.scenarios[0]);
+    renderMutationList();
     selectMutation(data.mutations[0]);
   } catch (error) {
     elements.sourceSummary.textContent = `Evidence projection unavailable: ${error.message}. No result is inferred.`;

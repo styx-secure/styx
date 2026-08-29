@@ -16,6 +16,7 @@ REPO = DEMO.parents[1]
 HTML_PATH = DEMO / "index.html"
 CSS_PATH = DEMO / "styles.css"
 APP_PATH = DEMO / "app.mjs"
+CORE_PATH = DEMO / "core.mjs"
 DATA_PATH = DEMO / "data" / "c03-evidence.json"
 CORPUS = REPO / "conformance" / "application-protocol" / "c03"
 
@@ -55,6 +56,7 @@ class EvidenceExplorerTests(unittest.TestCase):
         cls.html = HTML_PATH.read_text(encoding="utf-8")
         cls.css = CSS_PATH.read_text(encoding="utf-8")
         cls.app = APP_PATH.read_text(encoding="utf-8")
+        cls.core = CORE_PATH.read_text(encoding="utf-8")
         cls.data_raw = DATA_PATH.read_bytes()
         cls.data = json.loads(cls.data_raw)
         cls.parser = DemoParser()
@@ -74,6 +76,10 @@ class EvidenceExplorerTests(unittest.TestCase):
             self.assertEqual(output.read_bytes(), self.data_raw)
 
     def test_projection_identity_counts_and_claim_boundaries(self) -> None:
+        self.assertEqual(
+            set(self.data),
+            {"schema", "source", "authority", "nonClaims", "counts", "vectors", "scenarios", "mutations"},
+        )
         self.assertEqual(self.data["schema"], "styx-c03-evidence-explorer/v1")
         self.assertIs(self.data["source"]["synthetic"], True)
         self.assertEqual(self.data["authority"]["c03Verdict"], "NO_GO")
@@ -100,6 +106,53 @@ class EvidenceExplorerTests(unittest.TestCase):
             },
         )
 
+        manifest = json.loads((CORPUS / "manifest.json").read_text())
+        self.assertEqual(self.data["authority"], manifest["authority"])
+        self.assertEqual(self.data["nonClaims"], manifest["nonClaims"])
+        self.assertEqual(
+            set(self.data["source"]),
+            {"profile", "synthetic", "manifestSha256", "corpusFormatVersion", "generatorBase", "files"},
+        )
+        self.assertEqual(
+            self.data["source"]["files"],
+            [
+                {"path": name, "sha256": digest}
+                for name, digest in sorted(_load_builder().PINNED_SHA256.items())
+            ],
+        )
+
+    def test_projection_vector_summaries_have_a_closed_derived_schema(self) -> None:
+        expected = []
+        for filename, validity in (
+            ("valid-transcript-vectors.json", "VALID"),
+            ("invalid-transcript-vectors.json", "INVALID"),
+        ):
+            records = json.loads((CORPUS / filename).read_text())["records"]
+            for record in records:
+                fields = record.get("fields") or {}
+                summary = {
+                    "id": record["id"],
+                    "validity": validity,
+                    "kind": record.get("kind"),
+                    "eventRole": fields.get("eventRole"),
+                    "eventTypeId": fields.get("eventTypeId"),
+                    "authorSequence": fields.get("authorSequence"),
+                    "causalParentCount": len(fields.get("causalParents") or []),
+                    "contentClass": (fields.get("content") or {}).get("class"),
+                    "signatureSuiteId": record.get("signatureSuiteId"),
+                    "transcriptOctets": len(record.get("transcriptHex", "")) // 2,
+                    "synthetic": record.get("synthetic"),
+                    "testOnly": record.get("testOnly"),
+                }
+                if validity == "INVALID":
+                    summary.update(
+                        mutation=record.get("mutation"),
+                        sourceVectorId=record.get("sourceVectorId"),
+                        expected=record.get("expected"),
+                    )
+                expected.append(summary)
+        self.assertEqual(self.data["vectors"], expected)
+
     def test_projection_preserves_exact_scenario_trace_relation(self) -> None:
         scenarios = json.loads((CORPUS / "state-machine-scenarios.json").read_text())["records"]
         traces = json.loads((CORPUS / "expected-traces.json").read_text())["records"]
@@ -108,9 +161,41 @@ class EvidenceExplorerTests(unittest.TestCase):
         projected_steps = {record["id"]: len(record["steps"]) for record in self.data["scenarios"]}
         self.assertEqual(projected_steps, source_steps)
         self.assertEqual(projected_steps, trace_steps)
+        scenarios_by_id = {record["id"]: record for record in scenarios}
+        traces_by_id = {record["scenarioId"]: record for record in traces}
         for record in self.data["scenarios"]:
+            source = scenarios_by_id[record["id"]]
+            trace = traces_by_id[record["id"]]
+            expected_identity = {
+                key: source[key]
+                for key in ("flowId", "counterexampleId", "vectorId", "exercisedInvariantIds")
+                if key in source
+            }
+            self.assertEqual(
+                set(record),
+                {
+                    "id",
+                    "modelId",
+                    "identity",
+                    "citations",
+                    "observationDigest",
+                    "semanticObservationDigest",
+                    "steps",
+                },
+            )
+            self.assertEqual(record["modelId"], source.get("modelId"))
+            self.assertEqual(record["identity"], expected_identity)
+            self.assertEqual(record["citations"], source.get("citations", []))
+            self.assertEqual(record["observationDigest"], trace.get("observationDigest"))
+            self.assertEqual(record["semanticObservationDigest"], trace.get("semanticObservationDigest"))
             for index, step in enumerate(record["steps"]):
+                self.assertEqual(set(step), {"expected", "observed"})
+                self.assertEqual(step["expected"], source["steps"][index])
+                self.assertEqual(step["observed"], trace["steps"][index])
                 self.assertEqual(step["observed"]["step"], index)
+
+        source_mutations = json.loads((CORPUS / "adversarial-mutations.json").read_text())["records"]
+        self.assertEqual(self.data["mutations"], source_mutations)
 
     def test_projection_omits_secret_like_and_full_byte_material(self) -> None:
         forbidden = {
@@ -189,6 +274,10 @@ class EvidenceExplorerTests(unittest.TestCase):
             self.assertTrue({"noopener", "noreferrer"}.issubset(set(attrs.get("rel", "").split())))
         for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function"):
             self.assertNotIn(sink, self.app)
+            self.assertNotIn(sink, self.core)
+        for tag, attrs in self.parser.tags:
+            self.assertFalse(any(name.startswith("on") for name in attrs), tag)
+            self.assertNotEqual(urlparse(attrs.get("href", "")).scheme, "javascript", tag)
         self.assertEqual(self.app.count("fetch("), 1)
         self.assertIn('fetch("./data/c03-evidence.json"', self.app)
 
