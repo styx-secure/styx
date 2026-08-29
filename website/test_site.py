@@ -185,9 +185,33 @@ class LandingPageTests(unittest.TestCase):
             for attrs in self.tags_named("a")
             if attrs.get("data-status") == "implemented"
         ]
-        self.assertGreaterEqual(len(evidence_links), 3)
+        self.assertGreaterEqual(len(evidence_links), 5)
         for attrs in evidence_links:
             self.assertIn("github.com/styx-secure/styx", attrs.get("href", ""))
+
+    def test_c03_evidence_is_current_bounded_and_not_a_demo(self) -> None:
+        for phrase in (
+            "Conformance evidence on main",
+            "Synthetic C0.3 conformance corpus",
+            "independent Python and JavaScript replay",
+            "not implementation conformance, a security audit, or product readiness",
+            "C0.3 remains NO-GO",
+        ):
+            self.assertIn(phrase, self.text)
+
+        hrefs = {attrs.get("href", "") for attrs in self.tags_named("a")}
+        self.assertIn(
+            "https://github.com/styx-secure/styx/blob/main/"
+            "conformance/application-protocol/c03/manifest.json",
+            hrefs,
+        )
+        self.assertIn(
+            "https://github.com/styx-secure/styx/blob/main/"
+            "tools/causal-flow-simulator/c03/README.md",
+            hrefs,
+        )
+        self.assertNotRegex(self.html, r'href="[^"]*demo')
+        self.assertNotIn('id="demo"', self.html)
 
     def test_svg_is_restricted_human_readable_source(self) -> None:
         source = SVG_PATH.read_text(encoding="utf-8")

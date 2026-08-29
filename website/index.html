@@ -132,12 +132,13 @@
       <div class="architecture-heading">
         <h2 id="architecture-title">Product meaning stays separate from cryptographic transport.</h2>
         <p>No current implementation is intended to be the normative protocol.
-          The language-neutral application protocol and conformance corpus are
-          planned as the authority.</p>
+          A language-neutral, transcript-only corpus now provides cross-runtime
+          evidence while the application protocol remains incomplete and C0.3
+          remains <code>NO-GO</code>.</p>
       </div>
       <ol class="layer-list">
         <li class="layer layer-product"><span class="layer-number">04</span><div><p class="layer-state planned">Planned first vertical</p><h3>Themis product experience</h3><p>Workflow, roles, policy, safety language, and accessible reporter and operator interfaces.</p></div><span class="layer-side">Human purpose</span></li>
-        <li class="layer"><span class="layer-number">03</span><div><p class="layer-state planned">Protocol work planned</p><h3>Styx application protocol</h3><p>Versioned objects, state transitions, causality, evidence, retention, pruning, and conformance.</p></div><span class="layer-side">Durable meaning</span></li>
+        <li class="layer"><span class="layer-number">03</span><div><p class="layer-state evidence">Conformance evidence on main</p><h3>Styx application protocol</h3><p>A fully synthetic transcript corpus is replayed independently in Python and JavaScript against adversarial mutations. Corpus construction is complete; protocol completion and implementation alignment are not.</p></div><span class="layer-side">Durable meaning</span></li>
         <li class="layer"><span class="layer-number">02</span><div><p class="layer-state evidence">Bounded evidence</p><h3>Secure-session profiles</h3><p>Membership, epochs, continuous group key agreement, convergence, and confidential delivery. Exact-pin interoperability is proven only for the isolated Phase B scope; a supported product adapter remains future work.</p></div><span class="layer-side">Protected exchange</span></li>
         <li class="layer"><span class="layer-number">01</span><div><p class="layer-state evidence">Browser foundation exists</p><h3>Runtime profiles</h3><p>Key custody, encrypted storage, workers, notifications, distribution, and platform integration. A future signed native profile could offer stronger origin assurance.</p></div><span class="layer-side">Local custody</span></li>
       </ol>
@@ -196,6 +197,15 @@
           <p>At the revisions recorded in the final Phase B report, Styx interoperated with the pinned MDK peer through a bounded synthetic direct-MLS lifecycle. This is not general Marmot conformance or product activation.</p>
           <a data-status="implemented" href="https://github.com/styx-secure/styx/blob/main/docs/architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md" target="_blank" rel="noopener noreferrer">Read the bounded Phase B verdict <span aria-hidden="true">↗</span></a>
         </article>
+        <article>
+          <p class="evidence-tag">Application-protocol evidence</p>
+          <h3>Synthetic C0.3 conformance corpus</h3>
+          <p>A transcript-only corpus, independent Python and JavaScript replay, and a closed adversarial mutation registry are merged on <code>main</code>. This is corpus evidence—not implementation conformance, a security audit, or product readiness. C0.3 remains <code>NO-GO</code>.</p>
+          <div class="evidence-actions">
+            <a data-status="implemented" href="https://github.com/styx-secure/styx/blob/main/conformance/application-protocol/c03/manifest.json" target="_blank" rel="noopener noreferrer">Inspect the corpus manifest <span aria-hidden="true">↗</span></a>
+            <a data-status="implemented" href="https://github.com/styx-secure/styx/blob/main/tools/causal-flow-simulator/c03/README.md" target="_blank" rel="noopener noreferrer">Reproduce the evidence <span aria-hidden="true">↗</span></a>
+          </div>
+        </article>
       </div>
     </section>
 
@@ -208,7 +218,7 @@
           independent review, exact tests, and human approval.</p>
       </div>
       <ol class="roadmap-list">
-        <li><span>01</span><div><h3>Protocol and conformance</h3><p>Define language-neutral objects, transitions, adversarial scenarios, and reusable vectors.</p></div></li>
+        <li><span>01</span><div><h3>Protocol and conformance</h3><p>The transcript-only synthetic corpus and cross-runtime replay are merged. Remaining protocol decisions, conformance work, and implementation alignment stay separately gated.</p></div></li>
         <li><span>02</span><div><h3>Secure-session decision</h3><p>Bounded exact-pin proof complete. A supported application adapter, transport scope, persistence and retention policy remain separately gated work.</p></div></li>
         <li><span>03</span><div><h3>SDK and reliable delivery</h3><p>Separate application semantics from chat and make offline, retry, acknowledgement, and recovery states truthful.</p></div></li>
         <li><span>04</span><div><h3>Themis alpha</h3><p>Build text-first accountless case intake, return dialogue, operator roles, revocation, retention, and safety UX.</p></div></li>

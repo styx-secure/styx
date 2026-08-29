@@ -27,6 +27,14 @@ structure, local resources, prohibited runtime elements, external-link safety,
 required content, and SVG restrictions. It does not replace browser,
 accessibility, security-claims, or human visual review.
 
+## Future protocol trace demo
+
+Keep this landing page clean and informational. A future corpus-backed trace
+player belongs on a separate local page under its own approved task, tests and
+claim boundaries. Add no placeholder link here: link the demo from the landing
+page only after that separate artifact exists, reproduces frozen evidence, and
+has passed independent review and the required human gates.
+
 ## Status and publishing
 
 The source is covered by the repository's existing licensing and trademark
