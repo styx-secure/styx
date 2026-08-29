@@ -33,10 +33,11 @@ review, safeguarding procedures, or emergency channels.
   lifecycle, pinned WASM artifacts, fail-closed storage work, and isolated synthetic
   secure-session evidence through the completed Phase B exact-pin proof.
 - **Application-protocol evidence now on `main`:** a fully synthetic, transcript-only C0.3
-  conformance corpus, independent Python and JavaScript replay, and a closed adversarial mutation
-  registry. This completes corpus construction only. It does not establish connected authority
-  admission, implementation conformance, protocol completion, or product readiness; C0.3 remains
-  `NO-GO`.
+  [conformance corpus](conformance/application-protocol/c03/manifest.json), independent Python and
+  JavaScript replay through the [reproduction tooling](tools/causal-flow-simulator/c03/README.md),
+  and a closed adversarial mutation registry. This completes corpus construction only. It does not
+  establish implementation conformance, protocol completion, or product readiness; C0.3 remains
+  `NO-GO` for implementation alignment, demo, product, and sensitive use.
 - **Not yet a complete product:** completion and ratification of the language-neutral application
   protocol, supported session integration, a reusable SDK and reliable delivery,
   metadata-minimizing case routing, anonymous return capability, organizational workflow,

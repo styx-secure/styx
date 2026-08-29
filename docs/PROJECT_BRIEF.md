@@ -142,9 +142,9 @@ product:
 
 1. **Application-state experience.** The Dart reference implements a signed,
    append-only ledger with causal clocks, deterministic merge, offline outbox,
-   retention/pruning, migration, and identity backup. Its baseline of 389
-   tests across six packages is implementation evidence, not an audit or an
-   interoperability claim
+   retention/pruning, migration, and identity backup. Its per-package suites
+   and the path-aware coverage gates reported by GitHub Actions are
+   implementation evidence, not an audit or an interoperability claim
    ([README](../README.md#dart-reference-architecture)).
 2. **Browser secure-session path.** The JavaScript stack contains an encrypted
    1:1 MLS reference chat, authenticated QR pairing, Nostr event validation,

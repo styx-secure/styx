@@ -42,7 +42,7 @@ Documentation is not dual-licensed and no Creative Commons license is used.
 
 ## 2. Exact Apache-2.0 exceptions (twelve paths)
 
-Exactly the following current and future synthetic data paths are approved for
+Exactly the following twelve synthetic data paths are approved for
 `Apache-2.0` (text in [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt)),
 copyright Maurizio Verde. No directory glob or unlisted descendant is covered.
 
