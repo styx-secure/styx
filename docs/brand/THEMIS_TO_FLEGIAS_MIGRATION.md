@@ -2,6 +2,12 @@
 
 Date: 2026-08-29
 
+Authority: [Issue #274](https://github.com/styx-secure/styx/issues/274),
+[ratification record](https://github.com/styx-secure/styx/issues/274#issuecomment-5463469336),
+contract body SHA-256
+`405ed42869a16042c26d55f93addf92d9f58b48270dec9e447e5015eec82715e`,
+and implementation [PR #276](https://github.com/styx-secure/styx/pull/276).
+
 ## Decision
 
 The planned first Styx product vertical is renamed from **Themis** to
@@ -23,11 +29,15 @@ boundary.
 
 ## Current and historical references
 
-Current public, normative and technical surfaces use the new name. Historical
-records under `docs/archive/`, the dated Phase A spike, and the 2026-07-12
-licensing inventory retain their original wording because rewriting them would
-misrepresent the evidence available when they were produced. ADR-0003 keeps one
-explicit former-package-name note so old references remain understandable.
+Current public, normative and technical surfaces use the new name. The dated
+Phase A spike and the 2026-07-12 licensing inventory retain their original
+wording because rewriting them would misrepresent the evidence available when
+they were produced. ADR-0003 keeps one explicit former-package-name note so old
+references remain understandable.
+
+The name `Flegias` already appeared in the Phase B2.4 spike before Issue #274,
+where it denoted a separate planned consumer alongside the then-current name.
+This migration does not treat that earlier occurrence as naming authority.
 
 Repository history is not rewritten. Unpublished consumers outside this
 repository that import the former package URI must migrate explicitly.

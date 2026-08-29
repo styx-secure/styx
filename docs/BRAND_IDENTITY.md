@@ -74,6 +74,8 @@ Never describe it as available, anonymous by default, compliant, certified, or
 safe for live reporting.
 
 Preferred public name: **Flegias by Styx** on first reference, then **Flegias**.
+The former-name mapping and compatibility impact are recorded in the
+[naming migration](brand/THEMIS_TO_FLEGIAS_MIGRATION.md).
 
 ### Styx Reference Chat
 

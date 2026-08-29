@@ -69,7 +69,7 @@ Styx/
 │   ├── transport/                #   Nostr + Email(IMAP/SMTP) + Tor + failover/outbox
 │   ├── push_bridge_client/       #   client push Flutter (dummy detection, privacy profiles)
 │   ├── styx/                     #   FACCIATA pubblica: SovereignLedger (identità→ledger→trasporto→pairing)
-│   └── flegias_survey/            #   app Flutter di sondaggi (separata, opzionalmente su Styx)
+│   └── flegias_survey/           #   app Flutter di sondaggi (separata, opzionalmente su Styx)
 ├── test_integration/             #   generatore di test-vector cross-linguaggio + stub
 │
 ├── styx-js/                      # ── STACK JS: chat E2EE su MLS (LINEA ATTIVA) ──
