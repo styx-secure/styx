@@ -103,6 +103,8 @@ class BlindProjectionTests(unittest.TestCase):
         self.assertIn("FINAL_AFTER_S6", readme)
         self.assertIn("OPAQUE_REMOTE_FAILURE", readme)
         self.assertIn("PARENTS_PER_EVENT", readme)
+        self.assertIn("CURRENT_OBJECT_OUT_OF_PROFILE", readme)
+        self.assertIn("commitmentVerification=PENDING", readme)
         self.assertIn("Replica-local admission state cannot manufacture", readme)
         self.assertIn("NOT_EVALUATED", readme)
         self.assertNotIn("case-", readme)

@@ -733,7 +733,12 @@ def parse_event(transcript: bytes) -> dict[str, Any]:
         "schemaVersion": schema_version,
         "transitionBlockHex": transition.hex(),
     }
-    if protocol != 1 or profile != 1 or profile_version != 1 or object_kind != 1 or min(event_type, schema, schema_version) <= 0:
+    # Parsing proves canonical framing. A non-zero AP tuple that differs from
+    # the receiver-selected tuple is still parseable; the selected-profile
+    # admission check below owns CURRENT_OBJECT_OUT_OF_PROFILE. Treating that
+    # mismatch as malformed input would collapse transcript conformance into
+    # local profile selection.
+    if protocol != 1 or profile <= 0 or profile_version <= 0 or object_kind != 1 or min(event_type, schema, schema_version) <= 0:
         raise ProtocolError("UNSUPPORTED_PROFILE_OR_REGISTRY")
     if role == "REMOVAL":
         target_event = body.take(32, "target_event")
@@ -780,6 +785,11 @@ def _event_profile_failures(
     still controls when protected work may begin.
     """
 
+    if (
+        int(fields["applicationProfileId"]) != 1
+        or int(fields["applicationProfileVersion"]) != 1
+    ):
+        return ProtocolError("APPLICATION_PROFILE_MISMATCH"), None
     body_length = int.from_bytes(transcript[16:20], "big")
     if body_length > O08_LIMITS["FRAMING_OBJECT_OCTETS"]:
         return ProtocolError("FRAMING_OBJECT_OCTETS_LIMIT"), None

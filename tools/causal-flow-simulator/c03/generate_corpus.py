@@ -1685,7 +1685,7 @@ def _invalid_vectors(
         "inv-profile-substitution",
         "APPLICATION_PROFILE_SUBSTITUTION",
         profile_fields,
-        outcome="STRUCTURAL_REJECTION",
+        outcome="CURRENT_OBJECT_OUT_OF_PROFILE",
     )
 
     self_lineage_fields = _event_fields(

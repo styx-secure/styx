@@ -98,6 +98,59 @@ class ReplayTests(unittest.TestCase):
         self.assertEqual(rejected_replay["localOutcome"], "INVALID")
         self.assertNotEqual(rejected_replay["localOutcome"], "DUPLICATE")
 
+    def test_selected_profile_mismatch_is_not_malformed_transcript(self) -> None:
+        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+        record = next(row for row in invalid if row["id"] == "inv-profile-substitution")
+        observed = evaluate_vector(record)
+        self.assertEqual(observed["transcriptVerification"], "VALID")
+        self.assertEqual(observed["referenceVerification"], "VALID")
+        self.assertEqual(observed["signatureVerification"], "NOT_EVALUATED")
+        self.assertEqual(observed["commitmentVerification"], "NOT_PRESENT")
+        self.assertEqual(observed["localOutcome"], "CURRENT_OBJECT_OUT_OF_PROFILE")
+        self.assertEqual(observed["stage"], "S3_KERNEL_STRUCTURAL")
+
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        base = deepcopy(next(row for row in valid if row["id"] == "vec-ordinary-none"))
+        for field, value, expected in (
+            ("applicationProfileVersion", 2, "CURRENT_OBJECT_OUT_OF_PROFILE"),
+            ("applicationProfileId", 0, "STRUCTURAL_REJECTION"),
+            ("applicationProfileVersion", 0, "STRUCTURAL_REJECTION"),
+        ):
+            candidate = deepcopy(base)
+            candidate["fields"][field] = value
+            transcript = encode_event(candidate["fields"])
+            public, signature = ed25519_sign(
+                synthetic_octets(f"selected-profile-regression/{field}/{value}", 32),
+                transcript,
+            )
+            candidate["transcriptHex"] = transcript.hex()
+            candidate["eventReferenceHex"] = framed_hash(
+                DOMAINS["event_reference"], transcript
+            ).hex()
+            candidate["binding"]["verificationKeyHex"] = public.hex()
+            candidate["signatureHex"] = signature.hex()
+            observed = evaluate_vector(candidate)
+            self.assertEqual(observed["localOutcome"], expected)
+            self.assertEqual(
+                observed["transcriptVerification"],
+                "VALID" if expected == "CURRENT_OBJECT_OUT_OF_PROFILE" else "REJECTED",
+            )
+
+    def test_missing_detachable_opening_is_pending_at_rejected_boundary(self) -> None:
+        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+        record = next(
+            row for row in invalid if row["id"] == "inv-opening-missing-detachable"
+        )
+        observed = evaluate_vector(record)
+        self.assertEqual(observed["transcriptVerification"], "VALID")
+        self.assertEqual(observed["signatureVerification"], "VALID")
+        self.assertEqual(observed["commitmentVerification"], "PENDING")
+        self.assertEqual(observed["commitmentMatchVerification"], "NOT_EVALUATED")
+        self.assertEqual(observed["suppliedLengthVerification"], "NOT_EVALUATED")
+        self.assertEqual(observed["kBindingAdmission"], "REJECTED")
+        self.assertEqual(observed["localOutcome"], "OPENING_MISSING")
+        self.assertEqual(observed["stage"], "S3_KERNEL_STRUCTURAL")
+
     def test_transition_rejects_an_incompatible_vector(self) -> None:
         scenarios = load(CORPUS / "state-machine-scenarios.json")["records"]
         scenario = deepcopy(

@@ -288,7 +288,10 @@ function parseEvent(transcript) {
   const fields = { applicationProfileId: profile, applicationProfileVersion: version, authorSequence: sequence, causalParents: parents.map(hex), content,
     contextIdentifierHex: hex(context), credentialIdentifierHex: hex(credential), directPredecessorHex: predecessor ? hex(predecessor) : null,
     eventRole: role, eventTypeId: eventType, genesisReferenceHex: hex(genesis), schemaId, schemaVersion, transitionBlockHex: hex(transition) };
-  require(protocol === 1 && profile === 1 && version === 1 && objectKind === 1 && Math.min(eventType, schemaId, schemaVersion) > 0, "UNSUPPORTED_PROFILE_OR_REGISTRY");
+  // Parsing proves canonical framing. A non-zero AP tuple that differs from
+  // the receiver-selected tuple is classified by eventProfileFailures rather
+  // than being rewritten as malformed transcript bytes.
+  require(protocol === 1 && profile > 0 && version > 0 && objectKind === 1 && Math.min(eventType, schemaId, schemaVersion) > 0, "UNSUPPORTED_PROFILE_OR_REGISTRY");
   if (role === "REMOVAL") { const target = body.take(32, "target_event"); fields.tail = { targetCommitmentHex: hex(body.opaque("target_commitment")), targetEventReferenceHex: hex(target) }; }
   else if (role === "CREDENTIAL") {
     const kindCode = body.integer(1, "control_kind"), kind = ({ 1: "GRANT", 2: "REVOKE", 3: "ROTATE", 4: "RECOVER", 5: "POLICY", 6: "CLOSURE" })[kindCode];
@@ -303,6 +306,7 @@ function parseEvent(transcript) {
 }
 
 function eventProfileFailures(transcript, fields) {
+  if (fields.applicationProfileId !== 1 || fields.applicationProfileVersion !== 1) return [new ProtocolError("APPLICATION_PROFILE_MISMATCH"), null];
   const bodyLength = transcript.readUInt32BE(16);
   if (bodyLength > O08_LIMITS.FRAMING_OBJECT_OCTETS) return [new ProtocolError("FRAMING_OBJECT_OCTETS_LIMIT"), null];
   if (Buffer.from(fields.transitionBlockHex, "hex").length > O08_LIMITS.AP_TRANSITION_BLOCK_OCTETS) return [new ProtocolError("AP_TRANSITION_BLOCK_OCTETS_LIMIT"), null];

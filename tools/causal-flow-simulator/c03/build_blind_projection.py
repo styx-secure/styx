@@ -723,14 +723,21 @@ a connected K success reports
 `profile` is the active profile selected by the receiving replica. Transcript
 fields that disagree with it do not change the selected profile. The selected
 v0 tuple in this kit is protocol/profile/profile-version/signature-suite/
-commitment-suite `1/1/1/1/1`.
+commitment-suite `1/1/1/1/1`. A canonically encoded non-zero AP identifier or
+version that differs from this selected tuple leaves
+`transcriptVerification=VALID`; after reference verification it selects
+`CURRENT_OBJECT_OUT_OF_PROFILE` at `S3_KERNEL_STRUCTURAL`, before signature or
+content verification. Zero or non-canonical registry fields remain structural
+transcript rejection.
 
 For content class `NONE`, commitment match, supplied length and all seven
 geometry predicates are `NOT_APPLICABLE`, while commitment verification is
 `NOT_PRESENT`. For either committed-content class, a missing verified opening
-is not the same as missing detachable content bytes: `REQUIRED` selects
-`PENDING_OPENING` at `EVENT_LOCAL`; `DETACHABLE` without its verified opening
-selects `OPENING_MISSING` at `S3_KERNEL_STRUCTURAL`. Detachability permits later
+sets `commitmentVerification=PENDING`, supplied-length and commitment-match
+verification to `NOT_EVALUATED`. It is not the same as missing detachable
+content bytes: `REQUIRED` selects `PENDING_OPENING` at `EVENT_LOCAL` and remains
+K-admitted; `DETACHABLE` without its verified opening selects `OPENING_MISSING`
+at `S3_KERNEL_STRUCTURAL` and is rejected by K. Detachability permits later
 content-byte retrieval, not verification without an opening.
 
 O-08 enforcement uses each dimension's source-selected stage rather than a
