@@ -714,11 +714,12 @@ event-local condition, such as a same-author fork, missing REQUIRED opening or
 pending ancestor, prevents AP folding. A connected failure before K admission
 reports K `REJECTED`. Every disconnected fixture, including a locally negative
 fixture, reports K `NOT_EVALUATED`: the fixture has no connected authority
-history from which K admission could be decided. Every negative or deferred
-result reports `apAuthorityResult=NOT_REACHED`; AP is never executed by this
-kit. A disconnected transcript-conformance success reports K `NOT_EVALUATED`;
-a connected K success reports
-`AP_FOLD_NOT_EXECUTED` because this task never executes AP.
+history from which K admission could be decided. Every disconnected fixture,
+whether its transcript/local result is positive, negative or deferred, reports
+`apAuthorityResult=NOT_REACHED`: without connected K admission the AP fold is
+not a reachable boundary. Only a connected K success reports
+`AP_FOLD_NOT_EXECUTED`; K was reached and admitted there, while AP itself
+remains deliberately outside this task.
 
 `profile` is the active profile selected by the receiving replica. Transcript
 fields that disagree with it do not change the selected profile. The selected
