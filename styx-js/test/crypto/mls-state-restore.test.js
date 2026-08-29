@@ -1,7 +1,7 @@
 // test/crypto/mls-state-restore.test.js — the committed mls-state-v1 fixture restores
 // on the real WASM runtime, and every corruption fails closed (structured error, no
 // WASM trap, no silent fresh-start).
-import { describe, test, expect, beforeAll } from '@jest/globals';
+import { describe, test, expect, beforeAll, jest } from '@jest/globals';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -304,6 +304,9 @@ describe('mls-state-b3-1 outgoing writer fixture before the B3.2 artifact rebuil
     const stateBytes = base64ToBytes(envelope.payload);
     expect(createHash('sha256').update(stateBytes).digest('hex')).toBe(envelope.payloadSha256);
     const provider = new wasm.Provider();
+    const realDateNow = Date.now;
+    const historicalClock = jest.spyOn(Date, 'now')
+      .mockReturnValue(context.proofCreatedAt * 1000);
     let identity;
     let keyPackage;
     try {
@@ -330,6 +333,27 @@ describe('mls-state-b3-1 outgoing writer fixture before the B3.2 artifact rebuil
       keyPackage?.free();
       identity?.free();
       provider.free();
+      historicalClock.mockRestore();
     }
+    expect(Date.now).toBe(realDateNow);
+  });
+
+  test('rejects the same persisted KeyPackage after its encoded lifetime', async () => {
+    const wasm = await import('../../vendor/openmls-wasm/openmls_wasm.js');
+    const { context } = B3_1_PROVIDER_FIXTURE;
+    const framed = base64ToBytes(context.framedKeyPackage);
+    const realDateNow = Date.now;
+    const expiredClock = jest.spyOn(Date, 'now')
+      .mockReturnValue((context.proofCreatedAt + (8 * 24 * 60 * 60)) * 1000);
+    let keyPackage;
+    try {
+      expect(() => {
+        keyPackage = wasm.PhaseB31KeyPackage.from_framed_bytes(framed);
+      }).toThrow('phase-b3.1 key package: validation failed');
+    } finally {
+      keyPackage?.free();
+      expiredClock.mockRestore();
+    }
+    expect(Date.now).toBe(realDateNow);
   });
 });
