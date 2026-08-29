@@ -1,6 +1,6 @@
 # Styx project brief
 
-> **Status:** public project and funding brief, updated 23 August 2026.
+> **Status:** public project and funding brief, updated 29 August 2026.
 >
 > Styx is experimental, has not completed an independent security audit, and
 > is not ready for sensitive, high-risk, or life-critical use. This brief
