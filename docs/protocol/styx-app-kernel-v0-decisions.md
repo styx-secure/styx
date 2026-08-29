@@ -1482,7 +1482,11 @@ and O-10 registries:
   presentation is re-evaluated. `PENDING_OPENING`, `PENDING_ANCESTOR` and
   `DEPENDENCY_DEFERRED` retain distinct retry boundaries. The closed primary
   evidence partition is `17/5/3`, and the 102 O-10 source rows partition
-  `25/24/53`, without changing any registered O-10 meaning. A canonical
+  `25/24/53`, without changing any registered O-10 meaning. The 53
+  transcript-profile-unreachable rows are argued from the selected
+  transcript-only profile rather than mechanically proven unreachable; the
+  pinned cardinality detects later drift, not a pre-existing reachability gap.
+  A canonical
   non-zero AP tuple that differs from the receiver-selected tuple remains
   transcript-valid and selects `CURRENT_OBJECT_OUT_OF_PROFILE` after reference
   verification; it is not structural corruption. A missing verified opening

@@ -228,6 +228,40 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(len(observations), len(counterexamples))
         self.assertFalse(any("conditions" in row for row in invalid))
 
+    def test_evidence_layer_cannot_be_swapped_at_constant_cardinality(self) -> None:
+        temporary, target = self._mutated_corpus()
+        self.addCleanup(temporary.cleanup)
+        scenarios = load(target / "state-machine-scenarios.json")
+        transcript_step = next(
+            step
+            for scenario in scenarios["records"]
+            for step in scenario["steps"]
+            if step.get("evidenceLayer") == "TRANSCRIPT_CONFORMANCE"
+        )
+        local_negative_step = next(
+            step
+            for scenario in scenarios["records"]
+            for step in scenario["steps"]
+            if step.get("evidenceLayer") == "LOCAL_NEGATIVE"
+        )
+        transcript_step["evidenceLayer"] = "LOCAL_NEGATIVE"
+        local_negative_step["evidenceLayer"] = "TRANSCRIPT_CONFORMANCE"
+        store(target / "state-machine-scenarios.json", scenarios)
+        manifest = load(target / "manifest.json")
+        manifest_entry = next(
+            row for row in manifest["files"]
+            if row["path"] == "state-machine-scenarios.json"
+        )
+        manifest_entry["sha256"] = sha256(
+            (target / "state-machine-scenarios.json").read_bytes()
+        ).hexdigest()
+        store(target / "manifest.json", manifest)
+        with self.assertRaisesRegex(
+            ValidationError,
+            "layer references a non-(?:valid|invalid) vector",
+        ):
+            validate(REPO, target)
+
 
 if __name__ == "__main__":
     unittest.main()

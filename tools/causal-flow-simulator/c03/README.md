@@ -33,6 +33,12 @@ is explicit and is allowed only when the same input necessarily violates rows
 with the same primary and stage; sharing a generic same-outcome scenario is not
 coverage.
 
+The 53 `TRANSCRIPT_PROFILE_UNREACHABLE` source rows are bounded arguments from
+the selected transcript-only profile, not a mechanical proof that no future
+implementation could ever reach them. Their exact cardinality detects drift in
+this selected partition; it cannot detect a reachability gap that was already
+present when the partition was frozen.
+
 From the repository root:
 
 ```bash

@@ -441,6 +441,10 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
     }
     scenarios = _unique_sorted(documents["state-machine-scenarios.json"]["records"], "scenarios")
     scenario_ids = {record["id"] for record in scenarios}
+    transcript_conformance_vector_ids = {
+        record["id"] for record in valid + ap_expectations
+    }
+    invalid_vector_ids = {record["id"] for record in invalid}
     used_vector_ids: set[str] = set()
     exercised_transitions: set[tuple[str, str]] = set()
     reached_states: set[tuple[str, str]] = set()
@@ -480,6 +484,16 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
                     and "inputKAdmissionRecordId" not in step,
                     f"invalid vector-backed step input: {scenario['id']}",
                 )
+                if layer == "TRANSCRIPT_CONFORMANCE":
+                    require(
+                        step["inputVectorId"] in transcript_conformance_vector_ids,
+                        f"transcript-conformance layer references a non-valid vector: {scenario['id']}",
+                    )
+                elif layer == "LOCAL_NEGATIVE":
+                    require(
+                        step["inputVectorId"] in invalid_vector_ids,
+                        f"local-negative layer references a non-invalid vector: {scenario['id']}",
+                    )
                 used_vector_ids.add(step["inputVectorId"])
             required_evidence = step.get("requiredPriorEvidence")
             require(isinstance(required_evidence, list), f"invalid prior evidence: {scenario['id']}")
