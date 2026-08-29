@@ -173,7 +173,11 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
 
     def test_licensing_documents_record_the_bounded_approval(self) -> None:
         required = {
-            "LICENSING.md": ("twelve paths", "Issue #253", "creates no corpus bytes"),
+            "LICENSING.md": (
+                "twelve paths",
+                "Issue #253",
+                "licensing status and corpus construction do not",
+            ),
             "README.md": ("Twelve exact synthetic data paths", "Issue #253"),
             "CONTRIBUTING.md": ("twelve exact", "Issues #41 and #253"),
             "docs/architecture/decisions/ADR-0004-licensing-strategy.md": (
