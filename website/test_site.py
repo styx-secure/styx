@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 import xml.etree.ElementTree as ET
+import re
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
@@ -45,6 +46,9 @@ class DocumentParser(HTMLParser):
         self.h1_count = 0
         self.title_depth = 0
         self.title_text: list[str] = []
+        self.anchor_depth = 0
+        self.current_anchor_text: list[str] = []
+        self.anchor_texts: list[str] = []
         self.text: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -56,15 +60,25 @@ class DocumentParser(HTMLParser):
             self.h1_count += 1
         if tag == "title":
             self.title_depth += 1
+        if tag == "a":
+            self.anchor_depth += 1
+            self.current_anchor_text = []
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "title":
             self.title_depth -= 1
+        if tag == "a":
+            self.anchor_texts.append(
+                " ".join(" ".join(self.current_anchor_text).split())
+            )
+            self.anchor_depth -= 1
 
     def handle_data(self, data: str) -> None:
         self.text.append(data)
         if self.title_depth:
             self.title_text.append(data)
+        if self.anchor_depth:
+            self.current_anchor_text.append(data)
 
 
 class LandingPageTests(unittest.TestCase):
@@ -210,8 +224,13 @@ class LandingPageTests(unittest.TestCase):
             "tools/causal-flow-simulator/c03/README.md",
             hrefs,
         )
-        self.assertNotRegex(self.html, r'href="[^"]*demo')
-        self.assertNotIn('id="demo"', self.html)
+        demo_marker = re.compile(r"\b(?:demo|trace[-_ ]?player)\b", re.IGNORECASE)
+        for attrs in self.tags_named("a"):
+            self.assertIsNone(demo_marker.search(attrs.get("href", "")))
+        for anchor_text in self.parser.anchor_texts:
+            self.assertIsNone(demo_marker.search(anchor_text))
+        for element_id in self.parser.ids:
+            self.assertIsNone(demo_marker.search(element_id))
 
     def test_svg_is_restricted_human_readable_source(self) -> None:
         source = SVG_PATH.read_text(encoding="utf-8")

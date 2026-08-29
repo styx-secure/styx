@@ -711,6 +711,10 @@ h1 em {
   margin-top: 28px;
 }
 
+.evidence-grid code {
+  white-space: nowrap;
+}
+
 .evidence-grid a {
   display: inline-block;
   margin-top: 15px;
@@ -722,7 +726,12 @@ h1 em {
 .evidence-actions {
   display: flex;
   flex-wrap: wrap;
+  margin-top: 15px;
   gap: 8px 22px;
+}
+
+.evidence-actions a {
+  margin-top: 0;
 }
 
 .roadmap {
