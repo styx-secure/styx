@@ -42,7 +42,7 @@ Documentation is not dual-licensed and no Creative Commons license is used.
 
 ## 2. Exact Apache-2.0 exceptions (twelve paths)
 
-Exactly the following current and future synthetic data paths are approved for
+Exactly the following twelve synthetic data paths are approved for
 `Apache-2.0` (text in [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt)),
 copyright Maurizio Verde. No directory glob or unlisted descendant is covered.
 
@@ -66,7 +66,7 @@ and specifications — including `styx-js/test/fixtures/vault-crypto-v1/README.m
 `styx-js/test/fixtures/mls-state-v1/` — remain under the AGPL default or
 their third-party classification.
 
-### Future C0.3 synthetic corpus data — Issue #253
+### C0.3 synthetic transcript corpus — Issues #253 and #264
 
 ```text
 conformance/application-protocol/c03/manifest.json
@@ -77,14 +77,15 @@ conformance/application-protocol/c03/adversarial-mutations.json
 conformance/application-protocol/c03/expected-traces.json
 ```
 
-These six paths are pre-registered while absent. The Apache-2.0 licence
-attaches to each file only when it exists as fully synthetic Styx-generated
-data accepted by the copyright holder. Copied, adapted, transcribed or
-generated third-party/upstream bytes are forbidden. The future
-`manifest.json` must record generator identity, reproduction inputs,
+These six paths were pre-registered by Issue #253 and populated by Issue #264
+with fully synthetic Styx-generated transcript-conformance data accepted by the
+copyright holder. The Apache-2.0 licence now attaches to these exact files.
+Copied, adapted, transcribed or generated third-party/upstream bytes remain
+forbidden. `manifest.json` records generator identity, reproduction inputs,
 normative-source digests, generated-file digests, `synthetic: true` and
-`upstreamBytes: "none"`. This approval creates no corpus bytes and does not
-authorize C0.3.
+`upstreamBytes: "none"`. This licensing status and corpus construction do not
+authorize C0.3, establish implementation conformance, or make a product-readiness
+claim.
 
 ## 3. Exact third-party and derivative classifications
 
