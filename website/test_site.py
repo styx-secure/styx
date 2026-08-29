@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import unittest
 import xml.etree.ElementTree as ET
-import re
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
@@ -203,7 +202,7 @@ class LandingPageTests(unittest.TestCase):
         for attrs in evidence_links:
             self.assertIn("github.com/styx-secure/styx", attrs.get("href", ""))
 
-    def test_c03_evidence_is_current_bounded_and_not_a_demo(self) -> None:
+    def test_c03_evidence_is_current_bounded_and_links_one_explorer(self) -> None:
         for phrase in (
             "Conformance evidence on main",
             "Synthetic C0.3 conformance corpus",
@@ -224,13 +223,23 @@ class LandingPageTests(unittest.TestCase):
             "tools/causal-flow-simulator/c03/README.md",
             hrefs,
         )
-        demo_marker = re.compile(r"\b(?:demo|trace[-_ ]?player)\b", re.IGNORECASE)
-        for attrs in self.tags_named("a"):
-            self.assertIsNone(demo_marker.search(attrs.get("href", "")))
-        for anchor_text in self.parser.anchor_texts:
-            self.assertIsNone(demo_marker.search(anchor_text))
-        for element_id in self.parser.ids:
-            self.assertIsNone(demo_marker.search(element_id))
+        explorer_links = [
+            attrs
+            for attrs in self.tags_named("a")
+            if attrs.get("data-status") == "explorer"
+        ]
+        self.assertEqual(
+            explorer_links,
+            [{"data-status": "explorer", "href": "demo/index.html"}],
+        )
+        explorer_text = [
+            text
+            for attrs, text in zip(
+                self.tags_named("a"), self.parser.anchor_texts, strict=True
+            )
+            if attrs.get("data-status") == "explorer"
+        ]
+        self.assertEqual(explorer_text, ["Explore the evidence visually →"])
 
     def test_svg_is_restricted_human_readable_source(self) -> None:
         source = SVG_PATH.read_text(encoding="utf-8")
