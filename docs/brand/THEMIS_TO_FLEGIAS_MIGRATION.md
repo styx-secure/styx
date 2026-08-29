@@ -3,9 +3,9 @@
 Date: 2026-08-29
 
 Authority: [Issue #274](https://github.com/styx-secure/styx/issues/274),
-[ratification record](https://github.com/styx-secure/styx/issues/274#issuecomment-5463469336),
+[operative ratification record](https://github.com/styx-secure/styx/issues/274#issuecomment-5463780077),
 contract body SHA-256
-`405ed42869a16042c26d55f93addf92d9f58b48270dec9e447e5015eec82715e`,
+`0036547e9b4ce0d7c520e871969d2b0415c55c87ecb3694113807308b153da50`,
 and implementation [PR #276](https://github.com/styx-secure/styx/pull/276).
 
 ## Decision
@@ -33,11 +33,14 @@ Current public, normative and technical surfaces use the new name. The dated
 Phase A spike and the 2026-07-12 licensing inventory retain their original
 wording because rewriting them would misrepresent the evidence available when
 they were produced. ADR-0003 keeps one explicit former-package-name note so old
-references remain understandable.
+references remain understandable. `docs/BRAND_IDENTITY.md` keeps one link to
+this migration record, whose filename contains the former name; this record
+necessarily contains both names to document the mapping.
 
 The name `Flegias` already appeared in the Phase B2.4 spike before Issue #274,
-where it denoted a separate planned consumer alongside the then-current name.
-This migration does not treat that earlier occurrence as naming authority.
+where it was a candidate alternative name later normalized to the generic
+"successor vertical" description. This migration does not treat that earlier
+occurrence as naming authority.
 
 Repository history is not rewritten. Unpublished consumers outside this
 repository that import the former package URI must migrate explicitly.
