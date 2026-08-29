@@ -454,6 +454,11 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
         available_evidence: set[str] = set()
         for step in scenario["steps"]:
             layer = step.get("evidenceLayer")
+            require(
+                (layer == "BOUNDARY_NOT_EXECUTED")
+                == (step.get("executed") is False),
+                f"boundary execution-layer mismatch: {scenario['id']}",
+            )
             if layer == "CONNECTED_K_ADMISSION":
                 require(
                     "inputVectorId" not in step

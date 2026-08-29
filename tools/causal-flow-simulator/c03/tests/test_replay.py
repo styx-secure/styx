@@ -19,6 +19,7 @@ from corpus_model import (  # noqa: E402
     DOMAINS,
     ProtocolError,
     ed25519_sign,
+    encode_genesis,
     encode_event,
     evaluate_k_admission_graph,
     evaluate_k_admission_scenario,
@@ -213,6 +214,65 @@ class ReplayTests(unittest.TestCase):
             }
             <= {record["id"] for record in invalid}
         )
+
+    def test_removed_r6_vectors_remain_direct_fail_closed_regressions(self) -> None:
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        ordinary = next(record for record in valid if record["id"] == "vec-ordinary-none")
+
+        truncated = deepcopy(ordinary)
+        truncated["transcriptHex"] = truncated["transcriptHex"][:-2]
+        trailing = deepcopy(ordinary)
+        trailing["transcriptHex"] += "00"
+        overlong = deepcopy(ordinary)
+        raw = bytearray.fromhex(overlong["transcriptHex"])
+        transition_length = len(
+            bytes.fromhex(ordinary["fields"]["transitionBlockHex"])
+        )
+        sequence_offset = 20 + 57 + 4 + transition_length + 32
+        raw[16:20] = (int.from_bytes(raw[16:20], "big") + 1).to_bytes(4, "big")
+        raw[sequence_offset:sequence_offset] = b"\x00"
+        overlong["transcriptHex"] = raw.hex()
+
+        for record in (truncated, trailing, overlong):
+            result = evaluate_vector(record)
+            self.assertEqual(result["localOutcome"], "STRUCTURAL_REJECTION")
+            self.assertEqual(result["kBindingAdmission"], "REJECTED")
+
+        framing_fields = deepcopy(ordinary["fields"])
+        framing_fields["transitionBlockHex"] = synthetic_octets(
+            "direct-resource-framing-object", 8193
+        ).hex()
+        framing = _application_vector(
+            "direct-resource-framing-object",
+            framing_fields,
+            "seed/root",
+        )
+        framing_result = evaluate_vector(framing)
+        self.assertEqual(
+            framing_result["localOutcome"], "CURRENT_OBJECT_OUT_OF_PROFILE"
+        )
+        self.assertEqual(framing_result["kBindingAdmission"], "REJECTED")
+
+        genesis = next(record for record in valid if record["id"] == "vec-genesis")
+        policy = deepcopy(genesis)
+        policy["fields"]["initialAuthorityPolicyHex"] = synthetic_octets(
+            "direct-resource-genesis-policy", 4097
+        ).hex()
+        policy_transcript = encode_genesis(policy["fields"])
+        policy_key, policy_signature = ed25519_sign(
+            synthetic_octets("seed/root", 32), policy_transcript
+        )
+        policy["binding"]["verificationKeyHex"] = policy_key.hex()
+        policy["signatureHex"] = policy_signature.hex()
+        policy["transcriptHex"] = policy_transcript.hex()
+        policy["genesisReferenceHex"] = framed_hash(
+            DOMAINS["genesis_reference"], policy_transcript
+        ).hex()
+        policy_result = evaluate_vector(policy)
+        self.assertEqual(
+            policy_result["localOutcome"], "CURRENT_OBJECT_OUT_OF_PROFILE"
+        )
+        self.assertEqual(policy_result["kBindingAdmission"], "REJECTED")
 
 
 class KAdmissionScenarioTests(unittest.TestCase):

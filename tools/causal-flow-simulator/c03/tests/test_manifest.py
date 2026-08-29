@@ -50,7 +50,7 @@ class ManifestTests(unittest.TestCase):
         rows = load(CORPUS / "manifest.json")["coverage"]["o10"]["sourceRows"]
         self.assertEqual(len(rows), 102)
         produced = [row for row in rows if row["disposition"] == "PRODUCED"]
-        self.assertEqual(len(produced), 25)
+        self.assertEqual(len(produced), 27)
         self.assertTrue(all(row["witnesses"] for row in produced))
         self.assertTrue(
             all(not row["witnesses"] for row in rows if row["disposition"] != "PRODUCED")
@@ -84,6 +84,26 @@ class ManifestTests(unittest.TestCase):
                 == "k-hostile-revoke-unknown-target"
                 for row in unresolved
             )
+        )
+        structural = {
+            row["rowId"]: row["witnesses"][0]
+            for row in produced
+            if row["rowId"] in {
+                "BASE:STRUCTURAL_REJECTION:00",
+                "BASE:STRUCTURAL_REJECTION:01",
+            }
+        }
+        self.assertEqual(
+            structural["BASE:STRUCTURAL_REJECTION:00"][
+                "inputKAdmissionRecordId"
+            ],
+            "k-hostile-self-rotation-event",
+        )
+        self.assertEqual(
+            structural["BASE:STRUCTURAL_REJECTION:01"][
+                "inputKAdmissionRecordId"
+            ],
+            "k-hostile-revoke-noncausal-target-event",
         )
 
     def test_generic_same_outcome_cannot_replace_o10_row_witness(self) -> None:
@@ -259,6 +279,40 @@ class ManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(
             ValidationError,
             "layer references a non-(?:valid|invalid) vector",
+        ):
+            validate(REPO, target)
+
+    def test_boundary_layer_cannot_be_swapped_at_constant_cardinality(self) -> None:
+        temporary, target = self._mutated_corpus()
+        self.addCleanup(temporary.cleanup)
+        scenarios = load(target / "state-machine-scenarios.json")
+        boundary_step = next(
+            step
+            for scenario in scenarios["records"]
+            for step in scenario["steps"]
+            if step.get("evidenceLayer") == "BOUNDARY_NOT_EXECUTED"
+        )
+        transcript_step = next(
+            step
+            for scenario in scenarios["records"]
+            for step in scenario["steps"]
+            if step.get("evidenceLayer") == "TRANSCRIPT_CONFORMANCE"
+        )
+        boundary_step["evidenceLayer"] = "TRANSCRIPT_CONFORMANCE"
+        transcript_step["evidenceLayer"] = "BOUNDARY_NOT_EXECUTED"
+        store(target / "state-machine-scenarios.json", scenarios)
+        manifest = load(target / "manifest.json")
+        manifest_entry = next(
+            row for row in manifest["files"]
+            if row["path"] == "state-machine-scenarios.json"
+        )
+        manifest_entry["sha256"] = sha256(
+            (target / "state-machine-scenarios.json").read_bytes()
+        ).hexdigest()
+        store(target / "manifest.json", manifest)
+        with self.assertRaisesRegex(
+            ValidationError,
+            "boundary execution-layer mismatch",
         ):
             validate(REPO, target)
 

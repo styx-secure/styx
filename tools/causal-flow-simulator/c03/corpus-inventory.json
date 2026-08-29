@@ -69,6 +69,8 @@
     "BASE:PENDING_OPENING:00": [{"inputId": "inv-opening-missing", "jointSourceRowIds": ["BASE:PENDING_OPENING:00"]}],
     "BASE:REFERENCE_COLLISION_UNSUPPORTED:00": [{"inputId": "inv-reference", "jointSourceRowIds": ["BASE:REFERENCE_COLLISION_UNSUPPORTED:00"]}],
     "BASE:REFERENCE_COLLISION_UNSUPPORTED:01": [{"inputId": "inv-reference", "jointSourceRowIds": ["BASE:REFERENCE_COLLISION_UNSUPPORTED:01"]}],
+    "BASE:STRUCTURAL_REJECTION:00": [{"inputKAdmissionRecordId": "k-hostile-self-rotation-event", "inputKAdmissionScenarioId": "k-hostile-self-rotation", "jointSourceRowIds": ["BASE:STRUCTURAL_REJECTION:00"]}],
+    "BASE:STRUCTURAL_REJECTION:01": [{"inputKAdmissionRecordId": "k-hostile-revoke-noncausal-target-event", "inputKAdmissionScenarioId": "k-hostile-revoke-noncausal-target", "jointSourceRowIds": ["BASE:STRUCTURAL_REJECTION:01"]}],
     "BASE:UNRESOLVABLE_CREDENTIAL:00": [{"inputKAdmissionRecordId": "k-hostile-revoke-unknown-target", "inputKAdmissionScenarioId": "k-hostile-revoke-unknown-target", "jointSourceRowIds": ["BASE:UNRESOLVABLE_CREDENTIAL:00", "BASE:UNRESOLVABLE_CREDENTIAL:01"]}],
     "BASE:UNRESOLVABLE_CREDENTIAL:01": [{"inputKAdmissionRecordId": "k-hostile-revoke-unknown-target", "inputKAdmissionScenarioId": "k-hostile-revoke-unknown-target", "jointSourceRowIds": ["BASE:UNRESOLVABLE_CREDENTIAL:00", "BASE:UNRESOLVABLE_CREDENTIAL:01"]}],
     "BASE:UNRESOLVED_CREDENTIAL_BINDING:00": [{"inputId": "inv-unresolved-credential-binding", "jointSourceRowIds": ["BASE:UNRESOLVED_CREDENTIAL_BINDING:00"]}],
