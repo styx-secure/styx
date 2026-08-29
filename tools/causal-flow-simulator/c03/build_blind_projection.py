@@ -765,8 +765,13 @@ For every connected candidate, its authenticated genesis reference is compared
 with the graph's preaccepted genesis before credential lookup. A mismatch is
 `CREDENTIAL_BINDING_MISMATCH`; only a candidate in the selected genesis context
 can proceed to credential resolution. Non-root verification bindings then come
-only from admitted same-context GRANT events. A disconnected fixture key or
-credential claim never supplies a connected binding.
+only from admitted same-context GRANT events. The binding GRANT for a non-root
+candidate must also be causally available in that candidate's authenticated
+dependency ancestry. An admitted same-context GRANT elsewhere in the bounded
+graph does not bind the candidate; absence from its ancestry selects
+`UNRESOLVED_CREDENTIAL_BINDING` at `S3_KERNEL_STRUCTURAL`. The preaccepted
+genesis root is the only binding that needs no GRANT ancestor. A disconnected
+fixture key or credential claim never supplies a connected binding.
 
 REVOKE and the retiring side of ROTATE require their target credential to be
 resolvable in admitted K history. A resolvable non-genesis target must also have
