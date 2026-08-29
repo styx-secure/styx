@@ -93,7 +93,7 @@ JavaScript/TypeScript. A successful path detector may green-skip irrelevant
 heavy jobs; detector failure is never a green skip.
 
 CI coverage does not replace the exact tests named by the task contract.
-`packages/themis_survey` is Flutter and must be tested separately when touched.
+`packages/flegias_survey` is Flutter and must be tested separately when touched.
 
 ## Current governance boundary
 

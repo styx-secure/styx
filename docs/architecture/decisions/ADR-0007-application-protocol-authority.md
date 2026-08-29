@@ -14,7 +14,7 @@ JavaScript and Dart, a Rust/OpenMLS secure-session engine exposed through WASM,
 a browser runtime, and a reference chat. Earlier architecture wording treated
 Rust/OpenMLS and the chat PWA as a single canonical product stack. The approved
 Vision instead defines Styx as a platform-neutral secure application substrate
-whose first vertical is Themis.
+whose first vertical is Flegias.
 
 Leaving both descriptions normative would make protocol decisions ambiguous:
 an implementation could become authoritative merely because it currently
@@ -73,7 +73,7 @@ and endpoint properties while implementing the same application protocol.
 
 ### 5. Product verticals and reference chat
 
-Product verticals own workflows, roles, policy and user experience. Themis is
+Product verticals own workflows, roles, policy and user experience. Flegias is
 the first intended vertical. The reference chat remains a minimal
 interoperability, pairing, persistence and failure-diagnostic surface. It is
 not the product authority and does not set the application roadmap.

@@ -20,7 +20,7 @@ REQUIRED_IDS = {
     "problem",
     "audiences",
     "architecture",
-    "themis",
+    "flegias",
     "evidence",
     "roadmap",
     "boundaries",
@@ -185,12 +185,21 @@ class LandingPageTests(unittest.TestCase):
         for phrase in (
             "Secure infrastructure for sensitive work",
             "human-rights and civil-society teams",
-            "Themis by Styx",
+            "Flegias by Styx",
             "Not ready for live reporting",
             "has not completed an independent security audit",
             "must not be used for sensitive, high-risk, or life-critical work",
         ):
             self.assertIn(phrase, self.text)
+
+    def test_flegias_name_is_current_and_stale_legacy_surface_is_absent(self) -> None:
+        self.assertIn("Flegias by Styx", self.text)
+        self.assertIn('id="flegias"', self.html)
+        self.assertIn(".flegias", self.css)
+        legacy = "the" + "mis"
+        for stale in (legacy.title(), legacy, f"#{legacy}", f".{legacy}"):
+            self.assertNotIn(stale, self.html)
+            self.assertNotIn(stale, self.css)
 
     def test_current_evidence_links_are_marked(self) -> None:
         evidence_links = [

@@ -6,7 +6,7 @@
 > [`specs/01-vision.md`](../specs/01-vision.md), insieme a
 > [`specs/02-prd.md`](../specs/02-prd.md), [`specs/04-tech-spec.md`](../specs/04-tech-spec.md) e al
 > [rapporto Phase A Marmot/OpenMLS](architecture/spikes/2026-08-08-marmot-openmls-phase-a.md).
-> Styx è ora definito come substrato applicativo sicuro; Themis è il primo verticale e la chat è
+> Styx è ora definito come substrato applicativo sicuro; Flegias è il primo verticale e la chat è
 > un'applicazione di riferimento. Per licenza e contributi fanno fede
 > [`LICENSE`](../LICENSE), [`LICENSING.md`](../LICENSING.md), [`REUSE.toml`](../REUSE.toml) e
 > [`CONTRIBUTING.md`](../CONTRIBUTING.md).
@@ -54,7 +54,7 @@ Alla data dello snapshot, Styx era descritto come **due implementazioni parallel
 | `push_bridge/` (Node) | 247 | — | bridge push attivo |
 | `push_bridge_server/` (Go) | 888 | — | bridge legacy (scaffold) |
 
-**Test complessivi:** 61 file `*_test.dart` + 58 file `*.test.js`. La suite JS è verde (646 test, dopo l'envelope MLS di PR #23); la suite Dart è **verde** dopo il fix della baseline CI (390 test: 135 crypto_core, 76 styx, 69 ledger_engine, 61 transport, 37 storage, 11 push_bridge_client, 1 test_integration; `themis_survey` Flutter escluso dallo stack di riferimento). La coverage Dart è gestita a **baseline non-regressione** per package: il 90% resta un obiettivo, non ancora raggiunto ovunque (storage ~78%, styx ~82%, transport ~85%; gli altri ≥90%).
+**Test complessivi:** 61 file `*_test.dart` + 58 file `*.test.js`. La suite JS è verde (646 test, dopo l'envelope MLS di PR #23); la suite Dart è **verde** dopo il fix della baseline CI (390 test: 135 crypto_core, 76 styx, 69 ledger_engine, 61 transport, 37 storage, 11 push_bridge_client, 1 test_integration; `flegias_survey` Flutter escluso dallo stack di riferimento). La coverage Dart è gestita a **baseline non-regressione** per package: il 90% resta un obiettivo, non ancora raggiunto ovunque (storage ~78%, styx ~82%, transport ~85%; gli altri ≥90%).
 
 ---
 
@@ -69,7 +69,7 @@ Styx/
 │   ├── transport/                #   Nostr + Email(IMAP/SMTP) + Tor + failover/outbox
 │   ├── push_bridge_client/       #   client push Flutter (dummy detection, privacy profiles)
 │   ├── styx/                     #   FACCIATA pubblica: SovereignLedger (identità→ledger→trasporto→pairing)
-│   └── themis_survey/            #   app Flutter di sondaggi (separata, opzionalmente su Styx)
+│   └── flegias_survey/            #   app Flutter di sondaggi (separata, opzionalmente su Styx)
 ├── test_integration/             #   generatore di test-vector cross-linguaggio + stub
 │
 ├── styx-js/                      # ── STACK JS: chat E2EE su MLS (LINEA ATTIVA) ──
@@ -127,7 +127,7 @@ Il motore crittografico è **MLS (RFC 9420)** via OpenMLS compilato in WASM (`ve
 
 - **`push_bridge/` (Node, attivo)** — bridge Web Push/VAPID per la chat JS. Cieco sui contenuti (push vuoto), ascolta i relay per kind 1059 e sveglia il device. Registrazione firmata schnorr. **Limite noto:** la registry è keyed su pubkey Nostr, quindi il bridge apprende quali pubkey sono registrati e li correla al push endpoint (nessun handle anonimo — target del Blocco 2 della roadmap, workstream P2).
 - **`push_bridge_server/` (Go, legacy)** — bridge FCM/APNs per il client Dart, deliverable del vecchio TASK_10 (in `docs/archive/`). **Scaffold**: le dipendenze FCM/APNs/Nostr sono dichiarate in `go.mod` ma non importate, nessun `go.sum`, relay `nil`, sender no-op. I profili privacy con dummy Poisson sono implementati come logica, ma non c'è invio push reale. Da trattare come implementazione precedente inattiva.
-- **`themis_survey` (Flutter)** — motore di sondaggi con UI, **decoupled dal core** (nessuna dipendenza `styx_*`, si integra via callback iniettato `SurveyStyxBridge`). Fuori dal workspace e dalla CI.
+- **`flegias_survey` (Flutter)** — motore di sondaggi con UI, **decoupled dal core** (nessuna dipendenza `styx_*`, si integra via callback iniettato `SurveyStyxBridge`). Fuori dal workspace e dalla CI.
 
 ---
 

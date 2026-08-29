@@ -1,4 +1,4 @@
-/// Themis Survey Engine — models, branching logic, Flutter renderer, and API client.
+/// Flegias Survey Engine — models, branching logic, Flutter renderer, and API client.
 library;
 
 export 'src/api/api.dart';
