@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unittest
 import xml.etree.ElementTree as ET
+import re
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
@@ -45,6 +46,9 @@ class DocumentParser(HTMLParser):
         self.h1_count = 0
         self.title_depth = 0
         self.title_text: list[str] = []
+        self.anchor_depth = 0
+        self.current_anchor_text: list[str] = []
+        self.anchor_texts: list[str] = []
         self.text: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -56,15 +60,25 @@ class DocumentParser(HTMLParser):
             self.h1_count += 1
         if tag == "title":
             self.title_depth += 1
+        if tag == "a":
+            self.anchor_depth += 1
+            self.current_anchor_text = []
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "title":
             self.title_depth -= 1
+        if tag == "a":
+            self.anchor_texts.append(
+                " ".join(" ".join(self.current_anchor_text).split())
+            )
+            self.anchor_depth -= 1
 
     def handle_data(self, data: str) -> None:
         self.text.append(data)
         if self.title_depth:
             self.title_text.append(data)
+        if self.anchor_depth:
+            self.current_anchor_text.append(data)
 
 
 class LandingPageTests(unittest.TestCase):
@@ -185,9 +199,38 @@ class LandingPageTests(unittest.TestCase):
             for attrs in self.tags_named("a")
             if attrs.get("data-status") == "implemented"
         ]
-        self.assertGreaterEqual(len(evidence_links), 3)
+        self.assertGreaterEqual(len(evidence_links), 5)
         for attrs in evidence_links:
             self.assertIn("github.com/styx-secure/styx", attrs.get("href", ""))
+
+    def test_c03_evidence_is_current_bounded_and_not_a_demo(self) -> None:
+        for phrase in (
+            "Conformance evidence on main",
+            "Synthetic C0.3 conformance corpus",
+            "independent Python and JavaScript replay",
+            "not implementation conformance, a security audit, or product readiness",
+            "C0.3 remains NO-GO",
+        ):
+            self.assertIn(phrase, self.text)
+
+        hrefs = {attrs.get("href", "") for attrs in self.tags_named("a")}
+        self.assertIn(
+            "https://github.com/styx-secure/styx/blob/main/"
+            "conformance/application-protocol/c03/manifest.json",
+            hrefs,
+        )
+        self.assertIn(
+            "https://github.com/styx-secure/styx/blob/main/"
+            "tools/causal-flow-simulator/c03/README.md",
+            hrefs,
+        )
+        demo_marker = re.compile(r"\b(?:demo|trace[-_ ]?player)\b", re.IGNORECASE)
+        for attrs in self.tags_named("a"):
+            self.assertIsNone(demo_marker.search(attrs.get("href", "")))
+        for anchor_text in self.parser.anchor_texts:
+            self.assertIsNone(demo_marker.search(anchor_text))
+        for element_id in self.parser.ids:
+            self.assertIsNone(demo_marker.search(element_id))
 
     def test_svg_is_restricted_human_readable_source(self) -> None:
         source = SVG_PATH.read_text(encoding="utf-8")

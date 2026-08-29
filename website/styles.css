@@ -477,9 +477,16 @@ h1 em {
 .problem-grid,
 .evidence-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
   border-top: 1px solid var(--line-light);
   border-bottom: 1px solid var(--line-light);
+}
+
+.problem-grid {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.evidence-grid {
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .problem-grid article,
@@ -496,6 +503,21 @@ h1 em {
 .problem-grid article:last-child,
 .evidence-grid article:last-child {
   border-right: 0;
+}
+
+.evidence-grid article:nth-child(odd) {
+  padding-right: 34px;
+  padding-left: 0;
+}
+
+.evidence-grid article:nth-child(even) {
+  padding-right: 0;
+  padding-left: 34px;
+  border-right: 0;
+}
+
+.evidence-grid article:nth-child(n + 3) {
+  border-top: 1px solid var(--line-light);
 }
 
 .problem-grid span {
@@ -689,12 +711,27 @@ h1 em {
   margin-top: 28px;
 }
 
+.evidence-grid code {
+  white-space: nowrap;
+}
+
 .evidence-grid a {
   display: inline-block;
   margin-top: 15px;
   color: var(--river-dark);
   font-size: .8rem;
   font-weight: 750;
+}
+
+.evidence-actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 15px;
+  gap: 8px 22px;
+}
+
+.evidence-actions a {
+  margin-top: 0;
 }
 
 .roadmap {
@@ -980,6 +1017,17 @@ footer > div a:hover {
     padding: 30px 0;
     border-right: 0;
     border-bottom: 1px solid var(--line-light);
+  }
+
+  .evidence-grid article:nth-child(odd),
+  .evidence-grid article:nth-child(even) {
+    padding: 30px 0;
+    border-top: 0;
+    border-right: 0;
+  }
+
+  .evidence-grid article:last-child {
+    border-bottom: 0;
   }
 
   .roadmap-list {
