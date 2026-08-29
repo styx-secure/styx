@@ -20,7 +20,7 @@ It is intended for human-rights and civil-society teams, journalists, safeguardi
 trusted intermediaries, and developers building casework, evidence, coordination, or other
 sensitive applications.
 
-The first product vertical is **Themis**: a planned case-management application intended to let a
+The first product vertical is **Flegias**: a planned case-management application intended to let a
 person open and continue a confidential case without providing an email address, phone number, or
 ordinary account. This can support abuse, harassment, discrimination, whistleblowing, safeguarding,
 and other sensitive casework, but the software cannot replace trained handlers, legal and privacy
@@ -54,7 +54,7 @@ review, safeguarding procedures, or emergency channels.
 
 The proposed funded programme preserves the completed bounded secure-session evidence and takes
 the project through a conformance-backed Styx application protocol, a supported session adapter,
-a reusable SDK and reliable delivery, a text-first Themis alpha, stronger distribution assurance,
+a reusable SDK and reliable delivery, a text-first Flegias alpha, stronger distribution assurance,
 a targeted review of a contractually bounded high-risk scope with remediation and retest, and a
 separately gated synthetic or non-sensitive organizational exercise or later controlled-pilot
 decision. See the

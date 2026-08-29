@@ -149,7 +149,7 @@ melos run test:all
 melos run coverage:check
 ```
 
-`packages/themis_survey` is Flutter and, when touched, is tested from its own
+`packages/flegias_survey` is Flutter and, when touched, is tested from its own
 directory with `flutter test`.
 
 JavaScript/PWA:

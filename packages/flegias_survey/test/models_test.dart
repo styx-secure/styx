@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:themis_survey/themis_survey.dart';
+import 'package:flegias_survey/flegias_survey.dart';
 
 void main() {
   group('QuestionType', () {

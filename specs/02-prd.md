@@ -31,9 +31,9 @@ adversarial conformance scenarios.
   before being frozen.
 - **Requirement:** neither implementation is normative.
 
-## E2 — Themis vertical
+## E2 — Flegias vertical
 
-Themis is the first supported product: anonymous case management with durable
+Flegias is the first supported product: anonymous case management with durable
 case state, asynchronous two-way dialogue, controlled disclosure, notification
 support, evidence integrity, recovery, retention, and safe operational UX.
 

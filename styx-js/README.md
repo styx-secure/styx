@@ -9,7 +9,7 @@
 `styx-js` contains the active browser implementation of the Styx application protocol, reusable
 browser-runtime components, and a minimal chat reference application. It is an implementation—not
 the normative protocol and not a general-purpose messenger. The chat exists as an interoperability
-harness and diagnostic surface for future product verticals such as Themis.
+harness and diagnostic surface for future product verticals such as Flegias.
 
 The JavaScript ledger shares selected application-level formats and conformance vectors with the
 Dart reference implementation. The JavaScript MLS chat and Dart ledger are separate cryptographic

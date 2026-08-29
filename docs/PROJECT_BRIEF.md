@@ -41,14 +41,14 @@ collaboration, verifiable state transitions, offline operation, and redundant
 delivery without making a central service the authoritative record or giving
 delivery infrastructure access to application content.
 
-The first vertical, **Themis**, is intended to let a person open and continue a
+The first vertical, **Flegias**, is intended to let a person open and continue a
 confidential case without providing an email address, telephone number, or
 ordinary account, while authorized organizations manage follow-up, roles,
 evidence, retention, and continuity through verifiable encrypted state.
 
 Styx is not a general-purpose messenger. The reference chat exists to exercise
 pairing, encrypted sessions, persistence, interoperability, and failure
-diagnostics. Product work is driven by the reusable substrate and Themis.
+diagnostics. Product work is driven by the reusable substrate and Flegias.
 
 ## Problem
 
@@ -91,7 +91,7 @@ client or transport:
 
 | Layer | Responsibility | Current direction |
 |---|---|---|
-| Product vertical | Workflow, roles, policy, and user experience | Themis first; reference chat minimal |
+| Product vertical | Workflow, roles, policy, and user experience | Flegias first; reference chat minimal |
 | Styx application protocol | Versioned objects, state transitions, causality, evidence, retention, pruning, and conformance | Language-neutral specification and vectors are to become authoritative |
 | Secure-session profile | Membership, epochs, continuous group key agreement, convergence, and confidential delivery | Bounded exact-pin Styx/MDK direct-MLS proof complete; supported adapter and Nostr-envelope integration remain future work |
 | Runtime profile | Key custody, encrypted storage, workers, notifications, distribution, and platform integration | Browser PWA first; signed native profiles are a future higher-assurance option |
@@ -104,14 +104,14 @@ feature line is frozen.
 
 Nostr is a replaceable store-and-forward transport, not the application
 identity or database. MLS, through the pinned OpenMLS implementation, supplies
-secure-session primitives but not Themis workflow semantics. Marmot is the
+secure-session primitives but not Flegias workflow semantics. Marmot is the
 preferred MLS-over-Nostr compatibility target. Phase B demonstrated a bounded
 isolated direct-MLS profile against exact pinned OpenMLS, Marmot and MDK
 revisions; it did not establish general Marmot conformance, Nostr-envelope
 interoperability or product activation. No upstream project has endorsed or
 certified Styx.
 
-## Themis: first vertical
+## Flegias: first vertical
 
 The planned text-first flow is deliberately narrower than a consumer
 messenger. A reporter would create a fresh case context and a high-entropy
@@ -230,7 +230,7 @@ independent review, exact tests, and human gate.
 | 1. Application protocol and conformance | **Active protocol-hardening freeze:** versioned language-neutral objects, transitions, error rules, adversarial scenarios, and reusable vectors; Dart cases extracted before its feature freeze | The [hardening exit gates](protocol/protocol-hardening-plan.md#8-exit-gates) pass; independent implementations execute the applicable corpus; divergences are resolved in the specification rather than hidden in ports |
 | 2. Secure-session interoperability decision | **Bounded evidence complete:** preserve the staged-commit, identity, KeyPackage, Welcome, traffic, self-update, retained-window and two-candidate convergence proofs; next define a separately supported adapter without relabelling the isolated harness as product code | Reproducible exact-pin evidence and the [final bounded GO](architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md); no general-conformance or product claim |
 | 3. Minimum SDK and reliable delivery | Data-only application interfaces, context separation, persistent outbox, ACK states, retry, idempotency, deduplication, and crash recovery | Tests demonstrate offline recovery and never label relay publication as recipient or human receipt |
-| 4. Anonymous-case capability and Themis alpha | Fresh per-case identity, accountless return capability, text submission and dialogue, operator roles and revocation, retention, and safety UX | Cross-case unlinkability tests under the declared model; end-to-end reporter/operator scenarios without conventional contact details |
+| 4. Anonymous-case capability and Flegias alpha | Fresh per-case identity, accountless return capability, text submission and dialogue, operator roles and revocation, retention, and safety UX | Cross-case unlinkability tests under the declared model; end-to-end reporter/operator scenarios without conventional contact details |
 | 5. Distribution and deployment assurance | Verifiable artifacts and updates, stricter browser release controls, a native high-assurance profile decision, and reproducible relay/deployment guidance | Independent artifact comparison, update/rollback tests, metadata data-flow evidence, and continuity drills |
 | 6. Targeted independent review, remediation, and gated field decision | Contractually bounded review of the highest-risk Styx-authored scope, finding disposition, retest and operational procedures; a synthetic/non-sensitive exercise or later pilot only after separate readiness gates | No unresolved blocking finding within the reviewed scope; reviewed residual risks; trained operators; and an explicit GO/NO-GO decision before any broader field use |
 
@@ -270,7 +270,7 @@ themselves demonstrate safety, anonymity, adoption, or readiness.
   recipient taking a screenshot, or prevent identification through content.
 - Deletion and pruning cannot guarantee physical erasure from flash, browser
   storage, backups, screenshots, or third-party replicas.
-- Themis does not currently exist as a complete application. Its anonymous
+- Flegias does not currently exist as a complete application. Its anonymous
   capability, metadata profile, operator controls, and deployment procedure are
   proposed work.
 - The completed Phase B work is exact-pin isolated interoperability and

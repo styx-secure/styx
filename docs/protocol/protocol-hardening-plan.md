@@ -40,7 +40,7 @@ increments that produce or reconcile:
 
 The following work is paused:
 
-- product, SDK, adapter, PWA/UI and Themis or successor-vertical feature
+- product, SDK, adapter, PWA/UI and Flegias or successor-vertical feature
   development;
 - new wire, storage, vault or migration implementation;
 - product activation of the secure-session proof;
@@ -385,7 +385,7 @@ order:
 3. independently testable implementation(s) against the conformance corpus;
 4. supported secure-session adapter and authenticated persistence boundaries;
 5. reliable delivery and runtime profiles;
-6. synthetic Themis or successor-vertical scenarios, then separately gated
+6. synthetic Flegias or successor-vertical scenarios, then separately gated
    field readiness.
 
 The current browser PWA remains one runtime profile, not the protocol authority.

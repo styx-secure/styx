@@ -13,6 +13,7 @@ SITE = Path(__file__).resolve().parent
 HTML_PATH = SITE / "index.html"
 CSS_PATH = SITE / "styles.css"
 SVG_PATH = SITE / "assets" / "styx-mark.svg"
+DEMO_HTML_PATH = SITE / "demo" / "index.html"
 
 REQUIRED_IDS = {
     "main",
@@ -20,7 +21,7 @@ REQUIRED_IDS = {
     "problem",
     "audiences",
     "architecture",
-    "themis",
+    "flegias",
     "evidence",
     "roadmap",
     "boundaries",
@@ -109,6 +110,7 @@ class LandingPageTests(unittest.TestCase):
         ]
         self.assertEqual(len(descriptions), 1)
         self.assertGreaterEqual(len(descriptions[0]), 80)
+        self.assertIn("Flegias", descriptions[0])
 
         color_schemes = [
             tag.get("content", "")
@@ -185,12 +187,36 @@ class LandingPageTests(unittest.TestCase):
         for phrase in (
             "Secure infrastructure for sensitive work",
             "human-rights and civil-society teams",
-            "Themis by Styx",
+            "Flegias by Styx",
             "Not ready for live reporting",
             "has not completed an independent security audit",
             "must not be used for sensitive, high-risk, or life-critical work",
         ):
             self.assertIn(phrase, self.text)
+
+    def test_flegias_name_is_current_and_stale_legacy_surface_is_absent(self) -> None:
+        self.assertIn("Flegias by Styx", self.text)
+        self.assertIn('id="flegias"', self.html)
+        self.assertIn(".flegias", self.css)
+        flegias_nav = [
+            text
+            for (tag, attrs), text in zip(
+                (item for item in self.tags if item[0] == "a"),
+                self.parser.anchor_texts,
+                strict=True,
+            )
+            if attrs.get("href") == "#flegias"
+        ]
+        self.assertIn("Flegias", flegias_nav)
+
+        demo_html = DEMO_HTML_PATH.read_text(encoding="utf-8")
+        self.assertIn("No Flegias workflow", demo_html)
+
+        # Build the former token so this guard does not become a live stale
+        # reference rejected by the repository-wide migration check itself.
+        legacy = "the" + "mis"
+        for surface in (self.html, self.css, demo_html):
+            self.assertNotIn(legacy, surface.lower())
 
     def test_current_evidence_links_are_marked(self) -> None:
         evidence_links = [

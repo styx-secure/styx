@@ -33,7 +33,7 @@ Styx is an open-source, platform-neutral substrate for applications that need
 to collaborate over infrastructure not trusted with plaintext. It separates
 application state, secure sessions, runtime custody, and product policy so that
 casework, evidence, coordination, and other sensitive workflows do not have to
-be reduced to chat. The first planned product is Themis, an accountless
+be reduced to chat. The first planned product is Flegias, an accountless
 confidential case-management experience. Current builds are experimental,
 unaudited foundations—not a deployable high-risk system.
 
@@ -58,22 +58,24 @@ Preferred first reference: **Styx**. Use **the Styx project** where a noun is
 needed. Use **Styx Secure** only for the project organization or an official
 publisher identity, never as a separate product tier.
 
-### Themis by Styx
+### Flegias by Styx
 
 **Role:** the planned first product vertical, not yet an implemented product.
 
-Themis is intended to support confidential case intake and two-way,
+Flegias is intended to support confidential case intake and two-way,
 asynchronous follow-up without requiring a reporter to provide an email
 address, phone number, or ordinary account. It is driven by the needs of
 reporters, human-rights and civil-society organizations, safeguarding teams,
 trusted intermediaries, and trained case handlers.
 
 Until its implementation and validation milestones are complete, always pair
-Themis with **planned**, **proposed**, **intended**, or **in development**.
+Flegias with **planned**, **proposed**, **intended**, or **in development**.
 Never describe it as available, anonymous by default, compliant, certified, or
 safe for live reporting.
 
-Preferred public name: **Themis by Styx** on first reference, then **Themis**.
+Preferred public name: **Flegias by Styx** on first reference, then **Flegias**.
+The former-name mapping and compatibility impact are recorded in the
+[naming migration](brand/THEMIS_TO_FLEGIAS_MIGRATION.md).
 
 ### Styx Reference Chat
 
@@ -115,7 +117,7 @@ assurance gates, with any exercise or pilot decision gated separately.
 - not a substitute for operational security, trained handlers, legal review,
   safeguarding, or emergency services;
 - not a hosted service, production deployment, audited release, or completed
-  Themis application;
+  Flegias application;
 - not tied to JavaScript, Dart, a browser, Nostr, or any one implementation as
   its normative application protocol.
 
@@ -139,7 +141,7 @@ sensitive reports.
 just one-way submission—while treating process, metadata, endpoints, and human
 operations as part of the safety boundary.
 
-**Required caveat:** Themis is planned; current builds must not receive real
+**Required caveat:** Flegias is planned; current builds must not receive real
 sensitive reports.
 
 ### Developers and security engineers
@@ -155,7 +157,7 @@ remain paused under the current contribution policy.
 ### Funders and research partners
 
 **Message:** tested foundations exist, but the requested programme is the work
-needed to turn them into a conformance-backed substrate, a text-first Themis
+needed to turn them into a conformance-backed substrate, a text-first Flegias
 alpha, stronger distribution assurance, a targeted independent review of a
 contractually bounded high-risk scope with remediation and retest, and a
 separately gated synthetic or non-sensitive organizational exercise or later
@@ -208,7 +210,7 @@ paused.
 | federated or independently operated relays | serverless | Relays and other services still exist. |
 | metadata-minimizing, when evidenced | do not claim zero metadata | Timing, size, routing, and relationships may remain visible. |
 | experimental and unaudited | military-grade | The phrase has no useful assurance meaning. |
-| planned Themis alpha | anonymous reporting platform | The product and anonymity evidence do not yet exist. |
+| planned Flegias alpha | anonymous reporting platform | The product and anonymity evidence do not yet exist. |
 | interoperated with the exact pinned MDK peer for the operations in the Phase B report | Marmot-compatible | The completed evidence is revision- and operation-bounded, not general conformance. |
 | verifiable state transitions | immutable records | Retention and pruning are intentional; physical deletion is limited. |
 | open source under AGPL-3.0-or-later | free of restrictions | The licence has obligations and trademarks are separate. |
@@ -244,7 +246,7 @@ When space is limited, preserve these facts before adding detail:
 - current transports expose routing, timing, size, and relationship metadata;
 - end-to-end encryption does not protect a compromised endpoint or prevent a
   recipient from copying content;
-- Themis, general Marmot conformance, product integration of the isolated
+- Flegias, general Marmot conformance, product integration of the isolated
   profile, native distribution, a targeted
   independent review with remediation/retest, and any separately approved
   organizational exercise or pilot are future work;
@@ -350,7 +352,7 @@ site uses no JavaScript and no essential animation.
 > sensitive work over services not trusted with plaintext. Current builds are
 > experimental and not ready for live high-risk use.
 
-> Themis by Styx is the planned first vertical: confidential case intake and
+> Flegias by Styx is the planned first vertical: confidential case intake and
 > follow-up without requiring a conventional contact identifier.
 
 > At the OpenMLS, Marmot and MDK revisions recorded in the final Phase B
@@ -366,7 +368,7 @@ site uses no JavaScript and no essential animation.
 
 > Military-grade cryptography guarantees that nobody can read your data.
 
-> Themis is an HRF-backed reporting platform.
+> Flegias is an HRF-backed reporting platform.
 
 > Styx is the decentralized Signal for Bitcoin.
 
@@ -387,7 +389,7 @@ Licensing is defined by [`LICENSING.md`](../LICENSING.md), attribution by
 [`CONTRIBUTING.md`](../CONTRIBUTING.md), and trademarks by
 [`TRADEMARKS.md`](../TRADEMARKS.md). This guide does not amend them.
 
-Review this guide whenever the product vision, Themis status, audit status,
+Review this guide whenever the product vision, Flegias status, audit status,
 compatibility evidence, runtime profiles, licensing, or public deployment
 changes. A wording refresh must never silently promote planned work to current
 capability.

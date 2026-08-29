@@ -15,7 +15,7 @@ current monorepo directory layout.
 
 | Layer | Responsibility | Current realization |
 |---|---|---|
-| Product vertical | Workflows, policy, roles, UX | Themis first; reference chat minimal |
+| Product vertical | Workflows, policy, roles, UX | Flegias first; reference chat minimal |
 | Styx application protocol | Events, state transitions, causality, evidence, pruning, conformance | JS active browser implementation; Dart independent reference |
 | Secure-session profile | Membership, epochs, CGKA, convergence, confidential delivery | Bounded exact-pin direct-MLS proof complete; supported adapter and Nostr-envelope integration remain future work |
 | Runtime profile | Key custody, storage, workers, notifications, platform integration | Browser PWA first; signed native profiles future |
@@ -98,7 +98,7 @@ contracts. Browser-specific APIs must not leak into those contracts.
   it is not the product authority.
 - `push_bridge/` and `push_bridge_server/` are notification delivery
   components and deliberate metadata boundaries.
-- Themis is the first product vertical and must consume the application
+- Flegias is the first product vertical and must consume the application
   protocol through explicit interfaces rather than importing chat semantics.
 
 ## Governance constraints
