@@ -74,6 +74,13 @@ EXPECTED_SOURCE_SECURITY_MUTATION_IDS = frozenset(
         *(f"mutation-source-geometry-predicate-{number}" for number in range(1, 8)),
     }
 )
+NON_EXECUTED_FLOW_IDS = frozenset(
+    {
+        "secure_session_receive",
+        "secure_session_send",
+        "transport_publish",
+    }
+)
 
 
 class ValidationError(CorpusModelError):
@@ -451,6 +458,10 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
     for scenario in scenarios:
         require(all(_citation_valid(reader, source_paths, citation) for citation in scenario["citations"]), f"stale scenario citation: {scenario['id']}")
         require(isinstance(scenario.get("steps"), list) and scenario["steps"], f"empty scenario: {scenario['id']}")
+        scenario_is_nonexecuted_boundary = (
+            scenario["modelId"] == "ap_projection"
+            or scenario.get("flowId") in NON_EXECUTED_FLOW_IDS
+        )
         available_evidence: set[str] = set()
         for step in scenario["steps"]:
             layer = step.get("evidenceLayer")
@@ -458,6 +469,16 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
                 (layer == "BOUNDARY_NOT_EXECUTED")
                 == (step.get("executed") is False),
                 f"boundary execution-layer mismatch: {scenario['id']}",
+            )
+            require(
+                (layer == "BOUNDARY_NOT_EXECUTED")
+                == scenario_is_nonexecuted_boundary,
+                f"boundary scenario-layer mismatch: {scenario['id']}",
+            )
+            require(
+                (layer == "BOUNDARY_NOT_EXECUTED")
+                == (step.get("expectedStage") == "BOUNDARY_NOT_EXECUTED"),
+                f"boundary stage-layer mismatch: {scenario['id']}",
             )
             if layer == "CONNECTED_K_ADMISSION":
                 require(
@@ -703,7 +724,7 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
     require(coverage["counterexamples"] == expected_counterexamples, "counterexample coverage relation mismatch")
     expected_flows = [
         {
-            "branch": "BOUNDARY_NOT_EXECUTED" if record["id"] in {"secure_session_receive", "secure_session_send", "transport_publish"} else "EXECUTED",
+            "branch": "BOUNDARY_NOT_EXECUTED" if record["id"] in NON_EXECUTED_FLOW_IDS else "EXECUTED",
             "id": record["id"],
             "scenarioId": f"scenario-flow-{record['id']}",
         }

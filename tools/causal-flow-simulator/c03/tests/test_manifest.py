@@ -316,6 +316,43 @@ class ManifestTests(unittest.TestCase):
         ):
             validate(REPO, target)
 
+    def test_boundary_shape_cannot_move_to_an_executed_flow(self) -> None:
+        temporary, target = self._mutated_corpus()
+        self.addCleanup(temporary.cleanup)
+        scenarios = load(target / "state-machine-scenarios.json")
+        boundary_scenario = next(
+            scenario
+            for scenario in scenarios["records"]
+            if scenario.get("flowId") == "secure_session_receive"
+        )
+        transcript_scenario = next(
+            scenario
+            for scenario in scenarios["records"]
+            if scenario.get("flowId") == "author_application_event"
+        )
+        boundary_step = boundary_scenario["steps"][0]
+        transcript_step = transcript_scenario["steps"][0]
+        for field in ("evidenceLayer", "executed", "expectedStage"):
+            boundary_step[field], transcript_step[field] = (
+                transcript_step[field],
+                boundary_step[field],
+            )
+        store(target / "state-machine-scenarios.json", scenarios)
+        manifest = load(target / "manifest.json")
+        manifest_entry = next(
+            row for row in manifest["files"]
+            if row["path"] == "state-machine-scenarios.json"
+        )
+        manifest_entry["sha256"] = sha256(
+            (target / "state-machine-scenarios.json").read_bytes()
+        ).hexdigest()
+        store(target / "manifest.json", manifest)
+        with self.assertRaisesRegex(
+            ValidationError,
+            "boundary scenario-layer mismatch",
+        ):
+            validate(REPO, target)
+
 
 if __name__ == "__main__":
     unittest.main()
