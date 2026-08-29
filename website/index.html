@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Styx is open-source secure infrastructure for sensitive work. Explore its experimental foundations, planned Themis case-management vertical, and evidence-led roadmap.">
+  <meta name="description" content="Styx is open-source secure infrastructure for sensitive work. Explore its experimental foundations, planned Flegias case-management vertical, and evidence-led roadmap.">
   <meta name="color-scheme" content="light">
   <title>Styx — Secure infrastructure for sensitive work</title>
   <link rel="icon" href="assets/styx-mark.svg" type="image/svg+xml">
@@ -19,7 +19,7 @@
     </a>
     <nav aria-label="Primary navigation">
       <a href="#architecture">Architecture</a>
-      <a href="#themis">Themis</a>
+      <a href="#flegias">Flegias</a>
       <a href="#evidence">Evidence</a>
       <a href="#roadmap">Roadmap</a>
     </nav>
@@ -33,7 +33,7 @@
       </div>
       <div class="hero-copy">
         <p class="eyebrow">Open-source application infrastructure
-          <span class="mobile-status">Experimental · Themis casework is planned, not live</span>
+          <span class="mobile-status">Experimental · Flegias casework is planned, not live</span>
         </p>
         <h1 id="hero-title">Secure infrastructure<br>for <em>sensitive work.</em></h1>
         <p class="hero-lede">Build confidential, resilient applications over
@@ -52,14 +52,14 @@
           <span class="status-dot" aria-hidden="true"></span>
           <span>Experimental foundation</span>
         </div>
-        <h2>Themis by Styx</h2>
+        <h2>Flegias by Styx</h2>
         <p>The planned first vertical: confidential case intake and ongoing
           dialogue without requiring an email address, phone number, or
           ordinary account.</p>
         <p class="status-warning"><strong>Not ready for live reporting.</strong>
           Styx has not completed an independent security audit. Current builds
           must not be used for sensitive, high-risk, or life-critical work.</p>
-        <a href="#themis">See what is planned <span aria-hidden="true">↓</span></a>
+        <a href="#flegias">See what is planned <span aria-hidden="true">↓</span></a>
       </aside>
     </section>
 
@@ -132,27 +132,28 @@
       <div class="architecture-heading">
         <h2 id="architecture-title">Product meaning stays separate from cryptographic transport.</h2>
         <p>No current implementation is intended to be the normative protocol.
-          The language-neutral application protocol and conformance corpus are
-          planned as the authority.</p>
+          A language-neutral, transcript-only corpus now provides cross-runtime
+          evidence while the application protocol remains incomplete and C0.3
+          remains <code>NO-GO</code>.</p>
       </div>
       <ol class="layer-list">
-        <li class="layer layer-product"><span class="layer-number">04</span><div><p class="layer-state planned">Planned first vertical</p><h3>Themis product experience</h3><p>Workflow, roles, policy, safety language, and accessible reporter and operator interfaces.</p></div><span class="layer-side">Human purpose</span></li>
-        <li class="layer"><span class="layer-number">03</span><div><p class="layer-state planned">Protocol work planned</p><h3>Styx application protocol</h3><p>Versioned objects, state transitions, causality, evidence, retention, pruning, and conformance.</p></div><span class="layer-side">Durable meaning</span></li>
+        <li class="layer layer-product"><span class="layer-number">04</span><div><p class="layer-state planned">Planned first vertical</p><h3>Flegias product experience</h3><p>Workflow, roles, policy, safety language, and accessible reporter and operator interfaces.</p></div><span class="layer-side">Human purpose</span></li>
+        <li class="layer"><span class="layer-number">03</span><div><p class="layer-state evidence">Conformance evidence on main</p><h3>Styx application protocol</h3><p>A fully synthetic transcript corpus is replayed independently in Python and JavaScript against adversarial mutations. Corpus construction is complete; protocol completion and implementation alignment are not.</p></div><span class="layer-side">Durable meaning</span></li>
         <li class="layer"><span class="layer-number">02</span><div><p class="layer-state evidence">Bounded evidence</p><h3>Secure-session profiles</h3><p>Membership, epochs, continuous group key agreement, convergence, and confidential delivery. Exact-pin interoperability is proven only for the isolated Phase B scope; a supported product adapter remains future work.</p></div><span class="layer-side">Protected exchange</span></li>
         <li class="layer"><span class="layer-number">01</span><div><p class="layer-state evidence">Browser foundation exists</p><h3>Runtime profiles</h3><p>Key custody, encrypted storage, workers, notifications, distribution, and platform integration. A future signed native profile could offer stronger origin assurance.</p></div><span class="layer-side">Local custody</span></li>
       </ol>
       <a class="text-link on-dark" href="https://github.com/styx-secure/styx/blob/main/specs/01-vision.md" target="_blank" rel="noopener noreferrer">Read the approved product vision <span aria-hidden="true">↗</span></a>
     </section>
 
-    <section class="section themis" id="themis" aria-labelledby="themis-title">
+    <section class="section flegias" id="flegias" aria-labelledby="flegias-title">
       <div class="section-label">The first vertical</div>
-      <div class="themis-grid">
+      <div class="flegias-grid">
         <div>
           <p class="eyebrow dark">Planned · not yet available</p>
-          <h2 id="themis-title">Themis by Styx</h2>
-          <p class="themis-lede">Confidential case intake with a path back to conversation.</p>
+          <h2 id="flegias-title">Flegias by Styx</h2>
+          <p class="flegias-lede">Confidential case intake with a path back to conversation.</p>
         </div>
-        <div class="themis-copy">
+        <div class="flegias-copy">
           <p>A reporter would create a fresh case context and high-entropy return
             capability locally, submit an encrypted case object, and use that
             capability later to receive questions and send answers—without an
@@ -162,7 +163,7 @@
             administrative audit. Safe deployment also depends on trained
             handlers, independent escalation routes, legal and privacy review,
             incident procedures, and tested backups.</p>
-          <p class="callout">Themis targets anonymity or pseudonymity only
+          <p class="callout">Flegias targets anonymity or pseudonymity only
             against declared observers under tested conditions. Network,
             device, timing, content, and human factors may still identify a
             reporter.</p>
@@ -196,6 +197,16 @@
           <p>At the revisions recorded in the final Phase B report, Styx interoperated with the pinned MDK peer through a bounded synthetic direct-MLS lifecycle. This is not general Marmot conformance or product activation.</p>
           <a data-status="implemented" href="https://github.com/styx-secure/styx/blob/main/docs/architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md" target="_blank" rel="noopener noreferrer">Read the bounded Phase B verdict <span aria-hidden="true">↗</span></a>
         </article>
+        <article>
+          <p class="evidence-tag">Application-protocol evidence</p>
+          <h3>Synthetic C0.3 conformance corpus</h3>
+          <p>A transcript-only corpus, independent Python and JavaScript replay, and a closed adversarial mutation registry are merged on <code>main</code>. This is corpus evidence—not implementation conformance, a security audit, or product readiness. C0.3 remains <code>NO-GO</code>.</p>
+          <div class="evidence-actions">
+            <a data-status="implemented" href="https://github.com/styx-secure/styx/blob/main/conformance/application-protocol/c03/manifest.json" target="_blank" rel="noopener noreferrer">Inspect the corpus manifest <span aria-hidden="true">↗</span></a>
+            <a data-status="implemented" href="https://github.com/styx-secure/styx/blob/main/tools/causal-flow-simulator/c03/README.md" target="_blank" rel="noopener noreferrer">Reproduce the evidence <span aria-hidden="true">↗</span></a>
+            <a data-status="explorer" href="demo/index.html">Explore the evidence visually <span aria-hidden="true">→</span></a>
+          </div>
+        </article>
       </div>
     </section>
 
@@ -208,10 +219,10 @@
           independent review, exact tests, and human approval.</p>
       </div>
       <ol class="roadmap-list">
-        <li><span>01</span><div><h3>Protocol and conformance</h3><p>Define language-neutral objects, transitions, adversarial scenarios, and reusable vectors.</p></div></li>
+        <li><span>01</span><div><h3>Protocol and conformance</h3><p>The transcript-only synthetic corpus and cross-runtime replay are merged. Remaining protocol decisions, conformance work, and implementation alignment stay separately gated.</p></div></li>
         <li><span>02</span><div><h3>Secure-session decision</h3><p>Bounded exact-pin proof complete. A supported application adapter, transport scope, persistence and retention policy remain separately gated work.</p></div></li>
         <li><span>03</span><div><h3>SDK and reliable delivery</h3><p>Separate application semantics from chat and make offline, retry, acknowledgement, and recovery states truthful.</p></div></li>
-        <li><span>04</span><div><h3>Themis alpha</h3><p>Build text-first accountless case intake, return dialogue, operator roles, revocation, retention, and safety UX.</p></div></li>
+        <li><span>04</span><div><h3>Flegias alpha</h3><p>Build text-first accountless case intake, return dialogue, operator roles, revocation, retention, and safety UX.</p></div></li>
         <li><span>05</span><div><h3>Distribution assurance</h3><p>Strengthen browser release controls and decide a future signed native profile with reproducible operations.</p></div></li>
         <li><span>06</span><div><h3>Audit and controlled pilot</h3><p>Commission independent review, remediate findings, test procedures, and pilot only within an approved scope.</p></div></li>
       </ol>

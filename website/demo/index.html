@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Explore Styx's frozen synthetic C0.3 transcript evidence, state transitions, expected outcomes, and adversarial mutations without implying product or protocol readiness.">
+  <meta name="color-scheme" content="dark light">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Styx C0.3 Evidence Explorer</title>
+  <link rel="icon" href="../assets/styx-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.mjs"></script>
+</head>
+<body>
+  <a class="skip-link" href="#explorer">Skip to explorer</a>
+
+  <header class="site-header">
+    <a class="brand" href="../" aria-label="Back to the Styx landing page">
+      <img src="../assets/styx-mark.svg" alt="" width="38" height="38">
+      <span>Styx</span>
+    </a>
+    <p>Evidence Explorer <span aria-hidden="true">/</span> C0.3</p>
+    <a href="https://github.com/styx-secure/styx/tree/main/conformance/application-protocol/c03" target="_blank" rel="noopener noreferrer">Source corpus <span aria-hidden="true">↗</span></a>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">Synthetic · transcript-only · read-only · C0.3 NO-GO</p>
+        <h1 id="page-title">See what the protocol evidence says—<em>and what it does not.</em></h1>
+        <p class="lede">This is not a product or security demo. Walk through frozen C0.3 scenarios one step at a time and inspect only the precomputed evidence recorded by the corpus.</p>
+      </div>
+      <aside class="verdict" aria-label="Scope warning">
+        <p class="verdict-label">Current phase verdict</p>
+        <strong>NO-GO</strong>
+        <p>This is not a product, security, encryption or implementation demo. It replays precomputed synthetic evidence and performs no protocol operation.</p>
+      </aside>
+    </section>
+
+    <section class="corpus-strip" aria-label="Frozen corpus identity">
+      <div><strong>118</strong><span>scenarios</span></div>
+      <div><strong>501</strong><span>hostile mutations</span></div>
+      <div><strong>46</strong><span>transcript vectors</span></div>
+      <div><strong>2</strong><span>independent readers in source evidence</span></div>
+      <p id="source-summary">The pinned evidence projection loads only when JavaScript is available.</p>
+    </section>
+
+    <section class="boundary" aria-labelledby="boundary-title">
+      <div class="section-heading">
+        <p class="eyebrow">Read the boundary first</p>
+        <h2 id="boundary-title">One view, four different layers.</h2>
+      </div>
+      <div class="boundary-grid">
+        <article class="outside">
+          <span>01 / outside corpus</span>
+          <h3>Transport &amp; secure session</h3>
+          <p>No relay, recipient, network metadata, MLS encryption, delivery or wire behavior is executed or inferred here.</p>
+        </article>
+        <article class="inside">
+          <span>02 / modeled</span>
+          <h3>Canonical transcript</h3>
+          <p>Synthetic bytes, signature verification, context binding, commitments and bounded framing are represented by frozen vectors.</p>
+        </article>
+        <article class="inside">
+          <span>03 / modeled</span>
+          <h3>Kernel evaluation</h3>
+          <p>Dependency status, admission, authority projection, outcome precedence and deterministic state observations are replayed.</p>
+        </article>
+        <article class="outside">
+          <span>04 / outside corpus</span>
+          <h3>Product &amp; operations</h3>
+          <p>No Flegias workflow, durable storage, recovery, anonymity, audit, UI policy or sensitive-use safety is demonstrated.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="explorer" id="explorer" aria-labelledby="explorer-title">
+      <div class="section-heading">
+        <p class="eyebrow">Trace explorer</p>
+        <h2 id="explorer-title">Follow a frozen scenario.</h2>
+        <p>Choose a corpus scenario. Controls only move through its precomputed trace; they do not generate or validate new protocol input.</p>
+      </div>
+
+      <div class="workspace" data-enhanced="false">
+        <aside class="scenario-browser" aria-label="Scenario browser">
+          <div class="field-group">
+            <label for="scenario-search">Search scenarios</label>
+            <input id="scenario-search" type="search" placeholder="Fork, opening, authority…" autocomplete="off" disabled>
+          </div>
+          <div class="field-group">
+            <label for="model-filter">Evidence family</label>
+            <select id="model-filter" disabled>
+              <option value="all">All families</option>
+            </select>
+          </div>
+          <p id="scenario-count" class="result-count" aria-live="polite">Interactive scenario index requires JavaScript.</p>
+          <ul id="scenario-list" class="scenario-list"></ul>
+        </aside>
+
+        <article class="trace-panel" aria-labelledby="scenario-title">
+          <div class="trace-heading">
+            <div>
+              <p id="scenario-family" class="eyebrow">Frozen evidence</p>
+              <h3 id="scenario-title">Select a scenario</h3>
+              <p id="scenario-id" class="identifier">The source corpus remains available without JavaScript.</p>
+            </div>
+            <span id="scenario-steps" class="step-count">—</span>
+          </div>
+
+          <div class="step-controls" aria-label="Trace navigation">
+            <button id="previous-step" type="button" disabled>← Previous</button>
+            <button id="reset-step" type="button" disabled>Reset</button>
+            <button id="next-step" type="button" disabled>Next →</button>
+          </div>
+
+          <ol id="step-timeline" class="step-timeline" aria-label="Scenario steps"></ol>
+          <div id="step-live" class="sr-only" aria-live="polite"></div>
+
+          <div class="step-card">
+            <div class="step-action">
+              <p class="field-label">Candidate action</p>
+              <h4 id="step-action">No trace loaded</h4>
+              <p><span id="step-actor">—</span> · <code id="step-vector">—</code></p>
+            </div>
+            <dl class="trace-grid">
+              <div><dt>Stage</dt><dd id="step-stage">—</dd></div>
+              <div><dt>Local outcome</dt><dd id="step-outcome">—</dd></div>
+              <div><dt>Remote class</dt><dd id="step-remote">—</dd></div>
+              <div><dt>Dependency</dt><dd id="step-dependency">—</dd></div>
+              <div><dt>Transcript</dt><dd id="step-transcript">—</dd></div>
+              <div><dt>Signature</dt><dd id="step-signature">—</dd></div>
+              <div><dt>Commitment</dt><dd id="step-commitment">—</dd></div>
+              <div><dt>K admission</dt><dd id="step-admission">—</dd></div>
+              <div><dt>AP authority</dt><dd id="step-authority">—</dd></div>
+              <div><dt>External effects</dt><dd id="step-effects">—</dd></div>
+            </dl>
+            <div class="state-row">
+              <div><span>Pre-state</span><code id="step-pre-state">—</code></div>
+              <span aria-hidden="true">→</span>
+              <div><span>Post-state</span><code id="step-post-state">—</code></div>
+            </div>
+            <div class="evidence-row">
+              <p><span>Requires</span><code id="step-requires">—</code></p>
+              <p><span>Produces</span><code id="step-produces">—</code></p>
+            </div>
+            <details class="vector-summary">
+              <summary>Input transcript summary</summary>
+              <dl>
+                <div><dt>Corpus validity</dt><dd id="vector-validity">—</dd></div>
+                <div><dt>Kind</dt><dd id="vector-kind">—</dd></div>
+                <div><dt>Event role</dt><dd id="vector-role">—</dd></div>
+                <div><dt>Event type</dt><dd id="vector-type">—</dd></div>
+                <div><dt>Author sequence</dt><dd id="vector-sequence">—</dd></div>
+                <div><dt>Causal parents</dt><dd id="vector-parents">—</dd></div>
+                <div><dt>Content class</dt><dd id="vector-content">—</dd></div>
+                <div><dt>Transcript size</dt><dd id="vector-octets">—</dd></div>
+                <div><dt>Signature suite</dt><dd id="vector-suite">—</dd></div>
+                <div><dt>Frozen mutation</dt><dd id="vector-mutation">—</dd></div>
+              </dl>
+              <p>This summary describes synthetic transcript material. It does not describe transport encryption, recipients, routing metadata or plaintext visibility.</p>
+            </details>
+          </div>
+
+          <details class="trace-provenance">
+            <summary>Trace identity and normative citations</summary>
+            <dl>
+              <div><dt>Observation</dt><dd><code id="observation-digest">—</code></dd></div>
+              <div><dt>Semantic observation</dt><dd><code id="semantic-digest">—</code></dd></div>
+            </dl>
+            <ul id="scenario-citations"></ul>
+          </details>
+        </article>
+      </div>
+    </section>
+
+    <section class="mutations" id="mutations" aria-labelledby="mutations-title">
+      <div class="section-heading">
+        <p class="eyebrow">Adversarial registry</p>
+        <h2 id="mutations-title">Inspect a known hostile change.</h2>
+        <p>The registry records what was changed, which invariant it challenges and which independent detector must reject it. Selecting an entry does not execute the mutation.</p>
+      </div>
+      <div class="mutation-layout">
+        <div>
+          <label for="mutation-search">Search 501 frozen mutations</label>
+          <input id="mutation-search" type="search" placeholder="Signature, context, source relation…" autocomplete="off" disabled>
+          <p id="mutation-count" class="result-count" aria-live="polite">Mutation index requires JavaScript.</p>
+          <ul id="mutation-list" class="mutation-list"></ul>
+        </div>
+        <article class="mutation-detail" aria-labelledby="mutation-title">
+          <p class="eyebrow">Recorded counter-test</p>
+          <h3 id="mutation-title">Select a mutation</h3>
+          <dl>
+            <div><dt>Class</dt><dd id="mutation-class">—</dd></div>
+            <div><dt>Transformation</dt><dd id="mutation-transformation">—</dd></div>
+            <div><dt>Violated invariant</dt><dd id="mutation-invariant">—</dd></div>
+            <div><dt>Detector</dt><dd id="mutation-detector">—</dd></div>
+            <div><dt>Expected stage</dt><dd id="mutation-stage">—</dd></div>
+            <div><dt>Expected outcome</dt><dd id="mutation-outcome">—</dd></div>
+            <div><dt>Source record</dt><dd><code id="mutation-source">—</code></dd></div>
+          </dl>
+        </article>
+      </div>
+    </section>
+
+    <section class="limits" aria-labelledby="limits-title">
+      <div>
+        <p class="eyebrow">Non-claims travel with the evidence</p>
+        <h2 id="limits-title">A passing trace is not a safe deployment.</h2>
+      </div>
+      <ul id="non-claims">
+        <li>No implementation alignment</li>
+        <li>No product or demo readiness</li>
+        <li>No production ceremony or recovery</li>
+        <li>No runtime storage, transport or wire claim</li>
+        <li>No security proof or audit</li>
+        <li>No sensitive use</li>
+      </ul>
+    </section>
+
+    <noscript>
+      <section class="no-script" aria-label="JavaScript unavailable">
+        <h2>The interactive replay is unavailable.</h2>
+        <p>This page still identifies the frozen synthetic corpus and its limits. Inspect the complete source evidence in the repository; do not infer a passing implementation or product from these static counts.</p>
+        <a href="https://github.com/styx-secure/styx/tree/main/conformance/application-protocol/c03" target="_blank" rel="noopener noreferrer">Open the source corpus</a>
+      </section>
+    </noscript>
+  </main>
+
+  <footer>
+    <a href="../">← Back to Styx</a>
+    <p>Static evidence projection · no user data · no network operation · C0.3 remains NO-GO</p>
+  </footer>
+</body>
+</html>

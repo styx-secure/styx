@@ -27,6 +27,29 @@ structure, local resources, prohibited runtime elements, external-link safety,
 required content, and SVG restrictions. It does not replace browser,
 accessibility, security-claims, or human visual review.
 
+## C0.3 Evidence Explorer
+
+The landing page stays clean and informational. Its single local explorer link
+opens `demo/index.html`, a separate corpus-backed trace interface with its own
+styles, JavaScript, tests and claim boundaries. The explorer is generated from
+the pinned synthetic C0.3 corpus and replays precomputed evidence; it is not an
+implementation adapter, cryptographic runtime, product demo or phase verdict.
+
+Regenerate its tracked projection from the repository root:
+
+```bash
+python3 website/demo/build_data.py \
+  --repo-root . \
+  --output website/demo/data/c03-evidence.json
+```
+
+Run both site test suites and the browser-logic unit tests:
+
+```bash
+python3 -m unittest website/test_site.py website/demo/test_demo.py
+node --test website/demo/test_core.mjs
+```
+
 ## Status and publishing
 
 The source is covered by the repository's existing licensing and trademark

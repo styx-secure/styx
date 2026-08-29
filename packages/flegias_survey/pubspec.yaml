@@ -1,5 +1,5 @@
-name: themis_survey
-description: Survey engine for Themis - models, branching logic, and Flutter renderer.
+name: flegias_survey
+description: Survey engine for Flegias - models, branching logic, and Flutter renderer.
 publish_to: none
 
 environment:

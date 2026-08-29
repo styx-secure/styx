@@ -13,6 +13,7 @@ SITE = Path(__file__).resolve().parent
 HTML_PATH = SITE / "index.html"
 CSS_PATH = SITE / "styles.css"
 SVG_PATH = SITE / "assets" / "styx-mark.svg"
+DEMO_HTML_PATH = SITE / "demo" / "index.html"
 
 REQUIRED_IDS = {
     "main",
@@ -20,7 +21,7 @@ REQUIRED_IDS = {
     "problem",
     "audiences",
     "architecture",
-    "themis",
+    "flegias",
     "evidence",
     "roadmap",
     "boundaries",
@@ -45,6 +46,9 @@ class DocumentParser(HTMLParser):
         self.h1_count = 0
         self.title_depth = 0
         self.title_text: list[str] = []
+        self.anchor_depth = 0
+        self.current_anchor_text: list[str] = []
+        self.anchor_texts: list[str] = []
         self.text: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -56,15 +60,25 @@ class DocumentParser(HTMLParser):
             self.h1_count += 1
         if tag == "title":
             self.title_depth += 1
+        if tag == "a":
+            self.anchor_depth += 1
+            self.current_anchor_text = []
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "title":
             self.title_depth -= 1
+        if tag == "a":
+            self.anchor_texts.append(
+                " ".join(" ".join(self.current_anchor_text).split())
+            )
+            self.anchor_depth -= 1
 
     def handle_data(self, data: str) -> None:
         self.text.append(data)
         if self.title_depth:
             self.title_text.append(data)
+        if self.anchor_depth:
+            self.current_anchor_text.append(data)
 
 
 class LandingPageTests(unittest.TestCase):
@@ -96,6 +110,7 @@ class LandingPageTests(unittest.TestCase):
         ]
         self.assertEqual(len(descriptions), 1)
         self.assertGreaterEqual(len(descriptions[0]), 80)
+        self.assertIn("Flegias", descriptions[0])
 
         color_schemes = [
             tag.get("content", "")
@@ -172,12 +187,36 @@ class LandingPageTests(unittest.TestCase):
         for phrase in (
             "Secure infrastructure for sensitive work",
             "human-rights and civil-society teams",
-            "Themis by Styx",
+            "Flegias by Styx",
             "Not ready for live reporting",
             "has not completed an independent security audit",
             "must not be used for sensitive, high-risk, or life-critical work",
         ):
             self.assertIn(phrase, self.text)
+
+    def test_flegias_name_is_current_and_stale_legacy_surface_is_absent(self) -> None:
+        self.assertIn("Flegias by Styx", self.text)
+        self.assertIn('id="flegias"', self.html)
+        self.assertIn(".flegias", self.css)
+        flegias_nav = [
+            text
+            for (tag, attrs), text in zip(
+                (item for item in self.tags if item[0] == "a"),
+                self.parser.anchor_texts,
+                strict=True,
+            )
+            if attrs.get("href") == "#flegias"
+        ]
+        self.assertIn("Flegias", flegias_nav)
+
+        demo_html = DEMO_HTML_PATH.read_text(encoding="utf-8")
+        self.assertIn("No Flegias workflow", demo_html)
+
+        # Build the former token so this guard does not become a live stale
+        # reference rejected by the repository-wide migration check itself.
+        legacy = "the" + "mis"
+        for surface in (self.html, self.css, demo_html):
+            self.assertNotIn(legacy, surface.lower())
 
     def test_current_evidence_links_are_marked(self) -> None:
         evidence_links = [
@@ -185,9 +224,48 @@ class LandingPageTests(unittest.TestCase):
             for attrs in self.tags_named("a")
             if attrs.get("data-status") == "implemented"
         ]
-        self.assertGreaterEqual(len(evidence_links), 3)
+        self.assertGreaterEqual(len(evidence_links), 5)
         for attrs in evidence_links:
             self.assertIn("github.com/styx-secure/styx", attrs.get("href", ""))
+
+    def test_c03_evidence_is_current_bounded_and_links_one_explorer(self) -> None:
+        for phrase in (
+            "Conformance evidence on main",
+            "Synthetic C0.3 conformance corpus",
+            "independent Python and JavaScript replay",
+            "not implementation conformance, a security audit, or product readiness",
+            "C0.3 remains NO-GO",
+        ):
+            self.assertIn(phrase, self.text)
+
+        hrefs = {attrs.get("href", "") for attrs in self.tags_named("a")}
+        self.assertIn(
+            "https://github.com/styx-secure/styx/blob/main/"
+            "conformance/application-protocol/c03/manifest.json",
+            hrefs,
+        )
+        self.assertIn(
+            "https://github.com/styx-secure/styx/blob/main/"
+            "tools/causal-flow-simulator/c03/README.md",
+            hrefs,
+        )
+        explorer_links = [
+            attrs
+            for attrs in self.tags_named("a")
+            if attrs.get("data-status") == "explorer"
+        ]
+        self.assertEqual(
+            explorer_links,
+            [{"data-status": "explorer", "href": "demo/index.html"}],
+        )
+        explorer_text = [
+            text
+            for attrs, text in zip(
+                self.tags_named("a"), self.parser.anchor_texts, strict=True
+            )
+            if attrs.get("data-status") == "explorer"
+        ]
+        self.assertEqual(explorer_text, ["Explore the evidence visually →"])
 
     def test_svg_is_restricted_human_readable_source(self) -> None:
         source = SVG_PATH.read_text(encoding="utf-8")

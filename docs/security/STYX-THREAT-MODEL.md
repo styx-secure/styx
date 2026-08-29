@@ -622,7 +622,7 @@ prove that:
 - a deployment complies with a law, standard or certification; or
 - an automated alert reached a trained person in time.
 
-Themis therefore requires a separate deployment threat model, DPIA/legal and
+Flegias therefore requires a separate deployment threat model, DPIA/legal and
 safeguarding review, trained handlers, conflict-of-interest route, incident and
 emergency procedures, and explicit pilot authorization. Synthetic data and
 non-sensitive exercises do not authorize real reports.

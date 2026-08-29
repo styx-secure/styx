@@ -20,7 +20,7 @@ It is intended for human-rights and civil-society teams, journalists, safeguardi
 trusted intermediaries, and developers building casework, evidence, coordination, or other
 sensitive applications.
 
-The first product vertical is **Themis**: a planned case-management application intended to let a
+The first product vertical is **Flegias**: a planned case-management application intended to let a
 person open and continue a confidential case without providing an email address, phone number, or
 ordinary account. This can support abuse, harassment, discrimination, whistleblowing, safeguarding,
 and other sensitive casework, but the software cannot replace trained handlers, legal and privacy
@@ -32,11 +32,18 @@ review, safeguarding procedures, or emergency channels.
   stack with a reference MLS chat, Nostr transport, encrypted IndexedDB vault, crypto-worker
   lifecycle, pinned WASM artifacts, fail-closed storage work, and isolated synthetic
   secure-session evidence through the completed Phase B exact-pin proof.
-- **Not yet a complete product:** the language-neutral application protocol, interoperability
-  adapter and supported session integration, reliable delivery SDK, metadata-minimizing case
-  routing, anonymous return capability, organizational workflow, distribution assurance, a
-  targeted independent review of a bounded high-risk scope, and any separately approved exercise
-  or pilot remain future work.
+- **Application-protocol evidence now on `main`:** a fully synthetic, transcript-only C0.3
+  [conformance corpus](conformance/application-protocol/c03/manifest.json), independent Python and
+  JavaScript replay through the [reproduction tooling](tools/causal-flow-simulator/c03/README.md),
+  and a closed adversarial mutation registry. This completes corpus construction only. It does not
+  establish implementation conformance, protocol completion, or product readiness; C0.3 remains
+  `NO-GO` for implementation alignment, demo, product, and sensitive use.
+- **Not yet a complete product:** completion and ratification of the language-neutral application
+  protocol, supported session integration, a reusable SDK and reliable delivery,
+  metadata-minimizing case routing, anonymous return capability, organizational workflow,
+  distribution assurance, a targeted independent review of a bounded high-risk scope, and any
+  separately approved exercise or pilot remain future work. Isolated development candidates are
+  not counted here until they pass their recorded gates and merge.
 - **Current technical direction:** Marmot is the preferred compatibility target for the
   MLS-over-Nostr session profile. At the exact OpenMLS, Marmot and MDK revisions recorded in the
   final Phase B report, Styx interoperated with the pinned MDK peer in an isolated synthetic
@@ -47,7 +54,7 @@ review, safeguarding procedures, or emergency channels.
 
 The proposed funded programme preserves the completed bounded secure-session evidence and takes
 the project through a conformance-backed Styx application protocol, a supported session adapter,
-a reusable SDK and reliable delivery, a text-first Themis alpha, stronger distribution assurance,
+a reusable SDK and reliable delivery, a text-first Flegias alpha, stronger distribution assurance,
 a targeted review of a contractually bounded high-risk scope with remediation and retest, and a
 separately gated synthetic or non-sensitive organizational exercise or later controlled-pilot
 decision. See the
@@ -68,9 +75,10 @@ controlled by the adversary. No current build offers a universal anonymity guara
 
 ## Dart reference quick start
 
-The following example exercises the Dart reference implementation. New application-layer work
-targets the language-neutral protocol and conformance corpus before either implementation is
-extended.
+The following example exercises the independent Dart reference implementation. Current
+application-layer work treats the language-neutral protocol and conformance corpus as the
+cross-runtime authority before either implementation is extended. This quick start demonstrates
+the Dart API; it is not evidence that the Dart stack implements C0.3 end to end.
 
 ```dart
 import 'dart:convert';
@@ -141,17 +149,18 @@ Styx is structured as a monorepo of composable packages, layered bottom-up:
 └─────────────────────────────────────────────────────────┘
 ```
 
-| Package | Description | Tests |
-|---------|-------------|-------|
-| `styx` | Public façade — single entry point with `SovereignLedger` | 76 |
-| `crypto_core` | Ed25519/X25519 keys, SPAKE2, SHA-256, BIP-39, Shamir SSS | 135 |
-| `storage` | Drift + SQLCipher encrypted database engine | 37 |
-| `ledger_engine` | Append-only hash chain, HLC, vector clocks, merge, pruning | 69 |
-| `transport` | Nostr (primary), Email/IMAP (fallback), Tor (overlay), failover engine | 61 |
-| `push_bridge_client` | FCM/APNs wake-up with 3 privacy profiles | 11 |
-| `push_bridge_server` | Stateless Go microservice for push notification bridging | — |
+| Package | Description |
+|---------|-------------|
+| `styx` | Public façade — single entry point with `SovereignLedger` |
+| `crypto_core` | Ed25519/X25519 keys, SPAKE2, SHA-256, BIP-39, Shamir SSS |
+| `storage` | Drift + SQLCipher encrypted database engine |
+| `ledger_engine` | Append-only hash chain, HLC, vector clocks, merge, pruning |
+| `transport` | Nostr (primary), Email/IMAP (fallback), Tor (overlay), failover engine |
+| `push_bridge_client` | FCM/APNs wake-up with 3 privacy profiles |
+| `push_bridge_server` | Stateless Go microservice for push notification bridging |
 
-**389 tests** across 6 Dart packages.
+Current test results and path-aware coverage gates are reported by GitHub Actions; fixed totals are
+not used here because the suites change as the protocol and reference implementations evolve.
 
 ## Dart reference capabilities
 
@@ -242,10 +251,11 @@ Styx is **open source**. The licensing model, approved in
 [`LICENSING.md`](LICENSING.md) and [`REUSE.toml`](REUSE.toml), is:
 
 - **Original Styx software and documentation:** [`AGPL-3.0-or-later`](LICENSE).
-- **Twelve exact synthetic data paths** (six existing interoperability vectors from Issue #41
-  and six absent, future C0.3 corpus paths pre-registered by Issue #253, all listed exactly in
-  `LICENSING.md`): `Apache-2.0`. The future paths acquire that licence only when populated with
-  fully synthetic Styx-generated data; no corpus bytes or C0.3 capability are created here.
+- **Twelve exact synthetic data paths** (six interoperability vectors from Issue #41 and six
+  C0.3 transcript-corpus paths approved by Issue #253 and populated by Issue #264, all listed
+  exactly in `LICENSING.md`): `Apache-2.0`. The C0.3 files contain fully synthetic Styx-generated
+  data and no upstream bytes. Their presence licenses reusable conformance data; it does not
+  authorize C0.3 or establish implementation conformance.
 - **Third-party and vendored material** keeps its upstream licenses and attribution — notably the
   OpenMLS-derived material in `styx-js/vendor/openmls-wasm/` (MIT; that directory also contains
   Styx-authored AGPL scripts and a Styx-modified MIT derivative, classified path by path). See
