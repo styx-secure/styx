@@ -589,6 +589,12 @@ authorization and must never be flattened to application success.
 Run `python3 VERIFY.py` before using the package.  The withheld integration map
 is created only after the reader source has been frozen.
 
+The kit intentionally copies its eight normative source files from the exact
+candidate working tree. Corpus provenance and historical gate validation remain
+anchored independently to the Issue #266 Base blobs. This asymmetry is deliberate:
+the reader implements the reconciled candidate semantics, while the corpus gate
+proves that the candidate did not rewrite the frozen Base evidence.
+
 ## Required output contract
 
 The reader output has schema `styx-c03-clean-room-report/v2` and exactly three
@@ -688,8 +694,9 @@ if it rejects, reference and signature are not reached. The recomputed
 reference is then compared with `presentedReferenceHex`. A differing presented
 reference selects `REFERENCE_COLLISION_UNSUPPORTED` only when the replica-owned
 `seenEventReferences` also contains that presented value; that set is collision
-history only and never proves admission. Checkpoint exact-zero and other S3
-profile checks precede protected work. Signature, claimed binding and reached
+history only and never proves admission. Without that collision-history match,
+the same presented-reference mismatch selects `INVALID`. Checkpoint exact-zero
+and other S3 profile checks precede protected work. Signature, claimed binding and reached
 content checks follow. Duplicate classification occurs only after signature
 and binding and only against `admittedEventReferences`. Bytes that were merely
 seen or previously rejected must be evaluated again and retain their original
