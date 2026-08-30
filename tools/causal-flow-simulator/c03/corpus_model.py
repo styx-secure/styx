@@ -1042,7 +1042,17 @@ def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
         result.update(s3_profile_failure.observations)
         return reject("CURRENT_OBJECT_OUT_OF_PROFILE", s3_profile_failure.stage)
 
-    public_key = bytes.fromhex(record["binding"]["verificationKeyHex"])
+    supplied_key_hex = record["binding"]["verificationKeyHex"]
+    if (
+        record["kind"] == "GENESIS"
+        and supplied_key_hex != fields["rootVerificationKeyHex"]
+    ):
+        return reject("CREDENTIAL_BINDING_MISMATCH", "S3_KERNEL_STRUCTURAL")
+    public_key = bytes.fromhex(
+        fields["rootVerificationKeyHex"]
+        if record["kind"] == "GENESIS"
+        else supplied_key_hex
+    )
     signature = bytes.fromhex(record["signatureHex"])
     if not ed25519_verify(public_key, signature, transcript):
         result["signatureVerification"] = "REJECTED"

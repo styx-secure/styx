@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from pathlib import Path
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -106,8 +107,35 @@ class BlindProjectionTests(unittest.TestCase):
         self.assertIn("CURRENT_OBJECT_OUT_OF_PROFILE", readme)
         self.assertIn("commitmentVerification=PENDING", readme)
         self.assertIn("Replica-local admission state cannot manufacture", readme)
+        self.assertIn("an inapplicable predicate never reports", readme)
+        self.assertIn("exact_length <= 2^32 - 132", readme)
+        self.assertIn("Content class `NONE` completes the content-shape branch", readme)
+        self.assertIn("canonical grant preimages", readme)
+        self.assertIn("membership in `admittedEventReferences` is neither required", readme)
+        self.assertIn("supplied verification key is compared", readme)
+        self.assertIn("reader exits non-zero and emits no canonical report", readme)
         self.assertIn("NOT_EVALUATED", readme)
         self.assertNotIn("case-", readme)
+        self.assertNotRegex(readme, r"\b(?:vec|inv|trace|scenario)-")
+        self.assertIsNone(
+            re.search(r"(?<![0-9A-Fa-f])[0-9A-Fa-f]{16,}(?![0-9A-Fa-f])", readme)
+        )
+
+        schema = load(self.kit / "blind-input.schema.json")
+        record = schema["properties"]["records"]["items"]
+        claimed = record["properties"]["claimedBinding"]
+        self.assertEqual(len(claimed["anyOf"]), 2)
+        admitted = record["properties"]["admittedCredentialBindings"]["items"]
+        self.assertEqual(
+            set(admitted["required"]),
+            {
+                "canonicalGrantPreimageHex",
+                "contextIdentifierHex",
+                "credentialIdentifierHex",
+                "grantReferenceHex",
+                "verificationKeyHex",
+            },
+        )
 
     def test_projection_separates_selected_profile_and_collision_state(self) -> None:
         valid = load(CORPUS / "valid-transcript-vectors.json")["records"]

@@ -137,6 +137,56 @@ class ReplayTests(unittest.TestCase):
                 "VALID" if expected == "CURRENT_OBJECT_OUT_OF_PROFILE" else "REJECTED",
             )
 
+    def test_genesis_supplied_key_cannot_substitute_for_embedded_root(self) -> None:
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        candidate = deepcopy(next(row for row in valid if row["id"] == "vec-genesis"))
+        substitute_key, substitute_signature = ed25519_sign(
+            synthetic_octets("genesis-key-substitution", 32),
+            bytes.fromhex(candidate["transcriptHex"]),
+        )
+        candidate["binding"]["verificationKeyHex"] = substitute_key.hex()
+        candidate["signatureHex"] = substitute_signature.hex()
+
+        observed = evaluate_vector(candidate)
+
+        self.assertEqual(observed["transcriptVerification"], "VALID")
+        self.assertEqual(observed["referenceVerification"], "VALID")
+        self.assertEqual(observed["signatureVerification"], "NOT_EVALUATED")
+        self.assertEqual(observed["localOutcome"], "CREDENTIAL_BINDING_MISMATCH")
+        self.assertEqual(observed["stage"], "S3_KERNEL_STRUCTURAL")
+
+    def test_geometry_applicability_and_o08_limits_are_separate(self) -> None:
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+
+        single = evaluate_vector(
+            next(row for row in valid if row["id"] == "vec-required-single")
+        )
+        self.assertEqual(single["geometryPredicate1"], "PASS")
+        self.assertEqual(single["geometryPredicate2"], "PASS")
+        for index in range(3, 8):
+            self.assertEqual(single[f"geometryPredicate{index}"], "NOT_APPLICABLE")
+
+        tree = evaluate_vector(
+            next(row for row in valid if row["id"] == "vec-detachable-tree")
+        )
+        self.assertEqual(tree["geometryPredicate2"], "NOT_APPLICABLE")
+        for index in (1, 3, 4, 5, 6, 7):
+            self.assertEqual(tree[f"geometryPredicate{index}"], "PASS")
+
+        content_limit = evaluate_vector(
+            next(row for row in invalid if row["id"] == "inv-resource-content-length")
+        )
+        self.assertEqual(content_limit["geometryPredicate2"], "PASS")
+        self.assertEqual(content_limit["localOutcome"], "CURRENT_OBJECT_OUT_OF_PROFILE")
+
+        chunk_limit = evaluate_vector(
+            next(row for row in invalid if row["id"] == "inv-resource-chunk-size")
+        )
+        self.assertEqual(chunk_limit["geometryPredicate2"], "NOT_APPLICABLE")
+        self.assertEqual(chunk_limit["geometryPredicate3"], "PASS")
+        self.assertEqual(chunk_limit["localOutcome"], "CURRENT_OBJECT_OUT_OF_PROFILE")
+
     def test_missing_detachable_opening_is_pending_at_rejected_boundary(self) -> None:
         invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
         record = next(

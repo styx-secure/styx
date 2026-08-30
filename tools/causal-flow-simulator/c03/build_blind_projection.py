@@ -404,6 +404,38 @@ def materialize_blind_evaluator_input(record: dict[str, Any]) -> dict[str, Any]:
 def _input_schema() -> dict[str, Any]:
     hex_string = {"pattern": "^[0-9a-f]*$", "type": "string"}
     ref = {"maxLength": 64, "minLength": 64, **hex_string}
+    claimed_binding = {
+        "anyOf": [
+            {"additionalProperties": False, "maxProperties": 0, "type": "object"},
+            {
+                "additionalProperties": False,
+                "properties": {
+                    "contextIdentifierHex": ref,
+                    "credentialIdentifierHex": ref,
+                },
+                "required": ["contextIdentifierHex", "credentialIdentifierHex"],
+                "type": "object",
+            },
+        ]
+    }
+    admitted_binding = {
+        "additionalProperties": False,
+        "properties": {
+            "canonicalGrantPreimageHex": hex_string,
+            "contextIdentifierHex": ref,
+            "credentialIdentifierHex": ref,
+            "grantReferenceHex": ref,
+            "verificationKeyHex": ref,
+        },
+        "required": [
+            "canonicalGrantPreimageHex",
+            "contextIdentifierHex",
+            "credentialIdentifierHex",
+            "grantReferenceHex",
+            "verificationKeyHex",
+        ],
+        "type": "object",
+    }
     def graph_record(kind: str) -> dict[str, Any]:
         opening = {
             "additionalProperties": False,
@@ -472,10 +504,10 @@ def _input_schema() -> dict[str, Any]:
                     "additionalProperties": False,
                     "properties": {
                         "acceptedGenesisReferenceHex": {"anyOf": [ref, {"type": "null"}]},
-                        "admittedCredentialBindings": {"items": {"type": "object"}, "type": "array"},
+                        "admittedCredentialBindings": {"items": admitted_binding, "type": "array"},
                         "admittedEventReferences": {"items": ref, "type": "array"},
                         "checkpointEvidenceReferences": {"items": ref, "type": "array"},
-                        "claimedBinding": {"type": "object"},
+                        "claimedBinding": claimed_binding,
                         "kind": {"enum": ["APPLICATION_EVENT", "GENESIS"]},
                         "knownPendingOpeningRoots": {"items": ref, "type": "array"},
                         "localGenesisAccepted": {"type": "boolean"},
@@ -683,11 +715,17 @@ stage
 
 When `protocolErrorCodePresent` is true, `protocolErrorCode` is additionally
 present; otherwise it is absent. The closed error vocabulary is
-`CONTEXT_CAPACITY_EXHAUSTED | CREDENTIAL_BINDING_MISMATCH |
-DEPENDENCY_DEFERRED | FORK_EVIDENCE | INVALID | PENDING_ANCESTOR |
-PENDING_OPENING | STRUCTURAL_REJECTION | UNRESOLVABLE_CREDENTIAL |
-UNRESOLVED_CREDENTIAL_BINDING`. The reader must not consult any
-disconnected-fixture binding while evaluating a graph.
+`COMMITMENT_MISMATCH | CONTEXT_CAPACITY_EXHAUSTED |
+CREDENTIAL_BINDING_MISMATCH |
+CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED |
+CURRENT_OBJECT_OUT_OF_PROFILE | DEPENDENCY_DEFERRED | DUPLICATE |
+FORK_EVIDENCE | INVALID | LENGTH_MISMATCH | OPENING_MISSING |
+PENDING_ANCESTOR | PENDING_OPENING | REFERENCE_COLLISION_UNSUPPORTED |
+STRUCTURAL_REJECTION | UNRESOLVABLE_CREDENTIAL |
+UNRESOLVED_CREDENTIAL_BINDING`. A reached K-owned failure keeps its exact
+primary and stage and is not collapsed to generic `STRUCTURAL_REJECTION`.
+AP-owned results remain excluded. The reader must not consult any disconnected-
+fixture binding while evaluating a graph.
 
 Evaluation is fail-closed and ordered. Transcript framing is evaluated first;
 if it rejects, reference and signature are not reached. The recomputed
@@ -696,12 +734,33 @@ reference selects `REFERENCE_COLLISION_UNSUPPORTED` only when the replica-owned
 `seenEventReferences` also contains that presented value; that set is collision
 history only and never proves admission. Without that collision-history match,
 the same presented-reference mismatch selects `INVALID`. Checkpoint exact-zero
-and other S3 profile checks precede protected work. Signature, claimed binding and reached
-content checks follow. Duplicate classification occurs only after signature
-and binding and only against `admittedEventReferences`. Bytes that were merely
-seen or previously rejected must be evaluated again and retain their original
-rejection unless admitted state has changed. S4 capacity, fork, dependency and
-credential admission follow only when their prerequisites were reached.
+and other S3 profile checks precede protected work. Signature, claimed binding
+and reached content checks follow. Duplicate classification occurs only after
+signature and binding and only against `admittedEventReferences`. Bytes that
+were merely seen or previously rejected must be evaluated again and retain
+their original rejection unless admitted state has changed. S4 capacity, fork,
+dependency availability, credential-identifier collision and unresolved
+credential binding follow, in that order, only when their prerequisites were
+reached. Content class `NONE` completes the content-shape branch but does not
+disable any of these later checks.
+
+For an application event, `claimedBinding` is the receiving binding claim. Its
+context and credential identifiers must equal the authenticated event fields;
+a mismatch selects `CREDENTIAL_BINDING_MISMATCH` at S3. The canonical
+`admittedCredentialBindings` entries contain context identifier, credential
+identifier, verification key, grant reference and canonical grant preimage.
+Two distinct canonical grant preimages for one credential identifier select
+`CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED` at S3. For a non-GRANT
+application candidate, exactly one admitted binding must match its authenticated
+context identifier, credential identifier and verification key; zero or more
+than one selects `UNRESOLVED_CREDENTIAL_BINDING` at S3.
+`sameAuthorSequenceReferences` contains distinct candidate references known to
+occupy the same authenticated context, author and sequence slot. Any member
+different from the current candidate selects `FORK_EVIDENCE` at `EVENT_LOCAL`;
+membership in `admittedEventReferences` is neither required nor a suppression
+condition. `admittedEventReferences` proves prior K admission for duplicate and
+dependency processing. `seenEventReferences` is collision history only. These
+sets cannot substitute for one another.
 
 The report fields describe reached protocol boundaries, not merely values that
 a decoder happened to extract. A framing, closed-value, written-inverse,
@@ -711,7 +770,12 @@ length, reserved-field or cross-field failure makes
 `NOT_EVALUATED`. For a canonical genesis or content class `NONE`, the
 content-shape branch is complete immediately after the written inverse and all
 shape-specific fields become `NOT_APPLICABLE` even if a later reference,
-signature, binding or profile check fails. A
+signature, binding or profile check fails. For `SINGLE`, predicates 1 and 2 are
+applicable and predicates 3-7 are `NOT_APPLICABLE`. For `TREE`, predicates 1
+and 3-7 are applicable and predicate 2 is `NOT_APPLICABLE`. Applicable
+predicates report `PASS` or `FAIL`; an inapplicable predicate never reports
+vacuous `PASS`, and a predicate prevented by an earlier failure remains
+`NOT_EVALUATED`. A
 supplied-content length mismatch rejects both supplied-length verification and
 the attempted commitment match; it is not reported as an unattempted match.
 
@@ -737,6 +801,24 @@ version that differs from this selected tuple leaves
 `CURRENT_OBJECT_OUT_OF_PROFILE` at `S3_KERNEL_STRUCTURAL`, before signature or
 content verification. Zero or non-canonical registry fields remain structural
 transcript rejection.
+
+Predicate 2 for `SINGLE` checks only the intrinsic representable ceiling
+`exact_length <= 2^32 - 132`. Predicate 3 for `TREE` checks only
+`1 <= chunk_size <= 2^32 - 132`. Selected O-08 limits for exact content octets,
+chunks per content and the closed chunk-octet set are separate profile checks;
+they cannot make an intrinsic predicate fail. When intrinsic geometry passes
+and only one of those selected limits is exceeded, applicable predicates retain
+`PASS`, inapplicable predicates retain `NOT_APPLICABLE`, and the candidate
+selects `CURRENT_OBJECT_OUT_OF_PROFILE` at S3 before signature or protected
+content work.
+
+A canonical representable event or GENESIS whose declared body exceeds only
+the selected framing-object or genesis-body limit likewise has valid transcript
+and recomputed reference, signature `NOT_EVALUATED`, and
+`CURRENT_OBJECT_OUT_OF_PROFILE` at S3. Truncation, trailing bytes,
+non-canonical encoding, a written-inverse failure or a value beyond the
+representable normative ceiling remains structural transcript rejection with
+reference `NOT_REACHED`.
 
 For content class `NONE`, commitment match, supplied length and all seven
 geometry predicates are `NOT_APPLICABLE`, while commitment verification is
@@ -767,6 +849,19 @@ A `ROTATE` replacement-grant reference or `RECOVER` recovery-grant reference
 must name an already admitted same-context GRANT and must equal either the
 event's direct predecessor or one member of its encoded causal-parent frontier.
 Replica-local admission state cannot manufacture this signed causal relation.
+
+For a disconnected GENESIS, the supplied verification key is compared
+byte-for-byte with the root key embedded in the canonical transcript before
+signature verification. A mismatch selects `CREDENTIAL_BINDING_MISMATCH` at S3
+with signature `NOT_EVALUATED`. When equal, the signature is verified under the
+embedded root key; cryptographic failure selects `INVALID` at S3. An externally
+supplied key never substitutes for the authority committed by GENESIS.
+
+The `acceptedGenesis` member of a connected graph is a precondition rather than
+a candidate event. It must parse canonically, its presented reference must
+match, and its signature must verify under its embedded root. Failure makes the
+graph input invalid: the reader exits non-zero and emits no canonical report.
+It is not converted into a descendant outcome or a new protocol primary.
 
 For every connected candidate, its authenticated genesis reference is compared
 with the graph's preaccepted genesis before credential lookup. A mismatch is
