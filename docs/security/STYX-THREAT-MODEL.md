@@ -118,7 +118,7 @@ the [C0.2a responsibility matrix](../protocol/styx-app-kernel-v0-responsibility-
 | Author and role authority | Monotone context-bound K grant binding separated from reversible bounded AP authorization | Invalid or unresolved binding is rejected; authentic-but-unauthorized and post-revocation actions apply no AP transition; necessary Pass0 authority admits expansion, the first eligible contested slot per actor admits bounded accepted reductions, R-1 constrains direct reduction targets, and revocation/fork termination follows credential provenance; stale or resource-exhausted projection makes authority unavailable | `OB-AP02`; binding/provenance by `OB-K18`/`OB-K19` | One uncontested compromised authority can remove every peer and remain sole producer. Any K-admitted rejected reduction can permanently lower necessary authority for its target subtree without becoming an accepted reduction; R-1 blocks direct omitted-history veto of an unseen grant but not an indirect veto through its visible issuer. Mutual reductions can leave no authority; independently granted same-key aliases survive lineage-local revocation and occupy separate fork namespaces. |
 | Causal history and state | Transcript-only deterministic validation/order, replay/fork detection and bounded convergence under monotone opening observations | Classified duplicate, pending root/ancestor, applied, stale, authority-unavailable or lineage-quarantine result; independent authorized lineages may continue | `OB-K05`–`OB-K07`, `OB-K13`, `OB-K19` | A valid-key holder can terminate its lineage through a fork and amplify replay through delayed evidence; bounded DP replay has state/transition costs and typed exhaustion; no finality exists. |
 | Durable local state | Confidentiality, atomicity, crash safety and rollback behavior within a declared runtime profile | Fail closed on ambiguous persistence; restore/reconcile or require intervention | `OB-RS02`–`OB-RS10` | Browser storage may be evicted; a coherent whole-profile rollback may be undetectable without external evidence. |
-| Session secrets and membership | Confidential authenticated delivery, membership control, forward secrecy and post-compromise recovery within the selected session profile | Reject invalid or unauthorized session transitions; rotate/recover within profile bounds | `OB-SS01`–`OB-SS09` | Phase B proves only the exact pinned isolated profile recorded by its verdict. |
+| Session secrets and membership | Confidential authenticated delivery, membership control and explicitly bounded secret-history behavior within the selected session profile | Reject invalid or out-of-profile transitions; stage authoritative mutation until the owning RS result is `COMMITTED` | `OB-SS01`–`OB-SS09`; SS-0 mapping `SSD-01`–`SSD-11` | The SS-0 Gate-A candidate describes only the exact pinned two-member evidence profile. It makes no general forward-secrecy, post-compromise-recovery, rollback, storage, adapter or product claim. |
 | Return capabilities and recovery material | Unforgeability, confidentiality, context separation and intentional recovery semantics | Reject invalid/reused context; explain intentional irrecoverability or use the approved recovery route | `OB-AP09`, custody by `OB-RS01` | Loss may be unrecoverable; screenshots, backups and phishing can disclose a capability. |
 | Routing and relationship metadata | Minimization and unlinkability only against the adversaries named by a concrete transport/product profile | Capture concrete data flow and run negative-linkage tests; rotate or disable exposed handles | `OB-TR02`, `OB-TR06`–`OB-TR10` | E2EE does not hide IP addresses, timing, size, frequency or stable routing handles by itself. |
 | Local and remote delivery evidence | Truthful distinction between durable local commit, publication, device receipt and application receipt | Reconcile each typed stage; never promote missing evidence | `OB-RS06`, `OB-TR03`, `OB-AP07` | A relay acknowledgement is not proof that a person received or read an object. |
@@ -474,6 +474,34 @@ candidate and a replayed authentic candidate. O-10 selects no response code,
 acknowledgement, timing, padding or transport behavior; a future ratified
 secure-session/transport profile owns that residual signal.
 
+### 3.4 SS-0 bounded secure-session adversarial boundary
+
+Issue #285 separates a normative secure-session candidate from its later
+derived executable evidence. The candidate does not activate the pinned
+Phase-B implementation. Its security purpose is to make the following
+substitutions explicit and falsifiable before adapter work:
+
+| Decision | Primary adversary/assets | Boundary rule | Required hostile result |
+| --- | --- | --- | --- |
+| `SSD-01` | A12; dependency/profile provenance | external evidence → SS profile eligibility | Any revision, ciphersuite, profile, extension or retention-depth drift is unsupported; no fallback. |
+| `SSD-02` | A2/A4; application authority and identity | K/AP → SS and SS → K/AP | Membership, decryption, possession and session attribution never create application identity, role, authority, causality or truth. |
+| `SSD-03` | A5/A6/A14; payload and metadata | kernel → SS → runtime/transport | Payload success protects only opaque bounded bytes and creates no delivery, receipt, attachment or metadata claim. |
+| `SSD-04` | A3/A10; authoritative session mutation | SS → RS → SS | Missing or indeterminate RS evidence halts; only `COMMITTED` permits authoritative application. |
+| `SSD-05` | A3; past-epoch traffic and duplicate replay | session input → epoch/replay checks | Distance six is rejected; exact duplicate replay is idempotent; neither mechanism substitutes for the other. |
+| `SSD-06` | A3/A4; concurrent Commit state | authenticated candidate projections → SS selector | Only the exact two-candidate same-parent case selects by lower raw committer identity; application input, arrival, time and out-of-profile topology are rejected before selection. |
+| `SSD-07` | A3/A10; onboarding material | Welcome/KeyPackage → local logical consumption | Foreign profile, LastResort and unsupported onboarding fail closed; restart or asserted rollback cannot re-enable logical consumption in the model. |
+| `SSD-08` | A4/A9/A10/A14; retained secrets/state | logical SS state → runtime custody boundary | Logical availability never proves physical retention, zeroization, deletion, rollback detection or compromise recovery. |
+| `SSD-09` | A10; durable authoritative state | SS logical mutation ↔ RS result | Restored bytes are unvalidated until owning-layer revalidation; proof journals and deserialization never substitute for durable product state. |
+| `SSD-10` | A1/A5/A14; diagnostic oracle and provenance | SS failure → observation | Only closed redacted model-local observations are emitted; secrets, stable group IDs and runtime/evidence identities are excluded. |
+| `SSD-11` | A12; evidence provenance and scope | repository evidence → SS report eligibility | Missing identity, drift, unsupported topology or unrepresented operation invalidates the report rather than shrinking the claim. |
+
+The A4/A10 availability cost is intentional: fail-closed mutation can leave a
+session unavailable indefinitely when RS evidence is missing or indeterminate.
+SS-0 does not invent retry, recovery, rollback detection or alternate authority
+to conceal that cost. Gate A freezes the normative boundary; Gate B is still
+required for the bounded executable evidence. Neither gate provides adapter,
+SDK, demo or product authority, and C0.3 remains `NO-GO`.
+
 ## 4. Trust assumptions
 
 The semantic-kernel objectives depend on all of these assumptions:
@@ -527,7 +555,7 @@ claims about current code.
 | Missing parent, fork or concurrent operation | Classify under the selected bounded causal model; all siblings at one `(credential_id, author_sequence)` slot form one fork classification that terminates the forked credential lineage and cannot expand authority | Preserve graph/fork/pending diagnostics; independently granted aliases remain separate fork namespaces; independent lineages continue only if definitely authorized; expose no recovery or finality claim | Application semantic kernel plus application profile |
 | Holder of valid key material grinds a concurrent event reference | Preserve signature validity and graph/order; retain every bounded Pass0 reachable state and select reductions only from each actor's first eligible contested author-sequence slot | Never infer priority, finality or irreversible effects from order; make authority unavailable on DP exhaustion and recompute by fresh full replay when evidence changes | Application semantic kernel plus application profile |
 | Semantically conflicting but individually valid operations | Do not infer business truth from total order | Apply the application profile's declared conflict rule or escalate | Application profile |
-| Unauthorized session membership change | Reject before applying the membership transition | Typed session failure and recovery path | Secure-session adapter |
+| Unauthorized or out-of-profile session membership change | Authenticate and stage without authoritative application; require `COMMITTED` RS evidence for the exact in-profile mutation, otherwise reject, leave unapplied or halt | Closed model-local SS-0 observation only; no stable recovery promise or O-10/API/wire code | Secure-session owner `OB-SS02`/`OB-SS07`, bounded candidate `SSD-04`/`SSD-09` |
 | Relay duplication, reordering, omission or stale response | Never alter application validity; reconcile within delivery policy | Retry/failover or explicit unavailable/expired state | Transport/routing profile |
 | Crash between durable transition and send | Resume without duplicate effect or false delivery | Reconcile outbox and idempotency state | Runtime/storage profile |
 | Persistence or quota failure | Fail closed; do not report success | Typed fatal/recoverable outcome according to the runtime contract | Runtime/storage profile |
@@ -656,7 +684,10 @@ Current evidence establishes only bounded components:
   verdict; O-11 through O-16 retain their recorded open, conditional or
   downstream-blocking roles;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
-  described in its final verdict; and
+  described in its final verdict. Issue #285 Phase A records only the bounded
+  `SSD-01`–`SSD-11` candidate and cross-layer non-substitution rules; those
+  bytes require Gate A and later executable evidence requires Gate B before the
+  SS-0 increment can close. No adapter or product activation follows; and
 - existing vault and chat work provides component evidence under its own
   reports and tests.
 

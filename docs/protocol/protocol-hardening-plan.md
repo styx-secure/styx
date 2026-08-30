@@ -100,6 +100,8 @@ of the derived review model:
 
 - decision registry:
   `docs/protocol/styx-app-kernel-v0-decisions.md`;
+- bounded secure-session evidence-profile registry:
+  `docs/protocol/styx-secure-session-v0-decisions.md`;
 - transcript encoding profile:
   `docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md`;
 - commitment encoding profile:
@@ -207,6 +209,12 @@ Protocol increments proceed in dependency order:
    passes, and independent review and human gates completed in merged PR #261
    at `490689f0d81980cf942d448c76a54192913b7cde`. Resolve O-12 wherever a
    selected profile carries time.
+   Separately, Issue #285 defines SS-0 as a two-gate secure-session increment.
+   Its Phase A may add the bounded secure-session decision source and reconcile
+   the responsibility/threat boundaries. Its Phase B may synchronize only the
+   derived review model and bounded executable evidence after the exact
+   Phase-A bytes and verifier are bound by Gate A. SS-0 selects no adapter,
+   implementation, product capability or C0.3 `GO`.
    Issue #255 is a bounded procedural predecessor to O-10 only: it pins the
    historical evidence guards to their exact candidate identities and supplies
    the reusable AST allowlist and O-14-removal rejection required by O-08's
@@ -511,6 +519,12 @@ bounded evidence verdict:
 - the exact D4 transcript/K corpus and evidence package have a bounded evidence
   GO, while the C0.3 capability gate remains `NO-GO` for implementation
   alignment, demo, product and sensitive use;
+- Issue #285 has an exact ratified task contract for SS-0. Its Phase-A candidate
+  introduces a separate bounded secure-session normative registry without
+  changing application-kernel authority. Until Gate A binds the exact four
+  normative files and frozen verifier, that candidate is not authority; until
+  Gate B completes, it is not closed evidence. Neither gate activates an
+  adapter, SDK, demo or product;
 - `C0.3_CORPUS_PATH_APPROVAL` is bounded `DECIDED` by Issue #253; Issue #264
   populates exactly its six synthetic-only paths and completes their executable
   conformance and mutation evidence;
