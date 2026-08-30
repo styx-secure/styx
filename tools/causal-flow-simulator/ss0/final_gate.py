@@ -5,14 +5,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import subprocess
 import tempfile
 from pathlib import Path
-
-from canonical_report import store
-
 
 BASE_SHA = "bd13fac2df51e8585db6487fff7217fb68fb6242"
 PHASE_A_SHA = "bd9a06f08131c6fcd4edbaa1e0eeae38d8e28eb5"
@@ -32,13 +30,37 @@ class FinalGateError(ValueError):
     pass
 
 
-def _environment(temporary_root: Path) -> dict[str, str]:
+def _store(report: dict[str, object], output: Path) -> None:
+    payload = (
+        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    ).encode("utf-8")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, name = tempfile.mkstemp(
+        dir=output.parent, prefix=f".{output.name}.", suffix=".tmp"
+    )
+    temporary = Path(name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, output)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _environment(
+    temporary_root: Path, runtime_node: Path | None = None
+) -> dict[str, str]:
+    executable_path = "/usr/bin:/bin"
+    if runtime_node is not None:
+        executable_path = f"{runtime_node.parent}:{executable_path}"
     return {
         "GIT_CONFIG_GLOBAL": os.devnull,
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_SYSTEM": os.devnull,
         "LC_ALL": "C",
-        "PATH": "/usr/bin:/bin",
+        "PATH": executable_path,
         "PYTHONDONTWRITEBYTECODE": "1",
         "TMPDIR": str(temporary_root),
     }
@@ -49,17 +71,26 @@ def _run(
     *,
     root: Path,
     temporary_root: Path,
+    runtime_node: Path | None = None,
 ) -> bytes:
     completed = subprocess.run(
         command,
         cwd=root,
-        env=_environment(temporary_root),
+        env=_environment(temporary_root, runtime_node),
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
     if completed.returncode != 0:
-        raise FinalGateError("required SS-0 gate command failed")
+        label = next(
+            (
+                Path(argument).name
+                for argument in command
+                if argument.endswith((".py", ".mjs"))
+            ),
+            Path(command[0]).name,
+        )
+        raise FinalGateError(f"required SS-0 gate command failed: {label}")
     return completed.stdout
 
 
@@ -242,7 +273,12 @@ def _regenerate(
     )
     destination.mkdir(parents=True, exist_ok=False)
     for command in commands:
-        _run(command, root=checkout, temporary_root=temporary_root)
+        _run(
+            command,
+            root=checkout,
+            temporary_root=temporary_root,
+            runtime_node=node,
+        )
 
 
 def _read_report(root: Path, name: str) -> bytes:
@@ -309,7 +345,7 @@ def execute(arguments: argparse.Namespace) -> dict[str, object]:
         if git_one == git_two:
             raise FinalGateError("checkouts share one Git metadata directory")
         forbidden = (checkout_one, checkout_two, git_one, git_two)
-        for root in (evidence_one, evidence_two, temporary_parent):
+        for root in (evidence_one, evidence_two, temporary_root):
             _require_external_root(root, forbidden)
 
         gate_one = temporary_root / "gate-one.json"
@@ -379,7 +415,7 @@ def main() -> int:
     parser.add_argument("--evidence-two", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     arguments = parser.parse_args()
-    store(execute(arguments), arguments.output)
+    _store(execute(arguments), arguments.output)
     return 0
 
 

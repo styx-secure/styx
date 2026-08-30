@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -20,6 +21,22 @@ from final_gate import (  # noqa: E402
 
 
 class FinalGateTests(unittest.TestCase):
+    def test_final_gate_starts_under_the_required_isolated_interpreter(self) -> None:
+        completed = subprocess.run(
+            [
+                "/usr/bin/python3",
+                "-I",
+                "-S",
+                "-B",
+                str(PACKAGE / "final_gate.py"),
+                "--help",
+            ],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr.decode("utf-8"))
+
     def test_inner_gate_a_command_is_explicitly_isolated(self) -> None:
         command = _gate_a_command(
             Path("/checkout"),
