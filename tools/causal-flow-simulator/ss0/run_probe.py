@@ -7,7 +7,7 @@ import argparse
 from pathlib import Path
 
 from canonical_report import store
-from inventory import load_unique, validate_anchor, validate_inventory
+from inventory import load_unique, validate_anchor, validate_inventory, validate_public_reader_inputs
 from model import evaluate
 
 
@@ -15,6 +15,7 @@ def build_report(root: Path) -> dict[str, object]:
     package = root / "tools/causal-flow-simulator/ss0"
     cases = validate_inventory(load_unique(package / "source-inventory.json"))
     validate_anchor(root, load_unique(package / "phase-b-anchor.json"))
+    validate_public_reader_inputs(root)
     observations: list[dict[str, object]] = []
     for case in cases:
         observed = evaluate(case["input"])

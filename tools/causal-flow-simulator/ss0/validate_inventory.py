@@ -7,7 +7,12 @@ import argparse
 from pathlib import Path
 
 from canonical_report import store
-from inventory import load_unique, validate_anchor, validate_inventory
+from inventory import (
+    load_unique,
+    validate_anchor,
+    validate_inventory,
+    validate_public_reader_inputs,
+)
 
 
 def main() -> int:
@@ -21,11 +26,13 @@ def main() -> int:
     anchor = load_unique(package / "phase-b-anchor.json")
     cases = validate_inventory(inventory)
     validate_anchor(root, anchor)
+    projection_count = validate_public_reader_inputs(root)
     store(
         {
             "case_count": len(cases),
             "decision_count": 11,
             "obligation_count": 9,
+            "public_projection_count": projection_count,
             "result": "PASS",
             "schema": "styx.ss0.inventory-report.v1",
         },

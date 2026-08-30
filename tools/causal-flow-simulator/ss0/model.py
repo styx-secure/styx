@@ -13,6 +13,7 @@ from typing import Any
 
 
 PROFILE = {
+    "ciphersuite_registry": "IANA_MLS",
     "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
     "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
     "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",

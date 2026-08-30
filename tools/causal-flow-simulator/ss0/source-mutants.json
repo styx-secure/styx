@@ -120,9 +120,9 @@
       "target": "or len(candidates) != 2\\n            or not all(_candidate(item) for item in candidates)"
     },
     {
-      "detector": "SSD-01-S-CIPHERSUITE-FALLBACK",
+      "detector": "SSD-01-X-REGISTRY-SUBSTITUTION",
       "id": "M-X-IANA-STYX-SUITE-SUBSTITUTION",
-      "replacement": "return isinstance(value, dict) and value.get(\"ciphersuite\") in {\"0x0001\", \"0x0002\"} and all(value.get(k) == v for k, v in PROFILE.items() if k != \"ciphersuite\")",
+      "replacement": "return isinstance(value, dict) and value.get(\"ciphersuite_registry\") in {\"IANA_MLS\", \"STYX_SIGNATURE\"} and all(value.get(k) == v for k, v in PROFILE.items() if k != \"ciphersuite_registry\")",
       "requirement": "X-IANA-STYX-SUITE-SUBSTITUTION",
       "target": "return isinstance(value, dict) and value == PROFILE"
     },

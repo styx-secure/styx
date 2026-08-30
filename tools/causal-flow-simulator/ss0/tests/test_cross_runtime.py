@@ -31,7 +31,7 @@ class CrossRuntimeTests(unittest.TestCase):
             self.assertEqual(0, completed.returncode, completed.stderr)
             report = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual("PASS", report["result"])
-            self.assertEqual(66, len(report["observations"]))
+            self.assertEqual(67, len(report["observations"]))
 
 
 if __name__ == "__main__":

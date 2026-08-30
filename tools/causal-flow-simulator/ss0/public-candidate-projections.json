@@ -2,6 +2,7 @@
   "schema": "styx.ss0.public-candidate-projections.v1",
   "projections": [
     {
+      "derivation": "EXACT_ANCHOR_PROFILE_WITHOUT_TERMINAL_RESULT",
       "id": "profile",
       "input": {
         "operation": "profile",
@@ -10,6 +11,7 @@
           "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
           "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
           "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
           "members": [
             "MDK_PIN_9396ADB",
             "STYX_B32A"
@@ -19,6 +21,7 @@
       }
     },
     {
+      "derivation": "EPOCH_DISTANCE_LE_RETAINED_PAST_EPOCHS",
       "id": "retention-distance-five",
       "input": {
         "operation": "retention",
@@ -27,6 +30,7 @@
           "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
           "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
           "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
           "members": [
             "MDK_PIN_9396ADB",
             "STYX_B32A"
@@ -38,6 +42,7 @@
       }
     },
     {
+      "derivation": "EPOCH_DISTANCE_LE_RETAINED_PAST_EPOCHS",
       "id": "retention-distance-six",
       "input": {
         "operation": "retention",
@@ -46,6 +51,7 @@
           "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
           "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
           "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
           "members": [
             "MDK_PIN_9396ADB",
             "STYX_B32A"
@@ -57,6 +63,7 @@
       }
     },
     {
+      "derivation": "LOWER_UNSIGNED_LEXICOGRAPHIC_ACCOUNT_AFTER_FIXED_INPUT_CHECKS",
       "id": "two-candidate-selection",
       "input": {
         "operation": "convergence",
@@ -65,6 +72,7 @@
           "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
           "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
           "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
           "members": [
             "MDK_PIN_9396ADB",
             "STYX_B32A"
@@ -94,6 +102,7 @@
       }
     },
     {
+      "derivation": "UNSUPPORTED_OPERATION_NONCLAIM",
       "id": "unsupported-recovery",
       "input": {
         "operation": "recovery",
@@ -102,6 +111,7 @@
           "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
           "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
           "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
           "members": [
             "MDK_PIN_9396ADB",
             "STYX_B32A"

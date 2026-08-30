@@ -3,6 +3,7 @@
 
 export const PROFILE = Object.freeze({
   ciphersuite: "0x0001",
+  ciphersuite_registry: "IANA_MLS",
   marmot: "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
   mdk: "9396adb6aa6b95b521a7979facd5ea7040c07288",
   members: Object.freeze(["MDK_PIN_9396ADB", "STYX_B32A"]),
