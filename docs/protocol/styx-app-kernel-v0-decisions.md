@@ -1503,6 +1503,12 @@ These decisions authorize only the corrected adversarial corpus and evidence
 system. They do not execute O-02/AP policy, establish implementation alignment,
 or make a product, demo or sensitive-use claim.
 
+Issue #266 / merged PR #267 completed the exact D4 transcript/K reconciliation,
+including independent Python and JavaScript replay and a fresh oracle-free
+reader. The human verdict is a bounded evidence GO for that exact corpus and
+evidence package only; it does not promote evidence disposition into a C0.3
+capability authorization.
+
 **C0.3 verdict: `NO-GO`.** The ratified C0.2i construction replaces the vulnerable C0.2f
 whole-suffix halt with deterministic pending-subtree replay. C0.2j then selects
 grant-rooted credential identity, exact K-readable grant/succession carriage,
@@ -1518,12 +1524,12 @@ remote collapse. O-07 is landed, O-14's placeholder-substituted O-06c rerun is
 discharged, and Issue #253 / merged PR #258 at
 `25be9abc0d8c1bce8821a750616e13d245abc356` fixes the synthetic-only Apache-2.0
 corpus paths. Issue #262 performs the exact-final authority-set synchronization
-required by frozen Issue #251. The seven-item entry set is therefore satisfied
-when this synchronization merges, and construction of the separately
-contracted specification-derived C0.3 corpus is authorized. No corpus byte is
-created here. O-12 is additionally blocking for any profile that retains a
-physical-time claim; it is inapplicable to this transcript-only profile. O-11
-intentionally does not block this corpus.
+required by frozen Issue #251. Issue #264 constructed the separately contracted
+specification-derived C0.3 corpus, and Issue #266 / merged PR #267 completed its
+exact D4 transcript/K reconciliation and bounded evidence verdict. O-12 is
+additionally blocking for any profile that retains a physical-time claim; it is
+inapplicable to this transcript-only profile. O-11 intentionally does not block
+this corpus.
 
 The smallest safe sequence is:
 
@@ -1559,10 +1565,11 @@ O-13, O-15 and O-16 do not block transcript-only C0.3 under a strictly pinned
 v0 profile with explicit no-finality semantics. They do block every destruction-
 capable increment, profile upgrade, product-readiness claim and irreversible
 effect. C0.2k and the integrated O-06c/O-14 rerun have completed their exact-
-final evidence and human gates. The `C0.3` `NO-GO` gate no longer blocks corpus
-construction, but continues to block implementation alignment, demo, product
-and sensitive-use capabilities until corpus completion, independent
-implementation agreement, exit review and an explicit human phase verdict.
+final evidence and human gates. The `C0.3` `NO-GO` gate no longer blocks the
+already completed exact D4 corpus and evidence package, but continues to block
+implementation alignment, demo, product and sensitive-use capabilities until
+independent implementation agreement, the full Section 8 exit review and an
+explicit human phase verdict.
 
 No supported Phase B adapter may persist current application-ledger objects
 while this `NO-GO` remains in force.

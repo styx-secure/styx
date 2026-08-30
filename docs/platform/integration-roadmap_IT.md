@@ -1,4 +1,4 @@
-<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="7c65270456a9b13c4b1506e79d49050c176969c8f9432fcc7da1c6c5ee632194" -->
+<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="2a1d99287cdfff6e8dc98368a8f257c32a52c6be1e4717487c443ebe8bfa698f" -->
 # Roadmap per integrare le capacità applicative in Styx
 
 [English canonical version](integration-roadmap.md)
@@ -17,8 +17,12 @@ Il [piano di hardening del protocollo applicativo](../protocol/protocol-hardenin
 congela attualmente le nuove implementazioni di prodotto e runtime. Le decisioni
 di protocollo, la riconciliazione del threat model, le evidenze avversariali e la
 conformità language-neutral hanno priorità finché non passano gli exit gate
-ratificati dagli esseri umani. La Issue #233 / PR #234 resta evidenza
-sperimentale isolata, C0.3 resta `NO-GO` e questa roadmap non aggira il gate.
+ratificati dagli esseri umani. La Issue #266 / PR #267 mergiata ha completato
+un bounded evidence GO per l'esatto corpus transcript/K D4 e il relativo
+pacchetto di evidenze. C0.3 resta comunque `NO-GO` per allineamento
+dell'implementazione, demo, prodotto e uso sensibile. Può procedere soltanto un
+incremento SS-0 con contratto separato e limitato alle classi di artefatti di
+protocollo permesse dal piano; questa roadmap non aggira il gate.
 
 ## 1. Metodo e legenda
 

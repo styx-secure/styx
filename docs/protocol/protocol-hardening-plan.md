@@ -1,12 +1,12 @@
 # Styx application-protocol hardening plan
 
-> **Status:** active protocol-hardening and ratification phase, 23 August 2026.
+> **Status:** active protocol-hardening and ratification phase, 30 August 2026.
 >
 > This document governs the order of protocol work. It is not a protocol
 > specification, security proof, implementation authorization or readiness
-> claim. Issue #262 authorizes only construction of the separately contracted
-> C0.3 corpus. C0.3 remains `NO-GO` for implementation alignment, demo,
-> product and sensitive use.
+> claim. Issue #266 / merged PR #267 records a bounded evidence GO for the
+> exact D4 transcript/K corpus and evidence package only. C0.3 remains `NO-GO`
+> for implementation alignment, demo, product and sensitive use.
 
 ## 1. Purpose
 
@@ -222,8 +222,8 @@ Protocol increments proceed in dependency order:
    exact twelve-path Apache-2.0 inventory now includes six absent future C0.3
    data paths. This licensing gate creates no corpus byte and does not authorize
    C0.3.
-8. **Produce and reconcile C0.3 — construction completed by Issue #264;
-   layered-evidence reconciliation in Issue #266.** The six-file,
+8. **Produce and reconcile C0.3 — bounded evidence completed by Issue #266 /
+   merged PR #267.** Issue #264 constructed the six-file,
    synthetic-only specification-derived corpus preserves 17 historical valid
    transcript byte sequences, contains 36 local-negative records, 128
    state/flow/counterexample/vector/invariant/history/dependency scenarios and
@@ -238,10 +238,11 @@ Protocol increments proceed in dependency order:
    and rejected by the same production corpus validators, but are classified as
    evidence-integrity checks rather than semantic invariant witnesses.
    Independent Python and JavaScript replay and relation validation agree byte
-   for byte; a fresh oracle-free reader must independently derive the same
-   public transcript/K observations. This remains corpus and conformance
-   evidence only; it does not authorize implementation alignment, demo,
-   product or sensitive use.
+   for byte, and a fresh oracle-free reader independently derived the same
+   public transcript/K observations. The reviewed candidate and merged `main`
+   have the same exact tree. The resulting bounded evidence GO remains corpus
+   and conformance evidence only; it does not authorize implementation
+   alignment, demo, product or sensitive use.
 9. **Obtain the phase verdict.** Independent exact-final review and human
    ratification produce `GO`, bounded `GO`, or `NO-GO` with residual risks.
 
@@ -256,7 +257,7 @@ The dependency basis is explicit:
 | O-06c | exact C0.2j/C0.2k bytes and existing O-06b profiles | completed as bounded evidence by Issue #243; obligations affected by later O-07/O-08/O-10/O-14 decisions are rerun or reopened after those decisions |
 | remaining blockers | O-06c results plus each decision's own recorded inputs | Issue #260 / merged PR #261 reruns the integrated O-14/O-06c hostile cases; exact-final technical evidence, independent review and human gates pass |
 | K-11 corpus boundary | `DECIDED` by the exact Issue #253 six-path amendment; twelve Apache paths total | Issue #264 populates only the approved synthetic paths; no third-party corpus byte is authorized |
-| C0.3 | all seven frozen Issue #251 entry items satisfied by Issue #262; corpus construction completed by Issue #264 and layered-evidence reconciliation proceeding under Issue #266 | exact blind corroboration, implementation alignment and the phase verdict remain separate gated work; C0.3 remains `NO-GO` for demo, product and sensitive use |
+| C0.3 | all seven frozen Issue #251 entry items satisfied by Issue #262; corpus construction completed by Issue #264; exact D4 transcript/K reconciliation, blind corroboration and bounded evidence GO completed by Issue #266 / merged PR #267 | implementation alignment and the full phase-exit verdict remain separate gated work; C0.3 remains `NO-GO` for demo, product and sensitive use |
 
 For visibility, every O-series objective in the current registry is accounted
 for below. Absence from this table is an error in this plan, not evidence that
@@ -378,6 +379,13 @@ The phase may end only when all applicable conditions are true:
 A bounded `GO` authorizes only the named corpus or next contract. It does not
 authorize product code, deployment or sensitive use.
 
+While the freeze remains active, a separately contracted SS-0 increment may
+proceed only if it is limited to the Section 2 artifact classes: normative
+decisions, threat-model/responsibility reconciliation, synchronized derived-
+model records and bounded executable adversarial evidence. It may not create or
+change conformance-corpus bytes, adapters, product code, wire or storage
+formats, persistence behavior, transport selection or deployment behavior.
+
 ## 9. Work after the freeze
 
 After a passing exit verdict, work resumes through separate contracts in this
@@ -435,8 +443,8 @@ Originating findings are dispositioned as follows:
 
 ## 11. Current state
 
-After C0.2k ratification, the O-06c handoff reconciliation and Issue #243's
-bounded executable evidence:
+After Issue #266 / merged PR #267 completed the exact D4 reconciliation and
+bounded evidence verdict:
 
 - the review model exists and is useful for bounded inspection;
 - C0.2j and C0.2k are ratified historical inputs; the selected 84-octet
@@ -460,15 +468,17 @@ bounded executable evidence:
   placeholder-substitution rerun still gated. O-12 remains conditional as
   described in section 4; O-11, O-13, O-15 and O-16 retain their explicitly
   bounded non-blocking or downstream-blocking roles;
-- C0.3 remains `NO-GO` and depends exactly on the now-satisfied entry set
-  `{C0.3_CORPUS_PATH_APPROVAL,O-06c,O-07,O-08,O-10,O-14}`;
+- the exact D4 transcript/K corpus and evidence package have a bounded evidence
+  GO, while the C0.3 capability gate remains `NO-GO` for implementation
+  alignment, demo, product and sensitive use;
 - `C0.3_CORPUS_PATH_APPROVAL` is bounded `DECIDED` by Issue #253; Issue #264
   populates exactly its six synthetic-only paths and completes their executable
   conformance and mutation evidence;
-- Issue #262 completed the final authority-set synchronization and Issue #264
-  completed corpus construction. C0.3 continues to block implementation
-  alignment, demo, product and sensitive use until independent implementation
-  agreement, exit review and an explicit human phase verdict.
+- Issue #262 completed the final authority-set synchronization, Issue #264
+  completed corpus construction and Issue #266 completed the exact D4
+  transcript/K reconciliation with independent-reader agreement. Independent
+  implementation alignment, the full Section 8 exit review and an explicit
+  human phase verdict remain separate work.
 
 The human ratification gate is currently discipline-enforced rather than fully
 server-enforced: the repository governance record at
@@ -477,12 +487,11 @@ approving review and no last-push approval. Until an authorized human verifies
 and applies stronger ruleset controls, every human gate must be evidenced
 explicitly in the relevant Issue and pull request.
 
-The same discovery limitation applies to the freeze itself: `AGENTS.md` and
-`CLAUDE.md` do not yet link to this plan. Tracking Issue #237 records the
-separately human-gated governance change. Until it lands, every new task or
-story contract and its human review must explicitly verify this freeze before
-execution; the unresolved discovery gap is carried into the section 8 exit
-audit.
+`AGENTS.md` and `CLAUDE.md` now link directly to this plan. Tracking Issue #237
+is satisfied when the reconciliation increment that added those pointers is
+merged. Issue #230 retains historical wording outside that bounded change.
+Issue #270 remains idle and unratified on a stale base; it may not execute
+without a refreshed non-overlapping contract or a new explicit ratification.
 
 This state is intentionally conservative. The freeze ends only through section
 8, not through elapsed time, reviewer consensus or pressure to demonstrate a

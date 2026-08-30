@@ -100,3 +100,9 @@ CI coverage does not replace the exact tests named by the task contract.
 Governance work does not authorize product changes. Do not start PR-3 or decide
 cryptography, persisted formats, migrations or vault architecture unless a
 separate approved technical Issue explicitly authorizes that work.
+
+The active freeze, permitted protocol-only artifact classes and exit gates are
+defined by `docs/protocol/protocol-hardening-plan.md`. A task contract cannot
+silently bypass that plan. Issue #266 / merged PR #267 completed bounded C0.3
+transcript/K evidence only; implementation alignment, demo, product and
+sensitive use remain `NO-GO`.

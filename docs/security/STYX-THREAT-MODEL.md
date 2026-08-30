@@ -48,8 +48,10 @@
   passes, and merged PR #261 completes its independent review and human gates.
   Issue #262 performs the final authority-set synchronization and authorizes
   only construction of the separately contracted specification-derived corpus.
-  C0.3 remains `NO-GO` for implementation alignment, demo, product and
-  sensitive use.
+  Issue #266 / merged PR #267 completes the exact D4 transcript/K
+  reconciliation and records a bounded evidence GO for that corpus and evidence
+  package only. C0.3 remains `NO-GO` for implementation alignment, demo,
+  product and sensitive use.
 - **O-14 amendment:** Issue #246 selects internal suite `0x0001`, pure Ed25519
   over the complete O-06b-1 transcript with canonical 32-octet keys, canonical
   64-octet `R || S`, `S < L`, prime-order guards, one pinned verifier and no
@@ -649,8 +651,10 @@ Current evidence establishes only bounded components:
   `DECIDED`; O-07, O-08 and O-10 are bounded `DECIDED`; O-14 is
   condition-bearing `DECIDED` with its separately scoped Issue #260 integrated-
   evidence gate completed by merged PR #261; Issue #262 authorizes only C0.3
-  corpus construction; O-11 through O-16 retain their recorded open,
-  conditional or downstream-blocking roles;
+  corpus construction, Issue #264 constructs it and Issue #266 / merged PR
+  #267 completes its exact D4 transcript/K reconciliation and bounded evidence
+  verdict; O-11 through O-16 retain their recorded open, conditional or
+  downstream-blocking roles;
 - Phase B demonstrates the exact-pin isolated Styx/MDK direct-MLS profile
   described in its final verdict; and
 - existing vault and chat work provides component evidence under its own
