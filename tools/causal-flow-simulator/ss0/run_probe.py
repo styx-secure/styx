@@ -13,27 +13,25 @@ from model import evaluate
 
 def build_report(root: Path) -> dict[str, object]:
     package = root / "tools/causal-flow-simulator/ss0"
-    cases = validate_inventory(load_unique(package / "source-inventory.json"))
+    inventory = validate_inventory(load_unique(package / "source-inventory.json"))
     validate_anchor(root, load_unique(package / "phase-b-anchor.json"))
     validate_public_reader_inputs(root)
     observations: list[dict[str, object]] = []
-    for case in cases:
-        observed = evaluate(case["input"])
-        if observed["disposition"] != case["expected"]:
-            raise ValueError(f"scenario failed: {case['id']}")
+    for witness in inventory["witnesses"]:
+        observed = evaluate(witness["input"])
+        if observed != witness["expected"]:
+            raise ValueError(f"witness failed: {witness['id']}")
         observations.append(
             {
-                "assertion": case["assertion"],
-                "disposition": observed["disposition"],
-                "id": case["id"],
-                "kind": case["kind"],
-                "owner": case["owner"],
+                "id": witness["id"],
+                "observation": observed,
             }
         )
     return {
+        "atom_witness_relation": inventory["relations"],
         "observations": observations,
         "result": "PASS",
-        "schema": "styx.ss0.probe-report.v1",
+        "schema": "styx.ss0.probe-report.v2",
     }
 
 

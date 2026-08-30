@@ -22,6 +22,49 @@ PROFILE = {
     "retained_past_epochs": 5,
 }
 
+U64_MAX = 2**64 - 1
+OPERATION_FIELDS = {
+    "convergence": frozenset({"candidates", "operation", "profile"}),
+    "diagnostic_secret": frozenset({"operation", "profile"}),
+    "mutation": frozenset(
+        {"authoritative", "operation", "profile", "rs_result", "staged"}
+    ),
+    "physical_erasure": frozenset({"operation", "profile"}),
+    "profile": frozenset({"operation", "profile"}),
+    "receive": frozenset(
+        {
+            "authenticated",
+            "member_count",
+            "opaque_application_bytes",
+            "operation",
+            "profile",
+        }
+    ),
+    "recovery": frozenset({"operation", "profile"}),
+    "replay": frozenset(
+        {"already_emitted", "message_identity", "operation", "profile"}
+    ),
+    "restored_state": frozenset({"operation", "profile"}),
+    "retention": frozenset(
+        {"current_epoch", "message_epoch", "operation", "profile"}
+    ),
+    "transport": frozenset({"operation", "profile"}),
+    "welcome": frozenset(
+        {
+            "asserted_rollback",
+            "consumed",
+            "embedded_tree",
+            "framed",
+            "last_resort",
+            "member_bound",
+            "operation",
+            "profile",
+            "profile_bound",
+        }
+    ),
+    "wire_format": frozenset({"operation", "profile"}),
+}
+
 DISPOSITIONS = frozenset(
     {
         "ACCEPTED_EVIDENCE",
@@ -65,8 +108,18 @@ def _exact_profile(value: Any) -> bool:
     return isinstance(value, dict) and value == PROFILE
 
 
-def _is_u64(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and 0 <= value < 2**64
+def _parse_u64(value: Any) -> int | None:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > 20
+        or (value != "0" and value.startswith("0"))
+        or not value.isascii()
+        or not value.isdecimal()
+    ):
+        return None
+    parsed = int(value)
+    return parsed if parsed <= U64_MAX else None
 
 
 def _candidate(value: Any) -> bool:
@@ -87,7 +140,9 @@ def _candidate(value: Any) -> bool:
         and all(character in "0123456789abcdef" for character in account)
         and value["authenticated"] is True
         and value["proposal_free"] is True
+        and type(value["depth"]) is int
         and value["depth"] == 1
+        and type(value["app_witness_score"]) is int
         and value["app_witness_score"] == 0
         and value["tip_priority"] == "ordinary"
         and isinstance(value["parent"], str)
@@ -101,6 +156,11 @@ def evaluate(candidate: Any) -> dict[str, Any]:
     if not isinstance(candidate, dict) or not isinstance(candidate.get("operation"), str):
         return Observation("INVALID_SESSION_INPUT").as_dict()
     operation = candidate["operation"]
+    expected_fields = OPERATION_FIELDS.get(
+        operation, frozenset({"operation", "profile"})
+    )
+    if set(candidate) != expected_fields:
+        return Observation("INVALID_SESSION_INPUT").as_dict()
 
     if operation == "profile":
         return Observation(
@@ -130,9 +190,9 @@ def evaluate(candidate: Any) -> dict[str, Any]:
         return Observation("INVALID_SESSION_INPUT").as_dict()
 
     if operation == "retention":
-        current = candidate.get("current_epoch")
-        message = candidate.get("message_epoch")
-        if not _is_u64(current) or not _is_u64(message) or message > current:
+        current = _parse_u64(candidate.get("current_epoch"))
+        message = _parse_u64(candidate.get("message_epoch"))
+        if current is None or message is None or message > current:
             return Observation("EPOCH_OUT_OF_RANGE").as_dict()
         distance = current - message
         return Observation(

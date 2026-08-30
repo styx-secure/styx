@@ -31,7 +31,22 @@ class CrossRuntimeTests(unittest.TestCase):
             self.assertEqual(0, completed.returncode, completed.stderr)
             report = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual("PASS", report["result"])
-            self.assertEqual(67, len(report["observations"]))
+            self.assertEqual(52, len(report["observations"]))
+            by_id = {
+                row["id"]: row["observation"] for row in report["observations"]
+            }
+            self.assertEqual(
+                "ACCEPTED_EVIDENCE",
+                by_id["X-REORDERED-PROFILE-KEYS"]["disposition"],
+            )
+            self.assertEqual(
+                "UNSUPPORTED_PROFILE_INPUT",
+                by_id["X-BOOLEAN-NUMERIC-CANDIDATE-FIELDS"]["disposition"],
+            )
+            self.assertEqual(
+                "INVALID_SESSION_INPUT",
+                by_id["X-UNKNOWN-CANDIDATE-FIELD"]["disposition"],
+            )
 
 
 if __name__ == "__main__":

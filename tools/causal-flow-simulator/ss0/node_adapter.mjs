@@ -11,6 +11,23 @@ export const PROFILE = Object.freeze({
   retained_past_epochs: 5,
 });
 
+const U64_MAX = 18446744073709551615n;
+const OPERATION_FIELDS = new Map([
+  ["convergence", ["candidates", "operation", "profile"]],
+  ["diagnostic_secret", ["operation", "profile"]],
+  ["mutation", ["authoritative", "operation", "profile", "rs_result", "staged"]],
+  ["physical_erasure", ["operation", "profile"]],
+  ["profile", ["operation", "profile"]],
+  ["receive", ["authenticated", "member_count", "opaque_application_bytes", "operation", "profile"]],
+  ["recovery", ["operation", "profile"]],
+  ["replay", ["already_emitted", "message_identity", "operation", "profile"]],
+  ["restored_state", ["operation", "profile"]],
+  ["retention", ["current_epoch", "message_epoch", "operation", "profile"]],
+  ["transport", ["operation", "profile"]],
+  ["welcome", ["asserted_rollback", "consumed", "embedded_tree", "framed", "last_resort", "member_bound", "operation", "profile", "profile_bound"]],
+  ["wire_format", ["operation", "profile"]],
+]);
+
 const observation = (disposition, fields = {}) => ({
   applied: false,
   disposition,
@@ -18,8 +35,26 @@ const observation = (disposition, fields = {}) => ({
   ...fields,
 });
 
-const exactProfile = (value) => JSON.stringify(value) === JSON.stringify(PROFILE);
-const u64 = (value) => Number.isSafeInteger(value) && value >= 0;
+const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const exactKeys = (value, keys) =>
+  record(value) &&
+  Object.keys(value).sort().join(",") === [...keys].sort().join(",");
+const exactProfile = (value) =>
+  exactKeys(value, Object.keys(PROFILE)) &&
+  value.ciphersuite === PROFILE.ciphersuite &&
+  value.ciphersuite_registry === PROFILE.ciphersuite_registry &&
+  value.marmot === PROFILE.marmot &&
+  value.mdk === PROFILE.mdk &&
+  Array.isArray(value.members) &&
+  value.members.length === PROFILE.members.length &&
+  value.members.every((member, index) => member === PROFILE.members[index]) &&
+  value.openmls === PROFILE.openmls &&
+  value.retained_past_epochs === PROFILE.retained_past_epochs;
+const parseU64 = (value) => {
+  if (typeof value !== "string" || value.length > 20 || !/^(?:0|[1-9][0-9]*)$/u.test(value)) return null;
+  const parsed = BigInt(value);
+  return parsed <= U64_MAX ? parsed : null;
+};
 const validAccount = (value) =>
   typeof value === "string" && /^[0-9a-f]{64}$/u.test(value);
 const branchCandidate = (value) =>
@@ -38,9 +73,11 @@ const branchCandidate = (value) =>
   value.parent.length > 0;
 
 export function evaluate(candidate) {
-  if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate) || typeof candidate.operation !== "string") {
+  if (!record(candidate) || typeof candidate.operation !== "string") {
     return observation("INVALID_SESSION_INPUT");
   }
+  const fields = OPERATION_FIELDS.get(candidate.operation) ?? ["operation", "profile"];
+  if (!exactKeys(candidate, fields)) return observation("INVALID_SESSION_INPUT");
   if (candidate.operation === "profile") {
     return observation(exactProfile(candidate.profile) ? "ACCEPTED_EVIDENCE" : "DRIFT_INVALIDATED");
   }
@@ -58,10 +95,10 @@ export function evaluate(candidate) {
       if (candidate.rs_result === undefined || candidate.rs_result === null || candidate.rs_result === "INDETERMINATE") return observation("RS_RESULT_REQUIRED");
       return observation("INVALID_SESSION_INPUT");
     case "retention": {
-      const current = candidate.current_epoch;
-      const message = candidate.message_epoch;
-      if (!u64(current) || !u64(message) || message > current) return observation("EPOCH_OUT_OF_RANGE");
-      const accepted = current - message <= PROFILE.retained_past_epochs;
+      const current = parseU64(candidate.current_epoch);
+      const message = parseU64(candidate.message_epoch);
+      if (current === null || message === null || message > current) return observation("EPOCH_OUT_OF_RANGE");
+      const accepted = current - message <= BigInt(PROFILE.retained_past_epochs);
       return observation(accepted ? "ACCEPTED_EVIDENCE" : "EPOCH_OUT_OF_RANGE", { emitted_plaintext: accepted });
     }
     case "replay":

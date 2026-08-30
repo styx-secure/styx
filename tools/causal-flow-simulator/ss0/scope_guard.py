@@ -66,6 +66,34 @@ FORBIDDEN_PREFIXES = (
     "vendor/",
     "website/",
 )
+FORBIDDEN_LOCKFILES = frozenset(
+    {
+        "Cargo.lock",
+        "Gemfile.lock",
+        "Pipfile.lock",
+        "bun.lock",
+        "bun.lockb",
+        "composer.lock",
+        "npm-shrinkwrap.json",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "poetry.lock",
+        "pubspec.lock",
+        "uv.lock",
+        "yarn.lock",
+    }
+)
+FORBIDDEN_RUNTIME_MANIFESTS = frozenset(
+    {
+        "Cargo.toml",
+        "Gemfile",
+        "Pipfile",
+        "composer.json",
+        "package.json",
+        "pubspec.yaml",
+        "pyproject.toml",
+    }
+)
 
 
 class ScopeViolation(ValueError):
@@ -158,6 +186,49 @@ def _registry_decisions(node: ast.AST) -> list[str]:
                 raise ScopeViolation("decision registry is not a literal string list")
             return result
     raise ScopeViolation("decision registry is absent")
+
+
+def _validate_disposition_disjointness(repo: Path) -> None:
+    inventory = load_unique(repo / "tools/causal-flow-simulator/ss0/source-inventory.json")
+    taxonomy = load_unique(repo / "tools/causal-flow-simulator/o10/outcome-taxonomy.json")
+    dispositions = inventory.get("closed_dispositions")
+    primaries = taxonomy.get("primaries")
+    alias = taxonomy.get("alias")
+    markers = taxonomy.get("post_c03_markers")
+    remote = taxonomy.get("remote_collapse")
+    if (
+        not isinstance(dispositions, list)
+        or not dispositions
+        or any(not isinstance(item, str) or not item for item in dispositions)
+        or len(dispositions) != len(set(dispositions))
+        or not isinstance(primaries, list)
+        or any(not isinstance(item, dict) or not isinstance(item.get("id"), str) for item in primaries)
+        or not isinstance(alias, dict)
+        or set(alias) != {"id", "primary"}
+        or any(not isinstance(alias[item], str) for item in alias)
+        or not isinstance(markers, list)
+        or any(not isinstance(item, str) for item in markers)
+        or not isinstance(remote, str)
+    ):
+        raise ScopeViolation("SS-0 or O-10 disposition registry shape mismatch")
+    o10_identifiers = {
+        *(item["id"] for item in primaries),
+        alias["id"],
+        alias["primary"],
+        *markers,
+        remote,
+    }
+    overlap = set(dispositions) & o10_identifiers
+    if overlap:
+        raise ScopeViolation("SS-0 model-only dispositions overlap the stable O-10 registry")
+
+
+def _validate_frozen_bytes(
+    repo: Path, before: str, after: str, paths: frozenset[str] = FROZEN_PHASE_A
+) -> None:
+    for path in paths:
+        if _git(repo, "show", f"{before}:{path}") != _git(repo, "show", f"{after}:{path}"):
+            raise ScopeViolation("Gate-A-frozen byte drift")
 
 
 def _validate_validator_projection(repo: Path, base: str, head: str) -> None:
@@ -269,25 +340,27 @@ def _changed_relation(repo: Path, base: str, head: str) -> list[dict[str, object
         cursor += width
         if status[0] in "CR":
             raise ScopeViolation("copy or rename relation is forbidden")
+        if status[0] == "D":
+            raise ScopeViolation("deletion is forbidden")
         for endpoint in endpoints:
             leaf = endpoint.rsplit("/", 1)[-1]
             if (
                 endpoint.startswith(FORBIDDEN_PREFIXES)
                 or endpoint in {"CODEOWNERS", "LICENSING.md", "REUSE.toml"}
                 or endpoint.endswith((".lock", ".wasm"))
-                or leaf in {"package.json", "pubspec.yaml"}
+                or leaf in FORBIDDEN_LOCKFILES
+                or leaf in FORBIDDEN_RUNTIME_MANIFESTS
             ):
                 raise ScopeViolation("forbidden endpoint")
             if endpoint not in ALLOWED_EXACT and not endpoint.startswith(ALLOWED_PREFIX):
                 raise ScopeViolation("out-of-scope endpoint")
-            revision = base if status.startswith("D") else head
-            row = _git(repo, "ls-tree", revision, "--", endpoint).decode().strip()
+            row = _git(repo, "ls-tree", head, "--", endpoint).decode().strip()
             if not row:
                 raise ScopeViolation("missing changed endpoint")
             mode, kind, _object_id = row.split("\t", 1)[0].split()
             if kind != "blob" or mode not in {"100644", "100755"}:
                 raise ScopeViolation("non-regular endpoint")
-            payload = _git(repo, "show", f"{revision}:{endpoint}")
+            payload = _git(repo, "show", f"{head}:{endpoint}")
             if b"\0" in payload:
                 raise ScopeViolation("binary endpoint")
         relation.append({"endpoints": endpoints, "status": status})
@@ -304,9 +377,7 @@ def build_report(repo: Path, base: str, head: str, phase_a: str) -> dict[str, ob
     if _git(repo, "merge-base", MODEL_SYNC_SHA, head).decode().strip() != MODEL_SYNC_SHA:
         raise ScopeViolation("candidate is not descended from the model-sync commit")
     relation = _changed_relation(repo, base, head)
-    for path in FROZEN_PHASE_A:
-        if _git(repo, "show", f"{phase_a}:{path}") != _git(repo, "show", f"{head}:{path}"):
-            raise ScopeViolation("Gate-A-frozen byte drift")
+    _validate_frozen_bytes(repo, phase_a, head)
     _validate_validator_projection(repo, base, head)
     test_validate_path = "tools/protocol-review-model/tests/test_validate.py"
     model_sync_test = _git(repo, "show", f"{MODEL_SYNC_SHA}:{test_validate_path}")
@@ -320,6 +391,7 @@ def build_report(repo: Path, base: str, head: str, phase_a: str) -> dict[str, ob
         raise ScopeViolation("C0.3 verdict drift")
     if "implementation_alignment" in model.get("authorized_unblocked_capabilities", []):
         raise ScopeViolation("implementation alignment became authorized")
+    _validate_disposition_disjointness(repo)
     return {
         "changed": relation,
         "result": "PASS",

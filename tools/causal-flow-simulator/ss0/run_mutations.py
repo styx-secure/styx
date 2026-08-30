@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import sys
 import types
 from pathlib import Path
@@ -27,11 +29,11 @@ REQUIRED_REQUIREMENTS = frozenset(
         "X-INDETERMINATE-COMMITTED",
         "X-INDETERMINATE-NOT-COMMITTED",
         "X-LASTRESORT-ACCEPTANCE",
-        "X-LOSER-PROMOTION-RESTART",
+        "X-LOSER-PROMOTION-INPUT-REORDER",
         "X-MEMBERSHIP-AP-ROLE",
         "X-PIN-FALLBACK",
         "X-REPLAY-DUPLICATE-OUTPUT",
-        "X-RETENTION-OFF-BY-ONE-FIVE",
+        "X-EPOCH-U64-MAX",
         "X-RETENTION-OFF-BY-ONE-SIX",
         "X-REUSE-AFTER-REPLAY",
         "X-REUSE-AFTER-ROLLBACK",
@@ -62,12 +64,10 @@ def main() -> int:
     arguments = parser.parse_args()
     root = arguments.root.resolve(strict=True)
     package = root / "tools/causal-flow-simulator/ss0"
-    cases = {
-        case["id"]: case
-        for case in validate_inventory(load_unique(package / "source-inventory.json"))
-    }
+    inventory = validate_inventory(load_unique(package / "source-inventory.json"))
+    witnesses = {row["id"]: row for row in inventory["witnesses"]}
     registry = load_unique(package / "source-mutants.json")
-    if set(registry) != {"mutants", "schema"} or registry["schema"] != "styx.ss0.mutants.v1":
+    if set(registry) != {"mutants", "schema"} or registry["schema"] != "styx.ss0.mutants.v2":
         raise ValueError("mutant registry shape mismatch")
     mutants = registry["mutants"]
     if not isinstance(mutants, list) or [row.get("id") for row in mutants] != sorted(
@@ -79,25 +79,66 @@ def main() -> int:
     model_source = (package / "model.py").read_text(encoding="utf-8")
     rows: list[dict[str, object]] = []
     seen: set[str] = set()
+    transformations: set[tuple[str, str]] = set()
+    mutated_source_digests: set[str] = set()
+    behavioral_signatures: set[str] = set()
+    baselines = {
+        identity: evaluate(witness["input"])
+        for identity, witness in witnesses.items()
+    }
     for mutant in mutants:
         if not isinstance(mutant, dict) or set(mutant) != {
             "detector", "id", "replacement", "requirement", "target"
         }:
             raise ValueError("mutant shape mismatch")
         identity = mutant["id"]
-        if identity in seen or mutant["detector"] not in cases:
+        if identity in seen or mutant["detector"] not in witnesses:
             raise ValueError("duplicate mutant or missing detector")
         seen.add(identity)
         target = mutant["target"].replace("\\n", "\n")
         replacement = mutant["replacement"].replace("\\n", "\n")
         if model_source.count(target) != 1 or target == replacement:
             raise ValueError(f"mutant anchor mismatch: {identity}")
-        detector = cases[mutant["detector"]]
-        baseline = evaluate(detector["input"])
-        if baseline["disposition"] != detector["expected"]:
+        transformation = (target, replacement)
+        if transformation in transformations:
+            raise ValueError("duplicate mutant transformation")
+        transformations.add(transformation)
+        detector = witnesses[mutant["detector"]]
+        baseline = baselines[mutant["detector"]]
+        if baseline != detector["expected"]:
             raise ValueError(f"baseline detector mismatch: {identity}")
         mutated_source = model_source.replace(target, replacement, 1)
-        mutated = _mutated_evaluate(mutated_source, identity)(detector["input"])
+        mutated_digest = hashlib.sha256(mutated_source.encode("utf-8")).hexdigest()
+        if mutated_digest in mutated_source_digests:
+            raise ValueError("duplicate mutated source")
+        mutated_source_digests.add(mutated_digest)
+        mutated_evaluate = _mutated_evaluate(mutated_source, identity)
+        changed: list[dict[str, object]] = []
+        for witness_id, witness in witnesses.items():
+            observation = mutated_evaluate(witness["input"])
+            if observation != baselines[witness_id]:
+                changed.append(
+                    {
+                        "baseline": baselines[witness_id],
+                        "mutated": observation,
+                        "witness": witness_id,
+                    }
+                )
+        if not changed or mutant["detector"] not in {
+            row["witness"] for row in changed
+        }:
+            raise ValueError(f"detector did not observe mutant: {identity}")
+        behavioral_signature = json.dumps(
+            changed, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        )
+        if behavioral_signature in behavioral_signatures:
+            raise ValueError("semantically equivalent mutant transformation")
+        behavioral_signatures.add(behavioral_signature)
+        mutated = next(
+            row["mutated"]
+            for row in changed
+            if row["witness"] == mutant["detector"]
+        )
         if mutated == baseline:
             raise ValueError(f"surviving mutant: {identity}")
         try:
@@ -115,6 +156,10 @@ def main() -> int:
             raise ValueError("diagnostic leakage survived canonical boundary")
         rows.append(
             {
+                "affected_witness_count": len(changed),
+                "behavioral_signature_sha256": hashlib.sha256(
+                    behavioral_signature.encode("utf-8")
+                ).hexdigest(),
                 "detector": mutant["detector"],
                 "id": identity,
                 "killed": True,
@@ -126,7 +171,7 @@ def main() -> int:
             "killed": len(rows),
             "mutants": rows,
             "result": "PASS",
-            "schema": "styx.ss0.mutation-report.v1",
+            "schema": "styx.ss0.mutation-report.v2",
         },
         arguments.output,
     )

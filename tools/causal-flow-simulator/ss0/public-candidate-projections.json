@@ -37,8 +37,8 @@
           ],
           "retained_past_epochs": 5
         },
-        "current_epoch": 12,
-        "message_epoch": 7
+        "current_epoch": "12",
+        "message_epoch": "7"
       }
     },
     {
@@ -58,8 +58,8 @@
           ],
           "retained_past_epochs": 5
         },
-        "current_epoch": 12,
-        "message_epoch": 6
+        "current_epoch": "12",
+        "message_epoch": "6"
       }
     },
     {

@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from model import DISPOSITIONS, PROFILE
+from model import DISPOSITIONS, OPERATION_FIELDS, PROFILE
 
 
 DECISIONS = tuple(f"SSD-{index:02d}" for index in range(1, 12))
@@ -89,49 +89,142 @@ def validate_anchor(root: Path, anchor: dict[str, Any]) -> None:
         raise ValueError("anchor labels or digests mismatch")
 
 
-def validate_inventory(document: dict[str, Any]) -> list[dict[str, Any]]:
-    if set(document) != {"cases", "closed_dispositions", "owners", "schema"}:
+def validate_inventory(document: dict[str, Any]) -> dict[str, Any]:
+    if set(document) != {
+        "atoms",
+        "closed_dispositions",
+        "owners",
+        "schema",
+        "witnesses",
+    }:
         raise ValueError("inventory has unknown or missing keys")
-    if document["schema"] != "styx.ss0.inventory.v1":
+    if document["schema"] != "styx.ss0.inventory.v2":
         raise ValueError("unknown inventory schema")
     owners = sorted((*DECISIONS, *OBLIGATIONS))
     if document["owners"] != owners:
         raise ValueError("owner set mismatch")
     if document["closed_dispositions"] != sorted(DISPOSITIONS):
         raise ValueError("disposition set mismatch")
-    cases = document["cases"]
-    if not isinstance(cases, list) or len(cases) != 67:
-        raise ValueError("inventory cardinality mismatch")
-    if [case.get("id") for case in cases] != sorted(case.get("id") for case in cases):
-        raise ValueError("case order is not canonical")
-    ids: set[str] = set()
+    witnesses = document["witnesses"]
+    if not isinstance(witnesses, list) or not witnesses:
+        raise ValueError("witness inventory is empty")
+    if [row.get("id") for row in witnesses] != sorted(
+        row.get("id") for row in witnesses
+    ):
+        raise ValueError("witness order is not canonical")
+    witness_ids: set[str] = set()
     inputs: set[str] = set()
-    relation: set[tuple[str, str]] = set()
-    for case in cases:
-        if not isinstance(case, dict) or set(case) != {
-            "assertion", "expected", "id", "input", "kind", "owner"
+    for witness in witnesses:
+        if not isinstance(witness, dict) or set(witness) != {
+            "expected",
+            "id",
+            "input",
         }:
-            raise ValueError("case shape mismatch")
-        if case["id"] in ids or not isinstance(case["assertion"], str) or not case["assertion"]:
-            raise ValueError("duplicate case or empty assertion")
-        ids.add(case["id"])
-        if case["owner"] not in owners or case["kind"] not in KINDS:
-            raise ValueError("case owner or kind mismatch")
-        if case["expected"] not in DISPOSITIONS or not isinstance(case["input"], dict):
-            raise ValueError("case expected result or input mismatch")
-        if "expected" in case["input"] or "assertion" in case["input"]:
+            raise ValueError("witness shape mismatch")
+        identity = witness["id"]
+        if not isinstance(identity, str) or not identity or identity in witness_ids:
+            raise ValueError("duplicate or invalid witness")
+        witness_ids.add(identity)
+        candidate = witness["input"]
+        if not isinstance(candidate, dict):
+            raise ValueError("witness input mismatch")
+        operation = candidate.get("operation")
+        expected_fields = OPERATION_FIELDS.get(
+            operation, frozenset({"operation", "profile"})
+        )
+        if not isinstance(operation, str) or set(candidate) != expected_fields:
+            raise ValueError("witness input field set mismatch")
+        if "scenario_variant" in candidate:
+            raise ValueError("non-behavioral witness discriminator")
+        if "expected" in candidate or "assertion" in candidate:
             raise ValueError("oracle leaked into adapter input")
         encoded_input = json.dumps(
-            case["input"], ensure_ascii=False, separators=(",", ":"), sort_keys=True
+            candidate, ensure_ascii=False, separators=(",", ":"), sort_keys=True
         )
         if encoded_input in inputs:
-            raise ValueError("one candidate input cannot evidence distinct atoms")
+            raise ValueError("duplicate executable witness input")
         inputs.add(encoded_input)
-        relation.add((case["owner"], case["kind"]))
-    required = {(owner, kind) for owner in owners for kind in KINDS}
-    if relation != required:
-        raise ValueError("owner-kind relation is incomplete")
-    return cases
+        expected = witness["expected"]
+        if not isinstance(expected, dict) or set(expected) not in (
+            {"applied", "disposition", "emitted_plaintext"},
+            {"applied", "disposition", "emitted_plaintext", "selected"},
+        ):
+            raise ValueError("witness full observation mismatch")
+        if (
+            expected["disposition"] not in DISPOSITIONS
+            or not isinstance(expected["applied"], bool)
+            or not isinstance(expected["emitted_plaintext"], bool)
+            or ("selected" in expected and not isinstance(expected["selected"], str))
+        ):
+            raise ValueError("witness full observation value mismatch")
+
+    atoms = document["atoms"]
+    required_atoms = {
+        f"ATOM-{owner}-{kind}": (owner, kind)
+        for owner in owners
+        for kind in KINDS
+    }
+    if not isinstance(atoms, list) or [row.get("id") for row in atoms] != sorted(
+        required_atoms
+    ):
+        raise ValueError("atom identity or order mismatch")
+    relations: list[dict[str, object]] = []
+    referenced: set[str] = set()
+    for atom in atoms:
+        if not isinstance(atom, dict) or set(atom) != {
+            "id",
+            "kind",
+            "owner",
+            "source_id",
+            "witnesses",
+        }:
+            raise ValueError("atom shape mismatch")
+        identity = atom["id"]
+        owner, kind = required_atoms.get(identity, (None, None))
+        if (
+            atom["owner"] != owner
+            or atom["kind"] != kind
+            or atom["source_id"] != owner
+        ):
+            raise ValueError("atom owner, kind or source mismatch")
+        mappings = atom["witnesses"]
+        if not isinstance(mappings, list) or not mappings or [
+            row.get("id") for row in mappings
+        ] != sorted(row.get("id") for row in mappings):
+            raise ValueError("atom witness relation mismatch")
+        atom_seen: set[str] = set()
+        for mapping in mappings:
+            if not isinstance(mapping, dict) or set(mapping) != {"assertions", "id"}:
+                raise ValueError("atom witness mapping shape mismatch")
+            witness_id = mapping["id"]
+            assertions = mapping["assertions"]
+            if (
+                witness_id not in witness_ids
+                or witness_id in atom_seen
+                or not isinstance(assertions, list)
+                or not assertions
+                or assertions != sorted(set(assertions))
+                or not all(isinstance(value, str) and value for value in assertions)
+            ):
+                raise ValueError("atom witness mapping value mismatch")
+            atom_seen.add(witness_id)
+            referenced.add(witness_id)
+            relations.append(
+                {
+                    "assertions": assertions,
+                    "atom": identity,
+                    "witness": witness_id,
+                }
+            )
+    if referenced != witness_ids:
+        raise ValueError("unreferenced executable witness")
+    return {
+        "atoms": atoms,
+        "relations": sorted(
+            relations, key=lambda row: (row["atom"], row["witness"])
+        ),
+        "witnesses": witnesses,
+    }
 
 
 def validate_public_reader_inputs(root: Path) -> int:
@@ -174,14 +267,14 @@ def validate_public_reader_inputs(root: Path) -> int:
     if set(by_id["profile"]) != {"operation", "profile"} or by_id["profile"]["operation"] != "profile":
         raise ValueError("public profile projection mismatch")
     for identity, message_epoch in (
-        ("retention-distance-five", 7),
-        ("retention-distance-six", 6),
+        ("retention-distance-five", "7"),
+        ("retention-distance-six", "6"),
     ):
         candidate = by_id[identity]
         if (
             set(candidate) != {"current_epoch", "message_epoch", "operation", "profile"}
             or candidate["operation"] != "retention"
-            or candidate["current_epoch"] != 12
+            or candidate["current_epoch"] != "12"
             or candidate["message_epoch"] != message_epoch
         ):
             raise ValueError("public retention projection mismatch")

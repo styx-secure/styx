@@ -1,1781 +1,1030 @@
 {
-  "cases": [
+  "atoms": [
     {
-      "assertion": "unauthenticated input rejected; obligation witness OB-SS01",
-      "expected": "INVALID_SESSION_INPUT",
-      "id": "OB-SS01-H-UNAUTHENTICATED-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "receive",
-        "member_count": 2,
-        "authenticated": false,
-        "opaque_application_bytes": true,
-        "scenario_variant": "OB-SS01-1"
-      },
-      "kind": "HOSTILE_BOUNDARY",
-      "owner": "OB-SS01"
-    },
-    {
-      "assertion": "session success does not grant AP authority; obligation witness OB-SS01",
-      "expected": "AP_AUTHORITY_REQUIRED",
-      "id": "OB-SS01-P-AUTHENTICATED-BYTES-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "receive",
-        "member_count": 2,
-        "authenticated": true,
-        "opaque_application_bytes": true,
-        "scenario_variant": "OB-SS01-0"
-      },
-      "kind": "POSITIVE",
-      "owner": "OB-SS01"
-    },
-    {
-      "assertion": "membership cannot substitute for application authority; obligation witness OB-SS01",
-      "expected": "INVALID_SESSION_INPUT",
-      "id": "OB-SS01-S-MEMBERSHIP-AS-AUTHORITY-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "receive",
-        "member_count": 3,
-        "authenticated": true,
-        "opaque_application_bytes": true,
-        "scenario_variant": "OB-SS01-2"
-      },
+      "id": "ATOM-OB-SS01-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "OB-SS01"
+      "owner": "OB-SS01",
+      "source_id": "OB-SS01",
+      "witnesses": [
+        {
+          "assertions": [
+            "membership cannot substitute for application authority; obligation witness OB-SS01"
+          ],
+          "id": "W-OB-SS01-S-MEMBERSHIP-AS-AUTHORITY-OB"
+        }
+      ]
     },
     {
-      "assertion": "indeterminate result halts; obligation witness OB-SS02",
-      "expected": "RS_RESULT_REQUIRED",
-      "id": "OB-SS02-H-INDETERMINATE-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "mutation",
-        "authoritative": true,
-        "staged": true,
-        "rs_result": "INDETERMINATE",
-        "scenario_variant": "OB-SS02-1"
-      },
+      "id": "ATOM-OB-SS01-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "OB-SS02"
+      "owner": "OB-SS01",
+      "source_id": "OB-SS01",
+      "witnesses": [
+        {
+          "assertions": [
+            "unauthenticated input rejected; obligation witness OB-SS01"
+          ],
+          "id": "W-OB-SS01-H-UNAUTHENTICATED-OB"
+        }
+      ]
     },
     {
-      "assertion": "only committed staged mutation applies; obligation witness OB-SS02",
-      "expected": "COMMITTED_MUTATION",
-      "id": "OB-SS02-P-COMMITTED-STAGED-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "mutation",
-        "authoritative": true,
-        "staged": true,
-        "rs_result": "COMMITTED",
-        "scenario_variant": "OB-SS02-0"
-      },
+      "id": "ATOM-OB-SS01-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "OB-SS02"
+      "owner": "OB-SS01",
+      "source_id": "OB-SS01",
+      "witnesses": [
+        {
+          "assertions": [
+            "session success does not grant AP authority; obligation witness OB-SS01"
+          ],
+          "id": "W-OB-SS01-P-AUTHENTICATED-BYTES-OB"
+        }
+      ]
     },
     {
-      "assertion": "commit result cannot bypass staging; obligation witness OB-SS02",
-      "expected": "INVALID_SESSION_INPUT",
-      "id": "OB-SS02-S-APPLY-WITHOUT-STAGE-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "mutation",
-        "authoritative": true,
-        "staged": false,
-        "rs_result": "COMMITTED",
-        "scenario_variant": "OB-SS02-2"
-      },
+      "id": "ATOM-OB-SS02-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "OB-SS02"
+      "owner": "OB-SS02",
+      "source_id": "OB-SS02",
+      "witnesses": [
+        {
+          "assertions": [
+            "commit result cannot bypass staging; obligation witness OB-SS02"
+          ],
+          "id": "W-OB-SS02-S-APPLY-WITHOUT-STAGE-OB"
+        }
+      ]
     },
     {
-      "assertion": "application schema is unsupported; obligation witness OB-SS03",
-      "expected": "UNSUPPORTED_PROFILE_INPUT",
-      "id": "OB-SS03-H-INTERPRETED-PAYLOAD-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "receive",
-        "member_count": 2,
-        "authenticated": true,
-        "opaque_application_bytes": false,
-        "scenario_variant": "OB-SS03-1"
-      },
+      "id": "ATOM-OB-SS02-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "OB-SS03"
+      "owner": "OB-SS02",
+      "source_id": "OB-SS02",
+      "witnesses": [
+        {
+          "assertions": [
+            "indeterminate result halts; obligation witness OB-SS02"
+          ],
+          "id": "W-OB-SS02-H-INDETERMINATE-OB"
+        }
+      ]
     },
     {
-      "assertion": "opaque application bytes remain authority-neutral; obligation witness OB-SS03",
-      "expected": "AP_AUTHORITY_REQUIRED",
-      "id": "OB-SS03-P-OPAQUE-BOUNDED-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "receive",
-        "member_count": 2,
-        "authenticated": true,
-        "opaque_application_bytes": true,
-        "scenario_variant": "OB-SS03-0"
-      },
+      "id": "ATOM-OB-SS02-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "OB-SS03"
+      "owner": "OB-SS02",
+      "source_id": "OB-SS02",
+      "witnesses": [
+        {
+          "assertions": [
+            "only committed staged mutation applies; obligation witness OB-SS02"
+          ],
+          "id": "W-OB-SS02-P-COMMITTED-STAGED-OB"
+        }
+      ]
     },
     {
-      "assertion": "transport claim cannot substitute for bounded session evidence; obligation witness OB-SS03",
-      "expected": "NOT_CLAIMED_IN_PROFILE",
-      "id": "OB-SS03-S-TRANSPORT-CLAIM-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "transport",
-        "scenario_variant": "OB-SS03-2"
-      },
+      "id": "ATOM-OB-SS03-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "OB-SS03"
+      "owner": "OB-SS03",
+      "source_id": "OB-SS03",
+      "witnesses": [
+        {
+          "assertions": [
+            "transport claim cannot substitute for bounded session evidence; obligation witness OB-SS03"
+          ],
+          "id": "W-OB-SS03-S-TRANSPORT-CLAIM-OB"
+        }
+      ]
     },
     {
-      "assertion": "distance six rejected; obligation witness OB-SS04",
-      "expected": "EPOCH_OUT_OF_RANGE",
-      "id": "OB-SS04-H-DISTANCE-SIX-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "retention",
-        "current_epoch": 12,
-        "message_epoch": 6,
-        "scenario_variant": "OB-SS04-1"
-      },
+      "id": "ATOM-OB-SS03-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "OB-SS04"
+      "owner": "OB-SS03",
+      "source_id": "OB-SS03",
+      "witnesses": [
+        {
+          "assertions": [
+            "application schema is unsupported; obligation witness OB-SS03"
+          ],
+          "id": "W-OB-SS03-H-INTERPRETED-PAYLOAD-OB"
+        }
+      ]
     },
     {
-      "assertion": "distance five accepted; obligation witness OB-SS04",
-      "expected": "ACCEPTED_EVIDENCE",
-      "id": "OB-SS04-P-DISTANCE-FIVE-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "retention",
-        "current_epoch": 12,
-        "message_epoch": 7,
-        "scenario_variant": "OB-SS04-0"
-      },
+      "id": "ATOM-OB-SS03-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "OB-SS04"
+      "owner": "OB-SS03",
+      "source_id": "OB-SS03",
+      "witnesses": [
+        {
+          "assertions": [
+            "opaque application bytes remain authority-neutral; obligation witness OB-SS03"
+          ],
+          "id": "W-OB-SS01-P-AUTHENTICATED-BYTES-OB"
+        }
+      ]
     },
     {
-      "assertion": "session epoch cannot establish K ordering; obligation witness OB-SS04",
-      "expected": "EPOCH_OUT_OF_RANGE",
-      "id": "OB-SS04-S-SESSION-EPOCH-AS-K-ORDER-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "retention",
-        "current_epoch": 7,
-        "message_epoch": 8,
-        "scenario_variant": "OB-SS04-2"
-      },
+      "id": "ATOM-OB-SS04-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "OB-SS04"
+      "owner": "OB-SS04",
+      "source_id": "OB-SS04",
+      "witnesses": [
+        {
+          "assertions": [
+            "session epoch cannot establish K ordering; obligation witness OB-SS04"
+          ],
+          "id": "W-OB-SS04-S-SESSION-EPOCH-AS-K-ORDER-OB"
+        }
+      ]
     },
     {
-      "assertion": "third candidate is unsupported; obligation witness OB-SS05",
-      "expected": "UNSUPPORTED_PROFILE_INPUT",
-      "id": "OB-SS05-H-THIRD-CANDIDATE-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "convergence",
-        "candidates": [
-          {
-            "account": "1111111111111111111111111111111111111111111111111111111111111111",
-            "app_witness_score": 0,
-            "authenticated": true,
-            "depth": 1,
-            "parent": "parent-a",
-            "proposal_free": true,
-            "tip_priority": "ordinary"
-          },
-          {
-            "account": "2222222222222222222222222222222222222222222222222222222222222222",
-            "app_witness_score": 0,
-            "authenticated": true,
-            "depth": 1,
-            "parent": "parent-a",
-            "proposal_free": true,
-            "tip_priority": "ordinary"
-          },
-          {
-            "account": "3333333333333333333333333333333333333333333333333333333333333333",
-            "app_witness_score": 0,
-            "authenticated": true,
-            "depth": 1,
-            "parent": "parent-a",
-            "proposal_free": true,
-            "tip_priority": "ordinary"
-          }
-        ],
-        "scenario_variant": "OB-SS05-1"
-      },
+      "id": "ATOM-OB-SS04-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "OB-SS05"
+      "owner": "OB-SS04",
+      "source_id": "OB-SS04",
+      "witnesses": [
+        {
+          "assertions": [
+            "distance six rejected; obligation witness OB-SS04"
+          ],
+          "id": "W-OB-SS04-H-DISTANCE-SIX-OB"
+        },
+        {
+          "assertions": [
+            "JSON numeric epoch is not a canonical model u64 string"
+          ],
+          "id": "W-RETENTION-JSON-NUMBER"
+        },
+        {
+          "assertions": [
+            "leading-zero epoch encoding fails closed"
+          ],
+          "id": "W-RETENTION-LEADING-ZERO"
+        },
+        {
+          "assertions": [
+            "value above u64 maximum fails closed"
+          ],
+          "id": "W-RETENTION-U64-OVERFLOW"
+        }
+      ]
     },
     {
-      "assertion": "lower authenticated account wins; obligation witness OB-SS05",
-      "expected": "DEFERRED_CANDIDATE",
-      "id": "OB-SS05-P-LOWER-COMMITTER-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "convergence",
-        "candidates": [
-          {
-            "account": "2222222222222222222222222222222222222222222222222222222222222222",
-            "app_witness_score": 0,
-            "authenticated": true,
-            "depth": 1,
-            "parent": "parent-a",
-            "proposal_free": true,
-            "tip_priority": "ordinary"
-          },
-          {
-            "account": "1111111111111111111111111111111111111111111111111111111111111111",
-            "app_witness_score": 0,
-            "authenticated": true,
-            "depth": 1,
-            "parent": "parent-a",
-            "proposal_free": true,
-            "tip_priority": "ordinary"
-          }
-        ],
-        "scenario_variant": "OB-SS05-0"
-      },
+      "id": "ATOM-OB-SS04-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "OB-SS05"
+      "owner": "OB-SS04",
+      "source_id": "OB-SS04",
+      "witnesses": [
+        {
+          "assertions": [
+            "distance five accepted; obligation witness OB-SS04"
+          ],
+          "id": "W-OB-SS04-P-DISTANCE-FIVE-OB"
+        },
+        {
+          "assertions": [
+            "complete u64 evidence input does not inherit JavaScript safe-integer range"
+          ],
+          "id": "W-RETENTION-ABOVE-SAFE-DISTANCE-FIVE"
+        },
+        {
+          "assertions": [
+            "distance one remains accepted"
+          ],
+          "id": "W-RETENTION-DISTANCE-ONE"
+        },
+        {
+          "assertions": [
+            "distance zero remains accepted"
+          ],
+          "id": "W-RETENTION-DISTANCE-ZERO"
+        },
+        {
+          "assertions": [
+            "maximum safe JSON integer encoded as canonical u64 string remains accepted"
+          ],
+          "id": "W-RETENTION-SAFE-MAX-DISTANCE-FIVE"
+        },
+        {
+          "assertions": [
+            "maximum u64 with distance five remains accepted"
+          ],
+          "id": "W-RETENTION-U64-MAX-DISTANCE-FIVE"
+        }
+      ]
     },
     {
-      "assertion": "application witness cannot select branch; obligation witness OB-SS05",
-      "expected": "UNSUPPORTED_PROFILE_INPUT",
-      "id": "OB-SS05-S-APPLICATION-SELECTOR-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "convergence",
-        "candidates": [
-          {
-            "account": "1111111111111111111111111111111111111111111111111111111111111111",
-            "app_witness_score": 1,
-            "authenticated": true,
-            "depth": 1,
-            "parent": "parent-a",
-            "proposal_free": true,
-            "tip_priority": "ordinary"
-          },
-          {
-            "account": "2222222222222222222222222222222222222222222222222222222222222222",
-            "app_witness_score": 0,
-            "authenticated": true,
-            "depth": 1,
-            "parent": "parent-a",
-            "proposal_free": true,
-            "tip_priority": "ordinary"
-          }
-        ],
-        "scenario_variant": "OB-SS05-2"
-      },
+      "id": "ATOM-OB-SS05-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "OB-SS05"
+      "owner": "OB-SS05",
+      "source_id": "OB-SS05",
+      "witnesses": [
+        {
+          "assertions": [
+            "application witness cannot select branch; obligation witness OB-SS05"
+          ],
+          "id": "W-OB-SS05-S-APPLICATION-SELECTOR-OB"
+        }
+      ]
     },
     {
-      "assertion": "LastResort unsupported; obligation witness OB-SS06",
-      "expected": "UNSUPPORTED_PROFILE_INPUT",
-      "id": "OB-SS06-H-LAST-RESORT-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "welcome",
-        "framed": true,
-        "embedded_tree": true,
-        "profile_bound": true,
-        "member_bound": true,
-        "last_resort": true,
-        "consumed": false,
-        "asserted_rollback": false,
-        "scenario_variant": "OB-SS06-1"
-      },
+      "id": "ATOM-OB-SS05-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "OB-SS06"
+      "owner": "OB-SS05",
+      "source_id": "OB-SS05",
+      "witnesses": [
+        {
+          "assertions": [
+            "third candidate is unsupported; obligation witness OB-SS05"
+          ],
+          "id": "W-OB-SS05-H-THIRD-CANDIDATE-OB"
+        }
+      ]
     },
     {
-      "assertion": "bounded Welcome accepted once; obligation witness OB-SS06",
-      "expected": "WELCOME_ACCEPTED",
-      "id": "OB-SS06-P-BOUND-WELCOME-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "welcome",
-        "framed": true,
-        "embedded_tree": true,
-        "profile_bound": true,
-        "member_bound": true,
-        "last_resort": false,
-        "consumed": false,
-        "asserted_rollback": false,
-        "scenario_variant": "OB-SS06-0"
-      },
+      "id": "ATOM-OB-SS05-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "OB-SS06"
+      "owner": "OB-SS05",
+      "source_id": "OB-SS05",
+      "witnesses": [
+        {
+          "assertions": [
+            "candidate input ordering cannot promote the losing candidate"
+          ],
+          "id": "W-CONVERGENCE-INPUT-REORDER"
+        },
+        {
+          "assertions": [
+            "lower authenticated account wins; obligation witness OB-SS05"
+          ],
+          "id": "W-OB-SS05-P-LOWER-COMMITTER-OB"
+        }
+      ]
     },
     {
-      "assertion": "asserted rollback cannot re-enable consumption; obligation witness OB-SS06",
-      "expected": "REPLAY_REJECTED",
-      "id": "OB-SS06-S-ROLLBACK-REENABLE-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "welcome",
-        "framed": true,
-        "embedded_tree": true,
-        "profile_bound": true,
-        "member_bound": true,
-        "last_resort": false,
-        "consumed": true,
-        "asserted_rollback": true,
-        "scenario_variant": "OB-SS06-2"
-      },
+      "id": "ATOM-OB-SS06-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "OB-SS06"
+      "owner": "OB-SS06",
+      "source_id": "OB-SS06",
+      "witnesses": [
+        {
+          "assertions": [
+            "asserted rollback cannot re-enable consumption; obligation witness OB-SS06"
+          ],
+          "id": "W-OB-SS06-S-ROLLBACK-REENABLE-OB"
+        }
+      ]
     },
     {
-      "assertion": "logical secret unavailable beyond depth; obligation witness OB-SS07",
-      "expected": "EPOCH_OUT_OF_RANGE",
-      "id": "OB-SS07-H-BEYOND-LOGICAL-DEPTH-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "retention",
-        "current_epoch": 7,
-        "message_epoch": 1,
-        "scenario_variant": "OB-SS07-1"
-      },
+      "id": "ATOM-OB-SS06-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "OB-SS07"
+      "owner": "OB-SS06",
+      "source_id": "OB-SS06",
+      "witnesses": [
+        {
+          "assertions": [
+            "LastResort unsupported; obligation witness OB-SS06"
+          ],
+          "id": "W-OB-SS06-H-LAST-RESORT-OB"
+        }
+      ]
     },
     {
-      "assertion": "only logical retained evidence claimed; obligation witness OB-SS07",
-      "expected": "ACCEPTED_EVIDENCE",
-      "id": "OB-SS07-P-LOGICAL-AVAILABILITY-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "retention",
-        "current_epoch": 5,
-        "message_epoch": 1,
-        "scenario_variant": "OB-SS07-0"
-      },
+      "id": "ATOM-OB-SS06-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "OB-SS07"
+      "owner": "OB-SS06",
+      "source_id": "OB-SS06",
+      "witnesses": [
+        {
+          "assertions": [
+            "bounded Welcome accepted once; obligation witness OB-SS06"
+          ],
+          "id": "W-OB-SS06-P-BOUND-WELCOME-OB"
+        }
+      ]
     },
     {
-      "assertion": "logical depth cannot prove physical erasure; obligation witness OB-SS07",
-      "expected": "NOT_CLAIMED_IN_PROFILE",
-      "id": "OB-SS07-S-PHYSICAL-ERASURE-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "physical_erasure",
-        "scenario_variant": "OB-SS07-2"
-      },
+      "id": "ATOM-OB-SS07-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "OB-SS07"
+      "owner": "OB-SS07",
+      "source_id": "OB-SS07",
+      "witnesses": [
+        {
+          "assertions": [
+            "logical depth cannot prove physical erasure; obligation witness OB-SS07"
+          ],
+          "id": "W-OB-SS07-S-PHYSICAL-ERASURE-OB"
+        }
+      ]
     },
     {
-      "assertion": "restored state is not trusted; obligation witness OB-SS08",
-      "expected": "UNVALIDATED_RESTORED_STATE",
-      "id": "OB-SS08-H-RESTORED-UNVALIDATED-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "restored_state",
-        "scenario_variant": "OB-SS08-1"
-      },
+      "id": "ATOM-OB-SS07-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "OB-SS08"
+      "owner": "OB-SS07",
+      "source_id": "OB-SS07",
+      "witnesses": [
+        {
+          "assertions": [
+            "logical secret unavailable beyond depth; obligation witness OB-SS07"
+          ],
+          "id": "W-OB-SS07-H-BEYOND-LOGICAL-DEPTH-OB"
+        }
+      ]
     },
     {
-      "assertion": "abstract committed result permits logical apply; obligation witness OB-SS08",
-      "expected": "COMMITTED_MUTATION",
-      "id": "OB-SS08-P-ATOMIC-LOGICAL-COMMIT-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "mutation",
-        "authoritative": true,
-        "staged": true,
-        "rs_result": "COMMITTED",
-        "scenario_variant": "OB-SS08-0"
-      },
+      "id": "ATOM-OB-SS07-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "OB-SS08"
+      "owner": "OB-SS07",
+      "source_id": "OB-SS07",
+      "witnesses": [
+        {
+          "assertions": [
+            "only logical retained evidence claimed; obligation witness OB-SS07"
+          ],
+          "id": "W-OB-SS07-P-LOGICAL-AVAILABILITY-OB"
+        }
+      ]
     },
     {
-      "assertion": "indeterminate cannot substitute for commit; obligation witness OB-SS08",
-      "expected": "RS_RESULT_REQUIRED",
-      "id": "OB-SS08-S-INDETERMINATE-AS-COMMIT-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "mutation",
-        "authoritative": true,
-        "staged": true,
-        "rs_result": "INDETERMINATE",
-        "scenario_variant": "OB-SS08-2"
-      },
+      "id": "ATOM-OB-SS08-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "OB-SS08"
-    },
-    {
-      "assertion": "missing profile invalidates; obligation witness OB-SS09",
-      "expected": "DRIFT_INVALIDATED",
-      "id": "OB-SS09-H-MISSING-PROFILE-OB",
-      "input": {
-        "profile": null,
-        "operation": "receive",
-        "member_count": 2,
-        "authenticated": true,
-        "opaque_application_bytes": true,
-        "scenario_variant": "OB-SS09-1"
-      },
-      "kind": "HOSTILE_BOUNDARY",
-      "owner": "OB-SS09"
-    },
-    {
-      "assertion": "exact anchored profile accepted; obligation witness OB-SS09",
-      "expected": "ACCEPTED_EVIDENCE",
-      "id": "OB-SS09-P-ANCHORED-PROFILE-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
+      "owner": "OB-SS08",
+      "source_id": "OB-SS08",
+      "witnesses": [
+        {
+          "assertions": [
+            "indeterminate cannot substitute for commit; obligation witness OB-SS08"
           ],
-          "retained_past_epochs": 5
-        },
-        "operation": "profile",
-        "scenario_variant": "OB-SS09-0"
-      },
+          "id": "W-OB-SS02-H-INDETERMINATE-OB"
+        }
+      ]
+    },
+    {
+      "id": "ATOM-OB-SS08-HOSTILE_BOUNDARY",
+      "kind": "HOSTILE_BOUNDARY",
+      "owner": "OB-SS08",
+      "source_id": "OB-SS08",
+      "witnesses": [
+        {
+          "assertions": [
+            "restored state is not trusted; obligation witness OB-SS08"
+          ],
+          "id": "W-OB-SS08-H-RESTORED-UNVALIDATED-OB"
+        }
+      ]
+    },
+    {
+      "id": "ATOM-OB-SS08-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "OB-SS09"
+      "owner": "OB-SS08",
+      "source_id": "OB-SS08",
+      "witnesses": [
+        {
+          "assertions": [
+            "abstract committed result permits logical apply; obligation witness OB-SS08"
+          ],
+          "id": "W-OB-SS02-P-COMMITTED-STAGED-OB"
+        }
+      ]
     },
     {
-      "assertion": "evidence provenance cannot imply product recovery; obligation witness OB-SS09",
-      "expected": "NOT_CLAIMED_IN_PROFILE",
-      "id": "OB-SS09-S-PRODUCT-INFERENCE-OB",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "recovery",
-        "scenario_variant": "OB-SS09-2"
-      },
+      "id": "ATOM-OB-SS09-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "OB-SS09"
+      "owner": "OB-SS09",
+      "source_id": "OB-SS09",
+      "witnesses": [
+        {
+          "assertions": [
+            "evidence provenance cannot imply product recovery; obligation witness OB-SS09"
+          ],
+          "id": "W-OB-SS09-S-PRODUCT-INFERENCE-OB"
+        }
+      ]
     },
     {
-      "assertion": "pin drift invalidates",
-      "expected": "DRIFT_INVALIDATED",
-      "id": "SSD-01-H-PIN-DRIFT",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "0000000000000000000000000000000000000000",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "profile"
-      },
+      "id": "ATOM-OB-SS09-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-01"
+      "owner": "OB-SS09",
+      "source_id": "OB-SS09",
+      "witnesses": [
+        {
+          "assertions": [
+            "missing profile invalidates; obligation witness OB-SS09"
+          ],
+          "id": "W-OB-SS09-H-MISSING-PROFILE-OB"
+        },
+        {
+          "assertions": [
+            "missing exact-profile key invalidates evidence"
+          ],
+          "id": "W-PROFILE-MISSING-KEY"
+        },
+        {
+          "assertions": [
+            "unknown exact-profile key invalidates evidence"
+          ],
+          "id": "W-PROFILE-UNKNOWN-KEY"
+        }
+      ]
     },
     {
-      "assertion": "exact evidence profile accepted",
-      "expected": "ACCEPTED_EVIDENCE",
-      "id": "SSD-01-P-EXACT-PROFILE",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "profile"
-      },
+      "id": "ATOM-OB-SS09-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "SSD-01"
+      "owner": "OB-SS09",
+      "source_id": "OB-SS09",
+      "witnesses": [
+        {
+          "assertions": [
+            "exact anchored profile accepted; obligation witness OB-SS09"
+          ],
+          "id": "W-OB-SS09-P-ANCHORED-PROFILE-OB"
+        }
+      ]
     },
     {
-      "assertion": "no ciphersuite fallback",
-      "expected": "DRIFT_INVALIDATED",
-      "id": "SSD-01-S-CIPHERSUITE-FALLBACK",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0002",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "profile"
-      },
+      "id": "ATOM-SSD-01-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "SSD-01"
+      "owner": "SSD-01",
+      "source_id": "SSD-01",
+      "witnesses": [
+        {
+          "assertions": [
+            "no ciphersuite fallback"
+          ],
+          "id": "W-SSD-01-S-CIPHERSUITE-FALLBACK"
+        },
+        {
+          "assertions": [
+            "IANA MLS ciphersuite registry cannot be substituted by the Styx signature registry"
+          ],
+          "id": "W-SSD-01-X-REGISTRY-SUBSTITUTION"
+        }
+      ]
     },
     {
-      "assertion": "IANA MLS ciphersuite registry cannot be substituted by the Styx signature registry",
-      "expected": "DRIFT_INVALIDATED",
-      "id": "SSD-01-X-REGISTRY-SUBSTITUTION",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "STYX_SIGNATURE",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "profile"
-      },
-      "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "SSD-01"
-    },
-    {
-      "assertion": "unauthenticated input rejected",
-      "expected": "INVALID_SESSION_INPUT",
-      "id": "SSD-02-H-UNAUTHENTICATED",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "receive",
-        "member_count": 2,
-        "authenticated": false,
-        "opaque_application_bytes": true
-      },
+      "id": "ATOM-SSD-01-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-02"
+      "owner": "SSD-01",
+      "source_id": "SSD-01",
+      "witnesses": [
+        {
+          "assertions": [
+            "missing exact-profile key invalidates evidence"
+          ],
+          "id": "W-PROFILE-MISSING-KEY"
+        },
+        {
+          "assertions": [
+            "unknown exact-profile key invalidates evidence"
+          ],
+          "id": "W-PROFILE-UNKNOWN-KEY"
+        },
+        {
+          "assertions": [
+            "pin drift invalidates"
+          ],
+          "id": "W-SSD-01-H-PIN-DRIFT"
+        }
+      ]
     },
     {
-      "assertion": "session success does not grant AP authority",
-      "expected": "AP_AUTHORITY_REQUIRED",
-      "id": "SSD-02-P-AUTHENTICATED-BYTES",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "receive",
-        "member_count": 2,
-        "authenticated": true,
-        "opaque_application_bytes": true
-      },
+      "id": "ATOM-SSD-01-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "SSD-02"
+      "owner": "SSD-01",
+      "source_id": "SSD-01",
+      "witnesses": [
+        {
+          "assertions": [
+            "exact evidence profile accepted"
+          ],
+          "id": "W-OB-SS09-P-ANCHORED-PROFILE-OB"
+        }
+      ]
     },
     {
-      "assertion": "membership cannot substitute for application authority",
-      "expected": "INVALID_SESSION_INPUT",
-      "id": "SSD-02-S-MEMBERSHIP-AS-AUTHORITY",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "receive",
-        "member_count": 3,
-        "authenticated": true,
-        "opaque_application_bytes": true
-      },
+      "id": "ATOM-SSD-02-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "SSD-02"
+      "owner": "SSD-02",
+      "source_id": "SSD-02",
+      "witnesses": [
+        {
+          "assertions": [
+            "membership cannot substitute for application authority"
+          ],
+          "id": "W-OB-SS01-S-MEMBERSHIP-AS-AUTHORITY-OB"
+        }
+      ]
     },
     {
-      "assertion": "application schema is unsupported",
-      "expected": "UNSUPPORTED_PROFILE_INPUT",
-      "id": "SSD-03-H-INTERPRETED-PAYLOAD",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "receive",
-        "member_count": 2,
-        "authenticated": true,
-        "opaque_application_bytes": false
-      },
+      "id": "ATOM-SSD-02-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-03"
+      "owner": "SSD-02",
+      "source_id": "SSD-02",
+      "witnesses": [
+        {
+          "assertions": [
+            "unauthenticated input rejected"
+          ],
+          "id": "W-OB-SS01-H-UNAUTHENTICATED-OB"
+        }
+      ]
     },
     {
-      "assertion": "opaque application bytes remain authority-neutral",
-      "expected": "AP_AUTHORITY_REQUIRED",
-      "id": "SSD-03-P-OPAQUE-BOUNDED",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "receive",
-        "scenario_variant": "opaque-bounded-application-bytes",
-        "member_count": 2,
-        "authenticated": true,
-        "opaque_application_bytes": true
-      },
+      "id": "ATOM-SSD-02-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "SSD-03"
+      "owner": "SSD-02",
+      "source_id": "SSD-02",
+      "witnesses": [
+        {
+          "assertions": [
+            "session success does not grant AP authority"
+          ],
+          "id": "W-OB-SS01-P-AUTHENTICATED-BYTES-OB"
+        }
+      ]
     },
     {
-      "assertion": "transport claim cannot substitute for bounded session evidence",
-      "expected": "NOT_CLAIMED_IN_PROFILE",
-      "id": "SSD-03-S-TRANSPORT-CLAIM",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "transport"
-      },
+      "id": "ATOM-SSD-03-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "SSD-03"
+      "owner": "SSD-03",
+      "source_id": "SSD-03",
+      "witnesses": [
+        {
+          "assertions": [
+            "transport claim cannot substitute for bounded session evidence"
+          ],
+          "id": "W-OB-SS03-S-TRANSPORT-CLAIM-OB"
+        }
+      ]
     },
     {
-      "assertion": "indeterminate result halts",
-      "expected": "RS_RESULT_REQUIRED",
-      "id": "SSD-04-H-INDETERMINATE",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "mutation",
-        "authoritative": true,
-        "staged": true,
-        "rs_result": "INDETERMINATE"
-      },
+      "id": "ATOM-SSD-03-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-04"
+      "owner": "SSD-03",
+      "source_id": "SSD-03",
+      "witnesses": [
+        {
+          "assertions": [
+            "application schema is unsupported"
+          ],
+          "id": "W-OB-SS03-H-INTERPRETED-PAYLOAD-OB"
+        }
+      ]
     },
     {
-      "assertion": "only committed staged mutation applies",
-      "expected": "COMMITTED_MUTATION",
-      "id": "SSD-04-P-COMMITTED-STAGED",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "mutation",
-        "authoritative": true,
-        "staged": true,
-        "rs_result": "COMMITTED"
-      },
+      "id": "ATOM-SSD-03-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "SSD-04"
+      "owner": "SSD-03",
+      "source_id": "SSD-03",
+      "witnesses": [
+        {
+          "assertions": [
+            "opaque application bytes remain authority-neutral"
+          ],
+          "id": "W-OB-SS01-P-AUTHENTICATED-BYTES-OB"
+        }
+      ]
     },
     {
-      "assertion": "commit result cannot bypass staging",
-      "expected": "INVALID_SESSION_INPUT",
-      "id": "SSD-04-S-APPLY-WITHOUT-STAGE",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "mutation",
-        "authoritative": true,
-        "staged": false,
-        "rs_result": "COMMITTED"
-      },
+      "id": "ATOM-SSD-04-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "SSD-04"
+      "owner": "SSD-04",
+      "source_id": "SSD-04",
+      "witnesses": [
+        {
+          "assertions": [
+            "commit result cannot bypass staging"
+          ],
+          "id": "W-OB-SS02-S-APPLY-WITHOUT-STAGE-OB"
+        }
+      ]
     },
     {
-      "assertion": "distance six rejected",
-      "expected": "EPOCH_OUT_OF_RANGE",
-      "id": "SSD-05-H-DISTANCE-SIX",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "retention",
-        "current_epoch": 12,
-        "message_epoch": 6
-      },
+      "id": "ATOM-SSD-04-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-05"
+      "owner": "SSD-04",
+      "source_id": "SSD-04",
+      "witnesses": [
+        {
+          "assertions": [
+            "indeterminate result halts"
+          ],
+          "id": "W-OB-SS02-H-INDETERMINATE-OB"
+        },
+        {
+          "assertions": [
+            "non-authoritative staged mutation is rejected"
+          ],
+          "id": "W-OB-SS02-H-NONAUTHORITATIVE-OB"
+        }
+      ]
     },
     {
-      "assertion": "distance five accepted",
-      "expected": "ACCEPTED_EVIDENCE",
-      "id": "SSD-05-P-DISTANCE-FIVE",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "retention",
-        "current_epoch": 12,
-        "message_epoch": 7
-      },
+      "id": "ATOM-SSD-04-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "SSD-05"
+      "owner": "SSD-04",
+      "source_id": "SSD-04",
+      "witnesses": [
+        {
+          "assertions": [
+            "only committed staged mutation applies"
+          ],
+          "id": "W-OB-SS02-P-COMMITTED-STAGED-OB"
+        }
+      ]
     },
     {
-      "assertion": "session epoch cannot establish K ordering",
-      "expected": "EPOCH_OUT_OF_RANGE",
-      "id": "SSD-05-S-SESSION-EPOCH-AS-K-ORDER",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "retention",
-        "current_epoch": 7,
-        "message_epoch": 8
-      },
+      "id": "ATOM-SSD-05-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "SSD-05"
+      "owner": "SSD-05",
+      "source_id": "SSD-05",
+      "witnesses": [
+        {
+          "assertions": [
+            "session epoch cannot establish K ordering"
+          ],
+          "id": "W-OB-SS04-S-SESSION-EPOCH-AS-K-ORDER-OB"
+        }
+      ]
     },
     {
-      "assertion": "first delivery emits once",
-      "expected": "ACCEPTED_EVIDENCE",
-      "id": "SSD-05-X-REPLAY-FIRST",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "replay",
-        "message_identity": "message-a",
-        "already_emitted": false
-      },
-      "kind": "POSITIVE",
-      "owner": "SSD-05"
-    },
-    {
-      "assertion": "exact duplicate emits no second plaintext",
-      "expected": "DUPLICATE_SUPPRESSED",
-      "id": "SSD-05-X-REPLAY-SUPPRESSED",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "replay",
-        "message_identity": "message-a",
-        "already_emitted": true
-      },
+      "id": "ATOM-SSD-05-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-05"
+      "owner": "SSD-05",
+      "source_id": "SSD-05",
+      "witnesses": [
+        {
+          "assertions": [
+            "distance six rejected"
+          ],
+          "id": "W-OB-SS04-H-DISTANCE-SIX-OB"
+        },
+        {
+          "assertions": [
+            "JSON numeric epoch is not a canonical model u64 string"
+          ],
+          "id": "W-RETENTION-JSON-NUMBER"
+        },
+        {
+          "assertions": [
+            "leading-zero epoch encoding fails closed"
+          ],
+          "id": "W-RETENTION-LEADING-ZERO"
+        },
+        {
+          "assertions": [
+            "value above u64 maximum fails closed"
+          ],
+          "id": "W-RETENTION-U64-OVERFLOW"
+        },
+        {
+          "assertions": [
+            "exact duplicate emits no second plaintext"
+          ],
+          "id": "W-SSD-05-X-REPLAY-SUPPRESSED"
+        }
+      ]
     },
     {
-      "assertion": "third candidate is unsupported",
-      "expected": "UNSUPPORTED_PROFILE_INPUT",
-      "id": "SSD-06-H-THIRD-CANDIDATE",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "convergence",
-        "candidates": [
-          {
-            "account": "1111111111111111111111111111111111111111111111111111111111111111",
-            "app_witness_score": 0,
-            "authenticated": true,
-            "depth": 1,
-            "parent": "parent-a",
-            "proposal_free": true,
-            "tip_priority": "ordinary"
-          },
-          {
-            "account": "2222222222222222222222222222222222222222222222222222222222222222",
-            "app_witness_score": 0,
-            "authenticated": true,
-            "depth": 1,
-            "parent": "parent-a",
-            "proposal_free": true,
-            "tip_priority": "ordinary"
-          },
-          {
-            "account": "3333333333333333333333333333333333333333333333333333333333333333",
-            "app_witness_score": 0,
-            "authenticated": true,
-            "depth": 1,
-            "parent": "parent-a",
-            "proposal_free": true,
-            "tip_priority": "ordinary"
-          }
-        ]
-      },
-      "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-06"
-    },
-    {
-      "assertion": "lower authenticated account wins",
-      "expected": "DEFERRED_CANDIDATE",
-      "id": "SSD-06-P-LOWER-COMMITTER",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "convergence",
-        "candidates": [
-          {
-            "account": "2222222222222222222222222222222222222222222222222222222222222222",
-            "app_witness_score": 0,
-            "authenticated": true,
-            "depth": 1,
-            "parent": "parent-a",
-            "proposal_free": true,
-            "tip_priority": "ordinary"
-          },
-          {
-            "account": "1111111111111111111111111111111111111111111111111111111111111111",
-            "app_witness_score": 0,
-            "authenticated": true,
-            "depth": 1,
-            "parent": "parent-a",
-            "proposal_free": true,
-            "tip_priority": "ordinary"
-          }
-        ]
-      },
+      "id": "ATOM-SSD-05-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "SSD-06"
+      "owner": "SSD-05",
+      "source_id": "SSD-05",
+      "witnesses": [
+        {
+          "assertions": [
+            "distance five accepted"
+          ],
+          "id": "W-OB-SS04-P-DISTANCE-FIVE-OB"
+        },
+        {
+          "assertions": [
+            "complete u64 evidence input does not inherit JavaScript safe-integer range"
+          ],
+          "id": "W-RETENTION-ABOVE-SAFE-DISTANCE-FIVE"
+        },
+        {
+          "assertions": [
+            "distance one remains accepted"
+          ],
+          "id": "W-RETENTION-DISTANCE-ONE"
+        },
+        {
+          "assertions": [
+            "distance zero remains accepted"
+          ],
+          "id": "W-RETENTION-DISTANCE-ZERO"
+        },
+        {
+          "assertions": [
+            "maximum safe JSON integer encoded as canonical u64 string remains accepted"
+          ],
+          "id": "W-RETENTION-SAFE-MAX-DISTANCE-FIVE"
+        },
+        {
+          "assertions": [
+            "maximum u64 with distance five remains accepted"
+          ],
+          "id": "W-RETENTION-U64-MAX-DISTANCE-FIVE"
+        },
+        {
+          "assertions": [
+            "first delivery emits once"
+          ],
+          "id": "W-SSD-05-X-REPLAY-FIRST"
+        }
+      ]
     },
     {
-      "assertion": "application witness cannot select branch",
-      "expected": "UNSUPPORTED_PROFILE_INPUT",
-      "id": "SSD-06-S-APPLICATION-SELECTOR",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "convergence",
-        "candidates": [
-          {
-            "account": "1111111111111111111111111111111111111111111111111111111111111111",
-            "app_witness_score": 1,
-            "authenticated": true,
-            "depth": 1,
-            "parent": "parent-a",
-            "proposal_free": true,
-            "tip_priority": "ordinary"
-          },
-          {
-            "account": "2222222222222222222222222222222222222222222222222222222222222222",
-            "app_witness_score": 0,
-            "authenticated": true,
-            "depth": 1,
-            "parent": "parent-a",
-            "proposal_free": true,
-            "tip_priority": "ordinary"
-          }
-        ]
-      },
+      "id": "ATOM-SSD-06-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "SSD-06"
+      "owner": "SSD-06",
+      "source_id": "SSD-06",
+      "witnesses": [
+        {
+          "assertions": [
+            "application witness cannot select branch"
+          ],
+          "id": "W-OB-SS05-S-APPLICATION-SELECTOR-OB"
+        }
+      ]
     },
     {
-      "assertion": "LastResort unsupported",
-      "expected": "UNSUPPORTED_PROFILE_INPUT",
-      "id": "SSD-07-H-LAST-RESORT",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "welcome",
-        "framed": true,
-        "embedded_tree": true,
-        "profile_bound": true,
-        "member_bound": true,
-        "last_resort": true,
-        "consumed": false,
-        "asserted_rollback": false
-      },
+      "id": "ATOM-SSD-06-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-07"
+      "owner": "SSD-06",
+      "source_id": "SSD-06",
+      "witnesses": [
+        {
+          "assertions": [
+            "third candidate is unsupported"
+          ],
+          "id": "W-OB-SS05-H-THIRD-CANDIDATE-OB"
+        }
+      ]
     },
     {
-      "assertion": "bounded Welcome accepted once",
-      "expected": "WELCOME_ACCEPTED",
-      "id": "SSD-07-P-BOUND-WELCOME",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "welcome",
-        "framed": true,
-        "embedded_tree": true,
-        "profile_bound": true,
-        "member_bound": true,
-        "last_resort": false,
-        "consumed": false,
-        "asserted_rollback": false
-      },
+      "id": "ATOM-SSD-06-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "SSD-07"
+      "owner": "SSD-06",
+      "source_id": "SSD-06",
+      "witnesses": [
+        {
+          "assertions": [
+            "candidate input ordering cannot promote the losing candidate"
+          ],
+          "id": "W-CONVERGENCE-INPUT-REORDER"
+        },
+        {
+          "assertions": [
+            "lower authenticated account wins"
+          ],
+          "id": "W-OB-SS05-P-LOWER-COMMITTER-OB"
+        }
+      ]
     },
     {
-      "assertion": "asserted rollback cannot re-enable consumption",
-      "expected": "REPLAY_REJECTED",
-      "id": "SSD-07-S-ROLLBACK-REENABLE",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "welcome",
-        "framed": true,
-        "embedded_tree": true,
-        "profile_bound": true,
-        "member_bound": true,
-        "last_resort": false,
-        "consumed": true,
-        "asserted_rollback": true
-      },
+      "id": "ATOM-SSD-07-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "SSD-07"
+      "owner": "SSD-07",
+      "source_id": "SSD-07",
+      "witnesses": [
+        {
+          "assertions": [
+            "asserted rollback cannot re-enable consumption"
+          ],
+          "id": "W-OB-SS06-S-ROLLBACK-REENABLE-OB"
+        }
+      ]
     },
     {
-      "assertion": "Welcome profile mismatch is rejected",
-      "expected": "INVALID_SESSION_INPUT",
-      "id": "SSD-07-X-A-WELCOME-PROFILE-MISMATCH",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "welcome",
-        "framed": true,
-        "embedded_tree": true,
-        "profile_bound": false,
-        "member_bound": true,
-        "last_resort": false,
-        "consumed": false,
-        "asserted_rollback": false
-      },
+      "id": "ATOM-SSD-07-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-07"
+      "owner": "SSD-07",
+      "source_id": "SSD-07",
+      "witnesses": [
+        {
+          "assertions": [
+            "LastResort unsupported"
+          ],
+          "id": "W-OB-SS06-H-LAST-RESORT-OB"
+        },
+        {
+          "assertions": [
+            "unframed Welcome is rejected"
+          ],
+          "id": "W-OB-SS06-H-UNFRAMED-OB"
+        },
+        {
+          "assertions": [
+            "Welcome profile mismatch is rejected"
+          ],
+          "id": "W-SSD-07-X-A-WELCOME-PROFILE-MISMATCH"
+        },
+        {
+          "assertions": [
+            "Welcome member mismatch is rejected"
+          ],
+          "id": "W-SSD-07-X-B-WELCOME-MEMBER-MISMATCH"
+        },
+        {
+          "assertions": [
+            "asserted rollback alone cannot revive consumed capability"
+          ],
+          "id": "W-SSD-07-X-C-ASSERTED-ROLLBACK"
+        }
+      ]
     },
     {
-      "assertion": "Welcome member mismatch is rejected",
-      "expected": "INVALID_SESSION_INPUT",
-      "id": "SSD-07-X-B-WELCOME-MEMBER-MISMATCH",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "welcome",
-        "framed": true,
-        "embedded_tree": true,
-        "profile_bound": true,
-        "member_bound": false,
-        "last_resort": false,
-        "consumed": false,
-        "asserted_rollback": false
-      },
-      "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-07"
-    },
-    {
-      "assertion": "asserted rollback alone cannot revive consumed capability",
-      "expected": "REPLAY_REJECTED",
-      "id": "SSD-07-X-C-ASSERTED-ROLLBACK",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "welcome",
-        "framed": true,
-        "embedded_tree": true,
-        "profile_bound": true,
-        "member_bound": true,
-        "last_resort": false,
-        "consumed": false,
-        "asserted_rollback": true
-      },
-      "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-07"
-    },
-    {
-      "assertion": "logical secret unavailable beyond depth",
-      "expected": "EPOCH_OUT_OF_RANGE",
-      "id": "SSD-08-H-BEYOND-LOGICAL-DEPTH",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "retention",
-        "current_epoch": 7,
-        "message_epoch": 1
-      },
-      "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-08"
-    },
-    {
-      "assertion": "only logical retained evidence claimed",
-      "expected": "ACCEPTED_EVIDENCE",
-      "id": "SSD-08-P-LOGICAL-AVAILABILITY",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "retention",
-        "current_epoch": 5,
-        "message_epoch": 1
-      },
+      "id": "ATOM-SSD-07-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "SSD-08"
+      "owner": "SSD-07",
+      "source_id": "SSD-07",
+      "witnesses": [
+        {
+          "assertions": [
+            "bounded Welcome accepted once"
+          ],
+          "id": "W-OB-SS06-P-BOUND-WELCOME-OB"
+        }
+      ]
     },
     {
-      "assertion": "logical depth cannot prove physical erasure",
-      "expected": "NOT_CLAIMED_IN_PROFILE",
-      "id": "SSD-08-S-PHYSICAL-ERASURE",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "physical_erasure"
-      },
+      "id": "ATOM-SSD-08-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "SSD-08"
+      "owner": "SSD-08",
+      "source_id": "SSD-08",
+      "witnesses": [
+        {
+          "assertions": [
+            "logical depth cannot prove physical erasure"
+          ],
+          "id": "W-OB-SS07-S-PHYSICAL-ERASURE-OB"
+        }
+      ]
     },
     {
-      "assertion": "restored state is not trusted",
-      "expected": "UNVALIDATED_RESTORED_STATE",
-      "id": "SSD-09-H-RESTORED-UNVALIDATED",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "restored_state"
-      },
+      "id": "ATOM-SSD-08-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-09"
+      "owner": "SSD-08",
+      "source_id": "SSD-08",
+      "witnesses": [
+        {
+          "assertions": [
+            "logical secret unavailable beyond depth"
+          ],
+          "id": "W-OB-SS07-H-BEYOND-LOGICAL-DEPTH-OB"
+        }
+      ]
     },
     {
-      "assertion": "abstract committed result permits logical apply",
-      "expected": "COMMITTED_MUTATION",
-      "id": "SSD-09-P-ATOMIC-LOGICAL-COMMIT",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "mutation",
-        "scenario_variant": "atomic-logical-commit",
-        "authoritative": true,
-        "staged": true,
-        "rs_result": "COMMITTED"
-      },
+      "id": "ATOM-SSD-08-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "SSD-09"
+      "owner": "SSD-08",
+      "source_id": "SSD-08",
+      "witnesses": [
+        {
+          "assertions": [
+            "only logical retained evidence claimed"
+          ],
+          "id": "W-OB-SS07-P-LOGICAL-AVAILABILITY-OB"
+        }
+      ]
     },
     {
-      "assertion": "indeterminate cannot substitute for commit",
-      "expected": "RS_RESULT_REQUIRED",
-      "id": "SSD-09-S-INDETERMINATE-AS-COMMIT",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "mutation",
-        "scenario_variant": "indeterminate-cannot-commit",
-        "authoritative": true,
-        "staged": true,
-        "rs_result": "INDETERMINATE"
-      },
+      "id": "ATOM-SSD-09-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "SSD-09"
+      "owner": "SSD-09",
+      "source_id": "SSD-09",
+      "witnesses": [
+        {
+          "assertions": [
+            "indeterminate cannot substitute for commit"
+          ],
+          "id": "W-OB-SS02-H-INDETERMINATE-OB"
+        }
+      ]
     },
     {
-      "assertion": "secret-bearing diagnostic unsupported",
-      "expected": "NOT_CLAIMED_IN_PROFILE",
-      "id": "SSD-10-H-SECRET-DIAGNOSTIC",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "diagnostic_secret"
-      },
+      "id": "ATOM-SSD-09-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-10"
+      "owner": "SSD-09",
+      "source_id": "SSD-09",
+      "witnesses": [
+        {
+          "assertions": [
+            "restored state is not trusted"
+          ],
+          "id": "W-OB-SS08-H-RESTORED-UNVALIDATED-OB"
+        }
+      ]
     },
     {
-      "assertion": "model-local disposition remains a non-claim",
-      "expected": "NOT_CLAIMED_IN_PROFILE",
-      "id": "SSD-10-P-CLOSED-DISPOSITION",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "wire_format"
-      },
+      "id": "ATOM-SSD-09-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "SSD-10"
+      "owner": "SSD-09",
+      "source_id": "SSD-09",
+      "witnesses": [
+        {
+          "assertions": [
+            "abstract committed result permits logical apply"
+          ],
+          "id": "W-OB-SS02-P-COMMITTED-STAGED-OB"
+        }
+      ]
     },
     {
-      "assertion": "model output cannot become stable O-10 code",
-      "expected": "UNSUPPORTED_PROFILE_INPUT",
-      "id": "SSD-10-S-STABLE-ERROR-CLAIM",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "unknown_error_code"
-      },
+      "id": "ATOM-SSD-10-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "SSD-10"
-    },
-    {
-      "assertion": "missing profile invalidates",
-      "expected": "DRIFT_INVALIDATED",
-      "id": "SSD-11-H-MISSING-PROFILE",
-      "input": {
-        "profile": null,
-        "operation": "receive",
-        "member_count": 2,
-        "authenticated": true,
-        "opaque_application_bytes": true
-      },
-      "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-11"
-    },
-    {
-      "assertion": "exact anchored profile accepted",
-      "expected": "ACCEPTED_EVIDENCE",
-      "id": "SSD-11-P-ANCHORED-PROFILE",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
+      "owner": "SSD-10",
+      "source_id": "SSD-10",
+      "witnesses": [
+        {
+          "assertions": [
+            "model output cannot become stable O-10 code"
           ],
-          "retained_past_epochs": 5
-        },
-        "operation": "profile",
-        "scenario_variant": "anchored-profile"
-      },
+          "id": "W-SSD-10-S-STABLE-ERROR-CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "ATOM-SSD-10-HOSTILE_BOUNDARY",
+      "kind": "HOSTILE_BOUNDARY",
+      "owner": "SSD-10",
+      "source_id": "SSD-10",
+      "witnesses": [
+        {
+          "assertions": [
+            "secret-bearing diagnostic unsupported"
+          ],
+          "id": "W-SSD-10-H-SECRET-DIAGNOSTIC"
+        }
+      ]
+    },
+    {
+      "id": "ATOM-SSD-10-POSITIVE",
       "kind": "POSITIVE",
-      "owner": "SSD-11"
+      "owner": "SSD-10",
+      "source_id": "SSD-10",
+      "witnesses": [
+        {
+          "assertions": [
+            "model-local disposition remains a non-claim"
+          ],
+          "id": "W-SSD-10-P-CLOSED-DISPOSITION"
+        }
+      ]
     },
     {
-      "assertion": "evidence provenance cannot imply product recovery",
-      "expected": "NOT_CLAIMED_IN_PROFILE",
-      "id": "SSD-11-S-PRODUCT-INFERENCE",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_B32A"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "recovery"
-      },
+      "id": "ATOM-SSD-11-FORBIDDEN_SUBSTITUTION",
       "kind": "FORBIDDEN_SUBSTITUTION",
-      "owner": "SSD-11"
+      "owner": "SSD-11",
+      "source_id": "SSD-11",
+      "witnesses": [
+        {
+          "assertions": [
+            "evidence provenance cannot imply product recovery"
+          ],
+          "id": "W-OB-SS09-S-PRODUCT-INFERENCE-OB"
+        }
+      ]
     },
     {
-      "assertion": "member-profile drift invalidates receive evidence",
-      "expected": "DRIFT_INVALIDATED",
-      "id": "SSD-11-X-MEMBER-PROFILE-DRIFT",
-      "input": {
-        "profile": {
-          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
-          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
-          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
-          "ciphersuite": "0x0001",
-          "ciphersuite_registry": "IANA_MLS",
-          "members": [
-            "MDK_PIN_9396ADB",
-            "STYX_OTHER"
-          ],
-          "retained_past_epochs": 5
-        },
-        "operation": "receive",
-        "member_count": 2,
-        "authenticated": true,
-        "opaque_application_bytes": true
-      },
+      "id": "ATOM-SSD-11-HOSTILE_BOUNDARY",
       "kind": "HOSTILE_BOUNDARY",
-      "owner": "SSD-11"
+      "owner": "SSD-11",
+      "source_id": "SSD-11",
+      "witnesses": [
+        {
+          "assertions": [
+            "missing profile invalidates"
+          ],
+          "id": "W-OB-SS09-H-MISSING-PROFILE-OB"
+        },
+        {
+          "assertions": [
+            "member-profile drift invalidates receive evidence"
+          ],
+          "id": "W-SSD-11-X-MEMBER-PROFILE-DRIFT"
+        }
+      ]
+    },
+    {
+      "id": "ATOM-SSD-11-POSITIVE",
+      "kind": "POSITIVE",
+      "owner": "SSD-11",
+      "source_id": "SSD-11",
+      "witnesses": [
+        {
+          "assertions": [
+            "exact anchored profile accepted"
+          ],
+          "id": "W-OB-SS09-P-ANCHORED-PROFILE-OB"
+        }
+      ]
     }
   ],
   "closed_dispositions": [
@@ -1817,5 +1066,1323 @@
     "SSD-10",
     "SSD-11"
   ],
-  "schema": "styx.ss0.inventory.v1"
+  "schema": "styx.ss0.inventory.v2",
+  "witnesses": [
+    {
+      "expected": {
+        "applied": true,
+        "disposition": "DEFERRED_CANDIDATE",
+        "emitted_plaintext": false,
+        "selected": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "id": "W-CONVERGENCE-INPUT-REORDER",
+      "input": {
+        "candidates": [
+          {
+            "account": "1111111111111111111111111111111111111111111111111111111111111111",
+            "app_witness_score": 0,
+            "authenticated": true,
+            "depth": 1,
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          },
+          {
+            "account": "2222222222222222222222222222222222222222222222222222222222222222",
+            "app_witness_score": 0,
+            "authenticated": true,
+            "depth": 1,
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          }
+        ],
+        "operation": "convergence",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "INVALID_SESSION_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS01-H-UNAUTHENTICATED-OB",
+      "input": {
+        "authenticated": false,
+        "member_count": 2,
+        "opaque_application_bytes": true,
+        "operation": "receive",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "AP_AUTHORITY_REQUIRED",
+        "emitted_plaintext": true
+      },
+      "id": "W-OB-SS01-P-AUTHENTICATED-BYTES-OB",
+      "input": {
+        "authenticated": true,
+        "member_count": 2,
+        "opaque_application_bytes": true,
+        "operation": "receive",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "INVALID_SESSION_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS01-S-MEMBERSHIP-AS-AUTHORITY-OB",
+      "input": {
+        "authenticated": true,
+        "member_count": 3,
+        "opaque_application_bytes": true,
+        "operation": "receive",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "RS_RESULT_REQUIRED",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS02-H-INDETERMINATE-OB",
+      "input": {
+        "authoritative": true,
+        "operation": "mutation",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        },
+        "rs_result": "INDETERMINATE",
+        "staged": true
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "INVALID_SESSION_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS02-H-NONAUTHORITATIVE-OB",
+      "input": {
+        "authoritative": false,
+        "operation": "mutation",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        },
+        "rs_result": "COMMITTED",
+        "staged": true
+      }
+    },
+    {
+      "expected": {
+        "applied": true,
+        "disposition": "COMMITTED_MUTATION",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS02-P-COMMITTED-STAGED-OB",
+      "input": {
+        "authoritative": true,
+        "operation": "mutation",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        },
+        "rs_result": "COMMITTED",
+        "staged": true
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "INVALID_SESSION_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS02-S-APPLY-WITHOUT-STAGE-OB",
+      "input": {
+        "authoritative": true,
+        "operation": "mutation",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        },
+        "rs_result": "COMMITTED",
+        "staged": false
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "UNSUPPORTED_PROFILE_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS03-H-INTERPRETED-PAYLOAD-OB",
+      "input": {
+        "authenticated": true,
+        "member_count": 2,
+        "opaque_application_bytes": false,
+        "operation": "receive",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "NOT_CLAIMED_IN_PROFILE",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS03-S-TRANSPORT-CLAIM-OB",
+      "input": {
+        "operation": "transport",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "EPOCH_OUT_OF_RANGE",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS04-H-DISTANCE-SIX-OB",
+      "input": {
+        "current_epoch": "12",
+        "message_epoch": "6",
+        "operation": "retention",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "ACCEPTED_EVIDENCE",
+        "emitted_plaintext": true
+      },
+      "id": "W-OB-SS04-P-DISTANCE-FIVE-OB",
+      "input": {
+        "current_epoch": "12",
+        "message_epoch": "7",
+        "operation": "retention",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "EPOCH_OUT_OF_RANGE",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS04-S-SESSION-EPOCH-AS-K-ORDER-OB",
+      "input": {
+        "current_epoch": "7",
+        "message_epoch": "8",
+        "operation": "retention",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "UNSUPPORTED_PROFILE_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS05-H-THIRD-CANDIDATE-OB",
+      "input": {
+        "candidates": [
+          {
+            "account": "1111111111111111111111111111111111111111111111111111111111111111",
+            "app_witness_score": 0,
+            "authenticated": true,
+            "depth": 1,
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          },
+          {
+            "account": "2222222222222222222222222222222222222222222222222222222222222222",
+            "app_witness_score": 0,
+            "authenticated": true,
+            "depth": 1,
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          },
+          {
+            "account": "3333333333333333333333333333333333333333333333333333333333333333",
+            "app_witness_score": 0,
+            "authenticated": true,
+            "depth": 1,
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          }
+        ],
+        "operation": "convergence",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": true,
+        "disposition": "DEFERRED_CANDIDATE",
+        "emitted_plaintext": false,
+        "selected": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "id": "W-OB-SS05-P-LOWER-COMMITTER-OB",
+      "input": {
+        "candidates": [
+          {
+            "account": "2222222222222222222222222222222222222222222222222222222222222222",
+            "app_witness_score": 0,
+            "authenticated": true,
+            "depth": 1,
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          },
+          {
+            "account": "1111111111111111111111111111111111111111111111111111111111111111",
+            "app_witness_score": 0,
+            "authenticated": true,
+            "depth": 1,
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          }
+        ],
+        "operation": "convergence",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "UNSUPPORTED_PROFILE_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS05-S-APPLICATION-SELECTOR-OB",
+      "input": {
+        "candidates": [
+          {
+            "account": "1111111111111111111111111111111111111111111111111111111111111111",
+            "app_witness_score": 1,
+            "authenticated": true,
+            "depth": 1,
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          },
+          {
+            "account": "2222222222222222222222222222222222222222222222222222222222222222",
+            "app_witness_score": 0,
+            "authenticated": true,
+            "depth": 1,
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          }
+        ],
+        "operation": "convergence",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "UNSUPPORTED_PROFILE_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS06-H-LAST-RESORT-OB",
+      "input": {
+        "asserted_rollback": false,
+        "consumed": false,
+        "embedded_tree": true,
+        "framed": true,
+        "last_resort": true,
+        "member_bound": true,
+        "operation": "welcome",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        },
+        "profile_bound": true
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "INVALID_SESSION_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS06-H-UNFRAMED-OB",
+      "input": {
+        "asserted_rollback": false,
+        "consumed": false,
+        "embedded_tree": true,
+        "framed": false,
+        "last_resort": false,
+        "member_bound": true,
+        "operation": "welcome",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        },
+        "profile_bound": true
+      }
+    },
+    {
+      "expected": {
+        "applied": true,
+        "disposition": "WELCOME_ACCEPTED",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS06-P-BOUND-WELCOME-OB",
+      "input": {
+        "asserted_rollback": false,
+        "consumed": false,
+        "embedded_tree": true,
+        "framed": true,
+        "last_resort": false,
+        "member_bound": true,
+        "operation": "welcome",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        },
+        "profile_bound": true
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "REPLAY_REJECTED",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS06-S-ROLLBACK-REENABLE-OB",
+      "input": {
+        "asserted_rollback": true,
+        "consumed": true,
+        "embedded_tree": true,
+        "framed": true,
+        "last_resort": false,
+        "member_bound": true,
+        "operation": "welcome",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        },
+        "profile_bound": true
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "EPOCH_OUT_OF_RANGE",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS07-H-BEYOND-LOGICAL-DEPTH-OB",
+      "input": {
+        "current_epoch": "7",
+        "message_epoch": "1",
+        "operation": "retention",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "ACCEPTED_EVIDENCE",
+        "emitted_plaintext": true
+      },
+      "id": "W-OB-SS07-P-LOGICAL-AVAILABILITY-OB",
+      "input": {
+        "current_epoch": "5",
+        "message_epoch": "1",
+        "operation": "retention",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "NOT_CLAIMED_IN_PROFILE",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS07-S-PHYSICAL-ERASURE-OB",
+      "input": {
+        "operation": "physical_erasure",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "UNVALIDATED_RESTORED_STATE",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS08-H-RESTORED-UNVALIDATED-OB",
+      "input": {
+        "operation": "restored_state",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "DRIFT_INVALIDATED",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS09-H-MISSING-PROFILE-OB",
+      "input": {
+        "authenticated": true,
+        "member_count": 2,
+        "opaque_application_bytes": true,
+        "operation": "receive",
+        "profile": null
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "ACCEPTED_EVIDENCE",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS09-P-ANCHORED-PROFILE-OB",
+      "input": {
+        "operation": "profile",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "NOT_CLAIMED_IN_PROFILE",
+        "emitted_plaintext": false
+      },
+      "id": "W-OB-SS09-S-PRODUCT-INFERENCE-OB",
+      "input": {
+        "operation": "recovery",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "DRIFT_INVALIDATED",
+        "emitted_plaintext": false
+      },
+      "id": "W-PROFILE-MISSING-KEY",
+      "input": {
+        "operation": "profile",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "DRIFT_INVALIDATED",
+        "emitted_plaintext": false
+      },
+      "id": "W-PROFILE-UNKNOWN-KEY",
+      "input": {
+        "operation": "profile",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5,
+          "unknown": "forbidden"
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "ACCEPTED_EVIDENCE",
+        "emitted_plaintext": true
+      },
+      "id": "W-RETENTION-ABOVE-SAFE-DISTANCE-FIVE",
+      "input": {
+        "current_epoch": "9007199254740992",
+        "message_epoch": "9007199254740987",
+        "operation": "retention",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "ACCEPTED_EVIDENCE",
+        "emitted_plaintext": true
+      },
+      "id": "W-RETENTION-DISTANCE-ONE",
+      "input": {
+        "current_epoch": "12",
+        "message_epoch": "11",
+        "operation": "retention",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "ACCEPTED_EVIDENCE",
+        "emitted_plaintext": true
+      },
+      "id": "W-RETENTION-DISTANCE-ZERO",
+      "input": {
+        "current_epoch": "12",
+        "message_epoch": "12",
+        "operation": "retention",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "EPOCH_OUT_OF_RANGE",
+        "emitted_plaintext": false
+      },
+      "id": "W-RETENTION-JSON-NUMBER",
+      "input": {
+        "current_epoch": 12,
+        "message_epoch": "12",
+        "operation": "retention",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "EPOCH_OUT_OF_RANGE",
+        "emitted_plaintext": false
+      },
+      "id": "W-RETENTION-LEADING-ZERO",
+      "input": {
+        "current_epoch": "012",
+        "message_epoch": "12",
+        "operation": "retention",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "ACCEPTED_EVIDENCE",
+        "emitted_plaintext": true
+      },
+      "id": "W-RETENTION-SAFE-MAX-DISTANCE-FIVE",
+      "input": {
+        "current_epoch": "9007199254740991",
+        "message_epoch": "9007199254740986",
+        "operation": "retention",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "ACCEPTED_EVIDENCE",
+        "emitted_plaintext": true
+      },
+      "id": "W-RETENTION-U64-MAX-DISTANCE-FIVE",
+      "input": {
+        "current_epoch": "18446744073709551615",
+        "message_epoch": "18446744073709551610",
+        "operation": "retention",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "EPOCH_OUT_OF_RANGE",
+        "emitted_plaintext": false
+      },
+      "id": "W-RETENTION-U64-OVERFLOW",
+      "input": {
+        "current_epoch": "18446744073709551616",
+        "message_epoch": "0",
+        "operation": "retention",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "DRIFT_INVALIDATED",
+        "emitted_plaintext": false
+      },
+      "id": "W-SSD-01-H-PIN-DRIFT",
+      "input": {
+        "operation": "profile",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "0000000000000000000000000000000000000000",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "DRIFT_INVALIDATED",
+        "emitted_plaintext": false
+      },
+      "id": "W-SSD-01-S-CIPHERSUITE-FALLBACK",
+      "input": {
+        "operation": "profile",
+        "profile": {
+          "ciphersuite": "0x0002",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "DRIFT_INVALIDATED",
+        "emitted_plaintext": false
+      },
+      "id": "W-SSD-01-X-REGISTRY-SUBSTITUTION",
+      "input": {
+        "operation": "profile",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "STYX_SIGNATURE",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "ACCEPTED_EVIDENCE",
+        "emitted_plaintext": true
+      },
+      "id": "W-SSD-05-X-REPLAY-FIRST",
+      "input": {
+        "already_emitted": false,
+        "message_identity": "message-a",
+        "operation": "replay",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "DUPLICATE_SUPPRESSED",
+        "emitted_plaintext": false
+      },
+      "id": "W-SSD-05-X-REPLAY-SUPPRESSED",
+      "input": {
+        "already_emitted": true,
+        "message_identity": "message-a",
+        "operation": "replay",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "INVALID_SESSION_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-SSD-07-X-A-WELCOME-PROFILE-MISMATCH",
+      "input": {
+        "asserted_rollback": false,
+        "consumed": false,
+        "embedded_tree": true,
+        "framed": true,
+        "last_resort": false,
+        "member_bound": true,
+        "operation": "welcome",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        },
+        "profile_bound": false
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "INVALID_SESSION_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-SSD-07-X-B-WELCOME-MEMBER-MISMATCH",
+      "input": {
+        "asserted_rollback": false,
+        "consumed": false,
+        "embedded_tree": true,
+        "framed": true,
+        "last_resort": false,
+        "member_bound": false,
+        "operation": "welcome",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        },
+        "profile_bound": true
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "REPLAY_REJECTED",
+        "emitted_plaintext": false
+      },
+      "id": "W-SSD-07-X-C-ASSERTED-ROLLBACK",
+      "input": {
+        "asserted_rollback": true,
+        "consumed": false,
+        "embedded_tree": true,
+        "framed": true,
+        "last_resort": false,
+        "member_bound": true,
+        "operation": "welcome",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        },
+        "profile_bound": true
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "NOT_CLAIMED_IN_PROFILE",
+        "emitted_plaintext": false
+      },
+      "id": "W-SSD-10-H-SECRET-DIAGNOSTIC",
+      "input": {
+        "operation": "diagnostic_secret",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "NOT_CLAIMED_IN_PROFILE",
+        "emitted_plaintext": false
+      },
+      "id": "W-SSD-10-P-CLOSED-DISPOSITION",
+      "input": {
+        "operation": "wire_format",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "UNSUPPORTED_PROFILE_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-SSD-10-S-STABLE-ERROR-CLAIM",
+      "input": {
+        "operation": "unknown_error_code",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "DRIFT_INVALIDATED",
+        "emitted_plaintext": false
+      },
+      "id": "W-SSD-11-X-MEMBER-PROFILE-DRIFT",
+      "input": {
+        "authenticated": true,
+        "member_count": 2,
+        "opaque_application_bytes": true,
+        "operation": "receive",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_OTHER"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    }
+  ]
 }

@@ -29,6 +29,13 @@ class MutationTests(unittest.TestCase):
             report = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual(33, report["killed"])
             self.assertTrue(all(row["killed"] is True for row in report["mutants"]))
+            signatures = [
+                row["behavioral_signature_sha256"] for row in report["mutants"]
+            ]
+            self.assertEqual(33, len(set(signatures)))
+            self.assertTrue(
+                all(row["affected_witness_count"] > 0 for row in report["mutants"])
+            )
 
 
 if __name__ == "__main__":

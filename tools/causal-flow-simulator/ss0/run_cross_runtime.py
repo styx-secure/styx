@@ -11,7 +11,48 @@ from pathlib import Path
 
 from canonical_report import store
 from inventory import load_unique, validate_anchor, validate_inventory
-from model import evaluate
+from model import PROFILE, evaluate
+
+
+def supplemental_inputs() -> list[tuple[str, dict[str, object]]]:
+    reordered_profile = {key: PROFILE[key] for key in reversed(PROFILE)}
+    boolean_numeric_candidate = {
+        "account": "1" * 64,
+        "app_witness_score": False,
+        "authenticated": True,
+        "depth": True,
+        "parent": "parent-a",
+        "proposal_free": True,
+        "tip_priority": "ordinary",
+    }
+    ordinary_candidate = {
+        **boolean_numeric_candidate,
+        "account": "2" * 64,
+        "app_witness_score": 0,
+        "depth": 1,
+    }
+    return [
+        (
+            "X-BOOLEAN-NUMERIC-CANDIDATE-FIELDS",
+            {
+                "candidates": [boolean_numeric_candidate, ordinary_candidate],
+                "operation": "convergence",
+                "profile": PROFILE,
+            },
+        ),
+        (
+            "X-REORDERED-PROFILE-KEYS",
+            {"operation": "profile", "profile": reordered_profile},
+        ),
+        (
+            "X-UNKNOWN-CANDIDATE-FIELD",
+            {
+                "operation": "profile",
+                "profile": PROFILE,
+                "scenario_variant": "forbidden-inert-discriminator",
+            },
+        ),
+    ]
 
 
 def main() -> int:
@@ -22,37 +63,41 @@ def main() -> int:
     arguments = parser.parse_args()
     root = arguments.root.resolve(strict=True)
     package = root / "tools/causal-flow-simulator/ss0"
-    cases = validate_inventory(load_unique(package / "source-inventory.json"))
+    inventory = validate_inventory(load_unique(package / "source-inventory.json"))
     validate_anchor(root, load_unique(package / "phase-b-anchor.json"))
-    inputs = [case["input"] for case in cases]
+    witnesses = inventory["witnesses"]
+    supplemental = supplemental_inputs()
+    input_rows = [(witness["id"], witness["input"]) for witness in witnesses]
+    input_rows.extend(supplemental)
+    inputs = [candidate for _, candidate in input_rows]
     completed = subprocess.run(
         [str(arguments.node.resolve(strict=True)), str(package / "node_adapter.mjs")],
-        input=json.dumps(inputs, sort_keys=True),
+        input=json.dumps(inputs),
         text=True,
         capture_output=True,
         check=False,
         cwd=root,
-        env={"PATH": "/usr/bin:/bin"},
+        env={"PATH": f"{arguments.node.resolve(strict=True).parent}:/usr/bin:/bin"},
     )
     if completed.returncode != 0:
         raise ValueError("JavaScript adapter failed")
     javascript = json.loads(completed.stdout)
     python = [evaluate(value) for value in inputs]
-    if javascript != python or len(javascript) != len(cases):
+    if javascript != python or len(javascript) != len(input_rows):
         raise ValueError("cross-runtime observation mismatch")
     version = subprocess.run(
         [str(arguments.node.resolve(strict=True)), "--version"],
         text=True,
         capture_output=True,
         check=True,
-        env={"PATH": "/usr/bin:/bin"},
+        env={"PATH": f"{arguments.node.resolve(strict=True).parent}:/usr/bin:/bin"},
     ).stdout.strip()
     match = re.fullmatch(r"v(\d+)\.(\d+)\.\d+", version)
     if match is None:
         raise ValueError("unsupported Node capability label")
     rows = [
-        {"disposition": value["disposition"], "id": case["id"]}
-        for case, value in zip(cases, python, strict=True)
+        {"id": identity, "observation": value}
+        for (identity, _), value in zip(input_rows, python, strict=True)
     ]
     store(
         {
@@ -60,7 +105,7 @@ def main() -> int:
             "observations": rows,
             "result": "PASS",
             "runtimes": ["javascript", "python"],
-            "schema": "styx.ss0.cross-runtime-report.v1",
+            "schema": "styx.ss0.cross-runtime-report.v2",
         },
         arguments.output,
     )

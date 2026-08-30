@@ -24,17 +24,28 @@ def main() -> int:
     package = root / "tools/causal-flow-simulator/ss0"
     inventory = load_unique(package / "source-inventory.json")
     anchor = load_unique(package / "phase-b-anchor.json")
-    cases = validate_inventory(inventory)
+    validated = validate_inventory(inventory)
     validate_anchor(root, anchor)
     projection_count = validate_public_reader_inputs(root)
     store(
         {
-            "case_count": len(cases),
+            "atom_count": len(validated["atoms"]),
             "decision_count": 11,
             "obligation_count": 9,
             "public_projection_count": projection_count,
+            "relation_count": len(validated["relations"]),
             "result": "PASS",
-            "schema": "styx.ss0.inventory-report.v1",
+            "schema": "styx.ss0.inventory-report.v2",
+            "shared_witness_count": sum(
+                1
+                for witness in validated["witnesses"]
+                if sum(
+                    row["witness"] == witness["id"]
+                    for row in validated["relations"]
+                )
+                > 1
+            ),
+            "witness_count": len(validated["witnesses"]),
         },
         arguments.output,
     )

@@ -24,13 +24,16 @@ class InventoryTests(unittest.TestCase):
         self.inventory = load_unique(PACKAGE / "source-inventory.json")
 
     def test_closed_inventory_and_anchor_pass(self) -> None:
-        self.assertEqual(67, len(validate_inventory(self.inventory)))
+        validated = validate_inventory(self.inventory)
+        self.assertEqual(60, len(validated["atoms"]))
+        self.assertEqual(49, len(validated["witnesses"]))
+        self.assertEqual(91, len(validated["relations"]))
         validate_anchor(ROOT, load_unique(PACKAGE / "phase-b-anchor.json"))
         self.assertEqual(5, validate_public_reader_inputs(ROOT))
 
-    def test_missing_case_fails_closed(self) -> None:
+    def test_missing_atom_fails_closed(self) -> None:
         mutated = copy.deepcopy(self.inventory)
-        mutated["cases"].pop()
+        mutated["atoms"].pop()
         with self.assertRaises(ValueError):
             validate_inventory(mutated)
 
@@ -42,15 +45,35 @@ class InventoryTests(unittest.TestCase):
 
     def test_oracle_in_adapter_input_fails_closed(self) -> None:
         mutated = copy.deepcopy(self.inventory)
-        mutated["cases"][0]["input"]["expected"] = "PASS"
+        mutated["witnesses"][0]["input"]["expected"] = "PASS"
         with self.assertRaises(ValueError):
             validate_inventory(mutated)
 
-    def test_reused_candidate_input_fails_closed(self) -> None:
+    def test_reused_executable_witness_input_fails_closed(self) -> None:
         mutated = copy.deepcopy(self.inventory)
-        mutated["cases"][1]["input"] = copy.deepcopy(mutated["cases"][0]["input"])
-        with self.assertRaisesRegex(ValueError, "distinct atoms"):
+        mutated["witnesses"][1]["input"] = copy.deepcopy(
+            mutated["witnesses"][0]["input"]
+        )
+        with self.assertRaisesRegex(ValueError, "duplicate executable witness"):
             validate_inventory(mutated)
+
+    def test_inert_scenario_variant_fails_closed(self) -> None:
+        mutated = copy.deepcopy(self.inventory)
+        mutated["witnesses"][0]["input"]["scenario_variant"] = "fake-uniqueness"
+        with self.assertRaisesRegex(ValueError, "field set|discriminator"):
+            validate_inventory(mutated)
+
+    def test_shared_witness_is_one_explicit_relation(self) -> None:
+        validated = validate_inventory(self.inventory)
+        witness_id = "W-OB-SS01-H-UNAUTHENTICATED-OB"
+        relations = [
+            row for row in validated["relations"] if row["witness"] == witness_id
+        ]
+        self.assertEqual(2, len(relations))
+        self.assertEqual(
+            {"ATOM-OB-SS01-HOSTILE_BOUNDARY", "ATOM-SSD-02-HOSTILE_BOUNDARY"},
+            {row["atom"] for row in relations},
+        )
 
     def test_public_derivation_drift_fails_closed(self) -> None:
         path = PACKAGE / "public-candidate-projections.json"
