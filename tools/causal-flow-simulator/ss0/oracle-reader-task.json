@@ -1,0 +1,22 @@
+{
+  "allowed_inputs": [
+    "oracle-reader-task.json",
+    "phase-b-anchor.json",
+    "public-candidate-projections.json"
+  ],
+  "forbidden_inputs": [
+    "canonical reports",
+    "Gate-A normative source",
+    "implementation source",
+    "mutant registry",
+    "prior reviews",
+    "scenario expected dispositions"
+  ],
+  "questions": [
+    "Does the public profile name exactly three dependency pins, one registry-qualified ciphersuite, two member profiles and retention depth five?",
+    "Does a current or retained-past-epoch public observation distinguish distance five from distance six?",
+    "Does the two-candidate public projection select the lower authenticated account identity without application-derived input?",
+    "Does any public projection claim adapter, product, transport, recovery, wire-format or persistence support?"
+  ],
+  "schema": "styx.ss0.oracle-reader-task.v1"
+}
