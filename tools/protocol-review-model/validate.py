@@ -68,6 +68,17 @@ EXPECTED_REGISTRIES = {
         "O-14",
         "O-15",
         "O-16",
+        "SSD-01",
+        "SSD-02",
+        "SSD-03",
+        "SSD-04",
+        "SSD-05",
+        "SSD-06",
+        "SSD-07",
+        "SSD-08",
+        "SSD-09",
+        "SSD-10",
+        "SSD-11",
     ],
     "gated_capabilities": [
         "corpus",
@@ -185,6 +196,10 @@ EXPECTED_SOURCE_RECORDS = {
         "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
         "normative",
     ),
+    "secure_session_decisions": (
+        "docs/protocol/styx-secure-session-v0-decisions.md",
+        "normative",
+    ),
     "signature_suite_analysis": (
         "docs/protocol/styx-app-kernel-v0-signature-suite-analysis.md",
         "evidence",
@@ -199,6 +214,38 @@ EXPECTED_SOURCE_RECORDS = {
         "normative",
     ),
 }
+
+APPLICATION_KERNEL_DECISIONS = tuple(
+    decision for decision in EXPECTED_REGISTRIES["decisions"] if decision.startswith("O-")
+)
+SECURE_SESSION_EVIDENCE_DECISIONS = tuple(
+    decision for decision in EXPECTED_REGISTRIES["decisions"] if decision.startswith("SSD-")
+)
+EXPECTED_MODELED_SCOPE = {
+    "application_kernel_decisions": list(APPLICATION_KERNEL_DECISIONS),
+    "implementation_claim": False,
+    "product_activation": False,
+    "secure_session_evidence_decisions": list(SECURE_SESSION_EVIDENCE_DECISIONS),
+    "secure_session_profile_kind": "BOUNDED_EVIDENCE_ONLY",
+    "supported_adapter": False,
+}
+EXPECTED_DECISION_SOURCES = {
+    **{decision: "decisions" for decision in APPLICATION_KERNEL_DECISIONS},
+    **{
+        decision: "secure_session_decisions"
+        for decision in SECURE_SESSION_EVIDENCE_DECISIONS
+    },
+}
+EXPECTED_SS_DECISION_REFS = ["O-09", "O-11", *SECURE_SESSION_EVIDENCE_DECISIONS]
+EXPECTED_SS_OBLIGATION_REFS = [f"OB-SS{index:02d}" for index in range(1, 10)]
+EXPECTED_SS_FORBIDDEN_INFERENCES = [
+    "Decryption proves AP authorization",
+    "Logical retention or absence proves physical custody or deletion",
+    "Membership proves business role",
+    "Model-local disposition is a stable O-10 outcome",
+    "Session epoch defines application order",
+    "Session success proves delivery, freshness or business truth",
+]
 
 REQUIRED_COUNTEREXAMPLES = {
     "CE_ALIAS_SURVIVAL",
@@ -706,7 +753,7 @@ SUPPORTED_SCHEMA_KEYWORDS = {
 
 SCHEMA_DRAFT = "https://json-schema.org/draft/2020-12/schema"
 EXPECTED_SCHEMA_SHA256 = (
-    "2a568ce900c8a9537e6f305893082efc5f3ad68daa214c5466235e2bf1099593"
+    "9975d7ad63bb00ff3351bcf7e740f315a5cbac3acf9b13ac36901e421b46f846"
 )
 
 PROTECTED_UNRESOLVED_FIELDS = {
@@ -1684,6 +1731,79 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
     for name, values in registries.items() if isinstance(registries, dict) else []:
         findings.extend(_require_sorted_unique_strings(values, f"$model.registries.{name}"))
 
+    modeled_scope = model.get("modeled_scope")
+    if modeled_scope != EXPECTED_MODELED_SCOPE:
+        findings.append(
+            Finding(
+                "PINNED_VALUE_DRIFT",
+                "$model.modeled_scope",
+                "closed application-kernel and secure-session modeled scope mismatch",
+            )
+        )
+    if isinstance(modeled_scope, dict):
+        for key in (
+            "application_kernel_decisions",
+            "secure_session_evidence_decisions",
+        ):
+            findings.extend(
+                _require_sorted_unique_strings(
+                    modeled_scope.get(key), f"$model.modeled_scope.{key}"
+                )
+            )
+
+    decision_sources = model.get("decision_sources", [])
+    seen_decision_sources: dict[str, str] = {}
+    if isinstance(decision_sources, list):
+        order: list[str] = []
+        for index, record in enumerate(decision_sources):
+            path = f"$model.decision_sources[{index}]"
+            if not isinstance(record, dict):
+                continue
+            decision_id = record.get("decision_id")
+            source_id = record.get("source_id")
+            if not isinstance(decision_id, str) or not isinstance(source_id, str):
+                continue
+            order.append(decision_id)
+            if decision_id in seen_decision_sources:
+                findings.append(
+                    Finding("DUPLICATE_ID", f"{path}.decision_id", decision_id)
+                )
+            else:
+                seen_decision_sources[decision_id] = source_id
+            expected_source = EXPECTED_DECISION_SOURCES.get(decision_id)
+            if expected_source is None:
+                findings.append(
+                    Finding(
+                        "UNKNOWN_REGISTRY_VALUE",
+                        f"{path}.decision_id",
+                        decision_id,
+                    )
+                )
+            elif source_id != expected_source:
+                findings.append(
+                    Finding(
+                        "PINNED_VALUE_DRIFT",
+                        f"{path}.source_id",
+                        f"{decision_id} must be attributed to {expected_source}",
+                    )
+                )
+        if order != sorted(order):
+            findings.append(
+                Finding(
+                    "NONDETERMINISTIC_ORDER",
+                    "$model.decision_sources",
+                    "decision-source records must be sorted by decision_id",
+                )
+            )
+        if seen_decision_sources != EXPECTED_DECISION_SOURCES:
+            findings.append(
+                Finding(
+                    "REQUIRED_RECORD_MISSING",
+                    "$model.decision_sources",
+                    "decision-source attribution must cover the closed decision registry exactly",
+                )
+            )
+
     id_sets: dict[str, set[str]] = {}
     for name in SORTED_RECORD_ARRAYS:
         records = model.get(name, [])
@@ -1813,6 +1933,7 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
     findings.extend(_validate_citations(model, source_bytes, source_authority))
 
     actors = _record_map(model, "actors")
+    layer_records = _record_map(model, "layers")
     objects = _record_map(model, "objects")
     outcomes = _record_map(model, "outcomes")
     blockers = _record_map(model, "blockers")
@@ -1822,6 +1943,56 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
     statuses = set(EXPECTED_REGISTRIES["statuses"])
     decisions = set(EXPECTED_REGISTRIES["decisions"])
     obligations = set(EXPECTED_REGISTRIES["obligations"])
+
+    ss_actor = actors.get("secure_session_adapter", {})
+    ss_layer = layer_records.get("SS", {})
+    for path, record in (
+        ("$model.actors.secure_session_adapter", ss_actor),
+        ("$model.layers.SS", ss_layer),
+    ):
+        if record.get("decision_refs") != EXPECTED_SS_DECISION_REFS:
+            findings.append(
+                Finding(
+                    "PINNED_VALUE_DRIFT",
+                    f"{path}.decision_refs",
+                    "SS boundary must reference the closed SS-0 decision set",
+                )
+            )
+        if record.get("obligation_refs") != EXPECTED_SS_OBLIGATION_REFS:
+            findings.append(
+                Finding(
+                    "PINNED_VALUE_DRIFT",
+                    f"{path}.obligation_refs",
+                    "SS boundary must reference all nine closed SS obligations",
+                )
+            )
+    if ss_layer.get("forbidden_inferences") != EXPECTED_SS_FORBIDDEN_INFERENCES:
+        findings.append(
+            Finding(
+                "PINNED_VALUE_DRIFT",
+                "$model.layers.SS.forbidden_inferences",
+                "SS forbidden-inference boundary mismatch",
+            )
+        )
+
+    for decision_id, source_id in seen_decision_sources.items():
+        source = sources.get(source_id)
+        if source is None:
+            findings.append(
+                Finding(
+                    "DANGLING_REFERENCE",
+                    "$model.decision_sources",
+                    f"{decision_id} references missing source {source_id}",
+                )
+            )
+        elif source.get("authority") != "normative":
+            findings.append(
+                Finding(
+                    "MISSING_NORMATIVE_CITATION",
+                    "$model.decision_sources",
+                    f"{decision_id} is attributed to non-normative source {source_id}",
+                )
+            )
 
     for collection in (
         "blockers",

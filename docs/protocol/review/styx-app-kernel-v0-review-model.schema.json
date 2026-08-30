@@ -228,6 +228,22 @@
       ],
       "type": "object"
     },
+    "decisionSource": {
+      "additionalProperties": false,
+      "properties": {
+        "decision_id": {
+          "$ref": "#/$defs/id"
+        },
+        "source_id": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "required": [
+        "decision_id",
+        "source_id"
+      ],
+      "type": "object"
+    },
     "field": {
       "additionalProperties": false,
       "properties": {
@@ -471,6 +487,38 @@
         "decision_refs",
         "obligation_refs",
         "citations"
+      ],
+      "type": "object"
+    },
+    "modeledScope": {
+      "additionalProperties": false,
+      "properties": {
+        "application_kernel_decisions": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "implementation_claim": {
+          "const": false
+        },
+        "product_activation": {
+          "const": false
+        },
+        "secure_session_evidence_decisions": {
+          "$ref": "#/$defs/nonEmptyStrings"
+        },
+        "secure_session_profile_kind": {
+          "const": "BOUNDED_EVIDENCE_ONLY"
+        },
+        "supported_adapter": {
+          "const": false
+        }
+      },
+      "required": [
+        "application_kernel_decisions",
+        "secure_session_evidence_decisions",
+        "secure_session_profile_kind",
+        "supported_adapter",
+        "implementation_claim",
+        "product_activation"
       ],
       "type": "object"
     },
@@ -897,6 +945,13 @@
       "minItems": 1,
       "type": "array"
     },
+    "decision_sources": {
+      "items": {
+        "$ref": "#/$defs/decisionSource"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
     "flows": {
       "items": {
         "$ref": "#/$defs/flow"
@@ -917,6 +972,9 @@
       },
       "minItems": 6,
       "type": "array"
+    },
+    "modeled_scope": {
+      "$ref": "#/$defs/modeledScope"
     },
     "non_claims": {
       "items": {
@@ -984,7 +1042,9 @@
     "outcomes",
     "invariants",
     "counterexamples",
+    "decision_sources",
     "blockers",
+    "modeled_scope",
     "non_claims",
     "residual_risks",
     "review_queries"
