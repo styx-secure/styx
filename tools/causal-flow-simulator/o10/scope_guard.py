@@ -41,6 +41,12 @@ EXPECTED_C03_SYNC_VALIDATE_DOMAIN_SHA256 = (
 EXPECTED_C03_CORPUS_COMPLETE_SHA256 = (
     "ca4536bda7f0ff3a86fa5e0ae2e171600252d29bd1e7ccd5a1e259f5880a35c7"
 )
+EXPECTED_SS0_SYNC_COMPLETE_SHA256 = (
+    "e79caecde38c457ed79036d339c67b7aa7a394e37708ba76f0aa715ce0092f3b"
+)
+EXPECTED_SS0_SYNC_VALIDATE_DOMAIN_SHA256 = (
+    "f31ebaa85d6a5247772a38ee7fbb1ea3addcf4bae55ec6db86259e31913786c5"
+)
 EXPECTED_C03_GATE_CACHE_KEY_SHA256 = (
     "c19afe3b84d2ee8a5138fdfe03dfe494783cf51f05c3f03a5a388df62cfea2cb"
 )
@@ -242,7 +248,9 @@ def expected_c03_sync_validator_source(
     return historical, expected
 
 
-def validate_validator_delta(before_source: str, actual_source: str) -> dict[str, str]:
+def validate_c03_corpus_validator_delta(
+    before_source: str, actual_source: str
+) -> dict[str, str]:
     """Validate the exact current validator while preserving frozen O-10 proof."""
 
     historical, synchronized = expected_c03_sync_validator_source(
@@ -310,6 +318,52 @@ def validate_validator_delta(before_source: str, actual_source: str) -> dict[str
         "complete_source_sha256": actual_digest,
         "function_sha256": hashlib.sha256(
             _function_segment(actual_source, "validate_o10_outcome_taxonomy").encode("utf-8")
+        ).hexdigest(),
+        "main_sha256": hashlib.sha256(
+            _function_segment(actual_source, "main").encode("utf-8")
+        ).hexdigest(),
+    }
+
+
+def validate_validator_delta(before_source: str, actual_source: str) -> dict[str, str]:
+    """Validate the exact SS-0 extension while preserving frozen O-10 functions."""
+
+    # Re-derive the historical pre-corpus relation from the same Base. This is
+    # independent of the SS-0 full-file pin and keeps every pre-existing O-10
+    # function digest live in the current guard.
+    expected_validator_source(before_source, actual_source)
+
+    actual_digest = hashlib.sha256(actual_source.encode("utf-8")).hexdigest()
+    if actual_digest != EXPECTED_SS0_SYNC_COMPLETE_SHA256:
+        raise ScopeError("actual validator bytes differ from ratified SS-0 bytes")
+
+    expected_functions = {
+        "_c03_gate_cache_key": EXPECTED_C03_GATE_CACHE_KEY_SHA256,
+        "_validate_c03_corpus_gate": EXPECTED_C03_GATE_SHA256,
+        "_validate_output_boundary": EXPECTED_C03_OUTPUT_BOUNDARY_SHA256,
+        "validate": EXPECTED_C03_VALIDATE_SHA256,
+        "validate_domain": EXPECTED_SS0_SYNC_VALIDATE_DOMAIN_SHA256,
+        "validate_o10_outcome_taxonomy": EXPECTED_FUNCTION_SHA256,
+    }
+    for name, expected_digest in expected_functions.items():
+        actual_function_digest = hashlib.sha256(
+            _function_segment(actual_source, name).encode("utf-8")
+        ).hexdigest()
+        if actual_function_digest != expected_digest:
+            raise ScopeError(f"SS-0 validator function drift: {name}")
+    if (
+        hashlib.sha256(
+            _function_segment(actual_source, "main").encode("utf-8")
+        ).hexdigest()
+        != EXPECTED_MAIN_SHA256
+    ):
+        raise ScopeError("SS-0 validator main function drift")
+    return {
+        "complete_source_sha256": actual_digest,
+        "function_sha256": hashlib.sha256(
+            _function_segment(
+                actual_source, "validate_o10_outcome_taxonomy"
+            ).encode("utf-8")
         ).hexdigest(),
         "main_sha256": hashlib.sha256(
             _function_segment(actual_source, "main").encode("utf-8")

@@ -205,7 +205,16 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
         self.assertEqual([], validator.validate(self.model, self.schema, REPO_ROOT))
 
     def test_rebased_o10_guard_accepts_the_exact_validator(self) -> None:
-        hashes = validate_validator_delta(self.base_validator, self.actual_validator)
+        validate_c03_corpus_validator_delta = validate_validator_delta.__globals__[
+            "validate_c03_corpus_validator_delta"
+        ]
+        c03_corpus_validator = _git_show(
+            "bd13fac2df51e8585db6487fff7217fb68fb6242",
+            "tools/protocol-review-model/validate.py",
+        ).decode("utf-8")
+        hashes = validate_c03_corpus_validator_delta(
+            self.base_validator, c03_corpus_validator
+        )
         self.assertEqual(
             "ca4536bda7f0ff3a86fa5e0ae2e171600252d29bd1e7ccd5a1e259f5880a35c7",
             hashes["complete_source_sha256"],
