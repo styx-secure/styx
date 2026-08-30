@@ -8,7 +8,6 @@ change this verifier after the human Gate-A binding.
 
 from __future__ import annotations
 
-import os as _bootstrap_os
 import sys as _bootstrap_sys
 
 
@@ -16,8 +15,15 @@ if not (
     _bootstrap_sys.flags.isolated
     and _bootstrap_sys.flags.no_site
     and _bootstrap_sys.flags.dont_write_bytecode
+    and getattr(_bootstrap_sys.flags, "safe_path", 0)
 ):
-    raise RuntimeError("Gate-A verifier requires Python isolated mode (-I -S -B)")
+    raise RuntimeError(
+        "Gate-A verifier requires Python isolated mode (-I -S -B) "
+        "with safe-path support"
+    )
+
+
+import os as _bootstrap_os  # noqa: E402 - only after the isolation gate
 
 
 _BOOTSTRAP_BASE = _bootstrap_os.path.realpath(_bootstrap_sys.base_prefix)
@@ -387,7 +393,8 @@ def self_test() -> None:
     require(
         sys.flags.isolated == 1
         and sys.flags.no_site == 1
-        and sys.flags.dont_write_bytecode == 1,
+        and sys.flags.dont_write_bytecode == 1
+        and sys.flags.safe_path == 1,
         "required Python isolation flags are not active",
     )
     require(Path(sys.executable).is_absolute(), "Python executable is not absolute")

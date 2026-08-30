@@ -496,7 +496,7 @@ substitutions explicit and falsifiable before adapter work:
 | `SSD-11` | A12; evidence provenance and scope | repository evidence → SS report eligibility | Missing identity, drift, unsupported topology or unrepresented operation invalidates the report rather than shrinking the claim. |
 | `SSD-04`, `SSD-09` | A13; fail-closed availability under suppressed or exhausted evidence | SS → RS → SS | Missing or indeterminate RS evidence halts without advancing authoritative state, automatic retry or alternate authority; the resulting indefinite unavailability is an accepted residual cost. |
 
-The A4/A10 availability cost is intentional: fail-closed mutation can leave a
+The A13 availability cost is intentional: fail-closed mutation can leave a
 session unavailable indefinitely when RS evidence is missing or indeterminate.
 SS-0 does not invent retry, recovery, rollback detection or alternate authority
 to conceal that cost. Gate A freezes the normative boundary; Gate B is still

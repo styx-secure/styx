@@ -116,8 +116,10 @@ dispositions are review evidence, not stable O-10 codes.
   distances zero, one, five and six are available.
 - **Transition/disposition:** compare message epoch at receipt. The evidence
   profile records `{current-1 ... current-5}`; traffic at distances four and
-  five is accepted and distance six is rejected. Separately, an exact duplicate
-  replay is idempotent and emits neither duplicate plaintext nor a second state
+  five is accepted and distance six is rejected. Traffic beyond the
+  evidence-profile depth is rejected; distance zero is the current epoch and is
+  accepted within the same bounded window. Separately, an exact duplicate replay
+  is idempotent and emits neither duplicate plaintext nor a second state
   transition.
 - **Forbidden substitutions:** retention MUST NOT be inferred from duplicate
   replay behavior or vice versa; checkpoint, wall time, relay order or storage

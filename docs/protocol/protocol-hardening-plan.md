@@ -123,6 +123,33 @@ is intentionally absent from the model `sources` map and the validator's
 threat-model digests intentionally differ from their derived-model pins. Those
 three inconsistencies are permitted only until Gate B, authorize no capability,
 adapter or corpus, and MUST all be eliminated by the Phase-B synchronization.
+During this interval, `tools/protocol-review-model/validate.py` exits with status
+2 and exactly two `SOURCE_DIGEST_MISMATCH` findings: source index 15 retains
+`1f40fde4b8912766eb586d56f4e72f8c040448e74bc3e6503ed25787abbb7e8f`
+while the responsibility matrix is
+`3ea43a5b6c9b93a19b2b17ab6a54815583275ea7a544de7e5102b294b13f53db`,
+and source index 18 retains
+`35ab45608fb843debd2b6934da834ca44385930aacfebf77a07832ec5c36d8d4`
+while the threat model is
+`8863ce4b2ef697055e95da22e0a2fbb630172cdf3f5fd0c91b27ec02f9d2ba54`.
+The derived-model suite consequently has exactly seven failures and one error:
+the four `test_additive_inventory_cases_fail_only_the_pinned_equality`
+subcases `unexpected-closed-registry-entry`, `unexpected-object-field`,
+`unexpected-record-set-entry` and `unexpected-state-transition`;
+`test_current_model_passes`;
+`test_gate_is_decided_while_c03_remains_no_go`;
+`test_exact_entry_state_authorizes_only_corpus_construction`; and the error in
+`test_validation_report_is_byte_deterministic`. Any additional finding,
+failure or error is a regression. Gate B MUST restore the validator and suite
+to zero findings and zero failures or errors.
+
+The Gate-A verifier's `--self-test` is intentionally a Phase-A-checkout test:
+after Phase B adds the authorized derived-model paths, exact-final review uses
+`--mode model-binding` instead. The verifier authenticates the exact immutable
+provider comment selected by `--comment-id`; it does not enumerate later Issue
+comments. A later human cancellation is therefore an independent stop signal:
+continuing with the earlier accepted comment is prohibited but is not detected
+mechanically by this verifier.
 A separate `K11-SS` Apache-2.0 licensing amendment remains required before the
 first SS conformance-corpus byte; the C0.3 corpus approval in Issue #253 does not
 authorize an SS corpus.
