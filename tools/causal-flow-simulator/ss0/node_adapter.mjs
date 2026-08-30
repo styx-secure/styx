@@ -38,7 +38,8 @@ const observation = (disposition, fields = {}) => ({
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const exactKeys = (value, keys) =>
   record(value) &&
-  Object.keys(value).sort().join(",") === [...keys].sort().join(",");
+  Object.keys(value).length === keys.length &&
+  keys.every((key) => Object.hasOwn(value, key));
 const exactProfile = (value) =>
   exactKeys(value, Object.keys(PROFILE)) &&
   value.ciphersuite === PROFILE.ciphersuite &&
@@ -61,13 +62,20 @@ const branchCandidate = (value) =>
   value !== null &&
   typeof value === "object" &&
   !Array.isArray(value) &&
-  Object.keys(value).sort().join(",") ===
-    "account,app_witness_score,authenticated,depth,parent,proposal_free,tip_priority" &&
+  exactKeys(value, [
+    "account",
+    "app_witness_score",
+    "authenticated",
+    "depth",
+    "parent",
+    "proposal_free",
+    "tip_priority",
+  ]) &&
   validAccount(value.account) &&
   value.authenticated === true &&
   value.proposal_free === true &&
-  value.depth === 1 &&
-  value.app_witness_score === 0 &&
+  value.depth === "1" &&
+  value.app_witness_score === "0" &&
   value.tip_priority === "ordinary" &&
   typeof value.parent === "string" &&
   value.parent.length > 0;

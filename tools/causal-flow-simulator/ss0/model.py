@@ -140,10 +140,8 @@ def _candidate(value: Any) -> bool:
         and all(character in "0123456789abcdef" for character in account)
         and value["authenticated"] is True
         and value["proposal_free"] is True
-        and type(value["depth"]) is int
-        and value["depth"] == 1
-        and type(value["app_witness_score"]) is int
-        and value["app_witness_score"] == 0
+        and value["depth"] == "1"
+        and value["app_witness_score"] == "0"
         and value["tip_priority"] == "ordinary"
         and isinstance(value["parent"], str)
         and bool(value["parent"])
@@ -185,7 +183,7 @@ def evaluate(candidate: Any) -> dict[str, Any]:
             return Observation("COMMITTED_MUTATION", applied=True).as_dict()
         if result == "NOT_COMMITTED":
             return Observation("NOT_COMMITTED").as_dict()
-        if result in {None, "INDETERMINATE"}:
+        if result is None or result == "INDETERMINATE":
             return Observation("RS_RESULT_REQUIRED").as_dict()
         return Observation("INVALID_SESSION_INPUT").as_dict()
 

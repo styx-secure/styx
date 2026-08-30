@@ -26,8 +26,8 @@ class InventoryTests(unittest.TestCase):
     def test_closed_inventory_and_anchor_pass(self) -> None:
         validated = validate_inventory(self.inventory)
         self.assertEqual(60, len(validated["atoms"]))
-        self.assertEqual(49, len(validated["witnesses"]))
-        self.assertEqual(91, len(validated["relations"]))
+        self.assertEqual(56, len(validated["witnesses"]))
+        self.assertEqual(104, len(validated["relations"]))
         validate_anchor(ROOT, load_unique(PACKAGE / "phase-b-anchor.json"))
         self.assertEqual(5, validate_public_reader_inputs(ROOT))
 
@@ -74,6 +74,17 @@ class InventoryTests(unittest.TestCase):
             {"ATOM-OB-SS01-HOSTILE_BOUNDARY", "ATOM-SSD-02-HOSTILE_BOUNDARY"},
             {row["atom"] for row in relations},
         )
+
+    def test_every_closed_disposition_has_an_executable_witness(self) -> None:
+        mutated = copy.deepcopy(self.inventory)
+        witness = next(
+            row
+            for row in mutated["witnesses"]
+            if row["id"] == "W-MUTATION-NOT-COMMITTED"
+        )
+        witness["expected"]["disposition"] = "INVALID_SESSION_INPUT"
+        with self.assertRaisesRegex(ValueError, "disposition witness coverage"):
+            validate_inventory(mutated)
 
     def test_public_derivation_drift_fails_closed(self) -> None:
         path = PACKAGE / "public-candidate-projections.json"

@@ -25,6 +25,37 @@ class ReportTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 canonical_bytes({"schema": "styx.ss0.test.v1", "value": value})
 
+    def test_selected_value_is_a_bounded_synthetic_account(self) -> None:
+        for value in ("deadbeef", "secret=bytes", "a" * 63, "g" * 64):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                canonical_bytes(
+                    {
+                        "observation": {"selected": value},
+                        "schema": "styx.ss0.test.v1",
+                    }
+                )
+        canonical_bytes(
+            {
+                "observation": {
+                    "applied": True,
+                    "disposition": "DEFERRED_CANDIDATE",
+                    "emitted_plaintext": False,
+                    "selected": "a" * 64,
+                },
+                "schema": "styx.ss0.test.v1",
+            }
+        )
+        with self.assertRaises(ValueError):
+            canonical_bytes(
+                {
+                    "observation": {
+                        "disposition": "NOT_CLAIMED_IN_PROFILE",
+                        "selected": "a" * 64,
+                    },
+                    "schema": "styx.ss0.test.v1",
+                }
+            )
+
     def test_atomic_store_leaves_no_temporary_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "report.json"

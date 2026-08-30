@@ -86,6 +86,34 @@ class ModelTests(unittest.TestCase):
         self.assertTrue(evaluate({**common, "rs_result": "COMMITTED"})["applied"])
         self.assertFalse(evaluate({**common, "rs_result": "NOT_COMMITTED"})["applied"])
         self.assertFalse(evaluate({**common, "rs_result": "INDETERMINATE"})["applied"])
+        self.assertEqual(
+            "INVALID_SESSION_INPUT",
+            evaluate({**common, "rs_result": []})["disposition"],
+        )
+
+    def test_branch_numeric_fields_use_canonical_strings(self) -> None:
+        ordinary = {
+            "account": "1" * 64,
+            "app_witness_score": "0",
+            "authenticated": True,
+            "depth": "1",
+            "parent": "parent-a",
+            "proposal_free": True,
+            "tip_priority": "ordinary",
+        }
+        peer = {**ordinary, "account": "2" * 64}
+        base = {"operation": "convergence", "profile": PROFILE}
+        self.assertEqual(
+            "DEFERRED_CANDIDATE",
+            evaluate({**base, "candidates": [ordinary, peer]})["disposition"],
+        )
+        for field, value in (("depth", 1), ("depth", 1.0), ("app_witness_score", 0), ("app_witness_score", 0.0)):
+            with self.subTest(field=field, value=value):
+                invalid = {**ordinary, field: value}
+                self.assertEqual(
+                    "UNSUPPORTED_PROFILE_INPUT",
+                    evaluate({**base, "candidates": [invalid, peer]})["disposition"],
+                )
 
     def test_replay_is_idempotent(self) -> None:
         observed = evaluate(

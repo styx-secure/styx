@@ -31,7 +31,7 @@ class CrossRuntimeTests(unittest.TestCase):
             self.assertEqual(0, completed.returncode, completed.stderr)
             report = json.loads(output.read_text(encoding="utf-8"))
             self.assertEqual("PASS", report["result"])
-            self.assertEqual(52, len(report["observations"]))
+            self.assertEqual(64, len(report["observations"]))
             by_id = {
                 row["id"]: row["observation"] for row in report["observations"]
             }
@@ -46,6 +46,26 @@ class CrossRuntimeTests(unittest.TestCase):
             self.assertEqual(
                 "INVALID_SESSION_INPUT",
                 by_id["X-UNKNOWN-CANDIDATE-FIELD"]["disposition"],
+            )
+            self.assertEqual(
+                "UNSUPPORTED_PROFILE_INPUT",
+                by_id["X-FLOAT-NUMERIC-CANDIDATE-FIELDS"]["disposition"],
+            )
+            self.assertEqual(
+                "UNSUPPORTED_PROFILE_INPUT",
+                by_id["X-FLOAT-DEPTH-CANDIDATE-FIELD"]["disposition"],
+            )
+            self.assertEqual(
+                "UNSUPPORTED_PROFILE_INPUT",
+                by_id["X-FLOAT-APP-WITNESS-CANDIDATE-FIELD"]["disposition"],
+            )
+            self.assertEqual(
+                "INVALID_SESSION_INPUT",
+                by_id["X-COMMA-COLLIDING-TOP-LEVEL-KEY"]["disposition"],
+            )
+            self.assertEqual(
+                "INVALID_SESSION_INPUT",
+                by_id["X-UNHASHABLE-RS-RESULT"]["disposition"],
             )
 
 

@@ -22,6 +22,7 @@ _TIME_VALUE = re.compile(
     r"(?:\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}|\b(?:elapsed|duration|runtime)\s*[=:])",
     re.IGNORECASE,
 )
+_SELECTED_VALUE = re.compile(r"[0-9a-f]{64}")
 
 
 def _walk(value: Any, path: str = "$report") -> None:
@@ -29,6 +30,12 @@ def _walk(value: Any, path: str = "$report") -> None:
         for key, child in value.items():
             if not isinstance(key, str) or _FORBIDDEN_KEY.search(key):
                 raise ValueError(f"forbidden canonical key at {path}")
+            if key == "selected" and (
+                not isinstance(child, str) or _SELECTED_VALUE.fullmatch(child) is None
+            ):
+                raise ValueError(f"unbounded selected value at {path}")
+            if key == "selected" and value.get("disposition") != "DEFERRED_CANDIDATE":
+                raise ValueError(f"selected value outside convergence at {path}")
             _walk(child, f"{path}.{key}")
         return
     if isinstance(value, list):

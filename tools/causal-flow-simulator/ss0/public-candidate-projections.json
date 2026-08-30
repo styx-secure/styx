@@ -82,18 +82,18 @@
         "candidates": [
           {
             "account": "2222222222222222222222222222222222222222222222222222222222222222",
-            "app_witness_score": 0,
+            "app_witness_score": "0",
             "authenticated": true,
-            "depth": 1,
+            "depth": "1",
             "parent": "parent-a",
             "proposal_free": true,
             "tip_priority": "ordinary"
           },
           {
             "account": "1111111111111111111111111111111111111111111111111111111111111111",
-            "app_witness_score": 0,
+            "app_witness_score": "0",
             "authenticated": true,
-            "depth": 1,
+            "depth": "1",
             "parent": "parent-a",
             "proposal_free": true,
             "tip_priority": "ordinary"

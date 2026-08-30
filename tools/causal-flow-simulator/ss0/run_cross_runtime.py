@@ -28,8 +28,24 @@ def supplemental_inputs() -> list[tuple[str, dict[str, object]]]:
     ordinary_candidate = {
         **boolean_numeric_candidate,
         "account": "2" * 64,
-        "app_witness_score": 0,
-        "depth": 1,
+        "app_witness_score": "0",
+        "depth": "1",
+    }
+    float_numeric_candidate = {
+        **ordinary_candidate,
+        "account": "1" * 64,
+        "app_witness_score": 0.0,
+        "depth": 1.0,
+    }
+    float_depth_candidate = {
+        **ordinary_candidate,
+        "account": "1" * 64,
+        "depth": 1.0,
+    }
+    float_app_witness_candidate = {
+        **ordinary_candidate,
+        "account": "1" * 64,
+        "app_witness_score": 0.0,
     }
     return [
         (
@@ -43,6 +59,48 @@ def supplemental_inputs() -> list[tuple[str, dict[str, object]]]:
         (
             "X-REORDERED-PROFILE-KEYS",
             {"operation": "profile", "profile": reordered_profile},
+        ),
+        (
+            "X-FLOAT-NUMERIC-CANDIDATE-FIELDS",
+            {
+                "candidates": [float_numeric_candidate, ordinary_candidate],
+                "operation": "convergence",
+                "profile": PROFILE,
+            },
+        ),
+        (
+            "X-FLOAT-DEPTH-CANDIDATE-FIELD",
+            {
+                "candidates": [float_depth_candidate, ordinary_candidate],
+                "operation": "convergence",
+                "profile": PROFILE,
+            },
+        ),
+        (
+            "X-FLOAT-APP-WITNESS-CANDIDATE-FIELD",
+            {
+                "candidates": [float_app_witness_candidate, ordinary_candidate],
+                "operation": "convergence",
+                "profile": PROFILE,
+            },
+        ),
+        (
+            "X-COMMA-COLLIDING-TOP-LEVEL-KEY",
+            {
+                "operation": "profile",
+                "operation,profile": "forbidden-key-collision",
+                "profile": PROFILE,
+            },
+        ),
+        (
+            "X-UNHASHABLE-RS-RESULT",
+            {
+                "authoritative": True,
+                "operation": "mutation",
+                "profile": PROFILE,
+                "rs_result": [],
+                "staged": True,
+            },
         ),
         (
             "X-UNKNOWN-CANDIDATE-FIELD",

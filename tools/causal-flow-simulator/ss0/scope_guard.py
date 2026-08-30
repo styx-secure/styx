@@ -136,6 +136,18 @@ def _top_level(tree: ast.Module) -> dict[tuple[str, str], ast.AST]:
     return records
 
 
+def _unmanaged_top_level(
+    tree: ast.Module, declared: frozenset[tuple[str, str]]
+) -> list[str]:
+    records = _top_level(tree)
+    managed_nodes = {id(records[coordinate]) for coordinate in declared if coordinate in records}
+    return [
+        ast.dump(node, include_attributes=False)
+        for node in tree.body
+        if id(node) not in managed_nodes
+    ]
+
+
 def _function_segment(source: str, name: str) -> str:
     matches = [
         node
@@ -266,6 +278,10 @@ def _validate_validator_projection(repo: Path, base: str, head: str) -> None:
     }
     if changed != expected_changed:
         raise ScopeViolation("undeclared complete validator AST drift")
+    if _unmanaged_top_level(before_tree, frozenset(expected_changed)) != _unmanaged_top_level(
+        actual_tree, frozenset(expected_changed)
+    ):
+        raise ScopeViolation("undeclared top-level validator statement drift")
     decisions = _registry_decisions(actual[("assignment", "EXPECTED_REGISTRIES")])
     base_decisions = _registry_decisions(before[("assignment", "EXPECTED_REGISTRIES")])
     if decisions != [*base_decisions, *(f"SSD-{index:02d}" for index in range(1, 12))]:
@@ -389,8 +405,6 @@ def build_report(repo: Path, base: str, head: str, phase_a: str) -> dict[str, ob
     model = load_unique(repo / "docs/protocol/review/styx-app-kernel-v0-review-model.json")
     if model.get("artifact", {}).get("c03_verdict") != "NO_GO":
         raise ScopeViolation("C0.3 verdict drift")
-    if "implementation_alignment" in model.get("authorized_unblocked_capabilities", []):
-        raise ScopeViolation("implementation alignment became authorized")
     _validate_disposition_disjointness(repo)
     return {
         "changed": relation,

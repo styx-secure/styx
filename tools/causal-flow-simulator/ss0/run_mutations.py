@@ -14,6 +14,7 @@ from typing import Any
 from canonical_report import canonical_bytes, store
 from inventory import load_unique, validate_inventory
 from model import evaluate
+from run_cross_runtime import supplemental_inputs
 
 
 REQUIRED_REQUIREMENTS = frozenset(
@@ -57,6 +58,13 @@ def _mutated_evaluate(source: str, identity: str) -> Any:
         sys.modules.pop(module_name, None)
 
 
+def _observe(evaluator: Any, candidate: dict[str, object]) -> dict[str, object]:
+    try:
+        return evaluator(candidate)
+    except Exception as error:  # A deterministic mutant crash is a killed mutant.
+        return {"mutation_exception": type(error).__name__}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, required=True)
@@ -66,6 +74,14 @@ def main() -> int:
     package = root / "tools/causal-flow-simulator/ss0"
     inventory = validate_inventory(load_unique(package / "source-inventory.json"))
     witnesses = {row["id"]: row for row in inventory["witnesses"]}
+    for identity, candidate in supplemental_inputs():
+        if identity in witnesses:
+            raise ValueError("duplicate supplemental mutant witness")
+        witnesses[identity] = {
+            "expected": evaluate(candidate),
+            "id": identity,
+            "input": candidate,
+        }
     registry = load_unique(package / "source-mutants.json")
     if set(registry) != {"mutants", "schema"} or registry["schema"] != "styx.ss0.mutants.v2":
         raise ValueError("mutant registry shape mismatch")
@@ -115,7 +131,7 @@ def main() -> int:
         mutated_evaluate = _mutated_evaluate(mutated_source, identity)
         changed: list[dict[str, object]] = []
         for witness_id, witness in witnesses.items():
-            observation = mutated_evaluate(witness["input"])
+            observation = _observe(mutated_evaluate, witness["input"])
             if observation != baselines[witness_id]:
                 changed.append(
                     {

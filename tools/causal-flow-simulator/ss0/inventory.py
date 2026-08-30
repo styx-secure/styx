@@ -218,6 +218,11 @@ def validate_inventory(document: dict[str, Any]) -> dict[str, Any]:
             )
     if referenced != witness_ids:
         raise ValueError("unreferenced executable witness")
+    observed_dispositions = {
+        witness["expected"]["disposition"] for witness in witnesses
+    }
+    if observed_dispositions != DISPOSITIONS:
+        raise ValueError("closed disposition witness coverage mismatch")
     return {
         "atoms": atoms,
         "relations": sorted(
@@ -294,9 +299,9 @@ def validate_public_reader_inputs(root: Path) -> int:
     ]:
         raise ValueError("public convergence account mismatch")
     required = {
-        "app_witness_score": 0,
+        "app_witness_score": "0",
         "authenticated": True,
-        "depth": 1,
+        "depth": "1",
         "parent": "parent-a",
         "proposal_free": True,
         "tip_priority": "ordinary",

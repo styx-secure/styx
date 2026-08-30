@@ -80,9 +80,9 @@
     {
       "detector": "W-OB-SS05-S-APPLICATION-SELECTOR-OB",
       "id": "M-X-APPLICATION-SELECTOR",
-      "replacement": "and value[\"app_witness_score\"] >= 0",
+      "replacement": "and value[\"app_witness_score\"] in {\"0\", \"1\"}",
       "requirement": "X-APPLICATION-SELECTOR",
-      "target": "and value[\"app_witness_score\"] == 0"
+      "target": "and value[\"app_witness_score\"] == \"0\""
     },
     {
       "detector": "W-OB-SS02-S-APPLY-WITHOUT-STAGE-OB",
@@ -92,11 +92,46 @@
       "target": "candidate.get(\"staged\") is not True"
     },
     {
+      "detector": "X-FLOAT-APP-WITNESS-CANDIDATE-FIELD",
+      "id": "M-X-CANDIDATE-NUMERIC-APP-WITNESS",
+      "replacement": "and value[\"app_witness_score\"] in {\"0\", 0.0}",
+      "requirement": "SSD-06",
+      "target": "and value[\"app_witness_score\"] == \"0\""
+    },
+    {
+      "detector": "X-FLOAT-DEPTH-CANDIDATE-FIELD",
+      "id": "M-X-CANDIDATE-NUMERIC-DEPTH",
+      "replacement": "and value[\"depth\"] in {\"1\", 1.0}",
+      "requirement": "SSD-06",
+      "target": "and value[\"depth\"] == \"1\""
+    },
+    {
+      "detector": "W-CONVERGENCE-UNKNOWN-CANDIDATE-FIELD",
+      "id": "M-X-CANDIDATE-UNKNOWN-FIELD",
+      "replacement": "if not isinstance(value, dict) or not {\\n        \"account\",\\n        \"app_witness_score\",\\n        \"authenticated\",\\n        \"depth\",\\n        \"parent\",\\n        \"proposal_free\",\\n        \"tip_priority\",\\n    }.issubset(value):",
+      "requirement": "SSD-06",
+      "target": "if not isinstance(value, dict) or set(value) != {\\n        \"account\",\\n        \"app_witness_score\",\\n        \"authenticated\",\\n        \"depth\",\\n        \"parent\",\\n        \"proposal_free\",\\n        \"tip_priority\",\\n    }:"
+    },
+    {
       "detector": "W-SSD-01-S-CIPHERSUITE-FALLBACK",
       "id": "M-X-CIPHERSUITE-FALLBACK",
       "replacement": "return isinstance(value, dict) and all(value.get(k) == v for k, v in PROFILE.items() if k != \"ciphersuite\")",
       "requirement": "X-CIPHERSUITE-FALLBACK",
       "target": "return isinstance(value, dict) and value == PROFILE"
+    },
+    {
+      "detector": "W-CONVERGENCE-DIFFERENT-PARENTS",
+      "id": "M-X-CONVERGENCE-DIFFERENT-PARENTS",
+      "replacement": "or False",
+      "requirement": "X-FORK-EXPANSION",
+      "target": "or candidates[0][\"parent\"] != candidates[1][\"parent\"]"
+    },
+    {
+      "detector": "W-CONVERGENCE-SAME-ACCOUNT",
+      "id": "M-X-CONVERGENCE-SAME-ACCOUNT",
+      "replacement": "or False",
+      "requirement": "SSD-06",
+      "target": "or candidates[0][\"account\"] == candidates[1][\"account\"]"
     },
     {
       "detector": "W-OB-SS01-P-AUTHENTICATED-BYTES-OB",
@@ -107,10 +142,24 @@
     },
     {
       "detector": "W-SSD-10-H-SECRET-DIAGNOSTIC",
+      "id": "M-X-DIAGNOSTIC-BOUNDED-SELECTION",
+      "replacement": "return Observation(\"NOT_CLAIMED_IN_PROFILE\", selected=\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\").as_dict()\\n\\n    return Observation(\"UNSUPPORTED_PROFILE_INPUT\").as_dict()",
+      "requirement": "X-DIAGNOSTIC-LEAKAGE",
+      "target": "return Observation(\"NOT_CLAIMED_IN_PROFILE\").as_dict()\\n\\n    return Observation(\"UNSUPPORTED_PROFILE_INPUT\").as_dict()"
+    },
+    {
+      "detector": "W-SSD-10-H-SECRET-DIAGNOSTIC",
       "id": "M-X-DIAGNOSTIC-LEAKAGE",
       "replacement": "return Observation(\"NOT_CLAIMED_IN_PROFILE\", selected=\"secret=diagnostic\").as_dict()\\n\\n    return Observation(\"UNSUPPORTED_PROFILE_INPUT\").as_dict()",
       "requirement": "X-DIAGNOSTIC-LEAKAGE",
       "target": "return Observation(\"NOT_CLAIMED_IN_PROFILE\").as_dict()\\n\\n    return Observation(\"UNSUPPORTED_PROFILE_INPUT\").as_dict()"
+    },
+    {
+      "detector": "W-REPLAY-EMPTY-IDENTITY",
+      "id": "M-X-EMPTY-REPLAY-IDENTITY",
+      "replacement": "if not isinstance(candidate.get(\"message_identity\"), str):",
+      "requirement": "SSD-05",
+      "target": "if not isinstance(candidate.get(\"message_identity\"), str) or not candidate[\"message_identity\"]:"
     },
     {
       "detector": "W-RETENTION-U64-MAX-DISTANCE-FIVE",
@@ -136,9 +185,9 @@
     {
       "detector": "W-OB-SS02-H-INDETERMINATE-OB",
       "id": "M-X-INDETERMINATE-COMMITTED",
-      "replacement": "if result in {None, \"INDETERMINATE\"}:\\n            return Observation(\"COMMITTED_MUTATION\", applied=True).as_dict()",
+      "replacement": "if result is None or result == \"INDETERMINATE\":\\n            return Observation(\"COMMITTED_MUTATION\", applied=True).as_dict()",
       "requirement": "X-INDETERMINATE-COMMITTED",
-      "target": "if result in {None, \"INDETERMINATE\"}:\\n            return Observation(\"RS_RESULT_REQUIRED\").as_dict()"
+      "target": "if result is None or result == \"INDETERMINATE\":\\n            return Observation(\"RS_RESULT_REQUIRED\").as_dict()"
     },
     {
       "detector": "W-OB-SS02-H-INDETERMINATE-OB",
@@ -169,6 +218,13 @@
       "target": "if candidate.get(\"member_count\") != 2 or candidate.get(\"authenticated\") is not True:"
     },
     {
+      "detector": "W-MUTATION-NOT-COMMITTED",
+      "id": "M-X-NOT-COMMITTED-APPLY",
+      "replacement": "if result == \"NOT_COMMITTED\":\\n            return Observation(\"COMMITTED_MUTATION\", applied=True).as_dict()",
+      "requirement": "SSD-04",
+      "target": "if result == \"NOT_COMMITTED\":\\n            return Observation(\"NOT_COMMITTED\").as_dict()"
+    },
+    {
       "detector": "W-SSD-01-H-PIN-DRIFT",
       "id": "M-X-PIN-FALLBACK",
       "replacement": "return isinstance(value, dict) and all(value.get(k) == v for k, v in PROFILE.items() if k != \"mdk\")",
@@ -181,6 +237,13 @@
       "replacement": "return Observation(\"DUPLICATE_SUPPRESSED\", emitted_plaintext=True).as_dict()",
       "requirement": "X-REPLAY-DUPLICATE-OUTPUT",
       "target": "return Observation(\"DUPLICATE_SUPPRESSED\").as_dict()"
+    },
+    {
+      "detector": "W-RETENTION-NONASCII-DIGITS",
+      "id": "M-X-RETENTION-NONASCII-DIGITS",
+      "replacement": "",
+      "requirement": "SSD-05",
+      "target": "        or not value.isascii()\\n"
     },
     {
       "detector": "W-OB-SS04-H-DISTANCE-SIX-OB",
@@ -216,6 +279,20 @@
       "replacement": "winner = candidates[0][\"account\"]",
       "requirement": "X-TIP-RULE-DELETION",
       "target": "winner = min(item[\"account\"] for item in candidates)"
+    },
+    {
+      "detector": "X-UNKNOWN-CANDIDATE-FIELD",
+      "id": "M-X-TOP-LEVEL-UNKNOWN-FIELD",
+      "replacement": "if not expected_fields.issubset(candidate):",
+      "requirement": "SSD-03",
+      "target": "if set(candidate) != expected_fields:"
+    },
+    {
+      "detector": "W-MUTATION-UNHASHABLE-RS-RESULT",
+      "id": "M-X-UNHASHABLE-RS-RESULT",
+      "replacement": "if result in {None, \"INDETERMINATE\"}:\\n            return Observation(\"RS_RESULT_REQUIRED\").as_dict()",
+      "requirement": "SSD-04",
+      "target": "if result is None or result == \"INDETERMINATE\":\\n            return Observation(\"RS_RESULT_REQUIRED\").as_dict()"
     },
     {
       "detector": "W-SSD-07-X-B-WELCOME-MEMBER-MISMATCH",

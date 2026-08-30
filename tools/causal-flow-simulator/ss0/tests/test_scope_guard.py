@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -27,6 +28,7 @@ from scope_guard import (  # noqa: E402
     _validate_disposition_disjointness,
     _validate_frozen_bytes,
     _validate_validator_projection,
+    _unmanaged_top_level,
     build_report,
 )
 
@@ -76,6 +78,17 @@ class ScopeGuardTests(unittest.TestCase):
         _validate_validator_projection(ROOT, BASE_SHA, "HEAD")
         report = build_report(ROOT, BASE_SHA, "HEAD", PHASE_A_SHA)
         self.assertEqual("PASS", report["result"])
+
+    def test_undeclared_top_level_statement_is_not_hidden(self) -> None:
+        declared = frozenset({("assignment", "VALUE"), ("function", "validate")})
+        before = ast.parse("VALUE = 1\n\ndef validate():\n    return True\n")
+        after = ast.parse(
+            "VALUE = 2\n\nif True:\n    UNDECLARED = 1\n\ndef validate():\n    return False\n"
+        )
+        self.assertNotEqual(
+            _unmanaged_top_level(before, declared),
+            _unmanaged_top_level(after, declared),
+        )
 
     def test_ratified_test_validate_bytes_are_exact(self) -> None:
         path = ROOT / "tools/protocol-review-model/tests/test_validate.py"

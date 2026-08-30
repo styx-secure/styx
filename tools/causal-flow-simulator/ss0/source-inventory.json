@@ -64,6 +64,12 @@
       "witnesses": [
         {
           "assertions": [
+            "non-scalar result is rejected without evaluator failure; obligation witness OB-SS02"
+          ],
+          "id": "W-MUTATION-UNHASHABLE-RS-RESULT"
+        },
+        {
+          "assertions": [
             "indeterminate result halts; obligation witness OB-SS02"
           ],
           "id": "W-OB-SS02-H-INDETERMINATE-OB"
@@ -76,6 +82,12 @@
       "owner": "OB-SS02",
       "source_id": "OB-SS02",
       "witnesses": [
+        {
+          "assertions": [
+            "not-committed result preserves the unapplied state; obligation witness OB-SS02"
+          ],
+          "id": "W-MUTATION-NOT-COMMITTED"
+        },
         {
           "assertions": [
             "only committed staged mutation applies; obligation witness OB-SS02"
@@ -166,6 +178,12 @@
         },
         {
           "assertions": [
+            "non-ASCII decimal digits fail closed"
+          ],
+          "id": "W-RETENTION-NONASCII-DIGITS"
+        },
+        {
+          "assertions": [
             "value above u64 maximum fails closed"
           ],
           "id": "W-RETENTION-U64-OVERFLOW"
@@ -222,6 +240,24 @@
       "owner": "OB-SS05",
       "source_id": "OB-SS05",
       "witnesses": [
+        {
+          "assertions": [
+            "candidates with different parents are unsupported; obligation witness OB-SS05"
+          ],
+          "id": "W-CONVERGENCE-DIFFERENT-PARENTS"
+        },
+        {
+          "assertions": [
+            "duplicate candidate accounts are unsupported; obligation witness OB-SS05"
+          ],
+          "id": "W-CONVERGENCE-SAME-ACCOUNT"
+        },
+        {
+          "assertions": [
+            "candidate field-set drift is unsupported; obligation witness OB-SS05"
+          ],
+          "id": "W-CONVERGENCE-UNKNOWN-CANDIDATE-FIELD"
+        },
         {
           "assertions": [
             "application witness cannot select branch; obligation witness OB-SS05"
@@ -610,6 +646,12 @@
       "witnesses": [
         {
           "assertions": [
+            "non-scalar result is rejected without evaluator failure"
+          ],
+          "id": "W-MUTATION-UNHASHABLE-RS-RESULT"
+        },
+        {
+          "assertions": [
             "indeterminate result halts"
           ],
           "id": "W-OB-SS02-H-INDETERMINATE-OB"
@@ -628,6 +670,12 @@
       "owner": "SSD-04",
       "source_id": "SSD-04",
       "witnesses": [
+        {
+          "assertions": [
+            "not-committed result preserves the unapplied state"
+          ],
+          "id": "W-MUTATION-NOT-COMMITTED"
+        },
         {
           "assertions": [
             "only committed staged mutation applies"
@@ -664,6 +712,12 @@
         },
         {
           "assertions": [
+            "empty replay identity is rejected before emission"
+          ],
+          "id": "W-REPLAY-EMPTY-IDENTITY"
+        },
+        {
+          "assertions": [
             "JSON numeric epoch is not a canonical model u64 string"
           ],
           "id": "W-RETENTION-JSON-NUMBER"
@@ -673,6 +727,12 @@
             "leading-zero epoch encoding fails closed"
           ],
           "id": "W-RETENTION-LEADING-ZERO"
+        },
+        {
+          "assertions": [
+            "non-ASCII decimal digits fail closed"
+          ],
+          "id": "W-RETENTION-NONASCII-DIGITS"
         },
         {
           "assertions": [
@@ -744,6 +804,24 @@
       "owner": "SSD-06",
       "source_id": "SSD-06",
       "witnesses": [
+        {
+          "assertions": [
+            "candidates with different parents are unsupported"
+          ],
+          "id": "W-CONVERGENCE-DIFFERENT-PARENTS"
+        },
+        {
+          "assertions": [
+            "duplicate candidate accounts are unsupported"
+          ],
+          "id": "W-CONVERGENCE-SAME-ACCOUNT"
+        },
+        {
+          "assertions": [
+            "candidate field-set drift is unsupported"
+          ],
+          "id": "W-CONVERGENCE-UNKNOWN-CANDIDATE-FIELD"
+        },
         {
           "assertions": [
             "application witness cannot select branch"
@@ -1070,6 +1148,46 @@
   "witnesses": [
     {
       "expected": {
+        "applied": false,
+        "disposition": "UNSUPPORTED_PROFILE_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-CONVERGENCE-DIFFERENT-PARENTS",
+      "input": {
+        "candidates": [
+          {
+            "account": "1111111111111111111111111111111111111111111111111111111111111111",
+            "app_witness_score": "0",
+            "authenticated": true,
+            "depth": "1",
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          },
+          {
+            "account": "2222222222222222222222222222222222222222222222222222222222222222",
+            "app_witness_score": "0",
+            "authenticated": true,
+            "depth": "1",
+            "parent": "parent-b",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          }
+        ],
+        "operation": "convergence",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": ["MDK_PIN_9396ADB", "STYX_B32A"],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
         "applied": true,
         "disposition": "DEFERRED_CANDIDATE",
         "emitted_plaintext": false,
@@ -1080,18 +1198,18 @@
         "candidates": [
           {
             "account": "1111111111111111111111111111111111111111111111111111111111111111",
-            "app_witness_score": 0,
+            "app_witness_score": "0",
             "authenticated": true,
-            "depth": 1,
+            "depth": "1",
             "parent": "parent-a",
             "proposal_free": true,
             "tip_priority": "ordinary"
           },
           {
             "account": "2222222222222222222222222222222222222222222222222222222222222222",
-            "app_witness_score": 0,
+            "app_witness_score": "0",
             "authenticated": true,
-            "depth": 1,
+            "depth": "1",
             "parent": "parent-a",
             "proposal_free": true,
             "tip_priority": "ordinary"
@@ -1110,6 +1228,133 @@
           "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
           "retained_past_epochs": 5
         }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "UNSUPPORTED_PROFILE_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-CONVERGENCE-SAME-ACCOUNT",
+      "input": {
+        "candidates": [
+          {
+            "account": "1111111111111111111111111111111111111111111111111111111111111111",
+            "app_witness_score": "0",
+            "authenticated": true,
+            "depth": "1",
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          },
+          {
+            "account": "1111111111111111111111111111111111111111111111111111111111111111",
+            "app_witness_score": "0",
+            "authenticated": true,
+            "depth": "1",
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          }
+        ],
+        "operation": "convergence",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": ["MDK_PIN_9396ADB", "STYX_B32A"],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "UNSUPPORTED_PROFILE_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-CONVERGENCE-UNKNOWN-CANDIDATE-FIELD",
+      "input": {
+        "candidates": [
+          {
+            "account": "1111111111111111111111111111111111111111111111111111111111111111",
+            "app_witness_score": "0",
+            "authenticated": true,
+            "depth": "1",
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary",
+            "unexpected": "rejected"
+          },
+          {
+            "account": "2222222222222222222222222222222222222222222222222222222222222222",
+            "app_witness_score": "0",
+            "authenticated": true,
+            "depth": "1",
+            "parent": "parent-a",
+            "proposal_free": true,
+            "tip_priority": "ordinary"
+          }
+        ],
+        "operation": "convergence",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": ["MDK_PIN_9396ADB", "STYX_B32A"],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "NOT_COMMITTED",
+        "emitted_plaintext": false
+      },
+      "id": "W-MUTATION-NOT-COMMITTED",
+      "input": {
+        "authoritative": true,
+        "operation": "mutation",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": ["MDK_PIN_9396ADB", "STYX_B32A"],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        },
+        "rs_result": "NOT_COMMITTED",
+        "staged": true
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "INVALID_SESSION_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-MUTATION-UNHASHABLE-RS-RESULT",
+      "input": {
+        "authoritative": true,
+        "operation": "mutation",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": ["MDK_PIN_9396ADB", "STYX_B32A"],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        },
+        "rs_result": [],
+        "staged": true
       }
     },
     {
@@ -1429,27 +1674,27 @@
         "candidates": [
           {
             "account": "1111111111111111111111111111111111111111111111111111111111111111",
-            "app_witness_score": 0,
+            "app_witness_score": "0",
             "authenticated": true,
-            "depth": 1,
+            "depth": "1",
             "parent": "parent-a",
             "proposal_free": true,
             "tip_priority": "ordinary"
           },
           {
             "account": "2222222222222222222222222222222222222222222222222222222222222222",
-            "app_witness_score": 0,
+            "app_witness_score": "0",
             "authenticated": true,
-            "depth": 1,
+            "depth": "1",
             "parent": "parent-a",
             "proposal_free": true,
             "tip_priority": "ordinary"
           },
           {
             "account": "3333333333333333333333333333333333333333333333333333333333333333",
-            "app_witness_score": 0,
+            "app_witness_score": "0",
             "authenticated": true,
-            "depth": 1,
+            "depth": "1",
             "parent": "parent-a",
             "proposal_free": true,
             "tip_priority": "ordinary"
@@ -1482,18 +1727,18 @@
         "candidates": [
           {
             "account": "2222222222222222222222222222222222222222222222222222222222222222",
-            "app_witness_score": 0,
+            "app_witness_score": "0",
             "authenticated": true,
-            "depth": 1,
+            "depth": "1",
             "parent": "parent-a",
             "proposal_free": true,
             "tip_priority": "ordinary"
           },
           {
             "account": "1111111111111111111111111111111111111111111111111111111111111111",
-            "app_witness_score": 0,
+            "app_witness_score": "0",
             "authenticated": true,
-            "depth": 1,
+            "depth": "1",
             "parent": "parent-a",
             "proposal_free": true,
             "tip_priority": "ordinary"
@@ -1525,18 +1770,18 @@
         "candidates": [
           {
             "account": "1111111111111111111111111111111111111111111111111111111111111111",
-            "app_witness_score": 1,
+            "app_witness_score": "1",
             "authenticated": true,
-            "depth": 1,
+            "depth": "1",
             "parent": "parent-a",
             "proposal_free": true,
             "tip_priority": "ordinary"
           },
           {
             "account": "2222222222222222222222222222222222222222222222222222222222222222",
-            "app_witness_score": 0,
+            "app_witness_score": "0",
             "authenticated": true,
-            "depth": 1,
+            "depth": "1",
             "parent": "parent-a",
             "proposal_free": true,
             "tip_priority": "ordinary"
@@ -1883,6 +2128,31 @@
     {
       "expected": {
         "applied": false,
+        "disposition": "INVALID_SESSION_INPUT",
+        "emitted_plaintext": false
+      },
+      "id": "W-REPLAY-EMPTY-IDENTITY",
+      "input": {
+        "already_emitted": false,
+        "message_identity": "",
+        "operation": "replay",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": [
+            "MDK_PIN_9396ADB",
+            "STYX_B32A"
+          ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
         "disposition": "ACCEPTED_EVIDENCE",
         "emitted_plaintext": true
       },
@@ -2000,6 +2270,28 @@
             "MDK_PIN_9396ADB",
             "STYX_B32A"
           ],
+          "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
+          "retained_past_epochs": 5
+        }
+      }
+    },
+    {
+      "expected": {
+        "applied": false,
+        "disposition": "EPOCH_OUT_OF_RANGE",
+        "emitted_plaintext": false
+      },
+      "id": "W-RETENTION-NONASCII-DIGITS",
+      "input": {
+        "current_epoch": "١٢",
+        "message_epoch": "7",
+        "operation": "retention",
+        "profile": {
+          "ciphersuite": "0x0001",
+          "ciphersuite_registry": "IANA_MLS",
+          "marmot": "4ad4ae21479c3f3fa9950c6fc4556a76941a62e1",
+          "mdk": "9396adb6aa6b95b521a7979facd5ea7040c07288",
+          "members": ["MDK_PIN_9396ADB", "STYX_B32A"],
           "openmls": "09e92777dba0528d3d29e2e5e681b7e91637c7be",
           "retained_past_epochs": 5
         }
