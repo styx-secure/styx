@@ -22,6 +22,12 @@ executor/persona, independent reviewers, human gates, base branch and base SHA.
 Missing or ambiguous data blocks execution. MUCC stories have their own
 executability condition, defined under "Execution lanes" below.
 
+The active protocol-hardening freeze and its ordered exit gates are defined in
+`docs/protocol/protocol-hardening-plan.md`. No task contract or MUCC story may
+silently bypass that plan: any permitted protocol increment must fit its freeze
+boundary, and product/runtime work remains paused until the recorded exit gate
+is satisfied.
+
 ## Execution lanes
 
 Since ADR-0006 the repository runs two execution lanes:

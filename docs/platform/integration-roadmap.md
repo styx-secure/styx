@@ -17,8 +17,11 @@ The [application-protocol hardening plan](../protocol/protocol-hardening-plan.md
 currently freezes new product and runtime implementation. Protocol decisions,
 threat-model reconciliation, adversarial evidence and language-neutral
 conformance take priority until the plan's human-ratified exit gates pass.
-Issue #233 / PR #234 remain isolated experimental evidence, C0.3 remains
-`NO-GO`, and this roadmap does not bypass that gate.
+Issue #266 / merged PR #267 completed a bounded evidence GO for the exact D4
+transcript/K corpus and evidence package. C0.3 nevertheless remains `NO-GO`
+for implementation alignment, demo, product and sensitive use. Only a
+separately contracted SS-0 increment limited to the plan's permitted
+protocol-artifact classes may proceed; this roadmap does not bypass that gate.
 
 ## 1. Method and legend
 

@@ -1,6 +1,6 @@
 # Styx project brief
 
-> **Status:** public project and funding brief, updated 29 August 2026.
+> **Status:** public project and funding brief, updated 30 August 2026.
 >
 > Styx is experimental, has not completed an independent security audit, and
 > is not ready for sensitive, high-risk, or life-critical use. This brief
@@ -25,15 +25,21 @@ resumes.
 
 The canonical [protocol-hardening plan](protocol/protocol-hardening-plan.md)
 defines the freeze boundary, authority order, review bundle and exit gates.
-Issue #233 / PR #234 remain isolated experimental evidence and are not treated
-as ratified protocol semantics. Issue #264 constructed the first separately
-contracted, synthetic-only C0.3 corpus. Issue #266 is reconciling that corpus
-with layered transcript/K/AP semantics after demonstrating that disconnected
-fixture metadata cannot establish connected K authority. The corrected corpus
-uses independent Python/JavaScript replay, connected authority graphs, a closed
-adversarial mutation registry and an oracle-free clean-room reader exercise.
-This remains protocol evidence only: C0.3 is still `NO-GO` for implementation
-alignment, public demo, product deployment and sensitive use.
+Issue #233 / PR #234 are ratified historical protocol evidence within their
+stated bounds. Issue #264 constructed the first separately contracted,
+synthetic-only C0.3 corpus. Issue #266 / merged PR #267 then reconciled that
+corpus with layered transcript/K/AP semantics at an exact tree shared by the
+reviewed candidate and `main`. Independent Python/JavaScript replay, connected
+authority graphs, a closed adversarial mutation registry and an oracle-free
+clean-room reader agree on the bounded public transcript/K observations.
+
+That result is a human-ratified **bounded evidence GO** for the exact D4 corpus
+and evidence package only. It is not implementation conformance and does not
+lift the active freeze: C0.3 remains `NO-GO` for implementation alignment,
+public demo, product deployment and sensitive use. A separately contracted
+SS-0 protocol increment may operate only on the protocol-artifact classes
+already allowed by the hardening plan; adapter, wire, storage, persistence,
+transport, corpus and product work remain paused.
 
 ## Mission
 
@@ -193,11 +199,11 @@ persistence, retention/compaction, transport and runtime boundaries.
 
 ## What remains
 
-- construct the authorized language-neutral Styx application-protocol
-  adversarial corpus; then, under a separate approved contract, build a third
-  implementation from the specification, obtain
-  the explicit protocol-hardening exit verdict, extract independent Dart cases,
-  and keep parallel product implementation frozen until that verdict;
+- preserve the completed language-neutral C0.3 adversarial corpus; then, under
+  separate approved contracts, define the remaining SS-0 semantics and bounded
+  adversarial evidence, obtain independent implementation agreement and the
+  explicit protocol-hardening exit verdict, and keep parallel product
+  implementation frozen until that verdict;
 - turn the completed bounded secure-session proof into a separately versioned,
   supported adapter only after selecting and testing authenticated product
   persistence, retention/compaction, transport and runtime boundaries;

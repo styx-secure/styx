@@ -1,12 +1,12 @@
 # Styx application-protocol hardening plan
 
-> **Status:** active protocol-hardening and ratification phase, 23 August 2026.
+> **Status:** active protocol-hardening and ratification phase, 30 August 2026.
 >
 > This document governs the order of protocol work. It is not a protocol
 > specification, security proof, implementation authorization or readiness
-> claim. Issue #262 authorizes only construction of the separately contracted
-> C0.3 corpus. C0.3 remains `NO-GO` for implementation alignment, demo,
-> product and sensitive use.
+> claim. Issue #266 / merged PR #267 records a bounded evidence GO for the
+> exact D4 transcript/K corpus and evidence package only. C0.3 remains `NO-GO`
+> for implementation alignment, demo, product and sensitive use.
 
 ## 1. Purpose
 
@@ -222,8 +222,8 @@ Protocol increments proceed in dependency order:
    exact twelve-path Apache-2.0 inventory now includes six absent future C0.3
    data paths. This licensing gate creates no corpus byte and does not authorize
    C0.3.
-8. **Produce and reconcile C0.3 — construction completed by Issue #264;
-   layered-evidence reconciliation in Issue #266.** The six-file,
+8. **Produce and reconcile C0.3 — bounded evidence completed by Issue #266 /
+   merged PR #267.** Issue #264 constructed the six-file,
    synthetic-only specification-derived corpus preserves 17 historical valid
    transcript byte sequences, contains 36 local-negative records, 128
    state/flow/counterexample/vector/invariant/history/dependency scenarios and
@@ -238,10 +238,11 @@ Protocol increments proceed in dependency order:
    and rejected by the same production corpus validators, but are classified as
    evidence-integrity checks rather than semantic invariant witnesses.
    Independent Python and JavaScript replay and relation validation agree byte
-   for byte; a fresh oracle-free reader must independently derive the same
-   public transcript/K observations. This remains corpus and conformance
-   evidence only; it does not authorize implementation alignment, demo,
-   product or sensitive use.
+   for byte, and a fresh oracle-free reader independently derived the same
+   public transcript/K observations. The reviewed candidate and merged `main`
+   have the same exact tree. The resulting bounded evidence GO remains corpus
+   and conformance evidence only; it does not authorize implementation
+   alignment, demo, product or sensitive use.
 9. **Obtain the phase verdict.** Independent exact-final review and human
    ratification produce `GO`, bounded `GO`, or `NO-GO` with residual risks.
 
@@ -256,7 +257,7 @@ The dependency basis is explicit:
 | O-06c | exact C0.2j/C0.2k bytes and existing O-06b profiles | completed as bounded evidence by Issue #243; obligations affected by later O-07/O-08/O-10/O-14 decisions are rerun or reopened after those decisions |
 | remaining blockers | O-06c results plus each decision's own recorded inputs | Issue #260 / merged PR #261 reruns the integrated O-14/O-06c hostile cases; exact-final technical evidence, independent review and human gates pass |
 | K-11 corpus boundary | `DECIDED` by the exact Issue #253 six-path amendment; twelve Apache paths total | Issue #264 populates only the approved synthetic paths; no third-party corpus byte is authorized |
-| C0.3 | all seven frozen Issue #251 entry items satisfied by Issue #262; corpus construction completed by Issue #264 and layered-evidence reconciliation proceeding under Issue #266 | exact blind corroboration, implementation alignment and the phase verdict remain separate gated work; C0.3 remains `NO-GO` for demo, product and sensitive use |
+| C0.3 | all seven frozen Issue #251 entry items satisfied by Issue #262; corpus construction completed by Issue #264; exact D4 transcript/K reconciliation, blind corroboration and bounded evidence GO completed by Issue #266 / merged PR #267 | implementation alignment and the full phase-exit verdict remain separate gated work; C0.3 remains `NO-GO` for demo, product and sensitive use |
 
 For visibility, every O-series objective in the current registry is accounted
 for below. Absence from this table is an error in this plan, not evidence that
@@ -378,6 +379,53 @@ The phase may end only when all applicable conditions are true:
 A bounded `GO` authorizes only the named corpus or next contract. It does not
 authorize product code, deployment or sensitive use.
 
+While the freeze remains active, a separately contracted SS-0 increment may
+proceed only if it is limited to the Section 2 artifact classes: normative
+decisions, threat-model/responsibility reconciliation, synchronized derived-
+model records and bounded executable adversarial evidence. It may not create or
+change conformance-corpus bytes, adapters, product code, wire or storage
+formats, persistence behavior, transport selection or deployment behavior.
+
+### 8.10 Closed first-parent exception audit
+
+This audit covers the literal first-parent range from the freeze merge through
+the Issue #283 Base. `CONFORMING` means that immutable provider evidence places
+the increment inside the named plan lane or a previously recorded exception;
+it is not a security verdict. A row that needs a new historical determination
+remains `UNRECONCILED/BLOCKING` until an authorized human makes that decision
+explicitly. The later determination is never backdated to execution time.
+
+The exact path set for each pull request is the provider `files` response linked
+in the path column. The associated-pulls response is checked independently for
+every commit; the one empty association below is evidence, not an inference
+from its subject.
+
+<!-- styx-section8-exception-audit:v1:start -->
+| Commit | Subject | Issue / PR association | Touched paths / path set | Closed class | Ratifying-human evidence | Integration owner | Provider evidence | Semantic finding | Reconciliation outcome |
+|---|---|---|---|---|---|---|---|---|---|
+| `8f30f1940e4417fcb47b156b08c2242f405dc09b` | Establish the protocol-hardening freeze | Issue [#235](https://github.com/styx-secure/styx/issues/235) / PR [#236](https://github.com/styx-secure/styx/pull/236) | [5 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/236/files) | `FREEZE_BASELINE` | [contract ratification 5385215554](https://github.com/styx-secure/styx/issues/235#issuecomment-5385215554); [final ratification 5385459344](https://github.com/styx-secure/styx/pull/236#issuecomment-5385459344) | `maverde73` via PR #236 | [commit](https://api.github.com/repos/styx-secure/styx/commits/8f30f1940e4417fcb47b156b08c2242f405dc09b); [association](https://api.github.com/repos/styx-secure/styx/commits/8f30f1940e4417fcb47b156b08c2242f405dc09b/pulls) | Establishes the freeze; selects no protocol semantic. | `CONFORMING` |
+| `d28deb4ac8fe00718201c7384a4b7e18fda1b296` | Select and falsify credential succession | Issue [#233](https://github.com/styx-secure/styx/issues/233) / PR [#234](https://github.com/styx-secure/styx/pull/234) | [21 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/234/files) | `PLAN_INCREMENT` | [contract ratification 5386313008](https://github.com/styx-secure/styx/issues/233#issuecomment-5386313008); [final ratification 5388510070](https://github.com/styx-secure/styx/pull/234#issuecomment-5388510070) | `maverde73` via PR #234 | [commit](https://api.github.com/repos/styx-secure/styx/commits/d28deb4ac8fe00718201c7384a4b7e18fda1b296); [association](https://api.github.com/repos/styx-secure/styx/commits/d28deb4ac8fe00718201c7384a4b7e18fda1b296/pulls) | Ratified C0.2j credential/succession semantics and bounded evidence within the ordered plan. | `CONFORMING` |
+| `745de6d8954a39ad3a39e9ccc5303ba08fa8508c` | Harden review-model validation | Issue [#232](https://github.com/styx-secure/styx/issues/232) / PR [#238](https://github.com/styx-secure/styx/pull/238) | [4 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/238/files) | `EXCEPTION_ROUTINE_MAINTENANCE` | [contract ratification 5390630845](https://github.com/styx-secure/styx/issues/232#issuecomment-5390630845); [final ratification 5391111223](https://github.com/styx-secure/styx/pull/238#issuecomment-5391111223); [present determination 5468111470](https://github.com/styx-secure/styx/pull/284#issuecomment-5468111470) | `maverde73` via PR #238 | [commit](https://api.github.com/repos/styx-secure/styx/commits/745de6d8954a39ad3a39e9ccc5303ba08fa8508c); [association](https://api.github.com/repos/styx-secure/styx/commits/745de6d8954a39ad3a39e9ccc5303ba08fa8508c/pulls) | Non-normative validator hardening; frozen model and normative sources were reported byte-identical. The present determination confirms the exception without backdating it. | `RETROACTIVE_HUMAN_DETERMINATION(5468111470)` |
+| `6676be641a4b3edc250fcb59ce9c7dd39c4ad8cc` | Bind commitments to credential and sequence | Issue [#239](https://github.com/styx-secure/styx/issues/239) / PR [#240](https://github.com/styx-secure/styx/pull/240) | [19 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/240/files) | `PLAN_INCREMENT` | [contract ratification 5391758126](https://github.com/styx-secure/styx/issues/239#issuecomment-5391758126); [completion 5393446984](https://github.com/styx-secure/styx/issues/239#issuecomment-5393446984) | `maverde73` via PR #240 | [commit](https://api.github.com/repos/styx-secure/styx/commits/6676be641a4b3edc250fcb59ce9c7dd39c4ad8cc); [association](https://api.github.com/repos/styx-secure/styx/commits/6676be641a4b3edc250fcb59ce9c7dd39c4ad8cc/pulls) | Ratified C0.2k commitment-context semantics and bounded evidence within the ordered plan. | `CONFORMING` |
+| `3f439189e0cbe4071f642c693dbb196b477a48ea` | Reconcile the O-06c handoff | Issue [#241](https://github.com/styx-secure/styx/issues/241) / PR [#242](https://github.com/styx-secure/styx/pull/242) | [7 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/242/files) | `SECTION_7_EXEMPTED_INCREMENT` | [final contract ratification 5396241901](https://github.com/styx-secure/styx/issues/241#issuecomment-5396241901); [completion 5396477958](https://github.com/styx-secure/styx/issues/241#issuecomment-5396477958) | `maverde73` via PR #242 | [commit](https://api.github.com/repos/styx-secure/styx/commits/3f439189e0cbe4071f642c693dbb196b477a48ea); [association](https://api.github.com/repos/styx-secure/styx/commits/3f439189e0cbe4071f642c693dbb196b477a48ea/pulls) | Reconciles contradictory prose/provenance only; no wire, persisted, runtime or new protocol semantic; the Section 7 evidence exemption remains a residual exit risk. | `CONFORMING` |
+| `94f0a9b2781d45324199e6588629d23babedf746` | Execute the O-06c falsification gate | Issue [#243](https://github.com/styx-secure/styx/issues/243) / PR [#244](https://github.com/styx-secure/styx/pull/244) | [36 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/244/files) | `PLAN_INCREMENT` | [contract ratification 5398321811](https://github.com/styx-secure/styx/issues/243#issuecomment-5398321811); [completion 5401803354](https://github.com/styx-secure/styx/issues/243#issuecomment-5401803354) | `maverde73` via PR #244 | [commit](https://api.github.com/repos/styx-secure/styx/commits/94f0a9b2781d45324199e6588629d23babedf746); [association](https://api.github.com/repos/styx-secure/styx/commits/94f0a9b2781d45324199e6588629d23babedf746/pulls) | Supplies bounded O-06c executable evidence without implementation or readiness authority. | `CONFORMING` |
+| `86c3f2dbd630e445d737a25c09889de2777ee185` | Close O-14 with a guarded signature suite | Issue [#246](https://github.com/styx-secure/styx/issues/246) / PR [#247](https://github.com/styx-secure/styx/pull/247) | [30 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/247/files) | `PLAN_INCREMENT` | [contract ratification 5402987067](https://github.com/styx-secure/styx/issues/246#issuecomment-5402987067); [suite selection 5403171142](https://github.com/styx-secure/styx/issues/246#issuecomment-5403171142) | `maverde73` via PR #247 | [commit](https://api.github.com/repos/styx-secure/styx/commits/86c3f2dbd630e445d737a25c09889de2777ee185); [association](https://api.github.com/repos/styx-secure/styx/commits/86c3f2dbd630e445d737a25c09889de2777ee185/pulls) | Ratifies the bounded internal signature-suite language and evidence; no product/runtime conformance. | `CONFORMING` |
+| `ba0525da1dd78c76c5cc60bc2041e2d3bed44bb3` | Decide O-07 genesis and checkpoint evidence | Issue [#248](https://github.com/styx-secure/styx/issues/248) / PR [#249](https://github.com/styx-secure/styx/pull/249) | [41 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/249/files) | `PLAN_INCREMENT` | [consolidated contract ratification 5411849432](https://github.com/styx-secure/styx/issues/248#issuecomment-5411849432); [human review 5028648088](https://github.com/styx-secure/styx/pull/249#pullrequestreview-5028648088) | `maverde73` via PR #249 | [commit](https://api.github.com/repos/styx-secure/styx/commits/ba0525da1dd78c76c5cc60bc2041e2d3bed44bb3); [association](https://api.github.com/repos/styx-secure/styx/commits/ba0525da1dd78c76c5cc60bc2041e2d3bed44bb3/pulls) | Ratifies bounded single-root genesis and checkpoint non-substitution evidence; production ceremony and recovery remain non-claims. | `CONFORMING` |
+| `c9a0420e8cf26606c4c87d7fe7b610beb31133ef` | Bound the O-08 C0.3 resource envelope | Issue [#250](https://github.com/styx-secure/styx/issues/250) / PR [#254](https://github.com/styx-secure/styx/pull/254) | [41 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/254/files) | `PLAN_INCREMENT` | [provider-bound selection 5431393925](https://github.com/styx-secure/styx/issues/250#issuecomment-5431393925); [closing ratification 5432143151](https://github.com/styx-secure/styx/issues/250#issuecomment-5432143151) | `maverde73` via PR #254 | [commit](https://api.github.com/repos/styx-secure/styx/commits/c9a0420e8cf26606c4c87d7fe7b610beb31133ef); [association](https://api.github.com/repos/styx-secure/styx/commits/c9a0420e8cf26606c4c87d7fe7b610beb31133ef/pulls) | Selects the bounded transcript-only resource envelope; no product/runtime availability claim. | `CONFORMING` |
+| `d35052dfbf0631c726f250933bc401f424602f31` | Rebase historical evidence guards | Issue [#255](https://github.com/styx-secure/styx/issues/255) / PR [#256](https://github.com/styx-secure/styx/pull/256) | [8 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/256/files) | `EXCEPTION_SECURITY_REMEDIATION` | [exact-final human review 5036984300](https://github.com/styx-secure/styx/pull/256#pullrequestreview-5036984300); [completion 5434008409](https://github.com/styx-secure/styx/issues/255#issuecomment-5434008409) | `maverde73` via PR #256 | [commit](https://api.github.com/repos/styx-secure/styx/commits/d35052dfbf0631c726f250933bc401f424602f31); [association](https://api.github.com/repos/styx-secure/styx/commits/d35052dfbf0631c726f250933bc401f424602f31/pulls) | Repairs historical identity pins and AST scope guards; the plan records it as procedural remediation selecting no protocol semantic. | `CONFORMING` |
+| `4a4ebc4b8fc91e500ecd8002801896dc73d5073f` | Close O-10 stable outcome taxonomy | Issue [#252](https://github.com/styx-secure/styx/issues/252) / PR [#257](https://github.com/styx-secure/styx/pull/257) | [41 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/257/files) | `PLAN_INCREMENT` | [human review 5038130839](https://github.com/styx-secure/styx/pull/257#pullrequestreview-5038130839); merged by `maverde73` | `maverde73` via PR #257 | [commit](https://api.github.com/repos/styx-secure/styx/commits/4a4ebc4b8fc91e500ecd8002801896dc73d5073f); [association](https://api.github.com/repos/styx-secure/styx/commits/4a4ebc4b8fc91e500ecd8002801896dc73d5073f/pulls) | Ratifies the bounded trusted-local taxonomy and opaque remote collapse without wire/API selection. | `CONFORMING` |
+| `25be9abc0d8c1bce8821a750616e13d245abc356` | Approve exact C0.3 corpus paths | Issue [#253](https://github.com/styx-secure/styx/issues/253) / PR [#258](https://github.com/styx-secure/styx/pull/258) | [12 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/258/files) | `PLAN_INCREMENT` | [copyright-holder contract ratification 5436056363](https://github.com/styx-secure/styx/issues/253#issuecomment-5436056363); [final approval 5436628091](https://github.com/styx-secure/styx/pull/258#issuecomment-5436628091) | `maverde73` via PR #258 | [commit](https://api.github.com/repos/styx-secure/styx/commits/25be9abc0d8c1bce8821a750616e13d245abc356); [association](https://api.github.com/repos/styx-secure/styx/commits/25be9abc0d8c1bce8821a750616e13d245abc356/pulls) | Ratifies the exact synthetic-only Apache-2.0 corpus-path inventory; creates no corpus byte. | `CONFORMING` |
+| `490689f0d81980cf942d448c76a54192913b7cde` | Integrate O-14 verification into O-06c | Issue [#260](https://github.com/styx-secure/styx/issues/260) / PR [#261](https://github.com/styx-secure/styx/pull/261) | [23 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/261/files) | `PLAN_INCREMENT` | [contract ratification 5437409919](https://github.com/styx-secure/styx/issues/260#issuecomment-5437409919); [human review 5045824217](https://github.com/styx-secure/styx/pull/261#pullrequestreview-5045824217) | `maverde73` via PR #261 | [commit](https://api.github.com/repos/styx-secure/styx/commits/490689f0d81980cf942d448c76a54192913b7cde); [association](https://api.github.com/repos/styx-secure/styx/commits/490689f0d81980cf942d448c76a54192913b7cde/pulls) | Discharges the recorded O-14 placeholder rerun within bounded O-06c evidence; no runtime/product claim. | `CONFORMING` |
+| `7768c32d3ddba230bd60f8b5db1b34d4bcb8ec3b` | Synchronize C0.3 entry authority | Issue [#262](https://github.com/styx-secure/styx/issues/262) / PR [#263](https://github.com/styx-secure/styx/pull/263) | [20 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/263/files) | `PLAN_INCREMENT` | [human review 5046400672](https://github.com/styx-secure/styx/pull/263#pullrequestreview-5046400672); merged by `maverde73` | `maverde73` via PR #263 | [commit](https://api.github.com/repos/styx-secure/styx/commits/7768c32d3ddba230bd60f8b5db1b34d4bcb8ec3b); [association](https://api.github.com/repos/styx-secure/styx/commits/7768c32d3ddba230bd60f8b5db1b34d4bcb8ec3b/pulls) | Synchronizes the exact corpus-entry authority set; keeps implementation, demo, product and sensitive use blocked. | `CONFORMING` |
+| `0fbba871130e4e100558030837e03dd609128976` | Construct transcript-only C0.3 conformance corpus | Issue [#264](https://github.com/styx-secure/styx/issues/264) / PR [#265](https://github.com/styx-secure/styx/pull/265) | [34 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/265/files) | `PLAN_INCREMENT` | [contract ratification 5446445472](https://github.com/styx-secure/styx/issues/264#issuecomment-5446445472); [amendment ratification 5446789373](https://github.com/styx-secure/styx/issues/264#issuecomment-5446789373) | `maverde73` via PR #265 | [commit](https://api.github.com/repos/styx-secure/styx/commits/0fbba871130e4e100558030837e03dd609128976); [association](https://api.github.com/repos/styx-secure/styx/commits/0fbba871130e4e100558030837e03dd609128976/pulls) | Constructs only the licensed synthetic corpus and bounded conformance/mutation evidence. | `CONFORMING` |
+| `0912c49e4b40e0c8aa4e35fa3e8d500152e60e71` | Align GitHub storefront with merged C0.3 corpus state | Issue [#268](https://github.com/styx-secure/styx/issues/268) / PR [#269](https://github.com/styx-secure/styx/pull/269) | [3 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/269/files) | `EXCEPTION_ROUTINE_MAINTENANCE` | [final contract ratification 5462438153](https://github.com/styx-secure/styx/issues/268#issuecomment-5462438153); [human review 5058119165](https://github.com/styx-secure/styx/pull/269#pullrequestreview-5058119165); [present determination 5468111470](https://github.com/styx-secure/styx/pull/284#issuecomment-5468111470) | `maverde73` via PR #269 | [commit](https://api.github.com/repos/styx-secure/styx/commits/0912c49e4b40e0c8aa4e35fa3e8d500152e60e71); [association](https://api.github.com/repos/styx-secure/styx/commits/0912c49e4b40e0c8aa4e35fa3e8d500152e60e71/pulls) | Public documentation claims only; no protocol byte or semantic intended. The present determination records the exception and original timing without backdating it. | `RETROACTIVE_HUMAN_DETERMINATION(5468111470)` |
+| `a51d1cdb378678a8997cf131f8d2df63fa2a3937` | Align landing page with C0.3 evidence | Issue [#271](https://github.com/styx-secure/styx/issues/271) / PR [#272](https://github.com/styx-secure/styx/pull/272) | [4 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/272/files) | `EXCEPTION_DISJOINT_WORK` | [final contract ratification 5462652352](https://github.com/styx-secure/styx/issues/271#issuecomment-5462652352); [human review 5058236423](https://github.com/styx-secure/styx/pull/272#pullrequestreview-5058236423); [present determination 5468111470](https://github.com/styx-secure/styx/pull/284#issuecomment-5468111470) | `maverde73` via PR #272 | [commit](https://api.github.com/repos/styx-secure/styx/commits/a51d1cdb378678a8997cf131f8d2df63fa2a3937); [association](https://api.github.com/repos/styx-secure/styx/commits/a51d1cdb378678a8997cf131f8d2df63fa2a3937/pulls) | Static website copy/style alignment only; no protocol byte or semantic intended. The present determination records the exception and original timing without backdating it. | `RETROACTIVE_HUMAN_DETERMINATION(5468111470)` |
+| `ebd7ff60523e9658055fb2904246917716678aac` | Add a bounded C0.3 evidence explorer | Issue [#273](https://github.com/styx-secure/styx/issues/273) / PR [#275](https://github.com/styx-secure/styx/pull/275) | [11 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/275/files) | `EXCEPTION_DISJOINT_WORK` | [final contract ratification 5463003161](https://github.com/styx-secure/styx/issues/273#issuecomment-5463003161); [final maintainer record 5463417097](https://github.com/styx-secure/styx/pull/275#issuecomment-5463417097); [present determination 5468111470](https://github.com/styx-secure/styx/pull/284#issuecomment-5468111470) | `maverde73` via PR #275 | [commit](https://api.github.com/repos/styx-secure/styx/commits/ebd7ff60523e9658055fb2904246917716678aac); [association](https://api.github.com/repos/styx-secure/styx/commits/ebd7ff60523e9658055fb2904246917716678aac/pulls) | Dependency-free synthetic read-only evidence explorer; it does not execute product protocol, transport or persistence and is not a deployable product demo. The present determination confirms the disjoint-work exception without backdating it. | `RETROACTIVE_HUMAN_DETERMINATION(5468111470)` |
+| `578b3241d6e7d0231da0d2e00b9d04c69530d24e` | Bind historical MLS fixture replay to proof time | No associated PR: [empty provider response](https://api.github.com/repos/styx-secure/styx/commits/578b3241d6e7d0231da0d2e00b9d04c69530d24e/pulls). PR [#279](https://github.com/styx-secure/styx/pull/279) remains open on a different HEAD and is not this commit's association. | [1 exact path in commit response](https://api.github.com/repos/styx-secure/styx/commits/578b3241d6e7d0231da0d2e00b9d04c69530d24e) | `NON_PR_COMMIT` | No immutable pre-integration PR association or exact-commit human gate found; [present determination 5468111470](https://github.com/styx-secure/styx/pull/284#issuecomment-5468111470) | `maverde73` direct commit via GitHub `web-flow` | [commit](https://api.github.com/repos/styx-secure/styx/commits/578b3241d6e7d0231da0d2e00b9d04c69530d24e); [empty association](https://api.github.com/repos/styx-secure/styx/commits/578b3241d6e7d0231da0d2e00b9d04c69530d24e/pulls); [different open PR #279](https://api.github.com/repos/styx-secure/styx/pulls/279) | Changes one historical MLS fixture-replay test, not protocol semantics. The present determination accepts its bounded semantic placement but preserves the non-PR process-provenance violation and does not associate it with PR #279. | `RETROACTIVE_HUMAN_DETERMINATION(5468111470)` |
+| `a4fa1286b57b2ee79b3c580fdce0d1fb3bf9cd40` | Rename the planned Themis vertical to Flegias | Issue [#274](https://github.com/styx-secure/styx/issues/274) / PR [#276](https://github.com/styx-secure/styx/pull/276) | [47 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/276/files) | `EXCEPTION_ROUTINE_MAINTENANCE` | [final contract ratification 5463780077](https://github.com/styx-secure/styx/issues/274#issuecomment-5463780077); [human review 5058733881](https://github.com/styx-secure/styx/pull/276#pullrequestreview-5058733881); [present determination 5468111470](https://github.com/styx-secure/styx/pull/284#issuecomment-5468111470) | `maverde73` via PR #276 | [commit](https://api.github.com/repos/styx-secure/styx/commits/a4fa1286b57b2ee79b3c580fdce0d1fb3bf9cd40); [association](https://api.github.com/repos/styx-secure/styx/commits/a4fa1286b57b2ee79b3c580fdce0d1fb3bf9cd40/pulls) | Mechanical brand/package rename with no intended protocol semantic. The present determination confirms the exception without backdating it. | `RETROACTIVE_HUMAN_DETERMINATION(5468111470)` |
+| `289418257268d88d7d546c78fef662fd0579365d` | Reconcile C0.3 K evidence with O-08/O-10 | Issue [#266](https://github.com/styx-secure/styx/issues/266) / PR [#267](https://github.com/styx-secure/styx/pull/267) | [38 exact paths](https://api.github.com/repos/styx-secure/styx/pulls/267/files) | `PLAN_INCREMENT` | [exact D4 kit ratification 5466903799](https://github.com/styx-secure/styx/issues/266#issuecomment-5466903799); [final bounded GO 5467276541](https://github.com/styx-secure/styx/issues/266#issuecomment-5467276541); [merged-byte record 5467311216](https://github.com/styx-secure/styx/issues/266#issuecomment-5467311216) | `maverde73` via PR #267 | [commit](https://api.github.com/repos/styx-secure/styx/commits/289418257268d88d7d546c78fef662fd0579365d); [association](https://api.github.com/repos/styx-secure/styx/commits/289418257268d88d7d546c78fef662fd0579365d/pulls) | Completes bounded D4 transcript/K evidence and blind corroboration; AP execution, implementation alignment, demo, product and sensitive use remain `NO-GO`. | `CONFORMING` |
+<!-- styx-section8-exception-audit:v1:end -->
+
 ## 9. Work after the freeze
 
 After a passing exit verdict, work resumes through separate contracts in this
@@ -435,8 +483,8 @@ Originating findings are dispositioned as follows:
 
 ## 11. Current state
 
-After C0.2k ratification, the O-06c handoff reconciliation and Issue #243's
-bounded executable evidence:
+After Issue #266 / merged PR #267 completed the exact D4 reconciliation and
+bounded evidence verdict:
 
 - the review model exists and is useful for bounded inspection;
 - C0.2j and C0.2k are ratified historical inputs; the selected 84-octet
@@ -460,15 +508,17 @@ bounded executable evidence:
   placeholder-substitution rerun still gated. O-12 remains conditional as
   described in section 4; O-11, O-13, O-15 and O-16 retain their explicitly
   bounded non-blocking or downstream-blocking roles;
-- C0.3 remains `NO-GO` and depends exactly on the now-satisfied entry set
-  `{C0.3_CORPUS_PATH_APPROVAL,O-06c,O-07,O-08,O-10,O-14}`;
+- the exact D4 transcript/K corpus and evidence package have a bounded evidence
+  GO, while the C0.3 capability gate remains `NO-GO` for implementation
+  alignment, demo, product and sensitive use;
 - `C0.3_CORPUS_PATH_APPROVAL` is bounded `DECIDED` by Issue #253; Issue #264
   populates exactly its six synthetic-only paths and completes their executable
   conformance and mutation evidence;
-- Issue #262 completed the final authority-set synchronization and Issue #264
-  completed corpus construction. C0.3 continues to block implementation
-  alignment, demo, product and sensitive use until independent implementation
-  agreement, exit review and an explicit human phase verdict.
+- Issue #262 completed the final authority-set synchronization, Issue #264
+  completed corpus construction and Issue #266 completed the exact D4
+  transcript/K reconciliation with independent-reader agreement. Independent
+  implementation alignment, the full Section 8 exit review and an explicit
+  human phase verdict remain separate work.
 
 The human ratification gate is currently discipline-enforced rather than fully
 server-enforced: the repository governance record at
@@ -477,12 +527,11 @@ approving review and no last-push approval. Until an authorized human verifies
 and applies stronger ruleset controls, every human gate must be evidenced
 explicitly in the relevant Issue and pull request.
 
-The same discovery limitation applies to the freeze itself: `AGENTS.md` and
-`CLAUDE.md` do not yet link to this plan. Tracking Issue #237 records the
-separately human-gated governance change. Until it lands, every new task or
-story contract and its human review must explicitly verify this freeze before
-execution; the unresolved discovery gap is carried into the section 8 exit
-audit.
+`AGENTS.md` and `CLAUDE.md` now link directly to this plan. Tracking Issue #237
+is satisfied when the reconciliation increment that added those pointers is
+merged. Issue #230 retains historical wording outside that bounded change.
+Issue #270 remains idle and unratified on a stale base; it may not execute
+without a refreshed non-overlapping contract or a new explicit ratification.
 
 This state is intentionally conservative. The freeze ends only through section
 8, not through elapsed time, reviewer consensus or pressure to demonstrate a
