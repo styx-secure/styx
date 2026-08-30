@@ -15,6 +15,24 @@ ROOT = PACKAGE.parents[2]
 
 
 class CrossRuntimeTests(unittest.TestCase):
+    def test_javascript_exact_keys_rejects_comma_collision(self) -> None:
+        node = shutil.which("node")
+        self.assertIsNotNone(node)
+        script = f"""
+            import {{ exactKeys }} from {json.dumps((PACKAGE / 'node_adapter.mjs').as_uri())};
+            if (!exactKeys({{operation: true, profile: true}}, ["operation", "profile"])) process.exit(1);
+            if (exactKeys({{"operation,profile": true}}, ["operation", "profile"])) process.exit(2);
+        """
+        completed = subprocess.run(
+            [node, "--input-type=module", "--eval", script],
+            cwd=ROOT,
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
+
     def test_javascript_matches_python(self) -> None:
         node = shutil.which("node")
         self.assertIsNotNone(node)

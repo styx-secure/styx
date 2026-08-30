@@ -36,7 +36,7 @@ const observation = (disposition, fields = {}) => ({
 });
 
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-const exactKeys = (value, keys) =>
+export const exactKeys = (value, keys) =>
   record(value) &&
   Object.keys(value).length === keys.length &&
   keys.every((key) => Object.hasOwn(value, key));
