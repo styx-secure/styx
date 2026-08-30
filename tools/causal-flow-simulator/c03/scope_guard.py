@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed path and package-shape guard for Issue #264."""
+"""Fail-closed path and package-shape guard for Issue #266."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT))
 from canonical_json import store  # noqa: E402
 
 
-BASE_SHA = "7768c32d3ddba230bd60f8b5db1b34d4bcb8ec3b"
+BASE_SHA = "a4fa1286b57b2ee79b3c580fdce0d1fb3bf9cd40"
 COPY_THRESHOLD = 25
 CORPUS_PREFIX = "conformance/application-protocol/c03/"
 TOOL_PREFIX = "tools/causal-flow-simulator/c03/"
@@ -25,9 +25,11 @@ CORPUS_FILES = frozenset({
     "state-machine-scenarios.json", "adversarial-mutations.json", "expected-traces.json",
 })
 TOOL_FILES = frozenset({
-    "README.md", "canonical_json.py", "corpus-inventory.json", "corpus-source-map.json",
+    "README.md", "build_blind_projection.py", "canonical_json.py", "compare_clean_room.py",
+    "corpus-inventory.json", "corpus-source-map.json",
     "corpus_model.py", "generate_corpus.py", "validate_corpus.py", "replay_corpus.py",
     "node_adapter.mjs", "run_cross_runtime.py", "run_mutations.py", "scope_guard.py",
+    "tests/test_blind_projection.py", "tests/test_compare_clean_room.py",
     "tests/test_canonical_json.py", "tests/test_coverage.py", "tests/test_generation.py",
     "tests/test_manifest.py", "tests/test_mutations.py", "tests/test_replay.py",
     "tests/test_scope_guard.py", "tests/test_cross_runtime.py",
@@ -35,10 +37,14 @@ TOOL_FILES = frozenset({
 SYNC_FILES = frozenset({
     "docs/PROJECT_BRIEF.md", "docs/protocol/protocol-hardening-plan.md",
     "docs/protocol/review/README.md", "docs/protocol/review/styx-app-kernel-v0-review-model.json",
+    "docs/protocol/review/styx-app-kernel-v0-review-model.schema.json",
+    "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
+    "docs/protocol/styx-app-kernel-v0-decisions.md",
     "tools/protocol-review-model/validate.py",
     "tools/causal-flow-simulator/o10/scope_guard.py",
     "tools/protocol-review-model/tests/test_c03_corpus_path_approval.py",
     "tools/protocol-review-model/tests/test_c03_entry_authorization.py",
+    "tools/protocol-review-model/tests/test_o10_outcome_taxonomy.py",
 })
 
 

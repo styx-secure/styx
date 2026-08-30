@@ -537,6 +537,13 @@ EXPECTED_TRANSITION_STATUS = {
     for transition_id in transition_ids
 }
 
+K_ADMISSION_ONLY_TRANSITIONS = {
+    ("k_admission", "k_admit_binding_grant"),
+    ("k_admission", "k_admit_candidate"),
+    ("pending_replay", "replay_apply_candidate"),
+    ("pending_replay", "replay_verified_opening"),
+}
+
 # Digests are over canonical JSON projections of the exact base-model values. They
 # are deliberately independent of candidate input and act as reviewed kill-switch
 # pins without duplicating unrelated descriptive fields.
@@ -588,7 +595,7 @@ EXPECTED_FIELD_SECURITY_DIGEST = {
 EXPECTED_STATE_MODEL_STRUCTURE_DIGEST = {
     "ap_projection": "65ce14337e10d7305a409ef46577a21f2331df0cc7df0c545363592d0b0c4e96",
     "k_admission": "c0f2b6dc8fd68a4f21f4f52625a4f232b7968ea07ac11311e4f632877101a7ad",
-    "pending_replay": "d9eedea7a98f44c391d55f15f703fa44d0ed7dc222800f170684be39c447493c",
+    "pending_replay": "814d69792952bd4fb119fa536d601a6c2e826f4b512f19c7ce0df213dcc21e1a",
 }
 
 EXPECTED_TRANSITION_STRUCTURE_DIGEST = {
@@ -600,16 +607,16 @@ EXPECTED_TRANSITION_STRUCTURE_DIGEST = {
     ("ap_projection", "ap_to_partially_pending"): "e93b5f5e9a43e56a12192e128ffc7ab2d80af457ece3e2b06f0692357da7195b",
     ("ap_projection", "ap_to_stale"): "60adb84af20f096bab1c19ab6e2361ffe29a843569febf3bcafefd8dc60b5961",
     ("ap_projection", "ap_to_terminal_fork"): "b095b9d790fb54474b7cea058f2736a5d2bbaa34eeafa26dfacb55afad26fd74",
-    ("k_admission", "k_admit_binding_grant"): "9263f1b56c11c85c155cb5a887cc85581973ab2c01ec2591f03dbb777c3e5159",
-    ("k_admission", "k_admit_candidate"): "57c5bb63dc7f90a425231fb77291b3b23df0cded2a4d3dbd708273edf194ae45",
+    ("k_admission", "k_admit_binding_grant"): "fb2b157b129907a79d4a7218a7986ff98a32ac1bc4507d34885fa47e72931751",
+    ("k_admission", "k_admit_candidate"): "ab32985bfe67a649bd164331fd94f636e0716b2f61a6c9c990f20da1ee181071",
     ("k_admission", "k_reject_invalid"): "4d68e7d153b28dc177d3ab4c0bd8f24bb921c6ecbde2dfbff34176f6f46e0730",
     ("k_admission", "k_reject_unresolved_binding"): "0ad68d5d4607fde380b96fcc798a772cc06af03a8b4701bec66a1131d85cc322",
     ("k_admission", "k_to_collision"): "45fed3154aabbd415b12ec711657c2144014d839d3bd775c9d54f7b8fe6aa78d",
     ("k_admission", "k_to_fork"): "0865b092f5682c163d670f0832ffc9d6a35eb3b665ead74fc06d776ce184b717",
-    ("pending_replay", "replay_apply_candidate"): "89d5677772ff0f2677574e6e77de282023b28843d0f67fc62fbe9d5e1f6e8399",
+    ("pending_replay", "replay_apply_candidate"): "4c9008031c7258194f02860a931f9a249af253bde5d0324e2a8ef2a37fb89152",
     ("pending_replay", "replay_to_pending_descendant"): "9b505d483be8e29dad7e82fcdf186f26156b823f92b9ba1f4b88e5dfbed24ed6",
     ("pending_replay", "replay_to_pending_root"): "2e131619f64ac2edd81e016293550e2481b910f6e4bb189782c12f9819af37d6",
-    ("pending_replay", "replay_verified_opening"): "666a00ec99be48b2f4bd0a7f762c4b6dae982ef75164de1a5b76f35d078d3f96",
+    ("pending_replay", "replay_verified_opening"): "f9978c222ffc2273fbae21811a5a47662c0bd19cb33e3396e846cc291a2767ee",
 }
 
 EXPECTED_INVARIANT_REFS_DIGEST = {
@@ -699,7 +706,7 @@ SUPPORTED_SCHEMA_KEYWORDS = {
 
 SCHEMA_DRAFT = "https://json-schema.org/draft/2020-12/schema"
 EXPECTED_SCHEMA_SHA256 = (
-    "efc83b3c3981296a77bf1b6d5592ccfa4a6137691ec8e078d196c2c740a0e82e"
+    "2a568ce900c8a9537e6f305893082efc5f3ad68daa214c5466235e2bf1099593"
 )
 
 PROTECTED_UNRESOLVED_FIELDS = {
@@ -1326,8 +1333,13 @@ def _validate_exact_pins(model: dict[str, Any]) -> list[Finding]:
                         f"must remain {expected_status}",
                     )
                 )
+            projection_keys = (
+                ("from", "to", "outcome", "result_layer")
+                if locator in K_ADMISSION_ONLY_TRANSITIONS
+                else ("from", "to", "outcome")
+            )
             transition_projection = {
-                key: transition.get(key) for key in ("from", "to", "outcome")
+                key: transition.get(key) for key in projection_keys
             }
             if (
                 _projection_digest(transition_projection)
@@ -2523,7 +2535,23 @@ def validate_domain(model: dict[str, Any], repo_root: Path) -> list[Finding]:
                         str(transition.get("to")),
                     )
                 )
-            if transition.get("outcome") not in outcomes:
+            locator = (state_model.get("id"), transition.get("id"))
+            if locator in K_ADMISSION_ONLY_TRANSITIONS:
+                if (
+                    "outcome" in transition
+                    or transition.get("result_layer") != "K_ADMISSION_ONLY"
+                ):
+                    findings.append(
+                        Finding(
+                            "PINNED_VALUE_DRIFT",
+                            transition_path,
+                            "positive K transition must carry only K_ADMISSION_ONLY",
+                        )
+                    )
+            elif (
+                transition.get("outcome") not in outcomes
+                or "result_layer" in transition
+            ):
                 findings.append(
                     Finding(
                         "DANGLING_REFERENCE",
@@ -2588,11 +2616,11 @@ def _validate_c03_corpus_gate(repo_root: Path) -> list[Finding]:
         ):
             raise ValueError("exact six-file corpus set is absent")
         canonical_counts: dict[str, int] = {}
-        minimum_counts = {
+        expected_counts = {
             "validVectors": 17,
-            "invalidVectors": 29,
-            "scenarios": 118,
-            "mutations": 501,
+            "invalidVectors": 36,
+            "scenarios": 128,
+            "mutations": 522,
         }
         manifest = load_json_unique(corpus / "manifest.json")
         manifest_files = manifest.get("files")
@@ -2615,7 +2643,7 @@ def _validate_c03_corpus_gate(repo_root: Path) -> list[Finding]:
             if (
                 isinstance(record_count, bool)
                 or not isinstance(record_count, int)
-                or record_count < minimum_counts[label]
+                or record_count != expected_counts[label]
             ):
                 raise ValueError(f"canonical {label} coverage is incomplete")
             canonical_counts[label] = record_count

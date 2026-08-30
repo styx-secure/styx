@@ -839,6 +839,9 @@
         "owner": {
           "$ref": "#/$defs/id"
         },
+        "result_layer": {
+          "const": "K_ADMISSION_ONLY"
+        },
         "status": {
           "$ref": "#/$defs/status"
         },
@@ -856,7 +859,6 @@
         "from",
         "trigger",
         "to",
-        "outcome",
         "decision_refs",
         "obligation_refs",
         "citations"

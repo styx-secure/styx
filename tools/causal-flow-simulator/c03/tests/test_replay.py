@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from copy import deepcopy
 from pathlib import Path
+import subprocess
 import sys
+import tempfile
 import unittest
 
 
@@ -11,12 +13,84 @@ REPO = ROOT.parents[2]
 CORPUS = REPO / "conformance/application-protocol/c03"
 sys.path.insert(0, str(ROOT))
 
-from canonical_json import load  # noqa: E402
-from corpus_model import BaseReader, CorpusModelError  # noqa: E402
+from canonical_json import dumps, load, loads  # noqa: E402
+from corpus_model import (  # noqa: E402
+    CorpusModelError,
+    DOMAINS,
+    MAX_U32,
+    ProtocolError,
+    ed25519_sign,
+    encode_genesis,
+    encode_event,
+    evaluate_k_admission_graph,
+    evaluate_k_admission_scenario,
+    evaluate_vector,
+    framed_hash,
+    load_local_json,
+    synthetic_octets,
+    validate_geometry_predicates,
+)
+from generate_corpus import (  # noqa: E402
+    _application_vector,
+    _event_fields,
+    _k_admission_vectors,
+    _valid_vectors,
+)
 from replay_corpus import _transition_index, compute_trace, replay  # noqa: E402
 
 
 class ReplayTests(unittest.TestCase):
+    def test_intrinsic_single_geometry_ceiling_is_exact_and_bounded(self) -> None:
+        ceiling = MAX_U32 - 132
+        for value in (ceiling - 1, ceiling):
+            observed = validate_geometry_predicates(value, "SINGLE", None)
+            self.assertEqual(observed["geometryPredicate2"], "PASS")
+        with self.assertRaises(ProtocolError) as failure:
+            validate_geometry_predicates(ceiling + 1, "SINGLE", None)
+        self.assertEqual(failure.exception.observations["geometryPredicate2"], "FAIL")
+
+    def test_grant_verification_key_boundaries_admit_only_exact_width(self) -> None:
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+        records = {
+            row["id"]: row
+            for row in valid + invalid
+            if row["id"] in {
+                "inv-grantee-key-empty",
+                "inv-grantee-key-short",
+                "vec-control-grant",
+                "inv-resource-grantee-key",
+            }
+        }
+        self.assertEqual(
+            {
+                identifier: len(bytes.fromhex(row["fields"]["tail"]["granteeVerificationKeyHex"]))
+                for identifier, row in records.items()
+            },
+            {
+                "inv-grantee-key-empty": 0,
+                "inv-grantee-key-short": 31,
+                "vec-control-grant": 32,
+                "inv-resource-grantee-key": 33,
+            },
+        )
+        for identifier in ("inv-grantee-key-empty", "inv-grantee-key-short"):
+            observed = evaluate_vector(records[identifier])
+            self.assertEqual(observed["transcriptVerification"], "REJECTED")
+            self.assertEqual(observed["referenceVerification"], "NOT_REACHED")
+            self.assertEqual(observed["signatureVerification"], "NOT_EVALUATED")
+            self.assertEqual(observed["kBindingAdmission"], "REJECTED")
+        supported = evaluate_vector(records["vec-control-grant"])
+        self.assertEqual(supported["transcriptVerification"], "VALID")
+        self.assertEqual(supported["signatureVerification"], "VALID")
+        self.assertEqual(supported["kBindingAdmission"], "ADMITTED")
+        overlong = evaluate_vector(records["inv-resource-grantee-key"])
+        self.assertEqual(overlong["transcriptVerification"], "VALID")
+        self.assertEqual(overlong["referenceVerification"], "VALID")
+        self.assertEqual(overlong["signatureVerification"], "NOT_EVALUATED")
+        self.assertEqual(overlong["localOutcome"], "CURRENT_OBJECT_OUT_OF_PROFILE")
+        self.assertEqual(overlong["kBindingAdmission"], "REJECTED")
+
     def test_all_vectors_and_scenarios_replay(self) -> None:
         report = replay(REPO, CORPUS)
         self.assertEqual(report["result"], "PASS")
@@ -55,17 +129,151 @@ class ReplayTests(unittest.TestCase):
             if step["dependencyStatus"] == "MISSING"
         ]
         self.assertTrue(missing)
-        self.assertTrue(all(step["localOutcome"] == "PENDING_ANCESTOR" for step in missing))
+        self.assertTrue(all(step["localOutcome"] == "DEPENDENCY_DEFERRED" for step in missing))
+
+    def test_disconnected_records_never_claim_k_or_ap_authority(self) -> None:
+        report = replay(REPO, CORPUS)
+        observations = report["blindTranscriptObservations"]
+        self.assertEqual(len(observations), 53)
+        self.assertTrue(
+            all(row["kBindingAdmission"] == "NOT_EVALUATED" for row in observations)
+        )
+        self.assertTrue(
+            all(row["apAuthorityResult"] == "NOT_REACHED" for row in observations)
+        )
+
+        rejected_replay = next(
+            row
+            for row in observations
+            if row["id"] == "inv-rejected-signature-representation"
+        )
+        self.assertEqual(rejected_replay["referenceVerification"], "VALID")
+        self.assertEqual(rejected_replay["signatureVerification"], "REJECTED")
+        self.assertEqual(rejected_replay["localOutcome"], "INVALID")
+        self.assertNotEqual(rejected_replay["localOutcome"], "DUPLICATE")
+
+    def test_selected_profile_mismatch_is_not_malformed_transcript(self) -> None:
+        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+        record = next(row for row in invalid if row["id"] == "inv-profile-substitution")
+        observed = evaluate_vector(record)
+        self.assertEqual(observed["transcriptVerification"], "VALID")
+        self.assertEqual(observed["referenceVerification"], "VALID")
+        self.assertEqual(observed["signatureVerification"], "NOT_EVALUATED")
+        self.assertEqual(observed["commitmentVerification"], "NOT_PRESENT")
+        self.assertEqual(observed["localOutcome"], "CURRENT_OBJECT_OUT_OF_PROFILE")
+        self.assertEqual(observed["stage"], "S3_KERNEL_STRUCTURAL")
+
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        base = deepcopy(next(row for row in valid if row["id"] == "vec-ordinary-none"))
+        for field, value, expected in (
+            ("applicationProfileVersion", 2, "CURRENT_OBJECT_OUT_OF_PROFILE"),
+            ("applicationProfileId", 0, "STRUCTURAL_REJECTION"),
+            ("applicationProfileVersion", 0, "STRUCTURAL_REJECTION"),
+        ):
+            candidate = deepcopy(base)
+            candidate["fields"][field] = value
+            transcript = encode_event(candidate["fields"])
+            public, signature = ed25519_sign(
+                synthetic_octets(f"selected-profile-regression/{field}/{value}", 32),
+                transcript,
+            )
+            candidate["transcriptHex"] = transcript.hex()
+            candidate["eventReferenceHex"] = framed_hash(
+                DOMAINS["event_reference"], transcript
+            ).hex()
+            candidate["binding"]["verificationKeyHex"] = public.hex()
+            candidate["signatureHex"] = signature.hex()
+            observed = evaluate_vector(candidate)
+            self.assertEqual(observed["localOutcome"], expected)
+            self.assertEqual(
+                observed["transcriptVerification"],
+                "VALID" if expected == "CURRENT_OBJECT_OUT_OF_PROFILE" else "REJECTED",
+            )
+
+    def test_genesis_supplied_key_cannot_substitute_for_embedded_root(self) -> None:
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        candidate = deepcopy(next(row for row in valid if row["id"] == "vec-genesis"))
+        substitute_key, substitute_signature = ed25519_sign(
+            synthetic_octets("genesis-key-substitution", 32),
+            bytes.fromhex(candidate["transcriptHex"]),
+        )
+        candidate["binding"]["verificationKeyHex"] = substitute_key.hex()
+        candidate["signatureHex"] = substitute_signature.hex()
+
+        observed = evaluate_vector(candidate)
+
+        self.assertEqual(observed["transcriptVerification"], "VALID")
+        self.assertEqual(observed["referenceVerification"], "VALID")
+        self.assertEqual(observed["signatureVerification"], "NOT_EVALUATED")
+        self.assertEqual(observed["localOutcome"], "CREDENTIAL_BINDING_MISMATCH")
+        self.assertEqual(observed["stage"], "S3_KERNEL_STRUCTURAL")
+
+    def test_geometry_applicability_and_o08_limits_are_separate(self) -> None:
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+
+        single = evaluate_vector(
+            next(row for row in valid if row["id"] == "vec-required-single")
+        )
+        self.assertEqual(single["geometryPredicate1"], "PASS")
+        self.assertEqual(single["geometryPredicate2"], "PASS")
+        for index in range(3, 8):
+            self.assertEqual(single[f"geometryPredicate{index}"], "NOT_APPLICABLE")
+
+        tree = evaluate_vector(
+            next(row for row in valid if row["id"] == "vec-detachable-tree")
+        )
+        self.assertEqual(tree["geometryPredicate2"], "NOT_APPLICABLE")
+        for index in (1, 3, 4, 5, 6, 7):
+            self.assertEqual(tree[f"geometryPredicate{index}"], "PASS")
+
+        content_limit = evaluate_vector(
+            next(row for row in invalid if row["id"] == "inv-resource-content-length")
+        )
+        self.assertEqual(content_limit["geometryPredicate2"], "PASS")
+        self.assertEqual(content_limit["localOutcome"], "CURRENT_OBJECT_OUT_OF_PROFILE")
+
+        chunk_limit = evaluate_vector(
+            next(row for row in invalid if row["id"] == "inv-resource-chunk-size")
+        )
+        self.assertEqual(chunk_limit["geometryPredicate2"], "NOT_APPLICABLE")
+        self.assertEqual(chunk_limit["geometryPredicate3"], "PASS")
+        self.assertEqual(chunk_limit["localOutcome"], "CURRENT_OBJECT_OUT_OF_PROFILE")
+
+    def test_missing_detachable_opening_is_pending_at_rejected_boundary(self) -> None:
+        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+        record = next(
+            row for row in invalid if row["id"] == "inv-opening-missing-detachable"
+        )
+        observed = evaluate_vector(record)
+        self.assertEqual(observed["transcriptVerification"], "VALID")
+        self.assertEqual(observed["signatureVerification"], "VALID")
+        self.assertEqual(observed["commitmentVerification"], "PENDING")
+        self.assertEqual(observed["commitmentMatchVerification"], "NOT_EVALUATED")
+        self.assertEqual(observed["suppliedLengthVerification"], "NOT_EVALUATED")
+        self.assertEqual(observed["kBindingAdmission"], "REJECTED")
+        self.assertEqual(observed["localOutcome"], "OPENING_MISSING")
+        self.assertEqual(observed["stage"], "S3_KERNEL_STRUCTURAL")
 
     def test_transition_rejects_an_incompatible_vector(self) -> None:
         scenarios = load(CORPUS / "state-machine-scenarios.json")["records"]
-        scenario = deepcopy(next(row for row in scenarios if row["steps"][0]["transitionId"] is not None))
+        scenario = deepcopy(
+            next(
+                row
+                for row in scenarios
+                if row["modelId"] == "k_admission"
+                and row["steps"][0].get("expectedResultLayer") == "K_ADMISSION_ONLY"
+            )
+        )
+        scenario["steps"][0]["evidenceLayer"] = "LOCAL_NEGATIVE"
         scenario["steps"][0]["inputVectorId"] = "inv-signature"
+        scenario["steps"][0].pop("inputKAdmissionScenarioId")
+        scenario["steps"][0].pop("inputKAdmissionRecordId")
         valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
         invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
         vectors = {row["id"]: row for row in valid + invalid}
-        model = BaseReader(REPO).json("docs/protocol/review/styx-app-kernel-v0-review-model.json")
-        with self.assertRaisesRegex(CorpusModelError, "incompatible transition input"):
+        model = load_local_json(REPO / "docs/protocol/review/styx-app-kernel-v0-review-model.json")
+        with self.assertRaisesRegex(CorpusModelError, "incompatible positive K transition"):
             compute_trace(scenario, vectors, _transition_index(model))
 
     def test_vectors_cover_identity_parent_and_selected_resource_boundaries(self) -> None:
@@ -95,18 +303,367 @@ class ReplayTests(unittest.TestCase):
             {
                 "inv-parent-order",
                 "inv-profile-substitution",
-                "inv-noncanonical-integer",
                 "inv-resource-parent-count",
                 "inv-resource-sequence",
                 "inv-resource-transition-block",
-                "inv-resource-framing-object",
                 "inv-resource-chunk-size",
                 "inv-resource-chunk-count",
                 "inv-resource-content-length",
-                "inv-resource-genesis-policy",
+                "inv-commitment-equal-length",
+                "inv-opening-missing-detachable",
+                "inv-pending-ancestor",
+                "inv-credential-identifier-collision",
+                "inv-unresolved-credential-binding",
             }
             <= {record["id"] for record in invalid}
         )
+
+    def test_removed_r6_vectors_remain_direct_fail_closed_regressions(self) -> None:
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        ordinary = next(record for record in valid if record["id"] == "vec-ordinary-none")
+
+        truncated = deepcopy(ordinary)
+        truncated["transcriptHex"] = truncated["transcriptHex"][:-2]
+        trailing = deepcopy(ordinary)
+        trailing["transcriptHex"] += "00"
+        overlong = deepcopy(ordinary)
+        raw = bytearray.fromhex(overlong["transcriptHex"])
+        transition_length = len(
+            bytes.fromhex(ordinary["fields"]["transitionBlockHex"])
+        )
+        sequence_offset = 20 + 57 + 4 + transition_length + 32
+        raw[16:20] = (int.from_bytes(raw[16:20], "big") + 1).to_bytes(4, "big")
+        raw[sequence_offset:sequence_offset] = b"\x00"
+        overlong["transcriptHex"] = raw.hex()
+
+        for record in (truncated, trailing, overlong):
+            result = evaluate_vector(record)
+            self.assertEqual(result["localOutcome"], "STRUCTURAL_REJECTION")
+            self.assertEqual(result["kBindingAdmission"], "REJECTED")
+
+        framing_fields = deepcopy(ordinary["fields"])
+        framing_fields["transitionBlockHex"] = synthetic_octets(
+            "direct-resource-framing-object", 8193
+        ).hex()
+        framing = _application_vector(
+            "direct-resource-framing-object",
+            framing_fields,
+            "seed/root",
+        )
+        framing_result = evaluate_vector(framing)
+        self.assertEqual(
+            framing_result["localOutcome"], "CURRENT_OBJECT_OUT_OF_PROFILE"
+        )
+        self.assertEqual(framing_result["kBindingAdmission"], "REJECTED")
+
+        genesis = next(record for record in valid if record["id"] == "vec-genesis")
+        policy = deepcopy(genesis)
+        policy["fields"]["initialAuthorityPolicyHex"] = synthetic_octets(
+            "direct-resource-genesis-policy", 4097
+        ).hex()
+        policy_transcript = encode_genesis(policy["fields"])
+        policy_key, policy_signature = ed25519_sign(
+            synthetic_octets("seed/root", 32), policy_transcript
+        )
+        policy["binding"]["verificationKeyHex"] = policy_key.hex()
+        policy["signatureHex"] = policy_signature.hex()
+        policy["transcriptHex"] = policy_transcript.hex()
+        policy["genesisReferenceHex"] = framed_hash(
+            DOMAINS["genesis_reference"], policy_transcript
+        ).hex()
+        policy_result = evaluate_vector(policy)
+        self.assertEqual(
+            policy_result["localOutcome"], "CURRENT_OBJECT_OUT_OF_PROFILE"
+        )
+        self.assertEqual(policy_result["kBindingAdmission"], "REJECTED")
+
+
+class KAdmissionScenarioTests(unittest.TestCase):
+    def setUp(self) -> None:
+        records, self.scenarios = _k_admission_vectors()
+        self.by_id = {record["id"]: record for record in records}
+
+    def _scenario(self, identifier: str):
+        scenario = next(row for row in self.scenarios if row["id"] == identifier)
+        genesis = self.by_id[scenario["acceptedGenesisRecordId"]]
+        records = [self.by_id[value] for value in scenario["recordIds"]]
+        return genesis, records
+
+    @staticmethod
+    def _resign(record, seed_label):
+        value = deepcopy(record)
+        transcript = encode_event(value["fields"])
+        public, signature = ed25519_sign(synthetic_octets(seed_label, 32), transcript)
+        value["binding"]["verificationKeyHex"] = public.hex()
+        value["signatureHex"] = signature.hex()
+        value["transcriptHex"] = transcript.hex()
+        value["eventReferenceHex"] = framed_hash(
+            DOMAINS["event_reference"], transcript
+        ).hex()
+        return value
+
+    def test_connected_histories_are_admitted(self) -> None:
+        counts = {}
+        for scenario in self.scenarios:
+            genesis, records = self._scenario(scenario["id"])
+            observations = evaluate_k_admission_scenario(genesis, records)
+            self.assertTrue(
+                all(row["kBindingAdmission"] == "ADMITTED" for row in observations)
+            )
+            counts[scenario["id"]] = len(observations)
+        self.assertEqual(
+            counts,
+            {
+                "k-admission-genesis-revoke-exception": 3,
+                "k-admission-grant-rooted-join": 5,
+                "k-admission-linear-controls": 10,
+            },
+        )
+
+    def test_javascript_adapter_matches_python_byte_for_byte(self) -> None:
+        scenarios = []
+        expected_observations = []
+        for scenario in self.scenarios:
+            genesis, records = self._scenario(scenario["id"])
+            scenarios.append(
+                {
+                    "acceptedGenesisRecord": genesis,
+                    "id": scenario["id"],
+                    "records": records,
+                }
+            )
+            expected_observations.append(
+                {
+                    "id": scenario["id"],
+                    "observations": evaluate_k_admission_scenario(genesis, records),
+                }
+            )
+        expected = dumps({"observations": expected_observations, "result": "PASS"})
+        with tempfile.TemporaryDirectory(prefix="styx-c03-k-admission-") as tmp:
+            input_path = Path(tmp) / "input.json"
+            output_path = Path(tmp) / "output.json"
+            input_path.write_bytes(dumps({"scenarios": scenarios}))
+            completed = subprocess.run(
+                [
+                    "node",
+                    str(ROOT / "node_adapter.mjs"),
+                    "--k-scenario-input",
+                    str(input_path),
+                    "--output",
+                    str(output_path),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            observed = output_path.read_bytes()
+            loads(observed)
+            self.assertEqual(observed, expected)
+
+    def test_graph_evaluation_is_arrival_order_independent(self) -> None:
+        for scenario in self.scenarios:
+            genesis, records = self._scenario(scenario["id"])
+            self.assertEqual(
+                evaluate_k_admission_graph(genesis, records),
+                evaluate_k_admission_graph(genesis, list(reversed(records))),
+            )
+
+    def test_connected_fork_pending_capacity_and_dependency_semantics(self) -> None:
+        hostiles = {
+            row["id"]: row
+            for row in load(CORPUS / "adversarial-mutations.json")[
+                "kAdmissionScenarios"
+            ]
+        }
+
+        fork = hostiles["k-hostile-connected-same-author-fork"]
+        fork_observations = evaluate_k_admission_graph(
+            fork["acceptedGenesisRecord"], fork["records"]
+        )
+        fork_rows = [
+            row for row in fork_observations if row["protocolErrorCode"] == "FORK_EVIDENCE"
+        ]
+        self.assertEqual(len(fork_rows), 2)
+        self.assertTrue(
+            all(row["kBindingAdmission"] == "ADMITTED" for row in fork_rows)
+        )
+        fork_descendant = next(
+            row
+            for row in fork_observations
+            if row["id"] == "k-hostile-fork-left-descendant"
+        )
+        self.assertEqual(fork_descendant["kBindingAdmission"], "ADMITTED")
+        self.assertIsNone(fork_descendant["protocolErrorCode"])
+
+        pending = hostiles["k-hostile-required-opening-and-pending-ancestor"]
+        pending_observations = evaluate_k_admission_graph(
+            pending["acceptedGenesisRecord"], pending["records"]
+        )
+        self.assertEqual(
+            {
+                row["protocolErrorCode"]: (row["kBindingAdmission"], row["stage"])
+                for row in pending_observations
+            },
+            {
+                "PENDING_ANCESTOR": ("ADMITTED", "EVENT_LOCAL"),
+                "PENDING_OPENING": ("ADMITTED", "EVENT_LOCAL"),
+            },
+        )
+
+        capacity = hostiles["k-hostile-connected-parent-capacity"]
+        capacity_record = next(
+            row
+            for row in capacity["records"]
+            if row["id"] == "k-hostile-connected-parent-capacity"
+        )
+        capacity_observation = evaluate_vector(capacity_record)
+        self.assertEqual(capacity_observation["transcriptVerification"], "VALID")
+        self.assertEqual(capacity_observation["referenceVerification"], "VALID")
+        self.assertEqual(capacity_observation["signatureVerification"], "VALID")
+        self.assertEqual(
+            (capacity_observation["localOutcome"], capacity_observation["stage"]),
+            ("CONTEXT_CAPACITY_EXHAUSTED", "S4_GRAPH_ADMISSION"),
+        )
+
+        transitive = hostiles["k-hostile-transitive-rejection"]
+        transitive_observations = evaluate_k_admission_graph(
+            transitive["acceptedGenesisRecord"], transitive["records"]
+        )
+        descendant = next(
+            row
+            for row in transitive_observations
+            if row["id"] == "k-hostile-descendant-of-rejected-control"
+        )
+        self.assertEqual(
+            (descendant["protocolErrorCode"], descendant["stage"]),
+            ("DEPENDENCY_DEFERRED", "S4_GRAPH_ADMISSION"),
+        )
+
+    def test_rejected_dependency_is_closed_transitively(self) -> None:
+        genesis, records = self._scenario("k-admission-linear-controls")
+        invalid_revoke = deepcopy(records[2])
+        invalid_revoke["fields"]["tail"]["targetCredentialHex"] = "ef" * 32
+        invalid_revoke = self._resign(invalid_revoke, "k-linear/root")
+        descendant = deepcopy(records[3])
+        descendant["fields"]["directPredecessorHex"] = invalid_revoke[
+            "eventReferenceHex"
+        ]
+        descendant = self._resign(descendant, "k-linear/root")
+        observations = evaluate_k_admission_graph(
+            genesis,
+            [records[0], records[1], invalid_revoke, descendant],
+        )
+        by_id = {row["id"]: row for row in observations}
+        self.assertEqual(
+            by_id[invalid_revoke["id"]]["protocolErrorCode"],
+            "UNRESOLVABLE_CREDENTIAL",
+        )
+        self.assertEqual(
+            by_id[descendant["id"]]["protocolErrorCode"],
+            "DEPENDENCY_DEFERRED",
+        )
+
+    def test_removal_target_absence_does_not_break_k_admission(self) -> None:
+        genesis, records = self._scenario("k-admission-linear-controls")
+        root = records[0]
+        removal = _application_vector(
+            "k-removal-missing-target",
+            _event_fields(
+                "k-removal-missing-target",
+                role="REMOVAL",
+                sequence=1,
+                predecessor=root["eventReferenceHex"],
+                credential=bytes.fromhex(genesis["genesisReferenceHex"]),
+                context=bytes.fromhex(genesis["fields"]["contextIdentifierHex"]),
+                genesis_reference=bytes.fromhex(genesis["genesisReferenceHex"]),
+                tail={
+                    "targetCommitmentHex": "ab" * 32,
+                    "targetEventReferenceHex": "cd" * 32,
+                },
+            ),
+            "k-linear/root",
+        )
+        observations = evaluate_k_admission_graph(genesis, [root, removal])
+        self.assertEqual(
+            {row["id"]: row["kBindingAdmission"] for row in observations},
+            {root["id"]: "ADMITTED", removal["id"]: "ADMITTED"},
+        )
+
+    def test_foreign_genesis_and_unknown_credential_are_rejected(self) -> None:
+        genesis, records = self._scenario("k-admission-linear-controls")
+        foreign = deepcopy(records[0])
+        foreign["fields"]["genesisReferenceHex"] = "ab" * 32
+        foreign = self._resign(foreign, "k-linear/root")
+        with self.assertRaisesRegex(
+            ProtocolError, "CREDENTIAL_BINDING_MISMATCH"
+        ):
+            evaluate_k_admission_scenario(genesis, [foreign])
+
+        unknown = deepcopy(records[0])
+        unknown["fields"]["credentialIdentifierHex"] = "cd" * 32
+        unknown = self._resign(unknown, "k-linear/root")
+        with self.assertRaisesRegex(ProtocolError, "UNRESOLVED_CREDENTIAL_BINDING"):
+            evaluate_k_admission_scenario(genesis, [unknown])
+
+    def test_legacy_transcript_does_not_prove_k_admission(self) -> None:
+        legacy = _valid_vectors(legacy_controls=True)
+        genesis = next(row for row in legacy if row["id"] == "vec-genesis")
+        ordinary = next(row for row in legacy if row["id"] == "vec-ordinary-none")
+        with self.assertRaisesRegex(
+            ProtocolError, "CREDENTIAL_BINDING_MISMATCH"
+        ):
+            evaluate_k_admission_scenario(genesis, [ordinary])
+
+    def test_control_lifecycle_requires_admitted_targets_and_frontier(self) -> None:
+        genesis, records = self._scenario("k-admission-linear-controls")
+        revoke_prefix = deepcopy(records[:3])
+        revoke_prefix[-1]["fields"]["tail"]["targetCredentialHex"] = "ef" * 32
+        revoke_prefix[-1] = self._resign(revoke_prefix[-1], "k-linear/root")
+        with self.assertRaisesRegex(ProtocolError, "UNRESOLVABLE_CREDENTIAL"):
+            evaluate_k_admission_scenario(genesis, revoke_prefix)
+
+        rotate_prefix = deepcopy(records[:6])
+        rotate_prefix[-1]["fields"]["tail"]["replacementGrantHex"] = (
+            rotate_prefix[1]["eventReferenceHex"]
+        )
+        rotate_prefix[-1] = self._resign(rotate_prefix[-1], "k-linear/root")
+        with self.assertRaisesRegex(ProtocolError, "STRUCTURAL_REJECTION"):
+            evaluate_k_admission_scenario(genesis, rotate_prefix)
+
+    def test_genesis_exception_and_noncausal_control_targets_are_explicit(self) -> None:
+        genesis, records = self._scenario("k-admission-genesis-revoke-exception")
+        observations = evaluate_k_admission_scenario(genesis, records)
+        self.assertEqual(observations[-1]["kBindingAdmission"], "ADMITTED")
+
+        hostiles = {
+            row["id"]: row
+            for row in load(CORPUS / "adversarial-mutations.json")[
+                "kAdmissionScenarios"
+            ]
+        }
+        for identifier in (
+            "k-hostile-revoke-noncausal-target",
+            "k-hostile-rotate-retiring-noncausal",
+        ):
+            row = hostiles[identifier]
+            observations = evaluate_k_admission_graph(
+                row["acceptedGenesisRecord"], row["records"]
+            )
+            self.assertEqual(observations, row["expectedObservations"])
+            rejected = next(
+                observation
+                for observation in observations
+                if observation["id"].startswith(identifier)
+            )
+            self.assertEqual(
+                rejected["protocolErrorCode"],
+                "STRUCTURAL_REJECTION",
+            )
+            self.assertEqual(
+                rejected["stage"],
+                "S3_KERNEL_STRUCTURAL",
+            )
 
 
 if __name__ == "__main__":

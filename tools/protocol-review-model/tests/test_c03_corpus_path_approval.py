@@ -48,7 +48,7 @@ HISTORICAL_O10_TEST = (
     / "tools/protocol-review-model/tests/test_o10_outcome_taxonomy.py"
 )
 HISTORICAL_O10_TEST_SHA256 = (
-    "b329270f6361cedf62fce5f063ce32f77dc4e56b9535c291a1a728f32af823ab"
+    "81c58e68bbd0e6f638daa4f55d61dfb7dc7b370870059aa48bedb3cc07e28cd6"
 )
 
 
@@ -173,7 +173,11 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
 
     def test_licensing_documents_record_the_bounded_approval(self) -> None:
         required = {
-            "LICENSING.md": ("twelve paths", "Issue #253", "creates no corpus bytes"),
+            "LICENSING.md": (
+                "twelve paths",
+                "Issue #253",
+                "licensing status and corpus construction do not",
+            ),
             "README.md": ("Twelve exact synthetic data paths", "Issue #253"),
             "CONTRIBUTING.md": ("twelve exact", "Issues #41 and #253"),
             "docs/architecture/decisions/ADR-0004-licensing-strategy.md": (
@@ -203,7 +207,7 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
     def test_rebased_o10_guard_accepts_the_exact_validator(self) -> None:
         hashes = validate_validator_delta(self.base_validator, self.actual_validator)
         self.assertEqual(
-            "d09d62b8c2c27af2af12abf7dcc0df6192c826dd671aa114c567f1551628e393",
+            "ca4536bda7f0ff3a86fa5e0ae2e171600252d29bd1e7ccd5a1e259f5880a35c7",
             hashes["complete_source_sha256"],
         )
 

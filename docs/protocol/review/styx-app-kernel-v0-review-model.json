@@ -353,7 +353,7 @@
         "OB-K01"
       ],
       "owner": "K",
-      "reason": "Issue #264 completes the separately contracted synthetic-only corpus construction; implementation alignment, demo, product and sensitive use remain blocked pending implementation agreement, exit review and an explicit human phase verdict.",
+      "reason": "Issue #264 completed the first separately contracted synthetic-only corpus construction. Issue #266 reconciles it with separated transcript-conformance, local-negative and connected-K evidence plus an oracle-free clean-room comparison; implementation alignment, demo, product and sensitive use remain blocked pending exact agreement, exit review and an explicit human phase verdict.",
       "status": "NO_GO"
     },
     {
@@ -5938,7 +5938,7 @@
       "authority": "normative",
       "id": "commitment_profile",
       "path": "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
-      "sha256": "f3488bec6b61d92b6f1fc86e06ff101281d4ea51f4aaa5ecb8c4e1dee56584fa"
+      "sha256": "673e10e3392560e4227a74c99a276d6f880fe1af32eff4943fd2aaac5b791287"
     },
     {
       "authority": "evidence",
@@ -5956,7 +5956,7 @@
       "authority": "normative",
       "id": "decisions",
       "path": "docs/protocol/styx-app-kernel-v0-decisions.md",
-      "sha256": "0e0335a2f727b979c7ff64ffc281663a223fc709e6c25bd8a11350d605c39eed"
+      "sha256": "32dd0df4a420417491bab25f3c6bc3cb1c1edfa82ea63fd8d4391db7a3f848a4"
     },
     {
       "authority": "evidence",
@@ -6010,7 +6010,7 @@
       "authority": "normative",
       "id": "responsibility",
       "path": "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md",
-      "sha256": "fc8cbef3f492fc0004f13c98128b9569f913348ec1e1fd42608cf316fd83e03e"
+      "sha256": "1f40fde4b8912766eb586d56f4e72f8c040448e74bc3e6503ed25787abbb7e8f"
     },
     {
       "authority": "evidence",
@@ -6028,7 +6028,7 @@
       "authority": "normative",
       "id": "threat_model",
       "path": "docs/security/STYX-THREAT-MODEL.md",
-      "sha256": "e4a003e55022ff2c0c31a5ac0dafb93482fb76585f379c8af18842f8407c03f8"
+      "sha256": "53ff40c30155b3c7607493c0fb100430904ccf9bfe0c68c95557b94d5dd2674d"
     },
     {
       "authority": "normative",
@@ -6342,8 +6342,8 @@
           "obligation_refs": [
             "OB-K18"
           ],
-          "outcome": "APPLIED",
           "owner": "K",
+          "result_layer": "K_ADMISSION_ONLY",
           "status": "DECIDED",
           "to": "BINDING_ADMITTED",
           "trigger": "A structurally valid, causally available and signature-valid GRANT creates one fresh grant-rooted binding without implying AP authority."
@@ -6366,8 +6366,8 @@
           "obligation_refs": [
             "OB-K01"
           ],
-          "outcome": "APPLIED",
           "owner": "K",
+          "result_layer": "K_ADMISSION_ONLY",
           "status": "DECIDED",
           "to": "ADMITTED",
           "trigger": "The candidate passes K validity, collision and fork classification."
@@ -6478,7 +6478,7 @@
           "owner": "K",
           "status": "DECIDED",
           "to": "FORK_CLASSIFIED",
-          "trigger": "Distinct same-author transcript shares an author sequence"
+          "trigger": "Distinct same-author transcripts share an author sequence; both remain authenticated K-graph dependencies while AP owns lineage quarantine."
         }
       ]
     },
@@ -6503,13 +6503,12 @@
       "owner": "K",
       "precedence": [
         "PENDING_OPENING",
-        "PENDING_ANCESTOR",
-        "APPLIED"
+        "PENDING_ANCESTOR"
       ],
       "states": [
-        "APPLIED",
         "PENDING_ANCESTOR",
         "PENDING_OPENING",
+        "READY_FOR_AP_FOLD",
         "REPLAY_CANDIDATE"
       ],
       "status": "DECIDED",
@@ -6532,10 +6531,10 @@
           "obligation_refs": [
             "OB-K13"
           ],
-          "outcome": "APPLIED",
           "owner": "K",
+          "result_layer": "K_ADMISSION_ONLY",
           "status": "DECIDED",
-          "to": "APPLIED",
+          "to": "READY_FOR_AP_FOLD",
           "trigger": "No missing REQUIRED opening or pending ancestor blocks this candidate."
         },
         {
@@ -6602,10 +6601,10 @@
           "obligation_refs": [
             "OB-K01"
           ],
-          "outcome": "APPLIED",
           "owner": "K",
+          "result_layer": "K_ADMISSION_ONLY",
           "status": "DECIDED",
-          "to": "APPLIED",
+          "to": "READY_FOR_AP_FOLD",
           "trigger": "Monotone verified-opening update releases the event from every remaining pending root"
         }
       ]

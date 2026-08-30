@@ -14,17 +14,70 @@ CORPUS = REPO / "conformance/application-protocol/c03"
 sys.path.insert(0, str(ROOT))
 
 from canonical_json import dumps, load, store  # noqa: E402
-from corpus_model import BaseReader  # noqa: E402
+from corpus_model import load_local_json  # noqa: E402
 from replay_corpus import _transition_index, compute_trace  # noqa: E402
 from run_cross_runtime import run  # noqa: E402
 
 
 class CrossRuntimeTests(unittest.TestCase):
+    def test_javascript_intrinsic_geometry_ceiling_is_exact_and_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "geometry-boundaries.json"
+            completed = subprocess.run(
+                [
+                    "node",
+                    str(ROOT / "node_adapter.mjs"),
+                    "--mode",
+                    "geometry-boundaries",
+                    "--output",
+                    str(output),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                load(output),
+                {
+                    "intrinsicExactLengthCeiling": "4294967163",
+                    "rows": [
+                        {"exactLength": "4294967162", "geometryPredicate2": "PASS"},
+                        {"exactLength": "4294967163", "geometryPredicate2": "PASS"},
+                        {"exactLength": "4294967164", "geometryPredicate2": "FAIL"},
+                    ],
+                    "schema": "styx-c03-geometry-boundaries/v1",
+                },
+            )
+
+    def test_javascript_executes_all_grant_key_boundaries(self) -> None:
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+        by_id = {row["id"]: row for row in valid + invalid}
+        self.assertEqual(
+            [
+                len(bytes.fromhex(by_id[identifier]["fields"]["tail"]["granteeVerificationKeyHex"]))
+                for identifier in (
+                    "inv-grantee-key-empty",
+                    "inv-grantee-key-short",
+                    "vec-control-grant",
+                    "inv-resource-grantee-key",
+                )
+            ],
+            [0, 31, 32, 33],
+        )
+        # The independent adapter validates every vector against its exact
+        # transcript/reference/signature/stage oracle before writing this report.
+        self.assertEqual(run(REPO, CORPUS)["result"], "PASS")
+
     def test_python_and_javascript_reports_are_identical(self) -> None:
         report = run(REPO, CORPUS)
         self.assertEqual(report["result"], "PASS")
         self.assertEqual(report["runtimes"], ["javascript", "python"])
         self.assertEqual(report["scenarios"], len(load(CORPUS / "state-machine-scenarios.json")["records"]))
+        self.assertEqual(report["kAdmissionRecords"], 18)
+        self.assertEqual(report["kAdmissionScenarios"], 3)
+        self.assertEqual(report["kAdmissionHostileScenarios"], 17)
         self.assertEqual(
             report["vectors"],
             len(load(CORPUS / "valid-transcript-vectors.json")["records"])
@@ -36,7 +89,16 @@ class CrossRuntimeTests(unittest.TestCase):
         report = run(REPO, CORPUS)
         self.assertEqual(
             set(report),
-            {"reportDigest", "result", "runtimes", "scenarios", "vectors"},
+            {
+                "kAdmissionHostileScenarios",
+                "kAdmissionRecords",
+                "kAdmissionScenarios",
+                "reportDigest",
+                "result",
+                "runtimes",
+                "scenarios",
+                "vectors",
+            },
         )
         encoded = dumps(report)
         self.assertTrue(encoded.endswith(b"\n"))
@@ -114,9 +176,13 @@ class CrossRuntimeTests(unittest.TestCase):
             counterexamples = [row for row in scenarios_doc["records"] if "counterexampleId" in row]
             common_vectors = [step["inputVectorId"] for step in counterexamples[0]["steps"]]
             valid = load(target / "valid-transcript-vectors.json")["records"]
-            invalid = load(target / "invalid-transcript-vectors.json")["records"]
-            vectors = {row["id"]: row for row in valid + invalid}
-            model = BaseReader(REPO).json("docs/protocol/review/styx-app-kernel-v0-review-model.json")
+            invalid_document = load(target / "invalid-transcript-vectors.json")
+            invalid = invalid_document["records"]
+            vectors = {
+                row["id"]: row
+                for row in valid + invalid + invalid_document["apExpectationOnlyRecords"]
+            }
+            model = load_local_json(REPO / "docs/protocol/review/styx-app-kernel-v0-review-model.json")
             transitions = _transition_index(model)
             expected_by_scenario = {row["scenarioId"]: row for row in expected_doc["records"]}
             for scenario in counterexamples:
@@ -141,8 +207,16 @@ class CrossRuntimeTests(unittest.TestCase):
             target = Path(directory) / "corpus"
             shutil.copytree(CORPUS, target)
             scenarios = load(target / "state-machine-scenarios.json")
-            transition = next(row for row in scenarios["records"] if row["steps"][0]["transitionId"] is not None)
+            transition = next(
+                row
+                for row in scenarios["records"]
+                if row["modelId"] == "k_admission"
+                and row["steps"][0].get("expectedResultLayer") == "K_ADMISSION_ONLY"
+            )
+            transition["steps"][0]["evidenceLayer"] = "LOCAL_NEGATIVE"
             transition["steps"][0]["inputVectorId"] = "inv-signature"
+            transition["steps"][0].pop("inputKAdmissionScenarioId")
+            transition["steps"][0].pop("inputKAdmissionRecordId")
             store(target / "state-machine-scenarios.json", scenarios)
             completed = subprocess.run(
                 ["node", str(ROOT / "node_adapter.mjs"), "--repo-root", str(REPO),
@@ -152,7 +226,7 @@ class CrossRuntimeTests(unittest.TestCase):
                 text=True,
             )
             self.assertEqual(completed.returncode, 2)
-            self.assertIn("incompatible transition input", completed.stderr)
+            self.assertIn("scenario evidence-layer cardinality mismatch", completed.stderr)
 
 
 if __name__ == "__main__":

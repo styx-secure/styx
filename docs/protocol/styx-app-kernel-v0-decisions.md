@@ -1441,6 +1441,68 @@ also be transcript-bound and locally evaluated under the application's policy.
 
 ## 6. Gate for C0.3 and exact next sequence
 
+### C0.3 reconciliation decisions R5 through R7
+
+The Issue #266 pre-execution ratification and its exact R7 amendment select
+three bounded evidence-layer
+decisions without executing the application-policy fold or changing the O-08
+and O-10 registries:
+
+- **R5 — layered K/AP result.** Successful transcript and binding admission is
+  represented as `kBindingAdmission = ADMITTED`,
+  `apAuthorityResult = AP_FOLD_NOT_EXECUTED` and
+  `outcomeEvaluated = false`. In that exact state `localOutcome` and
+  `remoteClass` are absent. `AP_FOLD_NOT_EXECUTED` is report-only and is not an
+  O-10 primary, wire/API value or success disposition. Positive K transition
+  eligibility uses this complete tuple and state `READY_FOR_AP_FOLD`; it never
+  infers application authorization or `APPLIED`. Negative K transitions retain
+  their exact O-10 primary, stage and remote collapse. AP-owned expectations
+  remain normative but are excluded from transcript-only C0.3 execution.
+- **R6 — closed-set classification after geometry.** Commitment-profile
+  predicates 1–7 establish well-formed geometry with checked arithmetic.
+  Predicate 8 and the authenticated O-08 envelope then establish supported
+  profile admission. A well-formed tree using a chunk size outside
+  `{4096, 16384}` selects `CURRENT_OBJECT_OUT_OF_PROFILE` at
+  `S3_KERNEL_STRUCTURAL`; malformed geometry selects
+  `STRUCTURAL_REJECTION`. This resolves the older sentence that classified all
+  closed-set failures as structural without changing the accepted 17 transcript
+  byte sequences or any O-08/O-10 registry entry.
+- **R7 — connected authority evidence and complete-graph forks.** The 17
+  historical valid fixtures prove transcript, reference, signature and
+  commitment conformance only; their fixture-local metadata cannot create K
+  authority. Connected K admission derives the root solely from the
+  preaccepted exact O-07 genesis and every non-root verification binding solely
+  from an admitted same-context `GRANT`. Corpus format v2 separates transcript
+  conformance, local-negative evidence and connected K admission. A complete
+  bounded graph classifies both same-author/same-sequence siblings as admitted
+  `FORK_EVIDENCE`; both remain authenticated dependencies for K, and a correctly
+  authenticated descendant remains K-admitted. The later AP fold, which C0.3
+  does not execute, owns `LINEAGE_QUARANTINED` for events and authority on that
+  lineage. Duplicate recognition uses admitted references only; a rejected
+  presentation is re-evaluated. `PENDING_OPENING`, `PENDING_ANCESTOR` and
+  `DEPENDENCY_DEFERRED` retain distinct retry boundaries. The closed primary
+  evidence partition is `17/5/3`, and the 102 O-10 source rows partition
+  `31/24/47`, without changing any registered O-10 meaning. The 47
+  transcript-profile-unreachable rows are argued from the selected
+  transcript-only profile rather than mechanically proven unreachable; the
+  pinned cardinality detects later drift, not a pre-existing reachability gap.
+  A canonical
+  non-zero AP tuple that differs from the receiver-selected tuple remains
+  transcript-valid and selects `CURRENT_OBJECT_OUT_OF_PROFILE` after reference
+  verification; it is not structural corruption. A missing verified opening
+  leaves commitment verification `PENDING` for both committed-content classes:
+  `REQUIRED` remains K-admitted with event-local `PENDING_OPENING`, while
+  `DETACHABLE` is rejected at S3 with `OPENING_MISSING`.
+
+O-06c-frozen commitment-profile §4 remains byte-identical. R6 is recorded in
+this decision and in the later verification section of the commitment profile;
+those later words supersede the contrary historical sentence without repinning
+or weakening frozen-section evidence.
+
+These decisions authorize only the corrected adversarial corpus and evidence
+system. They do not execute O-02/AP policy, establish implementation alignment,
+or make a product, demo or sensitive-use claim.
+
 **C0.3 verdict: `NO-GO`.** The ratified C0.2i construction replaces the vulnerable C0.2f
 whole-suffix halt with deterministic pending-subtree replay. C0.2j then selects
 grant-rooted credential identity, exact K-readable grant/succession carriage,

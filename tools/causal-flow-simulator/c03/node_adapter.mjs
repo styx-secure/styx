@@ -17,7 +17,7 @@ const DOMAINS = Object.freeze({
 });
 const MAX_U32 = 0xffff_ffffn;
 const MAX_BODY = MAX_U32 - 20n;
-const BASE_SHA = "7768c32d3ddba230bd60f8b5db1b34d4bcb8ec3b";
+const BASE_SHA = "a4fa1286b57b2ee79b3c580fdce0d1fb3bf9cd40";
 const O08_LIMITS = Object.freeze({
   AP_TRANSITION_BLOCK_OCTETS: 4096,
   CHUNKS_PER_CONTENT: 64,
@@ -27,15 +27,46 @@ const O08_LIMITS = Object.freeze({
   GENESIS_POLICY_OCTETS: 4096,
   PARENTS_PER_EVENT: 8,
   SEQUENCE_VALUE: 4095,
+  VERIFICATION_KEY_OCTETS: 32,
 });
 const O08_CHUNK_OCTETS = new Set([4096, 16384]);
+const PRODUCED_K_PRIMARIES = new Set(["COMMITMENT_MISMATCH", "CONTEXT_CAPACITY_EXHAUSTED", "CREDENTIAL_BINDING_MISMATCH", "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED", "CURRENT_OBJECT_OUT_OF_PROFILE", "DEPENDENCY_DEFERRED", "DUPLICATE", "FORK_EVIDENCE", "INVALID", "LENGTH_MISMATCH", "OPENING_MISSING", "PENDING_ANCESTOR", "PENDING_OPENING", "REFERENCE_COLLISION_UNSUPPORTED", "STRUCTURAL_REJECTION", "UNRESOLVABLE_CREDENTIAL", "UNRESOLVED_CREDENTIAL_BINDING"]);
+const AP_OWNED_EXCLUSIONS = new Set(["APPLIED", "AUTHENTIC_BUT_UNAUTHORIZED", "AUTHORITY_PROJECTION_UNAVAILABLE", "LINEAGE_QUARANTINED", "POST_REVOCATION"]);
+const TRANSCRIPT_PROFILE_UNREACHABLE = new Set(["PROFILE_ACTIVATION_UNSUPPORTED", "REMOVAL_INAPPLICABLE", "STALE_EVIDENCE"]);
+const O10_TAXONOMY = JSON.parse(readFileSync(new URL("../o10/outcome-taxonomy.json", import.meta.url), "utf8"));
+const O10_BY_ID = new Map(O10_TAXONOMY.primaries.map(row => [row.id, row]));
 
 class ProtocolError extends Error {
-  constructor(message, stage = "S3_KERNEL_STRUCTURAL") { super(message); this.stage = stage; }
+  constructor(message, stage = "S3_KERNEL_STRUCTURAL", observations = {}, admitted = false) {
+    super(message); this.admitted = admitted; this.stage = stage; this.observations = observations;
+  }
 }
 const require = (ok, message) => { if (!ok) throw new ProtocolError(message); };
 const hash = (...parts) => createHash("sha256").update(Buffer.concat(parts)).digest();
 const hex = value => Buffer.from(value).toString("hex");
+function o10Result(primary, stage = undefined) {
+  const row = O10_BY_ID.get(primary);
+  require(row?.owner === "K", `non-K or unknown O-10 primary:${primary}`);
+  const stages = row.stage.split("|");
+  const selected = stage ?? stages[0];
+  require(stages.includes(selected), `O-10 stage mismatch:${primary}:${selected}`);
+  return { localOutcome: primary, remoteClass: O10_TAXONOMY.remote_collapse, stage: selected };
+}
+function selectO10Result(candidates) {
+  require(Array.isArray(candidates) && candidates.length > 0, "empty O-10 candidate set");
+  const normalized = [...new Map(candidates.map(([primary, stage]) => [`${primary}:${stage}`, [primary, stage]])).values()]
+    .sort((left, right) => `${left[0]}:${left[1]}`.localeCompare(`${right[0]}:${right[1]}`));
+  const results = normalized.map(([primary, stage]) => o10Result(primary, stage));
+  if (results.length === 1) return results[0];
+  const identifiers = new Set(results.map(row => row.localOutcome));
+  for (const key of ["k_precedence", "event_precedence"]) {
+    const precedence = O10_TAXONOMY[key];
+    if (Array.isArray(precedence) && [...identifiers].every(identifier => precedence.includes(identifier))) {
+      return results.toSorted((left, right) => precedence.indexOf(left.localOutcome) - precedence.indexOf(right.localOutcome))[0];
+    }
+  }
+  throw new ProtocolError(`O-10 candidates lack one closed precedence relation:${[...identifiers].sort().join(",")}`);
+}
 
 function uint(value, width, label) {
   const number = BigInt(value);
@@ -81,6 +112,63 @@ class Reader {
   finish(label) { require(this.offset === this.data.length, `TRAILING_${label.toUpperCase()}`); }
 }
 
+function geometryObservations() {
+  return Object.fromEntries(Array.from({ length: 7 }, (_, index) => [`geometryPredicate${index + 1}`, "NOT_EVALUATED"]));
+}
+
+function validateGeometryPredicates(exactLength, shape, geometry) {
+  const observations = geometryObservations();
+  const fail = (index, code = "CHUNK_GEOMETRY_INVALID") => {
+    observations[`geometryPredicate${index}`] = "FAIL";
+    throw new ProtocolError(code, "S3_KERNEL_STRUCTURAL", observations);
+  };
+  if (shape === "SINGLE") {
+    observations.geometryPredicate1 = "PASS";
+    if (exactLength > Number(MAX_U32 - 132n)) fail(2, "CONTENT_GEOMETRY_INVALID");
+    observations.geometryPredicate2 = "PASS";
+    for (let index = 3; index <= 7; index += 1) observations[`geometryPredicate${index}`] = "NOT_APPLICABLE";
+    return observations;
+  }
+  if (shape !== "TREE" || geometry === null) fail(1, "CONTENT_GEOMETRY_INVALID");
+  if (exactLength === 0) fail(1);
+  observations.geometryPredicate1 = "PASS";
+  observations.geometryPredicate2 = "NOT_APPLICABLE";
+  const { chunkSize, chunkCount, finalChunkLength } = geometry;
+  if (!(chunkSize >= 1 && chunkSize <= Number(MAX_U32 - 132n))) fail(3);
+  observations.geometryPredicate3 = "PASS";
+  if (chunkSize >= exactLength || chunkCount < 2) fail(4);
+  observations.geometryPredicate4 = "PASS";
+  const expectedCount = 1 + Math.floor((exactLength - 1) / chunkSize);
+  if (chunkCount !== expectedCount) fail(5);
+  observations.geometryPredicate5 = "PASS";
+  const consumed = chunkSize * (chunkCount - 1);
+  if (!Number.isSafeInteger(consumed) || consumed >= exactLength || finalChunkLength !== exactLength - consumed) fail(6);
+  observations.geometryPredicate6 = "PASS";
+  if (!(finalChunkLength > 0 && finalChunkLength <= chunkSize)) fail(7);
+  observations.geometryPredicate7 = "PASS";
+  return observations;
+}
+
+function geometryPredicateMutantIsKilled(number) {
+  const cases = new Map([
+    [1, [0, "TREE", { chunkSize: 1, chunkCount: 2, finalChunkLength: 1 }, "FAIL"]],
+    [2, [Number(MAX_U32 - 131n), "SINGLE", null, "FAIL"]],
+    [3, [8, "TREE", { chunkSize: 0, chunkCount: 2, finalChunkLength: 8 }, "FAIL"]],
+    [4, [8, "TREE", { chunkSize: 8, chunkCount: 2, finalChunkLength: 1 }, "FAIL"]],
+    [5, [9, "TREE", { chunkSize: 4, chunkCount: 2, finalChunkLength: 5 }, "FAIL"]],
+    [6, [9, "TREE", { chunkSize: 4, chunkCount: 3, finalChunkLength: 2 }, "FAIL"]],
+    [7, [8, "TREE", { chunkSize: 4, chunkCount: 2, finalChunkLength: 4 }, "PASS"]],
+  ]);
+  const [exactLength, shape, geometry, expected] = cases.get(number);
+  let observations;
+  try { observations = validateGeometryPredicates(exactLength, shape, geometry); }
+  catch (error) {
+    if (!(error instanceof ProtocolError)) throw error;
+    observations = error.observations;
+  }
+  return observations[`geometryPredicate${number}`] === expected;
+}
+
 function encodeGenesis(fields) {
   const policy = Buffer.from(fields.initialAuthorityPolicyHex, "hex");
   const key = Buffer.from(fields.rootVerificationKeyHex, "hex");
@@ -100,18 +188,23 @@ function parseGenesis(transcript) {
   require(outer.take(16, "domain").equals(DOMAINS.genesisSignature), "WRONG_DOMAIN");
   const bodyLength = outer.integer(4, "body_length");
   require(BigInt(bodyLength) <= MAX_BODY, "GENESIS_BODY_LIMIT");
-  require(bodyLength <= O08_LIMITS.GENESIS_BODY_OCTETS, "GENESIS_BODY_OCTETS_LIMIT");
   const body = new Reader(outer.take(bodyLength, "body")); outer.finish("transcript");
   const protocol = body.integer(2, "protocol");
   const profile = body.integer(4, "profile"); const version = body.integer(4, "profile_version");
   const context = body.take(32, "context"); const suite = body.integer(2, "signature_suite");
   const key = body.opaque("root_key"); const policy = body.opaque("initial_authority_policy"); body.finish("body");
-  require(policy.length <= O08_LIMITS.GENESIS_POLICY_OCTETS, "GENESIS_POLICY_OCTETS_LIMIT");
   require(protocol === 1 && profile === 1 && version === 1 && suite === 1 && key.length === 32 && policy.length > 0, "GENESIS_FIELDS_INVALID");
   const fields = { applicationProfileId: profile, applicationProfileVersion: version,
     contextIdentifierHex: hex(context), initialAuthorityPolicyHex: hex(policy), rootVerificationKeyHex: hex(key) };
   require(encodeGenesis(fields).equals(transcript), "NONCANONICAL_REENCODING");
   return fields;
+}
+
+function genesisProfileFailure(transcript, fields) {
+  const bodyLength = transcript.readUInt32BE(16);
+  if (bodyLength > O08_LIMITS.GENESIS_BODY_OCTETS) return new ProtocolError("GENESIS_BODY_OCTETS_LIMIT");
+  if (Buffer.from(fields.initialAuthorityPolicyHex, "hex").length > O08_LIMITS.GENESIS_POLICY_OCTETS) return new ProtocolError("GENESIS_POLICY_OCTETS_LIMIT");
+  return null;
 }
 
 function encodeEvent(fields) {
@@ -167,19 +260,16 @@ function encodeEvent(fields) {
 function parseEvent(transcript) {
   const outer = new Reader(transcript); require(outer.take(16, "domain").equals(DOMAINS.application), "WRONG_DOMAIN");
   const bodyLength = outer.integer(4, "body_length"); require(BigInt(bodyLength) <= MAX_BODY, "FRAMING_OBJECT_LIMIT");
-  require(bodyLength <= O08_LIMITS.FRAMING_OBJECT_OCTETS, "FRAMING_OBJECT_OCTETS_LIMIT");
   const body = new Reader(outer.take(bodyLength, "body")); outer.finish("transcript");
   const protocol = body.integer(2, "protocol"), profile = body.integer(4, "profile"), version = body.integer(4, "profile_version");
   const context = body.take(32, "context"), objectKind = body.integer(2, "object_kind"), roleCode = body.integer(1, "role");
   const eventType = body.integer(4, "event_type"), schemaId = body.integer(4, "schema"), schemaVersion = body.integer(4, "schema_version");
-  const transition = body.opaque("transition_block"); require(transition.length <= O08_LIMITS.AP_TRANSITION_BLOCK_OCTETS, "AP_TRANSITION_BLOCK_OCTETS_LIMIT");
-  const credential = body.take(32, "credential"), sequence = body.integer(8, "sequence"); require(sequence <= O08_LIMITS.SEQUENCE_VALUE, "SEQUENCE_VALUE_LIMIT");
+  const transition = body.opaque("transition_block");
+  const credential = body.take(32, "credential"), sequence = body.integer(8, "sequence");
   const presence = body.integer(1, "predecessor_presence"); require([0, 1].includes(presence), "PREDECESSOR_PRESENCE_INVALID");
   const predecessor = presence ? body.take(32, "predecessor") : null; const parentCount = body.integer(4, "parent_count");
-  if (parentCount > O08_LIMITS.PARENTS_PER_EVENT) throw new ProtocolError("PARENTS_PER_EVENT_LIMIT", "S4_GRAPH_ADMISSION");
   const parents = Array.from({ length: parentCount }, () => body.take(32, "parent"));
   const genesis = body.take(32, "genesis"), contentClass = body.integer(1, "content_class"), exactLength = body.integer(8, "content_length");
-  require(exactLength <= O08_LIMITS.CONTENT_EXACT_OCTETS, "CONTENT_EXACT_OCTETS_LIMIT");
   const className = ({ 0: "NONE", 1: "REQUIRED", 2: "DETACHABLE" })[contentClass]; require(className !== undefined, "CONTENT_CLASS_UNKNOWN");
   const content = { class: className, exactLength };
   if (contentClass === 0) require(exactLength === 0, "NONE_DESCRIPTOR_INVALID");
@@ -190,29 +280,52 @@ function parseEvent(transcript) {
     let geometry = null;
     if (geometryPresence) {
       const encoded = new Reader(body.opaque("geometry")); geometry = { chunkSize: encoded.integer(4, "chunk_size"), chunkCount: encoded.integer(8, "chunk_count"), finalChunkLength: encoded.integer(4, "final_chunk_length") }; encoded.finish("geometry");
-      require(O08_CHUNK_OCTETS.has(geometry.chunkSize), "CHUNK_OCTETS_LIMIT");
-      require(geometry.chunkCount <= O08_LIMITS.CHUNKS_PER_CONTENT, "CHUNKS_PER_CONTENT_LIMIT");
-      require(geometry.finalChunkLength > 0 && geometry.finalChunkLength <= geometry.chunkSize, "FINAL_CHUNK_LENGTH_LIMIT");
     }
     const shape = ({ 0: "SINGLE", 1: "TREE" })[shapeCode]; require(shape !== undefined && ((shape === "SINGLE") !== (geometry !== null)), "CONTENT_GEOMETRY_INVALID");
-    Object.assign(content, { commitmentHex: hex(commitment), contentType, shape }); if (geometry !== null) content.geometry = geometry;
+    const predicateResults = validateGeometryPredicates(exactLength, shape, geometry);
+    Object.assign(content, { commitmentHex: hex(commitment), contentType, geometryPredicateResults: predicateResults, shape }); if (geometry !== null) content.geometry = geometry;
   }
   const role = ({ 0: "ORDINARY", 1: "REMOVAL", 2: "CREDENTIAL" })[roleCode];
   const fields = { applicationProfileId: profile, applicationProfileVersion: version, authorSequence: sequence, causalParents: parents.map(hex), content,
     contextIdentifierHex: hex(context), credentialIdentifierHex: hex(credential), directPredecessorHex: predecessor ? hex(predecessor) : null,
     eventRole: role, eventTypeId: eventType, genesisReferenceHex: hex(genesis), schemaId, schemaVersion, transitionBlockHex: hex(transition) };
-  require(protocol === 1 && profile === 1 && version === 1 && objectKind === 1 && Math.min(eventType, schemaId, schemaVersion) > 0, "UNSUPPORTED_PROFILE_OR_REGISTRY");
+  // Parsing proves canonical framing. A non-zero AP tuple that differs from
+  // the receiver-selected tuple is classified by eventProfileFailures rather
+  // than being rewritten as malformed transcript bytes.
+  require(protocol === 1 && profile > 0 && version > 0 && objectKind === 1 && Math.min(eventType, schemaId, schemaVersion) > 0, "UNSUPPORTED_PROFILE_OR_REGISTRY");
   if (role === "REMOVAL") { const target = body.take(32, "target_event"); fields.tail = { targetCommitmentHex: hex(body.opaque("target_commitment")), targetEventReferenceHex: hex(target) }; }
   else if (role === "CREDENTIAL") {
     const kindCode = body.integer(1, "control_kind"), kind = ({ 1: "GRANT", 2: "REVOKE", 3: "ROTATE", 4: "RECOVER", 5: "POLICY", 6: "CLOSURE" })[kindCode];
     require(kind !== undefined, "CONTROL_KIND_UNKNOWN"); const tail = { kind };
-    if (kind === "GRANT") { require(body.integer(2, "grantee_suite") === 1, "GRANTEE_SUITE_UNSUPPORTED"); tail.granteeVerificationKeyHex = hex(body.opaque("grantee_key")); }
+    if (kind === "GRANT") {
+      require(body.integer(2, "grantee_suite") === 1, "GRANTEE_SUITE_UNSUPPORTED");
+      const granteeKey = body.opaque("grantee_key");
+      require(granteeKey.length >= O08_LIMITS.VERIFICATION_KEY_OCTETS, "GRANTEE_KEY_LENGTH_INVALID");
+      tail.granteeVerificationKeyHex = hex(granteeKey);
+    }
     if (kind === "REVOKE") tail.targetCredentialHex = hex(body.take(32, "target_credential"));
     if (kind === "ROTATE") { tail.retiringCredentialHex = hex(body.take(32, "retiring_credential")); tail.replacementGrantHex = hex(body.take(32, "replacement_grant")); }
     if (kind === "RECOVER") { tail.retiredCredentialHex = hex(body.take(32, "retired_credential")); tail.recoveryGrantHex = hex(body.take(32, "recovery_grant")); }
     fields.tail = tail;
   } else require(role === "ORDINARY", "EVENT_ROLE_UNKNOWN");
   body.finish("body"); require(encodeEvent(fields).equals(transcript), "NONCANONICAL_REENCODING"); return fields;
+}
+
+function eventProfileFailures(transcript, fields) {
+  if (fields.applicationProfileId !== 1 || fields.applicationProfileVersion !== 1) return [new ProtocolError("APPLICATION_PROFILE_MISMATCH"), null];
+  const bodyLength = transcript.readUInt32BE(16);
+  if (bodyLength > O08_LIMITS.FRAMING_OBJECT_OCTETS) return [new ProtocolError("FRAMING_OBJECT_OCTETS_LIMIT"), null];
+  if (Buffer.from(fields.transitionBlockHex, "hex").length > O08_LIMITS.AP_TRANSITION_BLOCK_OCTETS) return [new ProtocolError("AP_TRANSITION_BLOCK_OCTETS_LIMIT"), null];
+  if (fields.eventRole === "CREDENTIAL" && fields.tail?.kind === "GRANT" && Buffer.from(fields.tail.granteeVerificationKeyHex, "hex").length > O08_LIMITS.VERIFICATION_KEY_OCTETS) return [new ProtocolError("VERIFICATION_KEY_OCTETS_LIMIT"), null];
+  if (fields.authorSequence > O08_LIMITS.SEQUENCE_VALUE) return [new ProtocolError("SEQUENCE_VALUE_LIMIT"), null];
+  const content = fields.content;
+  const geometry = content.geometry ?? null;
+  const observations = content.geometryPredicateResults ?? {};
+  if (geometry !== null && !O08_CHUNK_OCTETS.has(geometry.chunkSize)) return [new ProtocolError("CHUNK_OCTETS_LIMIT", "S3_KERNEL_STRUCTURAL", observations), null];
+  if (geometry !== null && geometry.chunkCount > O08_LIMITS.CHUNKS_PER_CONTENT) return [new ProtocolError("CHUNKS_PER_CONTENT_LIMIT", "S3_KERNEL_STRUCTURAL", observations), null];
+  if (content.exactLength > O08_LIMITS.CONTENT_EXACT_OCTETS) return [new ProtocolError("CONTENT_EXACT_OCTETS_LIMIT", "S3_KERNEL_STRUCTURAL", observations), null];
+  if (fields.causalParents.length > O08_LIMITS.PARENTS_PER_EVENT) return [null, new ProtocolError("PARENTS_PER_EVENT_LIMIT", "S4_GRAPH_ADMISSION")];
+  return [null, null];
 }
 
 function commitment(fields, supplied, randomizer, chunkSize) {
@@ -238,57 +351,387 @@ function ed25519Verify(publicKey, signature, message) {
 
 function evaluate(record) {
   const transcript = Buffer.from(record.transcriptHex, "hex"), state = hex(hash(Buffer.from("styx-c03/evaluation/initial")));
-  const result = { commitmentVerification: "NOT_PRESENT", externalEffects: [], localOutcome: "APPLIED", postStateDigest: null, preStateDigest: state,
-    remoteClass: "APPLIED", signatureVerification: "NOT_EVALUATED", stage: "FINAL_AFTER_S6", transcriptVerification: "VALID" };
-  const reject = (outcome, stage, transcriptStatus = "VALID") => Object.assign(result, { localOutcome: outcome, postStateDigest: state, remoteClass: "OPAQUE_REMOTE_FAILURE", stage, transcriptVerification: transcriptStatus });
-  let fields, reference, expected;
+  const result = { apAuthorityResult: "AP_FOLD_NOT_EXECUTED", commitmentMatchVerification: "NOT_EVALUATED", commitmentVerification: "NOT_EVALUATED", externalEffects: [], ...geometryObservations(),
+    kBindingAdmission: "ADMITTED", outcomeEvaluated: false, postStateDigest: null, preStateDigest: state,
+    referenceVerification: "NOT_REACHED", signatureVerification: "NOT_EVALUATED", stage: "FINAL_AFTER_S6", suppliedLengthVerification: "NOT_EVALUATED", transcriptVerification: "VALID" };
+  const reject = (outcome, stage, transcriptStatus = "VALID", admitted = false) => Object.assign(result, selectO10Result(
+    Array.isArray(outcome) ? outcome : [[outcome, stage ?? O10_BY_ID.get(outcome)?.stage.split("|")[0]]],
+  ), {
+    apAuthorityResult: "NOT_REACHED",
+    kBindingAdmission: admitted ? "ADMITTED" : "REJECTED", outcomeEvaluated: true,
+    postStateDigest: state, transcriptVerification: transcriptStatus,
+  });
+  let fields, reference, expected, s3ProfileFailure = null, s4ProfileFailure = null;
   try {
-    if (record.kind === "GENESIS") { fields = parseGenesis(transcript); reference = hex(framedHash(DOMAINS.genesisReference, transcript)); expected = record.genesisReferenceHex; }
-    else if (record.kind === "APPLICATION_EVENT") { fields = parseEvent(transcript); reference = hex(framedHash(DOMAINS.eventReference, transcript)); expected = record.eventReferenceHex; }
+    if (record.kind === "GENESIS") { fields = parseGenesis(transcript); reference = hex(framedHash(DOMAINS.genesisReference, transcript)); expected = record.genesisReferenceHex; s3ProfileFailure = genesisProfileFailure(transcript, fields); }
+    else if (record.kind === "APPLICATION_EVENT") { fields = parseEvent(transcript); reference = hex(framedHash(DOMAINS.eventReference, transcript)); expected = record.eventReferenceHex; [s3ProfileFailure, s4ProfileFailure] = eventProfileFailures(transcript, fields); }
     else throw new ProtocolError("OBJECT_KIND_UNKNOWN");
   } catch (error) {
-    if (error instanceof ProtocolError && error.message.endsWith("_LIMIT")) return reject("CURRENT_OBJECT_OUT_OF_PROFILE", error.stage, "REJECTED");
+    if (error instanceof ProtocolError) Object.assign(result, error.observations);
     return reject("STRUCTURAL_REJECTION", error instanceof ProtocolError ? error.stage : "S3_KERNEL_STRUCTURAL", "REJECTED");
   }
-  if (reference !== expected) return reject("REFERENCE_COLLISION_UNSUPPORTED", "S3_KERNEL_STRUCTURAL");
+  const admission = record.admissionContext ?? {};
+  if (admission === null || Array.isArray(admission) || typeof admission !== "object") return reject("STRUCTURAL_REJECTION", "S3_KERNEL_STRUCTURAL");
+  if (record.kind === "APPLICATION_EVENT") {
+    if (fields.content.class === "NONE") {
+      for (let index = 1; index <= 7; index += 1) result[`geometryPredicate${index}`] = "NOT_APPLICABLE";
+      result.commitmentVerification = "NOT_PRESENT";
+      result.suppliedLengthVerification = "NOT_APPLICABLE";
+      result.commitmentMatchVerification = "NOT_APPLICABLE";
+    } else Object.assign(result, fields.content.geometryPredicateResults);
+  } else {
+    for (let index = 1; index <= 7; index += 1) result[`geometryPredicate${index}`] = "NOT_APPLICABLE";
+    result.commitmentVerification = "NOT_PRESENT";
+    result.suppliedLengthVerification = "NOT_APPLICABLE";
+    result.commitmentMatchVerification = "NOT_APPLICABLE";
+  }
+  if (reference !== expected) {
+    result.referenceVerification = "REJECTED";
+    const collision = new Set(admission.seenEventReferences ?? []).has(expected);
+    return reject(collision ? "REFERENCE_COLLISION_UNSUPPORTED" : "INVALID", "S3_KERNEL_STRUCTURAL");
+  }
+  result.referenceVerification = "VALID";
+  if ((admission.checkpointEvidenceReferences ?? []).length > 0) return reject("CURRENT_OBJECT_OUT_OF_PROFILE", "S3_KERNEL_STRUCTURAL");
+  if (s3ProfileFailure !== null) { Object.assign(result, s3ProfileFailure.observations); return reject("CURRENT_OBJECT_OUT_OF_PROFILE", s3ProfileFailure.stage); }
   try { if (!ed25519Verify(Buffer.from(record.binding.verificationKeyHex, "hex"), Buffer.from(record.signatureHex, "hex"), transcript)) { result.signatureVerification = "REJECTED"; return reject("INVALID", "S3_KERNEL_STRUCTURAL"); } } catch { result.signatureVerification = "REJECTED"; return reject("INVALID", "S3_KERNEL_STRUCTURAL"); }
   result.signatureVerification = "VALID";
   if (record.kind === "APPLICATION_EVENT") {
     if (record.binding.contextIdentifierHex !== fields.contextIdentifierHex || record.binding.credentialIdentifierHex !== fields.credentialIdentifierHex) return reject("CREDENTIAL_BINDING_MISMATCH", "S3_KERNEL_STRUCTURAL");
     if (fields.content.class !== "NONE") {
-      if (record.opening === undefined) { result.commitmentVerification = "PENDING"; return reject("OPENING_MISSING", "EVENT_LOCAL"); }
+      if (record.opening === undefined) {
+        result.commitmentVerification = "PENDING";
+        result.suppliedLengthVerification = "NOT_EVALUATED";
+        result.commitmentMatchVerification = "NOT_EVALUATED";
+        return fields.content.class === "REQUIRED"
+          ? reject("PENDING_OPENING", "EVENT_LOCAL", "VALID", true)
+          : reject("OPENING_MISSING", "S3_KERNEL_STRUCTURAL");
+      }
       const supplied = Buffer.from(record.opening.contentHex, "hex"), randomizer = Buffer.from(record.opening.randomizerHex, "hex");
       const computed = commitment(fields, supplied, randomizer, fields.content.geometry?.chunkSize);
-      if (supplied.length !== fields.content.exactLength || computed.commitmentHex !== fields.content.commitmentHex) { result.commitmentVerification = "REJECTED"; return reject("COMMITMENT_MISMATCH", "S3_KERNEL_STRUCTURAL"); }
+      const failures = [];
+      if (supplied.length !== fields.content.exactLength) {
+        result.commitmentVerification = "REJECTED";
+        result.suppliedLengthVerification = "REJECTED";
+        failures.push(["LENGTH_MISMATCH", "S3_KERNEL_STRUCTURAL"]);
+      } else result.suppliedLengthVerification = "VALID";
+      if (computed.commitmentHex !== fields.content.commitmentHex) {
+        result.commitmentVerification = "REJECTED";
+        result.commitmentMatchVerification = "REJECTED";
+        failures.push(["COMMITMENT_MISMATCH", "S3_KERNEL_STRUCTURAL"]);
+      } else result.commitmentMatchVerification = "VALID";
+      if (failures.length > 0) return reject(failures);
       result.commitmentVerification = "VALID";
+      result.commitmentMatchVerification = "VALID";
     }
   }
-  const admission = record.admissionContext ?? {};
-  if (admission === null || Array.isArray(admission) || typeof admission !== "object") return reject("STRUCTURAL_REJECTION", "S4_GRAPH_ADMISSION");
-  if ((admission.checkpointEvidenceReferences ?? []).length > 0) return reject("STRUCTURAL_REJECTION", "S4_GRAPH_ADMISSION");
-  if ((admission.seenEventReferences ?? []).includes(reference)) return reject("DUPLICATE", "S3_KERNEL_STRUCTURAL");
-  if ((admission.sameAuthorSequenceReferences ?? []).some(candidate => candidate !== reference)) return reject("FORK_EVIDENCE", "EVENT_LOCAL");
+  if ((admission.admittedEventReferences ?? []).includes(reference)) return reject("DUPLICATE", "S3_KERNEL_STRUCTURAL", "VALID", true);
+  if (s4ProfileFailure !== null) return reject("CONTEXT_CAPACITY_EXHAUSTED", s4ProfileFailure.stage);
+  if ((admission.sameAuthorSequenceReferences ?? []).some(candidate => candidate !== reference)) return reject("FORK_EVIDENCE", "EVENT_LOCAL", "VALID", true);
   if (record.kind === "APPLICATION_EVENT") {
     const dependencies = new Set(fields.causalParents);
     if (fields.directPredecessorHex !== null) dependencies.add(fields.directPredecessorHex);
     const available = new Set(admission.availableDependencyReferences ?? [...dependencies]);
-    if ([...dependencies].some(candidate => !available.has(candidate))) return reject("PENDING_ANCESTOR", "S4_GRAPH_ADMISSION");
-    if ((admission.revokedCredentialIdentifiers ?? []).includes(fields.credentialIdentifierHex)) return reject("POST_REVOCATION", "EVENT_LOCAL");
-    if (admission.authorizedCredentialIdentifiers !== undefined && !admission.authorizedCredentialIdentifiers.includes(fields.credentialIdentifierHex)) return reject("AUTHENTIC_BUT_UNAUTHORIZED", "EVENT_LOCAL");
-    if (fields.eventRole === "CREDENTIAL" && ["REVOKE", "ROTATE"].includes(fields.tail.kind)) {
-      const target = fields.tail.targetCredentialHex ?? fields.tail.retiringCredentialHex;
-      if (target === fields.credentialIdentifierHex) return reject("AUTHENTIC_BUT_UNAUTHORIZED", "EVENT_LOCAL");
+    const missing = [...dependencies].filter(candidate => !available.has(candidate));
+    if (missing.length > 0) {
+      const pending = new Set([...(admission.knownPendingOpeningRoots ?? []), ...(admission.pendingOpeningDescendantReferences ?? [])]);
+      const classifiedPending = missing.every(candidate => pending.has(candidate));
+      return classifiedPending
+        ? reject("PENDING_ANCESTOR", "EVENT_LOCAL", "VALID", true)
+        : reject("DEPENDENCY_DEFERRED", "S4_GRAPH_ADMISSION", "VALID", true);
+    }
+    if (admission.credentialIdentifierCollision === true) return reject("CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED", "S3_KERNEL_STRUCTURAL");
+    if (!(fields.eventRole === "CREDENTIAL" && fields.tail?.kind === "GRANT")
+        && admission.credentialBindingMatchCount !== undefined
+        && admission.credentialBindingMatchCount !== 1) return reject("UNRESOLVED_CREDENTIAL_BINDING", "S3_KERNEL_STRUCTURAL");
+  }
+  if (s4ProfileFailure !== null) return reject("CONTEXT_CAPACITY_EXHAUSTED", s4ProfileFailure.stage);
+  result.postStateDigest = hex(hash(Buffer.from(state, "hex"), Buffer.from(reference, "hex"))); return result;
+}
+
+function evaluateKAdmissionScenario(genesisRecord, records, knownForkReferences = new Set()) {
+  require(genesisRecord?.kind === "GENESIS", "PREACCEPTED_GENESIS_KIND_INVALID");
+  const genesisTranscript = Buffer.from(genesisRecord.transcriptHex, "hex");
+  const genesisFields = parseGenesis(genesisTranscript);
+  const genesisReference = hex(framedHash(DOMAINS.genesisReference, genesisTranscript));
+  require(genesisReference === genesisRecord.genesisReferenceHex, "PREACCEPTED_GENESIS_REFERENCE_INVALID");
+  const genesisKey = Buffer.from(genesisFields.rootVerificationKeyHex, "hex");
+  require(ed25519Verify(genesisKey, Buffer.from(genesisRecord.signatureHex, "hex"), genesisTranscript), "PREACCEPTED_GENESIS_SIGNATURE_INVALID");
+
+  const context = genesisFields.contextIdentifierHex;
+  const admitted = new Map();
+  const bindings = new Map([[genesisReference, {
+    grantReferenceHex: null,
+    issuerCredentialHex: null,
+    verificationKeyHex: genesisFields.rootVerificationKeyHex,
+  }]]);
+  const observations = [];
+  const ancestors = reference => {
+    const values = new Set(), frontier = [reference];
+    while (frontier.length > 0) {
+      const current = frontier.pop();
+      if (values.has(current)) continue;
+      values.add(current);
+      const event = admitted.get(current);
+      if (event === undefined) continue;
+      if (event.fields.directPredecessorHex !== null) frontier.push(event.fields.directPredecessorHex);
+      frontier.push(...event.fields.causalParents);
+    }
+    values.delete(reference);
+    return values;
+  };
+
+  for (const record of records) {
+    require(record?.kind === "APPLICATION_EVENT", "SCENARIO_EVENT_KIND_INVALID");
+    const transcript = Buffer.from(record.transcriptHex, "hex");
+    const fields = parseEvent(transcript);
+    const reference = hex(framedHash(DOMAINS.eventReference, transcript));
+    require(reference === record.eventReferenceHex, "SCENARIO_EVENT_REFERENCE_INVALID");
+    if (fields.contextIdentifierHex !== context || fields.genesisReferenceHex !== genesisReference) {
+      throw new ProtocolError("CREDENTIAL_BINDING_MISMATCH", "S3_KERNEL_STRUCTURAL");
+    }
+
+    const actor = fields.credentialIdentifierHex, binding = bindings.get(actor);
+    require(binding !== undefined, "UNRESOLVED_CREDENTIAL_BINDING");
+    const localRecord = structuredClone(record);
+    delete localRecord.admissionContext;
+    localRecord.binding = {
+      contextIdentifierHex: context,
+      credentialIdentifierHex: actor,
+      verificationKeyHex: binding.verificationKeyHex,
+    };
+    const localObservation = evaluate(localRecord);
+    if (!transitionInputIsCompatible(localObservation)) {
+      throw new ProtocolError(
+        localObservation.localOutcome ?? "INVALID",
+        localObservation.stage ?? "S3_KERNEL_STRUCTURAL",
+        {},
+        localObservation.kBindingAdmission === "ADMITTED",
+      );
+    }
+    require(ed25519Verify(Buffer.from(binding.verificationKeyHex, "hex"), Buffer.from(record.signatureHex, "hex"), transcript), "INVALID");
+
+    const predecessor = fields.directPredecessorHex, parents = fields.causalParents;
+    const sameSlotReferences = [...admitted.entries()]
+      .filter(([, candidate]) => candidate.fields.credentialIdentifierHex === actor
+        && candidate.fields.authorSequence === fields.authorSequence)
+      .map(([admittedReference]) => admittedReference);
+    if (sameSlotReferences.length > 0 && !(knownForkReferences.has(reference)
+      && sameSlotReferences.every(admittedReference => knownForkReferences.has(admittedReference)))) {
+      throw new ProtocolError("FORK_EVIDENCE", "EVENT_LOCAL", {}, true);
+    }
+    const dependencies = new Set(parents);
+    if (predecessor !== null) dependencies.add(predecessor);
+    if (![...dependencies].every(value => admitted.has(value))) {
+      throw new ProtocolError("DEPENDENCY_DEFERRED", "S4_GRAPH_ADMISSION");
+    }
+    if (fields.authorSequence === 0) require(predecessor === null, "STRUCTURAL_REJECTION");
+    else {
+      const previous = admitted.get(predecessor);
+      require(previous !== undefined
+        && previous.fields.credentialIdentifierHex === actor
+        && previous.fields.authorSequence + 1 === fields.authorSequence,
+      "STRUCTURAL_REJECTION");
+    }
+    const predecessorAncestors = predecessor === null ? new Set() : ancestors(predecessor);
+    require(!parents.some(parent => predecessorAncestors.has(parent)), "STRUCTURAL_REJECTION");
+    for (let leftIndex = 0; leftIndex < parents.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < parents.length; rightIndex += 1) {
+        require(!ancestors(parents[leftIndex]).has(parents[rightIndex])
+          && !ancestors(parents[rightIndex]).has(parents[leftIndex]), "STRUCTURAL_REJECTION");
+      }
+    }
+    const candidateAncestors = new Set(dependencies);
+    for (const dependency of dependencies) for (const value of ancestors(dependency)) candidateAncestors.add(value);
+    if (actor !== genesisReference) require(candidateAncestors.has(binding.grantReferenceHex), "UNRESOLVED_CREDENTIAL_BINDING");
+
+    if (fields.eventRole === "CREDENTIAL") {
+      const tail = fields.tail;
+      if (tail.kind === "GRANT") {
+        require(reference !== genesisReference && !bindings.has(reference), "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED");
+      } else if (tail.kind === "REVOKE") {
+        require(bindings.has(tail.targetCredentialHex), "UNRESOLVABLE_CREDENTIAL");
+        require(tail.targetCredentialHex === genesisReference
+          || candidateAncestors.has(tail.targetCredentialHex), "STRUCTURAL_REJECTION");
+      } else if (tail.kind === "ROTATE") {
+        require(tail.retiringCredentialHex !== actor, "STRUCTURAL_REJECTION");
+        require(bindings.has(tail.retiringCredentialHex), "UNRESOLVABLE_CREDENTIAL");
+        require(tail.retiringCredentialHex === genesisReference
+          || candidateAncestors.has(tail.retiringCredentialHex), "STRUCTURAL_REJECTION");
+        const replacement = admitted.get(tail.replacementGrantHex);
+        require(replacement?.fields?.tail?.kind === "GRANT"
+          && (tail.replacementGrantHex === predecessor || parents.includes(tail.replacementGrantHex)),
+        "STRUCTURAL_REJECTION");
+      } else if (tail.kind === "RECOVER") {
+        const recovery = admitted.get(tail.recoveryGrantHex);
+        require(recovery?.fields?.tail?.kind === "GRANT"
+          && (tail.recoveryGrantHex === predecessor || parents.includes(tail.recoveryGrantHex)),
+        "STRUCTURAL_REJECTION");
+      }
+    }
+    admitted.set(reference, { ...record, fields });
+    if (fields.eventRole === "CREDENTIAL" && fields.tail.kind === "GRANT") {
+      bindings.set(reference, {
+        grantReferenceHex: reference,
+        issuerCredentialHex: actor,
+        verificationKeyHex: fields.tail.granteeVerificationKeyHex,
+      });
+    }
+    const detailed = Object.fromEntries(
+      Object.entries(localObservation).filter(([key]) => !["preStateDigest", "postStateDigest"].includes(key)),
+    );
+    observations.push({ eventReferenceHex: reference, id: record.id, ...detailed, protocolErrorCode: null });
+  }
+  return observations;
+}
+
+function evaluateKAdmissionGraph(genesisRecord, records) {
+  const parsed = new Map(), rejected = new Map(), identifiers = new Map();
+  for (const record of records) {
+    const transcript = Buffer.from(record.transcriptHex, "hex");
+    const reference = hex(framedHash(DOMAINS.eventReference, transcript));
+    require(!identifiers.has(reference) || identifiers.get(reference) === record.id,
+      "REFERENCE_COLLISION_UNSUPPORTED");
+    identifiers.set(reference, record.id);
+    try {
+      const fields = parseEvent(transcript);
+      require(reference === record.eventReferenceHex, "SCENARIO_EVENT_REFERENCE_INVALID");
+      parsed.set(reference, { fields, record });
+    } catch (error) {
+      rejected.set(reference, {
+        code: error.message,
+        stage: error.stage ?? "S3_KERNEL_STRUCTURAL",
+      });
     }
   }
-  result.postStateDigest = hex(hash(Buffer.from(state, "hex"), Buffer.from(reference, "hex"))); return result;
+
+  const dependencies = fields => {
+    const values = new Set(fields.causalParents);
+    if (fields.directPredecessorHex !== null) values.add(fields.directPredecessorHex);
+    return values;
+  };
+  let forcedForks = new Set();
+  for (;;) {
+    const runRejected = new Map(rejected), admittedRecords = [], admittedReferences = new Set();
+    const pending = new Set([...parsed.keys()].filter(reference => !runRejected.has(reference)));
+    const discoveredForks = new Set(forcedForks);
+    while (pending.size > 0) {
+      let progress = false;
+      for (const reference of [...pending].sort()) {
+        const { fields, record } = parsed.get(reference), required = dependencies(fields);
+        const failedDependencies = [...required].filter(value => {
+          if (!runRejected.has(value)) return false;
+          const dependency = runRejected.get(value);
+          return !(dependency.admitted === true && dependency.code === "FORK_EVIDENCE");
+        });
+        if (failedDependencies.length > 0) {
+          const pendingAncestor = failedDependencies.some(value => {
+            const error = runRejected.get(value);
+            return error.admitted === true && ["PENDING_ANCESTOR", "PENDING_OPENING"].includes(error.code);
+          });
+          runRejected.set(reference, {
+            admitted: pendingAncestor,
+            code: pendingAncestor ? "PENDING_ANCESTOR" : "DEPENDENCY_DEFERRED",
+            stage: pendingAncestor ? "EVENT_LOCAL" : "S4_GRAPH_ADMISSION",
+          });
+          pending.delete(reference); progress = true; continue;
+        }
+        if (![...required].every(value => admittedReferences.has(value))) continue;
+        try {
+          evaluateKAdmissionScenario(genesisRecord, [...admittedRecords, record], forcedForks);
+          if (forcedForks.has(reference)) {
+            runRejected.set(reference, { admitted: true, code: "FORK_EVIDENCE", stage: "EVENT_LOCAL" });
+          }
+          admittedRecords.push({ ...record, fields }); admittedReferences.add(reference);
+        } catch (error) {
+          runRejected.set(reference, {
+            admitted: error.admitted === true,
+            code: error.message,
+            stage: error.stage ?? "S3_KERNEL_STRUCTURAL",
+          });
+          if (error.message === "FORK_EVIDENCE") {
+            discoveredForks.add(reference);
+            for (const candidate of admittedRecords) {
+              if (candidate.fields.credentialIdentifierHex === fields.credentialIdentifierHex
+                  && candidate.fields.authorSequence === fields.authorSequence) {
+                discoveredForks.add(candidate.eventReferenceHex);
+              }
+            }
+          }
+        }
+        pending.delete(reference); progress = true;
+      }
+      if (progress) continue;
+      for (const reference of [...pending].sort()) {
+        runRejected.set(reference, { admitted: false, code: "DEPENDENCY_DEFERRED", stage: "S4_GRAPH_ADMISSION" });
+      }
+      pending.clear();
+    }
+    if (discoveredForks.size === forcedForks.size && [...discoveredForks].every(value => forcedForks.has(value))) {
+      rejected.clear();
+      for (const [key, value] of runRejected) rejected.set(key, value);
+      break;
+    }
+    forcedForks = discoveredForks;
+  }
+  return [...identifiers.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([reference, id]) => {
+    const error = rejected.get(reference);
+    return {
+      eventReferenceHex: reference,
+      id,
+      kBindingAdmission: error === undefined || error.admitted === true ? "ADMITTED" : "REJECTED",
+      protocolErrorCode: error?.code ?? null,
+      stage: error?.stage ?? "FINAL_AFTER_S6",
+    };
+  });
+}
+
+function evaluateTranscriptConformance(record) {
+  const observed = evaluate(record);
+  const result = {
+    ...observed,
+    apAuthorityResult: "NOT_REACHED",
+    kBindingAdmission: "NOT_EVALUATED",
+  };
+  if (transitionInputIsCompatible(observed)) {
+    result.postStateDigest = observed.preStateDigest;
+    result.stage = "TRANSCRIPT_CONFORMANCE_COMPLETE";
+  }
+  return result;
+}
+
+function publicTranscriptObservation(record) {
+  const observed = evaluateTranscriptConformance(record);
+  const result = {
+    apAuthorityResult: observed.apAuthorityResult,
+    commitmentMatchVerification: observed.commitmentMatchVerification,
+    commitmentVerification: observed.commitmentVerification,
+    ...Object.fromEntries(Array.from({ length: 7 }, (_, index) => [
+      `geometryPredicate${index + 1}`, observed[`geometryPredicate${index + 1}`],
+    ])),
+    kBindingAdmission: observed.kBindingAdmission,
+    localOutcomePresent: Object.hasOwn(observed, "localOutcome"),
+    outcomeEvaluated: observed.outcomeEvaluated,
+    referenceVerification: observed.referenceVerification,
+    remoteClassPresent: Object.hasOwn(observed, "remoteClass"),
+    signatureVerification: observed.signatureVerification,
+    stage: observed.stage,
+    suppliedLengthVerification: observed.suppliedLengthVerification,
+    transcriptVerification: observed.transcriptVerification,
+  };
+  if (Object.hasOwn(observed, "localOutcome")) result.localOutcome = observed.localOutcome;
+  if (Object.hasOwn(observed, "remoteClass")) result.remoteClass = observed.remoteClass;
+  return result;
 }
 
 function stateDigest(value) { return hex(hash(Buffer.from(value, "utf8"))); }
 const SEMANTIC_OBSERVATION_FIELDS = Object.freeze([
-  "apAuthorityResult", "commitmentVerification", "dependencyStatus", "executed",
-  "externalEffects", "inputDigest", "kBindingAdmission", "localOutcome",
-  "remoteClass", "signatureVerification", "stage", "transcriptVerification",
+  "apAuthorityResult", "commitmentMatchVerification", "commitmentVerification", "dependencyStatus", "executed",
+  "externalEffects", "inputDigest", "kBindingAdmission", "outcomeEvaluated",
+  "geometryPredicate1", "geometryPredicate2", "geometryPredicate3", "geometryPredicate4",
+  "geometryPredicate5", "geometryPredicate6", "geometryPredicate7", "signatureVerification",
+  "stage", "suppliedLengthVerification", "transcriptVerification",
 ]);
+const OPTIONAL_SEMANTIC_OBSERVATION_FIELDS = Object.freeze(["localOutcome", "remoteClass"]);
 const NONSEMANTIC_VECTOR_FIELDS = new Set([
   "citations", "expected", "id", "mutation", "sourceVectorId", "synthetic", "testOnly",
 ]);
@@ -296,63 +739,114 @@ function semanticInputDigest(vector) {
   const projection = Object.fromEntries(Object.entries(vector).filter(([key]) => !NONSEMANTIC_VECTOR_FIELDS.has(key)));
   return hex(hash(Buffer.from(canonical(projection), "utf8")));
 }
+function semanticKGraphInputDigest(genesisRecord, records, targetRecordId) {
+  const project = record => Object.fromEntries(
+    Object.entries(record).filter(([key]) => !NONSEMANTIC_VECTOR_FIELDS.has(key)),
+  );
+  const projectedRecords = records.map(project).sort((left, right) =>
+    left.eventReferenceHex.localeCompare(right.eventReferenceHex));
+  return hex(hash(Buffer.from(canonical({
+    acceptedGenesis: project(genesisRecord),
+    records: projectedRecords,
+    targetRecordId,
+  }), "utf8")));
+}
 function semanticObservationDigest(steps) {
-  const projection = steps.map(step => Object.fromEntries(SEMANTIC_OBSERVATION_FIELDS.map(field => [field, step[field]])));
+  const projection = steps.map(step => {
+    const observation = Object.fromEntries(SEMANTIC_OBSERVATION_FIELDS.map(field => [field, step[field]]));
+    for (const field of OPTIONAL_SEMANTIC_OBSERVATION_FIELDS) {
+      const present = Object.hasOwn(step, field);
+      observation[`${field}Present`] = present;
+      if (present) observation[field] = step[field];
+    }
+    return observation;
+  });
   return hex(hash(Buffer.from(canonical(projection), "utf8")));
 }
 function transitionInputIsCompatible(observed) {
-  return observed?.localOutcome === "APPLIED" && observed?.stage === "FINAL_AFTER_S6"
+  return observed?.kBindingAdmission === "ADMITTED"
+    && observed?.apAuthorityResult === "AP_FOLD_NOT_EXECUTED"
+    && observed?.outcomeEvaluated === false
+    && !Object.hasOwn(observed ?? {}, "localOutcome")
+    && !Object.hasOwn(observed ?? {}, "remoteClass")
     && observed?.transcriptVerification === "VALID" && observed?.signatureVerification === "VALID";
 }
 
-function computeTrace(scenario, vectors, transitions) {
+function computeTrace(scenario, vectors, transitions, kRecords = new Map(), kScenarios = new Map()) {
   const availableEvidence = new Set();
   const steps = scenario.steps.map((step, index) => {
-    const vector = vectors.get(step.inputVectorId); require(vector !== undefined, `unknown vector:${step.inputVectorId}`);
-    const executed = step.executed ?? true, observed = executed ? evaluate(vector) : null;
-    const preStateDigest = stateDigest(`styx-c03/state/${scenario.id}/${step.preState}`);
-    let localOutcome, stage, postState;
+    const vector = step.inputVectorId === undefined ? undefined : vectors.get(step.inputVectorId);
+    const executed = step.executed ?? true;
+    let observed = null, inputDigest, inputLabel;
     if (!executed) {
-      require(scenario.modelId === "flow", `non-flow boundary:${scenario.id}`);
-      localOutcome = scenario.id === "scenario-flow-transport_publish" ? "TRANSPORT_PROFILE_REQUIRED" : "SESSION_PROFILE_REQUIRED";
-      stage = "BOUNDARY_NOT_EXECUTED"; postState = "UNCHANGED";
+      require(vector !== undefined, `boundary step has no vector:${scenario.id}:${index}`);
+      inputDigest = semanticInputDigest(vector);
+      inputLabel = `VECTOR:${vector.id}`;
+    } else if (step.evidenceLayer === "CONNECTED_K_ADMISSION") {
+      const connected = kScenarios.get(step.inputKAdmissionScenarioId);
+      require(connected !== undefined, `unknown connected K scenario:${step.inputKAdmissionScenarioId}`);
+      const genesis = kRecords.get(connected.acceptedGenesisRecordId);
+      const records = connected.recordIds.map(identifier => kRecords.get(identifier));
+      require(genesis !== undefined && records.every(record => record !== undefined), "connected K record missing");
+      const observations = evaluateKAdmissionScenario(genesis, records);
+      observed = observations.find(row => row.id === step.inputKAdmissionRecordId);
+      require(observed !== undefined, `unknown connected K target:${step.inputKAdmissionRecordId}`);
+      inputDigest = semanticKGraphInputDigest(genesis, records, step.inputKAdmissionRecordId);
+      inputLabel = `K_GRAPH:${step.inputKAdmissionScenarioId}:${step.inputKAdmissionRecordId}`;
+    } else {
+      require(vector !== undefined, `${step.evidenceLayer} step has no vector:${scenario.id}:${index}`);
+      if (step.evidenceLayer === "TRANSCRIPT_CONFORMANCE") observed = evaluateTranscriptConformance(vector);
+      else if (step.evidenceLayer === "LOCAL_NEGATIVE") observed = evaluate(vector);
+      else throw new Error(`unknown evidence layer:${step.evidenceLayer}`);
+      inputDigest = semanticInputDigest(vector);
+      inputLabel = `VECTOR:${vector.id}`;
+    }
+    const preStateDigest = stateDigest(`styx-c03/state/${scenario.id}/${step.preState}`);
+    let observation, postState;
+    if (!executed) {
+      require(["flow", "ap_projection"].includes(scenario.modelId), `invalid boundary:${scenario.id}`);
+      const localOutcome = scenario.modelId === "ap_projection" ? "NOT_EVALUATED"
+        : scenario.id === "scenario-flow-transport_publish" ? "TRANSPORT_PROFILE_REQUIRED" : "SESSION_PROFILE_REQUIRED";
+      observation = { apAuthorityResult: "NOT_EVALUATED", commitmentMatchVerification: "NOT_EVALUATED", commitmentVerification: "NOT_PRESENT", externalEffects: [], ...geometryObservations(),
+        kBindingAdmission: "NOT_EVALUATED", localOutcome, outcomeEvaluated: false, remoteClass: "OPAQUE_REMOTE_FAILURE",
+        signatureVerification: "NOT_EVALUATED", stage: "BOUNDARY_NOT_EXECUTED", suppliedLengthVerification: "NOT_EVALUATED", transcriptVerification: "NOT_EVALUATED" };
+      postState = "UNCHANGED";
     } else if (step.transitionId !== null) {
-      require(transitionInputIsCompatible(observed), `incompatible transition input:${scenario.id}:${index}`);
       const transition = transitions.get(`${scenario.modelId}:${step.transitionId}`);
       require(transition !== undefined && transition.from.includes(step.preState), `transition mismatch:${scenario.id}:${index}`);
-      localOutcome = transition.outcome; stage = "MODEL_TRANSITION"; postState = transition.to;
+      if (transition.result_layer === "K_ADMISSION_ONLY") {
+        require(transitionInputIsCompatible(observed), `incompatible positive K transition:${scenario.id}:${index}`);
+      } else {
+        require(observed?.outcomeEvaluated === true && observed?.localOutcome === transition.outcome,
+          `incompatible negative K transition:${scenario.id}:${index}`);
+      }
+      observation = Object.fromEntries(Object.entries(observed).filter(([key]) => ![
+        "eventReferenceHex", "id", "preStateDigest", "postStateDigest", "protocolErrorCode",
+      ].includes(key)));
+      postState = transition.to;
     } else {
-      localOutcome = observed.localOutcome; stage = observed.stage;
-      postState = observed.preStateDigest === observed.postStateDigest ? "UNCHANGED" : "APPLIED";
+      observation = Object.fromEntries(Object.entries(observed).filter(([key]) => ![
+        "eventReferenceHex", "id", "preStateDigest", "postStateDigest", "protocolErrorCode",
+      ].includes(key)));
+      postState = step.evidenceLayer === "TRANSCRIPT_CONFORMANCE"
+        || observed.preStateDigest === observed.postStateDigest ? "UNCHANGED" : "READY_FOR_AP_FOLD";
     }
     const postStateDigest = postState === "UNCHANGED" || !executed
       ? preStateDigest : stateDigest(`styx-c03/state/${scenario.id}/${postState}`);
     const requirements = new Set(step.requiredPriorEvidence);
     const dependencyStatus = [...requirements].every(value => availableEvidence.has(value)) ? "SATISFIED" : "MISSING";
     require(dependencyStatus === step.expectedDependencyStatus, `dependency status mismatch:${scenario.id}:${index}`);
-    let kBindingAdmission, apAuthorityResult;
-    if (!executed) {
-      kBindingAdmission = "NOT_EVALUATED"; apAuthorityResult = "NOT_EVALUATED";
-    } else if (observed.transcriptVerification !== "VALID" || observed.signatureVerification === "REJECTED" || ["CREDENTIAL_BINDING_MISMATCH", "REFERENCE_COLLISION_UNSUPPORTED"].includes(observed.localOutcome)) {
-      kBindingAdmission = "REJECTED"; apAuthorityResult = "NOT_REACHED";
-    } else {
-      kBindingAdmission = "ADMITTED"; apAuthorityResult = observed.localOutcome === "APPLIED" ? "APPLIED" : "REJECTED_OR_DEFERRED";
-    }
     const result = {
       actionDigest: hex(hash(Buffer.from(step.candidateAction, "utf8"))),
-      apAuthorityResult,
-      causalClassification: step.transitionId ?? `VECTOR:${vector.id}`,
-      commitmentVerification: observed === null ? "NOT_PRESENT" : observed.commitmentVerification,
+      causalClassification: step.transitionId ?? inputLabel,
       dependencyStatus,
       evidenceConsumed: [...requirements].sort(),
       evidenceProduced: step.providedEvidence ?? null,
       executed,
-      externalEffects: [], inputDigest: semanticInputDigest(vector),
-      kBindingAdmission, localOutcome,
-      postStateDigest, preStateDigest, remoteClass: localOutcome === "APPLIED" ? "APPLIED" : "OPAQUE_REMOTE_FAILURE",
-      signatureVerification: observed === null ? "NOT_EVALUATED" : observed.signatureVerification,
-      stage, step: index, transcriptVerification: observed === null ? "NOT_EVALUATED" : observed.transcriptVerification,
+      inputDigest, postStateDigest, preStateDigest, step: index,
     };
+    Object.assign(result, observation);
+    if (Object.hasOwn(step, "apExpectationOnly")) result.apExpectationOnly = step.apExpectationOnly;
     if (step.providedEvidence !== null && step.providedEvidence !== undefined) availableEvidence.add(step.providedEvidence);
     return result;
   });
@@ -382,10 +876,16 @@ function validateSourceCoverage(coverage, o07, o08, excludedO08, o10) {
 }
 function validateFileManifest(corpus, manifest) {
   const names = ["adversarial-mutations.json", "expected-traces.json", "invalid-transcript-vectors.json", "state-machine-scenarios.json", "valid-transcript-vectors.json"];
-  const expected = names.map(path => ({ path, recordCount: loadCanonical(resolve(corpus, path)).records.length, sha256: hex(hash(readFileSync(resolve(corpus, path)))) }));
+  const expected = names.map(path => {
+    const document = loadCanonical(resolve(corpus, path));
+    const row = { path, recordCount: document.records.length, sha256: hex(hash(readFileSync(resolve(corpus, path)))) };
+    if (document.kAdmissionRecords !== undefined) row.kAdmissionRecordCount = document.kAdmissionRecords.length;
+    else if (document.kAdmissionScenarios !== undefined) row.kAdmissionRecordCount = document.kAdmissionScenarios.length;
+    return row;
+  });
   require(JSON.stringify(canonicalValue(manifest.files)) === JSON.stringify(canonicalValue(expected)), "manifest file digests/counts mismatch");
 }
-function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, mutations, valid, invalid) {
+function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, mutations, valid, invalid, apExpectations, kScenarios, kHostile) {
   const coverage = manifest.coverage;
   const inventory = JSON.parse(readFileSync(resolve(repoRoot, "tools/causal-flow-simulator/c03/corpus-inventory.json"), "utf8"));
   const nonExecutableInvariants = new Set(["INV_C0_3_NO_GO", "INV_SOURCE_AUTHORITY"]);
@@ -394,14 +894,27 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
   require(setEqual(executableInvariantIds, inventoriedInvariantIds), "invariant witness inventory mismatch");
   require(new Set(Object.values(inventory.invariant_witness_vectors)).size === executableInvariantIds.size, "shared inventoried invariant witness vector");
   const scenarioIds = new Set(scenarios.map(row => row.id));
-  const vectorIds = new Set([...valid, ...invalid].map(row => row.id));
+  const vectorIds = new Set([...valid, ...invalid, ...apExpectations].map(row => row.id));
   const usedVectorIds = new Set();
+  const kScenarioById = new Map(kScenarios.map(row => [row.id, row]));
   for (const scenario of scenarios) {
     const available = new Set();
     require(Array.isArray(scenario.steps) && scenario.steps.length > 0, `empty scenario:${scenario.id}`);
     for (const step of scenario.steps) {
-      require(vectorIds.has(step.inputVectorId), `unknown vector:${scenario.id}:${step.inputVectorId}`);
-      usedVectorIds.add(step.inputVectorId);
+      if (step.evidenceLayer === "CONNECTED_K_ADMISSION") {
+        const connected = kScenarioById.get(step.inputKAdmissionScenarioId);
+        require(!Object.hasOwn(step, "inputVectorId") && connected !== undefined
+          && typeof step.inputKAdmissionRecordId === "string"
+          && connected.recordIds.includes(step.inputKAdmissionRecordId),
+        `invalid connected K step input:${scenario.id}`);
+      } else {
+        require(["BOUNDARY_NOT_EXECUTED", "LOCAL_NEGATIVE", "TRANSCRIPT_CONFORMANCE"].includes(step.evidenceLayer)
+          && vectorIds.has(step.inputVectorId)
+          && !Object.hasOwn(step, "inputKAdmissionScenarioId")
+          && !Object.hasOwn(step, "inputKAdmissionRecordId"),
+        `invalid vector-backed step input:${scenario.id}:${step.inputVectorId}`);
+        usedVectorIds.add(step.inputVectorId);
+      }
       const dependencyStatus = step.requiredPriorEvidence.every(value => available.has(value)) ? "SATISFIED" : "MISSING";
       require(step.expectedDependencyStatus === dependencyStatus, `dependency expectation mismatch:${scenario.id}`);
       require(typeof step.providedEvidence === "string" && step.providedEvidence.length > 0 && !available.has(step.providedEvidence), `invalid produced evidence:${scenario.id}`);
@@ -409,6 +922,19 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
     }
   }
   require(setEqual(usedVectorIds, vectorIds), "vector execution coverage mismatch");
+  const layerCounts = new Map();
+  for (const scenario of scenarios) for (const step of scenario.steps) {
+    layerCounts.set(step.evidenceLayer, (layerCounts.get(step.evidenceLayer) ?? 0) + 1);
+    require(!(step.evidenceLayer === "TRANSCRIPT_CONFORMANCE"
+      && step.expectedPostState === "READY_FOR_AP_FOLD"),
+    "disconnected transcript fixture mutates K state");
+  }
+  require(JSON.stringify([...layerCounts].sort()) === JSON.stringify([
+    ["BOUNDARY_NOT_EXECUTED", 11],
+    ["CONNECTED_K_ADMISSION", 4],
+    ["LOCAL_NEGATIVE", 68],
+    ["TRANSCRIPT_CONFORMANCE", 81],
+  ]), "scenario evidence-layer cardinality mismatch");
 
   for (const trace of traces) {
     require(
@@ -436,6 +962,26 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
   require(JSON.stringify(canonicalValue(coverage.flows)) === JSON.stringify(canonicalValue(expectedFlows)), "flow coverage relation mismatch");
 
   const mutationById = new Map(mutations.map(row => [row.id, row]));
+  const expectedSourceMutationIds = new Set([
+    "mutation-source-checkpoint-after-protected-work",
+    "mutation-source-o10-applicability",
+    "mutation-source-o10-class-membership",
+    "mutation-source-o10-precedence",
+    "mutation-source-r5-flatten-k-admission",
+    "mutation-source-r6-classification",
+    "mutation-source-fork-descendant-dependency-rejection",
+    ...Array.from({ length: 7 }, (_, index) => `mutation-source-geometry-predicate-${index + 1}`),
+  ]);
+  const sourceMutations = mutations.filter(row => row.mutationClass === "SOURCE_ANCHORED_SECURITY");
+  require(setEqual(new Set(sourceMutations.map(row => row.id)), expectedSourceMutationIds), "source-anchored mutation set mismatch");
+  const sourceRowIds = new Set(baseJson(repoRoot, "tools/causal-flow-simulator/o10/source-inventory.json").rows.map(row => row.row_id));
+  for (const mutation of sourceMutations) {
+    require(typeof mutation.sourcePath === "string" && typeof mutation.sourceAnchor === "string" && mutation.sourceAnchor.length > 0, `invalid source mutation anchor:${mutation.id}`);
+    require(baseText(repoRoot, mutation.sourcePath).includes(mutation.sourceAnchor), `stale source mutation anchor:${mutation.id}`);
+    require(Array.isArray(mutation.sourceRowIds) && mutation.sourceRowIds.length > 0
+      && new Set(mutation.sourceRowIds).size === mutation.sourceRowIds.length
+      && mutation.sourceRowIds.every(row => sourceRowIds.has(row)), `invalid source mutation rows:${mutation.id}`);
+  }
   const expectedNonExecutable = nonExecutableInvariants;
   const invariantRows = new Map(coverage.invariants.map(row => [row.id, row]));
   require(invariantRows.size === model.invariants.length && model.invariants.every(row => invariantRows.has(row.id)), "invariant coverage mismatch");
@@ -476,22 +1022,125 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
 
   require(JSON.stringify(canonicalValue(coverage.o10.alias)) === JSON.stringify(canonicalValue(inventory.o10_alias)), "O-10 alias mismatch");
   const expectedOutcomes = inventory.o10_primaries.map(outcome => {
-    const matching = scenarios.filter(scenario => scenario.steps.some(step => step.expectedOutcome === outcome)).map(row => row.id);
-    return { branch: matching.length > 0 ? "EXERCISED" : "UNREACHABLE_IN_TRANSCRIPT_ONLY_PROFILE", citations: [{ anchor: "## Primary registry", path: "docs/protocol/styx-app-kernel-v0-outcome-taxonomy.md" }], id: outcome, scenarioIds: matching };
+    let branch, matching;
+    if (PRODUCED_K_PRIMARIES.has(outcome)) {
+      branch = "PRODUCED";
+      matching = scenarios.filter(scenario => scenario.steps.some(step => step.expectedOutcome === outcome)).map(row => row.id);
+      matching.push(...kHostile.filter(scenario => scenario.expectedObservations.some(observation => observation.protocolErrorCode === outcome)).map(row => row.id));
+      matching.sort();
+    } else if (AP_OWNED_EXCLUSIONS.has(outcome)) {
+      branch = "AP_OWNED_EXCLUDED";
+      matching = scenarios.filter(scenario => scenario.steps.some(step => step.apExpectationOnly === outcome)).map(row => row.id);
+    } else {
+      require(TRANSCRIPT_PROFILE_UNREACHABLE.has(outcome), `unpartitioned O-10 primary:${outcome}`);
+      branch = "TRANSCRIPT_PROFILE_UNREACHABLE"; matching = [];
+    }
+    return { branch, citations: [{ anchor: "## Primary registry", path: "docs/protocol/styx-app-kernel-v0-outcome-taxonomy.md" }], id: outcome, scenarioIds: matching };
   });
   expectedOutcomes.push(...inventory.o10_post_c03_markers.map(marker => ({ branch: "UNREACHABLE_IN_TRANSCRIPT_ONLY_PROFILE", citations: [{ anchor: "## Closed cardinalities", path: "docs/protocol/styx-app-kernel-v0-outcome-taxonomy.md" }], id: marker, scenarioIds: [] })));
   require(JSON.stringify(canonicalValue(coverage.o10.outcomes)) === JSON.stringify(canonicalValue(expectedOutcomes)), "O-10 outcome coverage mismatch");
+  const sourceInventory = baseJson(repoRoot, "tools/causal-flow-simulator/o10/source-inventory.json");
+  const sourceById = new Map(sourceInventory.rows.map(row => [row.row_id, row]));
+  const vectorById = new Map([...valid, ...invalid, ...apExpectations].map(row => [row.id, row]));
+  const producedWitnesses = inventory.o10_produced_source_row_witnesses;
+  require(producedWitnesses && typeof producedWitnesses === "object" && !Array.isArray(producedWitnesses)
+    && Object.keys(producedWitnesses).length > 0, "O-10 produced-row witness map missing");
+  for (const [rowId, witnesses] of Object.entries(producedWitnesses)) {
+    const source = sourceById.get(rowId);
+    require(source !== undefined, `O-10 produced-row witness references unknown row:${rowId}`);
+    require(source.mapping !== undefined, `produced forbidden O-10 row:${rowId}`);
+    const primary = inventory.o10_primaries.includes(source.mapping.primary)
+      ? source.mapping.primary : undefined;
+    require(primary !== undefined && !AP_OWNED_EXCLUSIONS.has(primary), `produced non-K O-10 row:${rowId}`);
+    require(Array.isArray(witnesses) && witnesses.length > 0, `empty O-10 row witness set:${rowId}`);
+    const seenInputs = new Set();
+    for (const witness of witnesses) {
+      const keys = witness && typeof witness === "object" && !Array.isArray(witness)
+        ? Object.keys(witness).sort() : [];
+      const vectorWitness = JSON.stringify(keys) === JSON.stringify(["inputId", "jointSourceRowIds"]);
+      const graphWitness = JSON.stringify(keys) === JSON.stringify(["inputKAdmissionRecordId", "inputKAdmissionScenarioId", "jointSourceRowIds"]);
+      require(vectorWitness || graphWitness, `malformed O-10 row witness:${rowId}`);
+      const inputIdentity = vectorWitness
+        ? witness.inputId
+        : `${witness.inputKAdmissionScenarioId}:${witness.inputKAdmissionRecordId}`;
+      require(typeof inputIdentity === "string" && inputIdentity.length > 0
+        && !seenInputs.has(inputIdentity), `invalid O-10 row witness relation:${rowId}`);
+      seenInputs.add(inputIdentity);
+      require(Array.isArray(witness.jointSourceRowIds) && witness.jointSourceRowIds.length > 0
+        && witness.jointSourceRowIds.includes(rowId)
+        && JSON.stringify(witness.jointSourceRowIds) === JSON.stringify([...new Set(witness.jointSourceRowIds)].sort())
+        && witness.jointSourceRowIds.every(identifier => sourceById.has(identifier)),
+      `invalid O-10 row witness relation:${rowId}`);
+    }
+  }
+  const expectedSourceRows = sourceInventory.rows.map(row => {
+    let disposition, primary, rowWitnesses = [];
+    if (Object.hasOwn(producedWitnesses, row.row_id)) {
+      disposition = "PRODUCED"; primary = row.mapping.primary;
+      rowWitnesses = producedWitnesses[row.row_id].map(witness => {
+        const vectorWitness = Object.hasOwn(witness, "inputId");
+        const scenarioId = vectorWitness
+          ? `scenario-vector-${witness.inputId}`
+          : witness.inputKAdmissionScenarioId;
+        let observed, inputId;
+        if (vectorWitness) {
+          inputId = witness.inputId;
+          const scenario = scenarios.find(item => item.id === scenarioId);
+          require(scenario?.steps.some(step => step.inputVectorId === inputId), `missing O-10 row scenario:${row.row_id}:${inputId}`);
+          observed = evaluate(vectorById.get(inputId));
+          require(observed.localOutcome === primary && observed.stage === row.mapping.stage, `O-10 row witness result mismatch:${row.row_id}:${inputId}`);
+        } else {
+          inputId = witness.inputKAdmissionRecordId;
+          const scenario = kHostile.find(item => item.id === scenarioId);
+          require(scenario !== undefined, `unknown connected O-10 scenario:${row.row_id}:${scenarioId}`);
+          observed = evaluateKAdmissionGraph(scenario.acceptedGenesisRecord, scenario.records).find(item => item.id === inputId);
+          require(observed !== undefined, `unknown connected O-10 record:${row.row_id}:${inputId}`);
+          require(observed.protocolErrorCode === primary && observed.stage === row.mapping.stage, `O-10 row witness result mismatch:${row.row_id}:${inputId}`);
+        }
+        require(Array.isArray(witness.jointSourceRowIds) && witness.jointSourceRowIds.length > 0
+          && witness.jointSourceRowIds.includes(row.row_id)
+          && JSON.stringify(witness.jointSourceRowIds) === JSON.stringify([...new Set(witness.jointSourceRowIds)].sort()), `invalid O-10 joint witness:${row.row_id}`);
+        for (const jointId of witness.jointSourceRowIds) {
+          const joint = sourceById.get(jointId)?.mapping;
+          require(joint?.primary === row.mapping.primary && joint?.stage === row.mapping.stage, `incompatible O-10 joint witness:${row.row_id}:${jointId}`);
+        }
+        return { ...witness, scenarioId };
+      });
+    } else if (row.mapping !== undefined && AP_OWNED_EXCLUSIONS.has(row.mapping.primary)) {
+      disposition = "AP_OWNED_EXCLUDED"; primary = row.mapping.primary;
+    } else if (row.mapping !== undefined) {
+      disposition = "TRANSCRIPT_PROFILE_UNREACHABLE"; primary = row.mapping.primary;
+    } else {
+      disposition = "TRANSCRIPT_PROFILE_UNREACHABLE"; primary = row.forbidden_identifier;
+    }
+    return { disposition, primary, rowId: row.row_id, witnesses: rowWitnesses };
+  });
+  require(JSON.stringify(canonicalValue(coverage.o10.sourceRows)) === JSON.stringify(canonicalValue(expectedSourceRows)), "O-10 source-row partition mismatch");
 }
-function parseArgs() { const args = process.argv.slice(2), values = {}; for (let i = 0; i < args.length; i += 2) values[args[i]] = args[i + 1]; for (const key of ["--repo-root", "--corpus", "--output"]) require(values[key], `missing ${key}`); return values; }
+function parseArgs() {
+  const args = process.argv.slice(2), values = {};
+  for (let i = 0; i < args.length; i += 2) values[args[i]] = args[i + 1];
+  const required = values["--mode"] === "geometry-boundaries"
+    ? ["--output"]
+    : values["--k-scenario-input"]
+      ? ["--k-scenario-input", "--output"]
+      : ["--repo-root", "--corpus", "--output"];
+  for (const key of required) require(values[key], `missing ${key}`);
+  return values;
+}
 
 function baseJson(repoRoot, path) {
   return JSON.parse(execFileSync("git", ["show", `${BASE_SHA}:${path}`], { cwd: repoRoot, encoding: "utf8" }));
 }
+function baseText(repoRoot, path) {
+  require(typeof path === "string" && !path.startsWith("/") && !path.split(/[\\/]/).includes(".."), `unsafe Base path:${path}`);
+  return execFileSync("git", ["show", `${BASE_SHA}:${path}`], { cwd: repoRoot, encoding: "utf8" });
+}
 
-function mutationReport(args, corpus, valid, invalid, scenarios, expected, model) {
+function mutationReport(args, corpus, valid, invalid, apExpectations, scenarios, expected, model, kById, kScenarioById) {
   const registry = loadCanonical(resolve(corpus, "adversarial-mutations.json")).records;
   const manifest = loadCanonical(resolve(corpus, "manifest.json"));
-  const vectors = new Map([...valid, ...invalid].map(record => [record.id, record]));
+  const vectors = new Map([...valid, ...invalid, ...apExpectations].map(record => [record.id, record]));
   const expectedById = new Map(expected.map(record => [record.id, record]));
   const scenarioByTrace = new Map(scenarios.map(record => [`trace-${record.id}`, record]));
   const transitions = new Map(model.state_models.flatMap(machine => machine.transitions.map(transition => [`${machine.id}:${transition.id}`, transition])));
@@ -516,19 +1165,19 @@ function mutationReport(args, corpus, valid, invalid, scenarios, expected, model
       corrupted.expected.localOutcome = "APPLIED";
       detected = evaluate(corrupted).localOutcome !== corrupted.expected.localOutcome;
     } else if (mutation.detector === "INDEPENDENT_EXPECTED_TRACE_MISMATCH") {
-      const scenario = scenarioByTrace.get(mutation.generatedTargetId), computed = computeTrace(scenario, vectors, transitions);
+      const scenario = scenarioByTrace.get(mutation.generatedTargetId), computed = computeTrace(scenario, vectors, transitions, kById, kScenarioById);
       const corrupted = structuredClone(expectedById.get(mutation.generatedTargetId));
       corrupted.steps[0].localOutcome = "INVALID";
       detected = JSON.stringify(canonicalValue(computed)) !== JSON.stringify(canonicalValue(corrupted));
     } else if (mutation.detector === "INDEPENDENT_EXPECTED_DEPENDENCY_STATUS_MISMATCH") {
-      const scenario = scenarioByTrace.get(mutation.generatedTargetId), computed = computeTrace(scenario, vectors, transitions);
+      const scenario = scenarioByTrace.get(mutation.generatedTargetId), computed = computeTrace(scenario, vectors, transitions, kById, kScenarioById);
       const corrupted = structuredClone(expectedById.get(mutation.generatedTargetId));
       corrupted.steps[0].dependencyStatus = "SATISFIED";
       detected = JSON.stringify(canonicalValue(computed)) !== JSON.stringify(canonicalValue(corrupted));
     } else if (mutation.detector === "INVARIANT_WITNESS_TRACE_MISMATCH") {
       const scenario = structuredClone(scenarioByTrace.get(mutation.generatedTargetId));
       scenario.steps[0].inputVectorId = mutation.replacementVectorId;
-      detected = JSON.stringify(canonicalValue(computeTrace(scenario, vectors, transitions))) !== JSON.stringify(canonicalValue(expectedById.get(mutation.generatedTargetId)));
+      detected = JSON.stringify(canonicalValue(computeTrace(scenario, vectors, transitions, kById, kScenarioById))) !== JSON.stringify(canonicalValue(expectedById.get(mutation.generatedTargetId)));
     } else if (mutation.detector === "MANIFEST_DIGEST_MISMATCH") {
       const mutated = structuredClone(manifest), row = mutated.files.find(item => item.path === mutation.generatedTargetId);
       row.sha256 = mutated.files.find(item => item.path !== row.path).sha256;
@@ -545,6 +1194,46 @@ function mutationReport(args, corpus, valid, invalid, scenarios, expected, model
       const target = mutation.generatedTargetId, mutated = structuredClone(manifest);
       mutated.coverage.o10.coveredSourceRowIds = mutated.coverage.o10.coveredSourceRowIds.filter(value => value !== target);
       try { validateSourceCoverage(mutated.coverage, o07, o08, excludedO08, o10); } catch { detected = o10.has(target); }
+    } else if (mutation.detector === "SOURCE_O10_CLASS_MEMBERSHIP") {
+      try { o10Result("APPLIED", "FINAL_AFTER_S6"); } catch { detected = true; }
+    } else if (mutation.detector === "SOURCE_O10_APPLICABILITY") {
+      try { o10Result("LENGTH_MISMATCH", "EVENT_LOCAL"); } catch { detected = true; }
+    } else if (mutation.detector === "SOURCE_O10_PRECEDENCE") {
+      detected = selectO10Result([
+        ["COMMITMENT_MISMATCH", "S3_KERNEL_STRUCTURAL"],
+        ["LENGTH_MISMATCH", "S3_KERNEL_STRUCTURAL"],
+      ]).localOutcome === "LENGTH_MISMATCH";
+    } else if (mutation.detector === "SOURCE_CHECKPOINT_BEFORE_PROTECTED_WORK") {
+      const corrupted = structuredClone(vectors.get(mutation.generatedTargetId));
+      corrupted.admissionContext ??= {};
+      corrupted.admissionContext.checkpointEvidenceReferences = ["00".repeat(32)];
+      const observed = evaluate(corrupted);
+      detected = observed.localOutcome === "CURRENT_OBJECT_OUT_OF_PROFILE"
+        && observed.signatureVerification === "NOT_EVALUATED"
+        && observed.commitmentVerification === "NOT_PRESENT";
+    } else if (mutation.detector === "SOURCE_GEOMETRY_PREDICATE") {
+      detected = geometryPredicateMutantIsKilled(mutation.predicateNumber);
+    } else if (mutation.detector === "SOURCE_R6_CLASSIFICATION") {
+      const observed = evaluate(vectors.get(mutation.generatedTargetId));
+      detected = observed.localOutcome === "CURRENT_OBJECT_OUT_OF_PROFILE"
+        && observed.stage === "S3_KERNEL_STRUCTURAL"
+        && observed.signatureVerification === "NOT_EVALUATED"
+        && [1, 3, 4, 5, 6, 7].every(number => observed[`geometryPredicate${number}`] === "PASS");
+    } else if (mutation.detector === "SOURCE_R5_LAYERING") {
+      const observed = evaluateTranscriptConformance(vectors.get(mutation.generatedTargetId));
+      detected = observed.kBindingAdmission === "NOT_EVALUATED"
+        && observed.apAuthorityResult === "NOT_REACHED"
+        && observed.outcomeEvaluated === false
+        && !Object.hasOwn(observed, "localOutcome")
+        && !Object.hasOwn(observed, "remoteClass");
+    } else if (mutation.detector === "SOURCE_FORK_DESCENDANT_GRAPH_RETENTION") {
+      const scenario = kScenarioById.get(mutation.generatedTargetId);
+      const descendant = evaluateKAdmissionGraph(
+        scenario.acceptedGenesisRecord,
+        scenario.records,
+      ).find(row => row.id === "k-hostile-fork-left-descendant");
+      detected = descendant?.kBindingAdmission === "ADMITTED"
+        && descendant.protocolErrorCode === null;
     }
     require(detected, `surviving mutation:${mutation.id}`); killed.push(mutation.id);
   }
@@ -553,27 +1242,152 @@ function mutationReport(args, corpus, valid, invalid, scenarios, expected, model
 }
 
 function main() {
-  const args = parseArgs(), corpus = resolve(args["--corpus"]);
-  const valid = loadCanonical(resolve(corpus, "valid-transcript-vectors.json")).records;
-  const invalid = loadCanonical(resolve(corpus, "invalid-transcript-vectors.json")).records;
-  for (const record of valid) { const observed = evaluate(record); require(observed.localOutcome === "APPLIED", `valid vector rejected:${record.id}:${observed.localOutcome}:${observed.stage}:${observed.commitmentVerification}`); }
+  const args = parseArgs();
+  if (args["--mode"] === "geometry-boundaries") {
+    const ceiling = Number(MAX_U32 - 132n);
+    const rows = [ceiling - 1, ceiling, ceiling + 1].map(exactLength => {
+      let result = "PASS";
+      try { validateGeometryPredicates(exactLength, "SINGLE", null); }
+      catch (error) {
+        if (!(error instanceof ProtocolError)) throw error;
+        result = error.observations.geometryPredicate2;
+      }
+      return { exactLength: String(exactLength), geometryPredicate2: result };
+    });
+    writeFileSync(resolve(args["--output"]), canonical({
+      intrinsicExactLengthCeiling: String(ceiling), rows,
+      schema: "styx-c03-geometry-boundaries/v1",
+    }), { flag: "wx" });
+    return;
+  }
+  if (args["--k-scenario-input"]) {
+    const input = loadCanonical(resolve(args["--k-scenario-input"]));
+    const observations = input.scenarios.map(scenario => ({
+      id: scenario.id,
+      observations: (scenario.graphEvaluation ? evaluateKAdmissionGraph : evaluateKAdmissionScenario)(
+        scenario.acceptedGenesisRecord,
+        scenario.records,
+      ),
+    }));
+    writeFileSync(resolve(args["--output"]), canonical({ observations, result: "PASS" }), { flag: "wx" });
+    return;
+  }
+  const corpus = resolve(args["--corpus"]);
+  const validDocument = loadCanonical(resolve(corpus, "valid-transcript-vectors.json"));
+  require(validDocument.schema === "styx-c03-valid-transcripts/v2", "valid transcript schema mismatch");
+  const valid = validDocument.records;
+  const invalidDocument = loadCanonical(resolve(corpus, "invalid-transcript-vectors.json"));
+  require(invalidDocument.schema === "styx-c03-invalid-transcripts/v2", "invalid transcript schema mismatch");
+  const invalid = invalidDocument.records, apExpectations = invalidDocument.apExpectationOnlyRecords;
+  for (const record of valid) {
+    const observed = evaluateTranscriptConformance(record);
+    require(observed.transcriptVerification === "VALID"
+      && observed.signatureVerification === "VALID"
+      && observed.kBindingAdmission === "NOT_EVALUATED"
+      && observed.apAuthorityResult === "NOT_REACHED"
+      && observed.outcomeEvaluated === false
+      && !Object.hasOwn(observed, "localOutcome")
+      && !Object.hasOwn(observed, "remoteClass"),
+    `valid transcript fixture rejected or overclaimed:${record.id}`);
+  }
   for (const record of invalid) { const observed = evaluate(record); require(observed.localOutcome === record.expected.localOutcome && observed.stage === record.expected.firstFailingStage, `invalid mismatch:${record.id}`); require(observed.preStateDigest === observed.postStateDigest && observed.externalEffects.length === 0, `invalid side effect:${record.id}`); }
-  const scenarios = loadCanonical(resolve(corpus, "state-machine-scenarios.json")).records;
-  const expected = loadCanonical(resolve(corpus, "expected-traces.json")).records;
+  for (const record of apExpectations) require(
+    evaluateTranscriptConformance(record).kBindingAdmission === "NOT_EVALUATED",
+    `AP-only vector claims disconnected K admission:${record.id}`,
+  );
+  const scenarioDocument = loadCanonical(resolve(corpus, "state-machine-scenarios.json"));
+  require(scenarioDocument.schema === "styx-c03-state-scenarios/v2", "state scenario schema mismatch");
+  const scenarios = scenarioDocument.records;
+  const adversarialDocument = loadCanonical(resolve(corpus, "adversarial-mutations.json"));
+  require(adversarialDocument.schema === "styx-c03-adversarial-mutations/v2", "adversarial schema mismatch");
+  const kRecords = validDocument.kAdmissionRecords;
+  const kScenarios = scenarioDocument.kAdmissionScenarios;
+  require(Array.isArray(kRecords) && kRecords.length === 18
+    && Array.isArray(kScenarios) && kScenarios.length === 3,
+  "connected K-admission cardinality mismatch");
+  const kById = new Map(kRecords.map(record => [record.id, record]));
+  const kScenarioById = new Map(kScenarios.map(scenario => [scenario.id, scenario]));
+  const usedKRecords = new Set(), kObservations = [];
+  for (const scenario of kScenarios) {
+    const genesis = kById.get(scenario.acceptedGenesisRecordId);
+    require(genesis?.kind === "GENESIS" && Array.isArray(scenario.recordIds)
+      && scenario.recordIds.length > 0 && new Set(scenario.recordIds).size === scenario.recordIds.length
+      && scenario.recordIds.every(identifier => kById.has(identifier)),
+    `invalid connected K scenario:${scenario.id}`);
+    usedKRecords.add(scenario.acceptedGenesisRecordId);
+    for (const identifier of scenario.recordIds) usedKRecords.add(identifier);
+    const observations = evaluateKAdmissionGraph(
+      genesis,
+      [...scenario.recordIds].reverse().map(identifier => kById.get(identifier)),
+    );
+    require(observations.length === scenario.recordIds.length
+      && observations.every(row => row.kBindingAdmission === "ADMITTED" && row.protocolErrorCode === null),
+    `connected K scenario rejected:${scenario.id}`);
+    kObservations.push({ id: scenario.id, observations });
+  }
+  require(usedKRecords.size === kById.size && [...kById].every(([identifier]) => usedKRecords.has(identifier)),
+    "unexecuted connected K record");
+  require(kObservations.reduce((count, row) => count + row.observations.length, 0) === 18,
+    "positive connected K observation cardinality mismatch");
+  const legacyById = new Map(valid.map(record => [record.id, record]));
+  const legacyObservation = evaluateKAdmissionGraph(
+    legacyById.get("vec-genesis"), [legacyById.get("vec-ordinary-none")],
+  )[0];
+  require(legacyObservation.kBindingAdmission === "REJECTED"
+    && legacyObservation.protocolErrorCode === "CREDENTIAL_BINDING_MISMATCH",
+  "legacy transcript fixture incorrectly proves K admission");
+  const kHostile = adversarialDocument.kAdmissionScenarios;
+  require(Array.isArray(kHostile) && kHostile.length === 17,
+    "hostile connected K cardinality mismatch");
+  const hostileObservations = [], observedErrorCodes = new Set();
+  for (const scenario of kHostile) {
+    require(JSON.stringify(Object.keys(scenario).sort()) === JSON.stringify([
+      "acceptedGenesisRecord", "expectedObservations", "id", "records",
+    ]), `invalid hostile connected K scenario:${scenario.id}`);
+    require(Array.isArray(scenario.records) && scenario.records.length > 0,
+      `empty hostile connected K scenario:${scenario.id}`);
+    const observations = evaluateKAdmissionGraph(
+      scenario.acceptedGenesisRecord, scenario.records,
+    );
+    require(JSON.stringify(canonicalValue(observations))
+      === JSON.stringify(canonicalValue(scenario.expectedObservations)),
+    `hostile connected K oracle mismatch:${scenario.id}`);
+    for (const row of observations) if (row.protocolErrorCode !== null) observedErrorCodes.add(row.protocolErrorCode);
+    hostileObservations.push({ id: scenario.id, observations });
+  }
+  require(hostileObservations.reduce((count, row) => count + row.observations.length, 0) === 66,
+    "hostile connected K observation cardinality mismatch");
+  for (const code of [
+    "CREDENTIAL_BINDING_MISMATCH", "INVALID",
+    "STRUCTURAL_REJECTION", "UNRESOLVABLE_CREDENTIAL", "UNRESOLVED_CREDENTIAL_BINDING",
+  ]) require(observedErrorCodes.has(code), `hostile connected K class missing:${code}`);
+  const removalObservations = hostileObservations.find(row =>
+    row.id === "k-hostile-removal-target-absence-is-not-k-rejection").observations;
+  require(removalObservations.every(row => row.kBindingAdmission === "ADMITTED"),
+    "removal target absence incorrectly rejected by K");
+  const expectedDocument = loadCanonical(resolve(corpus, "expected-traces.json"));
+  require(expectedDocument.schema === "styx-c03-expected-traces/v2", "expected trace schema mismatch");
+  const expected = expectedDocument.records;
   const manifest = loadCanonical(resolve(corpus, "manifest.json"));
-  const mutations = loadCanonical(resolve(corpus, "adversarial-mutations.json")).records;
-  const model = baseJson(resolve(args["--repo-root"]), "docs/protocol/review/styx-app-kernel-v0-review-model.json");
-  validateCorpusRelations(resolve(args["--repo-root"]), manifest, model, scenarios, expected, mutations, valid, invalid);
+  require(manifest.schema === "styx-c03-corpus-manifest/v2" && manifest.corpusFormatVersion === 2, "corpus manifest version mismatch");
+  const mutations = adversarialDocument.records;
+  const model = JSON.parse(readFileSync(resolve(args["--repo-root"], "docs/protocol/review/styx-app-kernel-v0-review-model.json"), "utf8"));
+  validateCorpusRelations(resolve(args["--repo-root"]), manifest, model, scenarios, expected, mutations, valid, invalid, apExpectations, kScenarios, kHostile);
   if (args["--mode"] === "mutations") {
-    writeFileSync(resolve(args["--output"]), canonical(mutationReport(args, corpus, valid, invalid, scenarios, expected, model)), { flag: "wx" });
+    writeFileSync(resolve(args["--output"]), canonical(mutationReport(
+      args, corpus, valid, invalid, apExpectations, scenarios, expected, model,
+      kById, new Map([...kScenarios, ...kHostile].map(scenario => [scenario.id, scenario])),
+    )), { flag: "wx" });
     return;
   }
   const transitions = new Map(model.state_models.flatMap(machine => machine.transitions.map(transition => [`${machine.id}:${transition.id}`, transition])));
-  const vectors = new Map([...valid, ...invalid].map(record => [record.id, record]));
+  const vectors = new Map([...valid, ...invalid, ...apExpectations].map(record => [record.id, record]));
   const expectedByScenario = new Map(expected.map(record => [record.scenarioId, record]));
+  const computedTraces = [];
   for (const scenario of scenarios) {
-    const computed = computeTrace(scenario, vectors, transitions), oracle = expectedByScenario.get(scenario.id);
+    const computed = computeTrace(scenario, vectors, transitions, kById, kScenarioById), oracle = expectedByScenario.get(scenario.id);
     require(JSON.stringify(canonicalValue(computed)) === JSON.stringify(canonicalValue(oracle)), `trace mismatch:${scenario.id}`);
+    computedTraces.push(computed);
   }
   require(scenarios.length === expected.length, "unexpected expected trace");
   const o07 = new Set(baseJson(resolve(args["--repo-root"]), "tools/causal-flow-simulator/o07/required_atom_instances_v1.json").rows.map(row => row.atom_instance_id));
@@ -585,7 +1399,24 @@ function main() {
   validateFileManifest(corpus, manifest);
   const names = ["adversarial-mutations.json", "expected-traces.json", "invalid-transcript-vectors.json", "manifest.json", "state-machine-scenarios.json", "valid-transcript-vectors.json"];
   const corpusDigest = hex(hash(...names.map(name => readFileSync(resolve(corpus, name)))));
-  const report = { corpusDigest, invalidVectors: invalid.length, result: "PASS", scenarios: scenarios.length,
+  const observations = computedTraces.flatMap(trace => trace.steps.map(step => {
+    const observation = { id: `${trace.scenarioId}:${step.step}`,
+      ...Object.fromEntries(SEMANTIC_OBSERVATION_FIELDS.map(field => [field, step[field]])) };
+    for (const field of OPTIONAL_SEMANTIC_OBSERVATION_FIELDS) {
+      const present = Object.hasOwn(step, field);
+      observation[`${field}Present`] = present;
+      if (present) observation[field] = step[field];
+    }
+    return observation;
+  })).sort((left, right) => left.id.localeCompare(right.id));
+  const report = {
+    blindAdmissionGraphs: [...kObservations, ...hostileObservations].sort((left, right) => left.id.localeCompare(right.id)),
+    blindTranscriptObservations: [...valid, ...invalid].sort((left, right) => left.id.localeCompare(right.id)).map(record => ({ id: record.id, ...publicTranscriptObservation(record) })),
+    corpusDigest, invalidVectors: invalid.length,
+    kAdmissionDigest: hex(hash(Buffer.from(canonical({ hostile: hostileObservations, positive: kObservations }), "utf8"))),
+    kAdmissionHostileScenarios: kHostile.length,
+    kAdmissionRecords: kRecords.length, kAdmissionScenarios: kScenarios.length,
+    observations, result: "PASS", scenarios: scenarios.length,
     traceDigest: hex(hash(readFileSync(resolve(corpus, "expected-traces.json")))), validVectors: valid.length };
   writeFileSync(resolve(args["--output"]), canonical(report), { flag: "wx" });
 }
