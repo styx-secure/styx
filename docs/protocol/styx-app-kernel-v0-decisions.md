@@ -1482,7 +1482,7 @@ and O-10 registries:
   presentation is re-evaluated. `PENDING_OPENING`, `PENDING_ANCESTOR` and
   `DEPENDENCY_DEFERRED` retain distinct retry boundaries. The closed primary
   evidence partition is `17/5/3`, and the 102 O-10 source rows partition
-  `27/24/51`, without changing any registered O-10 meaning. The 51
+  `31/24/47`, without changing any registered O-10 meaning. The 47
   transcript-profile-unreachable rows are argued from the selected
   transcript-only profile rather than mechanically proven unreachable; the
   pinned cardinality detects later drift, not a pre-existing reachability gap.

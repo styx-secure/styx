@@ -43,7 +43,7 @@ class BlindProjectionTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_public_kit_is_exact_and_self_verifying(self) -> None:
-        self.assertEqual(self.report["records"], 44)
+        self.assertEqual(self.report["records"], 53)
         self.assertEqual(self.report["admissionGraphs"], 20)
         self.assertEqual(self.report["sources"], 8)
         self.assertEqual(validate_kit(self.kit), self.report)
@@ -64,7 +64,7 @@ class BlindProjectionTests(unittest.TestCase):
         invalid = invalid_document["records"]
         self.assertEqual(len(invalid_document["apExpectationOnlyRecords"]), 3)
         projected = {record["opaqueId"]: record for record in blind["records"]}
-        self.assertEqual(len(projected), 44)
+        self.assertEqual(len(projected), 53)
         self.assertEqual(len(blind["admissionGraphs"]), 20)
         for official in valid + invalid:
             opaque, public = _project_record(official)
@@ -108,13 +108,25 @@ class BlindProjectionTests(unittest.TestCase):
         self.assertIn("commitmentVerification=PENDING", readme)
         self.assertIn("Replica-local admission state cannot manufacture", readme)
         self.assertIn("an inapplicable predicate never reports", readme)
-        self.assertIn("exact_length <= 2^32 - 132", readme)
+        self.assertIn("exact_length <= 2^32 - 1 - 132", readme)
+        self.assertIn("4,294,967,163", readme)
+        self.assertIn("empty or 1-31-octet key", readme)
+        self.assertIn("32-octet key is the sole supported", readme)
+        self.assertIn("longer than 32 octets", readme)
         self.assertIn("Content class `NONE` completes the content-shape branch", readme)
         self.assertIn("canonical grant preimages", readme)
         self.assertIn("membership in `admittedEventReferences` is neither required", readme)
         self.assertIn("supplied verification key is compared", readme)
         self.assertIn("reader exits non-zero and emits no canonical report", readme)
         self.assertIn("NOT_EVALUATED", readme)
+        for count_oracle in (
+            "17 valid",
+            "36 invalid",
+            "53 opaque",
+            "20 connected",
+            "eight normative source files",
+        ):
+            self.assertNotIn(count_oracle, readme)
         self.assertNotIn("case-", readme)
         self.assertNotRegex(readme, r"\b(?:vec|inv|trace|scenario)-")
         self.assertIsNone(
@@ -122,6 +134,26 @@ class BlindProjectionTests(unittest.TestCase):
         )
 
         schema = load(self.kit / "blind-input.schema.json")
+        manifest = load(self.kit / "KIT-MANIFEST.json")
+        self.assertEqual(set(manifest), {"paths", "schema"})
+        for forbidden_count in (
+            "admissionGraphCount",
+            "admissionObservationCount",
+            "connectedHostileGraphCount",
+            "connectedHostileObservationCount",
+            "connectedPositiveGraphCount",
+            "connectedPositiveObservationCount",
+            "invalidRecordCount",
+            "sourceCount",
+            "transcriptConformanceRecordCount",
+            "validRecordCount",
+        ):
+            self.assertNotIn(forbidden_count, manifest)
+
+        for family in ("records", "admissionGraphs"):
+            family_schema = schema["properties"][family]
+            self.assertEqual(family_schema["minItems"], 1)
+            self.assertNotIn("maxItems", family_schema)
         record = schema["properties"]["records"]["items"]
         claimed = record["properties"]["claimedBinding"]
         self.assertEqual(len(claimed["anyOf"]), 2)
@@ -200,10 +232,10 @@ class BlindProjectionTests(unittest.TestCase):
         validate_reader_freeze(reader, freeze)
         integration = self.root / "integration"
         report = build_integration(REPO, CORPUS, self.kit, freeze, integration)
-        self.assertEqual(report["records"], 44)
+        self.assertEqual(report["records"], 53)
         self.assertEqual(report["admissionGraphs"], 20)
         mapping = load(integration / "integration-map.json")
-        self.assertEqual(len(mapping["records"]), 44)
+        self.assertEqual(len(mapping["records"]), 53)
         self.assertEqual(len(mapping["admissionGraphs"]), 20)
         (reader / "reader").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
         with self.assertRaises(BlindProjectionError):

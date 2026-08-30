@@ -27,6 +27,7 @@ const O08_LIMITS = Object.freeze({
   GENESIS_POLICY_OCTETS: 4096,
   PARENTS_PER_EVENT: 8,
   SEQUENCE_VALUE: 4095,
+  VERIFICATION_KEY_OCTETS: 32,
 });
 const O08_CHUNK_OCTETS = new Set([4096, 16384]);
 const PRODUCED_K_PRIMARIES = new Set(["COMMITMENT_MISMATCH", "CONTEXT_CAPACITY_EXHAUSTED", "CREDENTIAL_BINDING_MISMATCH", "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED", "CURRENT_OBJECT_OUT_OF_PROFILE", "DEPENDENCY_DEFERRED", "DUPLICATE", "FORK_EVIDENCE", "INVALID", "LENGTH_MISMATCH", "OPENING_MISSING", "PENDING_ANCESTOR", "PENDING_OPENING", "REFERENCE_COLLISION_UNSUPPORTED", "STRUCTURAL_REJECTION", "UNRESOLVABLE_CREDENTIAL", "UNRESOLVED_CREDENTIAL_BINDING"]);
@@ -296,7 +297,12 @@ function parseEvent(transcript) {
   else if (role === "CREDENTIAL") {
     const kindCode = body.integer(1, "control_kind"), kind = ({ 1: "GRANT", 2: "REVOKE", 3: "ROTATE", 4: "RECOVER", 5: "POLICY", 6: "CLOSURE" })[kindCode];
     require(kind !== undefined, "CONTROL_KIND_UNKNOWN"); const tail = { kind };
-    if (kind === "GRANT") { require(body.integer(2, "grantee_suite") === 1, "GRANTEE_SUITE_UNSUPPORTED"); tail.granteeVerificationKeyHex = hex(body.opaque("grantee_key")); }
+    if (kind === "GRANT") {
+      require(body.integer(2, "grantee_suite") === 1, "GRANTEE_SUITE_UNSUPPORTED");
+      const granteeKey = body.opaque("grantee_key");
+      require(granteeKey.length >= O08_LIMITS.VERIFICATION_KEY_OCTETS, "GRANTEE_KEY_LENGTH_INVALID");
+      tail.granteeVerificationKeyHex = hex(granteeKey);
+    }
     if (kind === "REVOKE") tail.targetCredentialHex = hex(body.take(32, "target_credential"));
     if (kind === "ROTATE") { tail.retiringCredentialHex = hex(body.take(32, "retiring_credential")); tail.replacementGrantHex = hex(body.take(32, "replacement_grant")); }
     if (kind === "RECOVER") { tail.retiredCredentialHex = hex(body.take(32, "retired_credential")); tail.recoveryGrantHex = hex(body.take(32, "recovery_grant")); }
@@ -310,6 +316,7 @@ function eventProfileFailures(transcript, fields) {
   const bodyLength = transcript.readUInt32BE(16);
   if (bodyLength > O08_LIMITS.FRAMING_OBJECT_OCTETS) return [new ProtocolError("FRAMING_OBJECT_OCTETS_LIMIT"), null];
   if (Buffer.from(fields.transitionBlockHex, "hex").length > O08_LIMITS.AP_TRANSITION_BLOCK_OCTETS) return [new ProtocolError("AP_TRANSITION_BLOCK_OCTETS_LIMIT"), null];
+  if (fields.eventRole === "CREDENTIAL" && fields.tail?.kind === "GRANT" && Buffer.from(fields.tail.granteeVerificationKeyHex, "hex").length > O08_LIMITS.VERIFICATION_KEY_OCTETS) return [new ProtocolError("VERIFICATION_KEY_OCTETS_LIMIT"), null];
   if (fields.authorSequence > O08_LIMITS.SEQUENCE_VALUE) return [new ProtocolError("SEQUENCE_VALUE_LIMIT"), null];
   const content = fields.content;
   const geometry = content.geometry ?? null;
@@ -925,7 +932,7 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
   require(JSON.stringify([...layerCounts].sort()) === JSON.stringify([
     ["BOUNDARY_NOT_EXECUTED", 11],
     ["CONNECTED_K_ADMISSION", 4],
-    ["LOCAL_NEGATIVE", 59],
+    ["LOCAL_NEGATIVE", 68],
     ["TRANSCRIPT_CONFORMANCE", 81],
   ]), "scenario evidence-layer cardinality mismatch");
 
@@ -1113,9 +1120,11 @@ function validateCorpusRelations(repoRoot, manifest, model, scenarios, traces, m
 function parseArgs() {
   const args = process.argv.slice(2), values = {};
   for (let i = 0; i < args.length; i += 2) values[args[i]] = args[i + 1];
-  const required = values["--k-scenario-input"]
-    ? ["--k-scenario-input", "--output"]
-    : ["--repo-root", "--corpus", "--output"];
+  const required = values["--mode"] === "geometry-boundaries"
+    ? ["--output"]
+    : values["--k-scenario-input"]
+      ? ["--k-scenario-input", "--output"]
+      : ["--repo-root", "--corpus", "--output"];
   for (const key of required) require(values[key], `missing ${key}`);
   return values;
 }
@@ -1234,6 +1243,23 @@ function mutationReport(args, corpus, valid, invalid, apExpectations, scenarios,
 
 function main() {
   const args = parseArgs();
+  if (args["--mode"] === "geometry-boundaries") {
+    const ceiling = Number(MAX_U32 - 132n);
+    const rows = [ceiling - 1, ceiling, ceiling + 1].map(exactLength => {
+      let result = "PASS";
+      try { validateGeometryPredicates(exactLength, "SINGLE", null); }
+      catch (error) {
+        if (!(error instanceof ProtocolError)) throw error;
+        result = error.observations.geometryPredicate2;
+      }
+      return { exactLength: String(exactLength), geometryPredicate2: result };
+    });
+    writeFileSync(resolve(args["--output"]), canonical({
+      intrinsicExactLengthCeiling: String(ceiling), rows,
+      schema: "styx-c03-geometry-boundaries/v1",
+    }), { flag: "wx" });
+    return;
+  }
   if (args["--k-scenario-input"]) {
     const input = loadCanonical(resolve(args["--k-scenario-input"]));
     const observations = input.scenarios.map(scenario => ({

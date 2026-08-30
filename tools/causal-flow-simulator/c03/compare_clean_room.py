@@ -197,7 +197,7 @@ def compare(
     require(mapping.get("kitDigest") == kit_result["kitDigest"], "integration kit digest mismatch")
     require(mapping.get("freezeManifestSha256") == _sha(freeze_manifest), "integration freeze digest mismatch")
     rows = mapping.get("records")
-    require(isinstance(rows, list) and len(rows) == 44, "integration record count mismatch")
+    require(isinstance(rows, list) and len(rows) == 53, "integration record count mismatch")
     by_opaque: dict[str, dict[str, Any]] = {}
     official_ids: set[str] = set()
     report_ids: set[str] = set()
@@ -273,9 +273,9 @@ def compare(
             invalid_classifications += 1
     if valid_observations != 68:
         mismatch("COUNT", "valid-observations", f"observed {valid_observations}, expected 68")
-    if invalid_classifications != 27:
-        mismatch("COUNT", "invalid-classifications", f"observed {invalid_classifications}, expected 27")
-    if not (python_document["validVectors"] == 17 and python_document["invalidVectors"] == 27):
+    if invalid_classifications != 36:
+        mismatch("COUNT", "invalid-classifications", f"observed {invalid_classifications}, expected 36")
+    if not (python_document["validVectors"] == 17 and python_document["invalidVectors"] == 36):
         mismatch("COUNT", "python-vectors", "first-party vector count differs")
 
     graph_rows = mapping.get("admissionGraphs")
@@ -373,7 +373,7 @@ def compare(
         "connectedRejections": connected_rejected,
         "admissionGraphs": 20,
         "kitDigest": kit_result["kitDigest"],
-        "records": 44,
+        "records": 53,
         "mismatchCount": len(mismatches),
         "mismatches": mismatches,
         "result": "PASS" if not mismatches else "FAIL",

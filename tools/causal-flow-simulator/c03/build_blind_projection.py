@@ -76,6 +76,7 @@ BLIND_ENVELOPE_DIMENSIONS = frozenset(
         "PARENTS_PER_EVENT",
         "SEQUENCE_VALUE",
         "SIGNATURE_ATTEMPTS",
+        "VERIFICATION_KEY_OCTETS",
     }
 )
 PUBLIC_OBSERVATION_FIELDS = (
@@ -495,8 +496,7 @@ def _input_schema() -> dict[str, Any]:
                     ],
                     "type": "object",
                 },
-                "maxItems": 20,
-                "minItems": 20,
+                "minItems": 1,
                 "type": "array",
             },
             "records": {
@@ -532,8 +532,7 @@ def _input_schema() -> dict[str, Any]:
                     ],
                     "type": "object",
                 },
-                "maxItems": 44,
-                "minItems": 44,
+                "minItems": 1,
                 "type": "array",
             },
             "schema": {"const": INPUT_SCHEMA},
@@ -556,49 +555,233 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import re
-import sys
 
 root = Path(__file__).resolve().parent
-expected = set(json.loads((root / "KIT-MANIFEST.json").read_text())["paths"])
+
+def fail(message):
+    raise SystemExit(message)
+
+def canonical_bytes(value):
+    return (json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\\n").encode()
+
+def load_canonical(name):
+    raw = (root / name).read_bytes()
+    def closed_object(pairs):
+        value = {}
+        for key, child in pairs:
+            if key in value:
+                fail(f"duplicate JSON member: {name}:{key}")
+            value[key] = child
+        return value
+    try:
+        value = json.loads(raw.decode("utf-8"), object_pairs_hook=closed_object)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        fail(f"invalid JSON: {name}:{error}")
+    if canonical_bytes(value) != raw:
+        fail(f"non-canonical JSON: {name}")
+    return value
+
+def exact_members(value, members, label):
+    if not isinstance(value, dict) or set(value) != set(members):
+        fail(f"member-set mismatch: {label}")
+
+def hex_value(value, width, label, nullable=False):
+    if nullable and value is None:
+        return
+    if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]*", value) is None or len(value) % 2:
+        fail(f"invalid hex: {label}")
+    if width is not None and len(value) != width * 2:
+        fail(f"invalid hex width: {label}")
+
+def canonical_hex_set(values, label):
+    if not isinstance(values, list) or values != sorted(set(values)):
+        fail(f"non-canonical set: {label}")
+    for value in values:
+        hex_value(value, 32, label)
+
+manifest = load_canonical("KIT-MANIFEST.json")
+exact_members(manifest, {"paths", "schema"}, "kit manifest")
+if manifest["schema"] != "styx-c03-blind-kit/v2":
+    fail("kit schema mismatch")
+paths = manifest["paths"]
+if not isinstance(paths, list) or not paths or paths != sorted(set(paths)):
+    fail("invalid kit path list")
+for name in paths:
+    if not isinstance(name, str) or not name or name.startswith("/") or "\\\\" in name or any(part in {"", ".", ".."} for part in name.split("/")):
+        fail("invalid kit path")
+expected_paths = set(paths)
 actual = set()
 for path in root.rglob("*"):
     if path.is_symlink():
-        raise SystemExit(f"symlink forbidden: {path}")
+        fail(f"symlink forbidden: {path}")
     if path.is_file():
         actual.add(path.relative_to(root).as_posix())
-if actual != expected:
-    raise SystemExit("kit path set mismatch")
+if actual != expected_paths:
+    fail("kit path set mismatch")
 sums = {}
 for line in (root / "SHA256SUMS.txt").read_text("ascii").splitlines():
     match = re.fullmatch(r"([0-9a-f]{64})  (.+)", line)
     if not match or match.group(2) in sums:
-        raise SystemExit("invalid checksum manifest")
+        fail("invalid checksum manifest")
     sums[match.group(2)] = match.group(1)
-if set(sums) != expected - {"SHA256SUMS.txt"}:
-    raise SystemExit("checksum path set mismatch")
+if set(sums) != expected_paths - {"SHA256SUMS.txt"}:
+    fail("checksum path set mismatch")
 for name, digest in sums.items():
     if sha256((root / name).read_bytes()).hexdigest() != digest:
-        raise SystemExit(f"checksum mismatch: {name}")
-document = json.loads((root / "blind-input.json").read_text("utf-8"))
-if document.get("schema") != "styx-c03-blind-input/v2" or len(document.get("records", [])) != 44 or len(document.get("admissionGraphs", [])) != 20:
-    raise SystemExit("blind input cardinality mismatch")
-ids = [record.get("opaqueId") for record in document["records"]]
-if ids != sorted(set(ids)) or not all(re.fullmatch(r"case-[0-9a-f]{64}", value or "") for value in ids):
-    raise SystemExit("opaque identifier mismatch")
-graph_ids = [graph.get("opaqueGraphId") for graph in document["admissionGraphs"]]
-if graph_ids != sorted(set(graph_ids)) or not all(re.fullmatch(r"graph-[0-9a-f]{64}", value or "") for value in graph_ids):
-    raise SystemExit("opaque graph identifier mismatch")
-print("STYX_C03_BLIND_KIT_OK records=44 admission_graphs=20")
+        fail(f"checksum mismatch: {name}")
+
+source_sums = {}
+for line in (root / "SOURCE_SHA256SUMS.txt").read_text("ascii").splitlines():
+    match = re.fullmatch(r"([0-9a-f]{64})  (sources/.+)", line)
+    if not match or match.group(2) in source_sums:
+        fail("invalid source checksum manifest")
+    source_sums[match.group(2)] = match.group(1)
+if set(source_sums) != {name for name in expected_paths if name.startswith("sources/")}:
+    fail("source checksum path set mismatch")
+for name, digest in source_sums.items():
+    if sha256((root / name).read_bytes()).hexdigest() != digest:
+        fail(f"source checksum mismatch: {name}")
+
+def validate_profile(profile):
+    members = {"applicationProfileId", "applicationProfileVersion", "commitmentSuiteId", "signatureSuiteId", "styxProtocolVersion"}
+    exact_members(profile, members, "profile")
+    if not all(isinstance(value, int) and not isinstance(value, bool) and value >= 0 for value in profile.values()):
+        fail("invalid profile")
+
+def validate_record(record):
+    members = {
+        "acceptedGenesisReferenceHex", "admittedCredentialBindings", "admittedEventReferences",
+        "checkpointEvidenceReferences", "claimedBinding", "kind", "knownPendingOpeningRoots",
+        "localGenesisAccepted", "opaqueId", "pendingOpeningDescendantReferences",
+        "presentedReferenceHex", "profile", "sameAuthorSequenceReferences",
+        "seenEventReferences", "signatureHex", "transcriptHex", "verificationKeyHex",
+        "verifiedOpenings",
+    }
+    exact_members(record, members, "record")
+    if record["kind"] not in {"APPLICATION_EVENT", "GENESIS"} or not isinstance(record["localGenesisAccepted"], bool):
+        fail("invalid record kind or local state")
+    if re.fullmatch(r"case-[0-9a-f]{64}", record["opaqueId"] or "") is None:
+        fail("invalid opaque record id")
+    hex_value(record["presentedReferenceHex"], 32, "presented reference")
+    hex_value(record["verificationKeyHex"], 32, "verification key")
+    hex_value(record["signatureHex"], 64, "signature")
+    hex_value(record["transcriptHex"], None, "transcript")
+    if not record["transcriptHex"]:
+        fail("empty transcript")
+    hex_value(record["acceptedGenesisReferenceHex"], 32, "accepted genesis", nullable=True)
+    binding = record["claimedBinding"]
+    if set(binding) not in (set(), {"contextIdentifierHex", "credentialIdentifierHex"}):
+        fail("invalid claimed binding")
+    for name, value in binding.items():
+        hex_value(value, 32, name)
+    for name in ("admittedEventReferences", "checkpointEvidenceReferences", "knownPendingOpeningRoots", "pendingOpeningDescendantReferences", "sameAuthorSequenceReferences", "seenEventReferences"):
+        canonical_hex_set(record[name], name)
+    if not isinstance(record["admittedCredentialBindings"], list):
+        fail("invalid admitted bindings")
+    for binding in record["admittedCredentialBindings"]:
+        exact_members(binding, {"canonicalGrantPreimageHex", "contextIdentifierHex", "credentialIdentifierHex", "grantReferenceHex", "verificationKeyHex"}, "admitted binding")
+        for name, value in binding.items():
+            hex_value(value, 32, name)
+    if not isinstance(record["verifiedOpenings"], list):
+        fail("invalid verified openings")
+    for opening in record["verifiedOpenings"]:
+        exact_members(opening, {"contentHex", "eventReferenceHex", "randomizerHex"}, "verified opening")
+        hex_value(opening["contentHex"], None, "opening content")
+        hex_value(opening["eventReferenceHex"], 32, "opening reference")
+        hex_value(opening["randomizerHex"], 32, "opening randomizer")
+    validate_profile(record["profile"])
+    projection = dict(record)
+    projection.pop("opaqueId")
+    if record["opaqueId"] != "case-" + sha256(canonical_bytes(projection)).hexdigest():
+        fail("record id is not input-derived")
+
+def validate_graph_record(record, kind):
+    exact_members(record, {"kind", "opening", "opaqueId", "presentedReferenceHex", "signatureHex", "transcriptHex"}, "graph record")
+    if record["kind"] != kind or re.fullmatch(r"item-[0-9a-f]{64}", record["opaqueId"] or "") is None:
+        fail("invalid graph record identity")
+    hex_value(record["presentedReferenceHex"], 32, "graph reference")
+    hex_value(record["signatureHex"], 64, "graph signature")
+    hex_value(record["transcriptHex"], None, "graph transcript")
+    if not record["transcriptHex"]:
+        fail("empty graph transcript")
+    opening = record["opening"]
+    if opening is not None:
+        exact_members(opening, {"contentHex", "randomizerHex"}, "graph opening")
+        hex_value(opening["contentHex"], None, "graph content")
+        hex_value(opening["randomizerHex"], 32, "graph randomizer")
+    projection = dict(record)
+    projection.pop("opaqueId")
+    if record["opaqueId"] != "item-" + sha256(canonical_bytes(projection)).hexdigest():
+        fail("graph record id is not input-derived")
+
+document = load_canonical("blind-input.json")
+exact_members(document, {"admissionGraphs", "records", "schema", "selectedEnvelope"}, "blind input")
+if document["schema"] != "styx-c03-blind-input/v2":
+    fail("blind input schema mismatch")
+records = document["records"]
+graphs = document["admissionGraphs"]
+if not isinstance(records, list) or not records or not isinstance(graphs, list) or not graphs:
+    fail("empty blind input family")
+for record in records:
+    validate_record(record)
+record_ids = [record["opaqueId"] for record in records]
+if record_ids != sorted(set(record_ids)):
+    fail("opaque record identifiers are not a sorted set")
+for graph in graphs:
+    exact_members(graph, {"acceptedGenesis", "events", "opaqueGraphId"}, "admission graph")
+    if re.fullmatch(r"graph-[0-9a-f]{64}", graph["opaqueGraphId"] or "") is None:
+        fail("invalid graph id")
+    validate_graph_record(graph["acceptedGenesis"], "GENESIS")
+    if not isinstance(graph["events"], list) or not graph["events"]:
+        fail("empty graph event set")
+    for event in graph["events"]:
+        validate_graph_record(event, "APPLICATION_EVENT")
+    event_ids = [event["opaqueId"] for event in graph["events"]]
+    if len(event_ids) != len(set(event_ids)):
+        fail("duplicate graph event")
+    projection = dict(graph)
+    projection.pop("opaqueGraphId")
+    if graph["opaqueGraphId"] != "graph-" + sha256(canonical_bytes(projection)).hexdigest():
+        fail("graph id is not input-derived")
+graph_ids = [graph["opaqueGraphId"] for graph in graphs]
+if graph_ids != sorted(set(graph_ids)):
+    fail("opaque graph identifiers are not a sorted set")
+
+envelope_dimensions = {
+    "AP_TRANSITION_BLOCK_OCTETS", "CHECKPOINT_REFERENCES", "CHUNKS_PER_CONTENT",
+    "CHUNK_OCTETS", "CONTENT_EXACT_OCTETS", "FRAMING_OBJECT_OCTETS",
+    "GENESIS_BODY_OCTETS", "GENESIS_POLICY_OCTETS", "PARENTS_PER_EVENT",
+    "SEQUENCE_VALUE", "SIGNATURE_ATTEMPTS", "VERIFICATION_KEY_OCTETS",
+}
+envelope = document["selectedEnvelope"]
+exact_members(envelope, envelope_dimensions, "selected envelope")
+for name, entry in envelope.items():
+    exact_members(entry, {"closedValues", "comparison", "selectedValue"}, f"envelope {name}")
+    if not isinstance(entry["comparison"], str) or not entry["comparison"]:
+        fail("invalid envelope comparison")
+    if entry["closedValues"] is not None and (not isinstance(entry["closedValues"], list) or entry["closedValues"] != sorted(set(entry["closedValues"]))):
+        fail("invalid envelope closed set")
+    if entry["selectedValue"] is not None and (not isinstance(entry["selectedValue"], int) or isinstance(entry["selectedValue"], bool) or entry["selectedValue"] < 0):
+        fail("invalid envelope selected value")
+
+schema = load_canonical("blind-input.schema.json")
+if schema.get("type") != "object" or schema.get("additionalProperties") is not False:
+    fail("blind schema root is not closed")
+for family in ("records", "admissionGraphs"):
+    contract = schema.get("properties", {}).get(family, {})
+    if contract.get("minItems") != 1 or "maxItems" in contract:
+        fail("blind schema contains a corpus count oracle")
+
+print("STYX_C03_BLIND_KIT_OK")
 '''
 
 
 def _readme() -> bytes:
     return b"""# Styx C0.3 blind K-surface kit
 
-This deterministic package separates 44 disconnected transcript/local-negative
-fixtures from 20 connected admission graphs: three positive graphs with 18
-observations and 17 hostile graphs with 66 observations.  It contains raw candidates and
-only the replica-owned inputs enumerated by the C0.3 amendment.  It contains no
+This deterministic package separates disconnected transcript/local-negative
+fixtures from connected admission graphs. It contains raw candidates and only
+the replica-owned inputs enumerated by the C0.3 amendment. It contains no
 expected result, stage, transition, corpus identifier, repository revision or
 integration mapping.
 
@@ -621,7 +804,7 @@ authorization and must never be flattened to application success.
 Run `python3 VERIFY.py` before using the package.  The withheld integration map
 is created only after the reader source has been frozen.
 
-The kit intentionally copies its eight normative source files from the exact
+The kit intentionally copies its required normative source files from the exact
 candidate working tree. Corpus provenance and historical gate validation remain
 anchored independently to the Issue #266 Base blobs. This asymmetry is deliberate:
 the reader implements the reconciled candidate semantics, while the corpus gate
@@ -803,8 +986,8 @@ content verification. Zero or non-canonical registry fields remain structural
 transcript rejection.
 
 Predicate 2 for `SINGLE` checks only the intrinsic representable ceiling
-`exact_length <= 2^32 - 132`. Predicate 3 for `TREE` checks only
-`1 <= chunk_size <= 2^32 - 132`. Selected O-08 limits for exact content octets,
+`exact_length <= 2^32 - 1 - 132` (`4,294,967,163`). Predicate 3 for `TREE`
+checks only `1 <= chunk_size <= 2^32 - 1 - 132`. Selected O-08 limits for exact content octets,
 chunks per content and the closed chunk-octet set are separate profile checks;
 they cannot make an intrinsic predicate fail. When intrinsic geometry passes
 and only one of those selected limits is exceeded, applicable predicates retain
@@ -812,13 +995,21 @@ and only one of those selected limits is exceeded, applicable predicates retain
 selects `CURRENT_OBJECT_OUT_OF_PROFILE` at S3 before signature or protected
 content work.
 
-A canonical representable event or GENESIS whose declared body exceeds only
-the selected framing-object or genesis-body limit likewise has valid transcript
+A canonical representable event or GENESIS whose declared body exceeds the
+selected framing-object or genesis-body limit likewise has valid transcript
 and recomputed reference, signature `NOT_EVALUATED`, and
 `CURRENT_OBJECT_OUT_OF_PROFILE` at S3. Truncation, trailing bytes,
 non-canonical encoding, a written-inverse failure or a value beyond the
 representable normative ceiling remains structural transcript rejection with
 reference `NOT_REACHED`.
+
+For a suite `0x0001` GRANT, the grantee verification key has an exact selected
+width of 32 octets. An empty or 1-31-octet key is invalid transcript grammar and
+is rejected before reference computation. A 32-octet key is the sole supported
+boundary. A canonically framed key longer than 32 octets retains a valid
+transcript and reference but selects `CURRENT_OBJECT_OUT_OF_PROFILE` at S3
+before signature or credential binding. No short or overlong key can create a
+credential binding.
 
 For content class `NONE`, commitment match, supplied length and all seven
 geometry predicates are `NOT_APPLICABLE`, while commitment verification is
@@ -1058,41 +1249,9 @@ def validate_kit(kit: Path) -> dict[str, Any]:
     require(manifest.get("schema") == KIT_SCHEMA, "kit schema mismatch")
     require(
         set(manifest)
-        == {
-            "admissionGraphCount",
-            "admissionObservationCount",
-            "connectedHostileGraphCount",
-            "connectedHostileObservationCount",
-            "connectedPositiveGraphCount",
-            "connectedPositiveObservationCount",
-            "invalidRecordCount",
-            "paths",
-            "schema",
-            "sourceCount",
-            "transcriptConformanceRecordCount",
-            "validRecordCount",
-        },
+        == {"paths", "schema"},
         "kit manifest shape mismatch",
     )
-    require(manifest["admissionGraphCount"] == 20, "kit graph count mismatch")
-    require(
-        manifest["admissionObservationCount"] == 84,
-        "kit graph observation count mismatch",
-    )
-    require(
-        manifest["connectedHostileGraphCount"] == 17
-        and manifest["connectedHostileObservationCount"] == 66
-        and manifest["connectedPositiveGraphCount"] == 3
-        and manifest["connectedPositiveObservationCount"] == 18,
-        "kit graph partition mismatch",
-    )
-    require(
-        manifest["transcriptConformanceRecordCount"] == 17
-        and manifest["validRecordCount"] == 17
-        and manifest["invalidRecordCount"] == 27,
-        "kit record partition mismatch",
-    )
-    require(manifest["sourceCount"] == len(SOURCE_PATHS), "kit source count mismatch")
     require(manifest.get("paths") == sorted(KIT_PATHS), "kit manifest path set mismatch")
     sums = _parse_sums(files["SHA256SUMS.txt"].read_bytes())
     require(set(sums) == KIT_PATHS - {"SHA256SUMS.txt"}, "kit checksum path set mismatch")
@@ -1111,7 +1270,7 @@ def validate_kit(kit: Path) -> dict[str, Any]:
     )
     require(blind["schema"] == INPUT_SCHEMA, "blind input schema mismatch")
     records = blind["records"]
-    require(isinstance(records, list) and len(records) == 44, "blind input must contain 44 records")
+    require(isinstance(records, list) and len(records) == 53, "blind input record set mismatch")
     for record in records:
         _validate_record(record)
     identifiers = [record["opaqueId"] for record in records]
@@ -1146,10 +1305,10 @@ def build_kit(repo_root: Path, corpus: Path, output: Path) -> dict[str, Any]:
     valid = load(corpus / "valid-transcript-vectors.json")["records"]
     invalid_document = load(corpus / "invalid-transcript-vectors.json")
     invalid = invalid_document["records"]
-    require(len(valid) == 17 and len(invalid) == 27, "public corpus cardinality mismatch")
+    require(len(valid) == 17 and len(invalid) == 36, "public corpus cardinality mismatch")
     require(len(invalid_document.get("apExpectationOnlyRecords", [])) == 3, "AP-only partition mismatch")
     projected_pairs = [_project_record(record) for record in valid + invalid]
-    require(len({opaque for opaque, _ in projected_pairs}) == 44, "opaque-id collision")
+    require(len({opaque for opaque, _ in projected_pairs}) == 53, "opaque-id collision")
     for original, (_, projected) in zip(valid + invalid, projected_pairs, strict=True):
         require(
             _public_observation(original)
@@ -1203,20 +1362,7 @@ def build_kit(repo_root: Path, corpus: Path, output: Path) -> dict[str, Any]:
         target.write_bytes(data)
         source_entries.append((f"sources/{source}", data))
     (output / "SOURCE_SHA256SUMS.txt").write_bytes(_sums(source_entries))
-    manifest = {
-        "admissionGraphCount": 20,
-        "admissionObservationCount": 84,
-        "connectedHostileGraphCount": 17,
-        "connectedHostileObservationCount": 66,
-        "connectedPositiveGraphCount": 3,
-        "connectedPositiveObservationCount": 18,
-        "invalidRecordCount": 27,
-        "paths": sorted(KIT_PATHS),
-        "schema": KIT_SCHEMA,
-        "sourceCount": len(SOURCE_PATHS),
-        "transcriptConformanceRecordCount": 17,
-        "validRecordCount": 17,
-    }
+    manifest = {"paths": sorted(KIT_PATHS), "schema": KIT_SCHEMA}
     store(output / "KIT-MANIFEST.json", manifest)
     checksum_entries = [(name, path.read_bytes()) for name, path in _regular_files(output).items() if name != "SHA256SUMS.txt"]
     (output / "SHA256SUMS.txt").write_bytes(_sums(checksum_entries))
@@ -1285,7 +1431,7 @@ def build_integration(repo_root: Path, corpus: Path, kit: Path, freeze_manifest:
                 "set": "VALID" if record in valid else "INVALID",
             }
         )
-    require(len({row["opaqueId"] for row in rows}) == 44, "integration opaque-id collision")
+    require(len({row["opaqueId"] for row in rows}) == 53, "integration opaque-id collision")
     graph_rows = []
     for graph in _official_admission_graphs(corpus):
         opaque_graph_id, _ = _project_graph(graph["genesis"], graph["records"])
@@ -1341,7 +1487,7 @@ def build_integration(repo_root: Path, corpus: Path, kit: Path, freeze_manifest:
         "integrationDigest": _sha(
             (output / "integration-map.json").read_bytes()
         ),
-        "records": 44,
+        "records": 53,
         "result": "PASS",
     }
 

@@ -8,18 +8,18 @@ The generator reads every normative input from the contract Base commit. The
 Python and Node.js readers independently parse, verify and replay ordinary
 corpus inputs; expected results are compared only after execution. The mutation
 runner requires both implementations to kill the complete closed registry.
-The tracked package currently contains 17 transcript-conformant, 27
+The tracked package currently contains 17 transcript-conformant, 36
 local-negative and three
-AP-expectation-only transcript vectors, 119
+AP-expectation-only transcript vectors, 128
 state/flow/counterexample/vector/invariant/history/dependency scenarios, three
 positive connected K graphs with 18 observations, 17 hostile connected graphs
-with 66 observations, and 513 mutations. Transcript bytes and signatures are evaluated
+with 66 observations, and 522 mutations. Transcript bytes and signatures are evaluated
 independently in Python and JavaScript. Identity-bearing trace digests remain
 separate from semantic-observation digests that exclude scenario bookkeeping.
-The mutation registry separates 27 hostile-input mutations, 21 independently
+The mutation registry separates 36 hostile-input mutations, 21 independently
 pinned one-to-one invariant-witness substitutions, four legal
 expected-result substitutions, 442 exact source-relation removals and five
-manifest-digest substitutions, plus thirteen source-anchored checks for O-10,
+manifest-digest substitutions, plus fourteen source-anchored checks for O-10,
 checkpoint ordering, commitment geometry and layered K/AP results.
 Source-relation and manifest mutations are
 materialized and rejected by the same validators used for the unmodified
@@ -33,7 +33,7 @@ is explicit and is allowed only when the same input necessarily violates rows
 with the same primary and stage; sharing a generic same-outcome scenario is not
 coverage.
 
-The 51 `TRANSCRIPT_PROFILE_UNREACHABLE` source rows are bounded arguments from
+The 47 `TRANSCRIPT_PROFILE_UNREACHABLE` source rows are bounded arguments from
 the selected transcript-only profile, not a mechanical proof that no future
 implementation could ever reach them. Their exact cardinality detects drift in
 this selected partition; it cannot detect a reachability gap that was already
@@ -66,12 +66,13 @@ diff -ru conformance/application-protocol/c03 "$tmp/generated"
 ```
 
 The public blind-kit workflow is intentionally separate from ordinary corpus
-replay. `build_blind_projection.py build-kit` exports 44 opaque inputs and the
+replay. `build_blind_projection.py build-kit` exports opaque inputs without
+publishing their exact cardinality and includes the
 eight required specification sources without official identifiers, expected
 results, traces or integration mappings. A newly authored kit-only reader is
 then frozen before the withheld integration map is created. Finally,
 `compare_clean_room.py compare` requires exact agreement between Python,
-JavaScript and that frozen third reader for 68 valid observations and all 27
+JavaScript and that frozen third reader for 68 valid observations and all 36
 local-negative classifications, plus all 84 observations from the 20 connected
 graphs. The AP transition table is outside this blind
 claim.

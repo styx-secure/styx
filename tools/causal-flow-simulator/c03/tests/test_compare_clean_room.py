@@ -89,12 +89,12 @@ class CleanRoomComparisonTests(unittest.TestCase):
             self.third, self.freeze, self.reader,
         )
         self.assertEqual(report["result"], "PASS")
-        self.assertEqual(report["records"], 44)
+        self.assertEqual(report["records"], 53)
         self.assertEqual(report["admissionGraphs"], 20)
         self.assertGreater(report["connectedAdmissions"], 0)
         self.assertGreater(report["connectedRejections"], 0)
         self.assertEqual(report["transcriptConformanceChecks"], 68)
-        self.assertEqual(report["invalidClassifications"], 27)
+        self.assertEqual(report["invalidClassifications"], 36)
         self.assertEqual(report["runtimes"], ["javascript", "python", "third-clean-room"])
 
     def test_missing_or_extra_reader_output_fails_closed(self) -> None:

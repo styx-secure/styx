@@ -161,8 +161,8 @@ class O10OutcomeTaxonomyTests(unittest.TestCase):
 
     def test_c03_reconciliation_count_drift_is_rejected(self) -> None:
         drift = self.actual_validator.replace(
-            '            "mutations": 513,',
-            '            "mutations": 512,',
+            '            "mutations": 522,',
+            '            "mutations": 521,',
             1,
         )
         with self.assertRaises(ScopeError):

@@ -225,9 +225,9 @@ Protocol increments proceed in dependency order:
 8. **Produce and reconcile C0.3 — construction completed by Issue #264;
    layered-evidence reconciliation in Issue #266.** The six-file,
    synthetic-only specification-derived corpus preserves 17 historical valid
-   transcript byte sequences, contains 27 local-negative records, 119
+   transcript byte sequences, contains 36 local-negative records, 128
    state/flow/counterexample/vector/invariant/history/dependency scenarios and
-   513 adversarial mutations. Its v2 connected surface adds three positive and
+   522 adversarial mutations. Its v2 connected surface adds three positive and
    17 hostile authority graphs with 84 candidate observations. Every vector is
    executed; every counterexample has a
    distinct three-step program and observation; every executable invariant has

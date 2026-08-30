@@ -81,6 +81,23 @@ NON_EXECUTED_FLOW_IDS = frozenset(
         "transport_publish",
     }
 )
+RESTORED_BASE_INVALID_IDS = frozenset(
+    {
+        "inv-noncanonical-integer",
+        "inv-resource-framing-object",
+        "inv-resource-genesis-policy",
+        "inv-trailing",
+        "inv-truncated",
+    }
+)
+D4_ADDED_INVALID_IDS = frozenset(
+    {
+        "inv-grantee-key-empty",
+        "inv-grantee-key-short",
+        "inv-resource-genesis-body",
+        "inv-resource-grantee-key",
+    }
+)
 
 
 class ValidationError(CorpusModelError):
@@ -90,6 +107,62 @@ class ValidationError(CorpusModelError):
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise ValidationError(message)
+
+
+def _exceeded_o08_source_rows(record: dict[str, Any], stage: str) -> set[str]:
+    """Derive all selected-envelope rows exceeded at the witness's own stage."""
+
+    rows: set[str] = set()
+    fields = record["fields"]
+    transcript = bytes.fromhex(record["transcriptHex"])
+    if stage == "S3_KERNEL_STRUCTURAL":
+        if record["kind"] == "GENESIS":
+            if int.from_bytes(transcript[16:20], "big") > O08_LIMITS[
+                "GENESIS_BODY_OCTETS"
+            ]:
+                rows.add("O08:GENESIS_BODY_OCTETS:S3_KERNEL_STRUCTURAL")
+            if len(bytes.fromhex(fields["initialAuthorityPolicyHex"])) > O08_LIMITS[
+                "GENESIS_POLICY_OCTETS"
+            ]:
+                rows.add("O08:GENESIS_POLICY_OCTETS:S3_KERNEL_STRUCTURAL")
+            return rows
+        if int.from_bytes(transcript[16:20], "big") > O08_LIMITS[
+            "FRAMING_OBJECT_OCTETS"
+        ]:
+            rows.add("O08:FRAMING_OBJECT_OCTETS:S3_KERNEL_STRUCTURAL")
+        if len(bytes.fromhex(fields["transitionBlockHex"])) > O08_LIMITS[
+            "AP_TRANSITION_BLOCK_OCTETS"
+        ]:
+            rows.add("O08:AP_TRANSITION_BLOCK_OCTETS:S3_KERNEL_STRUCTURAL")
+        if fields["authorSequence"] > O08_LIMITS["SEQUENCE_VALUE"]:
+            rows.add("O08:SEQUENCE_VALUE:S3_KERNEL_STRUCTURAL")
+        geometry = fields["content"].get("geometry")
+        if geometry is not None and geometry["chunkSize"] not in O08_CHUNK_OCTETS:
+            rows.add("O08:CHUNK_OCTETS:S3_KERNEL_STRUCTURAL")
+        if geometry is not None and geometry["chunkCount"] > O08_LIMITS[
+            "CHUNKS_PER_CONTENT"
+        ]:
+            rows.add("O08:CHUNKS_PER_CONTENT:S3_KERNEL_STRUCTURAL")
+        if fields["content"]["exactLength"] > O08_LIMITS[
+            "CONTENT_EXACT_OCTETS"
+        ]:
+            rows.add("O08:CONTENT_EXACT_OCTETS:S3_KERNEL_STRUCTURAL")
+        tail = fields.get("tail", {})
+        if (
+            fields.get("eventRole") == "CREDENTIAL"
+            and tail.get("kind") == "GRANT"
+            and len(bytes.fromhex(tail["granteeVerificationKeyHex"]))
+            > O08_LIMITS["VERIFICATION_KEY_OCTETS"]
+        ):
+            rows.add("O08:VERIFICATION_KEY_OCTETS:S3_KERNEL_STRUCTURAL")
+        if record.get("admissionContext", {}).get("checkpointEvidenceReferences"):
+            rows.add("O08:CHECKPOINT_REFERENCES:S3_KERNEL_STRUCTURAL")
+        return rows
+    if stage == "S4_GRAPH_ADMISSION" and len(fields.get("causalParents", [])) > O08_LIMITS[
+        "PARENTS_PER_EVENT"
+    ]:
+        rows.add("O08:PARENTS_PER_EVENT:S4_GRAPH_ADMISSION")
+    return rows
 
 
 def _walk_hygiene(value: Any, location: str = "$") -> None:
@@ -277,12 +350,32 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
         invalid_document.get("apExpectationOnlyRecords"),
         "AP expectation-only vectors",
     )
-    require(len(valid) == 17 and len(invalid) == 27, "R7 vector cardinality mismatch")
+    require(
+        len(valid) == 17 and len(invalid) == 36,
+        "D4 vector cardinality mismatch",
+    )
     require(
         {record["id"] for record in ap_expectations}
         == {"inv-post-revocation", "inv-self-lineage", "inv-unauthorized"},
         "AP expectation-only vector set mismatch",
     )
+    invalid_by_id = {record["id"]: record for record in invalid}
+    require(
+        RESTORED_BASE_INVALID_IDS | D4_ADDED_INVALID_IDS
+        <= set(invalid_by_id),
+        "D4 restored or added invalid witness missing",
+    )
+    base_invalid = {
+        record["id"]: record
+        for record in reader.json(
+            "conformance/application-protocol/c03/invalid-transcript-vectors.json"
+        )["records"]
+    }
+    for identifier in RESTORED_BASE_INVALID_IDS:
+        require(
+            invalid_by_id[identifier] == base_invalid[identifier],
+            f"restored Base invalid witness drifted: {identifier}",
+        )
     vector_ids = {record["id"] for record in valid + invalid + ap_expectations}
     for record in valid:
         require(all(_citation_valid(reader, source_paths, citation) for citation in record["citations"]), f"stale citation: {record['id']}")
@@ -646,7 +739,7 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
         == {
             "BOUNDARY_NOT_EXECUTED": 11,
             "CONNECTED_K_ADMISSION": 4,
-            "LOCAL_NEGATIVE": 59,
+            "LOCAL_NEGATIVE": 68,
             "TRANSCRIPT_CONFORMANCE": 81,
         },
         "scenario evidence-layer cardinality mismatch",
@@ -673,6 +766,12 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
     require(reached_states == expected_states, "state coverage mismatch")
 
     traces = _unique_sorted(documents["expected-traces.json"]["records"], "traces")
+    require(
+        len(scenarios) == 128
+        and sum(len(scenario["steps"]) for scenario in scenarios) == 164
+        and len(traces) == 128,
+        "D4 scenario or trace cardinality mismatch",
+    )
     require({trace["scenarioId"] for trace in traces} == scenario_ids, "trace/scenario reference mismatch")
     for trace in traces:
         require(all(step["externalEffects"] == [] for step in trace["steps"]), f"trace contains external effect: {trace['id']}")
@@ -699,6 +798,30 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
     require(len(counterexample_observations) == len(set(counterexample_observations)), "counterexample observation collision")
 
     mutations = _unique_sorted(documents["adversarial-mutations.json"]["records"], "mutations")
+    require(len(mutations) == 522, "D4 mutation relation cardinality mismatch")
+    require(
+        {
+            mutation_class: sum(
+                record.get("mutationClass") == mutation_class
+                for record in mutations
+            )
+            for mutation_class in {
+                "SEMANTIC_VECTOR",
+                "EXPECTED_RESULT",
+                "SEMANTIC_INVARIANT",
+                "EVIDENCE_INTEGRITY",
+                "SOURCE_ANCHORED_SECURITY",
+            }
+        }
+        == {
+            "SEMANTIC_VECTOR": 36,
+            "EXPECTED_RESULT": 4,
+            "SEMANTIC_INVARIANT": 21,
+            "EVIDENCE_INTEGRITY": 447,
+            "SOURCE_ANCHORED_SECURITY": 14,
+        },
+        "D4 mutation-class cardinality mismatch",
+    )
     mutation_ids = {record["id"] for record in mutations}
     mutation_by_id = {record["id"]: record for record in mutations}
     require(len(mutation_ids) == len(mutations), "mutation identifier collision")
@@ -862,6 +985,21 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
                     and observed_stage == row["mapping"]["stage"],
                     f"O-10 row witness result mismatch: {row_id}:{input_id}",
                 )
+                if any(
+                    source_row.startswith("O08:")
+                    for source_row in witness["jointSourceRowIds"]
+                ):
+                    require(
+                        "inputId" in witness,
+                        f"O-08 source row requires a transcript witness: {row_id}",
+                    )
+                    require(
+                        set(witness["jointSourceRowIds"])
+                        == _exceeded_o08_source_rows(
+                            vector_by_id[input_id], observed_stage
+                        ),
+                        f"O-08 joint source-row attribution mismatch: {row_id}:{input_id}",
+                    )
         elif "mapping" in row and row["mapping"]["primary"] in AP_OWNED_EXCLUSIONS:
             primary = row["mapping"]["primary"]
             disposition = "AP_OWNED_EXCLUDED"
@@ -883,6 +1021,23 @@ def validate(repo_root: Path, corpus: Path) -> dict[str, Any]:
             }
         )
     require(coverage["o10"].get("sourceRows") == expected_source_rows, "O-10 source-row partition mismatch")
+    source_dispositions = {
+        disposition: sum(row["disposition"] == disposition for row in expected_source_rows)
+        for disposition in {
+            "PRODUCED",
+            "AP_OWNED_EXCLUDED",
+            "TRANSCRIPT_PROFILE_UNREACHABLE",
+        }
+    }
+    require(
+        source_dispositions
+        == {
+            "PRODUCED": 31,
+            "AP_OWNED_EXCLUDED": 24,
+            "TRANSCRIPT_PROFILE_UNREACHABLE": 47,
+        },
+        "D4 O-10 source-row partition mismatch",
+    )
     expected_invariants = {row["id"] for row in model["invariants"]}
     require(
         {row["id"] for row in coverage["invariants"]} == expected_invariants

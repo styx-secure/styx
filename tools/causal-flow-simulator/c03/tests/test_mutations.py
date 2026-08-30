@@ -18,7 +18,7 @@ class MutationTests(unittest.TestCase):
     def test_both_runtimes_kill_closed_registry(self) -> None:
         report = run(REPO, CORPUS)
         self.assertEqual(report["result"], "PASS")
-        self.assertEqual(report["killed"], 513)
+        self.assertEqual(report["killed"], 522)
         self.assertEqual(report["runtimes"], ["javascript", "python"])
         self.assertRegex(report["killDigest"], r"^[0-9a-f]{64}$")
 
@@ -31,7 +31,7 @@ class MutationTests(unittest.TestCase):
         self.assertEqual(counts["O08_EXACT_DIMENSION_SET"], 53)
         self.assertEqual(counts["O10_EXACT_SOURCE_ROW_SET"], 102)
         self.assertEqual(counts["MANIFEST_DIGEST_MISMATCH"], 5)
-        self.assertEqual(counts["INDEPENDENT_REPLAY_EXPECTATION_MISMATCH"], 27)
+        self.assertEqual(counts["INDEPENDENT_REPLAY_EXPECTATION_MISMATCH"], 36)
         self.assertEqual(counts["INDEPENDENT_EXPECTED_STAGE_MISMATCH"], 1)
         self.assertEqual(counts["INDEPENDENT_EXPECTED_OUTCOME_MISMATCH"], 1)
         self.assertEqual(counts["INDEPENDENT_EXPECTED_TRACE_MISMATCH"], 1)

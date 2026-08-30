@@ -267,10 +267,19 @@ INVALID_VECTOR_INVARIANTS = {
     "inv-resource-chunk-count": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-resource-chunk-size": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-resource-content-length": "INV_AUTHORITY_PROJECTION_LIMITS",
+    "inv-resource-framing-object": "INV_AUTHORITY_PROJECTION_LIMITS",
+    "inv-resource-genesis-body": "INV_AUTHORITY_PROJECTION_LIMITS",
+    "inv-resource-genesis-policy": "INV_AUTHORITY_PROJECTION_LIMITS",
+    "inv-resource-grantee-key": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-resource-parent-count": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-resource-sequence": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-resource-transition-block": "INV_AUTHORITY_PROJECTION_LIMITS",
     "inv-signature": "INV_OUTCOME_PRECEDENCE",
+    "inv-grantee-key-empty": "INV_GRANT_ROOTED_BINDING",
+    "inv-grantee-key-short": "INV_GRANT_ROOTED_BINDING",
+    "inv-noncanonical-integer": "INV_O06C_BOUNDED_EVIDENCE",
+    "inv-trailing": "INV_O06C_BOUNDED_EVIDENCE",
+    "inv-truncated": "INV_O06C_BOUNDED_EVIDENCE",
     "inv-credential-identifier-collision": "INV_GRANT_ROOTED_BINDING",
     "inv-unresolved-credential-binding": "INV_GRANT_ROOTED_BINDING",
     "inv-wrong-domain": "INV_O06C_BOUNDED_EVIDENCE",
@@ -1575,6 +1584,27 @@ def _invalid_vectors(
 
     transcript_mutation("inv-wrong-domain", "WRONG_DOMAIN", lambda raw: raw.__setitem__(15, 1))
     transcript_mutation("inv-body-length", "BODY_LENGTH_MISMATCH", lambda raw: raw.__setitem__(19, raw[19] ^ 1))
+    transcript_mutation("inv-truncated", "TRUNCATED_BODY", lambda raw: raw.__delitem__(slice(-1, None)))
+    transcript_mutation("inv-trailing", "TRAILING_BYTES", lambda raw: raw.extend(b"\x00"))
+
+    # Restore the exact Base structural witness.  The additional zero octet
+    # makes the fixed-width author sequence appear overlong while preserving
+    # the advertised outer length, so a decoder which accepts non-canonical
+    # integer framing is falsified independently of signature verification.
+    overlong_integer = _mutated_vector(
+        base,
+        "inv-noncanonical-integer",
+        "OVERLONG_AUTHOR_SEQUENCE_INTEGER",
+        "S3_KERNEL_STRUCTURAL",
+        "STRUCTURAL_REJECTION",
+    )
+    raw = bytearray.fromhex(overlong_integer["transcriptHex"])
+    transition_length = len(bytes.fromhex(base["fields"]["transitionBlockHex"]))
+    sequence_offset = 20 + 57 + 4 + transition_length + 32
+    raw[16:20] = (int.from_bytes(raw[16:20], "big") + 1).to_bytes(4, "big")
+    raw[sequence_offset:sequence_offset] = b"\x00"
+    overlong_integer["transcriptHex"] = raw.hex()
+    values.append(overlong_integer)
 
     signature = _mutated_vector(base, "inv-signature", "SIGNATURE_SUBSTITUTION", "S3_KERNEL_STRUCTURAL", "INVALID")
     sig = bytearray.fromhex(signature["signatureHex"])
@@ -1751,6 +1781,23 @@ def _invalid_vectors(
         transition_fields,
     )
 
+    # This Base witness necessarily crosses both the selected whole-body and
+    # AP-transition component limits.  D4 requires the joint attribution; it
+    # must not be weakened into an "exceeds only" claim.
+    body_fields = _event_fields(
+        "resource-framing-object",
+        sequence=final_control["fields"]["authorSequence"] + 1,
+        predecessor=final_control["eventReferenceHex"],
+    )
+    body_fields["transitionBlockHex"] = synthetic_octets(
+        "resource-framing-object", 8193
+    ).hex()
+    generated_invalid(
+        "inv-resource-framing-object",
+        "EXCEED_SELECTED_FRAMING_OBJECT_OCTETS",
+        body_fields,
+    )
+
     def tree_descriptor(*, chunk_size: int, chunk_count: int, final_length: int, exact_length: int = 1) -> dict[str, Any]:
         return {
             "class": "DETACHABLE",
@@ -1810,6 +1857,101 @@ def _invalid_vectors(
                 "shape": "SINGLE",
             },
         ),
+    )
+
+    genesis = next(item for item in valid if item["id"] == "vec-genesis")
+
+    def generated_invalid_genesis(
+        identifier: str,
+        mutation: str,
+        policy_length: int,
+    ) -> None:
+        genesis_fields = json.loads(json.dumps(genesis["fields"]))
+        genesis_fields["initialAuthorityPolicyHex"] = synthetic_octets(
+            identifier.removeprefix("inv-"), policy_length
+        ).hex()
+        genesis_transcript = encode_genesis(genesis_fields)
+        genesis_key, genesis_signature = ed25519_sign(
+            synthetic_octets("seed/root", 32), genesis_transcript
+        )
+        values.append(
+            {
+                "binding": {"verificationKeyHex": genesis_key.hex()},
+                "citations": genesis["citations"],
+                "expected": {
+                    "externalEffects": [],
+                    "firstFailingStage": "S3_KERNEL_STRUCTURAL",
+                    "localOutcome": "CURRENT_OBJECT_OUT_OF_PROFILE",
+                    "stateUnchanged": True,
+                },
+                "fields": genesis_fields,
+                "genesisReferenceHex": framed_hash(
+                    DOMAINS["genesis_reference"], genesis_transcript
+                ).hex(),
+                "id": identifier,
+                "kind": "GENESIS",
+                "mutation": mutation,
+                "profile": "STYX_APP_KERNEL_V0_TRANSCRIPT_ONLY",
+                "signatureHex": genesis_signature.hex(),
+                "signatureSuiteId": 1,
+                "sourceVectorId": "vec-genesis",
+                "synthetic": True,
+                "testOnly": True,
+                "transcriptHex": genesis_transcript.hex(),
+            }
+        )
+
+    # With the 84-byte fixed genesis overhead, policy 8108 yields exactly the
+    # selected 8192-byte body boundary; 8109 is the first body overrun and also
+    # exceeds the independently selected policy limit.
+    generated_invalid_genesis(
+        "inv-resource-genesis-policy",
+        "EXCEED_SELECTED_GENESIS_POLICY_OCTETS",
+        4097,
+    )
+    generated_invalid_genesis(
+        "inv-resource-genesis-body",
+        "EXCEED_SELECTED_GENESIS_BODY_OCTETS",
+        8109,
+    )
+
+    grant = next(item for item in valid if item["id"] == "vec-control-grant")
+
+    def generated_grantee_key_vector(
+        identifier: str,
+        mutation: str,
+        key_length: int,
+        outcome: str,
+    ) -> None:
+        fields = json.loads(json.dumps(grant["fields"]))
+        fields["tail"]["granteeVerificationKeyHex"] = synthetic_octets(
+            identifier.removeprefix("inv-"), key_length
+        ).hex()
+        generated_invalid(
+            identifier,
+            mutation,
+            fields,
+            outcome=outcome,
+            source="vec-control-grant",
+        )
+
+    generated_grantee_key_vector(
+        "inv-grantee-key-empty",
+        "EMPTY_GRANTEE_VERIFICATION_KEY",
+        0,
+        "STRUCTURAL_REJECTION",
+    )
+    generated_grantee_key_vector(
+        "inv-grantee-key-short",
+        "SHORT_GRANTEE_VERIFICATION_KEY",
+        31,
+        "STRUCTURAL_REJECTION",
+    )
+    generated_grantee_key_vector(
+        "inv-resource-grantee-key",
+        "EXCEED_SELECTED_VERIFICATION_KEY_OCTETS",
+        33,
+        "CURRENT_OBJECT_OUT_OF_PROFILE",
     )
 
     credential_id = base["fields"]["credentialIdentifierHex"]

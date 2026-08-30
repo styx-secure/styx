@@ -24,7 +24,7 @@ class ManifestTests(unittest.TestCase):
     def test_tracked_manifest_and_corpus_validate(self) -> None:
         report = validate(REPO, CORPUS)
         self.assertEqual(report["result"], "PASS")
-        self.assertEqual(report["mutations"], 513)
+        self.assertEqual(report["mutations"], 522)
 
     def test_every_v1_corpus_schema_identifier_fails_closed(self) -> None:
         for name in sorted(SCHEMAS):
@@ -50,7 +50,7 @@ class ManifestTests(unittest.TestCase):
         rows = load(CORPUS / "manifest.json")["coverage"]["o10"]["sourceRows"]
         self.assertEqual(len(rows), 102)
         produced = [row for row in rows if row["disposition"] == "PRODUCED"]
-        self.assertEqual(len(produced), 27)
+        self.assertEqual(len(produced), 31)
         self.assertTrue(all(row["witnesses"] for row in produced))
         self.assertTrue(
             all(not row["witnesses"] for row in rows if row["disposition"] != "PRODUCED")

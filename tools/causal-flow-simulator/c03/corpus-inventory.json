@@ -75,13 +75,17 @@
     "BASE:UNRESOLVABLE_CREDENTIAL:01": [{"inputKAdmissionRecordId": "k-hostile-revoke-unknown-target", "inputKAdmissionScenarioId": "k-hostile-revoke-unknown-target", "jointSourceRowIds": ["BASE:UNRESOLVABLE_CREDENTIAL:00", "BASE:UNRESOLVABLE_CREDENTIAL:01"]}],
     "BASE:UNRESOLVED_CREDENTIAL_BINDING:00": [{"inputId": "inv-unresolved-credential-binding", "jointSourceRowIds": ["BASE:UNRESOLVED_CREDENTIAL_BINDING:00"]}],
     "BASE:UNRESOLVED_CREDENTIAL_BINDING:01": [{"inputId": "inv-unresolved-credential-binding", "jointSourceRowIds": ["BASE:UNRESOLVED_CREDENTIAL_BINDING:01"]}],
-    "O08:AP_TRANSITION_BLOCK_OCTETS:S3_KERNEL_STRUCTURAL": [{"inputId": "inv-resource-transition-block", "jointSourceRowIds": ["O08:AP_TRANSITION_BLOCK_OCTETS:S3_KERNEL_STRUCTURAL"]}],
+    "O08:AP_TRANSITION_BLOCK_OCTETS:S3_KERNEL_STRUCTURAL": [{"inputId": "inv-resource-framing-object", "jointSourceRowIds": ["O08:AP_TRANSITION_BLOCK_OCTETS:S3_KERNEL_STRUCTURAL", "O08:FRAMING_OBJECT_OCTETS:S3_KERNEL_STRUCTURAL"]}, {"inputId": "inv-resource-transition-block", "jointSourceRowIds": ["O08:AP_TRANSITION_BLOCK_OCTETS:S3_KERNEL_STRUCTURAL"]}],
     "O08:CHECKPOINT_REFERENCES:S3_KERNEL_STRUCTURAL": [{"inputId": "inv-checkpoint-substitution", "jointSourceRowIds": ["O08:CHECKPOINT_REFERENCES:S3_KERNEL_STRUCTURAL"]}],
     "O08:CHUNKS_PER_CONTENT:S3_KERNEL_STRUCTURAL": [{"inputId": "inv-resource-chunk-count", "jointSourceRowIds": ["O08:CHUNKS_PER_CONTENT:S3_KERNEL_STRUCTURAL", "O08:CONTENT_EXACT_OCTETS:S3_KERNEL_STRUCTURAL"]}],
     "O08:CHUNK_OCTETS:S3_KERNEL_STRUCTURAL": [{"inputId": "inv-resource-chunk-size", "jointSourceRowIds": ["O08:CHUNK_OCTETS:S3_KERNEL_STRUCTURAL"]}],
     "O08:CONTENT_EXACT_OCTETS:S3_KERNEL_STRUCTURAL": [{"inputId": "inv-resource-content-length", "jointSourceRowIds": ["O08:CONTENT_EXACT_OCTETS:S3_KERNEL_STRUCTURAL"]}, {"inputId": "inv-resource-chunk-count", "jointSourceRowIds": ["O08:CHUNKS_PER_CONTENT:S3_KERNEL_STRUCTURAL", "O08:CONTENT_EXACT_OCTETS:S3_KERNEL_STRUCTURAL"]}],
+    "O08:FRAMING_OBJECT_OCTETS:S3_KERNEL_STRUCTURAL": [{"inputId": "inv-resource-framing-object", "jointSourceRowIds": ["O08:AP_TRANSITION_BLOCK_OCTETS:S3_KERNEL_STRUCTURAL", "O08:FRAMING_OBJECT_OCTETS:S3_KERNEL_STRUCTURAL"]}],
+    "O08:GENESIS_BODY_OCTETS:S3_KERNEL_STRUCTURAL": [{"inputId": "inv-resource-genesis-body", "jointSourceRowIds": ["O08:GENESIS_BODY_OCTETS:S3_KERNEL_STRUCTURAL", "O08:GENESIS_POLICY_OCTETS:S3_KERNEL_STRUCTURAL"]}],
+    "O08:GENESIS_POLICY_OCTETS:S3_KERNEL_STRUCTURAL": [{"inputId": "inv-resource-genesis-body", "jointSourceRowIds": ["O08:GENESIS_BODY_OCTETS:S3_KERNEL_STRUCTURAL", "O08:GENESIS_POLICY_OCTETS:S3_KERNEL_STRUCTURAL"]}, {"inputId": "inv-resource-genesis-policy", "jointSourceRowIds": ["O08:GENESIS_POLICY_OCTETS:S3_KERNEL_STRUCTURAL"]}],
     "O08:PARENTS_PER_EVENT:S4_GRAPH_ADMISSION": [{"inputId": "inv-resource-parent-count", "jointSourceRowIds": ["O08:PARENTS_PER_EVENT:S4_GRAPH_ADMISSION"]}],
-    "O08:SEQUENCE_VALUE:S3_KERNEL_STRUCTURAL": [{"inputId": "inv-resource-sequence", "jointSourceRowIds": ["O08:SEQUENCE_VALUE:S3_KERNEL_STRUCTURAL"]}]
+    "O08:SEQUENCE_VALUE:S3_KERNEL_STRUCTURAL": [{"inputId": "inv-resource-sequence", "jointSourceRowIds": ["O08:SEQUENCE_VALUE:S3_KERNEL_STRUCTURAL"]}],
+    "O08:VERIFICATION_KEY_OCTETS:S3_KERNEL_STRUCTURAL": [{"inputId": "inv-resource-grantee-key", "jointSourceRowIds": ["O08:VERIFICATION_KEY_OCTETS:S3_KERNEL_STRUCTURAL"]}]
   },
   "o10_source_row_count": 102,
   "schema": "styx-c03-corpus-inventory/v2"

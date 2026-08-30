@@ -90,6 +90,7 @@ O08_LIMITS = {
     "GENESIS_POLICY_OCTETS": 4096,
     "PARENTS_PER_EVENT": 8,
     "SEQUENCE_VALUE": 4095,
+    "VERIFICATION_KEY_OCTETS": 32,
 }
 O08_CHUNK_OCTETS = frozenset({4096, 16384})
 PRODUCED_K_PRIMARIES = frozenset(
@@ -765,7 +766,16 @@ def parse_event(transcript: bytes) -> dict[str, Any]:
         if kind == "GRANT":
             if body.integer(2, "grantee_suite") != 1:
                 raise ProtocolError("GRANTEE_SUITE_UNSUPPORTED")
-            tail["granteeVerificationKeyHex"] = body.opaque("grantee_key").hex()
+            grantee_key = body.opaque("grantee_key")
+            # Suite 0x0001 has a fixed-width Ed25519 verification key.  A
+            # short key is not a locally unsupported profile choice: it is an
+            # invalid transcript grammar instance and must fail before the
+            # candidate reference is computed.  Overlong keys remain
+            # canonically parseable so the selected O-08 envelope owns their
+            # fail-closed S3 classification after reference verification.
+            if len(grantee_key) < O08_LIMITS["VERIFICATION_KEY_OCTETS"]:
+                raise ProtocolError("GRANTEE_KEY_LENGTH_INVALID")
+            tail["granteeVerificationKeyHex"] = grantee_key.hex()
         elif kind == "REVOKE":
             tail["targetCredentialHex"] = body.take(32, "target_credential").hex()
         elif kind == "ROTATE":
@@ -807,6 +817,14 @@ def _event_profile_failures(
         "AP_TRANSITION_BLOCK_OCTETS"
     ]:
         return ProtocolError("AP_TRANSITION_BLOCK_OCTETS_LIMIT"), None
+    tail = fields.get("tail", {})
+    if (
+        fields.get("eventRole") == "CREDENTIAL"
+        and tail.get("kind") == "GRANT"
+        and len(bytes.fromhex(str(tail["granteeVerificationKeyHex"])))
+        > O08_LIMITS["VERIFICATION_KEY_OCTETS"]
+    ):
+        return ProtocolError("VERIFICATION_KEY_OCTETS_LIMIT"), None
     if int(fields["authorSequence"]) > O08_LIMITS["SEQUENCE_VALUE"]:
         return ProtocolError("SEQUENCE_VALUE_LIMIT"), None
     content = fields["content"]

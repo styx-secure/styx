@@ -17,6 +17,7 @@ from canonical_json import dumps, load, loads  # noqa: E402
 from corpus_model import (  # noqa: E402
     CorpusModelError,
     DOMAINS,
+    MAX_U32,
     ProtocolError,
     ed25519_sign,
     encode_genesis,
@@ -27,6 +28,7 @@ from corpus_model import (  # noqa: E402
     framed_hash,
     load_local_json,
     synthetic_octets,
+    validate_geometry_predicates,
 )
 from generate_corpus import (  # noqa: E402
     _application_vector,
@@ -38,6 +40,57 @@ from replay_corpus import _transition_index, compute_trace, replay  # noqa: E402
 
 
 class ReplayTests(unittest.TestCase):
+    def test_intrinsic_single_geometry_ceiling_is_exact_and_bounded(self) -> None:
+        ceiling = MAX_U32 - 132
+        for value in (ceiling - 1, ceiling):
+            observed = validate_geometry_predicates(value, "SINGLE", None)
+            self.assertEqual(observed["geometryPredicate2"], "PASS")
+        with self.assertRaises(ProtocolError) as failure:
+            validate_geometry_predicates(ceiling + 1, "SINGLE", None)
+        self.assertEqual(failure.exception.observations["geometryPredicate2"], "FAIL")
+
+    def test_grant_verification_key_boundaries_admit_only_exact_width(self) -> None:
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+        records = {
+            row["id"]: row
+            for row in valid + invalid
+            if row["id"] in {
+                "inv-grantee-key-empty",
+                "inv-grantee-key-short",
+                "vec-control-grant",
+                "inv-resource-grantee-key",
+            }
+        }
+        self.assertEqual(
+            {
+                identifier: len(bytes.fromhex(row["fields"]["tail"]["granteeVerificationKeyHex"]))
+                for identifier, row in records.items()
+            },
+            {
+                "inv-grantee-key-empty": 0,
+                "inv-grantee-key-short": 31,
+                "vec-control-grant": 32,
+                "inv-resource-grantee-key": 33,
+            },
+        )
+        for identifier in ("inv-grantee-key-empty", "inv-grantee-key-short"):
+            observed = evaluate_vector(records[identifier])
+            self.assertEqual(observed["transcriptVerification"], "REJECTED")
+            self.assertEqual(observed["referenceVerification"], "NOT_REACHED")
+            self.assertEqual(observed["signatureVerification"], "NOT_EVALUATED")
+            self.assertEqual(observed["kBindingAdmission"], "REJECTED")
+        supported = evaluate_vector(records["vec-control-grant"])
+        self.assertEqual(supported["transcriptVerification"], "VALID")
+        self.assertEqual(supported["signatureVerification"], "VALID")
+        self.assertEqual(supported["kBindingAdmission"], "ADMITTED")
+        overlong = evaluate_vector(records["inv-resource-grantee-key"])
+        self.assertEqual(overlong["transcriptVerification"], "VALID")
+        self.assertEqual(overlong["referenceVerification"], "VALID")
+        self.assertEqual(overlong["signatureVerification"], "NOT_EVALUATED")
+        self.assertEqual(overlong["localOutcome"], "CURRENT_OBJECT_OUT_OF_PROFILE")
+        self.assertEqual(overlong["kBindingAdmission"], "REJECTED")
+
     def test_all_vectors_and_scenarios_replay(self) -> None:
         report = replay(REPO, CORPUS)
         self.assertEqual(report["result"], "PASS")
@@ -81,7 +134,7 @@ class ReplayTests(unittest.TestCase):
     def test_disconnected_records_never_claim_k_or_ap_authority(self) -> None:
         report = replay(REPO, CORPUS)
         observations = report["blindTranscriptObservations"]
-        self.assertEqual(len(observations), 44)
+        self.assertEqual(len(observations), 53)
         self.assertTrue(
             all(row["kBindingAdmission"] == "NOT_EVALUATED" for row in observations)
         )

@@ -20,6 +20,56 @@ from run_cross_runtime import run  # noqa: E402
 
 
 class CrossRuntimeTests(unittest.TestCase):
+    def test_javascript_intrinsic_geometry_ceiling_is_exact_and_bounded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "geometry-boundaries.json"
+            completed = subprocess.run(
+                [
+                    "node",
+                    str(ROOT / "node_adapter.mjs"),
+                    "--mode",
+                    "geometry-boundaries",
+                    "--output",
+                    str(output),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertEqual(
+                load(output),
+                {
+                    "intrinsicExactLengthCeiling": "4294967163",
+                    "rows": [
+                        {"exactLength": "4294967162", "geometryPredicate2": "PASS"},
+                        {"exactLength": "4294967163", "geometryPredicate2": "PASS"},
+                        {"exactLength": "4294967164", "geometryPredicate2": "FAIL"},
+                    ],
+                    "schema": "styx-c03-geometry-boundaries/v1",
+                },
+            )
+
+    def test_javascript_executes_all_grant_key_boundaries(self) -> None:
+        valid = load(CORPUS / "valid-transcript-vectors.json")["records"]
+        invalid = load(CORPUS / "invalid-transcript-vectors.json")["records"]
+        by_id = {row["id"]: row for row in valid + invalid}
+        self.assertEqual(
+            [
+                len(bytes.fromhex(by_id[identifier]["fields"]["tail"]["granteeVerificationKeyHex"]))
+                for identifier in (
+                    "inv-grantee-key-empty",
+                    "inv-grantee-key-short",
+                    "vec-control-grant",
+                    "inv-resource-grantee-key",
+                )
+            ],
+            [0, 31, 32, 33],
+        )
+        # The independent adapter validates every vector against its exact
+        # transcript/reference/signature/stage oracle before writing this report.
+        self.assertEqual(run(REPO, CORPUS)["result"], "PASS")
+
     def test_python_and_javascript_reports_are_identical(self) -> None:
         report = run(REPO, CORPUS)
         self.assertEqual(report["result"], "PASS")
