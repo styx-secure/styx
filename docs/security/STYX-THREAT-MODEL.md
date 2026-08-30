@@ -494,6 +494,7 @@ substitutions explicit and falsifiable before adapter work:
 | `SSD-09` | A10; durable authoritative state | SS logical mutation ↔ RS result | Restored bytes are unvalidated until owning-layer revalidation; proof journals and deserialization never substitute for durable product state. |
 | `SSD-10` | A1/A5/A14; diagnostic oracle and provenance | SS failure → observation | Only closed redacted model-local observations are emitted; secrets, stable group IDs and runtime/evidence identities are excluded. |
 | `SSD-11` | A12; evidence provenance and scope | repository evidence → SS report eligibility | Missing identity, drift, unsupported topology or unrepresented operation invalidates the report rather than shrinking the claim. |
+| `SSD-04`, `SSD-09` | A13; fail-closed availability under suppressed or exhausted evidence | SS → RS → SS | Missing or indeterminate RS evidence halts without advancing authoritative state, automatic retry or alternate authority; the resulting indefinite unavailability is an accepted residual cost. |
 
 The A4/A10 availability cost is intentional: fail-closed mutation can leave a
 session unavailable indefinitely when RS evidence is missing or indeterminate.
@@ -501,6 +502,11 @@ SS-0 does not invent retry, recovery, rollback detection or alternate authority
 to conceal that cost. Gate A freezes the normative boundary; Gate B is still
 required for the bounded executable evidence. Neither gate provides adapter,
 SDK, demo or product authority, and C0.3 remains `NO-GO`.
+
+A7, A8 and A11 are not changed by SS-0: the bounded evidence model introduces
+no relay trust, browser/extension containment, device-custody or local
+privilege boundary. Their transport, runtime and product mitigations remain
+owned by their existing profiles and cannot be inferred from SS-0 evidence.
 
 ## 4. Trust assumptions
 

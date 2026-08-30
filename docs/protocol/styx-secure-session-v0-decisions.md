@@ -166,7 +166,8 @@ dispositions are review evidence, not stable O-10 codes.
   future `OB-RS09`/O-16 design prevents it.
 - **Non-claims:** no physical-time expiry, freshness, rollback resistance,
   production deletion or general onboarding policy is selected; O-12 remains
-  `OPEN`.
+  `OPEN`. One-shot deletion is an upstream MLS requirement observed by the
+  pinned profile, not an SS-0 protocol selection.
 
 ### SSD-08 — Bounded secret-lifecycle claim
 

@@ -95,13 +95,13 @@ domain.
 
 ### 3.1 Normative source index
 
-The current application-protocol normative set is enumerated here, independently
-of the derived review model:
+The current normative sources are grouped here independently of the derived
+review model.
+
+Application-protocol sources:
 
 - decision registry:
   `docs/protocol/styx-app-kernel-v0-decisions.md`;
-- bounded secure-session evidence-profile registry:
-  `docs/protocol/styx-secure-session-v0-decisions.md`;
 - transcript encoding profile:
   `docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md`;
 - commitment encoding profile:
@@ -110,6 +110,22 @@ of the derived review model:
   `docs/protocol/styx-app-kernel-v0-responsibility-matrix.md`;
 - application-protocol threat model:
   `docs/security/STYX-THREAT-MODEL.md`.
+
+Secure-session evidence-profile sources:
+
+- bounded secure-session evidence-profile registry:
+  `docs/protocol/styx-secure-session-v0-decisions.md`.
+
+From the Gate-A commit until Gate B, the new secure-session source exists before
+the derived model can be synchronized. During that bounded interval the source
+is intentionally absent from the model `sources` map and the validator's
+`EXPECTED_SOURCE_RECORDS`, while the changed responsibility-matrix and
+threat-model digests intentionally differ from their derived-model pins. Those
+three inconsistencies are permitted only until Gate B, authorize no capability,
+adapter or corpus, and MUST all be eliminated by the Phase-B synchronization.
+A separate `K11-SS` Apache-2.0 licensing amendment remains required before the
+first SS conformance-corpus byte; the C0.3 corpus approval in Issue #253 does not
+authorize an SS corpus.
 
 The derived review model at
 `docs/protocol/review/styx-app-kernel-v0-review-model.json` is verified against
@@ -214,7 +230,8 @@ Protocol increments proceed in dependency order:
    the responsibility/threat boundaries. Its Phase B may synchronize only the
    derived review model and bounded executable evidence after the exact
    Phase-A bytes and verifier are bound by Gate A. SS-0 selects no adapter,
-   implementation, product capability or C0.3 `GO`.
+   implementation, product capability or C0.3 `GO`. `K11-SS` remains a
+   prerequisite to any future SS corpus and is not discharged by either gate.
    Issue #255 is a bounded procedural predecessor to O-10 only: it pins the
    historical evidence guards to their exact candidate identities and supplies
    the reusable AST allowlist and O-14-removal rejection required by O-08's
@@ -524,7 +541,9 @@ bounded evidence verdict:
   changing application-kernel authority. Until Gate A binds the exact four
   normative files and frozen verifier, that candidate is not authority; until
   Gate B completes, it is not closed evidence. Neither gate activates an
-  adapter, SDK, demo or product;
+  adapter, SDK, demo or product. The temporary Gate-A-to-Gate-B source/model
+  inconsistency is authorized only for synchronization and creates no corpus
+  authority; `K11-SS` remains required before any SS corpus byte;
 - `C0.3_CORPUS_PATH_APPROVAL` is bounded `DECIDED` by Issue #253; Issue #264
   populates exactly its six synthetic-only paths and completes their executable
   conformance and mutation evidence;

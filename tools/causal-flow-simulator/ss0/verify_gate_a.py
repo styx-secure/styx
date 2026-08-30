@@ -8,6 +8,53 @@ change this verifier after the human Gate-A binding.
 
 from __future__ import annotations
 
+import os as _bootstrap_os
+import sys as _bootstrap_sys
+
+
+if not (
+    _bootstrap_sys.flags.isolated
+    and _bootstrap_sys.flags.no_site
+    and _bootstrap_sys.flags.dont_write_bytecode
+):
+    raise RuntimeError("Gate-A verifier requires Python isolated mode (-I -S -B)")
+
+
+_BOOTSTRAP_BASE = _bootstrap_os.path.realpath(_bootstrap_sys.base_prefix)
+
+
+def _trusted_import_path(entry: str) -> bool:
+    """Retain only interpreter-owned paths before importing the stdlib."""
+
+    try:
+        resolved = _bootstrap_os.path.realpath(entry or _bootstrap_os.getcwd())
+        return _bootstrap_os.path.commonpath((resolved, _BOOTSTRAP_BASE)) == _BOOTSTRAP_BASE
+    except (OSError, ValueError):
+        return False
+
+
+_bootstrap_sys.path[:] = [entry for entry in _bootstrap_sys.path if _trusted_import_path(entry)]
+if not _bootstrap_sys.path:
+    raise RuntimeError("no trusted standard-library import path remains")
+_BLOCKED_CALLER_ENVIRONMENT = {
+    "ALL_PROXY",
+    "CURL_CA_BUNDLE",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "OPENSSL_CONF",
+    "OPENSSL_MODULES",
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "REQUESTS_CA_BUNDLE",
+    "SSL_CERT_DIR",
+    "SSL_CERT_FILE",
+    "SSLKEYLOGFILE",
+}
+for _environment_name in tuple(_bootstrap_os.environ):
+    if _environment_name.upper() in _BLOCKED_CALLER_ENVIRONMENT:
+        _bootstrap_os.environ.pop(_environment_name, None)
+
 import argparse
 import copy
 from hashlib import sha256
@@ -15,12 +62,17 @@ import json
 import os
 from pathlib import Path
 import re
+import ssl
 import subprocess
 import sys
 from urllib.error import HTTPError, URLError
-from urllib.request import HTTPRedirectHandler, Request, build_opener
-
-sys.dont_write_bytecode = True
+from urllib.request import (
+    HTTPRedirectHandler,
+    HTTPSHandler,
+    ProxyHandler,
+    Request,
+    build_opener,
+)
 
 
 ISSUE_NUMBER = 285
@@ -29,12 +81,13 @@ COMMENT_API_PREFIX = "https://api.github.com/repos/styx-secure/styx/issues/comme
 OPERATOR_LOGIN = "maverde73"
 OPERATOR_ID = 141346846
 BASE_SHA = "bd13fac2df51e8585db6487fff7217fb68fb6242"
-ISSUE_BODY_SHA256 = "99a543bacfe9f0c136d22b976ed5f8f14e66d3df5fb5a1055c6adae83118e03d"
+ISSUE_BODY_SHA256 = "fe56a2390afc81c8ebcabe957f06e5e83abb04ddeac7e44eec3c72eb751f2df1"
 GATE_SCHEMA = "styx-ss0-gate-a/v1"
 MODEL_PATH = Path("docs/protocol/review/styx-app-kernel-v0-review-model.json")
 SOURCE_PATH = "docs/protocol/styx-secure-session-v0-decisions.md"
 SOURCE_ID = "secure_session_decisions"
 MAX_PROVIDER_BYTES = 256 * 1024
+GIT_EXECUTABLE = "/usr/bin/git"
 HEX40 = re.compile(r"[0-9a-f]{40}\Z")
 HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 FROZEN_PATHS = (
@@ -53,6 +106,17 @@ class GateAError(ValueError):
 class _RejectRedirect(HTTPRedirectHandler):
     def redirect_request(self, request, file_pointer, code, message, headers, new_url):  # noqa: ANN001
         raise HTTPError(request.full_url, code, "redirect rejected", headers, file_pointer)
+
+
+def provider_opener():
+    """Build a direct-TLS opener without caller-selected proxy or CA inputs."""
+
+    context = ssl.create_default_context()
+    return build_opener(
+        ProxyHandler({}),
+        HTTPSHandler(context=context),
+        _RejectRedirect(),
+    )
 
 
 def require(condition: bool, message: str) -> None:
@@ -82,7 +146,8 @@ def fetch_comment(comment_id: str) -> tuple[bytes, dict[str, object]]:
         },
     )
     try:
-        with build_opener(_RejectRedirect).open(request, timeout=30) as response:
+        with provider_opener().open(request, timeout=30) as response:
+            require(response.geturl() == url, "provider response URL mismatch")
             length = response.headers.get("Content-Length")
             if length is not None:
                 require(int(length) <= MAX_PROVIDER_BYTES, "provider response is oversized")
@@ -147,19 +212,42 @@ def validate_provider_comment(
     require(isinstance(user, dict), "provider user is missing")
     require(user.get("id") == OPERATOR_ID and user.get("login") == OPERATOR_LOGIN,
             "provider identity mismatch")
-    require(comment.get("created_at") == comment.get("updated_at"),
-            "Gate-A comment was edited")
+    created_at = comment.get("created_at")
+    updated_at = comment.get("updated_at")
+    require(isinstance(created_at, str) and bool(created_at),
+            "provider created_at is missing")
+    require(isinstance(updated_at, str) and bool(updated_at),
+            "provider updated_at is missing")
+    require(created_at == updated_at, "Gate-A comment was edited")
     return parse_gate_body(comment.get("body"))
 
 
-def run_git(repo: Path, *arguments: str, allow_failure: bool = False) -> bytes:
-    process = subprocess.run(
-        ["git", "-C", str(repo), *arguments],
+def git_environment() -> dict[str, str]:
+    """Return a closed environment for every trust-root Git invocation."""
+
+    return {
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }
+
+
+def run_git_process(repo: Path, *arguments: str) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        [GIT_EXECUTABLE, "-C", str(repo), *arguments],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
+        env=git_environment(),
     )
+
+
+def run_git(repo: Path, *arguments: str, allow_failure: bool = False) -> bytes:
+    process = run_git_process(repo, *arguments)
     if process.returncode != 0 and not allow_failure:
         raise GateAError("Git validation failed: " + " ".join(arguments))
     return process.stdout
@@ -177,21 +265,17 @@ def collect_checkout_facts(
 ) -> dict[str, object]:
     root = Path(run_git(repo, "rev-parse", "--show-toplevel").decode().strip()).resolve()
     require(root == repo, "repository root mismatch")
-    require(not run_git(repo, "status", "--porcelain=v1", "--untracked-files=all"),
-            "checkout is dirty")
+    clean = not bool(run_git(repo, "status", "--porcelain=v1", "--untracked-files=all"))
+    require(clean, "checkout is dirty")
     resolved_base = resolve_commit(repo, base)
     resolved_phase = resolve_commit(repo, phase_a_head)
     resolved_final = resolve_commit(repo, final_head)
     resolved_head = resolve_commit(repo, "HEAD")
-    base_to_phase = subprocess.run(
-        ["git", "-C", str(repo), "merge-base", "--is-ancestor", resolved_base, resolved_phase],
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        check=False,
+    base_to_phase = run_git_process(
+        repo, "merge-base", "--is-ancestor", resolved_base, resolved_phase,
     ).returncode == 0
-    phase_to_final = subprocess.run(
-        ["git", "-C", str(repo), "merge-base", "--is-ancestor", resolved_phase, resolved_final],
-        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        check=False,
+    phase_to_final = run_git_process(
+        repo, "merge-base", "--is-ancestor", resolved_phase, resolved_final,
     ).returncode == 0
     changed = tuple(sorted(filter(None, run_git(
         repo, "diff", "--name-only", "--no-renames", resolved_base, resolved_phase,
@@ -208,7 +292,7 @@ def collect_checkout_facts(
         "phase": resolved_phase,
         "final": resolved_final,
         "head": resolved_head,
-        "clean": True,
+        "clean": clean,
         "base_to_phase": base_to_phase,
         "phase_to_final": phase_to_final,
         "changed": changed,
@@ -294,8 +378,50 @@ def store_external_evidence(path: Path, value: dict[str, object], repo: Path) ->
 
 
 def self_test() -> None:
-    phase = "1" * 40
-    frozen = {path: digest(path.encode("utf-8")) for path in FROZEN_PATHS}
+    import_root = Path(sys.base_prefix).resolve()
+    script_root = Path(__file__).resolve().parent
+    require(
+        all(name.upper() not in _BLOCKED_CALLER_ENVIRONMENT for name in os.environ),
+        "unsafe caller environment survived bootstrap",
+    )
+    require(
+        sys.flags.isolated == 1
+        and sys.flags.no_site == 1
+        and sys.flags.dont_write_bytecode == 1,
+        "required Python isolation flags are not active",
+    )
+    require(Path(sys.executable).is_absolute(), "Python executable is not absolute")
+    require(Path(GIT_EXECUTABLE).is_absolute(), "Git executable is not absolute")
+    for entry in sys.path:
+        resolved = Path(entry or ".").resolve()
+        require(import_root == resolved or import_root in resolved.parents,
+                "non-interpreter import path survived bootstrap")
+        require(resolved != script_root, "sibling-module import path survived bootstrap")
+    require(git_environment() == {
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_SYSTEM": os.devnull,
+        "LANG": "C",
+        "LC_ALL": "C",
+        "PATH": "/usr/bin:/bin",
+    }, "Git environment is not closed")
+    opener = provider_opener()
+    proxy_handlers = [handler for handler in opener.handlers
+                      if isinstance(handler, ProxyHandler)]
+    https_handlers = [handler for handler in opener.handlers
+                      if isinstance(handler, HTTPSHandler)]
+    require(not proxy_handlers, "provider opener permits a proxy")
+    require(len(https_handlers) == 1, "provider opener TLS handler mismatch")
+    tls_context = https_handlers[0]._context  # noqa: SLF001 - frozen self-test
+    require(tls_context.verify_mode == ssl.CERT_REQUIRED and tls_context.check_hostname,
+            "provider TLS verification is not strict")
+
+    repo = Path.cwd().resolve()
+    phase = resolve_commit(repo, "HEAD")
+    actual_facts = collect_checkout_facts(repo, BASE_SHA, phase, phase)
+    require(tuple(actual_facts["changed"]) == tuple(sorted(FROZEN_PATHS)),
+            "self-test checkout does not contain the exact Phase-A path set")
+    frozen = dict(actual_facts["phase_digests"])
     body = {
         "schema": GATE_SCHEMA,
         "status": "accepted",
@@ -333,6 +459,20 @@ def self_test() -> None:
     missing = copy.deepcopy(comment)
     del missing["user"]
     hostile_comments.append(missing)
+    missing_gate_field = copy.deepcopy(comment)
+    missing_gate_body = copy.deepcopy(body)
+    del missing_gate_body["base_sha"]
+    missing_gate_field["body"] = json.dumps(
+        missing_gate_body, sort_keys=True, separators=(",", ":"),
+    )
+    hostile_comments.append(missing_gate_field)
+    missing_timestamps = copy.deepcopy(comment)
+    del missing_timestamps["created_at"]
+    del missing_timestamps["updated_at"]
+    hostile_comments.append(missing_timestamps)
+    edited = copy.deepcopy(comment)
+    edited["updated_at"] = "2026-08-30T12:00:01Z"
+    hostile_comments.append(edited)
     for hostile in hostile_comments:
         try:
             validate_provider_comment(hostile, comment_id)
@@ -351,22 +491,17 @@ def self_test() -> None:
     else:
         raise GateAError("redirect fixture was accepted")
 
-    facts = {
-        "base": BASE_SHA,
-        "phase": phase,
-        "final": phase,
-        "head": phase,
-        "clean": True,
-        "base_to_phase": True,
-        "phase_to_final": True,
-        "changed": tuple(sorted(FROZEN_PATHS)),
-        "phase_digests": frozen,
-        "working_digests": frozen,
-    }
+    facts = actual_facts
     validate_checkout_facts(facts, body, "frozen")
     for key, value in (
         ("clean", False),
+        ("base", "2" * 40),
+        ("head", "2" * 40),
+        ("base_to_phase", False),
         ("phase_to_final", False),
+        ("final", "2" * 40),
+        ("changed", tuple(sorted(FROZEN_PATHS[:-1]))),
+        ("phase_digests", {**frozen, SOURCE_PATH: "0" * 64}),
         ("working_digests", {**frozen, SOURCE_PATH: "0" * 64}),
     ):
         hostile_facts = copy.deepcopy(facts)
@@ -453,6 +588,18 @@ def main(argv: list[str] | None = None) -> int:
             "phase_a_head": facts["phase"],
             "final_head": facts["final"],
             "frozen_files": gate["frozen_files"],
+            "execution_environment": {
+                "python_executable": sys.executable,
+                "python_flags": {
+                    "dont_write_bytecode": sys.flags.dont_write_bytecode,
+                    "ignore_environment": sys.flags.ignore_environment,
+                    "isolated": sys.flags.isolated,
+                    "no_site": sys.flags.no_site,
+                    "no_user_site": sys.flags.no_user_site,
+                    "safe_path": sys.flags.safe_path,
+                },
+                "git_executable": GIT_EXECUTABLE,
+            },
             "verdict": "PASS",
         }
         store_external_evidence(args.output, evidence, repo)
