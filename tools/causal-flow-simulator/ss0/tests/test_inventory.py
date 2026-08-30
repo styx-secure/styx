@@ -33,6 +33,12 @@ class InventoryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_inventory(mutated)
 
+    def test_reused_candidate_input_fails_closed(self) -> None:
+        mutated = copy.deepcopy(self.inventory)
+        mutated["cases"][1]["input"] = copy.deepcopy(mutated["cases"][0]["input"])
+        with self.assertRaisesRegex(ValueError, "distinct atoms"):
+            validate_inventory(mutated)
+
 
 if __name__ == "__main__":
     unittest.main()

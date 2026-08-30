@@ -72,6 +72,7 @@ def validate_inventory(document: dict[str, Any]) -> list[dict[str, Any]]:
     if [case.get("id") for case in cases] != sorted(case.get("id") for case in cases):
         raise ValueError("case order is not canonical")
     ids: set[str] = set()
+    inputs: set[str] = set()
     relation: set[tuple[str, str]] = set()
     for case in cases:
         if not isinstance(case, dict) or set(case) != {
@@ -87,6 +88,12 @@ def validate_inventory(document: dict[str, Any]) -> list[dict[str, Any]]:
             raise ValueError("case expected result or input mismatch")
         if "expected" in case["input"] or "assertion" in case["input"]:
             raise ValueError("oracle leaked into adapter input")
+        encoded_input = json.dumps(
+            case["input"], ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        )
+        if encoded_input in inputs:
+            raise ValueError("one candidate input cannot evidence distinct atoms")
+        inputs.add(encoded_input)
         relation.add((case["owner"], case["kind"]))
     required = {(owner, kind) for owner in owners for kind in KINDS}
     if relation != required:
