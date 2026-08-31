@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[5]
@@ -15,6 +17,7 @@ sys.path.insert(0, str(CORPUS_TOOL))
 from final_gate import (  # noqa: E402
     CANONICAL_REPORTS,
     FinalGateError,
+    _checkout_identity,
     _compare_reports,
     _require_external_root,
     _resolve_plain_directory,
@@ -68,6 +71,75 @@ class FinalGateTests(unittest.TestCase):
             link.symlink_to(external, target_is_directory=True)
             with self.assertRaises(FinalGateError):
                 _resolve_plain_directory(link, "linked evidence")
+
+    def test_clean_dirty_ancestor_and_alternate_checkout_fixtures(self) -> None:
+        node_name = shutil.which("node")
+        self.assertIsNotNone(node_name)
+        node = Path(node_name).resolve(strict=True)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            checkout = root / "checkout"
+            temporary = root / "temporary"
+            checkout.mkdir()
+            temporary.mkdir()
+            subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+            subprocess.run(
+                ["git", "-C", str(checkout), "config", "user.name", "SS0 test"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(checkout), "config", "user.email", "ss0@example.invalid"],
+                check=True,
+            )
+            (checkout / "tracked.txt").write_text("fixture\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(checkout), "add", "tracked.txt"], check=True)
+            subprocess.run(
+                ["git", "-C", str(checkout), "commit", "-q", "-m", "fixture"],
+                check=True,
+            )
+            head = subprocess.check_output(
+                ["git", "-C", str(checkout), "rev-parse", "HEAD"], text=True
+            ).strip()
+            with mock.patch("final_gate.REQUIRED_HISTORY", ()):
+                git_dir = _checkout_identity(
+                    checkout,
+                    base=head,
+                    head=head,
+                    temporary_root=temporary,
+                    node=node,
+                )
+                self.assertEqual(checkout / ".git", git_dir)
+                (checkout / "dirty.txt").write_text("dirty\n", encoding="utf-8")
+                with self.assertRaises(FinalGateError):
+                    _checkout_identity(
+                        checkout,
+                        base=head,
+                        head=head,
+                        temporary_root=temporary,
+                        node=node,
+                    )
+                (checkout / "dirty.txt").unlink()
+                with self.assertRaises(FinalGateError):
+                    _checkout_identity(
+                        checkout,
+                        base="0" * 40,
+                        head=head,
+                        temporary_root=temporary,
+                        node=node,
+                    )
+                alternates = checkout / ".git/objects/info/alternates"
+                alternates.parent.mkdir(parents=True, exist_ok=True)
+                foreign_objects = root / "foreign-objects"
+                foreign_objects.mkdir()
+                alternates.write_text(f"{foreign_objects}\n", encoding="utf-8")
+                with self.assertRaises(FinalGateError):
+                    _checkout_identity(
+                        checkout,
+                        base=head,
+                        head=head,
+                        temporary_root=temporary,
+                        node=node,
+                    )
 
 
 if __name__ == "__main__":
