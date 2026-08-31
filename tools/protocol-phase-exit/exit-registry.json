@@ -1,0 +1,93 @@
+{
+  "schema": "styx-protocol-phase-exit-registry/v1",
+  "conditions": [
+    {
+      "id": "EXIT-01",
+      "applicability": "BOUNDED_PROTOCOL_PROFILE",
+      "disposition": "CONDITIONAL_EXCLUSION",
+      "required_evidence_ids": ["decision_registries", "review_model"],
+      "residual_risks": ["conditional decisions retain their declared downstream scope"],
+      "reopen_triggers": ["a candidate claims physical time, irreversible effects, profile succession, recovery, finality, or durable custody"]
+    },
+    {
+      "id": "EXIT-02",
+      "applicability": "PHASE_SCOPE",
+      "disposition": "PASS",
+      "required_evidence_ids": ["review_records"],
+      "residual_risks": ["independent review is bounded evidence, not a production audit"],
+      "reopen_triggers": ["a blocking or high finding is reopened"]
+    },
+    {
+      "id": "EXIT-03",
+      "applicability": "NORMATIVE_AND_DERIVED_SOURCES",
+      "disposition": "PASS",
+      "required_evidence_ids": ["frozen_manifest", "review_model", "protocol_plan"],
+      "residual_risks": ["exact pins can retain an upstream defect"],
+      "reopen_triggers": ["a pinned source or derived mapping changes"]
+    },
+    {
+      "id": "EXIT-04",
+      "applicability": "ADVERSARIAL_EVIDENCE",
+      "disposition": "PASS",
+      "required_evidence_ids": ["c03_evidence", "ss0_evidence"],
+      "residual_risks": ["bounded mutants do not prove absence of other faults"],
+      "reopen_triggers": ["a required trace is skipped or a mutant survives"]
+    },
+    {
+      "id": "EXIT-05",
+      "applicability": "LANGUAGE_NEUTRAL_BEHAVIOR",
+      "disposition": "PASS",
+      "required_evidence_ids": ["c03_cross_runtime", "ss0_cross_runtime"],
+      "residual_risks": ["evidence adapters are not supported implementations"],
+      "reopen_triggers": ["independent readers disagree on a claimed behavior"]
+    },
+    {
+      "id": "EXIT-06",
+      "applicability": "RESOURCE_AND_AVAILABILITY_COSTS",
+      "disposition": "PASS",
+      "required_evidence_ids": ["resource_evidence"],
+      "residual_risks": ["whole-suffix halt, logical-only retention, single-root loss, and absent recovery remain availability costs"],
+      "reopen_triggers": ["a later profile changes a bound or availability claim"]
+    },
+    {
+      "id": "EXIT-07",
+      "applicability": "SECURITY_CLAIMS",
+      "disposition": "PASS",
+      "required_evidence_ids": ["threat_and_responsibility"],
+      "residual_risks": ["no product, deployment, anonymity, compliance, or sensitive-use claim follows"],
+      "reopen_triggers": ["an actor, layer, scope, or residual risk changes"]
+    },
+    {
+      "id": "EXIT-08",
+      "applicability": "GATE_EVALUATED_OUTSIDE_VERIFIER",
+      "disposition": "HUMAN_GATE_PENDING",
+      "required_evidence_ids": [],
+      "residual_risks": ["exact-final independent review remains pending"],
+      "reopen_triggers": ["the exact final HEAD changes"]
+    },
+    {
+      "id": "EXIT-09",
+      "applicability": "GATE_EVALUATED_OUTSIDE_VERIFIER",
+      "disposition": "HUMAN_GATE_PENDING",
+      "required_evidence_ids": [],
+      "residual_risks": ["the explicit human phase verdict remains pending"],
+      "reopen_triggers": ["the provider verdict is edited, deleted, dismissed, mismatched, or withdrawn"]
+    },
+    {
+      "id": "EXIT-10",
+      "applicability": "FIRST_PARENT_EXCEPTION_AUDIT",
+      "disposition": "PASS",
+      "required_evidence_ids": ["first_parent_audit"],
+      "residual_risks": ["commit 578b3241 retains its non-PR provenance violation and absent Issue association"],
+      "reopen_triggers": ["the first-parent universe or a historical determination changes"]
+    },
+    {
+      "id": "EXIT-11",
+      "applicability": "C03_CORPUS_LICENSE_BOUNDARY",
+      "disposition": "PASS",
+      "required_evidence_ids": ["c03_license_boundary"],
+      "residual_risks": ["K11-SS remains required before any SS conformance-corpus byte"],
+      "reopen_triggers": ["a corpus path, license, or provenance boundary changes"]
+    }
+  ]
+}
