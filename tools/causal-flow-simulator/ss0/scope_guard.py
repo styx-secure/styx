@@ -8,9 +8,11 @@ import ast
 import copy
 import hashlib
 import importlib.util
+import json
 import os
 import subprocess
 import sys
+import types
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,29 @@ MODEL_SYNC_SHA = "c8430b2fbcb4bd9d0668e5877210d0244ff8bf81"
 VALIDATOR_SHA256 = "e79caecde38c457ed79036d339c67b7aa7a394e37708ba76f0aa715ce0092f3b"
 VALIDATE_DOMAIN_SHA256 = "f31ebaa85d6a5247772a38ee7fbb1ea3addcf4bae55ec6db86259e31913786c5"
 TEST_VALIDATE_SHA256 = "b96634a57f47b6e0526177870efb218f11a61efe4949e6ec2701a774fcca1ed3"
+INTEGRATED_SHA = "636c12c7da68fde309767732c42284f92b83ade3"
+INTEGRATED_TREE_SHA = "558c3e68d6c280cd4889b59d609891cc4a0c9d45"
+INTEGRATED_BLOB_SHA256 = {
+    "docs/protocol/protocol-hardening-plan.md":
+        "008719aa3ec1510572c0a1eddba42dca52566482384a0ff1353a6e705d46ed6f",
+    "docs/protocol/styx-app-kernel-v0-responsibility-matrix.md":
+        "3ea43a5b6c9b93a19b2b17ab6a54815583275ea7a544de7e5102b294b13f53db",
+    "docs/protocol/styx-secure-session-v0-decisions.md":
+        "235bcb86f9dd25e3c3cb56ed3a0b4820214821cf78ea881547c824db831eba07",
+    "docs/security/STYX-THREAT-MODEL.md":
+        "8863ce4b2ef697055e95da22e0a2fbb630172cdf3f5fd0c91b27ec02f9d2ba54",
+    "tools/causal-flow-simulator/ss0/verify_gate_a.py":
+        "b638c0ee8a19d5bdbae5a332aa562bf6e8ca864ab8527bb22f2550f2e216858c",
+    "tools/protocol-review-model/tests/test_validate.py": TEST_VALIDATE_SHA256,
+    "tools/causal-flow-simulator/o07/scope_guard_o07.py":
+        "af60f78ef92408c1b39507a4d3d04c751e93c1ac40823c9389c3e17b92ef9516",
+    "tools/causal-flow-simulator/ss0/source-inventory.json":
+        "9e793ac550cf5b42a5ebf6a61416c016aded7f248c6936f28fe70f5e6ea78f7c",
+    "tools/causal-flow-simulator/o10/outcome-taxonomy.json":
+        "9565280a5e9a8c8035188cb1c652e2bed3c9496ad05ad0883b0acc07befb7e24",
+    "docs/protocol/review/styx-app-kernel-v0-review-model.json":
+        "5b5208993973f4543688777026130cd3207e637aac5986b3b7fe757d0979e77e",
+}
 
 FROZEN_PHASE_A = frozenset(
     {
@@ -179,6 +204,44 @@ def _load_o07_guard(repo: Path) -> Any:
         sys.path.pop(0)
 
 
+def _load_pinned_o07_guard(source: bytes) -> Any:
+    dependency = types.ModuleType("report_schema")
+    dependency.FinalEvidenceIdentityContext = object
+    dependency.SCOPE_SCHEMA = "styx.o07.scope-report.v1"
+    dependency.final_evidence_hygiene_context = lambda *args, **kwargs: None
+    dependency.validate_canonical_report = lambda *args, **kwargs: None
+    previous = sys.modules.get("report_schema")
+    sys.modules["report_schema"] = dependency
+    try:
+        module = types.ModuleType("_styx_o07_integrated_guard")
+        filename = f"{INTEGRATED_SHA}:tools/causal-flow-simulator/o07/scope_guard_o07.py"
+        exec(compile(source.decode("utf-8"), filename, "exec"), module.__dict__)
+        return module
+    finally:
+        if previous is None:
+            del sys.modules["report_schema"]
+        else:
+            sys.modules["report_schema"] = previous
+
+
+def _load_unique_bytes(payload: bytes) -> dict[str, object]:
+    def unique(pairs: list[tuple[str, object]]) -> dict[str, object]:
+        result: dict[str, object] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ScopeViolation(f"duplicate JSON key: {key}")
+            result[key] = value
+        return result
+
+    try:
+        value = json.loads(payload.decode("utf-8"), object_pairs_hook=unique)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ScopeViolation("invalid pinned JSON") from error
+    if not isinstance(value, dict):
+        raise ScopeViolation("pinned JSON root is not an object")
+    return value
+
+
 def _assignment_value(node: ast.AST) -> ast.AST:
     if isinstance(node, ast.Assign):
         return node.value
@@ -200,9 +263,9 @@ def _registry_decisions(node: ast.AST) -> list[str]:
     raise ScopeViolation("decision registry is absent")
 
 
-def _validate_disposition_disjointness(repo: Path) -> None:
-    inventory = load_unique(repo / "tools/causal-flow-simulator/ss0/source-inventory.json")
-    taxonomy = load_unique(repo / "tools/causal-flow-simulator/o10/outcome-taxonomy.json")
+def _validate_disposition_values(
+    inventory: dict[str, object], taxonomy: dict[str, object]
+) -> None:
     dispositions = inventory.get("closed_dispositions")
     primaries = taxonomy.get("primaries")
     alias = taxonomy.get("alias")
@@ -235,6 +298,12 @@ def _validate_disposition_disjointness(repo: Path) -> None:
         raise ScopeViolation("SS-0 model-only dispositions overlap the stable O-10 registry")
 
 
+def _validate_disposition_disjointness(repo: Path) -> None:
+    inventory = load_unique(repo / "tools/causal-flow-simulator/ss0/source-inventory.json")
+    taxonomy = load_unique(repo / "tools/causal-flow-simulator/o10/outcome-taxonomy.json")
+    _validate_disposition_values(inventory, taxonomy)
+
+
 def _validate_frozen_bytes(
     repo: Path, before: str, after: str, paths: frozenset[str] = FROZEN_PHASE_A
 ) -> None:
@@ -243,7 +312,9 @@ def _validate_frozen_bytes(
             raise ScopeViolation("Gate-A-frozen byte drift")
 
 
-def _validate_validator_projection(repo: Path, base: str, head: str) -> None:
+def _validate_validator_projection(
+    repo: Path, base: str, head: str, *, guard: Any | None = None
+) -> None:
     path = "tools/protocol-review-model/validate.py"
     before_source = _git(repo, "show", f"{base}:{path}").decode("utf-8")
     actual_source = _git(repo, "show", f"{head}:{path}").decode("utf-8")
@@ -303,7 +374,8 @@ def _validate_validator_projection(repo: Path, base: str, head: str) -> None:
         index = projected.body.index(target)
         projected.body[index] = replacement
     projected_source = ast.unparse(ast.fix_missing_locations(projected))
-    guard = _load_o07_guard(repo)
+    if guard is None:
+        guard = _load_o07_guard(repo)
     allowed_assignments = assignments - {"EXPECTED_REGISTRIES"}
     guard.enforce_declared_validator_ast_delta(
         before_source,
@@ -325,6 +397,36 @@ def _validate_validator_projection(repo: Path, base: str, head: str) -> None:
         allowed_function_call_additions={},
         protected_literal_paths=frozenset(),
     )
+
+
+def _validate_candidate_ancestry(
+    repo: Path, base: str, head: str, model_sync: str = MODEL_SYNC_SHA
+) -> None:
+    if _git(repo, "merge-base", base, head).decode().strip() != base:
+        raise ScopeViolation("candidate is not descended from Base")
+    if _git(repo, "merge-base", model_sync, head).decode().strip() != model_sync:
+        raise ScopeViolation("candidate is not descended from the model-sync commit")
+
+
+def _require_integrated_identity(commit_record: bytes, tree_record: bytes) -> None:
+    if commit_record.decode("ascii").strip().split() != [INTEGRATED_SHA, BASE_SHA]:
+        raise ScopeViolation("integrated commit parent relation mismatch")
+    if tree_record.decode("ascii").strip() != INTEGRATED_TREE_SHA:
+        raise ScopeViolation("integrated commit tree mismatch")
+
+
+def _integrated_blobs(repo: Path) -> dict[str, bytes]:
+    _require_integrated_identity(
+        _git(repo, "rev-list", "--parents", "-n", "1", INTEGRATED_SHA),
+        _git(repo, "rev-parse", f"{INTEGRATED_SHA}^{{tree}}"),
+    )
+    blobs: dict[str, bytes] = {}
+    for path, expected_digest in INTEGRATED_BLOB_SHA256.items():
+        payload = _git(repo, "show", f"{INTEGRATED_SHA}:{path}")
+        if hashlib.sha256(payload).hexdigest() != expected_digest:
+            raise ScopeViolation(f"integrated input digest mismatch: {path}")
+        blobs[path] = payload
+    return blobs
 
 
 def _changed_relation(repo: Path, base: str, head: str) -> list[dict[str, object]]:
@@ -388,10 +490,7 @@ def _changed_relation(repo: Path, base: str, head: str) -> list[dict[str, object
 def build_report(repo: Path, base: str, head: str, phase_a: str) -> dict[str, object]:
     if base != BASE_SHA or phase_a != PHASE_A_SHA:
         raise ScopeViolation("contract identity mismatch")
-    if _git(repo, "merge-base", base, head).decode().strip() != base:
-        raise ScopeViolation("candidate is not descended from Base")
-    if _git(repo, "merge-base", MODEL_SYNC_SHA, head).decode().strip() != MODEL_SYNC_SHA:
-        raise ScopeViolation("candidate is not descended from the model-sync commit")
+    _validate_candidate_ancestry(repo, base, head)
     relation = _changed_relation(repo, base, head)
     _validate_frozen_bytes(repo, phase_a, head)
     _validate_validator_projection(repo, base, head)
@@ -406,6 +505,36 @@ def build_report(repo: Path, base: str, head: str, phase_a: str) -> dict[str, ob
     if model.get("artifact", {}).get("c03_verdict") != "NO_GO":
         raise ScopeViolation("C0.3 verdict drift")
     _validate_disposition_disjointness(repo)
+    return {
+        "changed": relation,
+        "result": "PASS",
+        "schema": "styx.ss0.scope-report.v1",
+    }
+
+
+def build_integrated_report(repo: Path) -> dict[str, object]:
+    blobs = _integrated_blobs(repo)
+    relation = _changed_relation(repo, BASE_SHA, INTEGRATED_SHA)
+    guard_path = "tools/causal-flow-simulator/o07/scope_guard_o07.py"
+    _validate_validator_projection(
+        repo,
+        BASE_SHA,
+        INTEGRATED_SHA,
+        guard=_load_pinned_o07_guard(blobs[guard_path]),
+    )
+    _validate_disposition_values(
+        _load_unique_bytes(
+            blobs["tools/causal-flow-simulator/ss0/source-inventory.json"]
+        ),
+        _load_unique_bytes(
+            blobs["tools/causal-flow-simulator/o10/outcome-taxonomy.json"]
+        ),
+    )
+    model = _load_unique_bytes(
+        blobs["docs/protocol/review/styx-app-kernel-v0-review-model.json"]
+    )
+    if model.get("artifact", {}).get("c03_verdict") != "NO_GO":
+        raise ScopeViolation("C0.3 verdict drift")
     return {
         "changed": relation,
         "result": "PASS",
