@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -261,8 +263,10 @@ class VerifyTests(unittest.TestCase):
         head = verify.resolve_commit(ROOT, "HEAD")
         committed = verify.run_git(ROOT, "show", f"{head}:{verify.CANONICAL_REPORT_PATH.as_posix()}")
         digest = verify.sha256(committed)
+        report = json.loads(committed)
         self.assertEqual((head, head), verify.validate_provider_heads(
             ROOT, phase_a_head=head, phase_a_report_sha256=digest, final_head=head,
+            final_report=report,
         ))
         for phase, report_digest, final in (
             (head, "0" * 64, head),
@@ -272,8 +276,87 @@ class VerifyTests(unittest.TestCase):
             with self.subTest(phase=phase, final=final), self.assertRaises(verify.ExitError):
                 verify.validate_provider_heads(
                     ROOT, phase_a_head=phase, phase_a_report_sha256=report_digest,
-                    final_head=final,
+                    final_head=final, final_report=report,
                 )
+
+    def test_phase_b_transition_rejects_code_and_semantic_changes(self):
+        head = verify.resolve_commit(ROOT, "HEAD")
+        report = json.loads(verify.run_git(ROOT, "show", f"{head}:{verify.CANONICAL_REPORT_PATH.as_posix()}"))
+        with self.assertRaises(verify.ExitError):
+            verify.phase_b_changed_paths(ROOT, "12e22220f9521f303d655e190d1e7b070628b997", head)
+        hostile = copy.deepcopy(report)
+        hostile["non_authorizations"].remove("sdk")
+        with self.assertRaises(verify.ExitError):
+            verify.validate_phase_b_report_transition(report, hostile)
+        registry = json.loads((ROOT / verify.REGISTRY_PATH).read_text(encoding="utf-8"))
+        hostile_registry = copy.deepcopy(registry)
+        hostile_registry["conditions"][0]["residual_risks"] = []
+        with self.assertRaises(verify.ExitError):
+            verify.validate_phase_b_registry_transition(registry, hostile_registry)
+
+    def test_live_issue_identity_and_body_are_bound(self):
+        issue = {
+            "url": verify.ISSUE_API_URL,
+            "repository_url": "https://api.github.com/repos/styx-secure/styx",
+            "number": verify.ISSUE_NUMBER,
+            "user": {"id": verify.MAVERDE_ID, "login": "maverde73"},
+            "state": "open",
+            "body": "ratified body",
+        }
+        digest = verify.sha256(issue["body"].encode())
+        with mock.patch.object(verify, "ISSUE_BODY_SHA256", digest):
+            verify.validate_issue_provider(issue)
+            for key, value in (
+                ("url", "https://example.invalid/issue"),
+                ("repository_url", "https://api.github.com/repos/other/repo"),
+                ("number", 1),
+                ("user", {"id": 1, "login": "maverde73"}),
+                ("body", "substituted"),
+            ):
+                hostile = copy.deepcopy(issue)
+                hostile[key] = value
+                with self.subTest(key=key), self.assertRaises(verify.ExitError):
+                    verify.validate_issue_provider(hostile)
+
+    def test_provider_bootstrap_and_tls_surface_fail_closed(self):
+        self.assertTrue(verify._trusted_import_path(str(Path(sys.base_prefix) / "lib")))
+        self.assertFalse(verify._trusted_import_path(str(ROOT)))
+        opener = verify.provider_opener()
+        proxies = [item for item in opener.handlers if isinstance(item, verify.urllib.request.ProxyHandler)]
+        self.assertFalse(proxies)
+        tls_handlers = [item for item in opener.handlers if isinstance(item, verify.urllib.request.HTTPSHandler)]
+        self.assertEqual(1, len(tls_handlers))
+        self.assertEqual(verify.ssl.CERT_REQUIRED, tls_handlers[0]._context.verify_mode)
+        self.assertTrue(tls_handlers[0]._context.check_hostname)
+        with self.assertRaises(verify.ExitError):
+            verify.fetch_provider_json(verify.ISSUE_API_URL)
+        self.assertEqual(2, verify.main([
+            "--repo-root", str(ROOT), "--base", verify.BASE_SHA,
+            "--output", str(ROOT / "forbidden-output.json"),
+            "--verdict-comment-id", "1",
+        ]))
+        probe = (
+            "import os,runpy,sys;"
+            f"sys.argv=[{str(MODULE_PATH)!r},'--repo-root',{str(ROOT)!r},'--base','invalid','--output','/dev/null'];"
+            f"p={str(MODULE_PATH)!r};"
+            "\ntry: runpy.run_path(p,run_name='__main__')\n"
+            "except SystemExit: pass\n"
+            "blocked={'SSL_CERT_FILE','HTTPS_PROXY','PYTHONPATH'};"
+            "assert not blocked.intersection(os.environ);"
+            "assert all(x.startswith(sys.base_prefix) for x in sys.path)"
+        )
+        environment = dict(os.environ)
+        environment.update({
+            "SSL_CERT_FILE": "/tmp/hostile-ca.pem",
+            "HTTPS_PROXY": "http://127.0.0.1:9",
+            "PYTHONPATH": str(ROOT),
+        })
+        result = subprocess.run(
+            [verify.SYSTEM_PYTHON, "-I", "-S", "-B", "-c", probe],
+            check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            env=environment,
+        )
+        self.assertEqual(0, result.returncode, result.stderr.decode())
 
     def test_external_evidence_is_outside_and_exclusive(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -48,6 +48,7 @@ repository:
   --verdict-comment-id "$VERDICT_COMMENT_ID" \
   --phase-a-head "$PHASE_A_HEAD" \
   --phase-a-report-sha256 "$PHASE_A_REPORT_SHA256" \
+  --issue-provider-raw-output "$TMPDIR/issue-provider.raw.json" \
   --provider-raw-output "$TMPDIR/verdict-provider.raw.json" \
   --provider-output "$TMPDIR/verdict-provider.json" \
   --approval-review-id "$APPROVAL_REVIEW_ID" \
@@ -58,5 +59,8 @@ repository:
 
 The verifier resolves every supplied commit through Git, proves
 `Base -> Phase-A HEAD -> final HEAD`, requires the final HEAD to be checked out,
-and hashes the canonical report directly from the Phase-A commit. Caller proxy,
-CA, OpenSSL and Python import-path overrides are removed before TLS is imported.
+hashes the canonical report directly from the Phase-A commit, and permits only
+the closed Phase-B status transformation defined by the contract. It also
+fetches the live Issue and verifies the exact ratified body digest. Caller
+proxy, CA, OpenSSL and Python import-path overrides are removed before TLS is
+imported, and provider verification accepts only `/usr/bin/python3`.

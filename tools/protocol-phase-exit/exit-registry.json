@@ -37,7 +37,7 @@
       "applicability": "PHASE_SCOPE",
       "required_evidence_ids": ["phase_exit_status", "review_records"],
       "expected_evidence_sha256": {
-        "phase_exit_status": "8ba4fe6b02e700e65b2384ba5d3148d2127530d6ffba8ca8df2009635d4a5f50",
+        "phase_exit_status": "631836af21a2da9a109193037a564085ce58a9863f45f5d5cc329f65eb87109e",
         "review_records": "508e127c8d257bebb0aae9f95a29595cbd5fa5826d1c8c925dee4de4ca88d0e5"
       },
       "residual_risks": ["independent review is bounded evidence, not a production audit"],

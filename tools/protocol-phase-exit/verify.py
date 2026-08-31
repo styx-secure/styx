@@ -17,6 +17,7 @@ for _environment_name in tuple(_bootstrap_os.environ):
         _bootstrap_os.environ.pop(_environment_name, None)
 
 _BOOTSTRAP_BASE = _bootstrap_os.path.realpath(_bootstrap_sys.base_prefix)
+SYSTEM_PYTHON = "/usr/bin/python3"
 
 
 def _trusted_import_path(entry: str) -> bool:
@@ -57,6 +58,7 @@ MAX_PROVIDER_BYTES = 256 * 1024
 ISSUE_API_URL = "https://api.github.com/repos/styx-secure/styx/issues/287"
 PR_NUMBER = 288
 CANONICAL_REPORT_PATH = Path("docs/protocol/review/phase-exit/phase-exit-report.json")
+REGISTRY_PATH = Path("tools/protocol-phase-exit/exit-registry.json")
 ALLOWED_CHANGED_PATHS = {
     "AGENTS.md",
     "CLAUDE.md",
@@ -71,6 +73,18 @@ ALLOWED_CHANGED_PREFIXES = (
     "docs/protocol/review/phase-exit/",
     "tools/protocol-phase-exit/",
 )
+PHASE_B_ALLOWED_CHANGED_PATHS = {
+    "AGENTS.md",
+    "CLAUDE.md",
+    "docs/PROJECT_BRIEF.md",
+    "docs/platform/integration-roadmap.md",
+    "docs/platform/integration-roadmap_IT.md",
+    "docs/protocol/protocol-hardening-plan.md",
+    "docs/protocol/review/README.md",
+    "docs/protocol/review/phase-exit/README.md",
+    CANONICAL_REPORT_PATH.as_posix(),
+    REGISTRY_PATH.as_posix(),
+}
 HISTORICAL_NON_PR_COMMIT = "578b3241d6e7d0231da0d2e00b9d04c69530d24e"
 MINIMUM_CONDITIONAL_STATEMENTS = [
     "O-12 is excluded only because the bounded v0 K and SS profiles make no physical-time claim.",
@@ -296,7 +310,10 @@ def fetch_provider_json(url: str) -> tuple[dict[str, object], bytes]:
         all(name.upper() not in _BLOCKED_CALLER_ENVIRONMENT for name in _bootstrap_os.environ),
         "unsafe caller environment survived provider bootstrap",
     )
-    require(Path(sys.executable).is_absolute(), "Python executable is not absolute")
+    require(
+        Path(sys.executable).resolve() == Path(SYSTEM_PYTHON).resolve(),
+        "provider fetch requires the pinned system Python",
+    )
     require(all(_trusted_import_path(entry) for entry in sys.path), "unsafe import path survived provider bootstrap")
     request = urllib.request.Request(
         url,
@@ -347,6 +364,31 @@ def provider_projection(comment: dict[str, object]) -> dict[str, object]:
         "created_at": comment["created_at"],
         "updated_at": comment["updated_at"],
         "body": comment["body"],
+    }
+
+
+def validate_issue_provider(issue: dict[str, object]) -> dict[str, object]:
+    user = issue.get("user")
+    require(isinstance(user, dict), "Issue provider user missing")
+    require(issue.get("url") == ISSUE_API_URL, "Issue provider URL mismatch")
+    require(issue.get("repository_url") == "https://api.github.com/repos/styx-secure/styx", "Issue repository mismatch")
+    require(issue.get("number") == ISSUE_NUMBER, "Issue number mismatch")
+    require(user.get("id") == MAVERDE_ID and user.get("login") == "maverde73", "Issue author mismatch")
+    require(issue.get("state") == "open", "Issue state mismatch")
+    body = issue.get("body")
+    require(isinstance(body, str), "Issue body missing")
+    require(sha256(body.encode("utf-8")) == ISSUE_BODY_SHA256, "live Issue body digest mismatch")
+    projection = {
+        "url": issue["url"],
+        "repository_url": issue["repository_url"],
+        "number": issue["number"],
+        "user": {"id": user["id"], "login": user["login"]},
+        "state": issue["state"],
+        "body_sha256": ISSUE_BODY_SHA256,
+    }
+    return {
+        "issue_provider_projection_sha256": sha256(canonical_bytes(projection)),
+        "issue_body_sha256": ISSUE_BODY_SHA256,
     }
 
 
@@ -462,9 +504,69 @@ def require_ancestor(repo: Path, ancestor: str, descendant: str, message: str) -
     require(result.returncode == 0, message)
 
 
+def phase_b_changed_paths(repo: Path, phase: str, final: str) -> set[str]:
+    raw = run_git(repo, "diff", "--name-status", "--no-renames", phase, final)
+    changed: set[str] = set()
+    for line in raw.decode("utf-8").splitlines():
+        fields = line.split("\t")
+        require(len(fields) == 2 and fields[0] in {"A", "M"}, "Phase-B path operation is forbidden")
+        require(fields[1] not in changed, "Phase-B changed-path duplicate")
+        require(fields[1] in PHASE_B_ALLOWED_CHANGED_PATHS, f"Phase-B path outside status scope: {fields[1]}")
+        changed.add(fields[1])
+    return changed
+
+
+def validate_phase_b_registry_transition(phase_value: object, final_value: object) -> None:
+    require(isinstance(phase_value, dict) and isinstance(final_value, dict), "Phase-B registry is invalid")
+    phase_copy = json.loads(json.dumps(phase_value))
+    final_copy = json.loads(json.dumps(final_value))
+    phase_conditions = phase_copy.get("conditions")
+    final_conditions = final_copy.get("conditions")
+    require(isinstance(phase_conditions, list) and isinstance(final_conditions, list), "Phase-B registry conditions missing")
+    require(len(phase_conditions) == len(final_conditions), "Phase-B registry condition count changed")
+    for phase_condition, final_condition in zip(phase_conditions, final_conditions, strict=True):
+        require(phase_condition.get("id") == final_condition.get("id"), "Phase-B registry identity changed")
+        if phase_condition.get("id") == "EXIT-02":
+            phase_digests = phase_condition.get("expected_evidence_sha256")
+            final_digests = final_condition.get("expected_evidence_sha256")
+            require(
+                isinstance(phase_digests, dict)
+                and isinstance(final_digests, dict)
+                and set(phase_digests) == {"phase_exit_status", "review_records"}
+                and set(final_digests) == set(phase_digests),
+                "Phase-B status digest set changed",
+            )
+            phase_condition["expected_evidence_sha256"] = final_digests
+    require(phase_copy == final_copy, "Phase-B registry changed beyond status digests")
+
+
+def validate_phase_b_report_transition(phase_report: object, final_report: dict[str, object]) -> None:
+    require(isinstance(phase_report, dict), "Phase-A report is invalid")
+    phase_copy = json.loads(json.dumps(phase_report))
+    final_copy = json.loads(json.dumps(final_report))
+    phase_conditions = phase_copy.get("conditions")
+    final_conditions = final_copy.get("conditions")
+    require(isinstance(phase_conditions, list) and isinstance(final_conditions, list), "Phase-B report conditions missing")
+    require(len(phase_conditions) == len(final_conditions), "Phase-B report condition count changed")
+    for phase_condition, final_condition in zip(phase_conditions, final_conditions, strict=True):
+        require(phase_condition.get("id") == final_condition.get("id"), "Phase-B report identity changed")
+        if phase_condition.get("id") == "EXIT-02":
+            phase_observed = phase_condition.get("observed_evidence_sha256")
+            final_observed = final_condition.get("observed_evidence_sha256")
+            require(
+                isinstance(phase_observed, dict)
+                and isinstance(final_observed, dict)
+                and set(phase_observed) == {"phase_exit_status", "review_records"}
+                and set(final_observed) == set(phase_observed),
+                "Phase-B report status evidence set changed",
+            )
+            phase_condition["observed_evidence_sha256"] = final_observed
+    require(phase_copy == final_copy, "Phase-B report changed beyond status evidence")
+
+
 def validate_provider_heads(
     repo: Path, *, phase_a_head: str, phase_a_report_sha256: str,
-    final_head: str | None,
+    final_head: str | None, final_report: dict[str, object],
 ) -> tuple[str, str | None]:
     require(re.fullmatch(r"[0-9a-f]{40}", phase_a_head) is not None, "invalid Phase-A HEAD")
     require(re.fullmatch(r"[0-9a-f]{64}", phase_a_report_sha256) is not None, "invalid Phase-A report digest")
@@ -473,13 +575,23 @@ def validate_provider_heads(
     require_ancestor(repo, base, phase, "Base is not ancestor of Phase-A HEAD")
     committed = run_git(repo, "show", f"{phase}:{CANONICAL_REPORT_PATH.as_posix()}")
     require(sha256(committed) == phase_a_report_sha256, "Phase-A report digest mismatch")
+    try:
+        phase_report = json.loads(committed)
+    except json.JSONDecodeError as error:
+        raise ExitError("Phase-A report is not JSON") from error
     if final_head is None:
         require(resolve_commit(repo, "HEAD") == phase, "Phase-A HEAD is not checked out")
+        require(canonical_bytes(final_report) == committed, "checked-out Phase-A report changed")
         return phase, None
     require(re.fullmatch(r"[0-9a-f]{40}", final_head) is not None, "invalid final HEAD")
     final = resolve_commit(repo, final_head)
     require(resolve_commit(repo, "HEAD") == final, "final HEAD is not checked out")
     require_ancestor(repo, phase, final, "Phase-A HEAD is not ancestor of final HEAD")
+    phase_b_changed_paths(repo, phase, final)
+    phase_registry = json.loads(run_git(repo, "show", f"{phase}:{REGISTRY_PATH.as_posix()}"))
+    final_registry = json.loads(run_git(repo, "show", f"{final}:{REGISTRY_PATH.as_posix()}"))
+    validate_phase_b_registry_transition(phase_registry, final_registry)
+    validate_phase_b_report_transition(phase_report, final_report)
     return phase, final
 
 
@@ -727,6 +839,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--phase-a-report-sha256")
     parser.add_argument("--provider-output", type=Path)
     parser.add_argument("--provider-raw-output", type=Path)
+    parser.add_argument("--issue-provider-raw-output", type=Path)
     parser.add_argument("--approval-review-id")
     parser.add_argument("--final-head")
     parser.add_argument("--approval-provider-output", type=Path)
@@ -743,6 +856,7 @@ def main(argv: list[str] | None = None) -> int:
         require((args.verdict_comment_id is None) == (args.phase_a_report_sha256 is None), "verdict report arguments incomplete")
         require((args.verdict_comment_id is None) == (args.provider_output is None), "verdict output arguments incomplete")
         require((args.verdict_comment_id is None) == (args.provider_raw_output is None), "verdict raw-output arguments incomplete")
+        require((args.verdict_comment_id is None) == (args.issue_provider_raw_output is None), "Issue raw-output arguments incomplete")
         require((args.approval_review_id is None) == (args.final_head is None), "approval identity arguments incomplete")
         require((args.approval_review_id is None) == (args.approval_provider_output is None), "approval output arguments incomplete")
         require((args.approval_review_id is None) == (args.approval_provider_raw_output is None), "approval raw-output arguments incomplete")
@@ -765,7 +879,12 @@ def main(argv: list[str] | None = None) -> int:
                 phase_a_head=args.phase_a_head,
                 phase_a_report_sha256=args.phase_a_report_sha256,
                 final_head=args.final_head,
+                final_report=report,
             )
+            require(args.issue_provider_raw_output is not None, "Issue provider raw output required")
+            issue, issue_raw = fetch_provider_json(ISSUE_API_URL)
+            store_external_bytes(repo, args.issue_provider_raw_output, issue_raw)
+            issue_result = validate_issue_provider(issue)
             url = verdict_url(args.verdict_comment_id)
             comment, raw = fetch_provider_json(url)
             store_external_bytes(repo, args.provider_raw_output, raw)
@@ -778,6 +897,8 @@ def main(argv: list[str] | None = None) -> int:
                 audit_sha=report["first_parent_audit_sha256"],
                 eligibility=report["eligibility"],
             )
+            result.update(issue_result)
+            result["issue_provider_response_sha256"] = sha256(issue_raw)
             result["provider_response_sha256"] = sha256(raw)
             store_external_report(repo, args.provider_output, result)
         if args.approval_review_id is not None:
