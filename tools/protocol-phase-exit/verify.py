@@ -16,11 +16,11 @@ import urllib.error
 import urllib.request
 
 
-BASE_SHA = "636c12c7da68fde309767732c42284f92b83ade3"
+BASE_SHA = "fd6f652af1666c6c9dca8356c2aed615773f5208"
 FREEZE_SHA = "8f30f1940e4417fcb47b156b08c2242f405dc09b"
-FIRST_PARENT_SHA256 = "1b433bf9bf65339a044c42dd1956472df5b3061d67736cc7c095917bd19f1f6a"
+FIRST_PARENT_SHA256 = "837ffcaf884059cf121414a44a88e5fa06ed4351b175c13e67dd43be4d7ad92d"
 ISSUE_NUMBER = 287
-ISSUE_BODY_SHA256 = "a34b9eda553867d6bad788e2b38dc6beb8810258acfdc8465b3ac0c9b25dfc6a"
+ISSUE_BODY_SHA256 = "a43d7e53df4656e6a6cd1b73b90b0fb8a4f4e4329bd4e6144ea4d0ab5fbdb778"
 MAVERDE_ID = 141346846
 MANEXADA_ID = 314148709
 MAX_PROVIDER_BYTES = 256 * 1024
@@ -250,7 +250,7 @@ def first_parent_commits(repo: Path) -> list[str]:
     raw = run_git(repo, "rev-list", "--first-parent", "--reverse", f"{FREEZE_SHA}^..{BASE_SHA}")
     require(sha256(raw) == FIRST_PARENT_SHA256, "first-parent identity mismatch")
     lines = raw.decode("ascii").splitlines()
-    require(len(lines) == 23, "first-parent count mismatch")
+    require(len(lines) == 24, "first-parent count mismatch")
     require(all(re.fullmatch(r"[0-9a-f]{40}", line) for line in lines), "invalid first-parent identity")
     return lines
 

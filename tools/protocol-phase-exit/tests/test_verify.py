@@ -20,7 +20,7 @@ SPEC.loader.exec_module(verify)
 class VerifyTests(unittest.TestCase):
     def test_first_parent_identity_is_exact(self):
         commits = verify.first_parent_commits(ROOT)
-        self.assertEqual(23, len(commits))
+        self.assertEqual(24, len(commits))
         self.assertEqual(verify.FREEZE_SHA, commits[0])
         self.assertEqual(verify.BASE_SHA, commits[-1])
 

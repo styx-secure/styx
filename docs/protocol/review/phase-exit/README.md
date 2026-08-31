@@ -19,7 +19,7 @@ Regenerate the report from a clean checkout at the exact candidate with:
 ```bash
 python3 tools/protocol-phase-exit/verify.py \
   --repo-root . \
-  --base 636c12c7da68fde309767732c42284f92b83ade3 \
+  --base fd6f652af1666c6c9dca8356c2aed615773f5208 \
   --output docs/protocol/review/phase-exit/phase-exit-report.json
 ```
 
