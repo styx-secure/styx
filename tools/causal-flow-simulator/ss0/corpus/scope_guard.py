@@ -29,8 +29,13 @@ RATIFICATION_COMMENT_ID = 5485961310
 OPERATOR_LOGIN = "maverde73"
 OPERATOR_ID = 141346846
 K11_COMMENT_ID = 5484188019
-K11_COMMENT_SHA256 = "c36c62c5130e59b05d70179d04c348b41be172dd34ebc611ddc7608ec13c7e95"
 K11_INVENTORY_SHA256 = "61bea8adc1e36af3bc011df2553f634f0eeeae2c2dba01611a426628341b1861"
+K11_RATIFICATION_BODY = f"""I approve this exact K11-SS task contract as copyright holder.
+Contract body SHA-256: 79f3691dfb0f871c0eaa022b521683ac9873d8a802e2eb131e46ff62f44d863a
+SS-0 Apache inventory SHA-256: {K11_INVENTORY_SHA256}
+This approves only the six absent, future, fully synthetic Styx-generated data
+paths listed in the contract. It creates no corpus byte and authorizes no
+adapter, persistence, SDK, transport, product, demo, deployment or sensitive use."""
 AUTHORIZED_CHANGE_INPUTS = (
     ("REUSE.toml", "818f56d3e9cf3f51737025aeb97f4f10d92ac46d70f8bd09ff836631b846ea58"),
     ("README.md", "47953cd2427078af3735ff5e755b7689244da48db9734c465fd750c44f37d0e5"),
@@ -210,12 +215,12 @@ def _provider_authority() -> bytes:
     k11_body = k11.get("body")
     if (
         k11.get("id") != K11_COMMENT_ID
+        or k11.get("url") != k11_url
         or k11.get("issue_url") != "https://api.github.com/repos/styx-secure/styx/issues/291"
         or not isinstance(k11_user, dict)
         or k11_user.get("login") != OPERATOR_LOGIN
         or k11_user.get("id") != OPERATOR_ID
-        or not isinstance(k11_body, str)
-        or hashlib.sha256(_normalize_body(k11_body)).hexdigest() != K11_COMMENT_SHA256
+        or k11_body != K11_RATIFICATION_BODY
     ):
         raise ScopeGuardError("K11-SS provider authority mismatch")
     return normalized

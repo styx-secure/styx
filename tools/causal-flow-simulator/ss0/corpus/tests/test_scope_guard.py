@@ -11,6 +11,8 @@ sys.path.insert(0, str(CORPUS_TOOL))
 
 from scope_guard import (  # noqa: E402
     CONTRACT_SHA256,
+    K11_INVENTORY_SHA256,
+    K11_RATIFICATION_BODY,
     _load_contract_module,
     _normalize_body,
 )
@@ -27,6 +29,8 @@ class ScopeGuardTests(unittest.TestCase):
         normalized = _normalize_body("alpha  \r\nbeta\t\r\n\r\n")
         self.assertEqual(b"alpha\nbeta\n", normalized)
         self.assertEqual(64, len(CONTRACT_SHA256))
+        self.assertIn(K11_INVENTORY_SHA256, K11_RATIFICATION_BODY)
+        self.assertFalse(K11_RATIFICATION_BODY.endswith("\n"))
 
 
 if __name__ == "__main__":
