@@ -4,8 +4,8 @@ This document is the authoritative, human-readable licensing map of this
 repository. The machine-readable equivalent is [`REUSE.toml`](REUSE.toml)
 (REUSE Specification 3.3). The model was approved by the copyright holder,
 Maurizio Verde, in GitHub Issue #40 and implemented under GitHub Issue #41.
-The exact-path inventory was extended by the copyright holder in Issue #253;
-no default or third-party classification changed.
+The exact-path inventory was extended by the copyright holder in Issues #253
+and #291; no default or third-party classification changed.
 
 ## License precedence
 
@@ -14,7 +14,7 @@ Licensing is resolved per exact path, in this closed order of precedence:
 1. **Exact third-party and derivative classifications** (listed below).
    A third-party or derivative classification always wins over any Styx
    default; the AGPL default never overwrites it.
-2. **Exact human-approved Apache-2.0 data exceptions** (the twelve paths
+2. **Exact human-approved Apache-2.0 data exceptions** (the eighteen paths
    listed below, and nothing else).
 3. **`AGPL-3.0-or-later` default** for all remaining original Styx material.
 
@@ -40,9 +40,9 @@ to [`LICENSES/AGPL-3.0-or-later.txt`](LICENSES/AGPL-3.0-or-later.txt).
 
 Documentation is not dual-licensed and no Creative Commons license is used.
 
-## 2. Exact Apache-2.0 exceptions (twelve paths)
+## 2. Exact Apache-2.0 exceptions (eighteen paths)
 
-Exactly the following twelve synthetic data paths are approved for
+Exactly the following eighteen synthetic data paths are approved for
 `Apache-2.0` (text in [`LICENSES/Apache-2.0.txt`](LICENSES/Apache-2.0.txt)),
 copyright Maurizio Verde. No directory glob or unlisted descendant is covered.
 
@@ -86,6 +86,26 @@ normative-source digests, generated-file digests, `synthetic: true` and
 `upstreamBytes: "none"`. This licensing status and corpus construction do not
 authorize C0.3, establish implementation conformance, or make a product-readiness
 claim.
+
+### SS-0 synthetic secure-session corpus — Issue #291
+
+```text
+conformance/secure-session/ss0/manifest.json
+conformance/secure-session/ss0/valid-session-vectors.json
+conformance/secure-session/ss0/invalid-session-vectors.json
+conformance/secure-session/ss0/state-machine-scenarios.json
+conformance/secure-session/ss0/adversarial-mutations.json
+conformance/secure-session/ss0/expected-traces.json
+```
+
+These six absent paths are pre-registered exclusively for future, fully
+synthetic Styx-generated SS-0 conformance data. Copied, adapted, transcribed or
+generated third-party/upstream bytes are forbidden. When separately authorized
+and created, `manifest.json` must bind generator identity, reproduction inputs,
+exact normative-source digests, generated-file digests, `synthetic: true` and
+`upstreamBytes: "none"`. Issue #291 creates no corpus byte and authorizes no
+adapter, persistence, SDK, transport, product, demo, deployment or sensitive
+use.
 
 ## 3. Exact third-party and derivative classifications
 
