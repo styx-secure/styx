@@ -263,6 +263,22 @@ python3 tools/docs-translation-sync/check.py \
 reuse lint
 ```
 
+## Phase-exit merged-scope review coverage
+
+<!-- styx-phase-exit-merged-review:v1:start -->
+- Exact merged-scope Base: `fd6f652af1666c6c9dca8356c2aed615773f5208`.
+- SS-0 PR #286 exact-final review `5062107437`: `APPROVED`, with no unresolved
+  `BLOCKER` or `HIGH` finding on reviewed head
+  `ddc62ac3d2f3b06aacf244cca924b1ef97433c62`.
+- SS-0 post-squash remediation PR #290 exact-final review `5065807842`:
+  `APPROVED`, with no unresolved `BLOCKER` or `HIGH` finding on reviewed head
+  `b9926a70c3a6feae78851852bcd1aa2159428b07`.
+- Merged phase scope through the exact Base has no recorded unresolved
+  `BLOCKER` or `HIGH` finding. The current phase-exit candidate is deliberately
+  excluded from this statement and is resolved only by `EXIT-08` at its exact
+  final HEAD.
+<!-- styx-phase-exit-merged-review:v1:end -->
+
 ## Limits
 
 The model does not prove protocol security, cryptographic soundness,
@@ -292,3 +308,10 @@ sensitive-use claims.
 the model: entries describe the procedural order of an adversarial trace and
 must not be alphabetically sorted. Other arrays documented as registries,
 references or sets remain sorted and duplicate-free.
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Protocol-hardening phase-exit status: `BOUNDED_GO`. The broad protocol freeze has ended
+only for work separately authorized under Section 9 of the hardening plan. Issue #287
+itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
+demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
+<!-- styx-protocol-phase-exit-status:v1:end -->

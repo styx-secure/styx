@@ -319,3 +319,10 @@ compatibility or use does not imply endorsement.
 - [Final exact-pin Phase B interoperability verdict](architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md)
 - [Current chat security report](security/2026-07-10-styx-chat-security-report.md)
 - [Repository governance](../AGENTS.md)
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Protocol-hardening phase-exit status: `BOUNDED_GO`. The broad protocol freeze has ended
+only for work separately authorized under Section 9 of the hardening plan. Issue #287
+itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
+demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
+<!-- styx-protocol-phase-exit-status:v1:end -->

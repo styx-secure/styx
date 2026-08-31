@@ -1,4 +1,4 @@
-<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="2a1d99287cdfff6e8dc98368a8f257c32a52c6be1e4717487c443ebe8bfa698f" -->
+<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="9fc14ba66a53e4cd7546bb435556e8604ed4ad082df51b77cc53e3ac423a5921" -->
 # Roadmap per integrare le capacità applicative in Styx
 
 [English canonical version](integration-roadmap.md)
@@ -370,3 +370,10 @@ L'azione attiva è eseguire il piano di hardening del protocollo nel relativo
 ordine di dipendenza. Ogni decisione continua a diventare una Issue approvata,
 con threat model, non-goal, test e rollback; l'integrazione di prodotto riprende
 solo dopo il verdetto di uscita del piano e tramite contratti separati.
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Stato dell'uscita dall'hardening del protocollo: `BOUNDED_GO`. Il freeze generale del
+protocollo termina solo per lavori autorizzati separatamente dalla sezione 9 del piano di
+hardening. La Issue #287 non autorizza di per se stessa adapter, persistenza autenticata,
+SDK, trasporto/consegna, prodotto, demo, deployment o uso sensibile; US-001--US-008 restano sospese.
+<!-- styx-protocol-phase-exit-status:v1:end -->
