@@ -14,11 +14,12 @@
 # precedence (it uses the default `closest` behaviour) and therefore never
 # outranks an overriding exact classification.
 #
-# Do not add Apache-2.0 paths here. The twelve paths below are the only approved
-# exceptions, ratified exactly in Issues #41 (six existing vector files) and
-# #253 (six future synthetic C0.3 data files). Any addition requires a new
-# inventory, an exact path list, an explicit human amendment and an independent
-# review; globs and third-party bytes are not approved.
+# Do not add Apache-2.0 paths here. The eighteen paths below are the only
+# approved exceptions, ratified exactly in Issues #41 (six existing vector
+# files), #253 (six synthetic C0.3 data files) and #291 (six absent future
+# synthetic SS-0 data files). Any addition requires a new inventory, an exact
+# path list, an explicit human amendment and an independent review; globs and
+# third-party bytes are not approved.
 
 version = 1
 
@@ -62,6 +63,24 @@ path = [
   "conformance/application-protocol/c03/state-machine-scenarios.json",
   "conformance/application-protocol/c03/adversarial-mutations.json",
   "conformance/application-protocol/c03/expected-traces.json",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Maurizio Verde"
+SPDX-License-Identifier = "Apache-2.0"
+
+# ---------------------------------------------------------------------------
+# 2c) Issue #291 Apache-2.0 exceptions — the six exact future, fully synthetic
+#     SS-0 data files pre-registered while absent in that ratified inventory.
+# ---------------------------------------------------------------------------
+
+[[annotations]]
+path = [
+  "conformance/secure-session/ss0/manifest.json",
+  "conformance/secure-session/ss0/valid-session-vectors.json",
+  "conformance/secure-session/ss0/invalid-session-vectors.json",
+  "conformance/secure-session/ss0/state-machine-scenarios.json",
+  "conformance/secure-session/ss0/adversarial-mutations.json",
+  "conformance/secure-session/ss0/expected-traces.json",
 ]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 Maurizio Verde"

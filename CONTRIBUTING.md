@@ -40,8 +40,9 @@ allow reasonable time for triage before any disclosure.
 ## Licensing context
 
 The repository's licensing model is described in
-[`LICENSING.md`](LICENSING.md) (AGPL-3.0-or-later default, twelve exact
-Apache-2.0 synthetic-data paths ratified in Issues #41 and #253, third-party
-material under its upstream licences). The six future C0.3 paths may contain
-only fully synthetic Styx-generated data; this does not reopen external
-contributions. Trademark use is governed by [`TRADEMARKS.md`](TRADEMARKS.md).
+[`LICENSING.md`](LICENSING.md) (AGPL-3.0-or-later default, eighteen exact
+Apache-2.0 synthetic-data paths ratified in Issues #41, #253 and #291,
+third-party material under its upstream licences). The six SS-0 paths approved
+by Issue #291 are absent and may later contain only fully synthetic
+Styx-generated data; this does not reopen external contributions or authorize
+corpus construction. Trademark use is governed by [`TRADEMARKS.md`](TRADEMARKS.md).

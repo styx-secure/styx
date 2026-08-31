@@ -38,6 +38,14 @@ C03_APACHE_PATHS = (
     "conformance/application-protocol/c03/adversarial-mutations.json",
     "conformance/application-protocol/c03/expected-traces.json",
 )
+SS0_APACHE_PATHS = (
+    "conformance/secure-session/ss0/manifest.json",
+    "conformance/secure-session/ss0/valid-session-vectors.json",
+    "conformance/secure-session/ss0/invalid-session-vectors.json",
+    "conformance/secure-session/ss0/state-machine-scenarios.json",
+    "conformance/secure-session/ss0/adversarial-mutations.json",
+    "conformance/secure-session/ss0/expected-traces.json",
+)
 APACHE_METADATA = {
     "precedence": "override",
     "SPDX-FileCopyrightText": "2026 Maurizio Verde",
@@ -110,7 +118,7 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
             left != right
             for left, right in zip(
                 cls.base_reuse["annotations"][2:],
-                cls.current_reuse["annotations"][3:],
+                cls.current_reuse["annotations"][4:],
                 strict=True,
             )
         )
@@ -123,6 +131,7 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         print(f"existing_apache_paths={len(EXISTING_APACHE_PATHS)}")
         print(f"c03_apache_paths={len(C03_APACHE_PATHS)}")
+        print(f"ss0_apache_paths={len(SS0_APACHE_PATHS)}")
         print(f"total_apache_paths={len(cls.apache_paths)}")
         print(f"wildcards={cls.wildcard_count}")
         print(f"duplicates={cls.duplicate_count}")
@@ -135,12 +144,13 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
         inventory = "".join(f"{path}\n" for path in C03_APACHE_PATHS).encode()
         self.assertEqual(INVENTORY_SHA256, hashlib.sha256(inventory).hexdigest())
         apache = _apache_annotations(self.current_reuse)
-        self.assertEqual(2, len(apache))
+        self.assertEqual(3, len(apache))
         self.assertEqual(list(EXISTING_APACHE_PATHS), apache[0]["path"])
         self.assertEqual(list(C03_APACHE_PATHS), apache[1]["path"])
+        self.assertEqual(list(SS0_APACHE_PATHS), apache[2]["path"])
 
     def test_annotations_have_exact_metadata_and_no_globs(self) -> None:
-        self.assertEqual(12, len(self.apache_paths))
+        self.assertEqual(18, len(self.apache_paths))
         self.assertEqual(0, self.duplicate_count)
         self.assertEqual(0, self.wildcard_count)
         for annotation in self.apache_annotations:
@@ -153,10 +163,10 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
     def test_default_existing_and_third_party_annotations_are_frozen(self) -> None:
         current = self.current_reuse["annotations"]
         base = self.base_reuse["annotations"]
-        self.assertEqual(len(base) + 1, len(current))
+        self.assertEqual(len(base) + 2, len(current))
         self.assertEqual(base[0], current[0])
         self.assertEqual(base[1], current[1])
-        self.assertEqual(base[2:], current[3:])
+        self.assertEqual(base[2:], current[4:])
 
     def test_approved_paths_are_exactly_populated_after_issue_264(self) -> None:
         self.assertEqual(6, self.future_files_present)
@@ -167,21 +177,22 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
                 self.assertFalse(candidate.is_symlink())
         self.assertNotIn("The six vector files below are the only", self.reuse_text)
         self.assertNotIn("Nothing else.", self.reuse_text)
-        self.assertIn("The twelve paths below are the only approved", self.reuse_text)
+        self.assertIn("The eighteen paths below are the only", self.reuse_text)
+        self.assertIn("approved exceptions", self.reuse_text)
         self.assertIn("# 2a) Issue #41 Apache-2.0 exceptions", self.reuse_text)
         self.assertIn("# 2b) Issue #253 Apache-2.0 exceptions", self.reuse_text)
 
     def test_licensing_documents_record_the_bounded_approval(self) -> None:
         required = {
             "LICENSING.md": (
-                "twelve paths",
+                "eighteen paths",
                 "Issue #253",
                 "licensing status and corpus construction do not",
             ),
-            "README.md": ("Twelve exact synthetic data paths", "Issue #253"),
-            "CONTRIBUTING.md": ("twelve exact", "Issues #41 and #253"),
+            "README.md": ("Eighteen exact synthetic data paths", "Issue #253"),
+            "CONTRIBUTING.md": ("eighteen exact", "Issues #41, #253"),
             "docs/architecture/decisions/ADR-0004-licensing-strategy.md": (
-                "esattamente dodici path",
+                "esattamente diciotto path",
                 "Issue #253",
             ),
         }

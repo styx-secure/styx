@@ -150,9 +150,10 @@ provider comment selected by `--comment-id`; it does not enumerate later Issue
 comments. A later human cancellation is therefore an independent stop signal:
 continuing with the earlier accepted comment is prohibited but is not detected
 mechanically by this verifier.
-A separate `K11-SS` Apache-2.0 licensing amendment remains required before the
-first SS conformance-corpus byte; the C0.3 corpus approval in Issue #253 does not
-authorize an SS corpus.
+Issue #291 completes the separate `K11-SS` Apache-2.0 path amendment required
+before the first SS conformance-corpus byte. It pre-registers six absent paths;
+the C0.3 approval in Issue #253 does not authorize SS bytes, and Issue #291 does
+not authorize corpus construction.
 
 The derived review model at
 `docs/protocol/review/styx-app-kernel-v0-review-model.json` is verified against
@@ -257,8 +258,9 @@ Protocol increments proceed in dependency order:
    the responsibility/threat boundaries. Its Phase B may synchronize only the
    derived review model and bounded executable evidence after the exact
    Phase-A bytes and verifier are bound by Gate A. SS-0 selects no adapter,
-   implementation, product capability or C0.3 `GO`. `K11-SS` remains a
-   prerequisite to any future SS corpus and is not discharged by either gate.
+   implementation, product capability or C0.3 `GO`. Issue #291 separately
+   discharges only the `K11-SS` path/licensing prerequisite; corpus construction
+   still requires its own ratified contract.
    Issue #255 is a bounded procedural predecessor to O-10 only: it pins the
    historical evidence guards to their exact candidate identities and supplies
    the reusable AST allowlist and O-14-removal rejection required by O-08's
@@ -270,10 +272,14 @@ Protocol increments proceed in dependency order:
 6. **Synchronize the derived model.** Update it only after normative changes;
    pin provenance and add negative fixtures for each new invariant or failure
    class.
-7. **Authorize the corpus licensing boundary — complete in Issue #253.** The
-   exact twelve-path Apache-2.0 inventory now includes six absent future C0.3
-   data paths. This licensing gate creates no corpus byte and does not authorize
-   C0.3.
+7. **Authorize the corpus licensing boundary — complete in Issue #253.** At
+   the Issue #253 milestone, the exact twelve-path Apache-2.0 inventory
+   included six absent future C0.3 data paths. This licensing gate created no
+   corpus byte and did not authorize C0.3.
+   **Authorize the SS corpus licensing boundary — complete in Issue #291.** A
+   distinct six-path SS-0 annotation brings the exact Apache inventory to
+   eighteen paths. Those SS paths remain absent; this creates no corpus byte or
+   adapter authority.
 8. **Produce and reconcile C0.3 — bounded evidence completed by Issue #266 /
    merged PR #267.** Issue #264 constructed the six-file,
    synthetic-only specification-derived corpus preserves 17 historical valid
@@ -308,7 +314,8 @@ The dependency basis is explicit:
 | C0.2k | exact C0.2j credential and sequence semantics | selected 84-octet context plus bounded model/mutation evidence; exact-final review and human gates complete the increment |
 | O-06c | exact C0.2j/C0.2k bytes and existing O-06b profiles | completed as bounded evidence by Issue #243; obligations affected by later O-07/O-08/O-10/O-14 decisions are rerun or reopened after those decisions |
 | remaining blockers | O-06c results plus each decision's own recorded inputs | Issue #260 / merged PR #261 reruns the integrated O-14/O-06c hostile cases; exact-final technical evidence, independent review and human gates pass |
-| K-11 corpus boundary | `DECIDED` by the exact Issue #253 six-path amendment; twelve Apache paths total | Issue #264 populates only the approved synthetic paths; no third-party corpus byte is authorized |
+| K-11 corpus boundary | `DECIDED` by the exact Issue #253 six-path amendment; twelve Apache paths total as of Issue #253 | Issue #264 populates only the approved synthetic paths; no third-party corpus byte is authorized |
+| K11-SS corpus boundary | `DECIDED` by the exact Issue #291 six-path amendment; eighteen Apache paths total | SS-0 paths remain absent; a separate construction contract must prove synthetic-only provenance |
 | C0.3 | all seven frozen Issue #251 entry items satisfied by Issue #262; corpus construction completed by Issue #264; exact D4 transcript/K reconciliation, blind corroboration and bounded evidence GO completed by Issue #266 / merged PR #267 | implementation alignment and the full phase-exit verdict remain separate gated work; C0.3 remains `NO-GO` for demo, product and sensitive use |
 
 For visibility, every O-series objective in the current registry is accounted
@@ -575,6 +582,8 @@ bounded evidence verdict:
   adapter, SDK, demo or product. The temporary Gate-A-to-Gate-B source/model
   inconsistency is authorized only for synchronization and creates no corpus
   authority; `K11-SS` remains required before any SS corpus byte;
+- `K11-SS` path/licensing authority is complete in Issue #291, but no SS corpus
+  byte or adapter capability follows;
 - `C0.3_CORPUS_PATH_APPROVAL` is bounded `DECIDED` by Issue #253; Issue #264
   populates exactly its six synthetic-only paths and completes their executable
   conformance and mutation evidence;
