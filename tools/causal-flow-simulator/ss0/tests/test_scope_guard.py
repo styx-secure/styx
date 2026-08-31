@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Callable
+from unittest.mock import patch
 
 
 PACKAGE = Path(__file__).resolve().parents[1]
@@ -18,18 +19,19 @@ sys.path.insert(0, str(PACKAGE))
 
 from scope_guard import (  # noqa: E402
     BASE_SHA,
-    MODEL_SYNC_SHA,
-    PHASE_A_SHA,
     FORBIDDEN_LOCKFILES,
     FORBIDDEN_RUNTIME_MANIFESTS,
+    INTEGRATED_SHA,
+    INTEGRATED_TREE_SHA,
     ScopeViolation,
     TEST_VALIDATE_SHA256,
     _changed_relation,
+    _require_integrated_identity,
+    _validate_candidate_ancestry,
     _validate_disposition_disjointness,
     _validate_frozen_bytes,
-    _validate_validator_projection,
     _unmanaged_top_level,
-    build_report,
+    build_integrated_report,
 )
 
 
@@ -74,10 +76,45 @@ class ScopeGuardTests(unittest.TestCase):
             with self.assertRaises(ScopeViolation):
                 _changed_relation(repo, base, head)
 
-    def test_current_committed_projection_is_accepted(self) -> None:
-        _validate_validator_projection(ROOT, BASE_SHA, "HEAD")
-        report = build_report(ROOT, BASE_SHA, "HEAD", PHASE_A_SHA)
+    def test_integrated_committed_projection_is_accepted(self) -> None:
+        report = build_integrated_report(ROOT)
         self.assertEqual("PASS", report["result"])
+
+    def test_candidate_ancestry_modes_are_distinct(self) -> None:
+        directory, repo, base = self._repository({})
+        with directory:
+            marker = repo / "tools/causal-flow-simulator/ss0/model-sync.py"
+            marker.write_text("SYNC = True\n", encoding="utf-8")
+            model_sync = self._commit(repo, "model sync")
+            marker.write_text("SYNC = False\n", encoding="utf-8")
+            candidate = self._commit(repo, "candidate")
+            _validate_candidate_ancestry(repo, base, candidate, model_sync)
+
+            self._git(repo, "checkout", "-q", "-b", "sibling", base)
+            marker.write_text("SIBLING = True\n", encoding="utf-8")
+            sibling = self._commit(repo, "sibling")
+            with self.assertRaises(ScopeViolation):
+                _validate_candidate_ancestry(repo, base, sibling, model_sync)
+
+    def test_integrated_identity_substitutions_are_rejected(self) -> None:
+        valid_commit = f"{INTEGRATED_SHA} {BASE_SHA}\n".encode("ascii")
+        valid_tree = f"{INTEGRATED_TREE_SHA}\n".encode("ascii")
+        _require_integrated_identity(valid_commit, valid_tree)
+        invalid = (
+            (f"{'0' * 40} {BASE_SHA}\n".encode("ascii"), valid_tree),
+            (f"{INTEGRATED_SHA} {BASE_SHA} {'1' * 40}\n".encode("ascii"), valid_tree),
+            (f"{INTEGRATED_SHA} {'2' * 40}\n".encode("ascii"), valid_tree),
+            (f"{INTEGRATED_SHA} {BASE_SHA}\n".encode("ascii"), f"{'3' * 40}\n".encode("ascii")),
+        )
+        for commit, tree in invalid:
+            with self.subTest(commit=commit, tree=tree):
+                with self.assertRaises(ScopeViolation):
+                    _require_integrated_identity(commit, tree)
+
+    def test_missing_integrated_object_fails_closed(self) -> None:
+        with patch("scope_guard._git", side_effect=ScopeViolation("git operation failed")):
+            with self.assertRaises(ScopeViolation):
+                build_integrated_report(ROOT)
 
     def test_undeclared_top_level_statement_is_not_hidden(self) -> None:
         declared = frozenset({("assignment", "VALUE"), ("function", "validate")})
@@ -91,20 +128,19 @@ class ScopeGuardTests(unittest.TestCase):
         )
 
     def test_ratified_test_validate_bytes_are_exact(self) -> None:
-        path = ROOT / "tools/protocol-review-model/tests/test_validate.py"
-        self.assertEqual(TEST_VALIDATE_SHA256, hashlib.sha256(path.read_bytes()).hexdigest())
+        payload = subprocess.run(
+            [
+                "/usr/bin/git",
+                "show",
+                f"{INTEGRATED_SHA}:tools/protocol-review-model/tests/test_validate.py",
+            ],
+            cwd=ROOT,
+            check=True,
+            stdout=subprocess.PIPE,
+        ).stdout
         self.assertEqual(
-            path.read_bytes(),
-            subprocess.run(
-                [
-                    "/usr/bin/git",
-                    "show",
-                    f"{MODEL_SYNC_SHA}:tools/protocol-review-model/tests/test_validate.py",
-                ],
-                cwd=ROOT,
-                check=True,
-                stdout=subprocess.PIPE,
-            ).stdout,
+            TEST_VALIDATE_SHA256,
+            hashlib.sha256(payload).hexdigest(),
         )
 
     def test_allowed_path_deletion_is_rejected(self) -> None:
