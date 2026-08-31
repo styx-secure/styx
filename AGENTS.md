@@ -195,8 +195,8 @@ only after successful change detection.
 This governance policy does not authorize PR-3 or any product change.
 
 <!-- styx-protocol-phase-exit-status:v1:start -->
-Protocol-hardening phase-exit status: `BOUNDED_GO`. The broad protocol freeze has ended
-only for work separately authorized under Section 9 of the hardening plan. Issue #287
-itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
-demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
+Protocol-hardening phase-exit status: `PENDING`. The broad freeze remains active.
+Issue #287 authorizes no adapter, authenticated persistence, SDK, transport/delivery,
+product, demo, deployment or sensitive-use work before the provider-bound verdict and
+exact-final human gates.
 <!-- styx-protocol-phase-exit-status:v1:end -->

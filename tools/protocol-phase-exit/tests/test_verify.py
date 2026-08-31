@@ -305,6 +305,21 @@ class VerifyTests(unittest.TestCase):
             with self.subTest(hostile=hostile[-32:]), self.assertRaises(verify.ExitError):
                 verify.validate_status_document_transition(path, phase, hostile, "BOUNDED_GO")
 
+    def test_phase_exit_readme_keeps_operational_status_only_in_versioned_block(self):
+        path = "docs/protocol/review/phase-exit/README.md"
+        document = (ROOT / path).read_bytes()
+        verify.validate_phase_neutral_status_prose(path, document)
+        for stale in (
+            b"This directory contains the deterministic Phase-A report for Issue #287.",
+            b"Current state:",
+            b"protocol-hardening freeze: **still active**",
+        ):
+            with self.subTest(stale=stale), self.assertRaises(verify.ExitError):
+                verify.validate_phase_neutral_status_prose(path, document.replace(
+                    b"Canonical mechanical record:",
+                    b"Canonical mechanical record:\n" + stale,
+                ))
+
     def test_phase_b_transition_rejects_code_and_semantic_changes(self):
         head = verify.resolve_commit(ROOT, "HEAD")
         report = json.loads(verify.run_git(ROOT, "show", f"{head}:{verify.CANONICAL_REPORT_PATH.as_posix()}"))

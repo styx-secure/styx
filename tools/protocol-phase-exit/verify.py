@@ -97,6 +97,21 @@ STATUS_DOCUMENTS = {
 }
 STATUS_MARKER_START = "<!-- styx-protocol-phase-exit-status:v1:start -->"
 STATUS_MARKER_END = "<!-- styx-protocol-phase-exit-status:v1:end -->"
+PHASE_NEUTRAL_STATUS_PROSE = {
+    "docs/protocol/review/phase-exit/README.md": {
+        "required": (
+            "This directory contains the deterministic mechanical report for Issue #287.",
+            "Canonical mechanical record:",
+            "operational phase status: declared exclusively by the versioned status block",
+            "capability authorization: never follows from the mechanical report or from",
+        ),
+        "forbidden": (
+            "This directory contains the deterministic Phase-A report for Issue #287.",
+            "Current state:",
+            "protocol-hardening freeze: **still active**",
+        ),
+    },
+}
 STATUS_TEXT = {
     "en": {
         "PENDING": (
@@ -613,6 +628,23 @@ def validate_phase_a_status_documents(repo: Path, phase: str) -> None:
         require(phase_bytes.count(pending) == 1, f"Phase-A status is not PENDING: {path}")
         require(phase_bytes.count(STATUS_MARKER_START.encode()) == 1, f"Phase-A status marker duplicated: {path}")
         require(phase_bytes.count(STATUS_MARKER_END.encode()) == 1, f"Phase-A status marker duplicated: {path}")
+        validate_phase_neutral_status_prose(path, phase_bytes)
+
+
+def validate_phase_neutral_status_prose(path: str, document: bytes) -> None:
+    rules = PHASE_NEUTRAL_STATUS_PROSE.get(path)
+    if rules is None:
+        return
+    start = STATUS_MARKER_START.encode()
+    end = STATUS_MARKER_END.encode()
+    require(document.count(start) == 1 and document.count(end) == 1, f"status marker is not unique: {path}")
+    start_offset = document.index(start)
+    end_offset = document.index(end, start_offset) + len(end)
+    prose = document[:start_offset] + document[end_offset:]
+    for required in rules["required"]:
+        require(required.encode() in prose, f"phase-neutral status explanation missing: {path}")
+    for forbidden in rules["forbidden"]:
+        require(forbidden.encode() not in prose, f"status-specific prose outside versioned block: {path}")
 
 
 def validate_phase_b_status_transition(

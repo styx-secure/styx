@@ -1,18 +1,19 @@
 # Protocol-hardening phase exit evidence
 
-This directory contains the deterministic Phase-A report for Issue #287.
+This directory contains the deterministic mechanical report for Issue #287.
 It evaluates the eleven exit conditions in
 `docs/protocol/protocol-hardening-plan.md` without deciding the two external
 human gates.
 
-Current state:
+Canonical mechanical record:
 
 - mechanical eligibility: `ELIGIBLE_FOR_BOUNDED_GO`;
-- `EXIT-08`: `HUMAN_GATE_PENDING`;
-- `EXIT-09`: `HUMAN_GATE_PENDING`;
-- protocol-hardening freeze: **still active**;
-- adapter, persistence, SDK, transport/delivery, product, demo, deployment and
-  sensitive use: **not authorized**.
+- `EXIT-08` and `EXIT-09`: `HUMAN_GATE_PENDING` in the canonical report by
+  design, because the verifier cannot satisfy either human gate;
+- operational phase status: declared exclusively by the versioned status block
+  at the end of this document after live provider validation;
+- capability authorization: never follows from the mechanical report or from
+  Issue #287 alone.
 
 Regenerate the report from a clean checkout at the exact candidate with:
 
@@ -66,8 +67,8 @@ proxy, CA, OpenSSL and Python import-path overrides are removed before TLS is
 imported, and provider verification accepts only `/usr/bin/python3`.
 
 <!-- styx-protocol-phase-exit-status:v1:start -->
-Protocol-hardening phase-exit status: `BOUNDED_GO`. The broad protocol freeze has ended
-only for work separately authorized under Section 9 of the hardening plan. Issue #287
-itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
-demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
+Protocol-hardening phase-exit status: `PENDING`. The broad freeze remains active.
+Issue #287 authorizes no adapter, authenticated persistence, SDK, transport/delivery,
+product, demo, deployment or sensitive-use work before the provider-bound verdict and
+exact-final human gates.
 <!-- styx-protocol-phase-exit-status:v1:end -->
