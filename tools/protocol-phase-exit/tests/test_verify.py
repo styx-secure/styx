@@ -235,7 +235,6 @@ class VerifyTests(unittest.TestCase):
         review_id = "5065807842"
         review = {
             "id": int(review_id),
-            "url": verify.approval_url(review_id),
             "pull_request_url": f"https://api.github.com/repos/styx-secure/styx/pulls/{verify.PR_NUMBER}",
             "user": {"id": verify.MANEXADA_ID, "login": "manexada"},
             "state": "APPROVED",
@@ -250,7 +249,6 @@ class VerifyTests(unittest.TestCase):
             verify.validate_approval_review(hostile, review_id=review_id, final_head="a" * 40)
         for key, value in (
             ("id", 1),
-            ("url", "https://example.invalid/review"),
             ("pull_request_url", "https://api.github.com/repos/styx-secure/styx/pulls/1"),
             ("user", {"id": 1, "login": "manexada"}),
         ):
@@ -264,8 +262,8 @@ class VerifyTests(unittest.TestCase):
         committed = verify.run_git(ROOT, "show", f"{head}:{verify.CANONICAL_REPORT_PATH.as_posix()}")
         digest = verify.sha256(committed)
         report = json.loads(committed)
-        self.assertEqual((head, head), verify.validate_provider_heads(
-            ROOT, phase_a_head=head, phase_a_report_sha256=digest, final_head=head,
+        self.assertEqual((head, None), verify.validate_provider_heads(
+            ROOT, phase_a_head=head, phase_a_report_sha256=digest, final_head=None,
             final_report=report,
         ))
         for phase, report_digest, final in (
@@ -276,8 +274,22 @@ class VerifyTests(unittest.TestCase):
             with self.subTest(phase=phase, final=final), self.assertRaises(verify.ExitError):
                 verify.validate_provider_heads(
                     ROOT, phase_a_head=phase, phase_a_report_sha256=report_digest,
-                    final_head=final, final_report=report,
+                    final_head=final, final_report=report, verdict="BOUNDED_GO",
                 )
+
+    def test_status_document_transition_is_an_exact_replacement(self):
+        path = "AGENTS.md"
+        phase = b"prefix\n" + verify.status_block(path, "PENDING") + b"\nsuffix\n"
+        final = b"prefix\n" + verify.status_block(path, "BOUNDED_GO") + b"\nsuffix\n"
+        verify.validate_status_document_transition(path, phase, final, "BOUNDED_GO")
+        for hostile in (
+            final + b"extra\n",
+            phase,
+            phase + b"\n" + verify.status_block(path, "PENDING"),
+            b"prefix\n" + verify.status_block(path, "GO") + b"\nsuffix\n",
+        ):
+            with self.subTest(hostile=hostile[-32:]), self.assertRaises(verify.ExitError):
+                verify.validate_status_document_transition(path, phase, hostile, "BOUNDED_GO")
 
     def test_phase_b_transition_rejects_code_and_semantic_changes(self):
         head = verify.resolve_commit(ROOT, "HEAD")
@@ -293,6 +305,16 @@ class VerifyTests(unittest.TestCase):
         hostile_registry["conditions"][0]["residual_risks"] = []
         with self.assertRaises(verify.ExitError):
             verify.validate_phase_b_registry_transition(registry, hostile_registry)
+        allowed_registry = copy.deepcopy(registry)
+        allowed_registry["conditions"][1]["expected_evidence_sha256"]["phase_exit_status"] = "1" * 64
+        allowed_registry["conditions"][1]["expected_evidence_sha256"]["review_records"] = "2" * 64
+        allowed_registry["conditions"][2]["expected_evidence_sha256"]["protocol_plan"] = "3" * 64
+        verify.validate_phase_b_registry_transition(registry, allowed_registry)
+        allowed_report = copy.deepcopy(report)
+        allowed_report["conditions"][1]["observed_evidence_sha256"]["phase_exit_status"] = "1" * 64
+        allowed_report["conditions"][1]["observed_evidence_sha256"]["review_records"] = "2" * 64
+        allowed_report["conditions"][2]["observed_evidence_sha256"]["protocol_plan"] = "3" * 64
+        verify.validate_phase_b_report_transition(report, allowed_report)
 
     def test_live_issue_identity_and_body_are_bound(self):
         issue = {

@@ -600,3 +600,10 @@ without a refreshed non-overlapping contract or a new explicit ratification.
 This state is intentionally conservative. The freeze ends only through section
 8, not through elapsed time, reviewer consensus or pressure to demonstrate a
 feature.
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Protocol-hardening phase-exit status: `PENDING`. The broad freeze remains active.
+Issue #287 authorizes no adapter, authenticated persistence, SDK, transport/delivery,
+product, demo, deployment or sensitive-use work before the provider-bound verdict and
+exact-final human gates.
+<!-- styx-protocol-phase-exit-status:v1:end -->

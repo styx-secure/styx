@@ -106,3 +106,10 @@ defined by `docs/protocol/protocol-hardening-plan.md`. A task contract cannot
 silently bypass that plan. Issue #266 / merged PR #267 completed bounded C0.3
 transcript/K evidence only; implementation alignment, demo, product and
 sensitive use remain `NO-GO`.
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Protocol-hardening phase-exit status: `PENDING`. The broad freeze remains active.
+Issue #287 authorizes no adapter, authenticated persistence, SDK, transport/delivery,
+product, demo, deployment or sensitive-use work before the provider-bound verdict and
+exact-final human gates.
+<!-- styx-protocol-phase-exit-status:v1:end -->

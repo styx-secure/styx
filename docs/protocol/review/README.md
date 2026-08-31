@@ -308,3 +308,10 @@ sensitive-use claims.
 the model: entries describe the procedural order of an adversarial trace and
 must not be alphabetically sorted. Other arrays documented as registries,
 references or sets remain sorted and duplicate-free.
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Protocol-hardening phase-exit status: `PENDING`. The broad freeze remains active.
+Issue #287 authorizes no adapter, authenticated persistence, SDK, transport/delivery,
+product, demo, deployment or sensitive-use work before the provider-bound verdict and
+exact-final human gates.
+<!-- styx-protocol-phase-exit-status:v1:end -->

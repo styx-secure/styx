@@ -319,3 +319,10 @@ compatibility or use does not imply endorsement.
 - [Final exact-pin Phase B interoperability verdict](architecture/spikes/2026-08-17-marmot-openmls-phase-b-verdict.md)
 - [Current chat security report](security/2026-07-10-styx-chat-security-report.md)
 - [Repository governance](../AGENTS.md)
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Protocol-hardening phase-exit status: `PENDING`. The broad freeze remains active.
+Issue #287 authorizes no adapter, authenticated persistence, SDK, transport/delivery,
+product, demo, deployment or sensitive-use work before the provider-bound verdict and
+exact-final human gates.
+<!-- styx-protocol-phase-exit-status:v1:end -->

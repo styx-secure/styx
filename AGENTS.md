@@ -193,3 +193,10 @@ only after successful change detection.
 - The product remains experimental while documented H1/H2 blockers are open.
 
 This governance policy does not authorize PR-3 or any product change.
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Protocol-hardening phase-exit status: `PENDING`. The broad freeze remains active.
+Issue #287 authorizes no adapter, authenticated persistence, SDK, transport/delivery,
+product, demo, deployment or sensitive-use work before the provider-bound verdict and
+exact-final human gates.
+<!-- styx-protocol-phase-exit-status:v1:end -->

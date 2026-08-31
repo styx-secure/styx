@@ -1,4 +1,4 @@
-<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="2a1d99287cdfff6e8dc98368a8f257c32a52c6be1e4717487c443ebe8bfa698f" -->
+<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="6de79a77b82760100a9f59b518b0db0924d277166815ff7ce22672571151e3e4" -->
 # Roadmap per integrare le capacità applicative in Styx
 
 [English canonical version](integration-roadmap.md)
@@ -370,3 +370,10 @@ L'azione attiva è eseguire il piano di hardening del protocollo nel relativo
 ordine di dipendenza. Ogni decisione continua a diventare una Issue approvata,
 con threat model, non-goal, test e rollback; l'integrazione di prodotto riprende
 solo dopo il verdetto di uscita del piano e tramite contratti separati.
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Stato dell'uscita dall'hardening del protocollo: `PENDING`. Il freeze generale resta attivo.
+La Issue #287 non autorizza adapter, persistenza autenticata, SDK, trasporto/consegna,
+prodotto, demo, deployment o uso sensibile prima del verdetto vincolato al provider e
+dei gate umani sull'HEAD finale esatto.
+<!-- styx-protocol-phase-exit-status:v1:end -->

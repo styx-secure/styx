@@ -366,3 +366,10 @@ The active action is to execute the protocol-hardening plan in dependency order.
 Each decision still becomes an approved Issue with a threat model, non-goals,
 tests and rollback; product integration resumes only after the plan's exit
 verdict and under separate contracts.
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Protocol-hardening phase-exit status: `PENDING`. The broad freeze remains active.
+Issue #287 authorizes no adapter, authenticated persistence, SDK, transport/delivery,
+product, demo, deployment or sensitive-use work before the provider-bound verdict and
+exact-final human gates.
+<!-- styx-protocol-phase-exit-status:v1:end -->

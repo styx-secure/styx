@@ -64,3 +64,10 @@ the closed Phase-B status transformation defined by the contract. It also
 fetches the live Issue and verifies the exact ratified body digest. Caller
 proxy, CA, OpenSSL and Python import-path overrides are removed before TLS is
 imported, and provider verification accepts only `/usr/bin/python3`.
+
+<!-- styx-protocol-phase-exit-status:v1:start -->
+Protocol-hardening phase-exit status: `PENDING`. The broad freeze remains active.
+Issue #287 authorizes no adapter, authenticated persistence, SDK, transport/delivery,
+product, demo, deployment or sensitive-use work before the provider-bound verdict and
+exact-final human gates.
+<!-- styx-protocol-phase-exit-status:v1:end -->

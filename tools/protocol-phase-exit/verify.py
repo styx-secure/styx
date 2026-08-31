@@ -85,6 +85,70 @@ PHASE_B_ALLOWED_CHANGED_PATHS = {
     CANONICAL_REPORT_PATH.as_posix(),
     REGISTRY_PATH.as_posix(),
 }
+STATUS_DOCUMENTS = {
+    "AGENTS.md": "en",
+    "CLAUDE.md": "en",
+    "docs/PROJECT_BRIEF.md": "en",
+    "docs/platform/integration-roadmap.md": "en",
+    "docs/platform/integration-roadmap_IT.md": "it",
+    "docs/protocol/protocol-hardening-plan.md": "en",
+    "docs/protocol/review/README.md": "en",
+    "docs/protocol/review/phase-exit/README.md": "en",
+}
+STATUS_MARKER_START = "<!-- styx-protocol-phase-exit-status:v1:start -->"
+STATUS_MARKER_END = "<!-- styx-protocol-phase-exit-status:v1:end -->"
+STATUS_TEXT = {
+    "en": {
+        "PENDING": (
+            "Protocol-hardening phase-exit status: `PENDING`. The broad freeze remains active.\n"
+            "Issue #287 authorizes no adapter, authenticated persistence, SDK, transport/delivery,\n"
+            "product, demo, deployment or sensitive-use work before the provider-bound verdict and\n"
+            "exact-final human gates."
+        ),
+        "GO": (
+            "Protocol-hardening phase-exit status: `GO`. The broad protocol freeze has ended only\n"
+            "for work separately authorized under Section 9 of the hardening plan. Issue #287 itself\n"
+            "authorizes no adapter, authenticated persistence, SDK, transport/delivery, product, demo,\n"
+            "deployment or sensitive-use work; US-001 through US-008 remain paused."
+        ),
+        "BOUNDED_GO": (
+            "Protocol-hardening phase-exit status: `BOUNDED_GO`. The broad protocol freeze has ended\n"
+            "only for work separately authorized under Section 9 of the hardening plan. Issue #287\n"
+            "itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,\n"
+            "demo, deployment or sensitive-use work; US-001 through US-008 remain paused."
+        ),
+        "NO_GO": (
+            "Protocol-hardening phase-exit status: `NO_GO`. The broad freeze remains active.\n"
+            "Issue #287 authorizes no adapter, authenticated persistence, SDK, transport/delivery,\n"
+            "product, demo, deployment or sensitive-use work."
+        ),
+    },
+    "it": {
+        "PENDING": (
+            "Stato dell'uscita dall'hardening del protocollo: `PENDING`. Il freeze generale resta attivo.\n"
+            "La Issue #287 non autorizza adapter, persistenza autenticata, SDK, trasporto/consegna,\n"
+            "prodotto, demo, deployment o uso sensibile prima del verdetto vincolato al provider e\n"
+            "dei gate umani sull'HEAD finale esatto."
+        ),
+        "GO": (
+            "Stato dell'uscita dall'hardening del protocollo: `GO`. Il freeze generale del protocollo\n"
+            "termina solo per lavori autorizzati separatamente dalla sezione 9 del piano di hardening.\n"
+            "La Issue #287 non autorizza di per se stessa adapter, persistenza autenticata, SDK,\n"
+            "trasporto/consegna, prodotto, demo, deployment o uso sensibile; US-001--US-008 restano sospese."
+        ),
+        "BOUNDED_GO": (
+            "Stato dell'uscita dall'hardening del protocollo: `BOUNDED_GO`. Il freeze generale del\n"
+            "protocollo termina solo per lavori autorizzati separatamente dalla sezione 9 del piano di\n"
+            "hardening. La Issue #287 non autorizza di per se stessa adapter, persistenza autenticata,\n"
+            "SDK, trasporto/consegna, prodotto, demo, deployment o uso sensibile; US-001--US-008 restano sospese."
+        ),
+        "NO_GO": (
+            "Stato dell'uscita dall'hardening del protocollo: `NO_GO`. Il freeze generale resta attivo.\n"
+            "La Issue #287 non autorizza adapter, persistenza autenticata, SDK, trasporto/consegna,\n"
+            "prodotto, demo, deployment o uso sensibile."
+        ),
+    },
+}
 HISTORICAL_NON_PR_COMMIT = "578b3241d6e7d0231da0d2e00b9d04c69530d24e"
 MINIMUM_CONDITIONAL_STATEMENTS = [
     "O-12 is excluded only because the bounded v0 K and SS profiles make no physical-time claim.",
@@ -443,7 +507,6 @@ def validate_approval_review(
     user = review.get("user")
     require(isinstance(user, dict), "approval user missing")
     require(review.get("id") == int(review_id), "approval review id mismatch")
-    require(review.get("url") == url, "approval review URL mismatch")
     require(review.get("pull_request_url") == f"https://api.github.com/repos/styx-secure/styx/pulls/{PR_NUMBER}", "approval PR mismatch")
     require(user.get("id") == MANEXADA_ID and user.get("login") == "manexada", "approval operator mismatch")
     require(review.get("state") == "APPROVED", "approval state mismatch")
@@ -451,7 +514,7 @@ def validate_approval_review(
     require(isinstance(review.get("submitted_at"), str) and bool(review["submitted_at"]), "approval submission missing")
     projection = {
         "id": review["id"],
-        "url": review["url"],
+        "fetch_url": url,
         "pull_request_url": review["pull_request_url"],
         "user": {"id": user["id"], "login": user["login"]},
         "state": review["state"],
@@ -516,6 +579,64 @@ def phase_b_changed_paths(repo: Path, phase: str, final: str) -> set[str]:
     return changed
 
 
+def status_block(path: str, status: str) -> bytes:
+    require(path in STATUS_DOCUMENTS, f"unknown phase-exit status document: {path}")
+    language = STATUS_DOCUMENTS[path]
+    require(status in STATUS_TEXT[language], f"unknown phase-exit status: {status}")
+    return (
+        f"{STATUS_MARKER_START}\n{STATUS_TEXT[language][status]}\n{STATUS_MARKER_END}"
+    ).encode("utf-8")
+
+
+def validate_status_document_transition(
+    path: str, phase_bytes: bytes, final_bytes: bytes, verdict: str,
+    canonical_digest_transition: tuple[str, str] | None = None,
+) -> None:
+    pending = status_block(path, "PENDING")
+    require(phase_bytes.count(pending) == 1, f"Phase-A status marker is not exact: {path}")
+    require(phase_bytes.count(STATUS_MARKER_START.encode()) == 1, f"Phase-A status marker duplicated: {path}")
+    require(phase_bytes.count(STATUS_MARKER_END.encode()) == 1, f"Phase-A status marker duplicated: {path}")
+    expected = phase_bytes.replace(pending, status_block(path, verdict))
+    if canonical_digest_transition is not None:
+        phase_digest, final_digest = canonical_digest_transition
+        phase_pin = f'sha256="{phase_digest}"'.encode()
+        final_pin = f'sha256="{final_digest}"'.encode()
+        require(expected.count(phase_pin) == 1, f"Phase-A translation pin is not exact: {path}")
+        expected = expected.replace(phase_pin, final_pin)
+    require(final_bytes == expected, f"Phase-B status document changed beyond exact verdict replacement: {path}")
+
+
+def validate_phase_a_status_documents(repo: Path, phase: str) -> None:
+    for path in sorted(STATUS_DOCUMENTS):
+        phase_bytes = run_git(repo, "show", f"{phase}:{path}")
+        pending = status_block(path, "PENDING")
+        require(phase_bytes.count(pending) == 1, f"Phase-A status is not PENDING: {path}")
+        require(phase_bytes.count(STATUS_MARKER_START.encode()) == 1, f"Phase-A status marker duplicated: {path}")
+        require(phase_bytes.count(STATUS_MARKER_END.encode()) == 1, f"Phase-A status marker duplicated: {path}")
+
+
+def validate_phase_b_status_transition(
+    repo: Path, phase: str, final: str, verdict: str,
+) -> None:
+    expected_paths = set(STATUS_DOCUMENTS) | {
+        CANONICAL_REPORT_PATH.as_posix(), REGISTRY_PATH.as_posix(),
+    }
+    require(phase_b_changed_paths(repo, phase, final) == expected_paths, "Phase-B changed-path set is not exact")
+    canonical_path = "docs/platform/integration-roadmap.md"
+    phase_canonical = run_git(repo, "show", f"{phase}:{canonical_path}")
+    final_canonical = run_git(repo, "show", f"{final}:{canonical_path}")
+    for path in sorted(STATUS_DOCUMENTS):
+        phase_bytes = run_git(repo, "show", f"{phase}:{path}")
+        final_bytes = run_git(repo, "show", f"{final}:{path}")
+        digest_transition = None
+        if path == "docs/platform/integration-roadmap_IT.md":
+            digest_transition = (sha256(phase_canonical), sha256(final_canonical))
+        validate_status_document_transition(
+            path, phase_bytes, final_bytes, verdict,
+            canonical_digest_transition=digest_transition,
+        )
+
+
 def validate_phase_b_registry_transition(phase_value: object, final_value: object) -> None:
     require(isinstance(phase_value, dict) and isinstance(final_value, dict), "Phase-B registry is invalid")
     phase_copy = json.loads(json.dumps(phase_value))
@@ -535,6 +656,19 @@ def validate_phase_b_registry_transition(phase_value: object, final_value: objec
                 and set(phase_digests) == {"phase_exit_status", "review_records"}
                 and set(final_digests) == set(phase_digests),
                 "Phase-B status digest set changed",
+            )
+            phase_condition["expected_evidence_sha256"] = final_digests
+        elif phase_condition.get("id") == "EXIT-03":
+            phase_digests = phase_condition.get("expected_evidence_sha256")
+            final_digests = final_condition.get("expected_evidence_sha256")
+            require(
+                isinstance(phase_digests, dict)
+                and isinstance(final_digests, dict)
+                and set(phase_digests) == {"frozen_manifest", "protocol_plan", "review_model"}
+                and set(final_digests) == set(phase_digests)
+                and phase_digests["frozen_manifest"] == final_digests["frozen_manifest"]
+                and phase_digests["review_model"] == final_digests["review_model"],
+                "Phase-B protocol-plan digest transition is invalid",
             )
             phase_condition["expected_evidence_sha256"] = final_digests
     require(phase_copy == final_copy, "Phase-B registry changed beyond status digests")
@@ -561,12 +695,25 @@ def validate_phase_b_report_transition(phase_report: object, final_report: dict[
                 "Phase-B report status evidence set changed",
             )
             phase_condition["observed_evidence_sha256"] = final_observed
+        elif phase_condition.get("id") == "EXIT-03":
+            phase_observed = phase_condition.get("observed_evidence_sha256")
+            final_observed = final_condition.get("observed_evidence_sha256")
+            require(
+                isinstance(phase_observed, dict)
+                and isinstance(final_observed, dict)
+                and set(phase_observed) == {"frozen_manifest", "protocol_plan", "review_model"}
+                and set(final_observed) == set(phase_observed)
+                and phase_observed["frozen_manifest"] == final_observed["frozen_manifest"]
+                and phase_observed["review_model"] == final_observed["review_model"],
+                "Phase-B report protocol-plan transition is invalid",
+            )
+            phase_condition["observed_evidence_sha256"] = final_observed
     require(phase_copy == final_copy, "Phase-B report changed beyond status evidence")
 
 
 def validate_provider_heads(
     repo: Path, *, phase_a_head: str, phase_a_report_sha256: str,
-    final_head: str | None, final_report: dict[str, object],
+    final_head: str | None, final_report: dict[str, object], verdict: str | None = None,
 ) -> tuple[str, str | None]:
     require(re.fullmatch(r"[0-9a-f]{40}", phase_a_head) is not None, "invalid Phase-A HEAD")
     require(re.fullmatch(r"[0-9a-f]{64}", phase_a_report_sha256) is not None, "invalid Phase-A report digest")
@@ -580,14 +727,17 @@ def validate_provider_heads(
     except json.JSONDecodeError as error:
         raise ExitError("Phase-A report is not JSON") from error
     if final_head is None:
+        require(verdict is None, "Phase-A validation received a verdict transition")
         require(resolve_commit(repo, "HEAD") == phase, "Phase-A HEAD is not checked out")
         require(canonical_bytes(final_report) == committed, "checked-out Phase-A report changed")
+        validate_phase_a_status_documents(repo, phase)
         return phase, None
     require(re.fullmatch(r"[0-9a-f]{40}", final_head) is not None, "invalid final HEAD")
+    require(verdict in {"GO", "BOUNDED_GO", "NO_GO"}, "final validation requires a provider verdict")
     final = resolve_commit(repo, final_head)
     require(resolve_commit(repo, "HEAD") == final, "final HEAD is not checked out")
     require_ancestor(repo, phase, final, "Phase-A HEAD is not ancestor of final HEAD")
-    phase_b_changed_paths(repo, phase, final)
+    validate_phase_b_status_transition(repo, phase, final, verdict)
     phase_registry = json.loads(run_git(repo, "show", f"{phase}:{REGISTRY_PATH.as_posix()}"))
     final_registry = json.loads(run_git(repo, "show", f"{final}:{REGISTRY_PATH.as_posix()}"))
     validate_phase_b_registry_transition(phase_registry, final_registry)
@@ -874,13 +1024,6 @@ def main(argv: list[str] | None = None) -> int:
             require(args.phase_a_report_sha256 is not None, "Phase-A report digest required")
             require(args.provider_output is not None, "provider output required")
             require(args.provider_raw_output is not None, "provider raw output required")
-            validate_provider_heads(
-                repo,
-                phase_a_head=args.phase_a_head,
-                phase_a_report_sha256=args.phase_a_report_sha256,
-                final_head=args.final_head,
-                final_report=report,
-            )
             require(args.issue_provider_raw_output is not None, "Issue provider raw output required")
             issue, issue_raw = fetch_provider_json(ISSUE_API_URL)
             store_external_bytes(repo, args.issue_provider_raw_output, issue_raw)
@@ -896,6 +1039,14 @@ def main(argv: list[str] | None = None) -> int:
                 frozen_sha=report["frozen_manifest_sha256"],
                 audit_sha=report["first_parent_audit_sha256"],
                 eligibility=report["eligibility"],
+            )
+            validate_provider_heads(
+                repo,
+                phase_a_head=args.phase_a_head,
+                phase_a_report_sha256=args.phase_a_report_sha256,
+                final_head=args.final_head,
+                final_report=report,
+                verdict=result["verdict"] if args.final_head is not None else None,
             )
             result.update(issue_result)
             result["issue_provider_response_sha256"] = sha256(issue_raw)
