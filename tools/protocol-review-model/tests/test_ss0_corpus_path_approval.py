@@ -108,10 +108,10 @@ def _inventory_errors(document: dict, *, root: Path = REPO_ROOT) -> list[str]:
 
 def _section(text: str, heading: str) -> str:
     start = text.index(heading)
-    following = text.find("\n### ", start + len(heading))
-    if following < 0:
+    following = re.search(r"\n##(?:#)? ", text[start + len(heading):])
+    if following is None:
         raise AssertionError(f"missing following heading after {heading}")
-    return text[start:following]
+    return text[start:start + len(heading) + following.start()]
 
 
 def _annotation_blocks(text: str) -> list[str]:
@@ -229,8 +229,16 @@ class Ss0CorpusPathApprovalTests(unittest.TestCase):
             existing = root / SS0_APACHE_PATHS[0]
             existing.parent.mkdir(parents=True)
             existing.write_text("{}\n", encoding="utf-8")
+            self.assertIn(
+                "SS0_FILE_PRESENT",
+                _inventory_errors(self.current_reuse, root=root),
+            )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
             dangling = root / SS0_APACHE_PATHS[1]
+            dangling.parent.mkdir(parents=True)
             os.symlink("missing-target", dangling)
+            self.assertFalse(dangling.exists())
             self.assertIn(
                 "SS0_FILE_PRESENT",
                 _inventory_errors(self.current_reuse, root=root),
@@ -268,6 +276,8 @@ class Ss0CorpusPathApprovalTests(unittest.TestCase):
         current_text = (REPO_ROOT / path).read_text(encoding="utf-8")
         base = _section(base_text, "### K-11")
         current = _section(current_text, "### K-11")
+        self.assertNotIn("\n## 3.", base)
+        self.assertNotIn("\n## 3.", current)
         self.assertEqual(
             base_text.replace(base, "", 1),
             current_text.replace(current, "", 1),

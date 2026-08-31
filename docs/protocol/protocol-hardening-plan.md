@@ -272,8 +272,8 @@ Protocol increments proceed in dependency order:
 6. **Synchronize the derived model.** Update it only after normative changes;
    pin provenance and add negative fixtures for each new invariant or failure
    class.
-7. **Authorize the corpus licensing boundary — complete in Issue #253.** The
-   At the Issue #253 milestone, the exact twelve-path Apache-2.0 inventory
+7. **Authorize the corpus licensing boundary — complete in Issue #253.** At
+   the Issue #253 milestone, the exact twelve-path Apache-2.0 inventory
    included six absent future C0.3 data paths. This licensing gate created no
    corpus byte and did not authorize C0.3.
    **Authorize the SS corpus licensing boundary — complete in Issue #291.** A
@@ -434,6 +434,7 @@ The phase may end only when all applicable conditions are true:
 11. K-11's exact Apache-2.0 corpus-path inventory and required licensing
     amendments were approved in Issue #253 before the first C0.3 corpus file
     was created.
+
 A bounded `GO` authorizes only the named corpus or next contract. It does not
 authorize product code, deployment or sensitive use.
 
