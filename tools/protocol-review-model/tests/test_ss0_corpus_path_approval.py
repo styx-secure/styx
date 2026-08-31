@@ -5,7 +5,10 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
+import re
 import subprocess
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -74,7 +77,7 @@ def _apache_annotations(document: dict) -> list[dict]:
     ]
 
 
-def _inventory_errors(document: dict, *, ss_files_present: int = 0) -> list[str]:
+def _inventory_errors(document: dict, *, root: Path = REPO_ROOT) -> list[str]:
     annotations = _apache_annotations(document)
     errors: list[str] = []
     expected = [
@@ -98,7 +101,7 @@ def _inventory_errors(document: dict, *, ss_files_present: int = 0) -> list[str]
         for item in annotations
     ):
         errors.append("APACHE_METADATA")
-    if ss_files_present:
+    if any(os.path.lexists(root / path) for path in SS0_APACHE_PATHS):
         errors.append("SS0_FILE_PRESENT")
     return errors
 
@@ -111,14 +114,49 @@ def _section(text: str, heading: str) -> str:
     return text[start:following]
 
 
+def _annotation_blocks(text: str) -> list[str]:
+    """Return each TOML annotation table as its exact byte-equivalent text."""
+
+    lines = text.splitlines(keepends=True)
+    blocks: list[str] = []
+    for start, line in enumerate(lines):
+        if line.rstrip("\r\n") != "[[annotations]]":
+            continue
+        end = start + 1
+        while end < len(lines) and lines[end].strip():
+            end += 1
+        blocks.append("".join(lines[start:end]))
+    return blocks
+
+
+def _k11_frozen_projection(section: str) -> str:
+    """Mask only the three K-11 bullets authorized to change."""
+
+    allowed = {"Rule", "Residual/reopen condition", "Human ratification"}
+    matches = list(re.finditer(r"(?m)^- \*\*(.+?):\*\*", section))
+    if not matches:
+        raise AssertionError("K-11 has no bullet registry")
+    projection = [section[:matches[0].start()]]
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(section)
+        label = match.group(1)
+        projection.append(
+            f"- **{label}:** <RATIFIED_CHANGE>\n"
+            if label in allowed
+            else section[match.start():end]
+        )
+    return "".join(projection)
+
+
 class Ss0CorpusPathApprovalTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.reuse_text = (REPO_ROOT / "REUSE.toml").read_text(encoding="utf-8")
+        cls.base_reuse_text = _git_show(BASE_SHA, "REUSE.toml").decode("utf-8")
         cls.current_reuse = tomllib.loads(cls.reuse_text)
-        cls.base_reuse = tomllib.loads(
-            _git_show(BASE_SHA, "REUSE.toml").decode("utf-8")
-        )
+        cls.base_reuse = tomllib.loads(cls.base_reuse_text)
+        cls.current_annotation_blocks = _annotation_blocks(cls.reuse_text)
+        cls.base_annotation_blocks = _annotation_blocks(cls.base_reuse_text)
         cls.apache_annotations = _apache_annotations(cls.current_reuse)
         cls.apache_paths = [
             path for annotation in cls.apache_annotations for path in annotation["path"]
@@ -128,15 +166,13 @@ class Ss0CorpusPathApprovalTests(unittest.TestCase):
         )
         cls.duplicate_count = len(cls.apache_paths) - len(set(cls.apache_paths))
         cls.future_ss0_files_present = sum(
-            (REPO_ROOT / path).exists() for path in SS0_APACHE_PATHS
+            os.path.lexists(REPO_ROOT / path) for path in SS0_APACHE_PATHS
         )
         cls.preexisting_annotations_changed = sum(
             left != right
             for left, right in zip(
-                cls.base_reuse["annotations"][:3]
-                + cls.base_reuse["annotations"][3:],
-                cls.current_reuse["annotations"][:3]
-                + cls.current_reuse["annotations"][4:],
+                cls.base_annotation_blocks,
+                cls.current_annotation_blocks[:3] + cls.current_annotation_blocks[4:],
                 strict=True,
             )
         )
@@ -158,8 +194,8 @@ class Ss0CorpusPathApprovalTests(unittest.TestCase):
         self.assertEqual([], _inventory_errors(self.current_reuse))
 
     def test_existing_annotations_are_byte_equivalent_and_ordered(self) -> None:
-        base = self.base_reuse["annotations"]
-        current = self.current_reuse["annotations"]
+        base = self.base_annotation_blocks
+        current = self.current_annotation_blocks
         self.assertEqual(len(base) + 1, len(current))
         self.assertEqual(base[:3], current[:3])
         self.assertEqual(base[3:], current[4:])
@@ -167,7 +203,7 @@ class Ss0CorpusPathApprovalTests(unittest.TestCase):
     def test_ss0_paths_are_absent_regular_future_paths(self) -> None:
         self.assertEqual(0, self.future_ss0_files_present)
         for path in SS0_APACHE_PATHS:
-            self.assertFalse((REPO_ROOT / path).exists(), path)
+            self.assertFalse(os.path.lexists(REPO_ROOT / path), path)
 
     def test_changed_seventh_wildcard_and_duplicate_paths_fail(self) -> None:
         mutations = []
@@ -188,7 +224,17 @@ class Ss0CorpusPathApprovalTests(unittest.TestCase):
                 self.assertTrue(_inventory_errors(document))
 
     def test_existing_file_and_metadata_mutations_fail(self) -> None:
-        self.assertIn("SS0_FILE_PRESENT", _inventory_errors(self.current_reuse, ss_files_present=1))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            existing = root / SS0_APACHE_PATHS[0]
+            existing.parent.mkdir(parents=True)
+            existing.write_text("{}\n", encoding="utf-8")
+            dangling = root / SS0_APACHE_PATHS[1]
+            os.symlink("missing-target", dangling)
+            self.assertIn(
+                "SS0_FILE_PRESENT",
+                _inventory_errors(self.current_reuse, root=root),
+            )
         for key, value in (
             ("precedence", "closest"),
             ("SPDX-FileCopyrightText", "someone else"),
@@ -218,16 +264,15 @@ class Ss0CorpusPathApprovalTests(unittest.TestCase):
 
     def test_k11_only_changes_ratified_bullets(self) -> None:
         path = "docs/protocol/styx-app-kernel-v0-decisions.md"
-        base = _section(_git_show(BASE_SHA, path).decode(), "### K-11")
-        current = _section((REPO_ROOT / path).read_text(), "### K-11")
-        for fixed in (
-            "- **Status:** `DECIDED`.",
-            "- **Rationale/evidence:**",
-            "- **Rejected alternatives:**",
-            "- **Security/privacy:**",
-        ):
-            self.assertIn(fixed, base)
-            self.assertIn(fixed, current)
+        base_text = _git_show(BASE_SHA, path).decode()
+        current_text = (REPO_ROOT / path).read_text(encoding="utf-8")
+        base = _section(base_text, "### K-11")
+        current = _section(current_text, "### K-11")
+        self.assertEqual(
+            base_text.replace(base, "", 1),
+            current_text.replace(current, "", 1),
+        )
+        self.assertEqual(_k11_frozen_projection(base), _k11_frozen_projection(current))
         self.assertIn(INVENTORY_SHA256, current)
         self.assertIn("Issue #291 comment `5484188019`", current)
 

@@ -273,9 +273,9 @@ Protocol increments proceed in dependency order:
    pin provenance and add negative fixtures for each new invariant or failure
    class.
 7. **Authorize the corpus licensing boundary — complete in Issue #253.** The
-   exact twelve-path Apache-2.0 inventory now includes six absent future C0.3
-   data paths. This licensing gate creates no corpus byte and does not authorize
-   C0.3.
+   At the Issue #253 milestone, the exact twelve-path Apache-2.0 inventory
+   included six absent future C0.3 data paths. This licensing gate created no
+   corpus byte and did not authorize C0.3.
    **Authorize the SS corpus licensing boundary — complete in Issue #291.** A
    distinct six-path SS-0 annotation brings the exact Apache inventory to
    eighteen paths. Those SS paths remain absent; this creates no corpus byte or
@@ -314,7 +314,7 @@ The dependency basis is explicit:
 | C0.2k | exact C0.2j credential and sequence semantics | selected 84-octet context plus bounded model/mutation evidence; exact-final review and human gates complete the increment |
 | O-06c | exact C0.2j/C0.2k bytes and existing O-06b profiles | completed as bounded evidence by Issue #243; obligations affected by later O-07/O-08/O-10/O-14 decisions are rerun or reopened after those decisions |
 | remaining blockers | O-06c results plus each decision's own recorded inputs | Issue #260 / merged PR #261 reruns the integrated O-14/O-06c hostile cases; exact-final technical evidence, independent review and human gates pass |
-| K-11 corpus boundary | `DECIDED` by the exact Issue #253 six-path amendment; twelve Apache paths total | Issue #264 populates only the approved synthetic paths; no third-party corpus byte is authorized |
+| K-11 corpus boundary | `DECIDED` by the exact Issue #253 six-path amendment; twelve Apache paths total as of Issue #253 | Issue #264 populates only the approved synthetic paths; no third-party corpus byte is authorized |
 | K11-SS corpus boundary | `DECIDED` by the exact Issue #291 six-path amendment; eighteen Apache paths total | SS-0 paths remain absent; a separate construction contract must prove synthetic-only provenance |
 | C0.3 | all seven frozen Issue #251 entry items satisfied by Issue #262; corpus construction completed by Issue #264; exact D4 transcript/K reconciliation, blind corroboration and bounded evidence GO completed by Issue #266 / merged PR #267 | implementation alignment and the full phase-exit verdict remain separate gated work; C0.3 remains `NO-GO` for demo, product and sensitive use |
 
@@ -434,9 +434,6 @@ The phase may end only when all applicable conditions are true:
 11. K-11's exact Apache-2.0 corpus-path inventory and required licensing
     amendments were approved in Issue #253 before the first C0.3 corpus file
     was created.
-12. K11-SS's exact six-path Apache-2.0 amendment was approved in Issue #291;
-    all six paths remain absent until a separate construction contract.
-
 A bounded `GO` authorizes only the named corpus or next contract. It does not
 authorize product code, deployment or sensitive use.
 

@@ -178,6 +178,7 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
         self.assertNotIn("The six vector files below are the only", self.reuse_text)
         self.assertNotIn("Nothing else.", self.reuse_text)
         self.assertIn("The eighteen paths below are the only", self.reuse_text)
+        self.assertIn("approved exceptions", self.reuse_text)
         self.assertIn("# 2a) Issue #41 Apache-2.0 exceptions", self.reuse_text)
         self.assertIn("# 2b) Issue #253 Apache-2.0 exceptions", self.reuse_text)
 
@@ -189,7 +190,7 @@ class C03CorpusPathApprovalTests(unittest.TestCase):
                 "licensing status and corpus construction do not",
             ),
             "README.md": ("Eighteen exact synthetic data paths", "Issue #253"),
-            "CONTRIBUTING.md": ("eighteen exact", "#253"),
+            "CONTRIBUTING.md": ("eighteen exact", "Issues #41, #253"),
             "docs/architecture/decisions/ADR-0004-licensing-strategy.md": (
                 "esattamente diciotto path",
                 "Issue #253",
