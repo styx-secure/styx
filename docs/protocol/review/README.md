@@ -304,10 +304,11 @@ D4 package has a bounded evidence GO only. The C0.3 capability gate remains
 `NO_GO` and continues to block implementation alignment, demo, product and
 sensitive-use claims.
 
-Issue #291 separately ratifies six absent, exact, synthetic-only SS-0 corpus
-paths under Apache-2.0. This `K11-SS` metadata gate creates no corpus byte and
-authorizes no adapter, persistence, SDK, transport, product, demo, deployment
-or sensitive use.
+Issue #291 separately ratified six exact, synthetic-only SS-0 corpus paths
+under Apache-2.0; Issue #293 populates exactly those paths with Styx-generated
+data and bounded replay/mutation evidence. `K11-SS` and SS-CORPUS-0 authorize no
+adapter, persistence, SDK, transport, product, demo, deployment or sensitive
+use.
 
 `counterexamples[].steps` is the one intentionally order-sensitive sequence in
 the model: entries describe the procedural order of an adversarial trace and

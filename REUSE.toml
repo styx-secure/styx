@@ -16,7 +16,7 @@
 #
 # Do not add Apache-2.0 paths here. The eighteen paths below are the only
 # approved exceptions, ratified exactly in Issues #41 (six existing vector
-# files), #253 (six synthetic C0.3 data files) and #291 (six absent future
+# files), #253 (six synthetic C0.3 data files) and #291/#293 (six populated
 # synthetic SS-0 data files). Any addition requires a new inventory, an exact
 # path list, an explicit human amendment and an independent review; globs and
 # third-party bytes are not approved.
@@ -69,8 +69,8 @@ SPDX-FileCopyrightText = "2026 Maurizio Verde"
 SPDX-License-Identifier = "Apache-2.0"
 
 # ---------------------------------------------------------------------------
-# 2c) Issue #291 Apache-2.0 exceptions — the six exact future, fully synthetic
-#     SS-0 data files pre-registered while absent in that ratified inventory.
+# 2c) Issues #291/#293 Apache-2.0 exceptions — the six exact, fully synthetic
+#     SS-0 data files pre-registered by #291 and populated by #293.
 # ---------------------------------------------------------------------------
 
 [[annotations]]

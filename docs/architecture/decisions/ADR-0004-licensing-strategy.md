@@ -33,8 +33,9 @@
    - `conformance/application-protocol/c03/adversarial-mutations.json`
    - `conformance/application-protocol/c03/expected-traces.json`
 
-   e sei path futuri nella Issue #291, pre-registrati mentre assenti e riservati
-   esclusivamente a dati SS-0 interamente sintetici generati da Styx:
+   e sei path approvati nella Issue #291, pre-registrati mentre assenti e
+   popolati dalla Issue #293 esclusivamente con dati SS-0 interamente sintetici
+   generati da Styx:
    - `conformance/secure-session/ss0/manifest.json`
    - `conformance/secure-session/ss0/valid-session-vectors.json`
    - `conformance/secure-session/ss0/invalid-session-vectors.json`
@@ -111,3 +112,6 @@ verificata dalla history Git). Restano esclusi e mantengono le rispettive licenz
 - **2026-08-31 — Issue #291:** emendamento del titolare per sei path futuri SS-0
   interamente sintetici, pre-registrati mentre assenti; nessun byte di corpus,
   materiale di terzi o autorizzazione adapter/prodotto introdotti.
+- **2026-09-01 — Issue #293:** popolazione dei sei path SS-0 con soli dati
+  sintetici Styx, manifest canonico, replay indipendente e mutazioni chiuse;
+  nessun byte upstream o autorizzazione adapter/prodotto introdotti.
