@@ -1,4 +1,4 @@
-<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="9fc14ba66a53e4cd7546bb435556e8604ed4ad082df51b77cc53e3ac423a5921" -->
+<!-- styx-translation:v1 canonical="docs/platform/integration-roadmap.md" sha256="6de79a77b82760100a9f59b518b0db0924d277166815ff7ce22672571151e3e4" -->
 # Roadmap per integrare le capacità applicative in Styx
 
 [English canonical version](integration-roadmap.md)
@@ -372,8 +372,8 @@ con threat model, non-goal, test e rollback; l'integrazione di prodotto riprende
 solo dopo il verdetto di uscita del piano e tramite contratti separati.
 
 <!-- styx-protocol-phase-exit-status:v1:start -->
-Stato dell'uscita dall'hardening del protocollo: `BOUNDED_GO`. Il freeze generale del
-protocollo termina solo per lavori autorizzati separatamente dalla sezione 9 del piano di
-hardening. La Issue #287 non autorizza di per se stessa adapter, persistenza autenticata,
-SDK, trasporto/consegna, prodotto, demo, deployment o uso sensibile; US-001--US-008 restano sospese.
+Stato dell'uscita dall'hardening del protocollo: `PENDING`. Il freeze generale resta attivo.
+La Issue #287 non autorizza adapter, persistenza autenticata, SDK, trasporto/consegna,
+prodotto, demo, deployment o uso sensibile prima del verdetto vincolato al provider e
+dei gate umani sull'HEAD finale esatto.
 <!-- styx-protocol-phase-exit-status:v1:end -->

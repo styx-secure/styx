@@ -259,22 +259,36 @@ class VerifyTests(unittest.TestCase):
 
     def test_provider_heads_are_derived_from_git(self):
         head = verify.resolve_commit(ROOT, "HEAD")
-        committed = verify.run_git(ROOT, "show", f"{head}:{verify.CANONICAL_REPORT_PATH.as_posix()}")
+        status_document = verify.run_git(ROOT, "show", f"{head}:AGENTS.md")
+        if verify.status_block("AGENTS.md", "PENDING") in status_document:
+            phase = head
+            final = None
+            verdict = None
+        else:
+            observed = [
+                value for value in ("GO", "BOUNDED_GO", "NO_GO")
+                if verify.status_block("AGENTS.md", value) in status_document
+            ]
+            self.assertEqual(1, len(observed))
+            phase = verify.resolve_commit(ROOT, f"{head}^")
+            final = head
+            verdict = observed[0]
+        committed = verify.run_git(ROOT, "show", f"{phase}:{verify.CANONICAL_REPORT_PATH.as_posix()}")
         digest = verify.sha256(committed)
-        report = json.loads(committed)
-        self.assertEqual((head, None), verify.validate_provider_heads(
-            ROOT, phase_a_head=head, phase_a_report_sha256=digest, final_head=None,
-            final_report=report,
+        report = json.loads(verify.run_git(ROOT, "show", f"{head}:{verify.CANONICAL_REPORT_PATH.as_posix()}"))
+        self.assertEqual((phase, final), verify.validate_provider_heads(
+            ROOT, phase_a_head=phase, phase_a_report_sha256=digest, final_head=final,
+            final_report=report, verdict=verdict,
         ))
-        for phase, report_digest, final in (
-            (head, "0" * 64, head),
-            (verify.FREEZE_SHA, digest, head),
-            (head, digest, verify.BASE_SHA),
+        for hostile_phase, report_digest, hostile_final in (
+            (phase, "0" * 64, final),
+            (verify.FREEZE_SHA, digest, final),
+            (phase, digest, verify.BASE_SHA),
         ):
-            with self.subTest(phase=phase, final=final), self.assertRaises(verify.ExitError):
+            with self.subTest(phase=hostile_phase, final=hostile_final), self.assertRaises(verify.ExitError):
                 verify.validate_provider_heads(
-                    ROOT, phase_a_head=phase, phase_a_report_sha256=report_digest,
-                    final_head=final, final_report=report, verdict="BOUNDED_GO",
+                    ROOT, phase_a_head=hostile_phase, phase_a_report_sha256=report_digest,
+                    final_head=hostile_final, final_report=report, verdict=verdict,
                 )
 
     def test_status_document_transition_is_an_exact_replacement(self):
