@@ -164,9 +164,6 @@ def validate_corpus(repo: Path, corpus_dir: Path) -> dict[str, Any]:
         if row["id"] in trace_ids:
             _fail("CDM-016", f"duplicate trace ID: {row['id']}")
         trace_ids.append(row["id"])
-    if set(trace_ids) != set(partitions):
-        _fail("CDM-020", "trace/input ID relation mismatch")
-
     source = loads_unique((repo / "tools/causal-flow-simulator/ss0/source-inventory.json").read_bytes())
     source_rows = {row["id"]: row for row in source["witnesses"]}
     missing = set(source_rows) - set(partitions)
@@ -175,6 +172,8 @@ def validate_corpus(repo: Path, corpus_dir: Path) -> dict[str, Any]:
         _fail("CDM-017", f"missing source witness: {sorted(missing)}")
     if extra:
         _fail("CDM-018", f"extra source witness: {sorted(extra)}")
+    if set(trace_ids) != set(partitions):
+        _fail("CDM-020", "trace/input ID relation mismatch")
     expected_files = build_files(repo)
     expected_docs = {name: loads_unique(data) for name, data in expected_files.items()}
     expected_partition = {}
