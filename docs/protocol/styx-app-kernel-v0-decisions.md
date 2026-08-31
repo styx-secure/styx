@@ -354,7 +354,7 @@ claim that current code conforms.
   corpus path, or any SS-0 corpus byte created before a separate construction
   contract, requires a new exact inventory, provenance analysis, human
   amendment and independent review.
-- **Human ratification:** Issue #291 comment `5483987772` by `maverde73` binds
+- **Human ratification:** Issue #291 comment `5484136636` by `maverde73` binds
   the exact SS-0 six-path inventory and authorizes metadata registration while
   the files are absent; Issue #253/PR #258 remain the authority for C0.3 paths.
 

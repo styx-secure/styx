@@ -229,7 +229,7 @@ class Ss0CorpusPathApprovalTests(unittest.TestCase):
             self.assertIn(fixed, base)
             self.assertIn(fixed, current)
         self.assertIn(INVENTORY_SHA256, current)
-        self.assertIn("Issue #291 comment `5483987772`", current)
+        self.assertIn("Issue #291 comment `5484136636`", current)
 
     def test_review_model_changes_only_decisions_source_digest(self) -> None:
         current = validator.load_json_unique(MODEL_PATH)
