@@ -442,7 +442,7 @@ formats, persistence behavior, transport selection or deployment behavior.
 
 This audit covers the exact 24-commit literal first-parent range from the freeze
 merge through Base `fd6f652af1666c6c9dca8356c2aed615773f5208`.
-`CONFORMING` means that provider evidence places
+`CONFORMING` means that immutable provider evidence places
 the increment inside the named plan lane or a previously recorded exception;
 it is not a security verdict. A row that needs a new historical determination
 remains `UNRECONCILED/BLOCKING` until an authorized human makes that decision

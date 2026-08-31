@@ -26,6 +26,30 @@ MANEXADA_ID = 314148709
 MAX_PROVIDER_BYTES = 256 * 1024
 ISSUE_API_URL = "https://api.github.com/repos/styx-secure/styx/issues/287"
 PR_NUMBER = 288
+CANONICAL_REPORT_PATH = Path("docs/protocol/review/phase-exit/phase-exit-report.json")
+ALLOWED_CHANGED_PATHS = {
+    "AGENTS.md",
+    "CLAUDE.md",
+    "docs/PROJECT_BRIEF.md",
+    "docs/platform/integration-roadmap.md",
+    "docs/platform/integration-roadmap_IT.md",
+    "docs/protocol/protocol-hardening-plan.md",
+    "docs/protocol/review/README.md",
+    "docs/protocol/review/styx-app-kernel-v0-review-model.json",
+}
+ALLOWED_CHANGED_PREFIXES = (
+    "docs/protocol/review/phase-exit/",
+    "tools/protocol-phase-exit/",
+)
+HISTORICAL_NON_PR_COMMIT = "578b3241d6e7d0231da0d2e00b9d04c69530d24e"
+MINIMUM_CONDITIONAL_STATEMENTS = [
+    "O-12 is excluded only because the bounded v0 K and SS profiles make no physical-time claim.",
+    "O-13 is excluded only from non-destructive interface/corpus work and remains blocking for irreversible effects and deletion or erasure claims.",
+    "O-15 remains blocking for profile succession, migration and upgrade claims.",
+    "O-16 remains blocking for semantic finality, recovery or finality UI and irreversible-effect claims.",
+    "O-11 and RS custody obligations remain blocking for durable product or storage claims.",
+    "No exclusion authorizes an adapter, authenticated persistence or product.",
+]
 
 PINNED_BASE_BLOBS = {
     "AGENTS.md": "50588a0cf2309af8fdf1551cd09facb6338e2eba8362d4e13ab22390a2f5bc93",
@@ -66,6 +90,7 @@ EVIDENCE_PATHS = {
     ),
     "review_model": ("docs/protocol/review/styx-app-kernel-v0-review-model.json",),
     "review_records": ("docs/protocol/review/README.md",),
+    "phase_exit_status": ("docs/protocol/review/phase-exit/README.md",),
     "protocol_plan": ("docs/protocol/protocol-hardening-plan.md",),
     "c03_evidence": (
         "conformance/application-protocol/c03/manifest.json",
@@ -117,6 +142,75 @@ def canonical_bytes(value: object) -> bytes:
     return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
 
 
+def normalized_prose(data: bytes) -> str:
+    return " ".join(data.decode("utf-8").replace("-\n", "-").split())
+
+
+def report_strings(value: object):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield from report_strings(key)
+            yield from report_strings(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from report_strings(item)
+
+
+def validate_report_strings(report: dict[str, object], forbidden: set[str]) -> None:
+    timestamp = re.compile(r"(?:19|20)[0-9]{2}-[0-9]{2}-[0-9]{2}[T ][0-9]{2}:[0-9]{2}")
+    absolute_path = re.compile(r"(?<![A-Za-z0-9_.-])(?:/|\\|[A-Za-z]:[\\/])")
+    for value in report_strings(report):
+        require(not any(identity in value for identity in forbidden), "canonical report contains execution identity")
+        require(timestamp.search(value) is None, "canonical report contains timestamp")
+        require(absolute_path.search(value) is None, "canonical report contains absolute path")
+        for identity in re.findall(r"(?<![0-9a-f])[0-9a-f]{40}(?![0-9a-f])", value):
+            require(identity == HISTORICAL_NON_PR_COMMIT, "canonical report contains unapproved commit identity")
+
+
+def validate_report_hygiene(repo: Path, report: dict[str, object]) -> None:
+    head = run_git(repo, "rev-parse", "HEAD").decode().strip()
+    tree = run_git(repo, "rev-parse", "HEAD^{tree}").decode().strip()
+    base_tree = run_git(repo, "rev-parse", f"{BASE_SHA}^{{tree}}").decode().strip()
+    diff = sha256(run_git(repo, "diff", "--binary", "--full-index", f"{BASE_SHA}...HEAD"))
+    validate_report_strings(report, {head, tree, base_tree, diff})
+
+
+def verify_committed_report(repo: Path, report: dict[str, object]) -> None:
+    path = repo / CANONICAL_REPORT_PATH
+    require(path.is_file() and not path.is_symlink(), "canonical report missing")
+    require(path.read_bytes() == canonical_bytes(report), "canonical report byte mismatch")
+
+
+def is_allowed_changed_path(path: str) -> bool:
+    return path in ALLOWED_CHANGED_PATHS or path.startswith(ALLOWED_CHANGED_PREFIXES)
+
+
+def verify_candidate_scope(repo: Path) -> None:
+    require(not run_git(repo, "status", "--porcelain=v1", "--untracked-files=all"), "candidate checkout is not clean")
+    raw = run_git(repo, "diff", "--name-status", "--no-renames", f"{BASE_SHA}...HEAD")
+    seen: set[str] = set()
+    for line in raw.decode("utf-8").splitlines():
+        fields = line.split("\t")
+        require(len(fields) == 2 and fields[0] in {"A", "M"}, "candidate contains forbidden path operation")
+        path = fields[1]
+        require(path not in seen, "candidate changed-path duplicate")
+        seen.add(path)
+        require(is_allowed_changed_path(path), f"candidate path outside scope: {path}")
+        candidate = repo / path
+        require(candidate.is_file() and not candidate.is_symlink(), f"invalid candidate path: {path}")
+    require(bool(seen), "candidate changed-path set is empty")
+
+
+def mechanical_eligibility(dispositions: list[str]) -> str:
+    if "FAIL" in dispositions:
+        return "REQUIRES_NO_GO"
+    if "CONDITIONAL_EXCLUSION" in dispositions:
+        return "ELIGIBLE_FOR_BOUNDED_GO"
+    return "ELIGIBLE_FOR_GO"
+
+
 def monotone_verdict(eligibility: str, verdict: str) -> bool:
     return verdict == "NO_GO" or (
         verdict == "GO" and eligibility == "ELIGIBLE_FOR_GO"
@@ -166,6 +260,11 @@ def fetch_provider_json(url: str) -> tuple[dict[str, object], bytes]:
 def verdict_url(comment_id: str) -> str:
     require(re.fullmatch(r"[1-9][0-9]*", comment_id) is not None, "invalid verdict comment id")
     return f"https://api.github.com/repos/styx-secure/styx/issues/comments/{comment_id}"
+
+
+def approval_url(review_id: str) -> str:
+    require(re.fullmatch(r"[1-9][0-9]*", review_id) is not None, "invalid approval review id")
+    return f"https://api.github.com/repos/styx-secure/styx/pulls/{PR_NUMBER}/reviews/{review_id}"
 
 
 def provider_projection(comment: dict[str, object]) -> dict[str, object]:
@@ -225,6 +324,35 @@ def validate_verdict_comment(
         "verdict": payload["verdict"],
         "mechanical_eligibility": eligibility,
         "comment_id": int(comment_id),
+    }
+
+
+def validate_approval_review(
+    review: dict[str, object], *, review_id: str, final_head: str,
+) -> dict[str, object]:
+    url = approval_url(review_id)
+    user = review.get("user")
+    require(isinstance(user, dict), "approval user missing")
+    require(review.get("id") == int(review_id), "approval review id mismatch")
+    require(review.get("url") == url, "approval review URL mismatch")
+    require(review.get("pull_request_url") == f"https://api.github.com/repos/styx-secure/styx/pulls/{PR_NUMBER}", "approval PR mismatch")
+    require(user.get("id") == MANEXADA_ID and user.get("login") == "manexada", "approval operator mismatch")
+    require(review.get("state") == "APPROVED", "approval state mismatch")
+    require(review.get("commit_id") == final_head, "approval HEAD mismatch")
+    require(isinstance(review.get("submitted_at"), str) and bool(review["submitted_at"]), "approval submission missing")
+    projection = {
+        "id": review["id"],
+        "url": review["url"],
+        "pull_request_url": review["pull_request_url"],
+        "user": {"id": user["id"], "login": user["login"]},
+        "state": review["state"],
+        "commit_id": review["commit_id"],
+        "submitted_at": review["submitted_at"],
+    }
+    return {
+        "approval_provider_projection_sha256": sha256(canonical_bytes(projection)),
+        "approval_review_id": int(review_id),
+        "approved_head": final_head,
     }
 
 
@@ -313,14 +441,66 @@ def load_registry(repo: Path) -> dict[str, object]:
     require(isinstance(conditions, list), "registry conditions missing")
     expected = [f"EXIT-{index:02d}" for index in range(1, 12)]
     require([item.get("id") for item in conditions if isinstance(item, dict)] == expected, "condition set mismatch")
+    registered_ids: list[str] = []
     for item in conditions:
-        require(set(item) == {"id", "applicability", "disposition", "required_evidence_ids", "residual_risks", "reopen_triggers"}, f"condition shape mismatch: {item.get('id')}")
-        disposition = item["disposition"]
-        if item["id"] in {"EXIT-08", "EXIT-09"}:
-            require(disposition == "HUMAN_GATE_PENDING", "external gate must be pending")
-        else:
-            require(disposition in {"PASS", "CONDITIONAL_EXCLUSION", "FAIL"}, "invalid mechanical disposition")
+        required_shape = {
+            "id", "applicability", "required_evidence_ids",
+            "expected_evidence_sha256", "residual_risks", "reopen_triggers",
+        }
+        if item["id"] == "EXIT-01":
+            required_shape.add("excluded_claims")
+        require(set(item) == required_shape, f"condition shape mismatch: {item.get('id')}")
+        evidence_ids = validate_evidence_declaration(item)
+        registered_ids.extend(evidence_ids)
+    require(set(registered_ids) == set(EVIDENCE_PATHS) | {"frozen_manifest", "first_parent_audit"}, "registered evidence universe mismatch")
+    validate_excluded_claims(repo, conditions[0])
     return value
+
+
+def validate_evidence_declaration(item: dict[str, object]) -> list[str]:
+    evidence_ids = item["required_evidence_ids"]
+    expected_digests = item["expected_evidence_sha256"]
+    require(isinstance(evidence_ids, list), "required evidence ids missing")
+    require(all(isinstance(value, str) for value in evidence_ids), "invalid required evidence id")
+    require(len(evidence_ids) == len(set(evidence_ids)), "duplicate required evidence id")
+    known = set(EVIDENCE_PATHS) | {"frozen_manifest", "first_parent_audit"}
+    require(all(value in known for value in evidence_ids), "unknown required evidence id")
+    require(isinstance(expected_digests, dict) and set(expected_digests) == set(evidence_ids), "expected evidence set mismatch")
+    require(all(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) for value in expected_digests.values()), "invalid expected evidence digest")
+    return evidence_ids
+
+
+def validate_excluded_claims(repo: Path, record: dict[str, object]) -> None:
+    claims = record.get("excluded_claims")
+    require(isinstance(claims, list) and len(claims) == 3, "conditional exclusion claim set mismatch")
+    seen: set[tuple[str, str, str]] = set()
+    for claim in claims:
+        require(isinstance(claim, dict), "conditional exclusion claim invalid")
+        require(set(claim) == {"file", "heading", "quoted_condition", "base_sha256"}, "conditional exclusion shape mismatch")
+        path = claim["file"]
+        require(path in {
+            "docs/protocol/styx-app-kernel-v0-decisions.md",
+            "docs/protocol/styx-secure-session-v0-decisions.md",
+        }, "conditional exclusion source outside decision registry")
+        require(claim["base_sha256"] == PINNED_BASE_BLOBS[path], "conditional exclusion Base digest mismatch")
+        source = normalized_prose(run_git(repo, "show", f"{BASE_SHA}:{path}"))
+        heading = " ".join(str(claim["heading"]).split())
+        quoted = " ".join(str(claim["quoted_condition"]).split())
+        require(heading in source, "conditional exclusion heading missing")
+        require(quoted in source, "conditional exclusion quote missing")
+        identity = (path, heading, quoted)
+        require(identity not in seen, "conditional exclusion duplicate")
+        seen.add(identity)
+
+
+def disposition_for(record: dict[str, object], observed: dict[str, str]) -> str:
+    expected = record["expected_evidence_sha256"]
+    require(observed == expected, f"evidence digest mismatch: {record['id']}")
+    if record["id"] == "EXIT-01":
+        return "CONDITIONAL_EXCLUSION"
+    if record["id"] in {"EXIT-08", "EXIT-09"}:
+        return "HUMAN_GATE_PENDING"
+    return "PASS"
 
 
 def build_report(repo: Path) -> dict[str, object]:
@@ -334,29 +514,36 @@ def build_report(repo: Path) -> dict[str, object]:
     for item in registry["conditions"]:
         evidence_ids = item["required_evidence_ids"]
         observed = {evidence_id: evidence_digest(repo, evidence_id, frozen_sha, audit_sha) for evidence_id in evidence_ids}
-        record = dict(item)
-        record["observed_evidence_sha256"] = observed
+        disposition = disposition_for(item, observed)
+        record = {
+            "id": item["id"],
+            "applicability": item["applicability"],
+            "required_evidence_ids": evidence_ids,
+            "observed_evidence_sha256": observed,
+            "disposition": disposition,
+            "residual_risks": item["residual_risks"],
+            "reopen_triggers": item["reopen_triggers"],
+        }
+        if item["id"] == "EXIT-01":
+            record["excluded_claims"] = item["excluded_claims"]
         records.append(record)
         if item["id"] not in {"EXIT-08", "EXIT-09"}:
-            mechanical.append(item["disposition"])
-    if "FAIL" in mechanical:
-        eligibility = "REQUIRES_NO_GO"
-    elif "CONDITIONAL_EXCLUSION" in mechanical:
-        eligibility = "ELIGIBLE_FOR_BOUNDED_GO"
-    else:
-        eligibility = "ELIGIBLE_FOR_GO"
-    return {
+            mechanical.append(disposition)
+    report = {
         "schema": "styx-protocol-phase-exit-report/v1",
         "issue_body_sha256": ISSUE_BODY_SHA256,
-        "eligibility": eligibility,
+        "eligibility": mechanical_eligibility(mechanical),
         "frozen_manifest_sha256": frozen_sha,
         "first_parent_audit_sha256": audit_sha,
         "conditions": records,
+        "conditional_exclusions": MINIMUM_CONDITIONAL_STATEMENTS,
         "non_authorizations": [
             "adapter", "authenticated_persistence", "sdk", "transport_delivery",
             "ss_corpus_until_k11_ss", "product", "demo", "deployment", "sensitive_use",
         ],
     }
+    validate_report_hygiene(repo, report)
+    return report
 
 
 def write_report(report: dict[str, object], output: Path) -> None:
@@ -373,6 +560,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--phase-a-head")
     parser.add_argument("--phase-a-report-sha256")
     parser.add_argument("--provider-output", type=Path)
+    parser.add_argument("--approval-review-id")
+    parser.add_argument("--final-head")
+    parser.add_argument("--approval-provider-output", type=Path)
+    parser.add_argument("--refresh-canonical-report", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -380,9 +571,21 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(sys.argv[1:] if argv is None else argv)
     try:
         require(args.base == BASE_SHA, "Base argument mismatch")
+        require((args.verdict_comment_id is None) == (args.phase_a_head is None), "verdict identity arguments incomplete")
+        require((args.verdict_comment_id is None) == (args.phase_a_report_sha256 is None), "verdict report arguments incomplete")
+        require((args.verdict_comment_id is None) == (args.provider_output is None), "verdict output arguments incomplete")
+        require((args.approval_review_id is None) == (args.final_head is None), "approval identity arguments incomplete")
+        require((args.approval_review_id is None) == (args.approval_provider_output is None), "approval output arguments incomplete")
         repo = args.repo_root.resolve(strict=True)
         report = build_report(repo)
-        write_report(report, args.output)
+        if args.refresh_canonical_report:
+            require(args.output.resolve() == (repo / CANONICAL_REPORT_PATH).resolve(), "refresh output must be canonical report")
+            require(args.verdict_comment_id is None and args.approval_review_id is None, "refresh cannot resolve provider gates")
+            write_report(report, args.output)
+        else:
+            verify_candidate_scope(repo)
+            verify_committed_report(repo, report)
+            write_report(report, args.output)
         if args.verdict_comment_id is not None:
             require(args.phase_a_head is not None, "Phase-A HEAD required")
             require(args.phase_a_report_sha256 is not None, "Phase-A report digest required")
@@ -400,6 +603,17 @@ def main(argv: list[str] | None = None) -> int:
             )
             result["provider_response_sha256"] = sha256(raw)
             write_report(result, args.provider_output)
+        if args.approval_review_id is not None:
+            require(args.final_head is not None, "final HEAD required")
+            require(args.approval_provider_output is not None, "approval provider output required")
+            require(re.fullmatch(r"[0-9a-f]{40}", args.final_head) is not None, "invalid final HEAD")
+            url = approval_url(args.approval_review_id)
+            review, raw = fetch_provider_json(url)
+            result = validate_approval_review(
+                review, review_id=args.approval_review_id, final_head=args.final_head,
+            )
+            result["approval_provider_response_sha256"] = sha256(raw)
+            write_report(result, args.approval_provider_output)
     except (ExitError, OSError, ValueError, json.JSONDecodeError) as error:
         print(f"phase_exit_failure={error}", file=sys.stderr)
         return 2

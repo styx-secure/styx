@@ -5,7 +5,9 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -33,6 +35,12 @@ class VerifyTests(unittest.TestCase):
     def test_registry_is_closed(self):
         registry = verify.load_registry(ROOT)
         self.assertEqual([f"EXIT-{index:02d}" for index in range(1, 12)], [item["id"] for item in registry["conditions"]])
+        registered = {
+            evidence_id
+            for item in registry["conditions"]
+            for evidence_id in item["required_evidence_ids"]
+        }
+        self.assertEqual(set(verify.EVIDENCE_PATHS) | {"frozen_manifest", "first_parent_audit"}, registered)
 
     def test_report_is_bounded_and_deterministic(self):
         first = verify.canonical_bytes(verify.build_report(ROOT))
@@ -43,13 +51,49 @@ class VerifyTests(unittest.TestCase):
         self.assertEqual("HUMAN_GATE_PENDING", report["conditions"][7]["disposition"])
         self.assertEqual("HUMAN_GATE_PENDING", report["conditions"][8]["disposition"])
         self.assertIn("adapter", report["non_authorizations"])
+        self.assertEqual(verify.MINIMUM_CONDITIONAL_STATEMENTS, report["conditional_exclusions"])
+        self.assertEqual(3, len(report["conditions"][0]["excluded_claims"]))
 
     def test_fail_dominates_eligibility(self):
+        self.assertEqual("REQUIRES_NO_GO", verify.mechanical_eligibility(["PASS", "FAIL"]))
+        self.assertEqual("ELIGIBLE_FOR_BOUNDED_GO", verify.mechanical_eligibility(["PASS", "CONDITIONAL_EXCLUSION"]))
+        self.assertEqual("ELIGIBLE_FOR_GO", verify.mechanical_eligibility(["PASS"]))
+
+    def test_digest_substitution_and_duplicate_evidence_fail_closed(self):
         registry = verify.load_registry(ROOT)
-        hostile = copy.deepcopy(registry)
-        hostile["conditions"][0]["disposition"] = "FAIL"
-        mechanical = [item["disposition"] for item in hostile["conditions"] if item["id"] not in {"EXIT-08", "EXIT-09"}]
-        self.assertIn("FAIL", mechanical)
+        record = copy.deepcopy(registry["conditions"][2])
+        observed = dict(record["expected_evidence_sha256"])
+        observed["protocol_plan"] = "0" * 64
+        with self.assertRaises(verify.ExitError):
+            verify.disposition_for(record, observed)
+        record["required_evidence_ids"].append(record["required_evidence_ids"][0])
+        with self.assertRaises(verify.ExitError):
+            verify.validate_evidence_declaration(record)
+
+    def test_missing_registered_input_fails_closed(self):
+        with mock.patch.dict(verify.EVIDENCE_PATHS, {"missing_fixture": ("not/present",)}):
+            with self.assertRaises(verify.ExitError):
+                verify.evidence_digest(ROOT, "missing_fixture", "0" * 64, "1" * 64)
+
+    def test_committed_report_substitution_fails_closed(self):
+        report = {"schema": "test", "eligibility": "ELIGIBLE_FOR_BOUNDED_GO"}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / verify.CANONICAL_REPORT_PATH
+            path.parent.mkdir(parents=True)
+            path.write_bytes(verify.canonical_bytes(report))
+            verify.verify_committed_report(root, report)
+            path.write_text('{"eligibility":"ELIGIBLE_FOR_GO"}\n', encoding="utf-8")
+            with self.assertRaises(verify.ExitError):
+                verify.verify_committed_report(root, report)
+
+    def test_report_hygiene_and_scope_are_fail_closed(self):
+        verify.validate_report_strings({"value": "docs/protocol/root-authority.md"}, {"deadbeef"})
+        for value in ("/tmp/leak", "path=C:\\review", "2026-08-31T12:00", "candidate-deadbeef"):
+            with self.subTest(value=value), self.assertRaises(verify.ExitError):
+                verify.validate_report_strings({"value": value}, {"deadbeef"})
+        self.assertTrue(verify.is_allowed_changed_path("tools/protocol-phase-exit/verify.py"))
+        self.assertFalse(verify.is_allowed_changed_path("tools/causal-flow-simulator/ss0/model.py"))
 
     def test_unknown_evidence_fails_closed(self):
         with self.assertRaises(verify.ExitError):
@@ -99,6 +143,24 @@ class VerifyTests(unittest.TestCase):
                 report_sha="b" * 64, frozen_sha="c" * 64, audit_sha="d" * 64,
                 eligibility="ELIGIBLE_FOR_BOUNDED_GO",
             )
+
+    def test_approval_provider_identity_and_head(self):
+        review_id = "5065807842"
+        review = {
+            "id": int(review_id),
+            "url": verify.approval_url(review_id),
+            "pull_request_url": f"https://api.github.com/repos/styx-secure/styx/pulls/{verify.PR_NUMBER}",
+            "user": {"id": verify.MANEXADA_ID, "login": "manexada"},
+            "state": "APPROVED",
+            "commit_id": "a" * 40,
+            "submitted_at": "2026-08-31T12:00:00Z",
+        }
+        result = verify.validate_approval_review(review, review_id=review_id, final_head="a" * 40)
+        self.assertEqual("a" * 40, result["approved_head"])
+        hostile = copy.deepcopy(review)
+        hostile["commit_id"] = "b" * 40
+        with self.assertRaises(verify.ExitError):
+            verify.validate_approval_review(hostile, review_id=review_id, final_head="a" * 40)
 
     def test_canonical_json_has_no_insignificant_whitespace(self):
         self.assertEqual(b'{"a":2,"z":1}\n', verify.canonical_bytes({"z": 1, "a": 2}))
