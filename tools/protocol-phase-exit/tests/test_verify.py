@@ -55,6 +55,51 @@ class VerifyTests(unittest.TestCase):
         with self.assertRaises(verify.ExitError):
             verify.evidence_digest(ROOT, "unknown", "0" * 64, "1" * 64)
 
+    def test_verdict_monotonicity(self):
+        self.assertTrue(verify.monotone_verdict("ELIGIBLE_FOR_GO", "GO"))
+        self.assertTrue(verify.monotone_verdict("ELIGIBLE_FOR_GO", "BOUNDED_GO"))
+        self.assertTrue(verify.monotone_verdict("ELIGIBLE_FOR_BOUNDED_GO", "BOUNDED_GO"))
+        self.assertFalse(verify.monotone_verdict("ELIGIBLE_FOR_BOUNDED_GO", "GO"))
+        self.assertFalse(verify.monotone_verdict("REQUIRES_NO_GO", "BOUNDED_GO"))
+        self.assertTrue(verify.monotone_verdict("REQUIRES_NO_GO", "NO_GO"))
+
+    def test_verdict_provider_identity_and_payload(self):
+        comment_id = "5476501347"
+        url = verify.verdict_url(comment_id)
+        payload = {
+            "schema": "styx-protocol-phase-exit-verdict/v1",
+            "issue_number": 287,
+            "issue_body_sha256": verify.ISSUE_BODY_SHA256,
+            "operator": "maverde73",
+            "base_sha": verify.BASE_SHA,
+            "phase_a_head": "a" * 40,
+            "phase_exit_report_sha256": "b" * 64,
+            "frozen_manifest_sha256": "c" * 64,
+            "first_parent_audit_sha256": "d" * 64,
+            "mechanical_eligibility": "ELIGIBLE_FOR_BOUNDED_GO",
+            "verdict": "BOUNDED_GO",
+        }
+        comment = {
+            "id": int(comment_id), "url": url, "issue_url": verify.ISSUE_API_URL,
+            "user": {"id": verify.MAVERDE_ID, "login": "maverde73"},
+            "created_at": "2026-08-31T12:00:00Z", "updated_at": "2026-08-31T12:00:00Z",
+            "body": json.dumps(payload, sort_keys=True, separators=(",", ":")),
+        }
+        result = verify.validate_verdict_comment(
+            comment, comment_id=comment_id, phase_a_head="a" * 40,
+            report_sha="b" * 64, frozen_sha="c" * 64, audit_sha="d" * 64,
+            eligibility="ELIGIBLE_FOR_BOUNDED_GO",
+        )
+        self.assertEqual("BOUNDED_GO", result["verdict"])
+        hostile = copy.deepcopy(comment)
+        hostile["updated_at"] = "2026-08-31T12:00:01Z"
+        with self.assertRaises(verify.ExitError):
+            verify.validate_verdict_comment(
+                hostile, comment_id=comment_id, phase_a_head="a" * 40,
+                report_sha="b" * 64, frozen_sha="c" * 64, audit_sha="d" * 64,
+                eligibility="ELIGIBLE_FOR_BOUNDED_GO",
+            )
+
     def test_canonical_json_has_no_insignificant_whitespace(self):
         self.assertEqual(b'{"a":2,"z":1}\n', verify.canonical_bytes({"z": 1, "a": 2}))
 

@@ -24,6 +24,8 @@ ISSUE_BODY_SHA256 = "6e48e020820cbb7427d9e7334a9f12a336e2684397a04dda6c7c41b7f89
 MAVERDE_ID = 141346846
 MANEXADA_ID = 314148709
 MAX_PROVIDER_BYTES = 256 * 1024
+ISSUE_API_URL = "https://api.github.com/repos/styx-secure/styx/issues/287"
+PR_NUMBER = 288
 
 PINNED_BASE_BLOBS = {
     "AGENTS.md": "50588a0cf2309af8fdf1551cd09facb6338e2eba8362d4e13ab22390a2f5bc93",
@@ -113,6 +115,117 @@ def sha256(data: bytes) -> str:
 
 def canonical_bytes(value: object) -> bytes:
     return (json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False) + "\n").encode()
+
+
+def monotone_verdict(eligibility: str, verdict: str) -> bool:
+    return verdict == "NO_GO" or (
+        verdict == "GO" and eligibility == "ELIGIBLE_FOR_GO"
+    ) or (
+        verdict == "BOUNDED_GO"
+        and eligibility in {"ELIGIBLE_FOR_GO", "ELIGIBLE_FOR_BOUNDED_GO"}
+    )
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def provider_opener() -> urllib.request.OpenerDirector:
+    context = ssl.create_default_context()
+    require(context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname, "provider TLS is not strict")
+    return urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        urllib.request.HTTPSHandler(context=context),
+        NoRedirect(),
+    )
+
+
+def fetch_provider_json(url: str) -> tuple[dict[str, object], bytes]:
+    require(sys.flags.isolated == 1, "provider fetch requires Python isolated mode")
+    require(sys.flags.no_site == 1, "provider fetch requires site isolation")
+    request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"})
+    try:
+        with provider_opener().open(request, timeout=30) as response:
+            require(response.geturl() == url, "provider response URL mismatch")
+            length = response.headers.get("Content-Length")
+            if length is not None:
+                require(int(length) <= MAX_PROVIDER_BYTES, "provider response oversized")
+            raw = response.read(MAX_PROVIDER_BYTES + 1)
+    except (urllib.error.URLError, TimeoutError, ValueError) as error:
+        raise ExitError("provider fetch failed") from error
+    require(len(raw) <= MAX_PROVIDER_BYTES, "provider response oversized")
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise ExitError("provider response is not JSON") from error
+    require(isinstance(value, dict), "provider response must be an object")
+    return value, raw
+
+
+def verdict_url(comment_id: str) -> str:
+    require(re.fullmatch(r"[1-9][0-9]*", comment_id) is not None, "invalid verdict comment id")
+    return f"https://api.github.com/repos/styx-secure/styx/issues/comments/{comment_id}"
+
+
+def provider_projection(comment: dict[str, object]) -> dict[str, object]:
+    user = comment.get("user")
+    require(isinstance(user, dict), "provider user missing")
+    keys = {"id", "url", "issue_url", "created_at", "updated_at", "body"}
+    require(all(key in comment for key in keys), "provider projection field missing")
+    return {
+        "id": comment["id"],
+        "url": comment["url"],
+        "issue_url": comment["issue_url"],
+        "user": {"id": user.get("id"), "login": user.get("login")},
+        "created_at": comment["created_at"],
+        "updated_at": comment["updated_at"],
+        "body": comment["body"],
+    }
+
+
+def validate_verdict_comment(
+    comment: dict[str, object], *, comment_id: str, phase_a_head: str,
+    report_sha: str, frozen_sha: str, audit_sha: str, eligibility: str,
+) -> dict[str, object]:
+    url = verdict_url(comment_id)
+    projection = provider_projection(comment)
+    require(projection["id"] == int(comment_id), "verdict comment id mismatch")
+    require(projection["url"] == url, "verdict comment URL mismatch")
+    require(projection["issue_url"] == ISSUE_API_URL, "verdict Issue mismatch")
+    require(projection["user"] == {"id": MAVERDE_ID, "login": "maverde73"}, "verdict operator mismatch")
+    require(projection["created_at"] == projection["updated_at"], "verdict comment was edited")
+    body = projection["body"]
+    require(isinstance(body, str), "verdict body missing")
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as error:
+        raise ExitError("verdict body must be one JSON object") from error
+    require(isinstance(payload, dict), "verdict body must be one JSON object")
+    expected = {
+        "schema", "issue_number", "issue_body_sha256", "operator", "base_sha",
+        "phase_a_head", "phase_exit_report_sha256", "frozen_manifest_sha256",
+        "first_parent_audit_sha256", "mechanical_eligibility", "verdict",
+    }
+    require(set(payload) == expected, "verdict body shape mismatch")
+    require(payload["schema"] == "styx-protocol-phase-exit-verdict/v1", "verdict schema mismatch")
+    require(payload["issue_number"] == ISSUE_NUMBER, "verdict Issue number mismatch")
+    require(payload["issue_body_sha256"] == ISSUE_BODY_SHA256, "verdict Issue digest mismatch")
+    require(payload["operator"] == "maverde73", "verdict operator body mismatch")
+    require(payload["base_sha"] == BASE_SHA, "verdict Base mismatch")
+    require(payload["phase_a_head"] == phase_a_head, "verdict Phase-A HEAD mismatch")
+    require(payload["phase_exit_report_sha256"] == report_sha, "verdict report mismatch")
+    require(payload["frozen_manifest_sha256"] == frozen_sha, "verdict frozen manifest mismatch")
+    require(payload["first_parent_audit_sha256"] == audit_sha, "verdict audit mismatch")
+    require(payload["mechanical_eligibility"] == eligibility, "verdict eligibility mismatch")
+    require(payload["verdict"] in {"GO", "BOUNDED_GO", "NO_GO"}, "unknown verdict")
+    require(monotone_verdict(eligibility, payload["verdict"]), "verdict is not monotone")
+    return {
+        "provider_projection_sha256": sha256(canonical_bytes(projection)),
+        "verdict": payload["verdict"],
+        "mechanical_eligibility": eligibility,
+        "comment_id": int(comment_id),
+    }
 
 
 def run_git(repo: Path, *args: str) -> bytes:
@@ -256,6 +369,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--base", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--verdict-comment-id")
+    parser.add_argument("--phase-a-head")
+    parser.add_argument("--phase-a-report-sha256")
+    parser.add_argument("--provider-output", type=Path)
     return parser.parse_args(argv)
 
 
@@ -266,6 +383,23 @@ def main(argv: list[str] | None = None) -> int:
         repo = args.repo_root.resolve(strict=True)
         report = build_report(repo)
         write_report(report, args.output)
+        if args.verdict_comment_id is not None:
+            require(args.phase_a_head is not None, "Phase-A HEAD required")
+            require(args.phase_a_report_sha256 is not None, "Phase-A report digest required")
+            require(args.provider_output is not None, "provider output required")
+            url = verdict_url(args.verdict_comment_id)
+            comment, raw = fetch_provider_json(url)
+            result = validate_verdict_comment(
+                comment,
+                comment_id=args.verdict_comment_id,
+                phase_a_head=args.phase_a_head,
+                report_sha=args.phase_a_report_sha256,
+                frozen_sha=report["frozen_manifest_sha256"],
+                audit_sha=report["first_parent_audit_sha256"],
+                eligibility=report["eligibility"],
+            )
+            result["provider_response_sha256"] = sha256(raw)
+            write_report(result, args.provider_output)
     except (ExitError, OSError, ValueError, json.JSONDecodeError) as error:
         print(f"phase_exit_failure={error}", file=sys.stderr)
         return 2
