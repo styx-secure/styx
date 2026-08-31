@@ -86,6 +86,23 @@ technical gate passes. Independent review and human approvals completed in
 merged PR #261 at `490689f0d81980cf942d448c76a54192913b7cde`; no
 product/runtime conformance follows.
 
+The SS-0 snapshot adds the Gate-A-frozen
+`styx-secure-session-v0-decisions.md` source and represents `SSD-01` through
+`SSD-11` as a separate bounded secure-session evidence-profile decision group.
+The top-level `modeled_scope` record keeps those decisions distinct from the
+application-kernel `O-*` group, while `decision_sources` attributes every
+decision to exactly one pinned normative source. The `SS` layer and its actor
+record reference all nine `OB-SS*` obligations and the closed forbidden-
+inference boundary. This is evidence-model coverage only: it selects no
+supported adapter, implementation, SDK, wire, persistence or product behavior,
+and `C0.3` remains `NO_GO`.
+
+The historical filenames in this directory remain application-kernel-oriented
+even though the derived graph now includes the bounded SS-0 slice. Renaming or
+splitting the graph would create a second source-of-truth and is outside Issue
+#285. The closed modeled scope and per-decision attribution make that mismatch
+explicit, but do not eliminate its review cost.
+
 The validator pins the exact source-ID, repository-path and authority tuple for
 every source in this snapshot. Changing an evidence source to `normative`,
 retargeting an ID to a different file, adding or removing a modeled record, or
@@ -130,7 +147,10 @@ verdict or permission to implement unresolved semantics.
 
 ## Closed registry semantics
 
-The arrays in `registries` are exhaustive and sorted. Their meanings are:
+The arrays in `registries` are exhaustive and sorted. `modeled_scope` and
+`decision_sources` additionally close the distinction between application-
+kernel decisions and bounded secure-session evidence decisions. Their meanings
+are:
 
 - `statuses`: `DECIDED` is normatively selected; `DERIVED` follows mechanically
   from normative data; `EVIDENCE_ONLY` is an observation, not authority;

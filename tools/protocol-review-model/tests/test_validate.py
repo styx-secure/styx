@@ -63,6 +63,45 @@ def _apply_mutation(document: dict, mutation: dict) -> None:
         raise AssertionError(f"unknown fixture operation: {operation}")
 
 
+def _pre_mutation_targets(
+    document: dict, mutation: dict
+) -> tuple[str | None, object, str | None]:
+    parts = [
+        part.replace("~1", "/").replace("~0", "~")
+        for part in mutation["path"].split("/")[1:]
+    ]
+    current: object = document
+    deepest_id: str | None = None
+    for part in parts:
+        if isinstance(current, dict) and isinstance(current.get("id"), str):
+            deepest_id = current["id"]
+        current = current[int(part)] if isinstance(current, list) else current[part]
+    if isinstance(current, dict) and isinstance(current.get("id"), str):
+        deepest_id = current["id"]
+
+    secondary_id: str | None = None
+    if mutation["operation"] in {"append-copy", "append-copy-set"}:
+        item = current[mutation["index"]]
+        if isinstance(item, dict) and isinstance(item.get("id"), str):
+            deepest_id = item["id"]
+    elif mutation["operation"] == "swap":
+        left, right = mutation["indices"]
+        primary = current[left]
+        secondary = current[right]
+        if isinstance(primary, dict) and isinstance(primary.get("id"), str):
+            deepest_id = primary["id"]
+        if isinstance(secondary, dict) and isinstance(secondary.get("id"), str):
+            secondary_id = secondary["id"]
+    return deepest_id, current, secondary_id
+
+
+def _mutation_is_index_addressed(mutation: dict) -> bool:
+    pointer_indices = any(
+        part.isdigit() for part in mutation["path"].split("/")[1:]
+    )
+    return pointer_indices or "index" in mutation or "indices" in mutation
+
+
 class ProtocolReviewModelTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -488,6 +527,22 @@ class ProtocolReviewModelTests(unittest.TestCase):
         for case in self.negative_cases:
             with self.subTest(case=case["id"]):
                 mutated = copy.deepcopy(self.model)
+                if _mutation_is_index_addressed(case["mutation"]):
+                    self.assertTrue(
+                        "expect_target_id" in case or "expect_target_value" in case,
+                        f"missing pre-mutation target assertion: {case['id']}",
+                    )
+                target_id, target_value, secondary_id = _pre_mutation_targets(
+                    mutated, case["mutation"]
+                )
+                if "expect_target_id" in case:
+                    self.assertEqual(case["expect_target_id"], target_id)
+                if "expect_target_value" in case:
+                    self.assertEqual(case["expect_target_value"], target_value)
+                if "expect_secondary_target_id" in case:
+                    self.assertEqual(
+                        case["expect_secondary_target_id"], secondary_id
+                    )
                 _apply_mutation(mutated, case["mutation"])
                 codes = {
                     finding.code

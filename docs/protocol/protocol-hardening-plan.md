@@ -95,8 +95,10 @@ domain.
 
 ### 3.1 Normative source index
 
-The current application-protocol normative set is enumerated here, independently
-of the derived review model:
+The current normative sources are grouped here independently of the derived
+review model.
+
+Application-protocol sources:
 
 - decision registry:
   `docs/protocol/styx-app-kernel-v0-decisions.md`;
@@ -108,6 +110,49 @@ of the derived review model:
   `docs/protocol/styx-app-kernel-v0-responsibility-matrix.md`;
 - application-protocol threat model:
   `docs/security/STYX-THREAT-MODEL.md`.
+
+Secure-session evidence-profile sources:
+
+- bounded secure-session evidence-profile registry:
+  `docs/protocol/styx-secure-session-v0-decisions.md`.
+
+From the Gate-A commit until Gate B, the new secure-session source exists before
+the derived model can be synchronized. During that bounded interval the source
+is intentionally absent from the model `sources` map and the validator's
+`EXPECTED_SOURCE_RECORDS`, while the changed responsibility-matrix and
+threat-model digests intentionally differ from their derived-model pins. Those
+three inconsistencies are permitted only until Gate B, authorize no capability,
+adapter or corpus, and MUST all be eliminated by the Phase-B synchronization.
+During this interval, `tools/protocol-review-model/validate.py` exits with status
+2 and exactly two `SOURCE_DIGEST_MISMATCH` findings: source index 15 retains
+`1f40fde4b8912766eb586d56f4e72f8c040448e74bc3e6503ed25787abbb7e8f`
+while the responsibility matrix is
+`3ea43a5b6c9b93a19b2b17ab6a54815583275ea7a544de7e5102b294b13f53db`,
+and source index 18 retains
+`35ab45608fb843debd2b6934da834ca44385930aacfebf77a07832ec5c36d8d4`
+while the threat model is
+`8863ce4b2ef697055e95da22e0a2fbb630172cdf3f5fd0c91b27ec02f9d2ba54`.
+The derived-model suite consequently has exactly seven failures and one error:
+the four `test_additive_inventory_cases_fail_only_the_pinned_equality`
+subcases `unexpected-closed-registry-entry`, `unexpected-object-field`,
+`unexpected-record-set-entry` and `unexpected-state-transition`;
+`test_current_model_passes`;
+`test_gate_is_decided_while_c03_remains_no_go`;
+`test_exact_entry_state_authorizes_only_corpus_construction`; and the error in
+`test_validation_report_is_byte_deterministic`. Any additional finding,
+failure or error is a regression. Gate B MUST restore the validator and suite
+to zero findings and zero failures or errors.
+
+The Gate-A verifier's `--self-test` is intentionally a Phase-A-checkout test:
+after Phase B adds the authorized derived-model paths, exact-final review uses
+`--mode model-binding` instead. The verifier authenticates the exact immutable
+provider comment selected by `--comment-id`; it does not enumerate later Issue
+comments. A later human cancellation is therefore an independent stop signal:
+continuing with the earlier accepted comment is prohibited but is not detected
+mechanically by this verifier.
+A separate `K11-SS` Apache-2.0 licensing amendment remains required before the
+first SS conformance-corpus byte; the C0.3 corpus approval in Issue #253 does not
+authorize an SS corpus.
 
 The derived review model at
 `docs/protocol/review/styx-app-kernel-v0-review-model.json` is verified against
@@ -207,6 +252,13 @@ Protocol increments proceed in dependency order:
    passes, and independent review and human gates completed in merged PR #261
    at `490689f0d81980cf942d448c76a54192913b7cde`. Resolve O-12 wherever a
    selected profile carries time.
+   Separately, Issue #285 defines SS-0 as a two-gate secure-session increment.
+   Its Phase A may add the bounded secure-session decision source and reconcile
+   the responsibility/threat boundaries. Its Phase B may synchronize only the
+   derived review model and bounded executable evidence after the exact
+   Phase-A bytes and verifier are bound by Gate A. SS-0 selects no adapter,
+   implementation, product capability or C0.3 `GO`. `K11-SS` remains a
+   prerequisite to any future SS corpus and is not discharged by either gate.
    Issue #255 is a bounded procedural predecessor to O-10 only: it pins the
    historical evidence guards to their exact candidate identities and supplies
    the reusable AST allowlist and O-14-removal rejection required by O-08's
@@ -511,6 +563,14 @@ bounded evidence verdict:
 - the exact D4 transcript/K corpus and evidence package have a bounded evidence
   GO, while the C0.3 capability gate remains `NO-GO` for implementation
   alignment, demo, product and sensitive use;
+- Issue #285 has an exact ratified task contract for SS-0. Its Phase-A candidate
+  introduces a separate bounded secure-session normative registry without
+  changing application-kernel authority. Until Gate A binds the exact four
+  normative files and frozen verifier, that candidate is not authority; until
+  Gate B completes, it is not closed evidence. Neither gate activates an
+  adapter, SDK, demo or product. The temporary Gate-A-to-Gate-B source/model
+  inconsistency is authorized only for synchronization and creates no corpus
+  authority; `K11-SS` remains required before any SS corpus byte;
 - `C0.3_CORPUS_PATH_APPROVAL` is bounded `DECIDED` by Issue #253; Issue #264
   populates exactly its six synthetic-only paths and completes their executable
   conformance and mutation evidence;
