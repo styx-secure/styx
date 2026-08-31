@@ -41,6 +41,24 @@ class VerifyTests(unittest.TestCase):
             for evidence_id in item["required_evidence_ids"]
         }
         self.assertEqual(set(verify.EVIDENCE_PATHS) | {"frozen_manifest", "first_parent_audit"}, registered)
+        self.assertEqual(
+            verify.EXPECTED_APPLICABILITY,
+            {item["id"]: item["applicability"] for item in registry["conditions"]},
+        )
+
+    def test_conditional_exclusion_citations_fail_closed(self):
+        record = copy.deepcopy(verify.load_registry(ROOT)["conditions"][0])
+        hostile_values = (
+            ("file", "docs/protocol/styx-secure-session-v0-decisions.md"),
+            ("heading", "## 5. Selected v0 contract"),
+            ("quoted_condition", record["excluded_claims"][2]["quoted_condition"]),
+            ("base_sha256", "0" * 64),
+        )
+        for key, value in hostile_values:
+            hostile = copy.deepcopy(record)
+            hostile["excluded_claims"][0][key] = value
+            with self.subTest(key=key), self.assertRaises(verify.ExitError):
+                verify.validate_excluded_claims(ROOT, hostile)
 
     def test_report_is_bounded_and_deterministic(self):
         first = verify.canonical_bytes(verify.build_report(ROOT))
@@ -95,6 +113,59 @@ class VerifyTests(unittest.TestCase):
         self.assertTrue(verify.is_allowed_changed_path("tools/protocol-phase-exit/verify.py"))
         self.assertFalse(verify.is_allowed_changed_path("tools/causal-flow-simulator/ss0/model.py"))
 
+    def test_candidate_scope_hostile_operations_fail_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            allowed = root / "tools/protocol-phase-exit/fixture.txt"
+            allowed.parent.mkdir(parents=True)
+            allowed.write_text("fixture", encoding="utf-8")
+            verify.validate_candidate_scope(root, b"", b"A\ttools/protocol-phase-exit/fixture.txt\n")
+            hostile = (
+                (b"?? untracked\n", b"A\ttools/protocol-phase-exit/fixture.txt\n"),
+                (b"", b"D\ttools/protocol-phase-exit/fixture.txt\n"),
+                (b"", b"A\toutside.txt\n"),
+                (b"", b"A\ttools/protocol-phase-exit/fixture.txt\nM\ttools/protocol-phase-exit/fixture.txt\n"),
+            )
+            for status, changed in hostile:
+                with self.subTest(changed=changed), self.assertRaises(verify.ExitError):
+                    verify.validate_candidate_scope(root, status, changed)
+            link = root / "tools/protocol-phase-exit/link.txt"
+            link.symlink_to(allowed)
+            with self.assertRaises(verify.ExitError):
+                verify.validate_candidate_scope(root, b"", b"A\ttools/protocol-phase-exit/link.txt\n")
+
+    def test_base_frozen_and_audit_drift_fail_closed(self):
+        pins = dict(verify.PINNED_BASE_BLOBS)
+        first = next(iter(pins))
+        pins[first] = "0" * 64
+        with mock.patch.object(verify, "PINNED_BASE_BLOBS", pins), self.assertRaises(verify.ExitError):
+            verify.verify_base_pins(ROOT)
+        with mock.patch.object(verify, "FIRST_PARENT_SHA256", "0" * 64), self.assertRaises(verify.ExitError):
+            verify.first_parent_commits(ROOT)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "x").write_bytes(b"observed")
+
+            def fake_git(_repo, *args):
+                if args[0] == "ls-files":
+                    return b"x\n"
+                if args[0] == "show":
+                    return b"expected"
+                raise AssertionError(args)
+
+            with mock.patch.object(verify, "frozen_paths", return_value=["x"]), \
+                    mock.patch.object(verify, "run_git", side_effect=fake_git), \
+                    self.assertRaises(verify.ExitError):
+                verify.frozen_manifest(root)
+            plan = root / "docs/protocol/protocol-hardening-plan.md"
+            plan.parent.mkdir(parents=True)
+            plan.write_bytes((ROOT / "docs/protocol/protocol-hardening-plan.md").read_bytes())
+            commits = verify.first_parent_commits(ROOT)
+            verify.audit_identity(root, commits)
+            plan.write_bytes(plan.read_bytes().replace(commits[0].encode(), b"0" * 40, 1))
+            with self.assertRaises(verify.ExitError):
+                verify.audit_identity(root, commits)
+
     def test_unknown_evidence_fails_closed(self):
         with self.assertRaises(verify.ExitError):
             verify.evidence_digest(ROOT, "unknown", "0" * 64, "1" * 64)
@@ -143,6 +214,20 @@ class VerifyTests(unittest.TestCase):
                 report_sha="b" * 64, frozen_sha="c" * 64, audit_sha="d" * 64,
                 eligibility="ELIGIBLE_FOR_BOUNDED_GO",
             )
+        for key, value in (
+            ("id", 1),
+            ("url", "https://example.invalid/comment"),
+            ("issue_url", "https://api.github.com/repos/styx-secure/styx/issues/1"),
+            ("user", {"id": 1, "login": "maverde73"}),
+        ):
+            hostile = copy.deepcopy(comment)
+            hostile[key] = value
+            with self.subTest(key=key), self.assertRaises(verify.ExitError):
+                verify.validate_verdict_comment(
+                    hostile, comment_id=comment_id, phase_a_head="a" * 40,
+                    report_sha="b" * 64, frozen_sha="c" * 64, audit_sha="d" * 64,
+                    eligibility="ELIGIBLE_FOR_BOUNDED_GO",
+                )
 
     def test_approval_provider_identity_and_head(self):
         review_id = "5065807842"
@@ -161,6 +246,44 @@ class VerifyTests(unittest.TestCase):
         hostile["commit_id"] = "b" * 40
         with self.assertRaises(verify.ExitError):
             verify.validate_approval_review(hostile, review_id=review_id, final_head="a" * 40)
+        for key, value in (
+            ("id", 1),
+            ("url", "https://example.invalid/review"),
+            ("pull_request_url", "https://api.github.com/repos/styx-secure/styx/pulls/1"),
+            ("user", {"id": 1, "login": "manexada"}),
+        ):
+            hostile = copy.deepcopy(review)
+            hostile[key] = value
+            with self.subTest(key=key), self.assertRaises(verify.ExitError):
+                verify.validate_approval_review(hostile, review_id=review_id, final_head="a" * 40)
+
+    def test_provider_heads_are_derived_from_git(self):
+        head = verify.resolve_commit(ROOT, "HEAD")
+        committed = verify.run_git(ROOT, "show", f"{head}:{verify.CANONICAL_REPORT_PATH.as_posix()}")
+        digest = verify.sha256(committed)
+        self.assertEqual((head, head), verify.validate_provider_heads(
+            ROOT, phase_a_head=head, phase_a_report_sha256=digest, final_head=head,
+        ))
+        for phase, report_digest, final in (
+            (head, "0" * 64, head),
+            (verify.FREEZE_SHA, digest, head),
+            (head, digest, verify.BASE_SHA),
+        ):
+            with self.subTest(phase=phase, final=final), self.assertRaises(verify.ExitError):
+                verify.validate_provider_heads(
+                    ROOT, phase_a_head=phase, phase_a_report_sha256=report_digest,
+                    final_head=final,
+                )
+
+    def test_external_evidence_is_outside_and_exclusive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            outside = Path(directory) / "raw.json"
+            verify.store_external_bytes(ROOT, outside, b"{}")
+            self.assertEqual(b"{}", outside.read_bytes())
+            with self.assertRaises(verify.ExitError):
+                verify.store_external_bytes(ROOT, outside, b"replacement")
+        with self.assertRaises(verify.ExitError):
+            verify.external_target(ROOT, ROOT / "evidence.json")
 
     def test_canonical_json_has_no_insignificant_whitespace(self):
         self.assertEqual(b'{"a":2,"z":1}\n', verify.canonical_bytes({"z": 1, "a": 2}))

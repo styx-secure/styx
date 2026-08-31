@@ -3,10 +3,40 @@
 
 from __future__ import annotations
 
+import sys as _bootstrap_sys
+import os as _bootstrap_os
+
+
+_BLOCKED_CALLER_ENVIRONMENT = {
+    "ALL_PROXY", "CURL_CA_BUNDLE", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+    "OPENSSL_CONF", "OPENSSL_MODULES", "PYTHONHOME", "PYTHONPATH",
+    "REQUESTS_CA_BUNDLE", "SSL_CERT_DIR", "SSL_CERT_FILE", "SSLKEYLOGFILE",
+}
+for _environment_name in tuple(_bootstrap_os.environ):
+    if _environment_name.upper() in _BLOCKED_CALLER_ENVIRONMENT:
+        _bootstrap_os.environ.pop(_environment_name, None)
+
+_BOOTSTRAP_BASE = _bootstrap_os.path.realpath(_bootstrap_sys.base_prefix)
+
+
+def _trusted_import_path(entry: str) -> bool:
+    try:
+        resolved = _bootstrap_os.path.realpath(entry or _bootstrap_os.getcwd())
+        return _bootstrap_os.path.commonpath((resolved, _BOOTSTRAP_BASE)) == _BOOTSTRAP_BASE
+    except (OSError, ValueError):
+        return False
+
+
+if __name__ == "__main__":
+    _bootstrap_sys.path[:] = [
+        entry for entry in _bootstrap_sys.path if _trusted_import_path(entry)
+    ]
+    if not _bootstrap_sys.path:
+        raise RuntimeError("no trusted standard-library import path remains")
+
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import re
 import ssl
@@ -50,6 +80,19 @@ MINIMUM_CONDITIONAL_STATEMENTS = [
     "O-11 and RS custody obligations remain blocking for durable product or storage claims.",
     "No exclusion authorizes an adapter, authenticated persistence or product.",
 ]
+EXPECTED_APPLICABILITY = {
+    "EXIT-01": "BOUNDED_PROTOCOL_PROFILE",
+    "EXIT-02": "PHASE_SCOPE",
+    "EXIT-03": "NORMATIVE_AND_DERIVED_SOURCES",
+    "EXIT-04": "ADVERSARIAL_EVIDENCE",
+    "EXIT-05": "LANGUAGE_NEUTRAL_BEHAVIOR",
+    "EXIT-06": "RESOURCE_AND_AVAILABILITY_COSTS",
+    "EXIT-07": "SECURITY_CLAIMS",
+    "EXIT-08": "GATE_EVALUATED_OUTSIDE_VERIFIER",
+    "EXIT-09": "GATE_EVALUATED_OUTSIDE_VERIFIER",
+    "EXIT-10": "FIRST_PARENT_EXCEPTION_AUDIT",
+    "EXIT-11": "C03_CORPUS_LICENSE_BOUNDARY",
+}
 
 PINNED_BASE_BLOBS = {
     "AGENTS.md": "50588a0cf2309af8fdf1551cd09facb6338e2eba8362d4e13ab22390a2f5bc93",
@@ -187,11 +230,10 @@ def is_allowed_changed_path(path: str) -> bool:
     return path in ALLOWED_CHANGED_PATHS or path.startswith(ALLOWED_CHANGED_PREFIXES)
 
 
-def verify_candidate_scope(repo: Path) -> None:
-    require(not run_git(repo, "status", "--porcelain=v1", "--untracked-files=all"), "candidate checkout is not clean")
-    raw = run_git(repo, "diff", "--name-status", "--no-renames", f"{BASE_SHA}...HEAD")
+def validate_candidate_scope(repo: Path, status: bytes, changed: bytes) -> set[str]:
+    require(not status, "candidate checkout is not clean")
     seen: set[str] = set()
-    for line in raw.decode("utf-8").splitlines():
+    for line in changed.decode("utf-8").splitlines():
         fields = line.split("\t")
         require(len(fields) == 2 and fields[0] in {"A", "M"}, "candidate contains forbidden path operation")
         path = fields[1]
@@ -201,6 +243,13 @@ def verify_candidate_scope(repo: Path) -> None:
         candidate = repo / path
         require(candidate.is_file() and not candidate.is_symlink(), f"invalid candidate path: {path}")
     require(bool(seen), "candidate changed-path set is empty")
+    return seen
+
+
+def verify_candidate_scope(repo: Path) -> None:
+    status = run_git(repo, "status", "--porcelain=v1", "--untracked-files=all")
+    changed = run_git(repo, "diff", "--name-status", "--no-renames", f"{BASE_SHA}...HEAD")
+    validate_candidate_scope(repo, status, changed)
 
 
 def mechanical_eligibility(dispositions: list[str]) -> str:
@@ -236,9 +285,27 @@ def provider_opener() -> urllib.request.OpenerDirector:
 
 
 def fetch_provider_json(url: str) -> tuple[dict[str, object], bytes]:
-    require(sys.flags.isolated == 1, "provider fetch requires Python isolated mode")
-    require(sys.flags.no_site == 1, "provider fetch requires site isolation")
-    request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"})
+    require(
+        sys.flags.isolated == 1
+        and sys.flags.no_site == 1
+        and sys.flags.dont_write_bytecode == 1
+        and getattr(sys.flags, "safe_path", 0) == 1,
+        "provider fetch requires Python isolated mode (-I -S -B)",
+    )
+    require(
+        all(name.upper() not in _BLOCKED_CALLER_ENVIRONMENT for name in _bootstrap_os.environ),
+        "unsafe caller environment survived provider bootstrap",
+    )
+    require(Path(sys.executable).is_absolute(), "Python executable is not absolute")
+    require(all(_trusted_import_path(entry) for entry in sys.path), "unsafe import path survived provider bootstrap")
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "styx-protocol-phase-exit-verifier",
+        },
+    )
     try:
         with provider_opener().open(request, timeout=30) as response:
             require(response.geturl() == url, "provider response URL mismatch")
@@ -360,12 +427,60 @@ def run_git(repo: Path, *args: str) -> bytes:
     result = subprocess.run(
         ("/usr/bin/git", "-C", str(repo), *args),
         check=False,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env={"LANG": "C", "LC_ALL": "C", "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"},
+        env={
+            "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin",
+            "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null",
+            "GIT_CONFIG_NOSYSTEM": "1",
+        },
     )
     require(result.returncode == 0, f"git failed: {' '.join(args)}")
     return result.stdout
+
+
+def resolve_commit(repo: Path, revision: str) -> str:
+    value = run_git(repo, "rev-parse", "--verify", f"{revision}^{{commit}}").decode("ascii").strip()
+    require(re.fullmatch(r"[0-9a-f]{40}", value) is not None, "invalid commit identity")
+    return value
+
+
+def require_ancestor(repo: Path, ancestor: str, descendant: str, message: str) -> None:
+    result = subprocess.run(
+        ("/usr/bin/git", "-C", str(repo), "merge-base", "--is-ancestor", ancestor, descendant),
+        check=False,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env={
+            "LANG": "C", "LC_ALL": "C", "PATH": "/usr/bin:/bin",
+            "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null",
+            "GIT_CONFIG_NOSYSTEM": "1",
+        },
+    )
+    require(result.returncode == 0, message)
+
+
+def validate_provider_heads(
+    repo: Path, *, phase_a_head: str, phase_a_report_sha256: str,
+    final_head: str | None,
+) -> tuple[str, str | None]:
+    require(re.fullmatch(r"[0-9a-f]{40}", phase_a_head) is not None, "invalid Phase-A HEAD")
+    require(re.fullmatch(r"[0-9a-f]{64}", phase_a_report_sha256) is not None, "invalid Phase-A report digest")
+    base = resolve_commit(repo, BASE_SHA)
+    phase = resolve_commit(repo, phase_a_head)
+    require_ancestor(repo, base, phase, "Base is not ancestor of Phase-A HEAD")
+    committed = run_git(repo, "show", f"{phase}:{CANONICAL_REPORT_PATH.as_posix()}")
+    require(sha256(committed) == phase_a_report_sha256, "Phase-A report digest mismatch")
+    if final_head is None:
+        require(resolve_commit(repo, "HEAD") == phase, "Phase-A HEAD is not checked out")
+        return phase, None
+    require(re.fullmatch(r"[0-9a-f]{40}", final_head) is not None, "invalid final HEAD")
+    final = resolve_commit(repo, final_head)
+    require(resolve_commit(repo, "HEAD") == final, "final HEAD is not checked out")
+    require_ancestor(repo, phase, final, "Phase-A HEAD is not ancestor of final HEAD")
+    return phase, final
 
 
 def verify_base_pins(repo: Path) -> None:
@@ -450,6 +565,10 @@ def load_registry(repo: Path) -> dict[str, object]:
         if item["id"] == "EXIT-01":
             required_shape.add("excluded_claims")
         require(set(item) == required_shape, f"condition shape mismatch: {item.get('id')}")
+        require(
+            item["applicability"] == EXPECTED_APPLICABILITY[item["id"]],
+            f"condition applicability mismatch: {item['id']}",
+        )
         evidence_ids = validate_evidence_declaration(item)
         registered_ids.extend(evidence_ids)
     require(set(registered_ids) == set(EVIDENCE_PATHS) | {"frozen_manifest", "first_parent_audit"}, "registered evidence universe mismatch")
@@ -470,6 +589,27 @@ def validate_evidence_declaration(item: dict[str, object]) -> list[str]:
     return evidence_ids
 
 
+def extract_markdown_section(source: bytes, heading: str) -> str:
+    lines = source.decode("utf-8").splitlines()
+    normalized_heading = " ".join(heading.split())
+    matches = [
+        index for index, line in enumerate(lines)
+        if " ".join(line.split()) == normalized_heading
+    ]
+    require(len(matches) == 1, "conditional exclusion heading is not exact and unique")
+    start = matches[0]
+    marker = re.match(r"^(#{1,6})\s+", lines[start])
+    require(marker is not None, "conditional exclusion heading is not Markdown")
+    level = len(marker.group(1))
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        next_heading = re.match(r"^(#{1,6})\s+", lines[index])
+        if next_heading is not None and len(next_heading.group(1)) <= level:
+            end = index
+            break
+    return normalized_prose(("\n".join(lines[start:end]) + "\n").encode("utf-8"))
+
+
 def validate_excluded_claims(repo: Path, record: dict[str, object]) -> None:
     claims = record.get("excluded_claims")
     require(isinstance(claims, list) and len(claims) == 3, "conditional exclusion claim set mismatch")
@@ -483,11 +623,15 @@ def validate_excluded_claims(repo: Path, record: dict[str, object]) -> None:
             "docs/protocol/styx-secure-session-v0-decisions.md",
         }, "conditional exclusion source outside decision registry")
         require(claim["base_sha256"] == PINNED_BASE_BLOBS[path], "conditional exclusion Base digest mismatch")
-        source = normalized_prose(run_git(repo, "show", f"{BASE_SHA}:{path}"))
+        source_bytes = run_git(repo, "show", f"{BASE_SHA}:{path}")
+        require(
+            sha256(source_bytes) == claim["base_sha256"],
+            "conditional exclusion source digest mismatch",
+        )
         heading = " ".join(str(claim["heading"]).split())
         quoted = " ".join(str(claim["quoted_condition"]).split())
-        require(heading in source, "conditional exclusion heading missing")
-        require(quoted in source, "conditional exclusion quote missing")
+        section = extract_markdown_section(source_bytes, heading)
+        require(quoted in section, "conditional exclusion quote is outside cited section")
         identity = (path, heading, quoted)
         require(identity not in seen, "conditional exclusion duplicate")
         seen.add(identity)
@@ -546,9 +690,31 @@ def build_report(repo: Path) -> dict[str, object]:
     return report
 
 
-def write_report(report: dict[str, object], output: Path) -> None:
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_bytes(canonical_bytes(report))
+def external_target(repo: Path, output: Path) -> Path:
+    target = output.resolve(strict=False)
+    require(target != repo and repo not in target.parents, "external evidence must be outside repository")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    require(not target.is_symlink(), "external evidence target must not be a symlink")
+    return target
+
+
+def store_external_bytes(repo: Path, output: Path, data: bytes) -> None:
+    target = external_target(repo, output)
+    try:
+        with target.open("xb") as handle:
+            handle.write(data)
+    except FileExistsError as error:
+        raise ExitError("refusing to overwrite external evidence") from error
+
+
+def store_external_report(repo: Path, output: Path, report: dict[str, object]) -> None:
+    store_external_bytes(repo, output, canonical_bytes(report))
+
+
+def refresh_canonical_report(repo: Path, output: Path, report: dict[str, object]) -> None:
+    target = output.resolve()
+    require(target == (repo / CANONICAL_REPORT_PATH).resolve(), "refresh output must be canonical report")
+    target.write_bytes(canonical_bytes(report))
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -560,9 +726,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--phase-a-head")
     parser.add_argument("--phase-a-report-sha256")
     parser.add_argument("--provider-output", type=Path)
+    parser.add_argument("--provider-raw-output", type=Path)
     parser.add_argument("--approval-review-id")
     parser.add_argument("--final-head")
     parser.add_argument("--approval-provider-output", type=Path)
+    parser.add_argument("--approval-provider-raw-output", type=Path)
     parser.add_argument("--refresh-canonical-report", action="store_true")
     return parser.parse_args(argv)
 
@@ -574,24 +742,33 @@ def main(argv: list[str] | None = None) -> int:
         require((args.verdict_comment_id is None) == (args.phase_a_head is None), "verdict identity arguments incomplete")
         require((args.verdict_comment_id is None) == (args.phase_a_report_sha256 is None), "verdict report arguments incomplete")
         require((args.verdict_comment_id is None) == (args.provider_output is None), "verdict output arguments incomplete")
+        require((args.verdict_comment_id is None) == (args.provider_raw_output is None), "verdict raw-output arguments incomplete")
         require((args.approval_review_id is None) == (args.final_head is None), "approval identity arguments incomplete")
         require((args.approval_review_id is None) == (args.approval_provider_output is None), "approval output arguments incomplete")
+        require((args.approval_review_id is None) == (args.approval_provider_raw_output is None), "approval raw-output arguments incomplete")
         repo = args.repo_root.resolve(strict=True)
         report = build_report(repo)
         if args.refresh_canonical_report:
-            require(args.output.resolve() == (repo / CANONICAL_REPORT_PATH).resolve(), "refresh output must be canonical report")
             require(args.verdict_comment_id is None and args.approval_review_id is None, "refresh cannot resolve provider gates")
-            write_report(report, args.output)
+            refresh_canonical_report(repo, args.output, report)
         else:
             verify_candidate_scope(repo)
             verify_committed_report(repo, report)
-            write_report(report, args.output)
+            store_external_report(repo, args.output, report)
         if args.verdict_comment_id is not None:
             require(args.phase_a_head is not None, "Phase-A HEAD required")
             require(args.phase_a_report_sha256 is not None, "Phase-A report digest required")
             require(args.provider_output is not None, "provider output required")
+            require(args.provider_raw_output is not None, "provider raw output required")
+            validate_provider_heads(
+                repo,
+                phase_a_head=args.phase_a_head,
+                phase_a_report_sha256=args.phase_a_report_sha256,
+                final_head=args.final_head,
+            )
             url = verdict_url(args.verdict_comment_id)
             comment, raw = fetch_provider_json(url)
+            store_external_bytes(repo, args.provider_raw_output, raw)
             result = validate_verdict_comment(
                 comment,
                 comment_id=args.verdict_comment_id,
@@ -602,18 +779,21 @@ def main(argv: list[str] | None = None) -> int:
                 eligibility=report["eligibility"],
             )
             result["provider_response_sha256"] = sha256(raw)
-            write_report(result, args.provider_output)
+            store_external_report(repo, args.provider_output, result)
         if args.approval_review_id is not None:
             require(args.final_head is not None, "final HEAD required")
             require(args.approval_provider_output is not None, "approval provider output required")
-            require(re.fullmatch(r"[0-9a-f]{40}", args.final_head) is not None, "invalid final HEAD")
+            require(args.approval_provider_raw_output is not None, "approval provider raw output required")
+            if args.verdict_comment_id is None:
+                raise ExitError("approval verification requires the provider-bound Phase-A verdict")
             url = approval_url(args.approval_review_id)
             review, raw = fetch_provider_json(url)
+            store_external_bytes(repo, args.approval_provider_raw_output, raw)
             result = validate_approval_review(
                 review, review_id=args.approval_review_id, final_head=args.final_head,
             )
             result["approval_provider_response_sha256"] = sha256(raw)
-            write_report(result, args.approval_provider_output)
+            store_external_report(repo, args.approval_provider_output, result)
     except (ExitError, OSError, ValueError, json.JSONDecodeError) as error:
         print(f"phase_exit_failure={error}", file=sys.stderr)
         return 2
