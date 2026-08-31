@@ -37,8 +37,8 @@
       "applicability": "PHASE_SCOPE",
       "required_evidence_ids": ["phase_exit_status", "review_records"],
       "expected_evidence_sha256": {
-        "phase_exit_status": "71bb798b3e3199c591895b27046e20423ac9299b44726a2fc5461a232e463b5c",
-        "review_records": "bdf917081f729e953a7ab24210b2188fe5ae41cf8f2012e3e4176c947fa56bcf"
+        "phase_exit_status": "8eb9161c7788daaa387daec577031ee86acd12f10ab4a0be001ce868a2b787bc",
+        "review_records": "6c52fa4f8d32209382117f02777460fde20fd75699850a0af29d21f2e40cc913"
       },
       "residual_risks": ["independent review is bounded evidence, not a production audit"],
       "reopen_triggers": ["a blocking or high finding is reopened"]
@@ -49,7 +49,7 @@
       "required_evidence_ids": ["frozen_manifest", "review_model", "protocol_plan"],
       "expected_evidence_sha256": {
         "frozen_manifest": "d98c762d5ce1a94740fa043a9bf6febc10eee64567067d9e2f2610bf91fec503",
-        "protocol_plan": "046dd8a1da6b15900485da92e91fe388b3b6b1d326b8c2e040d16db7a9d74b74",
+        "protocol_plan": "2f12cae4e9c198db22ee15fd40722c84cb98b08f3e4a2b1a89968e0accbd87ba",
         "review_model": "7eb52490c5b4467d873bbc143e2e1770d640093710c3a1011baa14ccbb972241"
       },
       "residual_risks": ["exact pins can retain an upstream defect"],
