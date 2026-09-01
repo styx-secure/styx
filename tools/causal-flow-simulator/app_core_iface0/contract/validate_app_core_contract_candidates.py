@@ -232,7 +232,7 @@ def validate_ownership(
         for pointer, node in objects
         if not (pointer.startswith("/$defs/") and pointer.count("/") == 2)
     }
-    require(len(direct) == 71 and len(inline) == 5, "object partition drift")
+    require(len(direct) == 73 and len(inline) == 5, "object partition drift")
     require(set(registry["definitions"]) == set(direct), "definition ownership drift")
     require(set(registry["inlineObjects"]) == set(inline), "inline ownership drift")
     covered = 0
@@ -251,7 +251,7 @@ def validate_ownership(
             require(set(selected["owners"]) <= owner_tokens and selected["owners"], f"owner drift: {key}.{property_name}")
             require(selected["source"] in source_tokens, f"source drift: {key}.{property_name}")
             covered += 1
-    require(covered == 298, f"ownership coverage drift: {covered}")
+    require(covered == 307, f"ownership coverage drift: {covered}")
 
 
 def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
@@ -267,11 +267,11 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
 
     nodes = list(walk(schema))
     references = [node["$ref"] for _, node in nodes if isinstance(node, dict) and "$ref" in node]
-    require(len(references) == 254, f"ref count drift: {len(references)}")
+    require(len(references) == 261, f"ref count drift: {len(references)}")
     for reference in references:
         resolve(schema, reference)
     definitions = validate_definition_closure(schema)
-    require(len(definitions) == 112, f"definition count drift: {len(definitions)}")
+    require(len(definitions) == 114, f"definition count drift: {len(definitions)}")
 
     enums = [pointer for pointer, node in nodes if isinstance(node, dict) and "enum" in node]
     one_ofs = [
@@ -287,12 +287,12 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         and isinstance(node.get("properties"), dict)
         and node["properties"]
     ]
-    require(len(enums) == 33, f"enum count drift: {len(enums)}")
+    require(len(enums) == 35, f"enum count drift: {len(enums)}")
     require(len(one_ofs) == 16, f"oneOf count drift: {len(one_ofs)}")
     require(sum(len(arms) for _, arms in one_ofs) == 54, "oneOf arm drift")
-    require(len(objects) == 76, f"object count drift: {len(objects)}")
-    require(sum(len(node["properties"]) for _, node in objects) == 298, "property count drift")
-    require(sum(len(node.get("required", [])) for _, node in objects) == 297, "required count drift")
+    require(len(objects) == 78, f"object count drift: {len(objects)}")
+    require(sum(len(node["properties"]) for _, node in objects) == 307, "property count drift")
+    require(sum(len(node.get("required", [])) for _, node in objects) == 306, "required count drift")
     validate_ownership(schema, objects)
 
     pair_registry = load("APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json")
@@ -316,7 +316,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
             reachability["objectSchemaCount"],
             reachability["oneOfArmCount"],
         )
-        == (12, 112, 76, 54),
+        == (12, 114, 78, 54),
         "carrier reachability count drift",
     )
     require(
@@ -342,8 +342,8 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
 
     structural = load("APP-CORE-IFACE-0-STRUCTURAL-AXES-CANDIDATE.json")
     require(len(structural["rules"]) == 23, "structural family drift")
-    require(sum(row["expectedCount"] for row in structural["rules"]) == 1367, "structural count drift")
-    require(structural["derivedCounts"] == {"structuralRuleFamilies": 23, "structuralExecutionInstances": 1367}, "structural derived-count drift")
+    require(sum(row["expectedCount"] for row in structural["rules"]) == 1400, "structural count drift")
+    require(structural["derivedCounts"] == {"structuralRuleFamilies": 23, "structuralExecutionInstances": 1400}, "structural derived-count drift")
     conditional_rules = [
         row
         for row in structural["rules"]
@@ -408,26 +408,26 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
 
     positive = load("APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json")
     witness = load("APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json")
-    require(positive["properties"]["caseCount"]["maximum"] == 142, "carrier maximum drift")
-    require(positive["properties"]["cases"]["maxItems"] == 142, "carrier maxItems drift")
-    require(witness["properties"]["rowCount"]["const"] == 1367, "witness count drift")
-    require(witness["properties"]["rows"]["minItems"] == witness["properties"]["rows"]["maxItems"] == 1367, "witness cardinality drift")
+    require(positive["properties"]["caseCount"]["maximum"] == 144, "carrier maximum drift")
+    require(positive["properties"]["cases"]["maxItems"] == 144, "carrier maxItems drift")
+    require(witness["properties"]["rowCount"]["const"] == 1400, "witness count drift")
+    require(witness["properties"]["rows"]["minItems"] == witness["properties"]["rows"]["maxItems"] == 1400, "witness cardinality drift")
 
     semantics = load("APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json")
     axes = load("APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json")
     validate_terminal_path_bindings(schema, axes)
     semantic_ids = [row["id"] for row in semantics["rules"]]
-    require(len(semantic_ids) == len(set(semantic_ids)) == 55, "semantic family drift")
+    require(len(semantic_ids) == len(set(semantic_ids)) == 65, "semantic family drift")
     require(
-        set(semantic_ids) == {f"ACV-{index:03d}" for index in range(1, 56)},
+        set(semantic_ids) == {f"ACV-{index:03d}" for index in range(1, 66)},
         "semantic rule-id set drift",
     )
     for field in ("scenario", "mutant"):
         values = [row[field] for row in semantics["rules"]]
-        require(len(values) == len(set(values)) == 55, f"semantic {field} drift")
+        require(len(values) == len(set(values)) == 65, f"semantic {field} drift")
     axis_ids = [row["id"] for row in axes["rules"]]
-    require(set(axis_ids) == set(semantic_ids) and len(axis_ids) == 55, "semantic axis relation drift")
-    require(sum(row["expectedCount"] for row in axes["rules"]) == 4624, "semantic execution count drift")
+    require(set(axis_ids) == set(semantic_ids) and len(axis_ids) == 65, "semantic axis relation drift")
+    require(sum(row["expectedCount"] for row in axes["rules"]) == 4828, "semantic execution count drift")
     require(axes["unresolvedAxes"] == [], "unresolved semantic axes")
     phases = load("APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json")
     require(
@@ -443,7 +443,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         phases.get("fixedCountsBeforeSeedPartition", {}).get(
             "totalSemanticExecutionInstances"
         )
-        == 4624,
+        == 4828,
         "execution-phase total drift",
     )
     custom_occurrences = {
@@ -534,20 +534,20 @@ def validate_manifest() -> None:
     counts = manifest["derivedCounts"]
     expected = {
         "operations": 6,
-        "propertyBearingObjectSchemas": 76,
-        "directObjectDefinitions": 71,
+        "propertyBearingObjectSchemas": 78,
+        "directObjectDefinitions": 73,
         "inlineObjectSchemas": 5,
-        "properties": 298,
-        "directlyRequiredProperties": 297,
+        "properties": 307,
+        "directlyRequiredProperties": 306,
         "customKeywordOccurrences": 24,
         "structuralRuleFamilies": 23,
-        "structuralExecutionInstances": 1367,
+        "structuralExecutionInstances": 1400,
         "oneOfOccurrences": 16,
         "oneOfArms": 54,
         "oneOfPairwiseDisjointnessRows": 93,
-        "semanticFamilies": 55,
-        "semanticExecutionInstances": 4624,
-        "totalExecutionInstances": 5991,
+        "semanticFamilies": 65,
+        "semanticExecutionInstances": 4828,
+        "totalExecutionInstances": 6228,
         "contentRelationRows": 23,
         "candidatePrimaryRelationRows": 25,
         "transcriptRelationRows": 14,
@@ -556,8 +556,8 @@ def validate_manifest() -> None:
         "readOnlyNativeDependencies": 59,
         "seededExtensionNativeDependencies": 4,
         "historicalProviderIncrements": 5,
-        "seedRegistryRowsPendingPostBase": 76,
-        "structuralWitnessRowsPendingPostBase": 1367,
+        "seedRegistryRowsPendingPostBase": 78,
+        "structuralWitnessRowsPendingPostBase": 1400,
     }
     require(counts == expected, "manifest derived-count drift")
 
@@ -585,7 +585,7 @@ def validate_documented_artifact_bindings() -> None:
             f"`{palette}`.",
             "`APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json`, SHA-256\n"
             f"`{one_of}`:",
-            "The 55-row instance-axis registry has no unresolved axis and has SHA-256\n"
+            "The 65-row instance-axis registry has no unresolved axis and has SHA-256\n"
             f"`{instance_axes}`.",
             "`APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256\n"
             f"`{execution_phases}`.",
@@ -679,11 +679,19 @@ def main() -> None:
             check=True,
         )
     validate_manifest()
+    subprocess.run(
+        [
+            "python3",
+            str(ROOT.parent / "derive_interface_maxima.py"),
+            "--check",
+        ],
+        check=True,
+    )
     validate_documented_artifact_bindings()
     print(
-        "PASS schemas=4 defs=112 refs=254 enums=33 oneOf=16 arms=54 "
-        "pairs=93 objects=76 properties=298 required=297 structural=1367 "
-        "semantic=4624 total=5991 F13=25 dependencies=63 provider_history=5 "
+        "PASS schemas=4 defs=114 refs=261 enums=35 oneOf=16 arms=54 "
+        "pairs=93 objects=78 properties=307 required=306 structural=1400 "
+        "semantic=4828 total=6228 F13=25 dependencies=63 provider_history=5 "
         "manifest=26 provider_live=" + ("PASS" if args.verify_provider else "NOT_RUN")
     )
 

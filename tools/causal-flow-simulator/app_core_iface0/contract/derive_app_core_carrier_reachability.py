@@ -164,8 +164,8 @@ def main() -> None:
     arm_keys = sorted(arm_to_roots)
     if (
         len(roots) != 12
-        or len(definition_pointers) != 112
-        or len(object_pointers) != 76
+        or len(definition_pointers) != 114
+        or len(object_pointers) != 78
         or len(arm_keys) != 54
     ):
         raise SystemExit(

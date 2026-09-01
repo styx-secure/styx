@@ -104,7 +104,7 @@
     {
       "id": "ACV-009",
       "owners": ["K", "O08"],
-      "targets": ["$defs.ProposedContextSnapshotV0.admittedCandidates", "$defs.ContextProjectionV0.records", "$defs.ContextProjectionV0.recordOutcomes", "$defs.ContextProjectionV0.contentStates"],
+      "targets": ["$defs.ProposedContextSnapshotV0.admittedCandidates", "$defs.ContextProjectionV0.records", "$defs.ContextProjectionV0.recordOutcomes", "$defs.ContextProjectionV0.contentStates", "$defs.ReplayContextInputV0.candidates"],
       "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
       "parameters": { "dimension": "RECORDS" },
       "scenario": "ACI-RECORD-COUNT-OVER-BOUND",
@@ -124,7 +124,7 @@
       "owners": ["K", "O08"],
       "targets": ["$defs.ApplicationEventProjectionV0.causalParentReferences"],
       "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
-      "parameters": { "dimension": "ACTIVE_FRONTIER" },
+      "parameters": { "dimension": "PARENTS_PER_EVENT" },
       "scenario": "ACI-FRONTIER-COUNT-OVER-BOUND",
       "mutant": "M-ACI-FRONTIER-BOUND-IGNORED"
     },
@@ -259,7 +259,11 @@
       "owners": ["O04"],
       "targets": ["$defs.ContentMaterialEvidenceV0.segments"],
       "rule": "SEGMENTS_SORTED_NONOVERLAPPING_AND_EXACTLY_BOUND",
-      "parameters": {},
+      "parameters": {
+        "exactBindingMeaning": "each segment lies within the exact content domain, segments are canonically sorted and non-overlapping, and their combined length does not exceed the exact content length",
+        "partialCoverageDisposition": "PARTIAL",
+        "completeCoverageRequires": "exact tiling plus the separately ratified content checks"
+      },
       "scenario": "ACI-PARTIAL-OVERLAPPING-SEGMENTS",
       "mutant": "M-ACI-MERGE-OVERLAPPING-SEGMENTS"
     },
@@ -290,7 +294,12 @@
       "owners": ["K", "AP"],
       "targets": ["$defs.ContextProjectionV0.aliasGroups"],
       "rule": "CANONICAL_DISJOINT_ALIAS_GROUPS_MIN_TWO",
-      "parameters": { "perCredentialDimension": "ALIASES_PER_CREDENTIAL" },
+      "parameters": {
+        "perCredentialDimension": "ALIASES_PER_CREDENTIAL",
+        "membershipDimension": "CREDENTIALS",
+        "membershipMustExistInCredentialBindings": true,
+        "maximumGroupCountExpression": "floor(CREDENTIALS/2)"
+      },
       "scenario": "ACI-OVERLAPPING-ALIAS-GROUPS",
       "mutant": "M-ACI-ALIAS-MEMBER-IN-TWO-GROUPS"
     },
@@ -490,7 +499,7 @@
       "owners": ["INTERFACE"],
       "targets": ["$defs.InterfaceRequestV0", "$defs.InterfaceResponseV0"],
       "rule": "CUSTOM_KEYWORD_AND_CONSTRAINT_REGISTRY_EXACT_EQUALITY",
-      "parameters": { "ruleCount": "55" },
+      "parameters": { "ruleCount": "65" },
       "scenario": "ACI-UNKNOWN-CUSTOM-KEYWORD",
       "mutant": "M-ACI-IGNORE-SEMANTIC-CONSTRAINT"
     },
@@ -510,7 +519,7 @@
         "$defs.ContextProjectionV0.contentStates"
       ],
       "rule": "EXACT_CANONICAL_COLLECTION_ORDER",
-      "parameters": {},
+      "parameters": { "singleReferenceKeyImpliesUniqueKey": true },
       "scenario": "ACI-CANONICAL-COLLECTION-PERMUTATION",
       "mutant": "M-ACI-ACCEPT-PRESENTATION-ORDER"
     },
@@ -558,6 +567,129 @@
       "parameters": {},
       "scenario": "F16-CROSS-REGISTRY-TOKEN-ALIAS",
       "mutant": "M-F16-REUSE-O10-PRIMARY-AS-UPDATE-REASON"
+    },
+    {
+      "id": "ACV-056",
+      "owners": ["O08", "INTERFACE"],
+      "targets": ["$defs.ProfileDescriptorV0.capabilityRequirements"],
+      "rule": "EXACT_ACTIVATION_CAPABILITY_REQUIREMENTS_FROM_PINNED_ENVELOPE",
+      "parameters": {
+        "partitionRole": "C03_ACTIVATION_CAPABILITY_INPUT",
+        "dimensionCount": "5",
+        "minimumCapabilityCount": "4",
+        "closedKeySetCountDimension": "ACTIVATION_CAPABILITY_SET"
+      },
+      "scenario": "ACI-DESCRIPTOR-CAPABILITY-REQUIREMENT-DRIFT",
+      "mutant": "M-ACI-DESCRIPTOR-OMIT-CAPABILITY-REQUIREMENT"
+    },
+    {
+      "id": "ACV-057",
+      "owners": ["K", "AP", "O08"],
+      "targets": [
+        "$defs.AuthorityAvailableV0.possibleCredentialIdentifiers",
+        "$defs.AuthorityAvailableV0.necessaryCredentialIdentifiers",
+        "$defs.AuthorityAvailableV0.terminalCredentialIdentifiers",
+        "$defs.ForkJoinProjectionV0.lineageClosureCredentialIdentifiers",
+        "$defs.AliasGroupV0.allOf[0]",
+        "$defs.ContextProjectionV0.revokedCredentialIdentifiers",
+        "$defs.ContextProjectionV0.terminatedCredentialIdentifiers",
+        "$defs.ContextProjectionV0.forkedCredentialIdentifiers"
+      ],
+      "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+      "parameters": { "dimension": "CREDENTIALS" },
+      "scenario": "ACI-CREDENTIAL-DERIVED-COLLECTION-OVER-BOUND",
+      "mutant": "M-ACI-CREDENTIAL-DERIVED-COUNT-POST-WORK"
+    },
+    {
+      "id": "ACV-058",
+      "owners": ["K", "O08"],
+      "targets": ["$defs.ForkJoinProjectionV0.siblingReferences"],
+      "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+      "parameters": { "dimension": "SIBLINGS_PER_FORK" },
+      "scenario": "ACI-FORK-SIBLING-COUNT-OVER-BOUND",
+      "mutant": "M-ACI-FORK-SIBLING-COUNT-POST-WORK"
+    },
+    {
+      "id": "ACV-059",
+      "owners": ["K", "AP", "O08"],
+      "targets": ["$defs.ContextProjectionV0.aliasGroups"],
+      "rule": "DERIVED_ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+      "parameters": {
+        "expression": "floor(CREDENTIALS/2)",
+        "selectedValue": "8"
+      },
+      "scenario": "ACI-ALIAS-GROUP-COUNT-OVER-DERIVED-BOUND",
+      "mutant": "M-ACI-ALIAS-GROUP-COUNT-POST-WORK"
+    },
+    {
+      "id": "ACV-060",
+      "owners": ["K", "AP", "O08"],
+      "targets": ["$defs.ContextProjectionV0.appliedControlReferences"],
+      "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+      "parameters": { "dimension": "CONTROL_EVENTS" },
+      "scenario": "ACI-APPLIED-CONTROL-COUNT-OVER-BOUND",
+      "mutant": "M-ACI-APPLIED-CONTROL-COUNT-POST-WORK"
+    },
+    {
+      "id": "ACV-061",
+      "owners": ["K", "AP", "O08"],
+      "targets": [
+        "$defs.ContextProjectionV0.reductionStandings",
+        "$defs.ContextProjectionV0.eventAuthority",
+        "$defs.ContextProjectionV0.forkJoins",
+        "$defs.ContextProjectionV0.replayDependencyReferences"
+      ],
+      "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+      "parameters": {
+        "dimension": "RECORDS",
+        "forkJoinBoundJustification": "single reference-key uniqueness and recomputation from the retained closure without checkpoint pruning"
+      },
+      "scenario": "ACI-RECORD-DERIVED-COLLECTION-OVER-BOUND",
+      "mutant": "M-ACI-RECORD-DERIVED-COUNT-POST-WORK"
+    },
+    {
+      "id": "ACV-062",
+      "owners": ["K", "O08"],
+      "targets": ["$defs.ContextProjectionV0.pendingRootReferences"],
+      "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+      "parameters": { "dimension": "PENDING_ROOTS" },
+      "scenario": "ACI-PENDING-ROOT-COUNT-OVER-BOUND",
+      "mutant": "M-ACI-PENDING-ROOT-COUNT-POST-WORK"
+    },
+    {
+      "id": "ACV-063",
+      "owners": ["K", "O08"],
+      "targets": ["$defs.ContextProjectionV0.pendingReferences"],
+      "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+      "parameters": { "dimension": "PENDING_DESCENDANTS" },
+      "scenario": "ACI-PENDING-DESCENDANT-COUNT-OVER-BOUND",
+      "mutant": "M-ACI-PENDING-DESCENDANT-COUNT-POST-WORK"
+    },
+    {
+      "id": "ACV-064",
+      "owners": ["O04", "INTERFACE"],
+      "targets": ["$defs.EvaluateCandidateInputV0.evidence"],
+      "rule": "CANDIDATE_EVIDENCE_REFERENCES_PRIOR_OR_APPENDED_CANDIDATE_ONLY",
+      "parameters": {
+        "allowedEventSet": "prior.records union appended candidate",
+        "rejectBefore": "candidate evaluation"
+      },
+      "scenario": "ACI-CANDIDATE-EVIDENCE-UNKNOWN-EVENT",
+      "mutant": "M-ACI-CANDIDATE-EVIDENCE-ACCEPT-UNKNOWN-EVENT"
+    },
+    {
+      "id": "ACV-065",
+      "owners": ["O04", "INTERFACE"],
+      "targets": ["$defs.EvaluateCandidateInputV0.evidence"],
+      "rule": "PURPOSE_KEYED_EVIDENCE_MERGE_IS_DETERMINISTIC",
+      "parameters": {
+        "contentRule": "exact duplicate segments are idempotent; non-overlapping segments merge then canonical-sort; overlap, replacement or partial conflict rejects the request",
+        "openingRule": "exact duplicate openings are idempotent; different openings for one event reject the request",
+        "arrivalOrderAuthority": false,
+        "callerVerdictAuthority": false
+      },
+      "scenario": "ACI-CANDIDATE-EVIDENCE-CONFLICTING-MERGE",
+      "mutant": "M-ACI-CANDIDATE-EVIDENCE-ARRIVAL-ORDER-WINS"
     }
   ]
 }

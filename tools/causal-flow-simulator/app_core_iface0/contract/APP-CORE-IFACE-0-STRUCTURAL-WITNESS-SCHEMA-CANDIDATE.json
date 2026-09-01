@@ -41,12 +41,12 @@
       "$ref": "#/$defs/Sha256Hex"
     },
     "rowCount": {
-      "const": 1367
+      "const": 1400
     },
     "rows": {
       "type": "array",
-      "minItems": 1367,
-      "maxItems": 1367,
+      "minItems": 1400,
+      "maxItems": 1400,
       "items": {
         "$ref": "#/$defs/WitnessRow"
       }

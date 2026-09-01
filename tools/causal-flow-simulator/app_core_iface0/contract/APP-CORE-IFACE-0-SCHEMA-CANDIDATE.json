@@ -985,6 +985,38 @@
       },
       "x-styx-derived-from-resource-envelope": "balanced"
     },
+    "CapabilityRequirementV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["comparison", "selectedValue", "unit"],
+      "properties": {
+        "comparison": {
+          "enum": ["EXACT_CLOSED_KEY_SET", "MINIMUM_CAPABILITY"]
+        },
+        "selectedValue": { "$ref": "#/$defs/CanonicalUnsignedDecimal" },
+        "unit": {
+          "enum": ["COUNT", "DECLARED_FAILURE_DOMAIN_COPIES", "OCTETS"]
+        }
+      }
+    },
+    "CapabilityRequirementsV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ACTIVATION_CAPABILITY_SET",
+        "DURABLE_REQUIRED_OCTETS",
+        "DURABLE_RECORDS",
+        "CUSTODY_REDUNDANCY",
+        "TRANSIENT_MEMORY_CAPABILITY"
+      ],
+      "properties": {
+        "ACTIVATION_CAPABILITY_SET": { "$ref": "#/$defs/CapabilityRequirementV0" },
+        "DURABLE_REQUIRED_OCTETS": { "$ref": "#/$defs/CapabilityRequirementV0" },
+        "DURABLE_RECORDS": { "$ref": "#/$defs/CapabilityRequirementV0" },
+        "CUSTODY_REDUNDANCY": { "$ref": "#/$defs/CapabilityRequirementV0" },
+        "TRANSIENT_MEMORY_CAPABILITY": { "$ref": "#/$defs/CapabilityRequirementV0" }
+      }
+    },
     "ProfileDescriptorV0": {
       "type": "object",
       "additionalProperties": false,
@@ -995,6 +1027,7 @@
         "evidenceEncoding",
         "authorityPins",
         "interfaceLimits",
+        "capabilityRequirements",
         "externalBoundaries"
       ],
       "properties": {
@@ -1046,6 +1079,7 @@
           "x-styx-literal-values-from-ratified-contract": true
         },
         "interfaceLimits": { "$ref": "#/$defs/InterfaceLimitsV0" },
+        "capabilityRequirements": { "$ref": "#/$defs/CapabilityRequirementsV0" },
         "externalBoundaries": {
           "const": [
             "GENESIS_CEREMONY_PROMOTION",

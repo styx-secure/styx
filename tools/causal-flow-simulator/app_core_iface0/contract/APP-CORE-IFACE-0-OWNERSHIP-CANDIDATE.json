@@ -108,6 +108,8 @@
     "ForkJoinProjectionV0": { "owners": ["K", "AP"], "source": "DERIVED_FULL_REPLAY" },
     "GenesisProjectionV0": { "owners": ["K", "O03", "AP"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
     "GenesisTranscriptCandidateV0": { "owners": ["K"], "source": "CANDIDATE_BYTES" },
+    "CapabilityRequirementV0": { "owners": ["O08", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
+    "CapabilityRequirementsV0": { "owners": ["O08", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
     "InterfaceLimitsV0": { "owners": ["O08", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
     "O03TupleV0": { "owners": ["O03", "K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
     "OpeningEvidenceV0": { "owners": ["O04"], "source": "RAW_LOCAL_EVIDENCE" },
@@ -129,7 +131,8 @@
       "overrides": {
         "profile": { "owners": ["O03", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
         "authorityPins": { "owners": ["K", "O08", "O10", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
-        "interfaceLimits": { "owners": ["O08", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" }
+        "interfaceLimits": { "owners": ["O08", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
+        "capabilityRequirements": { "owners": ["O08", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" }
       }
     },
     "ProposedApplicationDeltaV0": { "owners": ["INTERFACE"], "source": "PRECOMMIT_PROPOSAL" },

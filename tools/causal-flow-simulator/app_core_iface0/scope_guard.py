@@ -34,6 +34,7 @@ IMPLEMENTATION_FILES = frozenset(
         "README.md",
         "canonical_json.py",
         "canonical_report.py",
+        "derive_interface_maxima.py",
         "final_gate.py",
         "generate_seed_registry.py",
         "generate_structural_witnesses.py",
@@ -53,6 +54,7 @@ TEST_FILES = frozenset(
         "test_contract_package.py",
         "test_cross_runtime.py",
         "test_final_gate.py",
+        "test_interface_maxima.py",
         "test_interface_model.py",
         "test_inventory.py",
         "test_mutations.py",
@@ -217,4 +219,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

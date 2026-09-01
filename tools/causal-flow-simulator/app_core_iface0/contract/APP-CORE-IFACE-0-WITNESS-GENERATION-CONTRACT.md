@@ -5,7 +5,7 @@ authority and authorizes no implementation.
 
 ## Objective
 
-Define how the future 76-row positive seed registry and 1,367-row structural
+Define how the future 78-row positive seed registry and 1,400-row structural
 witness registry are generated without executor-selected coverage, convenient
 fixtures or disclosed response oracles. The generated registries are evidence;
 they are not protocol authority and are never runtime adapter inputs.
@@ -35,17 +35,17 @@ version.
 
 The positive-case inventory must conform to
 `APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json`, SHA-256
-`5ec2d83f992566f503c5e007626b5a030e8186cfc0eef266e6197dd76f71fc28`.
+`17dc0123dc8df3dff6b0e78ec372d93d5375dc1fd610a0d40e542d6eb1f17665`.
 The populated inventory receives its own digest in the executable Issue after
 the carrier bytes produced from exact Base
 `16274cc194cd2f8f7b631332687a252bad92ce02` are frozen.
 
 Carrier eligibility is derived from the exact reachability relation in
 `APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json`, SHA-256
-`4e649d2e0e3613661ea54a9179c17d333ef0a99fa22e707c2b6d43916ece95fb`.
+`b6bf05336c46d9e23c78adb9e283b3b05c0238730aa38d3d78337ffdf05afc6f`.
 The relation is regenerated from the schema by
 `derive_app_core_carrier_reachability.py`, SHA-256
-`dac0e53cc17d0f0d5c1eb0f833d430860f16b318d4bd7d4d5074578d7a8044f2`.
+`a349019ca273d88016f45b09e40afe6fcee71654617e230ef1dcebde9a5c92b4`.
 The generator must reproduce byte-identical output and prove that every
 remaining definition, object schema and union arm is reachable from at least
 one of the twelve operation/direction roots. An unreachable definition is a
@@ -53,7 +53,7 @@ schema defect and cannot be waived by a synthetic carrier or coverage note.
 
 ## Canonical enumeration
 
-The object-schema relation is the lexicographically sorted sequence of the 76
+The object-schema relation is the lexicographically sorted sequence of the 78
 canonical JSON Pointers in the ownership registry. The structural-instance
 relation preserves the literal rule order in the structural-axis registry and,
 within each rule, sorts its canonical source pointer or literal relation-row ID
@@ -101,12 +101,12 @@ object schema has no eligible carrier, generation fails; structural similarity
 to another schema is not a substitute.
 
 The inventory validator also requires `caseCount == len(cases)`, unique case
-IDs, all twelve direction-by-operation root cases, exact coverage of the 76
+IDs, all twelve direction-by-operation root cases, exact coverage of the 78
 object-schema pointers and exact coverage of the 54 literal `oneOf` arms.
 Every response case must name an existing request case of the same operation
 and the exact reference-execution report that produced it. Twelve cases are the
-minimum and 142 is the closed maximum obtained by assigning separate cases to
-all twelve roots, 76 object schemas and 54 union arms; overlap may reduce the
+minimum and 144 is the closed maximum obtained by assigning separate cases to
+all twelve roots, 78 object schemas and 54 union arms; overlap may reduce the
 actual ratified count but cannot reduce any coverage relation.
 
 ## Deterministic hostile synthesis
@@ -206,7 +206,7 @@ fails before any hostile case executes.
 The reference generator and independent JavaScript reader run in distinct clean
 exact-HEAD checkouts. They independently:
 
-- recompute all 76 seed rows and 1,367 instance rows;
+- recompute all 78 seed rows and 1,400 instance rows;
 - execute every request instance before seeing expected response bytes;
 - freeze response output before withheld-oracle release;
 - execute post-output response mutations only after the freeze;
@@ -216,7 +216,7 @@ exact-HEAD checkouts. They independently:
 
 The final gate requires byte-identical registries and reports, exact set
 equality, all baseline positives passing, all negative observations matching,
-all positive observations matching and all 1,367 mutants killed by their named
+all positive observations matching and all 1,400 mutants killed by their named
 detectors. Aggregate counts or suite-level `PASS` are insufficient.
 
 ## Remaining closure
@@ -224,6 +224,6 @@ detectors. Aggregate counts or suite-level `PASS` are insufficient.
 This contract fixes generation and isolation rules but does not fabricate the
 exact-Base carrier inventories. Before ratification, the executable Issue must
 bind the exact candidate palette and positive case inventories. Before APP-core
-conformance can close, the implementation must populate the 76 seed rows and
-1,367 witnesses, execute both readers and pass independent review plus the
+conformance can close, the implementation must populate the 78 seed rows and
+1,400 witnesses, execute both readers and pass independent review plus the
 human gate.

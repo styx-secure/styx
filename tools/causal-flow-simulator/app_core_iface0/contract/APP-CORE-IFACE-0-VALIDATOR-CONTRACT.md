@@ -26,7 +26,7 @@ One invocation receives exactly:
 6. the exact structural-axis registry;
 7. the exact 93-row `oneOf` pairwise-disjointness registry;
 8. the exact mechanically generated twelve-root carrier-reachability relation;
-9. the exact 76-row canonical object-schema seed registry for hostile generation;
+9. the exact 78-row canonical object-schema seed registry for hostile generation;
 10. the populated per-instance structural witness registry;
 11. read-only pinned native artifacts and their provider-bound SHA-256 values;
 12. the exact selected O-08 resource-envelope artifact; and
@@ -65,7 +65,7 @@ Before request parsing:
 - verify all provider-bound path/digest pairs byte-for-byte;
 - verify the schema meta-schema and resolve every local `$ref`;
 - regenerate the carrier-reachability relation and require exact equality,
-  including all twelve roots, 112 definitions, 76 object schemas and 54
+  including all twelve roots, 114 definitions, 78 object schemas and 54
   `oneOf` arms; reject every dead definition or unreachable assertion;
 - reject a schema cycle, remote reference, unknown vocabulary or unknown
   `x-styx-*` keyword;
@@ -74,6 +74,9 @@ Before request parsing:
 - derive and compare the ordered hostile-family and terminal-path digests;
 - verify the selected O-08 candidate ID/digest and every projected interface
   limit against the pinned O-08 artifact; and
+- run `derive_interface_maxima.py --check` and require exact equality of all
+  twelve root measurements, the three embedded maxima, maximizing roots and
+  component breakdowns; and
 - verify that no test scenario input contains expected output or mutation
   survivor data.
 
@@ -81,7 +84,7 @@ Any failure is `HARNESS_FAILURE`; it is not a malformed caller request.
 
 ### V1 — raw envelope admission
 
-Apply the ratified outer request-octet limit before copying, decoding or
+Apply `OUTER_REQUEST_OCTETS = 138645585` before copying, decoding or
 allocating proportional to a declared value. Then:
 
 1. require strict UTF-8 with no BOM;
@@ -153,7 +156,11 @@ Dispatch exactly one operation:
    closure. Otherwise it selects the first canonical failing candidate or one
    replay-input terminal; it never silently drops input.
 5. `EVALUATE_CANDIDATE` revalidates the complete prior, evaluates the candidate
-   under the exact 25-row F13 relation and returns a terminal result or one
+   and merges prior/call evidence by purpose and exact event reference before
+   candidate work. Exact repeats are idempotent, non-overlapping content
+   segments merge canonically, and unknown references or conflicting content/
+   openings reject the request. It then applies the exact 25-row F13 relation
+   and returns a terminal result or one
    complete successor proposal. The successor must equal complete replay. It
    copies the exact O-10 stage/mutation tuple and keeps deterministic O-08 S6
    reachable only on the would-be `APPLIED` path; all successor publication is
@@ -175,13 +182,19 @@ pinned descriptor; never copy them blindly from request or evaluator output.
 Validate the complete object against `InterfaceResponseV0` and all semantic
 constraints before serialization.
 
-Serialize once using the ratified evidence JSON profile. Reparse the emitted
+Serialize once into one buffer no larger than
+`OUTER_RESPONSE_OCTETS = 71197494` using the ratified evidence JSON profile.
+An over-bound generated object is `HARNESS_FAILURE`, not a protocol result.
+Reparse the emitted
 bytes through V1/V2 response validation and require field-for-field equality
 with the pre-serialization object. Reject any floating point, alternate numeric
 form, non-lowercase hex, unknown field, unstable collection order or extra
 bytes.
 
-Only then emit `RESPONSE_EMITTED` and the exact bytes.
+Only then emit `RESPONSE_EMITTED` and the exact bytes. Retained decoded
+transcript/block/reference/evidence material is bounded by
+`MAX_RETAINED_DECODED_OCTETS = 35351200`; the reader retains no raw request or
+hex-text duplicate beyond the `CHUNK_OCTETS` streaming window.
 
 ### V7 — canonical report hygiene
 
@@ -190,7 +203,7 @@ explicitly permitted by the report schema. Before report serialization:
 
 - expand the ratified semantic-instance axes;
 - require one observation per exact instance;
-- validate all 344 response string positions against each of the ten forbidden
+- validate all 359 response string positions against each of the ten forbidden
   runtime-provenance families;
 - reject absolute paths, host/user/PID/time/duration/environment/exception/
   stack material in every string position;
@@ -246,15 +259,15 @@ provider-bound exact bytes.
 
 ## Remaining pre-ratification closures
 
-The schema, 55-row semantic-instance-axis registry, 23-row content-axis,
+The schema, 65-row semantic-instance-axis registry, 23-row content-axis,
 25-row F13 primary/axis, 14-row transcript and 16-row genesis relations are now
 literal working candidates. The relation expands the nine ACV-048 forbidden
-families through all 76 property-bearing object schemas. Together with the
-closed structural-keyword relation it derives 5,991 structural-plus-semantic
+families through all 78 property-bearing object schemas. Together with the
+closed structural-keyword relation it derives 6,228 structural-plus-semantic
 execution instances. They all require independent review and human ratification.
 
 Two literal execution outputs cannot exist before the repository increment
-supplies valid carriers: the canonical 76-row seed registry and the
+supplies valid carriers: the canonical 78-row seed registry and the
 per-instance structural witness registry. Their row shape, equality rules and
 hostile derivation are already fixed; only exact carrier case IDs, JSON
 pointers and object-byte digests remain to be generated from Base
@@ -267,9 +280,9 @@ validator must additionally enforce relations that JSON Schema alone cannot:
 
 1. the seed registry binds the exact positive-carrier inventory digest; that
    inventory has unique case IDs, covers all twelve direction/operation roots,
-   all 76 object-schema pointers and all 54 literal `oneOf` arms, and every
+   all 78 object-schema pointers and all 54 literal `oneOf` arms, and every
    withheld response binds its generating request and reference report;
-2. the sorted `objectSchemaPointer` set equals exactly the 76 property-bearing
+2. the sorted `objectSchemaPointer` set equals exactly the 78 property-bearing
    object schemas in the pinned interface schema, including the five inline
    objects, with one row per pointer;
 3. each `objectSchemaId` is unique and stable, and `objectSchemaSha256` is the
@@ -287,7 +300,7 @@ validator must additionally enforce relations that JSON Schema alone cannot:
    operation without updating every bound digest fails closed.
 
 The structural witness registry additionally has exact-set equality with all
-1,367 structural instances. Every row binds one instance ID to a seed row,
+1,400 structural instances. Every row binds one instance ID to a seed row,
 target pointer, deterministic perturbation, expected disposition, observation
 ID and source-mutant detector. It also proves positive coverage of all 54
 `oneOf` arms and pairwise arm disjointness; an aggregate validator result or

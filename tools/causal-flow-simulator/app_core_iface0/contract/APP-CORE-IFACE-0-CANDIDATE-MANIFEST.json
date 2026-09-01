@@ -2,22 +2,64 @@
   "manifestVersion": "APP-CORE-IFACE-0-CANDIDATE-MANIFEST-V1",
   "status": "PRE_RATIFICATION_WORKING_EVIDENCE",
   "authorityEffect": "NONE",
+  "derivedInterfaceMaxima": {
+    "derivationVersion": "APP-CORE-IFACE-0-INTERFACE-MAXIMA-V1",
+    "maxRetainedDecodedOctets": 35351200,
+    "maxRetainedDecodedRoot": "REQUEST-EVALUATE_CANDIDATE",
+    "maximizingRootBreakdowns": [
+      {
+        "breakdown": [
+          { "component": "canonical-syntax-keys-and-final-lf", "jsonOctets": 55, "representedDecodedOctets": 0 },
+          { "component": "input", "jsonOctets": 138645399, "representedDecodedOctets": 68917920 },
+          { "component": "interfaceVersion", "jsonOctets": 3, "representedDecodedOctets": 0 },
+          { "component": "operation", "jsonOctets": 20, "representedDecodedOctets": 0 },
+          { "component": "profile", "jsonOctets": 108, "representedDecodedOctets": 0 }
+        ],
+        "direction": "REQUEST",
+        "jsonOctets": 138645585,
+        "operation": "EVALUATE_CANDIDATE",
+        "representedDecodedOctets": 68917920,
+        "retainedDecodedOctets": 35351200,
+        "rootId": "REQUEST-EVALUATE_CANDIDATE"
+      },
+      {
+        "breakdown": [
+          { "component": "canonical-syntax-keys-and-final-lf", "jsonOctets": 56, "representedDecodedOctets": 0 },
+          { "component": "interfaceVersion", "jsonOctets": 3, "representedDecodedOctets": 0 },
+          { "component": "operation", "jsonOctets": 20, "representedDecodedOctets": 0 },
+          { "component": "profile", "jsonOctets": 108, "representedDecodedOctets": 0 },
+          { "component": "result", "jsonOctets": 71197307, "representedDecodedOctets": 35342944 }
+        ],
+        "direction": "RESPONSE",
+        "jsonOctets": 71197494,
+        "operation": "EVALUATE_CANDIDATE",
+        "representedDecodedOctets": 35342944,
+        "retainedDecodedOctets": 35342944,
+        "rootId": "RESPONSE-EVALUATE_CANDIDATE"
+      }
+    ],
+    "outerRequestOctets": 138645585,
+    "outerRequestRoot": "REQUEST-EVALUATE_CANDIDATE",
+    "outerResponseOctets": 71197494,
+    "outerResponseRoot": "RESPONSE-EVALUATE_CANDIDATE",
+    "rootMeasurementSetSha256": "1846a040f66751fba6866d59af3f51fdc1aca2aa945d77706f68c81ba67771b8"
+  },
   "derivedCounts": {
     "operations": 6,
-    "propertyBearingObjectSchemas": 76,
-    "directObjectDefinitions": 71,
+    "propertyBearingObjectSchemas": 78,
+    "directObjectDefinitions": 73,
     "inlineObjectSchemas": 5,
-    "properties": 298,
-    "directlyRequiredProperties": 297,
+    "properties": 307,
+    "directlyRequiredProperties": 306,
     "customKeywordOccurrences": 24,
     "structuralRuleFamilies": 23,
-    "structuralExecutionInstances": 1367,
+    "structuralExecutionInstances": 1400,
     "oneOfOccurrences": 16,
     "oneOfArms": 54,
     "oneOfPairwiseDisjointnessRows": 93,
-    "semanticFamilies": 55,
-    "semanticExecutionInstances": 4624,
-    "totalExecutionInstances": 5991,
+    "semanticFamilies": 65,
+    "semanticExecutionInstances": 4828,
+    "totalExecutionInstances": 6228,
     "contentRelationRows": 23,
     "candidatePrimaryRelationRows": 25,
     "transcriptRelationRows": 14,
@@ -26,24 +68,24 @@
     "readOnlyNativeDependencies": 59,
     "seededExtensionNativeDependencies": 4,
     "historicalProviderIncrements": 5,
-    "seedRegistryRowsPendingPostBase": 76,
-    "structuralWitnessRowsPendingPostBase": 1367
+    "seedRegistryRowsPendingPostBase": 78,
+    "structuralWitnessRowsPendingPostBase": 1400
   },
   "artifacts": [
     {
       "path": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
       "role": "INTERFACE_SCHEMA",
-      "sha256": "cbd3b476c0cf2bf59324f3827067131ef0387adea655236da062e994e00b4a74"
+      "sha256": "310e265ab2a1ab818b7200da24fc4019df45d639279b8e14c2e3f7cff434ece9"
     },
     {
       "path": "APP-CORE-IFACE-0-OWNERSHIP-CANDIDATE.json",
       "role": "PROPERTY_OWNERSHIP",
-      "sha256": "e2b35042d768c2a9f5e3f4325788f79f69679ffd620a8300f66ad39affae13d3"
+      "sha256": "af7c2db16398e383e28e1812fe88f5f5cfaa69599a9ea999395e69a4c36779a0"
     },
     {
       "path": "APP-CORE-IFACE-0-STRUCTURAL-AXES-CANDIDATE.json",
       "role": "STRUCTURAL_INSTANCE_AXES",
-      "sha256": "fada452d14397b4d10b69c697fcb7e9fb163254488f0edd90c5bc6b8864c5aed"
+      "sha256": "86676cf5bab87d1eaf7de0a776fa4e94cf2b3fdfebb0605452af523d73bb65ee"
     },
     {
       "path": "APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json",
@@ -53,27 +95,27 @@
     {
       "path": "APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json",
       "role": "ONEOF_PAIRWISE_DISJOINTNESS",
-      "sha256": "3a433c47ec2d7fcf2536c39aafa953045c65c1cea9a5c89a70699019c00d47ec"
+      "sha256": "f65ef4f70bd082e769abbe08d397c56550edeb48f66a407d746808e56abea97b"
     },
     {
       "path": "APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json",
       "role": "STRUCTURAL_WITNESS_REGISTRY_SCHEMA",
-      "sha256": "dc0d38390b9e8c4c82d30125c40537e36788d41ebab315ef3196c66486f9bf2f"
+      "sha256": "3ae8047d474241e3d3e5c4500e7c8f21dc62e47fd1cab283edb11177111b3d78"
     },
     {
       "path": "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json",
       "role": "SEMANTIC_RULE_FAMILIES",
-      "sha256": "672ac0367da4373850e08673588e361e2160d8ef34d75d43af2719d15126f159"
+      "sha256": "784a1618e0e71c4d57ec249ac44c65d50f87a08cf1a239d15e19dda8a3a420f6"
     },
     {
       "path": "APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json",
       "role": "SEMANTIC_INSTANCE_AXES",
-      "sha256": "ee3abf45536a1fa2a96e00b95741c63dd78ebe68d36d1e916755c38f8c8e7baf"
+      "sha256": "40872e15ecbafac695ef83e1dda87d81ccf0ffe7136226b4eb058a48f0eb802c"
     },
     {
       "path": "APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json",
       "role": "INSTANCE_EXECUTION_PHASES",
-      "sha256": "29419bb5dcd9d610c2cd49ef3eb01aa6b5d0b2e1ee566e757046d5f797f946dd"
+      "sha256": "e8f94360dd5ac31acd93f5330bd7ed3bf4d090e04461e909bd647886fee9428b"
     },
     {
       "path": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json",
@@ -83,22 +125,22 @@
     {
       "path": "APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json",
       "role": "SEED_REGISTRY_SCHEMA",
-      "sha256": "8b6138d2bfeaa995d2449479d5d405d61c298c81f1f709fb9dd12d0f98acd01e"
+      "sha256": "8b98b69ee88bdbf59f5de1fc20e4008aaedd97c3f09a6c615869997501eeb2ef"
     },
     {
       "path": "APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json",
       "role": "POSITIVE_CARRIER_INVENTORY_SCHEMA",
-      "sha256": "5ec2d83f992566f503c5e007626b5a030e8186cfc0eef266e6197dd76f71fc28"
+      "sha256": "17dc0123dc8df3dff6b0e78ec372d93d5375dc1fd610a0d40e542d6eb1f17665"
     },
     {
       "path": "APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json",
       "role": "DERIVED_CARRIER_REACHABILITY",
-      "sha256": "4e649d2e0e3613661ea54a9179c17d333ef0a99fa22e707c2b6d43916ece95fb"
+      "sha256": "b6bf05336c46d9e23c78adb9e283b3b05c0238730aa38d3d78337ffdf05afc6f"
     },
     {
       "path": "derive_app_core_carrier_reachability.py",
       "role": "CARRIER_REACHABILITY_DERIVER",
-      "sha256": "dac0e53cc17d0f0d5c1eb0f833d430860f16b318d4bd7d4d5074578d7a8044f2"
+      "sha256": "a349019ca273d88016f45b09e40afe6fcee71654617e230ef1dcebde9a5c92b4"
     },
     {
       "path": "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json",
@@ -123,22 +165,22 @@
     {
       "path": "validate_app_core_contract_candidates.py",
       "role": "FAIL_CLOSED_CANDIDATE_PACKAGE_VALIDATOR",
-      "sha256": "d1fcdcb45262666739bf0a7af042d9e110f1bb23e000b86eedcd0111dd489da5"
+      "sha256": "4f454db4ba394e7a962489f5faaf7d803e35e8a7ed2bc5d75a664603b4a8fec5"
     },
     {
       "path": "APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md",
       "role": "HOSTILE_DERIVATION",
-      "sha256": "6ed70b761f18cc96de1ea042b5b39a7b96796cc0210a25bfaa26c7fd6f33f44c"
+      "sha256": "ff8d9e27824e318661fc2998f7a7464c94f1a9b38d1967ac3875f508b0c5643d"
     },
     {
       "path": "APP-CORE-IFACE-0-VALIDATOR-CONTRACT.md",
       "role": "VALIDATOR_PIPELINE",
-      "sha256": "212a5ee245555de41d3e792524be177aee83ad4cab6bf79e41bc5a375470545e"
+      "sha256": "7f017f28b19a2342a38f9e27018d68bad0100bab8566e6acf0df0b515a4083c4"
     },
     {
       "path": "APP-CORE-IFACE-0-WITNESS-GENERATION-CONTRACT.md",
       "role": "DETERMINISTIC_SEED_AND_WITNESS_GENERATION",
-      "sha256": "e1b98c61b2dcc8f3e4ca8e13d439f6cde250dea79f5b69174b97e3cfa94d0fd6"
+      "sha256": "b91eff067fb65aee4a56174db14e84a26fea8de9f2a605ae829666190c5bb2fb"
     },
     {
       "path": "APP-CORE-O10-CLOSURE-CANDIDATE.md",
@@ -158,7 +200,7 @@
     {
       "path": "APP-CORE-IFACE-0-CONTRACT-OUTLINE.md",
       "role": "EXECUTABLE_CONTRACT_OUTLINE",
-      "sha256": "847f760f65923092c080268cb57c08dddb45b4aa8f74f63df0d21861145c838e"
+      "sha256": "d7fd7303e3c66cdd90a874f2d4052e1eaf27450d3b92d383ceb61168a8727241"
     }
   ],
   "remainingBeforeExecutableIssue": [

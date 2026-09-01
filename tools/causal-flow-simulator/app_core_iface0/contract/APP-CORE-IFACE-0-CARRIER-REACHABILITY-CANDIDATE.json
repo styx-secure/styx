@@ -3,14 +3,14 @@
   "status": "PRE_RATIFICATION_PLANNING_EVIDENCE",
   "authorityEffect": "NONE",
   "schema": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
-  "schemaSha256": "cbd3b476c0cf2bf59324f3827067131ef0387adea655236da062e994e00b4a74",
-  "definitionPointerSetSha256": "87d7932d503eb3d4e01059fcc1f76341f23eb2cc3bba92f1e97bc8a927f6e7a0",
-  "objectSchemaPointerSetSha256": "da9baa1395eb70a93341c3a1905fd20530df98aa97184e54ca2092edea66d16a",
+  "schemaSha256": "310e265ab2a1ab818b7200da24fc4019df45d639279b8e14c2e3f7cff434ece9",
+  "definitionPointerSetSha256": "81d81ecb94194d0212cfa20c8fcbc2a54285e3401e33e3365fd48fdcce275911",
+  "objectSchemaPointerSetSha256": "79b260376a95d0c2e78e05b9ae347cf826c7dcb6b4b947acf977844390f2d20e",
   "oneOfArmEncoding": "lexicographically sorted <oneOfPointer>#<decimal-arm-index> plus LF",
   "oneOfArmSetSha256": "56e2eca24d79e3c29a4a2cbbb584783576ffe9fadacdc6d467943833f55db628",
   "rootCount": 12,
-  "definitionCount": 112,
-  "objectSchemaCount": 76,
+  "definitionCount": 114,
+  "objectSchemaCount": 78,
   "oneOfArmCount": 54,
   "roots": [
     {
@@ -593,6 +593,8 @@
       "wrapperSchemaPointer": "/$defs/OperationResponseDescribeProfileV0",
       "eligibleDefinitionPointers": [
         "/$defs/CanonicalUnsignedDecimal",
+        "/$defs/CapabilityRequirementV0",
+        "/$defs/CapabilityRequirementsV0",
         "/$defs/DescribeProfileResultSupportedV0",
         "/$defs/DescribeProfileResultUnsupportedV0",
         "/$defs/DescribeProfileResultV0",
@@ -607,6 +609,8 @@
         "/$defs/U32Text"
       ],
       "eligibleObjectSchemaPointers": [
+        "/$defs/CapabilityRequirementV0",
+        "/$defs/CapabilityRequirementsV0",
         "/$defs/DescribeProfileResultSupportedV0",
         "/$defs/DescribeProfileResultUnsupportedV0",
         "/$defs/ExactProfileSelectorV0",
@@ -1514,6 +1518,18 @@
         "RESPONSE-EVALUATE_GENESIS",
         "RESPONSE-REPLAY_CONTEXT",
         "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/CapabilityRequirementV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/CapabilityRequirementsV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
       ]
     },
     {
@@ -2425,6 +2441,18 @@
       "objectSchemaPointer": "/$defs/CandidateEvaluationTerminalV0",
       "eligibleRootIds": [
         "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/CapabilityRequirementV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/CapabilityRequirementsV0",
+      "eligibleRootIds": [
+        "RESPONSE-DESCRIBE_PROFILE"
       ]
     },
     {

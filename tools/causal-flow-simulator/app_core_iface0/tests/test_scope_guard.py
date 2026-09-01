@@ -17,10 +17,9 @@ class ScopeGuardTests(unittest.TestCase):
         self.assertTrue(_is_allowed("tools/causal-flow-simulator/app_core_iface0/README.md"))
         self.assertFalse(_is_allowed("tools/causal-flow-simulator/o10/taxonomy.py"))
         self.assertFalse(_is_allowed("styx-js/src/adapter.js"))
-        self.assertEqual(len(IMPLEMENTATION_FILES), 14)
-        self.assertEqual(len(TEST_FILES), 9)
+        self.assertEqual(len(IMPLEMENTATION_FILES), 15)
+        self.assertEqual(len(TEST_FILES), 10)
 
 
 if __name__ == "__main__":
     unittest.main()
-
