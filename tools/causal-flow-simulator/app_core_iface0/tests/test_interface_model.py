@@ -5,6 +5,8 @@ from io import BytesIO
 import unittest
 from pathlib import Path
 
+from jsonschema.validators import Draft202012Validator
+
 ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parents[2]
 sys.path.insert(0, str(ROOT))
@@ -43,6 +45,44 @@ class InterfaceModelTests(unittest.TestCase):
             },
         )
         self.assertEqual(len(descriptor["interfaceLimits"]), 22)
+        self.assertEqual(
+            descriptor["capabilityRequirements"],
+            {
+                "ACTIVATION_CAPABILITY_SET": {
+                    "comparison": "EXACT_CLOSED_KEY_SET",
+                    "selectedValue": "4",
+                    "unit": "COUNT",
+                },
+                "CUSTODY_REDUNDANCY": {
+                    "comparison": "MINIMUM_CAPABILITY",
+                    "selectedValue": "1",
+                    "unit": "DECLARED_FAILURE_DOMAIN_COPIES",
+                },
+                "DURABLE_RECORDS": {
+                    "comparison": "MINIMUM_CAPABILITY",
+                    "selectedValue": "512",
+                    "unit": "COUNT",
+                },
+                "DURABLE_REQUIRED_OCTETS": {
+                    "comparison": "MINIMUM_CAPABILITY",
+                    "selectedValue": "4194304",
+                    "unit": "OCTETS",
+                },
+                "TRANSIENT_MEMORY_CAPABILITY": {
+                    "comparison": "MINIMUM_CAPABILITY",
+                    "selectedValue": "134217728",
+                    "unit": "OCTETS",
+                },
+            },
+        )
+        validator = Draft202012Validator(
+            {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$ref": "#/$defs/ProfileDescriptorV0",
+                "$defs": self.authority.schema["$defs"],
+            }
+        )
+        self.assertEqual(list(validator.iter_errors(descriptor)), [])
 
     def test_describe_profile_has_only_supported_or_unsupported_result(self) -> None:
         supported = describe_profile(self.authority, dict(SUPPORTED_PROFILE))

@@ -199,13 +199,13 @@ purpose-keyed evidence deduplication. The exact V5 literals are:
 
 | Quantity | Octets | Maximizing root |
 | --- | ---: | --- |
-| `OUTER_REQUEST_OCTETS` | 138645585 | `REQUEST-EVALUATE_CANDIDATE` |
-| `OUTER_RESPONSE_OCTETS` | 71197494 | `RESPONSE-EVALUATE_CANDIDATE` |
+| `OUTER_REQUEST_OCTETS` | 138642769 | `REQUEST-EVALUATE_CANDIDATE` |
+| `OUTER_RESPONSE_OCTETS` | 71196086 | `RESPONSE-EVALUATE_CANDIDATE` |
 | `MAX_RETAINED_DECODED_OCTETS` | 35351200 | `REQUEST-EVALUATE_CANDIDATE` |
 
 The manifest embeds the deterministic component breakdowns for both distinct
 maximizing roots and binds the complete twelve-root measurement relation by
-SHA-256 `1846a040f66751fba6866d59af3f51fdc1aca2aa945d77706f68c81ba67771b8`.
+SHA-256 `aef675a27fb8f69d75a1c452a3a9f0ef8c35175d4c0c97fdf2ce2bceaccad4df`.
 Exact duplicate evidence increases canonical request bytes but is compared and
 merged without retaining a second decoded copy.
 

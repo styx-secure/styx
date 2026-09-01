@@ -238,7 +238,7 @@ The current pre-ratification candidate is mechanically finite:
   cardinalities, F13 equality against the pinned O-10 taxonomy and all manifest
   digests;
 - `derive_interface_maxima.py`: symbolic twelve-root derivation of
-  `OUTER_REQUEST_OCTETS = 138645585`, `OUTER_RESPONSE_OCTETS = 71197494` and
+  `OUTER_REQUEST_OCTETS = 138642769`, `OUTER_RESPONSE_OCTETS = 71196086` and
   `MAX_RETAINED_DECODED_OCTETS = 35351200`, with the maximizing-root
   breakdowns embedded in the manifest;
 - `APP-CORE-IFACE-0-WITNESS-GENERATION-CONTRACT.md`: deterministic carrier

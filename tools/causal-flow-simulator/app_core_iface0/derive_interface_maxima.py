@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from inventory import InventoryError, verify_contract_package
+
 
 ROOT = Path(__file__).resolve().parent
 CONTRACT = ROOT / "contract"
@@ -60,6 +62,10 @@ def json_string_octets(value: str) -> int:
 
 class Derivation:
     def __init__(self) -> None:
+        try:
+            verify_contract_package(CONTRACT)
+        except InventoryError as error:
+            raise MaximaError("contract package verification failed") from error
         self.schema = load(SCHEMA_PATH)
         self.semantics = load(SEMANTICS_PATH)
         self.reachability = load(REACHABILITY_PATH)
@@ -152,13 +158,51 @@ class Derivation:
         return Measure(2 + 2 * octets, octets)
 
     def _capabilities(self) -> Measure:
-        rows = {
-            "ACTIVATION_CAPABILITY_SET": ("EXACT_CLOSED_KEY_SET", "4", "COUNT"),
-            "DURABLE_REQUIRED_OCTETS": ("MINIMUM_CAPABILITY", "4194304", "OCTETS"),
-            "DURABLE_RECORDS": ("MINIMUM_CAPABILITY", "512", "COUNT"),
-            "CUSTODY_REDUNDANCY": ("MINIMUM_CAPABILITY", "1", "DECLARED_FAILURE_DOMAIN_COPIES"),
-            "TRANSIENT_MEMORY_CAPABILITY": ("MINIMUM_CAPABILITY", "134217728", "OCTETS"),
+        definition = self.schema["$defs"]["CapabilityRequirementsV0"]
+        required = definition.get("required")
+        properties = definition.get("properties")
+        row_definition = self.schema["$defs"]["CapabilityRequirementV0"]
+        row_properties = row_definition.get("properties")
+        require(isinstance(required, list), "capability required-set is malformed")
+        require(isinstance(properties, dict), "capability property-set is malformed")
+        require(isinstance(row_properties, dict), "capability row schema is malformed")
+        comparisons = row_properties.get("comparison", {}).get("enum")
+        units = row_properties.get("unit", {}).get("enum")
+        require(isinstance(comparisons, list), "capability comparison enum is malformed")
+        require(isinstance(units, list), "capability unit enum is malformed")
+        envelope_rows = {
+            name: row
+            for name, row in self.envelope["entries"].items()
+            if row.get("role") == "C03_ACTIVATION_CAPABILITY_INPUT"
         }
+        require(
+            set(required) == set(properties) == set(envelope_rows),
+            "capability requirement closure drift",
+        )
+        rows: dict[str, tuple[str, str, str]] = {}
+        for name in required:
+            row = envelope_rows[name]
+            comparison = row.get("comparison")
+            selected = row.get("selected_value")
+            unit = row.get("unit")
+            require(isinstance(comparison, str), f"invalid capability comparison: {name}")
+            require(comparison in comparisons, f"unknown capability comparison: {name}")
+            require(
+                isinstance(selected, int) and not isinstance(selected, bool) and selected >= 0,
+                f"invalid capability value: {name}",
+            )
+            require(isinstance(unit, str), f"invalid capability unit: {name}")
+            require(unit in units, f"unknown capability unit: {name}")
+            rows[name] = (comparison, str(selected), unit)
+        minimum_count = sum(
+            comparison == "MINIMUM_CAPABILITY"
+            for comparison, _, _ in rows.values()
+        )
+        require(
+            rows.get("ACTIVATION_CAPABILITY_SET")
+            == ("EXACT_CLOSED_KEY_SET", str(minimum_count), "COUNT"),
+            "activation capability-set count drift",
+        )
         return self._object({
             name: self._object({
                 "comparison": self._literal(comparison),
@@ -171,14 +215,33 @@ class Derivation:
     def _content_segments(self) -> Measure:
         count = self.array_bounds["$defs.ContentMaterialEvidenceV0.segments"]
         total_octets = self.limits["CONTENT_EXACT_OCTETS"]
-        require(count <= total_octets, "content segment count is not representable")
-        empty_item = self._object({
-            "offset": self._literal(str(total_octets - 1)),
-            "octetsHex": self._literal(""),
-        })
+        maximum_segment_octets = self.limits["CHUNK_OCTETS"]
+        require(count > 0, "content segment count is not positive")
+        require(
+            count <= total_octets <= count * maximum_segment_octets,
+            "content segment tiling is not representable",
+        )
+        remaining = total_octets
+        offset = 0
+        items: list[Measure] = []
+        for index in range(count):
+            remaining_slots = count - index - 1
+            length = min(maximum_segment_octets, remaining - remaining_slots)
+            require(
+                1 <= length <= maximum_segment_octets,
+                "content segment length is outside its exact bound",
+            )
+            item = self._object({
+                "offset": self._literal(str(offset)),
+                "octetsHex": self._literal(""),
+            })
+            items.append(Measure(item.json_octets + 2 * length, length))
+            offset += length
+            remaining -= length
+        require(offset == total_octets and remaining == 0, "content tiling drift")
         return Measure(
-            2 + count * empty_item.json_octets + max(0, count - 1) + 2 * total_octets,
-            total_octets,
+            2 + sum(item.json_octets for item in items) + max(0, count - 1),
+            sum(item.decoded_octets for item in items),
         )
 
     def _alias_groups(self) -> Measure:
@@ -213,12 +276,18 @@ class Derivation:
         return max(candidates, key=lambda item: (item.json_octets, item.decoded_octets))
 
     def definition(self, name: str, use_site: str | None = None) -> Measure:
+        exact_content_octets = self.limits["CONTENT_EXACT_OCTETS"]
+        chunk_octets = self.limits["CHUNK_OCTETS"]
+        require(
+            exact_content_octets % chunk_octets == 0,
+            "maximal chunk geometry is not integral",
+        )
         scalar_overrides = {
-            "$defs.ContentDescriptorSingleV0.exactContentLength": "262144",
-            "$defs.ContentDescriptorChunkTreeV0.exactContentLength": "262144",
-            "$defs.ChunkGeometryProjectionV0.chunkSize": "16384",
-            "$defs.ChunkGeometryProjectionV0.chunkCount": "16",
-            "$defs.ChunkGeometryProjectionV0.finalChunkLength": "16384",
+            "$defs.ContentDescriptorSingleV0.exactContentLength": str(exact_content_octets),
+            "$defs.ContentDescriptorChunkTreeV0.exactContentLength": str(exact_content_octets),
+            "$defs.ChunkGeometryProjectionV0.chunkSize": str(chunk_octets),
+            "$defs.ChunkGeometryProjectionV0.chunkCount": str(exact_content_octets // chunk_octets),
+            "$defs.ChunkGeometryProjectionV0.finalChunkLength": str(chunk_octets),
         }
         if use_site in scalar_overrides:
             return self._literal(scalar_overrides[use_site])

@@ -10,13 +10,13 @@
       {
         "breakdown": [
           { "component": "canonical-syntax-keys-and-final-lf", "jsonOctets": 55, "representedDecodedOctets": 0 },
-          { "component": "input", "jsonOctets": 138645399, "representedDecodedOctets": 68917920 },
+          { "component": "input", "jsonOctets": 138642583, "representedDecodedOctets": 68917920 },
           { "component": "interfaceVersion", "jsonOctets": 3, "representedDecodedOctets": 0 },
           { "component": "operation", "jsonOctets": 20, "representedDecodedOctets": 0 },
           { "component": "profile", "jsonOctets": 108, "representedDecodedOctets": 0 }
         ],
         "direction": "REQUEST",
-        "jsonOctets": 138645585,
+        "jsonOctets": 138642769,
         "operation": "EVALUATE_CANDIDATE",
         "representedDecodedOctets": 68917920,
         "retainedDecodedOctets": 35351200,
@@ -28,21 +28,21 @@
           { "component": "interfaceVersion", "jsonOctets": 3, "representedDecodedOctets": 0 },
           { "component": "operation", "jsonOctets": 20, "representedDecodedOctets": 0 },
           { "component": "profile", "jsonOctets": 108, "representedDecodedOctets": 0 },
-          { "component": "result", "jsonOctets": 71197307, "representedDecodedOctets": 35342944 }
+          { "component": "result", "jsonOctets": 71195899, "representedDecodedOctets": 35342944 }
         ],
         "direction": "RESPONSE",
-        "jsonOctets": 71197494,
+        "jsonOctets": 71196086,
         "operation": "EVALUATE_CANDIDATE",
         "representedDecodedOctets": 35342944,
         "retainedDecodedOctets": 35342944,
         "rootId": "RESPONSE-EVALUATE_CANDIDATE"
       }
     ],
-    "outerRequestOctets": 138645585,
+    "outerRequestOctets": 138642769,
     "outerRequestRoot": "REQUEST-EVALUATE_CANDIDATE",
-    "outerResponseOctets": 71197494,
+    "outerResponseOctets": 71196086,
     "outerResponseRoot": "RESPONSE-EVALUATE_CANDIDATE",
-    "rootMeasurementSetSha256": "1846a040f66751fba6866d59af3f51fdc1aca2aa945d77706f68c81ba67771b8"
+    "rootMeasurementSetSha256": "aef675a27fb8f69d75a1c452a3a9f0ef8c35175d4c0c97fdf2ce2bceaccad4df"
   },
   "derivedCounts": {
     "operations": 6,
@@ -170,12 +170,12 @@
     {
       "path": "APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md",
       "role": "HOSTILE_DERIVATION",
-      "sha256": "ff8d9e27824e318661fc2998f7a7464c94f1a9b38d1967ac3875f508b0c5643d"
+      "sha256": "b44264197d00e32f47a1ed16be190fc1dbe616f7ecffb88b6851d2840ff72fe9"
     },
     {
       "path": "APP-CORE-IFACE-0-VALIDATOR-CONTRACT.md",
       "role": "VALIDATOR_PIPELINE",
-      "sha256": "7f017f28b19a2342a38f9e27018d68bad0100bab8566e6acf0df0b515a4083c4"
+      "sha256": "a128b9bc9cb1da8183aa481423c277b433591d9cb299eab1d482b11cb2db29e8"
     },
     {
       "path": "APP-CORE-IFACE-0-WITNESS-GENERATION-CONTRACT.md",
@@ -200,7 +200,7 @@
     {
       "path": "APP-CORE-IFACE-0-CONTRACT-OUTLINE.md",
       "role": "EXECUTABLE_CONTRACT_OUTLINE",
-      "sha256": "d7fd7303e3c66cdd90a874f2d4052e1eaf27450d3b92d383ceb61168a8727241"
+      "sha256": "14c46d435e5f5addb7f7c8abe42cb04b2dcea8bf1ef72ca4c68b42512ba98020"
     }
   ],
   "remainingBeforeExecutableIssue": [

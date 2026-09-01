@@ -189,6 +189,66 @@ class ContractAuthority:
             raise InterfaceModelError("interface-limit property closure drift")
         return result
 
+    def capability_requirements(self) -> dict[str, dict[str, str]]:
+        definitions = self.schema.get("$defs")
+        if not isinstance(definitions, dict):
+            raise InterfaceModelError("missing schema definitions")
+        requirements = definitions.get("CapabilityRequirementsV0")
+        requirement = definitions.get("CapabilityRequirementV0")
+        if not isinstance(requirements, dict) or not isinstance(requirement, dict):
+            raise InterfaceModelError("missing capability-requirement schema")
+        properties = requirements.get("properties")
+        required = requirements.get("required")
+        fields = requirement.get("properties")
+        if (
+            not isinstance(properties, dict)
+            or not isinstance(required, list)
+            or not isinstance(fields, dict)
+        ):
+            raise InterfaceModelError("malformed capability-requirement schema")
+        entries = self.resource_envelope.get("entries")
+        if not isinstance(entries, dict):
+            raise InterfaceModelError("malformed resource-envelope entries")
+        selected = {
+            name: row
+            for name, row in entries.items()
+            if isinstance(row, dict)
+            and row.get("role") == "C03_ACTIVATION_CAPABILITY_INPUT"
+        }
+        if set(required) != set(properties) or set(required) != set(selected):
+            raise InterfaceModelError("capability-requirement property closure drift")
+        comparison_values = fields.get("comparison", {}).get("enum")
+        unit_values = fields.get("unit", {}).get("enum")
+        if not isinstance(comparison_values, list) or not isinstance(unit_values, list):
+            raise InterfaceModelError("capability-requirement enum drift")
+        result: dict[str, dict[str, str]] = {}
+        for name in required:
+            row = selected[name]
+            comparison = row.get("comparison")
+            value = row.get("selected_value")
+            unit = row.get("unit")
+            if comparison not in comparison_values:
+                raise InterfaceModelError(f"invalid capability comparison: {name}")
+            if unit not in unit_values:
+                raise InterfaceModelError(f"invalid capability unit: {name}")
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise InterfaceModelError(f"invalid capability value: {name}")
+            result[name] = {
+                "comparison": comparison,
+                "selectedValue": str(value),
+                "unit": unit,
+            }
+        minimum_count = sum(
+            row["comparison"] == "MINIMUM_CAPABILITY" for row in result.values()
+        )
+        if result.get("ACTIVATION_CAPABILITY_SET") != {
+            "comparison": "EXACT_CLOSED_KEY_SET",
+            "selectedValue": str(minimum_count),
+            "unit": "COUNT",
+        }:
+            raise InterfaceModelError("activation capability-set count drift")
+        return result
+
     def descriptor(self) -> dict[str, Any]:
         transcript = self.dependency(
             "docs/protocol/styx-app-kernel-v0-transcript-encoding-profile.md"
@@ -210,6 +270,7 @@ class ContractAuthority:
                 "verificationKeyOctets": "32",
             },
             "descriptorVersion": "0",
+            "capabilityRequirements": self.capability_requirements(),
             "evidenceEncoding": {
                 "byteStrings": "LOWERCASE_EVEN_HEX",
                 "duplicateKeys": "REJECT",

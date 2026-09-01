@@ -84,7 +84,7 @@ Any failure is `HARNESS_FAILURE`; it is not a malformed caller request.
 
 ### V1 — raw envelope admission
 
-Apply `OUTER_REQUEST_OCTETS = 138645585` before copying, decoding or
+Apply `OUTER_REQUEST_OCTETS = 138642769` before copying, decoding or
 allocating proportional to a declared value. Then:
 
 1. require strict UTF-8 with no BOM;
@@ -183,7 +183,7 @@ Validate the complete object against `InterfaceResponseV0` and all semantic
 constraints before serialization.
 
 Serialize once into one buffer no larger than
-`OUTER_RESPONSE_OCTETS = 71197494` using the ratified evidence JSON profile.
+`OUTER_RESPONSE_OCTETS = 71196086` using the ratified evidence JSON profile.
 An over-bound generated object is `HARNESS_FAILURE`, not a protocol result.
 Reparse the emitted
 bytes through V1/V2 response validation and require field-for-field equality

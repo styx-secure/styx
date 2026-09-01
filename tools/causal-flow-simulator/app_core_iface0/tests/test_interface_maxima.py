@@ -19,9 +19,9 @@ class InterfaceMaximaTests(unittest.TestCase):
         self.report = self.derivation.report()
 
     def test_exact_maxima_and_maximizing_roots(self) -> None:
-        self.assertEqual(self.report["outerRequestOctets"], 138645585)
+        self.assertEqual(self.report["outerRequestOctets"], 138642769)
         self.assertEqual(self.report["outerRequestRoot"], "REQUEST-EVALUATE_CANDIDATE")
-        self.assertEqual(self.report["outerResponseOctets"], 71197494)
+        self.assertEqual(self.report["outerResponseOctets"], 71196086)
         self.assertEqual(self.report["outerResponseRoot"], "RESPONSE-EVALUATE_CANDIDATE")
         self.assertEqual(self.report["maxRetainedDecodedOctets"], 35351200)
         self.assertEqual(self.report["maxRetainedDecodedRoot"], "REQUEST-EVALUATE_CANDIDATE")
@@ -46,6 +46,7 @@ class InterfaceMaximaTests(unittest.TestCase):
 
     def test_content_retention_uses_exact_content_not_segment_product(self) -> None:
         segments = self.derivation._content_segments()
+        self.assertEqual(segments.json_octets, 526518)
         self.assertEqual(segments.decoded_octets, 262144)
         self.assertLess(
             segments.decoded_octets,
