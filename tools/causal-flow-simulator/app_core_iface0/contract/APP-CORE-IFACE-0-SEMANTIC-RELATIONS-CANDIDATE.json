@@ -494,85 +494,99 @@
       "id": "TRS-001",
       "kind": "VALIDATED",
       "reason": null,
-      "stage": "TRANSCRIPT_COMPLETE"
+      "stage": "TRANSCRIPT_COMPLETE",
+      "reachability": "REACHABLE"
     },
     {
       "id": "TRS-002",
       "kind": "REJECTED",
       "reason": "PROFILE_ACTIVATION_UNSUPPORTED",
-      "stage": "PROFILE_SELECTION"
+      "stage": "PROFILE_SELECTION",
+      "reachability": "REACHABLE"
     },
     {
       "id": "TRS-003",
       "kind": "REJECTED",
       "reason": "TRANSCRIPT_LENGTH_REJECTED",
-      "stage": "OUTER_FRAMING"
+      "stage": "OUTER_FRAMING",
+      "reachability": "REACHABLE"
     },
     {
       "id": "TRS-004",
       "kind": "REJECTED",
       "reason": "TRANSCRIPT_DOMAIN_REJECTED",
-      "stage": "OUTER_FRAMING"
+      "stage": "OUTER_FRAMING",
+      "reachability": "REACHABLE"
     },
     {
       "id": "TRS-005",
       "kind": "REJECTED",
       "reason": "TRANSCRIPT_LENGTH_MISMATCH",
-      "stage": "OUTER_FRAMING"
+      "stage": "OUTER_FRAMING",
+      "reachability": "REACHABLE"
     },
     {
       "id": "TRS-006",
       "kind": "REJECTED",
       "reason": "TRANSCRIPT_TRUNCATED",
-      "stage": "TRANSCRIPT_BODY"
+      "stage": "TRANSCRIPT_BODY",
+      "reachability": "REACHABLE"
     },
     {
       "id": "TRS-007",
       "kind": "REJECTED",
       "reason": "TRANSCRIPT_TRAILING_BYTES",
-      "stage": "TRANSCRIPT_BODY"
+      "stage": "TRANSCRIPT_BODY",
+      "reachability": "REACHABLE"
     },
     {
       "id": "TRS-008",
       "kind": "REJECTED",
       "reason": "TRANSCRIPT_NONCANONICAL",
-      "stage": "TRANSCRIPT_BODY"
+      "stage": "TRANSCRIPT_BODY",
+      "reachability": "REACHABLE"
     },
     {
       "id": "TRS-009",
       "kind": "REJECTED",
       "reason": "CONTENT_DESCRIPTOR_REJECTED",
-      "stage": "TRANSCRIPT_BODY"
+      "stage": "TRANSCRIPT_BODY",
+      "reachability": "REACHABLE"
     },
     {
       "id": "TRS-010",
       "kind": "REJECTED",
       "reason": "COMMITMENT_GEOMETRY_REJECTED",
-      "stage": "TRANSCRIPT_BODY"
+      "stage": "TRANSCRIPT_BODY",
+      "reachability": "REACHABLE"
     },
     {
       "id": "TRS-011",
       "kind": "REJECTED",
       "reason": "REFERENCE_MISMATCH",
-      "stage": "REFERENCE_DERIVATION"
+      "stage": "REFERENCE_DERIVATION",
+      "reachability": "RESERVED_UNREACHABLE_V0"
     },
     {
       "id": "TRS-012",
       "kind": "REJECTED",
       "reason": "SIGNATURE_LENGTH_MISMATCH",
-      "stage": "SIGNATURE_VERIFICATION"
+      "stage": "SIGNATURE_VERIFICATION",
+      "reachability": "REACHABLE"
     },
     {
       "id": "TRS-013",
       "kind": "REJECTED",
       "reason": "SIGNATURE_INVALID",
-      "stage": "SIGNATURE_VERIFICATION"
+      "stage": "SIGNATURE_VERIFICATION",
+      "reachability": "REACHABLE"
     },
     {
       "id": "TRS-014",
       "kind": "REJECTED",
       "reason": "STANDALONE_VERIFICATION_KEY_REJECTED",
-      "stage": "SIGNATURE_VERIFICATION"
+      "stage": "SIGNATURE_VERIFICATION",
+      "reachability": "REACHABLE"
     }
   ],
   "genesisReasonStageRelationV0": [
@@ -580,97 +594,113 @@
       "id": "GRS-001",
       "kind": "GENESIS_PROPOSAL_READY",
       "reason": null,
-      "stage": "GENESIS_PROPOSAL_COMPLETE"
+      "stage": "GENESIS_PROPOSAL_COMPLETE",
+      "reachability": "REACHABLE"
     },
     {
       "id": "GRS-002",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "PROFILE_ACTIVATION_UNSUPPORTED",
-      "stage": "PROFILE_SELECTION"
+      "stage": "PROFILE_SELECTION",
+      "reachability": "REACHABLE"
     },
     {
       "id": "GRS-003",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "TRANSCRIPT_LENGTH_REJECTED",
-      "stage": "OUTER_FRAMING"
+      "stage": "OUTER_FRAMING",
+      "reachability": "REACHABLE"
     },
     {
       "id": "GRS-004",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "TRANSCRIPT_DOMAIN_REJECTED",
-      "stage": "OUTER_FRAMING"
+      "stage": "OUTER_FRAMING",
+      "reachability": "REACHABLE"
     },
     {
       "id": "GRS-005",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "TRANSCRIPT_LENGTH_MISMATCH",
-      "stage": "OUTER_FRAMING"
+      "stage": "OUTER_FRAMING",
+      "reachability": "REACHABLE"
     },
     {
       "id": "GRS-006",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "TRANSCRIPT_TRUNCATED",
-      "stage": "TRANSCRIPT_BODY"
+      "stage": "TRANSCRIPT_BODY",
+      "reachability": "REACHABLE"
     },
     {
       "id": "GRS-007",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "TRANSCRIPT_TRAILING_BYTES",
-      "stage": "TRANSCRIPT_BODY"
+      "stage": "TRANSCRIPT_BODY",
+      "reachability": "REACHABLE"
     },
     {
       "id": "GRS-008",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "TRANSCRIPT_NONCANONICAL",
-      "stage": "TRANSCRIPT_BODY"
+      "stage": "TRANSCRIPT_BODY",
+      "reachability": "REACHABLE"
     },
     {
       "id": "GRS-009",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "CONTENT_DESCRIPTOR_REJECTED",
-      "stage": "TRANSCRIPT_BODY"
+      "stage": "TRANSCRIPT_BODY",
+      "reachability": "REACHABLE"
     },
     {
       "id": "GRS-010",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "COMMITMENT_GEOMETRY_REJECTED",
-      "stage": "TRANSCRIPT_BODY"
+      "stage": "TRANSCRIPT_BODY",
+      "reachability": "REACHABLE"
     },
     {
       "id": "GRS-011",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "REFERENCE_MISMATCH",
-      "stage": "REFERENCE_DERIVATION"
+      "stage": "REFERENCE_DERIVATION",
+      "reachability": "RESERVED_UNREACHABLE_V0"
     },
     {
       "id": "GRS-012",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "SIGNATURE_LENGTH_MISMATCH",
-      "stage": "SIGNATURE_VERIFICATION"
+      "stage": "SIGNATURE_VERIFICATION",
+      "reachability": "REACHABLE"
     },
     {
       "id": "GRS-013",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "SIGNATURE_INVALID",
-      "stage": "SIGNATURE_VERIFICATION"
+      "stage": "SIGNATURE_VERIFICATION",
+      "reachability": "REACHABLE"
     },
     {
       "id": "GRS-014",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "EXPECTED_CONTEXT_MISMATCH",
-      "stage": "CONTEXT_BINDING"
+      "stage": "CONTEXT_BINDING",
+      "reachability": "REACHABLE"
     },
     {
       "id": "GRS-015",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "ROOT_CREDENTIAL_POSITION_MISMATCH",
-      "stage": "CONTEXT_BINDING"
+      "stage": "CONTEXT_BINDING",
+      "reachability": "REACHABLE"
     },
     {
       "id": "GRS-016",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "INITIAL_AUTHORITY_POLICY_REJECTED",
-      "stage": "TRANSCRIPT_BODY"
+      "stage": "TRANSCRIPT_BODY",
+      "reachability": "REACHABLE"
     }
   ]
 }

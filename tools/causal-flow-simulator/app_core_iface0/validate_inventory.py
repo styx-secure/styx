@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, InventoryError, ReportError, subprocess.SubprocessError) as error:
         print(f"APP-core inventory: FAIL: {error}", file=sys.stderr)
         return 2
-    print("APP-core inventory: PASS structural=1400 semantic=4828 total=6228")
+    print("APP-core inventory: PASS structural=1400 semantic=4831 total=6231")
     return 0
 
 

@@ -1,9 +1,9 @@
 {
   "status": "PRE_RATIFICATION_CANDIDATE",
   "registryVersion": "APP-CORE-IFACE-0-EXECUTION-PHASES-V1",
-  "semanticRuleSetSha256": "125d441941148db38570061fc2ad23511433564f1c761011da0714ac3b982ce7",
+  "semanticRuleSetSha256": "b9c4ea3bdb3f61b8f7d759ad81ce57d5c5fa7e763aef26cc27fb47a2e5e25983",
   "semanticRuleSetDigestEncoding": "ordered rule id plus LF",
-  "instanceAxisRegistrySha256": "40872e15ecbafac695ef83e1dda87d81ccf0ffe7136226b4eb058a48f0eb802c",
+  "instanceAxisRegistrySha256": "192e81c48f5596b01bbbf35914443c6b61b212675127db96a52d597980faf815",
   "defaultPhase": "BLIND_INPUT_EXECUTION",
   "phaseRegistry": [
     "BLIND_INPUT_EXECUTION",
@@ -60,14 +60,20 @@
       "partition": "ALL_INSTANCES",
       "phase": "POST_OUTPUT_MUTATION",
       "expectedCount": 15
+    },
+    {
+      "id": "ACV-066",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 3
     }
   ],
   "fixedCountsBeforeSeedPartition": {
     "BLIND_INPUT_EXECUTION": 484,
-    "POST_OUTPUT_MUTATION": 3617,
+    "POST_OUTPUT_MUTATION": 3620,
     "VALIDATOR_SELF_TEST": 25,
     "ACV048PendingCarrierPartition": 702,
-    "totalSemanticExecutionInstances": 4828
+    "totalSemanticExecutionInstances": 4831
   },
   "rules": [
     "Every semantic instance belongs to exactly one phase.",

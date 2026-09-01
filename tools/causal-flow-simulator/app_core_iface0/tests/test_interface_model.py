@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sys
 from io import BytesIO
+import json
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -17,9 +19,11 @@ from interface_model import (  # noqa: E402
     RequestRejected,
     SUPPORTED_OPERATIONS,
     SUPPORTED_PROFILE,
+    _validate_response_shape_and_relation,
     admit_canonical_request,
     describe_profile,
     read_bounded_request,
+    validate_response_before_release,
 )
 
 
@@ -131,6 +135,150 @@ class InterfaceModelTests(unittest.TestCase):
         with self.assertRaises(RequestRejected):
             read_bounded_request(stream, maximum_octets=len(accepted))
         self.assertEqual(stream.tell(), len(accepted) + 1)
+
+    @staticmethod
+    def _reference_observations() -> dict[str, str]:
+        return {
+            "commitmentMatchVerification": "NOT_APPLICABLE",
+            "commitmentVerification": "NOT_PRESENT",
+            "geometryPredicate1": "NOT_APPLICABLE",
+            "geometryPredicate2": "NOT_APPLICABLE",
+            "geometryPredicate3": "NOT_APPLICABLE",
+            "geometryPredicate4": "NOT_APPLICABLE",
+            "geometryPredicate5": "NOT_APPLICABLE",
+            "geometryPredicate6": "NOT_APPLICABLE",
+            "geometryPredicate7": "NOT_APPLICABLE",
+            "referenceVerification": "REJECTED",
+            "signatureVerification": "NOT_EVALUATED",
+            "suppliedLengthVerification": "NOT_APPLICABLE",
+            "transcriptVerification": "VALID",
+        }
+
+    def test_acv066_row_coherent_reserved_results_are_rejected_only_by_acv066(self) -> None:
+        transcript = {
+            "interfaceVersion": "0",
+            "operation": "VALIDATE_TRANSCRIPT",
+            "profile": dict(SUPPORTED_PROFILE),
+            "result": {
+                "kind": "REJECTED",
+                "reason": "REFERENCE_MISMATCH",
+                "stage": "REFERENCE_DERIVATION",
+                "observations": self._reference_observations(),
+            },
+        }
+        genesis = {
+            "interfaceVersion": "0",
+            "operation": "EVALUATE_GENESIS",
+            "profile": dict(SUPPORTED_PROFILE),
+            "result": {
+                "kind": "TERMINAL_NO_PROPOSAL",
+                "reason": "REFERENCE_MISMATCH",
+                "stage": "REFERENCE_DERIVATION",
+            },
+        }
+        observation = {
+            "interfaceVersion": "0",
+            "operation": "VALIDATE_TRANSCRIPT",
+            "profile": dict(SUPPORTED_PROFILE),
+            "result": {
+                "kind": "REJECTED",
+                "reason": "SIGNATURE_LENGTH_MISMATCH",
+                "stage": "SIGNATURE_VERIFICATION",
+                "observations": self._reference_observations(),
+            },
+        }
+        for response in (transcript, genesis, observation):
+            # This is the exact ACV-066 source mutant: schema and relation
+            # validation remain active, while only reserved reachability is
+            # removed.  The row-coherent response must therefore be admitted.
+            _validate_response_shape_and_relation(self.authority, response)
+            with self.assertRaisesRegex(HarnessFailure, "reserved reference"):
+                validate_response_before_release(self.authority, response)
+
+    def test_app_core_inputs_cannot_supply_an_expected_reference(self) -> None:
+        definitions = self.authority.schema["$defs"]
+        candidate_properties = {
+            "objectKind",
+            "signatureHex",
+            "transcriptHex",
+        }
+        self.assertEqual(
+            set(definitions["GenesisTranscriptCandidateV0"]["properties"]),
+            candidate_properties,
+        )
+        self.assertEqual(
+            set(definitions["ApplicationTranscriptCandidateV0"]["properties"]),
+            candidate_properties,
+        )
+        self.assertEqual(
+            set(definitions["EvaluateGenesisInputV0"]["properties"]),
+            {"candidate", "expectedContextIdentifierHex"},
+        )
+        for arm in definitions["ValidateTranscriptInputV0"]["oneOf"]:
+            self.assertNotIn("expectedReferenceHex", arm.get("properties", {}))
+
+    def test_independent_javascript_adapter_rejects_all_acv066_positions(self) -> None:
+        completed = subprocess.run(
+            [
+                "node",
+                str(ROOT / "node_adapter.mjs"),
+                "--self-test-acv066",
+                "--contract",
+                str(ROOT / "contract"),
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(
+            json.loads(completed.stdout),
+            {
+                "mutantAccepted": 3,
+                "normalRejected": 3,
+                "relationAccepted": 3,
+                "verdict": "PASS",
+            },
+        )
+        self.assertEqual(completed.stderr, "")
+
+    def test_native_reference_mismatches_have_external_expected_sources(self) -> None:
+        sources = {
+            path: (REPO / path).read_text(encoding="utf-8")
+            for path in (
+                "tools/causal-flow-simulator/c03/corpus_model.py",
+                "tools/causal-flow-simulator/c03/node_adapter.mjs",
+                "tools/causal-flow-simulator/o07/genesis_model.py",
+                "tools/causal-flow-simulator/o07/node_adapter.mjs",
+            )
+        }
+        c03_python = sources["tools/causal-flow-simulator/c03/corpus_model.py"]
+        self.assertIn('expected_reference = record["genesisReferenceHex"]', c03_python)
+        self.assertIn('expected_reference = record["eventReferenceHex"]', c03_python)
+        self.assertIn("if reference != expected_reference:", c03_python)
+
+        c03_javascript = sources["tools/causal-flow-simulator/c03/node_adapter.mjs"]
+        self.assertIn("expected = record.genesisReferenceHex", c03_javascript)
+        self.assertIn("expected = record.eventReferenceHex", c03_javascript)
+        self.assertIn("if (reference !== expected)", c03_javascript)
+
+        o07_python = sources["tools/causal-flow-simulator/o07/genesis_model.py"]
+        self.assertIn(
+            "if reference != ceremony.expected_genesis_reference:", o07_python
+        )
+        self.assertIn(
+            "if genesis_reference != state.genesis_reference:", o07_python
+        )
+        self.assertIn(
+            "if field16_reference != projection.genesis_reference:", o07_python
+        )
+
+        o07_javascript = sources["tools/causal-flow-simulator/o07/node_adapter.mjs"]
+        self.assertIn("function makeHarness(context, expectedReference", o07_javascript)
+        self.assertIn(
+            "if (!derived.equals(ceremony.expectedReference))", o07_javascript
+        )
 
 
 if __name__ == "__main__":

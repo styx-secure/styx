@@ -14,6 +14,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 
+from jsonschema.validators import Draft202012Validator
+
 from canonical_json import CanonicalJsonError, loads as canonical_loads
 from inventory import (
     BASE_SHA,
@@ -344,3 +346,58 @@ def admit_canonical_request(raw: bytes, *, maximum_octets: int | None) -> dict[s
     if not isinstance(value, dict):
         raise RequestRejected()
     return value
+
+
+def _validate_response_shape_and_relation(
+    authority: ContractAuthority, response: dict[str, Any]
+) -> None:
+    """Validate the response schema and the two exact reason/stage relations.
+
+    Reachability is deliberately not checked here.  The ACV-066 source mutant
+    is defined as this otherwise-complete validator with only the separate
+    reserved-reachability detector removed.
+    """
+
+    validator = Draft202012Validator(
+        {
+            "$schema": authority.schema["$schema"],
+            "$ref": "#/$defs/InterfaceResponseV0",
+            "$defs": authority.schema["$defs"],
+        }
+    )
+    if not validator.is_valid(response):
+        raise HarnessFailure("generated response violates the interface schema")
+    operation = response["operation"]
+    if operation not in {"VALIDATE_TRANSCRIPT", "EVALUATE_GENESIS"}:
+        return
+    relations = _read_json(
+        authority.contract / "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"
+    )
+    field = (
+        "transcriptReasonStageRelationV0"
+        if operation == "VALIDATE_TRANSCRIPT"
+        else "genesisReasonStageRelationV0"
+    )
+    result = response["result"]
+    observed = (result["kind"], result.get("reason"), result["stage"])
+    allowed = {
+        (row["kind"], row.get("reason"), row["stage"])
+        for row in relations[field]
+    }
+    if observed not in allowed:
+        raise HarnessFailure("generated response violates the exact reason/stage relation")
+
+
+def validate_response_before_release(
+    authority: ContractAuthority, response: dict[str, Any]
+) -> dict[str, Any]:
+    """Fail closed before releasing any reserved reference-mismatch result."""
+
+    _validate_response_shape_and_relation(authority, response)
+    result = response.get("result", {})
+    observations = result.get("observations", {})
+    if result.get("reason") == "REFERENCE_MISMATCH" or observations.get(
+        "referenceVerification"
+    ) == "REJECTED":
+        raise HarnessFailure("APP-core v0 reserved reference mismatch was generated")
+    return response

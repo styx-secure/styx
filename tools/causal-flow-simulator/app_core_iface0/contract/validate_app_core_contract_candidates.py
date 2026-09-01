@@ -417,17 +417,17 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     axes = load("APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json")
     validate_terminal_path_bindings(schema, axes)
     semantic_ids = [row["id"] for row in semantics["rules"]]
-    require(len(semantic_ids) == len(set(semantic_ids)) == 65, "semantic family drift")
+    require(len(semantic_ids) == len(set(semantic_ids)) == 66, "semantic family drift")
     require(
-        set(semantic_ids) == {f"ACV-{index:03d}" for index in range(1, 66)},
+        set(semantic_ids) == {f"ACV-{index:03d}" for index in range(1, 67)},
         "semantic rule-id set drift",
     )
     for field in ("scenario", "mutant"):
         values = [row[field] for row in semantics["rules"]]
-        require(len(values) == len(set(values)) == 65, f"semantic {field} drift")
+        require(len(values) == len(set(values)) == 66, f"semantic {field} drift")
     axis_ids = [row["id"] for row in axes["rules"]]
-    require(set(axis_ids) == set(semantic_ids) and len(axis_ids) == 65, "semantic axis relation drift")
-    require(sum(row["expectedCount"] for row in axes["rules"]) == 4828, "semantic execution count drift")
+    require(set(axis_ids) == set(semantic_ids) and len(axis_ids) == 66, "semantic axis relation drift")
+    require(sum(row["expectedCount"] for row in axes["rules"]) == 4831, "semantic execution count drift")
     require(axes["unresolvedAxes"] == [], "unresolved semantic axes")
     phases = load("APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json")
     require(
@@ -443,8 +443,29 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         phases.get("fixedCountsBeforeSeedPartition", {}).get(
             "totalSemanticExecutionInstances"
         )
-        == 4828,
+        == 4831,
         "execution-phase total drift",
+    )
+    acv066_phase = next(
+        (row for row in phases.get("overrides", []) if row.get("id") == "ACV-066"),
+        None,
+    )
+    require(
+        acv066_phase
+        == {
+            "id": "ACV-066",
+            "partition": "ALL_INSTANCES",
+            "phase": "POST_OUTPUT_MUTATION",
+            "expectedCount": 3,
+        },
+        "ACV-066 execution-phase drift",
+    )
+    require(
+        phases.get("fixedCountsBeforeSeedPartition", {}).get(
+            "POST_OUTPUT_MUTATION"
+        )
+        == 3620,
+        "post-output mutation count drift",
     )
     custom_occurrences = {
         pointer.lstrip("/").replace("/", ".") + "." + key
@@ -468,6 +489,55 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         require(len(rows) == count, f"relation count drift: {field}")
         ids = [row["id"] for row in rows]
         require(len(ids) == len(set(ids)), f"relation ID drift: {field}")
+
+    transcript_reachability = {
+        row["id"]: row.get("reachability")
+        for row in relations["transcriptReasonStageRelationV0"]
+    }
+    genesis_reachability = {
+        row["id"]: row.get("reachability")
+        for row in relations["genesisReasonStageRelationV0"]
+    }
+    require(
+        transcript_reachability.get("TRS-011") == "RESERVED_UNREACHABLE_V0"
+        and genesis_reachability.get("GRS-011") == "RESERVED_UNREACHABLE_V0",
+        "reserved reference-mismatch rows drift",
+    )
+    require(
+        set(transcript_reachability.values())
+        | set(genesis_reachability.values())
+        == {"REACHABLE", "RESERVED_UNREACHABLE_V0"}
+        and sum(
+            value == "RESERVED_UNREACHABLE_V0"
+            for value in (
+                *transcript_reachability.values(),
+                *genesis_reachability.values(),
+            )
+        )
+        == 2,
+        "reference-mismatch reachability relation drift",
+    )
+    acv066 = next(row for row in semantics["rules"] if row["id"] == "ACV-066")
+    require(
+        acv066
+        == {
+            "id": "ACV-066",
+            "owners": ["K", "O07", "INTERFACE"],
+            "targets": [
+                "$defs.ValidateTranscriptResultV0",
+                "$defs.EvaluateGenesisResultV0",
+                "$defs.TranscriptObservationV0",
+            ],
+            "rule": "REFERENCE_MISMATCH_RESERVED_AND_UNREACHABLE_IN_V0",
+            "parameters": {
+                "reservedRows": ["TRS-011", "GRS-011"],
+                "requiredReopenOwners": ["K", "O07", "INTERFACE"],
+            },
+            "scenario": "ACI-REFERENCE-MISMATCH-UNREACHABLE",
+            "mutant": "M-ACI-FABRICATE-REFERENCE-MISMATCH",
+        },
+        "ACV-066 rule drift",
+    )
 
     evidence_rejections = set(schema["$defs"]["EvidenceUpdateRejectionV0"]["enum"])
     primary_tokens = set(schema["$defs"]["PrimaryToken"]["enum"])
@@ -545,9 +615,9 @@ def validate_manifest() -> None:
         "oneOfOccurrences": 16,
         "oneOfArms": 54,
         "oneOfPairwiseDisjointnessRows": 93,
-        "semanticFamilies": 65,
-        "semanticExecutionInstances": 4828,
-        "totalExecutionInstances": 6228,
+        "semanticFamilies": 66,
+        "semanticExecutionInstances": 4831,
+        "totalExecutionInstances": 6231,
         "contentRelationRows": 23,
         "candidatePrimaryRelationRows": 25,
         "transcriptRelationRows": 14,
@@ -585,7 +655,7 @@ def validate_documented_artifact_bindings() -> None:
             f"`{palette}`.",
             "`APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json`, SHA-256\n"
             f"`{one_of}`:",
-            "The 65-row instance-axis registry has no unresolved axis and has SHA-256\n"
+            "The 66-row instance-axis registry has no unresolved axis and has SHA-256\n"
             f"`{instance_axes}`.",
             "`APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256\n"
             f"`{execution_phases}`.",
@@ -691,7 +761,7 @@ def main() -> None:
     print(
         "PASS schemas=4 defs=114 refs=261 enums=35 oneOf=16 arms=54 "
         "pairs=93 objects=78 properties=307 required=306 structural=1400 "
-        "semantic=4828 total=6228 F13=25 dependencies=63 provider_history=5 "
+        "semantic=4831 total=6231 F13=25 dependencies=63 provider_history=5 "
         "manifest=26 provider_live=" + ("PASS" if args.verify_provider else "NOT_RUN")
     )
 

@@ -12,10 +12,10 @@ from typing import Any, Iterable, Iterator
 
 
 BASE_SHA = "16274cc194cd2f8f7b631332687a252bad92ce02"
-MANIFEST_SHA256 = "2133bd6e93b21b9131b8c840b0907f80d5299ac47a86c593c18e074edfbcd920"
+MANIFEST_SHA256 = "d27870ec7d74ac1f36d9e16bce5abf6c491e55fcfd6741faaa68e1e0f025ecfd"
 STRUCTURAL_COUNT = 1400
-SEMANTIC_COUNT = 4828
-TOTAL_COUNT = 6228
+SEMANTIC_COUNT = 4831
+TOTAL_COUNT = 6231
 CONTRACT_FILES = 27
 
 
@@ -112,7 +112,7 @@ def run_ratified_package_validator(repo_root: Path, contract: Path) -> None:
         timeout=120,
         env={**__import__("os").environ, "PYTHONDONTWRITEBYTECODE": "1"},
     )
-    if completed.returncode != 0 or "total=6228" not in completed.stdout:
+    if completed.returncode != 0 or "total=6231" not in completed.stdout:
         raise InventoryError("ratified contract validator failed")
 
 
@@ -494,7 +494,7 @@ def build_inventory(repo_root: Path, contract: Path) -> dict[str, Any]:
     return {
         "combined_instance_set_sha256": digest_lines(all_ids),
         "contract_manifest_sha256": MANIFEST_SHA256,
-        "family_counts": {"semantic": 65, "structural": 23},
+        "family_counts": {"semantic": 66, "structural": 23},
         "instance_counts": {
             "semantic": SEMANTIC_COUNT,
             "structural": STRUCTURAL_COUNT,

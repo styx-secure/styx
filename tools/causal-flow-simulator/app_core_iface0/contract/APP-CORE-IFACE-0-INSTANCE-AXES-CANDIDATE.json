@@ -68,7 +68,8 @@
     { "id": "ACV-062", "mode": "SINGLE", "expectedCount": 1 },
     { "id": "ACV-063", "mode": "SINGLE", "expectedCount": 1 },
     { "id": "ACV-064", "mode": "SINGLE_RELATION", "expectedCount": 1 },
-    { "id": "ACV-065", "mode": "PER_LITERAL_VALUE", "values": ["CONTENT_NONIDENTICAL_OVERLAP", "OPENING_DIFFERENT_VALUE"], "expectedCount": 2 }
+    { "id": "ACV-065", "mode": "PER_LITERAL_VALUE", "values": ["CONTENT_NONIDENTICAL_OVERLAP", "OPENING_DIFFERENT_VALUE"], "expectedCount": 2 },
+    { "id": "ACV-066", "mode": "PER_LITERAL_VALUE", "values": ["VALIDATE_TRANSCRIPT_REASON", "EVALUATE_GENESIS_REASON", "REFERENCE_VERIFICATION_REJECTED"], "expectedCount": 3 }
   ],
   "unresolvedAxes": []
 }

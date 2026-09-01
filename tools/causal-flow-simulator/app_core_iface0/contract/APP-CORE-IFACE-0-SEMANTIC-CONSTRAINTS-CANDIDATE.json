@@ -690,6 +690,22 @@
       },
       "scenario": "ACI-CANDIDATE-EVIDENCE-CONFLICTING-MERGE",
       "mutant": "M-ACI-CANDIDATE-EVIDENCE-ARRIVAL-ORDER-WINS"
+    },
+    {
+      "id": "ACV-066",
+      "owners": ["K", "O07", "INTERFACE"],
+      "targets": [
+        "$defs.ValidateTranscriptResultV0",
+        "$defs.EvaluateGenesisResultV0",
+        "$defs.TranscriptObservationV0"
+      ],
+      "rule": "REFERENCE_MISMATCH_RESERVED_AND_UNREACHABLE_IN_V0",
+      "parameters": {
+        "reservedRows": ["TRS-011", "GRS-011"],
+        "requiredReopenOwners": ["K", "O07", "INTERFACE"]
+      },
+      "scenario": "ACI-REFERENCE-MISMATCH-UNREACHABLE",
+      "mutant": "M-ACI-FABRICATE-REFERENCE-MISMATCH"
     }
   ]
 }

@@ -57,9 +57,9 @@
     "oneOfOccurrences": 16,
     "oneOfArms": 54,
     "oneOfPairwiseDisjointnessRows": 93,
-    "semanticFamilies": 65,
-    "semanticExecutionInstances": 4828,
-    "totalExecutionInstances": 6228,
+    "semanticFamilies": 66,
+    "semanticExecutionInstances": 4831,
+    "totalExecutionInstances": 6231,
     "contentRelationRows": 23,
     "candidatePrimaryRelationRows": 25,
     "transcriptRelationRows": 14,
@@ -105,22 +105,22 @@
     {
       "path": "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json",
       "role": "SEMANTIC_RULE_FAMILIES",
-      "sha256": "784a1618e0e71c4d57ec249ac44c65d50f87a08cf1a239d15e19dda8a3a420f6"
+      "sha256": "c04f8f49db2276ec66f2b273e03e145485ac994c9e9268db1a161d128f724cd5"
     },
     {
       "path": "APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json",
       "role": "SEMANTIC_INSTANCE_AXES",
-      "sha256": "40872e15ecbafac695ef83e1dda87d81ccf0ffe7136226b4eb058a48f0eb802c"
+      "sha256": "192e81c48f5596b01bbbf35914443c6b61b212675127db96a52d597980faf815"
     },
     {
       "path": "APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json",
       "role": "INSTANCE_EXECUTION_PHASES",
-      "sha256": "e8f94360dd5ac31acd93f5330bd7ed3bf4d090e04461e909bd647886fee9428b"
+      "sha256": "fe5fb5477cc7f28424861f59b5bf2776b07d70f051dd1af2766648f463fae4a1"
     },
     {
       "path": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json",
       "role": "LITERAL_LEGAL_RELATIONS",
-      "sha256": "dd1408447de14e5617224d18c84d3f04230690f523b1fe6a4a31fb8ad35a41a3"
+      "sha256": "24c59abaeff8f6c92cc24c710330193c26eda1c0e75ef1f9b1bb0ab548d8298d"
     },
     {
       "path": "APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json",
@@ -165,17 +165,17 @@
     {
       "path": "validate_app_core_contract_candidates.py",
       "role": "FAIL_CLOSED_CANDIDATE_PACKAGE_VALIDATOR",
-      "sha256": "4f454db4ba394e7a962489f5faaf7d803e35e8a7ed2bc5d75a664603b4a8fec5"
+      "sha256": "dcd0e0d5d163734b5763daa5ec3a56977f1a1e7258fab9a9e3c5ac3a2f42daa4"
     },
     {
       "path": "APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md",
       "role": "HOSTILE_DERIVATION",
-      "sha256": "b44264197d00e32f47a1ed16be190fc1dbe616f7ecffb88b6851d2840ff72fe9"
+      "sha256": "8da8f578c712de81dd799ee57c3a87be3b836a30b2e17aa566ea6b5b66168baf"
     },
     {
       "path": "APP-CORE-IFACE-0-VALIDATOR-CONTRACT.md",
       "role": "VALIDATOR_PIPELINE",
-      "sha256": "a128b9bc9cb1da8183aa481423c277b433591d9cb299eab1d482b11cb2db29e8"
+      "sha256": "f61e7004959ddd19a2e000ab6142b306a75d2664b6ea453bd16620e48c43a1fb"
     },
     {
       "path": "APP-CORE-IFACE-0-WITNESS-GENERATION-CONTRACT.md",
@@ -200,7 +200,7 @@
     {
       "path": "APP-CORE-IFACE-0-CONTRACT-OUTLINE.md",
       "role": "EXECUTABLE_CONTRACT_OUTLINE",
-      "sha256": "14c46d435e5f5addb7f7c8abe42cb04b2dcea8bf1ef72ca4c68b42512ba98020"
+      "sha256": "ccb58a5eca19c289847749c56f6851c474366b7f0aa7bac7ee674659c32231b1"
     }
   ],
   "remainingBeforeExecutableIssue": [

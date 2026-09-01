@@ -222,6 +222,13 @@ projection. If a post-dispatch invariant fails, the harness records
 `HARNESS_FAILURE`; it must not reinterpret an implementation defect as a
 protocol rejection.
 
+In particular, schema membership does not make a reserved semantic row
+reachable. APP-core v0 supplies no expected reference, so any locally generated
+`REFERENCE_MISMATCH` reason or `referenceVerification = REJECTED` observation
+is `HARNESS_FAILURE` before response release. The normal and test-mutant paths
+must otherwise perform the same schema and exact relation validation; the
+ACV-066 mutant weakens only this reserved-reachability detector.
+
 ## Mutation obligations
 
 Each validator phase has at least one source mutant that weakens only that
@@ -259,11 +266,11 @@ provider-bound exact bytes.
 
 ## Remaining pre-ratification closures
 
-The schema, 65-row semantic-instance-axis registry, 23-row content-axis,
+The schema, 66-row semantic-instance-axis registry, 23-row content-axis,
 25-row F13 primary/axis, 14-row transcript and 16-row genesis relations are now
 literal working candidates. The relation expands the nine ACV-048 forbidden
 families through all 78 property-bearing object schemas. Together with the
-closed structural-keyword relation it derives 6,228 structural-plus-semantic
+closed structural-keyword relation it derives 6,231 structural-plus-semantic
 execution instances. They all require independent review and human ratification.
 
 Two literal execution outputs cannot exist before the repository increment

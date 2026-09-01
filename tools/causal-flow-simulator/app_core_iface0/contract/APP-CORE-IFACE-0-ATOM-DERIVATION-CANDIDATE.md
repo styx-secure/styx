@@ -21,7 +21,7 @@ The current candidates mechanically yield:
 | inline/union-arm property-bearing objects | 5 |
 | declared object properties | 307 |
 | directly required property occurrences | 306 |
-| semantic rules | 65 |
+| semantic rules | 66 |
 | custom-keyword occurrences | 24 |
 
 Conditional `required` predicates inside `ApplicationEventProjectionV0` do not
@@ -128,11 +128,11 @@ finite set of execution instances before the inventory can be frozen.
 structural rule families: 23
 SHA-256: 5c552a6a1217a914c84731ddd1b116429c00af4a37a762fee620ee5bae04204b
 
-semantic families: 65
-SHA-256: 125d441941148db38570061fc2ad23511433564f1c761011da0714ac3b982ce7
+semantic families: 66
+SHA-256: b9c4ea3bdb3f61b8f7d759ad81ce57d5c5fa7e763aef26cc27fb47a2e5e25983
 
-combined rule families: 88
-SHA-256: f085728f4a50d577108c8a28acffaa1462a56059348b70c6d45c4bc862c32b71
+combined rule families: 89
+SHA-256: f63b75c97efc2af0abc25ffbe5922fbc1e92fabb79446fc24e127c348b5f2d3f
 ```
 
 Each digest is over the lexicographically sorted UTF-8 identifiers, one
@@ -174,6 +174,10 @@ At minimum:
 - `ACV-048` expands all nine forbidden authority/runtime/cross-plane field
   families across the 78 property-bearing object schemas: 702 distinct
   execution instances; and
+- `ACV-066` expands the two reserved reason rows and the independently
+  prohibited `referenceVerification = REJECTED` observation into three
+  post-output mutation instances whose row-coherent responses must be rejected
+  solely by the reserved-reachability detector; and
 - multi-target, union-arm, field-by-field, exact-row and full-replay rules use
   the literal axis assigned by
   `APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json`. They cannot be reported as
@@ -183,12 +187,12 @@ The current exact expansion is:
 
 ```text
 1,400 structural instances
-+ 4,828 semantic instances
-= 6,228 total structural-plus-semantic execution instances
++ 4,831 semantic instances
+= 6,231 total structural-plus-semantic execution instances
 ```
 
-The 65-row instance-axis registry has no unresolved axis and has SHA-256
-`40872e15ecbafac695ef83e1dda87d81ccf0ffe7136226b4eb058a48f0eb802c`.
+The 66-row instance-axis registry has no unresolved axis and has SHA-256
+`192e81c48f5596b01bbbf35914443c6b61b212675127db96a52d597980faf815`.
 
 ## Derived interface maxima
 
@@ -211,7 +215,7 @@ merged without retaining a second decoded copy.
 
 Its execution-phase partition is the working
 `APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256
-`e8f94360dd5ac31acd93f5330bd7ed3bf4d090e04461e909bd647886fee9428b`.
+`fe5fb5477cc7f28424861f59b5bf2776b07d70f051dd1af2766648f463fae4a1`.
 It prevents a response-only hygiene mutation or validator self-test from being
 misreported as an oracle-free blind-input comparison. The exact ACV-048 phase
 counts remain derived from the future 78-row seed-carrier directions.
