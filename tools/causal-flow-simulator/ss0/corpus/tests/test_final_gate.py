@@ -20,6 +20,7 @@ from final_gate import (  # noqa: E402
     _checkout_identity,
     _compare_reports,
     _require_external_root,
+    _require_pairwise_disjoint,
     _resolve_plain_directory,
 )
 
@@ -71,6 +72,18 @@ class FinalGateTests(unittest.TestCase):
             link.symlink_to(external, target_is_directory=True)
             with self.assertRaises(FinalGateError):
                 _resolve_plain_directory(link, "linked evidence")
+
+    def test_evidence_roots_cannot_be_nested(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            left = root / "left"
+            nested = left / "nested"
+            right = root / "right"
+            for path in (left, nested, right):
+                path.mkdir(exist_ok=True)
+            _require_pairwise_disjoint((left, right))
+            with self.assertRaises(FinalGateError):
+                _require_pairwise_disjoint((left, nested, right))
 
     def test_clean_dirty_ancestor_and_alternate_checkout_fixtures(self) -> None:
         node_name = shutil.which("node")

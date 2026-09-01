@@ -133,6 +133,13 @@ def _require_external_root(root: Path, forbidden: tuple[Path, ...]) -> None:
             raise FinalGateError("evidence root overlaps a checkout or Git directory")
 
 
+def _require_pairwise_disjoint(roots: tuple[Path, ...]) -> None:
+    for index, left in enumerate(roots):
+        for right in roots[index + 1 :]:
+            if _inside(left, right) or _inside(right, left):
+                raise FinalGateError("evidence roots overlap or are nested")
+
+
 def _checkout_identity(
     root: Path,
     *,
@@ -368,6 +375,7 @@ def execute(arguments: argparse.Namespace) -> dict[str, Any]:
         raise FinalGateError("final output path is not a plain external path")
     if len({checkout_a, checkout_b, evidence_a, evidence_b, final_root}) != 5:
         raise FinalGateError("checkouts and evidence roots must be distinct")
+    _require_pairwise_disjoint((evidence_a, evidence_b, final_root))
 
     with tempfile.TemporaryDirectory(dir=final_root, prefix=".ss0-corpus-final-") as name:
         temporary_root = Path(name).resolve(strict=True)

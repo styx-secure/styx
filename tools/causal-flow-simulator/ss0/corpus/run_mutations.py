@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -36,7 +37,37 @@ from validate_corpus import (  # noqa: E402
 )
 
 
-DATA_MUTATION_IDS = tuple(f"CDM-{index:03d}" for index in range(1, 29))
+DATA_MUTATIONS = (
+    ("CDM-001", "missing manifest"),
+    ("CDM-002", "missing non-manifest corpus file"),
+    ("CDM-003", "unlisted seventh regular file"),
+    ("CDM-004", "symlink replacing a corpus file"),
+    ("CDM-005", "reordered generatedFiles relation"),
+    ("CDM-006", "wrong generated-file digest"),
+    ("CDM-007", "wrong manifestPayloadSha256"),
+    ("CDM-008", "duplicate JSON object key"),
+    ("CDM-009", "unknown top-level field"),
+    ("CDM-010", "missing required top-level field"),
+    ("CDM-011", "unknown schema identifier"),
+    ("CDM-012", "non-canonical object-key order"),
+    ("CDM-013", "absent final LF"),
+    ("CDM-014", "UTF-8 BOM or invalid UTF-8"),
+    ("CDM-015", "floating-point value outside frozen supplemental evidence"),
+    ("CDM-016", "duplicate case identifier"),
+    ("CDM-017", "missing source witness"),
+    ("CDM-018", "extra source witness"),
+    ("CDM-019", "witness moved to the wrong partition"),
+    ("CDM-020", "trace/input identifier mismatch"),
+    ("CDM-021", "expected result or disposition injected into reader input"),
+    ("CDM-022", "assertion, detector or source-mutant data injected into reader input"),
+    ("CDM-023", "synthetic false or upstreamBytes other than none"),
+    ("CDM-024", "missing or extra mutation record"),
+    ("CDM-025", "wrong mutation coverageClass or detector relation"),
+    ("CDM-026", "changed owner/atom/relation/disposition count"),
+    ("CDM-027", "runtime or repository provenance injected into a canonical report"),
+    ("CDM-028", "input stream exposes source filename or partition membership"),
+)
+DATA_MUTATION_IDS = tuple(identity for identity, _ in DATA_MUTATIONS)
 DETECTOR_OWNER = {
     **{identity: "validate_corpus.py" for identity in DATA_MUTATION_IDS[:26]},
     "CDM-027": "run_mutations.py",
@@ -218,7 +249,9 @@ def _kill_report_mutant() -> None:
 
 
 def _kill_stream_mutant(repo: Path) -> None:
-    build_child_inputs(load_input_records(repo), expose_provenance=True)
+    records = copy.deepcopy(load_input_records(repo))
+    records[0]["input"]["sourceWitness"] = records[0]["sourceWitness"]
+    build_child_inputs(records)
     raise ValueError("surviving reader-stream provenance mutant")
 
 
@@ -237,7 +270,7 @@ def run_data_mutations(repo: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory(prefix="styx-ss0-data-mutants-") as name:
         temporary_root = Path(name)
-        for identity in DATA_MUTATION_IDS:
+        for identity, _target in DATA_MUTATIONS:
             if identity <= "CDM-026":
                 _kill_file_mutant(repo, identity, temporary_root)
             elif identity == "CDM-027":

@@ -47,23 +47,49 @@ it does not execute either reader and cannot consume reader output.
 3. Both raw observation streams are written atomically before the expected
    trace file is opened. All 56 Python observations equal the 56 independent
    JavaScript observations and the 56 frozen traces.
-4. The frozen source runner kills all 44 source mutants. The corpus mutation
-   registry maps exactly 41 of them to corpus witnesses and preserves three
-   frozen supplemental detectors.
+4. The frozen source runner kills all 44 source mutants. All 44 mutate the
+   Python reference reader; this increment makes no JavaScript mutation-
+   sensitivity claim. The corpus mutation registry maps exactly 41 of them to
+   corpus witnesses and preserves three frozen supplemental detectors.
 5. All 28 literal corpus-data mutants are killed by their named detector owner;
    the reader-stream and report-provenance negative controls cannot pass.
 6. The scope guard re-fetches Issue #293, its ratification and the K11-SS
    authority from the provider, imports the repository's official task-contract
    parser/path matcher, verifies pinned inputs/history and rejects any changed
    path or object outside the ratified relation.
-7. The final gate requires two distinct clean exact-HEAD checkouts with distinct
-   Git metadata and no alternates, plus disjoint external evidence roots. It
+7. The final gate requires two distinct, pairwise-disjoint clean exact-HEAD
+   checkouts with distinct Git metadata and no alternates, plus pairwise-
+   disjoint external evidence roots. It
    reruns the corpus suite, compares all six corpus files and four canonical
    report families byte-for-byte, and checks cleanliness again after execution.
+
+The final evidence roots contain the replay, mutation, scope and review-model
+reports from each checkout. The canonical manifest binds its generator,
+normative inputs and reproduction inputs to exact closed lists. Report input is
+recursively rejected if it exposes source-file, partition, witness, case or
+other provenance keys to a child reader.
 
 The reader agreement is transport-fidelity and regression evidence relative to
 the already-frozen Base agreement. It is not presented as a fresh independent
 semantic implementation because both readers were frozen before this corpus.
+
+## Reproduction qualifications
+
+The scope and final gates preserve two historical commits from PR #286 that are
+not ancestors of the default `main` clone. A reproducer must fetch that provider
+reference before running either gate:
+
+```bash
+git fetch --no-tags origin refs/pull/286/head
+git cat-file -e bd9a06c7f7299a798105a71894934c25643ba78e^{commit}
+git cat-file -e c8430b4b57ff69a070ae4bc3a60b1a232c25df24^{commit}
+```
+
+The repository-wide `tools/protocol-phase-exit` suite is outside Issue #293's
+allowed paths and was already stale at Base: three of its 24 tests failed there.
+The candidate has four failures because that excluded suite also expects new
+audit-table rows for this increment. This is recorded as inherited/out-of-scope
+evidence, not converted into a green skip or silently repaired here.
 
 ## Mechanical result and remaining gates
 
@@ -77,3 +103,8 @@ unverifiable evidence is a failure, not a green skip.
 No adapter, authenticated persistence, SDK, transport/delivery, product,
 Flegias workflow, demo, deployment or sensitive-use authority follows from
 this bounded corpus result.
+
+Residual falsification limits include the asymmetric source-mutation evidence
+(Python only), the historical PR-reference fetch requirement and the excluded
+stale phase-exit suite. The exact-final review must assess these limitations; a
+passing corpus run does not erase them.

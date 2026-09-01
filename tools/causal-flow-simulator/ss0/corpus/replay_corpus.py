@@ -36,23 +36,36 @@ def load_input_records(repo: Path) -> list[dict[str, Any]]:
     return sorted(records, key=lambda row: row["sourceWitness"])
 
 
-def build_child_inputs(
-    records: list[dict[str, Any]], *, expose_provenance: bool = False
-) -> list[dict[str, Any]]:
+PROVENANCE_KEYS = frozenset(
+    {
+        "caseid",
+        "id",
+        "partition",
+        "sourcefile",
+        "sourcefilename",
+        "sourcepartition",
+        "sourcewitness",
+    }
+)
+
+
+def _contains_provenance(value: Any) -> bool:
+    if isinstance(value, list):
+        return any(_contains_provenance(item) for item in value)
+    if not isinstance(value, dict):
+        return False
+    for key, item in value.items():
+        normalized = key.replace("_", "").replace("-", "").lower()
+        if normalized in PROVENANCE_KEYS or _contains_provenance(item):
+            return True
+    return False
+
+
+def build_child_inputs(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     inputs: list[dict[str, Any]] = []
     for row in records:
         candidate = row["input"]
-        if expose_provenance:
-            raise CorpusValidationError(
-                "CDM-028", "reader input stream exposes corpus provenance"
-            )
-        if not isinstance(candidate, dict) or any(
-            key in candidate
-            for key in (
-                "id", "sourceFile", "sourceFilename", "sourcePartition",
-                "sourceWitness",
-            )
-        ):
+        if not isinstance(candidate, dict) or _contains_provenance(candidate):
             raise CorpusValidationError(
                 "CDM-028", "reader input stream contains corpus provenance"
             )
@@ -89,7 +102,6 @@ def replay(
     repo: Path, node: Path, corpus_dir: Path, output: Path
 ) -> dict[str, Any]:
     repo = repo.resolve(strict=True)
-    validate_corpus(repo, corpus_dir)
     records = load_input_records(repo)
     inputs = build_child_inputs(records)
     javascript = _javascript_observations(repo, node, inputs)
@@ -103,8 +115,9 @@ def replay(
     store_atomic(raw_python, canonical_bytes(python))
     store_atomic(raw_javascript, canonical_bytes(javascript))
 
-    # The expected trace file is deliberately opened only after both independent
-    # raw streams have been atomically frozen above.
+    # Full package validation opens the expected trace file only after both
+    # independent raw streams have been atomically frozen above.
+    validate_corpus(repo, corpus_dir)
     trace_document = load_canonical(repo / CORPUS_PATHS[5])
     expected_rows = trace_document["traces"]
     expected = [row["expected"] for row in expected_rows]

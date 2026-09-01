@@ -10,10 +10,52 @@ ROOT = Path(__file__).resolve().parents[5]
 CORPUS_TOOL = ROOT / "tools/causal-flow-simulator/ss0/corpus"
 sys.path.insert(0, str(CORPUS_TOOL))
 
-from run_mutations import DATA_MUTATION_IDS, run, run_data_mutations  # noqa: E402
+from run_mutations import (  # noqa: E402
+    DATA_MUTATION_IDS,
+    DATA_MUTATIONS,
+    run,
+    run_data_mutations,
+)
+
+
+EXPECTED_DATA_MUTATIONS = (
+    ("CDM-001", "missing manifest"),
+    ("CDM-002", "missing non-manifest corpus file"),
+    ("CDM-003", "unlisted seventh regular file"),
+    ("CDM-004", "symlink replacing a corpus file"),
+    ("CDM-005", "reordered generatedFiles relation"),
+    ("CDM-006", "wrong generated-file digest"),
+    ("CDM-007", "wrong manifestPayloadSha256"),
+    ("CDM-008", "duplicate JSON object key"),
+    ("CDM-009", "unknown top-level field"),
+    ("CDM-010", "missing required top-level field"),
+    ("CDM-011", "unknown schema identifier"),
+    ("CDM-012", "non-canonical object-key order"),
+    ("CDM-013", "absent final LF"),
+    ("CDM-014", "UTF-8 BOM or invalid UTF-8"),
+    ("CDM-015", "floating-point value outside frozen supplemental evidence"),
+    ("CDM-016", "duplicate case identifier"),
+    ("CDM-017", "missing source witness"),
+    ("CDM-018", "extra source witness"),
+    ("CDM-019", "witness moved to the wrong partition"),
+    ("CDM-020", "trace/input identifier mismatch"),
+    ("CDM-021", "expected result or disposition injected into reader input"),
+    ("CDM-022", "assertion, detector or source-mutant data injected into reader input"),
+    ("CDM-023", "synthetic false or upstreamBytes other than none"),
+    ("CDM-024", "missing or extra mutation record"),
+    ("CDM-025", "wrong mutation coverageClass or detector relation"),
+    ("CDM-026", "changed owner/atom/relation/disposition count"),
+    ("CDM-027", "runtime or repository provenance injected into a canonical report"),
+    ("CDM-028", "input stream exposes source filename or partition membership"),
+)
 
 
 class MutationTests(unittest.TestCase):
+    def test_data_mutation_registry_is_literal_and_exact(self) -> None:
+        self.assertEqual(DATA_MUTATIONS, EXPECTED_DATA_MUTATIONS)
+        self.assertEqual(len({identity for identity, _ in DATA_MUTATIONS}), 28)
+        self.assertEqual(len({target for _, target in DATA_MUTATIONS}), 28)
+
     def test_closed_data_mutation_registry_is_killed(self) -> None:
         rows = run_data_mutations(ROOT)
         self.assertEqual([row["id"] for row in rows], list(DATA_MUTATION_IDS))

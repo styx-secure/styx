@@ -330,5 +330,11 @@ The generator never executes either reader. Python and JavaScript receive only
 the bare candidate input; their raw observations are frozen before expected
 traces are opened. Agreement therefore demonstrates corpus transport fidelity
 and non-regression from the already-frozen Base agreement, not a second
-independent semantic corroboration. SS-CORPUS-0 does not authorize SS-1, SS-2,
-an adapter, SDK, application demo, product work or C0.3 activation.
+independent semantic corroboration. The 44 source mutants exercise only the
+Python reference reader; no JavaScript mutation-sensitivity claim is made. The
+final evidence roots include replay, mutation, scope and review-model reports
+from both clean checkouts. Reproduction also requires fetching
+`refs/pull/286/head`, which supplies the two historical PR commits frozen by the
+scope guard but absent from default `main` history. SS-CORPUS-0 does not
+authorize SS-1, SS-2, an adapter, SDK, application demo, product work or C0.3
+activation.

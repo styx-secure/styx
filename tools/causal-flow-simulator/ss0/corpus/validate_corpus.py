@@ -79,6 +79,14 @@ def _walk_input(value: Any) -> None:
         _walk_input(item)
 
 
+def _validate_manifest_source_bindings(
+    manifest: dict[str, Any], expected: dict[str, Any]
+) -> None:
+    for field in ("generator", "normativeInputs", "reproductionInputs"):
+        if manifest[field] != expected[field]:
+            _fail("CORPUS-AUTHORITY", f"manifest {field} binding mismatch")
+
+
 def validate_corpus(repo: Path, corpus_dir: Path) -> dict[str, Any]:
     repo = repo.resolve(strict=True)
     corpus_dir = corpus_dir.resolve(strict=False)
@@ -129,6 +137,14 @@ def validate_corpus(repo: Path, corpus_dir: Path) -> dict[str, Any]:
     if claimed_projection != hashlib.sha256(canonical_bytes(projection)).hexdigest():
         _fail("CDM-007", "manifest self-projection mismatch")
 
+    expected_files = build_files(repo)
+    expected_docs = {
+        name: loads_unique(data) for name, data in expected_files.items()
+    }
+    _validate_manifest_source_bindings(
+        manifest, expected_docs[CORPUS_PATHS[0]]
+    )
+
     schemas = {
         CORPUS_PATHS[1]: ("styx.ss0.corpus.valid-session-vectors.v1", "vectors"),
         CORPUS_PATHS[2]: ("styx.ss0.corpus.invalid-session-vectors.v1", "vectors"),
@@ -174,8 +190,6 @@ def validate_corpus(repo: Path, corpus_dir: Path) -> dict[str, Any]:
         _fail("CDM-018", f"extra source witness: {sorted(extra)}")
     if set(trace_ids) != set(partitions):
         _fail("CDM-020", "trace/input ID relation mismatch")
-    expected_files = build_files(repo)
-    expected_docs = {name: loads_unique(data) for name, data in expected_files.items()}
     expected_partition = {}
     for name in CORPUS_PATHS[1:4]:
         collection = "scenarios" if name == CORPUS_PATHS[3] else "vectors"
