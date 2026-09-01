@@ -58,7 +58,7 @@ DATA_MUTATIONS = (
     ("CDM-018", "extra source witness"),
     ("CDM-019", "witness moved to the wrong partition"),
     ("CDM-020", "trace/input identifier mismatch"),
-    ("CDM-021", "expected result or disposition injected into reader input"),
+    ("CDM-021", "expected result or disposition injected into ordinary reader input"),
     ("CDM-022", "assertion, detector or source-mutant data injected into reader input"),
     ("CDM-023", "synthetic false or upstreamBytes other than none"),
     ("CDM-024", "missing or extra mutation record"),
