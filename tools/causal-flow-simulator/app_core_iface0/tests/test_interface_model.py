@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from io import BytesIO
 import unittest
 from pathlib import Path
 
@@ -10,9 +11,13 @@ sys.path.insert(0, str(ROOT))
 
 from interface_model import (  # noqa: E402
     ContractAuthority,
+    HarnessFailure,
+    RequestRejected,
     SUPPORTED_OPERATIONS,
     SUPPORTED_PROFILE,
+    admit_canonical_request,
     describe_profile,
+    read_bounded_request,
 )
 
 
@@ -50,6 +55,25 @@ class InterfaceModelTests(unittest.TestCase):
             describe_profile(self.authority, mismatched),
             {"disposition": "UNSUPPORTED"},
         )
+
+    def test_v1_limit_is_required_and_never_implementation_selected(self) -> None:
+        canonical = b'{"input":{},"interfaceVersion":"0","operation":"DESCRIBE_PROFILE","profile":{"applicationProfileId":"1","applicationProfileVersion":"1","styxProtocolVersion":"1"}}\n'
+        with self.assertRaises(HarnessFailure):
+            admit_canonical_request(canonical, maximum_octets=None)
+        with self.assertRaises(RequestRejected):
+            admit_canonical_request(canonical, maximum_octets=len(canonical) - 1)
+        self.assertEqual(
+            admit_canonical_request(canonical, maximum_octets=len(canonical))["operation"],
+            "DESCRIBE_PROFILE",
+        )
+
+    def test_bounded_reader_consumes_only_one_sentinel_octet(self) -> None:
+        stream = BytesIO(b"x" * 1000)
+        with self.assertRaises(RequestRejected):
+            read_bounded_request(stream, maximum_octets=16)
+        self.assertEqual(stream.tell(), 17)
+        with self.assertRaises(HarnessFailure):
+            read_bounded_request(BytesIO(b"{}\n"), maximum_octets=None)
 
 
 if __name__ == "__main__":

@@ -12,8 +12,9 @@ import json
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
+from canonical_json import CanonicalJsonError, loads as canonical_loads
 from inventory import BASE_SHA, InventoryError, verify_contract_package
 
 
@@ -39,6 +40,14 @@ EXTERNAL_BOUNDARIES = [
 
 class InterfaceModelError(ValueError):
     """The pinned contract/native authority or model input is inconsistent."""
+
+
+class RequestRejected(ValueError):
+    """A caller request is rejected with zero public response bytes."""
+
+
+class HarnessFailure(RuntimeError):
+    """The evidence harness is misconfigured or cannot complete safely."""
 
 
 @dataclass(frozen=True)
@@ -217,3 +226,46 @@ def describe_profile(
     if profile == SUPPORTED_PROFILE:
         return {"descriptor": authority.descriptor(), "disposition": "SUPPORTED"}
     return {"disposition": "UNSUPPORTED"}
+
+
+def read_bounded_request(stream: BinaryIO, *, maximum_octets: int | None) -> bytes:
+    """Read at most ``maximum_octets + 1`` bytes from an untrusted stream.
+
+    The literal maximum remains a ratified-contract input.  Absence is a
+    harness failure, never an implementation-selected default.  Reading one
+    sentinel octet is sufficient to distinguish the closed boundary without
+    consuming an arbitrarily large input.
+    """
+
+    if maximum_octets is None or isinstance(maximum_octets, bool):
+        raise HarnessFailure("outer request-octet limit is not ratified")
+    if not isinstance(maximum_octets, int) or maximum_octets < 1:
+        raise HarnessFailure("outer request-octet limit is invalid")
+    raw = stream.read(maximum_octets + 1)
+    if not isinstance(raw, bytes):
+        raise HarnessFailure("request stream did not return bytes")
+    if len(raw) > maximum_octets:
+        raise RequestRejected()
+    return raw
+
+
+def admit_canonical_request(raw: bytes, *, maximum_octets: int | None) -> dict[str, Any]:
+    """Apply the parameterized V1 envelope and canonical-JSON admission.
+
+    Structural dispatch and semantic evaluation are deliberately later phases.
+    No parser diagnostic is included in :class:`RequestRejected`.
+    """
+
+    if maximum_octets is None or isinstance(maximum_octets, bool):
+        raise HarnessFailure("outer request-octet limit is not ratified")
+    if not isinstance(maximum_octets, int) or maximum_octets < 1:
+        raise HarnessFailure("outer request-octet limit is invalid")
+    if len(raw) > maximum_octets:
+        raise RequestRejected()
+    try:
+        value = canonical_loads(raw)
+    except CanonicalJsonError as error:
+        raise RequestRejected() from error
+    if not isinstance(value, dict):
+        raise RequestRejected()
+    return value
