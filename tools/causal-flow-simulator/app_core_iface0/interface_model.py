@@ -15,7 +15,12 @@ from pathlib import Path
 from typing import Any, BinaryIO
 
 from canonical_json import CanonicalJsonError, loads as canonical_loads
-from inventory import BASE_SHA, InventoryError, verify_contract_package
+from inventory import (
+    BASE_SHA,
+    InventoryError,
+    run_ratified_package_validator,
+    verify_contract_package,
+)
 
 
 INTERFACE_VERSION = "0"
@@ -142,6 +147,7 @@ class ContractAuthority:
         package = contract.resolve()
         try:
             verify_contract_package(package)
+            run_ratified_package_validator(root, package)
         except (InventoryError, OSError) as error:
             raise InterfaceModelError("ratified contract package verification failed") from error
         dependencies = _dependency_rows(package)
