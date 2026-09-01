@@ -87,7 +87,7 @@ normative-source digests, generated-file digests, `synthetic: true` and
 authorize C0.3, establish implementation conformance, or make a product-readiness
 claim.
 
-### SS-0 synthetic secure-session corpus — Issue #291
+### SS-0 synthetic secure-session corpus — Issues #291 and #293
 
 ```text
 conformance/secure-session/ss0/manifest.json
@@ -98,14 +98,13 @@ conformance/secure-session/ss0/adversarial-mutations.json
 conformance/secure-session/ss0/expected-traces.json
 ```
 
-These six absent paths are pre-registered exclusively for future, fully
-synthetic Styx-generated SS-0 conformance data. Copied, adapted, transcribed or
-generated third-party/upstream bytes are forbidden. When separately authorized
-and created, `manifest.json` must bind generator identity, reproduction inputs,
-exact normative-source digests, generated-file digests, `synthetic: true` and
-`upstreamBytes: "none"`. Issue #291 creates no corpus byte and authorizes no
-adapter, persistence, SDK, transport, product, demo, deployment or sensitive
-use.
+These six paths were pre-registered by Issue #291 and populated by Issue #293
+with fully synthetic Styx-generated SS-0 conformance data. Copied, adapted,
+transcribed or generated third-party/upstream bytes remain forbidden.
+`manifest.json` binds generator identity, reproduction inputs, exact
+normative-source digests, generated-file digests, `synthetic: true` and
+`upstreamBytes: "none"`. This bounded corpus construction authorizes no adapter,
+persistence, SDK, transport, product, demo, deployment or sensitive use.
 
 ## 3. Exact third-party and derivative classifications
 

@@ -307,5 +307,34 @@ A positive SS-0 result is bounded negative evidence, not a proof of MLS or the
 upstream implementations. It selects no adapter or SDK API, wire or persisted
 format, production storage, recovery, rollback detection, physical erasure,
 general convergence, multi-device behavior, delivery, metadata privacy or
-product support. It creates no conformance corpus and does not authorize SS-1,
-SS-2, an application demo, product work or C0.3 activation.
+product support. Issue #293 adds a six-file, fully synthetic conformance corpus
+with 20 owners, 60 atoms, 56 witnesses, 104 relations, 14 valid vectors, 18
+invalid vectors, 24 state-machine scenarios, 44 source-mutation records split
+41/3, 28 corpus-data mutants and 56 expected traces. Generate, validate and
+blindly replay it with:
+
+```bash
+python3 tools/causal-flow-simulator/ss0/corpus/generate_corpus.py \
+  --repo-root . --output-dir conformance/secure-session/ss0 --check
+python3 tools/causal-flow-simulator/ss0/corpus/validate_corpus.py \
+  --repo-root . --corpus-dir conformance/secure-session/ss0
+python3 tools/causal-flow-simulator/ss0/corpus/replay_corpus.py \
+  --repo-root . --node "$(command -v node)" \
+  --corpus-dir conformance/secure-session/ss0 --output /tmp/ss0-replay.json
+python3 tools/causal-flow-simulator/ss0/corpus/run_mutations.py \
+  --repo-root . --node "$(command -v node)" \
+  --corpus-dir conformance/secure-session/ss0 --output /tmp/ss0-mutations.json
+```
+
+The generator never executes either reader. Python and JavaScript receive only
+the bare candidate input; their raw observations are frozen before expected
+traces are opened. Agreement therefore demonstrates corpus transport fidelity
+and non-regression from the already-frozen Base agreement, not a second
+independent semantic corroboration. The 44 source mutants exercise only the
+Python reference reader; no JavaScript mutation-sensitivity claim is made. The
+final evidence roots include replay, mutation, scope and review-model reports
+from both clean checkouts. Reproduction also requires fetching
+`refs/pull/286/head`, which supplies the two historical PR commits frozen by the
+scope guard but absent from default `main` history. SS-CORPUS-0 does not
+authorize SS-1, SS-2, an adapter, SDK, application demo, product work or C0.3
+activation.

@@ -1,4 +1,4 @@
-"""Fail-closed evidence for the Issue #291 SS-0 corpus path approval."""
+"""Fail-closed evidence for the Issues #291/#293 SS-0 corpus boundary."""
 
 from __future__ import annotations
 
@@ -101,8 +101,11 @@ def _inventory_errors(document: dict, *, root: Path = REPO_ROOT) -> list[str]:
         for item in annotations
     ):
         errors.append("APACHE_METADATA")
-    if any(os.path.lexists(root / path) for path in SS0_APACHE_PATHS):
-        errors.append("SS0_FILE_PRESENT")
+    if any(
+        not (root / path).is_file() or (root / path).is_symlink()
+        for path in SS0_APACHE_PATHS
+    ):
+        errors.append("SS0_FILE_INVALID")
     return errors
 
 
@@ -165,8 +168,9 @@ class Ss0CorpusPathApprovalTests(unittest.TestCase):
             "*" in path or "?" in path or "[" in path for path in cls.apache_paths
         )
         cls.duplicate_count = len(cls.apache_paths) - len(set(cls.apache_paths))
-        cls.future_ss0_files_present = sum(
-            os.path.lexists(REPO_ROOT / path) for path in SS0_APACHE_PATHS
+        cls.ss0_regular_files = sum(
+            (REPO_ROOT / path).is_file() and not (REPO_ROOT / path).is_symlink()
+            for path in SS0_APACHE_PATHS
         )
         cls.preexisting_annotations_changed = sum(
             left != right
@@ -185,7 +189,7 @@ class Ss0CorpusPathApprovalTests(unittest.TestCase):
         print(f"total_apache_paths={len(cls.apache_paths)}")
         print(f"wildcards={cls.wildcard_count}")
         print(f"duplicates={cls.duplicate_count}")
-        print(f"future_ss0_files_present={cls.future_ss0_files_present}")
+        print(f"ss0_regular_files={cls.ss0_regular_files}")
         print(f"preexisting_annotations_changed={cls.preexisting_annotations_changed}")
 
     def test_inventory_digest_and_exact_order(self) -> None:
@@ -200,10 +204,29 @@ class Ss0CorpusPathApprovalTests(unittest.TestCase):
         self.assertEqual(base[:3], current[:3])
         self.assertEqual(base[3:], current[4:])
 
-    def test_ss0_paths_are_absent_regular_future_paths(self) -> None:
-        self.assertEqual(0, self.future_ss0_files_present)
+    def test_ss0_paths_are_populated_regular_synthetic_files(self) -> None:
+        self.assertEqual(6, self.ss0_regular_files)
         for path in SS0_APACHE_PATHS:
-            self.assertFalse(os.path.lexists(REPO_ROOT / path), path)
+            self.assertTrue((REPO_ROOT / path).is_file(), path)
+            self.assertFalse((REPO_ROOT / path).is_symlink(), path)
+
+    def test_manifest_is_canonical_and_binds_all_six_files(self) -> None:
+        manifest_path = REPO_ROOT / SS0_APACHE_PATHS[0]
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        canonical = json.dumps(
+            manifest, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        ).encode("utf-8") + b"\n"
+        self.assertEqual(canonical, manifest_path.read_bytes())
+        self.assertTrue(manifest["synthetic"])
+        self.assertEqual("none", manifest["upstreamBytes"])
+        self.assertEqual(list(SS0_APACHE_PATHS[1:]), [
+            row["path"] for row in manifest["generatedFiles"]
+        ])
+        for row in manifest["generatedFiles"]:
+            self.assertEqual(
+                row["sha256"],
+                hashlib.sha256((REPO_ROOT / row["path"]).read_bytes()).hexdigest(),
+            )
 
     def test_changed_seventh_wildcard_and_duplicate_paths_fail(self) -> None:
         mutations = []
@@ -223,24 +246,30 @@ class Ss0CorpusPathApprovalTests(unittest.TestCase):
             with self.subTest(errors=_inventory_errors(document)):
                 self.assertTrue(_inventory_errors(document))
 
-    def test_existing_file_and_metadata_mutations_fail(self) -> None:
+    def test_missing_symlink_and_metadata_mutations_fail(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            existing = root / SS0_APACHE_PATHS[0]
-            existing.parent.mkdir(parents=True)
-            existing.write_text("{}\n", encoding="utf-8")
+            for path in SS0_APACHE_PATHS:
+                candidate = root / path
+                candidate.parent.mkdir(parents=True, exist_ok=True)
+                candidate.write_text("{}\n", encoding="utf-8")
+            (root / SS0_APACHE_PATHS[0]).unlink()
             self.assertIn(
-                "SS0_FILE_PRESENT",
+                "SS0_FILE_INVALID",
                 _inventory_errors(self.current_reuse, root=root),
             )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
+            for path in SS0_APACHE_PATHS:
+                candidate = root / path
+                candidate.parent.mkdir(parents=True, exist_ok=True)
+                candidate.write_text("{}\n", encoding="utf-8")
             dangling = root / SS0_APACHE_PATHS[1]
-            dangling.parent.mkdir(parents=True)
+            dangling.unlink()
             os.symlink("missing-target", dangling)
             self.assertFalse(dangling.exists())
             self.assertIn(
-                "SS0_FILE_PRESENT",
+                "SS0_FILE_INVALID",
                 _inventory_errors(self.current_reuse, root=root),
             )
         for key, value in (
@@ -285,6 +314,7 @@ class Ss0CorpusPathApprovalTests(unittest.TestCase):
         self.assertEqual(_k11_frozen_projection(base), _k11_frozen_projection(current))
         self.assertIn(INVENTORY_SHA256, current)
         self.assertIn("Issue #291 comment `5484188019`", current)
+        self.assertIn("Issue #293 comment `5485961310`", current)
 
     def test_review_model_changes_only_decisions_source_digest(self) -> None:
         current = validator.load_json_unique(MODEL_PATH)
@@ -304,9 +334,9 @@ class Ss0CorpusPathApprovalTests(unittest.TestCase):
 
     def test_licensing_documents_record_bounded_approval(self) -> None:
         required = {
-            "LICENSING.md": ("eighteen paths", "Issue #291", "creates no corpus byte"),
-            "README.md": ("Eighteen exact synthetic data paths", "Issue #291"),
-            "CONTRIBUTING.md": ("eighteen exact", "#291"),
+            "LICENSING.md": ("eighteen paths", "Issue #291", "populated by Issue #293"),
+            "README.md": ("Eighteen exact synthetic data paths", "Issue #293"),
+            "CONTRIBUTING.md": ("eighteen exact", "Issue #293"),
             "docs/architecture/decisions/ADR-0004-licensing-strategy.md": (
                 "esattamente diciotto path",
                 "Issue #291",
