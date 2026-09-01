@@ -121,6 +121,35 @@ def _load_document(repo: Path, name: str) -> dict[str, Any]:
     return value
 
 
+def _build_mutation_rows(
+    inventory: dict[str, Any], mutants: dict[str, Any]
+) -> list[dict[str, str]]:
+    witness_ids = {witness["id"] for witness in inventory["witnesses"]}
+    rows: list[dict[str, str]] = []
+    for mutant in mutants["mutants"]:
+        identity = mutant["id"]
+        detector = mutant["detector"]
+        expected_detector = SUPPLEMENTAL_MUTANTS.get(identity)
+        if expected_detector is not None:
+            if detector != expected_detector or detector in witness_ids:
+                raise ValueError(f"supplemental detector mismatch: {identity}")
+            coverage_class = "FROZEN_SUPPLEMENTAL"
+        else:
+            if detector not in witness_ids:
+                raise ValueError(f"corpus witness detector unavailable: {identity}")
+            coverage_class = "CORPUS_WITNESS"
+        rows.append(
+            {
+                "coverageClass": coverage_class,
+                "detector": detector,
+                "id": identity,
+                "requirement": mutant["requirement"],
+                "sourceMutant": identity,
+            }
+        )
+    return rows
+
+
 def build_files(repo: Path) -> dict[str, bytes]:
     repo = repo.resolve(strict=True)
     normative = _read_pinned(repo, NORMATIVE_INPUTS)
@@ -151,24 +180,7 @@ def build_files(repo: Path) -> dict[str, bytes]:
             invalid.append(row)
         traces.append({"expected": witness["expected"], "id": identity})
 
-    mutation_rows = []
-    for mutant in mutants["mutants"]:
-        identity = mutant["id"]
-        expected_detector = SUPPLEMENTAL_MUTANTS.get(identity)
-        if expected_detector is not None and mutant["detector"] != expected_detector:
-            raise ValueError(f"supplemental detector mismatch: {identity}")
-        mutation_rows.append(
-            {
-                "coverageClass": (
-                    "FROZEN_SUPPLEMENTAL" if identity in SUPPLEMENTAL_MUTANTS
-                    else "CORPUS_WITNESS"
-                ),
-                "detector": mutant["detector"],
-                "id": identity,
-                "requirement": mutant["requirement"],
-                "sourceMutant": identity,
-            }
-        )
+    mutation_rows = _build_mutation_rows(inventory, mutants)
 
     documents: dict[str, dict[str, Any]] = {
         CORPUS_PATHS[1]: {"schema": "styx.ss0.corpus.valid-session-vectors.v1", "vectors": valid},

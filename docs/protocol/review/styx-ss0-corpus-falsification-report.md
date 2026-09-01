@@ -50,7 +50,9 @@ it does not execute either reader and cannot consume reader output.
 4. The frozen source runner kills all 44 source mutants. All 44 mutate the
    Python reference reader; this increment makes no JavaScript mutation-
    sensitivity claim. The corpus mutation registry maps exactly 41 of them to
-   corpus witnesses and preserves three frozen supplemental detectors.
+   corpus witnesses and preserves three frozen supplemental detectors. The
+   generator verifies both sides of that partition structurally: every corpus
+   detector is an inventory witness and no supplemental detector is one.
 5. All 28 literal corpus-data mutants are killed by their named detector owner;
    the reader-stream and report-provenance negative controls cannot pass.
 6. The scope guard re-fetches Issue #293, its ratification and the K11-SS
@@ -81,15 +83,18 @@ reference before running either gate:
 
 ```bash
 git fetch --no-tags origin refs/pull/286/head
-git cat-file -e bd9a06c7f7299a798105a71894934c25643ba78e^{commit}
-git cat-file -e c8430b4b57ff69a070ae4bc3a60b1a232c25df24^{commit}
+git cat-file -e bd9a06f08131c6fcd4edbaa1e0eeae38d8e28eb5^{commit}
+git cat-file -e c8430b2fbcb4bd9d0668e5877210d0244ff8bf81^{commit}
 ```
 
 The repository-wide `tools/protocol-phase-exit` suite is outside Issue #293's
 allowed paths and was already stale at Base: three of its 24 tests failed there.
 The candidate has four failures because that excluded suite also expects new
 audit-table rows for this increment. This is recorded as inherited/out-of-scope
-evidence, not converted into a green skip or silently repaired here.
+evidence, not converted into a green skip or silently repaired here. Ratified
+Issue #293 acceptance criterion 11 explicitly owns this exclusion and the 3-to-4
+delta; the integration human gate must consider that disposition rather than
+treating it as an executor-created test waiver.
 
 ## Mechanical result and remaining gates
 

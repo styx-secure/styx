@@ -70,7 +70,7 @@ DATA_MUTATIONS = (
 DATA_MUTATION_IDS = tuple(identity for identity, _ in DATA_MUTATIONS)
 DETECTOR_OWNER = {
     **{identity: "validate_corpus.py" for identity in DATA_MUTATION_IDS[:26]},
-    "CDM-027": "run_mutations.py",
+    "CDM-027": "canonical_report.py",
     "CDM-028": "replay_corpus.py",
 }
 
