@@ -267,7 +267,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
 
     nodes = list(walk(schema))
     references = [node["$ref"] for _, node in nodes if isinstance(node, dict) and "$ref" in node]
-    require(len(references) == 261, f"ref count drift: {len(references)}")
+    require(len(references) == 262, f"ref count drift: {len(references)}")
     for reference in references:
         resolve(schema, reference)
     definitions = validate_definition_closure(schema)
@@ -344,6 +344,38 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     require(len(structural["rules"]) == 23, "structural family drift")
     require(sum(row["expectedCount"] for row in structural["rules"]) == 1400, "structural count drift")
     require(structural["derivedCounts"] == {"structuralRuleFamilies": 23, "structuralExecutionInstances": 1400}, "structural derived-count drift")
+    structural_by_id = {row["id"]: row for row in structural["rules"]}
+    keyword_rules = {
+        "type": "STR-TYPE-MISMATCH",
+        "$ref": "STR-REF-TARGET-CONSTRAINT",
+        "pattern": "STR-PATTERN-MISMATCH",
+    }
+    for keyword, rule_id in keyword_rules.items():
+        pointers = {
+            pointer + "/" + escape_pointer(keyword)
+            for pointer, node in nodes
+            if isinstance(node, dict) and keyword in node
+        }
+        row = structural_by_id[rule_id]
+        require(
+            row["sourceCount"] == row["expectedCount"] == len(pointers)
+            and row["sourceSetSha256"] == digest_lines(pointers),
+            f"structural source binding drift: {rule_id}",
+        )
+    all_of_arms = {
+        f"{pointer}/allOf/{index}"
+        for pointer, node in nodes
+        if isinstance(node, dict) and isinstance(node.get("allOf"), list)
+        for index in range(len(node["allOf"]))
+    }
+    all_of_rule = structural_by_id["STR-ALL-OF-BRANCH-CONSTRAINT"]
+    require(
+        all_of_rule["sourceCount"]
+        == all_of_rule["expectedCount"]
+        == len(all_of_arms)
+        and all_of_rule["sourceSetSha256"] == digest_lines(all_of_arms),
+        "structural source binding drift: STR-ALL-OF-BRANCH-CONSTRAINT",
+    )
     conditional_rules = [
         row
         for row in structural["rules"]
@@ -417,17 +449,17 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     axes = load("APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json")
     validate_terminal_path_bindings(schema, axes)
     semantic_ids = [row["id"] for row in semantics["rules"]]
-    require(len(semantic_ids) == len(set(semantic_ids)) == 66, "semantic family drift")
+    require(len(semantic_ids) == len(set(semantic_ids)) == 68, "semantic family drift")
     require(
-        set(semantic_ids) == {f"ACV-{index:03d}" for index in range(1, 67)},
+        set(semantic_ids) == {f"ACV-{index:03d}" for index in range(1, 69)},
         "semantic rule-id set drift",
     )
     for field in ("scenario", "mutant"):
         values = [row[field] for row in semantics["rules"]]
-        require(len(values) == len(set(values)) == 66, f"semantic {field} drift")
+        require(len(values) == len(set(values)) == 68, f"semantic {field} drift")
     axis_ids = [row["id"] for row in axes["rules"]]
-    require(set(axis_ids) == set(semantic_ids) and len(axis_ids) == 66, "semantic axis relation drift")
-    require(sum(row["expectedCount"] for row in axes["rules"]) == 4831, "semantic execution count drift")
+    require(set(axis_ids) == set(semantic_ids) and len(axis_ids) == 68, "semantic axis relation drift")
+    require(sum(row["expectedCount"] for row in axes["rules"]) == 4850, "semantic execution count drift")
     require(axes["unresolvedAxes"] == [], "unresolved semantic axes")
     phases = load("APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json")
     require(
@@ -443,7 +475,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         phases.get("fixedCountsBeforeSeedPartition", {}).get(
             "totalSemanticExecutionInstances"
         )
-        == 4831,
+        == 4850,
         "execution-phase total drift",
     )
     acv066_phase = next(
@@ -460,12 +492,71 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         },
         "ACV-066 execution-phase drift",
     )
+    phase_by_id = {row["id"]: row for row in phases.get("overrides", [])}
     require(
-        phases.get("fixedCountsBeforeSeedPartition", {}).get(
-            "POST_OUTPUT_MUTATION"
-        )
-        == 3620,
-        "post-output mutation count drift",
+        phase_by_id.get("ACV-043")
+        == {
+            "id": "ACV-043",
+            "partition": "BY_RELATION_ROW_REACHABILITY",
+            "relation": [
+                {
+                    "reachability": "REACHABLE",
+                    "phase": "BLIND_INPUT_EXECUTION",
+                    "expectedCount": 13,
+                },
+                {
+                    "reachability": "RESERVED_UNREACHABLE_V0",
+                    "phase": "POST_OUTPUT_MUTATION",
+                    "expectedCount": 1,
+                },
+            ],
+        }
+        and phase_by_id.get("ACV-044")
+        == {
+            "id": "ACV-044",
+            "partition": "BY_RELATION_ROW_REACHABILITY",
+            "relation": [
+                {
+                    "reachability": "REACHABLE",
+                    "phase": "BLIND_INPUT_EXECUTION",
+                    "expectedCount": 15,
+                },
+                {
+                    "reachability": "RESERVED_UNREACHABLE_V0",
+                    "phase": "POST_OUTPUT_MUTATION",
+                    "expectedCount": 1,
+                },
+            ],
+        },
+        "reason/stage reachability phase partition drift",
+    )
+    require(
+        phase_by_id.get("ACV-067")
+        == {
+            "id": "ACV-067",
+            "partition": "ALL_INSTANCES",
+            "phase": "BLIND_INPUT_EXECUTION",
+            "expectedCount": 1,
+        }
+        and phase_by_id.get("ACV-068")
+        == {
+            "id": "ACV-068",
+            "partition": "ALL_INSTANCES",
+            "phase": "BLIND_INPUT_EXECUTION",
+            "expectedCount": 17,
+        },
+        "signature execution-phase drift",
+    )
+    require(
+        phases.get("fixedCountsBeforeSeedPartition")
+        == {
+            "BLIND_INPUT_EXECUTION": 500,
+            "POST_OUTPUT_MUTATION": 3622,
+            "VALIDATOR_SELF_TEST": 26,
+            "ACV048PendingCarrierPartition": 702,
+            "totalSemanticExecutionInstances": 4850,
+        },
+        "execution-phase count drift",
     )
     custom_occurrences = {
         pointer.lstrip("/").replace("/", ".") + "." + key
@@ -476,6 +567,14 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     }
     require(custom_occurrences == set(semantics["customKeywordCoverage"]), "custom keyword coverage drift")
     require(set(semantics["customKeywordCoverage"].values()) <= set(semantic_ids), "custom keyword owner drift")
+    acv050_rule = next(row for row in semantics["rules"] if row["id"] == "ACV-050")
+    acv050_axis = next(row for row in axes["rules"] if row["id"] == "ACV-050")
+    require(
+        acv050_rule["parameters"] == {"ruleCount": "68"}
+        and acv050_axis["mappedOccurrenceCount"] == len(custom_occurrences) == 25
+        and acv050_axis["expectedCount"] == len(custom_occurrences) + 1 == 26,
+        "ACV-050 exact-registry binding drift",
+    )
 
     relations = load("APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json")
     relation_counts = {
@@ -483,6 +582,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         "candidateEvaluationPrimaryRelationV0": 25,
         "transcriptReasonStageRelationV0": 14,
         "genesisReasonStageRelationV0": 16,
+        "signatureVerificationPathRelationV0": 17,
     }
     for field, count in relation_counts.items():
         rows = relations[field]
@@ -537,6 +637,102 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
             "mutant": "M-ACI-FABRICATE-REFERENCE-MISMATCH",
         },
         "ACV-066 rule drift",
+    )
+    acv067 = next(row for row in semantics["rules"] if row["id"] == "ACV-067")
+    require(
+        acv067
+        == {
+            "id": "ACV-067",
+            "owners": ["K", "O08", "O14"],
+            "targets": ["$defs.SignatureHex"],
+            "rule": "HEX_OCTETS_LIMIT_BEFORE_DECODE",
+            "parameters": {"dimension": "SIGNATURE_OCTETS"},
+            "scenario": "ACI-SIGNATURE-O08-BOUNDARY",
+            "mutant": "M-ACI-SIGNATURE-LIMIT-AFTER-DECODE",
+        },
+        "ACV-067 rule drift",
+    )
+    acv068 = next(row for row in semantics["rules"] if row["id"] == "ACV-068")
+    require(
+        acv068
+        == {
+            "id": "ACV-068",
+            "owners": ["K", "O14", "O08", "INTERFACE"],
+            "targets": [
+                "$defs.ValidateTranscriptInputV0",
+                "$defs.EvaluateGenesisInputV0",
+                "$defs.TranscriptObservationV0",
+                "$defs.ValidateTranscriptResultV0",
+                "$defs.EvaluateGenesisResultV0",
+            ],
+            "rule": "SIGNATURE_VERIFICATION_EXACT_PATH_RELATION",
+            "parameters": {
+                "relation": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#signatureVerificationPathRelationV0",
+                "relationRowCount": "17",
+                "signatureLengthGateFirst": True,
+                "standaloneKeyApplicationOnly": True,
+                "genesisKeySource": "PARSED_TRANSCRIPT_ONLY",
+                "standaloneAuthorityEffect": "NONE",
+            },
+            "scenario": "ACI-SIGNATURE-VERIFICATION-PATH",
+            "mutant": "M-ACI-SIGNATURE-PATH-RELATION",
+        },
+        "ACV-068 rule drift",
+    )
+    signature_paths = relations["signatureVerificationPathRelationV0"]
+    required_signature_keys = {
+        "id",
+        "operation",
+        "candidateKind",
+        "keySource",
+        "signatureLengthClass",
+        "keyState",
+        "signatureState",
+        "resultMapping",
+        "signatureObservation",
+        "backendInvocations",
+        "authorityEffect",
+    }
+    require(
+        [row["id"] for row in signature_paths]
+        == [f"SVP-{index:03d}" for index in range(1, 18)]
+        and all(set(row) == required_signature_keys for row in signature_paths)
+        and all(row["authorityEffect"] == "NONE" for row in signature_paths)
+        and all(row["backendInvocations"] in {0, 1} for row in signature_paths),
+        "signature path relation shape drift",
+    )
+    require(
+        sum(row["operation"] == "VALIDATE_TRANSCRIPT" for row in signature_paths)
+        == 12
+        and sum(row["operation"] == "EVALUATE_GENESIS" for row in signature_paths)
+        == 5
+        and sum(row["signatureLengthClass"] == "SHORT_0_TO_63" for row in signature_paths)
+        == 4
+        and sum(row["backendInvocations"] == 1 for row in signature_paths)
+        == 6,
+        "signature path relation cardinality drift",
+    )
+    require(
+        all(
+            row["backendInvocations"] == 0
+            for row in signature_paths
+            if row["signatureLengthClass"] == "SHORT_0_TO_63"
+            or row["keyState"] == "O14_POINT_GUARD_REJECTED"
+            or row["signatureState"] == "O14_RS_GUARD_REJECTED"
+        )
+        and all(
+            row["resultMapping"] == "TRS-012"
+            for row in signature_paths
+            if row["operation"] == "VALIDATE_TRANSCRIPT"
+            and row["signatureLengthClass"] == "SHORT_0_TO_63"
+        )
+        and all(
+            row["resultMapping"] == "GRS-012"
+            for row in signature_paths
+            if row["operation"] == "EVALUATE_GENESIS"
+            and row["signatureLengthClass"] == "SHORT_0_TO_63"
+        ),
+        "signature path ordering or short-signature mapping drift",
     )
 
     evidence_rejections = set(schema["$defs"]["EvidenceUpdateRejectionV0"]["enum"])
@@ -609,19 +805,20 @@ def validate_manifest() -> None:
         "inlineObjectSchemas": 5,
         "properties": 307,
         "directlyRequiredProperties": 306,
-        "customKeywordOccurrences": 24,
+        "customKeywordOccurrences": 25,
         "structuralRuleFamilies": 23,
         "structuralExecutionInstances": 1400,
         "oneOfOccurrences": 16,
         "oneOfArms": 54,
         "oneOfPairwiseDisjointnessRows": 93,
-        "semanticFamilies": 66,
-        "semanticExecutionInstances": 4831,
-        "totalExecutionInstances": 6231,
+        "semanticFamilies": 68,
+        "semanticExecutionInstances": 4850,
+        "totalExecutionInstances": 6250,
         "contentRelationRows": 23,
         "candidatePrimaryRelationRows": 25,
         "transcriptRelationRows": 14,
         "genesisRelationRows": 16,
+        "signatureVerificationPathRows": 17,
         "nativeDependencies": 63,
         "readOnlyNativeDependencies": 59,
         "seededExtensionNativeDependencies": 4,
@@ -655,7 +852,7 @@ def validate_documented_artifact_bindings() -> None:
             f"`{palette}`.",
             "`APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json`, SHA-256\n"
             f"`{one_of}`:",
-            "The 66-row instance-axis registry has no unresolved axis and has SHA-256\n"
+            "The 68-row instance-axis registry has no unresolved axis and has SHA-256\n"
             f"`{instance_axes}`.",
             "`APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256\n"
             f"`{execution_phases}`.",
@@ -759,9 +956,9 @@ def main() -> None:
     )
     validate_documented_artifact_bindings()
     print(
-        "PASS schemas=4 defs=114 refs=261 enums=35 oneOf=16 arms=54 "
+        "PASS schemas=4 defs=114 refs=262 enums=35 oneOf=16 arms=54 "
         "pairs=93 objects=78 properties=307 required=306 structural=1400 "
-        "semantic=4831 total=6231 F13=25 dependencies=63 provider_history=5 "
+        "semantic=4850 total=6250 F13=25 dependencies=63 provider_history=5 "
         "manifest=26 provider_live=" + ("PASS" if args.verify_provider else "NOT_RUN")
     )
 

@@ -1,9 +1,9 @@
 {
   "status": "PRE_RATIFICATION_CANDIDATE",
   "registryVersion": "APP-CORE-IFACE-0-EXECUTION-PHASES-V1",
-  "semanticRuleSetSha256": "b9c4ea3bdb3f61b8f7d759ad81ce57d5c5fa7e763aef26cc27fb47a2e5e25983",
+  "semanticRuleSetSha256": "0a8edd089f2aba63ed34cef080b32ac4a850d2d4c8b57535ad46713623d48e8f",
   "semanticRuleSetDigestEncoding": "ordered rule id plus LF",
-  "instanceAxisRegistrySha256": "192e81c48f5596b01bbbf35914443c6b61b212675127db96a52d597980faf815",
+  "instanceAxisRegistrySha256": "0e529cb583ab4879980f1a56b379787113812f65bdf2c162f7045d5695fd989f",
   "defaultPhase": "BLIND_INPUT_EXECUTION",
   "phaseRegistry": [
     "BLIND_INPUT_EXECUTION",
@@ -32,6 +32,38 @@
       "partition": "ALL_INSTANCES",
       "phase": "POST_OUTPUT_MUTATION",
       "expectedCount": 6
+    },
+    {
+      "id": "ACV-043",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 13
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "ACV-044",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 15
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 1
+        }
+      ]
     },
     {
       "id": "ACV-048",
@@ -66,14 +98,26 @@
       "partition": "ALL_INSTANCES",
       "phase": "POST_OUTPUT_MUTATION",
       "expectedCount": 3
+    },
+    {
+      "id": "ACV-067",
+      "partition": "ALL_INSTANCES",
+      "phase": "BLIND_INPUT_EXECUTION",
+      "expectedCount": 1
+    },
+    {
+      "id": "ACV-068",
+      "partition": "ALL_INSTANCES",
+      "phase": "BLIND_INPUT_EXECUTION",
+      "expectedCount": 17
     }
   ],
   "fixedCountsBeforeSeedPartition": {
-    "BLIND_INPUT_EXECUTION": 484,
-    "POST_OUTPUT_MUTATION": 3620,
-    "VALIDATOR_SELF_TEST": 25,
+    "BLIND_INPUT_EXECUTION": 500,
+    "POST_OUTPUT_MUTATION": 3622,
+    "VALIDATOR_SELF_TEST": 26,
     "ACV048PendingCarrierPartition": 702,
-    "totalSemanticExecutionInstances": 4831
+    "totalSemanticExecutionInstances": 4850
   },
   "rules": [
     "Every semantic instance belongs to exactly one phase.",

@@ -40,13 +40,13 @@
       "type": "string",
       "pattern": "^[0-9a-f]{64}$"
     },
-    "FixedHex64": {
-      "type": "string",
-      "pattern": "^[0-9a-f]{128}$"
-    },
     "EvenLowerHex": {
       "type": "string",
       "pattern": "^(?:[0-9a-f]{2})*$"
+    },
+    "SignatureHex": {
+      "allOf": [{ "$ref": "#/$defs/EvenLowerHex" }],
+      "x-styx-o08-limit": "SIGNATURE_OCTETS"
     },
     "TranscriptHex": {
       "allOf": [{ "$ref": "#/$defs/EvenLowerHex" }],
@@ -262,7 +262,7 @@
       "properties": {
         "objectKind": { "const": "GENESIS" },
         "transcriptHex": { "$ref": "#/$defs/TranscriptHex" },
-        "signatureHex": { "$ref": "#/$defs/FixedHex64" }
+        "signatureHex": { "$ref": "#/$defs/SignatureHex" }
       }
     },
     "ApplicationTranscriptCandidateV0": {
@@ -272,7 +272,7 @@
       "properties": {
         "objectKind": { "const": "APPLICATION_EVENT" },
         "transcriptHex": { "$ref": "#/$defs/TranscriptHex" },
-        "signatureHex": { "$ref": "#/$defs/FixedHex64" }
+        "signatureHex": { "$ref": "#/$defs/SignatureHex" }
       }
     },
     "StandaloneVerificationMaterialV0": {

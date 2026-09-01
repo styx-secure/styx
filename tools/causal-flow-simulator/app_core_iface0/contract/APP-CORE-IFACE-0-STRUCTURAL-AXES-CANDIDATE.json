@@ -2,9 +2,9 @@
   "status": "INCOMPLETE_PRE_RATIFICATION_CANDIDATE",
   "registryVersion": "APP-CORE-IFACE-0-STRUCTURAL-AXES-V1",
   "schema": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
-  "schemaSha256": "310e265ab2a1ab818b7200da24fc4019df45d639279b8e14c2e3f7cff434ece9",
+  "schemaSha256": "cb7d34f92ac71bb4f6dd724d8279917d1b481f027caba8c9546ca21e1b99ffd3",
   "oneOfDisjointnessRegistry": "APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json",
-  "oneOfDisjointnessRegistrySha256": "f65ef4f70bd082e769abbe08d397c56550edeb48f66a407d746808e56abea97b",
+  "oneOfDisjointnessRegistrySha256": "55d5ff0f519fcd9d429dbc009068b21dc611700879050b5b6c7dbc2f68b64b75",
   "perturbationPalette": "APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json",
   "perturbationPaletteSha256": "2fb0d6d55a86965624cd6fb0e077e72c10586eecb2e0c66562c0fa7006428620",
   "positiveCarrierInventorySchema": "APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json",
@@ -68,20 +68,20 @@
     {
       "id": "STR-TYPE-MISMATCH",
       "mode": "PER_TYPE_OCCURRENCE",
-      "sourceCount": 98,
-      "sourceSetSha256": "94363b8d03872df9f86f0ed2b1ea7740e8a5d61cf3bd05e2eccf702d74523ddb",
+      "sourceCount": 97,
+      "sourceSetSha256": "0399be5dd7ffd9d8f34a6db8de6800f63ac4dce68ba76dd9c45c8b0707de53f1",
       "perturbationKind": "REPLACE_WITH_WRONG_TYPE",
       "expectedDisposition": "REJECT",
-      "expectedCount": 98
+      "expectedCount": 97
     },
     {
       "id": "STR-REF-TARGET-CONSTRAINT",
       "mode": "PER_REF_OCCURRENCE",
-      "sourceCount": 261,
-      "sourceSetSha256": "24d3f1f5ee8ea31596b472dda5880a14378d60590d38128fbb4ffc92ac8cd8ce",
+      "sourceCount": 262,
+      "sourceSetSha256": "462dcfa454c91fe8ee14c1459200cf52d4004f8a2e2331225f5d3d865a64faa4",
       "perturbationKind": "VIOLATE_REFERENCED_SCHEMA",
       "expectedDisposition": "REJECT",
-      "expectedCount": 261
+      "expectedCount": 262
     },
     {
       "id": "STR-CONST-SUBSTITUTION",
@@ -104,11 +104,11 @@
     {
       "id": "STR-PATTERN-MISMATCH",
       "mode": "PER_PATTERN_OCCURRENCE",
-      "sourceCount": 4,
-      "sourceSetSha256": "7ba29b9b0f167ba9a924b421511f94765baaf27d2dc9513347b39176c66e09a1",
+      "sourceCount": 3,
+      "sourceSetSha256": "ed9c30ab315b69607c8ac884892ec8e240379e0999fe43beecc3f821eb9a60b4",
       "perturbationKind": "REPLACE_PATTERN_VALUE",
       "expectedDisposition": "REJECT",
-      "expectedCount": 4
+      "expectedCount": 3
     },
     {
       "id": "STR-MIN-LENGTH-UNDERFLOW",
@@ -203,11 +203,11 @@
     {
       "id": "STR-ALL-OF-BRANCH-CONSTRAINT",
       "mode": "PER_ALL_OF_ARM",
-      "sourceCount": 18,
-      "sourceSetSha256": "855abfaa6a6ebb5775b25d77d4f089821b0d69a5e5f945008aad8aec662ce4fd",
+      "sourceCount": 19,
+      "sourceSetSha256": "5868e604e3721dbf45aa5c3bff4dcb05adcb18aab3dcb6dcaf6fd746162af4ee",
       "perturbationKind": "VIOLATE_ALLOF_ARM",
       "expectedDisposition": "REJECT",
-      "expectedCount": 18
+      "expectedCount": 19
     },
     {
       "id": "STR-CONDITIONAL-BRANCH-MATRIX",

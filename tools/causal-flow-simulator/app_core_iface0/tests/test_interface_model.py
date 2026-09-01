@@ -19,9 +19,11 @@ from interface_model import (  # noqa: E402
     RequestRejected,
     SUPPORTED_OPERATIONS,
     SUPPORTED_PROFILE,
+    _load_pinned_c03_model,
     _validate_response_shape_and_relation,
     admit_canonical_request,
     describe_profile,
+    evaluate_signature_path,
     read_bounded_request,
     validate_response_before_release,
 )
@@ -216,6 +218,141 @@ class InterfaceModelTests(unittest.TestCase):
         )
         for arm in definitions["ValidateTranscriptInputV0"]["oneOf"]:
             self.assertNotIn("expectedReferenceHex", arm.get("properties", {}))
+
+    def test_signature_schema_and_o08_boundary_are_distinct(self) -> None:
+        definitions = self.authority.schema["$defs"]
+        signature = definitions["SignatureHex"]
+        self.assertEqual(signature["x-styx-o08-limit"], "SIGNATURE_OCTETS")
+        self.assertEqual(
+            signature["allOf"], [{"$ref": "#/$defs/EvenLowerHex"}]
+        )
+        candidate_validator = Draft202012Validator(
+            {
+                "$schema": self.authority.schema["$schema"],
+                "$ref": "#/$defs/ApplicationTranscriptCandidateV0",
+                "$defs": definitions,
+            }
+        )
+        base = {
+            "objectKind": "APPLICATION_EVENT",
+            "transcriptHex": "00",
+            "signatureHex": "",
+        }
+        self.assertTrue(candidate_validator.is_valid(base))
+        for malformed in ("0", "AA", "gg"):
+            self.assertFalse(
+                candidate_validator.is_valid({**base, "signatureHex": malformed})
+            )
+        with self.assertRaises(RequestRejected):
+            evaluate_signature_path(
+                self.authority,
+                operation="VALIDATE_TRANSCRIPT",
+                candidate_kind="APPLICATION_EVENT",
+                transcript=b"t",
+                signature=bytes(65),
+            )
+
+    def test_signature_path_relation_enforces_all_guard_boundaries(self) -> None:
+        backend = _load_pinned_c03_model(str(self.authority.repo_root))
+        transcript = b"app-core-signature-path"
+        key, signature = backend.ed25519_sign(bytes(range(32)), transcript)
+
+        short_without_key = evaluate_signature_path(
+            self.authority,
+            operation="VALIDATE_TRANSCRIPT",
+            candidate_kind="APPLICATION_EVENT",
+            transcript=transcript,
+            signature=b"",
+        )
+        self.assertEqual(short_without_key.relation_id, "SVP-001")
+        self.assertEqual(short_without_key.backend_invocations, 0)
+
+        no_key = evaluate_signature_path(
+            self.authority,
+            operation="VALIDATE_TRANSCRIPT",
+            candidate_kind="APPLICATION_EVENT",
+            transcript=transcript,
+            signature=signature,
+        )
+        self.assertEqual(no_key.relation_id, "SVP-002")
+        self.assertEqual(no_key.signature_observation, "NOT_EVALUATED")
+
+        short_with_key = evaluate_signature_path(
+            self.authority,
+            operation="VALIDATE_TRANSCRIPT",
+            candidate_kind="APPLICATION_EVENT",
+            transcript=transcript,
+            signature=signature[:-1],
+            standalone_verification_key=key,
+        )
+        self.assertEqual(short_with_key.relation_id, "SVP-003")
+
+        rejected_key = evaluate_signature_path(
+            self.authority,
+            operation="VALIDATE_TRANSCRIPT",
+            candidate_kind="APPLICATION_EVENT",
+            transcript=transcript,
+            signature=signature,
+            standalone_verification_key=bytes(32),
+        )
+        self.assertEqual(rejected_key.relation_id, "SVP-004")
+
+        rejected_rs = evaluate_signature_path(
+            self.authority,
+            operation="VALIDATE_TRANSCRIPT",
+            candidate_kind="APPLICATION_EVENT",
+            transcript=transcript,
+            signature=bytes(32) + bytes(32),
+            standalone_verification_key=key,
+        )
+        self.assertEqual(rejected_rs.relation_id, "SVP-005")
+
+        changed = signature[:32] + bytes([signature[32] ^ 1]) + signature[33:]
+        backend_rejected = evaluate_signature_path(
+            self.authority,
+            operation="VALIDATE_TRANSCRIPT",
+            candidate_kind="APPLICATION_EVENT",
+            transcript=transcript,
+            signature=changed,
+            standalone_verification_key=key,
+        )
+        self.assertEqual(backend_rejected.relation_id, "SVP-006")
+        self.assertEqual(backend_rejected.backend_invocations, 1)
+
+        accepted = evaluate_signature_path(
+            self.authority,
+            operation="VALIDATE_TRANSCRIPT",
+            candidate_kind="APPLICATION_EVENT",
+            transcript=transcript,
+            signature=signature,
+            standalone_verification_key=key,
+        )
+        self.assertEqual(accepted.relation_id, "SVP-007")
+        self.assertEqual(accepted.backend_invocations, 1)
+        self.assertEqual(accepted.signature_observation, "VALID")
+
+        genesis_invalid_key = evaluate_signature_path(
+            self.authority,
+            operation="VALIDATE_TRANSCRIPT",
+            candidate_kind="GENESIS",
+            transcript=transcript,
+            signature=signature,
+            parsed_genesis_root_key=bytes(32),
+        )
+        self.assertEqual(genesis_invalid_key.relation_id, "SVP-009")
+        self.assertEqual(genesis_invalid_key.result_mapping, "TRS-013")
+
+        genesis_accepted = evaluate_signature_path(
+            self.authority,
+            operation="EVALUATE_GENESIS",
+            candidate_kind="GENESIS",
+            transcript=transcript,
+            signature=signature,
+            parsed_genesis_root_key=key,
+        )
+        self.assertEqual(genesis_accepted.relation_id, "SVP-017")
+        self.assertEqual(genesis_accepted.result_mapping, "GRS-001_IF_ALL_REMAINING_GATES_PASS")
+        self.assertEqual(genesis_accepted.backend_invocations, 1)
 
     def test_independent_javascript_adapter_rejects_all_acv066_positions(self) -> None:
         completed = subprocess.run(

@@ -73,7 +73,7 @@ class Derivation:
         require(self.envelope.get("candidate_id") == "balanced", "unselected resource envelope")
         require(self.reachability.get("schemaSha256") == sha256(SCHEMA_PATH), "schema/reachability drift")
         require(self.reachability.get("rootCount") == 12, "carrier-root drift")
-        require(len(self.semantics.get("rules", [])) == 66, "semantic-rule drift")
+        require(len(self.semantics.get("rules", [])) == 68, "semantic-rule drift")
         self.limits = {
             name: int(row["selected_value"])
             for name, row in self.envelope["entries"].items()
@@ -293,8 +293,8 @@ class Derivation:
             return self._literal(scalar_overrides[use_site])
         if name == "FixedHex32":
             return self._fixed_hex(32)
-        if name == "FixedHex64":
-            return self._fixed_hex(64)
+        if name == "SignatureHex":
+            return self._fixed_hex(self.limits["SIGNATURE_OCTETS"])
         if name in {"U16Text", "U32Text", "U64Text"}:
             maximum = {"U16Text": "65535", "U32Text": "4294967295", "U64Text": "18446744073709551615"}[name]
             return self._literal(maximum)

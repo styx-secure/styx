@@ -7,6 +7,7 @@
     "$defs.U32Text.x-styx-unsigned-maximum": "ACV-002",
     "$defs.U64Text.x-styx-unsigned-maximum": "ACV-003",
     "$defs.TranscriptHex.x-styx-o08-limit": "ACV-004",
+    "$defs.SignatureHex.x-styx-o08-limit": "ACV-067",
     "$defs.ApTransitionBlockHex.x-styx-o08-limit": "ACV-005",
     "$defs.GenesisPolicyBlockHex.x-styx-o08-limit": "ACV-006",
     "$defs.ContentSegmentHex.x-styx-o08-limit": "ACV-007",
@@ -499,7 +500,7 @@
       "owners": ["INTERFACE"],
       "targets": ["$defs.InterfaceRequestV0", "$defs.InterfaceResponseV0"],
       "rule": "CUSTOM_KEYWORD_AND_CONSTRAINT_REGISTRY_EXACT_EQUALITY",
-      "parameters": { "ruleCount": "65" },
+      "parameters": { "ruleCount": "68" },
       "scenario": "ACI-UNKNOWN-CUSTOM-KEYWORD",
       "mutant": "M-ACI-IGNORE-SEMANTIC-CONSTRAINT"
     },
@@ -706,6 +707,37 @@
       },
       "scenario": "ACI-REFERENCE-MISMATCH-UNREACHABLE",
       "mutant": "M-ACI-FABRICATE-REFERENCE-MISMATCH"
+    },
+    {
+      "id": "ACV-067",
+      "owners": ["K", "O08", "O14"],
+      "targets": ["$defs.SignatureHex"],
+      "rule": "HEX_OCTETS_LIMIT_BEFORE_DECODE",
+      "parameters": { "dimension": "SIGNATURE_OCTETS" },
+      "scenario": "ACI-SIGNATURE-O08-BOUNDARY",
+      "mutant": "M-ACI-SIGNATURE-LIMIT-AFTER-DECODE"
+    },
+    {
+      "id": "ACV-068",
+      "owners": ["K", "O14", "O08", "INTERFACE"],
+      "targets": [
+        "$defs.ValidateTranscriptInputV0",
+        "$defs.EvaluateGenesisInputV0",
+        "$defs.TranscriptObservationV0",
+        "$defs.ValidateTranscriptResultV0",
+        "$defs.EvaluateGenesisResultV0"
+      ],
+      "rule": "SIGNATURE_VERIFICATION_EXACT_PATH_RELATION",
+      "parameters": {
+        "relation": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#signatureVerificationPathRelationV0",
+        "relationRowCount": "17",
+        "signatureLengthGateFirst": true,
+        "standaloneKeyApplicationOnly": true,
+        "genesisKeySource": "PARSED_TRANSCRIPT_ONLY",
+        "standaloneAuthorityEffect": "NONE"
+      },
+      "scenario": "ACI-SIGNATURE-VERIFICATION-PATH",
+      "mutant": "M-ACI-SIGNATURE-PATH-RELATION"
     }
   ]
 }

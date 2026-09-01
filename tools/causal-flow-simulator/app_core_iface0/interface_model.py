@@ -8,10 +8,14 @@ state, transport action, or product result.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import subprocess
+import sys
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
+from types import ModuleType
 from typing import Any, BinaryIO
 
 from jsonschema.validators import Draft202012Validator
@@ -58,6 +62,20 @@ class HarnessFailure(RuntimeError):
 
 
 @dataclass(frozen=True)
+class SignaturePathResult:
+    """One exact ACV-068 path observation.
+
+    This is conformance evidence only.  It is never a credential, authority
+    capability, acceptance decision, or persistence result.
+    """
+
+    relation_id: str
+    result_mapping: str
+    signature_observation: str
+    backend_invocations: int
+
+
+@dataclass(frozen=True)
 class NativeDependency:
     path: str
     sha256: str
@@ -76,6 +94,33 @@ def _read_json(path: Path) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
         raise InterfaceModelError(f"invalid JSON authority: {path}") from error
+
+
+@lru_cache(maxsize=1)
+def _load_pinned_c03_model(repo_root: str) -> ModuleType:
+    """Load the Base-pinned C0.3 Ed25519 evidence backend.
+
+    The APP-core model owns the O-14 guards and calls the backend exactly once
+    only after those guards pass.  Loading this module does not import any
+    product cryptography or make it runtime authority.
+    """
+
+    path = Path(repo_root) / "tools/causal-flow-simulator/c03/corpus_model.py"
+    name = "_styx_app_core_pinned_c03_model"
+    existing = sys.modules.get(name)
+    if existing is not None:
+        return existing
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise HarnessFailure("pinned C0.3 backend cannot be loaded")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(name, None)
+        raise
+    return module
 
 
 def _dependency_rows(contract: Path) -> tuple[NativeDependency, ...]:
@@ -285,6 +330,144 @@ class ContractAuthority:
             "profile": dict(SUPPORTED_PROFILE),
             "supportedOperations": list(SUPPORTED_OPERATIONS),
         }
+
+
+def _prime_order_point(module: ModuleType, encoded: bytes) -> bool:
+    """Return whether one canonical Ed25519 encoding has exact prime order."""
+
+    try:
+        point = module._ed_decode(encoded)
+    except module.ProtocolError:
+        return False
+    identity = (0, 1)
+    return point != identity and module._ed_mul(module._L, point) == identity
+
+
+def _signature_relation_row(
+    authority: ContractAuthority, relation_id: str
+) -> dict[str, Any]:
+    relations = _read_json(
+        authority.contract / "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"
+    )
+    rows = relations.get("signatureVerificationPathRelationV0")
+    if not isinstance(rows, list) or len(rows) != 17:
+        raise HarnessFailure("signature path relation is not the ratified 17-row set")
+    matches = [row for row in rows if row.get("id") == relation_id]
+    if len(matches) != 1:
+        raise HarnessFailure("signature path relation identity drift")
+    return matches[0]
+
+
+def evaluate_signature_path(
+    authority: ContractAuthority,
+    *,
+    operation: str,
+    candidate_kind: str,
+    transcript: bytes,
+    signature: bytes,
+    standalone_verification_key: bytes | None = None,
+    parsed_genesis_root_key: bytes | None = None,
+) -> SignaturePathResult:
+    """Evaluate the exact bounded ACV-068 signature path.
+
+    The length gate is first.  Standalone key material is accepted only for an
+    application candidate under ``VALIDATE_TRANSCRIPT`` and never creates AP
+    authority.  Genesis verification uses only the key parsed from the
+    transcript.  The pinned backend is invoked exactly once after the selected
+    O-14 point and scalar guards pass.
+    """
+
+    if operation not in {"VALIDATE_TRANSCRIPT", "EVALUATE_GENESIS"}:
+        raise HarnessFailure("signature path received an unsupported operation")
+    if candidate_kind not in {"APPLICATION_EVENT", "GENESIS"}:
+        raise HarnessFailure("signature path received an unsupported candidate kind")
+    if operation == "EVALUATE_GENESIS" and candidate_kind != "GENESIS":
+        raise HarnessFailure("genesis evaluation requires a genesis candidate")
+    if not all(isinstance(value, bytes) for value in (transcript, signature)):
+        raise HarnessFailure("signature path inputs must already be bounded bytes")
+    if standalone_verification_key is not None and not isinstance(
+        standalone_verification_key, bytes
+    ):
+        raise HarnessFailure("standalone verification key must be bytes")
+    if parsed_genesis_root_key is not None and not isinstance(
+        parsed_genesis_root_key, bytes
+    ):
+        raise HarnessFailure("parsed genesis root key must be bytes")
+
+    if candidate_kind == "GENESIS":
+        if standalone_verification_key is not None:
+            raise HarnessFailure("genesis cannot consume a standalone verification key")
+        key_source = "PARSED_TRANSCRIPT_ROOT"
+        key = parsed_genesis_root_key
+        short_relation = "SVP-008" if operation == "VALIDATE_TRANSCRIPT" else "SVP-013"
+    elif standalone_verification_key is None:
+        if parsed_genesis_root_key is not None:
+            raise HarnessFailure("application candidate cannot consume a genesis root key")
+        key_source = "NONE"
+        key = None
+        short_relation = "SVP-001"
+    else:
+        if parsed_genesis_root_key is not None:
+            raise HarnessFailure("application signature path has two key sources")
+        key_source = "STANDALONE"
+        key = standalone_verification_key
+        short_relation = "SVP-003"
+
+    if len(signature) < 64:
+        relation_id = short_relation
+        backend_invocations = 0
+    elif len(signature) > 64:
+        # ACV-067 rejects this during request admission, before ACV-068.
+        raise RequestRejected()
+    elif key_source == "NONE":
+        relation_id = "SVP-002"
+        backend_invocations = 0
+    else:
+        if key is None or len(key) != 32:
+            raise HarnessFailure("parsed signature key has an impossible length")
+        backend = _load_pinned_c03_model(str(authority.repo_root))
+        if not _prime_order_point(backend, key):
+            relation_id = (
+                "SVP-004"
+                if key_source == "STANDALONE"
+                else ("SVP-009" if operation == "VALIDATE_TRANSCRIPT" else "SVP-014")
+            )
+            backend_invocations = 0
+        else:
+            scalar = int.from_bytes(signature[32:], "little")
+            if not _prime_order_point(backend, signature[:32]) or scalar >= backend._L:
+                relation_id = (
+                    "SVP-005"
+                    if key_source == "STANDALONE"
+                    else ("SVP-010" if operation == "VALIDATE_TRANSCRIPT" else "SVP-015")
+                )
+                backend_invocations = 0
+            else:
+                accepted = backend.ed25519_verify(key, signature, transcript)
+                backend_invocations = 1
+                if key_source == "STANDALONE":
+                    relation_id = "SVP-007" if accepted else "SVP-006"
+                elif operation == "VALIDATE_TRANSCRIPT":
+                    relation_id = "SVP-012" if accepted else "SVP-011"
+                else:
+                    relation_id = "SVP-017" if accepted else "SVP-016"
+
+    row = _signature_relation_row(authority, relation_id)
+    expected = {
+        "operation": operation,
+        "candidateKind": candidate_kind,
+        "keySource": key_source,
+        "backendInvocations": backend_invocations,
+        "authorityEffect": "NONE",
+    }
+    if any(row.get(name) != value for name, value in expected.items()):
+        raise HarnessFailure("computed signature path violates the ratified relation")
+    return SignaturePathResult(
+        relation_id=relation_id,
+        result_mapping=row["resultMapping"],
+        signature_observation=row["signatureObservation"],
+        backend_invocations=backend_invocations,
+    )
 
 
 def describe_profile(

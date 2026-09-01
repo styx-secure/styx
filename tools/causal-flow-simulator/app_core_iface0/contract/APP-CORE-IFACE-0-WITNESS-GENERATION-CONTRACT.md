@@ -42,7 +42,7 @@ the carrier bytes produced from exact Base
 
 Carrier eligibility is derived from the exact reachability relation in
 `APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json`, SHA-256
-`b6bf05336c46d9e23c78adb9e283b3b05c0238730aa38d3d78337ffdf05afc6f`.
+`9e5c58034eab93b9e4e8539ac61ce733821a52a6dd0414e55b1333b8b5434286`.
 The relation is regenerated from the schema by
 `derive_app_core_carrier_reachability.py`, SHA-256
 `a349019ca273d88016f45b09e40afe6fcee71654617e230ef1dcebde9a5c92b4`.

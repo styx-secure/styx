@@ -53,7 +53,7 @@
     { "id": "ACV-047", "mode": "PER_RECURSIVE_TERMINAL_PATH", "axisSources": ["ProfileDescriptorV0.authorityPins"], "expectedCount": 7 },
     { "id": "ACV-048", "mode": "PER_OBJECT_SCHEMA_X_LITERAL_VALUE", "axisSources": ["PROPERTY_BEARING_OBJECT_SCHEMA_POINTERS"], "objectSchemaCount": 78, "objectSchemaPointerSetSha256": "79b260376a95d0c2e78e05b9ae347cf826c7dcb6b4b947acf977844390f2d20e", "values": ["CEREMONY_CAPABILITY_OR_VERDICT", "O11_MUTATION_OR_COMMIT", "SS_MEMBERSHIP_AS_AUTHORITY", "SS_DECRYPTION_AS_AUTHORITY", "TRANSPORT_IDENTITY_AS_AUTHORITY", "TRANSPORT_ORDER_AS_CAUSALITY", "TRANSPORT_ACK_AS_COMMIT", "TRUSTED_SNAPSHOT_OR_DELTA_DIGEST", "CALLER_RUNTIME_CAPABILITY"], "familyCount": 9, "expectedCount": 702 },
     { "id": "ACV-049", "mode": "PER_RESPONSE_STRING_PATH_X_PARAMETER_FAMILY", "axisSources": ["InterfaceResponseV0"], "pathCount": 359, "pathSha256": "1e76b649c0c5e74f9ae3b49ab88a6e443dfc3be396be04fe07a7703886057c90", "familyCount": 10, "expectedCount": 3590 },
-    { "id": "ACV-050", "mode": "PER_CUSTOM_KEYWORD_OCCURRENCE_PLUS_UNKNOWN", "mappedOccurrenceCount": 24, "expectedCount": 25 },
+    { "id": "ACV-050", "mode": "PER_CUSTOM_KEYWORD_OCCURRENCE_PLUS_UNKNOWN", "mappedOccurrenceCount": 25, "expectedCount": 26 },
     { "id": "ACV-051", "mode": "PER_TARGET", "expectedCount": 10 },
     { "id": "ACV-052", "mode": "PER_LITERAL_RELATION_ROW", "axisSources": ["APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#candidateEvaluationPrimaryRelationV0"], "expectedCount": 25 },
     { "id": "ACV-053", "mode": "SINGLE_RELATION", "expectedCount": 1 },
@@ -69,7 +69,9 @@
     { "id": "ACV-063", "mode": "SINGLE", "expectedCount": 1 },
     { "id": "ACV-064", "mode": "SINGLE_RELATION", "expectedCount": 1 },
     { "id": "ACV-065", "mode": "PER_LITERAL_VALUE", "values": ["CONTENT_NONIDENTICAL_OVERLAP", "OPENING_DIFFERENT_VALUE"], "expectedCount": 2 },
-    { "id": "ACV-066", "mode": "PER_LITERAL_VALUE", "values": ["VALIDATE_TRANSCRIPT_REASON", "EVALUATE_GENESIS_REASON", "REFERENCE_VERIFICATION_REJECTED"], "expectedCount": 3 }
+    { "id": "ACV-066", "mode": "PER_LITERAL_VALUE", "values": ["VALIDATE_TRANSCRIPT_REASON", "EVALUATE_GENESIS_REASON", "REFERENCE_VERIFICATION_REJECTED"], "expectedCount": 3 },
+    { "id": "ACV-067", "mode": "SINGLE", "expectedCount": 1 },
+    { "id": "ACV-068", "mode": "PER_LITERAL_RELATION_ROW", "axisSources": ["APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#signatureVerificationPathRelationV0"], "expectedCount": 17 }
   ],
   "unresolvedAxes": []
 }

@@ -2,7 +2,7 @@
   "status": "PRE_RATIFICATION_CANDIDATE",
   "registryVersion": "APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-V1",
   "schema": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
-  "schemaSha256": "310e265ab2a1ab818b7200da24fc4019df45d639279b8e14c2e3f7cff434ece9",
+  "schemaSha256": "cb7d34f92ac71bb4f6dd724d8279917d1b481f027caba8c9546ca21e1b99ffd3",
   "pairCount": 93,
   "pairSetSha256": "9e99136e0d831758c7a6b9f74649e3fbc3d617ea37e05c17be39c9e70ace465f",
   "algorithm": [

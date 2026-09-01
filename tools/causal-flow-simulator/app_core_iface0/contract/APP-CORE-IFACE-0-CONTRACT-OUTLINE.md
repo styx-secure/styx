@@ -218,7 +218,7 @@ The current pre-ratification candidate is mechanically finite:
 
 - `APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json`: 78 property-bearing object
   schemas (73 direct definitions plus five inline/union-arm objects), 307
-  properties and 24 named custom-keyword occurrences;
+  properties and 25 named custom-keyword occurrences;
 - `APP-CORE-IFACE-0-OWNERSHIP-CANDIDATE.json`: exact ownership/source coverage
   for all 78 object schemas and 307 properties;
 - `APP-CORE-IFACE-0-STRUCTURAL-AXES-CANDIDATE.json`: 23 closed structural rule
@@ -248,19 +248,19 @@ The current pre-ratification candidate is mechanically finite:
 - `APP-CORE-IFACE-0-WITNESS-GENERATION-CONTRACT.md`: deterministic carrier
   selection, instance numbering, perturbation isolation and two-reader
   generation rules for the 78 seed rows and 1,400 witnesses;
-- `APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json`: 66 closed semantic
+- `APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json`: 68 closed semantic
   rule families;
 - `APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json`: the literal expansion axes
-  for those 66 families;
+  for those 68 families;
 - `APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`: the closed partition
   between blind-input execution, post-output mutation and validator self-test;
 - `APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json`: 23 content-axis,
-  25 F13 primary/axis, 14 transcript reason/stage and 16 genesis reason/stage
-  rows; and
+  25 F13 primary/axis, 14 transcript reason/stage, 16 genesis reason/stage and
+  17 signature-verification path rows; and
 - `APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json`: the closed schema
   for the post-implementation 78-row canonical positive-carrier relation; and
-- `APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md`: 23 structural and 66
-  semantic rule families, deriving exactly 6,231 structural-plus-semantic
+- `APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md`: 23 structural and 68
+  semantic rule families, deriving exactly 6,250 structural-plus-semantic
   execution instances after both axis registries are expanded.
 
 These files are candidates, not authority. The executable Issue must bind their
@@ -338,7 +338,7 @@ ratified.
    evidence serialization is accepted as a future O-11/RS binding.
 10. Existing C0.3 corpus bytes, clean-room reader and historical evidence remain
     byte-identical.
-11. The hostile inventory is closed and equals the ratified 6,231-instance
+11. The hostile inventory is closed and equals the ratified 6,250-instance
     relation; every instance has a distinct required perturbation, assertion,
     observation and detector, all required mutants are killed, and all negative
     controls fail for the intended reason. A single aggregate pass cannot

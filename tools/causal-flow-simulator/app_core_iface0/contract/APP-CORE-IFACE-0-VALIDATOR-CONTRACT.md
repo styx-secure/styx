@@ -175,6 +175,36 @@ Dispatch exactly one operation:
 No operation mutates its input, writes storage, accesses a network, commits a
 state, returns a secret or exposes an internal exception.
 
+#### V5.1 — bounded signature carrier and exact verification paths
+
+`SignatureHex` is lowercase even hex bounded by the O-08
+`SIGNATURE_OCTETS = 64` maximum. Zero through 64 decoded octets are admitted at
+the resource boundary. More than 64 octets, odd-length hex, uppercase hex or
+non-hex rejects the request with zero response before decoding, allocation,
+key guards or backend invocation. O-14 then rejects every admitted signature
+shorter than 64 octets as `SIGNATURE_LENGTH_MISMATCH` at
+`SIGNATURE_VERIFICATION`; only exactly 64 octets may proceed.
+
+The exact 17-row `signatureVerificationPathRelationV0` is normative. Within
+`SIGNATURE_VERIFICATION`, evaluation order is signature length, key
+admissibility when a key exists, O-14 R/S and subgroup guards, then exactly one
+pinned backend invocation. A failure stops the path and no later guard runs.
+
+An application candidate without standalone verification material produces
+`signatureVerification = NOT_EVALUATED` after an exact-length signature and
+never consults an ambient key. An application standalone key is observation
+material only: even `VALID` proves possession for the exact bytes and cannot
+populate credential, authority, alias, admission, accepted-context or durable
+state. Genesis obtains its key only from the parsed canonical transcript. A
+structurally valid but inadmissible genesis root key maps to
+`SIGNATURE_INVALID`, never to the application-only standalone-key reason.
+
+TRS-011 and GRS-011 remain reserved outputs. Their ACV-043/044 relation-row
+membership is exercised only by post-output mutation; ACV-066 separately and
+solely rejects those otherwise row-valid outputs as unreachable. Relation
+membership and reachability are distinct detectors and cannot satisfy one
+another.
+
 ### V6 — response reconstruction and canonical serialization
 
 Construct the response discriminator/profile from the validated operation and
@@ -266,11 +296,12 @@ provider-bound exact bytes.
 
 ## Remaining pre-ratification closures
 
-The schema, 66-row semantic-instance-axis registry, 23-row content-axis,
-25-row F13 primary/axis, 14-row transcript and 16-row genesis relations are now
+The schema, 68-row semantic-instance-axis registry, 23-row content-axis,
+25-row F13 primary/axis, 14-row transcript, 16-row genesis and 17-row signature
+verification-path relations are now
 literal working candidates. The relation expands the nine ACV-048 forbidden
 families through all 78 property-bearing object schemas. Together with the
-closed structural-keyword relation it derives 6,231 structural-plus-semantic
+closed structural-keyword relation it derives 6,250 structural-plus-semantic
 execution instances. They all require independent review and human ratification.
 
 Two literal execution outputs cannot exist before the repository increment
