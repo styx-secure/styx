@@ -1,0 +1,196 @@
+{
+  "status": "PRE_RATIFICATION_CANDIDATE",
+  "paletteVersion": "APP-CORE-IFACE-0-PERTURBATION-PALETTE-V2",
+  "selectionRule": "For the owning perturbation recipe, enumerate candidates in the literal order defined here and select the first candidate that preserves every sibling constraint and satisfies the isolationMode proof. Exhaustion fails closed.",
+  "jsonValueOrder": [
+    null,
+    false,
+    true,
+    0,
+    1,
+    "",
+    "0",
+    "1",
+    "a",
+    "f",
+    "g",
+    "A",
+    "00",
+    [],
+    {}
+  ],
+  "stringRecipeOrder": {
+    "literalOrder": [
+      "",
+      "0",
+      "1",
+      "a",
+      "f",
+      "g",
+      "A",
+      "-",
+      "00"
+    ],
+    "repeatCharacterOrder": [
+      "0",
+      "a",
+      "f",
+      "g",
+      "A",
+      "-"
+    ],
+    "repeatLengthOrder": [
+      0,
+      1,
+      2,
+      4,
+      5,
+      6,
+      9,
+      10,
+      11,
+      19,
+      20,
+      21,
+      31,
+      32,
+      33,
+      63,
+      64,
+      65,
+      127,
+      128,
+      129
+    ]
+  },
+  "integerRecipeOrder": [
+    0,
+    1,
+    2,
+    -1,
+    65535,
+    65536,
+    4294967295,
+    4294967296
+  ],
+  "unknownPropertyNameOrder": [
+    "__styx_unknown__",
+    "_unknown",
+    "unknown"
+  ],
+  "recipes": [
+    {
+      "perturbationKind": "REMOVE_REQUIRED_PROPERTY",
+      "candidateOperations": ["REMOVE_TARGET_MEMBER"]
+    },
+    {
+      "perturbationKind": "REPLACE_WITH_NULL",
+      "candidateOperations": ["SET_TARGET_TO_NULL"]
+    },
+    {
+      "perturbationKind": "DUPLICATE_RAW_JSON_MEMBER",
+      "candidateOperations": ["APPEND_DUPLICATE_TARGET_MEMBER_WITH_IDENTICAL_CANONICAL_VALUE_BEFORE_CLOSING_BRACE"]
+    },
+    {
+      "perturbationKind": "INSERT_UNKNOWN_PROPERTY",
+      "candidateOperations": ["INSERT_FIRST_NAME_ABSENT_FROM_DECLARED_PROPERTIES_WITH_NULL_VALUE"]
+    },
+    {
+      "perturbationKind": "REPLACE_WITH_WRONG_TYPE",
+      "candidateOperations": ["FIRST_JSON_VALUE_WITH_TYPE_OUTSIDE_TARGET_ALLOWED_TYPE_SET"]
+    },
+    {
+      "perturbationKind": "VIOLATE_REFERENCED_SCHEMA",
+      "candidateOperations": ["FIRST_NEGATIVE_RECIPE_FOR_LEXICOGRAPHICALLY_FIRST_REACHABLE_TERMINAL_CONSTRAINT_UNDER_REF"]
+    },
+    {
+      "perturbationKind": "REPLACE_CONST_VALUE",
+      "candidateOperations": ["FIRST_JSON_VALUE_OF_SAME_TYPE_NOT_EQUAL_TO_CONST_AND_SATISFYING_SIBLING_CONSTRAINTS"]
+    },
+    {
+      "perturbationKind": "REPLACE_ENUM_VALUE",
+      "candidateOperations": ["FIRST_JSON_VALUE_OF_AN_ENUM_MEMBER_TYPE_NOT_IN_ENUM_AND_SATISFYING_SIBLING_CONSTRAINTS"]
+    },
+    {
+      "perturbationKind": "REPLACE_PATTERN_VALUE",
+      "candidateOperations": ["FIRST_STRING_RECIPE_NOT_MATCHING_PATTERN_AND_SATISFYING_SIBLING_CONSTRAINTS"]
+    },
+    {
+      "perturbationKind": "UNDERFLOW_MIN_LENGTH",
+      "candidateOperations": ["REPEAT_0_EXACTLY_MIN_LENGTH_MINUS_ONE"]
+    },
+    {
+      "perturbationKind": "OVERFLOW_MAX_LENGTH",
+      "candidateOperations": ["REPEAT_0_EXACTLY_MAX_LENGTH_PLUS_ONE"]
+    },
+    {
+      "perturbationKind": "UNDERFLOW_MIN_ITEMS",
+      "candidateOperations": ["TAKE_FIRST_MIN_ITEMS_MINUS_ONE_ITEMS_FROM_VALID_ARRAY"]
+    },
+    {
+      "perturbationKind": "DUPLICATE_ARRAY_ITEM",
+      "candidateOperations": ["APPEND_CANONICAL_COPY_OF_LEXICOGRAPHICALLY_FIRST_ITEM"]
+    },
+    {
+      "perturbationKind": "VIOLATE_ARRAY_ITEM_SCHEMA",
+      "candidateOperations": ["REPLACE_LEXICOGRAPHICALLY_FIRST_ITEM_WITH_FIRST_NEGATIVE_ITEM_RECIPE"]
+    },
+    {
+      "perturbationKind": "CONSTRUCT_NO_ONEOF_ARM",
+      "candidateOperations": ["FIRST_BOUNDED_DEEP_SINGLE_TARGET_REPLACEMENT_MATCHING_ZERO_LITERAL_ARMS"]
+    },
+    {
+      "perturbationKind": "POSITIVE_ONEOF_ARM",
+      "candidateOperations": ["FIRST_ELIGIBLE_POSITIVE_CARRIER_MATCHING_EXACTLY_THE_SELECTED_ARM"]
+    },
+    {
+      "perturbationKind": "CONSTRUCT_NO_ANYOF_ARM",
+      "candidateOperations": ["FIRST_BOUNDED_DEEP_SINGLE_TARGET_REPLACEMENT_MATCHING_ZERO_LITERAL_ARMS"]
+    },
+    {
+      "perturbationKind": "POSITIVE_ANYOF_ARM",
+      "candidateOperations": ["FIRST_ELIGIBLE_POSITIVE_CARRIER_MATCHING_THE_SELECTED_ARM_AND_NO_OTHER_ARM"]
+    },
+    {
+      "perturbationKind": "POSITIVE_ALL_ANYOF_ARMS",
+      "candidateOperations": ["FIRST_ELIGIBLE_POSITIVE_CARRIER_MATCHING_EVERY_LITERAL_ARM"]
+    },
+    {
+      "perturbationKind": "VIOLATE_ALLOF_ARM",
+      "candidateOperations": ["FIRST_NEGATIVE_RECIPE_FOR_SELECTED_ARM_THAT_SATISFIES_ALL_OTHER_ARMS"]
+    },
+    {
+      "perturbationKind": "CONDITIONAL_MATRIX_ROW",
+      "candidateOperations": [
+        "BUILD_EXACT_LITERAL_RELATION_ROW_WITH_ACTIVE_PREDICATE_AND_SELECTED_BRANCH",
+        "BUILD_EXACT_LITERAL_SKIP_ROW_WITH_INACTIVE_PREDICATE_AND_NO_SELECTED_BRANCH"
+      ],
+      "operationSelectionRule": "Rows containing _SKIPS_ and ending in _ACCEPTS use the inactive-predicate operation; every other conditional row uses the active-predicate operation. Any other row shape fails closed."
+    },
+    {
+      "perturbationKind": "MATCH_FORBIDDEN_NOT_SUBSCHEMA",
+      "candidateOperations": ["FIRST_JSON_VALUE_MATCHING_NOT_SUBSCHEMA_AND_SATISFYING_SIBLING_CONSTRAINTS"]
+    },
+    {
+      "perturbationKind": "EXCEED_MAX_PROPERTIES",
+      "candidateOperations": ["INSERT_MAX_PROPERTIES_PLUS_ONE_DISTINCT_UNKNOWN_MEMBERS_IN_NAME_ORDER"],
+      "isolationMode": "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST"
+    }
+  ],
+  "boundedDeepReplacement": {
+    "maximumDepth": 12,
+    "pathOrder": "canonical JSON Pointer UTF-8 order",
+    "valueOrder": "jsonValueOrder then stringRecipeOrder then integerRecipeOrder",
+    "noProportionalAllocation": true
+  },
+  "exactCounts": {
+    "perturbationRecipes": 23,
+    "jsonValues": 15,
+    "literalStrings": 9,
+    "repeatCharacters": 6,
+    "repeatLengths": 21,
+    "integers": 8,
+    "unknownPropertyNames": 3,
+    "redundantOccurrenceSelfTests": 1
+  }
+}

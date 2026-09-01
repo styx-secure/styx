@@ -1,0 +1,563 @@
+{
+  "status": "PRE_RATIFICATION_CANDIDATE",
+  "schema": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
+  "ownership": "APP-CORE-IFACE-0-OWNERSHIP-CANDIDATE.json",
+  "customKeywordCoverage": {
+    "$defs.U16Text.x-styx-unsigned-maximum": "ACV-001",
+    "$defs.U32Text.x-styx-unsigned-maximum": "ACV-002",
+    "$defs.U64Text.x-styx-unsigned-maximum": "ACV-003",
+    "$defs.TranscriptHex.x-styx-o08-limit": "ACV-004",
+    "$defs.ApTransitionBlockHex.x-styx-o08-limit": "ACV-005",
+    "$defs.GenesisPolicyBlockHex.x-styx-o08-limit": "ACV-006",
+    "$defs.ContentSegmentHex.x-styx-o08-limit": "ACV-007",
+    "$defs.ContentMaterialEvidenceV0.properties.segments.x-styx-canonical-order": "ACV-026",
+    "$defs.EvidenceProjectionV0.properties.contentMaterial.x-styx-canonical-order": "ACV-051",
+    "$defs.EvidenceProjectionV0.properties.openingMaterial.x-styx-canonical-order": "ACV-051",
+    "$defs.ApplicationEventProjectionV0.properties.causalParentReferences.x-styx-canonical-order": "ACV-023",
+    "$defs.CanonicalReferenceArray.x-styx-canonical-order": "ACV-051",
+    "$defs.ContextProjectionV0.properties.records.x-styx-canonical-order": "ACV-051",
+    "$defs.ContextProjectionV0.properties.recordOutcomes.x-styx-canonical-order": "ACV-051",
+    "$defs.ContextProjectionV0.properties.credentialBindings.x-styx-canonical-order": "ACV-051",
+    "$defs.ContextProjectionV0.properties.aliasGroups.x-styx-canonical-order": "ACV-029",
+    "$defs.ContextProjectionV0.properties.reductionStandings.x-styx-canonical-order": "ACV-051",
+    "$defs.ContextProjectionV0.properties.eventAuthority.x-styx-canonical-order": "ACV-051",
+    "$defs.ContextProjectionV0.properties.forkJoins.x-styx-canonical-order": "ACV-051",
+    "$defs.ContextProjectionV0.properties.contentStates.x-styx-canonical-order": "ACV-051",
+    "$defs.ProposedContextSnapshotV0.properties.admittedCandidates.x-styx-canonical-order": "ACV-020",
+    "$defs.InterfaceLimitsV0.x-styx-derived-from-resource-envelope": "ACV-046",
+    "$defs.ProfileDescriptorV0.properties.authorityPins.x-styx-literal-values-from-ratified-contract": "ACV-047",
+    "$defs.ReplayContextInputV0.properties.candidates.x-styx-canonical-order": "ACV-020"
+  },
+  "rules": [
+    {
+      "id": "ACV-001",
+      "owners": ["INTERFACE"],
+      "targets": ["$defs.U16Text"],
+      "rule": "CANONICAL_DECIMAL_RANGE",
+      "parameters": { "minimum": "0", "maximum": "65535" },
+      "scenario": "ACI-U16-MAX-PLUS-ONE",
+      "mutant": "M-ACI-U16-LENGTH-ONLY"
+    },
+    {
+      "id": "ACV-002",
+      "owners": ["INTERFACE"],
+      "targets": ["$defs.U32Text"],
+      "rule": "CANONICAL_DECIMAL_RANGE",
+      "parameters": { "minimum": "0", "maximum": "4294967295" },
+      "scenario": "ACI-U32-MAX-PLUS-ONE",
+      "mutant": "M-ACI-U32-LENGTH-ONLY"
+    },
+    {
+      "id": "ACV-003",
+      "owners": ["INTERFACE"],
+      "targets": ["$defs.U64Text"],
+      "rule": "CANONICAL_DECIMAL_RANGE",
+      "parameters": { "minimum": "0", "maximum": "18446744073709551615" },
+      "scenario": "ACI-U64-MAX-PLUS-ONE",
+      "mutant": "M-ACI-U64-HOST-NUMBER"
+    },
+    {
+      "id": "ACV-004",
+      "owners": ["K", "O08"],
+      "targets": ["$defs.GenesisTranscriptCandidateV0.transcriptHex", "$defs.ApplicationTranscriptCandidateV0.transcriptHex"],
+      "rule": "HEX_OCTETS_LIMIT_BEFORE_DECODE",
+      "parameters": { "dimension": "FRAMING_OBJECT_OCTETS" },
+      "scenario": "ACI-TRANSCRIPT-LIMIT-HEADER-ONLY",
+      "mutant": "M-ACI-TRANSCRIPT-LIMIT-AFTER-DECODE"
+    },
+    {
+      "id": "ACV-005",
+      "owners": ["AP_PROFILE", "K", "O08"],
+      "targets": ["$defs.ApplicationEventProjectionV0.apTransitionBlockHex"],
+      "rule": "HEX_OCTETS_LIMIT_BEFORE_DECODE",
+      "parameters": { "dimension": "AP_TRANSITION_BLOCK_OCTETS" },
+      "scenario": "ACI-AP-BLOCK-LIMIT",
+      "mutant": "M-ACI-AP-BLOCK-UNBOUNDED"
+    },
+    {
+      "id": "ACV-006",
+      "owners": ["AP", "K", "O08"],
+      "targets": ["$defs.GenesisProjectionV0.initialAuthorityPolicyBlockHex"],
+      "rule": "NONEMPTY_HEX_OCTETS_LIMIT_BEFORE_DECODE",
+      "parameters": { "dimension": "GENESIS_POLICY_OCTETS" },
+      "scenario": "ACI-GENESIS-POLICY-EMPTY-OR-OVERSIZE",
+      "mutant": "M-ACI-GENESIS-POLICY-EMPTY-ACCEPTED"
+    },
+    {
+      "id": "ACV-007",
+      "owners": ["O04", "O08"],
+      "targets": ["$defs.ContentSegmentV0.octetsHex"],
+      "rule": "NONEMPTY_HEX_OCTETS_LIMIT_BEFORE_DECODE",
+      "parameters": { "dimension": "CHUNK_OCTETS" },
+      "scenario": "ACI-CONTENT-SEGMENT-OVERSIZE",
+      "mutant": "M-ACI-CONTENT-SEGMENT-AFTER-ALLOCATION"
+    },
+    {
+      "id": "ACV-008",
+      "owners": ["O04", "O08"],
+      "targets": ["$defs.ContentMaterialEvidenceV0.segments"],
+      "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+      "parameters": { "dimension": "CHUNKS_PER_CONTENT" },
+      "scenario": "ACI-TOO-MANY-CONTENT-SEGMENTS",
+      "mutant": "M-ACI-SEGMENT-COUNT-AFTER-HASH"
+    },
+    {
+      "id": "ACV-009",
+      "owners": ["K", "O08"],
+      "targets": ["$defs.ProposedContextSnapshotV0.admittedCandidates", "$defs.ContextProjectionV0.records", "$defs.ContextProjectionV0.recordOutcomes", "$defs.ContextProjectionV0.contentStates"],
+      "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+      "parameters": { "dimension": "RECORDS" },
+      "scenario": "ACI-RECORD-COUNT-OVER-BOUND",
+      "mutant": "M-ACI-RECORD-COUNT-POST-REPLAY"
+    },
+    {
+      "id": "ACV-010",
+      "owners": ["K", "AP", "O08"],
+      "targets": ["$defs.ContextProjectionV0.credentialBindings"],
+      "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+      "parameters": { "dimension": "CREDENTIALS" },
+      "scenario": "ACI-CREDENTIAL-COUNT-OVER-BOUND",
+      "mutant": "M-ACI-CREDENTIAL-BOUND-IGNORED"
+    },
+    {
+      "id": "ACV-011",
+      "owners": ["K", "O08"],
+      "targets": ["$defs.ApplicationEventProjectionV0.causalParentReferences"],
+      "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+      "parameters": { "dimension": "ACTIVE_FRONTIER" },
+      "scenario": "ACI-FRONTIER-COUNT-OVER-BOUND",
+      "mutant": "M-ACI-FRONTIER-BOUND-IGNORED"
+    },
+    {
+      "id": "ACV-012",
+      "owners": ["O04", "O08"],
+      "targets": ["$defs.EvidenceProjectionV0.contentMaterial", "$defs.EvidenceProjectionV0.openingMaterial"],
+      "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+      "parameters": { "dimension": "RECORDS" },
+      "scenario": "ACI-EVIDENCE-OBJECT-COUNT-OVER-BOUND",
+      "mutant": "M-ACI-EVIDENCE-COUNT-UNBOUNDED"
+    },
+    {
+      "id": "ACV-013",
+      "owners": ["INTERFACE"],
+      "targets": ["$defs.InterfaceRequestV0", "$defs.InterfaceResponseV0"],
+      "rule": "CLOSED_TAGGED_UNION_BY_OPERATION",
+      "parameters": { "operationCount": "6" },
+      "scenario": "ACI-OPERATION-SHAPE-MISMATCH",
+      "mutant": "M-ACI-INFER-OPERATION-BY-SHAPE"
+    },
+    {
+      "id": "ACV-014",
+      "owners": ["INTERFACE"],
+      "targets": ["$defs.InterfaceRequestV0"],
+      "rule": "INVALID_REQUEST_HAS_NO_INTERFACE_RESPONSE",
+      "parameters": { "harnessDisposition": "REQUEST_REJECTED" },
+      "scenario": "ACI-UNKNOWN-OPERATION-NO-ECHO",
+      "mutant": "M-ACI-GENERIC-ERROR-RESPONSE"
+    },
+    {
+      "id": "ACV-015",
+      "owners": ["INTERFACE", "O03"],
+      "targets": ["$defs.InterfaceResponseV0"],
+      "rule": "RECONSTRUCT_AND_COMPARE_RESPONSE_DISCRIMINATORS",
+      "parameters": { "fields": ["interfaceVersion", "operation", "profile"] },
+      "scenario": "ACI-RESPONSE-PROFILE-SUBSTITUTION",
+      "mutant": "M-ACI-ECHO-UNVALIDATED-PROFILE"
+    },
+    {
+      "id": "ACV-016",
+      "owners": ["O03", "K"],
+      "targets": ["$defs.ExactProfileSelectorV0", "$defs.O03TupleV0", "$defs.ApplicationEventProjectionV0"],
+      "rule": "EXACT_O03_EQUALITY",
+      "parameters": { "members": ["styxProtocolVersion", "applicationProfileId", "applicationProfileVersion"] },
+      "scenario": "ACI-CROSS-PROFILE-TRANSCRIPT",
+      "mutant": "M-ACI-TRUST-CALLER-PROFILE"
+    },
+    {
+      "id": "ACV-017",
+      "owners": ["O03", "K"],
+      "targets": ["$defs.EvaluateGenesisInputV0.expectedContextIdentifierHex", "$defs.GenesisProjectionV0.context"],
+      "rule": "EXPECTED_CONTEXT_EQUALS_AUTHENTICATED_CONTEXT",
+      "parameters": {},
+      "scenario": "ACI-CROSS-CONTEXT-GENESIS",
+      "mutant": "M-ACI-GENESIS-CONTEXT-FROM-CALLER"
+    },
+    {
+      "id": "ACV-018",
+      "owners": ["K", "O03", "AP"],
+      "targets": ["$defs.ProposedGenesisSnapshotV0"],
+      "rule": "RECOMPUTE_GENESIS_PROJECTION_FIELD_BY_FIELD",
+      "parameters": { "digestSubstitutionForbidden": true },
+      "scenario": "ACI-TAMPERED-GENESIS-PROJECTION",
+      "mutant": "M-ACI-TRUST-GENESIS-SNAPSHOT"
+    },
+    {
+      "id": "ACV-019",
+      "owners": ["K", "AP", "O04"],
+      "targets": ["$defs.ProposedContextSnapshotV0"],
+      "rule": "REPLAY_RAW_CLOSURE_AND_COMPARE_PROJECTION_FIELD_BY_FIELD",
+      "parameters": { "digestSubstitutionForbidden": true },
+      "scenario": "ACI-TAMPERED-CONTEXT-PROJECTION",
+      "mutant": "M-ACI-TRUST-CONTEXT-SNAPSHOT"
+    },
+    {
+      "id": "ACV-020",
+      "owners": ["K"],
+      "targets": ["$defs.ProposedContextSnapshotV0.admittedCandidates"],
+      "rule": "DERIVE_REFERENCES_THEN_REQUIRE_CANONICAL_ORDER_AND_UNIQUENESS",
+      "parameters": {},
+      "scenario": "ACI-ARRIVAL-ORDER-CANDIDATES",
+      "mutant": "M-ACI-PRESERVE-ARRIVAL-ORDER"
+    },
+    {
+      "id": "ACV-021",
+      "owners": ["K", "AP", "O10"],
+      "targets": ["$defs.ReplayContextResultV0"],
+      "rule": "REPLAY_ALL_OR_TERMINAL_CANONICAL_FIRST_FAILURE",
+      "parameters": {},
+      "scenario": "ACI-REPLAY-SILENTLY-DROPS-INVALID",
+      "mutant": "M-ACI-REPLAY-READY-AFTER-DROP"
+    },
+    {
+      "id": "ACV-022",
+      "owners": ["K"],
+      "targets": ["$defs.ApplicationEventProjectionV0.directPredecessorReferenceHex", "$defs.ApplicationEventProjectionV0.authorSequence"],
+      "rule": "PREDECESSOR_PRESENT_IFF_SEQUENCE_NONZERO",
+      "parameters": {},
+      "scenario": "ACI-SEQUENCE-PREDECESSOR-MISMATCH",
+      "mutant": "M-ACI-PREDECESSOR-OPTIONAL"
+    },
+    {
+      "id": "ACV-023",
+      "owners": ["K", "AP"],
+      "targets": ["$defs.ApplicationEventProjectionV0.causalParentReferences", "$defs.ApplicationEventProjectionV0.directPredecessorReferenceHex"],
+      "rule": "SORTED_UNIQUE_MAXIMAL_ANTICHAIN_EXCLUDING_PREDECESSOR",
+      "parameters": {},
+      "scenario": "ACI-NONMAXIMAL-CAUSAL-PARENTS",
+      "mutant": "M-ACI-ACCEPT-NONMAXIMAL-PARENT-SET"
+    },
+    {
+      "id": "ACV-024",
+      "owners": ["K"],
+      "targets": ["$defs.ApplicationEventProjectionV0.eventRole", "$defs.ApplicationEventProjectionV0.roleTail"],
+      "rule": "ROLE_TAIL_EXACT_UNION",
+      "parameters": {},
+      "scenario": "ACI-ROLE-TAIL-CROSS-ARM",
+      "mutant": "M-ACI-ROLE-TAIL-INFERRED-BY-FIELDS"
+    },
+    {
+      "id": "ACV-025",
+      "owners": ["K", "O04"],
+      "targets": ["$defs.ContentDescriptorProjectionV0", "$defs.ChunkGeometryProjectionV0"],
+      "rule": "CONTENT_DESCRIPTOR_CANONICAL_GEOMETRY",
+      "parameters": { "predicateCount": "7" },
+      "scenario": "ACI-CONTENT-GEOMETRY-PREDICATE-FAIL",
+      "mutant": "M-ACI-SKIP-CONTENT-GEOMETRY-PREDICATE"
+    },
+    {
+      "id": "ACV-026",
+      "owners": ["O04"],
+      "targets": ["$defs.ContentMaterialEvidenceV0.segments"],
+      "rule": "SEGMENTS_SORTED_NONOVERLAPPING_AND_EXACTLY_BOUND",
+      "parameters": {},
+      "scenario": "ACI-PARTIAL-OVERLAPPING-SEGMENTS",
+      "mutant": "M-ACI-MERGE-OVERLAPPING-SEGMENTS"
+    },
+    {
+      "id": "ACV-027",
+      "owners": ["O04", "K", "AP", "O10"],
+      "targets": ["$defs.ContentStateProjectionV0"],
+      "rule": "CONTENT_AXES_LEGAL_COMBINATION",
+      "parameters": {
+        "axisCount": "5",
+        "relation": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#contentAxisLegalRelationV0",
+        "relationRowCount": "23"
+      },
+      "scenario": "ACI-ILLEGAL-CONTENT-AXIS-COMBINATION",
+      "mutant": "M-ACI-COLLAPSE-CONTENT-AXES"
+    },
+    {
+      "id": "ACV-028",
+      "owners": ["K", "AP"],
+      "targets": ["$defs.CredentialBindingProjectionV0"],
+      "rule": "CREDENTIAL_BINDING_EXACT_ORIGIN_UNION",
+      "parameters": {},
+      "scenario": "ACI-GENESIS-BINDING-WITH-GRANT-FIELDS",
+      "mutant": "M-ACI-CREDENTIAL-ORIGIN-OPTIONAL"
+    },
+    {
+      "id": "ACV-029",
+      "owners": ["K", "AP"],
+      "targets": ["$defs.ContextProjectionV0.aliasGroups"],
+      "rule": "CANONICAL_DISJOINT_ALIAS_GROUPS_MIN_TWO",
+      "parameters": { "perCredentialDimension": "ALIASES_PER_CREDENTIAL" },
+      "scenario": "ACI-OVERLAPPING-ALIAS-GROUPS",
+      "mutant": "M-ACI-ALIAS-MEMBER-IN-TWO-GROUPS"
+    },
+    {
+      "id": "ACV-030",
+      "owners": ["AP"],
+      "targets": ["$defs.AuthorityProjectionV0"],
+      "rule": "AUTHORITY_AVAILABLE_OR_UNAVAILABLE_EXACT_UNION",
+      "parameters": {},
+      "scenario": "ACI-UNAVAILABLE-WITH-EMPTY-SETS",
+      "mutant": "M-ACI-UNAVAILABLE-AS-AVAILABLE-EMPTY"
+    },
+    {
+      "id": "ACV-031",
+      "owners": ["K"],
+      "targets": ["$defs.ContextProjectionV0.checkpointEvidenceReferences"],
+      "rule": "LITERAL_EMPTY_V0",
+      "parameters": {},
+      "scenario": "ACI-CHECKPOINT-EVIDENCE-SMUGGLING",
+      "mutant": "M-ACI-ACCEPT-CHECKPOINT-REFERENCE"
+    },
+    {
+      "id": "ACV-032",
+      "owners": ["K", "AP"],
+      "targets": ["$defs.ContextProjectionV0.replayDependencyReferences"],
+      "rule": "EXACT_LIVE_REPLAY_DEPENDENCY_SET",
+      "parameters": {},
+      "scenario": "ACI-OMIT-LIVE-REPLAY-DEPENDENCY",
+      "mutant": "M-ACI-CHECKPOINT-SUBSTITUTES-LIVE-DEPENDENCY"
+    },
+    {
+      "id": "ACV-033",
+      "owners": ["O10", "K", "AP"],
+      "targets": ["$defs.CandidateEvaluationResultV0"],
+      "rule": "EXACT_F13_25_ROW_RELATION",
+      "parameters": {
+        "primaryCount": "25",
+        "retainNewCount": "10",
+        "relation": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#candidateEvaluationPrimaryRelationV0",
+        "relationRowCount": "25"
+      },
+      "scenario": "F13-EXACT-RELATION",
+      "mutant": "M-F13-INFER-RETENTION-FROM-AP-EFFECT"
+    },
+    {
+      "id": "ACV-034",
+      "owners": ["K", "AP", "O04"],
+      "targets": ["$defs.EvaluateCandidateInputV0", "$defs.CandidateEvaluationReadyV0"],
+      "rule": "INCREMENTAL_SUCCESSOR_EQUALS_FULL_REPLAY",
+      "parameters": {},
+      "scenario": "ACI-CANDIDATE-INCREMENTAL-FULL-REPLAY-EQUALITY",
+      "mutant": "M-ACI-INCREMENTAL-SKIPS-FORK-REPLAY"
+    },
+    {
+      "id": "ACV-035",
+      "owners": ["O04", "INTERFACE"],
+      "targets": ["$defs.EvidenceAdditionSetV0"],
+      "rule": "NONEMPTY_MONOTONE_ADDITION_ONLY",
+      "parameters": {},
+      "scenario": "F16-EVIDENCE-REPLACEMENT",
+      "mutant": "M-F16-ALLOW-EVIDENCE-REPLACEMENT"
+    },
+    {
+      "id": "ACV-036",
+      "owners": ["O04", "K", "AP"],
+      "targets": ["$defs.EvaluateEvidenceUpdateInputV0", "$defs.EvidenceUpdateReadyV0"],
+      "rule": "EVIDENCE_SUCCESSOR_EQUALS_FULL_REPLAY",
+      "parameters": {},
+      "scenario": "F16-EVIDENCE-UPDATE-FULL-REPLAY-EQUALITY",
+      "mutant": "M-F16-UPDATE-ONE-RECORD-ONLY"
+    },
+    {
+      "id": "ACV-037",
+      "owners": ["O04", "INTERFACE"],
+      "targets": ["$defs.EvidenceUpdateResultV0"],
+      "rule": "EXACT_EVIDENCE_UPDATE_UNION_NO_K_RETENTION_NO_PRIMARY",
+      "parameters": { "arms": ["TERMINAL_REJECTED", "IDEMPOTENT_NO_CHANGE", "PROPOSAL_READY"] },
+      "scenario": "F16-EVIDENCE-UPDATE-PRIMARY-SMUGGLING",
+      "mutant": "M-F16-REUSE-CANDIDATE-RESULT"
+    },
+    {
+      "id": "ACV-038",
+      "owners": ["O04"],
+      "targets": ["$defs.EvidenceAdditionSetV0", "$defs.ProposedContextSnapshotV0.evidence"],
+      "rule": "ADDITION_REFERENCES_EXIST_IN_REVALIDATED_PRIOR",
+      "parameters": {},
+      "scenario": "F16-UNKNOWN-EVENT-EVIDENCE",
+      "mutant": "M-F16-ACCEPT-UNKNOWN-EVENT-EVIDENCE"
+    },
+    {
+      "id": "ACV-039",
+      "owners": ["O04"],
+      "targets": ["$defs.ContentMaterialEvidenceV0"],
+      "rule": "ZERO_LENGTH_PRESENT_DISTINCT_FROM_ABSENT",
+      "parameters": {},
+      "scenario": "F16-ZERO-LENGTH-VERSUS-ABSENT",
+      "mutant": "M-F16-COLLAPSE-ZERO-LENGTH-ABSENT"
+    },
+    {
+      "id": "ACV-040",
+      "owners": ["K"],
+      "targets": ["$defs.ValidateTranscriptInputV0"],
+      "rule": "STANDALONE_KEY_APPLICATION_ONLY_AND_NONAUTHORITATIVE",
+      "parameters": {},
+      "scenario": "ACI-GENESIS-STANDALONE-KEY",
+      "mutant": "M-ACI-STANDALONE-KEY-BINDS-CREDENTIAL"
+    },
+    {
+      "id": "ACV-041",
+      "owners": ["K", "AP"],
+      "targets": ["$defs.ReplayContextInputV0", "$defs.EvaluateCandidateInputV0"],
+      "rule": "REPLAY_KEY_ONLY_FROM_COMPLETE_CREDENTIAL_HISTORY",
+      "parameters": {},
+      "scenario": "ACI-REPLAY-STANDALONE-KEY-SMUGGLING",
+      "mutant": "M-ACI-REPLAY-USES-AMBIENT-KEY"
+    },
+    {
+      "id": "ACV-042",
+      "owners": ["K"],
+      "targets": ["$defs.TranscriptObservationV0"],
+      "rule": "ORDERED_OBSERVATION_REACHABILITY",
+      "parameters": { "geometryPredicateCount": "7" },
+      "scenario": "ACI-LATER-OBSERVATION-AFTER-EARLY-FAILURE",
+      "mutant": "M-ACI-EVALUATE-AFTER-FAILURE"
+    },
+    {
+      "id": "ACV-043",
+      "owners": ["INTERFACE", "K"],
+      "targets": ["$defs.ValidateTranscriptResultV0"],
+      "rule": "TRANSCRIPT_REASON_STAGE_EXACT_RELATION",
+      "parameters": {
+        "relation": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#transcriptReasonStageRelationV0",
+        "relationRowCount": "14"
+      },
+      "scenario": "ACI-TRANSCRIPT-REASON-WRONG-STAGE",
+      "mutant": "M-ACI-TRANSCRIPT-USES-O10-PRIMARY"
+    },
+    {
+      "id": "ACV-044",
+      "owners": ["INTERFACE", "K", "O03"],
+      "targets": ["$defs.EvaluateGenesisResultV0"],
+      "rule": "GENESIS_REASON_STAGE_EXACT_RELATION",
+      "parameters": {
+        "relation": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#genesisReasonStageRelationV0",
+        "relationRowCount": "16"
+      },
+      "scenario": "ACI-GENESIS-REASON-WRONG-STAGE",
+      "mutant": "M-ACI-GENESIS-USES-O10-PRIMARY"
+    },
+    {
+      "id": "ACV-045",
+      "owners": ["INTERFACE", "K", "AP", "O04", "O10"],
+      "targets": ["$defs.ReplayContextResultV0"],
+      "rule": "REPLAY_RESULT_ARMS_MUTUALLY_EXCLUSIVE",
+      "parameters": {},
+      "scenario": "ACI-REPLAY-INPUT-REASON-PLUS-O10-PRIMARY",
+      "mutant": "M-ACI-MERGE-REPLAY-TERMINAL-ARMS"
+    },
+    {
+      "id": "ACV-046",
+      "owners": ["O08", "INTERFACE"],
+      "targets": ["$defs.ProfileDescriptorV0.authorityPins", "$defs.ProfileDescriptorV0.interfaceLimits"],
+      "rule": "COMPARE_DESCRIPTOR_TO_PINNED_RESOURCE_ENVELOPE",
+      "parameters": { "projectedDimensionCount": "22" },
+      "scenario": "ACI-DESCRIPTOR-LIMIT-DRIFT",
+      "mutant": "M-ACI-DESCRIPTOR-RUNTIME-LIMIT"
+    },
+    {
+      "id": "ACV-047",
+      "owners": ["K", "O10", "INTERFACE"],
+      "targets": ["$defs.ProfileDescriptorV0.authorityPins"],
+      "rule": "COMPARE_DESCRIPTOR_TO_PINNED_TRANSCRIPT_AND_OUTCOME_ARTIFACTS",
+      "parameters": {},
+      "scenario": "ACI-DESCRIPTOR-NATIVE-PIN-DRIFT",
+      "mutant": "M-ACI-DESCRIPTOR-UNPINNED-NATIVE"
+    },
+    {
+      "id": "ACV-048",
+      "owners": ["INTERFACE"],
+      "targets": ["$defs.InterfaceRequestV0", "$defs.InterfaceResponseV0"],
+      "rule": "FORBID_AUTHORITY_RUNTIME_AND_CROSS_PLANE_FIELDS_RECURSIVELY",
+      "parameters": { "forbiddenFamiliesSource": "APP-CORE-IFACE-0-FIELD-REGISTRY.md" },
+      "scenario": "ACI-COMMIT-CAPABILITY-FIELD-SMUGGLING",
+      "mutant": "M-ACI-ALLOW-UNKNOWN-AUTHORITY-FIELD"
+    },
+    {
+      "id": "ACV-049",
+      "owners": ["INTERFACE"],
+      "targets": ["$defs.InterfaceResponseV0"],
+      "rule": "FORBID_RUNTIME_PROVENANCE_IN_EVERY_STRING_POSITION",
+      "parameters": { "families": ["PATH", "HOST", "USER", "PID", "TIMESTAMP", "DURATION", "ELAPSED", "ENVIRONMENT", "EXCEPTION", "STACK"] },
+      "scenario": "ACI-RUNTIME-PROVENANCE-EMBEDDED",
+      "mutant": "M-ACI-EMIT-RUNTIME-DIAGNOSTIC"
+    },
+    {
+      "id": "ACV-050",
+      "owners": ["INTERFACE"],
+      "targets": ["$defs.InterfaceRequestV0", "$defs.InterfaceResponseV0"],
+      "rule": "CUSTOM_KEYWORD_AND_CONSTRAINT_REGISTRY_EXACT_EQUALITY",
+      "parameters": { "ruleCount": "55" },
+      "scenario": "ACI-UNKNOWN-CUSTOM-KEYWORD",
+      "mutant": "M-ACI-IGNORE-SEMANTIC-CONSTRAINT"
+    },
+    {
+      "id": "ACV-051",
+      "owners": ["INTERFACE", "K", "AP", "O04"],
+      "targets": [
+        "$defs.EvidenceProjectionV0.contentMaterial",
+        "$defs.EvidenceProjectionV0.openingMaterial",
+        "$defs.CanonicalReferenceArray",
+        "$defs.ContextProjectionV0.records",
+        "$defs.ContextProjectionV0.recordOutcomes",
+        "$defs.ContextProjectionV0.credentialBindings",
+        "$defs.ContextProjectionV0.reductionStandings",
+        "$defs.ContextProjectionV0.eventAuthority",
+        "$defs.ContextProjectionV0.forkJoins",
+        "$defs.ContextProjectionV0.contentStates"
+      ],
+      "rule": "EXACT_CANONICAL_COLLECTION_ORDER",
+      "parameters": {},
+      "scenario": "ACI-CANONICAL-COLLECTION-PERMUTATION",
+      "mutant": "M-ACI-ACCEPT-PRESENTATION-ORDER"
+    },
+    {
+      "id": "ACV-052",
+      "owners": ["O08", "O10", "INTERFACE"],
+      "targets": ["$defs.CandidateEvaluationResultV0"],
+      "rule": "O10_S6_REACHABLE_ONLY_FOR_WOULD_BE_APPLIED",
+      "parameters": {
+        "relation": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#candidateEvaluationPrimaryRelationV0",
+        "relationRowCount": "25"
+      },
+      "scenario": "F14-S6-EXACT-REACHABILITY",
+      "mutant": "M-F14-FABRICATE-S6-FOR-NON-APPLIED"
+    },
+    {
+      "id": "ACV-053",
+      "owners": ["O07", "O08", "O10"],
+      "targets": ["$defs.CandidateEvaluationResultV0"],
+      "rule": "STALE_EVIDENCE_RESERVED_AND_UNREACHABLE_IN_V0",
+      "parameters": {
+        "primary": "STALE_EVIDENCE",
+        "checkpointReferences": "0",
+        "requiredReopenOwners": ["O07", "O08", "O10"]
+      },
+      "scenario": "F13-STALE-EVIDENCE-UNREACHABLE",
+      "mutant": "M-F13-EXERCISE-STALE-EVIDENCE-WITHOUT-CAPACITY-ACCOUNTING"
+    },
+    {
+      "id": "ACV-054",
+      "owners": ["O04", "INTERFACE"],
+      "targets": ["$defs.EvaluateEvidenceUpdateInputV0.prior"],
+      "rule": "EVIDENCE_UPDATE_PRIOR_IS_EXTENSIONAL_NOT_UPDATE_AUTHORITY",
+      "parameters": {
+        "attacks": ["OMITTED_PRIOR", "SUBSTITUTED_PRIOR", "STALE_PRIOR", "CROSS_CONTEXT_PRIOR"]
+      },
+      "scenario": "F16-PRIOR-AUTHORITY-SUBSTITUTION",
+      "mutant": "M-F16-TRUST-CALLER-SUPPLIED-PRIOR"
+    },
+    {
+      "id": "ACV-055",
+      "owners": ["O10", "INTERFACE"],
+      "targets": ["$defs.EvidenceUpdateRejectionV0", "$defs.PrimaryToken"],
+      "rule": "EVIDENCE_UPDATE_AND_O10_TOKEN_REGISTRIES_DISJOINT",
+      "parameters": {},
+      "scenario": "F16-CROSS-REGISTRY-TOKEN-ALIAS",
+      "mutant": "M-F16-REUSE-O10-PRIMARY-AS-UPDATE-REASON"
+    }
+  ]
+}

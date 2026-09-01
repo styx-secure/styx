@@ -1,0 +1,74 @@
+{
+  "status": "PRE_RATIFICATION_CANDIDATE",
+  "registryVersion": "APP-CORE-IFACE-0-EXECUTION-PHASES-V1",
+  "semanticRuleSetSha256": "0cfd301ecd853362cb232cf54441d361b3659d611429b2ec76cbdbfb5e3bcf23",
+  "semanticRuleSetDigestEncoding": "ordered rule id plus LF",
+  "instanceAxisRegistrySha256": "ee3abf45536a1fa2a96e00b95741c63dd78ebe68d36d1e916755c38f8c8e7baf",
+  "defaultPhase": "BLIND_INPUT_EXECUTION",
+  "phaseRegistry": [
+    "BLIND_INPUT_EXECUTION",
+    "POST_OUTPUT_MUTATION",
+    "VALIDATOR_SELF_TEST"
+  ],
+  "overrides": [
+    {
+      "id": "ACV-013",
+      "partition": "BY_AXIS_SOURCE_ROOT",
+      "relation": [
+        {
+          "axisSource": "InterfaceRequestV0",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 6
+        },
+        {
+          "axisSource": "InterfaceResponseV0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 6
+        }
+      ]
+    },
+    {
+      "id": "ACV-015",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 6
+    },
+    {
+      "id": "ACV-048",
+      "partition": "BY_SEED_CARRIER_DIRECTION_X_LITERAL_VALUE",
+      "requestCarrierPhase": "BLIND_INPUT_EXECUTION",
+      "responseCarrierPhase": "POST_OUTPUT_MUTATION",
+      "objectSchemaCount": 76,
+      "familyCount": 9,
+      "expectedCount": 684,
+      "exactPhaseCounts": "DERIVED_FROM_RATIFIED_SEED_REGISTRY"
+    },
+    {
+      "id": "ACV-049",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 3440
+    },
+    {
+      "id": "ACV-050",
+      "partition": "ALL_INSTANCES",
+      "phase": "VALIDATOR_SELF_TEST",
+      "expectedCount": 25
+    }
+  ],
+  "fixedCountsBeforeSeedPartition": {
+    "BLIND_INPUT_EXECUTION": 463,
+    "POST_OUTPUT_MUTATION": 3452,
+    "VALIDATOR_SELF_TEST": 25,
+    "ACV048PendingCarrierPartition": 684,
+    "totalSemanticExecutionInstances": 4624
+  },
+  "rules": [
+    "Every semantic instance belongs to exactly one phase.",
+    "The default applies only to rule IDs absent from overrides.",
+    "A response mutation is never disclosed as a blind expected result.",
+    "A validator self-test cannot satisfy an implementation behavior instance.",
+    "The populated 76-row seed registry must resolve the ACV-048 phase partition before ratification.",
+    "Phase counts, instance IDs and the complete instance-to-phase relation are exact-set evidence."
+  ]
+}

@@ -1,0 +1,157 @@
+{
+  "status": "PRE_RATIFICATION_CANDIDATE",
+  "schema": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
+  "rule": "Every property inherits its exact property-bearing object-schema entry. An exact property-name override replaces, rather than extends, the inherited owners and source. Direct $defs objects use definitions; nested and union-arm objects use inlineObjects keyed by canonical schema pointer. Object schemas without properties need no entry. Unknown objects, unknown override keys and uncovered properties fail closed.",
+  "ownerTokens": [
+    "INTERFACE",
+    "O03",
+    "K",
+    "AP",
+    "AP_PROFILE",
+    "O04",
+    "O08",
+    "O10"
+  ],
+  "sourceTokens": [
+    "INTERFACE_LITERAL",
+    "REQUEST_LITERAL",
+    "ECHO_RECONSTRUCTED",
+    "CANDIDATE_BYTES",
+    "STANDALONE_PUBLIC_MATERIAL",
+    "RAW_LOCAL_EVIDENCE",
+    "DERIVED_AUTHENTICATED_TRANSCRIPT",
+    "DERIVED_FULL_REPLAY",
+    "PINNED_NATIVE_AUTHORITY",
+    "OPERATION_CLASSIFICATION",
+    "PRECOMMIT_PROPOSAL"
+  ],
+  "inlineObjects": {
+    "/$defs/ProfileDescriptorV0/properties/evidenceEncoding": {
+      "owners": ["INTERFACE"],
+      "source": "PINNED_NATIVE_AUTHORITY"
+    },
+    "/$defs/ProfileDescriptorV0/properties/authorityPins": {
+      "owners": ["INTERFACE"],
+      "source": "PINNED_NATIVE_AUTHORITY",
+      "overrides": {
+        "transcriptProfileSha256Hex": { "owners": ["K", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
+        "outcomeTaxonomySha256Hex": { "owners": ["O10", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
+        "resourceEnvelopeCandidateId": { "owners": ["O08", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
+        "resourceEnvelopeSha256Hex": { "owners": ["O08", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
+        "signatureSuiteId": { "owners": ["K", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
+        "verificationKeyOctets": { "owners": ["K", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
+        "signatureOctets": { "owners": ["K", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" }
+      }
+    },
+    "/$defs/ValidateTranscriptInputV0/oneOf/0": {
+      "owners": ["K"],
+      "source": "CANDIDATE_BYTES"
+    },
+    "/$defs/ValidateTranscriptInputV0/oneOf/1": {
+      "owners": ["K"],
+      "source": "CANDIDATE_BYTES"
+    },
+    "/$defs/ValidateTranscriptInputV0/oneOf/2": {
+      "owners": ["K"],
+      "source": "CANDIDATE_BYTES",
+      "overrides": {
+        "standaloneVerification": { "owners": ["K"], "source": "STANDALONE_PUBLIC_MATERIAL" }
+      }
+    }
+  },
+  "definitions": {
+    "ApplicationEventProjectionV0": {
+      "owners": ["K"],
+      "source": "DERIVED_AUTHENTICATED_TRANSCRIPT",
+      "overrides": {
+        "styxProtocolVersion": { "owners": ["O03", "K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+        "applicationProfileId": { "owners": ["O03", "K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+        "applicationProfileVersion": { "owners": ["O03", "K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+        "contextIdentifierHex": { "owners": ["O03", "K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+        "eventTypeIdentifier": { "owners": ["AP_PROFILE", "K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+        "schemaIdentifier": { "owners": ["AP_PROFILE", "K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+        "schemaVersion": { "owners": ["AP_PROFILE", "K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+        "apTransitionBlockHex": { "owners": ["AP_PROFILE", "K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+        "replayReadiness": { "owners": ["K", "AP", "O04"], "source": "DERIVED_FULL_REPLAY" }
+      }
+    },
+    "ApplicationTranscriptCandidateV0": { "owners": ["K"], "source": "CANDIDATE_BYTES" },
+    "AuthorityAvailableV0": { "owners": ["AP"], "source": "DERIVED_FULL_REPLAY" },
+    "AuthorityUnavailableV0": { "owners": ["AP", "O08", "O10"], "source": "DERIVED_FULL_REPLAY" },
+    "CandidateEvaluationReadyV0": { "owners": ["INTERFACE", "O10"], "source": "OPERATION_CLASSIFICATION" },
+    "CandidateEvaluationTerminalV0": { "owners": ["INTERFACE", "O10"], "source": "OPERATION_CLASSIFICATION" },
+    "ChunkGeometryProjectionV0": { "owners": ["K", "O04"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "ContentDescriptorChunkTreeV0": { "owners": ["K", "O04"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "ContentDescriptorNoneV0": { "owners": ["K", "O04"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "ContentDescriptorSingleV0": { "owners": ["K", "O04"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "ContentMaterialEvidenceV0": { "owners": ["O04"], "source": "RAW_LOCAL_EVIDENCE" },
+    "ContentSegmentV0": { "owners": ["O04"], "source": "RAW_LOCAL_EVIDENCE" },
+    "ContentStateProjectionV0": { "owners": ["O04", "K", "AP", "O10"], "source": "DERIVED_FULL_REPLAY" },
+    "ContextProjectionV0": { "owners": ["K", "AP", "O04", "O10"], "source": "DERIVED_FULL_REPLAY" },
+    "CredentialBindingGenesisV0": { "owners": ["K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "CredentialBindingGrantV0": { "owners": ["K", "AP"], "source": "DERIVED_FULL_REPLAY" },
+    "DescribeProfileResultSupportedV0": { "owners": ["INTERFACE"], "source": "OPERATION_CLASSIFICATION" },
+    "DescribeProfileResultUnsupportedV0": { "owners": ["INTERFACE"], "source": "OPERATION_CLASSIFICATION" },
+    "EvaluateCandidateInputV0": { "owners": ["INTERFACE"], "source": "REQUEST_LITERAL" },
+    "EvaluateCandidateResultV0": { "owners": ["INTERFACE"], "source": "OPERATION_CLASSIFICATION" },
+    "EvaluateEvidenceUpdateInputV0": { "owners": ["INTERFACE"], "source": "REQUEST_LITERAL" },
+    "EvaluateEvidenceUpdateResultV0": { "owners": ["INTERFACE"], "source": "OPERATION_CLASSIFICATION" },
+    "EvaluateGenesisInputV0": { "owners": ["INTERFACE", "O03"], "source": "REQUEST_LITERAL" },
+    "EvaluateGenesisResultReadyV0": { "owners": ["INTERFACE", "K"], "source": "PRECOMMIT_PROPOSAL" },
+    "EvaluateGenesisResultTerminalV0": { "owners": ["INTERFACE", "K", "O03"], "source": "OPERATION_CLASSIFICATION" },
+    "EventAuthorityProjectionV0": { "owners": ["AP"], "source": "DERIVED_FULL_REPLAY" },
+    "EvidenceProjectionV0": { "owners": ["O04"], "source": "RAW_LOCAL_EVIDENCE" },
+    "EvidenceUpdateIdempotentV0": { "owners": ["INTERFACE", "O04"], "source": "OPERATION_CLASSIFICATION" },
+    "EvidenceUpdateReadyV0": { "owners": ["INTERFACE", "O04"], "source": "PRECOMMIT_PROPOSAL" },
+    "EvidenceUpdateRejectedV0": { "owners": ["INTERFACE", "O04", "O10"], "source": "OPERATION_CLASSIFICATION" },
+    "ExactProfileSelectorV0": { "owners": ["O03", "INTERFACE"], "source": "REQUEST_LITERAL" },
+    "ForkJoinProjectionV0": { "owners": ["K", "AP"], "source": "DERIVED_FULL_REPLAY" },
+    "GenesisProjectionV0": { "owners": ["K", "O03", "AP"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "GenesisTranscriptCandidateV0": { "owners": ["K"], "source": "CANDIDATE_BYTES" },
+    "InterfaceLimitsV0": { "owners": ["O08", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
+    "O03TupleV0": { "owners": ["O03", "K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "OpeningEvidenceV0": { "owners": ["O04"], "source": "RAW_LOCAL_EVIDENCE" },
+    "OperationRequestDescribeProfileV0": { "owners": ["INTERFACE"], "source": "REQUEST_LITERAL" },
+    "OperationRequestEvaluateCandidateV0": { "owners": ["INTERFACE"], "source": "REQUEST_LITERAL" },
+    "OperationRequestEvaluateEvidenceUpdateV0": { "owners": ["INTERFACE"], "source": "REQUEST_LITERAL" },
+    "OperationRequestEvaluateGenesisV0": { "owners": ["INTERFACE"], "source": "REQUEST_LITERAL" },
+    "OperationRequestReplayContextV0": { "owners": ["INTERFACE"], "source": "REQUEST_LITERAL" },
+    "OperationRequestValidateTranscriptV0": { "owners": ["INTERFACE"], "source": "REQUEST_LITERAL" },
+    "OperationResponseDescribeProfileV0": { "owners": ["INTERFACE"], "source": "ECHO_RECONSTRUCTED" },
+    "OperationResponseEvaluateCandidateV0": { "owners": ["INTERFACE"], "source": "ECHO_RECONSTRUCTED" },
+    "OperationResponseEvaluateEvidenceUpdateV0": { "owners": ["INTERFACE"], "source": "ECHO_RECONSTRUCTED" },
+    "OperationResponseEvaluateGenesisV0": { "owners": ["INTERFACE"], "source": "ECHO_RECONSTRUCTED" },
+    "OperationResponseReplayContextV0": { "owners": ["INTERFACE"], "source": "ECHO_RECONSTRUCTED" },
+    "OperationResponseValidateTranscriptV0": { "owners": ["INTERFACE"], "source": "ECHO_RECONSTRUCTED" },
+    "ProfileDescriptorV0": {
+      "owners": ["INTERFACE"],
+      "source": "PINNED_NATIVE_AUTHORITY",
+      "overrides": {
+        "profile": { "owners": ["O03", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
+        "authorityPins": { "owners": ["K", "O08", "O10", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
+        "interfaceLimits": { "owners": ["O08", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" }
+      }
+    },
+    "ProposedApplicationDeltaV0": { "owners": ["INTERFACE"], "source": "PRECOMMIT_PROPOSAL" },
+    "ProposedContextSnapshotV0": { "owners": ["INTERFACE", "K", "AP", "O04"], "source": "PRECOMMIT_PROPOSAL" },
+    "ProposedGenesisSnapshotV0": { "owners": ["INTERFACE", "K", "O03"], "source": "PRECOMMIT_PROPOSAL" },
+    "RecordOutcomeV0": { "owners": ["O10", "K", "AP"], "source": "DERIVED_FULL_REPLAY" },
+    "ReductionStandingProjectionV0": { "owners": ["AP"], "source": "DERIVED_FULL_REPLAY" },
+    "ReplayContextInputV0": { "owners": ["INTERFACE"], "source": "REQUEST_LITERAL" },
+    "ReplayContextResultReadyV0": { "owners": ["INTERFACE", "K", "AP", "O04"], "source": "PRECOMMIT_PROPOSAL" },
+    "ReplayContextResultTerminalV0": { "owners": ["INTERFACE", "K", "AP", "O04"], "source": "OPERATION_CLASSIFICATION" },
+    "ReplayContextResultCandidateRejectedV0": { "owners": ["INTERFACE", "K", "AP", "O10"], "source": "OPERATION_CLASSIFICATION" },
+    "RoleTailClosureV0": { "owners": ["K", "AP"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "RoleTailGrantV0": { "owners": ["K", "AP"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "RoleTailOrdinaryV0": { "owners": ["K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "RoleTailPolicyV0": { "owners": ["K", "AP_PROFILE"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "RoleTailRecoverV0": { "owners": ["K", "AP"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "RoleTailRemovalV0": { "owners": ["K", "O04"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "RoleTailRotateV0": { "owners": ["K", "AP"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "RoleTailTargetCredentialV0": { "owners": ["K", "AP"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "StandaloneVerificationMaterialV0": { "owners": ["K"], "source": "STANDALONE_PUBLIC_MATERIAL" },
+    "TranscriptObservationV0": { "owners": ["K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
+    "ValidateTranscriptResultRejectedV0": { "owners": ["INTERFACE", "K"], "source": "OPERATION_CLASSIFICATION" },
+    "ValidateTranscriptResultValidatedV0": { "owners": ["INTERFACE", "K"], "source": "OPERATION_CLASSIFICATION" }
+  }
+}

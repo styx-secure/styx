@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://styxsecure.org/schema/app-core-iface-0-structural-witness-registry-v1.schema.json",
+  "title": "APP-CORE-IFACE-0 structural witness registry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "registryVersion",
+    "status",
+    "interfaceSchemaSha256",
+    "structuralAxisRegistrySha256",
+    "seedRegistrySha256",
+    "oneOfDisjointnessRegistrySha256",
+    "instanceSetSha256",
+    "rowCount",
+    "rows"
+  ],
+  "properties": {
+    "registryVersion": {
+      "const": "APP-CORE-IFACE-0-STRUCTURAL-WITNESSES-V1"
+    },
+    "status": {
+      "enum": [
+        "PRE_RATIFICATION_CANDIDATE",
+        "RATIFIED"
+      ]
+    },
+    "interfaceSchemaSha256": {
+      "$ref": "#/$defs/Sha256Hex"
+    },
+    "structuralAxisRegistrySha256": {
+      "$ref": "#/$defs/Sha256Hex"
+    },
+    "seedRegistrySha256": {
+      "$ref": "#/$defs/Sha256Hex"
+    },
+    "oneOfDisjointnessRegistrySha256": {
+      "$ref": "#/$defs/Sha256Hex"
+    },
+    "instanceSetSha256": {
+      "$ref": "#/$defs/Sha256Hex"
+    },
+    "rowCount": {
+      "const": 1367
+    },
+    "rows": {
+      "type": "array",
+      "minItems": 1367,
+      "maxItems": 1367,
+      "items": {
+        "$ref": "#/$defs/WitnessRow"
+      }
+    }
+  },
+  "$defs": {
+    "Sha256Hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "StableId": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+$"
+    },
+    "ObjectSchemaId": {
+      "type": "string",
+      "pattern": "^OBJ-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
+    },
+    "JsonPointer": {
+      "type": "string",
+      "pattern": "^(?:|/(?:[^~/]|~[01])+(?:/(?:[^~/]|~[01])+)*?)$"
+    },
+    "StructuralRuleId": {
+      "enum": [
+        "STR-ALL-OF-BRANCH-CONSTRAINT",
+        "STR-ANY-OF-ALL-ARMS",
+        "STR-ANY-OF-NO-ARM",
+        "STR-ANY-OF-POSITIVE-ARM",
+        "STR-CONDITIONAL-BRANCH-MATRIX",
+        "STR-CONST-SUBSTITUTION",
+        "STR-DUPLICATE-JSON-PROPERTY",
+        "STR-ITEM-CONSTRAINT-VIOLATION",
+        "STR-MAX-LENGTH-OVERFLOW",
+        "STR-MAX-PROPERTIES-OVERFLOW",
+        "STR-MIN-ITEMS-UNDERFLOW",
+        "STR-MIN-LENGTH-UNDERFLOW",
+        "STR-NOT-SUBSCHEMA-MATCH",
+        "STR-NULL-SUBSTITUTION",
+        "STR-ONE-OF-NO-ARM",
+        "STR-ONE-OF-POSITIVE-ARM",
+        "STR-PATTERN-MISMATCH",
+        "STR-REF-TARGET-CONSTRAINT",
+        "STR-REQUIRED-PROPERTY-OMISSION",
+        "STR-TYPE-MISMATCH",
+        "STR-UNIQUE-ITEMS-DUPLICATE",
+        "STR-UNKNOWN-ENUM-VALUE",
+        "STR-UNKNOWN-OBJECT-PROPERTY"
+      ]
+    },
+    "WitnessRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "instanceId",
+        "structuralRuleId",
+        "sourcePointerOrRowId",
+        "seedObjectSchemaId",
+        "carrierCaseId",
+        "carrierDirection",
+        "disclosureClass",
+        "executionPhase",
+        "targetJsonPointer",
+        "perturbationKind",
+        "isolationMode",
+        "expectedDisposition",
+        "expectedObservation",
+        "assertionId",
+        "mutationId",
+        "detectorId"
+      ],
+      "properties": {
+        "instanceId": {
+          "type": "string",
+          "pattern": "^STR-[A-Z0-9]+(?:-[A-Z0-9]+)*--[0-9]{4}$"
+        },
+        "structuralRuleId": {
+          "$ref": "#/$defs/StructuralRuleId"
+        },
+        "sourcePointerOrRowId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "seedObjectSchemaId": {
+          "$ref": "#/$defs/ObjectSchemaId"
+        },
+        "carrierCaseId": {
+          "$ref": "#/$defs/StableId"
+        },
+        "carrierDirection": {
+          "enum": [
+            "REQUEST",
+            "RESPONSE"
+          ]
+        },
+        "disclosureClass": {
+          "enum": [
+            "BLIND_INPUT",
+            "WITHHELD_ORACLE"
+          ]
+        },
+        "executionPhase": {
+          "enum": [
+            "BLIND_INPUT_EXECUTION",
+            "POST_OUTPUT_MUTATION"
+          ]
+        },
+        "targetJsonPointer": {
+          "$ref": "#/$defs/JsonPointer"
+        },
+        "perturbationKind": {
+          "enum": [
+            "REMOVE_REQUIRED_PROPERTY",
+            "REPLACE_WITH_NULL",
+            "DUPLICATE_RAW_JSON_MEMBER",
+            "INSERT_UNKNOWN_PROPERTY",
+            "REPLACE_WITH_WRONG_TYPE",
+            "VIOLATE_REFERENCED_SCHEMA",
+            "REPLACE_CONST_VALUE",
+            "REPLACE_ENUM_VALUE",
+            "REPLACE_PATTERN_VALUE",
+            "UNDERFLOW_MIN_LENGTH",
+            "OVERFLOW_MAX_LENGTH",
+            "UNDERFLOW_MIN_ITEMS",
+            "DUPLICATE_ARRAY_ITEM",
+            "VIOLATE_ARRAY_ITEM_SCHEMA",
+            "CONSTRUCT_NO_ONEOF_ARM",
+            "POSITIVE_ONEOF_ARM",
+            "CONSTRUCT_NO_ANYOF_ARM",
+            "POSITIVE_ANYOF_ARM",
+            "POSITIVE_ALL_ANYOF_ARMS",
+            "VIOLATE_ALLOF_ARM",
+            "CONDITIONAL_MATRIX_ROW",
+            "MATCH_FORBIDDEN_NOT_SUBSCHEMA",
+            "EXCEED_MAX_PROPERTIES"
+          ]
+        },
+        "isolationMode": {
+          "enum": [
+            "TARGET_ONLY_COUNTERFACTUAL",
+            "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST"
+          ]
+        },
+        "expectedDisposition": {
+          "enum": [
+            "ACCEPT",
+            "REJECT"
+          ]
+        },
+        "expectedObservation": {
+          "enum": [
+            "REQUEST_REJECTED_NO_BYTES",
+            "OUTPUT_REJECTED_BEFORE_RELEASE",
+            "POSITIVE_REQUEST_ADMITTED",
+            "POSITIVE_OUTPUT_ADMITTED"
+          ]
+        },
+        "assertionId": {
+          "$ref": "#/$defs/StableId"
+        },
+        "mutationId": {
+          "$ref": "#/$defs/StableId"
+        },
+        "detectorId": {
+          "$ref": "#/$defs/StableId"
+        }
+      }
+    }
+  }
+}

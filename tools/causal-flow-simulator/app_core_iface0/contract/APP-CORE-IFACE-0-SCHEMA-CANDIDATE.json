@@ -1,0 +1,1491 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://styxsecure.org/schemas/app-core-iface-0-candidate.schema.json",
+  "title": "Styx APP-CORE-IFACE-0 candidate evidence schema",
+  "description": "Pre-ratification, evidence-plane-only schema. Validation never creates APP, ceremony, secure-session, persistence or commit authority.",
+  "oneOf": [
+    { "$ref": "#/$defs/InterfaceRequestV0" },
+    { "$ref": "#/$defs/InterfaceResponseV0" }
+  ],
+  "$defs": {
+    "InterfaceVersionV0": {
+      "const": "0"
+    },
+    "CanonicalUnsignedDecimal": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)$"
+    },
+    "U16Text": {
+      "allOf": [
+        { "$ref": "#/$defs/CanonicalUnsignedDecimal" },
+        { "maxLength": 5 }
+      ],
+      "x-styx-unsigned-maximum": "65535"
+    },
+    "U32Text": {
+      "allOf": [
+        { "$ref": "#/$defs/CanonicalUnsignedDecimal" },
+        { "maxLength": 10 }
+      ],
+      "x-styx-unsigned-maximum": "4294967295"
+    },
+    "U64Text": {
+      "allOf": [
+        { "$ref": "#/$defs/CanonicalUnsignedDecimal" },
+        { "maxLength": 20 }
+      ],
+      "x-styx-unsigned-maximum": "18446744073709551615"
+    },
+    "FixedHex32": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "FixedHex64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{128}$"
+    },
+    "EvenLowerHex": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{2})*$"
+    },
+    "TranscriptHex": {
+      "allOf": [{ "$ref": "#/$defs/EvenLowerHex" }],
+      "x-styx-o08-limit": "FRAMING_OBJECT_OCTETS"
+    },
+    "ApTransitionBlockHex": {
+      "allOf": [{ "$ref": "#/$defs/EvenLowerHex" }],
+      "x-styx-o08-limit": "AP_TRANSITION_BLOCK_OCTETS"
+    },
+    "GenesisPolicyBlockHex": {
+      "allOf": [{ "$ref": "#/$defs/EvenLowerHex" }],
+      "x-styx-o08-limit": "GENESIS_POLICY_OCTETS"
+    },
+    "ContentSegmentHex": {
+      "allOf": [{ "$ref": "#/$defs/EvenLowerHex" }],
+      "minLength": 2,
+      "x-styx-o08-limit": "CHUNK_OCTETS"
+    },
+    "StageToken": {
+      "enum": [
+        "S0_PROFILE_ACTIVATION",
+        "S3_KERNEL_STRUCTURAL",
+        "POST_S3_REPLAY_EVIDENCE",
+        "S4_GRAPH_ADMISSION|S6_DURABLE_COMMIT",
+        "S5_AUTHORITY_PROJECTION",
+        "EVENT_LOCAL",
+        "FINAL_AFTER_S6"
+      ]
+    },
+    "TranscriptValidationStageV0": {
+      "enum": [
+        "PROFILE_SELECTION",
+        "OUTER_FRAMING",
+        "TRANSCRIPT_BODY",
+        "REFERENCE_DERIVATION",
+        "SIGNATURE_VERIFICATION",
+        "TRANSCRIPT_COMPLETE"
+      ]
+    },
+    "TranscriptValidationReasonV0": {
+      "enum": [
+        "PROFILE_ACTIVATION_UNSUPPORTED",
+        "TRANSCRIPT_LENGTH_REJECTED",
+        "TRANSCRIPT_DOMAIN_REJECTED",
+        "TRANSCRIPT_LENGTH_MISMATCH",
+        "TRANSCRIPT_TRUNCATED",
+        "TRANSCRIPT_TRAILING_BYTES",
+        "TRANSCRIPT_NONCANONICAL",
+        "CONTENT_DESCRIPTOR_REJECTED",
+        "COMMITMENT_GEOMETRY_REJECTED",
+        "REFERENCE_MISMATCH",
+        "SIGNATURE_LENGTH_MISMATCH",
+        "SIGNATURE_INVALID",
+        "STANDALONE_VERIFICATION_KEY_REJECTED"
+      ]
+    },
+    "GenesisEvaluationStageV0": {
+      "enum": [
+        "PROFILE_SELECTION",
+        "OUTER_FRAMING",
+        "TRANSCRIPT_BODY",
+        "REFERENCE_DERIVATION",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "GENESIS_PROPOSAL_COMPLETE"
+      ]
+    },
+    "GenesisEvaluationReasonV0": {
+      "oneOf": [
+        {
+          "enum": [
+            "PROFILE_ACTIVATION_UNSUPPORTED",
+            "TRANSCRIPT_LENGTH_REJECTED",
+            "TRANSCRIPT_DOMAIN_REJECTED",
+            "TRANSCRIPT_LENGTH_MISMATCH",
+            "TRANSCRIPT_TRUNCATED",
+            "TRANSCRIPT_TRAILING_BYTES",
+            "TRANSCRIPT_NONCANONICAL",
+            "CONTENT_DESCRIPTOR_REJECTED",
+            "COMMITMENT_GEOMETRY_REJECTED",
+            "REFERENCE_MISMATCH",
+            "SIGNATURE_LENGTH_MISMATCH",
+            "SIGNATURE_INVALID"
+          ]
+        },
+        {
+          "enum": [
+            "EXPECTED_CONTEXT_MISMATCH",
+            "ROOT_CREDENTIAL_POSITION_MISMATCH",
+            "INITIAL_AUTHORITY_POLICY_REJECTED"
+          ]
+        }
+      ]
+    },
+    "ReplayInputStageV0": {
+      "enum": [
+        "PROFILE_SELECTION",
+        "GENESIS_REVALIDATION",
+        "CANDIDATE_SET_VALIDATION",
+        "EVIDENCE_VALIDATION",
+        "FULL_REPLAY",
+        "REPLAY_COMPLETE"
+      ]
+    },
+    "ReplayInputRejectionReasonV0": {
+      "enum": [
+        "PROFILE_MISMATCH",
+        "GENESIS_REVALIDATION_FAILED",
+        "SNAPSHOT_PROJECTION_MISMATCH",
+        "CANDIDATE_SET_NONCANONICAL",
+        "DUPLICATE_CANDIDATE_REFERENCE",
+        "EVIDENCE_NONCANONICAL",
+        "UNKNOWN_EVIDENCE_REFERENCE",
+        "RESOURCE_LIMIT"
+      ]
+    },
+    "PrimaryToken": {
+      "enum": [
+        "APPLIED",
+        "AUTHENTIC_BUT_UNAUTHORIZED",
+        "AUTHORITY_PROJECTION_UNAVAILABLE",
+        "COMMITMENT_MISMATCH",
+        "CONTEXT_CAPACITY_EXHAUSTED",
+        "CREDENTIAL_BINDING_MISMATCH",
+        "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+        "CURRENT_OBJECT_OUT_OF_PROFILE",
+        "DEPENDENCY_DEFERRED",
+        "DUPLICATE",
+        "FORK_EVIDENCE",
+        "INVALID",
+        "LENGTH_MISMATCH",
+        "LINEAGE_QUARANTINED",
+        "OPENING_MISSING",
+        "PENDING_ANCESTOR",
+        "PENDING_OPENING",
+        "POST_REVOCATION",
+        "PROFILE_ACTIVATION_UNSUPPORTED",
+        "REFERENCE_COLLISION_UNSUPPORTED",
+        "REMOVAL_INAPPLICABLE",
+        "STALE_EVIDENCE",
+        "STRUCTURAL_REJECTION",
+        "UNRESOLVABLE_CREDENTIAL",
+        "UNRESOLVED_CREDENTIAL_BINDING"
+      ]
+    },
+    "NoSuccessorPrimary": {
+      "enum": [
+        "COMMITMENT_MISMATCH",
+        "CONTEXT_CAPACITY_EXHAUSTED",
+        "CREDENTIAL_BINDING_MISMATCH",
+        "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+        "CURRENT_OBJECT_OUT_OF_PROFILE",
+        "DEPENDENCY_DEFERRED",
+        "DUPLICATE",
+        "INVALID",
+        "LENGTH_MISMATCH",
+        "OPENING_MISSING",
+        "PROFILE_ACTIVATION_UNSUPPORTED",
+        "REFERENCE_COLLISION_UNSUPPORTED",
+        "STRUCTURAL_REJECTION",
+        "UNRESOLVABLE_CREDENTIAL",
+        "UNRESOLVED_CREDENTIAL_BINDING"
+      ]
+    },
+    "RetainNewPrimary": {
+      "enum": [
+        "APPLIED",
+        "AUTHENTIC_BUT_UNAUTHORIZED",
+        "AUTHORITY_PROJECTION_UNAVAILABLE",
+        "FORK_EVIDENCE",
+        "LINEAGE_QUARANTINED",
+        "PENDING_ANCESTOR",
+        "PENDING_OPENING",
+        "POST_REVOCATION",
+        "REMOVAL_INAPPLICABLE",
+        "STALE_EVIDENCE"
+      ]
+    },
+    "ExactProfileSelectorV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "styxProtocolVersion",
+        "applicationProfileId",
+        "applicationProfileVersion"
+      ],
+      "properties": {
+        "styxProtocolVersion": { "$ref": "#/$defs/U16Text" },
+        "applicationProfileId": { "$ref": "#/$defs/U32Text" },
+        "applicationProfileVersion": { "$ref": "#/$defs/U32Text" }
+      }
+    },
+    "O03TupleV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "styxProtocolVersion",
+        "applicationProfileId",
+        "applicationProfileVersion",
+        "contextIdentifierHex"
+      ],
+      "properties": {
+        "styxProtocolVersion": { "$ref": "#/$defs/U16Text" },
+        "applicationProfileId": { "$ref": "#/$defs/U32Text" },
+        "applicationProfileVersion": { "$ref": "#/$defs/U32Text" },
+        "contextIdentifierHex": { "$ref": "#/$defs/FixedHex32" }
+      }
+    },
+    "GenesisTranscriptCandidateV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objectKind", "transcriptHex", "signatureHex"],
+      "properties": {
+        "objectKind": { "const": "GENESIS" },
+        "transcriptHex": { "$ref": "#/$defs/TranscriptHex" },
+        "signatureHex": { "$ref": "#/$defs/FixedHex64" }
+      }
+    },
+    "ApplicationTranscriptCandidateV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objectKind", "transcriptHex", "signatureHex"],
+      "properties": {
+        "objectKind": { "const": "APPLICATION_EVENT" },
+        "transcriptHex": { "$ref": "#/$defs/TranscriptHex" },
+        "signatureHex": { "$ref": "#/$defs/FixedHex64" }
+      }
+    },
+    "StandaloneVerificationMaterialV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["verificationKeyHex"],
+      "properties": {
+        "verificationKeyHex": { "$ref": "#/$defs/FixedHex32" }
+      }
+    },
+    "ContentSegmentV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["offset", "octetsHex"],
+      "properties": {
+        "offset": { "$ref": "#/$defs/U64Text" },
+        "octetsHex": { "$ref": "#/$defs/ContentSegmentHex" }
+      }
+    },
+    "ContentMaterialEvidenceV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventReferenceHex", "segments"],
+      "properties": {
+        "eventReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "segments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ContentSegmentV0" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "offset"
+        }
+      }
+    },
+    "OpeningEvidenceV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventReferenceHex", "openingRandomizerHex"],
+      "properties": {
+        "eventReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "openingRandomizerHex": { "$ref": "#/$defs/FixedHex32" }
+      }
+    },
+    "EvidenceProjectionV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contentMaterial", "openingMaterial"],
+      "properties": {
+        "contentMaterial": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ContentMaterialEvidenceV0" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "eventReferenceHex"
+        },
+        "openingMaterial": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/OpeningEvidenceV0" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "eventReferenceHex"
+        }
+      }
+    },
+    "EvidenceAdditionSetV0": {
+      "allOf": [
+        { "$ref": "#/$defs/EvidenceProjectionV0" },
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "contentMaterial": { "minItems": 1 }
+              }
+            },
+            {
+              "properties": {
+                "openingMaterial": { "minItems": 1 }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "GenesisProjectionV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context",
+        "genesisReferenceHex",
+        "rootCredentialIdentifierHex",
+        "rootSignatureSuiteId",
+        "rootVerificationKeyHex",
+        "initialAuthorityPolicyBlockHex"
+      ],
+      "properties": {
+        "context": { "$ref": "#/$defs/O03TupleV0" },
+        "genesisReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "rootCredentialIdentifierHex": { "$ref": "#/$defs/FixedHex32" },
+        "rootSignatureSuiteId": { "$ref": "#/$defs/U16Text" },
+        "rootVerificationKeyHex": { "$ref": "#/$defs/FixedHex32" },
+        "initialAuthorityPolicyBlockHex": { "$ref": "#/$defs/GenesisPolicyBlockHex" }
+      }
+    },
+    "ProposedGenesisSnapshotV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile",
+        "candidate",
+        "expectedContextIdentifierHex",
+        "projection"
+      ],
+      "properties": {
+        "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
+        "candidate": { "$ref": "#/$defs/GenesisTranscriptCandidateV0" },
+        "expectedContextIdentifierHex": { "$ref": "#/$defs/FixedHex32" },
+        "projection": { "$ref": "#/$defs/GenesisProjectionV0" }
+      }
+    },
+    "ContentDescriptorNoneV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contentClass", "exactContentLength"],
+      "properties": {
+        "contentClass": { "const": "NONE" },
+        "exactContentLength": { "const": "0" }
+      }
+    },
+    "ChunkGeometryProjectionV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chunkSize", "chunkCount", "finalChunkLength"],
+      "properties": {
+        "chunkSize": { "$ref": "#/$defs/U32Text" },
+        "chunkCount": { "$ref": "#/$defs/U64Text" },
+        "finalChunkLength": { "$ref": "#/$defs/U32Text" }
+      }
+    },
+    "ContentDescriptorSingleV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contentClass",
+        "exactContentLength",
+        "contentTypeIdentifier",
+        "commitmentSuiteId",
+        "commitmentShape",
+        "commitmentValueHex"
+      ],
+      "properties": {
+        "contentClass": { "enum": ["REQUIRED", "DETACHABLE"] },
+        "exactContentLength": { "$ref": "#/$defs/U64Text" },
+        "contentTypeIdentifier": { "$ref": "#/$defs/U32Text" },
+        "commitmentSuiteId": { "$ref": "#/$defs/U16Text" },
+        "commitmentShape": { "const": "SINGLE" },
+        "commitmentValueHex": { "$ref": "#/$defs/FixedHex32" }
+      }
+    },
+    "ContentDescriptorChunkTreeV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contentClass",
+        "exactContentLength",
+        "contentTypeIdentifier",
+        "commitmentSuiteId",
+        "commitmentShape",
+        "commitmentValueHex",
+        "chunkGeometry"
+      ],
+      "properties": {
+        "contentClass": { "enum": ["REQUIRED", "DETACHABLE"] },
+        "exactContentLength": { "$ref": "#/$defs/U64Text" },
+        "contentTypeIdentifier": { "$ref": "#/$defs/U32Text" },
+        "commitmentSuiteId": { "$ref": "#/$defs/U16Text" },
+        "commitmentShape": { "const": "CHUNK_TREE" },
+        "commitmentValueHex": { "$ref": "#/$defs/FixedHex32" },
+        "chunkGeometry": { "$ref": "#/$defs/ChunkGeometryProjectionV0" }
+      }
+    },
+    "ContentDescriptorProjectionV0": {
+      "oneOf": [
+        { "$ref": "#/$defs/ContentDescriptorNoneV0" },
+        { "$ref": "#/$defs/ContentDescriptorSingleV0" },
+        { "$ref": "#/$defs/ContentDescriptorChunkTreeV0" }
+      ]
+    },
+    "RoleTailOrdinaryV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": { "kind": { "const": "ORDINARY" } }
+    },
+    "RoleTailRemovalV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "targetEventReferenceHex", "targetCommitmentHex"],
+      "properties": {
+        "kind": { "const": "LOGICAL_REMOVAL" },
+        "targetEventReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "targetCommitmentHex": { "$ref": "#/$defs/FixedHex32" }
+      }
+    },
+    "RoleTailGrantV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "granteeSignatureSuiteId", "granteeVerificationKeyHex"],
+      "properties": {
+        "kind": { "const": "GRANT" },
+        "granteeSignatureSuiteId": { "$ref": "#/$defs/U16Text" },
+        "granteeVerificationKeyHex": { "$ref": "#/$defs/FixedHex32" }
+      }
+    },
+    "RoleTailTargetCredentialV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "targetCredentialIdentifierHex"],
+      "properties": {
+        "kind": { "const": "REVOKE" },
+        "targetCredentialIdentifierHex": { "$ref": "#/$defs/FixedHex32" }
+      }
+    },
+    "RoleTailRotateV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "retiringCredentialIdentifierHex", "replacementGrantReferenceHex"],
+      "properties": {
+        "kind": { "const": "ROTATE" },
+        "retiringCredentialIdentifierHex": { "$ref": "#/$defs/FixedHex32" },
+        "replacementGrantReferenceHex": { "$ref": "#/$defs/FixedHex32" }
+      }
+    },
+    "RoleTailRecoverV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "retiredCredentialIdentifierHex", "recoveryGrantReferenceHex"],
+      "properties": {
+        "kind": { "const": "RECOVER" },
+        "retiredCredentialIdentifierHex": { "$ref": "#/$defs/FixedHex32" },
+        "recoveryGrantReferenceHex": { "$ref": "#/$defs/FixedHex32" }
+      }
+    },
+    "RoleTailPolicyV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": { "kind": { "const": "POLICY" } }
+    },
+    "RoleTailClosureV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": { "kind": { "const": "CLOSURE" } }
+    },
+    "RoleTailProjectionV0": {
+      "oneOf": [
+        { "$ref": "#/$defs/RoleTailOrdinaryV0" },
+        { "$ref": "#/$defs/RoleTailRemovalV0" },
+        { "$ref": "#/$defs/RoleTailGrantV0" },
+        { "$ref": "#/$defs/RoleTailTargetCredentialV0" },
+        { "$ref": "#/$defs/RoleTailRotateV0" },
+        { "$ref": "#/$defs/RoleTailRecoverV0" },
+        { "$ref": "#/$defs/RoleTailPolicyV0" },
+        { "$ref": "#/$defs/RoleTailClosureV0" }
+      ]
+    },
+    "ApplicationEventProjectionV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventReferenceHex",
+        "styxProtocolVersion",
+        "applicationProfileId",
+        "applicationProfileVersion",
+        "contextIdentifierHex",
+        "objectKind",
+        "eventRole",
+        "eventTypeIdentifier",
+        "schemaIdentifier",
+        "schemaVersion",
+        "apTransitionBlockHex",
+        "credentialIdentifierHex",
+        "authorSequence",
+        "causalParentReferences",
+        "genesisReferenceHex",
+        "contentDescriptor",
+        "roleTail",
+        "kAdmission",
+        "replayReadiness"
+      ],
+      "properties": {
+        "eventReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "styxProtocolVersion": { "$ref": "#/$defs/U16Text" },
+        "applicationProfileId": { "$ref": "#/$defs/U32Text" },
+        "applicationProfileVersion": { "$ref": "#/$defs/U32Text" },
+        "contextIdentifierHex": { "$ref": "#/$defs/FixedHex32" },
+        "objectKind": { "const": "APPLICATION_EVENT" },
+        "eventRole": { "enum": ["ORDINARY", "LOGICAL_REMOVAL", "CREDENTIAL_CONTROL"] },
+        "eventTypeIdentifier": { "$ref": "#/$defs/U32Text" },
+        "schemaIdentifier": { "$ref": "#/$defs/U32Text" },
+        "schemaVersion": { "$ref": "#/$defs/U32Text" },
+        "apTransitionBlockHex": { "$ref": "#/$defs/ApTransitionBlockHex" },
+        "credentialIdentifierHex": { "$ref": "#/$defs/FixedHex32" },
+        "authorSequence": { "$ref": "#/$defs/U64Text" },
+        "directPredecessorReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "causalParentReferences": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/FixedHex32" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "lexicographic-hex"
+        },
+        "genesisReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "contentDescriptor": { "$ref": "#/$defs/ContentDescriptorProjectionV0" },
+        "roleTail": { "$ref": "#/$defs/RoleTailProjectionV0" },
+        "kAdmission": { "enum": ["ADMITTED", "FORK_CLASSIFIED"] },
+        "replayReadiness": { "enum": ["READY_FOR_AP_FOLD", "PENDING_OPENING", "PENDING_ANCESTOR"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "authorSequence": { "const": "0" } }, "required": ["authorSequence"] },
+          "then": { "not": { "required": ["directPredecessorReferenceHex"] } },
+          "else": { "required": ["directPredecessorReferenceHex"] }
+        },
+        {
+          "if": { "properties": { "eventRole": { "const": "ORDINARY" } }, "required": ["eventRole"] },
+          "then": { "properties": { "roleTail": { "$ref": "#/$defs/RoleTailOrdinaryV0" } } }
+        },
+        {
+          "if": { "properties": { "eventRole": { "const": "LOGICAL_REMOVAL" } }, "required": ["eventRole"] },
+          "then": { "properties": { "roleTail": { "$ref": "#/$defs/RoleTailRemovalV0" } } }
+        },
+        {
+          "if": { "properties": { "eventRole": { "const": "CREDENTIAL_CONTROL" } }, "required": ["eventRole"] },
+          "then": {
+            "properties": {
+              "roleTail": {
+                "oneOf": [
+                  { "$ref": "#/$defs/RoleTailGrantV0" },
+                  { "$ref": "#/$defs/RoleTailTargetCredentialV0" },
+                  { "$ref": "#/$defs/RoleTailRotateV0" },
+                  { "$ref": "#/$defs/RoleTailRecoverV0" },
+                  { "$ref": "#/$defs/RoleTailPolicyV0" },
+                  { "$ref": "#/$defs/RoleTailClosureV0" }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "RecordOutcomeV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventReferenceHex", "disposition", "stage"],
+      "properties": {
+        "eventReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "disposition": { "$ref": "#/$defs/PrimaryToken" },
+        "stage": { "$ref": "#/$defs/StageToken" }
+      }
+    },
+    "CredentialBindingGenesisV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["credentialIdentifierHex", "origin", "signatureSuiteId", "verificationKeyHex"],
+      "properties": {
+        "credentialIdentifierHex": { "$ref": "#/$defs/FixedHex32" },
+        "origin": { "const": "GENESIS" },
+        "signatureSuiteId": { "$ref": "#/$defs/U16Text" },
+        "verificationKeyHex": { "$ref": "#/$defs/FixedHex32" }
+      }
+    },
+    "CredentialBindingGrantV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "credentialIdentifierHex",
+        "origin",
+        "signatureSuiteId",
+        "verificationKeyHex",
+        "issuerCredentialIdentifierHex",
+        "grantReferenceHex"
+      ],
+      "properties": {
+        "credentialIdentifierHex": { "$ref": "#/$defs/FixedHex32" },
+        "origin": { "const": "GRANT" },
+        "signatureSuiteId": { "$ref": "#/$defs/U16Text" },
+        "verificationKeyHex": { "$ref": "#/$defs/FixedHex32" },
+        "issuerCredentialIdentifierHex": { "$ref": "#/$defs/FixedHex32" },
+        "grantReferenceHex": { "$ref": "#/$defs/FixedHex32" }
+      }
+    },
+    "CredentialBindingProjectionV0": {
+      "oneOf": [
+        { "$ref": "#/$defs/CredentialBindingGenesisV0" },
+        { "$ref": "#/$defs/CredentialBindingGrantV0" }
+      ]
+    },
+    "ReductionStandingProjectionV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventReferenceHex", "standing"],
+      "properties": {
+        "eventReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "standing": { "enum": ["GENESIS", "ACCEPTED_GRANT", "POSSIBLE_GRANT"] }
+      }
+    },
+    "EventAuthorityProjectionV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventReferenceHex", "verdict"],
+      "properties": {
+        "eventReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "verdict": { "enum": ["MUST_AUTH", "MAY_AUTH", "NO_AUTH"] }
+      }
+    },
+    "AuthorityAvailableV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "possibleCredentialIdentifiers",
+        "necessaryCredentialIdentifiers",
+        "terminalCredentialIdentifiers"
+      ],
+      "properties": {
+        "status": { "const": "AVAILABLE" },
+        "possibleCredentialIdentifiers": { "$ref": "#/$defs/CanonicalReferenceArray" },
+        "necessaryCredentialIdentifiers": { "$ref": "#/$defs/CanonicalReferenceArray" },
+        "terminalCredentialIdentifiers": { "$ref": "#/$defs/CanonicalReferenceArray" }
+      }
+    },
+    "AuthorityUnavailableV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason"],
+      "properties": {
+        "status": { "const": "UNAVAILABLE" },
+        "reason": {
+          "enum": [
+            "AUTHORITY_PROJECTION_UNAVAILABLE",
+            "CONTEXT_CAPACITY_EXHAUSTED",
+            "DEPENDENCY_DEFERRED"
+          ]
+        }
+      }
+    },
+    "AuthorityProjectionV0": {
+      "oneOf": [
+        { "$ref": "#/$defs/AuthorityAvailableV0" },
+        { "$ref": "#/$defs/AuthorityUnavailableV0" }
+      ]
+    },
+    "ForkJoinProjectionV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "joinReferenceHex",
+        "credentialIdentifierHex",
+        "siblingReferences",
+        "lineageClosureCredentialIdentifiers"
+      ],
+      "properties": {
+        "joinReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "credentialIdentifierHex": { "$ref": "#/$defs/FixedHex32" },
+        "siblingReferences": { "$ref": "#/$defs/CanonicalReferenceArray" },
+        "lineageClosureCredentialIdentifiers": { "$ref": "#/$defs/CanonicalReferenceArray" }
+      }
+    },
+    "ContentStateProjectionV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventReferenceHex",
+        "contentClass",
+        "localAvailability",
+        "bindingObservation",
+        "retentionState",
+        "replayReadiness"
+      ],
+      "properties": {
+        "eventReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "contentClass": { "enum": ["NONE", "REQUIRED", "DETACHABLE"] },
+        "localAvailability": { "enum": ["ABSENT", "PARTIAL", "PRESENT"] },
+        "bindingObservation": {
+          "enum": [
+            "NOT_APPLICABLE",
+            "NOT_CHECKED",
+            "VERIFIED",
+            "OPENING_MISSING",
+            "LENGTH_MISMATCH",
+            "COMMITMENT_MISMATCH"
+          ]
+        },
+        "retentionState": { "enum": ["ACTIVE", "LOGICALLY_REMOVED"] },
+        "replayReadiness": { "enum": ["READY", "CONTENT_DEFERRED", "STALE_EVIDENCE"] }
+      }
+    },
+    "CanonicalReferenceArray": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/FixedHex32" },
+      "uniqueItems": true,
+      "x-styx-canonical-order": "lexicographic-hex"
+    },
+    "AliasGroupV0": {
+      "allOf": [
+        { "$ref": "#/$defs/CanonicalReferenceArray" },
+        { "minItems": 2 }
+      ]
+    },
+    "ContextProjectionV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contextState",
+        "records",
+        "recordOutcomes",
+        "credentialBindings",
+        "aliasGroups",
+        "appliedControlReferences",
+        "reductionStandings",
+        "eventAuthority",
+        "authority",
+        "revokedCredentialIdentifiers",
+        "terminatedCredentialIdentifiers",
+        "forkedCredentialIdentifiers",
+        "forkJoins",
+        "pendingRootReferences",
+        "pendingReferences",
+        "contentStates",
+        "checkpointEvidenceReferences",
+        "replayDependencyReferences"
+      ],
+      "properties": {
+        "contextState": {
+          "enum": [
+            "ACTIVE",
+            "AUTHORITY_UNAVAILABLE",
+            "EMPTY_STALE",
+            "PARTIALLY_LINEAGE_QUARANTINED",
+            "PARTIALLY_PENDING"
+          ]
+        },
+        "records": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ApplicationEventProjectionV0" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "protocol-k-order"
+        },
+        "recordOutcomes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/RecordOutcomeV0" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "eventReferenceHex"
+        },
+        "credentialBindings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CredentialBindingProjectionV0" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "credentialIdentifierHex"
+        },
+        "aliasGroups": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AliasGroupV0" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "nested-lexicographic-hex"
+        },
+        "appliedControlReferences": { "$ref": "#/$defs/CanonicalReferenceArray" },
+        "reductionStandings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ReductionStandingProjectionV0" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "eventReferenceHex"
+        },
+        "eventAuthority": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/EventAuthorityProjectionV0" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "eventReferenceHex"
+        },
+        "authority": { "$ref": "#/$defs/AuthorityProjectionV0" },
+        "revokedCredentialIdentifiers": { "$ref": "#/$defs/CanonicalReferenceArray" },
+        "terminatedCredentialIdentifiers": { "$ref": "#/$defs/CanonicalReferenceArray" },
+        "forkedCredentialIdentifiers": { "$ref": "#/$defs/CanonicalReferenceArray" },
+        "forkJoins": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ForkJoinProjectionV0" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "joinReferenceHex"
+        },
+        "pendingRootReferences": { "$ref": "#/$defs/CanonicalReferenceArray" },
+        "pendingReferences": { "$ref": "#/$defs/CanonicalReferenceArray" },
+        "contentStates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ContentStateProjectionV0" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "eventReferenceHex"
+        },
+        "checkpointEvidenceReferences": { "const": [] },
+        "replayDependencyReferences": { "$ref": "#/$defs/CanonicalReferenceArray" }
+      }
+    },
+    "ProposedContextSnapshotV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["genesis", "admittedCandidates", "evidence", "projection"],
+      "properties": {
+        "genesis": { "$ref": "#/$defs/ProposedGenesisSnapshotV0" },
+        "admittedCandidates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ApplicationTranscriptCandidateV0" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "derived-event-reference"
+        },
+        "evidence": { "$ref": "#/$defs/EvidenceProjectionV0" },
+        "projection": { "$ref": "#/$defs/ContextProjectionV0" }
+      }
+    },
+    "ProposedApplicationDeltaV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["successor"],
+      "properties": {
+        "successor": { "$ref": "#/$defs/ProposedContextSnapshotV0" }
+      }
+    },
+    "TranscriptObservationV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transcriptVerification",
+        "referenceVerification",
+        "signatureVerification",
+        "suppliedLengthVerification",
+        "commitmentVerification",
+        "commitmentMatchVerification",
+        "geometryPredicate1",
+        "geometryPredicate2",
+        "geometryPredicate3",
+        "geometryPredicate4",
+        "geometryPredicate5",
+        "geometryPredicate6",
+        "geometryPredicate7"
+      ],
+      "properties": {
+        "transcriptVerification": { "enum": ["VALID", "REJECTED"] },
+        "referenceVerification": { "enum": ["VALID", "REJECTED", "NOT_REACHED"] },
+        "signatureVerification": { "enum": ["VALID", "REJECTED", "NOT_EVALUATED"] },
+        "suppliedLengthVerification": { "enum": ["VALID", "REJECTED", "NOT_EVALUATED", "NOT_APPLICABLE"] },
+        "commitmentVerification": { "enum": ["VALID", "REJECTED", "PENDING", "NOT_PRESENT", "NOT_EVALUATED"] },
+        "commitmentMatchVerification": { "enum": ["VALID", "REJECTED", "NOT_EVALUATED", "NOT_APPLICABLE"] },
+        "geometryPredicate1": { "$ref": "#/$defs/GeometryObservation" },
+        "geometryPredicate2": { "$ref": "#/$defs/GeometryObservation" },
+        "geometryPredicate3": { "$ref": "#/$defs/GeometryObservation" },
+        "geometryPredicate4": { "$ref": "#/$defs/GeometryObservation" },
+        "geometryPredicate5": { "$ref": "#/$defs/GeometryObservation" },
+        "geometryPredicate6": { "$ref": "#/$defs/GeometryObservation" },
+        "geometryPredicate7": { "$ref": "#/$defs/GeometryObservation" }
+      }
+    },
+    "GeometryObservation": {
+      "enum": ["PASS", "FAIL", "NOT_EVALUATED", "NOT_APPLICABLE"]
+    },
+    "InterfaceLimitsV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ACTIVE_FRONTIER",
+        "ACTORS",
+        "ALIASES_PER_CREDENTIAL",
+        "ANCESTRY_RELATIONS",
+        "AP_EXPANDED_CONTENT_OCTETS",
+        "AP_TRANSITION_BLOCK_OCTETS",
+        "AUTHORITY_CONCURRENT_CONTROLS",
+        "CHUNKS_PER_CONTENT",
+        "CHUNK_OCTETS",
+        "COMMITMENT_VALUE_OCTETS",
+        "CONTENT_EXACT_OCTETS",
+        "CONTEXT_LIFETIME_EVENTS",
+        "CREDENTIALS",
+        "EVIDENCE_PER_CREDENTIAL",
+        "FRAMING_OBJECT_OCTETS",
+        "GENESIS_BODY_OCTETS",
+        "GENESIS_POLICY_OCTETS",
+        "RANDOMIZER_OCTETS",
+        "RECORDS",
+        "REFERENCE_OCTETS",
+        "SIGNATURE_OCTETS",
+        "VERIFICATION_KEY_OCTETS"
+      ],
+      "properties": {
+        "ACTIVE_FRONTIER": { "const": "16" },
+        "ACTORS": { "const": "8" },
+        "ALIASES_PER_CREDENTIAL": { "const": "4" },
+        "ANCESTRY_RELATIONS": { "const": "32768" },
+        "AP_EXPANDED_CONTENT_OCTETS": { "const": "131072" },
+        "AP_TRANSITION_BLOCK_OCTETS": { "const": "4096" },
+        "AUTHORITY_CONCURRENT_CONTROLS": { "const": "3" },
+        "CHUNKS_PER_CONTENT": { "const": "64" },
+        "CHUNK_OCTETS": { "const": "16384" },
+        "COMMITMENT_VALUE_OCTETS": { "const": "32" },
+        "CONTENT_EXACT_OCTETS": { "const": "262144" },
+        "CONTEXT_LIFETIME_EVENTS": { "const": "4096" },
+        "CREDENTIALS": { "const": "16" },
+        "EVIDENCE_PER_CREDENTIAL": { "const": "16" },
+        "FRAMING_OBJECT_OCTETS": { "const": "8192" },
+        "GENESIS_BODY_OCTETS": { "const": "8192" },
+        "GENESIS_POLICY_OCTETS": { "const": "4096" },
+        "RANDOMIZER_OCTETS": { "const": "32" },
+        "RECORDS": { "const": "128" },
+        "REFERENCE_OCTETS": { "const": "32" },
+        "SIGNATURE_OCTETS": { "const": "64" },
+        "VERIFICATION_KEY_OCTETS": { "const": "32" }
+      },
+      "x-styx-derived-from-resource-envelope": "balanced"
+    },
+    "ProfileDescriptorV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "descriptorVersion",
+        "profile",
+        "supportedOperations",
+        "evidenceEncoding",
+        "authorityPins",
+        "interfaceLimits",
+        "externalBoundaries"
+      ],
+      "properties": {
+        "descriptorVersion": { "const": "0" },
+        "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
+        "supportedOperations": {
+          "const": [
+            "DESCRIBE_PROFILE",
+            "VALIDATE_TRANSCRIPT",
+            "EVALUATE_GENESIS",
+            "REPLAY_CONTEXT",
+            "EVALUATE_CANDIDATE",
+            "EVALUATE_EVIDENCE_UPDATE"
+          ]
+        },
+        "evidenceEncoding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["jsonProfile", "byteStrings", "integers", "duplicateKeys", "unknownFields"],
+          "properties": {
+            "jsonProfile": { "const": "STYX_CANONICAL_EVIDENCE_JSON_V0" },
+            "byteStrings": { "const": "LOWERCASE_EVEN_HEX" },
+            "integers": { "const": "CANONICAL_UNSIGNED_DECIMAL_TEXT" },
+            "duplicateKeys": { "const": "REJECT" },
+            "unknownFields": { "const": "REJECT" }
+          }
+        },
+        "authorityPins": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "transcriptProfileSha256Hex",
+            "outcomeTaxonomySha256Hex",
+            "resourceEnvelopeCandidateId",
+            "resourceEnvelopeSha256Hex",
+            "signatureSuiteId",
+            "verificationKeyOctets",
+            "signatureOctets"
+          ],
+          "properties": {
+            "transcriptProfileSha256Hex": { "$ref": "#/$defs/FixedHex32" },
+            "outcomeTaxonomySha256Hex": { "$ref": "#/$defs/FixedHex32" },
+            "resourceEnvelopeCandidateId": { "const": "balanced" },
+            "resourceEnvelopeSha256Hex": { "$ref": "#/$defs/FixedHex32" },
+            "signatureSuiteId": { "const": "1" },
+            "verificationKeyOctets": { "const": "32" },
+            "signatureOctets": { "const": "64" }
+          },
+          "x-styx-literal-values-from-ratified-contract": true
+        },
+        "interfaceLimits": { "$ref": "#/$defs/InterfaceLimitsV0" },
+        "externalBoundaries": {
+          "const": [
+            "GENESIS_CEREMONY_PROMOTION",
+            "DURABLE_COMMIT_FINALIZATION"
+          ]
+        }
+      }
+    },
+    "DescribeProfileInputV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 0
+    },
+    "DescribeProfileResultSupportedV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["disposition", "descriptor"],
+      "properties": {
+        "disposition": { "const": "SUPPORTED" },
+        "descriptor": { "$ref": "#/$defs/ProfileDescriptorV0" }
+      }
+    },
+    "DescribeProfileResultUnsupportedV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["disposition"],
+      "properties": {
+        "disposition": { "const": "UNSUPPORTED" }
+      }
+    },
+    "DescribeProfileResultV0": {
+      "oneOf": [
+        { "$ref": "#/$defs/DescribeProfileResultSupportedV0" },
+        { "$ref": "#/$defs/DescribeProfileResultUnsupportedV0" }
+      ]
+    },
+    "ValidateTranscriptInputV0": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["candidate"],
+          "properties": {
+            "candidate": { "$ref": "#/$defs/GenesisTranscriptCandidateV0" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["candidate"],
+          "properties": {
+            "candidate": { "$ref": "#/$defs/ApplicationTranscriptCandidateV0" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["candidate", "standaloneVerification"],
+          "properties": {
+            "candidate": { "$ref": "#/$defs/ApplicationTranscriptCandidateV0" },
+            "standaloneVerification": { "$ref": "#/$defs/StandaloneVerificationMaterialV0" }
+          }
+        }
+      ]
+    },
+    "ValidateTranscriptResultValidatedV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "stage", "observations"],
+      "properties": {
+        "kind": { "const": "VALIDATED" },
+        "stage": { "$ref": "#/$defs/TranscriptValidationStageV0" },
+        "observations": { "$ref": "#/$defs/TranscriptObservationV0" }
+      }
+    },
+    "ValidateTranscriptResultRejectedV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reason", "stage", "observations"],
+      "properties": {
+        "kind": { "const": "REJECTED" },
+        "reason": { "$ref": "#/$defs/TranscriptValidationReasonV0" },
+        "stage": { "$ref": "#/$defs/TranscriptValidationStageV0" },
+        "observations": { "$ref": "#/$defs/TranscriptObservationV0" }
+      }
+    },
+    "ValidateTranscriptResultV0": {
+      "oneOf": [
+        { "$ref": "#/$defs/ValidateTranscriptResultValidatedV0" },
+        { "$ref": "#/$defs/ValidateTranscriptResultRejectedV0" }
+      ]
+    },
+    "EvaluateGenesisInputV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate", "expectedContextIdentifierHex"],
+      "properties": {
+        "candidate": { "$ref": "#/$defs/GenesisTranscriptCandidateV0" },
+        "expectedContextIdentifierHex": { "$ref": "#/$defs/FixedHex32" }
+      }
+    },
+    "EvaluateGenesisResultReadyV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "stage", "proposedGenesis"],
+      "properties": {
+        "kind": { "const": "GENESIS_PROPOSAL_READY" },
+        "stage": { "const": "GENESIS_PROPOSAL_COMPLETE" },
+        "proposedGenesis": { "$ref": "#/$defs/ProposedGenesisSnapshotV0" }
+      }
+    },
+    "EvaluateGenesisResultTerminalV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reason", "stage"],
+      "properties": {
+        "kind": { "const": "TERMINAL_NO_PROPOSAL" },
+        "reason": { "$ref": "#/$defs/GenesisEvaluationReasonV0" },
+        "stage": { "$ref": "#/$defs/GenesisEvaluationStageV0" }
+      }
+    },
+    "EvaluateGenesisResultV0": {
+      "oneOf": [
+        { "$ref": "#/$defs/EvaluateGenesisResultReadyV0" },
+        { "$ref": "#/$defs/EvaluateGenesisResultTerminalV0" }
+      ]
+    },
+    "ReplayContextInputV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["proposedGenesis", "candidates", "evidence"],
+      "properties": {
+        "proposedGenesis": { "$ref": "#/$defs/ProposedGenesisSnapshotV0" },
+        "candidates": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ApplicationTranscriptCandidateV0" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "derived-event-reference"
+        },
+        "evidence": { "$ref": "#/$defs/EvidenceProjectionV0" }
+      }
+    },
+    "ReplayContextResultReadyV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "stage", "proposedContext"],
+      "properties": {
+        "kind": { "const": "REPLAY_PROPOSAL_READY" },
+        "stage": { "const": "REPLAY_COMPLETE" },
+        "proposedContext": { "$ref": "#/$defs/ProposedContextSnapshotV0" }
+      }
+    },
+    "ReplayContextResultTerminalV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reason", "stage"],
+      "properties": {
+        "kind": { "const": "TERMINAL_INPUT_REJECTED" },
+        "reason": { "$ref": "#/$defs/ReplayInputRejectionReasonV0" },
+        "stage": { "$ref": "#/$defs/ReplayInputStageV0" }
+      }
+    },
+    "ReplayContextResultCandidateRejectedV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "primary", "stage"],
+      "properties": {
+        "kind": { "const": "TERMINAL_CANDIDATE_REJECTED" },
+        "primary": { "$ref": "#/$defs/NoSuccessorPrimary" },
+        "stage": { "$ref": "#/$defs/StageToken" }
+      }
+    },
+    "ReplayContextResultV0": {
+      "oneOf": [
+        { "$ref": "#/$defs/ReplayContextResultReadyV0" },
+        { "$ref": "#/$defs/ReplayContextResultTerminalV0" },
+        { "$ref": "#/$defs/ReplayContextResultCandidateRejectedV0" }
+      ]
+    },
+    "EvaluateCandidateInputV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prior", "candidate", "evidence"],
+      "properties": {
+        "prior": { "$ref": "#/$defs/ProposedContextSnapshotV0" },
+        "candidate": { "$ref": "#/$defs/ApplicationTranscriptCandidateV0" },
+        "evidence": { "$ref": "#/$defs/EvidenceProjectionV0" }
+      }
+    },
+    "CandidateEvaluationTerminalV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "primary", "stage"],
+      "properties": {
+        "kind": { "const": "TERMINAL_NO_SUCCESSOR" },
+        "primary": { "$ref": "#/$defs/NoSuccessorPrimary" },
+        "stage": { "$ref": "#/$defs/StageToken" }
+      }
+    },
+    "CandidateEvaluationReadyV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "primaryOnCommit", "proposal"],
+      "properties": {
+        "kind": { "const": "PROPOSAL_READY" },
+        "primaryOnCommit": { "$ref": "#/$defs/RetainNewPrimary" },
+        "proposal": { "$ref": "#/$defs/ProposedApplicationDeltaV0" }
+      }
+    },
+    "CandidateEvaluationResultV0": {
+      "oneOf": [
+        { "$ref": "#/$defs/CandidateEvaluationTerminalV0" },
+        { "$ref": "#/$defs/CandidateEvaluationReadyV0" }
+      ]
+    },
+    "EvaluateCandidateResultV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluation"],
+      "properties": {
+        "evaluation": { "$ref": "#/$defs/CandidateEvaluationResultV0" }
+      }
+    },
+    "EvaluateEvidenceUpdateInputV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prior", "additions"],
+      "properties": {
+        "prior": { "$ref": "#/$defs/ProposedContextSnapshotV0" },
+        "additions": { "$ref": "#/$defs/EvidenceAdditionSetV0" }
+      }
+    },
+    "EvidenceUpdateRejectionV0": {
+      "enum": [
+        "PRIOR_REVALIDATION_FAILED",
+        "EMPTY_ADDITION_SET",
+        "UNKNOWN_EVENT_REFERENCE",
+        "DELETION_FORBIDDEN",
+        "REPLACEMENT_FORBIDDEN",
+        "PARTIAL_OVERLAP",
+        "CONFLICTING_DUPLICATE",
+        "NONCANONICAL_MATERIAL",
+        "EVIDENCE_COMMITMENT_MISMATCH",
+        "RESOURCE_LIMIT",
+        "FULL_REPLAY_MISMATCH"
+      ]
+    },
+    "EvidenceUpdateRejectedV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "reason"],
+      "properties": {
+        "kind": { "const": "TERMINAL_REJECTED" },
+        "reason": { "$ref": "#/$defs/EvidenceUpdateRejectionV0" }
+      }
+    },
+    "EvidenceUpdateIdempotentV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "const": "IDEMPOTENT_NO_CHANGE" }
+      }
+    },
+    "EvidenceUpdateReadyV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "evidenceEffect", "proposal"],
+      "properties": {
+        "kind": { "const": "PROPOSAL_READY" },
+        "evidenceEffect": { "const": "ADD_MONOTONE" },
+        "proposal": { "$ref": "#/$defs/ProposedApplicationDeltaV0" }
+      }
+    },
+    "EvidenceUpdateResultV0": {
+      "oneOf": [
+        { "$ref": "#/$defs/EvidenceUpdateRejectedV0" },
+        { "$ref": "#/$defs/EvidenceUpdateIdempotentV0" },
+        { "$ref": "#/$defs/EvidenceUpdateReadyV0" }
+      ]
+    },
+    "EvaluateEvidenceUpdateResultV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluation"],
+      "properties": {
+        "evaluation": { "$ref": "#/$defs/EvidenceUpdateResultV0" }
+      }
+    },
+    "OperationRequestDescribeProfileV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interfaceVersion", "operation", "profile", "input"],
+      "properties": {
+        "interfaceVersion": { "$ref": "#/$defs/InterfaceVersionV0" },
+        "operation": { "const": "DESCRIBE_PROFILE" },
+        "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
+        "input": { "$ref": "#/$defs/DescribeProfileInputV0" }
+      }
+    },
+    "OperationRequestValidateTranscriptV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interfaceVersion", "operation", "profile", "input"],
+      "properties": {
+        "interfaceVersion": { "$ref": "#/$defs/InterfaceVersionV0" },
+        "operation": { "const": "VALIDATE_TRANSCRIPT" },
+        "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
+        "input": { "$ref": "#/$defs/ValidateTranscriptInputV0" }
+      }
+    },
+    "OperationRequestEvaluateGenesisV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interfaceVersion", "operation", "profile", "input"],
+      "properties": {
+        "interfaceVersion": { "$ref": "#/$defs/InterfaceVersionV0" },
+        "operation": { "const": "EVALUATE_GENESIS" },
+        "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
+        "input": { "$ref": "#/$defs/EvaluateGenesisInputV0" }
+      }
+    },
+    "OperationRequestReplayContextV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interfaceVersion", "operation", "profile", "input"],
+      "properties": {
+        "interfaceVersion": { "$ref": "#/$defs/InterfaceVersionV0" },
+        "operation": { "const": "REPLAY_CONTEXT" },
+        "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
+        "input": { "$ref": "#/$defs/ReplayContextInputV0" }
+      }
+    },
+    "OperationRequestEvaluateCandidateV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interfaceVersion", "operation", "profile", "input"],
+      "properties": {
+        "interfaceVersion": { "$ref": "#/$defs/InterfaceVersionV0" },
+        "operation": { "const": "EVALUATE_CANDIDATE" },
+        "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
+        "input": { "$ref": "#/$defs/EvaluateCandidateInputV0" }
+      }
+    },
+    "OperationRequestEvaluateEvidenceUpdateV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interfaceVersion", "operation", "profile", "input"],
+      "properties": {
+        "interfaceVersion": { "$ref": "#/$defs/InterfaceVersionV0" },
+        "operation": { "const": "EVALUATE_EVIDENCE_UPDATE" },
+        "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
+        "input": { "$ref": "#/$defs/EvaluateEvidenceUpdateInputV0" }
+      }
+    },
+    "InterfaceRequestV0": {
+      "oneOf": [
+        { "$ref": "#/$defs/OperationRequestDescribeProfileV0" },
+        { "$ref": "#/$defs/OperationRequestValidateTranscriptV0" },
+        { "$ref": "#/$defs/OperationRequestEvaluateGenesisV0" },
+        { "$ref": "#/$defs/OperationRequestReplayContextV0" },
+        { "$ref": "#/$defs/OperationRequestEvaluateCandidateV0" },
+        { "$ref": "#/$defs/OperationRequestEvaluateEvidenceUpdateV0" }
+      ]
+    },
+    "OperationResponseDescribeProfileV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interfaceVersion", "operation", "profile", "result"],
+      "properties": {
+        "interfaceVersion": { "$ref": "#/$defs/InterfaceVersionV0" },
+        "operation": { "const": "DESCRIBE_PROFILE" },
+        "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
+        "result": { "$ref": "#/$defs/DescribeProfileResultV0" }
+      }
+    },
+    "OperationResponseValidateTranscriptV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interfaceVersion", "operation", "profile", "result"],
+      "properties": {
+        "interfaceVersion": { "$ref": "#/$defs/InterfaceVersionV0" },
+        "operation": { "const": "VALIDATE_TRANSCRIPT" },
+        "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
+        "result": { "$ref": "#/$defs/ValidateTranscriptResultV0" }
+      }
+    },
+    "OperationResponseEvaluateGenesisV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interfaceVersion", "operation", "profile", "result"],
+      "properties": {
+        "interfaceVersion": { "$ref": "#/$defs/InterfaceVersionV0" },
+        "operation": { "const": "EVALUATE_GENESIS" },
+        "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
+        "result": { "$ref": "#/$defs/EvaluateGenesisResultV0" }
+      }
+    },
+    "OperationResponseReplayContextV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interfaceVersion", "operation", "profile", "result"],
+      "properties": {
+        "interfaceVersion": { "$ref": "#/$defs/InterfaceVersionV0" },
+        "operation": { "const": "REPLAY_CONTEXT" },
+        "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
+        "result": { "$ref": "#/$defs/ReplayContextResultV0" }
+      }
+    },
+    "OperationResponseEvaluateCandidateV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interfaceVersion", "operation", "profile", "result"],
+      "properties": {
+        "interfaceVersion": { "$ref": "#/$defs/InterfaceVersionV0" },
+        "operation": { "const": "EVALUATE_CANDIDATE" },
+        "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
+        "result": { "$ref": "#/$defs/EvaluateCandidateResultV0" }
+      }
+    },
+    "OperationResponseEvaluateEvidenceUpdateV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interfaceVersion", "operation", "profile", "result"],
+      "properties": {
+        "interfaceVersion": { "$ref": "#/$defs/InterfaceVersionV0" },
+        "operation": { "const": "EVALUATE_EVIDENCE_UPDATE" },
+        "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
+        "result": { "$ref": "#/$defs/EvaluateEvidenceUpdateResultV0" }
+      }
+    },
+    "InterfaceResponseV0": {
+      "oneOf": [
+        { "$ref": "#/$defs/OperationResponseDescribeProfileV0" },
+        { "$ref": "#/$defs/OperationResponseValidateTranscriptV0" },
+        { "$ref": "#/$defs/OperationResponseEvaluateGenesisV0" },
+        { "$ref": "#/$defs/OperationResponseReplayContextV0" },
+        { "$ref": "#/$defs/OperationResponseEvaluateCandidateV0" },
+        { "$ref": "#/$defs/OperationResponseEvaluateEvidenceUpdateV0" }
+      ]
+    }
+  }
+}

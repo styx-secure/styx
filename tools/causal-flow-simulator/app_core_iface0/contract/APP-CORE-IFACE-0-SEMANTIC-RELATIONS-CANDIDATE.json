@@ -1,0 +1,676 @@
+{
+  "status": "PRE_RATIFICATION_CANDIDATE",
+  "schema": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
+  "contentAxisLegalRelationV0": [
+    {
+      "id": "CAR-001",
+      "contentClass": "NONE",
+      "localAvailability": "ABSENT",
+      "bindingObservation": "NOT_APPLICABLE",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-002",
+      "contentClass": "NONE",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "NOT_APPLICABLE",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-003",
+      "contentClass": "REQUIRED",
+      "localAvailability": "ABSENT",
+      "bindingObservation": "NOT_CHECKED",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "CONTENT_DEFERRED"
+    },
+    {
+      "id": "CAR-004",
+      "contentClass": "REQUIRED",
+      "localAvailability": "PARTIAL",
+      "bindingObservation": "NOT_CHECKED",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "CONTENT_DEFERRED"
+    },
+    {
+      "id": "CAR-005",
+      "contentClass": "REQUIRED",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "NOT_CHECKED",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "CONTENT_DEFERRED"
+    },
+    {
+      "id": "CAR-006",
+      "contentClass": "REQUIRED",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "VERIFIED",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-007",
+      "contentClass": "REQUIRED",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "OPENING_MISSING",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "CONTENT_DEFERRED"
+    },
+    {
+      "id": "CAR-008",
+      "contentClass": "REQUIRED",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "LENGTH_MISMATCH",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "CONTENT_DEFERRED"
+    },
+    {
+      "id": "CAR-009",
+      "contentClass": "REQUIRED",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "COMMITMENT_MISMATCH",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "CONTENT_DEFERRED"
+    },
+    {
+      "id": "CAR-010",
+      "contentClass": "DETACHABLE",
+      "localAvailability": "ABSENT",
+      "bindingObservation": "NOT_CHECKED",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-011",
+      "contentClass": "DETACHABLE",
+      "localAvailability": "PARTIAL",
+      "bindingObservation": "NOT_CHECKED",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-012",
+      "contentClass": "DETACHABLE",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "NOT_CHECKED",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-013",
+      "contentClass": "DETACHABLE",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "VERIFIED",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-014",
+      "contentClass": "DETACHABLE",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "OPENING_MISSING",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-015",
+      "contentClass": "DETACHABLE",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "LENGTH_MISMATCH",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-016",
+      "contentClass": "DETACHABLE",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "COMMITMENT_MISMATCH",
+      "retentionState": "ACTIVE",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-017",
+      "contentClass": "DETACHABLE",
+      "localAvailability": "ABSENT",
+      "bindingObservation": "NOT_CHECKED",
+      "retentionState": "LOGICALLY_REMOVED",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-018",
+      "contentClass": "DETACHABLE",
+      "localAvailability": "PARTIAL",
+      "bindingObservation": "NOT_CHECKED",
+      "retentionState": "LOGICALLY_REMOVED",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-019",
+      "contentClass": "DETACHABLE",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "NOT_CHECKED",
+      "retentionState": "LOGICALLY_REMOVED",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-020",
+      "contentClass": "DETACHABLE",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "VERIFIED",
+      "retentionState": "LOGICALLY_REMOVED",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-021",
+      "contentClass": "DETACHABLE",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "OPENING_MISSING",
+      "retentionState": "LOGICALLY_REMOVED",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-022",
+      "contentClass": "DETACHABLE",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "LENGTH_MISMATCH",
+      "retentionState": "LOGICALLY_REMOVED",
+      "replayReadiness": "READY"
+    },
+    {
+      "id": "CAR-023",
+      "contentClass": "DETACHABLE",
+      "localAvailability": "PRESENT",
+      "bindingObservation": "COMMITMENT_MISMATCH",
+      "retentionState": "LOGICALLY_REMOVED",
+      "replayReadiness": "READY"
+    }
+  ],
+  "candidateEvaluationPrimaryRelationV0": [
+    {
+      "id": "F13R-001",
+      "primary": "APPLIED",
+      "existingO10Mutation": "APPLIED",
+      "existingO10Stage": "FINAL_AFTER_S6",
+      "apTransitionEffect": "APPLY",
+      "kRetentionEffect": "RETAIN_NEW",
+      "coreResultKind": "PROPOSAL_READY",
+      "sameBytesRuleAfterFinalization": "NONE",
+      "scenario": "F13-APPLIED",
+      "mutant": "M-F13-APPLIED-WITHOUT-RETENTION"
+    },
+    {
+      "id": "F13R-002",
+      "primary": "AUTHENTIC_BUT_UNAUTHORIZED",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "EVENT_LOCAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "RETAIN_NEW",
+      "coreResultKind": "PROPOSAL_READY",
+      "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
+      "scenario": "F13-AUTHENTIC-BUT-UNAUTHORIZED",
+      "mutant": "M-F13-DISCARD-UNAUTHORIZED-K-EVIDENCE"
+    },
+    {
+      "id": "F13R-003",
+      "primary": "AUTHORITY_PROJECTION_UNAVAILABLE",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S5_AUTHORITY_PROJECTION",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "RETAIN_NEW",
+      "coreResultKind": "PROPOSAL_READY",
+      "sameBytesRuleAfterFinalization": "AUTHORITY_CAPABILITY_RESTORED",
+      "scenario": "F13-AUTHORITY-UNAVAILABLE",
+      "mutant": "M-F13-DROP-K-EVIDENCE-WHEN-AUTHORITY-UNAVAILABLE"
+    },
+    {
+      "id": "F13R-004",
+      "primary": "COMMITMENT_MISMATCH",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S3_KERNEL_STRUCTURAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "DO_NOT_RETAIN",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
+      "scenario": "F13-COMMITMENT-MISMATCH",
+      "mutant": "M-F13-RETAIN-COMMITMENT-MISMATCH"
+    },
+    {
+      "id": "F13R-005",
+      "primary": "CONTEXT_CAPACITY_EXHAUSTED",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S4_GRAPH_ADMISSION|S6_DURABLE_COMMIT",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "DO_NOT_RETAIN",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "NEW_CONTEXT_OR_RATIFIED_PROFILE",
+      "scenario": "F13-CONTEXT-CAPACITY",
+      "mutant": "M-F13-RETAIN-OVER-CAPACITY"
+    },
+    {
+      "id": "F13R-006",
+      "primary": "CREDENTIAL_BINDING_MISMATCH",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S3_KERNEL_STRUCTURAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "DO_NOT_RETAIN",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
+      "scenario": "F13-CREDENTIAL-BINDING-MISMATCH",
+      "mutant": "M-F13-RETAIN-BINDING-MISMATCH"
+    },
+    {
+      "id": "F13R-007",
+      "primary": "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S3_KERNEL_STRUCTURAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "DO_NOT_RETAIN",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
+      "scenario": "F13-CREDENTIAL-ID-COLLISION",
+      "mutant": "M-F13-RETAIN-CREDENTIAL-ID-COLLISION"
+    },
+    {
+      "id": "F13R-008",
+      "primary": "CURRENT_OBJECT_OUT_OF_PROFILE",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S3_KERNEL_STRUCTURAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "DO_NOT_RETAIN",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "NEW_CONTEXT_OR_RATIFIED_PROFILE",
+      "scenario": "F13-OUT-OF-PROFILE",
+      "mutant": "M-F13-RETAIN-OUT-OF-PROFILE"
+    },
+    {
+      "id": "F13R-009",
+      "primary": "DEPENDENCY_DEFERRED",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S4_GRAPH_ADMISSION|S6_DURABLE_COMMIT",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "DO_NOT_RETAIN",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "AUTHENTICATED_DEPENDENCY_STATE_CHANGED",
+      "scenario": "F13-DEPENDENCY-DEFERRED",
+      "mutant": "M-F13-RETAIN-DEFERRED-CANDIDATE"
+    },
+    {
+      "id": "F13R-010",
+      "primary": "DUPLICATE",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S3_KERNEL_STRUCTURAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "ALREADY_RETAINED",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "NONE",
+      "scenario": "F13-DUPLICATE",
+      "mutant": "M-F13-DUPLICATE-CREATES-SUCCESSOR"
+    },
+    {
+      "id": "F13R-011",
+      "primary": "FORK_EVIDENCE",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "EVENT_LOCAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "RETAIN_NEW",
+      "coreResultKind": "PROPOSAL_READY",
+      "sameBytesRuleAfterFinalization": "RATIFIED_LINEAGE_STATE_CHANGED",
+      "scenario": "F13-FORK-EVIDENCE",
+      "mutant": "M-F13-DISCARD-FORK-EVIDENCE"
+    },
+    {
+      "id": "F13R-012",
+      "primary": "INVALID",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S3_KERNEL_STRUCTURAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "DO_NOT_RETAIN",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
+      "scenario": "F13-INVALID",
+      "mutant": "M-F13-RETAIN-INVALID"
+    },
+    {
+      "id": "F13R-013",
+      "primary": "LENGTH_MISMATCH",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S3_KERNEL_STRUCTURAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "DO_NOT_RETAIN",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
+      "scenario": "F13-LENGTH-MISMATCH",
+      "mutant": "M-F13-RETAIN-LENGTH-MISMATCH"
+    },
+    {
+      "id": "F13R-014",
+      "primary": "LINEAGE_QUARANTINED",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "EVENT_LOCAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "RETAIN_NEW",
+      "coreResultKind": "PROPOSAL_READY",
+      "sameBytesRuleAfterFinalization": "RATIFIED_LINEAGE_STATE_CHANGED",
+      "scenario": "F13-LINEAGE-QUARANTINED",
+      "mutant": "M-F13-DISCARD-QUARANTINED-EVIDENCE"
+    },
+    {
+      "id": "F13R-015",
+      "primary": "OPENING_MISSING",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S3_KERNEL_STRUCTURAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "DO_NOT_RETAIN",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "VERIFIED_OPENING_PRESENT",
+      "scenario": "F13-DETACHABLE-OPENING-MISSING",
+      "mutant": "M-F13-RETAIN-DETACHABLE-WITHOUT-OPENING"
+    },
+    {
+      "id": "F13R-016",
+      "primary": "PENDING_ANCESTOR",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "EVENT_LOCAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "RETAIN_NEW",
+      "coreResultKind": "PROPOSAL_READY",
+      "sameBytesRuleAfterFinalization": "AUTHENTICATED_DEPENDENCY_STATE_CHANGED",
+      "scenario": "F13-PENDING-ANCESTOR",
+      "mutant": "M-F13-DISCARD-PENDING-DESCENDANT"
+    },
+    {
+      "id": "F13R-017",
+      "primary": "PENDING_OPENING",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "EVENT_LOCAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "RETAIN_NEW",
+      "coreResultKind": "PROPOSAL_READY",
+      "sameBytesRuleAfterFinalization": "VERIFIED_OPENING_PRESENT",
+      "scenario": "F13-REQUIRED-PENDING-OPENING",
+      "mutant": "M-F13-DISCARD-REQUIRED-PENDING-ROOT"
+    },
+    {
+      "id": "F13R-018",
+      "primary": "POST_REVOCATION",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "EVENT_LOCAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "RETAIN_NEW",
+      "coreResultKind": "PROPOSAL_READY",
+      "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
+      "scenario": "F13-POST-REVOCATION",
+      "mutant": "M-F13-DISCARD-POST-REVOCATION-EVIDENCE"
+    },
+    {
+      "id": "F13R-019",
+      "primary": "PROFILE_ACTIVATION_UNSUPPORTED",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S0_PROFILE_ACTIVATION",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "DO_NOT_RETAIN",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "NEW_CONTEXT_OR_RATIFIED_PROFILE",
+      "scenario": "F13-PROFILE-UNSUPPORTED",
+      "mutant": "M-F13-RETAIN-UNSUPPORTED-PROFILE"
+    },
+    {
+      "id": "F13R-020",
+      "primary": "REFERENCE_COLLISION_UNSUPPORTED",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S3_KERNEL_STRUCTURAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "DO_NOT_RETAIN",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
+      "scenario": "F13-REFERENCE-COLLISION",
+      "mutant": "M-F13-SELECT-COLLISION-WINNER"
+    },
+    {
+      "id": "F13R-021",
+      "primary": "REMOVAL_INAPPLICABLE",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "EVENT_LOCAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "RETAIN_NEW",
+      "coreResultKind": "PROPOSAL_READY",
+      "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
+      "scenario": "F13-REMOVAL-INAPPLICABLE",
+      "mutant": "M-F13-DISCARD-INAPPLICABLE-REMOVAL"
+    },
+    {
+      "id": "F13R-022",
+      "primary": "STALE_EVIDENCE",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "POST_S3_REPLAY_EVIDENCE",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "RETAIN_NEW",
+      "coreResultKind": "PROPOSAL_READY",
+      "sameBytesRuleAfterFinalization": "FRESH_LIVE_EVIDENCE_PRESENT",
+      "scenario": "F13-STALE-LIVE-EVIDENCE",
+      "mutant": "M-F13-CHECKPOINT-SUBSTITUTES-OR-DROPS-LIVE-EVIDENCE"
+    },
+    {
+      "id": "F13R-023",
+      "primary": "STRUCTURAL_REJECTION",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S3_KERNEL_STRUCTURAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "DO_NOT_RETAIN",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
+      "scenario": "F13-STRUCTURAL-REJECTION",
+      "mutant": "M-F13-RETAIN-STRUCTURAL-REJECTION"
+    },
+    {
+      "id": "F13R-024",
+      "primary": "UNRESOLVABLE_CREDENTIAL",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S3_KERNEL_STRUCTURAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "DO_NOT_RETAIN",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
+      "scenario": "F13-UNRESOLVABLE-CREDENTIAL",
+      "mutant": "M-F13-RETAIN-UNRESOLVABLE-CREDENTIAL"
+    },
+    {
+      "id": "F13R-025",
+      "primary": "UNRESOLVED_CREDENTIAL_BINDING",
+      "existingO10Mutation": "NOT_APPLIED",
+      "existingO10Stage": "S3_KERNEL_STRUCTURAL",
+      "apTransitionEffect": "DO_NOT_APPLY",
+      "kRetentionEffect": "DO_NOT_RETAIN",
+      "coreResultKind": "TERMINAL_NO_SUCCESSOR",
+      "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
+      "scenario": "F13-UNRESOLVED-BINDING",
+      "mutant": "M-F13-RETAIN-UNRESOLVED-BINDING"
+    }
+  ],
+  "transcriptReasonStageRelationV0": [
+    {
+      "id": "TRS-001",
+      "kind": "VALIDATED",
+      "reason": null,
+      "stage": "TRANSCRIPT_COMPLETE"
+    },
+    {
+      "id": "TRS-002",
+      "kind": "REJECTED",
+      "reason": "PROFILE_ACTIVATION_UNSUPPORTED",
+      "stage": "PROFILE_SELECTION"
+    },
+    {
+      "id": "TRS-003",
+      "kind": "REJECTED",
+      "reason": "TRANSCRIPT_LENGTH_REJECTED",
+      "stage": "OUTER_FRAMING"
+    },
+    {
+      "id": "TRS-004",
+      "kind": "REJECTED",
+      "reason": "TRANSCRIPT_DOMAIN_REJECTED",
+      "stage": "OUTER_FRAMING"
+    },
+    {
+      "id": "TRS-005",
+      "kind": "REJECTED",
+      "reason": "TRANSCRIPT_LENGTH_MISMATCH",
+      "stage": "OUTER_FRAMING"
+    },
+    {
+      "id": "TRS-006",
+      "kind": "REJECTED",
+      "reason": "TRANSCRIPT_TRUNCATED",
+      "stage": "TRANSCRIPT_BODY"
+    },
+    {
+      "id": "TRS-007",
+      "kind": "REJECTED",
+      "reason": "TRANSCRIPT_TRAILING_BYTES",
+      "stage": "TRANSCRIPT_BODY"
+    },
+    {
+      "id": "TRS-008",
+      "kind": "REJECTED",
+      "reason": "TRANSCRIPT_NONCANONICAL",
+      "stage": "TRANSCRIPT_BODY"
+    },
+    {
+      "id": "TRS-009",
+      "kind": "REJECTED",
+      "reason": "CONTENT_DESCRIPTOR_REJECTED",
+      "stage": "TRANSCRIPT_BODY"
+    },
+    {
+      "id": "TRS-010",
+      "kind": "REJECTED",
+      "reason": "COMMITMENT_GEOMETRY_REJECTED",
+      "stage": "TRANSCRIPT_BODY"
+    },
+    {
+      "id": "TRS-011",
+      "kind": "REJECTED",
+      "reason": "REFERENCE_MISMATCH",
+      "stage": "REFERENCE_DERIVATION"
+    },
+    {
+      "id": "TRS-012",
+      "kind": "REJECTED",
+      "reason": "SIGNATURE_LENGTH_MISMATCH",
+      "stage": "SIGNATURE_VERIFICATION"
+    },
+    {
+      "id": "TRS-013",
+      "kind": "REJECTED",
+      "reason": "SIGNATURE_INVALID",
+      "stage": "SIGNATURE_VERIFICATION"
+    },
+    {
+      "id": "TRS-014",
+      "kind": "REJECTED",
+      "reason": "STANDALONE_VERIFICATION_KEY_REJECTED",
+      "stage": "SIGNATURE_VERIFICATION"
+    }
+  ],
+  "genesisReasonStageRelationV0": [
+    {
+      "id": "GRS-001",
+      "kind": "GENESIS_PROPOSAL_READY",
+      "reason": null,
+      "stage": "GENESIS_PROPOSAL_COMPLETE"
+    },
+    {
+      "id": "GRS-002",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "PROFILE_ACTIVATION_UNSUPPORTED",
+      "stage": "PROFILE_SELECTION"
+    },
+    {
+      "id": "GRS-003",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "TRANSCRIPT_LENGTH_REJECTED",
+      "stage": "OUTER_FRAMING"
+    },
+    {
+      "id": "GRS-004",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "TRANSCRIPT_DOMAIN_REJECTED",
+      "stage": "OUTER_FRAMING"
+    },
+    {
+      "id": "GRS-005",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "TRANSCRIPT_LENGTH_MISMATCH",
+      "stage": "OUTER_FRAMING"
+    },
+    {
+      "id": "GRS-006",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "TRANSCRIPT_TRUNCATED",
+      "stage": "TRANSCRIPT_BODY"
+    },
+    {
+      "id": "GRS-007",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "TRANSCRIPT_TRAILING_BYTES",
+      "stage": "TRANSCRIPT_BODY"
+    },
+    {
+      "id": "GRS-008",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "TRANSCRIPT_NONCANONICAL",
+      "stage": "TRANSCRIPT_BODY"
+    },
+    {
+      "id": "GRS-009",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "CONTENT_DESCRIPTOR_REJECTED",
+      "stage": "TRANSCRIPT_BODY"
+    },
+    {
+      "id": "GRS-010",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "COMMITMENT_GEOMETRY_REJECTED",
+      "stage": "TRANSCRIPT_BODY"
+    },
+    {
+      "id": "GRS-011",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "REFERENCE_MISMATCH",
+      "stage": "REFERENCE_DERIVATION"
+    },
+    {
+      "id": "GRS-012",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "SIGNATURE_LENGTH_MISMATCH",
+      "stage": "SIGNATURE_VERIFICATION"
+    },
+    {
+      "id": "GRS-013",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "SIGNATURE_INVALID",
+      "stage": "SIGNATURE_VERIFICATION"
+    },
+    {
+      "id": "GRS-014",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "EXPECTED_CONTEXT_MISMATCH",
+      "stage": "CONTEXT_BINDING"
+    },
+    {
+      "id": "GRS-015",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "ROOT_CREDENTIAL_POSITION_MISMATCH",
+      "stage": "CONTEXT_BINDING"
+    },
+    {
+      "id": "GRS-016",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "INITIAL_AUTHORITY_POLICY_REJECTED",
+      "stage": "TRANSCRIPT_BODY"
+    }
+  ]
+}
