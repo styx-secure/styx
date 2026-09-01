@@ -13,6 +13,7 @@ sys.path.insert(0, str(CORPUS_TOOL))
 from run_mutations import (  # noqa: E402
     DATA_MUTATION_IDS,
     DATA_MUTATIONS,
+    DETECTOR_OWNER,
     run,
     run_data_mutations,
 )
@@ -55,6 +56,17 @@ class MutationTests(unittest.TestCase):
         self.assertEqual(DATA_MUTATIONS, EXPECTED_DATA_MUTATIONS)
         self.assertEqual(len({identity for identity, _ in DATA_MUTATIONS}), 28)
         self.assertEqual(len({target for _, target in DATA_MUTATIONS}), 28)
+        self.assertEqual(
+            DETECTOR_OWNER,
+            {
+                **{
+                    identity: "validate_corpus.py"
+                    for identity in DATA_MUTATION_IDS[:26]
+                },
+                "CDM-027": "run_mutations.py",
+                "CDM-028": "replay_corpus.py",
+            },
+        )
 
     def test_closed_data_mutation_registry_is_killed(self) -> None:
         rows = run_data_mutations(ROOT)
