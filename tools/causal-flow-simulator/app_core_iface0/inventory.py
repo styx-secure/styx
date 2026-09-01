@@ -275,13 +275,17 @@ def _semantic_axis_members(
         return ["SINGLE"]
     if mode == "PER_TARGET":
         targets = sorted(semantic["targets"])
-        if len(targets) != axis["expectedCount"]:
-            targets = sorted(
+        if len(targets) == axis["expectedCount"]:
+            return targets
+        if axis["id"] == "ACV-020":
+            occurrences = sorted(
                 occurrence
                 for occurrence, owner in semantic["customKeywordCoverage"].items()
                 if owner == axis["id"]
             )
-        return targets
+            if len(occurrences) == axis["expectedCount"]:
+                return occurrences
+        raise InventoryError(f"PER_TARGET relation drift: {axis['id']}")
     if mode == "PER_LITERAL_VALUE":
         return list(axis["values"])
     if mode == "PER_LITERAL_RELATION_ROW":

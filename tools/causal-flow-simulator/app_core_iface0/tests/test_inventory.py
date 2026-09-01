@@ -8,9 +8,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from inventory import (
+    InventoryError,
     SEMANTIC_COUNT,
     STRUCTURAL_COUNT,
     TOTAL_COUNT,
+    _semantic_axis_members,
     expand_semantic_instances,
     expand_structural_instances,
 )
@@ -29,7 +31,14 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(len({row.instance_id for row in rows}), SEMANTIC_COUNT)
         self.assertEqual(len(rows) + STRUCTURAL_COUNT, TOTAL_COUNT)
 
+    def test_per_target_drift_has_only_the_ratified_acv020_derivation(self) -> None:
+        with self.assertRaisesRegex(InventoryError, "PER_TARGET relation drift"):
+            _semantic_axis_members(
+                {"id": "ACV-999", "mode": "PER_TARGET", "expectedCount": 2},
+                {"targets": ["one"], "customKeywordCoverage": {}},
+                ROOT / "contract",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
-
