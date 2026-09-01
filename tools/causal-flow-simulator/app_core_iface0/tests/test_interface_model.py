@@ -115,6 +115,23 @@ class InterfaceModelTests(unittest.TestCase):
         with self.assertRaises(HarnessFailure):
             read_bounded_request(BytesIO(b"{}\n"), maximum_octets=None)
 
+    def test_bounded_reader_handles_short_reads_without_early_eof(self) -> None:
+        class ShortReadStream(BytesIO):
+            def read(self, size: int = -1) -> bytes:
+                return super().read(min(size, 3))
+
+        accepted = b'{"a":1}\n'
+        self.assertEqual(
+            read_bounded_request(
+                ShortReadStream(accepted), maximum_octets=len(accepted)
+            ),
+            accepted,
+        )
+        stream = ShortReadStream(accepted + b"x")
+        with self.assertRaises(RequestRejected):
+            read_bounded_request(stream, maximum_octets=len(accepted))
+        self.assertEqual(stream.tell(), len(accepted) + 1)
+
 
 if __name__ == "__main__":
     unittest.main()

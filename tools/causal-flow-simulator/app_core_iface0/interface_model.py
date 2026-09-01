@@ -308,9 +308,17 @@ def read_bounded_request(stream: BinaryIO, *, maximum_octets: int | None) -> byt
         raise HarnessFailure("outer request-octet limit is not ratified")
     if not isinstance(maximum_octets, int) or maximum_octets < 1:
         raise HarnessFailure("outer request-octet limit is invalid")
-    raw = stream.read(maximum_octets + 1)
-    if not isinstance(raw, bytes):
-        raise HarnessFailure("request stream did not return bytes")
+    remaining = maximum_octets + 1
+    chunks: list[bytes] = []
+    while remaining:
+        chunk = stream.read(remaining)
+        if not isinstance(chunk, bytes):
+            raise HarnessFailure("request stream did not return bytes")
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    raw = b"".join(chunks)
     if len(raw) > maximum_octets:
         raise RequestRejected()
     return raw
