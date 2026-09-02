@@ -32,7 +32,7 @@ class SeedReachabilityTests(unittest.TestCase):
             {"request_count": 6, "response_count": 6},
         )
 
-    def test_repeated_required_schema_is_detected_for_seed_contract_review(self) -> None:
+    def test_repeated_required_schema_locations_are_enumerated(self) -> None:
         contract = ROOT / "contract"
         schema = _load_json(contract / "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json")
         reachability = _load_json(
@@ -49,6 +49,10 @@ class SeedReachabilityTests(unittest.TestCase):
         self.assertEqual(coverage["eligibleRootIds"], ["RESPONSE-DESCRIBE_PROFILE"])
         root = roots["RESPONSE-DESCRIBE_PROFILE"]
         carrier = synthesizer.carrier(root, target_pointer=target)
+        self.assertEqual(
+            carrier.target_json_pointer,
+            "/result/descriptor/capabilityRequirements/ACTIVATION_CAPABILITY_SET",
+        )
         self.assertEqual(
             synthesizer.target_locations(root, carrier.value, target),
             [

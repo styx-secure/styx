@@ -643,7 +643,7 @@ class SchemaSynthesizer:
         if virtual_arm:
             self._target_data_pointer = ""
         if not isinstance(value, dict) or self._target_data_pointer is None:
-            raise SeedGenerationError("target did not materialize exactly once")
+            raise SeedGenerationError("target did not materialize")
         validator = Draft202012Validator(
             {
                 "$schema": self.schema["$schema"],
@@ -664,7 +664,14 @@ class SchemaSynthesizer:
             if target_pointer is not None
             else f"{arm_goal[0]}/{arm_goal[1]}" if arm_goal is not None else wrapper
         )
-        target_value = _resolve_data_pointer(value, self._target_data_pointer)
+        target_locations = self.target_locations(root, value, target_schema_pointer)
+        if not target_locations:
+            raise SeedGenerationError("target did not materialize")
+        # One schema may occur more than once in a valid carrier. The stored
+        # JSON Pointer still selects exactly one value; the canonical contract
+        # tuple chooses the lexicographically first eligible location.
+        target_data_pointer = target_locations[0]
+        target_value = _resolve_data_pointer(value, target_data_pointer)
         target_node = self.resolve(target_schema_pointer)
         target_validator = Draft202012Validator(
             {
@@ -675,7 +682,7 @@ class SchemaSynthesizer:
         )
         if not target_validator.is_valid(target_value):
             raise SeedGenerationError("selected target does not validate at its data pointer")
-        return GeneratedCarrier(root["rootId"], value, self._target_data_pointer)
+        return GeneratedCarrier(root["rootId"], value, target_data_pointer)
 
     def target_locations(
         self,
