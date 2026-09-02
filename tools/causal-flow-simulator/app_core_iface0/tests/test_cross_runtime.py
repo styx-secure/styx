@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -25,6 +26,7 @@ from canonical_json import dumps  # noqa: E402
 from authority_witness import isolated_authority_states_witness  # noqa: E402
 from run_cross_runtime import build_report as build_javascript_release_report  # noqa: E402
 from run_probe import build_report as build_reference_probe_report  # noqa: E402
+import run_probe  # noqa: E402
 
 
 class SeedReachabilityTests(unittest.TestCase):
@@ -580,10 +582,38 @@ class PhaseAReaderIntegrationTests(unittest.TestCase):
         cls._temporary.cleanup()
 
     def test_reference_reader_freezes_all_requests_before_oracle_comparison(self) -> None:
-        report = build_reference_probe_report(
-            ROOT.parents[2], ROOT / "contract", self.evidence
+        inventory = json.loads(
+            (self.evidence / "positive-carrier-inventory.json").read_bytes()
         )
+        response_files = {
+            row["carrierFile"]
+            for row in inventory["cases"]
+            if row["direction"] == "RESPONSE"
+        }
+        evaluation_count = 0
+        original_object_reader = run_probe._canonical_object
+        original_evaluator = run_probe.evaluate_interface_request
+
+        def observed_object_reader(path: Path) -> tuple[object, bytes]:
+            if path.name in response_files and evaluation_count != 65:
+                self.fail("withheld response carrier was read before all outputs froze")
+            return original_object_reader(path)
+
+        def observed_evaluator(*args: object, **kwargs: object) -> dict[str, object]:
+            nonlocal evaluation_count
+            response = original_evaluator(*args, **kwargs)
+            evaluation_count += 1
+            return response
+
+        with (
+            patch("run_probe._canonical_object", side_effect=observed_object_reader),
+            patch("run_probe.evaluate_interface_request", side_effect=observed_evaluator),
+        ):
+            report = build_reference_probe_report(
+                ROOT.parents[2], ROOT / "contract", self.evidence
+            )
         self.assertEqual(report["verdict"], "PASS")
+        self.assertEqual(evaluation_count, 65)
         self.assertEqual(report["request_case_count"], 65)
         self.assertEqual(report["response_case_count"], 15)
         self.assertEqual(len(report["observations"]), 65)
