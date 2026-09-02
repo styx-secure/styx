@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import base64
 import hashlib
 import json
@@ -33,16 +34,14 @@ ISSUE_URL = "https://api.github.com/repos/styx-secure/styx/issues/295"
 ISSUE_COMMENTS_URL = ISSUE_URL + "/comments?per_page=100&page=1"
 OPERATOR_ID = 141346846
 OPERATOR_LOGIN = "maverde73"
-SEMANTIC_FIXTURE_SOURCE_COMMIT = "284b9230126cfa70337723c2a9d001800a64804c"
 SEMANTIC_FIXTURE_SOURCE_PATH = (
     "tools/causal-flow-simulator/app_core_iface0/generate_seed_registry.py"
 )
-SEMANTIC_FIXTURE_SOURCE_FIRST_LINE = 971
-SEMANTIC_FIXTURE_SOURCE_LAST_LINE = 1162
-SEMANTIC_FIXTURE_SOURCE_OCTETS = 7121
+SEMANTIC_FIXTURE_SOURCE_OCTETS = 8537
 SEMANTIC_FIXTURE_SOURCE_SHA256 = (
-    "686208b6d1285d42f8ec165fbb511905004eee124a0708207b103b60c561e1ad"
+    "9b80b0fb677c789ece85515d72ece5475f8dfcfc19946533e36cc3dd762219cb"
 )
+SEMANTIC_FIXTURE_IDENTIFIER = b"_semantic_request_carriers"
 BANNED_PROVIDER_ENVIRONMENT = frozenset(
     {
         "GH_HOST",
@@ -93,39 +92,58 @@ def _git_bytes(repo: Path, *arguments: str) -> bytes:
 
 
 def _frozen_semantic_fixture_slice(source: bytes) -> bytes:
+    """Extract and verify the exact V17 function from a selection-HEAD blob."""
+
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError) as error:
+        raise FinalGateError("semantic-fixture source is not valid Python") from error
+    definitions = [
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "_semantic_request_carriers"
+    ]
+    definition_lines = [
+        line
+        for line in source.splitlines()
+        if line.startswith(b"def _semantic_request_carriers(")
+    ]
+    if len(definitions) != 1 or len(definition_lines) != 1:
+        raise FinalGateError("semantic-fixture definition count drift")
+    node = definitions[0]
+    if node.end_lineno is None:
+        raise FinalGateError("semantic-fixture definition has no exact end")
     lines = source.splitlines(keepends=True)
-    if len(lines) < SEMANTIC_FIXTURE_SOURCE_LAST_LINE:
-        raise FinalGateError("semantic-fixture source is shorter than the ratified slice")
-    result = b"".join(
-        lines[
-            SEMANTIC_FIXTURE_SOURCE_FIRST_LINE - 1 :
-            SEMANTIC_FIXTURE_SOURCE_LAST_LINE
-        ]
-    )
+    result = b"".join(lines[node.lineno - 1 : node.end_lineno])
     if (
         len(result) != SEMANTIC_FIXTURE_SOURCE_OCTETS
         or _sha256(result) != SEMANTIC_FIXTURE_SOURCE_SHA256
         or not result.endswith(b"\n")
     ):
         raise FinalGateError("ratified semantic-fixture source slice drift")
+    if source.count(result) != 1:
+        raise FinalGateError("semantic-fixture source occurrence drift")
+    offset = 0
+    while True:
+        offset = source.find(SEMANTIC_FIXTURE_IDENTIFIER, offset)
+        if offset < 0:
+            break
+        following = offset + len(SEMANTIC_FIXTURE_IDENTIFIER)
+        if source[following : following + 1] != b"(":
+            raise FinalGateError("semantic-fixture identifier is rebound")
+        offset = following
     return result
 
 
-def _local_source_blobs(repo: Path, selection_head: str) -> tuple[bytes, bytes]:
-    historical = _git_bytes(
-        repo,
-        "show",
-        f"{SEMANTIC_FIXTURE_SOURCE_COMMIT}:{SEMANTIC_FIXTURE_SOURCE_PATH}",
-    )
-    frozen = _frozen_semantic_fixture_slice(historical)
+def _local_source_blobs(repo: Path, selection_head: str) -> bytes:
     selected = _git_bytes(
         repo,
         "show",
         f"{selection_head}:{SEMANTIC_FIXTURE_SOURCE_PATH}",
     )
-    if selected.count(frozen) != 1:
-        raise FinalGateError("selectionHead does not contain one exact semantic-fixture slice")
-    return historical, selected
+    _frozen_semantic_fixture_slice(selected)
+    return selected
 
 
 def _verify_clean_checkout(repo: Path, selection_head: str) -> None:
@@ -267,11 +285,11 @@ def run_phase_a_gate(
         raise FinalGateError("the two checkout roots are not distinct")
     _verify_clean_checkout(first, selection_head)
     _verify_clean_checkout(second, selection_head)
-    historical_one, selected_one = _local_source_blobs(first, selection_head)
-    historical_two, selected_two = _local_source_blobs(second, selection_head)
-    if historical_one != historical_two or selected_one != selected_two:
+    selected_one = _local_source_blobs(first, selection_head)
+    selected_two = _local_source_blobs(second, selection_head)
+    if selected_one != selected_two:
         raise FinalGateError("the two checkouts disagree on semantic-fixture source bytes")
-    _verify_provider_source_slice(selection_head, historical_one, selected_one)
+    _verify_provider_source_slice(selection_head, selected_one)
     first_result = _validate_external_root(first, evidence_one)
     second_result = _validate_external_root(second, evidence_two)
     first_tree = _tree(evidence_one.resolve())
@@ -350,19 +368,12 @@ def _provider_source_blob(commit: str) -> bytes:
 
 def _verify_provider_source_slice(
     selection_head: str,
-    local_historical: bytes,
     local_selected: bytes,
 ) -> None:
-    provider_historical = _provider_source_blob(SEMANTIC_FIXTURE_SOURCE_COMMIT)
     provider_selected = _provider_source_blob(selection_head)
-    if (
-        provider_historical != local_historical
-        or provider_selected != local_selected
-    ):
+    if provider_selected != local_selected:
         raise FinalGateError("provider and local source blobs differ")
-    frozen = _frozen_semantic_fixture_slice(provider_historical)
-    if provider_selected.count(frozen) != 1:
-        raise FinalGateError("provider selectionHead lost the frozen semantic fixture")
+    _frozen_semantic_fixture_slice(provider_selected)
 
 
 def _next_link(headers: dict[str, str]) -> str | None:
@@ -722,8 +733,8 @@ def _validate_provider_authority(comment_id: str, repo: Path) -> dict[str, Any]:
         manifest_sha,
     )
 
-    historical, selected = _local_source_blobs(repo.resolve(), selection_head)
-    _verify_provider_source_slice(selection_head, historical, selected)
+    selected = _local_source_blobs(repo.resolve(), selection_head)
+    _verify_provider_source_slice(selection_head, selected)
 
     # Phase B never consumes the reviewed or caller-supplied Phase-A directory.
     # Only after provider authentication does the gate create a fresh private

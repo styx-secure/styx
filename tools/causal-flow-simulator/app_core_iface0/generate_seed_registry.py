@@ -38,6 +38,25 @@ ROOT_ORDER = tuple(
     for direction in ("REQUEST", "RESPONSE")
     for operation in OPERATIONS
 )
+RESPONSE_STATE_POINTERS = (
+    ("EVALUATE_GENESIS", "/result/proposedGenesis"),
+    ("EVALUATE_GENESIS", "/result/proposedGenesis/projection"),
+    ("REPLAY_CONTEXT", "/result/proposedContext"),
+    ("REPLAY_CONTEXT", "/result/proposedContext/projection"),
+    ("EVALUATE_CANDIDATE", "/result/evaluation/proposal/successor"),
+    ("EVALUATE_CANDIDATE", "/result/evaluation/proposal/successor/projection"),
+    ("EVALUATE_EVIDENCE_UPDATE", "/result/evaluation/proposal/successor"),
+    (
+        "EVALUATE_EVIDENCE_UPDATE",
+        "/result/evaluation/proposal/successor/projection",
+    ),
+)
+SNAPSHOT_SCHEMA_POINTERS = frozenset(
+    {
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/ProposedContextSnapshotV0",
+    }
+)
 
 
 class SeedGenerationError(ValueError):
@@ -79,6 +98,116 @@ def _resolve_data_pointer(value: Any, pointer: str) -> Any:
         token = _unescape(token)
         node = node[int(token)] if isinstance(node, list) else node[token]
     return node
+
+
+def _container_subtrees(value: Any) -> list[dict[str, Any] | list[Any]]:
+    """Return every complete object/array subtree, including the root."""
+
+    result: list[dict[str, Any] | list[Any]] = []
+    if isinstance(value, dict):
+        result.append(value)
+        for child in value.values():
+            result.extend(_container_subtrees(child))
+    elif isinstance(value, list):
+        result.append(value)
+        for child in value:
+            result.extend(_container_subtrees(child))
+    return result
+
+
+def _derive_response_state_pointers(
+    schema: dict[str, Any], reachability: dict[str, Any]
+) -> tuple[tuple[str, str], ...]:
+    """Derive every top-level response snapshot and its projection child."""
+
+    synthesizer = SchemaSynthesizer(schema)
+    found: set[tuple[str, str]] = set()
+
+    def walk(
+        operation: str,
+        node: Any,
+        data_pointer: str,
+        reference_stack: tuple[str, ...],
+    ) -> None:
+        if isinstance(node, list):
+            for child in node:
+                walk(operation, child, data_pointer, reference_stack)
+            return
+        if not isinstance(node, dict):
+            return
+        reference = node.get("$ref")
+        if isinstance(reference, str):
+            pointer = reference.removeprefix("#")
+            if pointer in SNAPSHOT_SCHEMA_POINTERS:
+                found.add((operation, data_pointer))
+                found.add((operation, _join(data_pointer, "projection")))
+                return
+            if pointer in reference_stack:
+                return
+            walk(
+                operation,
+                synthesizer.resolve(pointer),
+                data_pointer,
+                (*reference_stack, pointer),
+            )
+            return
+        properties = node.get("properties")
+        if isinstance(properties, dict):
+            for name, child in properties.items():
+                walk(operation, child, _join(data_pointer, name), reference_stack)
+        for keyword in ("allOf", "anyOf", "oneOf"):
+            children = node.get(keyword)
+            if isinstance(children, list):
+                for child in children:
+                    walk(operation, child, data_pointer, reference_stack)
+        for keyword in ("if", "then", "else", "not"):
+            child = node.get(keyword)
+            if isinstance(child, dict):
+                walk(operation, child, data_pointer, reference_stack)
+        items = node.get("items")
+        if isinstance(items, dict):
+            walk(operation, items, _join(data_pointer, "*"), reference_stack)
+
+    for root in reachability.get("roots", []):
+        if not isinstance(root, dict) or root.get("direction") != "RESPONSE":
+            continue
+        operation = root.get("operation")
+        wrapper = root.get("wrapperSchemaPointer")
+        if not isinstance(operation, str) or not isinstance(wrapper, str):
+            raise SeedGenerationError("response root relation is malformed")
+        walk(operation, synthesizer.resolve(wrapper), "", (wrapper,))
+    observed = tuple(sorted(found, key=lambda row: (row[0], row[1])))
+    expected = tuple(sorted(RESPONSE_STATE_POINTERS, key=lambda row: (row[0], row[1])))
+    if observed != expected:
+        raise SeedGenerationError("response snapshot pointer derivation drift")
+    return expected
+
+
+def _enforce_cross_case_response_state_non_disclosure(
+    schema: dict[str, Any],
+    reachability: dict[str, Any],
+    requests: list[dict[str, Any]],
+    responses: list[dict[str, Any]],
+) -> None:
+    """Reject complete withheld response state disclosed in any public request."""
+
+    pointers = _derive_response_state_pointers(schema, reachability)
+    request_subtrees = [
+        subtree for request in requests for subtree in _container_subtrees(request)
+    ]
+    for response in responses:
+        operation = response.get("operation")
+        for expected_operation, pointer in pointers:
+            if operation != expected_operation:
+                continue
+            try:
+                node = _resolve_data_pointer(response, pointer)
+            except (KeyError, IndexError, TypeError, ValueError):
+                continue
+            if not isinstance(node, (dict, list)):
+                raise SeedGenerationError("response snapshot pointer is not a container")
+            if any(node == subtree for subtree in request_subtrees):
+                raise SeedGenerationError("CROSS_CASE_RESPONSE_STATE_DISCLOSURE")
 
 
 def _deep_merge(left: Any, right: Any) -> Any:
@@ -971,11 +1100,11 @@ def _application_fields(**updates: object) -> dict[str, object]:
 
 
 def _semantic_request_carriers(authority: Any) -> list[dict[str, Any]]:
-    """Build a closed deterministic set of blind semantic requests.
+    """Build domain-separated blind semantic requests.
 
-    These requests exist only to make schema-valid response carriers reachable.
-    They contain no expected disposition and every response is still produced by
-    ``evaluate_interface_request`` and checked before release.
+    No complete proposal state emitted by one public request is reused as a
+    subtree of another public request.  Hidden setup evaluations construct
+    otherwise-valid priors but are not themselves inventory requests.
     """
 
     from interface_model import (
@@ -987,44 +1116,66 @@ def _semantic_request_carriers(authority: Any) -> list[dict[str, Any]]:
     )
 
     backend = _load_pinned_c03_model(str(authority.repo_root))
-    seed = bytes(range(32))
-    root_key, _ = backend.ed25519_sign(seed, b"")
-    context_hex = "11" * 32
-    genesis_transcript = backend.encode_genesis(
-        {
-            "applicationProfileId": 1,
-            "applicationProfileVersion": 1,
-            "contextIdentifierHex": context_hex,
-            "initialAuthorityPolicyHex": "01",
-            "rootVerificationKeyHex": root_key.hex(),
-        }
-    )
-    _, genesis_signature = backend.ed25519_sign(seed, genesis_transcript)
-    genesis_candidate = {
-        "objectKind": "GENESIS",
-        "signatureHex": genesis_signature.hex(),
-        "transcriptHex": genesis_transcript.hex(),
-    }
-    genesis_input = {
-        "candidate": genesis_candidate,
-        "expectedContextIdentifierHex": context_hex,
-    }
-    genesis_ready = evaluate_genesis(
-        authority, dict(SUPPORTED_PROFILE), genesis_input
-    )
-    if genesis_ready.get("kind") != "GENESIS_PROPOSAL_READY":
-        raise SeedGenerationError("semantic genesis fixture did not become ready")
-    proposed_genesis = genesis_ready["proposedGenesis"]
-    genesis_reference = proposed_genesis["projection"]["genesisReferenceHex"]
 
+    def domain(label: str) -> bytes:
+        return hashlib.sha256(
+            b"STYX/APP-CORE-IFACE-0/SEMANTIC-FIXTURE/V17/"
+            + label.encode("ascii")
+        ).digest()
+
+    def genesis(label: str) -> tuple[bytes, str, dict[str, Any], dict[str, Any]]:
+        seed = domain(label + "/SEED")
+        context_hex = domain(label + "/CONTEXT").hex()
+        root_key, _ = backend.ed25519_sign(seed, b"")
+        transcript = backend.encode_genesis(
+            {
+                "applicationProfileId": 1,
+                "applicationProfileVersion": 1,
+                "contextIdentifierHex": context_hex,
+                "initialAuthorityPolicyHex": "01",
+                "rootVerificationKeyHex": root_key.hex(),
+            }
+        )
+        _, signature = backend.ed25519_sign(seed, transcript)
+        candidate = {
+            "objectKind": "GENESIS",
+            "signatureHex": signature.hex(),
+            "transcriptHex": transcript.hex(),
+        }
+        ready = evaluate_genesis(
+            authority,
+            dict(SUPPORTED_PROFILE),
+            {
+                "candidate": candidate,
+                "expectedContextIdentifierHex": context_hex,
+            },
+        )
+        if ready.get("kind") != "GENESIS_PROPOSAL_READY":
+            raise SeedGenerationError("semantic genesis fixture did not become ready")
+        return seed, context_hex, candidate, ready["proposedGenesis"]
+
+    public_seed, public_context_hex, public_genesis_candidate, _ = genesis(
+        "PUBLIC-GENESIS"
+    )
+    public_genesis_input = {
+        "candidate": public_genesis_candidate,
+        "expectedContextIdentifierHex": public_context_hex,
+    }
+
+    stateful_seed, stateful_context_hex, _, proposed_genesis = genesis(
+        "STATEFUL"
+    )
+    genesis_reference = proposed_genesis["projection"]["genesisReferenceHex"]
     application_transcript = backend.encode_event(
         _application_fields(
-            contextIdentifierHex=context_hex,
+            contextIdentifierHex=stateful_context_hex,
             credentialIdentifierHex=genesis_reference,
             genesisReferenceHex=genesis_reference,
         )
     )
-    _, application_signature = backend.ed25519_sign(seed, application_transcript)
+    _, application_signature = backend.ed25519_sign(
+        stateful_seed, application_transcript
+    )
     application_candidate = {
         "objectKind": "APPLICATION_EVENT",
         "signatureHex": application_signature.hex(),
@@ -1062,87 +1213,100 @@ def _semantic_request_carriers(authority: Any) -> list[dict[str, Any]]:
         "evidence": empty_evidence,
     }
 
-    content = b"late"
-    opening_hex = "45" * 32
-    commitment = backend.encode_commitment(
-        profile_id=1,
-        profile_version=1,
-        context=bytes.fromhex(context_hex),
-        credential=bytes.fromhex(genesis_reference),
-        sequence=0,
-        content_type=1,
-        content=content,
-        randomizer=bytes.fromhex(opening_hex),
-        chunk_size=None,
-    )
-    pending_transcript = backend.encode_event(
-        _application_fields(
-            contextIdentifierHex=context_hex,
-            credentialIdentifierHex=genesis_reference,
-            genesisReferenceHex=genesis_reference,
-            content={
-                "class": "REQUIRED",
-                "commitmentHex": commitment["commitmentHex"],
-                "contentType": 1,
-                "exactLength": len(content),
-                "geometryPredicateResults": {
-                    f"geometryPredicate{index}": "NOT_APPLICABLE"
-                    for index in range(1, 8)
+    def evidence_branch(
+        label: str, content: bytes
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        opening_hex = domain(label + "/OPENING").hex()
+        commitment = backend.encode_commitment(
+            profile_id=1,
+            profile_version=1,
+            context=bytes.fromhex(stateful_context_hex),
+            credential=bytes.fromhex(genesis_reference),
+            sequence=0,
+            content_type=1,
+            content=content,
+            randomizer=bytes.fromhex(opening_hex),
+            chunk_size=None,
+        )
+        pending_transcript = backend.encode_event(
+            _application_fields(
+                contextIdentifierHex=stateful_context_hex,
+                credentialIdentifierHex=genesis_reference,
+                genesisReferenceHex=genesis_reference,
+                content={
+                    "class": "REQUIRED",
+                    "commitmentHex": commitment["commitmentHex"],
+                    "contentType": 1,
+                    "exactLength": len(content),
+                    "geometryPredicateResults": {
+                        f"geometryPredicate{index}": "NOT_APPLICABLE"
+                        for index in range(1, 8)
+                    },
+                    "shape": "SINGLE",
                 },
-                "shape": "SINGLE",
+            )
+        )
+        _, pending_signature = backend.ed25519_sign(
+            stateful_seed, pending_transcript
+        )
+        pending_candidate = {
+            "objectKind": "APPLICATION_EVENT",
+            "signatureHex": pending_signature.hex(),
+            "transcriptHex": pending_transcript.hex(),
+        }
+        pending_replay = replay_context(
+            authority,
+            dict(SUPPORTED_PROFILE),
+            {
+                "proposedGenesis": proposed_genesis,
+                "candidates": [pending_candidate],
+                "evidence": empty_evidence,
             },
         )
+        if pending_replay.get("kind") != "REPLAY_PROPOSAL_READY":
+            raise SeedGenerationError("semantic pending replay fixture did not become ready")
+        pending = pending_replay["proposedContext"]
+        pending_reference = pending["projection"]["records"][0]["eventReferenceHex"]
+        additions = {
+            "contentMaterial": [
+                {
+                    "eventReferenceHex": pending_reference,
+                    "segments": [{"offset": "0", "octetsHex": content.hex()}],
+                }
+            ],
+            "openingMaterial": [
+                {
+                    "eventReferenceHex": pending_reference,
+                    "openingRandomizerHex": opening_hex,
+                }
+            ],
+        }
+        ready_input = {"prior": pending, "additions": additions}
+        ready = evaluate_evidence_update(
+            authority, dict(SUPPORTED_PROFILE), ready_input
+        )
+        evaluation = ready.get("evaluation", {})
+        if evaluation.get("kind") != "PROPOSAL_READY":
+            raise SeedGenerationError("semantic evidence fixture did not become ready")
+        return ready_input, evaluation["proposal"]["successor"], additions
+
+    evidence_ready_input, _, _ = evidence_branch(
+        "EVIDENCE-READY", b"late/ready/v1"
     )
-    _, pending_signature = backend.ed25519_sign(seed, pending_transcript)
-    pending_candidate = {
-        "objectKind": "APPLICATION_EVENT",
-        "signatureHex": pending_signature.hex(),
-        "transcriptHex": pending_transcript.hex(),
-    }
-    pending_replay = replay_context(
-        authority,
-        dict(SUPPORTED_PROFILE),
-        {
-            "proposedGenesis": proposed_genesis,
-            "candidates": [pending_candidate],
-            "evidence": empty_evidence,
-        },
+    _, idempotent_prior, idempotent_additions = evidence_branch(
+        "EVIDENCE-IDEMPOTENT", b"late/idempotent/v1"
     )
-    if pending_replay.get("kind") != "REPLAY_PROPOSAL_READY":
-        raise SeedGenerationError("semantic pending replay fixture did not become ready")
-    pending = pending_replay["proposedContext"]
-    pending_reference = pending["projection"]["records"][0]["eventReferenceHex"]
-    additions = {
-        "contentMaterial": [
-            {
-                "eventReferenceHex": pending_reference,
-                "segments": [{"offset": "0", "octetsHex": content.hex()}],
-            }
-        ],
-        "openingMaterial": [
-            {
-                "eventReferenceHex": pending_reference,
-                "openingRandomizerHex": opening_hex,
-            }
-        ],
-    }
-    evidence_ready_input = {"prior": pending, "additions": additions}
-    evidence_ready = evaluate_evidence_update(
-        authority, dict(SUPPORTED_PROFILE), evidence_ready_input
-    )
-    evaluation = evidence_ready.get("evaluation", {})
-    if evaluation.get("kind") != "PROPOSAL_READY":
-        raise SeedGenerationError("semantic evidence fixture did not become ready")
-    evidence_successor = evaluation["proposal"]["successor"]
 
     return [
         _request("DESCRIBE_PROFILE", {}),
-        _request("VALIDATE_TRANSCRIPT", {"candidate": genesis_candidate}),
-        _request("EVALUATE_GENESIS", genesis_input),
+        _request(
+            "VALIDATE_TRANSCRIPT", {"candidate": public_genesis_candidate}
+        ),
+        _request("EVALUATE_GENESIS", public_genesis_input),
         _request(
             "EVALUATE_GENESIS",
             {
-                "candidate": genesis_candidate,
+                "candidate": public_genesis_candidate,
                 "expectedContextIdentifierHex": "ff" * 32,
             },
         ),
@@ -1159,7 +1323,7 @@ def _semantic_request_carriers(authority: Any) -> list[dict[str, Any]]:
         _request("EVALUATE_EVIDENCE_UPDATE", evidence_ready_input),
         _request(
             "EVALUATE_EVIDENCE_UPDATE",
-            {"prior": evidence_successor, "additions": additions},
+            {"prior": idempotent_prior, "additions": idempotent_additions},
         ),
     ]
 
@@ -1243,6 +1407,13 @@ def prove_positive_carrier_closure(
         request_roots.add(root["rootId"])
         response_roots.add(response_root["rootId"])
         carriers.append((root, request))
+
+    _enforce_cross_case_response_state_non_disclosure(
+        schema,
+        reachability,
+        list(requests.values()),
+        [response for response, _request_bytes in responses.values()],
+    )
 
     for response, _request_bytes in responses.values():
         root = roots[f"RESPONSE-{response['operation']}"]
@@ -1426,6 +1597,13 @@ def _positive_population(
         response_bytes = dumps(response)
         responses.setdefault(response_bytes, response)
         producers.setdefault(response_bytes, set()).add(request_bytes)
+
+    _enforce_cross_case_response_state_non_disclosure(
+        schema,
+        reachability,
+        list(requests.values()),
+        list(responses.values()),
+    )
 
     if len(requests) != 65 or len(responses) != 15:
         raise SeedGenerationError(

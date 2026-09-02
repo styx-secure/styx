@@ -13,10 +13,16 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from generate_seed_registry import (  # noqa: E402
+    RESPONSE_STATE_POINTERS,
     SchemaSynthesizer,
+    SeedGenerationError,
+    _derive_response_state_pointers,
+    _enforce_cross_case_response_state_non_disclosure,
     _load_json,
     _ordered_roots,
     _pointer_to_dotted,
+    _positive_population,
+    _semantic_request_carriers,
     generate_phase_a,
     prove_positive_carrier_closure,
     prove_reachability,
@@ -24,12 +30,86 @@ from generate_seed_registry import (  # noqa: E402
 )
 from canonical_json import dumps  # noqa: E402
 from authority_witness import isolated_authority_states_witness  # noqa: E402
+from interface_model import ContractAuthority, evaluate_interface_request  # noqa: E402
 from run_cross_runtime import build_report as build_javascript_release_report  # noqa: E402
 from run_probe import build_report as build_reference_probe_report  # noqa: E402
 import run_probe  # noqa: E402
 
 
 class SeedReachabilityTests(unittest.TestCase):
+    def test_response_snapshot_pointer_derivation_is_exact_and_closed(self) -> None:
+        schema = _load_json(ROOT / "contract/APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json")
+        reachability = _load_json(
+            ROOT / "contract/APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json"
+        )
+        self.assertEqual(
+            set(_derive_response_state_pointers(schema, reachability)),
+            set(RESPONSE_STATE_POINTERS),
+        )
+
+    def test_semantic_fixture_transplants_fail_at_disclosure_gate(self) -> None:
+        repo = ROOT.parents[2]
+        contract = ROOT / "contract"
+        authority = ContractAuthority.load(repo, contract)
+        requests = _semantic_request_carriers(authority)
+        public_genesis = evaluate_interface_request(authority, requests[2])["result"][
+            "proposedGenesis"
+        ]
+        evidence_successor = evaluate_interface_request(authority, requests[7])[
+            "result"
+        ]["evaluation"]["proposal"]["successor"]
+
+        mutants = []
+        genesis_replay = json.loads(json.dumps(requests))
+        genesis_replay[4]["input"]["proposedGenesis"] = public_genesis
+        mutants.append(genesis_replay)
+
+        successor_idempotent = json.loads(json.dumps(requests))
+        successor_idempotent[8]["input"]["prior"] = evidence_successor
+        mutants.append(successor_idempotent)
+
+        genesis_in_evidence_prior = json.loads(json.dumps(requests))
+        genesis_in_evidence_prior[7]["input"]["prior"]["genesis"] = public_genesis
+        mutants.append(genesis_in_evidence_prior)
+
+        for mutant in mutants:
+            with self.subTest(operation=mutant[7]["operation"]):
+                with patch(
+                    "generate_seed_registry._semantic_request_carriers",
+                    return_value=mutant,
+                ):
+                    with self.assertRaisesRegex(
+                        SeedGenerationError,
+                        "CROSS_CASE_RESPONSE_STATE_DISCLOSURE",
+                    ):
+                        _positive_population(repo, contract)
+
+    def test_disclosure_walk_finds_nested_nodes_without_partial_false_positive(self) -> None:
+        schema = _load_json(ROOT / "contract/APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json")
+        reachability = _load_json(
+            ROOT / "contract/APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json"
+        )
+        successor = {"projection": {"a": 1, "b": 2}, "state": "READY"}
+        response = {
+            "operation": "EVALUATE_EVIDENCE_UPDATE",
+            "result": {"evaluation": {"proposal": {"successor": successor}}},
+        }
+        with self.assertRaisesRegex(
+            SeedGenerationError, "CROSS_CASE_RESPONSE_STATE_DISCLOSURE"
+        ):
+            _enforce_cross_case_response_state_non_disclosure(
+                schema,
+                reachability,
+                [{"nested": [{"value": successor}]}],
+                [response],
+            )
+        _enforce_cross_case_response_state_non_disclosure(
+            schema,
+            reachability,
+            [{"scalar": 1, "properPartial": {"a": 1}}],
+            [response],
+        )
+
     def test_javascript_contract_reader_rejects_symlink_without_toctou_window(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             contract = Path(raw) / "contract"

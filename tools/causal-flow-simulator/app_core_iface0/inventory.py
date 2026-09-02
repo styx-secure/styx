@@ -12,7 +12,7 @@ from typing import Any, Iterable, Iterator
 
 
 BASE_SHA = "16274cc194cd2f8f7b631332687a252bad92ce02"
-MANIFEST_SHA256 = "cd88e3e3a8612aa671911f39ff5d8a834c176518508660f1041cd35bc4a30f59"
+MANIFEST_SHA256 = "901332bb973202c11c0435495356ee33ae540949c0c83f3cf2f89d3b3159ba95"
 STRUCTURAL_COUNT = 1450
 SEMANTIC_COUNT = 5149
 TOTAL_COUNT = 6599
@@ -481,6 +481,123 @@ def expand_semantic_instances(contract: Path) -> list[EvidenceInstance]:
             )
     if len(rows) != SEMANTIC_COUNT or len({row.instance_id for row in rows}) != SEMANTIC_COUNT:
         raise InventoryError("semantic instance relation drift")
+    return rows
+
+
+def _semantic_reachability_by_row(contract: Path) -> dict[str, str]:
+    relations = _load_json(
+        contract / "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"
+    )
+    result: dict[str, str] = {}
+    for relation in relations.values():
+        if not isinstance(relation, list):
+            continue
+        for row in relation:
+            if not isinstance(row, dict) or not isinstance(row.get("id"), str):
+                continue
+            reachability = row.get("reachability")
+            nested = row.get("result")
+            if reachability is None and isinstance(nested, dict):
+                reachability = nested.get("reachability")
+            if reachability not in {"REACHABLE", "RESERVED_UNREACHABLE_V0"}:
+                continue
+            previous = result.setdefault(row["id"], reachability)
+            if previous != reachability:
+                raise InventoryError("semantic relation reachability conflicts")
+    return result
+
+
+def derive_semantic_execution_relation(
+    contract: Path, seed_registry: dict[str, Any]
+) -> list[dict[str, str]]:
+    """Bind every semantic instance to its closed execution phase.
+
+    Only ACV-048 depends on the populated seed registry; every other override
+    is frozen by the execution-phase and semantic-relation artifacts.
+    """
+
+    phases = _load_json(
+        contract / "APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json"
+    )
+    overrides = {row["id"]: row for row in phases["overrides"]}
+    if len(overrides) != len(phases["overrides"]):
+        raise InventoryError("semantic execution override IDs are duplicated")
+    seed_rows = seed_registry.get("rows")
+    if not isinstance(seed_rows, list) or len(seed_rows) != 78:
+        raise InventoryError("semantic phase derivation requires 78 seed rows")
+    direction_by_pointer: dict[str, str] = {}
+    for row in seed_rows:
+        if not isinstance(row, dict):
+            raise InventoryError("semantic phase seed row is malformed")
+        pointer = row.get("objectSchemaPointer")
+        direction = row.get("carrierDirection")
+        if (
+            not isinstance(pointer, str)
+            or direction not in {"REQUEST", "RESPONSE"}
+            or pointer in direction_by_pointer
+        ):
+            raise InventoryError("semantic phase seed partition drift")
+        direction_by_pointer[pointer] = direction
+    reachability = _semantic_reachability_by_row(contract)
+
+    rows: list[dict[str, str]] = []
+    for instance in expand_semantic_instances(contract):
+        override = overrides.get(instance.family_id)
+        phase = phases["defaultPhase"]
+        if override is not None:
+            partition = override["partition"]
+            if partition == "ALL_INSTANCES":
+                phase = override["phase"]
+            elif partition == "BY_AXIS_SOURCE_ROOT":
+                source_root = instance.source.split("::", 1)[0]
+                matches = [
+                    row["phase"]
+                    for row in override["relation"]
+                    if row["axisSource"] == source_root
+                ]
+                if len(matches) != 1:
+                    raise InventoryError("semantic axis-source phase is ambiguous")
+                phase = matches[0]
+            elif partition == "BY_RELATION_ROW_REACHABILITY":
+                state = reachability.get(instance.source)
+                matches = [
+                    row["phase"]
+                    for row in override["relation"]
+                    if row["reachability"] == state
+                ]
+                if len(matches) != 1:
+                    raise InventoryError("semantic reachability phase is ambiguous")
+                phase = matches[0]
+            elif partition == "BY_SEED_CARRIER_DIRECTION_X_LITERAL_VALUE":
+                pointer = instance.source.split("::", 1)[0]
+                direction = direction_by_pointer.get(pointer)
+                if direction == "REQUEST":
+                    phase = override["requestCarrierPhase"]
+                elif direction == "RESPONSE":
+                    phase = override["responseCarrierPhase"]
+                else:
+                    raise InventoryError("ACV-048 seed direction is absent")
+            else:
+                raise InventoryError(f"unknown semantic phase partition: {partition}")
+        if phase not in phases["phaseRegistry"]:
+            raise InventoryError("semantic execution phase is outside registry")
+        rows.append(
+            {
+                "assertionId": instance.assertion_id,
+                "detectorId": instance.detector_id,
+                "executionPhase": phase,
+                "instanceId": instance.instance_id,
+                "mutationId": instance.perturbation_id.replace("PRT-", "MUT-", 1),
+                "observationId": instance.observation_id,
+                "semanticRuleId": instance.family_id,
+                "sourceIdentity": instance.source,
+            }
+        )
+    if (
+        len(rows) != SEMANTIC_COUNT
+        or len({row["instanceId"] for row in rows}) != SEMANTIC_COUNT
+    ):
+        raise InventoryError("semantic execution phase relation drift")
     return rows
 
 

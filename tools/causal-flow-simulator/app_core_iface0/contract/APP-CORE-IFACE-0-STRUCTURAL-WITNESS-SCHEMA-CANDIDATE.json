@@ -61,6 +61,18 @@
       "type": "string",
       "pattern": "^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+$"
     },
+    "AssertionId": {
+      "type": "string",
+      "pattern": "^AST-[A-Z0-9]+(?:-[A-Z0-9]+)*--[0-9]{4}$"
+    },
+    "MutationId": {
+      "type": "string",
+      "pattern": "^MUT-[A-Z0-9]+(?:-[A-Z0-9]+)*--[0-9]{4}$"
+    },
+    "DetectorId": {
+      "type": "string",
+      "pattern": "^DET-[A-Z0-9]+(?:-[A-Z0-9]+)*--[0-9]{4}$"
+    },
     "ObjectSchemaId": {
       "type": "string",
       "pattern": "^OBJ-[A-Z0-9]+(?:-[A-Z0-9]+)*$"
@@ -206,13 +218,13 @@
           ]
         },
         "assertionId": {
-          "$ref": "#/$defs/StableId"
+          "$ref": "#/$defs/AssertionId"
         },
         "mutationId": {
-          "$ref": "#/$defs/StableId"
+          "$ref": "#/$defs/MutationId"
         },
         "detectorId": {
-          "$ref": "#/$defs/StableId"
+          "$ref": "#/$defs/DetectorId"
         }
       }
     }

@@ -63,7 +63,7 @@ class _Opener:
 
 
 class FinalGateTests(unittest.TestCase):
-    def test_ratified_semantic_fixture_slice_is_exact_in_git_history_and_head(self) -> None:
+    def test_ratified_semantic_fixture_source_is_exact_at_head(self) -> None:
         repo = ROOT.parents[2]
         selection_head = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -72,38 +72,21 @@ class FinalGateTests(unittest.TestCase):
             capture_output=True,
             text=True,
         ).stdout.strip()
-        historical, selected = _local_source_blobs(repo, selection_head)
-        frozen = _frozen_semantic_fixture_slice(historical)
-        self.assertEqual(len(frozen), 7121)
+        selected = (ROOT / "generate_seed_registry.py").read_bytes()
+        frozen = _frozen_semantic_fixture_slice(selected)
+        self.assertEqual(len(frozen), 8537)
         self.assertEqual(
             hashlib.sha256(frozen).hexdigest(),
-            "686208b6d1285d42f8ec165fbb511905004eee124a0708207b103b60c561e1ad",
+            "9b80b0fb677c789ece85515d72ece5475f8dfcfc19946533e36cc3dd762219cb",
         )
         self.assertEqual(selected.count(frozen), 1)
 
-    def test_provider_source_slice_must_equal_both_local_git_blobs(self) -> None:
-        historical = b"".join(
-            subprocess.run(
-                [
-                    "git",
-                    "show",
-                    (
-                        "284b9230126cfa70337723c2a9d001800a64804c:"
-                        "tools/causal-flow-simulator/app_core_iface0/"
-                        "generate_seed_registry.py"
-                    ),
-                ],
-                cwd=ROOT.parents[2],
-                check=True,
-                capture_output=True,
-            ).stdout.splitlines(keepends=True)
-        )
-        selected = historical + b"# selected-only\n"
+    def test_provider_source_slice_must_equal_local_selection_blob(self) -> None:
+        selected = (ROOT / "generate_seed_registry.py").read_bytes()
 
         def provider(url: str) -> tuple[object, bytes, dict[str, str]]:
-            payload = historical if "284b923" in url else selected
             value = {
-                "content": base64.b64encode(payload).decode("ascii"),
+                "content": base64.b64encode(selected).decode("ascii"),
                 "encoding": "base64",
                 "path": (
                     "tools/causal-flow-simulator/app_core_iface0/"
@@ -114,9 +97,20 @@ class FinalGateTests(unittest.TestCase):
             return value, b"provider", {}
 
         with patch("final_gate._fetch_json", side_effect=provider):
-            _verify_provider_source_slice("a" * 40, historical, selected)
+            _verify_provider_source_slice("a" * 40, selected)
             with self.assertRaisesRegex(FinalGateError, "local source blobs differ"):
-                _verify_provider_source_slice("a" * 40, historical, selected + b"drift")
+                _verify_provider_source_slice("a" * 40, selected + b"drift")
+
+    def test_semantic_fixture_source_rejects_definition_shadowing_and_rebinding(self) -> None:
+        selected = (ROOT / "generate_seed_registry.py").read_bytes()
+        with self.assertRaisesRegex(FinalGateError, "definition count drift"):
+            _frozen_semantic_fixture_slice(
+                selected + b"\ndef _semantic_request_carriers(authority):\n    return []\n"
+            )
+        with self.assertRaisesRegex(FinalGateError, "identifier is rebound"):
+            _frozen_semantic_fixture_slice(
+                selected + b"\nsemantic = _semantic_request_carriers\n"
+            )
 
     def test_provider_fetch_preserves_object_or_array_shape(self) -> None:
         url = "https://api.github.com/repos/styx-secure/styx/issues/295/comments"
@@ -233,7 +227,11 @@ class FinalGateTests(unittest.TestCase):
             evidence_two = temporary / "evidence-two"
             _generate_phase_a_from_checkout(checkout_one, evidence_one)
             _generate_phase_a_from_checkout(checkout_two, evidence_two)
-            with patch("final_gate._verify_provider_source_slice"):
+            selected_source = (ROOT / "generate_seed_registry.py").read_bytes()
+            with (
+                patch("final_gate._local_source_blobs", return_value=selected_source),
+                patch("final_gate._verify_provider_source_slice"),
+            ):
                 result = run_phase_a_gate(
                     checkout_one,
                     checkout_two,
@@ -472,7 +470,6 @@ class FinalGateTests(unittest.TestCase):
 
             def verify_source(
                 _selection_head: str,
-                _historical: bytes,
                 _selected: bytes,
             ) -> None:
                 self.assertEqual(events, ["comment", "commit", "pull", "comments"])
@@ -481,7 +478,7 @@ class FinalGateTests(unittest.TestCase):
             with (
                 patch("final_gate._fetch_json", side_effect=fetch),
                 patch("final_gate._verify_clean_checkout"),
-                patch("final_gate._local_source_blobs", return_value=(b"h", b"s")),
+                patch("final_gate._local_source_blobs", return_value=b"s"),
                 patch("final_gate._verify_provider_source_slice", side_effect=verify_source),
                 patch("final_gate._generate_phase_a_from_checkout", side_effect=generate),
                 patch("final_gate._validate_external_root", side_effect=validate),

@@ -20,9 +20,11 @@ from canonical_json import CanonicalJsonError, dumps, loads
 from canonical_report import ReportError, store_report
 from generate_seed_registry import (
     OPERATIONS,
+    SeedGenerationError,
     TERMINAL_IMPLEMENTATION_FILES,
     _case_ids,
     _coverage,
+    _enforce_cross_case_response_state_non_disclosure,
     _positive_population,
     _reference_source_set_sha256,
 )
@@ -69,6 +71,40 @@ def _load_canonical(path: Path) -> dict[str, object]:
     if not isinstance(value, dict) or dumps(value) != raw:
         raise PhaseAValidationError(f"invalid canonical object: {path.name}")
     return value
+
+
+def _validate_positive_coverage_union(
+    object_pointers: list[str],
+    one_of_arms: list[tuple[str, int]],
+    reachability: dict[str, object],
+) -> None:
+    """Require exact reconstructed coverage, including duplicate rejection."""
+
+    object_rows = reachability.get("objectCoverage")
+    arm_rows = reachability.get("oneOfArmCoverage")
+    if not isinstance(object_rows, list) or not isinstance(arm_rows, list):
+        raise PhaseAValidationError("POSITIVE_COVERAGE_UNION_DRIFT")
+    expected_objects = {
+        row.get("objectSchemaPointer")
+        for row in object_rows
+        if isinstance(row, dict) and isinstance(row.get("objectSchemaPointer"), str)
+    }
+    expected_arms = {
+        (row.get("oneOfPointer"), row.get("armIndex"))
+        for row in arm_rows
+        if isinstance(row, dict)
+        and isinstance(row.get("oneOfPointer"), str)
+        and isinstance(row.get("armIndex"), int)
+    }
+    if (
+        len(expected_objects) != 78
+        or len(expected_arms) != 54
+        or len(object_pointers) != len(set(object_pointers))
+        or len(one_of_arms) != len(set(one_of_arms))
+        or set(object_pointers) != expected_objects
+        or set(one_of_arms) != expected_arms
+    ):
+        raise PhaseAValidationError("POSITIVE_COVERAGE_UNION_DRIFT")
 
 
 def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> dict[str, object]:
@@ -153,6 +189,10 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
     authority = ContractAuthority.load(repo_root, contract)
     request_payload_by_id = {case_id: payload for payload, case_id in request_ids.items()}
     response_report_files: set[str] = set()
+    submitted_requests: list[dict[str, object]] = []
+    submitted_responses: list[dict[str, object]] = []
+    reconstructed_objects: set[str] = set()
+    reconstructed_arms: set[tuple[str, int]] = set()
     for payload, case_id in expected_payloads.items():
         row = by_id[case_id]
         carrier_file = row.get("carrierFile")
@@ -176,7 +216,12 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         )
         if row.get("coveredObjectSchemaPointers") != objects or row.get("coveredOneOfArms") != arms:
             raise PhaseAValidationError(f"carrier coverage drift: {case_id}")
+        reconstructed_objects.update(objects)
+        reconstructed_arms.update(
+            (arm["oneOfPointer"], arm["armIndex"]) for arm in arms
+        )
         if direction == "REQUEST":
+            submitted_requests.append(value)
             validate_request_structure(authority, value)
             response = evaluate_interface_request(authority, value)
             validate_response_before_release(authority, response)
@@ -185,6 +230,8 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
             if "requestCaseId" in row or "referenceExecutionReportSha256" in row:
                 raise PhaseAValidationError("request contains response authority")
             continue
+
+        submitted_responses.append(value)
 
         producer_ids = sorted(
             (
@@ -234,6 +281,21 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         }
         if report != expected_report:
             raise PhaseAValidationError("reference report reconstruction drift")
+
+    try:
+        _enforce_cross_case_response_state_non_disclosure(
+            synthesizer.schema,
+            reachability,
+            submitted_requests,
+            submitted_responses,
+        )
+    except SeedGenerationError as error:
+        raise PhaseAValidationError(str(error)) from error
+    _validate_positive_coverage_union(
+        sorted(reconstructed_objects),
+        sorted(reconstructed_arms),
+        reachability,
+    )
 
     toolchain = _load_canonical(root / "reference-toolchain.json")
     if toolchain != {
@@ -341,6 +403,7 @@ def main(argv: list[str] | None = None) -> int:
         OSError,
         InventoryError,
         InterfaceModelError,
+        SeedGenerationError,
         PhaseAValidationError,
         ReportError,
         subprocess.SubprocessError,

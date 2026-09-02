@@ -10,7 +10,7 @@
   "positiveCarrierInventorySchema": "APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json",
   "positiveCarrierInventorySchemaSha256": "8e469d88234e7194d8612f43491f3ea43c1c0d6a4b1becaa4be844e1ff75949f",
   "structuralWitnessRegistrySchema": "APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json",
-  "structuralWitnessRegistrySchemaSha256": "ab229464b86f6870003594f51b8fcfbe11603f7ecda76754ed106237e07ddc4c",
+  "structuralWitnessRegistrySchemaSha256": "c74582b06caa57ae2981db55092dbb41d6a8a41f16977b53dad26e68e8879d89",
   "pointerDigestEncoding": "lexicographically sorted canonical JSON Pointer plus LF",
   "executionContract": {
     "request": {

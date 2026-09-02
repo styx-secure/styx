@@ -227,10 +227,10 @@ misreported as an oracle-free blind-input comparison. The exact ACV-048 phase
 counts remain derived from the future 78-row seed-carrier directions.
 Its literal semantic relations contain 23 content-axis rows, the 25-row F13
 candidate relation with exact O-10 stage, ten fork/join-label rows, 16
-authority-projection dimensions, ten graph-admission dimensions, 16 transcript
+authority-projection dimensions, 11 graph-admission dimensions, 16 transcript
 result rows, 17 genesis result rows and 33 terminal-predicate rows; the relation artifact has
 SHA-256
-`8b67fb14b0f147c9aa571a5189f318b16990ccf92d1dcd88dbfd1354153007a2`.
+`ae285b0f5d760993017f56e500889a6d18475f9a33e9b30f6aa3d570564b812f`.
 
 The still-to-be-generated 78-row positive seed registry has a closed row schema
 in `APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json`, SHA-256
@@ -241,7 +241,7 @@ them or relax that dependency.
 
 The carrier relation itself must conform to
 `APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json`, SHA-256
-`17dc0123dc8df3dff6b0e78ec372d93d5375dc1fd610a0d40e542d6eb1f17665`.
+`8e469d88234e7194d8612f43491f3ea43c1c0d6a4b1becaa4be844e1ff75949f`.
 It closes all twelve direction/operation roots, all 78 object schemas and all
 54 literal `oneOf` arms while withholding response bytes until output freeze.
 
@@ -257,7 +257,7 @@ definitions were unused aliases/meta-types and therefore could not honestly
 carry schema assertions or conformance evidence.
 
 The structural axis registry has SHA-256
-`0eb8001eef76443d559d52f89e6761bd2329cac29c4514866f5aea8ba940ef56`.
+`ecca094cbda634c0db733d6c71c31fe5d92430ed8a8185de8569c6c5169230de`.
 Its 1,450 count is frozen only after a populated witness registry maps every
 instance to an exact positive carrier, target pointer, perturbation and expected
 observation. Until then it is a closed derivation candidate, not execution
@@ -276,7 +276,7 @@ All 93 pairwise `oneOf` arm relations are already explicit in
 the other closed shape, and the root request/response pair expands all 36
 nested arm combinations. The 1,450-row witness registry must conform to
 `APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json`, SHA-256
-`cee8479d6a126e4d4bca2a6d0a9c4659caadd8507a2549b034c1de1c9488111c`.
+`c74582b06caa57ae2981db55092dbb41d6a8a41f16977b53dad26e68e8879d89`.
 
 `GenesisEvaluationReasonV0` deliberately omits
 `STANDALONE_VERIFICATION_KEY_REJECTED`: the genesis request has no standalone

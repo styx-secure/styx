@@ -35,7 +35,7 @@ version.
 
 The positive-case inventory must conform to
 `APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json`, SHA-256
-`17dc0123dc8df3dff6b0e78ec372d93d5375dc1fd610a0d40e542d6eb1f17665`.
+`8e469d88234e7194d8612f43491f3ea43c1c0d6a4b1becaa4be844e1ff75949f`.
 The populated inventory receives its own digest in the executable Issue after
 the carrier bytes produced from exact Base
 `16274cc194cd2f8f7b631332687a252bad92ce02` are frozen.

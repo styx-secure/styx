@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import itertools
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Any, Iterable
@@ -42,6 +43,62 @@ def sha256(path: Path) -> str:
 def digest_lines(values: Iterable[str]) -> str:
     material = "".join(value + "\n" for value in sorted(values)).encode()
     return hashlib.sha256(material).hexdigest()
+
+
+def validate_witness_schema_satisfiability(
+    structural: dict[str, Any], witness: dict[str, Any]
+) -> None:
+    """Prove that literal-derived witness identifiers satisfy their schema."""
+
+    row_schema = {
+        "$schema": witness["$schema"],
+        "$defs": witness["$defs"],
+        **witness["$defs"]["WitnessRow"],
+    }
+    validator = Draft202012Validator(row_schema)
+    execution = structural["executionContract"]["request"]
+    for rule in structural["rules"]:
+        rule_id = rule["id"]
+        suffix = rule_id.removeprefix("STR-")
+        for index in sorted({1, rule["expectedCount"]}):
+            disposition = rule["expectedDisposition"]
+            source = rule_id
+            if disposition == "FROM_RELATION_SUFFIX":
+                source = rule["relation"][index - 1]
+                if source.endswith("_ACCEPTS"):
+                    disposition = "ACCEPT"
+                elif source.endswith("_REJECTS"):
+                    disposition = "REJECT"
+                else:
+                    raise SystemExit("conditional witness disposition suffix drift")
+            row = {
+                "instanceId": f"{rule_id}--{index:04d}",
+                "structuralRuleId": rule_id,
+                "sourcePointerOrRowId": source,
+                "seedObjectSchemaId": "OBJ-SYNTHETIC",
+                "carrierCaseId": "ACI-SYNTHETIC",
+                "carrierDirection": "REQUEST",
+                "disclosureClass": execution["oracleDisclosure"],
+                "executionPhase": execution["executionPhase"],
+                "targetJsonPointer": "",
+                "perturbationKind": rule["perturbationKind"],
+                "isolationMode": structural["executionContract"][
+                    "defaultIsolationMode"
+                ],
+                "expectedDisposition": disposition,
+                "expectedObservation": execution[
+                    "acceptObservation" if disposition == "ACCEPT" else "rejectObservation"
+                ],
+                "assertionId": f"AST-{suffix}--{index:04d}",
+                "mutationId": f"MUT-{suffix}--{index:04d}",
+                "detectorId": f"DET-{suffix}--{index:04d}",
+            }
+            errors = sorted(validator.iter_errors(row), key=lambda error: list(error.path))
+            require(
+                not errors,
+                f"unsatisfiable literal witness row: {rule_id}/{index}: "
+                + (errors[0].message if errors else "unknown schema error"),
+            )
 
 
 def escape_pointer(value: str) -> str:
@@ -467,6 +524,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         and witness_perturbations == palette_perturbations,
         "structural perturbation/palette/witness exact-set drift",
     )
+    validate_witness_schema_satisfiability(structural, witness)
 
     semantics = load("APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json")
     axes = load("APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json")
@@ -1549,6 +1607,18 @@ def validate_documented_artifact_bindings() -> None:
     palette = sha256(ROOT / "APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json")
     instance_axes = sha256(ROOT / "APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json")
     execution_phases = sha256(ROOT / "APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json")
+    positive_inventory = sha256(
+        ROOT / "APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json"
+    )
+    witness_schema = sha256(
+        ROOT / "APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json"
+    )
+    seed_schema = sha256(
+        ROOT / "APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json"
+    )
+    semantic_relations = sha256(
+        ROOT / "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"
+    )
 
     required_fragments = {
         atom_name: (
@@ -1564,12 +1634,21 @@ def validate_documented_artifact_bindings() -> None:
             f"`{instance_axes}`.",
             "`APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256\n"
             f"`{execution_phases}`.",
+            "`APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json`, SHA-256\n"
+            f"`{seed_schema}`.",
+            "`APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json`, SHA-256\n"
+            f"`{positive_inventory}`.",
+            "`APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json`, SHA-256\n"
+            f"`{witness_schema}`.",
+            f"`{semantic_relations}`.",
         ),
         witness_name: (
             "`APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json`, SHA-256\n"
             f"`{reachability}`.",
             "`APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json`, SHA-256\n"
             f"`{palette}`.",
+            "`APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json`, SHA-256\n"
+            f"`{positive_inventory}`.",
         ),
     }
     documents = {atom_name: atom, witness_name: witness}
@@ -1587,11 +1666,49 @@ def validate_documented_artifact_bindings() -> None:
         "f9128cf591ef474d8a347864fd6cf865841e0de73e0d7da97b90cd0fed2ff5d1",
         "3f267e1ec254b0d478ec3968e8485adb88f3785332f1926a1676213374fc03d3",
         "b9a1d1e48a2832b672b669ad23a7b396d1b3230d6b64d7f92ec3e032ee3964bc",
+        "cee8479d6a126e4d4bca2a6d0a9c4659caadd8507a2549b034c1de1c9488111c",
+        "17dc0123dc8df3dff6b0e78ec372d93d5375dc1fd610a0d40e542d6eb1f17665",
+        "8b67fb14b0f147c9aa571a5189f318b16990ccf92d1dcd88dbfd1354153007a2",
     }
     for document_name, document in documents.items():
         require(
             not any(digest in document for digest in stale_digests),
             f"stale documented artifact digest: {document_name}",
+        )
+
+    manifest = load("APP-CORE-IFACE-0-CANDIDATE-MANIFEST.json")
+    schema = load("APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json")
+    structural_ids = [
+        row["id"]
+        for row in load("APP-CORE-IFACE-0-STRUCTURAL-AXES-CANDIDATE.json")["rules"]
+    ]
+    semantic_ids = [
+        row["id"]
+        for row in load("APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json")["rules"]
+    ]
+    terminal_string_digests = {
+        digest_lines(
+            path
+            for terminal_class, path in set(
+                terminal_rows(schema, {"$ref": f"#/$defs/{root}"}, (root,))
+            )
+            if terminal_class == "string"
+        )
+        for root in ("InterfaceRequestV0", "InterfaceResponseV0")
+    }
+    documented_digest_allowlist = {
+        *(row["sha256"] for row in manifest["artifacts"]),
+        manifest["derivedInterfaceMaxima"]["rootMeasurementSetSha256"],
+        digest_lines(structural_ids),
+        digest_lines(semantic_ids),
+        digest_lines([*structural_ids, *semantic_ids]),
+        *terminal_string_digests,
+    }
+    for document_name, document in documents.items():
+        documented = set(re.findall(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])", document))
+        require(
+            documented <= documented_digest_allowlist,
+            f"unbound documented artifact digest: {document_name}",
         )
 
 
