@@ -2,15 +2,15 @@
   "status": "INCOMPLETE_PRE_RATIFICATION_CANDIDATE",
   "registryVersion": "APP-CORE-IFACE-0-STRUCTURAL-AXES-V1",
   "schema": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
-  "schemaSha256": "cb7d34f92ac71bb4f6dd724d8279917d1b481f027caba8c9546ca21e1b99ffd3",
+  "schemaSha256": "f72d1079e807edfc84a67742bdde7f047f7e8daad259e2515a0492d52cb65f0c",
   "oneOfDisjointnessRegistry": "APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json",
-  "oneOfDisjointnessRegistrySha256": "55d5ff0f519fcd9d429dbc009068b21dc611700879050b5b6c7dbc2f68b64b75",
+  "oneOfDisjointnessRegistrySha256": "eb992a044c5a5c53b4ea0c01b743adfd5846896d30f9274e4f26a5927f193382",
   "perturbationPalette": "APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json",
-  "perturbationPaletteSha256": "2fb0d6d55a86965624cd6fb0e077e72c10586eecb2e0c66562c0fa7006428620",
+  "perturbationPaletteSha256": "db8ebfaf3d34a8d47dae6c1996eb4cadc91d737f13a9278a75c2ea441ebea9d8",
   "positiveCarrierInventorySchema": "APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json",
   "positiveCarrierInventorySchemaSha256": "17dc0123dc8df3dff6b0e78ec372d93d5375dc1fd610a0d40e542d6eb1f17665",
   "structuralWitnessRegistrySchema": "APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json",
-  "structuralWitnessRegistrySchemaSha256": "3ae8047d474241e3d3e5c4500e7c8f21dc62e47fd1cab283edb11177111b3d78",
+  "structuralWitnessRegistrySchemaSha256": "cee8479d6a126e4d4bca2a6d0a9c4659caadd8507a2549b034c1de1c9488111c",
   "pointerDigestEncoding": "lexicographically sorted canonical JSON Pointer plus LF",
   "executionContract": {
     "request": {
@@ -32,20 +32,20 @@
     {
       "id": "STR-REQUIRED-PROPERTY-OMISSION",
       "mode": "PER_REQUIRED_PROPERTY_OF_PROPERTY_BEARING_OBJECT_SCHEMA",
-      "sourceCount": 306,
-      "sourceSetSha256": "d5f7f8536c8b4531c9a5eb5cfdd7d372afaba3b3e8200fbec8bc98674243885f",
+      "sourceCount": 322,
+      "sourceSetSha256": "b2452de64e6283c9fa60a9984c92cbf27e41ffc5385632d156e6054b80c351f0",
       "perturbationKind": "REMOVE_REQUIRED_PROPERTY",
       "expectedDisposition": "REJECT",
-      "expectedCount": 306
+      "expectedCount": 322
     },
     {
       "id": "STR-NULL-SUBSTITUTION",
       "mode": "PER_DECLARED_PROPERTY",
-      "sourceCount": 307,
-      "sourceSetSha256": "48cd37dedc39a6f1420fabf7982307f1068ed4fee69a2b165844b5f9062a6c27",
+      "sourceCount": 323,
+      "sourceSetSha256": "31aaa5401ba04e3efd9c6a6b4b5ba2a1ff9b3d5336adde552b8bf80a30aec64c",
       "perturbationKind": "REPLACE_WITH_NULL",
       "expectedDisposition": "REJECT",
-      "expectedCount": 307
+      "expectedCount": 323
     },
     {
       "id": "STR-DUPLICATE-JSON-PROPERTY",
@@ -77,20 +77,20 @@
     {
       "id": "STR-REF-TARGET-CONSTRAINT",
       "mode": "PER_REF_OCCURRENCE",
-      "sourceCount": 262,
-      "sourceSetSha256": "462dcfa454c91fe8ee14c1459200cf52d4004f8a2e2331225f5d3d865a64faa4",
+      "sourceCount": 263,
+      "sourceSetSha256": "8be2c2b0505f7630a9d52a1b19ab9086711d14bd96864a5b0e2cb779b6791f5c",
       "perturbationKind": "VIOLATE_REFERENCED_SCHEMA",
       "expectedDisposition": "REJECT",
-      "expectedCount": 262
+      "expectedCount": 263
     },
     {
       "id": "STR-CONST-SUBSTITUTION",
       "mode": "PER_CONST_OCCURRENCE",
-      "sourceCount": 88,
-      "sourceSetSha256": "8fd0c6262c98c45898d6a88e7c838d589094b00f27820cb2c29db73e3e54f9aa",
+      "sourceCount": 103,
+      "sourceSetSha256": "8cc02d57304108851dd1f8afc2f5d9be484d254cc904fca50485beea20bea58b",
       "perturbationKind": "REPLACE_CONST_VALUE",
       "expectedDisposition": "REJECT",
-      "expectedCount": 88
+      "expectedCount": 103
     },
     {
       "id": "STR-UNKNOWN-ENUM-VALUE",
@@ -131,11 +131,20 @@
     {
       "id": "STR-MIN-ITEMS-UNDERFLOW",
       "mode": "PER_MIN_ITEMS_OCCURRENCE",
-      "sourceCount": 3,
-      "sourceSetSha256": "a423ae70f4ea0fe83e947c8c948e2b73d7567407781dab3f9c9c837b3b5540d8",
+      "sourceCount": 4,
+      "sourceSetSha256": "b49aad7dabc2f4fd1bc21ea9e6aa777f2b5bb560920a385145459b3bf4024cf8",
       "perturbationKind": "UNDERFLOW_MIN_ITEMS",
       "expectedDisposition": "REJECT",
-      "expectedCount": 3
+      "expectedCount": 4
+    },
+    {
+      "id": "STR-MAX-ITEMS-OVERFLOW",
+      "mode": "PER_MAX_ITEMS_OCCURRENCE",
+      "sourceCount": 1,
+      "sourceSetSha256": "c26a9da575b772c9001fbcb86f83c48ff5ddf3b697faeec4112d9a179d99bc87",
+      "perturbationKind": "OVERFLOW_MAX_ITEMS",
+      "expectedDisposition": "REJECT",
+      "expectedCount": 1
     },
     {
       "id": "STR-UNIQUE-ITEMS-DUPLICATE",
@@ -254,8 +263,8 @@
     }
   ],
   "derivedCounts": {
-    "structuralRuleFamilies": 23,
-    "structuralExecutionInstances": 1400
+    "structuralRuleFamilies": 24,
+    "structuralExecutionInstances": 1450
   },
   "coverageReconciliation": {
     "$schema/$id/title/description/$defs": "Exact schema bytes and SHA-256 are immutable preflight authority, not runtime input scenarios.",
@@ -268,6 +277,7 @@
     "if/then/else": "STR-CONDITIONAL-BRANCH-MATRIX",
     "items": "STR-ITEM-CONSTRAINT-VIOLATION",
     "maxLength": "STR-MAX-LENGTH-OVERFLOW",
+    "maxItems": "STR-MAX-ITEMS-OVERFLOW",
     "maxProperties": "STR-MAX-PROPERTIES-OVERFLOW",
     "minItems": "STR-MIN-ITEMS-UNDERFLOW",
     "minLength": "STR-MIN-LENGTH-UNDERFLOW",
@@ -282,6 +292,6 @@
   "remainingBeforeRatification": [
     "HUMAN_RATIFICATION_OF_THE_SINGLE_LOGICALLY_REDUNDANT_MAX_PROPERTIES_OCCURRENCE",
     "POPULATED_STRUCTURAL_WITNESS_REGISTRY_WITH_EXACT_CARRIER_AND_TARGET_POINTER_PER_INSTANCE",
-    "CROSS_RUNTIME_VALIDATOR_AGREEMENT_ON_ALL_1400_INSTANCES"
+    "CROSS_RUNTIME_VALIDATOR_AGREEMENT_ON_ALL_1450_INSTANCES"
   ]
 }

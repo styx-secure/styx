@@ -175,6 +175,10 @@
       "perturbationKind": "EXCEED_MAX_PROPERTIES",
       "candidateOperations": ["INSERT_MAX_PROPERTIES_PLUS_ONE_DISTINCT_UNKNOWN_MEMBERS_IN_NAME_ORDER"],
       "isolationMode": "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST"
+    },
+    {
+      "perturbationKind": "OVERFLOW_MAX_ITEMS",
+      "candidateOperations": ["APPEND_DISTINCT_VALID_ITEM_UNTIL_MAX_ITEMS_PLUS_ONE"]
     }
   ],
   "boundedDeepReplacement": {
@@ -184,7 +188,7 @@
     "noProportionalAllocation": true
   },
   "exactCounts": {
-    "perturbationRecipes": 23,
+    "perturbationRecipes": 24,
     "jsonValues": 15,
     "literalStrings": 9,
     "repeatCharacters": 6,

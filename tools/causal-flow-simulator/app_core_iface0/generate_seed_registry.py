@@ -271,9 +271,23 @@ class SchemaSynthesizer:
             if self._target_data_pointer is None:
                 self._target_data_pointer = self._current_data_pointer
         if "$ref" in node:
-            return self._generate(
+            value = self._generate(
                 node["$ref"].removeprefix("#"), target_pointer, arm_goal, variant
             )
+            siblings = {key: child for key, child in node.items() if key != "$ref"}
+            if siblings:
+                combined = _deep_merge(
+                    self.resolve(node["$ref"].removeprefix("#")), siblings
+                )
+                value = self._constrain(
+                    value,
+                    combined,
+                    pointer,
+                    target_pointer,
+                    arm_goal,
+                    variant,
+                )
+            return value
         for keyword in ("oneOf", "anyOf"):
             if keyword in node:
                 validator = Draft202012Validator(
@@ -390,9 +404,23 @@ class SchemaSynthesizer:
             if self._target_data_pointer is None:
                 self._target_data_pointer = self._current_data_pointer
         if "$ref" in node:
-            return self._generate(
+            value = self._generate(
                 node["$ref"].removeprefix("#"), target_pointer, arm_goal, variant
             )
+            siblings = {key: child for key, child in node.items() if key != "$ref"}
+            if siblings:
+                combined = _deep_merge(
+                    self.resolve(node["$ref"].removeprefix("#")), siblings
+                )
+                value = self._constrain(
+                    value,
+                    combined,
+                    pointer,
+                    target_pointer,
+                    arm_goal,
+                    variant,
+                )
+            return value
         if "oneOf" in node:
             one_of_pointer = _join(pointer, "oneOf")
             arms = node["oneOf"]

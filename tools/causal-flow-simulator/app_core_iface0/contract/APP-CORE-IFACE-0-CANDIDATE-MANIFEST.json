@@ -4,22 +4,22 @@
   "authorityEffect": "NONE",
   "derivedInterfaceMaxima": {
     "derivationVersion": "APP-CORE-IFACE-0-INTERFACE-MAXIMA-V1",
-    "maxRetainedDecodedOctets": 35351200,
+    "maxRetainedDecodedOctets": 35284168,
     "maxRetainedDecodedRoot": "REQUEST-EVALUATE_CANDIDATE",
     "maximizingRootBreakdowns": [
       {
         "breakdown": [
           { "component": "canonical-syntax-keys-and-final-lf", "jsonOctets": 55, "representedDecodedOctets": 0 },
-          { "component": "input", "jsonOctets": 138642583, "representedDecodedOctets": 68917920 },
+          { "component": "input", "jsonOctets": 138499171, "representedDecodedOctets": 68850888 },
           { "component": "interfaceVersion", "jsonOctets": 3, "representedDecodedOctets": 0 },
           { "component": "operation", "jsonOctets": 20, "representedDecodedOctets": 0 },
           { "component": "profile", "jsonOctets": 108, "representedDecodedOctets": 0 }
         ],
         "direction": "REQUEST",
-        "jsonOctets": 138642769,
+        "jsonOctets": 138499357,
         "operation": "EVALUATE_CANDIDATE",
-        "representedDecodedOctets": 68917920,
-        "retainedDecodedOctets": 35351200,
+        "representedDecodedOctets": 68850888,
+        "retainedDecodedOctets": 35284168,
         "rootId": "REQUEST-EVALUATE_CANDIDATE"
       },
       {
@@ -28,55 +28,59 @@
           { "component": "interfaceVersion", "jsonOctets": 3, "representedDecodedOctets": 0 },
           { "component": "operation", "jsonOctets": 20, "representedDecodedOctets": 0 },
           { "component": "profile", "jsonOctets": 108, "representedDecodedOctets": 0 },
-          { "component": "result", "jsonOctets": 71195899, "representedDecodedOctets": 35342944 }
+          { "component": "result", "jsonOctets": 71052447, "representedDecodedOctets": 35275892 }
         ],
         "direction": "RESPONSE",
-        "jsonOctets": 71196086,
+        "jsonOctets": 71052634,
         "operation": "EVALUATE_CANDIDATE",
-        "representedDecodedOctets": 35342944,
-        "retainedDecodedOctets": 35342944,
+        "representedDecodedOctets": 35275892,
+        "retainedDecodedOctets": 35275892,
         "rootId": "RESPONSE-EVALUATE_CANDIDATE"
       }
     ],
-    "outerRequestOctets": 138642769,
+    "outerRequestOctets": 138499357,
     "outerRequestRoot": "REQUEST-EVALUATE_CANDIDATE",
-    "outerResponseOctets": 71196086,
+    "outerResponseOctets": 71052634,
     "outerResponseRoot": "RESPONSE-EVALUATE_CANDIDATE",
-    "rootMeasurementSetSha256": "aef675a27fb8f69d75a1c452a3a9f0ef8c35175d4c0c97fdf2ce2bceaccad4df"
+    "rootMeasurementSetSha256": "3ead04f4d3c35e159baa69bb44ec6cd1221c1f736a275306271057994279258a"
   },
   "derivedCounts": {
     "operations": 6,
     "propertyBearingObjectSchemas": 78,
     "directObjectDefinitions": 73,
     "inlineObjectSchemas": 5,
-    "properties": 307,
-    "directlyRequiredProperties": 306,
-    "customKeywordOccurrences": 25,
-    "structuralRuleFamilies": 23,
-    "structuralExecutionInstances": 1400,
+    "properties": 323,
+    "directlyRequiredProperties": 322,
+    "customKeywordOccurrences": 26,
+    "structuralRuleFamilies": 24,
+    "structuralExecutionInstances": 1450,
     "oneOfOccurrences": 16,
     "oneOfArms": 54,
     "oneOfPairwiseDisjointnessRows": 93,
-    "semanticFamilies": 68,
-    "semanticExecutionInstances": 4850,
-    "totalExecutionInstances": 6250,
+    "semanticFamilies": 82,
+    "semanticExecutionInstances": 5147,
+    "totalExecutionInstances": 6597,
     "contentRelationRows": 23,
+    "forkJoinLabelRelationRows": 10,
+    "authorityProjectionDimensionRelationRows": 16,
+    "graphAdmissionDimensionRelationRows": 10,
     "candidatePrimaryRelationRows": 25,
-    "transcriptRelationRows": 14,
-    "genesisRelationRows": 16,
+    "transcriptRelationRows": 16,
+    "genesisRelationRows": 17,
+    "terminalPredicateRelationRows": 33,
     "signatureVerificationPathRows": 17,
     "nativeDependencies": 63,
     "readOnlyNativeDependencies": 59,
     "seededExtensionNativeDependencies": 4,
     "historicalProviderIncrements": 5,
     "seedRegistryRowsPendingPostBase": 78,
-    "structuralWitnessRowsPendingPostBase": 1400
+    "structuralWitnessRowsPendingPostBase": 1450
   },
   "artifacts": [
     {
       "path": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
       "role": "INTERFACE_SCHEMA",
-      "sha256": "cb7d34f92ac71bb4f6dd724d8279917d1b481f027caba8c9546ca21e1b99ffd3"
+      "sha256": "f72d1079e807edfc84a67742bdde7f047f7e8daad259e2515a0492d52cb65f0c"
     },
     {
       "path": "APP-CORE-IFACE-0-OWNERSHIP-CANDIDATE.json",
@@ -86,42 +90,42 @@
     {
       "path": "APP-CORE-IFACE-0-STRUCTURAL-AXES-CANDIDATE.json",
       "role": "STRUCTURAL_INSTANCE_AXES",
-      "sha256": "68a2581a0bd0d2001574a23fff313b9037069c5091fa4c4834b578a15df9b3f6"
+      "sha256": "fc2f602964fe3dfe247ee3aea480d9c102f0026820f736d13542af2df57c15e6"
     },
     {
       "path": "APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json",
       "role": "BOUNDED_STRUCTURAL_PERTURBATION_PALETTE",
-      "sha256": "2fb0d6d55a86965624cd6fb0e077e72c10586eecb2e0c66562c0fa7006428620"
+      "sha256": "db8ebfaf3d34a8d47dae6c1996eb4cadc91d737f13a9278a75c2ea441ebea9d8"
     },
     {
       "path": "APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json",
       "role": "ONEOF_PAIRWISE_DISJOINTNESS",
-      "sha256": "55d5ff0f519fcd9d429dbc009068b21dc611700879050b5b6c7dbc2f68b64b75"
+      "sha256": "eb992a044c5a5c53b4ea0c01b743adfd5846896d30f9274e4f26a5927f193382"
     },
     {
       "path": "APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json",
       "role": "STRUCTURAL_WITNESS_REGISTRY_SCHEMA",
-      "sha256": "3ae8047d474241e3d3e5c4500e7c8f21dc62e47fd1cab283edb11177111b3d78"
+      "sha256": "cee8479d6a126e4d4bca2a6d0a9c4659caadd8507a2549b034c1de1c9488111c"
     },
     {
       "path": "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json",
       "role": "SEMANTIC_RULE_FAMILIES",
-      "sha256": "6c16f04dc8731d619524823132ae565e6b2820c913c3314b2b9580a004b09566"
+      "sha256": "70493d7cd627330feecf966b35c16c87907571a41f28848ee46ba7da627e2d92"
     },
     {
       "path": "APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json",
       "role": "SEMANTIC_INSTANCE_AXES",
-      "sha256": "0e529cb583ab4879980f1a56b379787113812f65bdf2c162f7045d5695fd989f"
+      "sha256": "83df5f9fad34141ae71ae3b34fc1b68b749e5c8e90e0357530780a18076b8b90"
     },
     {
       "path": "APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json",
       "role": "INSTANCE_EXECUTION_PHASES",
-      "sha256": "9c576a4a8dfede6c4f022b34667bf94a742679e14bfb0a272d92b3abb6d322bc"
+      "sha256": "cf2fbe4be7168e742aa789f58983a5ebf467831634eaf11d337857e849907e21"
     },
     {
       "path": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json",
       "role": "LITERAL_LEGAL_RELATIONS",
-      "sha256": "629fa8cde8ac9780c36c1312a32d6525385719aff17457cd94becba16e51edc9"
+      "sha256": "8b67fb14b0f147c9aa571a5189f318b16990ccf92d1dcd88dbfd1354153007a2"
     },
     {
       "path": "APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json",
@@ -136,7 +140,7 @@
     {
       "path": "APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json",
       "role": "DERIVED_CARRIER_REACHABILITY",
-      "sha256": "9e5c58034eab93b9e4e8539ac61ce733821a52a6dd0414e55b1333b8b5434286"
+      "sha256": "6ead453a551472a87ca00ef812a8952ebaeb76d5cdbbe1e6dcf10279f32147ca"
     },
     {
       "path": "derive_app_core_carrier_reachability.py",
@@ -166,22 +170,22 @@
     {
       "path": "validate_app_core_contract_candidates.py",
       "role": "FAIL_CLOSED_CANDIDATE_PACKAGE_VALIDATOR",
-      "sha256": "a58e85799e6fd28586cd6e9c030b46069b26a97560ac91722a4cf286c88657a3"
+      "sha256": "e6549dd69f872f64a6570eeaa145ac3e89b2af6f1da5f37521a152fbd76315ab"
     },
     {
       "path": "APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md",
       "role": "HOSTILE_DERIVATION",
-      "sha256": "c0ca3edac412617930071e2f57ff04143e1929b25b019407ae02ea6e2d8c4edd"
+      "sha256": "96708c38aa1f3cd40d47522c1578356777ef92e3214d1327b6b940712e8db4ff"
     },
     {
       "path": "APP-CORE-IFACE-0-VALIDATOR-CONTRACT.md",
       "role": "VALIDATOR_PIPELINE",
-      "sha256": "260f3dd9d4517707464730df1528e10af097db2e32849c922706c680311644e2"
+      "sha256": "b95bb4e8167a043487acd497d191b9876b8d00f7b0b3938e6f7dce796ae681ba"
     },
     {
       "path": "APP-CORE-IFACE-0-WITNESS-GENERATION-CONTRACT.md",
       "role": "DETERMINISTIC_SEED_AND_WITNESS_GENERATION",
-      "sha256": "ed4b08fd109fe40b24719bd3d5fb29d767709dac03e9eedad2657811bbd2460f"
+      "sha256": "5497a7782d790c20d8064721167442243ed553740366bfbb9927d17ea0d8849e"
     },
     {
       "path": "APP-CORE-O10-CLOSURE-CANDIDATE.md",
@@ -201,7 +205,7 @@
     {
       "path": "APP-CORE-IFACE-0-CONTRACT-OUTLINE.md",
       "role": "EXECUTABLE_CONTRACT_OUTLINE",
-      "sha256": "0f95f319b1a3e78b99837c118b778818f3239ec25ad2f6b8636203b5395b8793"
+      "sha256": "99f46faec073acae4892f14ca6f4784f36301f29506b7f03cbf44c313bc954c7"
     }
   ],
   "remainingBeforeExecutableIssue": [

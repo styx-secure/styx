@@ -251,7 +251,7 @@ def validate_ownership(
             require(set(selected["owners"]) <= owner_tokens and selected["owners"], f"owner drift: {key}.{property_name}")
             require(selected["source"] in source_tokens, f"source drift: {key}.{property_name}")
             covered += 1
-    require(covered == 307, f"ownership coverage drift: {covered}")
+    require(covered == 323, f"ownership coverage drift: {covered}")
 
 
 def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
@@ -267,7 +267,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
 
     nodes = list(walk(schema))
     references = [node["$ref"] for _, node in nodes if isinstance(node, dict) and "$ref" in node]
-    require(len(references) == 262, f"ref count drift: {len(references)}")
+    require(len(references) == 263, f"ref count drift: {len(references)}")
     for reference in references:
         resolve(schema, reference)
     definitions = validate_definition_closure(schema)
@@ -291,8 +291,8 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     require(len(one_ofs) == 16, f"oneOf count drift: {len(one_ofs)}")
     require(sum(len(arms) for _, arms in one_ofs) == 54, "oneOf arm drift")
     require(len(objects) == 78, f"object count drift: {len(objects)}")
-    require(sum(len(node["properties"]) for _, node in objects) == 307, "property count drift")
-    require(sum(len(node.get("required", [])) for _, node in objects) == 306, "required count drift")
+    require(sum(len(node["properties"]) for _, node in objects) == 323, "property count drift")
+    require(sum(len(node.get("required", [])) for _, node in objects) == 322, "required count drift")
     validate_ownership(schema, objects)
 
     pair_registry = load("APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json")
@@ -341,14 +341,15 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     require(actual_arms == expected_arms, "union-arm reachability drift")
 
     structural = load("APP-CORE-IFACE-0-STRUCTURAL-AXES-CANDIDATE.json")
-    require(len(structural["rules"]) == 23, "structural family drift")
-    require(sum(row["expectedCount"] for row in structural["rules"]) == 1400, "structural count drift")
-    require(structural["derivedCounts"] == {"structuralRuleFamilies": 23, "structuralExecutionInstances": 1400}, "structural derived-count drift")
+    require(len(structural["rules"]) == 24, "structural family drift")
+    require(sum(row["expectedCount"] for row in structural["rules"]) == 1450, "structural count drift")
+    require(structural["derivedCounts"] == {"structuralRuleFamilies": 24, "structuralExecutionInstances": 1450}, "structural derived-count drift")
     structural_by_id = {row["id"]: row for row in structural["rules"]}
     keyword_rules = {
         "type": "STR-TYPE-MISMATCH",
         "$ref": "STR-REF-TARGET-CONSTRAINT",
         "pattern": "STR-PATTERN-MISMATCH",
+        "maxItems": "STR-MAX-ITEMS-OVERFLOW",
     }
     for keyword, rule_id in keyword_rules.items():
         pointers = {
@@ -442,24 +443,24 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     witness = load("APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json")
     require(positive["properties"]["caseCount"]["maximum"] == 144, "carrier maximum drift")
     require(positive["properties"]["cases"]["maxItems"] == 144, "carrier maxItems drift")
-    require(witness["properties"]["rowCount"]["const"] == 1400, "witness count drift")
-    require(witness["properties"]["rows"]["minItems"] == witness["properties"]["rows"]["maxItems"] == 1400, "witness cardinality drift")
+    require(witness["properties"]["rowCount"]["const"] == 1450, "witness count drift")
+    require(witness["properties"]["rows"]["minItems"] == witness["properties"]["rows"]["maxItems"] == 1450, "witness cardinality drift")
 
     semantics = load("APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json")
     axes = load("APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json")
     validate_terminal_path_bindings(schema, axes)
     semantic_ids = [row["id"] for row in semantics["rules"]]
-    require(len(semantic_ids) == len(set(semantic_ids)) == 68, "semantic family drift")
+    require(len(semantic_ids) == len(set(semantic_ids)) == 82, "semantic family drift")
     require(
-        set(semantic_ids) == {f"ACV-{index:03d}" for index in range(1, 69)},
+        set(semantic_ids) == {f"ACV-{index:03d}" for index in range(1, 83)},
         "semantic rule-id set drift",
     )
     for field in ("scenario", "mutant"):
         values = [row[field] for row in semantics["rules"]]
-        require(len(values) == len(set(values)) == 68, f"semantic {field} drift")
+        require(len(values) == len(set(values)) == 82, f"semantic {field} drift")
     axis_ids = [row["id"] for row in axes["rules"]]
-    require(set(axis_ids) == set(semantic_ids) and len(axis_ids) == 68, "semantic axis relation drift")
-    require(sum(row["expectedCount"] for row in axes["rules"]) == 4850, "semantic execution count drift")
+    require(set(axis_ids) == set(semantic_ids) and len(axis_ids) == 82, "semantic axis relation drift")
+    require(sum(row["expectedCount"] for row in axes["rules"]) == 5147, "semantic execution count drift")
     require(axes["unresolvedAxes"] == [], "unresolved semantic axes")
     phases = load("APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json")
     require(
@@ -475,7 +476,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         phases.get("fixedCountsBeforeSeedPartition", {}).get(
             "totalSemanticExecutionInstances"
         )
-        == 4850,
+        == 5147,
         "execution-phase total drift",
     )
     acv066_phase = next(
@@ -488,7 +489,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
             "id": "ACV-066",
             "partition": "ALL_INSTANCES",
             "phase": "POST_OUTPUT_MUTATION",
-            "expectedCount": 3,
+            "expectedCount": 7,
         },
         "ACV-066 execution-phase drift",
     )
@@ -502,7 +503,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
                 {
                     "reachability": "REACHABLE",
                     "phase": "BLIND_INPUT_EXECUTION",
-                    "expectedCount": 13,
+                    "expectedCount": 15,
                 },
                 {
                     "reachability": "RESERVED_UNREACHABLE_V0",
@@ -519,12 +520,12 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
                 {
                     "reachability": "REACHABLE",
                     "phase": "BLIND_INPUT_EXECUTION",
-                    "expectedCount": 15,
+                    "expectedCount": 12,
                 },
                 {
                     "reachability": "RESERVED_UNREACHABLE_V0",
                     "phase": "POST_OUTPUT_MUTATION",
-                    "expectedCount": 1,
+                    "expectedCount": 5,
                 },
             ],
         },
@@ -548,13 +549,108 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         "signature execution-phase drift",
     )
     require(
+        phase_by_id.get("ACV-069")
+        == {
+            "id": "ACV-069",
+            "partition": "BY_RELATION_ROW_REACHABILITY",
+            "relation": [
+                {
+                    "reachability": "REACHABLE",
+                    "phase": "BLIND_INPUT_EXECUTION",
+                    "expectedCount": 27,
+                },
+                {
+                    "reachability": "RESERVED_UNREACHABLE_V0",
+                    "phase": "POST_OUTPUT_MUTATION",
+                    "expectedCount": 6,
+                },
+            ],
+        },
+        "terminal-predicate execution-phase drift",
+    )
+    expected_reachability_partitions = {
+        "ACV-027": (7, 16),
+        "ACV-033": (21, 4),
+        "ACV-052": (21, 4),
+        "ACV-073": (7, 3),
+        "ACV-078": (12, 4),
+        "ACV-079": (4, 6),
+    }
+    for rule_id, (blind_count, mutation_count) in expected_reachability_partitions.items():
+        require(
+            phase_by_id.get(rule_id)
+            == {
+                "id": rule_id,
+                "partition": "BY_RELATION_ROW_REACHABILITY",
+                "relation": [
+                    {
+                        "reachability": "REACHABLE",
+                        "phase": "BLIND_INPUT_EXECUTION",
+                        "expectedCount": blind_count,
+                    },
+                    {
+                        "reachability": "RESERVED_UNREACHABLE_V0",
+                        "phase": "POST_OUTPUT_MUTATION",
+                        "expectedCount": mutation_count,
+                    },
+                ],
+            },
+            f"V9 reachability phase partition drift: {rule_id}",
+        )
+    for rule_id, count in {
+        "ACV-070": 1,
+        "ACV-071": 2,
+        "ACV-072": 1,
+        "ACV-081": 2,
+        "ACV-082": 1,
+    }.items():
+        require(
+            phase_by_id.get(rule_id)
+            == {
+                "id": rule_id,
+                "partition": "ALL_INSTANCES",
+                "phase": "POST_OUTPUT_MUTATION",
+                "expectedCount": count,
+            },
+            f"V9 post-output phase drift: {rule_id}",
+        )
+    require(
+        set(phase_by_id)
+        == {
+            "ACV-013",
+            "ACV-015",
+            "ACV-027",
+            "ACV-033",
+            "ACV-043",
+            "ACV-044",
+            "ACV-048",
+            "ACV-049",
+            "ACV-050",
+            "ACV-052",
+            "ACV-056",
+            "ACV-066",
+            "ACV-067",
+            "ACV-068",
+            "ACV-069",
+            "ACV-070",
+            "ACV-071",
+            "ACV-072",
+            "ACV-073",
+            "ACV-078",
+            "ACV-079",
+            "ACV-081",
+            "ACV-082",
+        },
+        "V9 phase override set drift",
+    )
+    require(
         phases.get("fixedCountsBeforeSeedPartition")
         == {
-            "BLIND_INPUT_EXECUTION": 500,
-            "POST_OUTPUT_MUTATION": 3622,
-            "VALIDATOR_SELF_TEST": 26,
+            "BLIND_INPUT_EXECUTION": 558,
+            "POST_OUTPUT_MUTATION": 3860,
+            "VALIDATOR_SELF_TEST": 27,
             "ACV048PendingCarrierPartition": 702,
-            "totalSemanticExecutionInstances": 4850,
+            "totalSemanticExecutionInstances": 5147,
         },
         "execution-phase count drift",
     )
@@ -567,28 +663,451 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     }
     require(custom_occurrences == set(semantics["customKeywordCoverage"]), "custom keyword coverage drift")
     require(set(semantics["customKeywordCoverage"].values()) <= set(semantic_ids), "custom keyword owner drift")
+    concrete_transcript_annotations = {
+        "$defs.GenesisTranscriptCandidateV0.properties.transcriptHex": {
+            "dimension": "GENESIS_BODY_OCTETS",
+            "prefixOctets": "20",
+        },
+        "$defs.ApplicationTranscriptCandidateV0.properties.transcriptHex": {
+            "dimension": "FRAMING_OBJECT_OCTETS",
+            "prefixOctets": "20",
+        },
+    }
+    for path, expected_annotation in concrete_transcript_annotations.items():
+        node: object = schema
+        for component in path.split("."):
+            require(isinstance(node, dict) and component in node, f"missing concrete transcript annotation: {path}")
+            node = node[component]
+        require(
+            isinstance(node, dict)
+            and node.get("$ref") == "#/$defs/TranscriptHex"
+            and node.get("x-styx-o08-body-plus-prefix-limit")
+            == expected_annotation,
+            f"concrete transcript annotation drift: {path}",
+        )
+    require(
+        "x-styx-o08-limit" not in schema["$defs"]["TranscriptHex"],
+        "generic transcript O-08 annotation drift",
+    )
+    acv004 = next(row for row in semantics["rules"] if row["id"] == "ACV-004")
+    require(
+        acv004
+        == {
+            "id": "ACV-004",
+            "owners": ["K", "O08"],
+            "targets": list(concrete_transcript_annotations),
+            "rule": "HEX_BODY_PLUS_FIXED_PREFIX_LIMIT_BEFORE_DECODE",
+            "parameters": {
+                "fixedPrefixOctets": "20",
+                "targetDimensions": {
+                    path: annotation["dimension"]
+                    for path, annotation in concrete_transcript_annotations.items()
+                },
+            },
+            "scenario": "ACI-TRANSCRIPT-LIMIT-HEADER-ONLY",
+            "mutant": "M-ACI-TRANSCRIPT-LIMIT-AFTER-DECODE",
+        },
+        "ACV-004 body-plus-prefix rule drift",
+    )
     acv050_rule = next(row for row in semantics["rules"] if row["id"] == "ACV-050")
     acv050_axis = next(row for row in axes["rules"] if row["id"] == "ACV-050")
     require(
-        acv050_rule["parameters"] == {"ruleCount": "68"}
-        and acv050_axis["mappedOccurrenceCount"] == len(custom_occurrences) == 25
-        and acv050_axis["expectedCount"] == len(custom_occurrences) + 1 == 26,
+        acv050_rule["parameters"] == {"ruleCount": "82"}
+        and acv050_axis["mappedOccurrenceCount"] == len(custom_occurrences) == 26
+        and acv050_axis["expectedCount"] == len(custom_occurrences) + 1 == 27,
         "ACV-050 exact-registry binding drift",
     )
+    semantic_by_id = {row["id"]: row for row in semantics["rules"]}
+    axis_by_id = {row["id"]: row for row in axes["rules"]}
+    require(
+        semantic_by_id["ACV-010"]["rule"]
+        == "DERIVED_ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK"
+        and semantic_by_id["ACV-010"]["parameters"]
+        == {"expression": "RECORDS + 1", "selectedValue": "129"}
+        and semantic_by_id["ACV-029"]["parameters"]
+        == {
+            "perCredentialDimension": "ALIASES_PER_CREDENTIAL",
+            "membershipDimension": "CREDENTIALS",
+            "membershipMustExistInCredentialBindings": True,
+            "maximumGroupCountExpression": "floor((RECORDS + 1) / 2)",
+            "maximumGroupMemberExpression": "RECORDS + 1",
+            "maximumTotalMemberExpression": "RECORDS + 1",
+        }
+        and semantic_by_id["ACV-046"]["parameters"]
+        == {"projectedDimensionCount": "37"}
+        and semantic_by_id["ACV-059"]["parameters"]
+        == {
+            "expression": "floor((RECORDS + 1) / 2)",
+            "selectedValue": "64",
+        },
+        "V9 derived-bound constraint drift",
+    )
+    expected_ordering = {
+        "$defs.EvidenceProjectionV0.contentMaterial": "eventReferenceHex",
+        "$defs.EvidenceProjectionV0.openingMaterial": "eventReferenceHex",
+        "$defs.CanonicalReferenceArray": "lexicographic-hex",
+        "$defs.ContextProjectionV0.records": "protocol-k-order",
+        "$defs.ContextProjectionV0.recordOutcomes": "eventReferenceHex",
+        "$defs.ContextProjectionV0.credentialBindings": "credentialIdentifierHex",
+        "$defs.ContextProjectionV0.reductionStandings": "eventReferenceHex",
+        "$defs.ContextProjectionV0.eventAuthority": "eventReferenceHex",
+        "$defs.ContextProjectionV0.forkJoins": "joinLabelHex",
+        "$defs.ContextProjectionV0.contentStates": "eventReferenceHex",
+    }
+    require(
+        semantic_by_id["ACV-051"]["parameters"]
+        == {"orderingRelationByTarget": expected_ordering},
+        "V9 collection-order constraint drift",
+    )
+    credential_targets = semantic_by_id["ACV-057"]["targets"]
+    expected_credential_parameters = {
+        target: (
+            {"expression": "RECORDS + 1", "selectedValue": "129"}
+            if target == "$defs.AliasGroupV0.allOf[0]"
+            else {"dimension": "CREDENTIALS"}
+        )
+        for target in credential_targets
+    }
+    require(
+        semantic_by_id["ACV-057"]["parameters"]
+        == {"parametersByTarget": expected_credential_parameters},
+        "V9 credential-derived bound map drift",
+    )
+    require(
+        semantic_by_id["ACV-061"]["parameters"]
+        == {
+            "parametersByTarget": {
+                "$defs.ContextProjectionV0.reductionStandings": {
+                    "dimension": "CONTROL_EVENTS"
+                },
+                "$defs.ContextProjectionV0.eventAuthority": {"dimension": "RECORDS"},
+                "$defs.ContextProjectionV0.forkJoins": {"dimension": "FORK_SLOTS"},
+                "$defs.ContextProjectionV0.replayDependencyReferences": {
+                    "dimension": "RECORDS"
+                },
+            },
+            "forkJoinBoundJustification": "join-label uniqueness over complete slots and recomputation from the retained closure without checkpoint pruning",
+        },
+        "V9 record-derived bound map drift",
+    )
+    expected_axis_fragments = {
+        "ACV-019": {"expectedCount": 49},
+        "ACV-027": {
+            "mode": "PER_LITERAL_RELATION_ROW",
+            "axisSources": [
+                "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#contentAxisLegalRelationV0"
+            ],
+            "expectedCount": 23,
+        },
+        "ACV-034": {"expectedCount": 81},
+        "ACV-036": {"expectedCount": 81},
+        "ACV-046": {"expectedCount": 44},
+        "ACV-049": {
+            "pathCount": 377,
+            "pathSha256": "ae9149055d83b3c1960d6f0ec6db796a4e9b019551632e70dc86571b8f90c3a0",
+            "familyCount": 10,
+            "expectedCount": 3770,
+        },
+    }
+    for rule_id, fragment in expected_axis_fragments.items():
+        require(
+            all(axis_by_id[rule_id].get(key) == value for key, value in fragment.items()),
+            f"V9 semantic axis drift: {rule_id}",
+        )
+    expected_literal_axes = {
+        "ACV-071": ["CONTEXT_CAPACITY_EXHAUSTED", "DEPENDENCY_DEFERRED"],
+        "ACV-075": [
+            "MINIMAL_PENDING_PARTITION",
+            "K_FORK_EVIDENCE_IMPLIES_COMPLETE_SLOT",
+            "K_PENDING_OPENING_IMPLIES_PENDING_ROOT",
+            "K_PENDING_ANCESTOR_IMPLIES_PENDING_REFERENCE",
+            "K_NULL_IMPLIES_NOT_PENDING",
+        ],
+        "ACV-076": ["EVENT_OUTCOME_PRECEDENCE", "CONTEXT_STATE_PRECEDENCE"],
+        "ACV-080": [
+            "REPLAY_CONTEXT",
+            "EVALUATE_CANDIDATE",
+            "EVALUATE_EVIDENCE_UPDATE",
+        ],
+        "ACV-081": [
+            "NO_OPERATIONAL_AUTHORITY_ENTRY",
+            "NO_OPERATIONAL_AUTHORITY_TO_AUTHORITY_UNAVAILABLE",
+        ],
+    }
+    for rule_id, values in expected_literal_axes.items():
+        require(
+            axis_by_id[rule_id]
+            == {
+                "id": rule_id,
+                "mode": "PER_LITERAL_VALUE",
+                "values": values,
+                "expectedCount": len(values),
+            },
+            f"V9 literal semantic axis drift: {rule_id}",
+        )
 
     relations = load("APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json")
     relation_counts = {
         "contentAxisLegalRelationV0": 23,
+        "forkJoinLabelRelationV0": 10,
+        "authorityProjectionDimensionRelationV0": 16,
+        "graphAdmissionDimensionRelationV0": 10,
         "candidateEvaluationPrimaryRelationV0": 25,
-        "transcriptReasonStageRelationV0": 14,
-        "genesisReasonStageRelationV0": 16,
+        "transcriptReasonStageRelationV0": 16,
+        "genesisReasonStageRelationV0": 17,
         "signatureVerificationPathRelationV0": 17,
+        "terminalPredicateRelationV0": 33,
     }
     for field, count in relation_counts.items():
         rows = relations[field]
         require(len(rows) == count, f"relation count drift: {field}")
         ids = [row["id"] for row in rows]
         require(len(ids) == len(set(ids)), f"relation ID drift: {field}")
+
+    fork_join = schema["$defs"]["ForkJoinProjectionV0"]
+    require(
+        fork_join.get("additionalProperties") is False
+        and fork_join.get("required")
+        == [
+            "joinLabelHex",
+            "credentialIdentifierHex",
+            "authorSequence",
+            "siblingReferences",
+            "lineageClosureCredentialIdentifiers",
+        ]
+        and fork_join.get("properties")
+        == {
+            "joinLabelHex": {"$ref": "#/$defs/FixedHex32"},
+            "credentialIdentifierHex": {"$ref": "#/$defs/FixedHex32"},
+            "authorSequence": {"$ref": "#/$defs/U64Text"},
+            "siblingReferences": {
+                "$ref": "#/$defs/CanonicalReferenceArray",
+                "minItems": 2,
+                "maxItems": 3,
+            },
+            "lineageClosureCredentialIdentifiers": {
+                "$ref": "#/$defs/CanonicalReferenceArray"
+            },
+        },
+        "V9 fork-join schema drift",
+    )
+    context_properties = schema["$defs"]["ContextProjectionV0"]["properties"]
+    require(
+        context_properties["contextState"]
+        == {
+            "enum": [
+                "ACTIVE",
+                "AUTHORITY_UNAVAILABLE",
+                "EMPTY_STALE",
+                "NO_OPERATIONAL_AUTHORITY",
+                "PARTIALLY_LINEAGE_QUARANTINED",
+                "PARTIALLY_PENDING",
+            ]
+        }
+        and context_properties["forkJoins"].get("x-styx-canonical-order")
+        == "joinLabelHex",
+        "V9 context-state or fork-order drift",
+    )
+    expected_limits = {
+        "ACTIVE_FRONTIER": "16",
+        "ACTORS": "8",
+        "ALIASES_PER_CREDENTIAL": "4",
+        "ANCESTRY_RELATIONS": "32768",
+        "AP_EXPANDED_CONTENT_OCTETS": "131072",
+        "AP_TRANSITION_BLOCK_OCTETS": "4096",
+        "AUTHORITY_CONCURRENT_CONTROLS": "3",
+        "AUTHORITY_STATES": "256",
+        "AUTHORITY_TRANSITIONS": "512",
+        "CHUNKS_PER_CONTENT": "64",
+        "CHUNK_OCTETS": "16384",
+        "COMMITMENT_VALUE_OCTETS": "32",
+        "CONTENT_EXACT_OCTETS": "262144",
+        "CONTEXT_LIFETIME_EVENTS": "4096",
+        "CONTROL_EVENTS": "12",
+        "CREDENTIALS": "16",
+        "EVENTS_ADMITTED": "64",
+        "EVIDENCE_PER_CREDENTIAL": "16",
+        "FORK_SLOTS": "3",
+        "FRAMING_OBJECT_OCTETS": "8192",
+        "GENESIS_BODY_OCTETS": "8192",
+        "GENESIS_POLICY_OCTETS": "4096",
+        "GRAPH_DEPTH": "256",
+        "HALTED_REPLAY_SPAN": "256",
+        "LINEAGE_DEPTH": "8",
+        "ORDINARY_PREFIX_QUERIES": "64",
+        "PARENTS_PER_EVENT": "8",
+        "PENDING_DESCENDANTS": "128",
+        "PENDING_ROOTS": "16",
+        "RANDOMIZER_OCTETS": "32",
+        "RECORDS": "128",
+        "REFERENCE_OCTETS": "32",
+        "REMOVAL_DIRECTIVES": "32",
+        "REPLAYED_EVENT_WORK": "65536",
+        "SIGNATURE_OCTETS": "64",
+        "SIBLINGS_PER_FORK": "3",
+        "VERIFICATION_KEY_OCTETS": "32",
+    }
+    require(
+        schema["$defs"]["InterfaceLimitsV0"]["properties"]
+        == {key: {"const": value} for key, value in expected_limits.items()}
+        and schema["$defs"]["InterfaceLimitsV0"]["required"]
+        == list(expected_limits),
+        "V9 interface-limit projection drift",
+    )
+
+    content_reachability = {
+        "CAR-001": ("REACHABLE", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]),
+        "CAR-002": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-003": ("REACHABLE", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]),
+        "CAR-004": ("REACHABLE", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]),
+        "CAR-005": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-006": ("REACHABLE", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]),
+        "CAR-007": ("REACHABLE", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]),
+        "CAR-008": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-009": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-010": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-011": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-012": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-013": ("REACHABLE", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]),
+        "CAR-014": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-015": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-016": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-017": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-018": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-019": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-020": ("REACHABLE", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]),
+        "CAR-021": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-022": ("RESERVED_UNREACHABLE_V0", []),
+        "CAR-023": ("RESERVED_UNREACHABLE_V0", []),
+    }
+    require(
+        {
+            row["id"]: (row.get("reachability"), row.get("reachableOperations"))
+            for row in relations["contentAxisLegalRelationV0"]
+        }
+        == content_reachability,
+        "V9 content reachability drift",
+    )
+
+    fork_checks = [
+        "COMPLETE_SLOT_BIJECTION",
+        "EXACT_DOMAIN_SEPARATED_PREIMAGE",
+        "AUTHOR_SEQUENCE_U64_BIG_ENDIAN",
+        "SIBLING_COUNT_U32_BIG_ENDIAN",
+        "SIBLINGS_SORTED_BY_REFERENCE_OCTETS",
+        "LATE_SIBLING_RECOMPUTES_LABEL",
+        "REFLEXIVE_TRANSITIVE_GRANT_LINEAGE_CLOSURE",
+        "DISTINCT_PREIMAGE_LABEL_COLLISION",
+        "LABEL_EQUALS_EVENT_REFERENCE_COLLISION",
+        "LABEL_EQUALS_CREDENTIAL_IDENTIFIER_COLLISION",
+    ]
+    require(
+        relations["forkJoinLabelRelationV0"]
+        == [
+            {
+                "id": f"FJL-{index:03d}",
+                "check": check,
+                "reachability": (
+                    "REACHABLE" if index <= 7 else "RESERVED_UNREACHABLE_V0"
+                ),
+                "scenario": f"ACI-FJL-{index:03d}",
+                "mutant": f"M-ACI-FJL-{index:03d}",
+            }
+            for index, check in enumerate(fork_checks, 1)
+        ],
+        "V9 fork-join relation drift",
+    )
+
+    s5_dimensions = [
+        "FORK_SLOTS",
+        "SIBLINGS_PER_FORK",
+        "CREDENTIALS",
+        "LINEAGE_DEPTH",
+        "ALIASES_PER_CREDENTIAL",
+        "ACTORS",
+        "CONTROL_EVENTS",
+        "AUTHORITY_CONCURRENT_CONTROLS",
+        "REMOVAL_DIRECTIVES",
+        "AUTHORITY_TRANSITIONS",
+        "AUTHORITY_STATES",
+        "ORDINARY_PREFIX_QUERIES",
+        "REPLAYED_EVENT_WORK",
+        "GENESIS_POLICY_OCTETS",
+        "ROLE_ASSIGNMENTS",
+        "EVIDENCE_PER_CREDENTIAL",
+    ]
+    expected_s5 = []
+    for index, dimension in enumerate(s5_dimensions, 1):
+        expected_s5.append(
+            {
+                "id": f"S5D-{index:03d}",
+                "dimension": dimension,
+                "branch": "A" if index <= 6 else "B",
+                "reachability": (
+                    "REACHABLE" if index <= 12 else "RESERVED_UNREACHABLE_V0"
+                ),
+                "scenario": (
+                    "AUTHORITY_STATES_ISOLATED_V0"
+                    if index == 11
+                    else f"ACI-S5D-{index:03d}"
+                ),
+                "mutant": (
+                    "M-ACI-S5D-011-OMIT-CHECK"
+                    if index == 11
+                    else f"M-ACI-S5D-{index:03d}"
+                ),
+            }
+        )
+    require(
+        relations["authorityProjectionDimensionRelationV0"] == expected_s5,
+        "V9 S5 dimension relation drift",
+    )
+
+    s4_rows = [
+        ("PARENTS_PER_EVENT", "CONTEXT_CAPACITY_EXHAUSTED", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"]),
+        ("ACTIVE_FRONTIER", "CONTEXT_CAPACITY_EXHAUSTED", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"]),
+        ("EVIDENCE_PER_CREDENTIAL", "CONTEXT_CAPACITY_EXHAUSTED", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"]),
+        ("PENDING_ROOTS", "DEPENDENCY_DEFERRED", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"]),
+        ("EVENTS_ADMITTED", "RESERVED_UNREACHABLE_V0", []),
+        ("GRAPH_DEPTH", "RESERVED_UNREACHABLE_V0", []),
+        ("ANCESTRY_RELATIONS", "RESERVED_UNREACHABLE_V0", []),
+        ("CONTEXT_LIFETIME_EVENTS", "RESERVED_UNREACHABLE_V0", []),
+        ("PENDING_DESCENDANTS", "RESERVED_UNREACHABLE_V0", []),
+        ("HALTED_REPLAY_SPAN", "RESERVED_UNREACHABLE_V0", []),
+    ]
+    require(
+        relations["graphAdmissionDimensionRelationV0"]
+        == [
+            {
+                "id": f"S4D-{index:03d}",
+                "dimension": dimension,
+                "result": result,
+                "operations": operations,
+                "reachability": (
+                    "REACHABLE" if index <= 4 else "RESERVED_UNREACHABLE_V0"
+                ),
+                "scenario": f"ACI-S4D-{index:03d}",
+                "mutant": f"M-ACI-S4D-{index:03d}",
+            }
+            for index, (dimension, result, operations) in enumerate(s4_rows, 1)
+        ],
+        "V9 S4 dimension relation drift",
+    )
+    f13_reachability = {
+        row["id"]: row.get("reachability")
+        for row in relations["candidateEvaluationPrimaryRelationV0"]
+    }
+    require(
+        {
+            row_id
+            for row_id, reachability in f13_reachability.items()
+            if reachability == "RESERVED_UNREACHABLE_V0"
+        }
+        == {"F13R-007", "F13R-013", "F13R-020", "F13R-022"}
+        and set(f13_reachability.values())
+        == {"REACHABLE", "RESERVED_UNREACHABLE_V0"},
+        "V9 F13 reachability drift",
+    )
 
     transcript_reachability = {
         row["id"]: row.get("reachability")
@@ -599,9 +1118,16 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         for row in relations["genesisReasonStageRelationV0"]
     }
     require(
-        transcript_reachability.get("TRS-011") == "RESERVED_UNREACHABLE_V0"
-        and genesis_reachability.get("GRS-011") == "RESERVED_UNREACHABLE_V0",
-        "reserved reference-mismatch rows drift",
+        {
+            row_id
+            for row_id, reachability in (
+                *transcript_reachability.items(),
+                *genesis_reachability.items(),
+            )
+            if reachability == "RESERVED_UNREACHABLE_V0"
+        }
+        == {"TRS-011", "GRS-009", "GRS-010", "GRS-011", "GRS-015", "GRS-016"},
+        "reserved terminal-row set drift",
     )
     require(
         set(transcript_reachability.values())
@@ -614,27 +1140,34 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
                 *genesis_reachability.values(),
             )
         )
-        == 2,
-        "reference-mismatch reachability relation drift",
+        == 6,
+        "terminal-row reachability relation drift",
     )
     acv066 = next(row for row in semantics["rules"] if row["id"] == "ACV-066")
     require(
         acv066
         == {
             "id": "ACV-066",
-            "owners": ["K", "O07", "INTERFACE"],
+            "owners": ["K", "O03", "O04", "O07", "AP", "INTERFACE"],
             "targets": [
                 "$defs.ValidateTranscriptResultV0",
                 "$defs.EvaluateGenesisResultV0",
                 "$defs.TranscriptObservationV0",
             ],
-            "rule": "REFERENCE_MISMATCH_RESERVED_AND_UNREACHABLE_IN_V0",
+            "rule": "RESERVED_ROWS_UNREACHABLE_IN_V0",
             "parameters": {
-                "reservedRows": ["TRS-011", "GRS-011"],
-                "requiredReopenOwners": ["K", "O07", "INTERFACE"],
+                "reservedRows": [
+                    "TRS-011",
+                    "GRS-009",
+                    "GRS-010",
+                    "GRS-011",
+                    "GRS-015",
+                    "GRS-016",
+                ],
+                "independentObservationDetector": "referenceVerification=REJECTED",
             },
-            "scenario": "ACI-REFERENCE-MISMATCH-UNREACHABLE",
-            "mutant": "M-ACI-FABRICATE-REFERENCE-MISMATCH",
+            "scenario": "ACI-RESERVED-ROW-RELEASE",
+            "mutant": "M-ACI-RELEASE-RESERVED-ROW",
         },
         "ACV-066 rule drift",
     )
@@ -678,6 +1211,146 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
             "mutant": "M-ACI-SIGNATURE-PATH-RELATION",
         },
         "ACV-068 rule drift",
+    )
+    acv069 = next(row for row in semantics["rules"] if row["id"] == "ACV-069")
+    require(
+        acv069
+        == {
+            "id": "ACV-069",
+            "owners": [
+                "INTERFACE",
+                "K",
+                "O03",
+                "O04",
+                "O07",
+                "O08",
+                "O14",
+                "AP",
+                "AP_PROFILE",
+            ],
+            "targets": [
+                "$defs.ValidateTranscriptInputV0",
+                "$defs.ValidateTranscriptResultV0",
+                "$defs.EvaluateGenesisInputV0",
+                "$defs.EvaluateGenesisResultV0",
+            ],
+            "rule": "TRANSCRIPT_AND_GENESIS_TERMINAL_PREDICATE_EXACT_RELATION",
+            "parameters": {
+                "relation": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#terminalPredicateRelationV0",
+                "relationRowCount": "33",
+                "reachableRowCount": "27",
+                "reservedRowCount": "6",
+                "selectedEnvelopeCandidateProjection": "CURRENT_OBJECT_OUT_OF_PROFILE",
+            },
+            "scenario": "ACI-TERMINAL-PREDICATE-EXACT-ROW",
+            "mutant": "M-ACI-TERMINAL-PREDICATE-OR-ORDER",
+        },
+        "ACV-069 rule drift",
+    )
+
+    terminal_predicates = relations["terminalPredicateRelationV0"]
+    terminal_sources = {
+        row["id"]: row
+        for row in (
+            *relations["transcriptReasonStageRelationV0"],
+            *relations["genesisReasonStageRelationV0"],
+        )
+    }
+    terminal_required_keys = {
+        "id",
+        "relationRowId",
+        "owners",
+        "operation",
+        "candidateKinds",
+        "predicate",
+        "predecessorGatesPassed",
+        "laterGatesNotEvaluated",
+        "requiredObservations",
+        "result",
+        "scenario",
+        "mutant",
+    }
+    terminal_source_ids = [
+        *(f"TRS-{index:03d}" for index in range(1, 17)),
+        *(f"GRS-{index:03d}" for index in range(1, 18)),
+    ]
+    require(
+        [row["relationRowId"] for row in terminal_predicates] == terminal_source_ids
+        and [row["id"] for row in terminal_predicates]
+        == [f"TPR-{row_id}" for row_id in terminal_source_ids]
+        and all(set(row) == terminal_required_keys for row in terminal_predicates),
+        "terminal predicate relation shape drift",
+    )
+    for row in terminal_predicates:
+        source = terminal_sources[row["relationRowId"]]
+        require(
+            row["result"]
+            == {
+                "kind": source["kind"],
+                "reason": source["reason"],
+                "stage": source["stage"],
+                "reachability": source["reachability"],
+            }
+            and row["owners"] == sorted(set(row["owners"]))
+            and row["owners"]
+            and row["candidateKinds"] == sorted(set(row["candidateKinds"]))
+            and row["candidateKinds"]
+            and isinstance(row["predicate"], str)
+            and row["predicate"]
+            and row["predecessorGatesPassed"]
+            == list(dict.fromkeys(row["predecessorGatesPassed"]))
+            and row["laterGatesNotEvaluated"]
+            == list(dict.fromkeys(row["laterGatesNotEvaluated"])),
+            f"terminal predicate row drift: {row['relationRowId']}",
+        )
+        if row["operation"] == "VALIDATE_TRANSCRIPT":
+            require(
+                set(row["requiredObservations"])
+                == {
+                    "transcriptVerification",
+                    "referenceVerification",
+                    "signatureVerification",
+                },
+                f"terminal observation binding drift: {row['relationRowId']}",
+            )
+        else:
+            require(
+                row["operation"] == "EVALUATE_GENESIS"
+                and row["candidateKinds"] == ["GENESIS"]
+                and row["requiredObservations"] == {},
+                f"genesis terminal applicability drift: {row['relationRowId']}",
+            )
+    require(
+        sum(
+            row["result"]["reachability"] == "REACHABLE"
+            for row in terminal_predicates
+        )
+        == 27
+        and sum(
+            row["result"]["reachability"] == "RESERVED_UNREACHABLE_V0"
+            for row in terminal_predicates
+        )
+        == 6
+        and len({row["scenario"] for row in terminal_predicates}) == 33
+        and len({row["mutant"] for row in terminal_predicates}) == 33,
+        "terminal predicate cardinality or witness identity drift",
+    )
+    reserved_owner_sets = {
+        row["relationRowId"]: row["owners"]
+        for row in terminal_predicates
+        if row["result"]["reachability"] == "RESERVED_UNREACHABLE_V0"
+    }
+    require(
+        reserved_owner_sets
+        == {
+            "TRS-011": ["INTERFACE", "K", "O07"],
+            "GRS-009": ["INTERFACE", "K", "O04"],
+            "GRS-010": ["INTERFACE", "K", "O04"],
+            "GRS-011": ["INTERFACE", "K", "O07"],
+            "GRS-015": ["INTERFACE", "K", "O03", "O07"],
+            "GRS-016": ["AP", "INTERFACE", "K", "O07"],
+        },
+        "reserved terminal reopening authority drift",
     )
     signature_paths = relations["signatureVerificationPathRelationV0"]
     required_signature_keys = {
@@ -803,28 +1476,32 @@ def validate_manifest() -> None:
         "propertyBearingObjectSchemas": 78,
         "directObjectDefinitions": 73,
         "inlineObjectSchemas": 5,
-        "properties": 307,
-        "directlyRequiredProperties": 306,
-        "customKeywordOccurrences": 25,
-        "structuralRuleFamilies": 23,
-        "structuralExecutionInstances": 1400,
+        "properties": 323,
+        "directlyRequiredProperties": 322,
+        "customKeywordOccurrences": 26,
+        "structuralRuleFamilies": 24,
+        "structuralExecutionInstances": 1450,
         "oneOfOccurrences": 16,
         "oneOfArms": 54,
         "oneOfPairwiseDisjointnessRows": 93,
-        "semanticFamilies": 68,
-        "semanticExecutionInstances": 4850,
-        "totalExecutionInstances": 6250,
+        "semanticFamilies": 82,
+        "semanticExecutionInstances": 5147,
+        "totalExecutionInstances": 6597,
         "contentRelationRows": 23,
+        "forkJoinLabelRelationRows": 10,
+        "authorityProjectionDimensionRelationRows": 16,
+        "graphAdmissionDimensionRelationRows": 10,
         "candidatePrimaryRelationRows": 25,
-        "transcriptRelationRows": 14,
-        "genesisRelationRows": 16,
+        "transcriptRelationRows": 16,
+        "genesisRelationRows": 17,
+        "terminalPredicateRelationRows": 33,
         "signatureVerificationPathRows": 17,
         "nativeDependencies": 63,
         "readOnlyNativeDependencies": 59,
         "seededExtensionNativeDependencies": 4,
         "historicalProviderIncrements": 5,
         "seedRegistryRowsPendingPostBase": 78,
-        "structuralWitnessRowsPendingPostBase": 1400,
+        "structuralWitnessRowsPendingPostBase": 1450,
     }
     require(counts == expected, "manifest derived-count drift")
 
@@ -852,7 +1529,7 @@ def validate_documented_artifact_bindings() -> None:
             f"`{palette}`.",
             "`APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json`, SHA-256\n"
             f"`{one_of}`:",
-            "The 68-row instance-axis registry has no unresolved axis and has SHA-256\n"
+            "The 82-row instance-axis registry has no unresolved axis and has SHA-256\n"
             f"`{instance_axes}`.",
             "`APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256\n"
             f"`{execution_phases}`.",
@@ -956,9 +1633,9 @@ def main() -> None:
     )
     validate_documented_artifact_bindings()
     print(
-        "PASS schemas=4 defs=114 refs=262 enums=35 oneOf=16 arms=54 "
-        "pairs=93 objects=78 properties=307 required=306 structural=1400 "
-        "semantic=4850 total=6250 F13=25 dependencies=63 provider_history=5 "
+        "PASS schemas=4 defs=114 refs=263 enums=35 oneOf=16 arms=54 "
+        "pairs=93 objects=78 properties=323 required=322 structural=1450 "
+        "semantic=5147 total=6597 terminal=33 F13=25 dependencies=63 provider_history=5 "
         "manifest=26 provider_live=" + ("PASS" if args.verify_provider else "NOT_RUN")
     )
 

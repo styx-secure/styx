@@ -8,7 +8,9 @@
       "localAvailability": "ABSENT",
       "bindingObservation": "NOT_APPLICABLE",
       "retentionState": "ACTIVE",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "REACHABLE",
+      "reachableOperations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]
     },
     {
       "id": "CAR-002",
@@ -16,7 +18,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "NOT_APPLICABLE",
       "retentionState": "ACTIVE",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-003",
@@ -24,7 +28,9 @@
       "localAvailability": "ABSENT",
       "bindingObservation": "NOT_CHECKED",
       "retentionState": "ACTIVE",
-      "replayReadiness": "CONTENT_DEFERRED"
+      "replayReadiness": "CONTENT_DEFERRED",
+      "reachability": "REACHABLE",
+      "reachableOperations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]
     },
     {
       "id": "CAR-004",
@@ -32,7 +38,9 @@
       "localAvailability": "PARTIAL",
       "bindingObservation": "NOT_CHECKED",
       "retentionState": "ACTIVE",
-      "replayReadiness": "CONTENT_DEFERRED"
+      "replayReadiness": "CONTENT_DEFERRED",
+      "reachability": "REACHABLE",
+      "reachableOperations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]
     },
     {
       "id": "CAR-005",
@@ -40,7 +48,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "NOT_CHECKED",
       "retentionState": "ACTIVE",
-      "replayReadiness": "CONTENT_DEFERRED"
+      "replayReadiness": "CONTENT_DEFERRED",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-006",
@@ -48,7 +58,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "VERIFIED",
       "retentionState": "ACTIVE",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "REACHABLE",
+      "reachableOperations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]
     },
     {
       "id": "CAR-007",
@@ -56,7 +68,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "OPENING_MISSING",
       "retentionState": "ACTIVE",
-      "replayReadiness": "CONTENT_DEFERRED"
+      "replayReadiness": "CONTENT_DEFERRED",
+      "reachability": "REACHABLE",
+      "reachableOperations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]
     },
     {
       "id": "CAR-008",
@@ -64,7 +78,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "LENGTH_MISMATCH",
       "retentionState": "ACTIVE",
-      "replayReadiness": "CONTENT_DEFERRED"
+      "replayReadiness": "CONTENT_DEFERRED",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-009",
@@ -72,7 +88,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "COMMITMENT_MISMATCH",
       "retentionState": "ACTIVE",
-      "replayReadiness": "CONTENT_DEFERRED"
+      "replayReadiness": "CONTENT_DEFERRED",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-010",
@@ -80,7 +98,9 @@
       "localAvailability": "ABSENT",
       "bindingObservation": "NOT_CHECKED",
       "retentionState": "ACTIVE",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-011",
@@ -88,7 +108,9 @@
       "localAvailability": "PARTIAL",
       "bindingObservation": "NOT_CHECKED",
       "retentionState": "ACTIVE",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-012",
@@ -96,7 +118,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "NOT_CHECKED",
       "retentionState": "ACTIVE",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-013",
@@ -104,7 +128,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "VERIFIED",
       "retentionState": "ACTIVE",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "REACHABLE",
+      "reachableOperations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]
     },
     {
       "id": "CAR-014",
@@ -112,7 +138,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "OPENING_MISSING",
       "retentionState": "ACTIVE",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-015",
@@ -120,7 +148,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "LENGTH_MISMATCH",
       "retentionState": "ACTIVE",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-016",
@@ -128,7 +158,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "COMMITMENT_MISMATCH",
       "retentionState": "ACTIVE",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-017",
@@ -136,7 +168,9 @@
       "localAvailability": "ABSENT",
       "bindingObservation": "NOT_CHECKED",
       "retentionState": "LOGICALLY_REMOVED",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-018",
@@ -144,7 +178,9 @@
       "localAvailability": "PARTIAL",
       "bindingObservation": "NOT_CHECKED",
       "retentionState": "LOGICALLY_REMOVED",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-019",
@@ -152,7 +188,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "NOT_CHECKED",
       "retentionState": "LOGICALLY_REMOVED",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-020",
@@ -160,7 +198,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "VERIFIED",
       "retentionState": "LOGICALLY_REMOVED",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "REACHABLE",
+      "reachableOperations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"]
     },
     {
       "id": "CAR-021",
@@ -168,7 +208,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "OPENING_MISSING",
       "retentionState": "LOGICALLY_REMOVED",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-022",
@@ -176,7 +218,9 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "LENGTH_MISMATCH",
       "retentionState": "LOGICALLY_REMOVED",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     },
     {
       "id": "CAR-023",
@@ -184,8 +228,112 @@
       "localAvailability": "PRESENT",
       "bindingObservation": "COMMITMENT_MISMATCH",
       "retentionState": "LOGICALLY_REMOVED",
-      "replayReadiness": "READY"
+      "replayReadiness": "READY",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "reachableOperations": []
     }
+  ],
+  "forkJoinLabelRelationV0": [
+    {
+      "id": "FJL-001",
+      "check": "COMPLETE_SLOT_BIJECTION",
+      "reachability": "REACHABLE",
+      "scenario": "ACI-FJL-001",
+      "mutant": "M-ACI-FJL-001"
+    },
+    {
+      "id": "FJL-002",
+      "check": "EXACT_DOMAIN_SEPARATED_PREIMAGE",
+      "reachability": "REACHABLE",
+      "scenario": "ACI-FJL-002",
+      "mutant": "M-ACI-FJL-002"
+    },
+    {
+      "id": "FJL-003",
+      "check": "AUTHOR_SEQUENCE_U64_BIG_ENDIAN",
+      "reachability": "REACHABLE",
+      "scenario": "ACI-FJL-003",
+      "mutant": "M-ACI-FJL-003"
+    },
+    {
+      "id": "FJL-004",
+      "check": "SIBLING_COUNT_U32_BIG_ENDIAN",
+      "reachability": "REACHABLE",
+      "scenario": "ACI-FJL-004",
+      "mutant": "M-ACI-FJL-004"
+    },
+    {
+      "id": "FJL-005",
+      "check": "SIBLINGS_SORTED_BY_REFERENCE_OCTETS",
+      "reachability": "REACHABLE",
+      "scenario": "ACI-FJL-005",
+      "mutant": "M-ACI-FJL-005"
+    },
+    {
+      "id": "FJL-006",
+      "check": "LATE_SIBLING_RECOMPUTES_LABEL",
+      "reachability": "REACHABLE",
+      "scenario": "ACI-FJL-006",
+      "mutant": "M-ACI-FJL-006"
+    },
+    {
+      "id": "FJL-007",
+      "check": "REFLEXIVE_TRANSITIVE_GRANT_LINEAGE_CLOSURE",
+      "reachability": "REACHABLE",
+      "scenario": "ACI-FJL-007",
+      "mutant": "M-ACI-FJL-007"
+    },
+    {
+      "id": "FJL-008",
+      "check": "DISTINCT_PREIMAGE_LABEL_COLLISION",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "scenario": "ACI-FJL-008",
+      "mutant": "M-ACI-FJL-008"
+    },
+    {
+      "id": "FJL-009",
+      "check": "LABEL_EQUALS_EVENT_REFERENCE_COLLISION",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "scenario": "ACI-FJL-009",
+      "mutant": "M-ACI-FJL-009"
+    },
+    {
+      "id": "FJL-010",
+      "check": "LABEL_EQUALS_CREDENTIAL_IDENTIFIER_COLLISION",
+      "reachability": "RESERVED_UNREACHABLE_V0",
+      "scenario": "ACI-FJL-010",
+      "mutant": "M-ACI-FJL-010"
+    }
+  ],
+  "authorityProjectionDimensionRelationV0": [
+    { "id": "S5D-001", "dimension": "FORK_SLOTS", "branch": "A", "reachability": "REACHABLE", "scenario": "ACI-S5D-001", "mutant": "M-ACI-S5D-001" },
+    { "id": "S5D-002", "dimension": "SIBLINGS_PER_FORK", "branch": "A", "reachability": "REACHABLE", "scenario": "ACI-S5D-002", "mutant": "M-ACI-S5D-002" },
+    { "id": "S5D-003", "dimension": "CREDENTIALS", "branch": "A", "reachability": "REACHABLE", "scenario": "ACI-S5D-003", "mutant": "M-ACI-S5D-003" },
+    { "id": "S5D-004", "dimension": "LINEAGE_DEPTH", "branch": "A", "reachability": "REACHABLE", "scenario": "ACI-S5D-004", "mutant": "M-ACI-S5D-004" },
+    { "id": "S5D-005", "dimension": "ALIASES_PER_CREDENTIAL", "branch": "A", "reachability": "REACHABLE", "scenario": "ACI-S5D-005", "mutant": "M-ACI-S5D-005" },
+    { "id": "S5D-006", "dimension": "ACTORS", "branch": "A", "reachability": "REACHABLE", "scenario": "ACI-S5D-006", "mutant": "M-ACI-S5D-006" },
+    { "id": "S5D-007", "dimension": "CONTROL_EVENTS", "branch": "B", "reachability": "REACHABLE", "scenario": "ACI-S5D-007", "mutant": "M-ACI-S5D-007" },
+    { "id": "S5D-008", "dimension": "AUTHORITY_CONCURRENT_CONTROLS", "branch": "B", "reachability": "REACHABLE", "scenario": "ACI-S5D-008", "mutant": "M-ACI-S5D-008" },
+    { "id": "S5D-009", "dimension": "REMOVAL_DIRECTIVES", "branch": "B", "reachability": "REACHABLE", "scenario": "ACI-S5D-009", "mutant": "M-ACI-S5D-009" },
+    { "id": "S5D-010", "dimension": "AUTHORITY_TRANSITIONS", "branch": "B", "reachability": "REACHABLE", "scenario": "ACI-S5D-010", "mutant": "M-ACI-S5D-010" },
+    { "id": "S5D-011", "dimension": "AUTHORITY_STATES", "branch": "B", "reachability": "REACHABLE", "scenario": "AUTHORITY_STATES_ISOLATED_V0", "mutant": "M-ACI-S5D-011-OMIT-CHECK" },
+    { "id": "S5D-012", "dimension": "ORDINARY_PREFIX_QUERIES", "branch": "B", "reachability": "REACHABLE", "scenario": "ACI-S5D-012", "mutant": "M-ACI-S5D-012" },
+    { "id": "S5D-013", "dimension": "REPLAYED_EVENT_WORK", "branch": "B", "reachability": "RESERVED_UNREACHABLE_V0", "scenario": "ACI-S5D-013", "mutant": "M-ACI-S5D-013" },
+    { "id": "S5D-014", "dimension": "GENESIS_POLICY_OCTETS", "branch": "B", "reachability": "RESERVED_UNREACHABLE_V0", "scenario": "ACI-S5D-014", "mutant": "M-ACI-S5D-014" },
+    { "id": "S5D-015", "dimension": "ROLE_ASSIGNMENTS", "branch": "B", "reachability": "RESERVED_UNREACHABLE_V0", "scenario": "ACI-S5D-015", "mutant": "M-ACI-S5D-015" },
+    { "id": "S5D-016", "dimension": "EVIDENCE_PER_CREDENTIAL", "branch": "B", "reachability": "RESERVED_UNREACHABLE_V0", "scenario": "ACI-S5D-016", "mutant": "M-ACI-S5D-016" }
+  ],
+  "graphAdmissionDimensionRelationV0": [
+    { "id": "S4D-001", "dimension": "PARENTS_PER_EVENT", "result": "CONTEXT_CAPACITY_EXHAUSTED", "operations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"], "reachability": "REACHABLE", "scenario": "ACI-S4D-001", "mutant": "M-ACI-S4D-001" },
+    { "id": "S4D-002", "dimension": "ACTIVE_FRONTIER", "result": "CONTEXT_CAPACITY_EXHAUSTED", "operations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"], "reachability": "REACHABLE", "scenario": "ACI-S4D-002", "mutant": "M-ACI-S4D-002" },
+    { "id": "S4D-003", "dimension": "EVIDENCE_PER_CREDENTIAL", "result": "CONTEXT_CAPACITY_EXHAUSTED", "operations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"], "reachability": "REACHABLE", "scenario": "ACI-S4D-003", "mutant": "M-ACI-S4D-003" },
+    { "id": "S4D-004", "dimension": "PENDING_ROOTS", "result": "DEPENDENCY_DEFERRED", "operations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"], "reachability": "REACHABLE", "scenario": "ACI-S4D-004", "mutant": "M-ACI-S4D-004" },
+    { "id": "S4D-005", "dimension": "EVENTS_ADMITTED", "result": "RESERVED_UNREACHABLE_V0", "operations": [], "reachability": "RESERVED_UNREACHABLE_V0", "scenario": "ACI-S4D-005", "mutant": "M-ACI-S4D-005" },
+    { "id": "S4D-006", "dimension": "GRAPH_DEPTH", "result": "RESERVED_UNREACHABLE_V0", "operations": [], "reachability": "RESERVED_UNREACHABLE_V0", "scenario": "ACI-S4D-006", "mutant": "M-ACI-S4D-006" },
+    { "id": "S4D-007", "dimension": "ANCESTRY_RELATIONS", "result": "RESERVED_UNREACHABLE_V0", "operations": [], "reachability": "RESERVED_UNREACHABLE_V0", "scenario": "ACI-S4D-007", "mutant": "M-ACI-S4D-007" },
+    { "id": "S4D-008", "dimension": "CONTEXT_LIFETIME_EVENTS", "result": "RESERVED_UNREACHABLE_V0", "operations": [], "reachability": "RESERVED_UNREACHABLE_V0", "scenario": "ACI-S4D-008", "mutant": "M-ACI-S4D-008" },
+    { "id": "S4D-009", "dimension": "PENDING_DESCENDANTS", "result": "RESERVED_UNREACHABLE_V0", "operations": [], "reachability": "RESERVED_UNREACHABLE_V0", "scenario": "ACI-S4D-009", "mutant": "M-ACI-S4D-009" },
+    { "id": "S4D-010", "dimension": "HALTED_REPLAY_SPAN", "result": "RESERVED_UNREACHABLE_V0", "operations": [], "reachability": "RESERVED_UNREACHABLE_V0", "scenario": "ACI-S4D-010", "mutant": "M-ACI-S4D-010" }
   ],
   "candidateEvaluationPrimaryRelationV0": [
     {
@@ -198,7 +346,8 @@
       "coreResultKind": "PROPOSAL_READY",
       "sameBytesRuleAfterFinalization": "NONE",
       "scenario": "F13-APPLIED",
-      "mutant": "M-F13-APPLIED-WITHOUT-RETENTION"
+      "mutant": "M-F13-APPLIED-WITHOUT-RETENTION",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-002",
@@ -210,7 +359,8 @@
       "coreResultKind": "PROPOSAL_READY",
       "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
       "scenario": "F13-AUTHENTIC-BUT-UNAUTHORIZED",
-      "mutant": "M-F13-DISCARD-UNAUTHORIZED-K-EVIDENCE"
+      "mutant": "M-F13-DISCARD-UNAUTHORIZED-K-EVIDENCE",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-003",
@@ -222,7 +372,8 @@
       "coreResultKind": "PROPOSAL_READY",
       "sameBytesRuleAfterFinalization": "AUTHORITY_CAPABILITY_RESTORED",
       "scenario": "F13-AUTHORITY-UNAVAILABLE",
-      "mutant": "M-F13-DROP-K-EVIDENCE-WHEN-AUTHORITY-UNAVAILABLE"
+      "mutant": "M-F13-DROP-K-EVIDENCE-WHEN-AUTHORITY-UNAVAILABLE",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-004",
@@ -234,7 +385,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
       "scenario": "F13-COMMITMENT-MISMATCH",
-      "mutant": "M-F13-RETAIN-COMMITMENT-MISMATCH"
+      "mutant": "M-F13-RETAIN-COMMITMENT-MISMATCH",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-005",
@@ -246,7 +398,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "NEW_CONTEXT_OR_RATIFIED_PROFILE",
       "scenario": "F13-CONTEXT-CAPACITY",
-      "mutant": "M-F13-RETAIN-OVER-CAPACITY"
+      "mutant": "M-F13-RETAIN-OVER-CAPACITY",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-006",
@@ -258,7 +411,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
       "scenario": "F13-CREDENTIAL-BINDING-MISMATCH",
-      "mutant": "M-F13-RETAIN-BINDING-MISMATCH"
+      "mutant": "M-F13-RETAIN-BINDING-MISMATCH",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-007",
@@ -270,7 +424,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
       "scenario": "F13-CREDENTIAL-ID-COLLISION",
-      "mutant": "M-F13-RETAIN-CREDENTIAL-ID-COLLISION"
+      "mutant": "M-F13-RETAIN-CREDENTIAL-ID-COLLISION",
+      "reachability": "RESERVED_UNREACHABLE_V0"
     },
     {
       "id": "F13R-008",
@@ -282,7 +437,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "NEW_CONTEXT_OR_RATIFIED_PROFILE",
       "scenario": "F13-OUT-OF-PROFILE",
-      "mutant": "M-F13-RETAIN-OUT-OF-PROFILE"
+      "mutant": "M-F13-RETAIN-OUT-OF-PROFILE",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-009",
@@ -294,7 +450,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "AUTHENTICATED_DEPENDENCY_STATE_CHANGED",
       "scenario": "F13-DEPENDENCY-DEFERRED",
-      "mutant": "M-F13-RETAIN-DEFERRED-CANDIDATE"
+      "mutant": "M-F13-RETAIN-DEFERRED-CANDIDATE",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-010",
@@ -306,7 +463,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "NONE",
       "scenario": "F13-DUPLICATE",
-      "mutant": "M-F13-DUPLICATE-CREATES-SUCCESSOR"
+      "mutant": "M-F13-DUPLICATE-CREATES-SUCCESSOR",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-011",
@@ -318,7 +476,8 @@
       "coreResultKind": "PROPOSAL_READY",
       "sameBytesRuleAfterFinalization": "RATIFIED_LINEAGE_STATE_CHANGED",
       "scenario": "F13-FORK-EVIDENCE",
-      "mutant": "M-F13-DISCARD-FORK-EVIDENCE"
+      "mutant": "M-F13-DISCARD-FORK-EVIDENCE",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-012",
@@ -330,7 +489,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
       "scenario": "F13-INVALID",
-      "mutant": "M-F13-RETAIN-INVALID"
+      "mutant": "M-F13-RETAIN-INVALID",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-013",
@@ -342,7 +502,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
       "scenario": "F13-LENGTH-MISMATCH",
-      "mutant": "M-F13-RETAIN-LENGTH-MISMATCH"
+      "mutant": "M-F13-RETAIN-LENGTH-MISMATCH",
+      "reachability": "RESERVED_UNREACHABLE_V0"
     },
     {
       "id": "F13R-014",
@@ -354,7 +515,8 @@
       "coreResultKind": "PROPOSAL_READY",
       "sameBytesRuleAfterFinalization": "RATIFIED_LINEAGE_STATE_CHANGED",
       "scenario": "F13-LINEAGE-QUARANTINED",
-      "mutant": "M-F13-DISCARD-QUARANTINED-EVIDENCE"
+      "mutant": "M-F13-DISCARD-QUARANTINED-EVIDENCE",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-015",
@@ -366,7 +528,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "VERIFIED_OPENING_PRESENT",
       "scenario": "F13-DETACHABLE-OPENING-MISSING",
-      "mutant": "M-F13-RETAIN-DETACHABLE-WITHOUT-OPENING"
+      "mutant": "M-F13-RETAIN-DETACHABLE-WITHOUT-OPENING",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-016",
@@ -378,7 +541,8 @@
       "coreResultKind": "PROPOSAL_READY",
       "sameBytesRuleAfterFinalization": "AUTHENTICATED_DEPENDENCY_STATE_CHANGED",
       "scenario": "F13-PENDING-ANCESTOR",
-      "mutant": "M-F13-DISCARD-PENDING-DESCENDANT"
+      "mutant": "M-F13-DISCARD-PENDING-DESCENDANT",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-017",
@@ -390,7 +554,8 @@
       "coreResultKind": "PROPOSAL_READY",
       "sameBytesRuleAfterFinalization": "VERIFIED_OPENING_PRESENT",
       "scenario": "F13-REQUIRED-PENDING-OPENING",
-      "mutant": "M-F13-DISCARD-REQUIRED-PENDING-ROOT"
+      "mutant": "M-F13-DISCARD-REQUIRED-PENDING-ROOT",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-018",
@@ -402,7 +567,8 @@
       "coreResultKind": "PROPOSAL_READY",
       "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
       "scenario": "F13-POST-REVOCATION",
-      "mutant": "M-F13-DISCARD-POST-REVOCATION-EVIDENCE"
+      "mutant": "M-F13-DISCARD-POST-REVOCATION-EVIDENCE",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-019",
@@ -414,7 +580,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "NEW_CONTEXT_OR_RATIFIED_PROFILE",
       "scenario": "F13-PROFILE-UNSUPPORTED",
-      "mutant": "M-F13-RETAIN-UNSUPPORTED-PROFILE"
+      "mutant": "M-F13-RETAIN-UNSUPPORTED-PROFILE",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-020",
@@ -426,7 +593,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
       "scenario": "F13-REFERENCE-COLLISION",
-      "mutant": "M-F13-SELECT-COLLISION-WINNER"
+      "mutant": "M-F13-SELECT-COLLISION-WINNER",
+      "reachability": "RESERVED_UNREACHABLE_V0"
     },
     {
       "id": "F13R-021",
@@ -438,7 +606,8 @@
       "coreResultKind": "PROPOSAL_READY",
       "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
       "scenario": "F13-REMOVAL-INAPPLICABLE",
-      "mutant": "M-F13-DISCARD-INAPPLICABLE-REMOVAL"
+      "mutant": "M-F13-DISCARD-INAPPLICABLE-REMOVAL",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-022",
@@ -450,7 +619,8 @@
       "coreResultKind": "PROPOSAL_READY",
       "sameBytesRuleAfterFinalization": "FRESH_LIVE_EVIDENCE_PRESENT",
       "scenario": "F13-STALE-LIVE-EVIDENCE",
-      "mutant": "M-F13-CHECKPOINT-SUBSTITUTES-OR-DROPS-LIVE-EVIDENCE"
+      "mutant": "M-F13-CHECKPOINT-SUBSTITUTES-OR-DROPS-LIVE-EVIDENCE",
+      "reachability": "RESERVED_UNREACHABLE_V0"
     },
     {
       "id": "F13R-023",
@@ -462,7 +632,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
       "scenario": "F13-STRUCTURAL-REJECTION",
-      "mutant": "M-F13-RETAIN-STRUCTURAL-REJECTION"
+      "mutant": "M-F13-RETAIN-STRUCTURAL-REJECTION",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-024",
@@ -474,7 +645,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
       "scenario": "F13-UNRESOLVABLE-CREDENTIAL",
-      "mutant": "M-F13-RETAIN-UNRESOLVABLE-CREDENTIAL"
+      "mutant": "M-F13-RETAIN-UNRESOLVABLE-CREDENTIAL",
+      "reachability": "REACHABLE"
     },
     {
       "id": "F13R-025",
@@ -486,7 +658,8 @@
       "coreResultKind": "TERMINAL_NO_SUCCESSOR",
       "sameBytesRuleAfterFinalization": "DIFFERENT_CANDIDATE_BYTES",
       "scenario": "F13-UNRESOLVED-BINDING",
-      "mutant": "M-F13-RETAIN-UNRESOLVED-BINDING"
+      "mutant": "M-F13-RETAIN-UNRESOLVED-BINDING",
+      "reachability": "REACHABLE"
     }
   ],
   "transcriptReasonStageRelationV0": [
@@ -587,6 +760,20 @@
       "reason": "STANDALONE_VERIFICATION_KEY_REJECTED",
       "stage": "SIGNATURE_VERIFICATION",
       "reachability": "REACHABLE"
+    },
+    {
+      "id": "TRS-015",
+      "kind": "REJECTED",
+      "reason": "TRANSCRIPT_PROFILE_MISMATCH",
+      "stage": "PROFILE_ENVELOPE",
+      "reachability": "REACHABLE"
+    },
+    {
+      "id": "TRS-016",
+      "kind": "REJECTED",
+      "reason": "SELECTED_ENVELOPE_REJECTED",
+      "stage": "PROFILE_ENVELOPE",
+      "reachability": "REACHABLE"
     }
   ],
   "genesisReasonStageRelationV0": [
@@ -651,14 +838,14 @@
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "CONTENT_DESCRIPTOR_REJECTED",
       "stage": "TRANSCRIPT_BODY",
-      "reachability": "REACHABLE"
+      "reachability": "RESERVED_UNREACHABLE_V0"
     },
     {
       "id": "GRS-010",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "COMMITMENT_GEOMETRY_REJECTED",
       "stage": "TRANSCRIPT_BODY",
-      "reachability": "REACHABLE"
+      "reachability": "RESERVED_UNREACHABLE_V0"
     },
     {
       "id": "GRS-011",
@@ -693,13 +880,20 @@
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "ROOT_CREDENTIAL_POSITION_MISMATCH",
       "stage": "CONTEXT_BINDING",
-      "reachability": "REACHABLE"
+      "reachability": "RESERVED_UNREACHABLE_V0"
     },
     {
       "id": "GRS-016",
       "kind": "TERMINAL_NO_PROPOSAL",
       "reason": "INITIAL_AUTHORITY_POLICY_REJECTED",
       "stage": "TRANSCRIPT_BODY",
+      "reachability": "RESERVED_UNREACHABLE_V0"
+    },
+    {
+      "id": "GRS-017",
+      "kind": "TERMINAL_NO_PROPOSAL",
+      "reason": "SELECTED_ENVELOPE_REJECTED",
+      "stage": "PROFILE_ENVELOPE",
       "reachability": "REACHABLE"
     }
   ],
@@ -924,6 +1118,1204 @@
       "signatureObservation": "NOT_EXPOSED",
       "backendInvocations": 1,
       "authorityEffect": "NONE"
+    }
+  ],
+  "terminalPredicateRelationV0": [
+    {
+      "id": "TPR-TRS-001",
+      "relationRowId": "TRS-001",
+      "owners": [
+        "INTERFACE",
+        "K"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT",
+        "GENESIS"
+      ],
+      "predicate": "ALL_APPLICABLE_GATES_PASS",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED",
+        "TRANSCRIPT_BODY_PASSED",
+        "REFERENCE_DERIVATION_PASSED",
+        "PROFILE_ENVELOPE_PASSED",
+        "CONTEXT_BINDING_PASSED_IF_APPLICABLE",
+        "SIGNATURE_VERIFICATION_PASSED_OR_NOT_REQUIRED"
+      ],
+      "laterGatesNotEvaluated": [],
+      "requiredObservations": {
+        "transcriptVerification": "VALID",
+        "referenceVerification": "VALID",
+        "signatureVerification": [
+          "NOT_EVALUATED",
+          "VALID"
+        ]
+      },
+      "result": {
+        "kind": "VALIDATED",
+        "reason": null,
+        "stage": "TRANSCRIPT_COMPLETE",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-001",
+      "mutant": "M-TPR-TRS-001-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-TRS-002",
+      "relationRowId": "TRS-002",
+      "owners": [
+        "AP_PROFILE",
+        "INTERFACE"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT",
+        "GENESIS"
+      ],
+      "predicate": "REQUEST_PROFILE_TUPLE_NOT_EXACT_1_1_1",
+      "predecessorGatesPassed": [],
+      "laterGatesNotEvaluated": [
+        "OUTER_FRAMING",
+        "TRANSCRIPT_BODY",
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "REJECTED",
+        "referenceVerification": "NOT_REACHED",
+        "signatureVerification": "NOT_EVALUATED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "PROFILE_ACTIVATION_UNSUPPORTED",
+        "stage": "PROFILE_SELECTION",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-002",
+      "mutant": "M-TPR-TRS-002-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-TRS-003",
+      "relationRowId": "TRS-003",
+      "owners": [
+        "INTERFACE",
+        "K"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT",
+        "GENESIS"
+      ],
+      "predicate": "MATCHING_DOMAIN_AND_COMPLETE_HEADER_AND_DECLARED_BODY_LENGTH_GT_2_POW_32_MINUS_21",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "TRANSCRIPT_BODY",
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "REJECTED",
+        "referenceVerification": "NOT_REACHED",
+        "signatureVerification": "NOT_EVALUATED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "TRANSCRIPT_LENGTH_REJECTED",
+        "stage": "OUTER_FRAMING",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-003",
+      "mutant": "M-TPR-TRS-003-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-TRS-004",
+      "relationRowId": "TRS-004",
+      "owners": [
+        "INTERFACE",
+        "K"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT",
+        "GENESIS"
+      ],
+      "predicate": "AT_LEAST_16_OCTETS_AND_DOMAIN_DIFFERS_FROM_OBJECT_KIND_DOMAIN",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "TRANSCRIPT_BODY",
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "REJECTED",
+        "referenceVerification": "NOT_REACHED",
+        "signatureVerification": "NOT_EVALUATED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "TRANSCRIPT_DOMAIN_REJECTED",
+        "stage": "OUTER_FRAMING",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-004",
+      "mutant": "M-TPR-TRS-004-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-TRS-005",
+      "relationRowId": "TRS-005",
+      "owners": [
+        "INTERFACE",
+        "K"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT",
+        "GENESIS"
+      ],
+      "predicate": "FIRST_MATCH_OF_TOTAL_LT_16_OR_MATCHING_DOMAIN_TOTAL_LT_20_OR_DECLARED_AT_MOST_2_POW_32_MINUS_21_AND_TOTAL_NE_20_PLUS_DECLARED",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "TRANSCRIPT_BODY",
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "REJECTED",
+        "referenceVerification": "NOT_REACHED",
+        "signatureVerification": "NOT_EVALUATED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "TRANSCRIPT_LENGTH_MISMATCH",
+        "stage": "OUTER_FRAMING",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-005",
+      "mutant": "M-TPR-TRS-005-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-TRS-006",
+      "relationRowId": "TRS-006",
+      "owners": [
+        "INTERFACE",
+        "K"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT",
+        "GENESIS"
+      ],
+      "predicate": "EXACT_OUTER_FRAME_AND_BOUNDED_BODY_OR_GEOMETRY_READER_TAKE_FAILURE_WITH_TRUNCATED_PREFIX",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "REJECTED",
+        "referenceVerification": "NOT_REACHED",
+        "signatureVerification": "NOT_EVALUATED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "TRANSCRIPT_TRUNCATED",
+        "stage": "TRANSCRIPT_BODY",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-006",
+      "mutant": "M-TPR-TRS-006-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-TRS-007",
+      "relationRowId": "TRS-007",
+      "owners": [
+        "INTERFACE",
+        "K"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT",
+        "GENESIS"
+      ],
+      "predicate": "EXACT_OUTER_FRAME_AND_NATIVE_CODE_IN_TRAILING_BODY_OR_TRAILING_GEOMETRY",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "REJECTED",
+        "referenceVerification": "NOT_REACHED",
+        "signatureVerification": "NOT_EVALUATED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "TRANSCRIPT_TRAILING_BYTES",
+        "stage": "TRANSCRIPT_BODY",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-007",
+      "mutant": "M-TPR-TRS-007-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-TRS-008",
+      "relationRowId": "TRS-008",
+      "owners": [
+        "AP",
+        "AP_PROFILE",
+        "INTERFACE",
+        "K"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT",
+        "GENESIS"
+      ],
+      "predicate": "EXACT_OUTER_FRAME_AND_NATIVE_CODE_IN_CLOSED_NONCANONICAL_SET_OR_DISTINCT_ENCODER_GUARD",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "REJECTED",
+        "referenceVerification": "NOT_REACHED",
+        "signatureVerification": "NOT_EVALUATED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "TRANSCRIPT_NONCANONICAL",
+        "stage": "TRANSCRIPT_BODY",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-008",
+      "mutant": "M-TPR-TRS-008-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-TRS-009",
+      "relationRowId": "TRS-009",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O04"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT"
+      ],
+      "predicate": "EXACT_OUTER_FRAME_AND_APPLICATION_NATIVE_CODE_IN_CLOSED_CONTENT_DESCRIPTOR_SET_OR_ORDINARY_TAIL_ENCODER_GUARD",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "REJECTED",
+        "referenceVerification": "NOT_REACHED",
+        "signatureVerification": "NOT_EVALUATED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "CONTENT_DESCRIPTOR_REJECTED",
+        "stage": "TRANSCRIPT_BODY",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-009",
+      "mutant": "M-TPR-TRS-009-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-TRS-010",
+      "relationRowId": "TRS-010",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O04"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT"
+      ],
+      "predicate": "EXACT_OUTER_FRAME_AND_APPLICATION_NATIVE_CODE_IN_CLOSED_COMMITMENT_GEOMETRY_SET_OR_DISTINCT_GEOMETRY_ENCODER_GUARD",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "REJECTED",
+        "referenceVerification": "NOT_REACHED",
+        "signatureVerification": "NOT_EVALUATED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "COMMITMENT_GEOMETRY_REJECTED",
+        "stage": "TRANSCRIPT_BODY",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-010",
+      "mutant": "M-TPR-TRS-010-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-TRS-011",
+      "relationRowId": "TRS-011",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O07"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT",
+        "GENESIS"
+      ],
+      "predicate": "RESERVED_NO_V0_PRODUCING_PREDICATE",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED",
+        "TRANSCRIPT_BODY_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "VALID",
+        "referenceVerification": "REJECTED",
+        "signatureVerification": "NOT_EVALUATED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "REFERENCE_MISMATCH",
+        "stage": "REFERENCE_DERIVATION",
+        "reachability": "RESERVED_UNREACHABLE_V0"
+      },
+      "scenario": "ACI-TPR-TRS-011",
+      "mutant": "M-TPR-TRS-011-RELEASE-RESERVED"
+    },
+    {
+      "id": "TPR-TRS-012",
+      "relationRowId": "TRS-012",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O14"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT",
+        "GENESIS"
+      ],
+      "predicate": "ALL_EARLIER_GATES_PASS_AND_SIGNATURE_LENGTH_LT_64",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED",
+        "TRANSCRIPT_BODY_PASSED",
+        "REFERENCE_DERIVATION_PASSED",
+        "PROFILE_ENVELOPE_PASSED",
+        "CONTEXT_BINDING_PASSED_IF_APPLICABLE"
+      ],
+      "laterGatesNotEvaluated": [
+        "VERIFICATION_KEY_GUARD",
+        "SIGNATURE_GUARDS",
+        "SIGNATURE_BACKEND",
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "VALID",
+        "referenceVerification": "VALID",
+        "signatureVerification": "REJECTED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "SIGNATURE_LENGTH_MISMATCH",
+        "stage": "SIGNATURE_VERIFICATION",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-012",
+      "mutant": "M-TPR-TRS-012-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-TRS-013",
+      "relationRowId": "TRS-013",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O14"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT",
+        "GENESIS"
+      ],
+      "predicate": "ALL_EARLIER_GATES_PASS_AND_SIGNATURE_OR_PARSED_GENESIS_KEY_REJECTED_BY_O14_GUARD_OR_BACKEND",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED",
+        "TRANSCRIPT_BODY_PASSED",
+        "REFERENCE_DERIVATION_PASSED",
+        "PROFILE_ENVELOPE_PASSED",
+        "CONTEXT_BINDING_PASSED_IF_APPLICABLE"
+      ],
+      "laterGatesNotEvaluated": [
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "VALID",
+        "referenceVerification": "VALID",
+        "signatureVerification": "REJECTED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "SIGNATURE_INVALID",
+        "stage": "SIGNATURE_VERIFICATION",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-013",
+      "mutant": "M-TPR-TRS-013-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-TRS-014",
+      "relationRowId": "TRS-014",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O14"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT"
+      ],
+      "predicate": "ALL_EARLIER_GATES_PASS_AND_STANDALONE_VERIFICATION_KEY_REJECTED_BY_O14_POINT_GUARD",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED",
+        "TRANSCRIPT_BODY_PASSED",
+        "REFERENCE_DERIVATION_PASSED",
+        "PROFILE_ENVELOPE_PASSED",
+        "CONTEXT_BINDING_PASSED_IF_APPLICABLE"
+      ],
+      "laterGatesNotEvaluated": [
+        "SIGNATURE_GUARDS",
+        "SIGNATURE_BACKEND",
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "VALID",
+        "referenceVerification": "VALID",
+        "signatureVerification": "REJECTED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "STANDALONE_VERIFICATION_KEY_REJECTED",
+        "stage": "SIGNATURE_VERIFICATION",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-014",
+      "mutant": "M-TPR-TRS-014-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-TRS-015",
+      "relationRowId": "TRS-015",
+      "owners": [
+        "AP_PROFILE",
+        "INTERFACE",
+        "K"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT"
+      ],
+      "predicate": "CANONICAL_APPLICATION_TUPLE_DIFFERS_FROM_SELECTED_REQUEST_TUPLE_BEFORE_ANY_ENVELOPE_CHECK",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED",
+        "TRANSCRIPT_BODY_PASSED",
+        "REFERENCE_DERIVATION_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "SELECTED_ENVELOPE",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "VALID",
+        "referenceVerification": "VALID",
+        "signatureVerification": "NOT_EVALUATED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "TRANSCRIPT_PROFILE_MISMATCH",
+        "stage": "PROFILE_ENVELOPE",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-015",
+      "mutant": "M-TPR-TRS-015-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-TRS-016",
+      "relationRowId": "TRS-016",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O08"
+      ],
+      "operation": "VALIDATE_TRANSCRIPT",
+      "candidateKinds": [
+        "APPLICATION_EVENT",
+        "GENESIS"
+      ],
+      "predicate": "FIRST_SELECTED_ENVELOPE_FAILURE_IN_APPLICATION_OR_GENESIS_ORDER_AFTER_CANONICAL_PARSE_AND_REFERENCE",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED",
+        "TRANSCRIPT_BODY_PASSED",
+        "REFERENCE_DERIVATION_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {
+        "transcriptVerification": "VALID",
+        "referenceVerification": "VALID",
+        "signatureVerification": "NOT_EVALUATED"
+      },
+      "result": {
+        "kind": "REJECTED",
+        "reason": "SELECTED_ENVELOPE_REJECTED",
+        "stage": "PROFILE_ENVELOPE",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-TRS-016",
+      "mutant": "M-TPR-TRS-016-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-GRS-001",
+      "relationRowId": "GRS-001",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O03",
+        "O07"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "ALL_GENESIS_GATES_PASS",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED",
+        "TRANSCRIPT_BODY_PASSED",
+        "REFERENCE_DERIVATION_PASSED",
+        "PROFILE_ENVELOPE_PASSED",
+        "CONTEXT_BINDING_PASSED_IF_APPLICABLE",
+        "SIGNATURE_VERIFICATION_PASSED_OR_NOT_REQUIRED"
+      ],
+      "laterGatesNotEvaluated": [],
+      "requiredObservations": {},
+      "result": {
+        "kind": "GENESIS_PROPOSAL_READY",
+        "reason": null,
+        "stage": "GENESIS_PROPOSAL_COMPLETE",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-GRS-001",
+      "mutant": "M-TPR-GRS-001-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-GRS-002",
+      "relationRowId": "GRS-002",
+      "owners": [
+        "AP_PROFILE",
+        "INTERFACE"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "REQUEST_PROFILE_TUPLE_NOT_EXACT_1_1_1",
+      "predecessorGatesPassed": [],
+      "laterGatesNotEvaluated": [
+        "OUTER_FRAMING",
+        "TRANSCRIPT_BODY",
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "PROFILE_ACTIVATION_UNSUPPORTED",
+        "stage": "PROFILE_SELECTION",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-GRS-002",
+      "mutant": "M-TPR-GRS-002-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-GRS-003",
+      "relationRowId": "GRS-003",
+      "owners": [
+        "INTERFACE",
+        "K"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "MATCHING_GENESIS_DOMAIN_AND_COMPLETE_HEADER_AND_DECLARED_BODY_LENGTH_GT_2_POW_32_MINUS_21",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "TRANSCRIPT_BODY",
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "TRANSCRIPT_LENGTH_REJECTED",
+        "stage": "OUTER_FRAMING",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-GRS-003",
+      "mutant": "M-TPR-GRS-003-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-GRS-004",
+      "relationRowId": "GRS-004",
+      "owners": [
+        "INTERFACE",
+        "K"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "AT_LEAST_16_OCTETS_AND_DOMAIN_DIFFERS_FROM_GENESIS_DOMAIN",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "TRANSCRIPT_BODY",
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "TRANSCRIPT_DOMAIN_REJECTED",
+        "stage": "OUTER_FRAMING",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-GRS-004",
+      "mutant": "M-TPR-GRS-004-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-GRS-005",
+      "relationRowId": "GRS-005",
+      "owners": [
+        "INTERFACE",
+        "K"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "FIRST_MATCH_OF_TOTAL_LT_16_OR_MATCHING_DOMAIN_TOTAL_LT_20_OR_DECLARED_AT_MOST_2_POW_32_MINUS_21_AND_TOTAL_NE_20_PLUS_DECLARED",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "TRANSCRIPT_BODY",
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "TRANSCRIPT_LENGTH_MISMATCH",
+        "stage": "OUTER_FRAMING",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-GRS-005",
+      "mutant": "M-TPR-GRS-005-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-GRS-006",
+      "relationRowId": "GRS-006",
+      "owners": [
+        "INTERFACE",
+        "K"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "EXACT_OUTER_FRAME_AND_BOUNDED_GENESIS_BODY_READER_TAKE_FAILURE_WITH_TRUNCATED_PREFIX",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "TRANSCRIPT_TRUNCATED",
+        "stage": "TRANSCRIPT_BODY",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-GRS-006",
+      "mutant": "M-TPR-GRS-006-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-GRS-007",
+      "relationRowId": "GRS-007",
+      "owners": [
+        "INTERFACE",
+        "K"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "EXACT_OUTER_FRAME_AND_NATIVE_CODE_IN_TRAILING_BODY_OR_TRAILING_GEOMETRY",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "TRANSCRIPT_TRAILING_BYTES",
+        "stage": "TRANSCRIPT_BODY",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-GRS-007",
+      "mutant": "M-TPR-GRS-007-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-GRS-008",
+      "relationRowId": "GRS-008",
+      "owners": [
+        "AP",
+        "AP_PROFILE",
+        "INTERFACE",
+        "K"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "EXACT_OUTER_FRAME_AND_NATIVE_CODE_IN_CLOSED_GENESIS_NONCANONICAL_SET_OR_NONCANONICAL_REENCODING_GUARD",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "TRANSCRIPT_NONCANONICAL",
+        "stage": "TRANSCRIPT_BODY",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-GRS-008",
+      "mutant": "M-TPR-GRS-008-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-GRS-009",
+      "relationRowId": "GRS-009",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O04"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "RESERVED_GENESIS_GRAMMAR_HAS_NO_CONTENT_DESCRIPTOR",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "CONTENT_DESCRIPTOR_REJECTED",
+        "stage": "TRANSCRIPT_BODY",
+        "reachability": "RESERVED_UNREACHABLE_V0"
+      },
+      "scenario": "ACI-TPR-GRS-009",
+      "mutant": "M-TPR-GRS-009-RELEASE-RESERVED"
+    },
+    {
+      "id": "TPR-GRS-010",
+      "relationRowId": "GRS-010",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O04"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "RESERVED_GENESIS_GRAMMAR_HAS_NO_COMMITMENT_GEOMETRY",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "COMMITMENT_GEOMETRY_REJECTED",
+        "stage": "TRANSCRIPT_BODY",
+        "reachability": "RESERVED_UNREACHABLE_V0"
+      },
+      "scenario": "ACI-TPR-GRS-010",
+      "mutant": "M-TPR-GRS-010-RELEASE-RESERVED"
+    },
+    {
+      "id": "TPR-GRS-011",
+      "relationRowId": "GRS-011",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O07"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "RESERVED_NO_V0_PRODUCING_PREDICATE",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED",
+        "TRANSCRIPT_BODY_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "REFERENCE_MISMATCH",
+        "stage": "REFERENCE_DERIVATION",
+        "reachability": "RESERVED_UNREACHABLE_V0"
+      },
+      "scenario": "ACI-TPR-GRS-011",
+      "mutant": "M-TPR-GRS-011-RELEASE-RESERVED"
+    },
+    {
+      "id": "TPR-GRS-012",
+      "relationRowId": "GRS-012",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O14"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "ALL_EARLIER_GATES_PASS_AND_SIGNATURE_LENGTH_LT_64",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED",
+        "TRANSCRIPT_BODY_PASSED",
+        "REFERENCE_DERIVATION_PASSED",
+        "PROFILE_ENVELOPE_PASSED",
+        "CONTEXT_BINDING_PASSED_IF_APPLICABLE"
+      ],
+      "laterGatesNotEvaluated": [
+        "VERIFICATION_KEY_GUARD",
+        "SIGNATURE_GUARDS",
+        "SIGNATURE_BACKEND",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "SIGNATURE_LENGTH_MISMATCH",
+        "stage": "SIGNATURE_VERIFICATION",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-GRS-012",
+      "mutant": "M-TPR-GRS-012-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-GRS-013",
+      "relationRowId": "GRS-013",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O14"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "ALL_EARLIER_GATES_PASS_AND_PARSED_ROOT_KEY_OR_SIGNATURE_REJECTED_BY_O14_GUARD_OR_BACKEND",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED",
+        "TRANSCRIPT_BODY_PASSED",
+        "REFERENCE_DERIVATION_PASSED",
+        "PROFILE_ENVELOPE_PASSED",
+        "CONTEXT_BINDING_PASSED_IF_APPLICABLE"
+      ],
+      "laterGatesNotEvaluated": [
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "SIGNATURE_INVALID",
+        "stage": "SIGNATURE_VERIFICATION",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-GRS-013",
+      "mutant": "M-TPR-GRS-013-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-GRS-014",
+      "relationRowId": "GRS-014",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O03"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "ALL_EARLIER_GATES_PASS_AND_PARSED_CONTEXT_IDENTIFIER_DIFFERS_FROM_EXPECTED_CONTEXT",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED",
+        "TRANSCRIPT_BODY_PASSED",
+        "REFERENCE_DERIVATION_PASSED",
+        "PROFILE_ENVELOPE_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "EXPECTED_CONTEXT_MISMATCH",
+        "stage": "CONTEXT_BINDING",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-GRS-014",
+      "mutant": "M-TPR-GRS-014-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "TPR-GRS-015",
+      "relationRowId": "GRS-015",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O03",
+        "O07"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "RESERVED_ROOT_IDENTIFIER_EQUALS_DERIVED_GENESIS_REFERENCE_AND_HAS_NO_INDEPENDENT_INPUT",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED",
+        "TRANSCRIPT_BODY_PASSED",
+        "REFERENCE_DERIVATION_PASSED",
+        "PROFILE_ENVELOPE_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "ROOT_CREDENTIAL_POSITION_MISMATCH",
+        "stage": "CONTEXT_BINDING",
+        "reachability": "RESERVED_UNREACHABLE_V0"
+      },
+      "scenario": "ACI-TPR-GRS-015",
+      "mutant": "M-TPR-GRS-015-RELEASE-RESERVED"
+    },
+    {
+      "id": "TPR-GRS-016",
+      "relationRowId": "GRS-016",
+      "owners": [
+        "AP",
+        "INTERFACE",
+        "K",
+        "O07"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "RESERVED_POLICY_FIXED_POINT_EQUALITY_REQUIRES_TEST_ONLY_ORACLE",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
+        "CONTEXT_BINDING",
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "INITIAL_AUTHORITY_POLICY_REJECTED",
+        "stage": "TRANSCRIPT_BODY",
+        "reachability": "RESERVED_UNREACHABLE_V0"
+      },
+      "scenario": "ACI-TPR-GRS-016",
+      "mutant": "M-TPR-GRS-016-RELEASE-RESERVED"
+    },
+    {
+      "id": "TPR-GRS-017",
+      "relationRowId": "GRS-017",
+      "owners": [
+        "INTERFACE",
+        "K",
+        "O03",
+        "O08"
+      ],
+      "operation": "EVALUATE_GENESIS",
+      "candidateKinds": [
+        "GENESIS"
+      ],
+      "predicate": "FIRST_SELECTED_ENVELOPE_FAILURE_IN_GENESIS_ORDER_AFTER_CANONICAL_PARSE_AND_REFERENCE",
+      "predecessorGatesPassed": [
+        "PROFILE_SELECTION_PASSED",
+        "OUTER_FRAMING_PASSED",
+        "TRANSCRIPT_BODY_PASSED",
+        "REFERENCE_DERIVATION_PASSED"
+      ],
+      "laterGatesNotEvaluated": [
+        "SIGNATURE_VERIFICATION",
+        "COMPLETE"
+      ],
+      "requiredObservations": {},
+      "result": {
+        "kind": "TERMINAL_NO_PROPOSAL",
+        "reason": "SELECTED_ENVELOPE_REJECTED",
+        "stage": "PROFILE_ENVELOPE",
+        "reachability": "REACHABLE"
+      },
+      "scenario": "ACI-TPR-GRS-017",
+      "mutant": "M-TPR-GRS-017-PREDICATE-OR-ORDER"
     }
   ]
 }

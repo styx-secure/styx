@@ -1,9 +1,9 @@
 {
   "status": "PRE_RATIFICATION_CANDIDATE",
   "registryVersion": "APP-CORE-IFACE-0-EXECUTION-PHASES-V1",
-  "semanticRuleSetSha256": "0a8edd089f2aba63ed34cef080b32ac4a850d2d4c8b57535ad46713623d48e8f",
+  "semanticRuleSetSha256": "938673940b5ae541e5f56a92714242899dd6e2b9063d4388b6f96b7174c86148",
   "semanticRuleSetDigestEncoding": "ordered rule id plus LF",
-  "instanceAxisRegistrySha256": "0e529cb583ab4879980f1a56b379787113812f65bdf2c162f7045d5695fd989f",
+  "instanceAxisRegistrySha256": "83df5f9fad34141ae71ae3b34fc1b68b749e5c8e90e0357530780a18076b8b90",
   "defaultPhase": "BLIND_INPUT_EXECUTION",
   "phaseRegistry": [
     "BLIND_INPUT_EXECUTION",
@@ -34,13 +34,45 @@
       "expectedCount": 6
     },
     {
+      "id": "ACV-027",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 7
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 16
+        }
+      ]
+    },
+    {
+      "id": "ACV-033",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 21
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 4
+        }
+      ]
+    },
+    {
       "id": "ACV-043",
       "partition": "BY_RELATION_ROW_REACHABILITY",
       "relation": [
         {
           "reachability": "REACHABLE",
           "phase": "BLIND_INPUT_EXECUTION",
-          "expectedCount": 13
+          "expectedCount": 15
         },
         {
           "reachability": "RESERVED_UNREACHABLE_V0",
@@ -56,12 +88,12 @@
         {
           "reachability": "REACHABLE",
           "phase": "BLIND_INPUT_EXECUTION",
-          "expectedCount": 15
+          "expectedCount": 12
         },
         {
           "reachability": "RESERVED_UNREACHABLE_V0",
           "phase": "POST_OUTPUT_MUTATION",
-          "expectedCount": 1
+          "expectedCount": 5
         }
       ]
     },
@@ -79,13 +111,29 @@
       "id": "ACV-049",
       "partition": "ALL_INSTANCES",
       "phase": "POST_OUTPUT_MUTATION",
-      "expectedCount": 3590
+      "expectedCount": 3770
     },
     {
       "id": "ACV-050",
       "partition": "ALL_INSTANCES",
       "phase": "VALIDATOR_SELF_TEST",
-      "expectedCount": 25
+      "expectedCount": 27
+    },
+    {
+      "id": "ACV-052",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 21
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 4
+        }
+      ]
     },
     {
       "id": "ACV-056",
@@ -97,7 +145,7 @@
       "id": "ACV-066",
       "partition": "ALL_INSTANCES",
       "phase": "POST_OUTPUT_MUTATION",
-      "expectedCount": 3
+      "expectedCount": 7
     },
     {
       "id": "ACV-067",
@@ -110,14 +158,108 @@
       "partition": "ALL_INSTANCES",
       "phase": "BLIND_INPUT_EXECUTION",
       "expectedCount": 17
+    },
+    {
+      "id": "ACV-069",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 27
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 6
+        }
+      ]
+    },
+    {
+      "id": "ACV-070",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 1
+    },
+    {
+      "id": "ACV-071",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 2
+    },
+    {
+      "id": "ACV-072",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 1
+    },
+    {
+      "id": "ACV-073",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 7
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 3
+        }
+      ]
+    },
+    {
+      "id": "ACV-078",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 12
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 4
+        }
+      ]
+    },
+    {
+      "id": "ACV-079",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 4
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 6
+        }
+      ]
+    },
+    {
+      "id": "ACV-081",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 2
+    },
+    {
+      "id": "ACV-082",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 1
     }
   ],
   "fixedCountsBeforeSeedPartition": {
-    "BLIND_INPUT_EXECUTION": 500,
-    "POST_OUTPUT_MUTATION": 3622,
-    "VALIDATOR_SELF_TEST": 26,
+    "BLIND_INPUT_EXECUTION": 558,
+    "POST_OUTPUT_MUTATION": 3860,
+    "VALIDATOR_SELF_TEST": 27,
     "ACV048PendingCarrierPartition": 702,
-    "totalSemanticExecutionInstances": 4850
+    "totalSemanticExecutionInstances": 5147
   },
   "rules": [
     "Every semantic instance belongs to exactly one phase.",

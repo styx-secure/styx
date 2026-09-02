@@ -3,7 +3,7 @@
   "status": "PRE_RATIFICATION_PLANNING_EVIDENCE",
   "authorityEffect": "NONE",
   "schema": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
-  "schemaSha256": "cb7d34f92ac71bb4f6dd724d8279917d1b481f027caba8c9546ca21e1b99ffd3",
+  "schemaSha256": "f72d1079e807edfc84a67742bdde7f047f7e8daad259e2515a0492d52cb65f0c",
   "definitionPointerSetSha256": "49a1991afaad641cf108ce89f89103a3eb002b2d41853a916d01487933b1bef9",
   "objectSchemaPointerSetSha256": "79b260376a95d0c2e78e05b9ae347cf826c7dcb6b4b947acf977844390f2d20e",
   "oneOfArmEncoding": "lexicographically sorted <oneOfPointer>#<decimal-arm-index> plus LF",

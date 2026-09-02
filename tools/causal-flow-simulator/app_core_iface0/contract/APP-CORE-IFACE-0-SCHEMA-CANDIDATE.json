@@ -49,8 +49,7 @@
       "x-styx-o08-limit": "SIGNATURE_OCTETS"
     },
     "TranscriptHex": {
-      "allOf": [{ "$ref": "#/$defs/EvenLowerHex" }],
-      "x-styx-o08-limit": "FRAMING_OBJECT_OCTETS"
+      "allOf": [{ "$ref": "#/$defs/EvenLowerHex" }]
     },
     "ApTransitionBlockHex": {
       "allOf": [{ "$ref": "#/$defs/EvenLowerHex" }],
@@ -82,6 +81,7 @@
         "OUTER_FRAMING",
         "TRANSCRIPT_BODY",
         "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
         "SIGNATURE_VERIFICATION",
         "TRANSCRIPT_COMPLETE"
       ]
@@ -98,6 +98,8 @@
         "CONTENT_DESCRIPTOR_REJECTED",
         "COMMITMENT_GEOMETRY_REJECTED",
         "REFERENCE_MISMATCH",
+        "TRANSCRIPT_PROFILE_MISMATCH",
+        "SELECTED_ENVELOPE_REJECTED",
         "SIGNATURE_LENGTH_MISMATCH",
         "SIGNATURE_INVALID",
         "STANDALONE_VERIFICATION_KEY_REJECTED"
@@ -109,6 +111,7 @@
         "OUTER_FRAMING",
         "TRANSCRIPT_BODY",
         "REFERENCE_DERIVATION",
+        "PROFILE_ENVELOPE",
         "CONTEXT_BINDING",
         "SIGNATURE_VERIFICATION",
         "GENESIS_PROPOSAL_COMPLETE"
@@ -128,6 +131,7 @@
             "CONTENT_DESCRIPTOR_REJECTED",
             "COMMITMENT_GEOMETRY_REJECTED",
             "REFERENCE_MISMATCH",
+            "SELECTED_ENVELOPE_REJECTED",
             "SIGNATURE_LENGTH_MISMATCH",
             "SIGNATURE_INVALID"
           ]
@@ -261,7 +265,13 @@
       "required": ["objectKind", "transcriptHex", "signatureHex"],
       "properties": {
         "objectKind": { "const": "GENESIS" },
-        "transcriptHex": { "$ref": "#/$defs/TranscriptHex" },
+        "transcriptHex": {
+          "$ref": "#/$defs/TranscriptHex",
+          "x-styx-o08-body-plus-prefix-limit": {
+            "dimension": "GENESIS_BODY_OCTETS",
+            "prefixOctets": "20"
+          }
+        },
         "signatureHex": { "$ref": "#/$defs/SignatureHex" }
       }
     },
@@ -271,7 +281,13 @@
       "required": ["objectKind", "transcriptHex", "signatureHex"],
       "properties": {
         "objectKind": { "const": "APPLICATION_EVENT" },
-        "transcriptHex": { "$ref": "#/$defs/TranscriptHex" },
+        "transcriptHex": {
+          "$ref": "#/$defs/TranscriptHex",
+          "x-styx-o08-body-plus-prefix-limit": {
+            "dimension": "FRAMING_OBJECT_OCTETS",
+            "prefixOctets": "20"
+          }
+        },
         "signatureHex": { "$ref": "#/$defs/SignatureHex" }
       }
     },
@@ -726,15 +742,21 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "joinReferenceHex",
+        "joinLabelHex",
         "credentialIdentifierHex",
+        "authorSequence",
         "siblingReferences",
         "lineageClosureCredentialIdentifiers"
       ],
       "properties": {
-        "joinReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "joinLabelHex": { "$ref": "#/$defs/FixedHex32" },
         "credentialIdentifierHex": { "$ref": "#/$defs/FixedHex32" },
-        "siblingReferences": { "$ref": "#/$defs/CanonicalReferenceArray" },
+        "authorSequence": { "$ref": "#/$defs/U64Text" },
+        "siblingReferences": {
+          "$ref": "#/$defs/CanonicalReferenceArray",
+          "minItems": 2,
+          "maxItems": 3
+        },
         "lineageClosureCredentialIdentifiers": { "$ref": "#/$defs/CanonicalReferenceArray" }
       }
     },
@@ -808,6 +830,7 @@
             "ACTIVE",
             "AUTHORITY_UNAVAILABLE",
             "EMPTY_STALE",
+            "NO_OPERATIONAL_AUTHORITY",
             "PARTIALLY_LINEAGE_QUARANTINED",
             "PARTIALLY_PENDING"
           ]
@@ -857,7 +880,7 @@
           "type": "array",
           "items": { "$ref": "#/$defs/ForkJoinProjectionV0" },
           "uniqueItems": true,
-          "x-styx-canonical-order": "joinReferenceHex"
+          "x-styx-canonical-order": "joinLabelHex"
         },
         "pendingRootReferences": { "$ref": "#/$defs/CanonicalReferenceArray" },
         "pendingReferences": { "$ref": "#/$defs/CanonicalReferenceArray" },
@@ -943,20 +966,35 @@
         "AP_EXPANDED_CONTENT_OCTETS",
         "AP_TRANSITION_BLOCK_OCTETS",
         "AUTHORITY_CONCURRENT_CONTROLS",
+        "AUTHORITY_STATES",
+        "AUTHORITY_TRANSITIONS",
         "CHUNKS_PER_CONTENT",
         "CHUNK_OCTETS",
         "COMMITMENT_VALUE_OCTETS",
         "CONTENT_EXACT_OCTETS",
         "CONTEXT_LIFETIME_EVENTS",
+        "CONTROL_EVENTS",
         "CREDENTIALS",
+        "EVENTS_ADMITTED",
         "EVIDENCE_PER_CREDENTIAL",
+        "FORK_SLOTS",
         "FRAMING_OBJECT_OCTETS",
         "GENESIS_BODY_OCTETS",
         "GENESIS_POLICY_OCTETS",
+        "GRAPH_DEPTH",
+        "HALTED_REPLAY_SPAN",
+        "LINEAGE_DEPTH",
+        "ORDINARY_PREFIX_QUERIES",
+        "PARENTS_PER_EVENT",
+        "PENDING_DESCENDANTS",
+        "PENDING_ROOTS",
         "RANDOMIZER_OCTETS",
         "RECORDS",
         "REFERENCE_OCTETS",
+        "REMOVAL_DIRECTIVES",
+        "REPLAYED_EVENT_WORK",
         "SIGNATURE_OCTETS",
+        "SIBLINGS_PER_FORK",
         "VERIFICATION_KEY_OCTETS"
       ],
       "properties": {
@@ -967,20 +1005,35 @@
         "AP_EXPANDED_CONTENT_OCTETS": { "const": "131072" },
         "AP_TRANSITION_BLOCK_OCTETS": { "const": "4096" },
         "AUTHORITY_CONCURRENT_CONTROLS": { "const": "3" },
+        "AUTHORITY_STATES": { "const": "256" },
+        "AUTHORITY_TRANSITIONS": { "const": "512" },
         "CHUNKS_PER_CONTENT": { "const": "64" },
         "CHUNK_OCTETS": { "const": "16384" },
         "COMMITMENT_VALUE_OCTETS": { "const": "32" },
         "CONTENT_EXACT_OCTETS": { "const": "262144" },
         "CONTEXT_LIFETIME_EVENTS": { "const": "4096" },
+        "CONTROL_EVENTS": { "const": "12" },
         "CREDENTIALS": { "const": "16" },
+        "EVENTS_ADMITTED": { "const": "64" },
         "EVIDENCE_PER_CREDENTIAL": { "const": "16" },
+        "FORK_SLOTS": { "const": "3" },
         "FRAMING_OBJECT_OCTETS": { "const": "8192" },
         "GENESIS_BODY_OCTETS": { "const": "8192" },
         "GENESIS_POLICY_OCTETS": { "const": "4096" },
+        "GRAPH_DEPTH": { "const": "256" },
+        "HALTED_REPLAY_SPAN": { "const": "256" },
+        "LINEAGE_DEPTH": { "const": "8" },
+        "ORDINARY_PREFIX_QUERIES": { "const": "64" },
+        "PARENTS_PER_EVENT": { "const": "8" },
+        "PENDING_DESCENDANTS": { "const": "128" },
+        "PENDING_ROOTS": { "const": "16" },
         "RANDOMIZER_OCTETS": { "const": "32" },
         "RECORDS": { "const": "128" },
         "REFERENCE_OCTETS": { "const": "32" },
+        "REMOVAL_DIRECTIVES": { "const": "32" },
+        "REPLAYED_EVENT_WORK": { "const": "65536" },
         "SIGNATURE_OCTETS": { "const": "64" },
+        "SIBLINGS_PER_FORK": { "const": "3" },
         "VERIFICATION_KEY_OCTETS": { "const": "32" }
       },
       "x-styx-derived-from-resource-envelope": "balanced"

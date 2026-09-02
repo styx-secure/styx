@@ -12,10 +12,10 @@ from typing import Any, Iterable, Iterator
 
 
 BASE_SHA = "16274cc194cd2f8f7b631332687a252bad92ce02"
-MANIFEST_SHA256 = "b4ba89eecf0fb0d7c2d17eb3ac8689034841181bcd9bd34370096ee744c14625"
-STRUCTURAL_COUNT = 1400
-SEMANTIC_COUNT = 4850
-TOTAL_COUNT = 6250
+MANIFEST_SHA256 = "521abeea5d8ea294dde4ab29b1ebe999caa43e8fbf0bc26c4708d958f16e514c"
+STRUCTURAL_COUNT = 1450
+SEMANTIC_COUNT = 5147
+TOTAL_COUNT = 6597
 CONTRACT_FILES = 27
 
 
@@ -112,7 +112,7 @@ def run_ratified_package_validator(repo_root: Path, contract: Path) -> None:
         timeout=120,
         env={**__import__("os").environ, "PYTHONDONTWRITEBYTECODE": "1"},
     )
-    if completed.returncode != 0 or "total=6250" not in completed.stdout:
+    if completed.returncode != 0 or "total=6597" not in completed.stdout:
         raise InventoryError("ratified contract validator failed")
 
 
@@ -150,6 +150,7 @@ def _structural_sources(schema: dict[str, Any], rule: dict[str, Any]) -> list[st
         "PER_MIN_LENGTH_OCCURRENCE": "minLength",
         "PER_MAX_LENGTH_OCCURRENCE": "maxLength",
         "PER_MIN_ITEMS_OCCURRENCE": "minItems",
+        "PER_MAX_ITEMS_OCCURRENCE": "maxItems",
         "PER_UNIQUE_ITEMS_TRUE_OCCURRENCE": "uniqueItems",
         "PER_ITEMS_OCCURRENCE": "items",
         "PER_NOT_OCCURRENCE": "not",
@@ -494,7 +495,7 @@ def build_inventory(repo_root: Path, contract: Path) -> dict[str, Any]:
     return {
         "combined_instance_set_sha256": digest_lines(all_ids),
         "contract_manifest_sha256": MANIFEST_SHA256,
-        "family_counts": {"semantic": 68, "structural": 23},
+        "family_counts": {"semantic": 82, "structural": 24},
         "instance_counts": {
             "semantic": SEMANTIC_COUNT,
             "structural": STRUCTURAL_COUNT,

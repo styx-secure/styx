@@ -5,7 +5,7 @@ authority and authorizes no implementation.
 
 ## Objective
 
-Define how the future 78-row positive seed registry and 1,400-row structural
+Define how the future 78-row positive seed registry and 1,450-row structural
 witness registry are generated without executor-selected coverage, convenient
 fixtures or disclosed response oracles. The generated registries are evidence;
 they are not protocol authority and are never runtime adapter inputs.
@@ -29,7 +29,7 @@ fallback parser/profile selector.
 
 The exact bounded search authority is
 `APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json`, SHA-256
-`2fb0d6d55a86965624cd6fb0e077e72c10586eecb2e0c66562c0fa7006428620`.
+`db8ebfaf3d34a8d47dae6c1996eb4cadc91d737f13a9278a75c2ea441ebea9d8`.
 That digest must be replaced only by a new reviewed and human-ratified contract
 version.
 
@@ -42,7 +42,7 @@ the carrier bytes produced from exact Base
 
 Carrier eligibility is derived from the exact reachability relation in
 `APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json`, SHA-256
-`9e5c58034eab93b9e4e8539ac61ce733821a52a6dd0414e55b1333b8b5434286`.
+`6ead453a551472a87ca00ef812a8952ebaeb76d5cdbbe1e6dcf10279f32147ca`.
 The relation is regenerated from the schema by
 `derive_app_core_carrier_reachability.py`, SHA-256
 `a349019ca273d88016f45b09e40afe6fcee71654617e230ef1dcebde9a5c92b4`.
@@ -206,7 +206,7 @@ fails before any hostile case executes.
 The reference generator and independent JavaScript reader run in distinct clean
 exact-HEAD checkouts. They independently:
 
-- recompute all 78 seed rows and 1,400 instance rows;
+- recompute all 78 seed rows and 1,450 instance rows;
 - execute every request instance before seeing expected response bytes;
 - freeze response output before withheld-oracle release;
 - execute post-output response mutations only after the freeze;
@@ -216,7 +216,7 @@ exact-HEAD checkouts. They independently:
 
 The final gate requires byte-identical registries and reports, exact set
 equality, all baseline positives passing, all negative observations matching,
-all positive observations matching and all 1,400 mutants killed by their named
+all positive observations matching and all 1,450 mutants killed by their named
 detectors. Aggregate counts or suite-level `PASS` are insufficient.
 
 ## Remaining closure
@@ -225,5 +225,5 @@ This contract fixes generation and isolation rules but does not fabricate the
 exact-Base carrier inventories. Before ratification, the executable Issue must
 bind the exact candidate palette and positive case inventories. Before APP-core
 conformance can close, the implementation must populate the 78 seed rows and
-1,400 witnesses, execute both readers and pass independent review plus the
+1,450 witnesses, execute both readers and pass independent review plus the
 human gate.

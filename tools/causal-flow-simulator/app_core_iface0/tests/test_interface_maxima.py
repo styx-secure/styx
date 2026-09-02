@@ -19,11 +19,11 @@ class InterfaceMaximaTests(unittest.TestCase):
         self.report = self.derivation.report()
 
     def test_exact_maxima_and_maximizing_roots(self) -> None:
-        self.assertEqual(self.report["outerRequestOctets"], 138642769)
+        self.assertEqual(self.report["outerRequestOctets"], 138499357)
         self.assertEqual(self.report["outerRequestRoot"], "REQUEST-EVALUATE_CANDIDATE")
-        self.assertEqual(self.report["outerResponseOctets"], 71196086)
+        self.assertEqual(self.report["outerResponseOctets"], 71052634)
         self.assertEqual(self.report["outerResponseRoot"], "RESPONSE-EVALUATE_CANDIDATE")
-        self.assertEqual(self.report["maxRetainedDecodedOctets"], 35351200)
+        self.assertEqual(self.report["maxRetainedDecodedOctets"], 35284168)
         self.assertEqual(self.report["maxRetainedDecodedRoot"], "REQUEST-EVALUATE_CANDIDATE")
 
     def test_all_twelve_carrier_roots_are_measured_once(self) -> None:
@@ -37,7 +37,7 @@ class InterfaceMaximaTests(unittest.TestCase):
         self.assertEqual(len(self.derivation.array_bounds), 27)
         self.assertEqual(
             self.derivation.array_bounds["$defs.ContextProjectionV0.aliasGroups"],
-            8,
+            64,
         )
         self.assertEqual(
             self.derivation.array_bounds["$defs.ApplicationEventProjectionV0.causalParentReferences"],

@@ -73,7 +73,7 @@ class Derivation:
         require(self.envelope.get("candidate_id") == "balanced", "unselected resource envelope")
         require(self.reachability.get("schemaSha256") == sha256(SCHEMA_PATH), "schema/reachability drift")
         require(self.reachability.get("rootCount") == 12, "carrier-root drift")
-        require(len(self.semantics.get("rules", [])) == 68, "semantic-rule drift")
+        require(len(self.semantics.get("rules", [])) == 82, "semantic-rule drift")
         self.limits = {
             name: int(row["selected_value"])
             for name, row in self.envelope["entries"].items()
@@ -85,14 +85,46 @@ class Derivation:
     def _array_bounds(self) -> dict[str, int]:
         result: dict[str, int] = {}
         for row in self.semantics["rules"]:
-            if row["rule"] != "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK":
+            if row["rule"] not in {
+                "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+                "DERIVED_ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+            }:
                 continue
-            dimension = row["parameters"]["dimension"]
-            require(dimension in self.limits, f"unknown array dimension: {dimension}")
-            for target in row["targets"]:
+            parameters = row["parameters"]
+            by_target = parameters.get("parametersByTarget")
+            target_parameters = (
+                by_target
+                if isinstance(by_target, dict)
+                else {target: parameters for target in row["targets"]}
+            )
+            require(
+                set(target_parameters) == set(row["targets"]),
+                f"array target-parameter drift: {row['id']}",
+            )
+            for target, target_parameter in target_parameters.items():
                 require(target not in result, f"duplicate array bound: {target}")
-                result[target] = self.limits[dimension]
-        result["$defs.ContextProjectionV0.aliasGroups"] = self.limits["CREDENTIALS"] // 2
+                if "dimension" in target_parameter:
+                    dimension = target_parameter["dimension"]
+                    require(
+                        dimension in self.limits,
+                        f"unknown array dimension: {dimension}",
+                    )
+                    result[target] = self.limits[dimension]
+                else:
+                    expression = target_parameter.get("expression")
+                    selected = int(target_parameter.get("selectedValue", "-1"))
+                    expected = {
+                        "RECORDS + 1": self.limits["RECORDS"] + 1,
+                        "floor((RECORDS + 1) / 2)": (
+                            self.limits["RECORDS"] + 1
+                        )
+                        // 2,
+                    }
+                    require(
+                        expression in expected and selected == expected[expression],
+                        f"unknown or mismatched derived array expression: {target}",
+                    )
+                    result[target] = selected
         expected = {
             "$defs.ContentMaterialEvidenceV0.segments",
             "$defs.ProposedContextSnapshotV0.admittedCandidates",
@@ -246,8 +278,22 @@ class Derivation:
 
     def _alias_groups(self) -> Measure:
         group_count = self.array_bounds["$defs.ContextProjectionV0.aliasGroups"]
-        require(group_count * 2 == self.limits["CREDENTIALS"], "alias partition drift")
-        return self._array(self._array(self._fixed_hex(32), 2), group_count)
+        total_members = self.array_bounds["$defs.AliasGroupV0.allOf[0]"]
+        require(
+            group_count == 64 and total_members == 129,
+            "alias maximizing cardinality drift",
+        )
+        groups = [self._array(self._fixed_hex(32), 2) for _ in range(group_count - 1)]
+        groups.append(self._array(self._fixed_hex(32), 3))
+        result = Measure(
+            2 + sum(group.json_octets for group in groups) + group_count - 1,
+            sum(group.decoded_octets for group in groups),
+        )
+        require(
+            result.json_octets == 8772 and result.decoded_octets == 4128,
+            "alias maximizing measurement drift",
+        )
+        return result
 
     def _relation_object(self, definition: str) -> Measure:
         if definition == "ContentStateProjectionV0":
@@ -320,6 +366,30 @@ class Derivation:
         return self.node(self.schema["$defs"][name], f"$defs.{name}", name)
 
     def node(self, node: dict[str, Any], use_site: str, owner_definition: str) -> Measure:
+        body_plus_prefix = node.get("x-styx-o08-body-plus-prefix-limit")
+        if body_plus_prefix is not None:
+            require(
+                set(body_plus_prefix) == {"dimension", "prefixOctets"},
+                f"malformed body-plus-prefix annotation: {use_site}",
+            )
+            expected_dimensions = {
+                "$defs.GenesisTranscriptCandidateV0.transcriptHex": "GENESIS_BODY_OCTETS",
+                "$defs.ApplicationTranscriptCandidateV0.transcriptHex": "FRAMING_OBJECT_OCTETS",
+            }
+            require(
+                use_site in expected_dimensions
+                and node.get("$ref") == "#/$defs/TranscriptHex"
+                and body_plus_prefix
+                == {
+                    "dimension": expected_dimensions[use_site],
+                    "prefixOctets": "20",
+                },
+                f"body-plus-prefix annotation binding drift: {use_site}",
+            )
+            return self._fixed_hex(
+                self.limits[body_plus_prefix["dimension"]]
+                + int(body_plus_prefix["prefixOctets"])
+            )
         if "$ref" in node:
             return self.definition(self._ref_name(node["$ref"]), use_site)
         if "const" in node:

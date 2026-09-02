@@ -6,7 +6,8 @@
     "$defs.U16Text.x-styx-unsigned-maximum": "ACV-001",
     "$defs.U32Text.x-styx-unsigned-maximum": "ACV-002",
     "$defs.U64Text.x-styx-unsigned-maximum": "ACV-003",
-    "$defs.TranscriptHex.x-styx-o08-limit": "ACV-004",
+    "$defs.GenesisTranscriptCandidateV0.properties.transcriptHex.x-styx-o08-body-plus-prefix-limit": "ACV-004",
+    "$defs.ApplicationTranscriptCandidateV0.properties.transcriptHex.x-styx-o08-body-plus-prefix-limit": "ACV-004",
     "$defs.SignatureHex.x-styx-o08-limit": "ACV-067",
     "$defs.ApTransitionBlockHex.x-styx-o08-limit": "ACV-005",
     "$defs.GenesisPolicyBlockHex.x-styx-o08-limit": "ACV-006",
@@ -60,9 +61,15 @@
     {
       "id": "ACV-004",
       "owners": ["K", "O08"],
-      "targets": ["$defs.GenesisTranscriptCandidateV0.transcriptHex", "$defs.ApplicationTranscriptCandidateV0.transcriptHex"],
-      "rule": "HEX_OCTETS_LIMIT_BEFORE_DECODE",
-      "parameters": { "dimension": "FRAMING_OBJECT_OCTETS" },
+      "targets": ["$defs.GenesisTranscriptCandidateV0.properties.transcriptHex", "$defs.ApplicationTranscriptCandidateV0.properties.transcriptHex"],
+      "rule": "HEX_BODY_PLUS_FIXED_PREFIX_LIMIT_BEFORE_DECODE",
+      "parameters": {
+        "fixedPrefixOctets": "20",
+        "targetDimensions": {
+          "$defs.GenesisTranscriptCandidateV0.properties.transcriptHex": "GENESIS_BODY_OCTETS",
+          "$defs.ApplicationTranscriptCandidateV0.properties.transcriptHex": "FRAMING_OBJECT_OCTETS"
+        }
+      },
       "scenario": "ACI-TRANSCRIPT-LIMIT-HEADER-ONLY",
       "mutant": "M-ACI-TRANSCRIPT-LIMIT-AFTER-DECODE"
     },
@@ -115,8 +122,8 @@
       "id": "ACV-010",
       "owners": ["K", "AP", "O08"],
       "targets": ["$defs.ContextProjectionV0.credentialBindings"],
-      "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
-      "parameters": { "dimension": "CREDENTIALS" },
+      "rule": "DERIVED_ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+      "parameters": { "expression": "RECORDS + 1", "selectedValue": "129" },
       "scenario": "ACI-CREDENTIAL-COUNT-OVER-BOUND",
       "mutant": "M-ACI-CREDENTIAL-BOUND-IGNORED"
     },
@@ -299,7 +306,9 @@
         "perCredentialDimension": "ALIASES_PER_CREDENTIAL",
         "membershipDimension": "CREDENTIALS",
         "membershipMustExistInCredentialBindings": true,
-        "maximumGroupCountExpression": "floor(CREDENTIALS/2)"
+        "maximumGroupCountExpression": "floor((RECORDS + 1) / 2)",
+        "maximumGroupMemberExpression": "RECORDS + 1",
+        "maximumTotalMemberExpression": "RECORDS + 1"
       },
       "scenario": "ACI-OVERLAPPING-ALIAS-GROUPS",
       "mutant": "M-ACI-ALIAS-MEMBER-IN-TWO-GROUPS"
@@ -464,7 +473,7 @@
       "owners": ["O08", "INTERFACE"],
       "targets": ["$defs.ProfileDescriptorV0.authorityPins", "$defs.ProfileDescriptorV0.interfaceLimits"],
       "rule": "COMPARE_DESCRIPTOR_TO_PINNED_RESOURCE_ENVELOPE",
-      "parameters": { "projectedDimensionCount": "22" },
+      "parameters": { "projectedDimensionCount": "37" },
       "scenario": "ACI-DESCRIPTOR-LIMIT-DRIFT",
       "mutant": "M-ACI-DESCRIPTOR-RUNTIME-LIMIT"
     },
@@ -500,7 +509,7 @@
       "owners": ["INTERFACE"],
       "targets": ["$defs.InterfaceRequestV0", "$defs.InterfaceResponseV0"],
       "rule": "CUSTOM_KEYWORD_AND_CONSTRAINT_REGISTRY_EXACT_EQUALITY",
-      "parameters": { "ruleCount": "68" },
+      "parameters": { "ruleCount": "82" },
       "scenario": "ACI-UNKNOWN-CUSTOM-KEYWORD",
       "mutant": "M-ACI-IGNORE-SEMANTIC-CONSTRAINT"
     },
@@ -520,7 +529,20 @@
         "$defs.ContextProjectionV0.contentStates"
       ],
       "rule": "EXACT_CANONICAL_COLLECTION_ORDER",
-      "parameters": { "singleReferenceKeyImpliesUniqueKey": true },
+      "parameters": {
+        "orderingRelationByTarget": {
+          "$defs.EvidenceProjectionV0.contentMaterial": "eventReferenceHex",
+          "$defs.EvidenceProjectionV0.openingMaterial": "eventReferenceHex",
+          "$defs.CanonicalReferenceArray": "lexicographic-hex",
+          "$defs.ContextProjectionV0.records": "protocol-k-order",
+          "$defs.ContextProjectionV0.recordOutcomes": "eventReferenceHex",
+          "$defs.ContextProjectionV0.credentialBindings": "credentialIdentifierHex",
+          "$defs.ContextProjectionV0.reductionStandings": "eventReferenceHex",
+          "$defs.ContextProjectionV0.eventAuthority": "eventReferenceHex",
+          "$defs.ContextProjectionV0.forkJoins": "joinLabelHex",
+          "$defs.ContextProjectionV0.contentStates": "eventReferenceHex"
+        }
+      },
       "scenario": "ACI-CANONICAL-COLLECTION-PERMUTATION",
       "mutant": "M-ACI-ACCEPT-PRESENTATION-ORDER"
     },
@@ -597,7 +619,18 @@
         "$defs.ContextProjectionV0.forkedCredentialIdentifiers"
       ],
       "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
-      "parameters": { "dimension": "CREDENTIALS" },
+      "parameters": {
+        "parametersByTarget": {
+          "$defs.AuthorityAvailableV0.possibleCredentialIdentifiers": { "dimension": "CREDENTIALS" },
+          "$defs.AuthorityAvailableV0.necessaryCredentialIdentifiers": { "dimension": "CREDENTIALS" },
+          "$defs.AuthorityAvailableV0.terminalCredentialIdentifiers": { "dimension": "CREDENTIALS" },
+          "$defs.ForkJoinProjectionV0.lineageClosureCredentialIdentifiers": { "dimension": "CREDENTIALS" },
+          "$defs.AliasGroupV0.allOf[0]": { "expression": "RECORDS + 1", "selectedValue": "129" },
+          "$defs.ContextProjectionV0.revokedCredentialIdentifiers": { "dimension": "CREDENTIALS" },
+          "$defs.ContextProjectionV0.terminatedCredentialIdentifiers": { "dimension": "CREDENTIALS" },
+          "$defs.ContextProjectionV0.forkedCredentialIdentifiers": { "dimension": "CREDENTIALS" }
+        }
+      },
       "scenario": "ACI-CREDENTIAL-DERIVED-COLLECTION-OVER-BOUND",
       "mutant": "M-ACI-CREDENTIAL-DERIVED-COUNT-POST-WORK"
     },
@@ -616,8 +649,8 @@
       "targets": ["$defs.ContextProjectionV0.aliasGroups"],
       "rule": "DERIVED_ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
       "parameters": {
-        "expression": "floor(CREDENTIALS/2)",
-        "selectedValue": "8"
+        "expression": "floor((RECORDS + 1) / 2)",
+        "selectedValue": "64"
       },
       "scenario": "ACI-ALIAS-GROUP-COUNT-OVER-DERIVED-BOUND",
       "mutant": "M-ACI-ALIAS-GROUP-COUNT-POST-WORK"
@@ -642,8 +675,13 @@
       ],
       "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
       "parameters": {
-        "dimension": "RECORDS",
-        "forkJoinBoundJustification": "single reference-key uniqueness and recomputation from the retained closure without checkpoint pruning"
+        "parametersByTarget": {
+          "$defs.ContextProjectionV0.reductionStandings": { "dimension": "CONTROL_EVENTS" },
+          "$defs.ContextProjectionV0.eventAuthority": { "dimension": "RECORDS" },
+          "$defs.ContextProjectionV0.forkJoins": { "dimension": "FORK_SLOTS" },
+          "$defs.ContextProjectionV0.replayDependencyReferences": { "dimension": "RECORDS" }
+        },
+        "forkJoinBoundJustification": "join-label uniqueness over complete slots and recomputation from the retained closure without checkpoint pruning"
       },
       "scenario": "ACI-RECORD-DERIVED-COLLECTION-OVER-BOUND",
       "mutant": "M-ACI-RECORD-DERIVED-COUNT-POST-WORK"
@@ -694,19 +732,26 @@
     },
     {
       "id": "ACV-066",
-      "owners": ["K", "O07", "INTERFACE"],
+      "owners": ["K", "O03", "O04", "O07", "AP", "INTERFACE"],
       "targets": [
         "$defs.ValidateTranscriptResultV0",
         "$defs.EvaluateGenesisResultV0",
         "$defs.TranscriptObservationV0"
       ],
-      "rule": "REFERENCE_MISMATCH_RESERVED_AND_UNREACHABLE_IN_V0",
+      "rule": "RESERVED_ROWS_UNREACHABLE_IN_V0",
       "parameters": {
-        "reservedRows": ["TRS-011", "GRS-011"],
-        "requiredReopenOwners": ["K", "O07", "INTERFACE"]
+        "reservedRows": [
+          "TRS-011",
+          "GRS-009",
+          "GRS-010",
+          "GRS-011",
+          "GRS-015",
+          "GRS-016"
+        ],
+        "independentObservationDetector": "referenceVerification=REJECTED"
       },
-      "scenario": "ACI-REFERENCE-MISMATCH-UNREACHABLE",
-      "mutant": "M-ACI-FABRICATE-REFERENCE-MISMATCH"
+      "scenario": "ACI-RESERVED-ROW-RELEASE",
+      "mutant": "M-ACI-RELEASE-RESERVED-ROW"
     },
     {
       "id": "ACV-067",
@@ -738,6 +783,161 @@
       },
       "scenario": "ACI-SIGNATURE-VERIFICATION-PATH",
       "mutant": "M-ACI-SIGNATURE-PATH-RELATION"
+    },
+    {
+      "id": "ACV-069",
+      "owners": ["INTERFACE", "K", "O03", "O04", "O07", "O08", "O14", "AP", "AP_PROFILE"],
+      "targets": [
+        "$defs.ValidateTranscriptInputV0",
+        "$defs.ValidateTranscriptResultV0",
+        "$defs.EvaluateGenesisInputV0",
+        "$defs.EvaluateGenesisResultV0"
+      ],
+      "rule": "TRANSCRIPT_AND_GENESIS_TERMINAL_PREDICATE_EXACT_RELATION",
+      "parameters": {
+        "relation": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#terminalPredicateRelationV0",
+        "relationRowCount": "33",
+        "reachableRowCount": "27",
+        "reservedRowCount": "6",
+        "selectedEnvelopeCandidateProjection": "CURRENT_OBJECT_OUT_OF_PROFILE"
+      },
+      "scenario": "ACI-TERMINAL-PREDICATE-EXACT-ROW",
+      "mutant": "M-ACI-TERMINAL-PREDICATE-OR-ORDER"
+    },
+    {
+      "id": "ACV-070",
+      "owners": ["O04", "K", "INTERFACE"],
+      "targets": ["$defs.ContentStateProjectionV0.replayReadiness"],
+      "rule": "STALE_REPLAY_READINESS_RESERVED_UNREACHABLE_IN_V0",
+      "parameters": { "reservedValue": "STALE_EVIDENCE" },
+      "scenario": "ACI-STALE-REPLAY-READINESS-RELEASE",
+      "mutant": "M-ACI-RELEASE-STALE-REPLAY-READINESS"
+    },
+    {
+      "id": "ACV-071",
+      "owners": ["AP", "O08", "INTERFACE"],
+      "targets": ["$defs.AuthorityUnavailableV0.reason"],
+      "rule": "AUTHORITY_UNAVAILABLE_REASON_REACHABILITY_EXACT",
+      "parameters": {
+        "reachableValue": "AUTHORITY_PROJECTION_UNAVAILABLE",
+        "reservedValues": ["CONTEXT_CAPACITY_EXHAUSTED", "DEPENDENCY_DEFERRED"]
+      },
+      "scenario": "ACI-RESERVED-AUTHORITY-UNAVAILABLE-REASON",
+      "mutant": "M-ACI-RELEASE-RESERVED-AUTHORITY-UNAVAILABLE-REASON"
+    },
+    {
+      "id": "ACV-072",
+      "owners": ["K", "O08", "INTERFACE"],
+      "targets": ["$defs.ContextProjectionV0.pendingReferences"],
+      "rule": "PENDING_DESCENDANTS_CROSSING_RESERVED_UNREACHABLE_IN_V0",
+      "parameters": { "dimension": "PENDING_DESCENDANTS", "derivedCeiling": "127" },
+      "scenario": "ACI-PENDING-DESCENDANTS-RESERVED-CROSSING",
+      "mutant": "M-ACI-PENDING-DESCENDANTS-REMOVE-SOURCE-CHECK"
+    },
+    {
+      "id": "ACV-073",
+      "owners": ["K", "AP", "O08", "INTERFACE"],
+      "targets": ["$defs.ForkJoinProjectionV0", "$defs.ContextProjectionV0.forkJoins"],
+      "rule": "FORK_JOIN_LABEL_EXACT_RELATION",
+      "parameters": {
+        "relation": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#forkJoinLabelRelationV0",
+        "relationRowCount": "10",
+        "reachableRowCount": "7",
+        "reservedRowCount": "3"
+      },
+      "scenario": "ACI-FORK-JOIN-LABEL-EXACT-RELATION",
+      "mutant": "M-ACI-FORK-JOIN-LABEL-RELATION"
+    },
+    {
+      "id": "ACV-074",
+      "owners": ["K", "INTERFACE"],
+      "targets": ["$defs.ContextProjectionV0.records"],
+      "rule": "GREEDY_ONE_AT_A_TIME_PROTOCOL_K_ORDER",
+      "parameters": { "selectionKey": "eventReferenceHex", "readySetBatchingForbidden": true },
+      "scenario": "ACI-PROTOCOL-K-GREEDY-ORDER",
+      "mutant": "M-ACI-PROTOCOL-K-READY-BATCH"
+    },
+    {
+      "id": "ACV-075",
+      "owners": ["K", "O04", "INTERFACE"],
+      "targets": ["$defs.ContextProjectionV0.pendingRootReferences", "$defs.ContextProjectionV0.pendingReferences", "$defs.RecordOutcomeProjectionV0.kAdmission", "$defs.ContentStateProjectionV0.replayReadiness"],
+      "rule": "PENDING_PARTITION_AND_K_COMPATIBILITY_EXACT",
+      "parameters": { "implicationCount": "4", "reverseForkImplicationForbidden": true },
+      "scenario": "ACI-PENDING-PARTITION-K-COMPATIBILITY",
+      "mutant": "M-ACI-K-DIAGNOSTIC-AS-PUBLIC-PROJECTION"
+    },
+    {
+      "id": "ACV-076",
+      "owners": ["K", "AP", "O04", "INTERFACE"],
+      "targets": ["$defs.ContextProjectionV0.recordOutcomes", "$defs.ContextProjectionV0.contextState"],
+      "rule": "EVENT_OUTCOME_AND_CONTEXT_STATE_PRECEDENCE_EXACT",
+      "parameters": { "eventOutcomeLevels": "6", "contextStateLevels": "6" },
+      "scenario": "ACI-OUTCOME-AND-CONTEXT-PRECEDENCE",
+      "mutant": "M-ACI-SWAP-OUTCOME-OR-CONTEXT-PRECEDENCE"
+    },
+    {
+      "id": "ACV-077",
+      "owners": ["K", "AP", "INTERFACE"],
+      "targets": ["$defs.AuthorityProjectionV0", "$defs.ContextProjectionV0.forkJoins"],
+      "rule": "PASS0_AUTHORITY_ITEM_COMPOSITION_AND_JOIN_POSITION",
+      "parameters": { "controlFilter": "K_ADMITTED", "joinPosition": "AFTER_ALL_SIBLINGS_BEFORE_COMPLETE_ACKNOWLEDGERS" },
+      "scenario": "ACI-PASS0-JOIN-POSITION",
+      "mutant": "M-ACI-FILTER-PENDING-OR-UNAUTHORIZED-CONTROL"
+    },
+    {
+      "id": "ACV-078",
+      "owners": ["AP", "O08", "INTERFACE"],
+      "targets": ["$defs.ContextProjectionV0", "$defs.AuthorityProjectionV0"],
+      "rule": "AUTHORITY_PROJECTION_DIMENSION_EXACT_RELATION",
+      "parameters": {
+        "relation": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#authorityProjectionDimensionRelationV0",
+        "relationRowCount": "16",
+        "reachableRowCount": "12",
+        "reservedRowCount": "4"
+      },
+      "scenario": "ACI-AUTHORITY-PROJECTION-DIMENSION-RELATION",
+      "mutant": "M-ACI-AUTHORITY-PROJECTION-DIMENSION-RELATION"
+    },
+    {
+      "id": "ACV-079",
+      "owners": ["K", "O04", "O08", "O10", "INTERFACE"],
+      "targets": ["$defs.ReplayContextInputV0", "$defs.EvaluateCandidateInputV0", "$defs.EvaluateEvidenceUpdateInputV0"],
+      "rule": "GRAPH_ADMISSION_DIMENSION_EXACT_RELATION",
+      "parameters": {
+        "relation": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#graphAdmissionDimensionRelationV0",
+        "relationRowCount": "10",
+        "reachableRowCount": "4",
+        "reservedRowCount": "6"
+      },
+      "scenario": "ACI-GRAPH-ADMISSION-DIMENSION-RELATION",
+      "mutant": "M-ACI-GRAPH-ADMISSION-DIMENSION-RELATION"
+    },
+    {
+      "id": "ACV-080",
+      "owners": ["O04", "K", "INTERFACE"],
+      "targets": ["$defs.ReplayContextInputV0", "$defs.EvaluateCandidateInputV0", "$defs.EvaluateEvidenceUpdateInputV0"],
+      "rule": "CONTENT_ADMISSION_OPERATION_EXACT",
+      "parameters": { "operationCount": "3" },
+      "scenario": "ACI-CONTENT-ADMISSION-BY-OPERATION",
+      "mutant": "M-ACI-SHARE-OPERATION-CONTENT-ADMISSION"
+    },
+    {
+      "id": "ACV-081",
+      "owners": ["AP", "O08", "INTERFACE"],
+      "targets": ["$defs.ContextProjectionV0.contextState", "$defs.AuthorityProjectionV0"],
+      "rule": "NO_OPERATIONAL_AUTHORITY_TERMINAL_EXCEPT_CAPACITY_ESCALATION",
+      "parameters": { "restorationTransitions": "0", "soleOutgoingState": "AUTHORITY_UNAVAILABLE" },
+      "scenario": "ACI-NO-OPERATIONAL-AUTHORITY-TERMINALITY",
+      "mutant": "M-ACI-RESTORE-NO-OPERATIONAL-AUTHORITY"
+    },
+    {
+      "id": "ACV-082",
+      "owners": ["AP", "O08", "O10", "INTERFACE"],
+      "targets": ["$defs.CandidateEvaluationResultV0"],
+      "rule": "REMOVAL_DIRECTIVES_S6_CROSSING_RESERVED_AFTER_S5",
+      "parameters": { "dimension": "REMOVAL_DIRECTIVES", "selectedValue": "32" },
+      "scenario": "ACI-REMOVAL-DIRECTIVES-S6-RESERVED-CROSSING",
+      "mutant": "M-ACI-REMOVAL-DIRECTIVES-RELEASE-S6"
     }
   ]
 }

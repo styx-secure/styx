@@ -84,7 +84,7 @@ Any failure is `HARNESS_FAILURE`; it is not a malformed caller request.
 
 ### V1 — raw envelope admission
 
-Apply `OUTER_REQUEST_OCTETS = 138642769` before copying, decoding or
+Apply `OUTER_REQUEST_OCTETS = 138499357` before copying, decoding or
 allocating proportional to a declared value. Then:
 
 1. require strict UTF-8 with no BOM;
@@ -213,7 +213,7 @@ Validate the complete object against `InterfaceResponseV0` and all semantic
 constraints before serialization.
 
 Serialize once into one buffer no larger than
-`OUTER_RESPONSE_OCTETS = 71196086` using the ratified evidence JSON profile.
+`OUTER_RESPONSE_OCTETS = 71052634` using the ratified evidence JSON profile.
 An over-bound generated object is `HARNESS_FAILURE`, not a protocol result.
 Reparse the emitted
 bytes through V1/V2 response validation and require field-for-field equality
@@ -223,7 +223,7 @@ bytes.
 
 Only then emit `RESPONSE_EMITTED` and the exact bytes. Retained decoded
 transcript/block/reference/evidence material is bounded by
-`MAX_RETAINED_DECODED_OCTETS = 35351200`; the reader retains no raw request or
+`MAX_RETAINED_DECODED_OCTETS = 35284168`; the reader retains no raw request or
 hex-text duplicate beyond the `CHUNK_OCTETS` streaming window.
 
 ### V7 — canonical report hygiene
@@ -233,7 +233,7 @@ explicitly permitted by the report schema. Before report serialization:
 
 - expand the ratified semantic-instance axes;
 - require one observation per exact instance;
-- validate all 359 response string positions against each of the ten forbidden
+- validate all 377 response string positions against each of the ten forbidden
   runtime-provenance families;
 - reject absolute paths, host/user/PID/time/duration/environment/exception/
   stack material in every string position;
@@ -296,12 +296,12 @@ provider-bound exact bytes.
 
 ## Remaining pre-ratification closures
 
-The schema, 68-row semantic-instance-axis registry, 23-row content-axis,
-25-row F13 primary/axis, 14-row transcript, 16-row genesis and 17-row signature
-verification-path relations are now
+The schema, 82-row semantic-instance-axis registry, 23-row content-axis,
+25-row F13 primary/axis, 16-row transcript, 17-row genesis, 17-row signature
+verification-path and 33-row terminal-predicate relations are now
 literal working candidates. The relation expands the nine ACV-048 forbidden
 families through all 78 property-bearing object schemas. Together with the
-closed structural-keyword relation it derives 6,250 structural-plus-semantic
+closed structural-keyword relation it derives 6,597 structural-plus-semantic
 execution instances. They all require independent review and human ratification.
 
 Two literal execution outputs cannot exist before the repository increment
@@ -338,7 +338,7 @@ validator must additionally enforce relations that JSON Schema alone cannot:
    operation without updating every bound digest fails closed.
 
 The structural witness registry additionally has exact-set equality with all
-1,400 structural instances. Every row binds one instance ID to a seed row,
+1,450 structural instances. Every row binds one instance ID to a seed row,
 target pointer, deterministic perturbation, expected disposition, observation
 ID and source-mutant detector. It also proves positive coverage of all 54
 `oneOf` arms and pairwise arm disjointness; an aggregate validator result or
