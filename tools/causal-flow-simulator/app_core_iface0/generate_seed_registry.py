@@ -1231,6 +1231,10 @@ def prove_positive_carrier_closure(
             raise SeedGenerationError(
                 f"positive carrier evaluation failed for {root['rootId']}: {error}"
             ) from error
+        if response.get("operation") != operation:
+            raise SeedGenerationError("reference response operation drift")
+        if response.get("profile") != request.get("profile"):
+            raise SeedGenerationError("reference response profile drift")
         response_bytes = dumps(response)
         responses.setdefault(response_bytes, (response, request_bytes))
         response_root = roots[f"RESPONSE-{operation}"]
