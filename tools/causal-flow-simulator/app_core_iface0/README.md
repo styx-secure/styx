@@ -41,6 +41,16 @@ python3 tools/causal-flow-simulator/app_core_iface0/validate_inventory.py \
   --repo-root . \
   --contract tools/causal-flow-simulator/app_core_iface0/contract \
   --output /tmp/app-core-inventory.json
+
+python3 tools/causal-flow-simulator/app_core_iface0/generate_seed_registry.py \
+  --repo-root . \
+  --contract tools/causal-flow-simulator/app_core_iface0/contract \
+  --prove-reference-round-trip
 ```
+
+The last command produces and evaluates one structural blind request per
+operation and validates the six resulting responses before release. It is a
+round-trip prerequisite, not the still-missing complete positive-carrier or
+withheld-response inventory.
 
 Generated reports belong outside the repository and must never be committed.

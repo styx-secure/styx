@@ -740,23 +740,91 @@ def prove_reachability(contract: Path) -> dict[str, int]:
     return {"object_schema_count": object_count, "one_of_arm_count": arm_count}
 
 
+def prove_reference_round_trip(repo_root: Path, contract: Path) -> dict[str, int]:
+    """Produce one structural request and releasable response per operation.
+
+    This deliberately does not claim final positive-inventory coverage. It
+    proves only that each request root reaches the reference evaluator and can
+    produce one schema-valid response without exposing a withheld oracle to an
+    independent reader.
+    """
+
+    from interface_model import (  # Imported lazily; schema synthesis stays pure.
+        ContractAuthority,
+        HarnessFailure,
+        InterfaceModelError,
+        RequestRejected,
+        evaluate_interface_request,
+        validate_request_structure,
+        validate_response_before_release,
+    )
+
+    verify_contract_package(contract)
+    schema = _load_json(contract / "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json")
+    reachability = _load_json(
+        contract / "APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json"
+    )
+    roots = _ordered_roots(reachability)
+    synthesizer = SchemaSynthesizer(schema)
+    authority = ContractAuthority.load(repo_root, contract)
+    request_count = 0
+    response_count = 0
+    for root_id in ROOT_ORDER:
+        root = roots[root_id]
+        if root["direction"] != "REQUEST":
+            continue
+        eligible = root.get("eligibleObjectSchemaPointers")
+        if not isinstance(eligible, list) or not eligible:
+            raise SeedGenerationError(f"request root has no object carrier: {root_id}")
+        carrier = synthesizer.carrier(root, target_pointer=eligible[0])
+        try:
+            validate_request_structure(authority, carrier.value)
+            response = evaluate_interface_request(authority, carrier.value)
+            validate_response_before_release(authority, response)
+        except (HarnessFailure, InterfaceModelError, RequestRejected) as error:
+            raise SeedGenerationError(
+                f"reference round trip failed for {root_id}: {error}"
+            ) from error
+        dumps(response)
+        request_count += 1
+        response_count += 1
+    if request_count != len(OPERATIONS) or response_count != len(OPERATIONS):
+        raise SeedGenerationError("operation round-trip count drift")
+    return {"request_count": request_count, "response_count": response_count}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--contract", required=True, type=Path)
+    parser.add_argument("--repo-root", type=Path)
     parser.add_argument("--prove-reachability", action="store_true")
+    parser.add_argument("--prove-reference-round-trip", action="store_true")
     args = parser.parse_args(argv)
-    if not args.prove_reachability:
-        print("seed registry output mode is not yet selected", file=sys.stderr)
+    if args.prove_reachability == args.prove_reference_round_trip:
+        print("exactly one proof mode is required", file=sys.stderr)
+        return 2
+    if args.prove_reference_round_trip and args.repo_root is None:
+        print("--repo-root is required for reference round-trip proof", file=sys.stderr)
         return 2
     try:
-        result = prove_reachability(args.contract.resolve())
+        if args.prove_reachability:
+            result = prove_reachability(args.contract.resolve())
+            summary = (
+                f"objects={result['object_schema_count']} "
+                f"arms={result['one_of_arm_count']}"
+            )
+        else:
+            result = prove_reference_round_trip(
+                args.repo_root.resolve(), args.contract.resolve()
+            )
+            summary = (
+                f"requests={result['request_count']} "
+                f"responses={result['response_count']}"
+            )
     except (InventoryError, OSError, SeedGenerationError) as error:
         print(f"APP-core seed generation: FAIL: {error}", file=sys.stderr)
         return 2
-    print(
-        "APP-core seed generation: PASS "
-        f"objects={result['object_schema_count']} arms={result['one_of_arm_count']}"
-    )
+    print(f"APP-core seed generation: PASS {summary}")
     return 0
 
 

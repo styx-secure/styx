@@ -9,7 +9,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from generate_seed_registry import prove_reachability  # noqa: E402
+from generate_seed_registry import (  # noqa: E402
+    prove_reachability,
+    prove_reference_round_trip,
+)
 from authority_witness import isolated_authority_states_witness  # noqa: E402
 
 
@@ -18,6 +21,12 @@ class SeedReachabilityTests(unittest.TestCase):
         self.assertEqual(
             prove_reachability(ROOT / "contract"),
             {"object_schema_count": 78, "one_of_arm_count": 54},
+        )
+
+    def test_every_operation_has_a_releasable_reference_round_trip(self) -> None:
+        self.assertEqual(
+            prove_reference_round_trip(ROOT.parents[2], ROOT / "contract"),
+            {"request_count": 6, "response_count": 6},
         )
 
     def test_independent_javascript_fork_join_label_matches_v9_vector(self) -> None:
