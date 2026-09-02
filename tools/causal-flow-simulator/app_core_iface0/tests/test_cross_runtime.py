@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,29 @@ from run_probe import build_report as build_reference_probe_report  # noqa: E402
 
 
 class SeedReachabilityTests(unittest.TestCase):
+    def test_javascript_contract_reader_rejects_symlink_without_toctou_window(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            contract = Path(raw) / "contract"
+            shutil.copytree(ROOT / "contract", contract)
+            schema = contract / "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json"
+            schema.unlink()
+            schema.symlink_to("APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json")
+            completed = subprocess.run(
+                [
+                    "node",
+                    str(ROOT / "node_adapter.mjs"),
+                    "--preflight-collections",
+                    "--contract",
+                    str(contract),
+                ],
+                input=json.dumps({"direction": "REQUEST", "message": {}}),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(completed.stdout, "")
+
     def test_every_ratified_object_and_union_arm_has_a_valid_carrier(self) -> None:
         self.assertEqual(
             prove_reachability(ROOT / "contract"),

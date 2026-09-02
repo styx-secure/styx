@@ -53,9 +53,18 @@ function requireCondition(condition, message) {
 
 
 function readJson(filePath) {
-  const stat = fs.lstatSync(filePath);
-  requireCondition(stat.isFile() && !stat.isSymbolicLink(), `invalid JSON authority: ${filePath}`);
-  return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  requireCondition(Number.isInteger(fs.constants.O_NOFOLLOW), "O_NOFOLLOW is unavailable");
+  const descriptor = fs.openSync(
+    filePath,
+    fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW,
+  );
+  try {
+    const stat = fs.fstatSync(descriptor);
+    requireCondition(stat.isFile(), `invalid JSON authority: ${filePath}`);
+    return JSON.parse(fs.readFileSync(descriptor, "utf8"));
+  } finally {
+    fs.closeSync(descriptor);
+  }
 }
 
 
