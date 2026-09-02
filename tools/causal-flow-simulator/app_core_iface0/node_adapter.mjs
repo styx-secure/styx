@@ -650,6 +650,52 @@ function preflightCollections(input, schema, semantics) {
 }
 
 
+function outcomeProjection(input) {
+  exactKeys(input, ["authorityUnavailable", "forkedCredentials", "necessaryAuthority", "pendingRoots", "records"], "outcome projection input");
+  requireCondition(typeof input.authorityUnavailable === "boolean", "invalid authorityUnavailable");
+  requireCondition(Array.isArray(input.forkedCredentials), "invalid forkedCredentials");
+  requireCondition(Array.isArray(input.necessaryAuthority), "invalid necessaryAuthority");
+  requireCondition(Array.isArray(input.pendingRoots), "invalid pendingRoots");
+  for (const value of [...input.forkedCredentials, ...input.necessaryAuthority, ...input.pendingRoots]) fixedHex32(value, "projection reference");
+  requireCondition(Array.isArray(input.records), "invalid outcome records");
+  const outcomes = input.records.map((row, index) => {
+    exactKeys(
+      row,
+      ["appliedControl", "eventAuthority", "forkSibling", "lineageTerminated", "pendingDescendant", "pendingRoot", "postRevocation", "reference", "removalApplicable", "role"],
+      `outcome record ${index}`,
+    );
+    fixedHex32(row.reference, "outcome reference");
+    requireCondition(["CREDENTIAL", "ORDINARY", "REMOVAL"].includes(row.role), "invalid outcome role");
+    requireCondition(["MUST_AUTH", "MUST_NOT_AUTH"].includes(row.eventAuthority), "invalid event authority");
+    for (const field of ["appliedControl", "forkSibling", "lineageTerminated", "pendingDescendant", "pendingRoot", "postRevocation", "removalApplicable"]) {
+      requireCondition(typeof row[field] === "boolean", `invalid outcome flag: ${field}`);
+    }
+    let primary;
+    if (input.authorityUnavailable) primary = "AUTHORITY_PROJECTION_UNAVAILABLE";
+    else if (row.forkSibling) primary = "FORK_EVIDENCE";
+    else if (row.pendingRoot) primary = "PENDING_OPENING";
+    else if (row.pendingDescendant) primary = "PENDING_ANCESTOR";
+    else if (row.role === "REMOVAL" && !row.removalApplicable) primary = "REMOVAL_INAPPLICABLE";
+    else if (row.role === "CREDENTIAL") primary = row.appliedControl ? "APPLIED" : "AUTHENTIC_BUT_UNAUTHORIZED";
+    else if (row.eventAuthority === "MUST_AUTH") primary = "APPLIED";
+    else if (row.postRevocation) primary = "POST_REVOCATION";
+    else if (row.lineageTerminated) primary = "LINEAGE_QUARANTINED";
+    else primary = "AUTHENTIC_BUT_UNAUTHORIZED";
+    return { primary, reference: row.reference };
+  }).sort((left, right) => left.reference.localeCompare(right.reference));
+  const contextState = input.authorityUnavailable
+    ? "AUTHORITY_UNAVAILABLE"
+    : input.necessaryAuthority.length === 0
+      ? "NO_OPERATIONAL_AUTHORITY"
+      : input.forkedCredentials.length > 0
+        ? "PARTIALLY_LINEAGE_QUARANTINED"
+        : input.pendingRoots.length > 0
+          ? "PARTIALLY_PENDING"
+          : "ACTIVE";
+  return { contextState, outcomes };
+}
+
+
 const OBSERVATION_ENUMS = Object.freeze({
   transcriptVerification: ["VALID", "REJECTED"],
   referenceVerification: ["VALID", "REJECTED", "NOT_REACHED"],
@@ -851,6 +897,7 @@ function parseArguments(argv) {
   let credentialProjectionMode = false;
   let validateResponseMode = false;
   let preflightCollectionsMode = false;
+  let outcomeProjectionMode = false;
   let contractPath = null;
   for (let index = 0; index < argv.length; index += 1) {
     if (argv[index] === "--self-test-acv066") selfTest = true;
@@ -860,19 +907,22 @@ function parseArguments(argv) {
     else if (argv[index] === "--credential-projection") credentialProjectionMode = true;
     else if (argv[index] === "--validate-response") validateResponseMode = true;
     else if (argv[index] === "--preflight-collections") preflightCollectionsMode = true;
+    else if (argv[index] === "--outcome-projection") outcomeProjectionMode = true;
     else if (argv[index] === "--contract") contractPath = argv[++index];
     else throw new AdapterFailure(`unknown argument: ${argv[index]}`);
   }
   requireCondition(
     Number(selfTest) + Number(deriveForkJoin) + Number(authorityMetricsMode)
       + Number(graphProjectionMode) + Number(credentialProjectionMode)
-      + Number(validateResponseMode) + Number(preflightCollectionsMode) === 1,
+      + Number(validateResponseMode) + Number(preflightCollectionsMode)
+      + Number(outcomeProjectionMode) === 1,
     "exactly one adapter mode is required",
   );
   requireCondition(contractPath, "--contract is required");
   return {
     authorityMetricsMode, contractPath, credentialProjectionMode, deriveForkJoin,
-    graphProjectionMode, preflightCollectionsMode, selfTest, validateResponseMode,
+    graphProjectionMode, outcomeProjectionMode, preflightCollectionsMode,
+    selfTest, validateResponseMode,
   };
 }
 
@@ -880,7 +930,8 @@ function parseArguments(argv) {
 try {
   const {
     authorityMetricsMode, contractPath, credentialProjectionMode, deriveForkJoin,
-    graphProjectionMode, preflightCollectionsMode, selfTest, validateResponseMode,
+    graphProjectionMode, outcomeProjectionMode, preflightCollectionsMode,
+    selfTest, validateResponseMode,
   } = parseArguments(process.argv.slice(2));
   const resolvedContract = path.resolve(contractPath);
   if (selfTest) {
@@ -908,6 +959,9 @@ try {
     const semantics = readJson(path.join(resolvedContract, "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json"));
     const input = JSON.parse(fs.readFileSync(0, "utf8"));
     process.stdout.write(`${JSON.stringify(preflightCollections(input, schema, semantics))}\n`);
+  } else if (outcomeProjectionMode) {
+    const input = JSON.parse(fs.readFileSync(0, "utf8"));
+    process.stdout.write(`${JSON.stringify(outcomeProjection(input))}\n`);
   }
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);

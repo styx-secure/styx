@@ -338,6 +338,104 @@ class SeedReachabilityTests(unittest.TestCase):
         self.assertEqual(rejected_response.returncode, 2)
         self.assertIn("ContextProjectionV0.records", rejected_response.stderr)
 
+    def test_independent_javascript_applies_exact_outcome_and_state_precedence(self) -> None:
+        command = [
+            "node",
+            str(ROOT / "node_adapter.mjs"),
+            "--outcome-projection",
+            "--contract",
+            str(ROOT / "contract"),
+        ]
+
+        def row(index: int, **changes: object) -> dict[str, object]:
+            value: dict[str, object] = {
+                "appliedControl": False,
+                "eventAuthority": "MUST_NOT_AUTH",
+                "forkSibling": False,
+                "lineageTerminated": False,
+                "pendingDescendant": False,
+                "pendingRoot": False,
+                "postRevocation": False,
+                "reference": f"{index:064x}",
+                "removalApplicable": True,
+                "role": "ORDINARY",
+            }
+            value.update(changes)
+            return value
+
+        value = {
+            "authorityUnavailable": False,
+            "forkedCredentials": ["ee" * 32],
+            "necessaryAuthority": ["ff" * 32],
+            "pendingRoots": ["dd" * 32],
+            "records": [
+                row(1, role="REMOVAL", forkSibling=True, pendingRoot=True, removalApplicable=False),
+                row(2, role="REMOVAL", pendingRoot=True, pendingDescendant=True, removalApplicable=False),
+                row(3, role="REMOVAL", pendingDescendant=True, removalApplicable=False),
+                row(4, role="REMOVAL", removalApplicable=False, postRevocation=True),
+                row(5, role="CREDENTIAL", postRevocation=True, lineageTerminated=True),
+                row(6, role="CREDENTIAL", appliedControl=True),
+                row(7, eventAuthority="MUST_AUTH", postRevocation=True, lineageTerminated=True),
+                row(8, postRevocation=True, lineageTerminated=True),
+                row(9, lineageTerminated=True),
+                row(10),
+            ],
+        }
+        completed = subprocess.run(
+            command,
+            input=json.dumps(value),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["contextState"], "PARTIALLY_LINEAGE_QUARANTINED")
+        self.assertEqual(
+            [item["primary"] for item in result["outcomes"]],
+            [
+                "FORK_EVIDENCE",
+                "PENDING_OPENING",
+                "PENDING_ANCESTOR",
+                "REMOVAL_INAPPLICABLE",
+                "AUTHENTIC_BUT_UNAUTHORIZED",
+                "APPLIED",
+                "APPLIED",
+                "POST_REVOCATION",
+                "LINEAGE_QUARANTINED",
+                "AUTHENTIC_BUT_UNAUTHORIZED",
+            ],
+        )
+
+        no_authority = json.loads(json.dumps(value))
+        no_authority["necessaryAuthority"] = []
+        no_authority_result = subprocess.run(
+            command,
+            input=json.dumps(no_authority),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        self.assertEqual(
+            json.loads(no_authority_result.stdout)["contextState"],
+            "NO_OPERATIONAL_AUTHORITY",
+        )
+
+        unavailable = json.loads(json.dumps(value))
+        unavailable["authorityUnavailable"] = True
+        unavailable_result = subprocess.run(
+            command,
+            input=json.dumps(unavailable),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        unavailable_body = json.loads(unavailable_result.stdout)
+        self.assertEqual(unavailable_body["contextState"], "AUTHORITY_UNAVAILABLE")
+        self.assertEqual(
+            {item["primary"] for item in unavailable_body["outcomes"]},
+            {"AUTHORITY_PROJECTION_UNAVAILABLE"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

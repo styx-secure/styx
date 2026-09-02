@@ -6,11 +6,18 @@ objects or reports produced here is an accepted context, authority capability,
 durable commit, wire format, storage record, or supported runtime adapter.
 
 The immutable `contract/` directory contains the manifest plus the exact 26
-ratified inputs.  The surrounding Python implementation and independent
-JavaScript reader regenerate the finite structural and semantic inventories,
-evaluate blind request cases, mutate withheld response cases only after output
-freeze, and emit canonical reports.  `final_gate.py` compares complete evidence
-from two clean exact-HEAD worktrees.
+ratified inputs.  The current Python reference model evaluates the six pure
+operations and enforces the V9 replay, authority, pending/content, F13 and
+closed collection-bound relations covered by its tests.  The independent
+JavaScript reader currently checks reserved reachability, fork/join labels,
+graph, credential and authority projections, exact event/context outcome
+precedence, and the same closed collection bounds.
+
+The complete blind corpus, populated positive-carrier/seed registries,
+1,450-row structural witness execution, semantic mutation campaign, canonical
+two-reader reports and two-clean-worktree `final_gate.py` are still required.
+Until those artifacts exist and pass, this directory is an implementation in
+progress rather than complete conformance evidence.
 
 The six operations are:
 
@@ -37,4 +44,3 @@ python3 tools/causal-flow-simulator/app_core_iface0/validate_inventory.py \
 ```
 
 Generated reports belong outside the repository and must never be committed.
-
