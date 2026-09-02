@@ -271,6 +271,73 @@ class SeedReachabilityTests(unittest.TestCase):
         self.assertEqual(rejected.returncode, 2)
         self.assertIn("reserved F13", rejected.stderr)
 
+    def test_independent_javascript_preflights_closed_collection_bounds(self) -> None:
+        command = [
+            "node",
+            str(ROOT / "node_adapter.mjs"),
+            "--preflight-collections",
+            "--contract",
+            str(ROOT / "contract"),
+        ]
+        request = {
+            "direction": "REQUEST",
+            "message": {
+                "operation": "REPLAY_CONTEXT",
+                "input": {
+                    "candidates": [],
+                    "evidence": {"contentMaterial": [], "openingMaterial": []},
+                },
+            },
+        }
+        accepted = subprocess.run(
+            command,
+            input=json.dumps(request),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        self.assertEqual(json.loads(accepted.stdout), {"verdict": "PASS"})
+
+        over_bound = json.loads(json.dumps(request))
+        over_bound["message"]["input"]["candidates"] = [
+            {} for _ in range(129)
+        ]
+        rejected = subprocess.run(
+            command,
+            input=json.dumps(over_bound),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("ReplayContextInputV0.candidates", rejected.stderr)
+
+        response = {
+            "direction": "RESPONSE",
+            "message": {
+                "operation": "REPLAY_CONTEXT",
+                "result": {
+                    "proposedContext": {
+                        "admittedCandidates": [],
+                        "evidence": {
+                            "contentMaterial": [],
+                            "openingMaterial": [],
+                        },
+                        "projection": {"records": [{} for _ in range(129)]},
+                    }
+                },
+            },
+        }
+        rejected_response = subprocess.run(
+            command,
+            input=json.dumps(response),
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(rejected_response.returncode, 2)
+        self.assertIn("ContextProjectionV0.records", rejected_response.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

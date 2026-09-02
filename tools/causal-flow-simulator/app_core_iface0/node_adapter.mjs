@@ -16,6 +16,35 @@ class AdapterFailure extends Error {}
 
 
 const FORK_JOIN_DOMAIN = Buffer.from("STYX-APP-CORE-IFACE-0-FORK-JOIN-V0\0", "ascii");
+const IMPLEMENTED_COLLECTION_BOUND_TARGETS = Object.freeze([
+  "$defs.AliasGroupV0.allOf[0]",
+  "$defs.ApplicationEventProjectionV0.causalParentReferences",
+  "$defs.AuthorityAvailableV0.necessaryCredentialIdentifiers",
+  "$defs.AuthorityAvailableV0.possibleCredentialIdentifiers",
+  "$defs.AuthorityAvailableV0.terminalCredentialIdentifiers",
+  "$defs.ContentMaterialEvidenceV0.segments",
+  "$defs.ContextProjectionV0.aliasGroups",
+  "$defs.ContextProjectionV0.appliedControlReferences",
+  "$defs.ContextProjectionV0.contentStates",
+  "$defs.ContextProjectionV0.credentialBindings",
+  "$defs.ContextProjectionV0.eventAuthority",
+  "$defs.ContextProjectionV0.forkJoins",
+  "$defs.ContextProjectionV0.forkedCredentialIdentifiers",
+  "$defs.ContextProjectionV0.pendingReferences",
+  "$defs.ContextProjectionV0.pendingRootReferences",
+  "$defs.ContextProjectionV0.recordOutcomes",
+  "$defs.ContextProjectionV0.records",
+  "$defs.ContextProjectionV0.reductionStandings",
+  "$defs.ContextProjectionV0.replayDependencyReferences",
+  "$defs.ContextProjectionV0.revokedCredentialIdentifiers",
+  "$defs.ContextProjectionV0.terminatedCredentialIdentifiers",
+  "$defs.EvidenceProjectionV0.contentMaterial",
+  "$defs.EvidenceProjectionV0.openingMaterial",
+  "$defs.ForkJoinProjectionV0.lineageClosureCredentialIdentifiers",
+  "$defs.ForkJoinProjectionV0.siblingReferences",
+  "$defs.ProposedContextSnapshotV0.admittedCandidates",
+  "$defs.ReplayContextInputV0.candidates",
+]);
 
 
 function requireCondition(condition, message) {
@@ -481,6 +510,146 @@ function validateProfile(profile) {
 }
 
 
+function objectValue(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+
+function interfaceLimits(schema) {
+  const properties = schema.$defs?.InterfaceLimitsV0?.properties;
+  requireCondition(objectValue(properties), "interface limits are absent");
+  const limits = {};
+  for (const [name, row] of Object.entries(properties)) {
+    requireCondition(objectValue(row) && typeof row.const === "string", `non-literal limit: ${name}`);
+    const parsed = Number(row.const);
+    requireCondition(Number.isSafeInteger(parsed) && parsed >= 0, `invalid limit: ${name}`);
+    limits[name] = parsed;
+  }
+  return limits;
+}
+
+
+function verifyCollectionTargetClosure(semantics) {
+  requireCondition(Array.isArray(semantics.rules), "semantic rules are absent");
+  const actual = new Set();
+  for (const row of semantics.rules) {
+    if (!["ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK", "DERIVED_ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK"].includes(row.rule)) continue;
+    requireCondition(Array.isArray(row.targets), "collection-bound target list is absent");
+    for (const target of row.targets) actual.add(target);
+  }
+  requireCondition(
+    JSON.stringify([...actual].sort()) === JSON.stringify([...IMPLEMENTED_COLLECTION_BOUND_TARGETS].sort()),
+    "implemented collection-bound target set drift",
+  );
+}
+
+
+function requireCollectionBound(value, maximum, label) {
+  if (Array.isArray(value)) requireCondition(value.length <= maximum, `collection exceeds ${label}`);
+}
+
+
+function preflightEvidenceCollections(evidence, limits) {
+  if (!objectValue(evidence)) return;
+  const content = evidence.contentMaterial;
+  requireCollectionBound(content, limits.RECORDS, "EvidenceProjectionV0.contentMaterial/RECORDS");
+  requireCollectionBound(evidence.openingMaterial, limits.RECORDS, "EvidenceProjectionV0.openingMaterial/RECORDS");
+  if (Array.isArray(content)) {
+    for (const row of content) {
+      if (objectValue(row)) requireCollectionBound(row.segments, limits.CHUNKS_PER_CONTENT, "ContentMaterialEvidenceV0.segments/CHUNKS_PER_CONTENT");
+    }
+  }
+}
+
+
+function preflightSnapshotCollections(snapshot, limits) {
+  if (!objectValue(snapshot)) return;
+  requireCollectionBound(snapshot.admittedCandidates, limits.RECORDS, "ProposedContextSnapshotV0.admittedCandidates/RECORDS");
+  preflightEvidenceCollections(snapshot.evidence, limits);
+  const projection = snapshot.projection;
+  if (!objectValue(projection)) return;
+  const fieldLimits = {
+    records: limits.RECORDS,
+    recordOutcomes: limits.RECORDS,
+    credentialBindings: limits.RECORDS + 1,
+    aliasGroups: Math.floor((limits.RECORDS + 1) / 2),
+    appliedControlReferences: limits.CONTROL_EVENTS,
+    reductionStandings: limits.CONTROL_EVENTS,
+    eventAuthority: limits.RECORDS,
+    revokedCredentialIdentifiers: limits.CREDENTIALS,
+    terminatedCredentialIdentifiers: limits.CREDENTIALS,
+    forkedCredentialIdentifiers: limits.CREDENTIALS,
+    forkJoins: limits.FORK_SLOTS,
+    pendingRootReferences: limits.PENDING_ROOTS,
+    pendingReferences: limits.PENDING_DESCENDANTS,
+    contentStates: limits.RECORDS,
+    replayDependencyReferences: limits.RECORDS,
+  };
+  for (const [field, maximum] of Object.entries(fieldLimits)) {
+    requireCollectionBound(projection[field], maximum, `ContextProjectionV0.${field}`);
+  }
+  if (Array.isArray(projection.records)) {
+    for (const row of projection.records) {
+      if (objectValue(row)) requireCollectionBound(row.causalParentReferences, limits.PARENTS_PER_EVENT, "ApplicationEventProjectionV0.causalParentReferences/PARENTS_PER_EVENT");
+    }
+  }
+  if (Array.isArray(projection.aliasGroups)) {
+    let totalMembers = 0;
+    for (const group of projection.aliasGroups) {
+      requireCollectionBound(group, limits.RECORDS + 1, "AliasGroupV0/RECORDS+1");
+      if (Array.isArray(group)) totalMembers += group.length;
+    }
+    requireCondition(totalMembers <= limits.RECORDS + 1, "collection exceeds alias-group membership bound");
+  }
+  if (Array.isArray(projection.forkJoins)) {
+    for (const row of projection.forkJoins) {
+      if (!objectValue(row)) continue;
+      requireCollectionBound(row.siblingReferences, limits.SIBLINGS_PER_FORK, "ForkJoinProjectionV0.siblingReferences/SIBLINGS_PER_FORK");
+      requireCollectionBound(row.lineageClosureCredentialIdentifiers, limits.CREDENTIALS, "ForkJoinProjectionV0.lineageClosureCredentialIdentifiers/CREDENTIALS");
+    }
+  }
+  if (objectValue(projection.authority)) {
+    for (const field of ["possibleCredentialIdentifiers", "necessaryCredentialIdentifiers", "terminalCredentialIdentifiers"]) {
+      requireCollectionBound(projection.authority[field], limits.CREDENTIALS, `AuthorityAvailableV0.${field}/CREDENTIALS`);
+    }
+  }
+}
+
+
+function preflightCollections(input, schema, semantics) {
+  exactKeys(input, ["direction", "message"], "collection preflight input");
+  requireCondition(["REQUEST", "RESPONSE"].includes(input.direction), "invalid collection preflight direction");
+  requireCondition(objectValue(input.message), "collection preflight message is not an object");
+  verifyCollectionTargetClosure(semantics);
+  const limits = interfaceLimits(schema);
+  const message = input.message;
+  if (input.direction === "REQUEST") {
+    const value = message.input;
+    if (!objectValue(value)) return { verdict: "PASS" };
+    if (message.operation === "REPLAY_CONTEXT") {
+      requireCollectionBound(value.candidates, limits.RECORDS, "ReplayContextInputV0.candidates/RECORDS");
+      preflightEvidenceCollections(value.evidence, limits);
+    } else if (message.operation === "EVALUATE_CANDIDATE") {
+      preflightSnapshotCollections(value.prior, limits);
+      preflightEvidenceCollections(value.evidence, limits);
+    } else if (message.operation === "EVALUATE_EVIDENCE_UPDATE") {
+      preflightSnapshotCollections(value.prior, limits);
+      preflightEvidenceCollections(value.additions, limits);
+    }
+  } else {
+    const result = message.result;
+    let successor = null;
+    if (objectValue(result) && message.operation === "REPLAY_CONTEXT") successor = result.proposedContext;
+    else if (objectValue(result) && ["EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"].includes(message.operation)) {
+      const evaluation = result.evaluation;
+      if (objectValue(evaluation) && objectValue(evaluation.proposal)) successor = evaluation.proposal.successor;
+    }
+    preflightSnapshotCollections(successor, limits);
+  }
+  return { verdict: "PASS" };
+}
+
+
 const OBSERVATION_ENUMS = Object.freeze({
   transcriptVerification: ["VALID", "REJECTED"],
   referenceVerification: ["VALID", "REJECTED", "NOT_REACHED"],
@@ -681,6 +850,7 @@ function parseArguments(argv) {
   let graphProjectionMode = false;
   let credentialProjectionMode = false;
   let validateResponseMode = false;
+  let preflightCollectionsMode = false;
   let contractPath = null;
   for (let index = 0; index < argv.length; index += 1) {
     if (argv[index] === "--self-test-acv066") selfTest = true;
@@ -689,19 +859,20 @@ function parseArguments(argv) {
     else if (argv[index] === "--graph-projection") graphProjectionMode = true;
     else if (argv[index] === "--credential-projection") credentialProjectionMode = true;
     else if (argv[index] === "--validate-response") validateResponseMode = true;
+    else if (argv[index] === "--preflight-collections") preflightCollectionsMode = true;
     else if (argv[index] === "--contract") contractPath = argv[++index];
     else throw new AdapterFailure(`unknown argument: ${argv[index]}`);
   }
   requireCondition(
     Number(selfTest) + Number(deriveForkJoin) + Number(authorityMetricsMode)
       + Number(graphProjectionMode) + Number(credentialProjectionMode)
-      + Number(validateResponseMode) === 1,
+      + Number(validateResponseMode) + Number(preflightCollectionsMode) === 1,
     "exactly one adapter mode is required",
   );
   requireCondition(contractPath, "--contract is required");
   return {
     authorityMetricsMode, contractPath, credentialProjectionMode, deriveForkJoin,
-    graphProjectionMode, selfTest, validateResponseMode,
+    graphProjectionMode, preflightCollectionsMode, selfTest, validateResponseMode,
   };
 }
 
@@ -709,7 +880,7 @@ function parseArguments(argv) {
 try {
   const {
     authorityMetricsMode, contractPath, credentialProjectionMode, deriveForkJoin,
-    graphProjectionMode, selfTest, validateResponseMode,
+    graphProjectionMode, preflightCollectionsMode, selfTest, validateResponseMode,
   } = parseArguments(process.argv.slice(2));
   const resolvedContract = path.resolve(contractPath);
   if (selfTest) {
@@ -732,6 +903,11 @@ try {
     const input = JSON.parse(fs.readFileSync(0, "utf8"));
     validateBeforeRelease(input, relations);
     process.stdout.write(`${JSON.stringify({ verdict: "PASS" })}\n`);
+  } else if (preflightCollectionsMode) {
+    const schema = readJson(path.join(resolvedContract, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json"));
+    const semantics = readJson(path.join(resolvedContract, "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json"));
+    const input = JSON.parse(fs.readFileSync(0, "utf8"));
+    process.stdout.write(`${JSON.stringify(preflightCollections(input, schema, semantics))}\n`);
   }
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);

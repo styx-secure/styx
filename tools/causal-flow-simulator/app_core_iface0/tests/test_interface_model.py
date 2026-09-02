@@ -580,6 +580,47 @@ class InterfaceModelTests(unittest.TestCase):
         with self.assertRaises(RequestRejected):
             validate_request_structure(self.authority, too_large)
 
+    def test_collection_bounds_fail_before_item_validation_and_release(self) -> None:
+        over_bound_replay = {
+            "interfaceVersion": "0",
+            "operation": "REPLAY_CONTEXT",
+            "profile": dict(SUPPORTED_PROFILE),
+            "input": {
+                "proposedGenesis": {},
+                # Deliberately malformed elements prove the count check wins
+                # before schema item validation or transcript work.
+                "candidates": [{} for _ in range(129)],
+                "evidence": {"contentMaterial": [], "openingMaterial": []},
+            },
+        }
+        with self.assertRaises(RequestRejected):
+            validate_request_structure(self.authority, over_bound_replay)
+
+        proposed, candidate = self._replay_fixture(event_type=1)
+        released = replay_context(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {
+                "proposedGenesis": proposed,
+                "candidates": [candidate],
+                "evidence": {"contentMaterial": [], "openingMaterial": []},
+            },
+        )
+        response = {
+            "interfaceVersion": "0",
+            "operation": "REPLAY_CONTEXT",
+            "profile": dict(SUPPORTED_PROFILE),
+            "result": released,
+        }
+        record = response["result"]["proposedContext"]["projection"]["records"][0]
+        response["result"]["proposedContext"]["projection"]["records"] = [
+            json.loads(json.dumps(record)) for _ in range(129)
+        ]
+        with self.assertRaisesRegex(
+            HarnessFailure, "exceeds ContextProjectionV0.records"
+        ):
+            validate_response_before_release(self.authority, response)
+
     def _replay_fixture(
         self, *, event_type: int | None = None
     ) -> tuple[dict[str, object], dict[str, str] | None]:

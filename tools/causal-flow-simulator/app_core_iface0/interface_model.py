@@ -54,6 +54,37 @@ EXTERNAL_BOUNDARIES = [
     "GENESIS_CEREMONY_PROMOTION",
     "DURABLE_COMMIT_FINALIZATION",
 ]
+IMPLEMENTED_COLLECTION_BOUND_TARGETS = frozenset(
+    {
+        "$defs.AliasGroupV0.allOf[0]",
+        "$defs.ApplicationEventProjectionV0.causalParentReferences",
+        "$defs.AuthorityAvailableV0.necessaryCredentialIdentifiers",
+        "$defs.AuthorityAvailableV0.possibleCredentialIdentifiers",
+        "$defs.AuthorityAvailableV0.terminalCredentialIdentifiers",
+        "$defs.ContentMaterialEvidenceV0.segments",
+        "$defs.ContextProjectionV0.aliasGroups",
+        "$defs.ContextProjectionV0.appliedControlReferences",
+        "$defs.ContextProjectionV0.contentStates",
+        "$defs.ContextProjectionV0.credentialBindings",
+        "$defs.ContextProjectionV0.eventAuthority",
+        "$defs.ContextProjectionV0.forkJoins",
+        "$defs.ContextProjectionV0.forkedCredentialIdentifiers",
+        "$defs.ContextProjectionV0.pendingReferences",
+        "$defs.ContextProjectionV0.pendingRootReferences",
+        "$defs.ContextProjectionV0.recordOutcomes",
+        "$defs.ContextProjectionV0.records",
+        "$defs.ContextProjectionV0.reductionStandings",
+        "$defs.ContextProjectionV0.replayDependencyReferences",
+        "$defs.ContextProjectionV0.revokedCredentialIdentifiers",
+        "$defs.ContextProjectionV0.terminatedCredentialIdentifiers",
+        "$defs.EvidenceProjectionV0.contentMaterial",
+        "$defs.EvidenceProjectionV0.openingMaterial",
+        "$defs.ForkJoinProjectionV0.lineageClosureCredentialIdentifiers",
+        "$defs.ForkJoinProjectionV0.siblingReferences",
+        "$defs.ProposedContextSnapshotV0.admittedCandidates",
+        "$defs.ReplayContextInputV0.candidates",
+    }
+)
 
 
 class InterfaceModelError(ValueError):
@@ -258,6 +289,23 @@ class ContractAuthority:
         )
         if envelope.get("candidate_id") != "balanced":
             raise InterfaceModelError("selected resource envelope is not balanced")
+        semantics = _read_json(
+            package / "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json"
+        )
+        collection_targets = {
+            target
+            for row in semantics.get("rules", [])
+            if isinstance(row, dict)
+            and row.get("rule")
+            in {
+                "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+                "DERIVED_ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+            }
+            for target in row.get("targets", [])
+            if isinstance(target, str)
+        }
+        if collection_targets != IMPLEMENTED_COLLECTION_BOUND_TARGETS:
+            raise InterfaceModelError("implemented collection-bound target set drift")
         return cls(root, package, schema, envelope, dependencies)
 
     def dependency(self, path: str) -> NativeDependency:
@@ -543,6 +591,200 @@ def _request_validator(authority: ContractAuthority) -> Draft202012Validator:
     )
 
 
+def _require_collection_bound(
+    value: Any,
+    maximum: int,
+    *,
+    label: str,
+    request_side: bool,
+) -> None:
+    """Reject an over-bound array before inspecting any of its members."""
+
+    if isinstance(value, list) and len(value) > maximum:
+        if request_side:
+            raise RequestRejected()
+        raise HarnessFailure(f"generated response exceeds {label}")
+
+
+def _preflight_evidence_collections(
+    authority: ContractAuthority,
+    evidence: Any,
+    *,
+    request_side: bool,
+) -> None:
+    if not isinstance(evidence, dict):
+        return
+    limits = {name: int(value) for name, value in authority.interface_limits().items()}
+    content = evidence.get("contentMaterial")
+    opening = evidence.get("openingMaterial")
+    _require_collection_bound(
+        content,
+        limits["RECORDS"],
+        label="EvidenceProjectionV0.contentMaterial/RECORDS",
+        request_side=request_side,
+    )
+    _require_collection_bound(
+        opening,
+        limits["RECORDS"],
+        label="EvidenceProjectionV0.openingMaterial/RECORDS",
+        request_side=request_side,
+    )
+    if isinstance(content, list):
+        for row in content:
+            if isinstance(row, dict):
+                _require_collection_bound(
+                    row.get("segments"),
+                    limits["CHUNKS_PER_CONTENT"],
+                    label="ContentMaterialEvidenceV0.segments/CHUNKS_PER_CONTENT",
+                    request_side=request_side,
+                )
+
+
+def _preflight_snapshot_collections(
+    authority: ContractAuthority,
+    snapshot: Any,
+    *,
+    request_side: bool,
+) -> None:
+    """Enforce every request/response-reachable ACV-008..012 array bound."""
+
+    if not isinstance(snapshot, dict):
+        return
+    limits = {name: int(value) for name, value in authority.interface_limits().items()}
+    records_limit = limits["RECORDS"]
+    _require_collection_bound(
+        snapshot.get("admittedCandidates"),
+        records_limit,
+        label="ProposedContextSnapshotV0.admittedCandidates/RECORDS",
+        request_side=request_side,
+    )
+    _preflight_evidence_collections(
+        authority, snapshot.get("evidence"), request_side=request_side
+    )
+    projection = snapshot.get("projection")
+    if not isinstance(projection, dict):
+        return
+
+    field_limits = {
+        "records": records_limit,
+        "recordOutcomes": records_limit,
+        "credentialBindings": records_limit + 1,
+        "aliasGroups": (records_limit + 1) // 2,
+        "appliedControlReferences": limits["CONTROL_EVENTS"],
+        "reductionStandings": limits["CONTROL_EVENTS"],
+        "eventAuthority": records_limit,
+        "revokedCredentialIdentifiers": limits["CREDENTIALS"],
+        "terminatedCredentialIdentifiers": limits["CREDENTIALS"],
+        "forkedCredentialIdentifiers": limits["CREDENTIALS"],
+        "forkJoins": limits["FORK_SLOTS"],
+        "pendingRootReferences": limits["PENDING_ROOTS"],
+        "pendingReferences": limits["PENDING_DESCENDANTS"],
+        "contentStates": records_limit,
+        "replayDependencyReferences": records_limit,
+    }
+    for field, maximum in field_limits.items():
+        _require_collection_bound(
+            projection.get(field),
+            maximum,
+            label=f"ContextProjectionV0.{field}",
+            request_side=request_side,
+        )
+
+    records = projection.get("records")
+    if isinstance(records, list):
+        for row in records:
+            if isinstance(row, dict):
+                _require_collection_bound(
+                    row.get("causalParentReferences"),
+                    limits["PARENTS_PER_EVENT"],
+                    label="ApplicationEventProjectionV0.causalParentReferences/PARENTS_PER_EVENT",
+                    request_side=request_side,
+                )
+
+    alias_groups = projection.get("aliasGroups")
+    if isinstance(alias_groups, list):
+        total_members = 0
+        for group in alias_groups:
+            _require_collection_bound(
+                group,
+                records_limit + 1,
+                label="AliasGroupV0/RECORDS+1",
+                request_side=request_side,
+            )
+            if isinstance(group, list):
+                total_members += len(group)
+        if total_members > records_limit + 1:
+            if request_side:
+                raise RequestRejected()
+            raise HarnessFailure("generated response exceeds alias-group membership bound")
+
+    fork_joins = projection.get("forkJoins")
+    if isinstance(fork_joins, list):
+        for row in fork_joins:
+            if not isinstance(row, dict):
+                continue
+            _require_collection_bound(
+                row.get("siblingReferences"),
+                limits["SIBLINGS_PER_FORK"],
+                label="ForkJoinProjectionV0.siblingReferences/SIBLINGS_PER_FORK",
+                request_side=request_side,
+            )
+            _require_collection_bound(
+                row.get("lineageClosureCredentialIdentifiers"),
+                limits["CREDENTIALS"],
+                label="ForkJoinProjectionV0.lineageClosureCredentialIdentifiers/CREDENTIALS",
+                request_side=request_side,
+            )
+
+    authority_projection = projection.get("authority")
+    if isinstance(authority_projection, dict):
+        for field in (
+            "possibleCredentialIdentifiers",
+            "necessaryCredentialIdentifiers",
+            "terminalCredentialIdentifiers",
+        ):
+            _require_collection_bound(
+                authority_projection.get(field),
+                limits["CREDENTIALS"],
+                label=f"AuthorityAvailableV0.{field}/CREDENTIALS",
+                request_side=request_side,
+            )
+
+
+def _preflight_request_collections(
+    authority: ContractAuthority, request: Mapping[str, Any]
+) -> None:
+    operation = request.get("operation")
+    value = request.get("input")
+    if not isinstance(value, dict):
+        return
+    limits = {name: int(item) for name, item in authority.interface_limits().items()}
+    if operation == "REPLAY_CONTEXT":
+        _require_collection_bound(
+            value.get("candidates"),
+            limits["RECORDS"],
+            label="ReplayContextInputV0.candidates/RECORDS",
+            request_side=True,
+        )
+        _preflight_evidence_collections(
+            authority, value.get("evidence"), request_side=True
+        )
+    elif operation == "EVALUATE_CANDIDATE":
+        _preflight_snapshot_collections(
+            authority, value.get("prior"), request_side=True
+        )
+        _preflight_evidence_collections(
+            authority, value.get("evidence"), request_side=True
+        )
+    elif operation == "EVALUATE_EVIDENCE_UPDATE":
+        _preflight_snapshot_collections(
+            authority, value.get("prior"), request_side=True
+        )
+        _preflight_evidence_collections(
+            authority, value.get("additions"), request_side=True
+        )
+
+
 def validate_request_structure(
     authority: ContractAuthority, request: dict[str, Any]
 ) -> None:
@@ -550,6 +792,7 @@ def validate_request_structure(
 
     if not isinstance(request, dict):
         raise RequestRejected()
+    _preflight_request_collections(authority, request)
     candidate = request.get("input", {}).get("candidate")
     if isinstance(candidate, dict):
         signature = candidate.get("signatureHex")
@@ -2683,6 +2926,22 @@ def _validate_response_shape_and_relation(
     is defined as this otherwise-complete validator with only the separate
     reserved-reachability detector removed.
     """
+
+    operation = response.get("operation")
+    result = response.get("result")
+    if isinstance(result, dict):
+        successor: Any = None
+        if operation == "REPLAY_CONTEXT":
+            successor = result.get("proposedContext")
+        elif operation in {"EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"}:
+            evaluation = result.get("evaluation")
+            if isinstance(evaluation, dict):
+                proposal = evaluation.get("proposal")
+                if isinstance(proposal, dict):
+                    successor = proposal.get("successor")
+        _preflight_snapshot_collections(
+            authority, successor, request_side=False
+        )
 
     validator = Draft202012Validator(
         {
