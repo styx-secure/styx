@@ -13,6 +13,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from generate_structural_witnesses import (  # noqa: E402
+    _PARENT_RESOLVED_ARRAY_INSERTION_FAMILIES,
+    _resolve_data_pointer,
     derive_phase_b_registries,
     derive_seed_registry,
     derive_structural_plan,
@@ -93,6 +95,9 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         cls._temporary = tempfile.TemporaryDirectory()
         cls.evidence = Path(cls._temporary.name) / "evidence"
         generate_phase_a(ROOT.parents[2], ROOT / "contract", cls.evidence)
+        cls.phase_b_seeds, cls.phase_b_registry = derive_phase_b_registries(
+            ROOT.parents[2], ROOT / "contract", cls.evidence
+        )
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -147,9 +152,7 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         self.assertEqual(registry, repeated)
 
     def test_stored_witness_ids_are_recomputed_before_consumption(self) -> None:
-        _seeds, registry = derive_phase_b_registries(
-            ROOT.parents[2], ROOT / "contract", self.evidence
-        )
+        registry = self.phase_b_registry
         validate_structural_witness_identifiers(registry)
         mutations = {
             "wrong namespace": ("assertionId", "DET-REQUIRED-PROPERTY-OMISSION--0001"),
@@ -163,6 +166,67 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
                 candidate["rows"][0][field] = value
                 with self.assertRaisesRegex(WitnessGenerationError, field):
                     validate_structural_witness_identifiers(candidate)
+
+    def test_every_witness_target_has_a_real_carrier_parent(self) -> None:
+        inventory = json.loads(
+            (self.evidence / "positive-carrier-inventory.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        carrier_files = {
+            row["caseId"]: row["carrierFile"] for row in inventory["cases"]
+        }
+        inserted_arrays = {
+            "STR-REF-TARGET-CONSTRAINT--0001",
+            "STR-REF-TARGET-CONSTRAINT--0015",
+            "STR-REF-TARGET-CONSTRAINT--0063",
+            "STR-REF-TARGET-CONSTRAINT--0068",
+            "STR-REF-TARGET-CONSTRAINT--0071",
+            "STR-REF-TARGET-CONSTRAINT--0073",
+            "STR-REF-TARGET-CONSTRAINT--0074",
+            "STR-REF-TARGET-CONSTRAINT--0078",
+            "STR-REF-TARGET-CONSTRAINT--0079",
+            "STR-REF-TARGET-CONSTRAINT--0080",
+            "STR-REF-TARGET-CONSTRAINT--0093",
+            "STR-REF-TARGET-CONSTRAINT--0113",
+            "STR-REF-TARGET-CONSTRAINT--0114",
+            "STR-REF-TARGET-CONSTRAINT--0198",
+            "STR-REF-TARGET-CONSTRAINT--0210",
+            "STR-MIN-ITEMS-UNDERFLOW--0001",
+            "STR-ALL-OF-BRANCH-CONSTRAINT--0001",
+            "STR-ALL-OF-BRANCH-CONSTRAINT--0002",
+            "STR-ALL-OF-BRANCH-CONSTRAINT--0004",
+            "STR-ALL-OF-BRANCH-CONSTRAINT--0005",
+            "STR-ALL-OF-BRANCH-CONSTRAINT--0006",
+            "STR-ALL-OF-BRANCH-CONSTRAINT--0007",
+        }
+        observed_array_insertions: set[str] = set()
+        for row in self.phase_b_registry["rows"]:
+            carrier = json.loads(
+                (self.evidence / carrier_files[row["carrierCaseId"]]).read_text(
+                    encoding="utf-8"
+                )
+            )
+            target = row["targetJsonPointer"]
+            try:
+                _resolve_data_pointer(carrier, target)
+                continue
+            except (KeyError, IndexError, TypeError, ValueError):
+                pass
+            parent_pointer, token = target.rsplit("/", 1)
+            parent = _resolve_data_pointer(carrier, parent_pointer)
+            if isinstance(parent, dict):
+                self.assertNotIn(token, parent, row["instanceId"])
+            else:
+                self.assertIsInstance(parent, list, row["instanceId"])
+                self.assertTrue(token.isdecimal(), row["instanceId"])
+                self.assertEqual(int(token), len(parent), row["instanceId"])
+                self.assertIn(
+                    row["structuralRuleId"],
+                    _PARENT_RESOLVED_ARRAY_INSERTION_FAMILIES,
+                )
+                observed_array_insertions.add(row["instanceId"])
+        self.assertEqual(observed_array_insertions, inserted_arrays)
 
 
 if __name__ == "__main__":

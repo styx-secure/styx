@@ -323,6 +323,14 @@ _PARENT_KEYWORD_FAMILIES = frozenset(
     }
 )
 
+_PARENT_RESOLVED_ARRAY_INSERTION_FAMILIES = frozenset(
+    {
+        "STR-ALL-OF-BRANCH-CONSTRAINT",
+        "STR-MIN-ITEMS-UNDERFLOW",
+        "STR-REF-TARGET-CONSTRAINT",
+    }
+)
+
 
 def _instance_schema_target(instance: Any) -> tuple[str, str, str | None]:
     """Map a structural source identity to its constrained data location."""
@@ -376,6 +384,27 @@ def _witness_target_locations(
         direct = synthesizer.target_locations(root, carrier, schema_pointer)
         if direct:
             return direct
+        # A constraint inside an `if` predicate is not visited by
+        # SchemaSynthesizer.target_locations(), which follows only the active
+        # then/else branch.  Bind its direct property to an actually
+        # materialized enclosing object instead of fabricating a path.
+        conditional_marker = "/if/properties/"
+        if conditional_marker in schema_pointer and "/allOf/" in schema_pointer:
+            owner_pointer = schema_pointer.split("/allOf/", 1)[0]
+            property_tail = schema_pointer.split(conditional_marker, 1)[1]
+            if "/" not in property_tail:
+                property_name = _unescape(property_tail)
+                result = []
+                for owner in synthesizer.target_locations(
+                    root, carrier, owner_pointer
+                ):
+                    owner_value = _resolve_data_pointer(carrier, owner)
+                    if isinstance(owner_value, dict) and property_name in owner_value:
+                        result.append(_join(owner, property_name))
+                if result:
+                    return sorted(
+                        set(result), key=lambda value: value.encode("utf-8")
+                    )
         # Optional declared properties need not occur in a positive carrier.
         # Their hostile witness inserts the selected palette value at the
         # otherwise exact property location; the containing object remains the
@@ -393,12 +422,36 @@ def _witness_target_locations(
                     result.append(_join(owner, property_name))
                 if result:
                     return sorted(set(result), key=lambda value: value.encode("utf-8"))
-        key = (root["rootId"], mode, schema_pointer, property_name)
-        if key not in prospective_cache:
-            prospective_cache[key] = _prospective_target_locations(
-                synthesizer, root, mode, schema_pointer, property_name
-            )
-        return prospective_cache[key]
+        # A prospective schema path is not by itself evidence that a positive
+        # carrier contains the target.  An insertion at the next array index is
+        # eligible only for the three structural families that explicitly
+        # construct an item value and only when the exact parent array exists.
+        # This covers an empty optional array without permitting deeper absent
+        # shapes or a lexicographically early carrier with a missing parent.
+        if instance.family_id in _PARENT_RESOLVED_ARRAY_INSERTION_FAMILIES:
+            key = (root["rootId"], mode, schema_pointer, property_name)
+            if key not in prospective_cache:
+                prospective_cache[key] = _prospective_target_locations(
+                    synthesizer, root, mode, schema_pointer, property_name
+                )
+            eligible = []
+            for target in prospective_cache[key]:
+                if "/" not in target:
+                    continue
+                parent_pointer, index_token = target.rsplit("/", 1)
+                try:
+                    parent = _resolve_data_pointer(carrier, parent_pointer)
+                except (KeyError, IndexError, TypeError, ValueError):
+                    continue
+                if (
+                    isinstance(parent, list)
+                    and index_token.isdecimal()
+                    and int(index_token) == len(parent)
+                ):
+                    eligible.append(target)
+            if eligible:
+                return sorted(set(eligible), key=lambda value: value.encode("utf-8"))
+        return []
     result: list[str] = []
     for owner_pointer in synthesizer.target_locations(root, carrier, schema_pointer):
         owner = _resolve_data_pointer(carrier, owner_pointer)
