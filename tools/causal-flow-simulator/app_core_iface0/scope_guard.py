@@ -32,6 +32,8 @@ SUBTREE = "tools/causal-flow-simulator/app_core_iface0/"
 IMPLEMENTATION_FILES = frozenset(
     {
         "README.md",
+        "authority_projection.py",
+        "authority_witness.py",
         "canonical_json.py",
         "canonical_report.py",
         "derive_interface_maxima.py",
@@ -50,6 +52,7 @@ IMPLEMENTATION_FILES = frozenset(
 )
 TEST_FILES = frozenset(
     {
+        "test_authority_projection.py",
         "test_canonical_json.py",
         "test_contract_package.py",
         "test_cross_runtime.py",

@@ -127,6 +127,8 @@ class NativeDependency:
     sha256: str
     file_mode: str
     git_blob_oid: str
+    byte_size: int
+    mutation_policy: str
 
 
 @dataclass(frozen=True)
@@ -225,6 +227,8 @@ def _dependency_rows(contract: Path) -> tuple[NativeDependency, ...]:
                     sha256=row["sha256"],
                     file_mode=row["fileMode"],
                     git_blob_oid=row["gitBlobOid"],
+                    byte_size=row["byteSize"],
+                    mutation_policy=row["mutationPolicy"],
                 )
             )
         except KeyError as error:
@@ -235,17 +239,20 @@ def _dependency_rows(contract: Path) -> tuple[NativeDependency, ...]:
 
 
 def verify_native_authority(repo_root: Path, contract: Path) -> None:
-    """Verify every provider-bound Base artifact before request evaluation."""
+    """Verify Base authority and role-specific working-tree obligations."""
 
     root = repo_root.resolve()
+    seeded_extension_paths = {
+        "docs/protocol/review/README.md",
+        "docs/protocol/review/styx-app-kernel-v0-review-model.json",
+        "docs/protocol/review/styx-app-kernel-v0-review-model.schema.json",
+        "tools/protocol-review-model/validate.py",
+    }
     for dependency in _dependency_rows(contract):
         path = root / dependency.path
         if not path.is_file() or path.is_symlink():
             raise InterfaceModelError(f"invalid native dependency: {dependency.path}")
-        raw = path.read_bytes()
-        if _sha256(raw) != dependency.sha256:
-            raise InterfaceModelError(f"native dependency digest drift: {dependency.path}")
-        completed = subprocess.run(
+        tree_entry = subprocess.run(
             ["git", "ls-tree", BASE_SHA, "--", dependency.path],
             cwd=root,
             check=False,
@@ -258,8 +265,38 @@ def verify_native_authority(repo_root: Path, contract: Path) -> None:
             f"{dependency.file_mode} blob {dependency.git_blob_oid}"
             f"\t{dependency.path}\n"
         )
-        if completed.returncode != 0 or completed.stdout != expected:
+        if tree_entry.returncode != 0 or tree_entry.stdout != expected:
             raise InterfaceModelError(f"native dependency Git identity drift: {dependency.path}")
+        base_blob = subprocess.run(
+            ["git", "cat-file", "blob", dependency.git_blob_oid],
+            cwd=root,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        if (
+            base_blob.returncode != 0
+            or len(base_blob.stdout) != dependency.byte_size
+            or _sha256(base_blob.stdout) != dependency.sha256
+        ):
+            raise InterfaceModelError(
+                f"native dependency Base bytes drift: {dependency.path}"
+            )
+        if dependency.mutation_policy == "READ_ONLY_BYTE_IDENTICAL":
+            if path.read_bytes() != base_blob.stdout:
+                raise InterfaceModelError(
+                    f"read-only native dependency drift: {dependency.path}"
+                )
+        elif dependency.mutation_policy == "SEEDED_EXTENSION_ONLY_PRESERVE_BASE_SEMANTICS":
+            if dependency.path not in seeded_extension_paths:
+                raise InterfaceModelError(
+                    f"unauthorized seeded-extension path: {dependency.path}"
+                )
+        else:
+            raise InterfaceModelError(
+                f"unknown native dependency mutation policy: {dependency.path}"
+            )
 
 
 @dataclass(frozen=True)
@@ -1794,7 +1831,7 @@ def _replay_graph_capacity_failure(
     candidates: tuple[ReplayCandidate, ...],
     unverified_required: frozenset[str],
 ) -> dict[str, str] | None:
-    """Apply the four reachable V9 S4 rows in literal first-failure order."""
+    """Apply the five reachable V14 S4 rows in literal first-failure order."""
 
     limits = {key: int(value) for key, value in authority.interface_limits().items()}
     parent_offenders = sorted(
@@ -1836,6 +1873,12 @@ def _replay_graph_capacity_failure(
         for reference in references
     )
     if evidence_offenders:
+        return _candidate_terminal(
+            "CONTEXT_CAPACITY_EXHAUSTED",
+            "S4_GRAPH_ADMISSION|S6_DURABLE_COMMIT",
+        )
+
+    if len(candidates) > limits["RECORDS"]:
         return _candidate_terminal(
             "CONTEXT_CAPACITY_EXHAUSTED",
             "S4_GRAPH_ADMISSION|S6_DURABLE_COMMIT",

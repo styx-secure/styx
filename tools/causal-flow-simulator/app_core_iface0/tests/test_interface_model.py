@@ -1125,6 +1125,30 @@ class InterfaceModelTests(unittest.TestCase):
             "DEPENDENCY_DEFERRED",
         )
 
+        retained = tuple(
+            ReplayCandidate(
+                {
+                    "objectKind": "APPLICATION_EVENT",
+                    "signatureHex": "",
+                    "transcriptHex": "",
+                },
+                f"{index + 1:064x}",
+                b"",
+                self._application_fields(authorSequence=index),
+            )
+            for index in range(129)
+        )
+        self.assertEqual(
+            _replay_graph_capacity_failure(
+                self.authority, retained, frozenset()
+            ),
+            {
+                "kind": "TERMINAL_CANDIDATE_REJECTED",
+                "primary": "CONTEXT_CAPACITY_EXHAUSTED",
+                "stage": "S4_GRAPH_ADMISSION|S6_DURABLE_COMMIT",
+            },
+        )
+
     def test_replay_preserves_required_pending_but_rejects_unopened_detachable(self) -> None:
         backend = _load_pinned_c03_model(str(self.authority.repo_root))
         proposed, _ = self._replay_fixture()

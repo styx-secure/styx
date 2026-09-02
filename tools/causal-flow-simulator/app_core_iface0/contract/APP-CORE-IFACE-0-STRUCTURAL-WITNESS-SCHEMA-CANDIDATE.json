@@ -79,6 +79,7 @@
         "STR-CONST-SUBSTITUTION",
         "STR-DUPLICATE-JSON-PROPERTY",
         "STR-ITEM-CONSTRAINT-VIOLATION",
+        "STR-MAX-ITEMS-OVERFLOW",
         "STR-MAX-LENGTH-OVERFLOW",
         "STR-MAX-PROPERTIES-OVERFLOW",
         "STR-MIN-ITEMS-UNDERFLOW",
@@ -180,7 +181,8 @@
             "VIOLATE_ALLOF_ARM",
             "CONDITIONAL_MATRIX_ROW",
             "MATCH_FORBIDDEN_NOT_SUBSCHEMA",
-            "EXCEED_MAX_PROPERTIES"
+            "EXCEED_MAX_PROPERTIES",
+            "OVERFLOW_MAX_ITEMS"
           ]
         },
         "isolationMode": {

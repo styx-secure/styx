@@ -73,7 +73,7 @@ class Derivation:
         require(self.envelope.get("candidate_id") == "balanced", "unselected resource envelope")
         require(self.reachability.get("schemaSha256") == sha256(SCHEMA_PATH), "schema/reachability drift")
         require(self.reachability.get("rootCount") == 12, "carrier-root drift")
-        require(len(self.semantics.get("rules", [])) == 82, "semantic-rule drift")
+        require(len(self.semantics.get("rules", [])) == 83, "semantic-rule drift")
         self.limits = {
             name: int(row["selected_value"])
             for name, row in self.envelope["entries"].items()

@@ -21,7 +21,7 @@ The current candidates mechanically yield:
 | inline/union-arm property-bearing objects | 5 |
 | declared object properties | 323 |
 | directly required property occurrences | 322 |
-| semantic rules | 82 |
+| semantic rules | 83 |
 | custom-keyword occurrences | 26 |
 
 Conditional `required` predicates inside `ApplicationEventProjectionV0` do not
@@ -128,11 +128,11 @@ finite set of execution instances before the inventory can be frozen.
 structural rule families: 24
 SHA-256: 9624a24ff7a5b748afc66eca1c59e8deaf6db9cf37598523dd1d8ef8efdb450a
 
-semantic families: 82
-SHA-256: 938673940b5ae541e5f56a92714242899dd6e2b9063d4388b6f96b7174c86148
+semantic families: 83
+SHA-256: 78f4ebf3956a851f3b90b0bb97944100e608a575b8c27a96772f86ba186754a0
 
-combined rule families: 106
-SHA-256: 682d78187341090e7cd9992c012b08b5a8f76529c43ca4fcababa7812c152803
+combined rule families: 107
+SHA-256: b0a4d4ee1a657b84e850c13e9c51363006be21ebb23cc71613019625c5b907dc
 ```
 
 Each digest is over the lexicographically sorted UTF-8 identifiers, one
@@ -193,12 +193,12 @@ The current exact expansion is:
 
 ```text
 1,450 structural instances
-+ 5,147 semantic instances
-= 6,597 total structural-plus-semantic execution instances
++ 5,149 semantic instances
+= 6,599 total structural-plus-semantic execution instances
 ```
 
-The 82-row instance-axis registry has no unresolved axis and has SHA-256
-`83df5f9fad34141ae71ae3b34fc1b68b749e5c8e90e0357530780a18076b8b90`.
+The 83-row instance-axis registry has no unresolved axis and has SHA-256
+`04fd304ac6b23add64033b45282ac0d46fe09d44f92651881995f4727c9e0832`.
 
 ## Derived interface maxima
 
@@ -221,7 +221,7 @@ merged without retaining a second decoded copy.
 
 Its execution-phase partition is the working
 `APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256
-`cf2fbe4be7168e742aa789f58983a5ebf467831634eaf11d337857e849907e21`.
+`7dad552e9bcde710205302f72c81aac7ac98e350fc31cb4a11007739428cc0ed`.
 It prevents a response-only hygiene mutation or validator self-test from being
 misreported as an oracle-free blind-input comparison. The exact ACV-048 phase
 counts remain derived from the future 78-row seed-carrier directions.
@@ -257,7 +257,7 @@ definitions were unused aliases/meta-types and therefore could not honestly
 carry schema assertions or conformance evidence.
 
 The structural axis registry has SHA-256
-`fc2f602964fe3dfe247ee3aea480d9c102f0026820f736d13542af2df57c15e6`.
+`0eb8001eef76443d559d52f89e6761bd2329cac29c4514866f5aea8ba940ef56`.
 Its 1,450 count is frozen only after a populated witness registry maps every
 instance to an exact positive carrier, target pointer, perturbation and expected
 observation. Until then it is a closed derivation candidate, not execution

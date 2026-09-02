@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -13,11 +14,14 @@ from generate_seed_registry import (  # noqa: E402
     SchemaSynthesizer,
     _load_json,
     _ordered_roots,
+    generate_phase_a,
     prove_positive_carrier_closure,
     prove_reachability,
     prove_reference_round_trip,
 )
 from authority_witness import isolated_authority_states_witness  # noqa: E402
+from run_cross_runtime import build_report as build_javascript_release_report  # noqa: E402
+from run_probe import build_report as build_reference_probe_report  # noqa: E402
 
 
 class SeedReachabilityTests(unittest.TestCase):
@@ -492,6 +496,35 @@ class SeedReachabilityTests(unittest.TestCase):
             {item["primary"] for item in unavailable_body["outcomes"]},
             {"AUTHORITY_PROJECTION_UNAVAILABLE"},
         )
+
+
+class PhaseAReaderIntegrationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._temporary = tempfile.TemporaryDirectory()
+        cls.evidence = Path(cls._temporary.name) / "evidence"
+        generate_phase_a(ROOT.parents[2], ROOT / "contract", cls.evidence)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls._temporary.cleanup()
+
+    def test_reference_reader_freezes_all_requests_before_oracle_comparison(self) -> None:
+        report = build_reference_probe_report(
+            ROOT.parents[2], ROOT / "contract", self.evidence
+        )
+        self.assertEqual(report["verdict"], "PASS")
+        self.assertEqual(report["request_case_count"], 65)
+        self.assertEqual(report["response_case_count"], 15)
+        self.assertEqual(len(report["observations"]), 65)
+
+    def test_javascript_reader_admits_every_released_response(self) -> None:
+        report = build_javascript_release_report(
+            ROOT.parents[2], ROOT / "contract", self.evidence, "node"
+        )
+        self.assertEqual(report["verdict"], "PASS")
+        self.assertEqual(report["response_case_count"], 15)
+        self.assertRegex(report["response_set_sha256"], r"^[0-9a-f]{64}$")
 
 
 if __name__ == "__main__":

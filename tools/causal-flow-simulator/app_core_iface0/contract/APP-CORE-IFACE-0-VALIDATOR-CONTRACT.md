@@ -296,12 +296,12 @@ provider-bound exact bytes.
 
 ## Remaining pre-ratification closures
 
-The schema, 82-row semantic-instance-axis registry, 23-row content-axis,
+The schema, 83-row semantic-instance-axis registry, 23-row content-axis,
 25-row F13 primary/axis, 16-row transcript, 17-row genesis, 17-row signature
 verification-path and 33-row terminal-predicate relations are now
 literal working candidates. The relation expands the nine ACV-048 forbidden
 families through all 78 property-bearing object schemas. Together with the
-closed structural-keyword relation it derives 6,597 structural-plus-semantic
+closed structural-keyword relation it derives 6,599 structural-plus-semantic
 execution instances. They all require independent review and human ratification.
 
 Two literal execution outputs cannot exist before the repository increment

@@ -82,10 +82,11 @@
     { "id": "ACV-076", "mode": "PER_LITERAL_VALUE", "values": ["EVENT_OUTCOME_PRECEDENCE", "CONTEXT_STATE_PRECEDENCE"], "expectedCount": 2 },
     { "id": "ACV-077", "mode": "SINGLE_RELATION", "expectedCount": 1 },
     { "id": "ACV-078", "mode": "PER_LITERAL_RELATION_ROW", "axisSources": ["APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#authorityProjectionDimensionRelationV0"], "expectedCount": 16 },
-    { "id": "ACV-079", "mode": "PER_LITERAL_RELATION_ROW", "axisSources": ["APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#graphAdmissionDimensionRelationV0"], "expectedCount": 10 },
+    { "id": "ACV-079", "mode": "PER_LITERAL_RELATION_ROW", "axisSources": ["APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#graphAdmissionDimensionRelationV0"], "expectedCount": 11 },
     { "id": "ACV-080", "mode": "PER_LITERAL_VALUE", "values": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE", "EVALUATE_EVIDENCE_UPDATE"], "expectedCount": 3 },
     { "id": "ACV-081", "mode": "PER_LITERAL_VALUE", "values": ["NO_OPERATIONAL_AUTHORITY_ENTRY", "NO_OPERATIONAL_AUTHORITY_TO_AUTHORITY_UNAVAILABLE"], "expectedCount": 2 },
-    { "id": "ACV-082", "mode": "SINGLE", "expectedCount": 1 }
+    { "id": "ACV-082", "mode": "SINGLE", "expectedCount": 1 },
+    { "id": "ACV-083", "mode": "SINGLE", "expectedCount": 1 }
   ],
   "unresolvedAxes": []
 }

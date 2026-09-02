@@ -11,7 +11,9 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
+import importlib.metadata
 import json
+import platform
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -1300,6 +1302,367 @@ def prove_positive_carrier_closure(
     }
 
 
+TERMINAL_IMPLEMENTATION_FILES = (
+    "README.md",
+    "authority_projection.py",
+    "authority_witness.py",
+    "canonical_json.py",
+    "canonical_report.py",
+    "derive_interface_maxima.py",
+    "final_gate.py",
+    "generate_seed_registry.py",
+    "generate_structural_witnesses.py",
+    "interface_model.py",
+    "inventory.py",
+    "node_adapter.mjs",
+    "run_cross_runtime.py",
+    "run_mutations.py",
+    "run_probe.py",
+    "scope_guard.py",
+    "validate_inventory.py",
+)
+
+
+def _positive_population(
+    repo_root: Path, contract: Path
+) -> tuple[
+    dict[bytes, dict[str, Any]],
+    dict[bytes, dict[str, Any]],
+    dict[bytes, set[bytes]],
+    SchemaSynthesizer,
+    dict[str, dict[str, Any]],
+    dict[str, Any],
+]:
+    """Regenerate the closed request set and reference-derived responses."""
+
+    from interface_model import (
+        ContractAuthority,
+        HarnessFailure,
+        InterfaceModelError,
+        RequestRejected,
+        evaluate_interface_request,
+        validate_request_structure,
+        validate_response_before_release,
+    )
+
+    verify_contract_package(contract)
+    schema = _load_json(contract / "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json")
+    reachability = _load_json(
+        contract / "APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json"
+    )
+    roots = _ordered_roots(reachability)
+    synthesizer = SchemaSynthesizer(schema)
+    authority = ContractAuthority.load(repo_root, contract)
+
+    requests: dict[bytes, dict[str, Any]] = {}
+    for row in reachability["objectCoverage"]:
+        for root_id in sorted(row["eligibleRootIds"], key=ROOT_ORDER.index):
+            root = roots[root_id]
+            if root["direction"] != "REQUEST":
+                continue
+            carrier = synthesizer.carrier(
+                root, target_pointer=row["objectSchemaPointer"]
+            )
+            requests.setdefault(carrier.canonical_bytes, carrier.value)
+    for row in reachability["oneOfArmCoverage"]:
+        for root_id in sorted(row["eligibleRootIds"], key=ROOT_ORDER.index):
+            root = roots[root_id]
+            if root["direction"] != "REQUEST":
+                continue
+            carrier = synthesizer.carrier(
+                root,
+                arm_goal=(row["oneOfPointer"], int(row["armIndex"])),
+            )
+            requests.setdefault(carrier.canonical_bytes, carrier.value)
+    for request in _semantic_request_carriers(authority):
+        requests.setdefault(dumps(request), request)
+
+    responses: dict[bytes, dict[str, Any]] = {}
+    producers: dict[bytes, set[bytes]] = {}
+    for request_bytes, request in requests.items():
+        try:
+            validate_request_structure(authority, request)
+            response = evaluate_interface_request(authority, request)
+            validate_response_before_release(authority, response)
+        except (HarnessFailure, InterfaceModelError, RequestRejected) as error:
+            raise SeedGenerationError("positive carrier reference execution failed") from error
+        if response.get("operation") != request.get("operation"):
+            raise SeedGenerationError("reference response operation drift")
+        if response.get("profile") != request.get("profile"):
+            raise SeedGenerationError("reference response profile drift")
+        response_bytes = dumps(response)
+        responses.setdefault(response_bytes, response)
+        producers.setdefault(response_bytes, set()).add(request_bytes)
+
+    if len(requests) != 65 or len(responses) != 15:
+        raise SeedGenerationError(
+            f"positive population drift: requests={len(requests)} responses={len(responses)}"
+        )
+    return requests, responses, producers, synthesizer, roots, reachability
+
+
+def _case_ids(
+    carriers: dict[bytes, dict[str, Any]], direction: str
+) -> dict[bytes, str]:
+    grouped: dict[str, list[bytes]] = {operation: [] for operation in OPERATIONS}
+    for payload, value in carriers.items():
+        operation = value.get("operation")
+        if operation not in grouped:
+            raise SeedGenerationError("carrier operation is outside the closed registry")
+        grouped[operation].append(payload)
+    result: dict[bytes, str] = {}
+    for operation in OPERATIONS:
+        ordered = sorted(grouped[operation], key=lambda value: (_sha256(value), value))
+        slug = operation.replace("_", "-")
+        for serial, payload in enumerate(ordered, 1):
+            result[payload] = f"PCR-{direction}-{slug}-{serial:04d}"
+    return result
+
+
+def _coverage(
+    synthesizer: SchemaSynthesizer,
+    root: dict[str, Any],
+    value: dict[str, Any],
+    reachability: dict[str, Any],
+) -> tuple[list[str], list[dict[str, Any]]]:
+    objects = sorted(
+        (
+            row["objectSchemaPointer"]
+            for row in reachability["objectCoverage"]
+            if root["rootId"] in row["eligibleRootIds"]
+            and synthesizer.target_locations(
+                root, value, row["objectSchemaPointer"]
+            )
+        ),
+        key=lambda value: value.encode("utf-8"),
+    )
+    arms = sorted(
+        (
+            {
+                "oneOfPointer": row["oneOfPointer"],
+                "armIndex": int(row["armIndex"]),
+            }
+            for row in reachability["oneOfArmCoverage"]
+            if root["rootId"] in row["eligibleRootIds"]
+            and synthesizer.target_locations(
+                root, value, f"{row['oneOfPointer']}/{int(row['armIndex'])}"
+            )
+        ),
+        key=lambda row: (row["oneOfPointer"].encode("utf-8"), row["armIndex"]),
+    )
+    if not objects:
+        raise SeedGenerationError("carrier has no object-schema coverage")
+    return objects, arms
+
+
+def _reference_source_set_sha256(repo_root: Path) -> str:
+    base = "tools/causal-flow-simulator/app_core_iface0"
+    lines: list[str] = []
+    for name in sorted(TERMINAL_IMPLEMENTATION_FILES, key=lambda value: value.encode("utf-8")):
+        relative = f"{base}/{name}"
+        path = repo_root / relative
+        if not path.is_file() or path.is_symlink():
+            raise SeedGenerationError(f"terminal implementation source absent: {name}")
+        lines.append(f"{relative}\t{_sha256(path.read_bytes())}\n")
+    return _sha256("".join(lines).encode("utf-8"))
+
+
+def _write_external(path: Path, payload: bytes) -> None:
+    if path.exists() or path.is_symlink():
+        raise SeedGenerationError(f"external evidence path already exists: {path.name}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(payload)
+
+
+def generate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> dict[str, Any]:
+    """Generate the complete immutable Phase-A carrier package once."""
+
+    root = evidence_root.resolve()
+    if root.exists() or root.is_symlink():
+        raise SeedGenerationError("Phase-A evidence root must not exist")
+    if repo_root == root or repo_root in root.parents or root in repo_root.parents:
+        raise SeedGenerationError("evidence root overlaps the repository")
+    root.mkdir(parents=True, exist_ok=False)
+
+    (
+        requests,
+        responses,
+        producers,
+        synthesizer,
+        roots,
+        reachability,
+    ) = _positive_population(repo_root, contract)
+    request_ids = _case_ids(requests, "REQUEST")
+    response_ids = _case_ids(responses, "RESPONSE")
+
+    toolchain = {
+        "jsonschemaVersion": importlib.metadata.version("jsonschema"),
+        "pythonVersion": platform.python_version(),
+    }
+    toolchain_bytes = dumps(toolchain)
+    toolchain_sha = _sha256(toolchain_bytes)
+    reference_source_sha = _reference_source_set_sha256(repo_root)
+    manifest_sha = _sha256(
+        (contract / "APP-CORE-IFACE-0-CANDIDATE-MANIFEST.json").read_bytes()
+    )
+    canonical_sha = _sha256(
+        (repo_root / "tools/causal-flow-simulator/app_core_iface0/canonical_json.py").read_bytes()
+    )
+
+    request_rows: dict[bytes, dict[str, Any]] = {}
+    for payload, value in requests.items():
+        operation = value["operation"]
+        case_id = request_ids[payload]
+        objects, arms = _coverage(
+            synthesizer, roots[f"REQUEST-{operation}"], value, reachability
+        )
+        carrier_file = f"carriers/{case_id}.json"
+        _write_external(root / carrier_file, payload)
+        request_rows[payload] = {
+            "caseId": case_id,
+            "direction": "REQUEST",
+            "operation": operation,
+            "sourceKind": "CLOSED_REQUEST_FIXTURE",
+            "releasePhase": "PRE_FREEZE_BLIND_INPUT",
+            "carrierFile": carrier_file,
+            "carrierSha256": _sha256(payload),
+            "carrierOctets": len(payload),
+            "positiveObservationId": f"OBS-{case_id}",
+            "coveredObjectSchemaPointers": objects,
+            "coveredOneOfArms": arms,
+        }
+
+    response_rows: dict[bytes, dict[str, Any]] = {}
+    for payload, value in responses.items():
+        operation = value["operation"]
+        case_id = response_ids[payload]
+        eligible_requests = sorted(
+            (
+                request_ids[request_payload]
+                for request_payload in producers[payload]
+                if requests[request_payload]["operation"] == operation
+            ),
+            key=lambda value: value.encode("utf-8"),
+        )
+        if not eligible_requests:
+            raise SeedGenerationError("response has no same-operation request producer")
+        request_case_id = eligible_requests[0]
+        request_payload = next(
+            candidate
+            for candidate, candidate_id in request_ids.items()
+            if candidate_id == request_case_id
+        )
+        objects, arms = _coverage(
+            synthesizer, roots[f"RESPONSE-{operation}"], value, reachability
+        )
+        carrier_file = f"carriers/{case_id}.json"
+        _write_external(root / carrier_file, payload)
+        report = {
+            "reportVersion": "APP-CORE-IFACE-0-REFERENCE-EXECUTION-V1",
+            "contractManifestSha256": manifest_sha,
+            "canonicalJsonSourceSha256": canonical_sha,
+            "referenceSourceSetSha256": reference_source_sha,
+            "toolchainSha256": toolchain_sha,
+            "requestCaseId": request_case_id,
+            "responseCaseId": case_id,
+            "operation": operation,
+            "requestCarrierSha256": _sha256(request_payload),
+            "responseCarrierSha256": _sha256(payload),
+            "requestValidation": "PASS",
+            "referenceEvaluation": "COMPLETED",
+            "responseReleaseValidation": "PASS",
+        }
+        report_bytes = dumps(report)
+        report_schema = {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$ref": "#/$defs/ReferenceExecutionReportV1",
+            "$defs": _load_json(
+                contract
+                / "APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json"
+            )["$defs"],
+        }
+        errors = list(Draft202012Validator(report_schema).iter_errors(report))
+        if errors:
+            raise SeedGenerationError("reference execution report schema failure")
+        report_file = f"reference-executions/{case_id}.json"
+        _write_external(root / report_file, report_bytes)
+        response_rows[payload] = {
+            "caseId": case_id,
+            "direction": "RESPONSE",
+            "operation": operation,
+            "sourceKind": "WITHHELD_REFERENCE_OUTPUT",
+            "releasePhase": "POST_FREEZE_ORACLE_RELEASE",
+            "requestCaseId": request_case_id,
+            "referenceExecutionReportSha256": _sha256(report_bytes),
+            "carrierFile": carrier_file,
+            "carrierSha256": _sha256(payload),
+            "carrierOctets": len(payload),
+            "positiveObservationId": f"OBS-{case_id}",
+            "coveredObjectSchemaPointers": objects,
+            "coveredOneOfArms": arms,
+        }
+
+    cases = sorted(
+        [*request_rows.values(), *response_rows.values()],
+        key=lambda row: row["caseId"].encode("utf-8"),
+    )
+    inventory = {
+        "inventoryVersion": "APP-CORE-IFACE-0-POSITIVE-CARRIERS-V1",
+        "status": "PRE_RATIFICATION_CANDIDATE",
+        "interfaceSchemaSha256": reachability["schemaSha256"],
+        "oneOfArmSetSha256": reachability["oneOfArmSetSha256"],
+        "objectSchemaPointerSetSha256": reachability["objectSchemaPointerSetSha256"],
+        "caseCount": len(cases),
+        "cases": cases,
+    }
+    inventory_schema = _load_json(
+        contract / "APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json"
+    )
+    errors = list(Draft202012Validator(inventory_schema).iter_errors(inventory))
+    if errors:
+        raise SeedGenerationError("positive inventory schema failure")
+    inventory_bytes = dumps(inventory)
+    _write_external(root / "positive-carrier-inventory.json", inventory_bytes)
+    _write_external(root / "reference-toolchain.json", toolchain_bytes)
+
+    artifacts = []
+    for path in sorted(
+        (candidate for candidate in root.rglob("*") if candidate.is_file()),
+        key=lambda path: path.relative_to(root).as_posix().encode("utf-8"),
+    ):
+        relative = path.relative_to(root).as_posix()
+        artifacts.append(
+            {
+                "path": relative,
+                "sha256": _sha256(path.read_bytes()),
+                "octets": path.stat().st_size,
+            }
+        )
+    package_report = {
+        "reportVersion": "APP-CORE-IFACE-0-PHASE-A-PACKAGE-V1",
+        "status": "PRE_RATIFICATION_CANDIDATE",
+        "verdict": "PASS",
+        "contractManifestSha256": manifest_sha,
+        "positiveCarrierInventorySha256": _sha256(inventory_bytes),
+        "referenceSourceSetSha256": reference_source_sha,
+        "toolchainSha256": toolchain_sha,
+        "caseCount": 80,
+        "requestCaseCount": 65,
+        "responseCaseCount": 15,
+        "artifactCount": len(artifacts),
+        "artifacts": artifacts,
+    }
+    package_bytes = dumps(package_report)
+    _write_external(root / "phase-a-package-report.json", package_bytes)
+    return {
+        "request_case_count": 65,
+        "response_case_count": 15,
+        "case_count": 80,
+        "inventory_sha256": _sha256(inventory_bytes),
+        "package_report_sha256": _sha256(package_bytes),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--contract", required=True, type=Path)
@@ -1307,19 +1670,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prove-reachability", action="store_true")
     parser.add_argument("--prove-reference-round-trip", action="store_true")
     parser.add_argument("--prove-positive-carrier-closure", action="store_true")
+    parser.add_argument("--generate-phase-a", action="store_true")
+    parser.add_argument("--evidence-root", type=Path)
     args = parser.parse_args(argv)
     modes = sum(
         (
             args.prove_reachability,
             args.prove_reference_round_trip,
             args.prove_positive_carrier_closure,
+            args.generate_phase_a,
         )
     )
     if modes != 1:
         print("exactly one proof mode is required", file=sys.stderr)
         return 2
     if (
-        args.prove_reference_round_trip or args.prove_positive_carrier_closure
+        args.prove_reference_round_trip
+        or args.prove_positive_carrier_closure
+        or args.generate_phase_a
     ) and args.repo_root is None:
         print("--repo-root is required for reference-backed proof", file=sys.stderr)
         return 2
@@ -1338,7 +1706,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"requests={result['request_count']} "
                 f"responses={result['response_count']}"
             )
-        else:
+        elif args.prove_positive_carrier_closure:
             result = prove_positive_carrier_closure(
                 args.repo_root.resolve(), args.contract.resolve()
             )
@@ -1348,6 +1716,20 @@ def main(argv: list[str] | None = None) -> int:
                 f"roots={result['root_count']} "
                 f"objects={result['object_schema_count']} "
                 f"arms={result['one_of_arm_count']}"
+            )
+        else:
+            if args.evidence_root is None:
+                raise SeedGenerationError("--evidence-root is required for Phase A")
+            result = generate_phase_a(
+                args.repo_root.resolve(),
+                args.contract.resolve(),
+                args.evidence_root,
+            )
+            summary = (
+                f"requests={result['request_case_count']} "
+                f"responses={result['response_case_count']} "
+                f"inventory={result['inventory_sha256']} "
+                f"package={result['package_report_sha256']}"
             )
     except (InventoryError, OSError, SeedGenerationError) as error:
         print(f"APP-core seed generation: FAIL: {error}", file=sys.stderr)

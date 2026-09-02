@@ -103,6 +103,12 @@ splitting the graph would create a second source-of-truth and is outside Issue
 #285. The closed modeled scope and per-decision attribution make that mismatch
 explicit, but do not eliminate its review cost.
 
+The historical C0.3 corpus and public kernel review model do not yet carry the
+APP-core `NO_OPERATIONAL_AUTHORITY` state token. Its bounded APP-core v0
+semantics live separately in `docs/protocol/styx-app-core-interface-v0.md`;
+that separation is an explicit non-claim, not an alias or an implicit corpus
+extension.
+
 The validator pins the exact source-ID, repository-path and authority tuple for
 every source in this snapshot. Changing an evidence source to `normative`,
 retargeting an ID to a different file, adding or removing a modeled record, or

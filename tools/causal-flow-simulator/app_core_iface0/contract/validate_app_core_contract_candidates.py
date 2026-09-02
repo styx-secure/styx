@@ -445,22 +445,44 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     require(positive["properties"]["cases"]["maxItems"] == 144, "carrier maxItems drift")
     require(witness["properties"]["rowCount"]["const"] == 1450, "witness count drift")
     require(witness["properties"]["rows"]["minItems"] == witness["properties"]["rows"]["maxItems"] == 1450, "witness cardinality drift")
+    structural_rule_ids = [row["id"] for row in structural["rules"]]
+    structural_perturbations = [row["perturbationKind"] for row in structural["rules"]]
+    palette_perturbations = [row["perturbationKind"] for row in palette["recipes"]]
+    witness_rule_ids = witness["$defs"]["StructuralRuleId"]["enum"]
+    witness_perturbations = witness["$defs"]["WitnessRow"]["properties"]["perturbationKind"]["enum"]
+    require(
+        len(set(structural_rule_ids)) == len(set(witness_rule_ids)) == 24
+        and set(structural_rule_ids) == set(witness_rule_ids)
+        and witness_rule_ids == sorted(witness_rule_ids),
+        "structural rule/witness exact-set drift",
+    )
+    require(
+        len(set(structural_perturbations))
+        == len(set(palette_perturbations))
+        == len(set(witness_perturbations))
+        == 24
+        and set(structural_perturbations)
+        == set(palette_perturbations)
+        == set(witness_perturbations)
+        and witness_perturbations == palette_perturbations,
+        "structural perturbation/palette/witness exact-set drift",
+    )
 
     semantics = load("APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json")
     axes = load("APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json")
     validate_terminal_path_bindings(schema, axes)
     semantic_ids = [row["id"] for row in semantics["rules"]]
-    require(len(semantic_ids) == len(set(semantic_ids)) == 82, "semantic family drift")
+    require(len(semantic_ids) == len(set(semantic_ids)) == 83, "semantic family drift")
     require(
-        set(semantic_ids) == {f"ACV-{index:03d}" for index in range(1, 83)},
+        set(semantic_ids) == {f"ACV-{index:03d}" for index in range(1, 84)},
         "semantic rule-id set drift",
     )
     for field in ("scenario", "mutant"):
         values = [row[field] for row in semantics["rules"]]
-        require(len(values) == len(set(values)) == 82, f"semantic {field} drift")
+        require(len(values) == len(set(values)) == 83, f"semantic {field} drift")
     axis_ids = [row["id"] for row in axes["rules"]]
-    require(set(axis_ids) == set(semantic_ids) and len(axis_ids) == 82, "semantic axis relation drift")
-    require(sum(row["expectedCount"] for row in axes["rules"]) == 5147, "semantic execution count drift")
+    require(set(axis_ids) == set(semantic_ids) and len(axis_ids) == 83, "semantic axis relation drift")
+    require(sum(row["expectedCount"] for row in axes["rules"]) == 5149, "semantic execution count drift")
     require(axes["unresolvedAxes"] == [], "unresolved semantic axes")
     phases = load("APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json")
     require(
@@ -476,7 +498,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         phases.get("fixedCountsBeforeSeedPartition", {}).get(
             "totalSemanticExecutionInstances"
         )
-        == 5147,
+        == 5149,
         "execution-phase total drift",
     )
     acv066_phase = next(
@@ -574,7 +596,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         "ACV-052": (21, 4),
         "ACV-073": (7, 3),
         "ACV-078": (12, 4),
-        "ACV-079": (4, 6),
+        "ACV-079": (5, 6),
     }
     for rule_id, (blind_count, mutation_count) in expected_reachability_partitions.items():
         require(
@@ -603,6 +625,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         "ACV-072": 1,
         "ACV-081": 2,
         "ACV-082": 1,
+        "ACV-083": 1,
     }.items():
         require(
             phase_by_id.get(rule_id)
@@ -640,17 +663,18 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
             "ACV-079",
             "ACV-081",
             "ACV-082",
+            "ACV-083",
         },
         "V9 phase override set drift",
     )
     require(
         phases.get("fixedCountsBeforeSeedPartition")
         == {
-            "BLIND_INPUT_EXECUTION": 558,
-            "POST_OUTPUT_MUTATION": 3860,
+            "BLIND_INPUT_EXECUTION": 559,
+            "POST_OUTPUT_MUTATION": 3861,
             "VALIDATOR_SELF_TEST": 27,
             "ACV048PendingCarrierPartition": 702,
-            "totalSemanticExecutionInstances": 5147,
+            "totalSemanticExecutionInstances": 5149,
         },
         "execution-phase count drift",
     )
@@ -712,7 +736,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     acv050_rule = next(row for row in semantics["rules"] if row["id"] == "ACV-050")
     acv050_axis = next(row for row in axes["rules"] if row["id"] == "ACV-050")
     require(
-        acv050_rule["parameters"] == {"ruleCount": "82"}
+        acv050_rule["parameters"] == {"ruleCount": "83"}
         and acv050_axis["mappedOccurrenceCount"] == len(custom_occurrences) == 26
         and acv050_axis["expectedCount"] == len(custom_occurrences) + 1 == 27,
         "ACV-050 exact-registry binding drift",
@@ -851,7 +875,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         "contentAxisLegalRelationV0": 23,
         "forkJoinLabelRelationV0": 10,
         "authorityProjectionDimensionRelationV0": 16,
-        "graphAdmissionDimensionRelationV0": 10,
+        "graphAdmissionDimensionRelationV0": 11,
         "candidateEvaluationPrimaryRelationV0": 25,
         "transcriptReasonStageRelationV0": 16,
         "genesisReasonStageRelationV0": 17,
@@ -1064,34 +1088,33 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     )
 
     s4_rows = [
-        ("PARENTS_PER_EVENT", "CONTEXT_CAPACITY_EXHAUSTED", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"]),
-        ("ACTIVE_FRONTIER", "CONTEXT_CAPACITY_EXHAUSTED", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"]),
-        ("EVIDENCE_PER_CREDENTIAL", "CONTEXT_CAPACITY_EXHAUSTED", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"]),
-        ("PENDING_ROOTS", "DEPENDENCY_DEFERRED", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"]),
-        ("EVENTS_ADMITTED", "RESERVED_UNREACHABLE_V0", []),
-        ("GRAPH_DEPTH", "RESERVED_UNREACHABLE_V0", []),
-        ("ANCESTRY_RELATIONS", "RESERVED_UNREACHABLE_V0", []),
-        ("CONTEXT_LIFETIME_EVENTS", "RESERVED_UNREACHABLE_V0", []),
-        ("PENDING_DESCENDANTS", "RESERVED_UNREACHABLE_V0", []),
-        ("HALTED_REPLAY_SPAN", "RESERVED_UNREACHABLE_V0", []),
+        ("S4D-001", "PARENTS_PER_EVENT", "CONTEXT_CAPACITY_EXHAUSTED", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"], "REACHABLE"),
+        ("S4D-002", "ACTIVE_FRONTIER", "CONTEXT_CAPACITY_EXHAUSTED", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"], "REACHABLE"),
+        ("S4D-003", "EVIDENCE_PER_CREDENTIAL", "CONTEXT_CAPACITY_EXHAUSTED", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"], "REACHABLE"),
+        ("S4D-011", "RECORDS", "CONTEXT_CAPACITY_EXHAUSTED", ["EVALUATE_CANDIDATE"], "REACHABLE"),
+        ("S4D-004", "PENDING_ROOTS", "DEPENDENCY_DEFERRED", ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"], "REACHABLE"),
+        ("S4D-005", "EVENTS_ADMITTED", "RESERVED_UNREACHABLE_V0", [], "RESERVED_UNREACHABLE_V0"),
+        ("S4D-006", "GRAPH_DEPTH", "RESERVED_UNREACHABLE_V0", [], "RESERVED_UNREACHABLE_V0"),
+        ("S4D-007", "ANCESTRY_RELATIONS", "RESERVED_UNREACHABLE_V0", [], "RESERVED_UNREACHABLE_V0"),
+        ("S4D-008", "CONTEXT_LIFETIME_EVENTS", "RESERVED_UNREACHABLE_V0", [], "RESERVED_UNREACHABLE_V0"),
+        ("S4D-009", "PENDING_DESCENDANTS", "RESERVED_UNREACHABLE_V0", [], "RESERVED_UNREACHABLE_V0"),
+        ("S4D-010", "HALTED_REPLAY_SPAN", "RESERVED_UNREACHABLE_V0", [], "RESERVED_UNREACHABLE_V0"),
     ]
     require(
         relations["graphAdmissionDimensionRelationV0"]
         == [
             {
-                "id": f"S4D-{index:03d}",
+                "id": row_id,
                 "dimension": dimension,
                 "result": result,
                 "operations": operations,
-                "reachability": (
-                    "REACHABLE" if index <= 4 else "RESERVED_UNREACHABLE_V0"
-                ),
-                "scenario": f"ACI-S4D-{index:03d}",
-                "mutant": f"M-ACI-S4D-{index:03d}",
+                "reachability": reachability,
+                "scenario": f"ACI-{row_id}",
+                "mutant": f"M-ACI-{row_id}",
             }
-            for index, (dimension, result, operations) in enumerate(s4_rows, 1)
+            for row_id, dimension, result, operations, reachability in s4_rows
         ],
-        "V9 S4 dimension relation drift",
+        "V14 S4 dimension relation drift",
     )
     f13_reachability = {
         row["id"]: row.get("reachability")
@@ -1484,13 +1507,13 @@ def validate_manifest() -> None:
         "oneOfOccurrences": 16,
         "oneOfArms": 54,
         "oneOfPairwiseDisjointnessRows": 93,
-        "semanticFamilies": 82,
-        "semanticExecutionInstances": 5147,
-        "totalExecutionInstances": 6597,
+        "semanticFamilies": 83,
+        "semanticExecutionInstances": 5149,
+        "totalExecutionInstances": 6599,
         "contentRelationRows": 23,
         "forkJoinLabelRelationRows": 10,
         "authorityProjectionDimensionRelationRows": 16,
-        "graphAdmissionDimensionRelationRows": 10,
+        "graphAdmissionDimensionRelationRows": 11,
         "candidatePrimaryRelationRows": 25,
         "transcriptRelationRows": 16,
         "genesisRelationRows": 17,
@@ -1511,6 +1534,14 @@ def validate_documented_artifact_bindings() -> None:
     witness_name = "APP-CORE-IFACE-0-WITNESS-GENERATION-CONTRACT.md"
     atom = (ROOT / atom_name).read_text(encoding="utf-8")
     witness = (ROOT / witness_name).read_text(encoding="utf-8")
+    outline = (ROOT / "APP-CORE-IFACE-0-CONTRACT-OUTLINE.md").read_text(
+        encoding="utf-8"
+    )
+    require(
+        "equals the ratified 6,599-instance" in outline
+        and "6,597-instance" not in outline,
+        "documented hostile-inventory total drift",
+    )
 
     reachability = sha256(ROOT / "APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json")
     structural = sha256(ROOT / "APP-CORE-IFACE-0-STRUCTURAL-AXES-CANDIDATE.json")
@@ -1529,7 +1560,7 @@ def validate_documented_artifact_bindings() -> None:
             f"`{palette}`.",
             "`APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json`, SHA-256\n"
             f"`{one_of}`:",
-            "The 82-row instance-axis registry has no unresolved axis and has SHA-256\n"
+            "The 83-row instance-axis registry has no unresolved axis and has SHA-256\n"
             f"`{instance_axes}`.",
             "`APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256\n"
             f"`{execution_phases}`.",
@@ -1635,7 +1666,7 @@ def main() -> None:
     print(
         "PASS schemas=4 defs=114 refs=263 enums=35 oneOf=16 arms=54 "
         "pairs=93 objects=78 properties=323 required=322 structural=1450 "
-        "semantic=5147 total=6597 terminal=33 F13=25 dependencies=63 provider_history=5 "
+        "semantic=5149 total=6599 terminal=33 F13=25 dependencies=63 provider_history=5 "
         "manifest=26 provider_live=" + ("PASS" if args.verify_provider else "NOT_RUN")
     )
 

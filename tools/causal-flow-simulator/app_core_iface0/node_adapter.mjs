@@ -515,6 +515,111 @@ function objectValue(value) {
 }
 
 
+function schemaPointer(root, reference) {
+  requireCondition(typeof reference === "string" && reference.startsWith("#/"), "non-local schema reference");
+  let node = root;
+  for (const raw of reference.slice(2).split("/")) {
+    const token = raw.replaceAll("~1", "/").replaceAll("~0", "~");
+    requireCondition(objectValue(node) && Object.prototype.hasOwnProperty.call(node, token), "schema reference target absent");
+    node = node[token];
+  }
+  requireCondition(objectValue(node), "schema reference target is not an object");
+  return node;
+}
+
+
+function deepEqual(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+
+function matchesType(value, kind) {
+  if (kind === "object") return objectValue(value);
+  if (kind === "array") return Array.isArray(value);
+  if (kind === "string") return typeof value === "string";
+  if (kind === "integer") return Number.isSafeInteger(value);
+  if (kind === "number") return typeof value === "number" && Number.isFinite(value);
+  if (kind === "boolean") return typeof value === "boolean";
+  if (kind === "null") return value === null;
+  throw new AdapterFailure(`unsupported schema type: ${kind}`);
+}
+
+
+function schemaMatches(value, schema, root) {
+  try {
+    validateSchema(value, schema, root);
+    return true;
+  } catch (error) {
+    if (!(error instanceof AdapterFailure)) throw error;
+    return false;
+  }
+}
+
+
+function validateSchema(value, schema, root) {
+  requireCondition(objectValue(schema), "schema node is not an object");
+  if (typeof schema.$ref === "string") validateSchema(value, schemaPointer(root, schema.$ref), root);
+  if (Object.prototype.hasOwnProperty.call(schema, "const")) {
+    requireCondition(deepEqual(value, schema.const), "schema const mismatch");
+  }
+  if (Array.isArray(schema.enum)) {
+    requireCondition(schema.enum.some((member) => deepEqual(value, member)), "schema enum mismatch");
+  }
+  if (typeof schema.type === "string") requireCondition(matchesType(value, schema.type), "schema type mismatch");
+  if (Array.isArray(schema.type)) {
+    requireCondition(schema.type.some((kind) => matchesType(value, kind)), "schema type union mismatch");
+  }
+  if (Array.isArray(schema.allOf)) {
+    for (const arm of schema.allOf) validateSchema(value, arm, root);
+  }
+  if (Array.isArray(schema.anyOf)) {
+    requireCondition(schema.anyOf.some((arm) => schemaMatches(value, arm, root)), "schema anyOf has no matching arm");
+  }
+  if (Array.isArray(schema.oneOf)) {
+    requireCondition(schema.oneOf.filter((arm) => schemaMatches(value, arm, root)).length === 1, "schema oneOf is not exclusive");
+  }
+  if (objectValue(schema.not)) requireCondition(!schemaMatches(value, schema.not, root), "schema not matched");
+  if (objectValue(schema.if)) {
+    const branch = schemaMatches(value, schema.if, root) ? schema.then : schema.else;
+    if (objectValue(branch)) validateSchema(value, branch, root);
+  }
+  if (typeof value === "string") {
+    if (Number.isInteger(schema.minLength)) requireCondition([...value].length >= schema.minLength, "schema minLength mismatch");
+    if (Number.isInteger(schema.maxLength)) requireCondition([...value].length <= schema.maxLength, "schema maxLength mismatch");
+    if (typeof schema.pattern === "string") requireCondition(new RegExp(schema.pattern, "u").test(value), "schema pattern mismatch");
+    if (typeof schema["x-styx-unsigned-maximum"] === "string") {
+      requireCondition(/^(0|[1-9][0-9]*)$/.test(value), "unsigned decimal is noncanonical");
+      requireCondition(BigInt(value) <= BigInt(schema["x-styx-unsigned-maximum"]), "unsigned decimal exceeds maximum");
+    }
+  }
+  if (Array.isArray(value)) {
+    if (Number.isInteger(schema.minItems)) requireCondition(value.length >= schema.minItems, "schema minItems mismatch");
+    if (Number.isInteger(schema.maxItems)) requireCondition(value.length <= schema.maxItems, "schema maxItems mismatch");
+    if (schema.uniqueItems === true) {
+      requireCondition(new Set(value.map((item) => JSON.stringify(item))).size === value.length, "schema uniqueItems mismatch");
+    }
+    if (objectValue(schema.items)) for (const item of value) validateSchema(item, schema.items, root);
+  }
+  if (objectValue(value)) {
+    if (Number.isInteger(schema.maxProperties)) requireCondition(Object.keys(value).length <= schema.maxProperties, "schema maxProperties mismatch");
+    if (Array.isArray(schema.required)) {
+      for (const name of schema.required) requireCondition(Object.prototype.hasOwnProperty.call(value, name), "schema required property absent");
+    }
+    if (objectValue(schema.properties)) {
+      for (const [name, child] of Object.entries(schema.properties)) {
+        if (Object.prototype.hasOwnProperty.call(value, name)) validateSchema(value[name], child, root);
+      }
+      if (schema.additionalProperties === false) {
+        const allowed = new Set(Object.keys(schema.properties));
+        requireCondition(Object.keys(value).every((name) => allowed.has(name)), "schema additional property present");
+      }
+    } else if (schema.additionalProperties === false) {
+      requireCondition(Object.keys(value).length === 0, "schema additional property present");
+    }
+  }
+}
+
+
 function interfaceLimits(schema) {
   const properties = schema.$defs?.InterfaceLimitsV0?.properties;
   requireCondition(objectValue(properties), "interface limits are absent");
@@ -797,6 +902,44 @@ function validateBeforeRelease(response, relations, reservedDetector = true) {
 }
 
 
+function validateCompleteResponseBeforeRelease(response, schema, relations) {
+  validateSchema(response, schema, schema);
+  if (response.operation === "EVALUATE_CANDIDATE") {
+    const evaluation = response.result.evaluation;
+    const primary = evaluation.primary ?? evaluation.primaryOnCommit;
+    const row = relations.candidateEvaluationPrimaryRelationV0.find((item) => item.primary === primary);
+    requireCondition(row !== undefined, "candidate primary is absent from F13");
+    requireCondition(row.reachability !== "RESERVED_UNREACHABLE_V0", "APP-core v0 reserved F13 row was generated");
+  }
+  if (["VALIDATE_TRANSCRIPT", "EVALUATE_GENESIS"].includes(response.operation)) {
+    const observed = JSON.stringify([
+      response.operation,
+      response.result.kind,
+      response.result.reason ?? null,
+      response.result.stage,
+    ]);
+    const reserved = new Set(
+      relations.terminalPredicateRelationV0
+        .filter((row) => row.result.reachability === "RESERVED_UNREACHABLE_V0")
+        .map((row) => JSON.stringify([
+          row.operation,
+          row.result.kind,
+          row.result.reason ?? null,
+          row.result.stage,
+        ])),
+    );
+    requireCondition(!reserved.has(observed), "APP-core v0 reserved terminal predicate was generated");
+    if (response.operation === "VALIDATE_TRANSCRIPT") {
+      requireCondition(
+        response.result.observations.referenceVerification !== "REJECTED",
+        "APP-core v0 reserved reference rejection was generated",
+      );
+    }
+  }
+  return response;
+}
+
+
 function referenceObservations() {
   return {
     commitmentMatchVerification: "NOT_APPLICABLE",
@@ -950,9 +1093,10 @@ try {
     const input = JSON.parse(fs.readFileSync(0, "utf8"));
     process.stdout.write(`${JSON.stringify(credentialProjection(input))}\n`);
   } else if (validateResponseMode) {
+    const schema = readJson(path.join(resolvedContract, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json"));
     const relations = readJson(path.join(resolvedContract, "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"));
     const input = JSON.parse(fs.readFileSync(0, "utf8"));
-    validateBeforeRelease(input, relations);
+    validateCompleteResponseBeforeRelease(input, schema, relations);
     process.stdout.write(`${JSON.stringify({ verdict: "PASS" })}\n`);
   } else if (preflightCollectionsMode) {
     const schema = readJson(path.join(resolvedContract, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json"));

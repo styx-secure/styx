@@ -509,7 +509,7 @@
       "owners": ["INTERFACE"],
       "targets": ["$defs.InterfaceRequestV0", "$defs.InterfaceResponseV0"],
       "rule": "CUSTOM_KEYWORD_AND_CONSTRAINT_REGISTRY_EXACT_EQUALITY",
-      "parameters": { "ruleCount": "82" },
+      "parameters": { "ruleCount": "83" },
       "scenario": "ACI-UNKNOWN-CUSTOM-KEYWORD",
       "mutant": "M-ACI-IGNORE-SEMANTIC-CONSTRAINT"
     },
@@ -905,8 +905,8 @@
       "rule": "GRAPH_ADMISSION_DIMENSION_EXACT_RELATION",
       "parameters": {
         "relation": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json#graphAdmissionDimensionRelationV0",
-        "relationRowCount": "10",
-        "reachableRowCount": "4",
+        "relationRowCount": "11",
+        "reachableRowCount": "5",
         "reservedRowCount": "6"
       },
       "scenario": "ACI-GRAPH-ADMISSION-DIMENSION-RELATION",
@@ -938,6 +938,19 @@
       "parameters": { "dimension": "REMOVAL_DIRECTIVES", "selectedValue": "32" },
       "scenario": "ACI-REMOVAL-DIRECTIVES-S6-RESERVED-CROSSING",
       "mutant": "M-ACI-REMOVAL-DIRECTIVES-RELEASE-S6"
+    },
+    {
+      "id": "ACV-083",
+      "owners": ["K", "O08", "O10", "INTERFACE"],
+      "targets": ["$defs.CandidateEvaluationResultV0"],
+      "rule": "RECORDS_S6_CROSSING_RESERVED_AFTER_S4",
+      "parameters": {
+        "dimension": "RECORDS",
+        "selectedValue": "128",
+        "boundingIdentity": "ACTORS * EVIDENCE_PER_CREDENTIAL = RECORDS"
+      },
+      "scenario": "ACI-RECORDS-S6-RESERVED-CROSSING",
+      "mutant": "M-ACI-RECORDS-RELEASE-S6"
     }
   ]
 }

@@ -57,13 +57,13 @@
     "oneOfOccurrences": 16,
     "oneOfArms": 54,
     "oneOfPairwiseDisjointnessRows": 93,
-    "semanticFamilies": 82,
-    "semanticExecutionInstances": 5147,
-    "totalExecutionInstances": 6597,
+    "semanticFamilies": 83,
+    "semanticExecutionInstances": 5149,
+    "totalExecutionInstances": 6599,
     "contentRelationRows": 23,
     "forkJoinLabelRelationRows": 10,
     "authorityProjectionDimensionRelationRows": 16,
-    "graphAdmissionDimensionRelationRows": 10,
+    "graphAdmissionDimensionRelationRows": 11,
     "candidatePrimaryRelationRows": 25,
     "transcriptRelationRows": 16,
     "genesisRelationRows": 17,
@@ -90,7 +90,7 @@
     {
       "path": "APP-CORE-IFACE-0-STRUCTURAL-AXES-CANDIDATE.json",
       "role": "STRUCTURAL_INSTANCE_AXES",
-      "sha256": "fc2f602964fe3dfe247ee3aea480d9c102f0026820f736d13542af2df57c15e6"
+      "sha256": "0eb8001eef76443d559d52f89e6761bd2329cac29c4514866f5aea8ba940ef56"
     },
     {
       "path": "APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json",
@@ -105,27 +105,27 @@
     {
       "path": "APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json",
       "role": "STRUCTURAL_WITNESS_REGISTRY_SCHEMA",
-      "sha256": "cee8479d6a126e4d4bca2a6d0a9c4659caadd8507a2549b034c1de1c9488111c"
+      "sha256": "ab229464b86f6870003594f51b8fcfbe11603f7ecda76754ed106237e07ddc4c"
     },
     {
       "path": "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json",
       "role": "SEMANTIC_RULE_FAMILIES",
-      "sha256": "70493d7cd627330feecf966b35c16c87907571a41f28848ee46ba7da627e2d92"
+      "sha256": "03c12f8bcb11b9fea939bd8736c80ad2d5a591f4659f257c80ddac5715b19d72"
     },
     {
       "path": "APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json",
       "role": "SEMANTIC_INSTANCE_AXES",
-      "sha256": "83df5f9fad34141ae71ae3b34fc1b68b749e5c8e90e0357530780a18076b8b90"
+      "sha256": "04fd304ac6b23add64033b45282ac0d46fe09d44f92651881995f4727c9e0832"
     },
     {
       "path": "APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json",
       "role": "INSTANCE_EXECUTION_PHASES",
-      "sha256": "cf2fbe4be7168e742aa789f58983a5ebf467831634eaf11d337857e849907e21"
+      "sha256": "7dad552e9bcde710205302f72c81aac7ac98e350fc31cb4a11007739428cc0ed"
     },
     {
       "path": "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json",
       "role": "LITERAL_LEGAL_RELATIONS",
-      "sha256": "8b67fb14b0f147c9aa571a5189f318b16990ccf92d1dcd88dbfd1354153007a2"
+      "sha256": "ae285b0f5d760993017f56e500889a6d18475f9a33e9b30f6aa3d570564b812f"
     },
     {
       "path": "APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json",
@@ -135,7 +135,7 @@
     {
       "path": "APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json",
       "role": "POSITIVE_CARRIER_INVENTORY_SCHEMA",
-      "sha256": "17dc0123dc8df3dff6b0e78ec372d93d5375dc1fd610a0d40e542d6eb1f17665"
+      "sha256": "8e469d88234e7194d8612f43491f3ea43c1c0d6a4b1becaa4be844e1ff75949f"
     },
     {
       "path": "APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json",
@@ -170,17 +170,17 @@
     {
       "path": "validate_app_core_contract_candidates.py",
       "role": "FAIL_CLOSED_CANDIDATE_PACKAGE_VALIDATOR",
-      "sha256": "e6549dd69f872f64a6570eeaa145ac3e89b2af6f1da5f37521a152fbd76315ab"
+      "sha256": "1d0c646d497d0ce85876dbc20a01e52a09286fe261932d69f8d57de8da8904c9"
     },
     {
       "path": "APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md",
       "role": "HOSTILE_DERIVATION",
-      "sha256": "96708c38aa1f3cd40d47522c1578356777ef92e3214d1327b6b940712e8db4ff"
+      "sha256": "5cd9b6260adba419a6a82a008c4a78a2cee3f8d0725979ef1911a12fff48b4d1"
     },
     {
       "path": "APP-CORE-IFACE-0-VALIDATOR-CONTRACT.md",
       "role": "VALIDATOR_PIPELINE",
-      "sha256": "b95bb4e8167a043487acd497d191b9876b8d00f7b0b3938e6f7dce796ae681ba"
+      "sha256": "e49edb4dc29ffaaba51c05d2cd2402018bf1d9830203e046fd0c456df85f484e"
     },
     {
       "path": "APP-CORE-IFACE-0-WITNESS-GENERATION-CONTRACT.md",
@@ -205,7 +205,7 @@
     {
       "path": "APP-CORE-IFACE-0-CONTRACT-OUTLINE.md",
       "role": "EXECUTABLE_CONTRACT_OUTLINE",
-      "sha256": "99f46faec073acae4892f14ca6f4784f36301f29506b7f03cbf44c313bc954c7"
+      "sha256": "d5d2fb90c4ab5bb2f0a4ed51f44dcb04f1a65376431e2052f6937350df391470"
     }
   ],
   "remainingBeforeExecutableIssue": [

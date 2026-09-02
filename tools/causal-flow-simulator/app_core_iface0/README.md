@@ -13,11 +13,20 @@ JavaScript reader currently checks reserved reachability, fork/join labels,
 graph, credential and authority projections, exact event/context outcome
 precedence, and the same closed collection bounds.
 
-The complete blind corpus, populated positive-carrier/seed registries,
-1,450-row structural witness execution, semantic mutation campaign, canonical
-two-reader reports and two-clean-worktree `final_gate.py` are still required.
-Until those artifacts exist and pass, this directory is an implementation in
-progress rather than complete conformance evidence.
+Phase A now generates the closed 65-request blind population, 15 withheld
+reference responses, the 80-row positive-carrier inventory and exact package
+manifest outside the repository. The reference probe freezes all 65 outputs
+before reading response bytes; the JavaScript reader independently validates
+all 15 released response carriers; seven package mutations are killed. These
+mechanisms have local test evidence only. An exact-HEAD two-clean-checkout run,
+independent review and provider-bound human ratification are still required
+before the carrier inventory becomes Phase-B input.
+
+Phase B remains unimplemented: it must bind that ratification, populate and
+execute the 1,450 structural witnesses and 5,149 semantic instances, kill every
+named source mutant and obtain byte-identical Python/JavaScript reports. Until
+both phases pass, this directory is an implementation in progress rather than
+complete conformance evidence.
 
 The six operations are:
 
@@ -51,6 +60,32 @@ python3 tools/causal-flow-simulator/app_core_iface0/generate_seed_registry.py \
   --repo-root . \
   --contract tools/causal-flow-simulator/app_core_iface0/contract \
   --prove-positive-carrier-closure
+
+# Evidence paths must be outside the repository and initially absent.
+python3 tools/causal-flow-simulator/app_core_iface0/generate_seed_registry.py \
+  --repo-root . \
+  --contract tools/causal-flow-simulator/app_core_iface0/contract \
+  --generate-phase-a \
+  --evidence-root /external/path/app-core-phase-a
+
+python3 tools/causal-flow-simulator/app_core_iface0/run_probe.py \
+  --repo-root . \
+  --contract tools/causal-flow-simulator/app_core_iface0/contract \
+  --evidence-root /external/path/app-core-phase-a \
+  --output /external/path/reference-probe.json
+
+python3 tools/causal-flow-simulator/app_core_iface0/run_cross_runtime.py \
+  --repo-root . \
+  --contract tools/causal-flow-simulator/app_core_iface0/contract \
+  --evidence-root /external/path/app-core-phase-a \
+  --javascript node \
+  --output /external/path/javascript-release.json
+
+python3 tools/causal-flow-simulator/app_core_iface0/run_mutations.py \
+  --repo-root . \
+  --contract tools/causal-flow-simulator/app_core_iface0/contract \
+  --evidence-root /external/path/app-core-phase-a \
+  --output /external/path/phase-a-mutations.json
 ```
 
 The first seed command produces and evaluates one structural blind request per

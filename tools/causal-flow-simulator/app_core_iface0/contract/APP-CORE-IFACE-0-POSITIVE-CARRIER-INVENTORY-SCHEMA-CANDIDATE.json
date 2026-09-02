@@ -71,6 +71,66 @@
         "EVALUATE_EVIDENCE_UPDATE"
       ]
     },
+    "ReferenceExecutionReportV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reportVersion",
+        "contractManifestSha256",
+        "canonicalJsonSourceSha256",
+        "referenceSourceSetSha256",
+        "toolchainSha256",
+        "requestCaseId",
+        "responseCaseId",
+        "operation",
+        "requestCarrierSha256",
+        "responseCarrierSha256",
+        "requestValidation",
+        "referenceEvaluation",
+        "responseReleaseValidation"
+      ],
+      "properties": {
+        "reportVersion": {
+          "const": "APP-CORE-IFACE-0-REFERENCE-EXECUTION-V1"
+        },
+        "contractManifestSha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "canonicalJsonSourceSha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "referenceSourceSetSha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "toolchainSha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "requestCaseId": {
+          "$ref": "#/$defs/StableId"
+        },
+        "responseCaseId": {
+          "$ref": "#/$defs/StableId"
+        },
+        "operation": {
+          "$ref": "#/$defs/OperationV0"
+        },
+        "requestCarrierSha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "responseCarrierSha256": {
+          "$ref": "#/$defs/Sha256Hex"
+        },
+        "requestValidation": {
+          "const": "PASS"
+        },
+        "referenceEvaluation": {
+          "const": "COMPLETED"
+        },
+        "responseReleaseValidation": {
+          "const": "PASS"
+        }
+      }
+    },
     "OneOfArm": {
       "type": "object",
       "additionalProperties": false,

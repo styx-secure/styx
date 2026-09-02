@@ -327,6 +327,7 @@
     { "id": "S4D-001", "dimension": "PARENTS_PER_EVENT", "result": "CONTEXT_CAPACITY_EXHAUSTED", "operations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"], "reachability": "REACHABLE", "scenario": "ACI-S4D-001", "mutant": "M-ACI-S4D-001" },
     { "id": "S4D-002", "dimension": "ACTIVE_FRONTIER", "result": "CONTEXT_CAPACITY_EXHAUSTED", "operations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"], "reachability": "REACHABLE", "scenario": "ACI-S4D-002", "mutant": "M-ACI-S4D-002" },
     { "id": "S4D-003", "dimension": "EVIDENCE_PER_CREDENTIAL", "result": "CONTEXT_CAPACITY_EXHAUSTED", "operations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"], "reachability": "REACHABLE", "scenario": "ACI-S4D-003", "mutant": "M-ACI-S4D-003" },
+    { "id": "S4D-011", "dimension": "RECORDS", "result": "CONTEXT_CAPACITY_EXHAUSTED", "operations": ["EVALUATE_CANDIDATE"], "reachability": "REACHABLE", "scenario": "ACI-S4D-011", "mutant": "M-ACI-S4D-011" },
     { "id": "S4D-004", "dimension": "PENDING_ROOTS", "result": "DEPENDENCY_DEFERRED", "operations": ["REPLAY_CONTEXT", "EVALUATE_CANDIDATE"], "reachability": "REACHABLE", "scenario": "ACI-S4D-004", "mutant": "M-ACI-S4D-004" },
     { "id": "S4D-005", "dimension": "EVENTS_ADMITTED", "result": "RESERVED_UNREACHABLE_V0", "operations": [], "reachability": "RESERVED_UNREACHABLE_V0", "scenario": "ACI-S4D-005", "mutant": "M-ACI-S4D-005" },
     { "id": "S4D-006", "dimension": "GRAPH_DEPTH", "result": "RESERVED_UNREACHABLE_V0", "operations": [], "reachability": "RESERVED_UNREACHABLE_V0", "scenario": "ACI-S4D-006", "mutant": "M-ACI-S4D-006" },
