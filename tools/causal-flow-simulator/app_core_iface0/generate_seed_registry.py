@@ -677,6 +677,142 @@ class SchemaSynthesizer:
             raise SeedGenerationError("selected target does not validate at its data pointer")
         return GeneratedCarrier(root["rootId"], value, self._target_data_pointer)
 
+    def target_locations(
+        self,
+        root: dict[str, Any],
+        value: dict[str, Any],
+        target_pointer: str,
+    ) -> list[str]:
+        """Return every instance location reached through one schema target.
+
+        The walk follows only branches that validate the current instance.
+        Locations are de-duplicated by data pointer, so two schema paths that
+        constrain the same value do not fabricate two object occurrences.
+        """
+
+        operation_index = OPERATIONS.index(root["operation"])
+        virtual_targets = {
+            f"/oneOf/{0 if root['direction'] == 'REQUEST' else 1}",
+            (
+                f"/$defs/InterfaceRequestV0/oneOf/{operation_index}"
+                if root["direction"] == "REQUEST"
+                else f"/$defs/InterfaceResponseV0/oneOf/{operation_index}"
+            ),
+        }
+        if target_pointer in virtual_targets:
+            return [""]
+
+        locations: set[str] = set()
+
+        def valid(node: dict[str, Any], instance: Any) -> bool:
+            return Draft202012Validator(
+                {
+                    "$schema": self.schema["$schema"],
+                    **node,
+                    "$defs": self.schema["$defs"],
+                }
+            ).is_valid(instance)
+
+        def visit(
+            pointer: str,
+            node: dict[str, Any],
+            instance: Any,
+            data_pointer: str,
+            active: frozenset[tuple[str, str]],
+        ) -> None:
+            locator = (pointer, data_pointer)
+            if locator in active:
+                return
+            nested_active = active | {locator}
+            if pointer == target_pointer:
+                locations.add(data_pointer)
+
+            reference = node.get("$ref")
+            if isinstance(reference, str):
+                resolved = reference.removeprefix("#")
+                target = self.resolve(resolved)
+                if isinstance(target, dict):
+                    visit(
+                        resolved,
+                        target,
+                        instance,
+                        data_pointer,
+                        nested_active,
+                    )
+
+            for keyword in ("oneOf", "anyOf"):
+                arms = node.get(keyword)
+                if not isinstance(arms, list):
+                    continue
+                arm_root = _join(pointer, keyword)
+                for index, arm in enumerate(arms):
+                    if isinstance(arm, dict) and valid(arm, instance):
+                        visit(
+                            _join(arm_root, index),
+                            arm,
+                            instance,
+                            data_pointer,
+                            nested_active,
+                        )
+
+            arms = node.get("allOf")
+            if isinstance(arms, list):
+                arm_root = _join(pointer, "allOf")
+                for index, arm in enumerate(arms):
+                    if isinstance(arm, dict):
+                        visit(
+                            _join(arm_root, index),
+                            arm,
+                            instance,
+                            data_pointer,
+                            nested_active,
+                        )
+
+            condition = node.get("if")
+            if isinstance(condition, dict):
+                branch_name = "then" if valid(condition, instance) else "else"
+                branch = node.get(branch_name)
+                if isinstance(branch, dict):
+                    visit(
+                        _join(pointer, branch_name),
+                        branch,
+                        instance,
+                        data_pointer,
+                        nested_active,
+                    )
+
+            properties = node.get("properties")
+            if isinstance(properties, dict) and isinstance(instance, dict):
+                property_root = _join(pointer, "properties")
+                for name, child in properties.items():
+                    if name in instance and isinstance(child, dict):
+                        visit(
+                            _join(property_root, name),
+                            child,
+                            instance[name],
+                            _join(data_pointer, name),
+                            nested_active,
+                        )
+
+            items = node.get("items")
+            if isinstance(items, dict) and isinstance(instance, list):
+                item_pointer = _join(pointer, "items")
+                for index, item in enumerate(instance):
+                    visit(
+                        item_pointer,
+                        items,
+                        item,
+                        _join(data_pointer, index),
+                        nested_active,
+                    )
+
+        wrapper = root["wrapperSchemaPointer"]
+        wrapper_node = self.resolve(wrapper)
+        if not isinstance(wrapper_node, dict):
+            raise SeedGenerationError("root wrapper is not a schema object")
+        visit(wrapper, wrapper_node, value, "", frozenset())
+        return sorted(locations)
+
     def _generate_with_data_path(
         self,
         pointer: str,

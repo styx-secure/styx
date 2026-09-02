@@ -10,6 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from generate_seed_registry import (  # noqa: E402
+    SchemaSynthesizer,
+    _load_json,
+    _ordered_roots,
     prove_reachability,
     prove_reference_round_trip,
 )
@@ -27,6 +30,34 @@ class SeedReachabilityTests(unittest.TestCase):
         self.assertEqual(
             prove_reference_round_trip(ROOT.parents[2], ROOT / "contract"),
             {"request_count": 6, "response_count": 6},
+        )
+
+    def test_repeated_required_schema_is_detected_for_seed_contract_review(self) -> None:
+        contract = ROOT / "contract"
+        schema = _load_json(contract / "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json")
+        reachability = _load_json(
+            contract / "APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json"
+        )
+        roots = _ordered_roots(reachability)
+        synthesizer = SchemaSynthesizer(schema)
+        target = "/$defs/CapabilityRequirementV0"
+        coverage = next(
+            row
+            for row in reachability["objectCoverage"]
+            if row["objectSchemaPointer"] == target
+        )
+        self.assertEqual(coverage["eligibleRootIds"], ["RESPONSE-DESCRIBE_PROFILE"])
+        root = roots["RESPONSE-DESCRIBE_PROFILE"]
+        carrier = synthesizer.carrier(root, target_pointer=target)
+        self.assertEqual(
+            synthesizer.target_locations(root, carrier.value, target),
+            [
+                "/result/descriptor/capabilityRequirements/ACTIVATION_CAPABILITY_SET",
+                "/result/descriptor/capabilityRequirements/CUSTODY_REDUNDANCY",
+                "/result/descriptor/capabilityRequirements/DURABLE_RECORDS",
+                "/result/descriptor/capabilityRequirements/DURABLE_REQUIRED_OCTETS",
+                "/result/descriptor/capabilityRequirements/TRANSIENT_MEMORY_CAPABILITY",
+            ],
         )
 
     def test_independent_javascript_fork_join_label_matches_v9_vector(self) -> None:
