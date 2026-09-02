@@ -87,8 +87,9 @@ def build_report(repo_root: Path, contract: Path, evidence_root: Path) -> dict[s
     if not isinstance(cases, list) or len(cases) != 80:
         raise ProbeError("positive carrier inventory count drift")
     request_rows = [row for row in cases if row.get("direction") == "REQUEST"]
-    response_rows = [row for row in cases if row.get("direction") == "RESPONSE"]
-    if len(request_rows) != 65 or len(response_rows) != 15:
+    if len(request_rows) != 65 or sum(
+        row.get("direction") == "RESPONSE" for row in cases
+    ) != 15:
         raise ProbeError("positive carrier direction partition drift")
 
     authority = ContractAuthority.load(repo_root, contract)
@@ -114,6 +115,7 @@ def build_report(repo_root: Path, contract: Path, evidence_root: Path) -> dict[s
         operation_counts[row["operation"]] += 1
 
     # Oracle release occurs only after all 65 outputs have been frozen.
+    response_rows = [row for row in cases if row.get("direction") == "RESPONSE"]
     response_by_bytes: dict[bytes, dict[str, Any]] = {}
     for row in response_rows:
         _value, payload = _canonical_object(evidence_root / row["carrierFile"])

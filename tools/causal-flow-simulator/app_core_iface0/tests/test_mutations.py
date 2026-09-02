@@ -69,12 +69,16 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
             report,
             {
                 "family_counts": {
+                    "authority-header": 2,
                     "carrier-identity": 1,
+                    "coverage-binding": 1,
+                    "direction-binding": 1,
                     "inventory-closure": 2,
                     "oracle-binding": 2,
-                    "package-closure": 2,
+                    "package-closure": 3,
+                    "toolchain-identity": 1,
                 },
-                "killed_count": 7,
+                "killed_count": 13,
                 "schema": "styx.app-core-iface0.phase-a-mutation-report.v1",
                 "survivor_count": 0,
                 "verdict": "PASS",

@@ -15,12 +15,19 @@ precedence, and the same closed collection bounds.
 
 Phase A now generates the closed 65-request blind population, 15 withheld
 reference responses, the 80-row positive-carrier inventory and exact package
-manifest outside the repository. The reference probe freezes all 65 outputs
-before reading response bytes; the JavaScript reader independently validates
-all 15 released response carriers; seven package mutations are killed. These
-mechanisms have local test evidence only. An exact-HEAD two-clean-checkout run,
-independent review and provider-bound human ratification are still required
-before the carrier inventory becomes Phase-B input.
+manifest outside the repository. Of the 65 requests, 56 are schema-object
+coverage carriers that stop at profile selection and nine are semantic fixtures
+that reach the evaluator; none of the attempted `oneOf` carriers survives
+canonical-byte de-duplication as a distinct request. Six of the 15 distinct
+responses are profile rejections. The reference probe freezes all 65 outputs
+before reading response bytes. Only after that local freeze, the JavaScript
+reader independently applies response-schema, canonical-JSON and reserved-row
+release checks to the 15 withheld response carriers; it does not evaluate the
+65 request semantics and cannot authorize provider-bound oracle release.
+Phase-A package mutations are required to fail through their named detectors.
+Exact-final-head two-clean-checkout evidence, independent acceptance and
+provider-bound human ratification are still required before the carrier
+inventory becomes Phase-B input.
 
 Phase B remains unimplemented: it must bind that ratification, populate and
 execute the 1,450 structural witnesses and 5,149 semantic instances, kill every

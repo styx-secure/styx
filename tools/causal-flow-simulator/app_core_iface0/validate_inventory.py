@@ -106,6 +106,7 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         expected_requests,
         expected_responses,
         expected_producers,
+        expected_request_provenance,
         synthesizer,
         roots,
         reachability,
@@ -115,6 +116,39 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
     expected_payloads = {**request_ids, **response_ids}
     if set(by_id) != set(expected_payloads.values()):
         raise PhaseAValidationError("stable positive case ID set drift")
+    expected_inventory_header = {
+        "inventoryVersion": "APP-CORE-IFACE-0-POSITIVE-CARRIERS-V1",
+        "status": "PRE_RATIFICATION_CANDIDATE",
+        "interfaceSchemaSha256": reachability["schemaSha256"],
+        "oneOfArmSetSha256": reachability["oneOfArmSetSha256"],
+        "objectSchemaPointerSetSha256": reachability[
+            "objectSchemaPointerSetSha256"
+        ],
+        "caseCount": 80,
+    }
+    if any(inventory.get(key) != value for key, value in expected_inventory_header.items()):
+        raise PhaseAValidationError("positive inventory authority header drift")
+    expected_root_files = {
+        "positive-carrier-inventory.json",
+        "reference-toolchain.json",
+        "phase-a-package-report.json",
+        *(f"carriers/{case_id}.json" for case_id in expected_payloads.values()),
+        *(
+            f"reference-executions/{case_id}.json"
+            for case_id in response_ids.values()
+        ),
+    }
+    observed_root_files: set[str] = set()
+    for path in root.rglob("*"):
+        if path.is_symlink():
+            raise PhaseAValidationError("Phase-A evidence contains a symlink")
+        if path.is_dir():
+            continue
+        if not path.is_file():
+            raise PhaseAValidationError("Phase-A evidence contains a non-regular entry")
+        observed_root_files.add(path.relative_to(root).as_posix())
+    if observed_root_files != expected_root_files:
+        raise PhaseAValidationError("Phase-A external file set drift")
 
     authority = ContractAuthority.load(repo_root, contract)
     request_payload_by_id = {case_id: payload for payload, case_id in request_ids.items()}
@@ -234,6 +268,15 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         }
         for relative in artifact_paths
     ]
+    request_provenance = sorted(
+        (
+            {"caseId": request_ids[payload], **provenance}
+            for payload, provenance in expected_request_provenance.items()
+        ),
+        key=lambda row: row["caseId"].encode("utf-8"),
+    )
+    if len(request_provenance) != 65:
+        raise PhaseAValidationError("request provenance reconstruction count drift")
     expected_package = {
         "reportVersion": "APP-CORE-IFACE-0-PHASE-A-PACKAGE-V1",
         "status": "PRE_RATIFICATION_CANDIDATE",
@@ -247,6 +290,7 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         "caseCount": 80,
         "requestCaseCount": 65,
         "responseCaseCount": 15,
+        "requestProvenance": request_provenance,
         "artifactCount": 97,
         "artifacts": artifacts,
     }

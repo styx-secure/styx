@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import base64
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -14,11 +17,17 @@ sys.path.insert(0, str(ROOT))
 from final_gate import (  # noqa: E402
     FinalGateError,
     _fetch_json,
+    _generate_phase_a_from_checkout,
     _next_link,
+    _local_source_blobs,
+    _frozen_semantic_fixture_slice,
     _tree,
+    _validate_provider_authority,
+    _verify_provider_source_slice,
     _verify_clean_checkout,
     run_phase_a_gate,
 )
+from canonical_json import dumps  # noqa: E402
 from inventory import BASE_SHA  # noqa: E402
 
 
@@ -53,6 +62,61 @@ class _Opener:
 
 
 class FinalGateTests(unittest.TestCase):
+    def test_ratified_semantic_fixture_slice_is_exact_in_git_history_and_head(self) -> None:
+        repo = ROOT.parents[2]
+        selection_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        historical, selected = _local_source_blobs(repo, selection_head)
+        frozen = _frozen_semantic_fixture_slice(historical)
+        self.assertEqual(len(frozen), 7121)
+        self.assertEqual(
+            hashlib.sha256(frozen).hexdigest(),
+            "686208b6d1285d42f8ec165fbb511905004eee124a0708207b103b60c561e1ad",
+        )
+        self.assertEqual(selected.count(frozen), 1)
+
+    def test_provider_source_slice_must_equal_both_local_git_blobs(self) -> None:
+        historical = b"".join(
+            subprocess.run(
+                [
+                    "git",
+                    "show",
+                    (
+                        "284b9230126cfa70337723c2a9d001800a64804c:"
+                        "tools/causal-flow-simulator/app_core_iface0/"
+                        "generate_seed_registry.py"
+                    ),
+                ],
+                cwd=ROOT.parents[2],
+                check=True,
+                capture_output=True,
+            ).stdout.splitlines(keepends=True)
+        )
+        selected = historical + b"# selected-only\n"
+
+        def provider(url: str) -> tuple[object, bytes, dict[str, str]]:
+            payload = historical if "284b923" in url else selected
+            value = {
+                "content": base64.b64encode(payload).decode("ascii"),
+                "encoding": "base64",
+                "path": (
+                    "tools/causal-flow-simulator/app_core_iface0/"
+                    "generate_seed_registry.py"
+                ),
+                "type": "file",
+            }
+            return value, b"provider", {}
+
+        with patch("final_gate._fetch_json", side_effect=provider):
+            _verify_provider_source_slice("a" * 40, historical, selected)
+            with self.assertRaisesRegex(FinalGateError, "local source blobs differ"):
+                _verify_provider_source_slice("a" * 40, historical, selected + b"drift")
+
     def test_provider_fetch_preserves_object_or_array_shape(self) -> None:
         url = "https://api.github.com/repos/styx-secure/styx/issues/295/comments"
         for value in ({"id": 1}, [{"id": 1}]):
@@ -140,6 +204,272 @@ class FinalGateTests(unittest.TestCase):
                 run_phase_a_gate(root, root, root / "a", root / "b", "HEAD")
             with self.assertRaisesRegex(FinalGateError, "not distinct"):
                 run_phase_a_gate(root, root, root / "a", root / "b", "a" * 40)
+
+    def test_phase_a_uses_two_clean_checkout_tools_and_regenerates_exact_bytes(self) -> None:
+        source = ROOT.parents[2]
+        selection_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=source,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        with tempfile.TemporaryDirectory() as raw:
+            temporary = Path(raw)
+            checkout_one = temporary / "checkout-one"
+            checkout_two = temporary / "checkout-two"
+            for checkout in (checkout_one, checkout_two):
+                subprocess.run(
+                    ["git", "clone", "--quiet", "--shared", str(source), str(checkout)],
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "checkout", "--quiet", "--detach", selection_head],
+                    cwd=checkout,
+                    check=True,
+                )
+            evidence_one = temporary / "evidence-one"
+            evidence_two = temporary / "evidence-two"
+            _generate_phase_a_from_checkout(checkout_one, evidence_one)
+            _generate_phase_a_from_checkout(checkout_two, evidence_two)
+            with patch("final_gate._verify_provider_source_slice"):
+                result = run_phase_a_gate(
+                    checkout_one,
+                    checkout_two,
+                    evidence_one,
+                    evidence_two,
+                    selection_head,
+                )
+        self.assertEqual(result["verdict"], "PASS")
+        self.assertEqual(result["caseCount"], 80)
+        self.assertRegex(result["positiveCarrierInventorySha256"], r"^[0-9a-f]{64}$")
+        self.assertRegex(result["phaseAPackageReportSha256"], r"^[0-9a-f]{64}$")
+
+    def test_phase_b_authenticates_before_fresh_regeneration_and_refreshes(self) -> None:
+        selection_head = "a" * 40
+        inventory_sha = "b" * 64
+        package_sha = "c" * 64
+        comment_id = "12345"
+        comment_url = (
+            "https://api.github.com/repos/styx-secure/styx/issues/comments/"
+            + comment_id
+        )
+        events: list[str] = []
+
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            contract = repo / "tools/causal-flow-simulator/app_core_iface0/contract"
+            contract.mkdir(parents=True)
+            manifest = contract / "APP-CORE-IFACE-0-CANDIDATE-MANIFEST.json"
+            manifest.write_bytes(b"manifest\n")
+            manifest_sha = hashlib.sha256(manifest.read_bytes()).hexdigest()
+            decision = {
+                "baseSha": BASE_SHA,
+                "candidateManifestSha256": manifest_sha,
+                "caseCount": 80,
+                "closureAmendmentSha256": (
+                    "fd17ed39c7288620cd62f132db3fd5a877f6ba1ef0ff3580c9ad745146d85165"
+                ),
+                "decision": "RATIFY",
+                "issue": 295,
+                "kind": "APP_CORE_POSITIVE_CARRIER_INVENTORY_RATIFICATION_V1",
+                "phaseAPackageReportSha256": package_sha,
+                "positiveCarrierInventorySha256": inventory_sha,
+                "repository": "styx-secure/styx",
+                "requestCaseCount": 65,
+                "responseCaseCount": 15,
+                "selectionHead": selection_head,
+            }
+            comment = {
+                "body": dumps(decision).decode("utf-8"),
+                "created_at": "2026-09-02T00:00:00Z",
+                "id": int(comment_id),
+                "issue_url": "https://api.github.com/repos/styx-secure/styx/issues/295",
+                "performed_via_github_app": None,
+                "updated_at": "2026-09-02T00:00:00Z",
+                "url": comment_url,
+                "user": {"id": 141346846, "login": "maverde73"},
+            }
+            provider_raw = json.dumps(comment, sort_keys=True).encode("utf-8")
+
+            def fetch(url: str) -> tuple[object, bytes, dict[str, str]]:
+                if url == comment_url:
+                    events.append("comment")
+                    return comment, provider_raw, {}
+                if url.endswith("/commits/" + selection_head):
+                    events.append("commit")
+                    return {"sha": selection_head}, b"commit", {}
+                if url.endswith("/pulls/296"):
+                    events.append("pull")
+                    return {
+                        "base": {"sha": BASE_SHA},
+                        "draft": True,
+                        "head": {"sha": selection_head},
+                        "state": "open",
+                    }, b"pull", {}
+                if "/issues/295/comments?" in url:
+                    events.append("comments")
+                    return [comment], b"comments", {}
+                raise AssertionError(url)
+
+            def generate(_repo: Path, output: Path) -> None:
+                self.assertFalse(output.exists())
+                self.assertEqual(
+                    events,
+                    ["comment", "commit", "pull", "comments", "source"],
+                )
+                events.append("generate")
+                output.mkdir()
+                (output / "generated").write_bytes(b"phase-a")
+
+            def validate(_repo: Path, output: Path) -> dict[str, object]:
+                self.assertEqual((output / "generated").read_bytes(), b"phase-a")
+                events.append("validate")
+                return {
+                    "inventory_sha256": inventory_sha,
+                    "package_report_sha256": package_sha,
+                }
+
+            def verify_source(
+                _selection_head: str,
+                _historical: bytes,
+                _selected: bytes,
+            ) -> None:
+                self.assertEqual(events, ["comment", "commit", "pull", "comments"])
+                events.append("source")
+
+            with (
+                patch("final_gate._fetch_json", side_effect=fetch),
+                patch("final_gate._verify_clean_checkout"),
+                patch("final_gate._local_source_blobs", return_value=(b"h", b"s")),
+                patch("final_gate._verify_provider_source_slice", side_effect=verify_source),
+                patch("final_gate._generate_phase_a_from_checkout", side_effect=generate),
+                patch("final_gate._validate_external_root", side_effect=validate),
+            ):
+                observed = _validate_provider_authority(comment_id, repo)
+
+            malformed_comment = dict(comment)
+            malformed_comment["user"] = None
+            with patch(
+                "final_gate._fetch_json",
+                return_value=(malformed_comment, b"malformed", {}),
+            ):
+                with self.assertRaisesRegex(FinalGateError, "provenance drift"):
+                    _validate_provider_authority(comment_id, repo)
+
+            def malformed_pull_fetch(
+                url: str,
+            ) -> tuple[object, bytes, dict[str, str]]:
+                if url == comment_url:
+                    return comment, provider_raw, {}
+                if url.endswith("/commits/" + selection_head):
+                    return {"sha": selection_head}, b"commit", {}
+                if url.endswith("/pulls/296"):
+                    return {
+                        "base": None,
+                        "draft": True,
+                        "head": {"sha": selection_head},
+                        "state": "open",
+                    }, b"pull", {}
+                raise AssertionError(url)
+
+            with (
+                patch("final_gate._fetch_json", side_effect=malformed_pull_fetch),
+                patch("final_gate._verify_clean_checkout"),
+            ):
+                with self.assertRaisesRegex(FinalGateError, "PR freeze identity drift"):
+                    _validate_provider_authority(comment_id, repo)
+
+        self.assertEqual(observed, decision)
+        self.assertEqual(
+            events,
+            [
+                "comment", "commit", "pull", "comments", "source",
+                "generate", "validate", "comment",
+            ],
+        )
+
+    def test_phase_b_rejects_provider_change_during_regeneration(self) -> None:
+        selection_head = "a" * 40
+        comment_id = "12345"
+        comment_url = (
+            "https://api.github.com/repos/styx-secure/styx/issues/comments/"
+            + comment_id
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "repo"
+            contract = repo / "tools/causal-flow-simulator/app_core_iface0/contract"
+            contract.mkdir(parents=True)
+            manifest = contract / "APP-CORE-IFACE-0-CANDIDATE-MANIFEST.json"
+            manifest.write_bytes(b"manifest\n")
+            decision = {
+                "baseSha": BASE_SHA,
+                "candidateManifestSha256": hashlib.sha256(
+                    manifest.read_bytes()
+                ).hexdigest(),
+                "caseCount": 80,
+                "closureAmendmentSha256": (
+                    "fd17ed39c7288620cd62f132db3fd5a877f6ba1ef0ff3580c9ad745146d85165"
+                ),
+                "decision": "RATIFY",
+                "issue": 295,
+                "kind": "APP_CORE_POSITIVE_CARRIER_INVENTORY_RATIFICATION_V1",
+                "phaseAPackageReportSha256": "c" * 64,
+                "positiveCarrierInventorySha256": "b" * 64,
+                "repository": "styx-secure/styx",
+                "requestCaseCount": 65,
+                "responseCaseCount": 15,
+                "selectionHead": selection_head,
+            }
+            comment = {
+                "body": dumps(decision).decode("utf-8"),
+                "created_at": "2026-09-02T00:00:00Z",
+                "id": int(comment_id),
+                "issue_url": "https://api.github.com/repos/styx-secure/styx/issues/295",
+                "performed_via_github_app": None,
+                "updated_at": "2026-09-02T00:00:00Z",
+                "url": comment_url,
+                "user": {"id": 141346846, "login": "maverde73"},
+            }
+            first_raw = json.dumps(comment, sort_keys=True).encode("utf-8")
+            calls = 0
+
+            def fetch(url: str) -> tuple[object, bytes, dict[str, str]]:
+                nonlocal calls
+                if url == comment_url:
+                    calls += 1
+                    raw_comment = first_raw if calls == 1 else first_raw + b" "
+                    return comment, raw_comment, {}
+                if url.endswith("/commits/" + selection_head):
+                    return {"sha": selection_head}, b"commit", {}
+                if url.endswith("/pulls/296"):
+                    return {
+                        "base": {"sha": BASE_SHA},
+                        "draft": True,
+                        "head": {"sha": selection_head},
+                        "state": "open",
+                    }, b"pull", {}
+                return [comment], b"comments", {}
+
+            def generate(_repo: Path, output: Path) -> None:
+                output.mkdir()
+
+            with (
+                patch("final_gate._fetch_json", side_effect=fetch),
+                patch("final_gate._verify_clean_checkout"),
+                patch("final_gate._local_source_blobs", return_value=(b"h", b"s")),
+                patch("final_gate._verify_provider_source_slice"),
+                patch("final_gate._generate_phase_a_from_checkout", side_effect=generate),
+                patch(
+                    "final_gate._validate_external_root",
+                    return_value={
+                        "inventory_sha256": "b" * 64,
+                        "package_report_sha256": "c" * 64,
+                    },
+                ),
+            ):
+                with self.assertRaisesRegex(FinalGateError, "changed during"):
+                    _validate_provider_authority(comment_id, repo)
 
 
 if __name__ == "__main__":

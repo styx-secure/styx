@@ -15,11 +15,13 @@ from generate_seed_registry import (  # noqa: E402
     SchemaSynthesizer,
     _load_json,
     _ordered_roots,
+    _pointer_to_dotted,
     generate_phase_a,
     prove_positive_carrier_closure,
     prove_reachability,
     prove_reference_round_trip,
 )
+from canonical_json import dumps  # noqa: E402
 from authority_witness import isolated_authority_states_witness  # noqa: E402
 from run_cross_runtime import build_report as build_javascript_release_report  # noqa: E402
 from run_probe import build_report as build_reference_probe_report  # noqa: E402
@@ -48,6 +50,52 @@ class SeedReachabilityTests(unittest.TestCase):
             )
             self.assertEqual(completed.returncode, 2)
             self.assertEqual(completed.stdout, "")
+
+    def test_javascript_contract_reader_binds_artifacts_to_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            contract = Path(raw) / "contract"
+            shutil.copytree(ROOT / "contract", contract)
+            schema = contract / "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json"
+            schema.write_bytes(schema.read_bytes() + b" ")
+            completed = subprocess.run(
+                [
+                    "node",
+                    str(ROOT / "node_adapter.mjs"),
+                    "--preflight-collections",
+                    "--contract",
+                    str(contract),
+                ],
+                input=json.dumps({"direction": "REQUEST", "message": {}}),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 2)
+            self.assertIn("candidate manifest digest mismatch", completed.stderr)
+
+    def test_javascript_contract_reader_rejects_symlinked_contract_ancestor(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            contract = root / "real" / "contract"
+            contract.parent.mkdir()
+            shutil.copytree(ROOT / "contract", contract)
+            alias = root / "alias"
+            alias.symlink_to(contract.parent, target_is_directory=True)
+            completed = subprocess.run(
+                [
+                    "node",
+                    str(ROOT / "node_adapter.mjs"),
+                    "--preflight-collections",
+                    "--contract",
+                    str(alias / "contract"),
+                ],
+                input=json.dumps({"direction": "REQUEST", "message": {}}),
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 2)
+            self.assertIn("contract path or ancestor is a symlink", completed.stderr)
 
     def test_every_ratified_object_and_union_arm_has_a_valid_carrier(self) -> None:
         self.assertEqual(
@@ -337,8 +385,7 @@ class SeedReachabilityTests(unittest.TestCase):
         }
         accepted = subprocess.run(
             command,
-            input=json.dumps(reachable),
-            text=True,
+            input=dumps(reachable),
             capture_output=True,
             check=True,
         )
@@ -348,13 +395,12 @@ class SeedReachabilityTests(unittest.TestCase):
         reserved["result"]["evaluation"]["primary"] = "LENGTH_MISMATCH"
         rejected = subprocess.run(
             command,
-            input=json.dumps(reserved),
-            text=True,
+            input=dumps(reserved),
             capture_output=True,
             check=False,
         )
         self.assertEqual(rejected.returncode, 2)
-        self.assertIn("reserved F13", rejected.stderr)
+        self.assertIn(b"reserved F13", rejected.stderr)
 
     def test_independent_javascript_preflights_closed_collection_bounds(self) -> None:
         command = [
@@ -542,6 +588,38 @@ class PhaseAReaderIntegrationTests(unittest.TestCase):
         self.assertEqual(report["response_case_count"], 15)
         self.assertEqual(len(report["observations"]), 65)
 
+    def test_package_records_exact_first_retained_request_provenance(self) -> None:
+        package = json.loads(
+            (self.evidence / "phase-a-package-report.json").read_bytes()
+        )
+        rows = package["requestProvenance"]
+        self.assertEqual(len(rows), 65)
+        self.assertEqual(
+            [row["caseId"] for row in rows],
+            sorted(row["caseId"] for row in rows),
+        )
+        self.assertEqual(
+            {key for row in rows for key in row},
+            {
+                "caseId",
+                "eligibleRootId",
+                "generatorKind",
+                "generatorOrdinal",
+                "sourceIdentity",
+            },
+        )
+        self.assertEqual(
+            {kind: sum(row["generatorKind"] == kind for row in rows) for kind in {
+                "OBJECT_COVERAGE", "ONEOF_ARM_COVERAGE", "SEMANTIC_FIXTURE"
+            }},
+            {
+                "OBJECT_COVERAGE": 56,
+                "ONEOF_ARM_COVERAGE": 0,
+                "SEMANTIC_FIXTURE": 9,
+            },
+        )
+        self.assertEqual(_pointer_to_dotted("/$defs/a~1b~0c"), "$defs.a/b~c")
+
     def test_javascript_reader_admits_every_released_response(self) -> None:
         report = build_javascript_release_report(
             ROOT.parents[2], ROOT / "contract", self.evidence, "node"
@@ -549,6 +627,41 @@ class PhaseAReaderIntegrationTests(unittest.TestCase):
         self.assertEqual(report["verdict"], "PASS")
         self.assertEqual(report["response_case_count"], 15)
         self.assertRegex(report["response_set_sha256"], r"^[0-9a-f]{64}$")
+
+    def test_javascript_response_mode_rejects_requests_and_noncanonical_bytes(self) -> None:
+        inventory = json.loads(
+            (self.evidence / "positive-carrier-inventory.json").read_bytes()
+        )
+        request_rows = [row for row in inventory["cases"] if row["direction"] == "REQUEST"]
+        response_row = next(
+            row for row in inventory["cases"] if row["direction"] == "RESPONSE"
+        )
+        command = [
+            "node",
+            str(ROOT / "node_adapter.mjs"),
+            "--validate-response",
+            "--contract",
+            str(ROOT / "contract"),
+        ]
+        for row in request_rows:
+            rejected = subprocess.run(
+                command,
+                input=(self.evidence / row["carrierFile"]).read_bytes(),
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(rejected.returncode, 2, row["caseId"])
+            self.assertNotIn(b"TypeError", rejected.stderr, row["caseId"])
+        canonical = (self.evidence / response_row["carrierFile"]).read_bytes()
+        noncanonical = canonical[:-1] + b" \n"
+        rejected = subprocess.run(
+            command,
+            input=noncanonical,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn(b"not canonical", rejected.stderr)
 
 
 if __name__ == "__main__":

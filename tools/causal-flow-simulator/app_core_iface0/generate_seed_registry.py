@@ -1329,6 +1329,7 @@ def _positive_population(
     dict[bytes, dict[str, Any]],
     dict[bytes, dict[str, Any]],
     dict[bytes, set[bytes]],
+    dict[bytes, dict[str, Any]],
     SchemaSynthesizer,
     dict[str, dict[str, Any]],
     dict[str, Any],
@@ -1355,27 +1356,59 @@ def _positive_population(
     authority = ContractAuthority.load(repo_root, contract)
 
     requests: dict[bytes, dict[str, Any]] = {}
+    request_provenance: dict[bytes, dict[str, Any]] = {}
+    object_ordinal = 0
     for row in reachability["objectCoverage"]:
         for root_id in sorted(row["eligibleRootIds"], key=ROOT_ORDER.index):
             root = roots[root_id]
             if root["direction"] != "REQUEST":
                 continue
+            object_ordinal += 1
             carrier = synthesizer.carrier(
                 root, target_pointer=row["objectSchemaPointer"]
             )
-            requests.setdefault(carrier.canonical_bytes, carrier.value)
+            if carrier.canonical_bytes not in requests:
+                requests[carrier.canonical_bytes] = carrier.value
+                request_provenance[carrier.canonical_bytes] = {
+                    "generatorKind": "OBJECT_COVERAGE",
+                    "generatorOrdinal": object_ordinal,
+                    "eligibleRootId": root_id,
+                    "sourceIdentity": _pointer_to_dotted(
+                        row["objectSchemaPointer"]
+                    ),
+                }
+    arm_ordinal = 0
     for row in reachability["oneOfArmCoverage"]:
         for root_id in sorted(row["eligibleRootIds"], key=ROOT_ORDER.index):
             root = roots[root_id]
             if root["direction"] != "REQUEST":
                 continue
+            arm_ordinal += 1
             carrier = synthesizer.carrier(
                 root,
                 arm_goal=(row["oneOfPointer"], int(row["armIndex"])),
             )
-            requests.setdefault(carrier.canonical_bytes, carrier.value)
-    for request in _semantic_request_carriers(authority):
-        requests.setdefault(dumps(request), request)
+            if carrier.canonical_bytes not in requests:
+                requests[carrier.canonical_bytes] = carrier.value
+                request_provenance[carrier.canonical_bytes] = {
+                    "generatorKind": "ONEOF_ARM_COVERAGE",
+                    "generatorOrdinal": arm_ordinal,
+                    "eligibleRootId": root_id,
+                    "sourceIdentity": (
+                        f"{_pointer_to_dotted(row['oneOfPointer'])}"
+                        f"#{int(row['armIndex'])}"
+                    ),
+                }
+    for fixture_ordinal, request in enumerate(_semantic_request_carriers(authority), 1):
+        payload = dumps(request)
+        if payload not in requests:
+            requests[payload] = request
+            request_provenance[payload] = {
+                "generatorKind": "SEMANTIC_FIXTURE",
+                "generatorOrdinal": fixture_ordinal,
+                "eligibleRootId": f"REQUEST-{request['operation']}",
+                "sourceIdentity": f"semantic-fixture/{fixture_ordinal}",
+            }
 
     responses: dict[bytes, dict[str, Any]] = {}
     producers: dict[bytes, set[bytes]] = {}
@@ -1398,7 +1431,40 @@ def _positive_population(
         raise SeedGenerationError(
             f"positive population drift: requests={len(requests)} responses={len(responses)}"
         )
-    return requests, responses, producers, synthesizer, roots, reachability
+    if set(request_provenance) != set(requests):
+        raise SeedGenerationError("request provenance does not cover the request set")
+    return (
+        requests,
+        responses,
+        producers,
+        request_provenance,
+        synthesizer,
+        roots,
+        reachability,
+    )
+
+
+def _pointer_to_dotted(pointer: str) -> str:
+    """Convert an exact RFC 6901 pointer to the ratified dotted identity."""
+
+    if not isinstance(pointer, str) or not pointer.startswith("/"):
+        raise SeedGenerationError("provenance pointer is not an absolute RFC 6901 pointer")
+    tokens = pointer[1:].split("/")
+    decoded: list[str] = []
+    for token in tokens:
+        index = 0
+        value = ""
+        while index < len(token):
+            if token[index] != "~":
+                value += token[index]
+                index += 1
+                continue
+            if index + 1 >= len(token) or token[index + 1] not in "01":
+                raise SeedGenerationError("provenance pointer contains invalid escaping")
+            value += "/" if token[index + 1] == "1" else "~"
+            index += 2
+        decoded.append(value)
+    return ".".join(decoded)
 
 
 def _case_ids(
@@ -1488,6 +1554,7 @@ def generate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         requests,
         responses,
         producers,
+        request_provenance,
         synthesizer,
         roots,
         reachability,
@@ -1606,6 +1673,15 @@ def generate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         [*request_rows.values(), *response_rows.values()],
         key=lambda row: row["caseId"].encode("utf-8"),
     )
+    provenance_rows = sorted(
+        (
+            {"caseId": request_ids[payload], **provenance}
+            for payload, provenance in request_provenance.items()
+        ),
+        key=lambda row: row["caseId"].encode("utf-8"),
+    )
+    if len(provenance_rows) != 65:
+        raise SeedGenerationError("request provenance count drift")
     inventory = {
         "inventoryVersion": "APP-CORE-IFACE-0-POSITIVE-CARRIERS-V1",
         "status": "PRE_RATIFICATION_CANDIDATE",
@@ -1649,6 +1725,7 @@ def generate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         "caseCount": 80,
         "requestCaseCount": 65,
         "responseCaseCount": 15,
+        "requestProvenance": provenance_rows,
         "artifactCount": len(artifacts),
         "artifacts": artifacts,
     }

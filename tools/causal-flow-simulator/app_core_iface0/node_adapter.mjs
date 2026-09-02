@@ -52,7 +52,7 @@ function requireCondition(condition, message) {
 }
 
 
-function readJson(filePath) {
+function readBytes(filePath) {
   requireCondition(Number.isInteger(fs.constants.O_NOFOLLOW), "O_NOFOLLOW is unavailable");
   const descriptor = fs.openSync(
     filePath,
@@ -60,11 +60,120 @@ function readJson(filePath) {
   );
   try {
     const stat = fs.fstatSync(descriptor);
-    requireCondition(stat.isFile(), `invalid JSON authority: ${filePath}`);
-    return JSON.parse(fs.readFileSync(descriptor, "utf8"));
+    requireCondition(stat.isFile(), `invalid file authority: ${filePath}`);
+    return fs.readFileSync(descriptor);
   } finally {
     fs.closeSync(descriptor);
   }
+}
+
+
+function readJson(filePath) {
+  return JSON.parse(readBytes(filePath).toString("utf8"));
+}
+
+
+function loadContractAuthority(contractPath) {
+  const lexical = path.resolve(contractPath);
+  const real = fs.realpathSync.native(lexical);
+  requireCondition(real === lexical, "contract path or ancestor is a symlink");
+  requireCondition(fs.statSync(real).isDirectory(), "contract authority is not a directory");
+  const manifestName = "APP-CORE-IFACE-0-CANDIDATE-MANIFEST.json";
+  const manifest = readJson(path.join(real, manifestName));
+  requireCondition(Array.isArray(manifest.artifacts), "candidate manifest artifact relation is absent");
+  const artifacts = new Map();
+  for (const row of manifest.artifacts) {
+    requireCondition(
+      row !== null && typeof row === "object" && !Array.isArray(row)
+        && typeof row.path === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(row.path)
+        && typeof row.sha256 === "string" && /^[0-9a-f]{64}$/.test(row.sha256),
+      "candidate manifest artifact row is invalid",
+    );
+    requireCondition(!artifacts.has(row.path), "candidate manifest contains a duplicate artifact");
+    artifacts.set(row.path, row.sha256);
+  }
+  return Object.freeze({ artifacts, lexical, real });
+}
+
+
+function readManifestBoundJson(authority, filename) {
+  requireCondition(authority.artifacts.has(filename), `artifact is absent from candidate manifest: ${filename}`);
+  requireCondition(
+    fs.realpathSync.native(authority.lexical) === authority.real,
+    "contract authority changed during adapter execution",
+  );
+  const raw = readBytes(path.join(authority.real, filename));
+  const digest = crypto.createHash("sha256").update(raw).digest("hex");
+  requireCondition(digest === authority.artifacts.get(filename), `candidate manifest digest mismatch: ${filename}`);
+  return JSON.parse(raw.toString("utf8"));
+}
+
+
+function validateUnicodeScalars(value) {
+  if (typeof value === "string") {
+    for (let index = 0; index < value.length; index += 1) {
+      const unit = value.charCodeAt(index);
+      if (unit >= 0xd800 && unit <= 0xdbff) {
+        requireCondition(index + 1 < value.length, "canonical JSON contains a lone surrogate");
+        const next = value.charCodeAt(index + 1);
+        requireCondition(next >= 0xdc00 && next <= 0xdfff, "canonical JSON contains a lone surrogate");
+        index += 1;
+      } else {
+        requireCondition(!(unit >= 0xdc00 && unit <= 0xdfff), "canonical JSON contains a lone surrogate");
+      }
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) validateUnicodeScalars(item);
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const [key, item] of Object.entries(value)) {
+      validateUnicodeScalars(key);
+      validateUnicodeScalars(item);
+    }
+  }
+}
+
+
+function canonicalStringify(value) {
+  validateUnicodeScalars(value);
+  if (value === null || typeof value === "boolean" || typeof value === "string") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number") {
+    requireCondition(Number.isSafeInteger(value), "canonical JSON number is not a safe integer");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalStringify(item)).join(",")}]`;
+  }
+  requireCondition(typeof value === "object", "canonical JSON contains an unsupported value");
+  const keys = Object.keys(value).sort((left, right) => Buffer.compare(
+    Buffer.from(left, "utf8"), Buffer.from(right, "utf8"),
+  ));
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalStringify(value[key])}`).join(",")}}`;
+}
+
+
+function readCanonicalInput() {
+  const raw = fs.readFileSync(0);
+  requireCondition(!raw.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])), "canonical JSON BOM is forbidden");
+  let text;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(raw);
+  } catch (_error) {
+    throw new AdapterFailure("canonical JSON is not strict UTF-8");
+  }
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch (_error) {
+    throw new AdapterFailure("canonical JSON is malformed");
+  }
+  requireCondition(`${canonicalStringify(value)}\n` === text, "input is not canonical evidence JSON");
+  return value;
 }
 
 
@@ -912,7 +1021,7 @@ function validateBeforeRelease(response, relations, reservedDetector = true) {
 
 
 function validateCompleteResponseBeforeRelease(response, schema, relations) {
-  validateSchema(response, schema, schema);
+  validateSchema(response, schema.$defs.InterfaceResponseV0, schema);
   if (response.operation === "EVALUATE_CANDIDATE") {
     const evaluation = response.result.evaluation;
     const primary = evaluation.primary ?? evaluation.primaryOnCommit;
@@ -976,9 +1085,9 @@ function containsPropertyName(node, propertyName) {
 }
 
 
-function selfTestAcv066(contractPath) {
-  const schema = readJson(path.join(contractPath, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json"));
-  const relations = readJson(path.join(contractPath, "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"));
+function selfTestAcv066(authority) {
+  const schema = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json");
+  const relations = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json");
   const reserved = relations.terminalPredicateRelationV0
     .filter((row) => row.result.reachability === "RESERVED_UNREACHABLE_V0");
   requireCondition(
@@ -1085,11 +1194,11 @@ try {
     graphProjectionMode, outcomeProjectionMode, preflightCollectionsMode,
     selfTest, validateResponseMode,
   } = parseArguments(process.argv.slice(2));
-  const resolvedContract = path.resolve(contractPath);
+  const authority = loadContractAuthority(contractPath);
   if (selfTest) {
-    process.stdout.write(`${JSON.stringify(selfTestAcv066(resolvedContract))}\n`);
+    process.stdout.write(`${JSON.stringify(selfTestAcv066(authority))}\n`);
   } else if (deriveForkJoin) {
-    const schema = readJson(path.join(resolvedContract, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json"));
+    const schema = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json");
     const input = JSON.parse(fs.readFileSync(0, "utf8"));
     process.stdout.write(`${JSON.stringify({ joinLabelHex: deriveForkJoinLabel(input, schema) })}\n`);
   } else if (authorityMetricsMode) {
@@ -1102,14 +1211,14 @@ try {
     const input = JSON.parse(fs.readFileSync(0, "utf8"));
     process.stdout.write(`${JSON.stringify(credentialProjection(input))}\n`);
   } else if (validateResponseMode) {
-    const schema = readJson(path.join(resolvedContract, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json"));
-    const relations = readJson(path.join(resolvedContract, "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"));
-    const input = JSON.parse(fs.readFileSync(0, "utf8"));
+    const schema = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json");
+    const relations = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json");
+    const input = readCanonicalInput();
     validateCompleteResponseBeforeRelease(input, schema, relations);
     process.stdout.write(`${JSON.stringify({ verdict: "PASS" })}\n`);
   } else if (preflightCollectionsMode) {
-    const schema = readJson(path.join(resolvedContract, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json"));
-    const semantics = readJson(path.join(resolvedContract, "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json"));
+    const schema = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json");
+    const semantics = readManifestBoundJson(authority, "APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json");
     const input = JSON.parse(fs.readFileSync(0, "utf8"));
     process.stdout.write(`${JSON.stringify(preflightCollections(input, schema, semantics))}\n`);
   } else if (outcomeProjectionMode) {

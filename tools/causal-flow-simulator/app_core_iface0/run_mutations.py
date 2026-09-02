@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import shutil
 import sys
 import tempfile
@@ -35,7 +36,43 @@ def _rewrite(path: Path, transform: Callable[[dict[str, object]], None]) -> None
     path.write_bytes(dumps(value))
 
 
-def _mutations(root: Path) -> tuple[tuple[str, str, Callable[[Path], None]], ...]:
+def _sha256(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _repair_package(candidate: Path) -> None:
+    package_path = candidate / "phase-a-package-report.json"
+    package = loads(package_path.read_bytes())
+    if not isinstance(package, dict):
+        raise MutationError("package report is malformed")
+    artifacts = []
+    for path in sorted(
+        (
+            item
+            for item in candidate.rglob("*")
+            if item.is_file() and item != package_path
+        ),
+        key=lambda item: item.relative_to(candidate).as_posix().encode("utf-8"),
+    ):
+        relative = path.relative_to(candidate).as_posix()
+        payload = path.read_bytes()
+        artifacts.append(
+            {"octets": len(payload), "path": relative, "sha256": _sha256(payload)}
+        )
+    package["artifacts"] = artifacts
+    package["artifactCount"] = len(artifacts)
+    package["positiveCarrierInventorySha256"] = _sha256(
+        (candidate / "positive-carrier-inventory.json").read_bytes()
+    )
+    package["toolchainSha256"] = _sha256(
+        (candidate / "reference-toolchain.json").read_bytes()
+    )
+    package_path.write_bytes(dumps(package))
+
+
+def _mutations(
+    root: Path,
+) -> tuple[tuple[str, str, str, Callable[[Path], None]], ...]:
     inventory = loads((root / "positive-carrier-inventory.json").read_bytes())
     if not isinstance(inventory, dict) or not isinstance(inventory.get("cases"), list):
         raise MutationError("baseline inventory is malformed")
@@ -90,14 +127,91 @@ def _mutations(root: Path) -> tuple[tuple[str, str, Callable[[Path], None]], ...
             lambda value: value.__setitem__("responseCarrierSha256", "0" * 64),
         )
 
+    def status_escalation(candidate: Path) -> None:
+        _rewrite(
+            candidate / "positive-carrier-inventory.json",
+            lambda value: value.__setitem__("status", "RATIFIED"),
+        )
+        _repair_package(candidate)
+
+    def authority_header_drift(candidate: Path) -> None:
+        def mutate(value: dict[str, object]) -> None:
+            value["interfaceSchemaSha256"] = "0" * 64
+            value["oneOfArmSetSha256"] = "1" * 64
+            value["objectSchemaPointerSetSha256"] = "2" * 64
+
+        _rewrite(candidate / "positive-carrier-inventory.json", mutate)
+        _repair_package(candidate)
+
+    def coherent_toolchain_drift(candidate: Path) -> None:
+        toolchain_path = candidate / "reference-toolchain.json"
+        toolchain_path.write_bytes(
+            dumps({"jsonschemaVersion": "0", "pythonVersion": "0"})
+        )
+        toolchain_sha = _sha256(toolchain_path.read_bytes())
+        inventory_path = candidate / "positive-carrier-inventory.json"
+        inventory = loads(inventory_path.read_bytes())
+        if not isinstance(inventory, dict) or not isinstance(inventory.get("cases"), list):
+            raise MutationError("inventory is malformed")
+        for row in inventory["cases"]:
+            if row.get("direction") != "RESPONSE":
+                continue
+            report_path = candidate / f"reference-executions/{row['caseId']}.json"
+            _rewrite(
+                report_path,
+                lambda value: value.__setitem__("toolchainSha256", toolchain_sha),
+            )
+            row["referenceExecutionReportSha256"] = _sha256(report_path.read_bytes())
+        inventory_path.write_bytes(dumps(inventory))
+        _repair_package(candidate)
+
+    def direction_inversion(candidate: Path) -> None:
+        def mutate(value: dict[str, object]) -> None:
+            rows = value["cases"]
+            if not isinstance(rows, list):
+                raise MutationError("inventory case relation is unavailable")
+            target = next(row for row in rows if row["direction"] == "RESPONSE")
+            target["direction"] = "REQUEST"
+            target["sourceKind"] = "CLOSED_REQUEST_FIXTURE"
+            target["releasePhase"] = "PRE_FREEZE_BLIND_INPUT"
+            target.pop("requestCaseId")
+            target.pop("referenceExecutionReportSha256")
+
+        _rewrite(candidate / "positive-carrier-inventory.json", mutate)
+        _repair_package(candidate)
+
+    def coverage_drift(candidate: Path) -> None:
+        def mutate(value: dict[str, object]) -> None:
+            rows = value["cases"]
+            if not isinstance(rows, list):
+                raise MutationError("inventory case relation is unavailable")
+            target = next(row for row in rows if row["direction"] == "REQUEST")
+            target["coveredObjectSchemaPointers"] = ["/$defs/InterfaceResponseV0"]
+
+        _rewrite(candidate / "positive-carrier-inventory.json", mutate)
+        _repair_package(candidate)
+
+    def carrier_symlink(candidate: Path) -> None:
+        carrier = candidate / request["carrierFile"]
+        target = candidate.parent / "external-carrier-target.json"
+        target.write_bytes(carrier.read_bytes())
+        carrier.unlink()
+        carrier.symlink_to(target)
+
     return (
-        ("MUT-PHA-CARRIER-BYTES", "carrier-identity", alter_carrier),
-        ("MUT-PHA-CASE-COUNT", "inventory-closure", count_drift),
-        ("MUT-PHA-DUPLICATE-ID", "inventory-closure", duplicate_case_id),
-        ("MUT-PHA-RESPONSE-LINK", "oracle-binding", response_link_drift),
-        ("MUT-PHA-MISSING-ARTIFACT", "package-closure", missing_artifact),
-        ("MUT-PHA-EXTRA-ARTIFACT", "package-closure", extra_artifact),
-        ("MUT-PHA-REPORT-DIGEST", "oracle-binding", report_digest_drift),
+        ("MUT-PHA-CARRIER-BYTES", "carrier-identity", "carrier byte drift", alter_carrier),
+        ("MUT-PHA-CASE-COUNT", "inventory-closure", "case count drift", count_drift),
+        ("MUT-PHA-DUPLICATE-ID", "inventory-closure", "case ID collision", duplicate_case_id),
+        ("MUT-PHA-RESPONSE-LINK", "oracle-binding", "response request link", response_link_drift),
+        ("MUT-PHA-MISSING-ARTIFACT", "package-closure", "external file set drift", missing_artifact),
+        ("MUT-PHA-EXTRA-ARTIFACT", "package-closure", "external file set drift", extra_artifact),
+        ("MUT-PHA-REPORT-DIGEST", "oracle-binding", "reference report digest drift", report_digest_drift),
+        ("MUT-PHA-STATUS-ESCALATION", "authority-header", "authority header drift", status_escalation),
+        ("MUT-PHA-HEADER-DIGESTS", "authority-header", "authority header drift", authority_header_drift),
+        ("MUT-PHA-TOOLCHAIN", "toolchain-identity", "reference toolchain drift", coherent_toolchain_drift),
+        ("MUT-PHA-DIRECTION", "direction-binding", "carrier root relation drift", direction_inversion),
+        ("MUT-PHA-COVERAGE", "coverage-binding", "carrier coverage drift", coverage_drift),
+        ("MUT-PHA-CARRIER-SYMLINK", "package-closure", "contains a symlink", carrier_symlink),
     )
 
 
@@ -105,15 +219,17 @@ def build_report(repo_root: Path, contract: Path, evidence_root: Path) -> dict[s
     verify_contract_package(contract)
     validate_phase_a(repo_root, contract, evidence_root)
     results: list[tuple[str, str, bool]] = []
-    for identifier, family, mutation in _mutations(evidence_root):
+    for identifier, family, detector, mutation in _mutations(evidence_root):
         with tempfile.TemporaryDirectory(prefix="styx-app-core-phase-a-mutant-") as raw:
             candidate = Path(raw) / "evidence"
             shutil.copytree(evidence_root, candidate, symlinks=True)
             mutation(candidate)
             try:
                 validate_phase_a(repo_root, contract, candidate)
-            except (OSError, PhaseAValidationError, InventoryError, KeyError, TypeError):
-                killed = True
+            except PhaseAValidationError as error:
+                killed = detector in str(error)
+            except (OSError, InventoryError, KeyError, TypeError):
+                killed = False
             else:
                 killed = False
             results.append((identifier, family, killed))

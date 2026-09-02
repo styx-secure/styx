@@ -5,6 +5,7 @@ from dataclasses import replace
 from io import BytesIO
 import json
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from interface_model import (  # noqa: E402
     ContractAuthority,
     EvidenceError,
     HarnessFailure,
+    InterfaceModelError,
     ReplayCandidate,
     ReplayClosure,
     ReplayProjection,
@@ -55,6 +57,7 @@ from interface_model import (  # noqa: E402
     validate_response_before_release,
     validate_request_structure,
     validate_transcript,
+    verify_native_authority,
 )
 
 
@@ -118,6 +121,37 @@ class InterfaceModelTests(unittest.TestCase):
             }
         )
         self.assertEqual(list(validator.iter_errors(descriptor)), [])
+
+    def test_seeded_delta_is_role_allowed_but_read_only_delta_fails(self) -> None:
+        selection_head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=REPO,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        with tempfile.TemporaryDirectory() as raw:
+            checkout = Path(raw) / "checkout"
+            subprocess.run(
+                ["git", "clone", "--quiet", "--shared", str(REPO), str(checkout)],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "checkout", "--quiet", "--detach", selection_head],
+                cwd=checkout,
+                check=True,
+            )
+            contract = checkout / "tools/causal-flow-simulator/app_core_iface0/contract"
+            seeded = checkout / "docs/protocol/review/README.md"
+            seeded.write_bytes(seeded.read_bytes() + b"\nseeded-role-test\n")
+            verify_native_authority(checkout, contract)
+
+            frozen = checkout / "conformance/application-protocol/c03/manifest.json"
+            frozen.write_bytes(frozen.read_bytes() + b" ")
+            with self.assertRaisesRegex(
+                InterfaceModelError, "read-only native dependency drift"
+            ):
+                verify_native_authority(checkout, contract)
 
     def test_describe_profile_has_only_supported_or_unsupported_result(self) -> None:
         supported = describe_profile(self.authority, dict(SUPPORTED_PROFILE))

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -18,12 +19,20 @@ from typing import Any
 sys.dont_write_bytecode = True
 
 from canonical_json import CanonicalJsonError, dumps, loads
-from generate_seed_registry import SeedGenerationError, generate_phase_a
-from inventory import BASE_SHA, InventoryError, verify_contract_package
-from validate_inventory import PhaseAValidationError, validate_phase_a
+from inventory import BASE_SHA, InventoryError
 
 
 RATIFIED_V14_SHA256 = "fd17ed39c7288620cd62f132db3fd5a877f6ba1ef0ff3580c9ad745146d85165"
+SEMANTIC_FIXTURE_SOURCE_COMMIT = "284b9230126cfa70337723c2a9d001800a64804c"
+SEMANTIC_FIXTURE_SOURCE_PATH = (
+    "tools/causal-flow-simulator/app_core_iface0/generate_seed_registry.py"
+)
+SEMANTIC_FIXTURE_SOURCE_FIRST_LINE = 971
+SEMANTIC_FIXTURE_SOURCE_LAST_LINE = 1162
+SEMANTIC_FIXTURE_SOURCE_OCTETS = 7121
+SEMANTIC_FIXTURE_SOURCE_SHA256 = (
+    "686208b6d1285d42f8ec165fbb511905004eee124a0708207b103b60c561e1ad"
+)
 BANNED_PROVIDER_ENVIRONMENT = frozenset(
     {
         "GH_HOST",
@@ -59,6 +68,56 @@ def _git(repo: Path, *arguments: str) -> str:
     return completed.stdout
 
 
+def _git_bytes(repo: Path, *arguments: str) -> bytes:
+    completed = subprocess.run(
+        ["git", *arguments],
+        cwd=repo,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=60,
+    )
+    if completed.returncode != 0:
+        raise FinalGateError("required Git object query failed")
+    return completed.stdout
+
+
+def _frozen_semantic_fixture_slice(source: bytes) -> bytes:
+    lines = source.splitlines(keepends=True)
+    if len(lines) < SEMANTIC_FIXTURE_SOURCE_LAST_LINE:
+        raise FinalGateError("semantic-fixture source is shorter than the ratified slice")
+    result = b"".join(
+        lines[
+            SEMANTIC_FIXTURE_SOURCE_FIRST_LINE - 1 :
+            SEMANTIC_FIXTURE_SOURCE_LAST_LINE
+        ]
+    )
+    if (
+        len(result) != SEMANTIC_FIXTURE_SOURCE_OCTETS
+        or _sha256(result) != SEMANTIC_FIXTURE_SOURCE_SHA256
+        or not result.endswith(b"\n")
+    ):
+        raise FinalGateError("ratified semantic-fixture source slice drift")
+    return result
+
+
+def _local_source_blobs(repo: Path, selection_head: str) -> tuple[bytes, bytes]:
+    historical = _git_bytes(
+        repo,
+        "show",
+        f"{SEMANTIC_FIXTURE_SOURCE_COMMIT}:{SEMANTIC_FIXTURE_SOURCE_PATH}",
+    )
+    frozen = _frozen_semantic_fixture_slice(historical)
+    selected = _git_bytes(
+        repo,
+        "show",
+        f"{selection_head}:{SEMANTIC_FIXTURE_SOURCE_PATH}",
+    )
+    if selected.count(frozen) != 1:
+        raise FinalGateError("selectionHead does not contain one exact semantic-fixture slice")
+    return historical, selected
+
+
 def _verify_clean_checkout(repo: Path, selection_head: str) -> None:
     root = repo.resolve()
     if not root.is_dir() or root.is_symlink():
@@ -91,6 +150,49 @@ def _tree(root: Path) -> dict[str, bytes]:
     return result
 
 
+def _run_checkout_tool(
+    repo: Path,
+    relative_tool: str,
+    arguments: list[str],
+    *,
+    timeout: int = 180,
+) -> subprocess.CompletedProcess[bytes]:
+    tool = repo.resolve() / relative_tool
+    if not tool.is_file() or tool.is_symlink():
+        raise FinalGateError("checkout evidence tool is absent or non-regular")
+    environment = dict(os.environ)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    completed = subprocess.run(
+        [sys.executable, str(tool), *arguments],
+        cwd=repo.resolve(),
+        env=environment,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+    )
+    if completed.returncode != 0:
+        raise FinalGateError("checkout-owned evidence tool failed")
+    return completed
+
+
+def _generate_phase_a_from_checkout(repo: Path, root: Path) -> None:
+    contract = repo.resolve() / "tools/causal-flow-simulator/app_core_iface0/contract"
+    _run_checkout_tool(
+        repo,
+        "tools/causal-flow-simulator/app_core_iface0/generate_seed_registry.py",
+        [
+            "--repo-root",
+            str(repo.resolve()),
+            "--contract",
+            str(contract),
+            "--generate-phase-a",
+            "--evidence-root",
+            str(root.resolve()),
+        ],
+    )
+
+
 def _validate_external_root(repo: Path, root: Path) -> dict[str, object]:
     resolved_repo = repo.resolve()
     resolved = root.resolve()
@@ -104,8 +206,40 @@ def _validate_external_root(repo: Path, root: Path) -> dict[str, object]:
         or resolved in git_dir.parents
     ):
         raise FinalGateError("evidence root overlaps checkout or Git metadata")
-    contract = resolved_repo / "tools/causal-flow-simulator/app_core_iface0/contract"
-    return validate_phase_a(resolved_repo, contract, resolved)
+    with tempfile.TemporaryDirectory(prefix="styx-app-core-validation-") as temporary:
+        report_path = Path(temporary) / "report.json"
+        contract = resolved_repo / "tools/causal-flow-simulator/app_core_iface0/contract"
+        _run_checkout_tool(
+            resolved_repo,
+            "tools/causal-flow-simulator/app_core_iface0/validate_inventory.py",
+            [
+                "--repo-root",
+                str(resolved_repo),
+                "--contract",
+                str(contract),
+                "--phase-a-evidence-root",
+                str(resolved),
+                "--output",
+                str(report_path),
+            ],
+        )
+        try:
+            report = loads(report_path.read_bytes())
+        except (CanonicalJsonError, OSError) as error:
+            raise FinalGateError("checkout validator report is invalid") from error
+    required = {
+        "case_count": 80,
+        "schema": "styx.app-core-iface0.phase-a-validation.v1",
+        "verdict": "PASS",
+    }
+    if (
+        not isinstance(report, dict)
+        or any(report.get(key) != value for key, value in required.items())
+        or not isinstance(report.get("inventory_sha256"), str)
+        or not isinstance(report.get("package_report_sha256"), str)
+    ):
+        raise FinalGateError("checkout validator report shape drift")
+    return report
 
 
 def run_phase_a_gate(
@@ -123,6 +257,11 @@ def run_phase_a_gate(
         raise FinalGateError("the two checkout roots are not distinct")
     _verify_clean_checkout(first, selection_head)
     _verify_clean_checkout(second, selection_head)
+    historical_one, selected_one = _local_source_blobs(first, selection_head)
+    historical_two, selected_two = _local_source_blobs(second, selection_head)
+    if historical_one != historical_two or selected_one != selected_two:
+        raise FinalGateError("the two checkouts disagree on semantic-fixture source bytes")
+    _verify_provider_source_slice(selection_head, historical_one, selected_one)
     first_result = _validate_external_root(first, evidence_one)
     second_result = _validate_external_root(second, evidence_two)
     first_tree = _tree(evidence_one.resolve())
@@ -134,10 +273,8 @@ def run_phase_a_gate(
         temporary_root = Path(temporary)
         regenerated_one = temporary_root / "checkout-one"
         regenerated_two = temporary_root / "checkout-two"
-        contract_one = first / "tools/causal-flow-simulator/app_core_iface0/contract"
-        contract_two = second / "tools/causal-flow-simulator/app_core_iface0/contract"
-        generate_phase_a(first, contract_one, regenerated_one)
-        generate_phase_a(second, contract_two, regenerated_two)
+        _generate_phase_a_from_checkout(first, regenerated_one)
+        _generate_phase_a_from_checkout(second, regenerated_two)
         if _tree(regenerated_one) != first_tree or _tree(regenerated_two) != first_tree:
             raise FinalGateError("independent final-gate regeneration differs")
 
@@ -180,6 +317,44 @@ def _fetch_json(url: str) -> tuple[Any, bytes, dict[str, str]]:
     return value, raw, headers
 
 
+def _provider_source_blob(commit: str) -> bytes:
+    url = (
+        "https://api.github.com/repos/styx-secure/styx/contents/"
+        f"{SEMANTIC_FIXTURE_SOURCE_PATH}?ref={commit}"
+    )
+    value, _raw, _headers = _fetch_json(url)
+    if (
+        not isinstance(value, dict)
+        or value.get("type") != "file"
+        or value.get("path") != SEMANTIC_FIXTURE_SOURCE_PATH
+        or value.get("encoding") != "base64"
+        or not isinstance(value.get("content"), str)
+    ):
+        raise FinalGateError("provider source object shape drift")
+    encoded = "".join(value["content"].split())
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except (ValueError, TypeError) as error:
+        raise FinalGateError("provider source object is not strict base64") from error
+
+
+def _verify_provider_source_slice(
+    selection_head: str,
+    local_historical: bytes,
+    local_selected: bytes,
+) -> None:
+    provider_historical = _provider_source_blob(SEMANTIC_FIXTURE_SOURCE_COMMIT)
+    provider_selected = _provider_source_blob(selection_head)
+    if (
+        provider_historical != local_historical
+        or provider_selected != local_selected
+    ):
+        raise FinalGateError("provider and local source blobs differ")
+    frozen = _frozen_semantic_fixture_slice(provider_historical)
+    if provider_selected.count(frozen) != 1:
+        raise FinalGateError("provider selectionHead lost the frozen semantic fixture")
+
+
 def _next_link(headers: dict[str, str]) -> str | None:
     link = headers.get("link", "")
     for item in link.split(","):
@@ -189,19 +364,21 @@ def _next_link(headers: dict[str, str]) -> str | None:
     return None
 
 
-def _validate_provider_authority(comment_id: str, repo: Path, evidence_root: Path) -> dict[str, Any]:
+def _validate_provider_authority(comment_id: str, repo: Path) -> dict[str, Any]:
     if not comment_id.isdecimal() or not comment_id:
         raise FinalGateError("provider comment ID is not decimal")
     url = f"https://api.github.com/repos/styx-secure/styx/issues/comments/{comment_id}"
-    comment, _raw, _headers = _fetch_json(url)
+    comment, comment_raw, _headers = _fetch_json(url)
     if not isinstance(comment, dict):
         raise FinalGateError("provider comment is not a JSON object")
+    comment_user = comment.get("user")
     if (
         comment.get("id") != int(comment_id)
         or comment.get("url") != url
         or comment.get("issue_url") != "https://api.github.com/repos/styx-secure/styx/issues/295"
-        or comment.get("user", {}).get("id") != 141346846
-        or comment.get("user", {}).get("login") != "maverde73"
+        or not isinstance(comment_user, dict)
+        or comment_user.get("id") != 141346846
+        or comment_user.get("login") != "maverde73"
         or comment.get("created_at") != comment.get("updated_at")
         or comment.get("performed_via_github_app") is not None
     ):
@@ -245,19 +422,14 @@ def _validate_provider_authority(comment_id: str, repo: Path, evidence_root: Pat
 
     selection_head = decision["selectionHead"]
     _verify_clean_checkout(repo.resolve(), selection_head)
-    result = _validate_external_root(repo.resolve(), evidence_root.resolve())
     manifest_sha = _sha256(
         (
             repo.resolve()
             / "tools/causal-flow-simulator/app_core_iface0/contract/APP-CORE-IFACE-0-CANDIDATE-MANIFEST.json"
         ).read_bytes()
     )
-    if (
-        decision["candidateManifestSha256"] != manifest_sha
-        or decision["positiveCarrierInventorySha256"] != result["inventory_sha256"]
-        or decision["phaseAPackageReportSha256"] != result["package_report_sha256"]
-    ):
-        raise FinalGateError("provider decision does not bind regenerated Phase A")
+    if decision["candidateManifestSha256"] != manifest_sha:
+        raise FinalGateError("provider decision does not bind the candidate manifest")
 
     commit, _commit_raw, _ = _fetch_json(
         f"https://api.github.com/repos/styx-secure/styx/commits/{selection_head}"
@@ -269,11 +441,15 @@ def _validate_provider_authority(comment_id: str, repo: Path, evidence_root: Pat
         raise FinalGateError("provider commit or PR is not a JSON object")
     if commit.get("sha") != selection_head:
         raise FinalGateError("provider commit identity drift")
+    pull_base = pull.get("base")
+    pull_head = pull.get("head")
     if (
         pull.get("state") != "open"
         or pull.get("draft") is not True
-        or pull.get("base", {}).get("sha") != BASE_SHA
-        or pull.get("head", {}).get("sha") != selection_head
+        or not isinstance(pull_base, dict)
+        or not isinstance(pull_head, dict)
+        or pull_base.get("sha") != BASE_SHA
+        or pull_head.get("sha") != selection_head
     ):
         raise FinalGateError("provider PR freeze identity drift")
 
@@ -299,13 +475,15 @@ def _validate_provider_authority(comment_id: str, repo: Path, evidence_root: Pat
                 candidate = loads(candidate_body.encode("utf-8"))
             except CanonicalJsonError:
                 continue
+            row_user = row.get("user") if isinstance(row, dict) else None
             if (
                 isinstance(candidate, dict)
                 and candidate.get("kind") == decision["kind"]
                 and candidate.get("selectionHead") == selection_head
                 and candidate.get("candidateManifestSha256") == manifest_sha
-                and row.get("user", {}).get("id") == 141346846
-                and row.get("user", {}).get("login") == "maverde73"
+                and isinstance(row_user, dict)
+                and row_user.get("id") == 141346846
+                and row_user.get("login") == "maverde73"
             ):
                 matches += 1
                 if row.get("id") != int(comment_id):
@@ -313,6 +491,31 @@ def _validate_provider_authority(comment_id: str, repo: Path, evidence_root: Pat
         page_url = _next_link(page_headers)
     if matches != 1:
         raise FinalGateError("provider authority is absent or duplicated")
+
+    historical, selected = _local_source_blobs(repo.resolve(), selection_head)
+    _verify_provider_source_slice(selection_head, historical, selected)
+
+    # Phase B never consumes the reviewed or caller-supplied Phase-A directory.
+    # Only after provider authentication does the gate create a fresh private
+    # root and independently regenerate the exact carrier population.
+    with tempfile.TemporaryDirectory(prefix="styx-app-core-phase-b-entry-") as temporary:
+        regenerated = Path(temporary) / "phase-a"
+        _generate_phase_a_from_checkout(repo.resolve(), regenerated)
+        result = _validate_external_root(repo.resolve(), regenerated)
+        if (
+            decision["positiveCarrierInventorySha256"]
+            != result["inventory_sha256"]
+            or decision["phaseAPackageReportSha256"]
+            != result["package_report_sha256"]
+        ):
+            raise FinalGateError("provider decision does not bind regenerated Phase A")
+
+    # Refresh the exact object after regeneration. A modification or deletion
+    # during the gate is a fail-closed authority change.
+    refreshed, refreshed_raw, _refreshed_headers = _fetch_json(url)
+    if refreshed_raw != comment_raw or refreshed != comment:
+        raise FinalGateError("provider decision changed during Phase-B entry")
+    _verify_clean_checkout(repo.resolve(), selection_head)
     return decision
 
 
@@ -323,14 +526,19 @@ def main(argv: list[str] | None = None) -> int:
     modes.add_argument("--phase-b-entry", action="store_true")
     parser.add_argument("--repo-root-one", required=True, type=Path)
     parser.add_argument("--repo-root-two", type=Path)
-    parser.add_argument("--evidence-root-one", required=True, type=Path)
+    parser.add_argument("--evidence-root-one", type=Path)
     parser.add_argument("--evidence-root-two", type=Path)
     parser.add_argument("--selection-head")
     parser.add_argument("--provider-comment-id")
     args = parser.parse_args(argv)
     try:
         if args.phase_a:
-            if args.repo_root_two is None or args.evidence_root_two is None or args.selection_head is None:
+            if (
+                args.repo_root_two is None
+                or args.evidence_root_one is None
+                or args.evidence_root_two is None
+                or args.selection_head is None
+            ):
                 raise FinalGateError("Phase A requires two roots and selectionHead")
             result = run_phase_a_gate(
                 args.repo_root_one,
@@ -345,7 +553,6 @@ def main(argv: list[str] | None = None) -> int:
             decision = _validate_provider_authority(
                 args.provider_comment_id,
                 args.repo_root_one,
-                args.evidence_root_one,
             )
             result = {
                 "verdict": "PASS",
@@ -358,8 +565,6 @@ def main(argv: list[str] | None = None) -> int:
         FinalGateError,
         InventoryError,
         OSError,
-        PhaseAValidationError,
-        SeedGenerationError,
         subprocess.SubprocessError,
     ) as error:
         print(f"APP-core final gate: FAIL: {error}", file=sys.stderr)

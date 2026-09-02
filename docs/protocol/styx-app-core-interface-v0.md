@@ -16,8 +16,7 @@ replacement authority, transport/session substitution or product activation.
 The dated C0.3 corpus and public kernel review model do not yet contain this
 APP-core state token.
 
-The historical C0.3 corpus and public kernel review model do not yet carry this
-APP-core state token. A future contract must supersede, rather than edit, that
+Consequently, a future contract must supersede, rather than edit, the dated
 corpus before the public model can add the token or its transitions, and must
 rebuild complete state, transition, trace and mutation evidence under a new
 human gate.
