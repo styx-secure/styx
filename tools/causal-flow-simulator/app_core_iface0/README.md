@@ -46,11 +46,23 @@ python3 tools/causal-flow-simulator/app_core_iface0/generate_seed_registry.py \
   --repo-root . \
   --contract tools/causal-flow-simulator/app_core_iface0/contract \
   --prove-reference-round-trip
+
+python3 tools/causal-flow-simulator/app_core_iface0/generate_seed_registry.py \
+  --repo-root . \
+  --contract tools/causal-flow-simulator/app_core_iface0/contract \
+  --prove-positive-carrier-closure
 ```
 
-The last command produces and evaluates one structural blind request per
+The first seed command produces and evaluates one structural blind request per
 operation and validates the six resulting responses before release. It is a
 round-trip prerequisite, not the still-missing complete positive-carrier or
 withheld-response inventory.
+
+The closure proof expands the blind request population with deterministic
+semantic requests, obtains every response from the reference evaluator, and
+validates each response before release. The current proof closes all 12 roots,
+78 property-bearing object schemas and 54 `oneOf` arms without synthesizing a
+response carrier. It deliberately writes no case IDs, inventory or seed rows;
+those remain governed generated artifacts rather than implementation choices.
 
 Generated reports belong outside the repository and must never be committed.

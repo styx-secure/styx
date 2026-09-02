@@ -13,6 +13,7 @@ from generate_seed_registry import (  # noqa: E402
     SchemaSynthesizer,
     _load_json,
     _ordered_roots,
+    prove_positive_carrier_closure,
     prove_reachability,
     prove_reference_round_trip,
 )
@@ -30,6 +31,18 @@ class SeedReachabilityTests(unittest.TestCase):
         self.assertEqual(
             prove_reference_round_trip(ROOT.parents[2], ROOT / "contract"),
             {"request_count": 6, "response_count": 6},
+        )
+
+    def test_blind_requests_and_reference_responses_close_carrier_coverage(self) -> None:
+        self.assertEqual(
+            prove_positive_carrier_closure(ROOT.parents[2], ROOT / "contract"),
+            {
+                "request_case_count": 65,
+                "response_case_count": 15,
+                "root_count": 12,
+                "object_schema_count": 78,
+                "one_of_arm_count": 54,
+            },
         )
 
     def test_repeated_required_schema_locations_are_enumerated(self) -> None:

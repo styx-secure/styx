@@ -936,18 +936,388 @@ def prove_reference_round_trip(repo_root: Path, contract: Path) -> dict[str, int
     return {"request_count": request_count, "response_count": response_count}
 
 
+def _request(operation: str, value: dict[str, Any]) -> dict[str, Any]:
+    from interface_model import SUPPORTED_PROFILE
+
+    return {
+        "interfaceVersion": "0",
+        "operation": operation,
+        "profile": dict(SUPPORTED_PROFILE),
+        "input": value,
+    }
+
+
+def _application_fields(**updates: object) -> dict[str, object]:
+    fields: dict[str, object] = {
+        "applicationProfileId": 1,
+        "applicationProfileVersion": 1,
+        "authorSequence": 0,
+        "causalParents": [],
+        "content": {"class": "NONE", "exactLength": 0},
+        "contextIdentifierHex": "11" * 32,
+        "credentialIdentifierHex": "22" * 32,
+        "directPredecessorHex": None,
+        "eventRole": "ORDINARY",
+        "eventTypeId": 1,
+        "genesisReferenceHex": "33" * 32,
+        "schemaId": 1,
+        "schemaVersion": 1,
+        "transitionBlockHex": "",
+    }
+    fields.update(updates)
+    return fields
+
+
+def _semantic_request_carriers(authority: Any) -> list[dict[str, Any]]:
+    """Build a closed deterministic set of blind semantic requests.
+
+    These requests exist only to make schema-valid response carriers reachable.
+    They contain no expected disposition and every response is still produced by
+    ``evaluate_interface_request`` and checked before release.
+    """
+
+    from interface_model import (
+        SUPPORTED_PROFILE,
+        _load_pinned_c03_model,
+        evaluate_evidence_update,
+        evaluate_genesis,
+        replay_context,
+    )
+
+    backend = _load_pinned_c03_model(str(authority.repo_root))
+    seed = bytes(range(32))
+    root_key, _ = backend.ed25519_sign(seed, b"")
+    context_hex = "11" * 32
+    genesis_transcript = backend.encode_genesis(
+        {
+            "applicationProfileId": 1,
+            "applicationProfileVersion": 1,
+            "contextIdentifierHex": context_hex,
+            "initialAuthorityPolicyHex": "01",
+            "rootVerificationKeyHex": root_key.hex(),
+        }
+    )
+    _, genesis_signature = backend.ed25519_sign(seed, genesis_transcript)
+    genesis_candidate = {
+        "objectKind": "GENESIS",
+        "signatureHex": genesis_signature.hex(),
+        "transcriptHex": genesis_transcript.hex(),
+    }
+    genesis_input = {
+        "candidate": genesis_candidate,
+        "expectedContextIdentifierHex": context_hex,
+    }
+    genesis_ready = evaluate_genesis(
+        authority, dict(SUPPORTED_PROFILE), genesis_input
+    )
+    if genesis_ready.get("kind") != "GENESIS_PROPOSAL_READY":
+        raise SeedGenerationError("semantic genesis fixture did not become ready")
+    proposed_genesis = genesis_ready["proposedGenesis"]
+    genesis_reference = proposed_genesis["projection"]["genesisReferenceHex"]
+
+    application_transcript = backend.encode_event(
+        _application_fields(
+            contextIdentifierHex=context_hex,
+            credentialIdentifierHex=genesis_reference,
+            genesisReferenceHex=genesis_reference,
+        )
+    )
+    _, application_signature = backend.ed25519_sign(seed, application_transcript)
+    application_candidate = {
+        "objectKind": "APPLICATION_EVENT",
+        "signatureHex": application_signature.hex(),
+        "transcriptHex": application_transcript.hex(),
+    }
+    empty_evidence = {"contentMaterial": [], "openingMaterial": []}
+    empty_replay_input = {
+        "proposedGenesis": proposed_genesis,
+        "candidates": [],
+        "evidence": empty_evidence,
+    }
+    empty_replay = replay_context(
+        authority, dict(SUPPORTED_PROFILE), empty_replay_input
+    )
+    if empty_replay.get("kind") != "REPLAY_PROPOSAL_READY":
+        raise SeedGenerationError("semantic empty replay fixture did not become ready")
+    prior = empty_replay["proposedContext"]
+
+    ready_replay_input = {
+        "proposedGenesis": proposed_genesis,
+        "candidates": [application_candidate],
+        "evidence": empty_evidence,
+    }
+    ready_replay = replay_context(
+        authority, dict(SUPPORTED_PROFILE), ready_replay_input
+    )
+    if ready_replay.get("kind") != "REPLAY_PROPOSAL_READY":
+        raise SeedGenerationError("semantic replay fixture did not become ready")
+
+    malformed_candidate = copy.deepcopy(application_candidate)
+    malformed_candidate["transcriptHex"] = malformed_candidate["transcriptHex"][:-2]
+    rejected_replay_input = {
+        "proposedGenesis": proposed_genesis,
+        "candidates": [malformed_candidate],
+        "evidence": empty_evidence,
+    }
+
+    content = b"late"
+    opening_hex = "45" * 32
+    commitment = backend.encode_commitment(
+        profile_id=1,
+        profile_version=1,
+        context=bytes.fromhex(context_hex),
+        credential=bytes.fromhex(genesis_reference),
+        sequence=0,
+        content_type=1,
+        content=content,
+        randomizer=bytes.fromhex(opening_hex),
+        chunk_size=None,
+    )
+    pending_transcript = backend.encode_event(
+        _application_fields(
+            contextIdentifierHex=context_hex,
+            credentialIdentifierHex=genesis_reference,
+            genesisReferenceHex=genesis_reference,
+            content={
+                "class": "REQUIRED",
+                "commitmentHex": commitment["commitmentHex"],
+                "contentType": 1,
+                "exactLength": len(content),
+                "geometryPredicateResults": {
+                    f"geometryPredicate{index}": "NOT_APPLICABLE"
+                    for index in range(1, 8)
+                },
+                "shape": "SINGLE",
+            },
+        )
+    )
+    _, pending_signature = backend.ed25519_sign(seed, pending_transcript)
+    pending_candidate = {
+        "objectKind": "APPLICATION_EVENT",
+        "signatureHex": pending_signature.hex(),
+        "transcriptHex": pending_transcript.hex(),
+    }
+    pending_replay = replay_context(
+        authority,
+        dict(SUPPORTED_PROFILE),
+        {
+            "proposedGenesis": proposed_genesis,
+            "candidates": [pending_candidate],
+            "evidence": empty_evidence,
+        },
+    )
+    if pending_replay.get("kind") != "REPLAY_PROPOSAL_READY":
+        raise SeedGenerationError("semantic pending replay fixture did not become ready")
+    pending = pending_replay["proposedContext"]
+    pending_reference = pending["projection"]["records"][0]["eventReferenceHex"]
+    additions = {
+        "contentMaterial": [
+            {
+                "eventReferenceHex": pending_reference,
+                "segments": [{"offset": "0", "octetsHex": content.hex()}],
+            }
+        ],
+        "openingMaterial": [
+            {
+                "eventReferenceHex": pending_reference,
+                "openingRandomizerHex": opening_hex,
+            }
+        ],
+    }
+    evidence_ready_input = {"prior": pending, "additions": additions}
+    evidence_ready = evaluate_evidence_update(
+        authority, dict(SUPPORTED_PROFILE), evidence_ready_input
+    )
+    evaluation = evidence_ready.get("evaluation", {})
+    if evaluation.get("kind") != "PROPOSAL_READY":
+        raise SeedGenerationError("semantic evidence fixture did not become ready")
+    evidence_successor = evaluation["proposal"]["successor"]
+
+    return [
+        _request("DESCRIBE_PROFILE", {}),
+        _request("VALIDATE_TRANSCRIPT", {"candidate": genesis_candidate}),
+        _request("EVALUATE_GENESIS", genesis_input),
+        _request(
+            "EVALUATE_GENESIS",
+            {
+                "candidate": genesis_candidate,
+                "expectedContextIdentifierHex": "ff" * 32,
+            },
+        ),
+        _request("REPLAY_CONTEXT", ready_replay_input),
+        _request("REPLAY_CONTEXT", rejected_replay_input),
+        _request(
+            "EVALUATE_CANDIDATE",
+            {
+                "prior": prior,
+                "candidate": application_candidate,
+                "evidence": empty_evidence,
+            },
+        ),
+        _request("EVALUATE_EVIDENCE_UPDATE", evidence_ready_input),
+        _request(
+            "EVALUATE_EVIDENCE_UPDATE",
+            {"prior": evidence_successor, "additions": additions},
+        ),
+    ]
+
+
+def prove_positive_carrier_closure(
+    repo_root: Path, contract: Path
+) -> dict[str, int]:
+    """Prove complete carrier coverage using blind requests and real responses.
+
+    This proof intentionally stops before assigning carrier case IDs or writing
+    the ratified inventory schemas.  It demonstrates that the closed carrier
+    population is constructible without synthesizing a response oracle.
+    """
+
+    from interface_model import (
+        ContractAuthority,
+        HarnessFailure,
+        InterfaceModelError,
+        RequestRejected,
+        evaluate_interface_request,
+        validate_request_structure,
+        validate_response_before_release,
+    )
+
+    verify_contract_package(contract)
+    schema = _load_json(contract / "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json")
+    reachability = _load_json(
+        contract / "APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json"
+    )
+    roots = _ordered_roots(reachability)
+    synthesizer = SchemaSynthesizer(schema)
+    authority = ContractAuthority.load(repo_root, contract)
+
+    requests: dict[bytes, dict[str, Any]] = {}
+    for row in reachability["objectCoverage"]:
+        for root_id in sorted(row["eligibleRootIds"], key=ROOT_ORDER.index):
+            root = roots[root_id]
+            if root["direction"] != "REQUEST":
+                continue
+            carrier = synthesizer.carrier(
+                root, target_pointer=row["objectSchemaPointer"]
+            )
+            requests.setdefault(carrier.canonical_bytes, carrier.value)
+    for row in reachability["oneOfArmCoverage"]:
+        for root_id in sorted(row["eligibleRootIds"], key=ROOT_ORDER.index):
+            root = roots[root_id]
+            if root["direction"] != "REQUEST":
+                continue
+            carrier = synthesizer.carrier(
+                root,
+                arm_goal=(row["oneOfPointer"], int(row["armIndex"])),
+            )
+            requests.setdefault(carrier.canonical_bytes, carrier.value)
+    for request in _semantic_request_carriers(authority):
+        requests.setdefault(dumps(request), request)
+
+    responses: dict[bytes, tuple[dict[str, Any], bytes]] = {}
+    request_roots: set[str] = set()
+    response_roots: set[str] = set()
+    carriers: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for request_bytes, request in sorted(requests.items()):
+        operation = request.get("operation")
+        root = roots.get(f"REQUEST-{operation}")
+        if root is None:
+            raise SeedGenerationError("generated request has no declared root")
+        try:
+            validate_request_structure(authority, request)
+            response = evaluate_interface_request(authority, request)
+            validate_response_before_release(authority, response)
+        except (HarnessFailure, InterfaceModelError, RequestRejected) as error:
+            raise SeedGenerationError(
+                f"positive carrier evaluation failed for {root['rootId']}: {error}"
+            ) from error
+        response_bytes = dumps(response)
+        responses.setdefault(response_bytes, (response, request_bytes))
+        response_root = roots[f"RESPONSE-{operation}"]
+        request_roots.add(root["rootId"])
+        response_roots.add(response_root["rootId"])
+        carriers.append((root, request))
+
+    for response, _request_bytes in responses.values():
+        root = roots[f"RESPONSE-{response['operation']}"]
+        carriers.append((root, response))
+
+    covered_objects: set[str] = set()
+    for row in reachability["objectCoverage"]:
+        target = row["objectSchemaPointer"]
+        eligible = set(row["eligibleRootIds"])
+        if any(
+            root["rootId"] in eligible
+            and synthesizer.target_locations(root, value, target)
+            for root, value in carriers
+        ):
+            covered_objects.add(target)
+
+    covered_arms: set[tuple[str, int]] = set()
+    for row in reachability["oneOfArmCoverage"]:
+        pointer = row["oneOfPointer"]
+        index = int(row["armIndex"])
+        target = f"{pointer}/{index}"
+        eligible = set(row["eligibleRootIds"])
+        if any(
+            root["rootId"] in eligible
+            and synthesizer.target_locations(root, value, target)
+            for root, value in carriers
+        ):
+            covered_arms.add((pointer, index))
+
+    if request_roots | response_roots != set(ROOT_ORDER):
+        raise SeedGenerationError("positive carrier root coverage drift")
+    if len(covered_objects) != 78 or len(covered_arms) != 54:
+        missing_objects = sorted(
+            {row["objectSchemaPointer"] for row in reachability["objectCoverage"]}
+            - covered_objects
+        )
+        missing_arms = sorted(
+            {
+                (row["oneOfPointer"], int(row["armIndex"]))
+                for row in reachability["oneOfArmCoverage"]
+            }
+            - covered_arms
+        )
+        raise SeedGenerationError(
+            "positive carrier coverage incomplete: "
+            f"objects={missing_objects} arms={missing_arms}"
+        )
+    case_count = len(requests) + len(responses)
+    if not 12 <= case_count <= 144:
+        raise SeedGenerationError("positive carrier case count outside ratified bounds")
+    return {
+        "request_case_count": len(requests),
+        "response_case_count": len(responses),
+        "root_count": len(request_roots | response_roots),
+        "object_schema_count": len(covered_objects),
+        "one_of_arm_count": len(covered_arms),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--contract", required=True, type=Path)
     parser.add_argument("--repo-root", type=Path)
     parser.add_argument("--prove-reachability", action="store_true")
     parser.add_argument("--prove-reference-round-trip", action="store_true")
+    parser.add_argument("--prove-positive-carrier-closure", action="store_true")
     args = parser.parse_args(argv)
-    if args.prove_reachability == args.prove_reference_round_trip:
+    modes = sum(
+        (
+            args.prove_reachability,
+            args.prove_reference_round_trip,
+            args.prove_positive_carrier_closure,
+        )
+    )
+    if modes != 1:
         print("exactly one proof mode is required", file=sys.stderr)
         return 2
-    if args.prove_reference_round_trip and args.repo_root is None:
-        print("--repo-root is required for reference round-trip proof", file=sys.stderr)
+    if (
+        args.prove_reference_round_trip or args.prove_positive_carrier_closure
+    ) and args.repo_root is None:
+        print("--repo-root is required for reference-backed proof", file=sys.stderr)
         return 2
     try:
         if args.prove_reachability:
@@ -956,13 +1326,24 @@ def main(argv: list[str] | None = None) -> int:
                 f"objects={result['object_schema_count']} "
                 f"arms={result['one_of_arm_count']}"
             )
-        else:
+        elif args.prove_reference_round_trip:
             result = prove_reference_round_trip(
                 args.repo_root.resolve(), args.contract.resolve()
             )
             summary = (
                 f"requests={result['request_count']} "
                 f"responses={result['response_count']}"
+            )
+        else:
+            result = prove_positive_carrier_closure(
+                args.repo_root.resolve(), args.contract.resolve()
+            )
+            summary = (
+                f"requests={result['request_case_count']} "
+                f"responses={result['response_case_count']} "
+                f"roots={result['root_count']} "
+                f"objects={result['object_schema_count']} "
+                f"arms={result['one_of_arm_count']}"
             )
     except (InventoryError, OSError, SeedGenerationError) as error:
         print(f"APP-core seed generation: FAIL: {error}", file=sys.stderr)
