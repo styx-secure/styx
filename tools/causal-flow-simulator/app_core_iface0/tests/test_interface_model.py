@@ -816,6 +816,39 @@ class InterfaceModelTests(unittest.TestCase):
                 {**value, "prior": forged},
             )
 
+        malformed = json.loads(json.dumps(candidate))
+        malformed["transcriptHex"] = malformed["transcriptHex"][:-2]
+        self.assertEqual(
+            evaluate_candidate(
+                self.authority,
+                dict(SUPPORTED_PROFILE),
+                {**value, "candidate": malformed},
+            ),
+            {
+                "evaluation": {
+                    "kind": "TERMINAL_NO_SUCCESSOR",
+                    "primary": "STRUCTURAL_REJECTION",
+                    "stage": "S3_KERNEL_STRUCTURAL",
+                }
+            },
+        )
+
+        reserved = {
+            "interfaceVersion": "0",
+            "operation": "EVALUATE_CANDIDATE",
+            "profile": dict(SUPPORTED_PROFILE),
+            "result": {
+                "evaluation": {
+                    "kind": "TERMINAL_NO_SUCCESSOR",
+                    "primary": "LENGTH_MISMATCH",
+                    "stage": "S3_KERNEL_STRUCTURAL",
+                }
+            },
+        }
+        _validate_response_shape_and_relation(self.authority, reserved)
+        with self.assertRaisesRegex(HarnessFailure, "reserved F13"):
+            validate_response_before_release(self.authority, reserved)
+
     def test_evidence_update_is_monotone_prior_bound_and_full_replay_equal(self) -> None:
         proposed, _ = self._replay_fixture()
         backend = _load_pinned_c03_model(str(self.authority.repo_root))

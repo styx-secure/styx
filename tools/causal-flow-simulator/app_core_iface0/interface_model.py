@@ -2439,13 +2439,11 @@ def evaluate_candidate(
     candidate = value["candidate"]
     parsed = _parse_transcript_candidate(authority, candidate)
     if parsed[0] is None:
-        reason, _, _ = parsed[4]
-        primary = (
-            "LENGTH_MISMATCH"
-            if reason in {"TRANSCRIPT_LENGTH_MISMATCH", "TRANSCRIPT_LENGTH_REJECTED"}
-            else "STRUCTURAL_REJECTION"
-        )
-        return {"evaluation": _candidate_result_from_primary(authority, primary)}
+        return {
+            "evaluation": _candidate_result_from_primary(
+                authority, "STRUCTURAL_REJECTION"
+            )
+        }
     module, transcript, _, fields, _ = parsed
     envelope_failure = _selected_envelope_failure(
         module, "APPLICATION_EVENT", transcript, fields
@@ -2736,6 +2734,12 @@ def validate_response_before_release(
 
     _validate_response_shape_and_relation(authority, response)
     result = response.get("result", {})
+    if response.get("operation") == "EVALUATE_CANDIDATE":
+        evaluation = result.get("evaluation", {})
+        primary = evaluation.get("primary", evaluation.get("primaryOnCommit"))
+        row = _f13_relation(authority).get(primary)
+        if row is not None and row.get("reachability") == "RESERVED_UNREACHABLE_V0":
+            raise HarnessFailure("APP-core v0 reserved F13 row was generated")
     observations = result.get("observations", {})
     relations = _read_json(
         authority.contract / "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"

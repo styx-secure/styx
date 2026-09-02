@@ -299,6 +299,172 @@ function authorityMetrics(value) {
 }
 
 
+function graphProjection(value) {
+  exactKeys(value, ["events", "unverifiedRequiredReferences"], "graph input");
+  requireCondition(Array.isArray(value.events), "graph events is not an array");
+  requireCondition(Array.isArray(value.unverifiedRequiredReferences), "pending set is not an array");
+  const events = value.events.map((row, index) => {
+    exactKeys(row, ["reference", "credential", "sequence", "dependencies"], `graph event ${index}`);
+    fixedHex32(row.reference, "graph event reference");
+    fixedHex32(row.credential, "graph event credential");
+    requireCondition(Number.isSafeInteger(row.sequence) && row.sequence >= 0, "invalid graph sequence");
+    requireCondition(Array.isArray(row.dependencies), "graph dependencies is not an array");
+    row.dependencies.forEach((item) => fixedHex32(item, "graph dependency"));
+    requireCondition(
+      JSON.stringify(row.dependencies) === JSON.stringify([...row.dependencies].sort()),
+      "graph dependencies are noncanonical",
+    );
+    return { ...row, dependencies: new Set(row.dependencies) };
+  });
+  const byReference = new Map(events.map((row) => [row.reference, row]));
+  requireCondition(byReference.size === events.length, "duplicate graph event reference");
+  for (const event of events) {
+    for (const dependency of event.dependencies) requireCondition(byReference.has(dependency), "graph dependency is absent");
+  }
+  value.unverifiedRequiredReferences.forEach((item) => requireCondition(byReference.has(item), "pending reference is absent"));
+  requireCondition(
+    JSON.stringify(value.unverifiedRequiredReferences) === JSON.stringify([...value.unverifiedRequiredReferences].sort()),
+    "pending set is noncanonical",
+  );
+
+  const emitted = new Set();
+  const order = [];
+  while (order.length < events.length) {
+    const ready = events
+      .filter((row) => !emitted.has(row.reference) && isSubset(row.dependencies, emitted))
+      .map((row) => row.reference)
+      .sort();
+    requireCondition(ready.length > 0, "graph is cyclic");
+    emitted.add(ready[0]);
+    order.push(ready[0]);
+  }
+
+  const ancestors = new Map(events.map((row) => [row.reference, new Set()]));
+  for (const reference of order) {
+    const result = ancestors.get(reference);
+    for (const dependency of byReference.get(reference).dependencies) {
+      result.add(dependency);
+      for (const ancestor of ancestors.get(dependency)) result.add(ancestor);
+    }
+  }
+  const unverified = new Set(value.unverifiedRequiredReferences);
+  const pendingRoots = [...unverified]
+    .filter((reference) => ![...ancestors.get(reference)].some((item) => unverified.has(item)))
+    .sort();
+  const rootSet = new Set(pendingRoots);
+  const pendingReferences = events
+    .filter((row) => !rootSet.has(row.reference) && [...ancestors.get(row.reference)].some((item) => rootSet.has(item)))
+    .map((row) => row.reference)
+    .sort();
+
+  const slots = new Map();
+  for (const event of events) {
+    const key = `${event.credential}/${event.sequence}`;
+    if (!slots.has(key)) slots.set(key, []);
+    slots.get(key).push(event.reference);
+  }
+  const forks = [...slots.entries()]
+    .filter(([, siblings]) => new Set(siblings).size >= 2)
+    .map(([key, siblings]) => {
+      const separator = key.lastIndexOf("/");
+      return {
+        credential: key.slice(0, separator),
+        sequence: Number(key.slice(separator + 1)),
+        siblings: [...new Set(siblings)].sort(),
+      };
+    })
+    .sort((left, right) => (
+      left.credential.localeCompare(right.credential) || left.sequence - right.sequence
+    ));
+  return {
+    ancestors: order.map((reference) => ({
+      reference,
+      ancestors: sortedSet(ancestors.get(reference)),
+    })),
+    forks,
+    pendingReferences,
+    pendingRootReferences: pendingRoots,
+    protocolKOrder: order,
+  };
+}
+
+
+function credentialProjection(value) {
+  exactKeys(value, ["root", "grants"], "credential input");
+  exactKeys(
+    value.root,
+    ["credentialIdentifierHex", "signatureSuiteId", "verificationKeyHex"],
+    "root binding",
+  );
+  fixedHex32(value.root.credentialIdentifierHex, "root credential");
+  requireCondition(value.root.signatureSuiteId === "1", "unsupported root suite");
+  fixedHex32(value.root.verificationKeyHex, "root verification key");
+  requireCondition(Array.isArray(value.grants), "grants is not an array");
+  const grants = new Map();
+  for (const row of value.grants) {
+    exactKeys(row, ["reference", "issuerCredentialIdentifierHex", "verificationKeyHex"], "grant binding");
+    fixedHex32(row.reference, "grant reference");
+    fixedHex32(row.issuerCredentialIdentifierHex, "grant issuer");
+    fixedHex32(row.verificationKeyHex, "grant verification key");
+    requireCondition(!grants.has(row.reference), "duplicate grant reference");
+    grants.set(row.reference, row);
+  }
+  const root = value.root.credentialIdentifierHex;
+  const bindings = new Map([[root, {
+    credentialIdentifierHex: root,
+    origin: "GENESIS",
+    signatureSuiteId: "1",
+    verificationKeyHex: value.root.verificationKeyHex,
+  }]]);
+  const lineage = new Map([[root, null]]);
+  while (grants.size > 0) {
+    const ready = [...grants.keys()]
+      .filter((reference) => bindings.has(grants.get(reference).issuerCredentialIdentifierHex))
+      .sort();
+    requireCondition(ready.length > 0, "grant has no issuer binding");
+    for (const reference of ready) {
+      requireCondition(!bindings.has(reference), "credential identifier collision");
+      const row = grants.get(reference);
+      grants.delete(reference);
+      bindings.set(reference, {
+        credentialIdentifierHex: reference,
+        grantReferenceHex: reference,
+        issuerCredentialIdentifierHex: row.issuerCredentialIdentifierHex,
+        origin: "GRANT",
+        signatureSuiteId: "1",
+        verificationKeyHex: row.verificationKeyHex,
+      });
+      lineage.set(reference, row.issuerCredentialIdentifierHex);
+    }
+  }
+  for (const credential of bindings.keys()) {
+    const seen = new Set();
+    let cursor = credential;
+    while (lineage.get(cursor) !== null) {
+      requireCondition(!seen.has(cursor), "credential lineage is cyclic");
+      seen.add(cursor);
+      cursor = lineage.get(cursor);
+      requireCondition(lineage.has(cursor), "credential lineage issuer is absent");
+    }
+  }
+  const aliases = new Map();
+  for (const [credential, binding] of bindings.entries()) {
+    const key = `${binding.signatureSuiteId}/${binding.verificationKeyHex}`;
+    if (!aliases.has(key)) aliases.set(key, []);
+    aliases.get(key).push(credential);
+  }
+  return {
+    aliasGroups: [...aliases.values()]
+      .filter((group) => group.length >= 2)
+      .map((group) => group.sort())
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+    credentialBindings: [...bindings.values()].sort((left, right) => (
+      left.credentialIdentifierHex.localeCompare(right.credentialIdentifierHex)
+    )),
+  };
+}
+
+
 function exactKeys(value, expected, label) {
   requireCondition(value !== null && typeof value === "object" && !Array.isArray(value), `${label} is not an object`);
   const actual = Object.keys(value).sort();
@@ -350,6 +516,21 @@ function validateResponseShapeAndRelation(response, relations) {
     validateObservations(result.observations);
   } else if (response.operation === "EVALUATE_GENESIS") {
     exactKeys(result, ["kind", "reason", "stage"], "genesis result");
+  } else if (response.operation === "EVALUATE_CANDIDATE") {
+    exactKeys(result, ["evaluation"], "candidate result");
+    const evaluation = result.evaluation;
+    const primary = evaluation.primary ?? evaluation.primaryOnCommit;
+    const row = relations.candidateEvaluationPrimaryRelationV0.find((item) => item.primary === primary);
+    requireCondition(row !== undefined, "candidate primary is absent from F13");
+    requireCondition(evaluation.kind === row.coreResultKind, "candidate result kind violates F13");
+    if (evaluation.kind === "TERMINAL_NO_SUCCESSOR") {
+      exactKeys(evaluation, ["kind", "primary", "stage"], "candidate terminal");
+      requireCondition(evaluation.stage === row.existingO10Stage, "candidate stage violates F13");
+    } else {
+      exactKeys(evaluation, ["kind", "primaryOnCommit", "proposal"], "candidate proposal");
+      exactKeys(evaluation.proposal, ["successor"], "candidate proposal body");
+    }
+    return;
   } else {
     throw new AdapterFailure("ACV-066 self-test received an unsupported operation");
   }
@@ -367,6 +548,14 @@ function validateResponseShapeAndRelation(response, relations) {
 
 function validateBeforeRelease(response, relations, reservedDetector = true) {
   validateResponseShapeAndRelation(response, relations);
+  if (reservedDetector && response.operation === "EVALUATE_CANDIDATE") {
+    const evaluation = response.result.evaluation;
+    const primary = evaluation.primary ?? evaluation.primaryOnCommit;
+    const row = relations.candidateEvaluationPrimaryRelationV0.find((item) => item.primary === primary);
+    if (row?.reachability === "RESERVED_UNREACHABLE_V0") {
+      throw new AdapterFailure("APP-core v0 reserved F13 row was generated");
+    }
+  }
   const observed = JSON.stringify([
     response.operation,
     response.result.kind,
@@ -489,26 +678,38 @@ function parseArguments(argv) {
   let selfTest = false;
   let deriveForkJoin = false;
   let authorityMetricsMode = false;
+  let graphProjectionMode = false;
+  let credentialProjectionMode = false;
+  let validateResponseMode = false;
   let contractPath = null;
   for (let index = 0; index < argv.length; index += 1) {
     if (argv[index] === "--self-test-acv066") selfTest = true;
     else if (argv[index] === "--derive-fork-join") deriveForkJoin = true;
     else if (argv[index] === "--authority-metrics") authorityMetricsMode = true;
+    else if (argv[index] === "--graph-projection") graphProjectionMode = true;
+    else if (argv[index] === "--credential-projection") credentialProjectionMode = true;
+    else if (argv[index] === "--validate-response") validateResponseMode = true;
     else if (argv[index] === "--contract") contractPath = argv[++index];
     else throw new AdapterFailure(`unknown argument: ${argv[index]}`);
   }
   requireCondition(
-    Number(selfTest) + Number(deriveForkJoin) + Number(authorityMetricsMode) === 1,
+    Number(selfTest) + Number(deriveForkJoin) + Number(authorityMetricsMode)
+      + Number(graphProjectionMode) + Number(credentialProjectionMode)
+      + Number(validateResponseMode) === 1,
     "exactly one adapter mode is required",
   );
   requireCondition(contractPath, "--contract is required");
-  return { authorityMetricsMode, contractPath, deriveForkJoin, selfTest };
+  return {
+    authorityMetricsMode, contractPath, credentialProjectionMode, deriveForkJoin,
+    graphProjectionMode, selfTest, validateResponseMode,
+  };
 }
 
 
 try {
   const {
-    authorityMetricsMode, contractPath, deriveForkJoin, selfTest,
+    authorityMetricsMode, contractPath, credentialProjectionMode, deriveForkJoin,
+    graphProjectionMode, selfTest, validateResponseMode,
   } = parseArguments(process.argv.slice(2));
   const resolvedContract = path.resolve(contractPath);
   if (selfTest) {
@@ -520,6 +721,17 @@ try {
   } else if (authorityMetricsMode) {
     const input = JSON.parse(fs.readFileSync(0, "utf8"));
     process.stdout.write(`${JSON.stringify(authorityMetrics(input))}\n`);
+  } else if (graphProjectionMode) {
+    const input = JSON.parse(fs.readFileSync(0, "utf8"));
+    process.stdout.write(`${JSON.stringify(graphProjection(input))}\n`);
+  } else if (credentialProjectionMode) {
+    const input = JSON.parse(fs.readFileSync(0, "utf8"));
+    process.stdout.write(`${JSON.stringify(credentialProjection(input))}\n`);
+  } else if (validateResponseMode) {
+    const relations = readJson(path.join(resolvedContract, "APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json"));
+    const input = JSON.parse(fs.readFileSync(0, "utf8"));
+    validateBeforeRelease(input, relations);
+    process.stdout.write(`${JSON.stringify({ verdict: "PASS" })}\n`);
   }
 } catch (error) {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
