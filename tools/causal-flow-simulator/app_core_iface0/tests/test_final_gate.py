@@ -21,6 +21,7 @@ from final_gate import (  # noqa: E402
     _next_link,
     _local_source_blobs,
     _frozen_semantic_fixture_slice,
+    _scan_provider_authority,
     _tree,
     _validate_provider_authority,
     _verify_provider_source_slice,
@@ -245,6 +246,145 @@ class FinalGateTests(unittest.TestCase):
         self.assertRegex(result["positiveCarrierInventorySha256"], r"^[0-9a-f]{64}$")
         self.assertRegex(result["phaseAPackageReportSha256"], r"^[0-9a-f]{64}$")
 
+    def test_authority_scan_rejects_withdrawal_and_supersession(self) -> None:
+        selection_head = "a" * 40
+        manifest_sha = "b" * 64
+        selected_decision = {
+            "baseSha": BASE_SHA,
+            "candidateManifestSha256": manifest_sha,
+            "caseCount": 80,
+            "closureAmendmentSha256": (
+                "fd17ed39c7288620cd62f132db3fd5a877f6ba1ef0ff3580c9ad745146d85165"
+            ),
+            "decision": "RATIFY",
+            "issue": 295,
+            "kind": "APP_CORE_POSITIVE_CARRIER_INVENTORY_RATIFICATION_V1",
+            "phaseAPackageReportSha256": "c" * 64,
+            "positiveCarrierInventorySha256": "d" * 64,
+            "repository": "styx-secure/styx",
+            "requestCaseCount": 65,
+            "responseCaseCount": 15,
+            "selectionHead": selection_head,
+        }
+        selected_body = dumps(selected_decision).decode("utf-8")
+        selected = {
+            "body": selected_body,
+            "created_at": "2026-09-02T00:00:00Z",
+            "id": 100,
+            "issue_url": "https://api.github.com/repos/styx-secure/styx/issues/295",
+            "performed_via_github_app": None,
+            "updated_at": "2026-09-02T00:00:00Z",
+            "url": "https://api.github.com/repos/styx-secure/styx/issues/comments/100",
+            "user": {"id": 141346846, "login": "maverde73"},
+        }
+        for action, replacement in (("WITHDRAW", None), ("SUPERSEDE", "300")):
+            with self.subTest(action=action):
+                change_body = dumps(
+                    {
+                        "decision": action,
+                        "issue": 295,
+                        "kind": "APP_CORE_POSITIVE_CARRIER_INVENTORY_AUTHORITY_CHANGE_V1",
+                        "replacementCommentId": replacement,
+                        "repository": "styx-secure/styx",
+                        "selectionHead": selection_head,
+                        "targetCommentBodySha256": hashlib.sha256(
+                            selected_body.encode("utf-8")
+                        ).hexdigest(),
+                        "targetCommentId": "100",
+                    }
+                ).decode("utf-8")
+                change = {
+                    "body": change_body,
+                    "created_at": "2026-09-02T00:00:01Z",
+                    "id": 200,
+                    "issue_url": "https://api.github.com/repos/styx-secure/styx/issues/295",
+                    "performed_via_github_app": None,
+                    "updated_at": "2026-09-02T00:00:01Z",
+                    "url": "https://api.github.com/repos/styx-secure/styx/issues/comments/200",
+                    "user": {"id": 141346846, "login": "maverde73"},
+                }
+
+                def fetch(url: str) -> tuple[object, bytes, dict[str, str]]:
+                    if "/issues/295/comments?" in url:
+                        return [selected, change], b"collection", {}
+                    if url.endswith("/200"):
+                        return change, json.dumps(change).encode("utf-8"), {}
+                    if url.endswith("/100"):
+                        return selected, json.dumps(selected).encode("utf-8"), {}
+                    raise AssertionError(url)
+
+                with patch("final_gate._fetch_json", side_effect=fetch):
+                    with self.assertRaisesRegex(FinalGateError, "withdrawn or superseded"):
+                        _scan_provider_authority(
+                            selected_decision,
+                            selected,
+                            manifest_sha,
+                        )
+
+    def test_authority_scan_fails_closed_on_operator_candidate_but_ignores_others(self) -> None:
+        decision = {
+            "candidateManifestSha256": "b" * 64,
+            "kind": "APP_CORE_POSITIVE_CARRIER_INVENTORY_RATIFICATION_V1",
+            "selectionHead": "a" * 40,
+        }
+        selected = {
+            "body": dumps(decision).decode("utf-8"),
+            "created_at": "2026-09-02T00:00:00Z",
+            "id": 100,
+            "user": {"id": 141346846, "login": "maverde73"},
+        }
+        suspicious = {
+            "body": "invalid APP_CORE_POSITIVE_CARRIER_INVENTORY_AUTHORITY_CHANGE_V1",
+            "created_at": "2026-09-02T00:00:01Z",
+            "id": 200,
+            "user": {"id": 141346846, "login": "maverde73"},
+        }
+        with (
+            patch(
+                "final_gate._fetch_issue_comments",
+                return_value=[selected, suspicious],
+            ),
+            patch(
+                "final_gate._fetch_json",
+                return_value=(suspicious, json.dumps(suspicious).encode("utf-8"), {}),
+            ),
+        ):
+            with self.assertRaises(FinalGateError):
+                _scan_provider_authority(decision, selected, "b" * 64)
+
+        suspicious["user"] = {"id": 999, "login": "other"}
+        with patch(
+            "final_gate._fetch_issue_comments",
+            return_value=[selected, suspicious],
+        ):
+            self.assertEqual(
+                _scan_provider_authority(decision, selected, "b" * 64),
+                (),
+            )
+
+        unrelated = {
+            "body": "ordinary operator note",
+            "created_at": "2026-09-02T00:00:02Z",
+            "id": 201,
+            "user": {"id": 141346846, "login": "maverde73"},
+        }
+        with patch(
+            "final_gate._fetch_issue_comments",
+            return_value=[selected, unrelated],
+        ):
+            self.assertEqual(
+                _scan_provider_authority(decision, selected, "b" * 64),
+                (),
+            )
+
+        duplicate = dict(selected, id=101)
+        with patch(
+            "final_gate._fetch_issue_comments",
+            return_value=[selected, duplicate],
+        ):
+            with self.assertRaisesRegex(FinalGateError, "duplicate matching"):
+                _scan_provider_authority(decision, selected, "b" * 64)
+
     def test_phase_b_authenticates_before_fresh_regeneration_and_refreshes(self) -> None:
         selection_head = "a" * 40
         inventory_sha = "b" * 64
@@ -385,7 +525,7 @@ class FinalGateTests(unittest.TestCase):
             events,
             [
                 "comment", "commit", "pull", "comments", "source",
-                "generate", "validate", "comment",
+                "generate", "validate", "comment", "comments",
             ],
         )
 

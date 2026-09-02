@@ -640,7 +640,7 @@ EXPECTED_FIELD_SECURITY_DIGEST = {
 }
 
 EXPECTED_STATE_MODEL_STRUCTURE_DIGEST = {
-    "ap_projection": "b235e90e8a8f3edcbe9336ef9db7ae2ae83afc872ac7dc5e14e18fe78d3c52e3",
+    "ap_projection": "65ce14337e10d7305a409ef46577a21f2331df0cc7df0c545363592d0b0c4e96",
     "k_admission": "c0f2b6dc8fd68a4f21f4f52625a4f232b7968ea07ac11311e4f632877101a7ad",
     "pending_replay": "814d69792952bd4fb119fa536d601a6c2e826f4b512f19c7ce0df213dcc21e1a",
 }

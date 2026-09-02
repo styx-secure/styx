@@ -30,12 +30,10 @@ PRECEDENCE = [
     "STALE_EVIDENCE",
     "AUTHORITY_PROJECTION_UNAVAILABLE",
     "FORK_EVIDENCE",
+    "LINEAGE_QUARANTINED",
     "PENDING_OPENING",
     "PENDING_ANCESTOR",
     "REMOVAL_INAPPLICABLE",
-    "POST_REVOCATION",
-    "LINEAGE_QUARANTINED",
-    "AUTHENTIC_BUT_UNAUTHORIZED",
     "APPLIED",
 ]
 
@@ -56,8 +54,11 @@ class AppCoreInterfaceV0Tests(unittest.TestCase):
         )
         self.assertIn(
             normalized(
-                "The historical C0.3 corpus and public kernel review model do "
-                "not yet carry the APP-core `NO_OPERATIONAL_AUTHORITY` state token."
+                "The historical C0.3 corpus and public kernel review model "
+                "retain their exact eight-token Base precedence and do not "
+                "project the APP-core `POST_REVOCATION`, "
+                "`AUTHENTIC_BUT_UNAUTHORIZED` or "
+                "`NO_OPERATIONAL_AUTHORITY` semantics."
             ),
             normalized(readme),
         )
@@ -72,6 +73,8 @@ class AppCoreInterfaceV0Tests(unittest.TestCase):
             row for row in model["state_models"] if row["id"] == "ap_projection"
         )
         self.assertEqual(ap_projection["precedence"], PRECEDENCE)
+        self.assertNotIn("POST_REVOCATION", ap_projection["precedence"])
+        self.assertNotIn("AUTHENTIC_BUT_UNAUTHORIZED", ap_projection["precedence"])
         self.assertNotIn("NO_OPERATIONAL_AUTHORITY", json.dumps(model))
 
         contract = APP_CORE_ROOT / "contract"

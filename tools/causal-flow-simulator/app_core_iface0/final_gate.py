@@ -23,6 +23,16 @@ from inventory import BASE_SHA, InventoryError
 
 
 RATIFIED_V14_SHA256 = "fd17ed39c7288620cd62f132db3fd5a877f6ba1ef0ff3580c9ad745146d85165"
+POSITIVE_INVENTORY_RATIFICATION_KIND = (
+    "APP_CORE_POSITIVE_CARRIER_INVENTORY_RATIFICATION_V1"
+)
+POSITIVE_INVENTORY_AUTHORITY_CHANGE_KIND = (
+    "APP_CORE_POSITIVE_CARRIER_INVENTORY_AUTHORITY_CHANGE_V1"
+)
+ISSUE_URL = "https://api.github.com/repos/styx-secure/styx/issues/295"
+ISSUE_COMMENTS_URL = ISSUE_URL + "/comments?per_page=100&page=1"
+OPERATOR_ID = 141346846
+OPERATOR_LOGIN = "maverde73"
 SEMANTIC_FIXTURE_SOURCE_COMMIT = "284b9230126cfa70337723c2a9d001800a64804c"
 SEMANTIC_FIXTURE_SOURCE_PATH = (
     "tools/causal-flow-simulator/app_core_iface0/generate_seed_registry.py"
@@ -364,6 +374,259 @@ def _next_link(headers: dict[str, str]) -> str | None:
     return None
 
 
+def _operator(row: dict[str, Any]) -> bool:
+    user = row.get("user")
+    return (
+        isinstance(user, dict)
+        and user.get("id") == OPERATOR_ID
+        and user.get("login") == OPERATOR_LOGIN
+    )
+
+
+def _fetch_issue_comments() -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    page_url: str | None = ISSUE_COMMENTS_URL
+    seen_pages: set[str] = set()
+    seen_ids: set[int] = set()
+    previous_id = -1
+    while page_url is not None:
+        if page_url in seen_pages or not page_url.startswith(ISSUE_URL + "/comments?"):
+            raise FinalGateError("provider pagination drift")
+        seen_pages.add(page_url)
+        page, _page_raw, page_headers = _fetch_json(page_url)
+        if not isinstance(page, list):
+            raise FinalGateError("provider comment page is malformed")
+        for row in page:
+            if not isinstance(row, dict) or not isinstance(row.get("id"), int):
+                raise FinalGateError("provider comment row is malformed")
+            row_id = row["id"]
+            if row_id in seen_ids or row_id <= previous_id:
+                raise FinalGateError("provider comment order or identity drift")
+            seen_ids.add(row_id)
+            previous_id = row_id
+            result.append(row)
+        page_url = _next_link(page_headers)
+    return result
+
+
+def _json_object(body: str) -> dict[str, Any] | None:
+    try:
+        value = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _validate_ratification_target(
+    target_id: str,
+    target_body_sha256: str,
+    selection_head: str,
+) -> dict[str, Any]:
+    if not target_id or not target_id.isdecimal():
+        raise FinalGateError("authority change target comment ID is invalid")
+    target_url = (
+        "https://api.github.com/repos/styx-secure/styx/issues/comments/"
+        + target_id
+    )
+    target, _target_raw, _headers = _fetch_json(target_url)
+    if (
+        not isinstance(target, dict)
+        or target.get("id") != int(target_id)
+        or target.get("url") != target_url
+        or target.get("issue_url") != ISSUE_URL
+        or not _operator(target)
+        or target.get("created_at") != target.get("updated_at")
+        or target.get("performed_via_github_app") is not None
+        or not isinstance(target.get("body"), str)
+    ):
+        raise FinalGateError("authority change target provenance drift")
+    target_body = target["body"].encode("utf-8")
+    if _sha256(target_body) != target_body_sha256:
+        raise FinalGateError("authority change target body digest drift")
+    try:
+        target_decision = loads(target_body)
+    except CanonicalJsonError as error:
+        raise FinalGateError("authority change target is not canonical") from error
+    required = {
+        "decision",
+        "kind",
+        "repository",
+        "issue",
+        "baseSha",
+        "selectionHead",
+        "closureAmendmentSha256",
+        "candidateManifestSha256",
+        "positiveCarrierInventorySha256",
+        "phaseAPackageReportSha256",
+        "caseCount",
+        "requestCaseCount",
+        "responseCaseCount",
+    }
+    if (
+        not isinstance(target_decision, dict)
+        or set(target_decision) != required
+        or dumps(target_decision) != target_body
+        or target_decision.get("decision") != "RATIFY"
+        or target_decision.get("kind") != POSITIVE_INVENTORY_RATIFICATION_KIND
+        or target_decision.get("repository") != "styx-secure/styx"
+        or target_decision.get("issue") != 295
+        or target_decision.get("baseSha") != BASE_SHA
+        or target_decision.get("closureAmendmentSha256") != RATIFIED_V14_SHA256
+        or target_decision.get("selectionHead") != selection_head
+        or (
+            target_decision.get("caseCount"),
+            target_decision.get("requestCaseCount"),
+            target_decision.get("responseCaseCount"),
+        )
+        != (80, 65, 15)
+        or any(
+            not isinstance(target_decision.get(name), str)
+            or len(target_decision[name]) != 64
+            or any(ch not in "0123456789abcdef" for ch in target_decision[name])
+            for name in (
+                "candidateManifestSha256",
+                "positiveCarrierInventorySha256",
+                "phaseAPackageReportSha256",
+            )
+        )
+    ):
+        raise FinalGateError("authority change target decision drift")
+    return target
+
+
+def _validate_authority_change(
+    row: dict[str, Any],
+    selected_comment: dict[str, Any],
+) -> tuple[int, bytes, str]:
+    row_id = row.get("id")
+    selected_id = selected_comment.get("id")
+    body = row.get("body")
+    if (
+        not isinstance(row_id, int)
+        or not isinstance(selected_id, int)
+        or not isinstance(body, str)
+        or row_id <= selected_id
+        or not isinstance(row.get("created_at"), str)
+        or not isinstance(selected_comment.get("created_at"), str)
+        or row["created_at"] <= selected_comment["created_at"]
+    ):
+        raise FinalGateError("authority change ordering drift")
+    url = f"https://api.github.com/repos/styx-secure/styx/issues/comments/{row_id}"
+    fetched, fetched_raw, _headers = _fetch_json(url)
+    if fetched != row:
+        raise FinalGateError("authority change collection/object drift")
+    if (
+        fetched.get("url") != url
+        or fetched.get("issue_url") != ISSUE_URL
+        or not _operator(fetched)
+        or fetched.get("created_at") != fetched.get("updated_at")
+        or fetched.get("performed_via_github_app") is not None
+    ):
+        raise FinalGateError("authority change provenance drift")
+    body_bytes = body.encode("utf-8")
+    try:
+        change = loads(body_bytes)
+    except CanonicalJsonError as error:
+        raise FinalGateError("authority change is not canonical JSON") from error
+    required = {
+        "decision",
+        "issue",
+        "kind",
+        "replacementCommentId",
+        "repository",
+        "selectionHead",
+        "targetCommentBodySha256",
+        "targetCommentId",
+    }
+    if not isinstance(change, dict) or set(change) != required or dumps(change) != body_bytes:
+        raise FinalGateError("authority change body shape or final LF drift")
+    decision = change["decision"]
+    replacement_id = change["replacementCommentId"]
+    if (
+        decision not in {"WITHDRAW", "SUPERSEDE"}
+        or change["kind"] != POSITIVE_INVENTORY_AUTHORITY_CHANGE_KIND
+        or change["repository"] != "styx-secure/styx"
+        or change["issue"] != 295
+        or not isinstance(change["selectionHead"], str)
+        or len(change["selectionHead"]) != 40
+        or any(ch not in "0123456789abcdef" for ch in change["selectionHead"])
+        or not isinstance(change["targetCommentBodySha256"], str)
+        or len(change["targetCommentBodySha256"]) != 64
+        or any(ch not in "0123456789abcdef" for ch in change["targetCommentBodySha256"])
+        or not isinstance(change["targetCommentId"], str)
+        or not change["targetCommentId"].isdecimal()
+        or (decision == "WITHDRAW" and replacement_id is not None)
+        or (
+            decision == "SUPERSEDE"
+            and (
+                not isinstance(replacement_id, str)
+                or not replacement_id
+                or not replacement_id.isdecimal()
+            )
+        )
+    ):
+        raise FinalGateError("authority change value drift")
+    target = _validate_ratification_target(
+        change["targetCommentId"],
+        change["targetCommentBodySha256"],
+        change["selectionHead"],
+    )
+    if row_id <= target["id"] or row["created_at"] <= target["created_at"]:
+        raise FinalGateError("authority change does not follow its target")
+    return row_id, fetched_raw, change["targetCommentId"]
+
+
+def _scan_provider_authority(
+    decision: dict[str, Any],
+    selected_comment: dict[str, Any],
+    manifest_sha: str,
+) -> tuple[tuple[int, bytes], ...]:
+    selected_id = selected_comment.get("id")
+    selected_created = selected_comment.get("created_at")
+    if not isinstance(selected_id, int) or not isinstance(selected_created, str):
+        raise FinalGateError("selected provider authority identity drift")
+    matches = 0
+    changes: list[tuple[int, bytes]] = []
+    for row in _fetch_issue_comments():
+        body = row.get("body")
+        if not isinstance(body, str):
+            continue
+        parsed = _json_object(body)
+        if (
+            _operator(row)
+            and isinstance(parsed, dict)
+            and parsed.get("kind") == decision["kind"]
+            and parsed.get("selectionHead") == decision["selectionHead"]
+            and parsed.get("candidateManifestSha256") == manifest_sha
+        ):
+            matches += 1
+            if row.get("id") != selected_id:
+                raise FinalGateError("duplicate matching provider authority")
+
+        if (
+            _operator(row)
+            and isinstance(row.get("id"), int)
+            and row["id"] > selected_id
+            and isinstance(row.get("created_at"), str)
+            and row["created_at"] > selected_created
+            and (
+                POSITIVE_INVENTORY_AUTHORITY_CHANGE_KIND.encode("utf-8")
+                in body.encode("utf-8")
+                or (
+                    isinstance(parsed, dict)
+                    and parsed.get("kind") == POSITIVE_INVENTORY_AUTHORITY_CHANGE_KIND
+                )
+            )
+        ):
+            row_id, raw, target_id = _validate_authority_change(row, selected_comment)
+            changes.append((row_id, raw))
+            if target_id == str(selected_id):
+                raise FinalGateError("provider authority was withdrawn or superseded")
+    if matches != 1:
+        raise FinalGateError("provider authority is absent or duplicated")
+    return tuple(changes)
+
+
 def _validate_provider_authority(comment_id: str, repo: Path) -> dict[str, Any]:
     if not comment_id.isdecimal() or not comment_id:
         raise FinalGateError("provider comment ID is not decimal")
@@ -453,44 +716,11 @@ def _validate_provider_authority(comment_id: str, repo: Path) -> dict[str, Any]:
     ):
         raise FinalGateError("provider PR freeze identity drift")
 
-    matches = 0
-    page_url: str | None = (
-        "https://api.github.com/repos/styx-secure/styx/issues/295/comments?per_page=100&page=1"
+    pre_regeneration_scan = _scan_provider_authority(
+        decision,
+        comment,
+        manifest_sha,
     )
-    seen: set[str] = set()
-    while page_url is not None:
-        if page_url in seen or not page_url.startswith(
-            "https://api.github.com/repos/styx-secure/styx/issues/295/comments?"
-        ):
-            raise FinalGateError("provider pagination drift")
-        seen.add(page_url)
-        page, _page_raw, page_headers = _fetch_json(page_url)
-        if not isinstance(page, list):
-            raise FinalGateError("provider comment page is malformed")
-        for row in page:
-            candidate_body = row.get("body") if isinstance(row, dict) else None
-            if not isinstance(candidate_body, str):
-                continue
-            try:
-                candidate = loads(candidate_body.encode("utf-8"))
-            except CanonicalJsonError:
-                continue
-            row_user = row.get("user") if isinstance(row, dict) else None
-            if (
-                isinstance(candidate, dict)
-                and candidate.get("kind") == decision["kind"]
-                and candidate.get("selectionHead") == selection_head
-                and candidate.get("candidateManifestSha256") == manifest_sha
-                and isinstance(row_user, dict)
-                and row_user.get("id") == 141346846
-                and row_user.get("login") == "maverde73"
-            ):
-                matches += 1
-                if row.get("id") != int(comment_id):
-                    raise FinalGateError("duplicate matching provider authority")
-        page_url = _next_link(page_headers)
-    if matches != 1:
-        raise FinalGateError("provider authority is absent or duplicated")
 
     historical, selected = _local_source_blobs(repo.resolve(), selection_head)
     _verify_provider_source_slice(selection_head, historical, selected)
@@ -515,6 +745,13 @@ def _validate_provider_authority(comment_id: str, repo: Path) -> dict[str, Any]:
     refreshed, refreshed_raw, _refreshed_headers = _fetch_json(url)
     if refreshed_raw != comment_raw or refreshed != comment:
         raise FinalGateError("provider decision changed during Phase-B entry")
+    post_regeneration_scan = _scan_provider_authority(
+        decision,
+        comment,
+        manifest_sha,
+    )
+    if post_regeneration_scan != pre_regeneration_scan:
+        raise FinalGateError("provider authority-change set drifted during Phase-B entry")
     _verify_clean_checkout(repo.resolve(), selection_head)
     return decision
 
