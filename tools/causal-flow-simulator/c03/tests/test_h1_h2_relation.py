@@ -25,6 +25,7 @@ from corpus_model import (  # noqa: E402
     synthetic_octets,
 )
 from generate_corpus import _application_vector, _event_fields  # noqa: E402
+from h1_h2_relation import run_runtime, slot_cases, validate_relation  # noqa: E402
 from scenarios import required_witnesses  # noqa: E402
 
 
@@ -41,6 +42,9 @@ def _runtime_witnesses():
 
 
 class H1BoundaryTests(unittest.TestCase):
+    def test_literal_relation_is_closed(self) -> None:
+        validate_relation()
+
     def test_python_matches_all_frozen_o14_boundary_vectors(self) -> None:
         witnesses = _runtime_witnesses()
         self.assertEqual(len(witnesses), 29)
@@ -270,6 +274,17 @@ class H2AdmissionOrderTests(unittest.TestCase):
                 loads(output_path.read_bytes()),
                 {"observations": expected, "result": "PASS"},
             )
+
+    def test_literal_slot_relation_exercises_both_lexical_schedules(self) -> None:
+        schedules = {
+            case["lexicalSchedule"]
+            for case in slot_cases()
+            if case["lexicalSchedule"] != "NOT_APPLICABLE"
+        }
+        self.assertEqual(schedules, {"LEFT_LT_RIGHT", "LEFT_GT_RIGHT"})
+
+    def test_complete_relation_is_byte_equivalent_across_runtimes(self) -> None:
+        self.assertEqual(run_runtime("python"), run_runtime("javascript"))
 
 
 if __name__ == "__main__":

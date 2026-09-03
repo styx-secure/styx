@@ -27,11 +27,13 @@ CORPUS_FILES = frozenset({
 TOOL_FILES = frozenset({
     "README.md", "build_blind_projection.py", "canonical_json.py", "compare_clean_room.py",
     "corpus-inventory.json", "corpus-source-map.json",
-    "corpus_model.py", "generate_corpus.py", "validate_corpus.py", "replay_corpus.py",
+    "corpus_model.py", "generate_corpus.py", "h1_h2_relation.py",
+    "validate_corpus.py", "replay_corpus.py",
     "node_adapter.mjs", "run_cross_runtime.py", "run_mutations.py", "scope_guard.py",
     "tests/test_blind_projection.py", "tests/test_compare_clean_room.py",
     "tests/test_canonical_json.py", "tests/test_coverage.py", "tests/test_generation.py",
-    "tests/test_manifest.py", "tests/test_mutations.py", "tests/test_replay.py",
+    "tests/test_h1_h2_relation.py", "tests/test_manifest.py",
+    "tests/test_mutations.py", "tests/test_replay.py",
     "tests/test_scope_guard.py", "tests/test_cross_runtime.py",
 })
 SYNC_FILES = frozenset({

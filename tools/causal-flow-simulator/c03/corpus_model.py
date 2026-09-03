@@ -860,6 +860,7 @@ _B = (
     15112221349535400772501151409588531511454012693041857206046113283949847762202,
     46316835694926478169428394003475163141307993866256225615783033603165251855960,
 )
+_ED25519_EVIDENCE_COUNTS = {"boundaryInvocations": 0, "equationInvocations": 0}
 
 
 def _ed_extended(point: tuple[int, int]) -> tuple[int, int, int, int]:
@@ -1032,7 +1033,22 @@ def ed25519_verify_detailed(
 
 
 def ed25519_verify(public: bytes, signature: bytes, message: bytes) -> bool:
-    return bool(ed25519_verify_detailed(public, signature, message)["accepted"])
+    observed = ed25519_verify_detailed(public, signature, message)
+    _ED25519_EVIDENCE_COUNTS["boundaryInvocations"] += 1
+    _ED25519_EVIDENCE_COUNTS["equationInvocations"] += int(
+        observed["equationInvocations"]
+    )
+    return bool(observed["accepted"])
+
+
+def reset_ed25519_evidence_counts() -> None:
+    _ED25519_EVIDENCE_COUNTS.update(
+        {"boundaryInvocations": 0, "equationInvocations": 0}
+    )
+
+
+def ed25519_evidence_counts() -> dict[str, int]:
+    return dict(_ED25519_EVIDENCE_COUNTS)
 
 
 def evaluate_vector(record: dict[str, Any]) -> dict[str, Any]:
@@ -1556,6 +1572,7 @@ def evaluate_k_admission_graph(
         return values
 
     admitted: dict[str, dict[str, Any]] = {}
+    local_results: dict[str, tuple[dict[str, Any], bool]] = {}
     bindings: dict[str, dict[str, Any]] = {
         genesis_reference: {
             "grantReferenceHex": None,
@@ -1589,6 +1606,31 @@ def evaluate_k_admission_graph(
             if binding is None:
                 continue
             required = dependencies(fields)
+            if reference not in local_results:
+                local_record = dict(record)
+                local_record.pop("admissionContext", None)
+                local_record["binding"] = {
+                    "contextIdentifierHex": context,
+                    "credentialIdentifierHex": actor,
+                    "verificationKeyHex": binding["verificationKeyHex"],
+                }
+                local = evaluate_vector(local_record)
+                local_code = local.get("localOutcome")
+                local_pending = (
+                    local_code == "PENDING_OPENING"
+                    and local.get("kBindingAdmission") == "ADMITTED"
+                )
+                if not transition_input_is_compatible(local) and not local_pending:
+                    rejected[reference] = ProtocolError(
+                        str(local_code or "INVALID"),
+                        str(local.get("stage", "S3_KERNEL_STRUCTURAL")),
+                    )
+                    pending.remove(reference)
+                    progress = True
+                    continue
+                local_results[reference] = (local, local_pending)
+            local, local_pending = local_results[reference]
+
             absent = required - set(parsed)
             failed = required & set(rejected)
             if absent or failed:
@@ -1599,28 +1641,6 @@ def evaluate_k_admission_graph(
                 progress = True
                 continue
             if not required <= set(admitted):
-                continue
-
-            local_record = dict(record)
-            local_record.pop("admissionContext", None)
-            local_record["binding"] = {
-                "contextIdentifierHex": context,
-                "credentialIdentifierHex": actor,
-                "verificationKeyHex": binding["verificationKeyHex"],
-            }
-            local = evaluate_vector(local_record)
-            local_code = local.get("localOutcome")
-            local_pending = (
-                local_code == "PENDING_OPENING"
-                and local.get("kBindingAdmission") == "ADMITTED"
-            )
-            if not transition_input_is_compatible(local) and not local_pending:
-                rejected[reference] = ProtocolError(
-                    str(local_code or "INVALID"),
-                    str(local.get("stage", "S3_KERNEL_STRUCTURAL")),
-                )
-                pending.remove(reference)
-                progress = True
                 continue
 
             predecessor = fields["directPredecessorHex"]

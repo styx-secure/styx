@@ -366,6 +366,7 @@ function modPow(base, exponent, modulus) {
 }
 
 const ED_IDENTITY = Object.freeze({ x: 0n, y: 1n, z: 1n, t: 0n });
+const ed25519EvidenceCounts = { boundaryInvocations: 0, equationInvocations: 0 };
 
 function edPoint(x, y, z = 1n, t = undefined) {
   return { x: mod(x), y: mod(y), z: mod(z), t: mod(t ?? x * y) };
@@ -458,7 +459,10 @@ function ed25519VerifyDetailed(publicKey, signature, message) {
 }
 
 function ed25519Verify(publicKey, signature, message) {
-  return ed25519VerifyDetailed(publicKey, signature, message).accepted;
+  const observed = ed25519VerifyDetailed(publicKey, signature, message);
+  ed25519EvidenceCounts.boundaryInvocations += 1;
+  ed25519EvidenceCounts.equationInvocations += observed.equationInvocations;
+  return observed.accepted;
 }
 
 function evaluate(record) {
@@ -741,6 +745,7 @@ function evaluateKAdmissionGraph(genesisRecord, records) {
     return values;
   };
   const admitted = new Map();
+  const localResults = new Map();
   const bindings = new Map([[genesisReference, {
     grantReferenceHex: null,
     issuerCredentialHex: null,
@@ -767,6 +772,29 @@ function evaluateKAdmissionGraph(genesisRecord, records) {
       const actor = fields.credentialIdentifierHex, binding = bindings.get(actor);
       if (binding === undefined) continue;
       const required = dependencies(fields);
+      if (!localResults.has(reference)) {
+        const localRecord = structuredClone(record);
+        delete localRecord.admissionContext;
+        localRecord.binding = {
+          contextIdentifierHex: context,
+          credentialIdentifierHex: actor,
+          verificationKeyHex: binding.verificationKeyHex,
+        };
+        const local = evaluate(localRecord);
+        const localPending = local.localOutcome === "PENDING_OPENING"
+          && local.kBindingAdmission === "ADMITTED";
+        if (!transitionInputIsCompatible(local) && !localPending) {
+          rejected.set(reference, {
+            admitted: false,
+            code: local.localOutcome ?? "INVALID",
+            stage: local.stage ?? "S3_KERNEL_STRUCTURAL",
+          });
+          pending.delete(reference); progress = true; continue;
+        }
+        localResults.set(reference, { local, localPending });
+      }
+      const { local, localPending } = localResults.get(reference);
+
       const absent = [...required].some(value => !parsed.has(value));
       const failed = [...required].some(value => rejected.has(value));
       if (absent || failed) {
@@ -774,25 +802,6 @@ function evaluateKAdmissionGraph(genesisRecord, records) {
         pending.delete(reference); progress = true; continue;
       }
       if (![...required].every(value => admitted.has(value))) continue;
-
-      const localRecord = structuredClone(record);
-      delete localRecord.admissionContext;
-      localRecord.binding = {
-        contextIdentifierHex: context,
-        credentialIdentifierHex: actor,
-        verificationKeyHex: binding.verificationKeyHex,
-      };
-      const local = evaluate(localRecord);
-      const localPending = local.localOutcome === "PENDING_OPENING"
-        && local.kBindingAdmission === "ADMITTED";
-      if (!transitionInputIsCompatible(local) && !localPending) {
-        rejected.set(reference, {
-          admitted: false,
-          code: local.localOutcome ?? "INVALID",
-          stage: local.stage ?? "S3_KERNEL_STRUCTURAL",
-        });
-        pending.delete(reference); progress = true; continue;
-      }
 
       const predecessor = fields.directPredecessorHex, parents = fields.causalParents;
       try {
@@ -1350,6 +1359,8 @@ function parseArgs() {
     ? ["--output"]
     : values["--h1-input"]
       ? ["--h1-input", "--output"]
+      : values["--c03-vector-input"]
+        ? ["--c03-vector-input", "--output"]
       : values["--k-scenario-input"]
         ? ["--k-scenario-input", "--output"]
       : ["--repo-root", "--corpus", "--output"];
@@ -1507,16 +1518,55 @@ function main() {
     }), { flag: "wx" });
     return;
   }
+  if (args["--c03-vector-input"]) {
+    const input = loadCanonical(resolve(args["--c03-vector-input"]));
+    require(input?.schema === "styx-c03-h1h2-vector-input/v1"
+      && Array.isArray(input.records), "H1/H2 vector input schema mismatch");
+    const observations = input.records.map(record => {
+      ed25519EvidenceCounts.boundaryInvocations = 0;
+      ed25519EvidenceCounts.equationInvocations = 0;
+      return {
+        id: record.id,
+        observation: evaluate(record),
+        verificationBoundary: { ...ed25519EvidenceCounts },
+      };
+    });
+    writeFileSync(resolve(args["--output"]), canonical({
+      observations,
+      result: "PASS",
+      schema: "styx-c03-h1h2-vector-observations/v1",
+    }), { flag: "wx" });
+    return;
+  }
   if (args["--k-scenario-input"]) {
     const input = loadCanonical(resolve(args["--k-scenario-input"]));
-    const observations = input.scenarios.map(scenario => ({
-      id: scenario.id,
-      observations: (scenario.graphEvaluation ? evaluateKAdmissionGraph : evaluateKAdmissionScenario)(
-        scenario.acceptedGenesisRecord,
-        scenario.records,
-      ),
-    }));
-    writeFileSync(resolve(args["--output"]), canonical({ observations, result: "PASS" }), { flag: "wx" });
+    const evidenceMode = input.schema === "styx-c03-h1h2-connected-input/v1";
+    const observations = input.scenarios.map(scenario => {
+      ed25519EvidenceCounts.boundaryInvocations = 0;
+      ed25519EvidenceCounts.equationInvocations = 0;
+      let row;
+      try {
+        row = {
+          id: scenario.id,
+          observations: (scenario.graphEvaluation ? evaluateKAdmissionGraph : evaluateKAdmissionScenario)(
+            scenario.acceptedGenesisRecord,
+            scenario.records,
+          ),
+        };
+      } catch (error) {
+        if (!evidenceMode) throw error;
+        row = {
+          harnessError: error.message,
+          id: scenario.id,
+          observations: [],
+        };
+      }
+      if (evidenceMode) row.verificationBoundary = { ...ed25519EvidenceCounts };
+      return row;
+    });
+    const output = { observations, result: "PASS" };
+    if (evidenceMode) output.schema = "styx-c03-h1h2-connected-observations/v1";
+    writeFileSync(resolve(args["--output"]), canonical(output), { flag: "wx" });
     return;
   }
   const corpus = resolve(args["--corpus"]);
