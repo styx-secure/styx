@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
+import json
 import sys
 from pathlib import Path
 from typing import Any
@@ -38,6 +40,28 @@ PLAN_FIELDS = frozenset(
         "instance_count",
         "instance_set_sha256",
         "rows",
+        "schema",
+        "verdict",
+    }
+)
+
+TARGET_PREFLIGHT_FIELDS = frozenset(
+    {
+        "instance_count",
+        "instance_set_sha256",
+        "resolution_counts",
+        "schema",
+        "unresolved_instance_ids",
+        "verdict",
+    }
+)
+
+ISOLATION_PREFLIGHT_FIELDS = frozenset(
+    {
+        "classification_counts",
+        "instance_count",
+        "instance_set_sha256",
+        "non_satisfiable_rows",
         "schema",
         "verdict",
     }
@@ -748,6 +772,956 @@ def derive_phase_b_registries(
     return seed_registry, witness_registry
 
 
+def _target_resolution(carrier: dict[str, Any], row: dict[str, Any]) -> str:
+    """Classify one selected hostile target without fabricating a parent.
+
+    The populated registry may name an absent member or the next element of an
+    existing array only when the perturbation itself constructs that value.
+    Every other target must resolve in the provider-shaped positive carrier.
+    """
+
+    pointer = row.get("targetJsonPointer")
+    if not isinstance(pointer, str):
+        return "UNRESOLVED_TARGET"
+    try:
+        _resolve_data_pointer(carrier, pointer)
+    except (KeyError, IndexError, TypeError, ValueError):
+        pass
+    else:
+        return "RESOLVED"
+
+    if not pointer or "/" not in pointer:
+        return "UNRESOLVED_TARGET"
+    parent_pointer, token = pointer.rsplit("/", 1)
+    token = _unescape(token)
+    try:
+        parent = _resolve_data_pointer(carrier, parent_pointer)
+    except (KeyError, IndexError, TypeError, ValueError):
+        return "UNRESOLVED_TARGET"
+
+    kind = row.get("perturbationKind")
+    if isinstance(parent, dict):
+        if token in parent:
+            return "UNRESOLVED_TARGET"
+        if kind in {"REPLACE_WITH_NULL", "VIOLATE_REFERENCED_SCHEMA"}:
+            return "PARENT_RESOLVED_MEMBER_ABSENT"
+        return "UNRESOLVED_TARGET"
+    if isinstance(parent, list):
+        family = row.get("structuralRuleId")
+        if (
+            isinstance(family, str)
+            and family in _PARENT_RESOLVED_ARRAY_INSERTION_FAMILIES
+            and token.isdecimal()
+            and int(token) == len(parent)
+        ):
+            return "PARENT_RESOLVED_MEMBER_ABSENT"
+    return "UNRESOLVED_TARGET"
+
+
+def derive_structural_target_preflight(
+    repo_root: Path,
+    contract: Path,
+    evidence_root: Path,
+) -> dict[str, Any]:
+    """Prove target reachability for the complete derived Phase-B relation."""
+
+    _seed_registry, witness_registry = derive_phase_b_registries(
+        repo_root, contract, evidence_root
+    )
+    inventory, _inventory_bytes, carriers = _load_phase_a(
+        repo_root, contract, evidence_root
+    )
+    carrier_ids = {
+        row.get("caseId")
+        for row in inventory.get("cases", [])
+        if isinstance(row, dict)
+    }
+    if carrier_ids != set(carriers):
+        raise WitnessGenerationError("target preflight carrier set drift")
+
+    counts = {
+        "PARENT_RESOLVED_MEMBER_ABSENT": 0,
+        "RESOLVED": 0,
+        "UNRESOLVED_TARGET": 0,
+    }
+    unresolved: list[str] = []
+    for row in witness_registry["rows"]:
+        case_id = row.get("carrierCaseId")
+        if not isinstance(case_id, str) or case_id not in carriers:
+            raise WitnessGenerationError("target preflight names an unknown carrier")
+        carrier, _raw = carriers[case_id]
+        resolution = _target_resolution(carrier, row)
+        counts[resolution] += 1
+        if resolution == "UNRESOLVED_TARGET":
+            unresolved.append(row["instanceId"])
+
+    if sum(counts.values()) != STRUCTURAL_COUNT:
+        raise WitnessGenerationError("target preflight count drift")
+    return {
+        "instance_count": STRUCTURAL_COUNT,
+        "instance_set_sha256": witness_registry["instanceSetSha256"],
+        "resolution_counts": counts,
+        "schema": "styx.app-core-iface0.structural-target-preflight.v1",
+        "unresolved_instance_ids": unresolved,
+        "verdict": "PASS" if not unresolved else "AMEND_REQUIRED",
+    }
+
+
+_DIRECT_PREFLIGHT_KINDS = frozenset(
+    {
+        "DUPLICATE_ARRAY_ITEM",
+        "EXCEED_MAX_PROPERTIES",
+        "INSERT_UNKNOWN_PROPERTY",
+        "MATCH_FORBIDDEN_NOT_SUBSCHEMA",
+        "OVERFLOW_MAX_ITEMS",
+        "OVERFLOW_MAX_LENGTH",
+        "REMOVE_REQUIRED_PROPERTY",
+        "REPLACE_CONST_VALUE",
+        "REPLACE_ENUM_VALUE",
+        "REPLACE_PATTERN_VALUE",
+        "REPLACE_WITH_NULL",
+        "REPLACE_WITH_WRONG_TYPE",
+        "UNDERFLOW_MIN_ITEMS",
+        "UNDERFLOW_MIN_LENGTH",
+        "VIOLATE_ARRAY_ITEM_SCHEMA",
+    }
+)
+
+_POSITIVE_UNION_KINDS = frozenset(
+    {
+        "POSITIVE_ALL_ANYOF_ARMS",
+        "POSITIVE_ANYOF_ARM",
+        "POSITIVE_ONEOF_ARM",
+    }
+)
+
+_DEEP_PREFLIGHT_KINDS = frozenset(
+    {
+        "CONSTRUCT_NO_ANYOF_ARM",
+        "CONSTRUCT_NO_ONEOF_ARM",
+        "VIOLATE_ALLOF_ARM",
+        "VIOLATE_REFERENCED_SCHEMA",
+    }
+)
+
+
+def _json_type_matches(value: Any, declared: str) -> bool:
+    if declared == "null":
+        return value is None
+    if declared == "boolean":
+        return isinstance(value, bool)
+    if declared == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if declared == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if declared == "string":
+        return isinstance(value, str)
+    if declared == "array":
+        return isinstance(value, list)
+    if declared == "object":
+        return isinstance(value, dict)
+    return False
+
+
+def _ordered_palette_values(palette: dict[str, Any]) -> list[Any]:
+    """Expand the literal bounded palette without reordering or invention."""
+
+    values = list(palette["jsonValueOrder"])
+    string_order = palette["stringRecipeOrder"]
+    values.extend(string_order["literalOrder"])
+    for character in string_order["repeatCharacterOrder"]:
+        for length in string_order["repeatLengthOrder"]:
+            values.append(character * length)
+    values.extend(palette["integerRecipeOrder"])
+    result: list[Any] = []
+    seen: set[bytes] = set()
+    for value in values:
+        encoded = dumps(value)
+        if encoded not in seen:
+            seen.add(encoded)
+            result.append(value)
+    return result
+
+
+def _replace_data_target(carrier: dict[str, Any], pointer: str, value: Any) -> Any:
+    if pointer == "":
+        return copy.deepcopy(value)
+    tokens = [_unescape(token) for token in pointer.removeprefix("/").split("/")]
+
+    def replace(node: Any, offset: int) -> Any:
+        token = tokens[offset]
+        terminal = offset == len(tokens) - 1
+        if isinstance(node, dict):
+            if not terminal and token not in node:
+                raise WitnessGenerationError("replacement path is unresolved")
+            candidate = dict(node)
+            candidate[token] = (
+                copy.deepcopy(value)
+                if terminal
+                else replace(node[token], offset + 1)
+            )
+            return candidate
+        if isinstance(node, list) and token.isdecimal():
+            index = int(token)
+            candidate = list(node)
+            if terminal and index == len(candidate):
+                candidate.append(copy.deepcopy(value))
+            elif 0 <= index < len(candidate):
+                candidate[index] = (
+                    copy.deepcopy(value)
+                    if terminal
+                    else replace(node[index], offset + 1)
+                )
+            else:
+                raise WitnessGenerationError("array replacement index is not bounded")
+            return candidate
+        raise WitnessGenerationError("replacement parent is not a container")
+
+    return replace(carrier, 0)
+
+
+def _remove_data_target(carrier: dict[str, Any], pointer: str) -> dict[str, Any]:
+    if not pointer or "/" not in pointer:
+        raise WitnessGenerationError("removal target has no parent")
+    tokens = [_unescape(token) for token in pointer.removeprefix("/").split("/")]
+
+    def remove(node: Any, offset: int) -> Any:
+        token = tokens[offset]
+        terminal = offset == len(tokens) - 1
+        if isinstance(node, dict) and token in node:
+            candidate = dict(node)
+            if terminal:
+                del candidate[token]
+            else:
+                candidate[token] = remove(node[token], offset + 1)
+            return candidate
+        if isinstance(node, list) and token.isdecimal() and not terminal:
+            index = int(token)
+            if 0 <= index < len(node):
+                candidate = list(node)
+                candidate[index] = remove(node[index], offset + 1)
+                return candidate
+        raise WitnessGenerationError("required member is absent from its carrier")
+
+    result = remove(carrier, 0)
+    if not isinstance(result, dict):
+        raise WitnessGenerationError("required-member removal changed root type")
+    return result
+
+
+def _schema_parent(schema: dict[str, Any], pointer: str) -> tuple[Any, str]:
+    if not pointer or "/" not in pointer:
+        raise WitnessGenerationError("schema mutation target has no parent")
+    parent_pointer, token = pointer.rsplit("/", 1)
+    parent = schema
+    if parent_pointer:
+        for part in parent_pointer.removeprefix("/").split("/"):
+            part = _unescape(part)
+            parent = parent[int(part)] if isinstance(parent, list) else parent[part]
+    return parent, _unescape(token)
+
+
+def _schema_node_at(schema: dict[str, Any], pointer: str) -> Any:
+    node: Any = schema
+    if pointer:
+        for part in pointer.removeprefix("/").split("/"):
+            part = _unescape(part)
+            node = node[int(part)] if isinstance(node, list) else node[part]
+    return node
+
+
+def _direct_schema_mutant(schema: dict[str, Any], instance: Any) -> dict[str, Any]:
+    mutant = copy.deepcopy(schema)
+    source = instance.source
+    family = instance.family_id
+    if family == "STR-REQUIRED-PROPERTY-OMISSION":
+        marker = "/required/"
+        owner_pointer, property_token = source.rsplit(marker, 1)
+        owner = mutant
+        for part in owner_pointer.removeprefix("/").split("/"):
+            if part:
+                part = _unescape(part)
+                owner = owner[int(part)] if isinstance(owner, list) else owner[part]
+        required = owner.get("required") if isinstance(owner, dict) else None
+        property_name = _unescape(property_token)
+        if not isinstance(required, list) or property_name not in required:
+            raise WitnessGenerationError("required-property mutant target drift")
+        owner["required"] = [name for name in required if name != property_name]
+        return mutant
+    if family == "STR-NULL-SUBSTITUTION":
+        parent, token = _schema_parent(mutant, source)
+        if isinstance(parent, list):
+            parent[int(token)] = {}
+        else:
+            parent[token] = {}
+        return mutant
+    parent, token = _schema_parent(mutant, source)
+    if not isinstance(parent, dict) or token not in parent:
+        raise WitnessGenerationError("direct schema mutant target drift")
+    if family == "STR-UNKNOWN-OBJECT-PROPERTY":
+        parent[token] = True
+    elif family == "STR-ITEM-CONSTRAINT-VIOLATION":
+        parent[token] = {}
+    else:
+        del parent[token]
+    return mutant
+
+
+def _deep_schema_mutant(schema: dict[str, Any], instance: Any) -> dict[str, Any]:
+    mutant = copy.deepcopy(schema)
+    parent, token = _schema_parent(mutant, instance.source)
+    if instance.family_id in {
+        "STR-ONE-OF-NO-ARM",
+        "STR-ANY-OF-NO-ARM",
+        "STR-REF-TARGET-CONSTRAINT",
+    }:
+        if not isinstance(parent, dict) or token not in parent:
+            raise WitnessGenerationError("deep schema keyword target drift")
+        del parent[token]
+    elif instance.family_id == "STR-ALL-OF-BRANCH-CONSTRAINT":
+        if not isinstance(parent, list) or not token.isdecimal():
+            raise WitnessGenerationError("allOf arm target drift")
+        parent[int(token)] = {}
+    else:
+        raise WitnessGenerationError("deep schema mutant kind is not implemented")
+    return mutant
+
+
+def _constraint_node(schema: dict[str, Any], instance: Any) -> dict[str, Any]:
+    mode, pointer, _property = _instance_schema_target(instance)
+    node = _schema_node_at(schema, pointer)
+    if not isinstance(node, dict):
+        raise WitnessGenerationError("structural constraint node is not an object")
+    return node
+
+
+def _schema_literal_candidates(
+    schema: dict[str, Any], node: dict[str, Any], active: frozenset[str] = frozenset()
+) -> list[Any]:
+    values: list[Any] = []
+    if "const" in node:
+        values.append(copy.deepcopy(node["const"]))
+    enum = node.get("enum")
+    if isinstance(enum, list):
+        values.extend(copy.deepcopy(enum))
+    reference = node.get("$ref")
+    if isinstance(reference, str) and reference.startswith("#/"):
+        pointer = reference.removeprefix("#")
+        if pointer not in active:
+            target = _schema_node_at(schema, pointer)
+            if isinstance(target, dict):
+                values.extend(
+                    _schema_literal_candidates(schema, target, active | {pointer})
+                )
+    result: list[Any] = []
+    seen: set[bytes] = set()
+    for value in values:
+        encoded = dumps(value)
+        if encoded not in seen:
+            seen.add(encoded)
+            result.append(value)
+    return result
+
+
+def _direct_perturbations(
+    carrier: dict[str, Any],
+    row: dict[str, Any],
+    instance: Any,
+    schema: dict[str, Any],
+    palette: dict[str, Any],
+) -> list[Any]:
+    kind = row["perturbationKind"]
+    pointer = row["targetJsonPointer"]
+    node = _constraint_node(schema, instance)
+    try:
+        current = _resolve_data_pointer(carrier, pointer)
+    except (KeyError, IndexError, TypeError, ValueError):
+        current = None
+
+    if kind == "REMOVE_REQUIRED_PROPERTY":
+        return [_remove_data_target(carrier, pointer)]
+    if kind == "REPLACE_WITH_NULL":
+        return [_replace_data_target(carrier, pointer, None)]
+    if kind == "INSERT_UNKNOWN_PROPERTY":
+        if not isinstance(current, dict):
+            return []
+        properties = node.get("properties", {})
+        for name in palette["unknownPropertyNameOrder"]:
+            if name not in current and name not in properties:
+                value = copy.deepcopy(current)
+                value[name] = None
+                return [_replace_data_target(carrier, pointer, value)]
+        return []
+    if kind == "REPLACE_WITH_WRONG_TYPE":
+        declared = node.get("type")
+        allowed = {declared} if isinstance(declared, str) else set(declared or [])
+        values = [
+            value
+            for value in _ordered_palette_values(palette)
+            if not any(_json_type_matches(value, item) for item in allowed)
+        ]
+        return [_replace_data_target(carrier, pointer, value) for value in values]
+    if kind == "REPLACE_CONST_VALUE":
+        constant = node.get("const")
+        constant_type = (
+            "boolean"
+            if isinstance(constant, bool)
+            else "integer"
+            if isinstance(constant, int)
+            else "string"
+            if isinstance(constant, str)
+            else "array"
+            if isinstance(constant, list)
+            else "object"
+            if isinstance(constant, dict)
+            else "null"
+        )
+        values = [
+            value
+            for value in _ordered_palette_values(palette)
+            if value != constant
+            and _json_type_matches(value, constant_type)
+        ]
+        return [_replace_data_target(carrier, pointer, value) for value in values]
+    if kind == "REPLACE_ENUM_VALUE":
+        enum = node.get("enum")
+        if not isinstance(enum, list) or not enum:
+            return []
+        types = set()
+        for value in enum:
+            if isinstance(value, bool):
+                types.add("boolean")
+            elif isinstance(value, int):
+                types.add("integer")
+            elif isinstance(value, str):
+                types.add("string")
+            elif isinstance(value, list):
+                types.add("array")
+            elif isinstance(value, dict):
+                types.add("object")
+            else:
+                types.add("null")
+        values = [
+            value
+            for value in _ordered_palette_values(palette)
+            if value not in enum
+            and any(_json_type_matches(value, declared) for declared in types)
+        ]
+        return [_replace_data_target(carrier, pointer, value) for value in values]
+    if kind == "REPLACE_PATTERN_VALUE":
+        values = [value for value in _ordered_palette_values(palette) if isinstance(value, str)]
+        return [_replace_data_target(carrier, pointer, value) for value in values]
+    if kind == "UNDERFLOW_MIN_LENGTH":
+        minimum = node.get("minLength")
+        if not isinstance(minimum, int) or minimum < 1:
+            return []
+        return [_replace_data_target(carrier, pointer, "0" * (minimum - 1))]
+    if kind == "OVERFLOW_MAX_LENGTH":
+        maximum = node.get("maxLength")
+        if not isinstance(maximum, int):
+            return []
+        return [_replace_data_target(carrier, pointer, "0" * (maximum + 1))]
+    if kind == "UNDERFLOW_MIN_ITEMS":
+        minimum = node.get("minItems")
+        if not isinstance(minimum, int) or minimum < 1 or not isinstance(current, list):
+            return []
+        return [_replace_data_target(carrier, pointer, current[: minimum - 1])]
+    if kind == "OVERFLOW_MAX_ITEMS":
+        maximum = node.get("maxItems")
+        item_schema = node.get("items")
+        if (
+            not isinstance(maximum, int)
+            or not isinstance(current, list)
+            or not isinstance(item_schema, dict)
+        ):
+            return []
+        value = copy.deepcopy(current)
+        item_validator = _schema_validator(schema, item_schema)
+        item_candidates = _schema_literal_candidates(schema, item_schema)
+        item_candidates.extend(_ordered_palette_values(palette))
+        for candidate in item_candidates:
+            if item_validator.is_valid(candidate) and candidate not in value:
+                value.append(copy.deepcopy(candidate))
+            if len(value) > maximum:
+                break
+        if len(value) <= maximum:
+            return []
+        return [_replace_data_target(carrier, pointer, value)]
+    if kind == "DUPLICATE_ARRAY_ITEM":
+        if not isinstance(current, list) or not current:
+            return []
+        value = copy.deepcopy(current)
+        first = min(current, key=dumps)
+        value.append(copy.deepcopy(first))
+        return [_replace_data_target(carrier, pointer, value)]
+    if kind == "VIOLATE_ARRAY_ITEM_SCHEMA":
+        if not isinstance(current, list) or not current:
+            return []
+        target_index = min(range(len(current)), key=lambda index: dumps(current[index]))
+        candidates = []
+        for value in _ordered_palette_values(palette):
+            replacement = copy.deepcopy(current)
+            replacement[target_index] = copy.deepcopy(value)
+            candidates.append(_replace_data_target(carrier, pointer, replacement))
+        return candidates
+    if kind == "MATCH_FORBIDDEN_NOT_SUBSCHEMA":
+        return [
+            _replace_data_target(carrier, pointer, value)
+            for value in _ordered_palette_values(palette)
+        ]
+    if kind == "EXCEED_MAX_PROPERTIES":
+        maximum = node.get("maxProperties")
+        if not isinstance(maximum, int) or not isinstance(current, dict):
+            return []
+        value = copy.deepcopy(current)
+        for name in palette["unknownPropertyNameOrder"]:
+            if name not in value:
+                value[name] = None
+            if len(value) > maximum:
+                return [_replace_data_target(carrier, pointer, value)]
+        return []
+    raise WitnessGenerationError("direct perturbation kind is not implemented")
+
+
+def _encode_with_duplicate_member(value: Any, target_pointer: str) -> bytes | None:
+    """Serialize canonically except for one repeated member at the target object."""
+
+    injected = False
+
+    def encode(node: Any, pointer: str) -> str:
+        nonlocal injected
+        if isinstance(node, dict):
+            pairs = []
+            for key in sorted(node):
+                key_text = json.dumps(
+                    key, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+                )
+                pairs.append(
+                    key_text + ":" + encode(node[key], _join(pointer, key))
+                )
+            if pointer == target_pointer and pairs:
+                pairs.append(pairs[0])
+                injected = True
+            return "{" + ",".join(pairs) + "}"
+        if isinstance(node, list):
+            return "[" + ",".join(
+                encode(item, _join(pointer, str(index)))
+                for index, item in enumerate(node)
+            ) + "]"
+        return json.dumps(
+            node, ensure_ascii=False, allow_nan=False, separators=(",", ":")
+        )
+
+    raw = (encode(value, "") + "\n").encode("utf-8")
+    return raw if injected else None
+
+
+def _duplicate_member_status(
+    carrier: dict[str, Any], row: dict[str, Any], exact: Draft202012Validator
+) -> str:
+    raw = _encode_with_duplicate_member(carrier, row["targetJsonPointer"])
+    if raw is None:
+        return "PALETTE_EXHAUSTED"
+    try:
+        loads(raw)
+    except CanonicalJsonError:
+        pass
+    else:
+        return "PALETTE_EXHAUSTED"
+    try:
+        weakened = json.loads(raw.decode("utf-8"))
+    except (UnicodeError, json.JSONDecodeError):
+        return "PALETTE_EXHAUSTED"
+    return "SATISFIABLE" if exact.is_valid(weakened) else "EQUIVALENT_MUTANT"
+
+
+def _positive_union_status(
+    carrier: dict[str, Any],
+    row: dict[str, Any],
+    instance: Any,
+    schema: dict[str, Any],
+    root: dict[str, Any],
+) -> str:
+    try:
+        target = _resolve_data_pointer(carrier, row["targetJsonPointer"])
+    except (KeyError, IndexError, TypeError, ValueError):
+        return "UNRESOLVED_TARGET"
+    source = instance.source
+    if instance.family_id == "STR-ONE-OF-POSITIVE-ARM":
+        arms_pointer, raw_index = source.rsplit("#", 1)
+    elif instance.family_id == "STR-ANY-OF-POSITIVE-ARM":
+        arms_pointer, raw_index = source.rsplit("/", 1)
+    else:
+        arms_pointer, raw_index = source, ""
+    arms = _schema_node_at(schema, arms_pointer)
+    if not isinstance(arms, list) or not arms:
+        raise WitnessGenerationError("positive union source drift")
+    matches = [
+        _schema_validator(schema, arm).is_valid(target)
+        for arm in arms
+    ]
+    if instance.family_id == "STR-ANY-OF-ALL-ARMS":
+        return "SATISFIABLE" if all(matches) else "PALETTE_EXHAUSTED"
+    if not raw_index.isdecimal():
+        raise WitnessGenerationError("positive union arm index drift")
+    index = int(raw_index)
+    if index >= len(arms) or not matches[index] or sum(matches) != 1:
+        return "PALETTE_EXHAUSTED"
+    mutant_schema = copy.deepcopy(schema)
+    mutant_arms = _schema_node_at(mutant_schema, arms_pointer)
+    mutant_arms[index] = {"not": {}}
+    mutant_root = SchemaSynthesizer(mutant_schema).resolve(
+        root["wrapperSchemaPointer"]
+    )
+    mutant = _schema_validator(mutant_schema, mutant_root)
+    return "SATISFIABLE" if not mutant.is_valid(carrier) else "EQUIVALENT_MUTANT"
+
+
+def _deep_data_targets(value: Any, maximum_depth: int) -> list[str]:
+    pointers: list[str] = []
+
+    def visit(node: Any, pointer: str, depth: int) -> None:
+        pointers.append(pointer)
+        if depth >= maximum_depth:
+            return
+        if isinstance(node, dict):
+            for name in sorted(node):
+                visit(node[name], _join(pointer, name), depth + 1)
+        elif isinstance(node, list):
+            for index, item in enumerate(node):
+                visit(item, _join(pointer, str(index)), depth + 1)
+
+    visit(value, "", 0)
+    return sorted(set(pointers), key=lambda item: item.encode("utf-8"))
+
+
+def _combine_data_pointer(owner: str, relative: str) -> str:
+    if not relative:
+        return owner
+    return owner + relative if owner else relative
+
+
+def _deep_perturbations(
+    carrier: dict[str, Any],
+    row: dict[str, Any],
+    palette: dict[str, Any],
+) -> Any:
+    """Yield the bounded deep single-target replacement order literally."""
+
+    target_pointer = row["targetJsonPointer"]
+    try:
+        target = _resolve_data_pointer(carrier, target_pointer)
+    except (KeyError, IndexError, TypeError, ValueError):
+        target = None
+        relative_pointers = [""]
+    else:
+        relative_pointers = _deep_data_targets(
+            target, palette["boundedDeepReplacement"]["maximumDepth"]
+        )
+    values = _ordered_palette_values(palette)
+    for relative in relative_pointers:
+        pointer = _combine_data_pointer(target_pointer, relative)
+        try:
+            current = _resolve_data_pointer(carrier, pointer)
+        except (KeyError, IndexError, TypeError, ValueError):
+            current = object()
+        for value in values:
+            if type(value) is type(current) and value == current:
+                continue
+            try:
+                yield _replace_data_target(carrier, pointer, value)
+            except WitnessGenerationError:
+                continue
+
+
+def _conditional_candidate(
+    carrier: dict[str, Any], row: dict[str, Any], relation: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    pointer = row["targetJsonPointer"]
+    try:
+        record = copy.deepcopy(_resolve_data_pointer(carrier, pointer))
+    except (KeyError, IndexError, TypeError, ValueError) as error:
+        raise WitnessGenerationError("conditional target is unresolved") from error
+    if not isinstance(record, dict):
+        raise WitnessGenerationError("conditional target is not an event projection")
+    zero = "0" * 64
+    ordinary = {"kind": "ORDINARY"}
+    removal = {
+        "kind": "LOGICAL_REMOVAL",
+        "targetCommitmentHex": zero,
+        "targetEventReferenceHex": zero,
+    }
+    control = {"kind": "CLOSURE"}
+
+    if relation.startswith("AUTHOR_SEQUENCE_ZERO_"):
+        record["authorSequence"] = "0"
+        if "WITH_PREDECESSOR_" in relation:
+            record["directPredecessorReferenceHex"] = zero
+        else:
+            record.pop("directPredecessorReferenceHex", None)
+    elif relation.startswith("AUTHOR_SEQUENCE_NONZERO_"):
+        record["authorSequence"] = "1"
+        if "WITHOUT_PREDECESSOR_" in relation:
+            record.pop("directPredecessorReferenceHex", None)
+        else:
+            record["directPredecessorReferenceHex"] = zero
+    elif relation == "ORDINARY_WITH_ORDINARY_TAIL_ACCEPTS":
+        record.update(eventRole="ORDINARY", roleTail=ordinary)
+    elif relation == "ORDINARY_WITH_NON_ORDINARY_TAIL_REJECTS":
+        record.update(eventRole="ORDINARY", roleTail=control)
+    elif relation == "NON_ORDINARY_SKIPS_ORDINARY_BRANCH_ACCEPTS":
+        record.update(eventRole="LOGICAL_REMOVAL", roleTail=removal)
+    elif relation == "LOGICAL_REMOVAL_WITH_REMOVAL_TAIL_ACCEPTS":
+        record.update(eventRole="LOGICAL_REMOVAL", roleTail=removal)
+    elif relation == "LOGICAL_REMOVAL_WITH_NON_REMOVAL_TAIL_REJECTS":
+        record.update(eventRole="LOGICAL_REMOVAL", roleTail=ordinary)
+    elif relation == "NON_REMOVAL_SKIPS_REMOVAL_BRANCH_ACCEPTS":
+        record.update(eventRole="ORDINARY", roleTail=ordinary)
+    elif relation == "CREDENTIAL_CONTROL_WITH_CONTROL_TAIL_ACCEPTS":
+        record.update(eventRole="CREDENTIAL_CONTROL", roleTail=control)
+    elif relation == "CREDENTIAL_CONTROL_WITH_NON_CONTROL_TAIL_REJECTS":
+        record.update(eventRole="CREDENTIAL_CONTROL", roleTail=ordinary)
+    elif relation == "NON_CONTROL_SKIPS_CONTROL_BRANCH_ACCEPTS":
+        record.update(eventRole="ORDINARY", roleTail=ordinary)
+    else:
+        raise WitnessGenerationError("conditional relation row drift")
+    return _replace_data_target(carrier, pointer, record), record
+
+
+def _conditional_schema_mutant(
+    schema: dict[str, Any], relation: str, record: dict[str, Any]
+) -> dict[str, Any]:
+    mutant = copy.deepcopy(schema)
+    arms = mutant["$defs"]["ApplicationEventProjectionV0"]["allOf"]
+    if relation.startswith("AUTHOR_SEQUENCE_"):
+        index = 0
+    elif "ORDINARY" in relation and "REMOVAL" not in relation:
+        index = 1
+    elif "REMOVAL" in relation:
+        index = 2
+    else:
+        index = 3
+
+    if relation.endswith("_REJECTS"):
+        arms[index] = {}
+        return mutant
+    if relation.startswith("AUTHOR_SEQUENCE_ZERO_"):
+        arms[0]["if"]["properties"]["authorSequence"]["const"] = "1"
+    elif relation.startswith("AUTHOR_SEQUENCE_NONZERO_"):
+        arms[0]["if"]["properties"]["authorSequence"]["const"] = record[
+            "authorSequence"
+        ]
+    elif "_SKIPS_" in relation:
+        arms[index]["if"]["properties"]["eventRole"]["const"] = record[
+            "eventRole"
+        ]
+    else:
+        arms[index]["then"]["properties"]["roleTail"] = {"not": {}}
+    return mutant
+
+
+def _conditional_status(
+    carrier: dict[str, Any],
+    row: dict[str, Any],
+    instance: Any,
+    schema: dict[str, Any],
+    root: dict[str, Any],
+) -> str:
+    candidate, record = _conditional_candidate(carrier, row, instance.source)
+    exact = _schema_validator(
+        schema, SchemaSynthesizer(schema).resolve(root["wrapperSchemaPointer"])
+    )
+    accepted = exact.is_valid(candidate)
+    expected_accept = row["expectedDisposition"] == "ACCEPT"
+    if accepted != expected_accept:
+        return "PALETTE_EXHAUSTED"
+    mutant_schema = _conditional_schema_mutant(schema, instance.source, record)
+    mutant = _schema_validator(
+        mutant_schema,
+        SchemaSynthesizer(mutant_schema).resolve(root["wrapperSchemaPointer"]),
+    )
+    mutant_accepted = mutant.is_valid(candidate)
+    return "SATISFIABLE" if mutant_accepted != accepted else "EQUIVALENT_MUTANT"
+
+
+def _classify_structural_binding(
+    carrier: dict[str, Any],
+    row: dict[str, Any],
+    instance: Any,
+    schema: dict[str, Any],
+    root: dict[str, Any],
+    palette: dict[str, Any],
+    synthesizer: SchemaSynthesizer,
+    validator_cache: dict[tuple[str, str, str], Draft202012Validator],
+) -> str:
+    root_id = root["rootId"]
+    exact_key = ("EXACT", root_id, "")
+    exact = validator_cache.get(exact_key)
+    if exact is None:
+        exact = _schema_validator(
+            schema, synthesizer.resolve(root["wrapperSchemaPointer"])
+        )
+        validator_cache[exact_key] = exact
+    resolution = _target_resolution(carrier, row)
+    if resolution == "UNRESOLVED_TARGET":
+        return "UNRESOLVED_TARGET"
+    if not exact.is_valid(carrier):
+        return "BASELINE_INVALID"
+    if row["perturbationKind"] == "DUPLICATE_RAW_JSON_MEMBER":
+        return _duplicate_member_status(carrier, row, exact)
+    if row["perturbationKind"] in _POSITIVE_UNION_KINDS:
+        return _positive_union_status(carrier, row, instance, schema, root)
+    if row["perturbationKind"] in _DEEP_PREFLIGHT_KINDS:
+        mutant_key = ("DEEP", root_id, instance.instance_id)
+        mutant = validator_cache.get(mutant_key)
+        local_exact_key = ("DEEP_LOCAL_EXACT", root_id, instance.instance_id)
+        local_mutant_key = ("DEEP_LOCAL_MUTANT", root_id, instance.instance_id)
+        local_exact = validator_cache.get(local_exact_key)
+        local_mutant = validator_cache.get(local_mutant_key)
+        if mutant is None:
+            mutant_schema = _deep_schema_mutant(schema, instance)
+            mutant = _schema_validator(
+                mutant_schema,
+                SchemaSynthesizer(mutant_schema).resolve(
+                    root["wrapperSchemaPointer"]
+                ),
+            )
+            validator_cache[mutant_key] = mutant
+        else:
+            mutant_schema = None
+        if local_exact is None or local_mutant is None:
+            _mode, local_pointer, _property = _instance_schema_target(instance)
+            if mutant_schema is None:
+                mutant_schema = _deep_schema_mutant(schema, instance)
+            local_exact_node = _schema_node_at(schema, local_pointer)
+            local_mutant_node = _schema_node_at(mutant_schema, local_pointer)
+            if not isinstance(local_exact_node, dict) or not isinstance(
+                local_mutant_node, dict
+            ):
+                raise WitnessGenerationError("deep local schema target drift")
+            local_exact = _schema_validator(schema, local_exact_node)
+            local_mutant = _schema_validator(mutant_schema, local_mutant_node)
+            validator_cache[local_exact_key] = local_exact
+            validator_cache[local_mutant_key] = local_mutant
+        rejected = False
+        for candidate in _deep_perturbations(carrier, row, palette):
+            try:
+                local_target = _resolve_data_pointer(
+                    candidate, row["targetJsonPointer"]
+                )
+            except (KeyError, IndexError, TypeError, ValueError):
+                continue
+            if local_exact.is_valid(local_target) or not local_mutant.is_valid(
+                local_target
+            ):
+                continue
+            if exact.is_valid(candidate):
+                continue
+            rejected = True
+            if mutant.is_valid(candidate):
+                return "SATISFIABLE"
+        return "EQUIVALENT_MUTANT" if rejected else "PALETTE_EXHAUSTED"
+    if row["perturbationKind"] == "CONDITIONAL_MATRIX_ROW":
+        return _conditional_status(carrier, row, instance, schema, root)
+    if row["perturbationKind"] not in _DIRECT_PREFLIGHT_KINDS:
+        return "RECIPE_NOT_IMPLEMENTED"
+
+    mutant_key = ("DIRECT", root_id, instance.instance_id)
+    mutant = validator_cache.get(mutant_key)
+    if mutant is None:
+        mutant_schema = _direct_schema_mutant(schema, instance)
+        mutant = _schema_validator(
+            mutant_schema,
+            SchemaSynthesizer(mutant_schema).resolve(root["wrapperSchemaPointer"]),
+        )
+        validator_cache[mutant_key] = mutant
+    rejected = False
+    for candidate in _direct_perturbations(
+        carrier, row, instance, schema, palette
+    ):
+        if exact.is_valid(candidate):
+            continue
+        rejected = True
+        if mutant.is_valid(candidate):
+            return "SATISFIABLE"
+    if (
+        row["isolationMode"] == "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST"
+        and rejected
+    ):
+        return "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST"
+    return "EQUIVALENT_MUTANT" if rejected else "PALETTE_EXHAUSTED"
+
+
+def derive_structural_isolation_preflight(
+    repo_root: Path,
+    contract: Path,
+    evidence_root: Path,
+) -> dict[str, Any]:
+    """Classify isolation recipes for the currently selected carrier bindings."""
+
+    _seed_registry, witness_registry = derive_phase_b_registries(
+        repo_root, contract, evidence_root
+    )
+    inventory, _inventory_bytes, carriers = _load_phase_a(
+        repo_root, contract, evidence_root
+    )
+    schema = _load_json(contract / "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json")
+    palette = _load_json(
+        contract / "APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json"
+    )
+    reachability = _load_json(
+        contract / "APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json"
+    )
+    roots = _root_rows(reachability)
+    synthesizer = SchemaSynthesizer(schema)
+    cases = {
+        row["caseId"]: row
+        for row in inventory["cases"]
+        if isinstance(row, dict) and isinstance(row.get("caseId"), str)
+    }
+    instances = {
+        instance.instance_id: instance
+        for instance in expand_structural_instances(contract)
+    }
+    counts: dict[str, int] = {}
+    failures: list[dict[str, str]] = []
+    validator_cache: dict[tuple[str, str, str], Draft202012Validator] = {}
+    for row in witness_registry["rows"]:
+        instance = instances[row["instanceId"]]
+        carrier, _raw = carriers[row["carrierCaseId"]]
+        case = cases[row["carrierCaseId"]]
+        root = roots[f"{case['direction']}-{case['operation']}"]
+        status = _classify_structural_binding(
+            carrier,
+            row,
+            instance,
+            schema,
+            root,
+            palette,
+            synthesizer,
+            validator_cache,
+        )
+        counts[status] = counts.get(status, 0) + 1
+        if status not in {"SATISFIABLE", "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST"}:
+            failures.append(
+                {
+                    "instance_id": row["instanceId"],
+                    "status": status,
+                }
+            )
+    if sum(counts.values()) != STRUCTURAL_COUNT:
+        raise WitnessGenerationError("isolation preflight count drift")
+    incomplete = counts.get("RECIPE_NOT_IMPLEMENTED", 0) > 0
+    return {
+        "classification_counts": dict(sorted(counts.items())),
+        "instance_count": STRUCTURAL_COUNT,
+        "instance_set_sha256": witness_registry["instanceSetSha256"],
+        "non_satisfiable_rows": failures,
+        "schema": "styx.app-core-iface0.selected-carrier-isolation-preflight.v1",
+        "verdict": "INCOMPLETE" if incomplete else "PASS" if not failures else "AMEND_REQUIRED",
+    }
+
+
 class WitnessGenerationError(ValueError):
     """The contract-driven structural plan cannot be derived exactly."""
 
@@ -799,21 +1773,54 @@ def derive_structural_plan(contract: Path) -> dict[str, Any]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--contract", required=True, type=Path)
-    parser.add_argument("--derive-plan", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--derive-plan", action="store_true")
+    mode.add_argument("--preflight-isolation", action="store_true")
+    mode.add_argument("--preflight-targets", action="store_true")
+    parser.add_argument("--repo-root", type=Path)
+    parser.add_argument("--evidence-root", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
-        if not args.derive_plan:
+        if args.derive_plan:
+            report = derive_structural_plan(args.contract.resolve())
+            allowed_fields = PLAN_FIELDS
+            success = "APP-core structural plan: PASS instances=1450"
+        elif args.preflight_targets or args.preflight_isolation:
+            if args.repo_root is None or args.evidence_root is None:
+                raise WitnessGenerationError(
+                    "structural preflight requires repo root and evidence root"
+                )
+            if args.preflight_targets:
+                report = derive_structural_target_preflight(
+                    args.repo_root.resolve(),
+                    args.contract.resolve(),
+                    args.evidence_root.resolve(),
+                )
+                allowed_fields = TARGET_PREFLIGHT_FIELDS
+                label = "target"
+            else:
+                report = derive_structural_isolation_preflight(
+                    args.repo_root.resolve(),
+                    args.contract.resolve(),
+                    args.evidence_root.resolve(),
+                )
+                allowed_fields = ISOLATION_PREFLIGHT_FIELDS
+                label = "isolation"
+            success = (
+                f"APP-core structural {label} preflight: "
+                f"{report['verdict']} instances=1450"
+            )
+        else:
             raise WitnessGenerationError(
                 "Phase-B witness synthesis requires provider-bound carrier ratification"
             )
-        report = derive_structural_plan(args.contract.resolve())
-        store_report(args.output, report, allowed_fields=PLAN_FIELDS)
+        store_report(args.output, report, allowed_fields=allowed_fields)
     except (InventoryError, OSError, ReportError, WitnessGenerationError) as error:
         print(f"APP-core structural generation: FAIL: {error}", file=sys.stderr)
         return 2
-    print("APP-core structural plan: PASS instances=1450")
-    return 0
+    print(success)
+    return 0 if report["verdict"] == "PASS" else 2
 
 
 if __name__ == "__main__":

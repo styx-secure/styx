@@ -17,7 +17,9 @@ from generate_structural_witnesses import (  # noqa: E402
     _resolve_data_pointer,
     derive_phase_b_registries,
     derive_seed_registry,
+    derive_structural_isolation_preflight,
     derive_structural_plan,
+    derive_structural_target_preflight,
     main as structural_main,
     validate_structural_witness_identifiers,
     WitnessGenerationError,
@@ -227,6 +229,42 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
                 )
                 observed_array_insertions.add(row["instanceId"])
         self.assertEqual(observed_array_insertions, inserted_arrays)
+
+    def test_structural_target_preflight_covers_every_instance(self) -> None:
+        report = derive_structural_target_preflight(
+            ROOT.parents[2], ROOT / "contract", self.evidence
+        )
+        self.assertEqual(report["verdict"], "PASS")
+        self.assertEqual(report["instance_count"], 1450)
+        self.assertEqual(report["unresolved_instance_ids"], [])
+        self.assertEqual(
+            report["resolution_counts"],
+            {
+                "PARENT_RESOLVED_MEMBER_ABSENT": 24,
+                "RESOLVED": 1426,
+                "UNRESOLVED_TARGET": 0,
+            },
+        )
+
+    def test_selected_carrier_isolation_preflight_is_complete_and_fail_closed(self) -> None:
+        report = derive_structural_isolation_preflight(
+            ROOT.parents[2], ROOT / "contract", self.evidence
+        )
+        self.assertEqual(report["verdict"], "AMEND_REQUIRED")
+        self.assertEqual(report["instance_count"], 1450)
+        self.assertEqual(
+            report["classification_counts"],
+            {
+                "EQUIVALENT_MUTANT": 70,
+                "PALETTE_EXHAUSTED": 38,
+                "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST": 1,
+                "SATISFIABLE": 1341,
+            },
+        )
+        self.assertEqual(len(report["non_satisfiable_rows"]), 108)
+        self.assertNotIn(
+            "RECIPE_NOT_IMPLEMENTED", report["classification_counts"]
+        )
 
 
 if __name__ == "__main__":
