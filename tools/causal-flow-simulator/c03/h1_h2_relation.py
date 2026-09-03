@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -19,6 +20,7 @@ from typing import Final
 ROOT = Path(__file__).resolve().parent
 REPO = ROOT.parents[2]
 O14 = ROOT.parent / "o14"
+BASE_SHA = "16274cc194cd2f8f7b631332687a252bad92ce02"
 sys.path.insert(0, str(O14))
 
 from canonical_json import dumps, loads, store  # noqa: E402
@@ -607,6 +609,23 @@ FROZEN_CORPUS_SHA256: Final = {
     "state-machine-scenarios.json": "ea07798d2fc2a95dc95f1d0a06300ef9b548a3eb13fbef6a59958d680b0842b3",
     "valid-transcript-vectors.json": "8dc607acff6b0f9c4942834acce3d5004594a8b9b8169edd5b346b53cc6955cb",
 }
+
+FROZEN_O14_SHA256: Final = {
+    "ed25519_reference.py": "e2ed8c97da836d39fece580f2cd81c155059e92fb65a3a5bc2357e05a59fb598",
+    "semantic_registry.py": "0c18394d713367efb9d95aa325b050be0fbc06031528d8fabe7006427bf3ff88",
+    "scenarios.py": "fdedde56409d7b6d74e9ce3bcdf372e9c3e7d66a60dba85e37d949e6913e451b",
+}
+RATIFIED_ISSUE_BODY_SHA256: Final = (
+    "493eb32b811505bb148a16d216bc8c61036abf043d51dbae988685e00ff75148"
+)
+EVIDENCE_FILENAMES: Final = (
+    "h1h2-python.json",
+    "h1h2-javascript.json",
+    "h1h2-mutations-python.json",
+    "h1h2-mutations-javascript.json",
+    "h1h2-regression.json",
+    "scope.json",
+)
 
 
 def _witnesses() -> dict[str, object]:
@@ -2275,6 +2294,290 @@ def run_regression() -> dict:
     }
 
 
+def _validate_issue_appendix(issue_body: bytes) -> None:
+    _require(
+        sha256(issue_body).hexdigest() == RATIFIED_ISSUE_BODY_SHA256,
+        "ratified Issue body mismatch",
+    )
+    text = issue_body.decode("utf-8")
+    _require("## Appendix A — literal Package-A hostile relation" in text, "Appendix A missing")
+    appendix = text.split("## Appendix A — literal Package-A hostile relation", 1)[1]
+    boundary = re.findall(
+        r"^\| `(H1-BND-\d{3})` \| `([^`]+)` \|", appendix, re.MULTILINE
+    )
+    connected = re.findall(
+        r"^\| `(H1-CON-\d{3})` \| `([^`]+)` \|", appendix, re.MULTILINE
+    )
+    slots = re.findall(
+        r"^\| `(H2-SLT-\d{3})` / `([^`]+)` \| `([^`]+)` \|",
+        appendix,
+        re.MULTILINE,
+    )
+    mutants = re.findall(
+        r"^\| `(M-(?:H1|H2)-[^`]+)` \|", appendix, re.MULTILINE
+    )
+    _require(
+        boundary == [(row.row_id, row.scenario_id) for row in H1_BOUNDARY],
+        "Appendix A boundary relation mismatch",
+    )
+    _require(
+        connected == [(row.row_id, row.scenario_id) for row in H1_CONNECTED],
+        "Appendix A connected relation mismatch",
+    )
+    _require(
+        slots
+        == [
+            (row.row_id, row.scenario_id, ">".join(row.order))
+            for row in H2_SLOTS
+        ],
+        "Appendix A slot relation mismatch",
+    )
+    _require(mutants == list(MUTANTS), "Appendix A mutant relation mismatch")
+
+
+def _git_text(checkout: Path, *arguments: str) -> str:
+    completed = subprocess.run(
+        ["git", "-C", str(checkout), *arguments],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    _require(completed.returncode == 0, "Git evidence command failed")
+    return completed.stdout.strip()
+
+
+def _clean_checkout(checkout: Path, candidate: str) -> None:
+    _require(checkout.is_dir() and not checkout.is_symlink(), "invalid checkout root")
+    _require(_git_text(checkout, "rev-parse", "HEAD^{commit}") == candidate, "checkout HEAD mismatch")
+    status = _git_text(
+        checkout,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        "--ignored=matching",
+    )
+    _require(status == "", "checkout is not clean")
+    submodules = _git_text(checkout, "submodule", "status", "--recursive")
+    _require(
+        not any(line[:1] in {"-", "+", "U"} for line in submodules.splitlines()),
+        "submodule state mismatch",
+    )
+
+
+def _outside(value: Path, roots: tuple[Path, ...]) -> bool:
+    resolved = value.resolve()
+    return all(resolved != root and root not in resolved.parents for root in roots)
+
+
+def _verify_bundle(bundle: Path, expected_sha256: str, base: str, candidate: str) -> None:
+    _require(bundle.is_file() and not bundle.is_symlink(), "invalid bundle")
+    _require(sha256(bundle.read_bytes()).hexdigest() == expected_sha256, "bundle digest mismatch")
+    listed = subprocess.run(
+        ["git", "bundle", "list-heads", str(bundle)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    _require(listed.returncode == 0, "bundle heads unavailable")
+    _require(
+        any(line.split(maxsplit=1)[0] == candidate for line in listed.stdout.splitlines()),
+        "candidate is not advertised by bundle",
+    )
+    with tempfile.TemporaryDirectory(prefix="styx-c03-bundle-clone-") as tmp:
+        clone = Path(tmp) / "clone"
+        completed = subprocess.run(
+            ["git", "clone", "--no-checkout", str(bundle), str(clone)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        _require(completed.returncode == 0, "bundle is not independently cloneable")
+        for identity in (base, candidate):
+            _require(
+                _git_text(clone, "cat-file", "-t", identity) == "commit",
+                "bundle commit missing",
+            )
+        _require(
+            _git_text(clone, "merge-base", base, candidate) == base,
+            "bundle Base ancestry mismatch",
+        )
+
+
+def _validate_evidence_set(root: Path) -> dict[str, bytes]:
+    _require(root.is_dir() and not root.is_symlink(), "invalid evidence root")
+    entries = tuple(root.iterdir())
+    _require(
+        all(path.is_file() and not path.is_symlink() for path in entries),
+        "non-regular evidence artifact",
+    )
+    regular = {
+        path.name: path.read_bytes()
+        for path in entries
+    }
+    _require(set(regular) == set(EVIDENCE_FILENAMES), "evidence artifact set mismatch")
+    for value in regular.values():
+        loads(value)
+    runtime_python = loads(regular["h1h2-python.json"])
+    runtime_javascript = loads(regular["h1h2-javascript.json"])
+    _require(runtime_python == runtime_javascript, "runtime evidence mismatch")
+    _require(
+        runtime_python.get("scenarioCount") == 126
+        and len(runtime_python.get("boundaryRows", [])) == 29
+        and len(runtime_python.get("connectedRows", [])) == 35
+        and len(runtime_python.get("slotRows", [])) == 62,
+        "runtime evidence cardinality mismatch",
+    )
+    for runtime in ("python", "javascript"):
+        mutation = loads(regular[f"h1h2-mutations-{runtime}.json"])
+        _require(
+            mutation.get("runtime") == runtime
+            and mutation.get("killed") == 20
+            and [row.get("mutantId") for row in mutation.get("rows", [])]
+            == list(MUTANTS)
+            and all(row.get("result") == "KILLED" for row in mutation.get("rows", [])),
+            "mutation evidence mismatch",
+        )
+    regression = loads(regular["h1h2-regression.json"])
+    _require(
+        regression.get("result") == "PASS"
+        and regression.get("frozenCorpusFiles") == 6
+        and [row.get("id") for row in regression.get("checks", [])]
+        == ["generate", "validate", "replay", "node", "cross-runtime", "historical-mutations"],
+        "regression evidence mismatch",
+    )
+    scope = loads(regular["scope.json"])
+    _require(
+        scope.get("result") == "PASS"
+        and scope.get("copyThresholdPercent") == 50,
+        "scope evidence mismatch",
+    )
+    return regular
+
+
+def _run_checkout_producer(
+    checkout: Path,
+    candidate: str,
+    command: list[str],
+    output: Path,
+) -> None:
+    _clean_checkout(checkout, candidate)
+    environment = dict(os.environ)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    environment.pop("PYTHONOPTIMIZE", None)
+    completed = subprocess.run(
+        [*command, "--output", str(output)],
+        cwd=checkout,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=180,
+        env=environment,
+    )
+    _require(completed.returncode == 0, "final-gate producer failed")
+    _clean_checkout(checkout, candidate)
+
+
+def _produce_evidence(checkout: Path, destination: Path, base: str, candidate: str) -> None:
+    relation = checkout / "tools/causal-flow-simulator/c03/h1_h2_relation.py"
+    scope = checkout / "tools/causal-flow-simulator/c03/scope_guard.py"
+    commands = (
+        ("h1h2-python.json", [sys.executable, str(relation), "--run-python"]),
+        ("h1h2-javascript.json", [sys.executable, str(relation), "--run-javascript"]),
+        (
+            "h1h2-mutations-python.json",
+            [sys.executable, str(relation), "--run-mutations", "--runtime", "python"],
+        ),
+        (
+            "h1h2-mutations-javascript.json",
+            [sys.executable, str(relation), "--run-mutations", "--runtime", "javascript"],
+        ),
+        ("h1h2-regression.json", [sys.executable, str(relation), "--run-regression"]),
+        (
+            "scope.json",
+            [
+                sys.executable,
+                str(scope),
+                "--repo-root",
+                str(checkout),
+                "--base",
+                base,
+                "--candidate",
+                candidate,
+                "--mode",
+                "strict",
+            ],
+        ),
+    )
+    for name, command in commands:
+        _run_checkout_producer(checkout, candidate, command, destination / name)
+
+
+def run_final_gate(
+    *,
+    base: str,
+    candidate: str,
+    bundle: Path,
+    bundle_sha256: str,
+    issue_body: Path,
+    issue_body_sha256: str,
+    checkout_1: Path,
+    checkout_2: Path,
+    evidence_1: Path,
+    evidence_2: Path,
+) -> dict:
+    _require(base == BASE_SHA, "final-gate Base mismatch")
+    _require(re.fullmatch(r"[0-9a-f]{40}", candidate) is not None, "invalid candidate identity")
+    _require(
+        issue_body.is_file()
+        and not issue_body.is_symlink()
+        and sha256(issue_body.read_bytes()).hexdigest() == issue_body_sha256
+        and issue_body_sha256 == RATIFIED_ISSUE_BODY_SHA256,
+        "Issue body identity mismatch",
+    )
+    _validate_issue_appendix(issue_body.read_bytes())
+    _verify_bundle(bundle, bundle_sha256, base, candidate)
+
+    checkouts = (checkout_1.resolve(), checkout_2.resolve())
+    _require(checkouts[0] != checkouts[1], "checkout roots are not distinct")
+    metadata = tuple(
+        (checkout / _git_text(checkout, "rev-parse", "--git-dir")).resolve()
+        for checkout in checkouts
+    )
+    evidence = (evidence_1.resolve(), evidence_2.resolve())
+    _require(evidence[0] != evidence[1], "evidence roots are not distinct")
+    for root in evidence:
+        _require(_outside(root, (*checkouts, *metadata)), "evidence root overlaps checkout")
+    for checkout in checkouts:
+        _clean_checkout(checkout, candidate)
+        _require(
+            _git_text(checkout, "merge-base", base, candidate) == base,
+            "checkout Base ancestry mismatch",
+        )
+    trees = {_git_text(checkout, "rev-parse", "HEAD^{tree}") for checkout in checkouts}
+    _require(len(trees) == 1, "checkout tree mismatch")
+
+    submitted_1 = _validate_evidence_set(evidence[0])
+    submitted_2 = _validate_evidence_set(evidence[1])
+    _require(submitted_1 == submitted_2, "two-checkout submitted evidence mismatch")
+    with tempfile.TemporaryDirectory(prefix="styx-c03-final-gate-") as tmp:
+        regenerated = (Path(tmp) / "one", Path(tmp) / "two")
+        for root in regenerated:
+            root.mkdir()
+        _produce_evidence(checkouts[0], regenerated[0], base, candidate)
+        _produce_evidence(checkouts[1], regenerated[1], base, candidate)
+        regenerated_1 = _validate_evidence_set(regenerated[0])
+        regenerated_2 = _validate_evidence_set(regenerated[1])
+        _require(regenerated_1 == regenerated_2, "regenerated evidence mismatch")
+        _require(regenerated_1 == submitted_1, "submitted evidence is not reproducible")
+    return {
+        "artifactCountPerCheckout": len(EVIDENCE_FILENAMES),
+        "mutantRuntimeKills": 40,
+        "result": "PASS",
+        "runtimeScenarioCount": 126,
+        "schema": "styx-c03-h1h2-final-gate/v1",
+    }
+
+
 def run_runtime(runtime: str) -> dict:
     _require(runtime in {"python", "javascript"}, "unknown runtime")
     if runtime == "python":
@@ -2368,8 +2671,19 @@ def main(argv: list[str] | None = None) -> int:
     action.add_argument("--run-detector", metavar="MUTANT")
     action.add_argument("--run-mutations", action="store_true")
     action.add_argument("--run-regression", action="store_true")
+    action.add_argument("--final-gate", action="store_true")
     parser.add_argument("--runtime", choices=("python", "javascript"))
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--base")
+    parser.add_argument("--candidate")
+    parser.add_argument("--bundle", type=Path)
+    parser.add_argument("--bundle-sha256")
+    parser.add_argument("--issue-body", type=Path)
+    parser.add_argument("--issue-body-sha256")
+    parser.add_argument("--checkout-1", type=Path)
+    parser.add_argument("--checkout-2", type=Path)
+    parser.add_argument("--evidence-1", type=Path)
+    parser.add_argument("--evidence-2", type=Path)
     args = parser.parse_args(argv)
     validate_relation()
     if args.validate_relation:
@@ -2394,6 +2708,38 @@ def main(argv: list[str] | None = None) -> int:
         _require(args.output is not None, "regression output is required")
         _require(args.runtime is None, "regression does not accept runtime")
         _store_new(args.output, run_regression())
+        return 0
+    if args.final_gate:
+        required = (
+            args.base,
+            args.candidate,
+            args.bundle,
+            args.bundle_sha256,
+            args.issue_body,
+            args.issue_body_sha256,
+            args.checkout_1,
+            args.checkout_2,
+            args.evidence_1,
+            args.evidence_2,
+            args.output,
+        )
+        _require(all(value is not None for value in required), "final-gate argument missing")
+        _require(args.runtime is None, "final gate does not accept runtime")
+        _store_new(
+            args.output,
+            run_final_gate(
+                base=args.base,
+                candidate=args.candidate,
+                bundle=args.bundle,
+                bundle_sha256=args.bundle_sha256,
+                issue_body=args.issue_body,
+                issue_body_sha256=args.issue_body_sha256,
+                checkout_1=args.checkout_1,
+                checkout_2=args.checkout_2,
+                evidence_1=args.evidence_1,
+                evidence_2=args.evidence_2,
+            ),
+        )
         return 0
     _require(args.runtime is None, "runtime belongs only to detector mode")
     _require(args.output is not None, "runtime output is required")
