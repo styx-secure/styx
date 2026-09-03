@@ -8,18 +8,18 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scope_guard import CORPUS_FILES, SYNC_FILES, TOOL_FILES, allowed  # noqa: E402
+from scope_guard import ALLOWED, NEW, PINS, allowed  # noqa: E402
 
 
 class ScopeGuardTests(unittest.TestCase):
-    def test_closed_package_sets_and_forbidden_neighbors(self) -> None:
-        self.assertEqual(len(CORPUS_FILES), 6)
-        self.assertEqual(len(TOOL_FILES), 26)
-        self.assertEqual(len(SYNC_FILES), 12)
-        self.assertTrue(allowed("conformance/application-protocol/c03/manifest.json"))
+    def test_closed_package_a_relation_and_forbidden_neighbors(self) -> None:
+        self.assertEqual(len(PINS), 8)
+        self.assertEqual(len(NEW), 2)
+        self.assertEqual(len(ALLOWED), 10)
+        self.assertTrue(allowed("tools/causal-flow-simulator/c03/corpus_model.py"))
         self.assertTrue(allowed("tools/causal-flow-simulator/c03/tests/test_scope_guard.py"))
         for path in (
-            "conformance/application-protocol/c03/seventh.json",
+            "conformance/application-protocol/c03/manifest.json",
             "tools/causal-flow-simulator/o10/outcome-taxonomy.json",
             "styx-js/src/index.js",
             ".github/workflows/ci.yml",
@@ -28,11 +28,8 @@ class ScopeGuardTests(unittest.TestCase):
                 self.assertFalse(allowed(path))
 
     def test_every_declared_endpoint_maps_back_to_one_inventory(self) -> None:
-        corpus_paths = {f"conformance/application-protocol/c03/{name}" for name in CORPUS_FILES}
-        tool_paths = {f"tools/causal-flow-simulator/c03/{name}" for name in TOOL_FILES}
-        declared = corpus_paths | tool_paths | set(SYNC_FILES)
-        self.assertEqual(len(declared), 44)
-        for endpoint in sorted(declared):
+        self.assertEqual(ALLOWED, set(PINS) | NEW)
+        for endpoint in sorted(ALLOWED):
             with self.subTest(endpoint=endpoint):
                 self.assertTrue(allowed(endpoint))
                 self.assertFalse(endpoint.startswith("/"))
@@ -48,6 +45,7 @@ class ScopeGuardTests(unittest.TestCase):
             "tools/causal-flow-simulator/o08/envelope_model.py",
             "tools/causal-flow-simulator/o10/taxonomy_model.py",
             "tools/causal-flow-simulator/o14/model.py",
+            "tools/causal-flow-simulator/c03/generate_corpus.py",
             "styx-js/package-lock.json", "packages/styx/pubspec.lock",
         }
         self.assertFalse(any(allowed(path) for path in forbidden))

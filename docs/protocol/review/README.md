@@ -279,6 +279,17 @@ reuse lint
   final HEAD.
 <!-- styx-phase-exit-merged-review:v1:end -->
 
+Issue #297 Package A is the bounded bridge from frozen C0.3 evidence to two
+selected implementation edges. Its H1 evidence invokes the guarded signature
+boundary at genesis and event call sites; its H2 evidence admits complete
+candidate slots before applying readiness precedence. The package has a
+literal 126-scenario relation, independent Python/JavaScript reports, signed
+lexical-schedule perturbations, 40 source-mutant/runtime kills and an explicit
+regression proof over the byte-frozen C0.3 corpus. Exact-final acceptance of
+Package A would close only those H1/H2 claims. It would not establish SDK or
+product conformance and would not change the C0.3 demo, product or
+sensitive-use `NO_GO` state by itself.
+
 ## Limits
 
 The model does not prove protocol security, cryptographic soundness,
