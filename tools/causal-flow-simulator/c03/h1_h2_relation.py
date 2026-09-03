@@ -6,7 +6,10 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 from dataclasses import dataclass
+from hashlib import sha256
+import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -14,6 +17,7 @@ from typing import Final
 
 
 ROOT = Path(__file__).resolve().parent
+REPO = ROOT.parents[2]
 O14 = ROOT.parent / "o14"
 sys.path.insert(0, str(O14))
 
@@ -51,6 +55,15 @@ class RelationRow:
     scenario_id: str
     expected: str
     order: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class MutationSpec:
+    identifier: str
+    python_anchor: str
+    python_replacement: str
+    javascript_anchor: str
+    javascript_replacement: str
 
 
 H1_BOUNDARY: Final = (
@@ -236,6 +249,364 @@ MUTANTS: Final = (
     "M-H1-GENESIS-BYPASS-BOUNDARY",
     "M-H1-GRANT-KEY-EAGER-REJECT",
 )
+
+DETECTORS: Final = {
+    "M-H1-A-CANONICAL": ("boundary", 23),
+    "M-H1-A-ORDER": ("boundary", 22),
+    "M-H1-R-CANONICAL": ("boundary", 18),
+    "M-H1-R-ORDER": ("boundary", 28),
+    "M-H1-S-BOUND": ("boundary", 14),
+    "M-H1-EARLY-EQUATION": ("boundary", 14),
+    "M-H1-GUARD-ONLY-ACCEPT": ("boundary", 5),
+    "M-H1-DOUBLE-VERIFY": ("connected", 1),
+    "M-H1-RAW-FALLBACK": ("connected", 5),
+    "M-H2-OPENING-FIRST": ("slot", 0),
+    "M-H2-INCLUDE-K-REJECTED": ("slot", 16),
+    "M-H2-ARRIVAL-WINNER": ("slot", 0),
+    "M-H2-CROSS-CREDENTIAL": ("slot", 20),
+    "M-H2-PREDECESSOR-IN-KEY": ("slot", 59),
+    "M-H2-PENDING-OUTRANKS-FORK": ("slot", 0),
+    "M-H2-PENDING-AS-MISSING": ("slot", 50),
+    "M-H2-SKIP-AUTH-UNDER-PENDING": ("slot", 49),
+    "M-H2-ANY-PENDING-DEP": ("slot", 61),
+    "M-H1-GENESIS-BYPASS-BOUNDARY": ("connected", 5),
+    "M-H1-GRANT-KEY-EAGER-REJECT": ("connected", 21),
+}
+
+
+_H1_MUTATION_SPECS: Final = (
+    MutationSpec(
+        "M-H1-A-CANONICAL",
+        "        point_a = _ed_decode(public)\n",
+        "        point_a = _ed_decode(public if int.from_bytes(public, \"little\") < _P else bytes(32))\n",
+        "  try { pointA = edDecode(publicKey); }\n",
+        "  try { pointA = edDecode(littleEndianInteger(publicKey) >= ED_P ? Buffer.alloc(32) : publicKey); }\n",
+    ),
+    MutationSpec(
+        "M-H1-A-ORDER",
+        "    if point_a == identity or _ed_mul(_L, point_a) != identity:\n",
+        "    if False and (point_a == identity or _ed_mul(_L, point_a) != identity):\n",
+        "  if (edEqual(pointA, ED_IDENTITY) || !edEqual(edScalarMult(ED_L, pointA), ED_IDENTITY)) {\n",
+        "  if (false && (edEqual(pointA, ED_IDENTITY) || !edEqual(edScalarMult(ED_L, pointA), ED_IDENTITY))) {\n",
+    ),
+    MutationSpec(
+        "M-H1-R-CANONICAL",
+        "        point_r = _ed_decode(signature[:32])\n",
+        "        point_r = _ed_decode(signature[:32] if int.from_bytes(signature[:32], \"little\") < _P else bytes(32))\n",
+        "  try { pointR = edDecode(signature.subarray(0, 32)); }\n",
+        "  try { pointR = edDecode(littleEndianInteger(signature.subarray(0, 32)) >= ED_P ? Buffer.alloc(32) : signature.subarray(0, 32)); }\n",
+    ),
+    MutationSpec(
+        "M-H1-R-ORDER",
+        "    if point_r == identity or _ed_mul(_L, point_r) != identity:\n",
+        "    if False and (point_r == identity or _ed_mul(_L, point_r) != identity):\n",
+        "  if (edEqual(pointR, ED_IDENTITY) || !edEqual(edScalarMult(ED_L, pointR), ED_IDENTITY)) {\n",
+        "  if (false && (edEqual(pointR, ED_IDENTITY) || !edEqual(edScalarMult(ED_L, pointR), ED_IDENTITY))) {\n",
+    ),
+    MutationSpec(
+        "M-H1-S-BOUND",
+        "    if scalar >= _L:\n",
+        "    if scalar >= 1 << 256:\n",
+        "  if (scalar >= ED_L) return { accepted: false, equationInvocations: 0, guardCode: \"NON_CANONICAL_SCALAR\" };\n",
+        "  if (scalar >= (1n << 256n)) return { accepted: false, equationInvocations: 0, guardCode: \"NON_CANONICAL_SCALAR\" };\n",
+    ),
+    MutationSpec(
+        "M-H1-EARLY-EQUATION",
+        """    scalar = int.from_bytes(signature[32:], "little")
+    if scalar >= _L:
+        return {
+            "accepted": False,
+            "equationInvocations": 0,
+            "guardCode": "NON_CANONICAL_SCALAR",
+        }
+""",
+        """    scalar = int.from_bytes(signature[32:], "little")
+    _ = _ed_mul(scalar) == _ed_add(point_r, _ed_mul(1, point_a))
+    if scalar >= _L:
+        return {
+            "accepted": False,
+            "equationInvocations": 1,
+            "guardCode": "NON_CANONICAL_SCALAR",
+        }
+""",
+        """  const scalar = littleEndianInteger(signature.subarray(32));
+  if (scalar >= ED_L) return { accepted: false, equationInvocations: 0, guardCode: "NON_CANONICAL_SCALAR" };
+""",
+        """  const scalar = littleEndianInteger(signature.subarray(32));
+  const earlyBase = edPoint(15112221349535400772501151409588531511454012693041857206046113283949847762202n, 46316835694926478169428394003475163141307993866256225615783033603165251855960n);
+  void edEqual(edScalarMult(scalar, earlyBase), edAdd(pointR, edScalarMult(1n, pointA)));
+  if (scalar >= ED_L) return { accepted: false, equationInvocations: 1, guardCode: "NON_CANONICAL_SCALAR" };
+""",
+    ),
+    MutationSpec(
+        "M-H1-GUARD-ONLY-ACCEPT",
+        "    accepted = _ed_mul(scalar) == _ed_add(point_r, _ed_mul(challenge, point_a))\n",
+        "    accepted = True\n",
+        "    const accepted = verifySignature(null, message, createPublicKey({ key: Buffer.concat([prefix, publicKey]), format: \"der\", type: \"spki\" }), signature);\n",
+        "    const accepted = true;\n",
+    ),
+    MutationSpec(
+        "M-H1-DOUBLE-VERIFY",
+        "    observed = ed25519_verify_detailed(public, signature, message)\n",
+        "    first = ed25519_verify_detailed(public, signature, message)\n    observed = ed25519_verify_detailed(public, signature, message)\n    observed[\"equationInvocations\"] += first[\"equationInvocations\"]\n",
+        "  const observed = ed25519VerifyDetailed(publicKey, signature, message);\n",
+        "  const first = ed25519VerifyDetailed(publicKey, signature, message);\n  const observed = ed25519VerifyDetailed(publicKey, signature, message);\n  observed.equationInvocations += first.equationInvocations;\n",
+    ),
+    MutationSpec(
+        "M-H1-RAW-FALLBACK",
+        "    return bool(observed[\"accepted\"])\n",
+        "    return bool(observed[\"accepted\"]) or observed[\"guardCode\"] != \"GUARD_ACCEPTED\"\n",
+        "  return observed.accepted;\n",
+        "  return observed.accepted || observed.guardCode !== \"GUARD_ACCEPTED\";\n",
+    ),
+    MutationSpec(
+        "M-H1-GENESIS-BYPASS-BOUNDARY",
+        """    if not ed25519_verify(
+        bytes.fromhex(genesis_fields["rootVerificationKeyHex"]),
+        bytes.fromhex(genesis_record["signatureHex"]),
+        genesis_transcript,
+    ):
+""",
+        """    if False and not ed25519_verify(
+        bytes.fromhex(genesis_fields["rootVerificationKeyHex"]),
+        bytes.fromhex(genesis_record["signatureHex"]),
+        genesis_transcript,
+    ):
+""",
+        "  require(ed25519Verify(\n",
+        "  require(true || ed25519Verify(\n",
+    ),
+)
+
+
+_H2_MUTATION_SPECS: Final = (
+    MutationSpec(
+        "M-H2-OPENING-FIRST",
+        """    for reference, event in admitted.items():
+        fields = event["fields"]
+""",
+        """    for reference, event in admitted.items():
+        if event["localPending"]:
+            continue
+        fields = event["fields"]
+""",
+        """  for (const [reference, event] of admitted) {
+    const fields = event.fields;
+""",
+        """  for (const [reference, event] of admitted) {
+    if (event.localPending) continue;
+    const fields = event.fields;
+""",
+    ),
+    MutationSpec(
+        "M-H2-INCLUDE-K-REJECTED",
+        """                if not transition_input_is_compatible(local) and not local_pending:
+                    rejected[reference] = ProtocolError(
+                        str(local_code or "INVALID"),
+                        str(local.get("stage", "S3_KERNEL_STRUCTURAL")),
+                    )
+                    pending.remove(reference)
+                    progress = True
+                    continue
+""",
+        """                if not transition_input_is_compatible(local) and not local_pending:
+                    admitted[reference] = {
+                        "fields": fields,
+                        "localPending": False,
+                        "pendingLineage": False,
+                        "record": record,
+                    }
+                    pending.remove(reference)
+                    progress = True
+                    continue
+""",
+        """        if (!transitionInputIsCompatible(local) && !localPending) {
+          rejected.set(reference, {
+            admitted: false,
+            code: local.localOutcome ?? "INVALID",
+            stage: local.stage ?? "S3_KERNEL_STRUCTURAL",
+          });
+          pending.delete(reference); progress = true; continue;
+        }
+""",
+        """        if (!transitionInputIsCompatible(local) && !localPending) {
+          admitted.set(reference, { fields, localPending: false, pendingLineage: false, record });
+          pending.delete(reference); progress = true; continue;
+        }
+""",
+    ),
+    MutationSpec(
+        "M-H2-ARRIVAL-WINNER",
+        "        if error is None and reference in forced_forks:\n",
+        "        if error is None and reference in forced_forks and reference != next(iter(record_order)):\n",
+        "    if (error === undefined && forcedForks.has(reference)) {\n",
+        "    if (error === undefined && forcedForks.has(reference) && reference !== identifiers.keys().next().value) {\n",
+    ),
+    MutationSpec(
+        "M-H2-CROSS-CREDENTIAL",
+        """        slot = (
+            fields["contextIdentifierHex"],
+            fields["credentialIdentifierHex"],
+            fields["authorSequence"],
+        )
+""",
+        """        slot = (
+            fields["contextIdentifierHex"],
+            fields["authorSequence"],
+        )
+""",
+        "    const slot = `${fields.contextIdentifierHex}:${fields.credentialIdentifierHex}:${fields.authorSequence}`;\n",
+        "    const slot = `${fields.contextIdentifierHex}:${fields.authorSequence}`;\n",
+    ),
+    MutationSpec(
+        "M-H2-PREDECESSOR-IN-KEY",
+        """        slot = (
+            fields["contextIdentifierHex"],
+            fields["credentialIdentifierHex"],
+            fields["authorSequence"],
+        )
+""",
+        """        slot = (
+            fields["contextIdentifierHex"],
+            fields["credentialIdentifierHex"],
+            fields["authorSequence"],
+            fields["directPredecessorHex"],
+        )
+""",
+        "    const slot = `${fields.contextIdentifierHex}:${fields.credentialIdentifierHex}:${fields.authorSequence}`;\n",
+        "    const slot = `${fields.contextIdentifierHex}:${fields.credentialIdentifierHex}:${fields.authorSequence}:${fields.directPredecessorHex}`;\n",
+    ),
+    MutationSpec(
+        "M-H2-PENDING-OUTRANKS-FORK",
+        """        if error is None and reference in forced_forks:
+            error = ProtocolError("FORK_EVIDENCE", "EVENT_LOCAL", admitted=True)
+        elif error is None and admitted[reference]["localPending"]:
+            error = ProtocolError("PENDING_OPENING", "EVENT_LOCAL", admitted=True)
+""",
+        """        if error is None and admitted[reference]["localPending"]:
+            error = ProtocolError("PENDING_OPENING", "EVENT_LOCAL", admitted=True)
+        elif error is None and reference in forced_forks:
+            error = ProtocolError("FORK_EVIDENCE", "EVENT_LOCAL", admitted=True)
+""",
+        """    if (error === undefined && forcedForks.has(reference)) {
+      error = { admitted: true, code: "FORK_EVIDENCE", stage: "EVENT_LOCAL" };
+    } else if (error === undefined && admitted.get(reference).localPending) {
+      error = { admitted: true, code: "PENDING_OPENING", stage: "EVENT_LOCAL" };
+""",
+        """    if (error === undefined && admitted.get(reference).localPending) {
+      error = { admitted: true, code: "PENDING_OPENING", stage: "EVENT_LOCAL" };
+    } else if (error === undefined && forcedForks.has(reference)) {
+      error = { admitted: true, code: "FORK_EVIDENCE", stage: "EVENT_LOCAL" };
+""",
+    ),
+    MutationSpec(
+        "M-H2-PENDING-AS-MISSING",
+        "            absent = required - set(parsed)\n",
+        "            absent = (required - set(parsed)) | {value for value in required if value in admitted and admitted[value][\"pendingLineage\"]}\n",
+        "      const absent = [...required].some(value => !parsed.has(value));\n",
+        "      const absent = [...required].some(value => !parsed.has(value) || admitted.get(value)?.pendingLineage === true);\n",
+    ),
+    MutationSpec(
+        "M-H2-SKIP-AUTH-UNDER-PENDING",
+        """            required = dependencies(fields)
+            if reference not in local_results:
+""",
+        """            required = dependencies(fields)
+            if any(value in admitted and admitted[value]["pendingLineage"] for value in required):
+                admitted[reference] = {
+                    "fields": fields,
+                    "localPending": False,
+                    "pendingLineage": True,
+                    "record": record,
+                }
+                pending.remove(reference)
+                progress = True
+                continue
+            if reference not in local_results:
+""",
+        """      const required = dependencies(fields);
+      if (!localResults.has(reference)) {
+""",
+        """      const required = dependencies(fields);
+      if ([...required].some(value => admitted.get(value)?.pendingLineage === true)) {
+        admitted.set(reference, { fields, localPending: false, pendingLineage: true, record });
+        pending.delete(reference); progress = true; continue;
+      }
+      if (!localResults.has(reference)) {
+""",
+    ),
+    MutationSpec(
+        "M-H2-ANY-PENDING-DEP",
+        """            absent = required - set(parsed)
+            failed = required & set(rejected)
+            if absent or failed:
+""",
+        """            absent = required - set(parsed)
+            failed = required & set(rejected)
+            if any(value in admitted and admitted[value]["pendingLineage"] for value in required):
+                admitted[reference] = {
+                    "fields": fields,
+                    "localPending": local_pending,
+                    "pendingLineage": True,
+                    "record": record,
+                }
+                pending.remove(reference)
+                progress = True
+                continue
+            if absent or failed:
+""",
+        """      const absent = [...required].some(value => !parsed.has(value));
+      const failed = [...required].some(value => rejected.has(value));
+      if (absent || failed) {
+""",
+        """      const absent = [...required].some(value => !parsed.has(value));
+      const failed = [...required].some(value => rejected.has(value));
+      if ([...required].some(value => admitted.get(value)?.pendingLineage === true)) {
+        admitted.set(reference, { fields, localPending, pendingLineage: true, record });
+        pending.delete(reference); progress = true; continue;
+      }
+      if (absent || failed) {
+""",
+    ),
+    MutationSpec(
+        "M-H1-GRANT-KEY-EAGER-REJECT",
+        """                    if kind == "GRANT":
+                        if reference == genesis_reference or reference in bindings:
+""",
+        """                    if kind == "GRANT":
+                        try:
+                            carried = _ed_decode(bytes.fromhex(tail["granteeVerificationKeyHex"]))
+                            if carried == (0, 1) or _ed_mul(_L, carried) != (0, 1):
+                                raise ProtocolError("STRUCTURAL_REJECTION")
+                        except (ValueError, ProtocolError) as error:
+                            raise ProtocolError("STRUCTURAL_REJECTION") from error
+                        if reference == genesis_reference or reference in bindings:
+""",
+        """          if (tail.kind === "GRANT") {
+            require(reference !== genesisReference && !bindings.has(reference), "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED");
+""",
+        """          if (tail.kind === "GRANT") {
+            let carried;
+            try { carried = edDecode(Buffer.from(tail.granteeVerificationKeyHex, "hex")); }
+            catch { throw new ProtocolError("STRUCTURAL_REJECTION"); }
+            require(!edEqual(carried, ED_IDENTITY) && edEqual(edScalarMult(ED_L, carried), ED_IDENTITY), "STRUCTURAL_REJECTION");
+            require(reference !== genesisReference && !bindings.has(reference), "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED");
+""",
+    ),
+)
+
+MUTATION_SPECS: Final = {
+    spec.identifier: spec for spec in (*_H1_MUTATION_SPECS, *_H2_MUTATION_SPECS)
+}
+
+FROZEN_CORPUS_SHA256: Final = {
+    "adversarial-mutations.json": "a1464c018b37272da5cee7afcb6e6f6c9f03a11b5c74173a559dc931fcf8cb94",
+    "expected-traces.json": "33eb07a0f5911926cd458cfa1f3e790a535942058e9bd7ef309860236b99765d",
+    "invalid-transcript-vectors.json": "6e5d9c4e9100be721651312fe5900fae640560b232588d4838142c2bd22889d4",
+    "manifest.json": "e0fe763ed1e2e8a032b0aa6ed495f57ce808ed17d3156d6a08e4da2048b78eb0",
+    "state-machine-scenarios.json": "ea07798d2fc2a95dc95f1d0a06300ef9b548a3eb13fbef6a59958d680b0842b3",
+    "valid-transcript-vectors.json": "8dc607acff6b0f9c4942834acce3d5004594a8b9b8169edd5b346b53cc6955cb",
+}
 
 
 def _witnesses() -> dict[str, object]:
@@ -1496,6 +1867,414 @@ def run_javascript_slots() -> dict:
     }
 
 
+def _javascript_single(option: str, payload: dict) -> dict:
+    with tempfile.TemporaryDirectory(prefix="styx-c03-detector-") as tmp:
+        input_path = Path(tmp) / "input.json"
+        output_path = Path(tmp) / "output.json"
+        input_path.write_bytes(dumps(payload))
+        completed = subprocess.run(
+            [
+                "node",
+                str(ROOT / "node_adapter.mjs"),
+                option,
+                str(input_path),
+                "--output",
+                str(output_path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        _require(
+            completed.returncode == 0,
+            f"detector adapter exit:{completed.returncode}",
+        )
+        return loads(output_path.read_bytes())
+
+
+def _run_boundary_detector(runtime: str, index: int) -> None:
+    row = H1_BOUNDARY[index]
+    witness = _witnesses()[row.scenario_id]
+    if runtime == "python":
+        _boundary_observation(row, witness)
+        return
+    event = witness.event
+    key = event.binding.verification_key if event.binding else b""
+    output = _javascript_single(
+        "--h1-input",
+        {
+            "records": [
+                {
+                    "id": row.scenario_id,
+                    "messageHex": event.transcript.hex(),
+                    "publicKeyHex": key.hex(),
+                    "signatureHex": event.signature.hex(),
+                }
+            ],
+            "schema": "styx-c03-h1-boundary-input/v1",
+        },
+    )
+    observed = output["observations"][0]
+    accepted = row.expected == "ACCEPTED"
+    guard = (
+        "GUARD_ACCEPTED"
+        if row.expected in {"ACCEPTED", "SIGNATURE_INVALID"}
+        else row.expected
+    )
+    _require(
+        observed
+        == {
+            "accepted": accepted,
+            "equationInvocations": 1 if guard == "GUARD_ACCEPTED" else 0,
+            "guardCode": guard,
+            "id": row.scenario_id,
+        },
+        f"{row.row_id} boundary observation",
+    )
+
+
+def _run_connected_detector(runtime: str, index: int) -> None:
+    case = connected_cases()[index]
+    if runtime == "python":
+        if case["mode"] == "graph":
+            _project_graph_case(case)
+        else:
+            _project_vector_case(case)
+        return
+    if case["mode"] == "graph":
+        output = _javascript_single(
+            "--k-scenario-input",
+            {
+                "scenarios": [
+                    {
+                        "acceptedGenesisRecord": case["genesis"],
+                        "graphEvaluation": True,
+                        "id": case["row"].scenario_id,
+                        "records": case["records"],
+                    }
+                ],
+                "schema": "styx-c03-h1h2-connected-input/v1",
+            },
+        )["observations"][0]
+        expected = _project_graph_case(case)
+        projected = {
+            "harnessError": output.get("harnessError"),
+            "observations": output["observations"],
+            "rowId": case["row"].row_id,
+            "scenarioId": case["row"].scenario_id,
+            "verificationBoundary": output["verificationBoundary"],
+        }
+    else:
+        record = deepcopy(case["record"])
+        record["id"] = case["row"].scenario_id
+        output = _javascript_single(
+            "--c03-vector-input",
+            {
+                "records": [record],
+                "schema": "styx-c03-h1h2-vector-input/v1",
+            },
+        )["observations"][0]
+        expected = _project_vector_case(case)
+        projected = {
+            "observation": output["observation"],
+            "rowId": case["row"].row_id,
+            "scenarioId": case["row"].scenario_id,
+            "verificationBoundary": output["verificationBoundary"],
+        }
+    _require(projected == expected, f"{case['row'].row_id} cross-runtime")
+
+
+def _run_slot_detector(runtime: str, index: int) -> None:
+    case = slot_cases()[index]
+    if index == 49:
+        case = _retag_slot_case(
+            case, "P", "X_BAD_SIG", left_first=True
+        )
+    if runtime == "python":
+        _project_slot_case(case)
+        return
+    output = _javascript_single(
+        "--k-scenario-input",
+        {
+            "scenarios": [
+                {
+                    "acceptedGenesisRecord": case["genesis"],
+                    "graphEvaluation": True,
+                    "id": case["row"].scenario_id,
+                    "records": case["records"],
+                }
+            ],
+            "schema": "styx-c03-h1h2-connected-input/v1",
+        },
+    )["observations"][0]
+    expected = _project_slot_case(case)
+    _require(
+        output.get("harnessError") is None,
+        f"{case['row'].row_id} JavaScript harness",
+    )
+    _require(
+        output["observations"]
+        == evaluate_k_admission_graph(case["genesis"], case["records"]),
+        f"{case['row'].row_id} cross-runtime slot",
+    )
+    by_id = {row["id"]: row for row in output["observations"]}
+    projected = {
+        "lexicalSchedule": case["lexicalSchedule"],
+        "observations": [
+            by_id[identifier] for identifier in sorted(case["targets"])
+        ],
+        "order": list(case["row"].order),
+        "rowId": case["row"].row_id,
+        "scenarioId": case["row"].scenario_id,
+    }
+    _require(projected == expected, f"{case['row'].row_id} slot projection")
+
+
+def run_detector(mutant: str, runtime: str) -> None:
+    _require(mutant in DETECTORS, "unknown mutant detector")
+    _require(runtime in {"python", "javascript"}, "unknown detector runtime")
+    family, index = DETECTORS[mutant]
+    if family == "boundary":
+        _run_boundary_detector(runtime, index)
+    elif family == "connected":
+        _run_connected_detector(runtime, index)
+    else:
+        _run_slot_detector(runtime, index)
+
+
+def _detector_marker(mutant: str) -> str:
+    family, index = DETECTORS[mutant]
+    rows = {
+        "boundary": H1_BOUNDARY,
+        "connected": H1_CONNECTED,
+        "slot": H2_SLOTS,
+    }[family]
+    return rows[index].row_id
+
+
+def _invoke_detector(source_root: Path, mutant: str, runtime: str) -> subprocess.CompletedProcess:
+    environment = dict(os.environ)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    return subprocess.run(
+        [
+            sys.executable,
+            str(source_root / "c03/h1_h2_relation.py"),
+            "--run-detector",
+            mutant,
+            "--runtime",
+            runtime,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=environment,
+    )
+
+
+def _copy_mutation_sources(destination: Path) -> None:
+    for name in ("c03", "o10", "o14"):
+        source = ROOT.parent / name
+        shutil.copytree(
+            source,
+            destination / name,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
+
+
+def _apply_mutation(source_root: Path, spec: MutationSpec, runtime: str) -> tuple[str, str]:
+    if runtime == "python":
+        path = source_root / "c03/corpus_model.py"
+        anchor = spec.python_anchor
+        replacement = spec.python_replacement
+    else:
+        path = source_root / "c03/node_adapter.mjs"
+        anchor = spec.javascript_anchor
+        replacement = spec.javascript_replacement
+    source = path.read_text(encoding="utf-8")
+    _require(source.count(anchor) == 1, f"{spec.identifier} source anchor")
+    before = sha256(source.encode()).hexdigest()
+    mutated = source.replace(anchor, replacement, 1)
+    _require(mutated != source, f"{spec.identifier} no-op mutation")
+    path.write_text(mutated, encoding="utf-8")
+    after = sha256(path.read_bytes()).hexdigest()
+    _require(before != after, f"{spec.identifier} unchanged digest")
+    return before, after
+
+
+def run_mutations(runtime: str) -> dict:
+    _require(runtime in {"python", "javascript"}, "unknown mutation runtime")
+    rows = []
+    for mutant in MUTANTS:
+        spec = MUTATION_SPECS[mutant]
+        with tempfile.TemporaryDirectory(prefix=f"styx-c03-{runtime}-mutant-") as tmp:
+            source_root = Path(tmp) / "tools/causal-flow-simulator"
+            source_root.mkdir(parents=True)
+            _copy_mutation_sources(source_root)
+            control = _invoke_detector(source_root, mutant, runtime)
+            _require(
+                control.returncode == 0
+                and f"detector_pass={mutant}:{runtime}" in control.stdout,
+                f"{mutant} unmutated detector",
+            )
+            before, after = _apply_mutation(source_root, spec, runtime)
+            mutated = _invoke_detector(source_root, mutant, runtime)
+            marker = _detector_marker(mutant)
+            _require(
+                mutated.returncode == 2
+                and "semantic_detector_failure=" in mutated.stderr
+                and marker in mutated.stderr
+                and "detector adapter exit:" not in mutated.stderr,
+                f"{mutant} wrong-detector or non-semantic kill",
+            )
+            rows.append(
+                {
+                    "detectorId": marker,
+                    "mutantId": mutant,
+                    "result": "KILLED",
+                    "runtime": runtime,
+                    "sourceDigestChanged": before != after,
+                }
+            )
+    _require(len(rows) == 20, "mutation kill count")
+    return {
+        "killed": 20,
+        "result": "PASS",
+        "rows": rows,
+        "runtime": runtime,
+        "schema": "styx-c03-h1h2-mutation-observations/v1",
+    }
+
+
+def _run_regression_command(command: list[str], output: Path) -> None:
+    environment = dict(os.environ)
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    completed = subprocess.run(
+        [*command, "--output", str(output)],
+        cwd=REPO,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=environment,
+    )
+    _require(completed.returncode == 0, "historical producer failed")
+    expected_kind = output.is_dir() if output.name == "generated" else output.is_file()
+    _require(expected_kind and not output.is_symlink(), "historical output missing")
+
+
+def run_regression() -> dict:
+    corpus = REPO / "conformance/application-protocol/c03"
+    for name, expected in FROZEN_CORPUS_SHA256.items():
+        path = corpus / name
+        _require(
+            path.is_file() and sha256(path.read_bytes()).hexdigest() == expected,
+            f"frozen corpus drift:{name}",
+        )
+
+    with tempfile.TemporaryDirectory(prefix="styx-c03-regression-") as tmp:
+        workspace = Path(tmp)
+        generated = workspace / "generated"
+        commands = (
+            (
+                "generate",
+                [
+                    sys.executable,
+                    str(ROOT / "generate_corpus.py"),
+                    "--repo-root",
+                    str(REPO),
+                ],
+                generated,
+            ),
+            (
+                "validate",
+                [
+                    sys.executable,
+                    str(ROOT / "validate_corpus.py"),
+                    "--repo-root",
+                    str(REPO),
+                    "--corpus",
+                    str(corpus),
+                ],
+                workspace / "validate.json",
+            ),
+            (
+                "replay",
+                [
+                    sys.executable,
+                    str(ROOT / "replay_corpus.py"),
+                    "--repo-root",
+                    str(REPO),
+                    "--corpus",
+                    str(corpus),
+                ],
+                workspace / "replay.json",
+            ),
+            (
+                "node",
+                [
+                    "node",
+                    str(ROOT / "node_adapter.mjs"),
+                    "--repo-root",
+                    str(REPO),
+                    "--corpus",
+                    str(corpus),
+                ],
+                workspace / "node.json",
+            ),
+            (
+                "cross-runtime",
+                [
+                    sys.executable,
+                    str(ROOT / "run_cross_runtime.py"),
+                    "--repo-root",
+                    str(REPO),
+                    "--corpus",
+                    str(corpus),
+                ],
+                workspace / "cross.json",
+            ),
+            (
+                "historical-mutations",
+                [
+                    sys.executable,
+                    str(ROOT / "run_mutations.py"),
+                    "--repo-root",
+                    str(REPO),
+                    "--corpus",
+                    str(corpus),
+                ],
+                workspace / "mutations.json",
+            ),
+        )
+        completed_ids = []
+        for identifier, command, output in commands:
+            _run_regression_command(command, output)
+            completed_ids.append(identifier)
+
+        generated_files = {
+            path.name: path.read_bytes()
+            for path in generated.iterdir()
+            if path.is_file() and not path.is_symlink()
+        }
+        corpus_files = {
+            path.name: path.read_bytes()
+            for path in corpus.iterdir()
+            if path.is_file() and not path.is_symlink()
+        }
+        _require(generated_files == corpus_files, "generated corpus drift")
+
+    return {
+        "checks": [
+            {"id": identifier, "result": "PASS"}
+            for identifier in completed_ids
+        ],
+        "frozenCorpusFiles": len(FROZEN_CORPUS_SHA256),
+        "result": "PASS",
+        "schema": "styx-c03-h1h2-regression-observations/v1",
+    }
+
+
 def run_runtime(runtime: str) -> dict:
     _require(runtime in {"python", "javascript"}, "unknown runtime")
     if runtime == "python":
@@ -1556,6 +2335,19 @@ def validate_relation() -> None:
         "duplicate scenario identifier",
     )
     _require(len(MUTANTS) == 20 and len(set(MUTANTS)) == 20, "mutant relation")
+    _require(set(MUTATION_SPECS) == set(MUTANTS), "mutation specification set")
+    python_source = (ROOT / "corpus_model.py").read_text(encoding="utf-8")
+    javascript_source = (ROOT / "node_adapter.mjs").read_text(encoding="utf-8")
+    for mutant in MUTANTS:
+        spec = MUTATION_SPECS[mutant]
+        _require(
+            python_source.count(spec.python_anchor) == 1,
+            f"{mutant} Python source anchor",
+        )
+        _require(
+            javascript_source.count(spec.javascript_anchor) == 1,
+            f"{mutant} JavaScript source anchor",
+        )
     runtime = {
         witness.identifier: witness.expected_code
         for witness in required_witnesses()
@@ -1573,13 +2365,37 @@ def main(argv: list[str] | None = None) -> int:
     action.add_argument("--validate-relation", action="store_true")
     action.add_argument("--run-python", action="store_true")
     action.add_argument("--run-javascript", action="store_true")
+    action.add_argument("--run-detector", metavar="MUTANT")
+    action.add_argument("--run-mutations", action="store_true")
+    action.add_argument("--run-regression", action="store_true")
+    parser.add_argument("--runtime", choices=("python", "javascript"))
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     validate_relation()
     if args.validate_relation:
-        _require(args.output is None, "validation does not accept output")
+        _require(
+            args.output is None and args.runtime is None,
+            "validation does not accept runtime or output",
+        )
         print("Package-A relation PASS scenarios=126 mutants=20")
         return 0
+    if args.run_detector:
+        _require(args.output is None, "detector does not accept output")
+        _require(args.runtime is not None, "detector runtime is required")
+        run_detector(args.run_detector, args.runtime)
+        print(f"detector_pass={args.run_detector}:{args.runtime}")
+        return 0
+    if args.run_mutations:
+        _require(args.output is not None, "mutation output is required")
+        _require(args.runtime is not None, "mutation runtime is required")
+        _store_new(args.output, run_mutations(args.runtime))
+        return 0
+    if args.run_regression:
+        _require(args.output is not None, "regression output is required")
+        _require(args.runtime is None, "regression does not accept runtime")
+        _store_new(args.output, run_regression())
+        return 0
+    _require(args.runtime is None, "runtime belongs only to detector mode")
     _require(args.output is not None, "runtime output is required")
     runtime = "python" if args.run_python else "javascript"
     _store_new(args.output, run_runtime(runtime))
@@ -1587,4 +2403,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except RelationError as error:
+        print(f"semantic_detector_failure={error}", file=sys.stderr)
+        raise SystemExit(2) from None
