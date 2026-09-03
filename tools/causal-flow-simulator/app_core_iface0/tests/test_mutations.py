@@ -246,7 +246,7 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
             },
         )
 
-    def test_selected_carrier_isolation_preflight_is_complete_and_fail_closed(self) -> None:
+    def test_carrier_search_isolation_preflight_is_complete_and_fail_closed(self) -> None:
         report = derive_structural_isolation_preflight(
             ROOT.parents[2], ROOT / "contract", self.evidence
         )
@@ -255,13 +255,145 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         self.assertEqual(
             report["classification_counts"],
             {
+                "EQUIVALENT_MUTANT": 72,
+                "PALETTE_EXHAUSTED": 8,
+                "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST": 1,
+                "SATISFIABLE": 1369,
+            },
+        )
+        self.assertEqual(
+            report["selected_classification_counts"],
+            {
                 "EQUIVALENT_MUTANT": 70,
                 "PALETTE_EXHAUSTED": 38,
                 "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST": 1,
                 "SATISFIABLE": 1341,
             },
         )
-        self.assertEqual(len(report["non_satisfiable_rows"]), 108)
+        self.assertEqual(len(report["non_satisfiable_rows"]), 80)
+        self.assertEqual(
+            {row["instance_id"] for row in report["non_satisfiable_rows"]},
+            {
+                "STR-ALL-OF-BRANCH-CONSTRAINT--0005",
+                "STR-ALL-OF-BRANCH-CONSTRAINT--0006",
+                "STR-ALL-OF-BRANCH-CONSTRAINT--0007",
+                "STR-ALL-OF-BRANCH-CONSTRAINT--0015",
+                "STR-ALL-OF-BRANCH-CONSTRAINT--0017",
+                "STR-ALL-OF-BRANCH-CONSTRAINT--0019",
+                "STR-CONST-SUBSTITUTION--0002",
+                "STR-CONST-SUBSTITUTION--0003",
+                "STR-CONST-SUBSTITUTION--0004",
+                "STR-CONST-SUBSTITUTION--0015",
+                "STR-ITEM-CONSTRAINT-VIOLATION--0001",
+                "STR-ITEM-CONSTRAINT-VIOLATION--0004",
+                "STR-MAX-ITEMS-OVERFLOW--0001",
+                "STR-MAX-LENGTH-OVERFLOW--0001",
+                "STR-MAX-LENGTH-OVERFLOW--0002",
+                "STR-MAX-LENGTH-OVERFLOW--0003",
+                "STR-MIN-ITEMS-UNDERFLOW--0001",
+                "STR-MIN-LENGTH-UNDERFLOW--0001",
+                "STR-NOT-SUBSCHEMA-MATCH--0001",
+                "STR-NULL-SUBSTITUTION--0004",
+                "STR-NULL-SUBSTITUTION--0009",
+                "STR-NULL-SUBSTITUTION--0017",
+                "STR-ONE-OF-NO-ARM--0001",
+                "STR-ONE-OF-NO-ARM--0010",
+                "STR-ONE-OF-NO-ARM--0011",
+                "STR-ONE-OF-NO-ARM--0013",
+                "STR-ONE-OF-NO-ARM--0016",
+                "STR-ONE-OF-POSITIVE-ARM--0025",
+                "STR-ONE-OF-POSITIVE-ARM--0026",
+                "STR-ONE-OF-POSITIVE-ARM--0027",
+                "STR-ONE-OF-POSITIVE-ARM--0028",
+                "STR-ONE-OF-POSITIVE-ARM--0029",
+                "STR-ONE-OF-POSITIVE-ARM--0030",
+                "STR-ONE-OF-POSITIVE-ARM--0031",
+                "STR-ONE-OF-POSITIVE-ARM--0032",
+                "STR-ONE-OF-POSITIVE-ARM--0033",
+                "STR-ONE-OF-POSITIVE-ARM--0034",
+                "STR-ONE-OF-POSITIVE-ARM--0035",
+                "STR-ONE-OF-POSITIVE-ARM--0036",
+                "STR-ONE-OF-POSITIVE-ARM--0053",
+                "STR-ONE-OF-POSITIVE-ARM--0054",
+                "STR-REF-TARGET-CONSTRAINT--0003",
+                "STR-REF-TARGET-CONSTRAINT--0004",
+                "STR-REF-TARGET-CONSTRAINT--0005",
+                "STR-REF-TARGET-CONSTRAINT--0006",
+                "STR-REF-TARGET-CONSTRAINT--0007",
+                "STR-REF-TARGET-CONSTRAINT--0008",
+                "STR-REF-TARGET-CONSTRAINT--0009",
+                "STR-REF-TARGET-CONSTRAINT--0010",
+                "STR-REF-TARGET-CONSTRAINT--0014",
+                "STR-REF-TARGET-CONSTRAINT--0019",
+                "STR-REF-TARGET-CONSTRAINT--0023",
+                "STR-REF-TARGET-CONSTRAINT--0137",
+                "STR-REF-TARGET-CONSTRAINT--0138",
+                "STR-REF-TARGET-CONSTRAINT--0139",
+                "STR-REF-TARGET-CONSTRAINT--0140",
+                "STR-REF-TARGET-CONSTRAINT--0141",
+                "STR-REF-TARGET-CONSTRAINT--0142",
+                "STR-REF-TARGET-CONSTRAINT--0143",
+                "STR-REF-TARGET-CONSTRAINT--0144",
+                "STR-REF-TARGET-CONSTRAINT--0145",
+                "STR-REF-TARGET-CONSTRAINT--0146",
+                "STR-REF-TARGET-CONSTRAINT--0147",
+                "STR-REF-TARGET-CONSTRAINT--0148",
+                "STR-REF-TARGET-CONSTRAINT--0223",
+                "STR-REF-TARGET-CONSTRAINT--0224",
+                "STR-REF-TARGET-CONSTRAINT--0225",
+                "STR-REF-TARGET-CONSTRAINT--0226",
+                "STR-REF-TARGET-CONSTRAINT--0227",
+                "STR-REF-TARGET-CONSTRAINT--0228",
+                "STR-REF-TARGET-CONSTRAINT--0229",
+                "STR-REF-TARGET-CONSTRAINT--0230",
+                "STR-REF-TARGET-CONSTRAINT--0262",
+                "STR-REF-TARGET-CONSTRAINT--0263",
+                "STR-REQUIRED-PROPERTY-OMISSION--0004",
+                "STR-REQUIRED-PROPERTY-OMISSION--0315",
+                "STR-TYPE-MISMATCH--0002",
+                "STR-UNIQUE-ITEMS-DUPLICATE--0001",
+                "STR-UNIQUE-ITEMS-DUPLICATE--0004",
+                "STR-UNKNOWN-OBJECT-PROPERTY--0019",
+            },
+        )
+        self.assertEqual(report["reselected_count"], 28)
+        self.assertEqual(len(report["reselected_rows"]), 28)
+        self.assertEqual(
+            {row["instance_id"] for row in report["reselected_rows"]},
+            {
+                "STR-ALL-OF-BRANCH-CONSTRAINT--0004",
+                "STR-ANY-OF-ALL-ARMS--0001",
+                "STR-ANY-OF-POSITIVE-ARM--0002",
+                "STR-ITEM-CONSTRAINT-VIOLATION--0002",
+                "STR-ITEM-CONSTRAINT-VIOLATION--0003",
+                "STR-ITEM-CONSTRAINT-VIOLATION--0005",
+                "STR-ITEM-CONSTRAINT-VIOLATION--0007",
+                "STR-ITEM-CONSTRAINT-VIOLATION--0008",
+                "STR-ITEM-CONSTRAINT-VIOLATION--0009",
+                "STR-ITEM-CONSTRAINT-VIOLATION--0010",
+                "STR-ITEM-CONSTRAINT-VIOLATION--0011",
+                "STR-ITEM-CONSTRAINT-VIOLATION--0012",
+                "STR-ITEM-CONSTRAINT-VIOLATION--0013",
+                "STR-ITEM-CONSTRAINT-VIOLATION--0014",
+                "STR-ITEM-CONSTRAINT-VIOLATION--0015",
+                "STR-MIN-ITEMS-UNDERFLOW--0003",
+                "STR-UNIQUE-ITEMS-DUPLICATE--0002",
+                "STR-UNIQUE-ITEMS-DUPLICATE--0003",
+                "STR-UNIQUE-ITEMS-DUPLICATE--0005",
+                "STR-UNIQUE-ITEMS-DUPLICATE--0007",
+                "STR-UNIQUE-ITEMS-DUPLICATE--0008",
+                "STR-UNIQUE-ITEMS-DUPLICATE--0009",
+                "STR-UNIQUE-ITEMS-DUPLICATE--0010",
+                "STR-UNIQUE-ITEMS-DUPLICATE--0011",
+                "STR-UNIQUE-ITEMS-DUPLICATE--0012",
+                "STR-UNIQUE-ITEMS-DUPLICATE--0013",
+                "STR-UNIQUE-ITEMS-DUPLICATE--0014",
+                "STR-UNIQUE-ITEMS-DUPLICATE--0015",
+            },
+        )
+        self.assertTrue(
+            all(row["candidate_ordinal"] >= 2 for row in report["reselected_rows"])
+        )
         self.assertNotIn(
             "RECIPE_NOT_IMPLEMENTED", report["classification_counts"]
         )

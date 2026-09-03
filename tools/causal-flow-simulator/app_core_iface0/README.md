@@ -31,11 +31,11 @@ inventory becomes Phase-B input.
 
 Phase B remains incomplete. Its deterministic registry derivation now maps all
 1,450 structural instances to Phase-A carriers and preflights both target
-reachability and the selected carrier's isolated perturbation. Target
-reachability is complete; the isolation preflight deliberately fails closed
-while any selected carrier yields an equivalent mutant or exhausts the bounded
-perturbation palette. Phase B must still bind the ratification, resolve those
-carrier selections, execute all 1,450 structural witnesses and 5,149 semantic
+reachability and isolated perturbation. Target reachability is complete; for a
+failed first binding, the isolation preflight searches every eligible carrier
+in the ratified deterministic order and records only failures that survive the
+complete search. Phase B must still bind the ratification, resolve those
+contract or palette failures, execute all 1,450 structural witnesses and 5,149 semantic
 instances, kill every named source mutant and obtain byte-identical
 Python/JavaScript reports. Until both phases pass, this directory is an
 implementation in progress rather than complete conformance evidence.
@@ -106,14 +106,14 @@ python3 tools/causal-flow-simulator/app_core_iface0/generate_structural_witnesse
   --preflight-targets \
   --output /external/path/structural-target-preflight.json
 
-# Exit 2 with an AMEND_REQUIRED report until every selected carrier supports
-# an isolated, rejecting perturbation for its assigned structural instance.
+# Exit 2 with an AMEND_REQUIRED report until every structural instance has an
+# isolated, rejecting perturbation under at least one eligible carrier.
 python3 tools/causal-flow-simulator/app_core_iface0/generate_structural_witnesses.py \
   --repo-root . \
   --contract tools/causal-flow-simulator/app_core_iface0/contract \
   --evidence-root /external/path/app-core-phase-a \
   --preflight-isolation \
-  --output /external/path/selected-carrier-isolation-preflight.json
+  --output /external/path/carrier-search-isolation-preflight.json
 ```
 
 The first seed command produces and evaluates one structural blind request per

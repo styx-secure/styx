@@ -62,7 +62,10 @@ ISOLATION_PREFLIGHT_FIELDS = frozenset(
         "instance_count",
         "instance_set_sha256",
         "non_satisfiable_rows",
+        "reselected_count",
+        "reselected_rows",
         "schema",
+        "selected_classification_counts",
         "verdict",
     }
 )
@@ -598,6 +601,69 @@ def _expected_execution(
     return relation["oracleDisclosure"], relation["executionPhase"], observation
 
 
+def _witness_candidates_for_instance(
+    instance: Any,
+    case_rows: dict[str, dict[str, Any]],
+    carriers: dict[str, tuple[dict[str, Any], bytes]],
+    roots: dict[str, dict[str, Any]],
+    synthesizer: SchemaSynthesizer,
+    prospective_cache: dict[tuple[str, str, str, str | None], list[str]],
+    object_locations_by_case: dict[str, list[tuple[str, str]]],
+    seed_id_by_pointer: dict[str, str],
+    axes: dict[str, Any],
+    rules: dict[str, dict[str, Any]],
+) -> list[tuple[tuple[Any, ...], dict[str, Any]]]:
+    """Enumerate every eligible carrier binding in the ratified byte order."""
+
+    candidates: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    for case in case_rows.values():
+        carrier, _raw = carriers[case["caseId"]]
+        root = roots[f"{case['direction']}-{case['operation']}"]
+        for target_pointer in _witness_target_locations(
+            synthesizer, root, carrier, instance, prospective_cache
+        ):
+            seed_id = _owning_seed_id(
+                target_pointer,
+                object_locations_by_case[case["caseId"]],
+                seed_id_by_pointer,
+            )
+            key = (
+                0 if case["direction"] == "REQUEST" else 1,
+                OPERATION_ORDER[case["operation"]],
+                case["caseId"].encode("utf-8"),
+                target_pointer.encode("utf-8"),
+                seed_id,
+            )
+            disclosure, phase, observation = _expected_execution(
+                axes, case["direction"], instance.expected_disposition
+            )
+            rule = rules.get(instance.family_id)
+            if rule is None:
+                raise WitnessGenerationError("structural witness has no rule")
+            row = {
+                "instanceId": instance.instance_id,
+                "structuralRuleId": instance.family_id,
+                "sourcePointerOrRowId": instance.source,
+                "seedObjectSchemaId": seed_id,
+                "carrierCaseId": case["caseId"],
+                "carrierDirection": case["direction"],
+                "disclosureClass": disclosure,
+                "executionPhase": phase,
+                "targetJsonPointer": target_pointer,
+                "perturbationKind": rule["perturbationKind"],
+                "isolationMode": rule.get(
+                    "isolationMode", axes["executionContract"]["defaultIsolationMode"]
+                ),
+                "expectedDisposition": instance.expected_disposition,
+                "expectedObservation": observation,
+                "assertionId": instance.assertion_id,
+                "mutationId": instance.perturbation_id.replace("PRT-", "MUT-", 1),
+                "detectorId": instance.detector_id,
+            }
+            candidates.append((key, row))
+    return sorted(candidates, key=lambda item: item[0])
+
+
 def derive_phase_b_registries(
     repo_root: Path,
     contract: Path,
@@ -653,56 +719,22 @@ def derive_phase_b_registries(
     prospective_cache: dict[tuple[str, str, str, str | None], list[str]] = {}
     missing_instances: list[str] = []
     for instance in instances:
-        candidates: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
-        for case in case_rows.values():
-            carrier, _raw = carriers[case["caseId"]]
-            root = roots[f"{case['direction']}-{case['operation']}"]
-            for target_pointer in _witness_target_locations(
-                synthesizer, root, carrier, instance, prospective_cache
-            ):
-                seed_id = _owning_seed_id(
-                    target_pointer,
-                    object_locations_by_case[case["caseId"]],
-                    seed_id_by_pointer,
-                )
-                key = (
-                    0 if case["direction"] == "REQUEST" else 1,
-                    OPERATION_ORDER[case["operation"]],
-                    case["caseId"].encode("utf-8"),
-                    target_pointer.encode("utf-8"),
-                    seed_id,
-                )
-                disclosure, phase, observation = _expected_execution(
-                    axes, case["direction"], instance.expected_disposition
-                )
-                rule = rules.get(instance.family_id)
-                if rule is None:
-                    raise WitnessGenerationError("structural witness has no rule")
-                row = {
-                    "instanceId": instance.instance_id,
-                    "structuralRuleId": instance.family_id,
-                    "sourcePointerOrRowId": instance.source,
-                    "seedObjectSchemaId": seed_id,
-                    "carrierCaseId": case["caseId"],
-                    "carrierDirection": case["direction"],
-                    "disclosureClass": disclosure,
-                    "executionPhase": phase,
-                    "targetJsonPointer": target_pointer,
-                    "perturbationKind": rule["perturbationKind"],
-                    "isolationMode": rule.get(
-                        "isolationMode", axes["executionContract"]["defaultIsolationMode"]
-                    ),
-                    "expectedDisposition": instance.expected_disposition,
-                    "expectedObservation": observation,
-                    "assertionId": instance.assertion_id,
-                    "mutationId": instance.perturbation_id.replace("PRT-", "MUT-", 1),
-                    "detectorId": instance.detector_id,
-                }
-                candidates.append((key, row))
+        candidates = _witness_candidates_for_instance(
+            instance,
+            case_rows,
+            carriers,
+            roots,
+            synthesizer,
+            prospective_cache,
+            object_locations_by_case,
+            seed_id_by_pointer,
+            axes,
+            rules,
+        )
         if not candidates:
             missing_instances.append(instance.instance_id)
             continue
-        chosen = min(candidates, key=lambda item: item[0])[1]
+        chosen = candidates[0][1]
         witness_rows.append(chosen)
         assigned_families[chosen["seedObjectSchemaId"]].add(instance.family_id)
 
@@ -1028,6 +1060,49 @@ def _schema_node_at(schema: dict[str, Any], pointer: str) -> Any:
             part = _unescape(part)
             node = node[int(part)] if isinstance(node, list) else node[part]
     return node
+
+
+def _reachable_schema_pointers(
+    schema: dict[str, Any], start_pointer: str
+) -> frozenset[str]:
+    """Return a conservative schema-occurrence closure from one wrapper.
+
+    Every literal child of a reachable schema node is included and local
+    references are followed.  The result therefore over-approximates runtime
+    branch selection: absence from this set proves that mutating the occurrence
+    cannot affect validation through the selected operation wrapper.
+    """
+
+    reached: set[str] = set()
+
+    def visit(pointer: str, node: Any) -> None:
+        if pointer in reached:
+            return
+        reached.add(pointer)
+        if isinstance(node, dict):
+            reference = node.get("$ref")
+            if isinstance(reference, str) and reference.startswith("#/"):
+                target_pointer = reference.removeprefix("#")
+                visit(target_pointer, _schema_node_at(schema, target_pointer))
+            for name in sorted(node):
+                visit(_join(pointer, name), node[name])
+        elif isinstance(node, list):
+            for index, item in enumerate(node):
+                visit(_join(pointer, str(index)), item)
+
+    visit(start_pointer, _schema_node_at(schema, start_pointer))
+    return frozenset(reached)
+
+
+def _instance_occurrence_pointer(instance: Any) -> str | None:
+    """Map virtual positive-arm identities to their literal schema pointer."""
+
+    if instance.family_id == "STR-CONDITIONAL-BRANCH-MATRIX":
+        return None
+    if instance.family_id == "STR-ONE-OF-POSITIVE-ARM":
+        pointer, index = instance.source.rsplit("#", 1)
+        return f"{pointer}/{index}"
+    return instance.source
 
 
 def _direct_schema_mutant(schema: dict[str, Any], instance: Any) -> dict[str, Any]:
@@ -1553,6 +1628,8 @@ def _classify_structural_binding(
     palette: dict[str, Any],
     synthesizer: SchemaSynthesizer,
     validator_cache: dict[tuple[str, str, str], Draft202012Validator],
+    schema_reachability_cache: dict[str, frozenset[str]] | None = None,
+    baseline_cache: dict[tuple[str, int], bool] | None = None,
 ) -> str:
     root_id = root["rootId"]
     exact_key = ("EXACT", root_id, "")
@@ -1565,8 +1642,33 @@ def _classify_structural_binding(
     resolution = _target_resolution(carrier, row)
     if resolution == "UNRESOLVED_TARGET":
         return "UNRESOLVED_TARGET"
-    if not exact.is_valid(carrier):
+    baseline_key = (root_id, id(carrier))
+    baseline_valid = (
+        baseline_cache.get(baseline_key)
+        if baseline_cache is not None
+        else None
+    )
+    if baseline_valid is None:
+        baseline_valid = exact.is_valid(carrier)
+        if baseline_cache is not None:
+            baseline_cache[baseline_key] = baseline_valid
+    if not baseline_valid:
         return "BASELINE_INVALID"
+    if row["perturbationKind"] in _POSITIVE_UNION_KINDS | _DEEP_PREFLIGHT_KINDS:
+        if schema_reachability_cache is None:
+            reachable = _reachable_schema_pointers(
+                schema, root["wrapperSchemaPointer"]
+            )
+        else:
+            reachable = schema_reachability_cache.get(root_id)
+            if reachable is None:
+                reachable = _reachable_schema_pointers(
+                    schema, root["wrapperSchemaPointer"]
+                )
+                schema_reachability_cache[root_id] = reachable
+        occurrence = _instance_occurrence_pointer(instance)
+        if occurrence is not None and occurrence not in reachable:
+            return "EQUIVALENT_MUTANT"
     if row["perturbationKind"] == "DUPLICATE_RAW_JSON_MEMBER":
         return _duplicate_member_status(carrier, row, exact)
     if row["perturbationKind"] in _POSITIVE_UNION_KINDS:
@@ -1605,6 +1707,13 @@ def _classify_structural_binding(
             validator_cache[local_mutant_key] = local_mutant
         rejected = False
         for candidate in _deep_perturbations(carrier, row, palette):
+            # Mutant admission is the rarer condition and is independent of
+            # the exact-validator result.  Check it first so a constraint
+            # masked by a sibling does not force a full exact-schema walk for
+            # every bounded deep replacement.
+            mutant_admits = mutant.is_valid(candidate)
+            if not mutant_admits and rejected:
+                continue
             try:
                 local_target = _resolve_data_pointer(
                     candidate, row["targetJsonPointer"]
@@ -1618,7 +1727,7 @@ def _classify_structural_binding(
             if exact.is_valid(candidate):
                 continue
             rejected = True
-            if mutant.is_valid(candidate):
+            if mutant_admits:
                 return "SATISFIABLE"
         return "EQUIVALENT_MUTANT" if rejected else "PALETTE_EXHAUSTED"
     if row["perturbationKind"] == "CONDITIONAL_MATRIX_ROW":
@@ -1639,10 +1748,13 @@ def _classify_structural_binding(
     for candidate in _direct_perturbations(
         carrier, row, instance, schema, palette
     ):
+        mutant_admits = mutant.is_valid(candidate)
+        if not mutant_admits and rejected:
+            continue
         if exact.is_valid(candidate):
             continue
         rejected = True
-        if mutant.is_valid(candidate):
+        if mutant_admits:
             return "SATISFIABLE"
     if (
         row["isolationMode"] == "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST"
@@ -1659,7 +1771,7 @@ def derive_structural_isolation_preflight(
 ) -> dict[str, Any]:
     """Classify isolation recipes for the currently selected carrier bindings."""
 
-    _seed_registry, witness_registry = derive_phase_b_registries(
+    seed_registry, witness_registry = derive_phase_b_registries(
         repo_root, contract, evidence_root
     )
     inventory, _inventory_bytes, carriers = _load_phase_a(
@@ -1673,6 +1785,10 @@ def derive_structural_isolation_preflight(
         contract / "APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json"
     )
     roots = _root_rows(reachability)
+    axes = _load_json(
+        contract / "APP-CORE-IFACE-0-STRUCTURAL-AXES-CANDIDATE.json"
+    )
+    rules = {row["id"]: row for row in axes["rules"]}
     synthesizer = SchemaSynthesizer(schema)
     cases = {
         row["caseId"]: row
@@ -1683,9 +1799,30 @@ def derive_structural_isolation_preflight(
         instance.instance_id: instance
         for instance in expand_structural_instances(contract)
     }
-    counts: dict[str, int] = {}
-    failures: list[dict[str, str]] = []
+    seed_id_by_pointer = {
+        row["objectSchemaPointer"]: row["objectSchemaId"]
+        for row in seed_registry["rows"]
+    }
+    object_locations_by_case: dict[str, list[tuple[str, str]]] = {}
+    for case in cases.values():
+        carrier, _raw = carriers[case["caseId"]]
+        root = roots[f"{case['direction']}-{case['operation']}"]
+        object_locations_by_case[case["caseId"]] = [
+            (object_pointer, data_pointer)
+            for object_pointer in case["coveredObjectSchemaPointers"]
+            for data_pointer in synthesizer.target_locations(
+                root, carrier, object_pointer
+            )
+        ]
+
+    selected_counts: dict[str, int] = {}
+    final_counts: dict[str, int] = {}
+    failures: list[dict[str, Any]] = []
+    reselected: list[dict[str, Any]] = []
     validator_cache: dict[tuple[str, str, str], Draft202012Validator] = {}
+    schema_reachability_cache: dict[str, frozenset[str]] = {}
+    baseline_cache: dict[tuple[str, int], bool] = {}
+    prospective_cache: dict[tuple[str, str, str, str | None], list[str]] = {}
     for row in witness_registry["rows"]:
         instance = instances[row["instanceId"]]
         carrier, _raw = carriers[row["carrierCaseId"]]
@@ -1700,24 +1837,102 @@ def derive_structural_isolation_preflight(
             palette,
             synthesizer,
             validator_cache,
+            schema_reachability_cache,
+            baseline_cache,
         )
-        counts[status] = counts.get(status, 0) + 1
-        if status not in {"SATISFIABLE", "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST"}:
-            failures.append(
-                {
-                    "instance_id": row["instanceId"],
-                    "status": status,
-                }
+        selected_counts[status] = selected_counts.get(status, 0) + 1
+        final_status = status
+        if status not in {
+            "SATISFIABLE",
+            "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST",
+        }:
+            candidates = _witness_candidates_for_instance(
+                instance,
+                cases,
+                carriers,
+                roots,
+                synthesizer,
+                prospective_cache,
+                object_locations_by_case,
+                seed_id_by_pointer,
+                axes,
+                rules,
             )
-    if sum(counts.values()) != STRUCTURAL_COUNT:
+            if not candidates or candidates[0][1] != row:
+                raise WitnessGenerationError("isolation candidate order drift")
+            candidate_statuses = {status: 1}
+            selected_candidate: tuple[int, dict[str, Any], str] | None = None
+            for ordinal, (_key, candidate) in enumerate(candidates[1:], 2):
+                candidate_carrier, _raw = carriers[candidate["carrierCaseId"]]
+                candidate_case = cases[candidate["carrierCaseId"]]
+                candidate_root = roots[
+                    f"{candidate_case['direction']}-{candidate_case['operation']}"
+                ]
+                candidate_status = _classify_structural_binding(
+                    candidate_carrier,
+                    candidate,
+                    instance,
+                    schema,
+                    candidate_root,
+                    palette,
+                    synthesizer,
+                    validator_cache,
+                    schema_reachability_cache,
+                    baseline_cache,
+                )
+                candidate_statuses[candidate_status] = (
+                    candidate_statuses.get(candidate_status, 0) + 1
+                )
+                if candidate_status in {
+                    "SATISFIABLE",
+                    "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST",
+                }:
+                    selected_candidate = (ordinal, candidate, candidate_status)
+                    break
+            if selected_candidate is not None:
+                ordinal, candidate, final_status = selected_candidate
+                reselected.append(
+                    {
+                        "candidate_ordinal": ordinal,
+                        "carrier_case_id": candidate["carrierCaseId"],
+                        "instance_id": row["instanceId"],
+                    }
+                )
+            else:
+                if candidate_statuses.get("EQUIVALENT_MUTANT", 0):
+                    final_status = "EQUIVALENT_MUTANT"
+                elif candidate_statuses.get("PALETTE_EXHAUSTED", 0):
+                    final_status = "PALETTE_EXHAUSTED"
+                failures.append(
+                    {
+                        "candidate_count": len(candidates),
+                        "candidate_status_counts": dict(
+                            sorted(candidate_statuses.items())
+                        ),
+                        "instance_id": row["instanceId"],
+                        "status": final_status,
+                    }
+                )
+        final_counts[final_status] = final_counts.get(final_status, 0) + 1
+    if sum(selected_counts.values()) != STRUCTURAL_COUNT or sum(
+        final_counts.values()
+    ) != STRUCTURAL_COUNT:
         raise WitnessGenerationError("isolation preflight count drift")
-    incomplete = counts.get("RECIPE_NOT_IMPLEMENTED", 0) > 0
+    incomplete_statuses = {
+        "BASELINE_INVALID",
+        "RECIPE_NOT_IMPLEMENTED",
+        "UNRESOLVED_TARGET",
+    }
+    incomplete = any(final_counts.get(item, 0) for item in incomplete_statuses)
     return {
-        "classification_counts": dict(sorted(counts.items())),
+        "classification_counts": dict(sorted(final_counts.items())),
         "instance_count": STRUCTURAL_COUNT,
         "instance_set_sha256": witness_registry["instanceSetSha256"],
         "non_satisfiable_rows": failures,
-        "schema": "styx.app-core-iface0.selected-carrier-isolation-preflight.v1",
+        "reselected_count": len(reselected),
+        "reselected_rows": reselected,
+        "schema": "styx.app-core-iface0.carrier-search-isolation-preflight.v1",
+        "selected_classification_counts": dict(sorted(selected_counts.items())),
         "verdict": "INCOMPLETE" if incomplete else "PASS" if not failures else "AMEND_REQUIRED",
     }
 
