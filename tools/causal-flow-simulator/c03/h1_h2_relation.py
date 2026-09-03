@@ -6,11 +6,13 @@ from __future__ import annotations
 import argparse
 from copy import deepcopy
 from dataclasses import dataclass
+import getpass
 from hashlib import sha256
 import os
 from pathlib import Path
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -323,7 +325,12 @@ _H1_MUTATION_SPECS: Final = (
         }
 """,
         """    scalar = int.from_bytes(signature[32:], "little")
-    _ = _ed_mul(scalar) == _ed_add(point_r, _ed_mul(1, point_a))
+    early_challenge = int.from_bytes(
+        sha512(signature[:32] + public + message).digest(), "little"
+    ) % _L
+    _ = _ed_mul(scalar) == _ed_add(
+        point_r, _ed_mul(early_challenge, point_a)
+    )
     if scalar >= _L:
         return {
             "accepted": False,
@@ -335,8 +342,10 @@ _H1_MUTATION_SPECS: Final = (
   if (scalar >= ED_L) return { accepted: false, equationInvocations: 0, guardCode: "NON_CANONICAL_SCALAR" };
 """,
         """  const scalar = littleEndianInteger(signature.subarray(32));
-  const earlyBase = edPoint(15112221349535400772501151409588531511454012693041857206046113283949847762202n, 46316835694926478169428394003475163141307993866256225615783033603165251855960n);
-  void edEqual(edScalarMult(scalar, earlyBase), edAdd(pointR, edScalarMult(1n, pointA)));
+  const earlyPrefix = Buffer.from("302a300506032b6570032100", "hex");
+  try {
+    verifySignature(null, message, createPublicKey({ key: Buffer.concat([earlyPrefix, publicKey]), format: "der", type: "spki" }), signature);
+  } catch {}
   if (scalar >= ED_L) return { accepted: false, equationInvocations: 1, guardCode: "NON_CANONICAL_SCALAR" };
 """,
     ),
@@ -2454,6 +2463,54 @@ def _validate_evidence_set(root: Path) -> dict[str, bytes]:
     return regular
 
 
+def _walk_strings(value: object):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, list):
+        for item in value:
+            yield from _walk_strings(item)
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield key
+            yield from _walk_strings(item)
+
+
+def _validate_report_hygiene(
+    reports: dict[str, bytes], forbidden_identities: tuple[str, ...]
+) -> None:
+    absolute_path = re.compile(
+        r"(?<![A-Za-z0-9_.-])(?:/|\\|[A-Za-z]:[\\/]|\\\\[^\\\s]+[\\/][^\\\s]+)"
+    )
+    measurement = re.compile(
+        r"(?i)(?:elapsed|duration|runtime)\s*[:=]\s*\d|\bpid\s*[:=]\s*\d"
+    )
+    timestamp = re.compile(r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}")
+    runtime_values = tuple(
+        value for value in {socket.gethostname(), getpass.getuser()} if value
+    )
+    identity_needles = tuple(
+        needle
+        for identity in forbidden_identities
+        for needle in {identity, identity[:7]}
+        if len(needle) >= 7
+    )
+    for raw in reports.values():
+        for value in _walk_strings(loads(raw)):
+            _require(not absolute_path.search(value), "canonical report contains absolute path")
+            _require(not measurement.search(value), "canonical report contains runtime measurement")
+            _require(not timestamp.search(value), "canonical report contains timestamp")
+            _require(
+                not any(needle in value for needle in identity_needles),
+                "canonical report contains repository identity",
+            )
+            for runtime_value in runtime_values:
+                tagged = re.search(
+                    rf"(?:^|[=:/\\\s]){re.escape(runtime_value)}(?:$|[=:/\\\s])",
+                    value,
+                )
+                _require(tagged is None, "canonical report contains runtime identity")
+
+
 def _run_checkout_producer(
     checkout: Path,
     candidate: str,
@@ -2558,6 +2615,15 @@ def run_final_gate(
 
     submitted_1 = _validate_evidence_set(evidence[0])
     submitted_2 = _validate_evidence_set(evidence[1])
+    forbidden_identities = (
+        base,
+        candidate,
+        bundle_sha256,
+        issue_body_sha256,
+        *tuple(trees),
+    )
+    _validate_report_hygiene(submitted_1, forbidden_identities)
+    _validate_report_hygiene(submitted_2, forbidden_identities)
     _require(submitted_1 == submitted_2, "two-checkout submitted evidence mismatch")
     with tempfile.TemporaryDirectory(prefix="styx-c03-final-gate-") as tmp:
         regenerated = (Path(tmp) / "one", Path(tmp) / "two")
@@ -2567,6 +2633,8 @@ def run_final_gate(
         _produce_evidence(checkouts[1], regenerated[1], base, candidate)
         regenerated_1 = _validate_evidence_set(regenerated[0])
         regenerated_2 = _validate_evidence_set(regenerated[1])
+        _validate_report_hygiene(regenerated_1, forbidden_identities)
+        _validate_report_hygiene(regenerated_2, forbidden_identities)
         _require(regenerated_1 == regenerated_2, "regenerated evidence mismatch")
         _require(regenerated_1 == submitted_1, "submitted evidence is not reproducible")
     return {
@@ -2650,6 +2718,19 @@ def validate_relation() -> None:
         _require(
             javascript_source.count(spec.javascript_anchor) == 1,
             f"{mutant} JavaScript source anchor",
+        )
+    for name, expected in FROZEN_O14_SHA256.items():
+        path = O14 / name
+        _require(
+            path.is_file() and sha256(path.read_bytes()).hexdigest() == expected,
+            f"frozen O-14 drift:{name}",
+        )
+    corpus = REPO / "conformance/application-protocol/c03"
+    for name, expected in FROZEN_CORPUS_SHA256.items():
+        path = corpus / name
+        _require(
+            path.is_file() and sha256(path.read_bytes()).hexdigest() == expected,
+            f"frozen C0.3 drift:{name}",
         )
     runtime = {
         witness.identifier: witness.expected_code
