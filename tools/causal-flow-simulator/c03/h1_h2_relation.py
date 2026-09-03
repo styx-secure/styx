@@ -2459,6 +2459,26 @@ def _git_text(checkout: Path, *arguments: str) -> str:
     return completed.stdout.strip()
 
 
+def _git_diff_sha256(checkout: Path, base: str, candidate: str) -> str:
+    completed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(checkout),
+            "diff",
+            "--binary",
+            "--full-index",
+            base,
+            candidate,
+            "--",
+        ],
+        check=False,
+        capture_output=True,
+    )
+    _require(completed.returncode == 0, "Git diff evidence command failed")
+    return sha256(completed.stdout).hexdigest()
+
+
 def _clean_checkout(checkout: Path, candidate: str) -> None:
     _require(checkout.is_dir() and not checkout.is_symlink(), "invalid checkout root")
     _require(_git_text(checkout, "rev-parse", "HEAD^{commit}") == candidate, "checkout HEAD mismatch")
@@ -2528,10 +2548,116 @@ def _validate_evidence_set(root: Path) -> dict[str, bytes]:
         for path in entries
     }
     _require(set(regular) == set(EVIDENCE_FILENAMES), "evidence artifact set mismatch")
-    for value in regular.values():
-        loads(value)
+    parsed = {name: loads(value) for name, value in regular.items()}
+
+    def exact_keys(value: object, expected: set[str], label: str) -> None:
+        _require(
+            isinstance(value, dict) and set(value) == expected,
+            f"unknown or missing canonical report field:{label}",
+        )
+
     runtime_python = loads(regular["h1h2-python.json"])
     runtime_javascript = loads(regular["h1h2-javascript.json"])
+    runtime_keys = {
+        "boundaryRows",
+        "connectedRows",
+        "result",
+        "scenarioCount",
+        "schema",
+        "slotRows",
+    }
+    for runtime_name, runtime in (
+        ("python", runtime_python),
+        ("javascript", runtime_javascript),
+    ):
+        exact_keys(runtime, runtime_keys, f"runtime-{runtime_name}")
+        for index, row in enumerate(runtime.get("boundaryRows", [])):
+            exact_keys(
+                row,
+                {
+                    "accepted",
+                    "equationInvocations",
+                    "guardCode",
+                    "rowId",
+                    "scenarioId",
+                },
+                f"runtime-{runtime_name}.boundaryRows[{index}]",
+            )
+        for index, row in enumerate(runtime.get("connectedRows", [])):
+            expected = {
+                "rowId",
+                "scenarioId",
+                "verificationBoundary",
+            }
+            _require(isinstance(row, dict), "invalid connected report row")
+            if "observations" in row:
+                expected |= {"harnessError", "observations"}
+                for observation_index, observation in enumerate(row["observations"]):
+                    exact_keys(
+                        observation,
+                        {
+                            "eventReferenceHex",
+                            "id",
+                            "kBindingAdmission",
+                            "protocolErrorCode",
+                            "stage",
+                        },
+                        f"runtime-{runtime_name}.connectedRows[{index}].observations[{observation_index}]",
+                    )
+            else:
+                expected.add("observation")
+                exact_keys(
+                    row.get("observation"),
+                    {
+                        "apAuthorityResult",
+                        "commitmentMatchVerification",
+                        "commitmentVerification",
+                        "externalEffects",
+                        "geometryPredicate1",
+                        "geometryPredicate2",
+                        "geometryPredicate3",
+                        "geometryPredicate4",
+                        "geometryPredicate5",
+                        "geometryPredicate6",
+                        "geometryPredicate7",
+                        "kBindingAdmission",
+                        "localOutcome",
+                        "outcomeEvaluated",
+                        "postStateDigest",
+                        "preStateDigest",
+                        "referenceVerification",
+                        "remoteClass",
+                        "signatureVerification",
+                        "stage",
+                        "suppliedLengthVerification",
+                        "transcriptVerification",
+                    },
+                    f"runtime-{runtime_name}.connectedRows[{index}].observation",
+                )
+            exact_keys(row, expected, f"runtime-{runtime_name}.connectedRows[{index}]")
+            exact_keys(
+                row.get("verificationBoundary"),
+                {"boundaryInvocations", "equationInvocations"},
+                f"runtime-{runtime_name}.connectedRows[{index}].verificationBoundary",
+            )
+        for index, row in enumerate(runtime.get("slotRows", [])):
+            exact_keys(
+                row,
+                {"lexicalSchedule", "observations", "order", "rowId", "scenarioId"},
+                f"runtime-{runtime_name}.slotRows[{index}]",
+            )
+            for observation_index, observation in enumerate(row["observations"]):
+                exact_keys(
+                    observation,
+                    {
+                        "eventReferenceHex",
+                        "id",
+                        "kBindingAdmission",
+                        "protocolErrorCode",
+                        "stage",
+                    },
+                    f"runtime-{runtime_name}.slotRows[{index}].observations[{observation_index}]",
+                )
     _require(runtime_python == runtime_javascript, "runtime evidence mismatch")
     _require(
         runtime_python.get("scenarioCount") == 126
@@ -2541,7 +2667,24 @@ def _validate_evidence_set(root: Path) -> dict[str, bytes]:
         "runtime evidence cardinality mismatch",
     )
     for runtime in ("python", "javascript"):
-        mutation = loads(regular[f"h1h2-mutations-{runtime}.json"])
+        mutation = parsed[f"h1h2-mutations-{runtime}.json"]
+        exact_keys(
+            mutation,
+            {"killed", "result", "rows", "runtime", "schema"},
+            f"mutations-{runtime}",
+        )
+        for index, row in enumerate(mutation.get("rows", [])):
+            exact_keys(
+                row,
+                {
+                    "detectorId",
+                    "mutantId",
+                    "result",
+                    "runtime",
+                    "sourceDigestChanged",
+                },
+                f"mutations-{runtime}.rows[{index}]",
+            )
         _require(
             mutation.get("runtime") == runtime
             and mutation.get("killed") == 20
@@ -2550,7 +2693,14 @@ def _validate_evidence_set(root: Path) -> dict[str, bytes]:
             and all(row.get("result") == "KILLED" for row in mutation.get("rows", [])),
             "mutation evidence mismatch",
         )
-    regression = loads(regular["h1h2-regression.json"])
+    regression = parsed["h1h2-regression.json"]
+    exact_keys(
+        regression,
+        {"checks", "frozenCorpusFiles", "result", "schema"},
+        "regression",
+    )
+    for index, row in enumerate(regression.get("checks", [])):
+        exact_keys(row, {"id", "result"}, f"regression.checks[{index}]")
     _require(
         regression.get("result") == "PASS"
         and regression.get("frozenCorpusFiles") == 6
@@ -2558,7 +2708,14 @@ def _validate_evidence_set(root: Path) -> dict[str, bytes]:
         == ["generate", "validate", "replay", "node", "cross-runtime", "historical-mutations"],
         "regression evidence mismatch",
     )
-    scope = loads(regular["scope.json"])
+    scope = parsed["scope.json"]
+    exact_keys(
+        scope,
+        {"changedRelation", "copyThresholdPercent", "endpointCount", "result"},
+        "scope",
+    )
+    for index, row in enumerate(scope.get("changedRelation", [])):
+        exact_keys(row, {"paths", "status"}, f"scope.changedRelation[{index}]")
     _require(
         scope.get("result") == "PASS"
         and scope.get("copyThresholdPercent") == 50,
@@ -2716,6 +2873,10 @@ def run_final_gate(
         )
     trees = {_git_text(checkout, "rev-parse", "HEAD^{tree}") for checkout in checkouts}
     _require(len(trees) == 1, "checkout tree mismatch")
+    diff_digests = {
+        _git_diff_sha256(checkout, base, candidate) for checkout in checkouts
+    }
+    _require(len(diff_digests) == 1, "checkout diff identity mismatch")
 
     submitted_1 = _validate_evidence_set(evidence[0])
     submitted_2 = _validate_evidence_set(evidence[1])
@@ -2725,6 +2886,7 @@ def run_final_gate(
         bundle_sha256,
         issue_body_sha256,
         *tuple(trees),
+        *tuple(diff_digests),
     )
     _validate_report_hygiene(submitted_1, forbidden_identities)
     _validate_report_hygiene(submitted_2, forbidden_identities)
