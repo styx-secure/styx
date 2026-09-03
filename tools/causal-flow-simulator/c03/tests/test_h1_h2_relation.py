@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -25,7 +26,13 @@ from corpus_model import (  # noqa: E402
     synthetic_octets,
 )
 from generate_corpus import _application_vector, _event_fields  # noqa: E402
-from h1_h2_relation import run_runtime, slot_cases, validate_relation  # noqa: E402
+from h1_h2_relation import (  # noqa: E402
+    RelationError,
+    _clean_checkout,
+    run_runtime,
+    slot_cases,
+    validate_relation,
+)
 from scenarios import required_witnesses  # noqa: E402
 
 
@@ -285,6 +292,140 @@ class H2AdmissionOrderTests(unittest.TestCase):
 
     def test_complete_relation_is_byte_equivalent_across_runtimes(self) -> None:
         self.assertEqual(run_runtime("python"), run_runtime("javascript"))
+
+
+class FinalGateGitIdentityTests(unittest.TestCase):
+    def test_replace_ref_cannot_make_an_old_tree_look_clean(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="styx-c03-replace-ref-") as tmp:
+            repo = Path(tmp) / "repo"
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(
+                ["git", "-C", str(repo), "config", "user.name", "Styx test"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "config", "user.email", "test@invalid"],
+                check=True,
+            )
+            tracked = repo / "tracked.txt"
+            tracked.write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "add", "tracked.txt"], check=True)
+            subprocess.run(
+                ["git", "-C", str(repo), "commit", "-qm", "base"], check=True
+            )
+            base = subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+            ).strip()
+            tracked.write_text("candidate\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(repo), "commit", "-qam", "candidate"], check=True)
+            candidate = subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+            ).strip()
+            subprocess.run(
+                ["git", "-C", str(repo), "replace", candidate, base], check=True
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "reset", "--hard", "-q", candidate],
+                check=True,
+            )
+            self.assertEqual(
+                subprocess.check_output(
+                    [
+                        "git",
+                        "-C",
+                        str(repo),
+                        "status",
+                        "--porcelain=v1",
+                        "--untracked-files=all",
+                        "--ignored=matching",
+                    ],
+                    text=True,
+                ),
+                "",
+            )
+            with self.assertRaisesRegex(
+                RelationError, "tracked checkout bytes mismatch"
+            ):
+                _clean_checkout(repo, candidate)
+
+    def test_assume_unchanged_cannot_hide_modified_source_bytes(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="styx-c03-assume-unchanged-") as tmp:
+            repo = Path(tmp) / "repo"
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            for key, value in (
+                ("user.name", "Styx test"),
+                ("user.email", "test@invalid"),
+            ):
+                subprocess.run(
+                    ["git", "-C", str(repo), "config", key, value], check=True
+                )
+            tracked = repo / "tracked.txt"
+            tracked.write_text("expected\n", encoding="utf-8")
+            subprocess.run(
+                ["git", "-C", str(repo), "add", "tracked.txt"], check=True
+            )
+            subprocess.run(
+                ["git", "-C", str(repo), "commit", "-qm", "candidate"],
+                check=True,
+            )
+            candidate = subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+            ).strip()
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo),
+                    "update-index",
+                    "--assume-unchanged",
+                    "tracked.txt",
+                ],
+                check=True,
+            )
+            tracked.write_text("malicious\n", encoding="utf-8")
+            self.assertEqual(
+                subprocess.check_output(
+                    ["git", "-C", str(repo), "status", "--porcelain=v1"],
+                    text=True,
+                ),
+                "",
+            )
+            with self.assertRaisesRegex(
+                RelationError, "tracked checkout bytes mismatch"
+            ):
+                _clean_checkout(repo, candidate)
+
+    def test_git_dir_environment_cannot_redirect_checkout_identity(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="styx-c03-git-env-") as tmp:
+            repo = Path(tmp) / "repo"
+            other = Path(tmp) / "other"
+            for path, content in ((repo, "expected\n"), (other, "other\n")):
+                subprocess.run(["git", "init", "-q", str(path)], check=True)
+                subprocess.run(
+                    ["git", "-C", str(path), "config", "user.name", "Styx test"],
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "-C", str(path), "config", "user.email", "test@invalid"],
+                    check=True,
+                )
+                (path / "tracked.txt").write_text(content, encoding="utf-8")
+                subprocess.run(["git", "-C", str(path), "add", "tracked.txt"], check=True)
+                subprocess.run(
+                    ["git", "-C", str(path), "commit", "-qm", "initial"], check=True
+                )
+            candidate = subprocess.check_output(
+                ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+            ).strip()
+            previous = os.environ.get("GIT_DIR")
+            os.environ["GIT_DIR"] = str(other / ".git")
+            try:
+                _clean_checkout(repo, candidate)
+            finally:
+                if previous is None:
+                    os.environ.pop("GIT_DIR", None)
+                else:
+                    os.environ["GIT_DIR"] = previous
 
 
 if __name__ == "__main__":

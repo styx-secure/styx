@@ -7,12 +7,14 @@ import argparse
 from copy import deepcopy
 from dataclasses import dataclass
 import getpass
+from hashlib import new as new_hash
 from hashlib import sha256
 import os
 from pathlib import Path
 import re
 import shutil
 import socket
+import stat
 import subprocess
 import sys
 import tempfile
@@ -2448,12 +2450,41 @@ def _validate_issue_appendix(issue_body: bytes) -> None:
     )
 
 
+def _git_environment() -> dict[str, str]:
+    """Return a deterministic Git environment that cannot replace objects."""
+    environment = {
+        key: value for key, value in os.environ.items() if not key.startswith("GIT_")
+    }
+    environment.update(
+        {
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_NO_REPLACE_OBJECTS": "1",
+        }
+    )
+    return environment
+
+
+def _git_command(checkout: Path, *arguments: str) -> list[str]:
+    return [
+        "git",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        f"core.hooksPath={os.devnull}",
+        "-C",
+        str(checkout),
+        *arguments,
+    ]
+
+
 def _git_text(checkout: Path, *arguments: str) -> str:
     completed = subprocess.run(
-        ["git", "-C", str(checkout), *arguments],
+        _git_command(checkout, *arguments),
         check=False,
         capture_output=True,
         text=True,
+        env=_git_environment(),
     )
     _require(completed.returncode == 0, "Git evidence command failed")
     return completed.stdout.strip()
@@ -2462,10 +2493,9 @@ def _git_text(checkout: Path, *arguments: str) -> str:
 def _git_diff_sha256(checkout: Path, base: str, candidate: str) -> str:
     completed = subprocess.run(
         [
-            "git",
-            "-C",
-            str(checkout),
+            *_git_command(checkout),
             "diff",
+            "--no-ext-diff",
             "--binary",
             "--full-index",
             base,
@@ -2474,14 +2504,70 @@ def _git_diff_sha256(checkout: Path, base: str, candidate: str) -> str:
         ],
         check=False,
         capture_output=True,
+        env=_git_environment(),
     )
     _require(completed.returncode == 0, "Git diff evidence command failed")
     return sha256(completed.stdout).hexdigest()
 
 
+def _git_blob_identity(payload: bytes, algorithm: str) -> str:
+    digest = new_hash(algorithm)
+    digest.update(f"blob {len(payload)}\0".encode("ascii"))
+    digest.update(payload)
+    return digest.hexdigest()
+
+
+def _verify_checkout_tree_bytes(checkout: Path, candidate: str) -> None:
+    algorithm = _git_text(checkout, "rev-parse", "--show-object-format")
+    _require(algorithm in {"sha1", "sha256"}, "unsupported Git object format")
+    completed = subprocess.run(
+        _git_command(
+            checkout,
+            "ls-tree",
+            "-rz",
+            "--full-tree",
+            candidate,
+        ),
+        check=False,
+        capture_output=True,
+        env=_git_environment(),
+    )
+    _require(completed.returncode == 0, "candidate tree is unavailable")
+    for record in completed.stdout.split(b"\0"):
+        if not record:
+            continue
+        metadata, raw_path = record.split(b"\t", 1)
+        mode, kind, expected = metadata.split(b" ", 2)
+        path = checkout / os.fsdecode(raw_path)
+        if kind == b"commit":
+            continue
+        _require(kind == b"blob", "unsupported candidate tree entry")
+        if mode == b"120000":
+            _require(path.is_symlink(), "tracked symlink mismatch")
+            payload = os.fsencode(os.readlink(path))
+        else:
+            _require(
+                mode in {b"100644", b"100755"}
+                and path.is_file()
+                and not path.is_symlink(),
+                "tracked file kind mismatch",
+            )
+            executable = bool(path.stat().st_mode & stat.S_IXUSR)
+            _require(
+                executable == (mode == b"100755"),
+                "tracked executable mode mismatch",
+            )
+            payload = path.read_bytes()
+        _require(
+            _git_blob_identity(payload, algorithm) == expected.decode("ascii"),
+            "tracked checkout bytes mismatch",
+        )
+
+
 def _clean_checkout(checkout: Path, candidate: str) -> None:
     _require(checkout.is_dir() and not checkout.is_symlink(), "invalid checkout root")
     _require(_git_text(checkout, "rev-parse", "HEAD^{commit}") == candidate, "checkout HEAD mismatch")
+    _verify_checkout_tree_bytes(checkout, candidate)
     status = _git_text(
         checkout,
         "status",
@@ -2502,7 +2588,9 @@ def _outside(value: Path, roots: tuple[Path, ...]) -> bool:
     return all(resolved != root and root not in resolved.parents for root in roots)
 
 
-def _verify_bundle(bundle: Path, expected_sha256: str, base: str, candidate: str) -> None:
+def _verify_bundle(
+    bundle: Path, expected_sha256: str, base: str, candidate: str
+) -> tuple[str, str]:
     _require(bundle.is_file() and not bundle.is_symlink(), "invalid bundle")
     _require(sha256(bundle.read_bytes()).hexdigest() == expected_sha256, "bundle digest mismatch")
     listed = subprocess.run(
@@ -2510,6 +2598,7 @@ def _verify_bundle(bundle: Path, expected_sha256: str, base: str, candidate: str
         check=False,
         capture_output=True,
         text=True,
+        env=_git_environment(),
     )
     _require(listed.returncode == 0, "bundle heads unavailable")
     _require(
@@ -2523,6 +2612,7 @@ def _verify_bundle(bundle: Path, expected_sha256: str, base: str, candidate: str
             check=False,
             capture_output=True,
             text=True,
+            env=_git_environment(),
         )
         _require(completed.returncode == 0, "bundle is not independently cloneable")
         for identity in (base, candidate):
@@ -2533,6 +2623,10 @@ def _verify_bundle(bundle: Path, expected_sha256: str, base: str, candidate: str
         _require(
             _git_text(clone, "merge-base", base, candidate) == base,
             "bundle Base ancestry mismatch",
+        )
+        return (
+            _git_text(clone, "rev-parse", f"{candidate}^{{tree}}"),
+            _git_diff_sha256(clone, base, candidate),
         )
 
 
@@ -2779,7 +2873,7 @@ def _run_checkout_producer(
     output: Path,
 ) -> None:
     _clean_checkout(checkout, candidate)
-    environment = dict(os.environ)
+    environment = _git_environment()
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     environment.pop("PYTHONOPTIMIZE", None)
     completed = subprocess.run(
@@ -2853,7 +2947,9 @@ def run_final_gate(
         "Issue body identity mismatch",
     )
     _validate_issue_appendix(issue_body.read_bytes())
-    _verify_bundle(bundle, bundle_sha256, base, candidate)
+    bundle_tree, bundle_diff_digest = _verify_bundle(
+        bundle, bundle_sha256, base, candidate
+    )
 
     checkouts = (checkout_1.resolve(), checkout_2.resolve())
     _require(checkouts[0] != checkouts[1], "checkout roots are not distinct")
@@ -2872,11 +2968,17 @@ def run_final_gate(
             "checkout Base ancestry mismatch",
         )
     trees = {_git_text(checkout, "rev-parse", "HEAD^{tree}") for checkout in checkouts}
-    _require(len(trees) == 1, "checkout tree mismatch")
+    _require(
+        trees == {bundle_tree},
+        "checkout tree does not match the independently verified bundle",
+    )
     diff_digests = {
         _git_diff_sha256(checkout, base, candidate) for checkout in checkouts
     }
-    _require(len(diff_digests) == 1, "checkout diff identity mismatch")
+    _require(
+        diff_digests == {bundle_diff_digest},
+        "checkout diff does not match the independently verified bundle",
+    )
 
     submitted_1 = _validate_evidence_set(evidence[0])
     submitted_2 = _validate_evidence_set(evidence[1])
