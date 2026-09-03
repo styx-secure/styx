@@ -2685,7 +2685,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--evidence-1", type=Path)
     parser.add_argument("--evidence-2", type=Path)
     args = parser.parse_args(argv)
-    validate_relation()
+    if not args.run_detector:
+        validate_relation()
     if args.validate_relation:
         _require(
             args.output is None and args.runtime is None,
