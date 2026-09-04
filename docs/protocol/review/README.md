@@ -279,17 +279,6 @@ reuse lint
   final HEAD.
 <!-- styx-phase-exit-merged-review:v1:end -->
 
-Issue #297 Package A is the bounded bridge from frozen C0.3 evidence to two
-selected implementation edges. Its H1 evidence invokes the guarded signature
-boundary at genesis and event call sites; its H2 evidence admits complete
-candidate slots before applying readiness precedence. The package has a
-literal 126-scenario relation, independent Python/JavaScript reports, signed
-lexical-schedule perturbations, 40 source-mutant/runtime kills and an explicit
-regression proof over the byte-frozen C0.3 corpus. Exact-final acceptance of
-Package A would close only those H1/H2 claims. It would not establish SDK or
-product conformance and would not change the C0.3 demo, product or
-sensitive-use `NO_GO` state by itself.
-
 ## Limits
 
 The model does not prove protocol security, cryptographic soundness,
@@ -332,3 +321,14 @@ only for work separately authorized under Section 9 of the hardening plan. Issue
 itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
 demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
 <!-- styx-protocol-phase-exit-status:v1:end -->
+
+<!-- styx-c03-h1h2-package-a:v4:review-readme:start -->
+### Package-A H1/H2 evidence boundary
+
+The Package-A candidate is limited to test-local C0.3/K conformance-oracle
+repair. It must pass 164 handwritten scenarios in each independent runtime and
+kill 24 source mutants in each runtime while the six public corpus files remain
+byte-identical to Base. These results do not update the public corpus review
+model; Package B, H3, exact-final review and human gates remain blocking. C0.3
+stays `NO_GO`.
+<!-- styx-c03-h1h2-package-a:v4:review-readme:end -->

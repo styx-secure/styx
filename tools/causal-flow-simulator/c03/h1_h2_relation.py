@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 import getpass
 from hashlib import new as new_hash
-from hashlib import sha256
+from hashlib import sha256, sha512
 import os
+import json
 from pathlib import Path
 import re
 import shutil
@@ -34,6 +36,7 @@ from corpus_model import (  # noqa: E402
     ed25519_evidence_counts,
     ed25519_sign,
     ed25519_verify_detailed,
+    encode_commitment,
     encode_event,
     encode_genesis,
     evaluate_k_admission_graph,
@@ -41,8 +44,18 @@ from corpus_model import (  # noqa: E402
     framed_hash,
     reset_ed25519_evidence_counts,
     synthetic_octets,
+    _classify_reference_identities,
 )
-from ed25519_reference import P, Point, add, decode, encode  # noqa: E402
+from ed25519_reference import (  # noqa: E402
+    BASE,
+    P,
+    Point,
+    add,
+    challenge,
+    decode,
+    encode,
+    scalar_mult,
+)
 from generate_corpus import (  # noqa: E402
     _application_vector,
     _event_fields,
@@ -221,6 +234,44 @@ _SLOT_ROWS: Final = (
     ("fork-under-fork", "A>B>D1>D2", "A,B,D1,D2:FORK_EVIDENCE"),
     ("pending-fork-sibling-descendant", "A>B>D", "A,B:FORK_EVIDENCE;D:PENDING_ANCESTOR"),
     ("pending-plus-absent-dependency", "P>X", "P:PENDING_OPENING;X:DEPENDENCY_DEFERRED"),
+    ("valid-signature-alias-01", "V>A>I", "V,A:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_COALESCED_1_EFFECT_1"),
+    ("valid-signature-alias-02", "V>I>A", "V,A:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_COALESCED_1_EFFECT_1"),
+    ("valid-signature-alias-03", "A>V>I", "V,A:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_COALESCED_1_EFFECT_1"),
+    ("valid-signature-alias-04", "A>I>V", "V,A:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_COALESCED_1_EFFECT_1"),
+    ("valid-signature-alias-05", "I>V>A", "V,A:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_COALESCED_1_EFFECT_1"),
+    ("valid-signature-alias-06", "I>A>V", "V,A:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_COALESCED_1_EFFECT_1"),
+    ("invalid-signature-alias-01", "V>B>I", "B:INVALID_0_0;V,I:ADMITTED_1_1"),
+    ("invalid-signature-alias-02", "V>I>B", "B:INVALID_0_0;V,I:ADMITTED_1_1"),
+    ("invalid-signature-alias-03", "B>V>I", "B:INVALID_0_0;V,I:ADMITTED_1_1"),
+    ("invalid-signature-alias-04", "B>I>V", "B:INVALID_0_0;V,I:ADMITTED_1_1"),
+    ("invalid-signature-alias-05", "I>V>B", "B:INVALID_0_0;V,I:ADMITTED_1_1"),
+    ("invalid-signature-alias-06", "I>B>V", "B:INVALID_0_0;V,I:ADMITTED_1_1"),
+    ("verified-opening-alias-01", "O>M>I", "O,M:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_1_1"),
+    ("verified-opening-alias-02", "O>I>M", "O,M:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_1_1"),
+    ("verified-opening-alias-03", "M>O>I", "O,M:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_1_1"),
+    ("verified-opening-alias-04", "M>I>O", "O,M:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_1_1"),
+    ("verified-opening-alias-05", "I>O>M", "O,M:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_1_1"),
+    ("verified-opening-alias-06", "I>M>O", "O,M:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_1_1"),
+    ("wrong-opening-alias-01", "O>W>I", "W:COMMITMENT_MISMATCH_0_0;O,I:ADMITTED_1_1"),
+    ("wrong-opening-alias-02", "O>I>W", "W:COMMITMENT_MISMATCH_0_0;O,I:ADMITTED_1_1"),
+    ("wrong-opening-alias-03", "W>O>I", "W:COMMITMENT_MISMATCH_0_0;O,I:ADMITTED_1_1"),
+    ("wrong-opening-alias-04", "W>I>O", "W:COMMITMENT_MISMATCH_0_0;O,I:ADMITTED_1_1"),
+    ("wrong-opening-alias-05", "I>O>W", "W:COMMITMENT_MISMATCH_0_0;O,I:ADMITTED_1_1"),
+    ("wrong-opening-alias-06", "I>W>O", "W:COMMITMENT_MISMATCH_0_0;O,I:ADMITTED_1_1"),
+    ("true-reference-collision-01", "C1>C2>I", "C1,C2:REFERENCE_COLLISION_UNSUPPORTED;I:UNIQUE"),
+    ("true-reference-collision-02", "C2>C1>I", "C1,C2:REFERENCE_COLLISION_UNSUPPORTED;I:UNIQUE"),
+    ("unauthenticated-correct-opening-01", "M>B_OPEN>I", "M:PENDING_1_1;B_OPEN:INVALID_0_0;I:ADMITTED_1_1"),
+    ("unauthenticated-correct-opening-02", "M>I>B_OPEN", "M:PENDING_1_1;B_OPEN:INVALID_0_0;I:ADMITTED_1_1"),
+    ("unauthenticated-correct-opening-03", "B_OPEN>M>I", "M:PENDING_1_1;B_OPEN:INVALID_0_0;I:ADMITTED_1_1"),
+    ("unauthenticated-correct-opening-04", "B_OPEN>I>M", "M:PENDING_1_1;B_OPEN:INVALID_0_0;I:ADMITTED_1_1"),
+    ("unauthenticated-correct-opening-05", "I>M>B_OPEN", "M:PENDING_1_1;B_OPEN:INVALID_0_0;I:ADMITTED_1_1"),
+    ("unauthenticated-correct-opening-06", "I>B_OPEN>M", "M:PENDING_1_1;B_OPEN:INVALID_0_0;I:ADMITTED_1_1"),
+    ("wrong-opening-cannot-supply-01", "M>W>I", "M:PENDING_1_1;W:COMMITMENT_MISMATCH_0_0;I:ADMITTED_1_1"),
+    ("wrong-opening-cannot-supply-02", "M>I>W", "M:PENDING_1_1;W:COMMITMENT_MISMATCH_0_0;I:ADMITTED_1_1"),
+    ("wrong-opening-cannot-supply-03", "W>M>I", "M:PENDING_1_1;W:COMMITMENT_MISMATCH_0_0;I:ADMITTED_1_1"),
+    ("wrong-opening-cannot-supply-04", "W>I>M", "M:PENDING_1_1;W:COMMITMENT_MISMATCH_0_0;I:ADMITTED_1_1"),
+    ("wrong-opening-cannot-supply-05", "I>M>W", "M:PENDING_1_1;W:COMMITMENT_MISMATCH_0_0;I:ADMITTED_1_1"),
+    ("wrong-opening-cannot-supply-06", "I>W>M", "M:PENDING_1_1;W:COMMITMENT_MISMATCH_0_0;I:ADMITTED_1_1"),
 )
 H2_SLOTS: Final = tuple(
     RelationRow(
@@ -254,6 +305,10 @@ MUTANTS: Final = (
     "M-H2-ANY-PENDING-DEP",
     "M-H1-GENESIS-BYPASS-BOUNDARY",
     "M-H1-GRANT-KEY-EAGER-REJECT",
+    "M-H2-GLOBAL-REFERENCE-ABORT",
+    "M-H2-ALIAS-BEFORE-AUTH",
+    "M-H2-ALIAS-POISON",
+    "M-H2-ALIAS-MULTI-EFFECT",
 )
 
 # Exact Appendix-A prose is provider-owned input, not an oracle generated by
@@ -301,6 +356,13 @@ APPENDIX_SLOT_OBSERVATIONS: Final = {
     "A,B fork at sequence 1; D1 predecessor A and D2 predecessor B share the credential/sequence-2 slot; A,B,D1,D2 => FORK_EVIDENCE": "A,B,D1,D2:FORK_EVIDENCE",
     "A REQUIRED without opening and B is its sibling; A,B => FORK_EVIDENCE; authenticated D depending on A => PENDING_ANCESTOR": "A,B:FORK_EVIDENCE;D:PENDING_ANCESTOR",
     "P => PENDING_OPENING; independently authenticated X names P and one never-presented dependency; X => DEPENDENCY_DEFERRED S4, not PENDING_ANCESTOR": "P:PENDING_OPENING;X:DEPENDENCY_DEFERRED",
+    "valid signature alias coalesces once": "V,A:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_COALESCED_1_EFFECT_1",
+    "invalid signature alias cannot poison": "B:INVALID_0_0;V,I:ADMITTED_1_1",
+    "verified opening alias supplies the logical event": "O,M:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_1_1",
+    "wrong opening alias cannot poison": "W:COMMITMENT_MISMATCH_0_0;O,I:ADMITTED_1_1",
+    "true collision is privately classified": "C1,C2:REFERENCE_COLLISION_UNSUPPORTED;I:UNIQUE",
+    "unauthenticated opening supplies nothing": "M:PENDING_1_1;B_OPEN:INVALID_0_0;I:ADMITTED_1_1",
+    "wrong opening supplies nothing": "M:PENDING_1_1;W:COMMITMENT_MISMATCH_0_0;I:ADMITTED_1_1",
 }
 
 APPENDIX_MUTANT_DESCRIPTIONS: Final = {
@@ -324,6 +386,10 @@ APPENDIX_MUTANT_DESCRIPTIONS: Final = {
     "M-H2-ANY-PENDING-DEP": "let one pending dependency hide another permanently rejected or absent dependency",
     "M-H1-GENESIS-BYPASS-BOUNDARY": "verify preaccepted or disconnected GENESIS without the selected guarded boundary",
     "M-H1-GRANT-KEY-EAGER-REJECT": "reject an authenticated exact-width GRANT solely because its carried grantee key fails point-membership guards under the selected lazy rule",
+    "M-H2-GLOBAL-REFERENCE-ABORT": "abort connected evaluation instead of attributing each multi-presentation outcome per record",
+    "M-H2-ALIAS-BEFORE-AUTH": "let one presentation authenticate another before all wrapper predicates are checked",
+    "M-H2-ALIAS-POISON": "let an invalid signature or wrong opening suppress a valid presentation of the same event",
+    "M-H2-ALIAS-MULTI-EFFECT": "insert one K-admitted logical reference or fork member more than once because it has valid aliases",
 }
 
 DETECTORS: Final = {
@@ -347,6 +413,10 @@ DETECTORS: Final = {
     "M-H2-ANY-PENDING-DEP": ("slot", 61),
     "M-H1-GENESIS-BYPASS-BOUNDARY": ("connected", 5),
     "M-H1-GRANT-KEY-EAGER-REJECT": ("connected", 21),
+    "M-H2-GLOBAL-REFERENCE-ABORT": ("slot", 62),
+    "M-H2-ALIAS-BEFORE-AUTH": ("slot", 68),
+    "M-H2-ALIAS-POISON": ("slot", 68),
+    "M-H2-ALIAS-MULTI-EFFECT": ("slot", 62),
 }
 
 
@@ -354,9 +424,9 @@ _H1_MUTATION_SPECS: Final = (
     MutationSpec(
         "M-H1-A-CANONICAL",
         "        point_a = _ed_decode(public)\n",
-        "        point_a = _ed_decode(public if int.from_bytes(public, \"little\") < _P else bytes(32))\n",
+        "        point_a = _ed_decode(public, enforce_canonical=False)\n",
         "  try { pointA = edDecode(publicKey); }\n",
-        "  try { pointA = edDecode(littleEndianInteger(publicKey) >= ED_P ? Buffer.alloc(32) : publicKey); }\n",
+        "  try { pointA = edDecode(publicKey, false); }\n",
     ),
     MutationSpec(
         "M-H1-A-ORDER",
@@ -368,9 +438,9 @@ _H1_MUTATION_SPECS: Final = (
     MutationSpec(
         "M-H1-R-CANONICAL",
         "        point_r = _ed_decode(signature[:32])\n",
-        "        point_r = _ed_decode(signature[:32] if int.from_bytes(signature[:32], \"little\") < _P else bytes(32))\n",
+        "        point_r = _ed_decode(signature[:32], enforce_canonical=False)\n",
         "  try { pointR = edDecode(signature.subarray(0, 32)); }\n",
-        "  try { pointR = edDecode(littleEndianInteger(signature.subarray(0, 32)) >= ED_P ? Buffer.alloc(32) : signature.subarray(0, 32)); }\n",
+        "  try { pointR = edDecode(signature.subarray(0, 32), false); }\n",
     ),
     MutationSpec(
         "M-H1-R-ORDER",
@@ -423,9 +493,9 @@ _H1_MUTATION_SPECS: Final = (
     ),
     MutationSpec(
         "M-H1-GUARD-ONLY-ACCEPT",
-        "    accepted = _ed_mul(scalar) == _ed_add(point_r, _ed_mul(challenge, point_a))\n",
+        "    accepted = selected_equation()\n",
         "    accepted = True\n",
-        "    const accepted = verifySignature(null, message, createPublicKey({ key: Buffer.concat([prefix, publicKey]), format: \"der\", type: \"spki\" }), signature);\n",
+        "    const accepted = selectedEquation();\n",
         "    const accepted = true;\n",
     ),
     MutationSpec(
@@ -678,6 +748,206 @@ _H2_MUTATION_SPECS: Final = (
     ),
 )
 
+# V4 supersedes the six source anchors affected by presentation-indexed graph
+# processing and appends four independently killed alias/collision mutants.
+_V4_SUPERSEDED_MUTANTS: Final = frozenset(
+    {
+        "M-H2-INCLUDE-K-REJECTED",
+        "M-H2-ARRIVAL-WINNER",
+        "M-H2-PENDING-OUTRANKS-FORK",
+        "M-H2-PENDING-AS-MISSING",
+        "M-H2-SKIP-AUTH-UNDER-PENDING",
+        "M-H2-ANY-PENDING-DEP",
+    }
+)
+_H2_MUTATION_SPECS = tuple(
+    spec for spec in _H2_MUTATION_SPECS
+    if spec.identifier not in _V4_SUPERSEDED_MUTANTS
+) + (
+    MutationSpec(
+        "M-H2-INCLUDE-K-REJECTED",
+        """                    if (
+                        not transition_input_is_compatible(local)
+                        and not local_pending
+                    ):
+                        presentation_rejected[identifier] = ProtocolError(
+                            str(local_code or "INVALID"),
+                            str(local.get("stage", "S3_KERNEL_STRUCTURAL")),
+                        )
+""",
+        """                    if (
+                        not transition_input_is_compatible(local)
+                        and not local_pending
+                    ):
+                        pass
+""",
+        """          if (!transitionInputIsCompatible(local) && !localPending) {
+            presentationRejected.set(identifier, {
+              admitted: false,
+              code: local.localOutcome ?? "INVALID",
+              stage: local.stage ?? "S3_KERNEL_STRUCTURAL",
+            });
+          }
+""",
+        """          if (!transitionInputIsCompatible(local) && !localPending) {
+            // Mutant: include this K-rejected presentation.
+          }
+""",
+    ),
+    MutationSpec(
+        "M-H2-ARRIVAL-WINNER",
+        "        if error is None and reference in forced_forks:\n",
+        "        if error is None and reference in forced_forks and identifier != next(iter(presentations)):\n",
+        "      if (error === undefined && forcedForks.has(reference)) {\n",
+        "      if (error === undefined && forcedForks.has(reference) && identifier !== presentations.keys().next().value) {\n",
+    ),
+    MutationSpec(
+        "M-H2-PENDING-OUTRANKS-FORK",
+        """        if error is None and reference in forced_forks:
+            error = ProtocolError("FORK_EVIDENCE", "EVENT_LOCAL", admitted=True)
+        elif error is None and logical["localPending"]:
+            error = ProtocolError("PENDING_OPENING", "EVENT_LOCAL", admitted=True)
+""",
+        """        if error is None and logical["localPending"]:
+            error = ProtocolError("PENDING_OPENING", "EVENT_LOCAL", admitted=True)
+        elif error is None and reference in forced_forks:
+            error = ProtocolError("FORK_EVIDENCE", "EVENT_LOCAL", admitted=True)
+""",
+        """      if (error === undefined && forcedForks.has(reference)) {
+        error = { admitted: true, code: "FORK_EVIDENCE", stage: "EVENT_LOCAL" };
+      } else if (error === undefined && logical.localPending) {
+        error = { admitted: true, code: "PENDING_OPENING", stage: "EVENT_LOCAL" };
+""",
+        """      if (error === undefined && logical.localPending) {
+        error = { admitted: true, code: "PENDING_OPENING", stage: "EVENT_LOCAL" };
+      } else if (error === undefined && forcedForks.has(reference)) {
+        error = { admitted: true, code: "FORK_EVIDENCE", stage: "EVENT_LOCAL" };
+""",
+    ),
+    MutationSpec(
+        "M-H2-PENDING-AS-MISSING",
+        "            absent = required - set(logical_groups)\n",
+        "            absent = (required - set(logical_groups)) | {value for value in required if value in admitted and admitted[value][\"pendingLineage\"]}\n",
+        "      const absent = [...required].some(value => !logicalGroups.has(value));\n",
+        "      const absent = [...required].some(value => !logicalGroups.has(value) || admitted.get(value)?.pendingLineage === true);\n",
+    ),
+    MutationSpec(
+        "M-H2-SKIP-AUTH-UNDER-PENDING",
+        """            for identifier in sorted(group["presentationIds"]):
+                if identifier not in local_results:
+""",
+        """            for identifier in sorted(group["presentationIds"]):
+                if any(value in admitted and admitted[value]["pendingLineage"] for value in required):
+                    local_results[identifier] = ({"localOutcome": None}, False)
+                if identifier not in local_results:
+""",
+        """      for (const identifier of [...group.presentationIds].sort()) {
+        if (!localResults.has(identifier)) {
+""",
+        """      for (const identifier of [...group.presentationIds].sort()) {
+        if ([...required].some(value => admitted.get(value)?.pendingLineage === true)) {
+          localResults.set(identifier, { local: { localOutcome: null }, localPending: false });
+        }
+        if (!localResults.has(identifier)) {
+""",
+    ),
+    MutationSpec(
+        "M-H2-ANY-PENDING-DEP",
+        """            absent = required - set(logical_groups)
+            failed = required & set(logical_rejected)
+            if absent or failed:
+""",
+        """            absent = required - set(logical_groups)
+            failed = required & set(logical_rejected)
+            if any(value in admitted and admitted[value]["pendingLineage"] for value in required):
+                admitted[reference] = {
+                    "fields": fields,
+                    "k1PresentationIds": tuple(eligible),
+                    "localPending": not ready,
+                    "logicalEventEffectCount": 1,
+                    "pendingLineage": True,
+                    "record": presentations[(ready or eligible)[0]]["record"],
+                }
+                pending.remove(reference)
+                progress = True
+                continue
+            if absent or failed:
+""",
+        """      const absent = [...required].some(value => !logicalGroups.has(value));
+      const failed = [...required].some(value => logicalRejected.has(value));
+      if (absent || failed) {
+""",
+        """      const absent = [...required].some(value => !logicalGroups.has(value));
+      const failed = [...required].some(value => logicalRejected.has(value));
+      if ([...required].some(value => admitted.get(value)?.pendingLineage === true)) {
+        admitted.set(reference, {
+          fields, k1PresentationIds: eligible, localPending: ready.length === 0,
+          logicalEventEffectCount: 1, pendingLineage: true,
+          record: presentations.get((ready.length > 0 ? ready : eligible)[0]).record,
+        });
+        pending.delete(reference); progress = true; continue;
+      }
+      if (absent || failed) {
+""",
+    ),
+    MutationSpec(
+        "M-H2-GLOBAL-REFERENCE-ABORT",
+        "        group[\"presentationIds\"].append(identifier)\n",
+        "        if group[\"presentationIds\"]:\n            raise ProtocolError(\"REFERENCE_COLLISION_UNSUPPORTED\")\n        group[\"presentationIds\"].append(identifier)\n",
+        "    logicalGroups.get(presentation.reference).presentationIds.push(identifier);\n",
+        "    if (logicalGroups.get(presentation.reference).presentationIds.length > 0) throw new ProtocolError(\"REFERENCE_COLLISION_UNSUPPORTED\");\n    logicalGroups.get(presentation.reference).presentationIds.push(identifier);\n",
+    ),
+    MutationSpec(
+        "M-H2-ALIAS-BEFORE-AUTH",
+        """                    if (
+                        not transition_input_is_compatible(local)
+                        and not local_pending
+                    ):
+""",
+        """                    if (
+                        not transition_input_is_compatible(local)
+                        and not local_pending
+                        and len(group["presentationIds"]) == 1
+                    ):
+""",
+        "          if (!transitionInputIsCompatible(local) && !localPending) {\n",
+        "          if (!transitionInputIsCompatible(local) && !localPending && group.presentationIds.length === 1) {\n",
+    ),
+    MutationSpec(
+        "M-H2-ALIAS-POISON",
+        """            if not eligible:
+                first = sorted(group["presentationIds"])[0]
+""",
+        """            if any(value in presentation_rejected for value in group["presentationIds"]):
+                first = next(value for value in sorted(group["presentationIds"]) if value in presentation_rejected)
+                logical_rejected[reference] = presentation_rejected[first]
+                pending.remove(reference)
+                progress = True
+                continue
+            if not eligible:
+                first = sorted(group["presentationIds"])[0]
+""",
+        """      if (eligible.length === 0) {
+        logicalRejected.set(reference, presentationRejected.get([...group.presentationIds].sort()[0]));
+""",
+        """      if (group.presentationIds.some(value => presentationRejected.has(value))) {
+        const firstRejected = [...group.presentationIds].sort().find(value => presentationRejected.has(value));
+        logicalRejected.set(reference, presentationRejected.get(firstRejected));
+        pending.delete(reference); progress = true; continue;
+      }
+      if (eligible.length === 0) {
+        logicalRejected.set(reference, presentationRejected.get([...group.presentationIds].sort()[0]));
+""",
+    ),
+    MutationSpec(
+        "M-H2-ALIAS-MULTI-EFFECT",
+        '                "logicalEventEffectCount": 1,\n',
+        '                "logicalEventEffectCount": len(eligible),\n',
+        "        logicalEventEffectCount: 1,\n",
+        "        logicalEventEffectCount: eligible.length,\n",
+    ),
+)
+
 MUTATION_SPECS: Final = {
     spec.identifier: spec for spec in (*_H1_MUTATION_SPECS, *_H2_MUTATION_SPECS)
 }
@@ -699,6 +969,13 @@ FROZEN_O14_SHA256: Final = {
 RATIFIED_ISSUE_BODY_SHA256: Final = (
     "493eb32b811505bb148a16d216bc8c61036abf043d51dbae988685e00ff75148"
 )
+RATIFICATION_COMMENT_ID: Final = 5539629327
+RATIFICATION_COMMENT_BODY_SHA256: Final = (
+    "ded887f1eaa945b76e3daa6023e6046ee5bad5a86a48b59f79c6ae30f0028951"
+)
+RATIFICATION_V4_SHA256: Final = (
+    "ff4eb914e3381540d1a104dc11b5c172c6854d161cf59494fb2ea3eaa6c539e8"
+)
 EVIDENCE_FILENAMES: Final = (
     "h1h2-python.json",
     "h1h2-javascript.json",
@@ -706,6 +983,87 @@ EVIDENCE_FILENAMES: Final = (
     "h1h2-mutations-javascript.json",
     "h1h2-regression.json",
     "scope.json",
+)
+PACKAGE_A_BASE_PINS: Final = {
+    "tools/causal-flow-simulator/c03/corpus_model.py": "c5fae0f950cc8f9691a95d8231cc88e6c43c5e1e74b797d716928b6c8f5b1558",
+    "tools/causal-flow-simulator/c03/node_adapter.mjs": "fc52c0800fab4c7cf75785b962ba09ffd67d06cb0b7bd02e850d6f13b0868da0",
+    "tools/causal-flow-simulator/c03/README.md": "bd7f0459836c07d849780789b7ba7b11107cd853921b185838c3a7b9db575d3c",
+    "tools/causal-flow-simulator/c03/scope_guard.py": "434c0b5276a0aba79cfc8d2b3cc56c4e337c58c6415db0ced2f9f9339aed4c66",
+    "tools/causal-flow-simulator/c03/tests/test_scope_guard.py": "208dd5995f2518bd1245cc6968bc6acc9c0d8686d620352d16006c8c12846011",
+    "tools/causal-flow-simulator/c03/tests/test_replay.py": "f1566d7412b16f3210b17c8e076c7d836e7693b7404c9af14a6ac1e6293b56ab",
+    "docs/protocol/protocol-hardening-plan.md": "21033486045cfcfc0947b8b516489d1683fe2ec3b48a184faa068bf1777ad0bf",
+    "docs/protocol/review/README.md": "d355ad16b2025240dadedbf2ca6ca1b78a5036c8ff2a727cf19d48414299b050",
+}
+EXACT_RECONSTRUCTED_PINS: Final = {
+    "tools/causal-flow-simulator/c03/README.md": "5f81a81f17e1e3ec4dd06a0e898730920bebb41a5def6bd53c716710a6921262",
+    "docs/protocol/protocol-hardening-plan.md": "2488352936788767341d8e2c902d6faabe22a3d5b30aa49b3b0af2c3e478b39c",
+    "docs/protocol/review/README.md": "749dd8869f437b58b0b090df50974afe40759e8e9759d120e2089c6cef705e9a",
+    "tools/causal-flow-simulator/c03/scope_guard.py": "659174150266eee3c3b82048c146fdc3cef3b7a2aba48206443c210922d12975",
+    "tools/causal-flow-simulator/c03/tests/test_scope_guard.py": "555d222f39f55549919ce2e46081011c92ae1a7f5cd4d072795f1c2e8fe5bbff",
+}
+PACKAGE_A_NEW: Final = frozenset(
+    {
+        "tools/causal-flow-simulator/c03/h1_h2_relation.py",
+        "tools/causal-flow-simulator/c03/tests/test_h1_h2_relation.py",
+    }
+)
+PACKAGE_A_ALLOWED: Final = frozenset(PACKAGE_A_BASE_PINS) | PACKAGE_A_NEW
+TEP_FILENAMES: Final = (
+    "ISSUE_297_REST.json",
+    "ISSUE_297_BODY.txt",
+    "RATIFICATION_COMMENT_REST.json",
+    "RATIFICATION_COMMENT_BODY.txt",
+    "DRAFT_PR_REST.json",
+    "DRAFT_PR_BODY.txt",
+    "CANDIDATE.bundle",
+    "CANDIDATE.diff",
+    "TOOL_VERSIONS.txt",
+    "SCOPE_PREFLIGHT_1.log",
+    "SCOPE_PREFLIGHT_2.log",
+    "REQUIRED_COMMANDS_1.log",
+    "REQUIRED_COMMANDS_2.log",
+    "MUTATIONS_PYTHON_1.log",
+    "MUTATIONS_PYTHON_2.log",
+    "MUTATIONS_JAVASCRIPT_1.log",
+    "MUTATIONS_JAVASCRIPT_2.log",
+    "FINAL_GATE.log",
+    "FINAL_GATE.json",
+    "H1H2_PYTHON_1.json",
+    "H1H2_PYTHON_2.json",
+    "H1H2_JAVASCRIPT_1.json",
+    "H1H2_JAVASCRIPT_2.json",
+    "H1H2_MUTATIONS_PYTHON_1.json",
+    "H1H2_MUTATIONS_PYTHON_2.json",
+    "H1H2_MUTATIONS_JAVASCRIPT_1.json",
+    "H1H2_MUTATIONS_JAVASCRIPT_2.json",
+    "H1H2_REGRESSION_1.json",
+    "H1H2_REGRESSION_2.json",
+    "SCOPE_1.json",
+    "SCOPE_2.json",
+    "CODEX_RECONCILIATION.md",
+    "PACKAGE_SCHEMA.txt",
+    "SHA256SUMS.txt",
+)
+TOOL_NAMES: Final = ("git", "python3", "node", "diff", "sha256sum")
+REQUIRED_COMMAND_IDS: Final = (
+    "PREFLIGHT",
+    "VALIDATE_RELATION",
+    "UNITTEST_C03",
+    "RUN_H1H2_PYTHON",
+    "RUN_H1H2_JAVASCRIPT",
+    "RUN_H1H2_MUTATIONS_PYTHON",
+    "RUN_H1H2_MUTATIONS_JAVASCRIPT",
+    "RUN_H1H2_REGRESSION",
+    "GENERATE_CORPUS",
+    "VALIDATE_CORPUS",
+    "REPLAY_CORPUS",
+    "NODE_CORPUS",
+    "CROSS_RUNTIME",
+    "CORPUS_MUTATIONS",
+    "VALIDATE_REVIEW_MODEL",
+    "DIFF_GENERATED_CORPUS",
+    "GIT_DIFF_CHECK",
+    "FINAL_GATE",
 )
 
 
@@ -1081,7 +1439,9 @@ def _project_graph_case(case: dict) -> dict:
     reset_ed25519_evidence_counts()
     harness_error = None
     try:
-        observations = evaluate_k_admission_graph(case["genesis"], case["records"])
+        observations = evaluate_k_admission_graph(
+            case["genesis"], case["records"], presentation_evidence=True
+        )
     except Exception as error:  # bounded harness evidence, normalized below
         observations = []
         harness_error = str(error)
@@ -1427,6 +1787,187 @@ def _retag_slot_case(
         )
         return result
     raise RelationError(f"{case['row'].row_id} lexical scheduler exhausted")
+
+
+def _alternate_valid_signature(record: dict, seed_label: str) -> str:
+    seed = synthetic_octets(seed_label, 32)
+    message = bytes.fromhex(record["transcriptHex"])
+    expanded = sha512(seed).digest()
+    clamped = bytearray(expanded[:32])
+    clamped[0] &= 248
+    clamped[31] &= 63
+    clamped[31] |= 64
+    secret = int.from_bytes(clamped, "little")
+    public = encode(scalar_mult(secret, BASE))
+    r_rfc8032 = int.from_bytes(
+        sha512(expanded[32:] + message).digest(), "little"
+    ) % _L
+    r_alias = (r_rfc8032 + 1) % _L
+    _require(r_alias not in {0, r_rfc8032}, "invalid deterministic alias nonce")
+    encoded_r = encode(scalar_mult(r_alias, BASE))
+    scalar = (
+        r_alias + challenge(encoded_r, public, message) * secret
+    ) % _L
+    signature = encoded_r + scalar.to_bytes(32, "little")
+    _require(
+        public.hex() == record["binding"]["verificationKeyHex"]
+        and signature.hex() != record["signatureHex"]
+        and ed25519_verify_detailed(public, signature, message)["accepted"],
+        "deterministic alias signature",
+    )
+    return signature.hex()
+
+
+def _new_presentation_case(
+    row: RelationRow,
+    genesis: dict,
+    setup: list[dict],
+    actor_a: dict,
+    actor_b: dict,
+    grant_a: dict,
+    grant_b: dict,
+    required_source: dict,
+    family: str,
+    *,
+    left_first: bool,
+) -> dict:
+    for nonce in range(1024):
+        logical_fields = _event_fields(
+            f"{row.scenario_id}-logical",
+            sequence=1,
+            predecessor=actor_a["eventReferenceHex"],
+            credential=bytes.fromhex(grant_a["eventReferenceHex"]),
+            context=bytes.fromhex(genesis["fields"]["contextIdentifierHex"]),
+            genesis_reference=bytes.fromhex(genesis["genesisReferenceHex"]),
+        )
+        if family in {
+            "opening",
+            "wrong-opening-alias",
+            "unauthenticated-opening",
+            "wrong-opening",
+        }:
+            source_content = required_source["fields"]["content"]
+            source_opening = required_source["opening"]
+            supplied = bytes.fromhex(source_opening["contentHex"])
+            computed = encode_commitment(
+                profile_id=logical_fields["applicationProfileId"],
+                profile_version=logical_fields["applicationProfileVersion"],
+                context=bytes.fromhex(logical_fields["contextIdentifierHex"]),
+                credential=bytes.fromhex(logical_fields["credentialIdentifierHex"]),
+                sequence=logical_fields["authorSequence"],
+                content_type=source_content["contentType"],
+                content=supplied,
+                randomizer=bytes.fromhex(source_opening["randomizerHex"]),
+                chunk_size=(source_content.get("geometry") or {}).get("chunkSize"),
+            )
+            logical_fields["content"] = {
+                "class": "REQUIRED",
+                "commitmentHex": computed["commitmentHex"],
+                "contentType": source_content["contentType"],
+                "exactLength": len(supplied),
+                "geometry": computed["geometry"],
+                "shape": computed["shape"],
+            }
+        logical_fields["transitionBlockHex"] = synthetic_octets(
+            f"package-a/presentation/{row.row_id}/{nonce}/logical", 12
+        ).hex()
+        logical = _application_vector(
+            f"{row.scenario_id}-logical", logical_fields, "k-join/actor-a"
+        )
+        independent_fields = _event_fields(
+            f"{row.scenario_id}-independent",
+            sequence=1,
+            predecessor=actor_b["eventReferenceHex"],
+            credential=bytes.fromhex(grant_b["eventReferenceHex"]),
+            context=bytes.fromhex(genesis["fields"]["contextIdentifierHex"]),
+            genesis_reference=bytes.fromhex(genesis["genesisReferenceHex"]),
+        )
+        independent_fields["transitionBlockHex"] = synthetic_octets(
+            f"package-a/presentation/{row.row_id}/{nonce}/independent", 12
+        ).hex()
+        independent = _application_vector(
+            f"{row.scenario_id}-I", independent_fields, "k-join/actor-b"
+        )
+        if (
+            (logical["eventReferenceHex"] < independent["eventReferenceHex"])
+            != left_first
+        ):
+            continue
+
+        named: dict[str, dict]
+        expected: dict[str, str | None]
+        if family == "valid-alias":
+            valid = deepcopy(logical)
+            valid["id"] = f"{row.scenario_id}-V"
+            alias = deepcopy(logical)
+            alias["id"] = f"{row.scenario_id}-A"
+            alias["signatureHex"] = _alternate_valid_signature(
+                alias, "k-join/actor-a"
+            )
+            named = {"V": valid, "A": alias, "I": independent}
+            expected = {valid["id"]: None, alias["id"]: None, independent["id"]: None}
+        elif family == "invalid-alias":
+            valid = deepcopy(logical)
+            valid["id"] = f"{row.scenario_id}-V"
+            bad = deepcopy(logical)
+            bad["id"] = f"{row.scenario_id}-B"
+            damaged = bytearray.fromhex(bad["signatureHex"])
+            damaged[-1] ^= 1
+            bad["signatureHex"] = damaged.hex()
+            named = {"V": valid, "B": bad, "I": independent}
+            expected = {valid["id"]: None, bad["id"]: "INVALID", independent["id"]: None}
+        else:
+            missing = deepcopy(logical)
+            missing["id"] = f"{row.scenario_id}-M"
+            opened = deepcopy(logical)
+            opened["id"] = f"{row.scenario_id}-O"
+            opened["opening"] = deepcopy(required_source["opening"])
+            if family == "opening":
+                named = {"O": opened, "M": missing, "I": independent}
+                expected = {opened["id"]: None, missing["id"]: None, independent["id"]: None}
+            elif family == "wrong-opening-alias":
+                hostile = deepcopy(opened)
+                hostile["id"] = f"{row.scenario_id}-W"
+                damaged = bytearray.fromhex(hostile["opening"]["contentHex"])
+                damaged[0] ^= 1
+                hostile["opening"]["contentHex"] = damaged.hex()
+                named = {"O": opened, "W": hostile, "I": independent}
+                expected = {
+                    opened["id"]: None,
+                    hostile["id"]: "COMMITMENT_MISMATCH",
+                    independent["id"]: None,
+                }
+            else:
+                hostile = deepcopy(opened)
+                if family == "unauthenticated-opening":
+                    hostile["id"] = f"{row.scenario_id}-B_OPEN"
+                    damaged = bytearray.fromhex(hostile["signatureHex"])
+                    damaged[-1] ^= 1
+                    hostile["signatureHex"] = damaged.hex()
+                    label, code = "B_OPEN", "INVALID"
+                else:
+                    hostile["id"] = f"{row.scenario_id}-W"
+                    damaged = bytearray.fromhex(hostile["opening"]["contentHex"])
+                    damaged[0] ^= 1
+                    hostile["opening"]["contentHex"] = damaged.hex()
+                    label, code = "W", "COMMITMENT_MISMATCH"
+                named = {"M": missing, label: hostile, "I": independent}
+                expected = {
+                    missing["id"]: "PENDING_OPENING",
+                    hostile["id"]: code,
+                    independent["id"]: None,
+                }
+        ordered = [named[label] for label in row.order]
+        return {
+            "expected": expected,
+            "genesis": genesis,
+            "labelIds": {label: value["id"] for label, value in named.items()},
+            "lexicalSchedule": "LEFT_LT_RIGHT" if left_first else "LEFT_GT_RIGHT",
+            "records": [*setup, *ordered],
+            "row": row,
+            "targets": {value["id"] for value in ordered},
+        }
+    raise RelationError(f"{row.row_id} presentation scheduler exhausted")
 
 
 def slot_cases() -> tuple[dict, ...]:
@@ -1861,12 +2402,117 @@ def slot_cases() -> tuple[dict, ...]:
             schedules == {"LEFT_LT_RIGHT", "LEFT_GT_RIGHT"},
             f"{H2_SLOTS[start].scenario_id} lexical coverage",
         )
+
+    presentation_families = (
+        (62, 68, "valid-alias"),
+        (68, 74, "invalid-alias"),
+        (74, 80, "opening"),
+        (80, 86, "wrong-opening-alias"),
+        (88, 94, "unauthenticated-opening"),
+        (94, 100, "wrong-opening"),
+    )
+    setup = [grant_a, grant_b, actor_a, actor_b]
+    for start, stop, family in presentation_families:
+        for offset, row in enumerate(H2_SLOTS[start:stop]):
+            cases.append(
+                _new_presentation_case(
+                    row,
+                    join_genesis,
+                    setup,
+                    actor_a,
+                    actor_b,
+                    grant_a,
+                    grant_b,
+                    root_zero,
+                    family,
+                    left_first=offset % 2 == 0,
+                )
+            )
+
+    for offset, row in enumerate(H2_SLOTS[86:88]):
+        shared = ("00" if offset == 0 else "ff") * 32
+        independent_reference = ("ff" if offset == 0 else "00") * 32
+        identities = {
+            "C1": {"reference": shared, "transcriptHex": "01"},
+            "C2": {"reference": shared, "transcriptHex": "02"},
+            "I": {"reference": independent_reference, "transcriptHex": "03"},
+        }
+        cases.append(
+            {
+                "classifierIdentities": [identities[label] for label in row.order],
+                "expectedClassifications": {
+                    shared: "REFERENCE_COLLISION_UNSUPPORTED",
+                    independent_reference: "UNIQUE",
+                },
+                "labelIds": {label: label for label in identities},
+                "lexicalSchedule": (
+                    "LEFT_LT_RIGHT" if offset == 0 else "LEFT_GT_RIGHT"
+                ),
+                "mode": "classifier",
+                "row": row,
+                "targets": set(identities),
+            }
+        )
+
+    cases.sort(key=lambda case: case["row"].row_id)
     return tuple(cases)
 
 
 def _project_slot_case(case: dict) -> dict:
-    observations = evaluate_k_admission_graph(case["genesis"], case["records"])
+    if case.get("mode") == "classifier":
+        identities = [
+            (value["reference"], bytes.fromhex(value["transcriptHex"]))
+            for value in case["classifierIdentities"]
+        ]
+        classified = _classify_reference_identities(identities)
+        observations = [
+            {
+                "classification": classified[(reference, transcript)],
+                "reference": reference,
+                "transcriptHex": transcript.hex(),
+            }
+            for reference, transcript in identities
+        ]
+        observed = {
+            row["reference"]: row["classification"] for row in observations
+        }
+        _require(
+            observed == case["expectedClassifications"],
+            f"{case['row'].row_id} classifier result",
+        )
+        return {
+            "lexicalSchedule": case["lexicalSchedule"],
+            "observations": observations,
+            "order": list(case["row"].order),
+            "rowId": case["row"].row_id,
+            "scenarioId": case["row"].scenario_id,
+        }
+    try:
+        observations = evaluate_k_admission_graph(
+            case["genesis"], case["records"], presentation_evidence=True
+        )
+    except Exception as error:
+        raise RelationError(
+            f"{case['row'].row_id} graph evaluation: {error}"
+        ) from error
     by_id = {row["id"]: row for row in observations}
+    admitted_per_reference: dict[str, int] = {}
+    for observation in observations:
+        if observation["kBindingAdmission"] == "ADMITTED":
+            reference = observation["eventReferenceHex"]
+            admitted_per_reference[reference] = (
+                admitted_per_reference.get(reference, 0) + 1
+            )
+    for observation in observations:
+        admitted = observation["kBindingAdmission"] == "ADMITTED"
+        reference = observation["eventReferenceHex"]
+        _require(
+            observation["logicalEventReferenceHex"] == reference
+            and observation["coalescedPresentationCount"]
+            == (admitted_per_reference.get(reference, 0) if admitted else 0)
+            and observation["logicalEventEffectCount"] == (1 if admitted else 0),
+            f"{case['row'].row_id} logical-event evidence",
+        )
     observed = {
         identifier: by_id[identifier]["protocolErrorCode"]
         for identifier in case["targets"]
@@ -1891,7 +2537,7 @@ def _project_slot_case(case: dict) -> dict:
 
 def run_python_slots() -> dict:
     rows = [_project_slot_case(case) for case in slot_cases()]
-    _require(len(rows) == 62, "slot Python observation count")
+    _require(len(rows) == 100, "slot Python observation count")
     return {
         "result": "PASS",
         "rows": rows,
@@ -1901,6 +2547,8 @@ def run_python_slots() -> dict:
 
 def run_javascript_slots() -> dict:
     cases = slot_cases()
+    graph_cases = [case for case in cases if case.get("mode") != "classifier"]
+    classifier_cases = [case for case in cases if case.get("mode") == "classifier"]
     with tempfile.TemporaryDirectory(prefix="styx-c03-h2-slots-") as tmp:
         input_path = Path(tmp) / "input.json"
         output_path = Path(tmp) / "output.json"
@@ -1914,7 +2562,7 @@ def run_javascript_slots() -> dict:
                             "id": case["row"].scenario_id,
                             "records": case["records"],
                         }
-                        for case in cases
+                        for case in graph_cases
                     ],
                     "schema": "styx-c03-h1h2-connected-input/v1",
                 }
@@ -1937,12 +2585,57 @@ def run_javascript_slots() -> dict:
         node_rows = {
             row["id"]: row for row in loads(output_path.read_bytes())["observations"]
         }
+        classifier_rows = {}
+        for case in classifier_cases:
+            classifier_input = Path(tmp) / f"{case['row'].row_id}-input.json"
+            classifier_output = Path(tmp) / f"{case['row'].row_id}-output.json"
+            classifier_input.write_bytes(
+                dumps(
+                    {
+                        "identities": case["classifierIdentities"],
+                        "schema": "styx-c03-reference-identities/v1",
+                    }
+                )
+            )
+            completed = subprocess.run(
+                [
+                    "node",
+                    str(ROOT / "node_adapter.mjs"),
+                    "--classify-reference-identities",
+                    str(classifier_input),
+                    "--output",
+                    str(classifier_output),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            _require(completed.returncode == 0, "JavaScript classifier adapter")
+            classifier_rows[case["row"].scenario_id] = loads(
+                classifier_output.read_bytes()
+            )["observations"]
 
     rows = []
     for case in cases:
         scenario = case["row"].scenario_id
+        if case.get("mode") == "classifier":
+            projected = {
+                "lexicalSchedule": case["lexicalSchedule"],
+                "observations": classifier_rows[scenario],
+                "order": list(case["row"].order),
+                "rowId": case["row"].row_id,
+                "scenarioId": scenario,
+            }
+            _require(
+                projected == _project_slot_case(case),
+                f"{case['row'].row_id} cross-runtime classifier",
+            )
+            rows.append(projected)
+            continue
         node = node_rows[scenario]
-        expected_full = evaluate_k_admission_graph(case["genesis"], case["records"])
+        expected_full = evaluate_k_admission_graph(
+            case["genesis"], case["records"], presentation_evidence=True
+        )
         _require(
             node["observations"] == expected_full,
             f"{case['row'].row_id} cross-runtime slot",
@@ -2090,44 +2783,54 @@ def _run_slot_detector(runtime: str, index: int) -> None:
         case = _retag_slot_case(
             case, "P", "X_BAD_SIG", left_first=True
         )
+    cases = [case]
+    if index == 61:
+        cases = [
+            _retag_slot_case(case, "P", "X", left_first=left_first)
+            for left_first in (True, False)
+        ]
     if runtime == "python":
-        _project_slot_case(case)
+        for value in cases:
+            _project_slot_case(value)
         return
-    output = _javascript_single(
-        "--k-scenario-input",
-        {
-            "scenarios": [
-                {
-                    "acceptedGenesisRecord": case["genesis"],
-                    "graphEvaluation": True,
-                    "id": case["row"].scenario_id,
-                    "records": case["records"],
-                }
+    for value in cases:
+        output = _javascript_single(
+            "--k-scenario-input",
+            {
+                "scenarios": [
+                    {
+                        "acceptedGenesisRecord": value["genesis"],
+                        "graphEvaluation": True,
+                        "id": value["row"].scenario_id,
+                        "records": value["records"],
+                    }
+                ],
+                "schema": "styx-c03-h1h2-connected-input/v1",
+            },
+        )["observations"][0]
+        expected = _project_slot_case(value)
+        _require(
+            output.get("harnessError") is None,
+            f"{value['row'].row_id} JavaScript harness",
+        )
+        _require(
+            output["observations"]
+            == evaluate_k_admission_graph(
+                value["genesis"], value["records"], presentation_evidence=True
+            ),
+            f"{value['row'].row_id} cross-runtime slot",
+        )
+        by_id = {row["id"]: row for row in output["observations"]}
+        projected = {
+            "lexicalSchedule": value["lexicalSchedule"],
+            "observations": [
+                by_id[identifier] for identifier in sorted(value["targets"])
             ],
-            "schema": "styx-c03-h1h2-connected-input/v1",
-        },
-    )["observations"][0]
-    expected = _project_slot_case(case)
-    _require(
-        output.get("harnessError") is None,
-        f"{case['row'].row_id} JavaScript harness",
-    )
-    _require(
-        output["observations"]
-        == evaluate_k_admission_graph(case["genesis"], case["records"]),
-        f"{case['row'].row_id} cross-runtime slot",
-    )
-    by_id = {row["id"]: row for row in output["observations"]}
-    projected = {
-        "lexicalSchedule": case["lexicalSchedule"],
-        "observations": [
-            by_id[identifier] for identifier in sorted(case["targets"])
-        ],
-        "order": list(case["row"].order),
-        "rowId": case["row"].row_id,
-        "scenarioId": case["row"].scenario_id,
-    }
-    _require(projected == expected, f"{case['row'].row_id} slot projection")
+            "order": list(value["row"].order),
+            "rowId": value["row"].row_id,
+            "scenarioId": value["row"].scenario_id,
+        }
+        _require(projected == expected, f"{value['row'].row_id} slot projection")
 
 
 def run_detector(mutant: str, runtime: str) -> None:
@@ -2202,43 +2905,101 @@ def _apply_mutation(source_root: Path, spec: MutationSpec, runtime: str) -> tupl
     return before, after
 
 
-def run_mutations(runtime: str) -> dict:
+def _run_one_mutation(mutant: str, runtime: str) -> dict:
     _require(runtime in {"python", "javascript"}, "unknown mutation runtime")
+    _require(mutant in MUTATION_SPECS, "unknown mutation")
+    spec = MUTATION_SPECS[mutant]
+    with tempfile.TemporaryDirectory(prefix=f"styx-c03-{runtime}-mutant-") as tmp:
+        source_root = Path(tmp) / "tools/causal-flow-simulator"
+        source_root.mkdir(parents=True)
+        _copy_mutation_sources(source_root)
+        control = _invoke_detector(source_root, mutant, runtime)
+        _require(
+            control.returncode == 0
+            and f"detector_pass={mutant}:{runtime}" in control.stdout,
+            f"{mutant} unmutated detector",
+        )
+        before, after = _apply_mutation(source_root, spec, runtime)
+        mutated = _invoke_detector(source_root, mutant, runtime)
+        marker = _detector_marker(mutant)
+        _require(
+            mutated.returncode == 2
+            and "semantic_detector_failure=" in mutated.stderr
+            and marker in mutated.stderr
+            and "detector adapter exit:" not in mutated.stderr,
+            f"{mutant} wrong-detector or non-semantic kill",
+        )
+        return {
+            "detectorId": marker,
+            "mutantId": mutant,
+            "result": "KILLED",
+            "runtime": runtime,
+            "sourceDigestChanged": before != after,
+        }
+
+
+def _write_jsonl(path: Path, rows: list[dict]) -> None:
+    _require(not path.exists(), "JSONL output already exists")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"".join(dumps(row) for row in rows))
+
+
+def run_mutations(
+    runtime: str,
+    *,
+    mutation_log: Path | None = None,
+    checkout_role: str | None = None,
+) -> dict:
+    _require(runtime in {"python", "javascript"}, "unknown mutation runtime")
+    if mutation_log is not None:
+        _require(
+            checkout_role in {"CHECKOUT_1", "CHECKOUT_2"},
+            "mutation log requires checkout role",
+        )
     rows = []
+    command_rows = []
     for mutant in MUTANTS:
-        spec = MUTATION_SPECS[mutant]
-        with tempfile.TemporaryDirectory(prefix=f"styx-c03-{runtime}-mutant-") as tmp:
-            source_root = Path(tmp) / "tools/causal-flow-simulator"
-            source_root.mkdir(parents=True)
-            _copy_mutation_sources(source_root)
-            control = _invoke_detector(source_root, mutant, runtime)
-            _require(
-                control.returncode == 0
-                and f"detector_pass={mutant}:{runtime}" in control.stdout,
-                f"{mutant} unmutated detector",
+        with tempfile.TemporaryDirectory(prefix="styx-c03-mutation-result-") as tmp:
+            output = Path(tmp) / "result.json"
+            argv = [
+                sys.executable,
+                str(Path(__file__).resolve()),
+                "--run-one-mutation",
+                mutant,
+                "--runtime",
+                runtime,
+                "--output",
+                str(output),
+            ]
+            completed = subprocess.run(
+                argv,
+                cwd=REPO,
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                env=dict(os.environ),
             )
-            before, after = _apply_mutation(source_root, spec, runtime)
-            mutated = _invoke_detector(source_root, mutant, runtime)
-            marker = _detector_marker(mutant)
-            _require(
-                mutated.returncode == 2
-                and "semantic_detector_failure=" in mutated.stderr
-                and marker in mutated.stderr
-                and "detector adapter exit:" not in mutated.stderr,
-                f"{mutant} wrong-detector or non-semantic kill",
-            )
-            rows.append(
-                {
-                    "detectorId": marker,
-                    "mutantId": mutant,
-                    "result": "KILLED",
-                    "runtime": runtime,
-                    "sourceDigestChanged": before != after,
-                }
-            )
-    _require(len(rows) == 20, "mutation kill count")
+            _require(completed.returncode == 0, f"{mutant} mutation command failed")
+            row = loads(output.read_bytes())
+            _require(isinstance(row, dict), f"{mutant} mutation result")
+            rows.append(row)
+            if mutation_log is not None:
+                command_rows.append(
+                    {
+                        "argv": argv,
+                        "checkoutRole": checkout_role,
+                        "commandId": mutant,
+                        "exitStatus": completed.returncode,
+                        "stderrUtf8": completed.stderr,
+                        "stdoutUtf8": completed.stdout,
+                    }
+                )
+    _require(len(rows) == 24, "mutation kill count")
+    if mutation_log is not None:
+        _write_jsonl(mutation_log, command_rows)
     return {
-        "killed": 20,
+        "killed": 24,
         "result": "PASS",
         "rows": rows,
         "runtime": runtime,
@@ -2436,7 +3197,7 @@ def _validate_issue_appendix(issue_body: bytes) -> None:
         slots
         == [
             (row.row_id, row.scenario_id, ">".join(row.order), row.expected)
-            for row in H2_SLOTS
+            for row in H2_SLOTS[:62]
         ],
         "Appendix A slot relation mismatch",
     )
@@ -2444,10 +3205,306 @@ def _validate_issue_appendix(issue_body: bytes) -> None:
         mutants
         == [
             (identifier, APPENDIX_MUTANT_DESCRIPTIONS[identifier])
-            for identifier in MUTANTS
+            for identifier in MUTANTS[:20]
         ],
         "Appendix A mutant relation mismatch",
     )
+
+
+def _load_provider_object(path: Path) -> dict:
+    _require(path.is_file() and not path.is_symlink(), "invalid provider object")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RelationError("invalid provider JSON") from error
+    _require(isinstance(value, dict), "provider object is not an object")
+    return value
+
+
+def _validate_issue_rest(path: Path) -> tuple[dict, bytes]:
+    issue = _load_provider_object(path)
+    _require(
+        issue.get("number") == 297
+        and issue.get("repository_url")
+        == "https://api.github.com/repos/styx-secure/styx"
+        and issue.get("html_url")
+        == "https://github.com/styx-secure/styx/issues/297",
+        "Issue provider identity mismatch",
+    )
+    body = issue.get("body")
+    _require(isinstance(body, str), "Issue body missing")
+    body_bytes = body.encode("utf-8")
+    _require(
+        sha256(body_bytes).hexdigest() == RATIFIED_ISSUE_BODY_SHA256,
+        "Issue body identity mismatch",
+    )
+    _validate_issue_appendix(body_bytes)
+    return issue, body_bytes
+
+
+def _validate_ratification_comment_rest(path: Path) -> tuple[dict, bytes, bytes]:
+    comment = _load_provider_object(path)
+    _require(
+        comment.get("id") == RATIFICATION_COMMENT_ID
+        and comment.get("url")
+        == f"https://api.github.com/repos/styx-secure/styx/issues/comments/{RATIFICATION_COMMENT_ID}"
+        and comment.get("issue_url")
+        == "https://api.github.com/repos/styx-secure/styx/issues/297"
+        and comment.get("user", {}).get("login") == "maverde73"
+        and comment.get("user", {}).get("id") == 141346846
+        and comment.get("created_at") == comment.get("updated_at"),
+        "ratification-comment provider identity mismatch",
+    )
+    body = comment.get("body")
+    _require(isinstance(body, str), "ratification-comment body missing")
+    body_bytes = body.encode("utf-8")
+    _require(
+        sha256(body_bytes).hexdigest() == RATIFICATION_COMMENT_BODY_SHA256,
+        "ratification-comment body identity mismatch",
+    )
+    start = b"<!-- styx-c03-package-a-remediation-v4:incorporated:start -->\n"
+    end = b"<!-- styx-c03-package-a-remediation-v4:incorporated:end -->"
+    _require(
+        body_bytes.count(start) == 1 and body_bytes.count(end) == 1,
+        "ratification-comment incorporated markers mismatch",
+    )
+    incorporated = body_bytes.split(start, 1)[1].split(end, 1)[0]
+    _require(
+        sha256(incorporated).hexdigest() == RATIFICATION_V4_SHA256,
+        "incorporated V4 identity mismatch",
+    )
+    return comment, body_bytes, incorporated
+
+
+def _validate_pr_rest(path: Path, candidate: str) -> tuple[dict, bytes]:
+    pull = _load_provider_object(path)
+    _require(
+        pull.get("state") == "open"
+        and pull.get("draft") is True
+        and pull.get("merged") is False
+        and isinstance(pull.get("number"), int)
+        and pull.get("head", {}).get("sha") == candidate
+        and pull.get("head", {}).get("ref")
+        == "task/297-c03-k-h1-h2-package-a"
+        and pull.get("head", {}).get("repo", {}).get("full_name")
+        == "styx-secure/styx"
+        and pull.get("base", {}).get("ref") == "main"
+        and pull.get("base", {}).get("repo", {}).get("full_name")
+        == "styx-secure/styx",
+        "Draft PR provider identity mismatch",
+    )
+    body = pull.get("body")
+    _require(isinstance(body, str), "Draft PR body missing")
+    return pull, body.encode("utf-8")
+
+
+def _write_new_bytes(path: Path, payload: bytes) -> None:
+    _require(not path.exists(), f"output already exists:{path.name}")
+    path.write_bytes(payload)
+
+
+def _resolve_toolchain() -> tuple[dict[str, str], bytes]:
+    commands = {
+        "git": ("--version",),
+        "python3": ("--version",),
+        "node": ("--version",),
+        "diff": ("--version",),
+        "sha256sum": ("--version",),
+    }
+    tools: dict[str, str] = {}
+    for name in TOOL_NAMES:
+        located = shutil.which(name)
+        _require(located is not None, f"required tool unavailable:{name}")
+        executable = Path(located).resolve()
+        _require(
+            executable.is_absolute()
+            and executable.is_file()
+            and os.access(executable, os.X_OK),
+            f"invalid tool executable:{name}",
+        )
+        tools[name] = str(executable)
+    rows = []
+    with tempfile.TemporaryDirectory(prefix="styx-c03-tool-versions-") as tmp:
+        environment = _closed_environment(tools, Path(tmp) / "environment")
+        for name in TOOL_NAMES:
+            completed = subprocess.run(
+                [tools[name], *commands[name]],
+                check=False,
+                capture_output=True,
+                env=environment,
+            )
+            _require(completed.returncode == 0, f"tool version failed:{name}")
+            try:
+                stdout = completed.stdout.decode("utf-8")
+            except UnicodeDecodeError as error:
+                raise RelationError(f"tool version is not UTF-8:{name}") from error
+            lines = stdout.splitlines()
+            _require(lines and lines[0], f"tool version missing:{name}")
+            rows.append(f"{name}\t{tools[name]}\t{lines[0]}\n")
+    return tools, "".join(rows).encode("utf-8")
+
+
+def _closed_environment(tools: dict[str, str], root: Path) -> dict[str, str]:
+    _require(not root.exists(), "environment root already exists")
+    root.mkdir()
+    home = root / "home"
+    temporary = root / "tmp"
+    home.mkdir()
+    temporary.mkdir()
+    directories = []
+    for name in TOOL_NAMES:
+        parent = str(Path(tools[name]).parent)
+        if parent not in directories:
+            directories.append(parent)
+    return {
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "HOME": str(home),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "PATH": os.pathsep.join(directories),
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "TMPDIR": str(temporary),
+        "TZ": "UTC",
+    }
+
+
+@contextmanager
+def _process_environment(environment: dict[str, str]):
+    original = dict(os.environ)
+    original_tempdir = tempfile.tempdir
+    os.environ.clear()
+    os.environ.update(environment)
+    tempfile.tempdir = None
+    try:
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(original)
+        tempfile.tempdir = original_tempdir
+
+
+def _command_row(
+    command_id: str,
+    argv: list[str],
+    checkout_role: str,
+    completed: subprocess.CompletedProcess,
+) -> dict:
+    try:
+        stdout = completed.stdout.decode("utf-8")
+        stderr = completed.stderr.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise RelationError(f"non-UTF-8 command output:{command_id}") from error
+    return {
+        "argv": argv,
+        "checkoutRole": checkout_role,
+        "commandId": command_id,
+        "exitStatus": completed.returncode,
+        "stderrUtf8": stderr,
+        "stdoutUtf8": stdout,
+    }
+
+
+def _run_logged_command(
+    *,
+    command_id: str,
+    argv: list[str],
+    checkout: Path,
+    candidate: str,
+    checkout_role: str,
+    environment: dict[str, str],
+    timeout: int = 300,
+) -> dict:
+    _clean_checkout(checkout, candidate)
+    completed = subprocess.run(
+        argv,
+        cwd=checkout,
+        check=False,
+        capture_output=True,
+        timeout=timeout,
+        env=environment,
+    )
+    row = _command_row(command_id, argv, checkout_role, completed)
+    _require(completed.returncode == 0, f"required command failed:{command_id}")
+    _clean_checkout(checkout, candidate)
+    return row
+
+
+def _issue_scope_preflight(issue_body: bytes) -> str:
+    text = issue_body.decode("utf-8")
+    marker = "Before importing or executing candidate code"
+    _require(text.count(marker) == 1, "Issue scope-preflight marker mismatch")
+    suffix = text.split(marker, 1)[1]
+    match = re.search(
+        r"```bash\npython3 - <<'PY'\n(.*?)\nPY\n```",
+        suffix,
+        re.DOTALL,
+    )
+    _require(match is not None, "Issue scope-preflight script missing")
+    return match.group(1) + "\n"
+
+
+def _validate_jsonl(
+    payload: bytes,
+    *,
+    expected_ids: tuple[str, ...],
+    checkout_role: str,
+) -> list[dict]:
+    _require(payload.endswith(b"\n"), "JSONL requires final LF")
+    rows = []
+    for raw in payload.splitlines():
+        row = loads(raw + b"\n")
+        _require(
+            isinstance(row, dict)
+            and set(row)
+            == {
+                "argv",
+                "checkoutRole",
+                "commandId",
+                "exitStatus",
+                "stderrUtf8",
+                "stdoutUtf8",
+            }
+            and isinstance(row["argv"], list)
+            and all(isinstance(value, str) for value in row["argv"])
+            and row["checkoutRole"] == checkout_role
+            and row["exitStatus"] == 0
+            and isinstance(row["stdoutUtf8"], str)
+            and isinstance(row["stderrUtf8"], str),
+            "invalid command-ledger row",
+        )
+        rows.append(row)
+    _require(
+        tuple(row["commandId"] for row in rows) == expected_ids,
+        "command-ledger ID relation mismatch",
+    )
+    return rows
+
+
+def _flat_regular_files(root: Path) -> dict[str, Path]:
+    _require(root.is_dir() and not root.is_symlink(), "invalid flat package")
+    result: dict[str, Path] = {}
+    for path in root.iterdir():
+        metadata = path.lstat()
+        _require(
+            stat.S_ISREG(metadata.st_mode)
+            and not path.is_symlink()
+            and metadata.st_nlink == 1
+            and "/" not in path.name
+            and "\\" not in path.name,
+            f"invalid package artifact:{path.name}",
+        )
+        _require(path.name not in result, "duplicate package artifact")
+        result[path.name] = path
+    return result
+
+
+def _manifest_bytes(root: Path) -> bytes:
+    rows = []
+    for name in sorted(value for value in TEP_FILENAMES if value != "SHA256SUMS.txt"):
+        rows.append(f"{sha256((root / name).read_bytes()).hexdigest()}  {name}\n")
+    return "".join(rows).encode("ascii")
 
 
 def _git_environment() -> dict[str, str]:
@@ -2488,6 +3545,104 @@ def _git_text(checkout: Path, *arguments: str) -> str:
     )
     _require(completed.returncode == 0, "Git evidence command failed")
     return completed.stdout.strip()
+
+
+def _git_bytes(checkout: Path, *arguments: str) -> bytes:
+    completed = subprocess.run(
+        _git_command(checkout, *arguments),
+        check=False,
+        capture_output=True,
+        env=_git_environment(),
+    )
+    _require(completed.returncode == 0, "Git evidence command failed")
+    return completed.stdout
+
+
+def run_package_a_scope(
+    checkout: Path, base: str, candidate: str
+) -> dict:
+    _require(base == BASE_SHA, "scope Base mismatch")
+    _require(
+        _git_text(checkout, "rev-parse", f"{base}^{{commit}}") == base
+        and _git_text(checkout, "rev-parse", f"{candidate}^{{commit}}")
+        == candidate,
+        "scope commit identity mismatch",
+    )
+    _require(
+        _git_text(checkout, "merge-base", base, candidate) == base,
+        "scope Base ancestry mismatch",
+    )
+    for path, expected in PACKAGE_A_BASE_PINS.items():
+        _require(
+            sha256(_git_bytes(checkout, "show", f"{base}:{path}")).hexdigest()
+            == expected,
+            f"scope Base pin mismatch:{path}",
+        )
+    for path in PACKAGE_A_NEW:
+        completed = subprocess.run(
+            _git_command(checkout, "cat-file", "-e", f"{base}:{path}"),
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=_git_environment(),
+        )
+        _require(completed.returncode != 0, f"new endpoint exists at Base:{path}")
+    fields = _git_bytes(
+        checkout, "diff", "--name-status", "-z", "--no-renames", base, candidate
+    ).split(b"\0")
+    if fields and not fields[-1]:
+        fields.pop()
+    _require(len(fields) % 2 == 0, "malformed scope relation")
+    rows = []
+    changed = set()
+    for index in range(0, len(fields), 2):
+        status = fields[index].decode("ascii")
+        path = fields[index + 1].decode("utf-8")
+        _require(status in {"A", "M"}, f"forbidden endpoint status:{status}")
+        _require(path in PACKAGE_A_ALLOWED, f"out-of-scope endpoint:{path}")
+        _require(path not in changed, f"duplicate endpoint:{path}")
+        _require(
+            (status == "A") == (path in PACKAGE_A_NEW),
+            f"wrong endpoint state:{path}",
+        )
+        changed.add(path)
+        rows.append({"paths": [path], "status": status})
+    _require(PACKAGE_A_NEW <= changed, "missing Package-A evidence endpoint")
+    copy_fields = _git_bytes(
+        checkout,
+        "diff",
+        "--name-status",
+        "-z",
+        "--find-copies-harder",
+        "--find-copies=50%",
+        "--find-renames=50%",
+        "-l0",
+        base,
+        candidate,
+    ).split(b"\0")
+    _require(
+        not any(value[:1] in {b"C", b"R"} for value in copy_fields if value),
+        "copy/rename relation forbidden",
+    )
+    for path, expected in EXACT_RECONSTRUCTED_PINS.items():
+        _require(
+            sha256(_git_bytes(checkout, "show", f"{candidate}:{path}")).hexdigest()
+            == expected,
+            f"exact reconstruction mismatch:{path}",
+        )
+    for name, expected in FROZEN_CORPUS_SHA256.items():
+        path = f"conformance/application-protocol/c03/{name}"
+        _require(
+            sha256(_git_bytes(checkout, "show", f"{candidate}:{path}")).hexdigest()
+            == expected,
+            f"frozen corpus mismatch:{name}",
+        )
+    return {
+        "changedRelation": rows,
+        "copyThresholdPercent": 50,
+        "endpointCount": len(rows),
+        "result": "PASS",
+    }
 
 
 def _git_diff_sha256(checkout: Path, base: str, candidate: str) -> str:
@@ -2690,9 +3845,12 @@ def _validate_evidence_set(root: Path) -> dict[str, bytes]:
                     exact_keys(
                         observation,
                         {
+                            "coalescedPresentationCount",
                             "eventReferenceHex",
                             "id",
                             "kBindingAdmission",
+                            "logicalEventEffectCount",
+                            "logicalEventReferenceHex",
                             "protocolErrorCode",
                             "stage",
                         },
@@ -2741,23 +3899,31 @@ def _validate_evidence_set(root: Path) -> dict[str, bytes]:
                 f"runtime-{runtime_name}.slotRows[{index}]",
             )
             for observation_index, observation in enumerate(row["observations"]):
-                exact_keys(
-                    observation,
-                    {
+                expected_observation_keys = (
+                    {"classification", "reference", "transcriptHex"}
+                    if row["rowId"] in {"H2-SLT-087", "H2-SLT-088"}
+                    else {
+                        "coalescedPresentationCount",
                         "eventReferenceHex",
                         "id",
                         "kBindingAdmission",
+                        "logicalEventEffectCount",
+                        "logicalEventReferenceHex",
                         "protocolErrorCode",
                         "stage",
-                    },
+                    }
+                )
+                exact_keys(
+                    observation,
+                    expected_observation_keys,
                     f"runtime-{runtime_name}.slotRows[{index}].observations[{observation_index}]",
                 )
     _require(runtime_python == runtime_javascript, "runtime evidence mismatch")
     _require(
-        runtime_python.get("scenarioCount") == 126
+        runtime_python.get("scenarioCount") == 164
         and len(runtime_python.get("boundaryRows", [])) == 29
         and len(runtime_python.get("connectedRows", [])) == 35
-        and len(runtime_python.get("slotRows", [])) == 62,
+        and len(runtime_python.get("slotRows", [])) == 100,
         "runtime evidence cardinality mismatch",
     )
     for runtime in ("python", "javascript"):
@@ -2781,7 +3947,7 @@ def _validate_evidence_set(root: Path) -> dict[str, bytes]:
             )
         _require(
             mutation.get("runtime") == runtime
-            and mutation.get("killed") == 20
+            and mutation.get("killed") == 24
             and [row.get("mutantId") for row in mutation.get("rows", [])]
             == list(MUTANTS)
             and all(row.get("result") == "KILLED" for row in mutation.get("rows", [])),
@@ -2891,7 +4057,6 @@ def _run_checkout_producer(
 
 def _produce_evidence(checkout: Path, destination: Path, base: str, candidate: str) -> None:
     relation = checkout / "tools/causal-flow-simulator/c03/h1_h2_relation.py"
-    scope = checkout / "tools/causal-flow-simulator/c03/scope_guard.py"
     commands = (
         ("h1h2-python.json", [sys.executable, str(relation), "--run-python"]),
         ("h1h2-javascript.json", [sys.executable, str(relation), "--run-javascript"]),
@@ -2908,9 +4073,8 @@ def _produce_evidence(checkout: Path, destination: Path, base: str, candidate: s
             "scope.json",
             [
                 sys.executable,
-                str(scope),
-                "--repo-root",
-                str(checkout),
+                str(relation),
+                "--scope",
                 "--base",
                 base,
                 "--candidate",
@@ -3007,10 +4171,531 @@ def run_final_gate(
         _require(regenerated_1 == submitted_1, "submitted evidence is not reproducible")
     return {
         "artifactCountPerCheckout": len(EVIDENCE_FILENAMES),
-        "mutantRuntimeKills": 40,
+        "mutantRuntimeKills": 48,
         "result": "PASS",
-        "runtimeScenarioCount": 126,
+        "runtimeScenarioCount": 164,
         "schema": "styx-c03-h1h2-final-gate/v1",
+    }
+
+
+def _run_required_commands(
+    *,
+    checkout: Path,
+    role: str,
+    base: str,
+    candidate: str,
+    issue_body: bytes,
+    tools: dict[str, str],
+    environment: dict[str, str],
+    workspace: Path,
+) -> tuple[list[dict], dict[str, Path], dict[str, Path]]:
+    python = tools["python3"]
+    node = tools["node"]
+    relation = checkout / "tools/causal-flow-simulator/c03/h1_h2_relation.py"
+    corpus_root = checkout / "conformance/application-protocol/c03"
+    report_root = workspace / "evidence"
+    report_root.mkdir()
+    reports = {
+        "h1h2-python.json": report_root / "h1h2-python.json",
+        "h1h2-javascript.json": report_root / "h1h2-javascript.json",
+        "h1h2-mutations-python.json": report_root / "h1h2-mutations-python.json",
+        "h1h2-mutations-javascript.json": report_root / "h1h2-mutations-javascript.json",
+        "h1h2-regression.json": report_root / "h1h2-regression.json",
+        "scope.json": report_root / "scope.json",
+    }
+    mutation_logs = {
+        "python": workspace / "mutations-python.jsonl",
+        "javascript": workspace / "mutations-javascript.jsonl",
+    }
+    generated = workspace / "generated"
+    commands: tuple[tuple[str, list[str]], ...] = (
+        (
+            "PREFLIGHT",
+            [python, "-c", _issue_scope_preflight(issue_body)],
+        ),
+        ("VALIDATE_RELATION", [python, str(relation), "--validate-relation"]),
+        (
+            "UNITTEST_C03",
+            [
+                python,
+                "-m",
+                "unittest",
+                "discover",
+                "-s",
+                "tools/causal-flow-simulator/c03/tests",
+                "-p",
+                "test_*.py",
+            ],
+        ),
+        (
+            "RUN_H1H2_PYTHON",
+            [python, str(relation), "--run-python", "--output", str(reports["h1h2-python.json"])],
+        ),
+        (
+            "RUN_H1H2_JAVASCRIPT",
+            [python, str(relation), "--run-javascript", "--output", str(reports["h1h2-javascript.json"])],
+        ),
+        (
+            "RUN_H1H2_MUTATIONS_PYTHON",
+            [
+                python,
+                str(relation),
+                "--run-mutations",
+                "--runtime",
+                "python",
+                "--mutation-log",
+                str(mutation_logs["python"]),
+                "--checkout-role",
+                role,
+                "--output",
+                str(reports["h1h2-mutations-python.json"]),
+            ],
+        ),
+        (
+            "RUN_H1H2_MUTATIONS_JAVASCRIPT",
+            [
+                python,
+                str(relation),
+                "--run-mutations",
+                "--runtime",
+                "javascript",
+                "--mutation-log",
+                str(mutation_logs["javascript"]),
+                "--checkout-role",
+                role,
+                "--output",
+                str(reports["h1h2-mutations-javascript.json"]),
+            ],
+        ),
+        (
+            "RUN_H1H2_REGRESSION",
+            [python, str(relation), "--run-regression", "--output", str(reports["h1h2-regression.json"])],
+        ),
+        (
+            "GENERATE_CORPUS",
+            [python, "tools/causal-flow-simulator/c03/generate_corpus.py", "--repo-root", ".", "--output", str(generated)],
+        ),
+        (
+            "VALIDATE_CORPUS",
+            [python, "tools/causal-flow-simulator/c03/validate_corpus.py", "--repo-root", ".", "--corpus", "conformance/application-protocol/c03", "--output", str(workspace / "validate.json")],
+        ),
+        (
+            "REPLAY_CORPUS",
+            [python, "tools/causal-flow-simulator/c03/replay_corpus.py", "--repo-root", ".", "--corpus", "conformance/application-protocol/c03", "--output", str(workspace / "replay.json")],
+        ),
+        (
+            "NODE_CORPUS",
+            [node, "tools/causal-flow-simulator/c03/node_adapter.mjs", "--repo-root", ".", "--corpus", "conformance/application-protocol/c03", "--output", str(workspace / "node.json")],
+        ),
+        (
+            "CROSS_RUNTIME",
+            [python, "tools/causal-flow-simulator/c03/run_cross_runtime.py", "--repo-root", ".", "--corpus", "conformance/application-protocol/c03", "--output", str(workspace / "cross.json")],
+        ),
+        (
+            "CORPUS_MUTATIONS",
+            [python, "tools/causal-flow-simulator/c03/run_mutations.py", "--repo-root", ".", "--corpus", "conformance/application-protocol/c03", "--output", str(workspace / "mutations.json")],
+        ),
+        (
+            "VALIDATE_REVIEW_MODEL",
+            [python, "tools/protocol-review-model/validate.py", "--repo-root", ".", "--schema", "docs/protocol/review/styx-app-kernel-v0-review-model.schema.json", "--model", "docs/protocol/review/styx-app-kernel-v0-review-model.json", "--output", str(workspace / "review-model.json")],
+        ),
+        (
+            "DIFF_GENERATED_CORPUS",
+            [tools["diff"], "-ru", str(corpus_root), str(generated)],
+        ),
+        ("GIT_DIFF_CHECK", [tools["git"], "diff", "--check"]),
+    )
+    rows = []
+    for command_id, argv in commands:
+        rows.append(
+            _run_logged_command(
+                command_id=command_id,
+                argv=argv,
+                checkout=checkout,
+                candidate=candidate,
+                checkout_role=role,
+                environment=environment,
+                timeout=900 if "MUTATION" in command_id else 300,
+            )
+        )
+    _require(
+        rows[0]["stdoutUtf8"] == "PACKAGE_A_SCOPE_OK\n",
+        "scope preflight output mismatch",
+    )
+    scope_argv = [
+        python,
+        str(relation),
+        "--scope",
+        "--base",
+        base,
+        "--candidate",
+        candidate,
+        "--mode",
+        "strict",
+        "--output",
+        str(reports["scope.json"]),
+    ]
+    _run_logged_command(
+        command_id="PREFLIGHT",
+        argv=scope_argv,
+        checkout=checkout,
+        candidate=candidate,
+        checkout_role=role,
+        environment=environment,
+    )
+    return rows, reports, mutation_logs
+
+
+def _copy_verified_evidence(
+    source: Path, produced: dict[str, Path], output: Path, suffix: str
+) -> None:
+    submitted = _validate_evidence_set(source)
+    generated = _validate_evidence_set(produced["scope.json"].parent)
+    _require(submitted == generated, "submitted evidence differs from required run")
+    mapping = {
+        "h1h2-python.json": f"H1H2_PYTHON_{suffix}.json",
+        "h1h2-javascript.json": f"H1H2_JAVASCRIPT_{suffix}.json",
+        "h1h2-mutations-python.json": f"H1H2_MUTATIONS_PYTHON_{suffix}.json",
+        "h1h2-mutations-javascript.json": f"H1H2_MUTATIONS_JAVASCRIPT_{suffix}.json",
+        "h1h2-regression.json": f"H1H2_REGRESSION_{suffix}.json",
+        "scope.json": f"SCOPE_{suffix}.json",
+    }
+    for source_name, destination_name in mapping.items():
+        _write_new_bytes(output / destination_name, submitted[source_name])
+
+
+def _verify_tep_structure(package: Path) -> dict[str, Path]:
+    artifacts = _flat_regular_files(package)
+    _require(set(artifacts) == set(TEP_FILENAMES), "TEP artifact set mismatch")
+    _require(
+        artifacts["PACKAGE_SCHEMA.txt"].read_bytes()
+        == "".join(f"{name}\n" for name in TEP_FILENAMES).encode("ascii"),
+        "TEP schema mismatch",
+    )
+    manifest = artifacts["SHA256SUMS.txt"].read_bytes()
+    _require(manifest == _manifest_bytes(package), "TEP manifest mismatch")
+    return artifacts
+
+
+def build_tep(
+    *,
+    base: str,
+    candidate: str,
+    bundle: Path,
+    issue_rest: Path,
+    ratification_comment_rest: Path,
+    pr_rest: Path,
+    checkout_1: Path,
+    checkout_2: Path,
+    evidence_1: Path,
+    evidence_2: Path,
+    codex_reconciliation: Path,
+    output_dir: Path,
+) -> dict:
+    _require(base == BASE_SHA, "TEP Base mismatch")
+    _require(re.fullmatch(r"[0-9a-f]{40}", candidate) is not None, "invalid TEP candidate")
+    issue, issue_body = _validate_issue_rest(issue_rest)
+    comment, comment_body, _ = _validate_ratification_comment_rest(
+        ratification_comment_rest
+    )
+    pull, pull_body = _validate_pr_rest(pr_rest, candidate)
+    _require(
+        codex_reconciliation.is_file()
+        and not codex_reconciliation.is_symlink(),
+        "invalid Codex reconciliation",
+    )
+    tools, tool_versions = _resolve_toolchain()
+    bundle_digest = sha256(bundle.read_bytes()).hexdigest()
+    checkouts = (checkout_1.resolve(), checkout_2.resolve())
+    _require(checkouts[0] != checkouts[1], "TEP checkouts are not distinct")
+    with tempfile.TemporaryDirectory(prefix="styx-c03-tep-preflight-") as tmp:
+        preflight_environment = _closed_environment(
+            tools, Path(tmp) / "environment"
+        )
+        with _process_environment(preflight_environment):
+            bundle_tree, bundle_diff = _verify_bundle(
+                bundle, bundle_digest, base, candidate
+            )
+            for checkout in checkouts:
+                _clean_checkout(checkout, candidate)
+                _require(
+                    _git_text(checkout, "rev-parse", "HEAD^{tree}") == bundle_tree
+                    and _git_diff_sha256(checkout, base, candidate) == bundle_diff,
+                    "TEP checkout differs from bundle",
+                )
+    _require(not output_dir.exists(), "TEP output directory already exists")
+    output_dir.mkdir()
+    try:
+        _write_new_bytes(output_dir / "ISSUE_297_REST.json", issue_rest.read_bytes())
+        _write_new_bytes(output_dir / "ISSUE_297_BODY.txt", issue_body)
+        _write_new_bytes(
+            output_dir / "RATIFICATION_COMMENT_REST.json",
+            ratification_comment_rest.read_bytes(),
+        )
+        _write_new_bytes(output_dir / "RATIFICATION_COMMENT_BODY.txt", comment_body)
+        _write_new_bytes(output_dir / "DRAFT_PR_REST.json", pr_rest.read_bytes())
+        _write_new_bytes(output_dir / "DRAFT_PR_BODY.txt", pull_body)
+        _write_new_bytes(output_dir / "CANDIDATE.bundle", bundle.read_bytes())
+        _write_new_bytes(output_dir / "TOOL_VERSIONS.txt", tool_versions)
+        _write_new_bytes(
+            output_dir / "CODEX_RECONCILIATION.md",
+            codex_reconciliation.read_bytes(),
+        )
+        with tempfile.TemporaryDirectory(prefix="styx-c03-tep-build-") as tmp:
+            workspace = Path(tmp)
+            environment = _closed_environment(tools, workspace / "environment")
+            run_roots = (workspace / "run-1", workspace / "run-2")
+            for root in run_roots:
+                root.mkdir()
+            with _process_environment(environment):
+                candidate_diff = _git_bytes(
+                    checkouts[0],
+                    "diff",
+                    "--no-ext-diff",
+                    "--binary",
+                    "--full-index",
+                    base,
+                    candidate,
+                    "--",
+                )
+                _require(
+                    sha256(candidate_diff).hexdigest() == bundle_diff,
+                    "TEP diff mismatch",
+                )
+                _write_new_bytes(output_dir / "CANDIDATE.diff", candidate_diff)
+                first = _run_required_commands(
+                    checkout=checkouts[0], role="CHECKOUT_1", base=base,
+                    candidate=candidate, issue_body=issue_body, tools=tools,
+                    environment=environment, workspace=run_roots[0],
+                )
+                second = _run_required_commands(
+                    checkout=checkouts[1], role="CHECKOUT_2", base=base,
+                    candidate=candidate, issue_body=issue_body, tools=tools,
+                    environment=environment, workspace=run_roots[1],
+                )
+                for index, (rows, reports, mutation_logs) in enumerate(
+                    (first, second), 1
+                ):
+                    _write_new_bytes(
+                        output_dir / f"SCOPE_PREFLIGHT_{index}.log",
+                        dumps(rows[0]),
+                    )
+                    _copy_verified_evidence(
+                        (evidence_1, evidence_2)[index - 1],
+                        reports,
+                        output_dir,
+                        str(index),
+                    )
+                    for runtime, label in (
+                        ("python", "PYTHON"),
+                        ("javascript", "JAVASCRIPT"),
+                    ):
+                        payload = mutation_logs[runtime].read_bytes()
+                        _validate_jsonl(
+                            payload,
+                            expected_ids=MUTANTS,
+                            checkout_role=f"CHECKOUT_{index}",
+                        )
+                        _write_new_bytes(
+                            output_dir / f"MUTATIONS_{label}_{index}.log",
+                            payload,
+                        )
+                final_output = workspace / "final-gate.json"
+                final_argv = [
+                    tools["python3"],
+                    str(checkouts[0] / "tools/causal-flow-simulator/c03/h1_h2_relation.py"),
+                    "--final-gate", "--base", base, "--candidate", candidate,
+                    "--bundle", str(bundle), "--bundle-sha256", bundle_digest,
+                    "--issue-body", str(output_dir / "ISSUE_297_BODY.txt"),
+                    "--issue-body-sha256", RATIFIED_ISSUE_BODY_SHA256,
+                    "--checkout-1", str(checkouts[0]), "--checkout-2", str(checkouts[1]),
+                    "--evidence-1", str(evidence_1), "--evidence-2", str(evidence_2),
+                    "--output", str(final_output),
+                ]
+                final_completed = subprocess.run(
+                    final_argv, cwd=checkouts[0], check=False, capture_output=True,
+                    timeout=1800, env=environment,
+                )
+                final_row = _command_row(
+                    "FINAL_GATE", final_argv, "CHECKOUT_1", final_completed
+                )
+                _require(final_completed.returncode == 0, "TEP final gate failed")
+                final_value = loads(final_output.read_bytes())
+                _require(final_value.get("result") == "PASS", "TEP final result")
+                _write_new_bytes(output_dir / "FINAL_GATE.log", dumps(final_row))
+                _write_new_bytes(output_dir / "FINAL_GATE.json", final_output.read_bytes())
+                for index, (rows, _, _) in enumerate((first, second), 1):
+                    recorded = dict(final_row)
+                    recorded["checkoutRole"] = f"CHECKOUT_{index}"
+                    complete_rows = [*rows, recorded]
+                    _require(
+                        tuple(row["commandId"] for row in complete_rows)
+                        == REQUIRED_COMMAND_IDS,
+                        "required command sequence mismatch",
+                    )
+                    _write_new_bytes(
+                        output_dir / f"REQUIRED_COMMANDS_{index}.log",
+                        b"".join(dumps(row) for row in complete_rows),
+                    )
+        _write_new_bytes(
+            output_dir / "PACKAGE_SCHEMA.txt",
+            "".join(f"{name}\n" for name in TEP_FILENAMES).encode("ascii"),
+        )
+        _write_new_bytes(output_dir / "SHA256SUMS.txt", _manifest_bytes(output_dir))
+        artifacts = _verify_tep_structure(output_dir)
+        return {
+            "artifactCount": len(artifacts),
+            "bundleSha256": bundle_digest,
+            "candidate": candidate,
+            "diffSha256": bundle_diff,
+            "issueNumber": issue["number"],
+            "prNumber": pull["number"],
+            "ratificationCommentId": comment["id"],
+            "result": "PASS",
+        }
+    except Exception:
+        # Leave the incomplete directory for diagnosis; it can never pass the
+        # exact-set verifier and is not evidence.
+        raise
+
+
+def verify_tep(package: Path) -> dict:
+    artifacts = _verify_tep_structure(package)
+    issue, issue_body = _validate_issue_rest(artifacts["ISSUE_297_REST.json"])
+    _require(
+        issue_body == artifacts["ISSUE_297_BODY.txt"].read_bytes(),
+        "TEP Issue body mismatch",
+    )
+    comment, comment_body, _ = _validate_ratification_comment_rest(
+        artifacts["RATIFICATION_COMMENT_REST.json"]
+    )
+    _require(
+        comment_body == artifacts["RATIFICATION_COMMENT_BODY.txt"].read_bytes(),
+        "TEP ratification body mismatch",
+    )
+    pull = _load_provider_object(artifacts["DRAFT_PR_REST.json"])
+    candidate = pull.get("head", {}).get("sha")
+    _require(isinstance(candidate, str), "TEP candidate missing")
+    _, pull_body = _validate_pr_rest(artifacts["DRAFT_PR_REST.json"], candidate)
+    _require(
+        pull_body == artifacts["DRAFT_PR_BODY.txt"].read_bytes(),
+        "TEP PR body mismatch",
+    )
+    tools, current_versions = _resolve_toolchain()
+    _require(
+        current_versions == artifacts["TOOL_VERSIONS.txt"].read_bytes(),
+        "TEP toolchain mismatch",
+    )
+    for index in (1, 2):
+        _validate_jsonl(
+            artifacts[f"SCOPE_PREFLIGHT_{index}.log"].read_bytes(),
+            expected_ids=("PREFLIGHT",),
+            checkout_role=f"CHECKOUT_{index}",
+        )
+        _validate_jsonl(
+            artifacts[f"REQUIRED_COMMANDS_{index}.log"].read_bytes(),
+            expected_ids=REQUIRED_COMMAND_IDS,
+            checkout_role=f"CHECKOUT_{index}",
+        )
+        for runtime in ("PYTHON", "JAVASCRIPT"):
+            _validate_jsonl(
+                artifacts[f"MUTATIONS_{runtime}_{index}.log"].read_bytes(),
+                expected_ids=MUTANTS,
+                checkout_role=f"CHECKOUT_{index}",
+            )
+    bundle_digest = sha256(artifacts["CANDIDATE.bundle"].read_bytes()).hexdigest()
+    tree, diff_digest = _verify_bundle(
+        artifacts["CANDIDATE.bundle"], bundle_digest, BASE_SHA, candidate
+    )
+    _require(
+        sha256(artifacts["CANDIDATE.diff"].read_bytes()).hexdigest() == diff_digest,
+        "TEP candidate diff mismatch",
+    )
+    final_value = loads(artifacts["FINAL_GATE.json"].read_bytes())
+    _require(final_value.get("result") == "PASS", "TEP recorded final gate failed")
+    _validate_jsonl(
+        artifacts["FINAL_GATE.log"].read_bytes(),
+        expected_ids=("FINAL_GATE",),
+        checkout_role="CHECKOUT_1",
+    )
+    _require(
+        artifacts["CODEX_RECONCILIATION.md"].read_bytes().strip(),
+        "TEP Codex reconciliation is empty",
+    )
+    evidence_mapping = {
+        "h1h2-python.json": "H1H2_PYTHON_{index}.json",
+        "h1h2-javascript.json": "H1H2_JAVASCRIPT_{index}.json",
+        "h1h2-mutations-python.json": "H1H2_MUTATIONS_PYTHON_{index}.json",
+        "h1h2-mutations-javascript.json": "H1H2_MUTATIONS_JAVASCRIPT_{index}.json",
+        "h1h2-regression.json": "H1H2_REGRESSION_{index}.json",
+        "scope.json": "SCOPE_{index}.json",
+    }
+    with tempfile.TemporaryDirectory(prefix="styx-c03-tep-verify-") as tmp:
+        workspace = Path(tmp)
+        checkouts = (workspace / "checkout-1", workspace / "checkout-2")
+        evidences = (workspace / "evidence-1", workspace / "evidence-2")
+        environment = _closed_environment(tools, workspace / "environment")
+        for index, evidence in enumerate(evidences, 1):
+            evidence.mkdir()
+            for destination, source_pattern in evidence_mapping.items():
+                _write_new_bytes(
+                    evidence / destination,
+                    artifacts[source_pattern.format(index=index)].read_bytes(),
+                )
+            _validate_evidence_set(evidence)
+        with _process_environment(environment):
+            for checkout in checkouts:
+                completed = subprocess.run(
+                    [tools["git"], "clone", str(artifacts["CANDIDATE.bundle"]), str(checkout)],
+                    check=False,
+                    capture_output=True,
+                    env=environment,
+                )
+                _require(completed.returncode == 0, "TEP verifier clone failed")
+                completed = subprocess.run(
+                    [tools["git"], "-C", str(checkout), "checkout", "--detach", candidate],
+                    check=False,
+                    capture_output=True,
+                    env=environment,
+                )
+                _require(completed.returncode == 0, "TEP verifier checkout failed")
+            exact_diff = _git_bytes(
+                checkouts[0],
+                "diff",
+                "--no-ext-diff",
+                "--binary",
+                "--full-index",
+                BASE_SHA,
+                candidate,
+                "--",
+            )
+            _require(
+                exact_diff == artifacts["CANDIDATE.diff"].read_bytes(),
+                "TEP diff bytes mismatch",
+            )
+            regenerated = run_final_gate(
+                base=BASE_SHA,
+                candidate=candidate,
+                bundle=artifacts["CANDIDATE.bundle"],
+                bundle_sha256=bundle_digest,
+                issue_body=artifacts["ISSUE_297_BODY.txt"],
+                issue_body_sha256=RATIFIED_ISSUE_BODY_SHA256,
+                checkout_1=checkouts[0],
+                checkout_2=checkouts[1],
+                evidence_1=evidences[0],
+                evidence_2=evidences[1],
+            )
+            _require(regenerated == final_value, "TEP final gate is not reproducible")
+    return {
+        "artifactCount": len(artifacts),
+        "bundleSha256": bundle_digest,
+        "candidate": candidate,
+        "candidateTree": tree,
+        "diffSha256": diff_digest,
+        "issueNumber": issue["number"],
+        "prNumber": pull["number"],
+        "ratificationCommentId": comment["id"],
+        "result": "PASS",
     }
 
 
@@ -3026,14 +4711,14 @@ def run_runtime(runtime: str) -> dict:
         slots = run_javascript_slots()
     _require(
         len(boundary["rows"]) + len(connected["rows"]) + len(slots["rows"])
-        == 126,
+        == 164,
         "runtime scenario count",
     )
     return {
         "boundaryRows": boundary["rows"],
         "connectedRows": connected["rows"],
         "result": "PASS",
-        "scenarioCount": 126,
+        "scenarioCount": 164,
         "schema": "styx-c03-h1h2-runtime-observations/v1",
         "slotRows": slots["rows"],
     }
@@ -3053,7 +4738,7 @@ def validate_relation() -> None:
     groups = (
         (H1_BOUNDARY, "H1-BND", 29),
         (H1_CONNECTED, "H1-CON", 35),
-        (H2_SLOTS, "H2-SLT", 62),
+        (H2_SLOTS, "H2-SLT", 100),
     )
     all_rows = []
     for rows, prefix, count in groups:
@@ -3064,7 +4749,7 @@ def validate_relation() -> None:
             f"{prefix} identifiers are not continuous",
         )
         all_rows.extend(rows)
-    _require(len(all_rows) == 126, "logical scenario count")
+    _require(len(all_rows) == 164, "logical scenario count")
     _require(
         len({row.row_id for row in all_rows}) == len(all_rows),
         "duplicate row identifier",
@@ -3073,7 +4758,7 @@ def validate_relation() -> None:
         len({row.scenario_id for row in all_rows}) == len(all_rows),
         "duplicate scenario identifier",
     )
-    _require(len(MUTANTS) == 20 and len(set(MUTANTS)) == 20, "mutant relation")
+    _require(len(MUTANTS) == 24 and len(set(MUTANTS)) == 24, "mutant relation")
     _require(set(MUTATION_SPECS) == set(MUTANTS), "mutation specification set")
     _require(
         set(APPENDIX_MUTANT_DESCRIPTIONS) == set(MUTANTS),
@@ -3132,9 +4817,13 @@ def main(argv: list[str] | None = None) -> int:
     action.add_argument("--run-python", action="store_true")
     action.add_argument("--run-javascript", action="store_true")
     action.add_argument("--run-detector", metavar="MUTANT")
+    action.add_argument("--run-one-mutation", metavar="MUTANT")
     action.add_argument("--run-mutations", action="store_true")
     action.add_argument("--run-regression", action="store_true")
+    action.add_argument("--scope", action="store_true")
     action.add_argument("--final-gate", action="store_true")
+    action.add_argument("--build-tep", action="store_true")
+    action.add_argument("--verify-tep", action="store_true")
     parser.add_argument("--runtime", choices=("python", "javascript"))
     parser.add_argument("--output", type=Path)
     parser.add_argument("--base")
@@ -3147,6 +4836,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--checkout-2", type=Path)
     parser.add_argument("--evidence-1", type=Path)
     parser.add_argument("--evidence-2", type=Path)
+    parser.add_argument("--issue-rest", type=Path)
+    parser.add_argument("--ratification-comment-rest", type=Path)
+    parser.add_argument("--pr-rest", type=Path)
+    parser.add_argument("--codex-reconciliation", type=Path)
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--package", type=Path)
+    parser.add_argument("--mode", choices=("strict",))
+    parser.add_argument("--mutation-log", type=Path)
+    parser.add_argument(
+        "--checkout-role", choices=("CHECKOUT_1", "CHECKOUT_2")
+    )
     args = parser.parse_args(argv)
     if not args.run_detector:
         validate_relation()
@@ -3155,7 +4855,7 @@ def main(argv: list[str] | None = None) -> int:
             args.output is None and args.runtime is None,
             "validation does not accept runtime or output",
         )
-        print("Package-A relation PASS scenarios=126 mutants=20")
+        print("Package-A relation PASS scenarios=164 mutants=24")
         return 0
     if args.run_detector:
         _require(args.output is None, "detector does not accept output")
@@ -3163,15 +4863,71 @@ def main(argv: list[str] | None = None) -> int:
         run_detector(args.run_detector, args.runtime)
         print(f"detector_pass={args.run_detector}:{args.runtime}")
         return 0
+    if args.run_one_mutation:
+        _require(args.output is not None, "single mutation output is required")
+        _require(args.runtime is not None, "single mutation runtime is required")
+        _store_new(
+            args.output,
+            _run_one_mutation(args.run_one_mutation, args.runtime),
+        )
+        return 0
     if args.run_mutations:
         _require(args.output is not None, "mutation output is required")
         _require(args.runtime is not None, "mutation runtime is required")
-        _store_new(args.output, run_mutations(args.runtime))
+        _store_new(
+            args.output,
+            run_mutations(
+                args.runtime,
+                mutation_log=args.mutation_log,
+                checkout_role=args.checkout_role,
+            ),
+        )
         return 0
     if args.run_regression:
         _require(args.output is not None, "regression output is required")
         _require(args.runtime is None, "regression does not accept runtime")
         _store_new(args.output, run_regression())
+        return 0
+    if args.scope:
+        _require(args.output is not None, "scope output is required")
+        _require(args.base is not None and args.candidate is not None, "scope identities are required")
+        _store_new(args.output, run_package_a_scope(REPO, args.base, args.candidate))
+        return 0
+    if args.build_tep:
+        required = (
+            args.base,
+            args.candidate,
+            args.bundle,
+            args.issue_rest,
+            args.ratification_comment_rest,
+            args.pr_rest,
+            args.checkout_1,
+            args.checkout_2,
+            args.evidence_1,
+            args.evidence_2,
+            args.codex_reconciliation,
+            args.output_dir,
+        )
+        _require(all(value is not None for value in required), "TEP builder argument missing")
+        result = build_tep(
+            base=args.base,
+            candidate=args.candidate,
+            bundle=args.bundle,
+            issue_rest=args.issue_rest,
+            ratification_comment_rest=args.ratification_comment_rest,
+            pr_rest=args.pr_rest,
+            checkout_1=args.checkout_1,
+            checkout_2=args.checkout_2,
+            evidence_1=args.evidence_1,
+            evidence_2=args.evidence_2,
+            codex_reconciliation=args.codex_reconciliation,
+            output_dir=args.output_dir,
+        )
+        print(dumps(result).decode("utf-8"), end="")
+        return 0
+    if args.verify_tep:
+        _require(args.package is not None, "TEP package is required")
+        print(dumps(verify_tep(args.package)).decode("utf-8"), end="")
         return 0
     if args.final_gate:
         required = (

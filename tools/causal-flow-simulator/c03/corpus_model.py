@@ -919,13 +919,15 @@ def _ed_encode(point: tuple[int, int]) -> bytes:
     return (y | ((x & 1) << 255)).to_bytes(32, "little")
 
 
-def _ed_decode(encoded: bytes) -> tuple[int, int]:
+def _ed_decode(
+    encoded: bytes, *, enforce_canonical: bool = True
+) -> tuple[int, int]:
     if len(encoded) != 32:
         raise ProtocolError("SIGNATURE_POINT_LENGTH")
     raw = int.from_bytes(encoded, "little")
     sign = raw >> 255
     y = raw & ((1 << 255) - 1)
-    if y >= _P:
+    if enforce_canonical and y >= _P:
         raise ProtocolError("SIGNATURE_POINT_NONCANONICAL")
     value = (y * y - 1) * pow(_D * y * y + 1, _P - 2, _P) % _P
     x = pow(value, (_P + 3) // 8, _P)
@@ -1024,10 +1026,19 @@ def ed25519_verify_detailed(
             "guardCode": "R_NOT_PRIME_ORDER",
         }
     challenge = int.from_bytes(sha512(signature[:32] + public + message).digest(), "little") % _L
-    accepted = _ed_mul(scalar) == _ed_add(point_r, _ed_mul(challenge, point_a))
+    equation_invocations = 0
+
+    def selected_equation() -> bool:
+        nonlocal equation_invocations
+        equation_invocations += 1
+        return _ed_mul(scalar) == _ed_add(
+            point_r, _ed_mul(challenge, point_a)
+        )
+
+    accepted = selected_equation()
     return {
         "accepted": accepted,
-        "equationInvocations": 1,
+        "equationInvocations": equation_invocations,
         "guardCode": "GUARD_ACCEPTED",
     }
 
@@ -1502,9 +1513,29 @@ def evaluate_k_admission_scenario(
     return observations
 
 
+def _classify_reference_identities(
+    identities: list[tuple[str, bytes]],
+) -> dict[tuple[str, bytes], str]:
+    """Classify already-computed logical identities without a digest override."""
+
+    transcripts_by_reference: dict[str, set[bytes]] = {}
+    for reference, transcript in identities:
+        transcripts_by_reference.setdefault(reference, set()).add(transcript)
+    return {
+        (reference, transcript): (
+            "REFERENCE_COLLISION_UNSUPPORTED"
+            if len(transcripts_by_reference[reference]) > 1
+            else "UNIQUE"
+        )
+        for reference, transcript in identities
+    }
+
+
 def evaluate_k_admission_graph(
     genesis_record: dict[str, Any],
     records: list[dict[str, Any]],
+    *,
+    presentation_evidence: bool = False,
 ) -> list[dict[str, Any]]:
     """Evaluate K0/K1/K2/K3 over one complete bounded candidate set."""
 
@@ -1528,10 +1559,9 @@ def evaluate_k_admission_graph(
         raise ProtocolError("PREACCEPTED_GENESIS_SIGNATURE_INVALID")
 
     context = genesis_fields["contextIdentifierHex"]
-    parsed: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {}
-    rejected: dict[str, ProtocolError] = {}
-    record_order: dict[str, str] = {}
-    canonical_inputs: dict[str, bytes] = {}
+    presentations: dict[str, dict[str, Any]] = {}
+    presentation_rejected: dict[str, ProtocolError] = {}
+    encoded_by_identifier: dict[str, bytes] = {}
     for record in records:
         try:
             transcript = bytes.fromhex(record["transcriptHex"])
@@ -1540,12 +1570,16 @@ def evaluate_k_admission_graph(
         except (KeyError, ValueError, TypeError) as error:
             raise ProtocolError("STRUCTURAL_REJECTION") from error
         encoded_input = dumps(record)
-        if reference in canonical_inputs:
-            if canonical_inputs[reference] == encoded_input:
+        if identifier in encoded_by_identifier:
+            if encoded_by_identifier[identifier] == encoded_input:
                 continue
-            raise ProtocolError("REFERENCE_COLLISION_UNSUPPORTED")
-        canonical_inputs[reference] = encoded_input
-        record_order[reference] = identifier
+            raise ProtocolError("STRUCTURAL_REJECTION")
+        encoded_by_identifier[identifier] = encoded_input
+        presentations[identifier] = {
+            "record": record,
+            "reference": reference,
+            "transcript": transcript,
+        }
         try:
             fields = parse_event(transcript)
             if reference != record.get("eventReferenceHex"):
@@ -1554,7 +1588,7 @@ def evaluate_k_admission_graph(
                 raise ProtocolError("CREDENTIAL_BINDING_MISMATCH")
             if fields["genesisReferenceHex"] != genesis_reference:
                 raise ProtocolError("CREDENTIAL_BINDING_MISMATCH")
-            parsed[reference] = (record, fields)
+            presentations[identifier]["fields"] = fields
         except (KeyError, ValueError, ProtocolError) as error:
             code = (
                 error.code
@@ -1563,7 +1597,36 @@ def evaluate_k_admission_graph(
                 in {"REFERENCE_COLLISION_UNSUPPORTED", "CREDENTIAL_BINDING_MISMATCH"}
                 else "STRUCTURAL_REJECTION"
             )
-            rejected[reference] = ProtocolError(code, "S3_KERNEL_STRUCTURAL")
+            presentation_rejected[identifier] = ProtocolError(
+                code, "S3_KERNEL_STRUCTURAL"
+            )
+
+    classified = _classify_reference_identities(
+        [
+            (value["reference"], value["transcript"])
+            for identifier, value in presentations.items()
+            if identifier not in presentation_rejected
+        ]
+    )
+    logical_groups: dict[str, dict[str, Any]] = {}
+    for identifier, presentation in presentations.items():
+        if identifier in presentation_rejected:
+            continue
+        identity = (presentation["reference"], presentation["transcript"])
+        if classified[identity] == "REFERENCE_COLLISION_UNSUPPORTED":
+            presentation_rejected[identifier] = ProtocolError(
+                "REFERENCE_COLLISION_UNSUPPORTED", "S3_KERNEL_STRUCTURAL"
+            )
+            continue
+        group = logical_groups.setdefault(
+            presentation["reference"],
+            {
+                "fields": presentation["fields"],
+                "presentationIds": [],
+                "transcript": presentation["transcript"],
+            },
+        )
+        group["presentationIds"].append(identifier)
 
     def dependencies(fields: Mapping[str, Any]) -> set[str]:
         values = set(fields["causalParents"])
@@ -1572,6 +1635,7 @@ def evaluate_k_admission_graph(
         return values
 
     admitted: dict[str, dict[str, Any]] = {}
+    logical_rejected: dict[str, ProtocolError] = {}
     local_results: dict[str, tuple[dict[str, Any], bool]] = {}
     bindings: dict[str, dict[str, Any]] = {
         genesis_reference: {
@@ -1596,45 +1660,58 @@ def evaluate_k_admission_graph(
         values.discard(reference)
         return frozenset(values)
 
-    pending = set(parsed) - set(rejected)
+    pending = set(logical_groups)
     while pending:
         progress = False
         for reference in sorted(tuple(pending)):
-            record, fields = parsed[reference]
+            group = logical_groups[reference]
+            fields = group["fields"]
             actor = fields["credentialIdentifierHex"]
             binding = bindings.get(actor)
             if binding is None:
                 continue
             required = dependencies(fields)
-            if reference not in local_results:
-                local_record = dict(record)
-                local_record.pop("admissionContext", None)
-                local_record["binding"] = {
-                    "contextIdentifierHex": context,
-                    "credentialIdentifierHex": actor,
-                    "verificationKeyHex": binding["verificationKeyHex"],
-                }
-                local = evaluate_vector(local_record)
-                local_code = local.get("localOutcome")
-                local_pending = (
-                    local_code == "PENDING_OPENING"
-                    and local.get("kBindingAdmission") == "ADMITTED"
-                )
-                if not transition_input_is_compatible(local) and not local_pending:
-                    rejected[reference] = ProtocolError(
-                        str(local_code or "INVALID"),
-                        str(local.get("stage", "S3_KERNEL_STRUCTURAL")),
+            eligible: list[str] = []
+            ready: list[str] = []
+            for identifier in sorted(group["presentationIds"]):
+                if identifier not in local_results:
+                    local_record = dict(presentations[identifier]["record"])
+                    local_record.pop("admissionContext", None)
+                    local_record["binding"] = {
+                        "contextIdentifierHex": context,
+                        "credentialIdentifierHex": actor,
+                        "verificationKeyHex": binding["verificationKeyHex"],
+                    }
+                    local = evaluate_vector(local_record)
+                    local_code = local.get("localOutcome")
+                    local_pending = (
+                        local_code == "PENDING_OPENING"
+                        and local.get("kBindingAdmission") == "ADMITTED"
                     )
-                    pending.remove(reference)
-                    progress = True
-                    continue
-                local_results[reference] = (local, local_pending)
-            local, local_pending = local_results[reference]
+                    local_results[identifier] = (local, local_pending)
+                    if (
+                        not transition_input_is_compatible(local)
+                        and not local_pending
+                    ):
+                        presentation_rejected[identifier] = ProtocolError(
+                            str(local_code or "INVALID"),
+                            str(local.get("stage", "S3_KERNEL_STRUCTURAL")),
+                        )
+                if identifier not in presentation_rejected:
+                    eligible.append(identifier)
+                    if not local_results[identifier][1]:
+                        ready.append(identifier)
+            if not eligible:
+                first = sorted(group["presentationIds"])[0]
+                logical_rejected[reference] = presentation_rejected[first]
+                pending.remove(reference)
+                progress = True
+                continue
 
-            absent = required - set(parsed)
-            failed = required & set(rejected)
+            absent = required - set(logical_groups)
+            failed = required & set(logical_rejected)
             if absent or failed:
-                rejected[reference] = ProtocolError(
+                logical_rejected[reference] = ProtocolError(
                     "DEPENDENCY_DEFERRED", "S4_GRAPH_ADMISSION"
                 )
                 pending.remove(reference)
@@ -1724,7 +1801,7 @@ def evaluate_k_admission_graph(
                         ):
                             raise ProtocolError("STRUCTURAL_REJECTION")
             except ProtocolError as error:
-                rejected[reference] = error
+                logical_rejected[reference] = error
                 pending.remove(reference)
                 progress = True
                 continue
@@ -1734,9 +1811,11 @@ def evaluate_k_admission_graph(
             )
             admitted[reference] = {
                 "fields": fields,
-                "localPending": local_pending,
-                "pendingLineage": local_pending or dependency_pending,
-                "record": record,
+                "k1PresentationIds": tuple(eligible),
+                "localPending": not ready,
+                "logicalEventEffectCount": 1,
+                "pendingLineage": (not ready) or dependency_pending,
+                "record": presentations[(ready or eligible)[0]]["record"],
             }
             if fields["eventRole"] == "CREDENTIAL" and fields["tail"]["kind"] == "GRANT":
                 bindings[reference] = {
@@ -1749,7 +1828,7 @@ def evaluate_k_admission_graph(
         if progress:
             continue
         for reference in sorted(pending):
-            _, fields = parsed[reference]
+            fields = logical_groups[reference]["fields"]
             code = (
                 "UNRESOLVED_CREDENTIAL_BINDING"
                 if fields["credentialIdentifierHex"] not in bindings
@@ -1760,7 +1839,7 @@ def evaluate_k_admission_graph(
                 if code == "UNRESOLVED_CREDENTIAL_BINDING"
                 else "S4_GRAPH_ADMISSION"
             )
-            rejected[reference] = ProtocolError(code, stage)
+            logical_rejected[reference] = ProtocolError(code, stage)
         pending.clear()
 
     slots: dict[tuple[str, str, int], list[str]] = {}
@@ -1780,26 +1859,55 @@ def evaluate_k_admission_graph(
     }
 
     observations = []
-    for reference, identifier in sorted(record_order.items()):
-        error = rejected.get(reference)
+    for identifier, presentation in sorted(
+        presentations.items(), key=lambda item: (item[1]["reference"], item[0])
+    ):
+        reference = presentation["reference"]
+        error = presentation_rejected.get(identifier)
+        logical = admitted.get(reference)
+        if error is None:
+            error = logical_rejected.get(reference)
         if error is None and reference in forced_forks:
             error = ProtocolError("FORK_EVIDENCE", "EVENT_LOCAL", admitted=True)
-        elif error is None and admitted[reference]["localPending"]:
+        elif error is None and logical["localPending"]:
             error = ProtocolError("PENDING_OPENING", "EVENT_LOCAL", admitted=True)
-        elif error is None and admitted[reference]["pendingLineage"]:
+        elif error is None and logical["pendingLineage"]:
             error = ProtocolError("PENDING_ANCESTOR", "EVENT_LOCAL", admitted=True)
+        k_admitted = error is None or error.admitted
+        coalesced = (
+            len(logical["k1PresentationIds"])
+            if k_admitted and logical is not None
+            else 0
+        )
         observations.append(
             {
+                "coalescedPresentationCount": coalesced,
                 "eventReferenceHex": reference,
                 "id": identifier,
                 "kBindingAdmission": (
-                    "ADMITTED" if error is None or error.admitted else "REJECTED"
+                    "ADMITTED" if k_admitted else "REJECTED"
                 ),
+                "logicalEventEffectCount": (
+                    logical["logicalEventEffectCount"]
+                    if k_admitted and logical is not None
+                    else 0
+                ),
+                "logicalEventReferenceHex": reference,
                 "protocolErrorCode": error.code if error else None,
                 "stage": error.stage if error else "FINAL_AFTER_S6",
             }
         )
-    return observations
+    if presentation_evidence:
+        return observations
+    evidence_fields = {
+        "coalescedPresentationCount",
+        "logicalEventEffectCount",
+        "logicalEventReferenceHex",
+    }
+    return [
+        {key: value for key, value in row.items() if key not in evidence_fields}
+        for row in observations
+    ]
 
 
 def evaluate_transcript_conformance(record: dict[str, Any]) -> dict[str, Any]:

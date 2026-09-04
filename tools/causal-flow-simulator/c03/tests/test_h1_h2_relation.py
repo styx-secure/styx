@@ -19,6 +19,7 @@ sys.path.insert(0, str(O14))
 from canonical_json import dumps, load, loads  # noqa: E402
 from corpus_model import (  # noqa: E402
     DOMAINS,
+    ProtocolError,
     ed25519_sign,
     ed25519_verify_detailed,
     evaluate_k_admission_graph,
@@ -27,8 +28,15 @@ from corpus_model import (  # noqa: E402
 )
 from generate_corpus import _application_vector, _event_fields  # noqa: E402
 from h1_h2_relation import (  # noqa: E402
+    MUTANTS,
     RelationError,
+    TEP_FILENAMES,
     _clean_checkout,
+    _closed_environment,
+    _manifest_bytes,
+    _resolve_toolchain,
+    _validate_jsonl,
+    _verify_tep_structure,
     run_runtime,
     slot_cases,
     validate_relation,
@@ -293,6 +301,91 @@ class H2AdmissionOrderTests(unittest.TestCase):
     def test_complete_relation_is_byte_equivalent_across_runtimes(self) -> None:
         self.assertEqual(run_runtime("python"), run_runtime("javascript"))
 
+    def test_valid_aliases_authenticate_independently_and_commit_once(self) -> None:
+        case = slot_cases()[62]
+        rows = evaluate_k_admission_graph(
+            case["genesis"], case["records"], presentation_evidence=True
+        )
+        targets = [row for row in rows if row["id"] in case["targets"]]
+        aliases = [row for row in targets if row["id"].endswith(("-V", "-A"))]
+        self.assertEqual(len(aliases), 2)
+        self.assertEqual(
+            {
+                (
+                    row["kBindingAdmission"],
+                    row["coalescedPresentationCount"],
+                    row["logicalEventEffectCount"],
+                )
+                for row in aliases
+            },
+            {("ADMITTED", 2, 1)},
+        )
+        self.assertEqual(
+            {row["eventReferenceHex"] for row in aliases},
+            {aliases[0]["logicalEventReferenceHex"]},
+        )
+
+    def test_invalid_alias_and_opening_cannot_poison_or_supply(self) -> None:
+        for index, rejected_code, surviving_code in (
+            (68, "INVALID", None),
+            (80, "COMMITMENT_MISMATCH", None),
+            (88, "INVALID", "PENDING_OPENING"),
+            (94, "COMMITMENT_MISMATCH", "PENDING_OPENING"),
+        ):
+            with self.subTest(row=index + 1):
+                case = slot_cases()[index]
+                rows = evaluate_k_admission_graph(
+                    case["genesis"],
+                    case["records"],
+                    presentation_evidence=True,
+                )
+                targets = [row for row in rows if row["id"] in case["targets"]]
+                rejected = next(
+                    row for row in targets if row["protocolErrorCode"] == rejected_code
+                )
+                self.assertEqual(
+                    (
+                        rejected["kBindingAdmission"],
+                        rejected["coalescedPresentationCount"],
+                        rejected["logicalEventEffectCount"],
+                    ),
+                    ("REJECTED", 0, 0),
+                )
+                survivor = next(
+                    row
+                    for row in targets
+                    if row["eventReferenceHex"] == rejected["eventReferenceHex"]
+                    and row["id"] != rejected["id"]
+                )
+                self.assertEqual(survivor["protocolErrorCode"], surviving_code)
+                self.assertEqual(survivor["logicalEventEffectCount"], 1)
+
+    def test_conflicting_stable_identifier_fails_before_graph_processing(self) -> None:
+        case = slot_cases()[62]
+        first = deepcopy(case["records"][-3])
+        conflicting = deepcopy(case["records"][-2])
+        conflicting["id"] = first["id"]
+        with self.assertRaisesRegex(ProtocolError, "STRUCTURAL_REJECTION"):
+            evaluate_k_admission_graph(case["genesis"], [first, conflicting])
+
+    def test_private_collision_rows_do_not_claim_admission_or_effect(self) -> None:
+        for case in slot_cases()[86:88]:
+            with self.subTest(row=case["row"].row_id):
+                from h1_h2_relation import _project_slot_case
+
+                projected = _project_slot_case(case)
+                self.assertEqual(
+                    {row["classification"] for row in projected["observations"]},
+                    {"REFERENCE_COLLISION_UNSUPPORTED", "UNIQUE"},
+                )
+                self.assertTrue(
+                    all(
+                        "logicalEventEffectCount" not in row
+                        and "kBindingAdmission" not in row
+                        for row in projected["observations"]
+                    )
+                )
+
 
 class FinalGateGitIdentityTests(unittest.TestCase):
     def test_replace_ref_cannot_make_an_old_tree_look_clean(self) -> None:
@@ -426,6 +519,89 @@ class FinalGateGitIdentityTests(unittest.TestCase):
                     os.environ.pop("GIT_DIR", None)
                 else:
                     os.environ["GIT_DIR"] = previous
+
+
+class TechnicalEvidencePackageTests(unittest.TestCase):
+    def test_closed_environment_contains_only_ratified_keys(self) -> None:
+        tools, versions = _resolve_toolchain()
+        self.assertEqual(len(versions.splitlines()), 5)
+        with tempfile.TemporaryDirectory(prefix="styx-c03-env-test-") as tmp:
+            environment = _closed_environment(tools, Path(tmp) / "environment")
+            self.assertEqual(
+                set(environment),
+                {
+                    "GIT_CONFIG_GLOBAL",
+                    "GIT_CONFIG_NOSYSTEM",
+                    "GIT_NO_REPLACE_OBJECTS",
+                    "HOME",
+                    "LANG",
+                    "LC_ALL",
+                    "PATH",
+                    "PYTHONDONTWRITEBYTECODE",
+                    "TMPDIR",
+                    "TZ",
+                },
+            )
+            self.assertNotIn("PYTHONPATH", environment)
+            self.assertNotIn("PYTHONOPTIMIZE", environment)
+            self.assertNotIn("NODE_OPTIONS", environment)
+
+    def test_mutation_ledger_requires_exact_order_and_zero_exit(self) -> None:
+        rows = [
+            {
+                "argv": ["python3", "detector.py", mutant],
+                "checkoutRole": "CHECKOUT_1",
+                "commandId": mutant,
+                "exitStatus": 0,
+                "stderrUtf8": "",
+                "stdoutUtf8": "PASS\n",
+            }
+            for mutant in MUTANTS
+        ]
+        payload = b"".join(dumps(row) for row in rows)
+        self.assertEqual(
+            len(
+                _validate_jsonl(
+                    payload,
+                    expected_ids=MUTANTS,
+                    checkout_role="CHECKOUT_1",
+                )
+            ),
+            24,
+        )
+        rows[-1]["exitStatus"] = 2
+        with self.assertRaisesRegex(RelationError, "command-ledger row"):
+            _validate_jsonl(
+                b"".join(dumps(row) for row in rows),
+                expected_ids=MUTANTS,
+                checkout_role="CHECKOUT_1",
+            )
+
+    def test_flat_package_schema_and_manifest_are_exact(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="styx-c03-tep-test-") as tmp:
+            package = Path(tmp) / "package"
+            package.mkdir()
+            for name in TEP_FILENAMES:
+                if name not in {"PACKAGE_SCHEMA.txt", "SHA256SUMS.txt"}:
+                    (package / name).write_bytes(f"fixture:{name}\n".encode())
+            (package / "PACKAGE_SCHEMA.txt").write_bytes(
+                "".join(f"{name}\n" for name in TEP_FILENAMES).encode("ascii")
+            )
+            (package / "SHA256SUMS.txt").write_bytes(_manifest_bytes(package))
+            self.assertEqual(len(_verify_tep_structure(package)), 34)
+            (package / "UNLISTED").write_text("no\n", encoding="utf-8")
+            with self.assertRaisesRegex(RelationError, "artifact set"):
+                _verify_tep_structure(package)
+
+    def test_flat_package_rejects_symlink(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="styx-c03-tep-link-") as tmp:
+            package = Path(tmp) / "package"
+            package.mkdir()
+            target = package / "target"
+            target.write_text("target\n", encoding="utf-8")
+            (package / "alias").symlink_to(target)
+            with self.assertRaisesRegex(RelationError, "invalid package artifact"):
+                _verify_tep_structure(package)
 
 
 if __name__ == "__main__":

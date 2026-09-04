@@ -65,43 +65,6 @@ python3 tools/causal-flow-simulator/c03/run_mutations.py \
 diff -ru conformance/application-protocol/c03 "$tmp/generated"
 ```
 
-Issue #297 Package A adds executable implementation-alignment evidence for two
-previously unbound edges without modifying the six official corpus files:
-
-- H1 applies the selected guarded Ed25519 accepted language at the actual
-  genesis and event-signature call sites, with exactly one verification
-  equation after canonical, subgroup and scalar guards;
-- H2 constructs complete `(context, credential, author-sequence)` candidate
-  slots from locally authenticated candidates before readiness selection, so
-  pending siblings remain visible and arrival order cannot select a winner.
-
-The literal relation contains 29 boundary rows, 35 connected/disconnected
-call-site rows and 62 slot/readiness rows. Both runtimes execute all 126 rows
-and independently kill the same 20 real source mutations. Signed scheduler
-fixtures exercise both lexical-reference directions as well as list-order
-permutations. The regression command regenerates and compares the frozen
-corpus and reruns its historical producers:
-
-```bash
-python3 tools/causal-flow-simulator/c03/h1_h2_relation.py --validate-relation
-python3 tools/causal-flow-simulator/c03/h1_h2_relation.py \
-  --run-python --output "$tmp/h1h2-python.json"
-python3 tools/causal-flow-simulator/c03/h1_h2_relation.py \
-  --run-javascript --output "$tmp/h1h2-javascript.json"
-python3 tools/causal-flow-simulator/c03/h1_h2_relation.py \
-  --run-mutations --runtime python \
-  --output "$tmp/h1h2-mutations-python.json"
-python3 tools/causal-flow-simulator/c03/h1_h2_relation.py \
-  --run-mutations --runtime javascript \
-  --output "$tmp/h1h2-mutations-javascript.json"
-python3 tools/causal-flow-simulator/c03/h1_h2_relation.py \
-  --run-regression --output "$tmp/h1h2-regression.json"
-```
-
-This remains evidence code, not an SDK or product cryptographic adapter. It
-does not select transport, persistence, recovery, wire/API error encoding or a
-production cryptographic library.
-
 The public blind-kit workflow is intentionally separate from ordinary corpus
 replay. `build_blind_projection.py build-kit` exports opaque inputs without
 publishing their exact cardinality and includes the
@@ -133,3 +96,15 @@ does not claim a production ceremony, recovery, persistence, transport, wire
 format, implementation alignment, audit, demo readiness or sensitive-use
 safety. C0.3 remains `NO_GO` for `demo`, `implementation_alignment`, `product`
 and `sensitive_use`.
+
+<!-- styx-c03-h1h2-package-a:v4:c03-readme:start -->
+## Package-A H1/H2 test-local evidence
+
+Package A repairs the isolated C0.3/K Ed25519 guard and
+authenticate-before-slot pending/fork conformance oracle. Its handwritten
+test-local relation contains 164 logical scenarios and 24 real source mutants
+executed independently in Python and JavaScript. The six tracked official C0.3
+corpus files remain byte-identical to the Package-A Base. Package B must later
+propagate the relation into the guarded corpus, blind reader and APP-core.
+C0.3, adapter, SDK, demo, Flegias and sensitive use remain `NO_GO`.
+<!-- styx-c03-h1h2-package-a:v4:c03-readme:end -->

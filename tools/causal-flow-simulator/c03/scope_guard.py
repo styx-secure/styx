@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed Base-to-candidate relation guard for Issue #297 Package A."""
+"""Fail-closed path and package-shape guard for Issue #266."""
 
 from __future__ import annotations
 
@@ -16,23 +16,37 @@ sys.path.insert(0, str(ROOT))
 from canonical_json import store  # noqa: E402
 
 
-BASE_SHA = "16274cc194cd2f8f7b631332687a252bad92ce02"
-COPY_THRESHOLD = 50
-PINS = {
-    "tools/causal-flow-simulator/c03/corpus_model.py": "c5fae0f950cc8f9691a95d8231cc88e6c43c5e1e74b797d716928b6c8f5b1558",
-    "tools/causal-flow-simulator/c03/node_adapter.mjs": "fc52c0800fab4c7cf75785b962ba09ffd67d06cb0b7bd02e850d6f13b0868da0",
-    "tools/causal-flow-simulator/c03/README.md": "bd7f0459836c07d849780789b7ba7b11107cd853921b185838c3a7b9db575d3c",
-    "tools/causal-flow-simulator/c03/scope_guard.py": "434c0b5276a0aba79cfc8d2b3cc56c4e337c58c6415db0ced2f9f9339aed4c66",
-    "tools/causal-flow-simulator/c03/tests/test_scope_guard.py": "208dd5995f2518bd1245cc6968bc6acc9c0d8686d620352d16006c8c12846011",
-    "tools/causal-flow-simulator/c03/tests/test_replay.py": "f1566d7412b16f3210b17c8e076c7d836e7693b7404c9af14a6ac1e6293b56ab",
-    "docs/protocol/protocol-hardening-plan.md": "21033486045cfcfc0947b8b516489d1683fe2ec3b48a184faa068bf1777ad0bf",
-    "docs/protocol/review/README.md": "d355ad16b2025240dadedbf2ca6ca1b78a5036c8ff2a727cf19d48414299b050",
-}
-NEW = frozenset({
-    "tools/causal-flow-simulator/c03/h1_h2_relation.py",
-    "tools/causal-flow-simulator/c03/tests/test_h1_h2_relation.py",
+BASE_SHA = "a4fa1286b57b2ee79b3c580fdce0d1fb3bf9cd40"
+COPY_THRESHOLD = 25
+CORPUS_PREFIX = "conformance/application-protocol/c03/"
+TOOL_PREFIX = "tools/causal-flow-simulator/c03/"
+CORPUS_FILES = frozenset({
+    "manifest.json", "valid-transcript-vectors.json", "invalid-transcript-vectors.json",
+    "state-machine-scenarios.json", "adversarial-mutations.json", "expected-traces.json",
 })
-ALLOWED = frozenset(PINS) | NEW
+TOOL_FILES = frozenset({
+    "README.md", "build_blind_projection.py", "canonical_json.py", "compare_clean_room.py",
+    "corpus-inventory.json", "corpus-source-map.json",
+    "corpus_model.py", "generate_corpus.py", "validate_corpus.py", "replay_corpus.py",
+    "node_adapter.mjs", "run_cross_runtime.py", "run_mutations.py", "scope_guard.py",
+    "tests/test_blind_projection.py", "tests/test_compare_clean_room.py",
+    "tests/test_canonical_json.py", "tests/test_coverage.py", "tests/test_generation.py",
+    "tests/test_manifest.py", "tests/test_mutations.py", "tests/test_replay.py",
+    "tests/test_scope_guard.py", "tests/test_cross_runtime.py",
+    "h1_h2_relation.py", "tests/test_h1_h2_relation.py",
+})
+SYNC_FILES = frozenset({
+    "docs/PROJECT_BRIEF.md", "docs/protocol/protocol-hardening-plan.md",
+    "docs/protocol/review/README.md", "docs/protocol/review/styx-app-kernel-v0-review-model.json",
+    "docs/protocol/review/styx-app-kernel-v0-review-model.schema.json",
+    "docs/protocol/styx-app-kernel-v0-commitment-encoding-profile.md",
+    "docs/protocol/styx-app-kernel-v0-decisions.md",
+    "tools/protocol-review-model/validate.py",
+    "tools/causal-flow-simulator/o10/scope_guard.py",
+    "tools/protocol-review-model/tests/test_c03_corpus_path_approval.py",
+    "tools/protocol-review-model/tests/test_c03_entry_authorization.py",
+    "tools/protocol-review-model/tests/test_o10_outcome_taxonomy.py",
+})
 
 
 class ScopeViolation(ValueError):
@@ -50,35 +64,45 @@ def commit(repo: Path, value: str) -> str:
 
 
 def allowed(path: str) -> bool:
-    return path in ALLOWED
+    if path.startswith(CORPUS_PREFIX):
+        return path.removeprefix(CORPUS_PREFIX) in CORPUS_FILES
+    if path.startswith(TOOL_PREFIX):
+        return path.removeprefix(TOOL_PREFIX) in TOOL_FILES
+    return path in SYNC_FILES
 
 
 def changed_relation(repo: Path, base: str, candidate: str) -> list[dict[str, Any]]:
     fields = git(
-        repo, "diff", "--name-status", "-z", "--no-renames", base, candidate,
+        repo, "diff-tree", "-r", f"--find-renames={COPY_THRESHOLD}%",
+        f"--find-copies={COPY_THRESHOLD}%", "--find-copies-harder", "-l0",
+        "--name-status", "-z", "--no-commit-id", base, candidate,
     ).split(b"\0")
     if fields and not fields[-1]:
         fields.pop()
     rows: list[dict[str, Any]] = []
-    seen: set[str] = set()
     cursor = 0
     while cursor < len(fields):
         status = fields[cursor].decode("ascii")
         cursor += 1
-        if status not in {"A", "M"}:
-            raise ScopeViolation(f"forbidden change status: {status}")
-        paths = [fields[cursor].decode("utf-8")]
-        cursor += 1
-        path = paths[0]
-        if not allowed(path):
-            raise ScopeViolation(f"out-of-scope endpoint: {path}")
-        if path in seen:
-            raise ScopeViolation(f"duplicate endpoint: {path}")
-        seen.add(path)
-        if (status == "A") != (path in NEW):
-            raise ScopeViolation(f"wrong endpoint state: {path}")
+        width = 2 if status[:1] in {"C", "R"} else 1
+        paths = [fields[cursor + offset].decode("utf-8") for offset in range(width)]
+        cursor += width
+        if status[:1] in {"C", "R"}:
+            raise ScopeViolation("copy/rename relation forbidden")
+        if status.startswith("D"):
+            raise ScopeViolation("deletion forbidden")
+        for path in paths:
+            if not allowed(path):
+                raise ScopeViolation(f"out-of-scope endpoint: {path}")
         rows.append({"paths": paths, "status": status})
     return rows
+
+
+def tree_files(repo: Path, candidate: str, prefix: str) -> set[str]:
+    return {
+        path.removeprefix(prefix)
+        for path in git(repo, "ls-tree", "-r", "--name-only", candidate, "--", prefix).decode().splitlines()
+    }
 
 
 def check_endpoints(repo: Path, candidate: str, rows: list[dict[str, Any]]) -> None:
@@ -97,67 +121,24 @@ def check_endpoints(repo: Path, candidate: str, rows: list[dict[str, Any]]) -> N
                 raise ScopeViolation(f"cache endpoint: {path}")
 
 
-def check_base_contract(repo: Path) -> None:
-    from hashlib import sha256
-
-    for path, expected in PINS.items():
-        blob = git(repo, "show", f"{BASE_SHA}:{path}")
-        if sha256(blob).hexdigest() != expected:
-            raise ScopeViolation(f"Base pin mismatch: {path}")
-    for path in NEW:
-        present = subprocess.run(
-            ["git", "-C", str(repo), "cat-file", "-e", f"{BASE_SHA}:{path}"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        ).returncode == 0
-        if present:
-            raise ScopeViolation(f"new endpoint exists at Base: {path}")
-
-
-def check_copy_relation(repo: Path, base: str, candidate: str) -> None:
-    fields = git(
-        repo,
-        "diff",
-        "--name-status",
-        "-z",
-        "--find-copies-harder",
-        f"--find-copies={COPY_THRESHOLD}%",
-        f"--find-renames={COPY_THRESHOLD}%",
-        "-l0",
-        base,
-        candidate,
-    ).split(b"\0")
-    if any(field[:1] in {b"C", b"R"} for field in fields[::2] if field):
-        raise ScopeViolation("copy/rename relation forbidden")
-
-
-def check_text_relation(repo: Path, base: str, candidate: str) -> None:
-    for line in git(repo, "diff", "--numstat", base, candidate).decode().splitlines():
-        added, deleted, _ = line.split("\t", 2)
-        if added == "-" or deleted == "-":
-            raise ScopeViolation("binary endpoint")
-
-
 def build_report(repo: Path, base_value: str, candidate_value: str) -> dict[str, Any]:
     base, candidate = commit(repo, base_value), commit(repo, candidate_value)
     if base_value != BASE_SHA or base != BASE_SHA:
         raise ScopeViolation("contract Base mismatch")
     if git(repo, "merge-base", base, candidate).decode().strip() != base:
         raise ScopeViolation("Base is not an ancestor")
-    check_base_contract(repo)
     rows = changed_relation(repo, base, candidate)
-    changed = {path for row in rows for path in row["paths"]}
-    if not NEW <= changed:
-        raise ScopeViolation("both required new evidence endpoints must be added")
     check_endpoints(repo, candidate, rows)
-    check_copy_relation(repo, base, candidate)
-    check_text_relation(repo, base, candidate)
+    if tree_files(repo, candidate, CORPUS_PREFIX) != CORPUS_FILES:
+        raise ScopeViolation("corpus package set mismatch")
+    if tree_files(repo, candidate, TOOL_PREFIX) != TOOL_FILES:
+        raise ScopeViolation("tool package set mismatch")
     return {
         "changedRelation": rows,
         "copyThresholdPercent": COPY_THRESHOLD,
-        "endpointCount": len(rows),
+        "corpusFiles": len(CORPUS_FILES),
         "result": "PASS",
+        "toolFiles": len(TOOL_FILES),
     }
 
 

@@ -304,15 +304,7 @@ Protocol increments proceed in dependency order:
    have the same exact tree. The resulting bounded evidence GO remains corpus
    and conformance evidence only; it does not authorize implementation
    alignment, demo, product or sensitive use.
-9. **Bind C0.3 Package A implementation edges.** Issue #297 applies the frozen
-   H1 signature language to the actual evidence-model call sites and replaces
-   arrival/readiness-dependent sibling handling with complete H2 admission
-   slots. A literal 126-row relation runs independently in Python and
-   JavaScript, exercises signed lexical schedules, kills 20 source mutants per
-   runtime and proves the six official C0.3 corpus files unchanged. This is a
-   bounded H1/H2 implementation-alignment increment only; it is not the SDK,
-   a production cryptographic adapter or a demo/product authorization.
-10. **Obtain the phase verdict.** Independent exact-final review and human
+9. **Obtain the phase verdict.** Independent exact-final review and human
    ratification produce `GO`, bounded `GO`, or `NO-GO` with residual risks.
 
 No later step may be used to fill an unresolved input of an earlier one.
@@ -327,7 +319,7 @@ The dependency basis is explicit:
 | remaining blockers | O-06c results plus each decision's own recorded inputs | Issue #260 / merged PR #261 reruns the integrated O-14/O-06c hostile cases; exact-final technical evidence, independent review and human gates pass |
 | K-11 corpus boundary | `DECIDED` by the exact Issue #253 six-path amendment; twelve Apache paths total as of Issue #253 | Issue #264 populates only the approved synthetic paths; no third-party corpus byte is authorized |
 | K11-SS corpus boundary | `DECIDED` by the exact Issue #291 six-path amendment; eighteen Apache paths total | Issue #293 populates exactly those six paths and proves synthetic-only provenance; adapter/product authority remains absent |
-| C0.3 | all seven frozen Issue #251 entry items satisfied by Issue #262; corpus construction completed by Issue #264; exact D4 transcript/K reconciliation, blind corroboration and bounded evidence GO completed by Issue #266 / merged PR #267; Issue #297 binds only Package A H1/H2 call-site and complete-slot behavior | remaining implementation-alignment packages and the full phase-exit verdict remain separately gated; C0.3 remains `NO-GO` for demo, product and sensitive use |
+| C0.3 | all seven frozen Issue #251 entry items satisfied by Issue #262; corpus construction completed by Issue #264; exact D4 transcript/K reconciliation, blind corroboration and bounded evidence GO completed by Issue #266 / merged PR #267 | implementation alignment and the full phase-exit verdict remain separate gated work; C0.3 remains `NO-GO` for demo, product and sensitive use |
 
 For visibility, every O-series objective in the current registry is accounted
 for below. Absence from this table is an error in this plan, not evidence that
@@ -630,3 +622,15 @@ only for work separately authorized under Section 9 of the hardening plan. Issue
 itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
 demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
 <!-- styx-protocol-phase-exit-status:v1:end -->
+
+<!-- styx-c03-h1h2-package-a:v4:hardening:start -->
+### C0.3/K H1/H2 Package A
+
+Package A repairs the isolated C0.3/K signature-guard and pending/fork
+conformance oracle against a 164-scenario, 24-mutant test-local relation while
+preserving the six official corpus blobs byte-for-byte. Package B remains
+mandatory for guarded corpus, blind/clean-room and APP-core propagation. H3
+remains separate. This is not an implementation-alignment increment. No
+adapter, SDK, demo, Flegias, product or sensitive-use work is authorized, and
+C0.3 remains `NO_GO`.
+<!-- styx-c03-h1h2-package-a:v4:hardening:end -->

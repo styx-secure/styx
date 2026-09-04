@@ -412,12 +412,12 @@ function littleEndianInteger(bytes) {
   return value;
 }
 
-function edDecode(encoded) {
+function edDecode(encoded, enforceCanonical = true) {
   if (encoded.length !== 32) throw new ProtocolError("SIGNATURE_POINT_LENGTH");
   const raw = littleEndianInteger(encoded);
   const sign = raw >> 255n;
   const y = raw & ((1n << 255n) - 1n);
-  if (y >= ED_P) throw new ProtocolError("SIGNATURE_POINT_NONCANONICAL");
+  if (enforceCanonical && y >= ED_P) throw new ProtocolError("SIGNATURE_POINT_NONCANONICAL");
   const y2 = mod(y * y);
   const value = mod((y2 - 1n) * modPow(ED_D * y2 + 1n, ED_P - 2n, ED_P));
   let x = modPow(value, (ED_P + 3n) / 8n, ED_P);
@@ -450,11 +450,16 @@ function ed25519VerifyDetailed(publicKey, signature, message) {
     return { accepted: false, equationInvocations: 0, guardCode: "R_NOT_PRIME_ORDER" };
   }
   const prefix = Buffer.from("302a300506032b6570032100", "hex");
+  let equationInvocations = 0;
+  const selectedEquation = () => {
+    equationInvocations += 1;
+    return verifySignature(null, message, createPublicKey({ key: Buffer.concat([prefix, publicKey]), format: "der", type: "spki" }), signature);
+  };
   try {
-    const accepted = verifySignature(null, message, createPublicKey({ key: Buffer.concat([prefix, publicKey]), format: "der", type: "spki" }), signature);
-    return { accepted, equationInvocations: 1, guardCode: "GUARD_ACCEPTED" };
+    const accepted = selectedEquation();
+    return { accepted, equationInvocations, guardCode: "GUARD_ACCEPTED" };
   } catch {
-    return { accepted: false, equationInvocations: 1, guardCode: "GUARD_ACCEPTED" };
+    return { accepted: false, equationInvocations, guardCode: "GUARD_ACCEPTED" };
   }
 }
 
@@ -698,7 +703,21 @@ function evaluateKAdmissionScenario(genesisRecord, records, knownForkReferences 
   return observations;
 }
 
-function evaluateKAdmissionGraph(genesisRecord, records) {
+function classifyReferenceIdentities(identities) {
+  const transcriptsByReference = new Map();
+  for (const { reference, transcriptHex } of identities) {
+    if (!transcriptsByReference.has(reference)) transcriptsByReference.set(reference, new Set());
+    transcriptsByReference.get(reference).add(transcriptHex);
+  }
+  return identities.map(({ reference, transcriptHex }) => ({
+    classification: transcriptsByReference.get(reference).size > 1
+      ? "REFERENCE_COLLISION_UNSUPPORTED" : "UNIQUE",
+    reference,
+    transcriptHex,
+  }));
+}
+
+function evaluateKAdmissionGraph(genesisRecord, records, presentationEvidence = false) {
   require(genesisRecord?.kind === "GENESIS", "PREACCEPTED_GENESIS_KIND_INVALID");
   const genesisTranscript = Buffer.from(genesisRecord.transcriptHex, "hex");
   const genesisFields = parseGenesis(genesisTranscript);
@@ -711,32 +730,56 @@ function evaluateKAdmissionGraph(genesisRecord, records) {
   ), "PREACCEPTED_GENESIS_SIGNATURE_INVALID");
 
   const context = genesisFields.contextIdentifierHex;
-  const parsed = new Map(), rejected = new Map(), identifiers = new Map(), canonicalInputs = new Map();
+  const presentations = new Map();
+  const presentationRejected = new Map();
+  const encodedByIdentifier = new Map();
   for (const record of records) {
     const transcript = Buffer.from(record.transcriptHex, "hex");
     const reference = hex(framedHash(DOMAINS.eventReference, transcript));
+    const identifier = String(record.id);
     const encodedInput = canonical(record);
-    if (canonicalInputs.has(reference)) {
-      if (canonicalInputs.get(reference) === encodedInput) continue;
-      throw new ProtocolError("REFERENCE_COLLISION_UNSUPPORTED");
+    if (encodedByIdentifier.has(identifier)) {
+      if (encodedByIdentifier.get(identifier) === encodedInput) continue;
+      throw new ProtocolError("STRUCTURAL_REJECTION");
     }
-    canonicalInputs.set(reference, encodedInput);
-    identifiers.set(reference, record.id);
+    encodedByIdentifier.set(identifier, encodedInput);
+    presentations.set(identifier, { record, reference, transcript });
     try {
       const fields = parseEvent(transcript);
       require(reference === record.eventReferenceHex, "REFERENCE_COLLISION_UNSUPPORTED");
       require(fields.contextIdentifierHex === context, "CREDENTIAL_BINDING_MISMATCH");
       require(fields.genesisReferenceHex === genesisReference, "CREDENTIAL_BINDING_MISMATCH");
-      parsed.set(reference, { fields, record });
+      presentations.get(identifier).fields = fields;
     } catch (error) {
       const code = ["REFERENCE_COLLISION_UNSUPPORTED", "CREDENTIAL_BINDING_MISMATCH"].includes(error.message)
         ? error.message : "STRUCTURAL_REJECTION";
-      rejected.set(reference, {
-        admitted: false,
-        code,
-        stage: "S3_KERNEL_STRUCTURAL",
+      presentationRejected.set(identifier, { admitted: false, code, stage: "S3_KERNEL_STRUCTURAL" });
+    }
+  }
+
+  const identities = [...presentations.entries()]
+    .filter(([identifier]) => !presentationRejected.has(identifier))
+    .map(([, value]) => ({ reference: value.reference, transcriptHex: hex(value.transcript) }));
+  const collisionReferences = new Set(
+    classifyReferenceIdentities(identities)
+      .filter(value => value.classification === "REFERENCE_COLLISION_UNSUPPORTED")
+      .map(value => value.reference),
+  );
+  const logicalGroups = new Map();
+  for (const [identifier, presentation] of presentations) {
+    if (presentationRejected.has(identifier)) continue;
+    if (collisionReferences.has(presentation.reference)) {
+      presentationRejected.set(identifier, {
+        admitted: false, code: "REFERENCE_COLLISION_UNSUPPORTED", stage: "S3_KERNEL_STRUCTURAL",
+      });
+      continue;
+    }
+    if (!logicalGroups.has(presentation.reference)) {
+      logicalGroups.set(presentation.reference, {
+        fields: presentation.fields, presentationIds: [], transcript: presentation.transcript,
       });
     }
+    logicalGroups.get(presentation.reference).presentationIds.push(identifier);
   }
 
   const dependencies = fields => {
@@ -745,6 +788,7 @@ function evaluateKAdmissionGraph(genesisRecord, records) {
     return values;
   };
   const admitted = new Map();
+  const logicalRejected = new Map();
   const localResults = new Map();
   const bindings = new Map([[genesisReference, {
     grantReferenceHex: null,
@@ -764,41 +808,53 @@ function evaluateKAdmissionGraph(genesisRecord, records) {
     return values;
   };
 
-  const pending = new Set([...parsed.keys()].filter(reference => !rejected.has(reference)));
+  const pending = new Set(logicalGroups.keys());
   while (pending.size > 0) {
     let progress = false;
     for (const reference of [...pending].sort()) {
-      const { fields, record } = parsed.get(reference);
+      const group = logicalGroups.get(reference);
+      const fields = group.fields;
       const actor = fields.credentialIdentifierHex, binding = bindings.get(actor);
       if (binding === undefined) continue;
       const required = dependencies(fields);
-      if (!localResults.has(reference)) {
-        const localRecord = structuredClone(record);
-        delete localRecord.admissionContext;
-        localRecord.binding = {
-          contextIdentifierHex: context,
-          credentialIdentifierHex: actor,
-          verificationKeyHex: binding.verificationKeyHex,
-        };
-        const local = evaluate(localRecord);
-        const localPending = local.localOutcome === "PENDING_OPENING"
-          && local.kBindingAdmission === "ADMITTED";
-        if (!transitionInputIsCompatible(local) && !localPending) {
-          rejected.set(reference, {
-            admitted: false,
-            code: local.localOutcome ?? "INVALID",
-            stage: local.stage ?? "S3_KERNEL_STRUCTURAL",
-          });
-          pending.delete(reference); progress = true; continue;
+      const eligible = [], ready = [];
+      for (const identifier of [...group.presentationIds].sort()) {
+        if (!localResults.has(identifier)) {
+          const localRecord = structuredClone(presentations.get(identifier).record);
+          delete localRecord.admissionContext;
+          localRecord.binding = {
+            contextIdentifierHex: context,
+            credentialIdentifierHex: actor,
+            verificationKeyHex: binding.verificationKeyHex,
+          };
+          const local = evaluate(localRecord);
+          const localPending = local.localOutcome === "PENDING_OPENING"
+            && local.kBindingAdmission === "ADMITTED";
+          localResults.set(identifier, { local, localPending });
+          if (!transitionInputIsCompatible(local) && !localPending) {
+            presentationRejected.set(identifier, {
+              admitted: false,
+              code: local.localOutcome ?? "INVALID",
+              stage: local.stage ?? "S3_KERNEL_STRUCTURAL",
+            });
+          }
         }
-        localResults.set(reference, { local, localPending });
+        if (!presentationRejected.has(identifier)) {
+          eligible.push(identifier);
+          if (!localResults.get(identifier).localPending) ready.push(identifier);
+        }
       }
-      const { local, localPending } = localResults.get(reference);
+      if (eligible.length === 0) {
+        logicalRejected.set(reference, presentationRejected.get([...group.presentationIds].sort()[0]));
+        pending.delete(reference); progress = true; continue;
+      }
 
-      const absent = [...required].some(value => !parsed.has(value));
-      const failed = [...required].some(value => rejected.has(value));
+      const absent = [...required].some(value => !logicalGroups.has(value));
+      const failed = [...required].some(value => logicalRejected.has(value));
       if (absent || failed) {
-        rejected.set(reference, { admitted: false, code: "DEPENDENCY_DEFERRED", stage: "S4_GRAPH_ADMISSION" });
+        logicalRejected.set(reference, {
+          admitted: false, code: "DEPENDENCY_DEFERRED", stage: "S4_GRAPH_ADMISSION",
+        });
         pending.delete(reference); progress = true; continue;
       }
       if (![...required].every(value => admitted.has(value))) continue;
@@ -841,22 +897,20 @@ function evaluateKAdmissionGraph(genesisRecord, records) {
             require(bindings.has(tail.retiringCredentialHex), "UNRESOLVABLE_CREDENTIAL");
             require(tail.retiringCredentialHex === genesisReference
               || candidateAncestors.has(tail.retiringCredentialHex), "STRUCTURAL_REJECTION");
-            const replacement = admitted.get(tail.replacementGrantHex);
-            require(replacement?.fields?.tail?.kind === "GRANT"
+            const replacementEvent = admitted.get(tail.replacementGrantHex);
+            require(replacementEvent?.fields?.tail?.kind === "GRANT"
               && (tail.replacementGrantHex === predecessor || parents.includes(tail.replacementGrantHex)),
             "STRUCTURAL_REJECTION");
           } else if (tail.kind === "RECOVER") {
-            const recovery = admitted.get(tail.recoveryGrantHex);
-            require(recovery?.fields?.tail?.kind === "GRANT"
+            const recoveryEvent = admitted.get(tail.recoveryGrantHex);
+            require(recoveryEvent?.fields?.tail?.kind === "GRANT"
               && (tail.recoveryGrantHex === predecessor || parents.includes(tail.recoveryGrantHex)),
             "STRUCTURAL_REJECTION");
           }
         }
       } catch (error) {
-        rejected.set(reference, {
-          admitted: false,
-          code: error.message,
-          stage: error.stage ?? "S3_KERNEL_STRUCTURAL",
+        logicalRejected.set(reference, {
+          admitted: false, code: error.message, stage: error.stage ?? "S3_KERNEL_STRUCTURAL",
         });
         pending.delete(reference); progress = true; continue;
       }
@@ -864,9 +918,11 @@ function evaluateKAdmissionGraph(genesisRecord, records) {
       const dependencyPending = [...required].some(value => admitted.get(value).pendingLineage);
       admitted.set(reference, {
         fields,
-        localPending,
-        pendingLineage: localPending || dependencyPending,
-        record,
+        k1PresentationIds: eligible,
+        localPending: ready.length === 0,
+        logicalEventEffectCount: 1,
+        pendingLineage: ready.length === 0 || dependencyPending,
+        record: presentations.get((ready.length > 0 ? ready : eligible)[0]).record,
       });
       if (fields.eventRole === "CREDENTIAL" && fields.tail.kind === "GRANT") {
         bindings.set(reference, {
@@ -879,9 +935,9 @@ function evaluateKAdmissionGraph(genesisRecord, records) {
     }
     if (progress) continue;
     for (const reference of [...pending].sort()) {
-      const { fields } = parsed.get(reference);
+      const fields = logicalGroups.get(reference).fields;
       const unresolved = !bindings.has(fields.credentialIdentifierHex);
-      rejected.set(reference, {
+      logicalRejected.set(reference, {
         admitted: false,
         code: unresolved ? "UNRESOLVED_CREDENTIAL_BINDING" : "DEPENDENCY_DEFERRED",
         stage: unresolved ? "S3_KERNEL_STRUCTURAL" : "S4_GRAPH_ADMISSION",
@@ -901,25 +957,43 @@ function evaluateKAdmissionGraph(genesisRecord, records) {
     [...slots.values()].filter(members => members.length > 1).flat(),
   );
 
-  return [...identifiers.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([reference, id]) => {
-    let error = rejected.get(reference);
-    if (error === undefined && forcedForks.has(reference)) {
-      error = { admitted: true, code: "FORK_EVIDENCE", stage: "EVENT_LOCAL" };
-    } else if (error === undefined && admitted.get(reference).localPending) {
-      error = { admitted: true, code: "PENDING_OPENING", stage: "EVENT_LOCAL" };
-    } else if (error === undefined && admitted.get(reference).pendingLineage) {
-      error = { admitted: true, code: "PENDING_ANCESTOR", stage: "EVENT_LOCAL" };
-    }
-    return {
-      eventReferenceHex: reference,
-      id,
-      kBindingAdmission: error === undefined || error.admitted === true ? "ADMITTED" : "REJECTED",
-      protocolErrorCode: error?.code ?? null,
-      stage: error?.stage ?? "FINAL_AFTER_S6",
-    };
-  });
+  const observations = [...presentations.entries()]
+    .sort(([leftId, left], [rightId, right]) =>
+      left.reference.localeCompare(right.reference) || leftId.localeCompare(rightId))
+    .map(([identifier, presentation]) => {
+      const reference = presentation.reference;
+      let error = presentationRejected.get(identifier);
+      const logical = admitted.get(reference);
+      if (error === undefined) error = logicalRejected.get(reference);
+      if (error === undefined && forcedForks.has(reference)) {
+        error = { admitted: true, code: "FORK_EVIDENCE", stage: "EVENT_LOCAL" };
+      } else if (error === undefined && logical.localPending) {
+        error = { admitted: true, code: "PENDING_OPENING", stage: "EVENT_LOCAL" };
+      } else if (error === undefined && logical.pendingLineage) {
+        error = { admitted: true, code: "PENDING_ANCESTOR", stage: "EVENT_LOCAL" };
+      }
+      const kAdmitted = error === undefined || error.admitted === true;
+      return {
+        coalescedPresentationCount: kAdmitted && logical !== undefined
+          ? logical.k1PresentationIds.length : 0,
+        eventReferenceHex: reference,
+        id: identifier,
+        kBindingAdmission: kAdmitted ? "ADMITTED" : "REJECTED",
+        logicalEventEffectCount: kAdmitted && logical !== undefined
+          ? logical.logicalEventEffectCount : 0,
+        logicalEventReferenceHex: reference,
+        protocolErrorCode: error?.code ?? null,
+        stage: error?.stage ?? "FINAL_AFTER_S6",
+      };
+    });
+  if (presentationEvidence) return observations;
+  return observations.map(({
+    coalescedPresentationCount,
+    logicalEventEffectCount,
+    logicalEventReferenceHex,
+    ...ordinary
+  }) => ordinary);
 }
-
 function evaluateTranscriptConformance(record) {
   const observed = evaluate(record);
   const result = {
@@ -1359,6 +1433,8 @@ function parseArgs() {
     ? ["--output"]
     : values["--h1-input"]
       ? ["--h1-input", "--output"]
+      : values["--classify-reference-identities"]
+        ? ["--classify-reference-identities", "--output"]
       : values["--c03-vector-input"]
         ? ["--c03-vector-input", "--output"]
       : values["--k-scenario-input"]
@@ -1518,6 +1594,18 @@ function main() {
     }), { flag: "wx" });
     return;
   }
+  if (args["--classify-reference-identities"]) {
+    const input = loadCanonical(resolve(args["--classify-reference-identities"]));
+    require(input?.schema === "styx-c03-reference-identities/v1"
+      && Array.isArray(input.identities), "reference-identity input schema mismatch");
+    const observations = classifyReferenceIdentities(input.identities);
+    writeFileSync(resolve(args["--output"]), canonical({
+      observations,
+      result: "PASS",
+      schema: "styx-c03-reference-classifications/v1",
+    }), { flag: "wx" });
+    return;
+  }
   if (args["--c03-vector-input"]) {
     const input = loadCanonical(resolve(args["--c03-vector-input"]));
     require(input?.schema === "styx-c03-h1h2-vector-input/v1"
@@ -1548,10 +1636,16 @@ function main() {
       try {
         row = {
           id: scenario.id,
-          observations: (scenario.graphEvaluation ? evaluateKAdmissionGraph : evaluateKAdmissionScenario)(
-            scenario.acceptedGenesisRecord,
-            scenario.records,
-          ),
+          observations: scenario.graphEvaluation
+            ? evaluateKAdmissionGraph(
+              scenario.acceptedGenesisRecord,
+              scenario.records,
+              evidenceMode,
+            )
+            : evaluateKAdmissionScenario(
+              scenario.acceptedGenesisRecord,
+              scenario.records,
+            ),
         };
       } catch (error) {
         if (!evidenceMode) throw error;
