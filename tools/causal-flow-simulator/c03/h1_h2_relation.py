@@ -860,14 +860,14 @@ _H2_MUTATION_SPECS = tuple(
         """            absent = required - set(logical_groups)
             failed = required & set(logical_rejected)
             if any(value in admitted and admitted[value]["pendingLineage"] for value in required):
-                admitted[reference] = {
+                candidate_event = {
                     "fields": fields,
                     "k1PresentationIds": tuple(eligible),
                     "localPending": not ready,
-                    "logicalEventEffectCount": 1,
                     "pendingLineage": True,
                     "record": presentations[(ready or eligible)[0]]["record"],
                 }
+                commit_admitted(reference, candidate_event)
                 pending.remove(reference)
                 progress = True
                 continue
@@ -880,11 +880,12 @@ _H2_MUTATION_SPECS = tuple(
         """      const absent = [...required].some(value => !logicalGroups.has(value));
       const failed = [...required].some(value => logicalRejected.has(value));
       if ([...required].some(value => admitted.get(value)?.pendingLineage === true)) {
-        admitted.set(reference, {
+        const candidateEvent = {
           fields, k1PresentationIds: eligible, localPending: ready.length === 0,
-          logicalEventEffectCount: 1, pendingLineage: true,
+          pendingLineage: true,
           record: presentations.get((ready.length > 0 ? ready : eligible)[0]).record,
-        });
+        };
+        commitAdmitted(reference, candidateEvent);
         pending.delete(reference); progress = true; continue;
       }
       if (absent || failed) {
@@ -941,10 +942,10 @@ _H2_MUTATION_SPECS = tuple(
     ),
     MutationSpec(
         "M-H2-ALIAS-MULTI-EFFECT",
-        '                "logicalEventEffectCount": 1,\n',
-        '                "logicalEventEffectCount": len(eligible),\n',
-        "        logicalEventEffectCount: 1,\n",
-        "        logicalEventEffectCount: eligible.length,\n",
+        "            commit_admitted(reference, candidate_event)\n",
+        "            commit_admitted(reference, candidate_event)\n            commit_admitted(reference, candidate_event)\n",
+        "      commitAdmitted(reference, candidateEvent);\n",
+        "      commitAdmitted(reference, candidateEvent);\n      commitAdmitted(reference, candidateEvent);\n",
     ),
 )
 
@@ -1435,7 +1436,38 @@ def connected_cases() -> tuple[dict, ...]:
     return tuple(cases)
 
 
+def _validate_candidate_set_wrapper_identities(
+    genesis: dict, records: list[dict]
+) -> None:
+    complete_by_identifier: dict[str, bytes] = {}
+    identifier_by_wrapper: dict[bytes, str] = {}
+    for record in (genesis, *records):
+        _require(isinstance(record, dict), "candidate-set record must be an object")
+        identifier = record.get("id")
+        _require(
+            isinstance(identifier, str) and bool(identifier),
+            "candidate-set stable ID must be a non-empty string",
+        )
+        complete = dumps(record)
+        wrapper = dict(record)
+        del wrapper["id"]
+        wrapper_bytes = dumps(wrapper)
+        previous_complete = complete_by_identifier.get(identifier)
+        _require(
+            previous_complete is None or previous_complete == complete,
+            "stable ID names different wrapper bytes within one candidate set",
+        )
+        previous_identifier = identifier_by_wrapper.get(wrapper_bytes)
+        _require(
+            previous_identifier is None or previous_identifier == identifier,
+            "byte-identical wrappers use different stable IDs within one candidate set",
+        )
+        complete_by_identifier[identifier] = complete
+        identifier_by_wrapper[wrapper_bytes] = identifier
+
+
 def _project_graph_case(case: dict) -> dict:
+    _validate_candidate_set_wrapper_identities(case["genesis"], case["records"])
     reset_ed25519_evidence_counts()
     harness_error = None
     try:
@@ -1513,6 +1545,8 @@ def run_javascript_connected() -> dict:
     cases = connected_cases()
     graph_cases = [case for case in cases if case["mode"] == "graph"]
     vector_cases = [case for case in cases if case["mode"] == "vector"]
+    for case in graph_cases:
+        _validate_candidate_set_wrapper_identities(case["genesis"], case["records"])
     with tempfile.TemporaryDirectory(prefix="styx-c03-h1-connected-") as tmp:
         workspace = Path(tmp)
         graph_input = workspace / "graph-input.json"
@@ -2487,6 +2521,7 @@ def _project_slot_case(case: dict) -> dict:
             "rowId": case["row"].row_id,
             "scenarioId": case["row"].scenario_id,
         }
+    _validate_candidate_set_wrapper_identities(case["genesis"], case["records"])
     try:
         observations = evaluate_k_admission_graph(
             case["genesis"], case["records"], presentation_evidence=True
@@ -2549,6 +2584,8 @@ def run_javascript_slots() -> dict:
     cases = slot_cases()
     graph_cases = [case for case in cases if case.get("mode") != "classifier"]
     classifier_cases = [case for case in cases if case.get("mode") == "classifier"]
+    for case in graph_cases:
+        _validate_candidate_set_wrapper_identities(case["genesis"], case["records"])
     with tempfile.TemporaryDirectory(prefix="styx-c03-h2-slots-") as tmp:
         input_path = Path(tmp) / "input.json"
         output_path = Path(tmp) / "output.json"
@@ -4808,6 +4845,16 @@ def validate_relation() -> None:
         runtime == {row.scenario_id: row.expected for row in H1_BOUNDARY},
         "frozen O-14 boundary relation drift",
     )
+    for case in connected_cases():
+        if case["mode"] == "graph":
+            _validate_candidate_set_wrapper_identities(
+                case["genesis"], case["records"]
+            )
+    for case in slot_cases():
+        if case.get("mode") != "classifier":
+            _validate_candidate_set_wrapper_identities(
+                case["genesis"], case["records"]
+            )
 
 
 def main(argv: list[str] | None = None) -> int:

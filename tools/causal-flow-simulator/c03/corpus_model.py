@@ -1635,6 +1635,7 @@ def evaluate_k_admission_graph(
         return values
 
     admitted: dict[str, dict[str, Any]] = {}
+    logical_event_effect_counts: dict[str, int] = {}
     logical_rejected: dict[str, ProtocolError] = {}
     local_results: dict[str, tuple[dict[str, Any], bool]] = {}
     bindings: dict[str, dict[str, Any]] = {
@@ -1644,6 +1645,12 @@ def evaluate_k_admission_graph(
             "verificationKeyHex": genesis_fields["rootVerificationKeyHex"],
         }
     }
+
+    def commit_admitted(reference: str, event: dict[str, Any]) -> None:
+        logical_event_effect_counts[reference] = (
+            logical_event_effect_counts.get(reference, 0) + 1
+        )
+        admitted[reference] = event
 
     def ancestors(reference: str) -> frozenset[str]:
         values: set[str] = set()
@@ -1809,14 +1816,14 @@ def evaluate_k_admission_graph(
             dependency_pending = any(
                 admitted[value]["pendingLineage"] for value in required
             )
-            admitted[reference] = {
+            candidate_event = {
                 "fields": fields,
                 "k1PresentationIds": tuple(eligible),
                 "localPending": not ready,
-                "logicalEventEffectCount": 1,
                 "pendingLineage": (not ready) or dependency_pending,
                 "record": presentations[(ready or eligible)[0]]["record"],
             }
+            commit_admitted(reference, candidate_event)
             if fields["eventRole"] == "CREDENTIAL" and fields["tail"]["kind"] == "GRANT":
                 bindings[reference] = {
                     "grantReferenceHex": reference,
@@ -1888,7 +1895,7 @@ def evaluate_k_admission_graph(
                     "ADMITTED" if k_admitted else "REJECTED"
                 ),
                 "logicalEventEffectCount": (
-                    logical["logicalEventEffectCount"]
+                    logical_event_effect_counts.get(reference, 0)
                     if k_admitted and logical is not None
                     else 0
                 ),

@@ -788,6 +788,7 @@ function evaluateKAdmissionGraph(genesisRecord, records, presentationEvidence = 
     return values;
   };
   const admitted = new Map();
+  const logicalEventEffectCounts = new Map();
   const logicalRejected = new Map();
   const localResults = new Map();
   const bindings = new Map([[genesisReference, {
@@ -795,6 +796,13 @@ function evaluateKAdmissionGraph(genesisRecord, records, presentationEvidence = 
     issuerCredentialHex: null,
     verificationKeyHex: genesisFields.rootVerificationKeyHex,
   }]]);
+  const commitAdmitted = (reference, event) => {
+    logicalEventEffectCounts.set(
+      reference,
+      (logicalEventEffectCounts.get(reference) ?? 0) + 1,
+    );
+    admitted.set(reference, event);
+  };
   const ancestors = reference => {
     const values = new Set(), frontier = [reference];
     while (frontier.length > 0) {
@@ -916,14 +924,14 @@ function evaluateKAdmissionGraph(genesisRecord, records, presentationEvidence = 
       }
 
       const dependencyPending = [...required].some(value => admitted.get(value).pendingLineage);
-      admitted.set(reference, {
+      const candidateEvent = {
         fields,
         k1PresentationIds: eligible,
         localPending: ready.length === 0,
-        logicalEventEffectCount: 1,
         pendingLineage: ready.length === 0 || dependencyPending,
         record: presentations.get((ready.length > 0 ? ready : eligible)[0]).record,
-      });
+      };
+      commitAdmitted(reference, candidateEvent);
       if (fields.eventRole === "CREDENTIAL" && fields.tail.kind === "GRANT") {
         bindings.set(reference, {
           grantReferenceHex: reference,
@@ -980,7 +988,7 @@ function evaluateKAdmissionGraph(genesisRecord, records, presentationEvidence = 
         id: identifier,
         kBindingAdmission: kAdmitted ? "ADMITTED" : "REJECTED",
         logicalEventEffectCount: kAdmitted && logical !== undefined
-          ? logical.logicalEventEffectCount : 0,
+          ? (logicalEventEffectCounts.get(reference) ?? 0) : 0,
         logicalEventReferenceHex: reference,
         protocolErrorCode: error?.code ?? null,
         stage: error?.stage ?? "FINAL_AFTER_S6",

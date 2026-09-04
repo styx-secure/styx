@@ -35,6 +35,7 @@ from h1_h2_relation import (  # noqa: E402
     _closed_environment,
     _manifest_bytes,
     _resolve_toolchain,
+    _validate_candidate_set_wrapper_identities,
     _validate_jsonl,
     _verify_tep_structure,
     run_runtime,
@@ -368,6 +369,36 @@ class H2AdmissionOrderTests(unittest.TestCase):
         with self.assertRaisesRegex(ProtocolError, "STRUCTURAL_REJECTION"):
             evaluate_k_admission_graph(case["genesis"], [first, conflicting])
 
+    def test_relation_wrapper_identity_guard_is_bidirectional_and_local(self) -> None:
+        case = slot_cases()[62]
+        first = deepcopy(case["records"][-3])
+        second = deepcopy(case["records"][-2])
+
+        _validate_candidate_set_wrapper_identities(
+            case["genesis"], case["records"]
+        )
+        _validate_candidate_set_wrapper_identities(
+            case["genesis"], [first, deepcopy(first)]
+        )
+
+        different_wrapper_same_id = deepcopy(second)
+        different_wrapper_same_id["id"] = first["id"]
+        with self.assertRaisesRegex(
+            RelationError, "stable ID names different wrapper bytes"
+        ):
+            _validate_candidate_set_wrapper_identities(
+                case["genesis"], [first, different_wrapper_same_id]
+            )
+
+        identical_wrapper_different_id = deepcopy(first)
+        identical_wrapper_different_id["id"] = f"{first['id']}-clone"
+        with self.assertRaisesRegex(
+            RelationError, "byte-identical wrappers use different stable IDs"
+        ):
+            _validate_candidate_set_wrapper_identities(
+                case["genesis"], [first, identical_wrapper_different_id]
+            )
+
     def test_private_collision_rows_do_not_claim_admission_or_effect(self) -> None:
         for case in slot_cases()[86:88]:
             with self.subTest(row=case["row"].row_id):
@@ -414,12 +445,17 @@ class FinalGateGitIdentityTests(unittest.TestCase):
             candidate = subprocess.check_output(
                 ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
             ).strip()
+            attacker_environment = dict(os.environ)
+            attacker_environment.pop("GIT_NO_REPLACE_OBJECTS", None)
             subprocess.run(
-                ["git", "-C", str(repo), "replace", candidate, base], check=True
+                ["git", "-C", str(repo), "replace", candidate, base],
+                check=True,
+                env=attacker_environment,
             )
             subprocess.run(
                 ["git", "-C", str(repo), "reset", "--hard", "-q", candidate],
                 check=True,
+                env=attacker_environment,
             )
             self.assertEqual(
                 subprocess.check_output(
@@ -432,6 +468,7 @@ class FinalGateGitIdentityTests(unittest.TestCase):
                         "--untracked-files=all",
                         "--ignored=matching",
                     ],
+                    env=attacker_environment,
                     text=True,
                 ),
                 "",
