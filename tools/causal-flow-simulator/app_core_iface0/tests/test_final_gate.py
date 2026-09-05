@@ -71,10 +71,10 @@ class _Opener:
 
 class FinalGateTests(unittest.TestCase):
     def test_ratified_semantic_fixture_source_is_exact_at_head(self) -> None:
-        repo = ROOT.parents[2]
+        source_repo = ROOT.parents[2]
         selection_head = subprocess.run(
             ["git", "rev-parse", "HEAD"],
-            cwd=repo,
+            cwd=source_repo,
             check=True,
             capture_output=True,
             text=True,
@@ -87,7 +87,21 @@ class FinalGateTests(unittest.TestCase):
             "323c5227972b79a33bc8238390e8e6000cd6a339a65375155ebea21010b4c8d4",
         )
         self.assertEqual(selected.count(frozen), 1)
-        historical_blob, selected_blob = _local_source_blobs(repo, selection_head)
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "clean-checkout"
+            subprocess.run(
+                ["git", "clone", "--quiet", "--shared", str(source_repo), str(repo)],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "checkout", "--quiet", "--detach", selection_head],
+                cwd=repo,
+                check=True,
+            )
+            historical_blob, selected_blob = _local_source_blobs(
+                repo,
+                selection_head,
+            )
         self.assertEqual(
             _frozen_semantic_fixture_slice(historical_blob),
             _frozen_semantic_fixture_slice(selected_blob),
