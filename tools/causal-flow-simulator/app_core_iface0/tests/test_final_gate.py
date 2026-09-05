@@ -29,6 +29,7 @@ from final_gate import (  # noqa: E402
     _tree,
     _validate_provider_authority,
     _verify_provider_source_slice,
+    _verify_runtime_semantic_fixture,
     _verify_clean_checkout,
     run_phase_a_gate,
 )
@@ -118,7 +119,7 @@ class FinalGateTests(unittest.TestCase):
             _frozen_semantic_fixture_slice(
                 selected + b"\ndef _semantic_request_carriers(authority):\n    return []\n"
             )
-        with self.assertRaisesRegex(FinalGateError, "identifier is rebound"):
+        with self.assertRaisesRegex(FinalGateError, "call-site drift"):
             _frozen_semantic_fixture_slice(
                 selected + b"\nsemantic = _semantic_request_carriers\n"
             )
@@ -129,6 +130,44 @@ class FinalGateTests(unittest.TestCase):
                 + b"    def _semantic_request_carriers(authority):\n"
                 + b"        return []\n"
             )
+        with self.assertRaisesRegex(FinalGateError, "identifier is rebound"):
+            _frozen_semantic_fixture_slice(
+                selected
+                + b"\nclass _semantic_request_carriers(tuple):\n"
+                + b"    pass\n"
+            )
+        with self.assertRaisesRegex(FinalGateError, "identifier is rebound"):
+            _frozen_semantic_fixture_slice(
+                selected
+                + b'\nglobals()["_semantic_request_" "carriers"] = object()\n'
+            )
+        decorated = selected.replace(
+            b"def _semantic_request_carriers(authority: Any)",
+            b"@staticmethod\ndef _semantic_request_carriers(authority: Any)",
+            1,
+        )
+        with self.assertRaisesRegex(FinalGateError, "definition count drift"):
+            _frozen_semantic_fixture_slice(decorated)
+        with self.assertRaisesRegex(FinalGateError, "identifier is rebound"):
+            _frozen_semantic_fixture_slice(selected + b"\nfrom inventory import *\n")
+        with self.assertRaisesRegex(FinalGateError, "identifier is rebound"):
+            _frozen_semantic_fixture_slice(
+                selected
+                + b'\nsys.modules[__name__].__dict__["fixture"] = object()\n'
+            )
+        indirect_call = selected.replace(
+            b"_semantic_request_carriers(authority)",
+            b"(_semantic_request_carriers)(authority)",
+            1,
+        )
+        with self.assertRaisesRegex(FinalGateError, "identifier is rebound"):
+            _frozen_semantic_fixture_slice(indirect_call)
+
+    def test_runtime_semantic_fixture_is_exact_imported_callable(self) -> None:
+        selected = (ROOT / "generate_seed_registry.py").read_bytes()
+        _verify_runtime_semantic_fixture(ROOT.parents[2], selected)
+        with self.assertRaisesRegex(FinalGateError, "differs from Git object"):
+            _verify_runtime_semantic_fixture(ROOT.parents[2], selected + b"\n")
 
     def test_provider_fetch_preserves_object_or_array_shape(self) -> None:
         url = "https://api.github.com/repos/styx-secure/styx/issues/295/comments"

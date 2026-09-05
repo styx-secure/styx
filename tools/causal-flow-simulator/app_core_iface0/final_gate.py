@@ -52,6 +52,22 @@ SEMANTIC_FIXTURE_SOURCE_SHA256 = (
 )
 SEMANTIC_FIXTURE_IDENTIFIER = b"_semantic_request_carriers"
 HISTORICAL_EVIDENCE_HEAD = "fb42037934618dacbb8d4aac65f68b01bc9e7bbb"
+DYNAMIC_NAMESPACE_MUTATORS = frozenset(
+    {
+        "__delattr__",
+        "__import__",
+        "__setattr__",
+        "compile",
+        "delattr",
+        "eval",
+        "exec",
+        "globals",
+        "locals",
+        "setattr",
+        "vars",
+    }
+)
+RUNTIME_FIXTURE_MODULE = "styx_app_core_frozen_generator"
 BANNED_PROVIDER_ENVIRONMENT = frozenset(
     {
         "GH_HOST",
@@ -133,8 +149,27 @@ def _frozen_semantic_fixture_slice(source: bytes) -> bytes:
         len(definitions) != 1
         or len(definition_lines) != 1
         or definitions[0] not in tree.body
+        or definitions[0].decorator_list
     ):
         raise FinalGateError("semantic-fixture definition count drift")
+    parents = {
+        child: parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+    fixture_loads = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name)
+        and node.id == "_semantic_request_carriers"
+        and isinstance(node.ctx, ast.Load)
+    ]
+    if len(fixture_loads) != 2 or any(
+        not isinstance(parents.get(node), ast.Call)
+        or parents[node].func is not node
+        for node in fixture_loads
+    ):
+        raise FinalGateError("semantic-fixture call-site drift")
     forbidden_bindings = [
         node
         for node in ast.walk(tree)
@@ -158,6 +193,47 @@ def _frozen_semantic_fixture_slice(source: bytes) -> bytes:
                 )
             )
         )
+        or (
+            isinstance(node, ast.ClassDef)
+            and node.name == "_semantic_request_carriers"
+        )
+        or (
+            isinstance(node, ast.Attribute)
+            and node.attr == "_semantic_request_carriers"
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+        )
+        or (
+            isinstance(node, ast.Attribute)
+            and node.attr == "__dict__"
+        )
+        or (
+            isinstance(node, ast.Call)
+            and (
+                (
+                    isinstance(node.func, ast.Name)
+                    and node.func.id in DYNAMIC_NAMESPACE_MUTATORS
+                )
+                or (
+                    isinstance(node.func, ast.Attribute)
+                    and node.func.attr in DYNAMIC_NAMESPACE_MUTATORS
+                )
+            )
+        )
+        or (
+            isinstance(node, ast.alias)
+            and node.name.rsplit(".", 1)[-1] in DYNAMIC_NAMESPACE_MUTATORS
+        )
+        or (
+            isinstance(node, ast.ImportFrom)
+            and any(alias.name == "*" for alias in node.names)
+        )
+        or (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.value, ast.Attribute)
+            and node.value.attr == "modules"
+            and isinstance(node.value.value, ast.Name)
+            and node.value.value.id == "sys"
+        )
     ]
     if forbidden_bindings:
         raise FinalGateError("semantic-fixture identifier is rebound")
@@ -174,6 +250,8 @@ def _frozen_semantic_fixture_slice(source: bytes) -> bytes:
         raise FinalGateError("ratified semantic-fixture source slice drift")
     if source.count(result) != 1:
         raise FinalGateError("semantic-fixture source occurrence drift")
+    if source.count(SEMANTIC_FIXTURE_IDENTIFIER) != 3:
+        raise FinalGateError("semantic-fixture identifier occurrence drift")
     offset = 0
     while True:
         offset = source.find(SEMANTIC_FIXTURE_IDENTIFIER, offset)
@@ -184,6 +262,103 @@ def _frozen_semantic_fixture_slice(source: bytes) -> bytes:
             raise FinalGateError("semantic-fixture identifier is rebound")
         offset = following
     return result
+
+
+def _verify_runtime_semantic_fixture(repo: Path, selected_source: bytes) -> None:
+    """Prove the imported callable is the exact frozen top-level function."""
+
+    source_path = repo.resolve() / SEMANTIC_FIXTURE_SOURCE_PATH
+    if (
+        not source_path.is_file()
+        or source_path.is_symlink()
+        or source_path.read_bytes() != selected_source
+    ):
+        raise FinalGateError("working semantic-fixture source differs from Git object")
+    expected_source = _frozen_semantic_fixture_slice(selected_source)
+    parsed = ast.parse(selected_source)
+    definition = next(
+        node
+        for node in parsed.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "_semantic_request_carriers"
+    )
+    inspector = r'''
+import base64
+import importlib.util
+import inspect
+import json
+import pathlib
+import sys
+
+sys.dont_write_bytecode = True
+source_path = pathlib.Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(source_path.parent))
+module_name = sys.argv[2]
+spec = importlib.util.spec_from_file_location(module_name, source_path)
+if spec is None or spec.loader is None:
+    raise SystemExit("module specification unavailable")
+module = importlib.util.module_from_spec(spec)
+sys.modules[module_name] = module
+spec.loader.exec_module(module)
+function = getattr(module, "_semantic_request_carriers", None)
+if not inspect.isfunction(function):
+    raise SystemExit("semantic fixture is not a function")
+payload = {
+    "codeFilename": str(pathlib.Path(function.__code__.co_filename).resolve()),
+    "firstLine": function.__code__.co_firstlineno,
+    "hasWrapped": hasattr(function, "__wrapped__"),
+    "module": function.__module__,
+    "name": function.__name__,
+    "qualname": function.__qualname__,
+    "sourceBase64": base64.b64encode(
+        inspect.getsource(function).encode("utf-8")
+    ).decode("ascii"),
+}
+sys.stdout.write(json.dumps(payload, sort_keys=True, separators=(",", ":")))
+'''
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-B",
+            "-c",
+            inspector,
+            str(source_path),
+            RUNTIME_FIXTURE_MODULE,
+        ],
+        cwd=repo.resolve(),
+        env={"PYTHONDONTWRITEBYTECODE": "1"},
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=60,
+    )
+    if completed.returncode != 0:
+        raise FinalGateError("runtime semantic-fixture import failed")
+    try:
+        observed = json.loads(completed.stdout)
+        runtime_source = base64.b64decode(
+            observed.get("sourceBase64", ""), validate=True
+        )
+    except (json.JSONDecodeError, AttributeError, TypeError, ValueError) as error:
+        raise FinalGateError("runtime semantic-fixture attestation is malformed") from error
+    required = {
+        "codeFilename": str(source_path),
+        "firstLine": definition.lineno,
+        "hasWrapped": False,
+        "module": RUNTIME_FIXTURE_MODULE,
+        "name": "_semantic_request_carriers",
+        "qualname": "_semantic_request_carriers",
+        "sourceBase64": base64.b64encode(expected_source).decode("ascii"),
+    }
+    if (
+        not isinstance(observed, dict)
+        or set(observed) != set(required)
+        or any(observed.get(key) != value for key, value in required.items())
+        or runtime_source != expected_source
+        or source_path.read_bytes() != selected_source
+    ):
+        raise FinalGateError("runtime semantic-fixture identity drift")
 
 
 def _local_source_blobs(repo: Path, selection_head: str) -> tuple[bytes, bytes]:
@@ -201,6 +376,7 @@ def _local_source_blobs(repo: Path, selection_head: str) -> tuple[bytes, bytes]:
         selected
     ):
         raise FinalGateError("historical and selected semantic-fixture slices differ")
+    _verify_runtime_semantic_fixture(repo, selected)
     return historical, selected
 
 
