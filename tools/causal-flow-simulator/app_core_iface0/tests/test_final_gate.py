@@ -29,6 +29,7 @@ from final_gate import (  # noqa: E402
     _tree,
     _validate_provider_authority,
     _verify_provider_source_slice,
+    _verify_historical_semantic_fixture,
     _verify_runtime_semantic_fixture,
     _verify_clean_checkout,
     run_phase_a_gate,
@@ -165,9 +166,58 @@ class FinalGateTests(unittest.TestCase):
 
     def test_runtime_semantic_fixture_is_exact_imported_callable(self) -> None:
         selected = (ROOT / "generate_seed_registry.py").read_bytes()
-        _verify_runtime_semantic_fixture(ROOT.parents[2], selected)
+        attestation = _verify_runtime_semantic_fixture(ROOT.parents[2], selected)
+        self.assertEqual(len(attestation), 3)
+        for digest in attestation:
+            self.assertRegex(digest, r"^[0-9a-f]{64}$")
         with self.assertRaisesRegex(FinalGateError, "differs from Git object"):
             _verify_runtime_semantic_fixture(ROOT.parents[2], selected + b"\n")
+
+    def test_historical_execution_rejects_split_name_globals_mutation(self) -> None:
+        source_repo = ROOT.parents[2]
+        selected = (ROOT / "generate_seed_registry.py").read_bytes()
+        baseline = _verify_runtime_semantic_fixture(source_repo, selected)
+        injection = b'''\n_g = globals\n_f = _g()["_semantic_" + "request_carriers"]\n_original_oracle = _g()["_TestCollision" "Oracle"]\ndef _patched_oracle(family, alternate_input, forced_digest):\n    return _original_oracle(family, alternate_input, b"\\x00" * 32)\n_f.__globals__["_TestCollision" "Oracle"] = _patched_oracle\n'''
+        mutated = selected.replace(
+            b'\n\nif __name__ == "__main__":\n',
+            injection + b'\nif __name__ == "__main__":\n',
+            1,
+        )
+        self.assertEqual(
+            _frozen_semantic_fixture_slice(mutated),
+            _frozen_semantic_fixture_slice(selected),
+        )
+        with tempfile.TemporaryDirectory() as raw:
+            repo = Path(raw) / "checkout"
+            subprocess.run(
+                ["git", "clone", "--quiet", "--shared", str(source_repo), str(repo)],
+                check=True,
+            )
+            generated = repo / (
+                "tools/causal-flow-simulator/app_core_iface0/"
+                "generate_seed_registry.py"
+            )
+            generated.write_bytes(mutated)
+            mutated_attestation = _verify_runtime_semantic_fixture(repo, mutated)
+            self.assertNotEqual(mutated_attestation, baseline)
+            historical = subprocess.run(
+                [
+                    "git",
+                    "show",
+                    "fb42037934618dacbb8d4aac65f68b01bc9e7bbb:"
+                    "tools/causal-flow-simulator/app_core_iface0/"
+                    "generate_seed_registry.py",
+                ],
+                cwd=repo,
+                check=True,
+                capture_output=True,
+            ).stdout
+            with self.assertRaisesRegex(FinalGateError, "fixture semantics differ"):
+                _verify_historical_semantic_fixture(
+                    repo,
+                    historical,
+                    mutated_attestation,
+                )
 
     def test_provider_fetch_preserves_object_or_array_shape(self) -> None:
         url = "https://api.github.com/repos/styx-secure/styx/issues/295/comments"

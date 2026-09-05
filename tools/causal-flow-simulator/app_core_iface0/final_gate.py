@@ -264,7 +264,10 @@ def _frozen_semantic_fixture_slice(source: bytes) -> bytes:
     return result
 
 
-def _verify_runtime_semantic_fixture(repo: Path, selected_source: bytes) -> None:
+def _verify_runtime_semantic_fixture(
+    repo: Path,
+    selected_source: bytes,
+) -> tuple[str, str, str]:
     """Prove the imported callable is the exact frozen top-level function."""
 
     source_path = repo.resolve() / SEMANTIC_FIXTURE_SOURCE_PATH
@@ -284,11 +287,13 @@ def _verify_runtime_semantic_fixture(repo: Path, selected_source: bytes) -> None
     )
     inspector = r'''
 import base64
+import hashlib
 import importlib.util
 import inspect
 import json
 import pathlib
 import sys
+import types
 
 sys.dont_write_bytecode = True
 source_path = pathlib.Path(sys.argv[1]).resolve()
@@ -303,9 +308,90 @@ spec.loader.exec_module(module)
 function = getattr(module, "_semantic_request_carriers", None)
 if not inspect.isfunction(function):
     raise SystemExit("semantic fixture is not a function")
+
+def normalize(value):
+    if value is None:
+        return ["none"]
+    if isinstance(value, bool):
+        return ["bool", value]
+    if isinstance(value, int):
+        return ["int", str(value)]
+    if isinstance(value, str):
+        return ["str", value]
+    if isinstance(value, bytes):
+        return ["bytes", base64.b64encode(value).decode("ascii")]
+    if isinstance(value, tuple):
+        return ["tuple", [normalize(item) for item in value]]
+    if isinstance(value, list):
+        return ["list", [normalize(item) for item in value]]
+    if isinstance(value, dict):
+        rows = [[normalize(key), normalize(item)] for key, item in value.items()]
+        rows.sort(key=lambda row: json.dumps(row[0], separators=(",", ":")))
+        return ["dict", rows]
+    if isinstance(value, types.CodeType):
+        return [
+            "code",
+            {
+                "argcount": value.co_argcount,
+                "cellvars": list(value.co_cellvars),
+                "code": base64.b64encode(value.co_code).decode("ascii"),
+                "consts": [normalize(item) for item in value.co_consts],
+                "flags": value.co_flags,
+                "freevars": list(value.co_freevars),
+                "kwonlyargcount": value.co_kwonlyargcount,
+                "names": list(value.co_names),
+                "posonlyargcount": value.co_posonlyargcount,
+                "varnames": list(value.co_varnames),
+            },
+        ]
+    raise TypeError(type(value).__name__)
+
+from interface_model import ContractAuthority
+
+authority = ContractAuthority.load(
+    source_path.parents[3],
+    source_path.parent / "contract",
+)
+fixture_rows = []
+for case in function(authority):
+    oracle = case.collision_oracle
+    fixture_rows.append(
+        [
+            module.dumps(case.request).decode("utf-8"),
+            None
+            if oracle is None
+            else [
+                oracle.family,
+                normalize(oracle.alternate_input),
+                base64.b64encode(oracle.forced_digest).decode("ascii"),
+            ],
+        ]
+    )
+fixture_bytes = json.dumps(
+    fixture_rows,
+    ensure_ascii=False,
+    sort_keys=True,
+    separators=(",", ":"),
+).encode("utf-8")
+code_bytes = json.dumps(
+    normalize(function.__code__),
+    ensure_ascii=False,
+    sort_keys=True,
+    separators=(",", ":"),
+).encode("utf-8")
+defaults_bytes = json.dumps(
+    normalize([function.__defaults__, function.__kwdefaults__]),
+    ensure_ascii=False,
+    sort_keys=True,
+    separators=(",", ":"),
+).encode("utf-8")
 payload = {
     "codeFilename": str(pathlib.Path(function.__code__.co_filename).resolve()),
+    "codeSha256": hashlib.sha256(code_bytes).hexdigest(),
+    "defaultsSha256": hashlib.sha256(defaults_bytes).hexdigest(),
     "firstLine": function.__code__.co_firstlineno,
+    "fixtureSha256": hashlib.sha256(fixture_bytes).hexdigest(),
+    "globalsOwned": function.__globals__ is module.__dict__,
     "hasWrapped": hasattr(function, "__wrapped__"),
     "module": function.__module__,
     "name": function.__name__,
@@ -344,7 +430,11 @@ sys.stdout.write(json.dumps(payload, sort_keys=True, separators=(",", ":")))
         raise FinalGateError("runtime semantic-fixture attestation is malformed") from error
     required = {
         "codeFilename": str(source_path),
+        "codeSha256": observed.get("codeSha256"),
+        "defaultsSha256": observed.get("defaultsSha256"),
         "firstLine": definition.lineno,
+        "fixtureSha256": observed.get("fixtureSha256"),
+        "globalsOwned": True,
         "hasWrapped": False,
         "module": RUNTIME_FIXTURE_MODULE,
         "name": "_semantic_request_carriers",
@@ -356,9 +446,61 @@ sys.stdout.write(json.dumps(payload, sort_keys=True, separators=(",", ":")))
         or set(observed) != set(required)
         or any(observed.get(key) != value for key, value in required.items())
         or runtime_source != expected_source
+        or any(
+            not isinstance(observed.get(key), str)
+            or len(observed[key]) != 64
+            or any(ch not in "0123456789abcdef" for ch in observed[key])
+            for key in ("codeSha256", "defaultsSha256", "fixtureSha256")
+        )
         or source_path.read_bytes() != selected_source
     ):
         raise FinalGateError("runtime semantic-fixture identity drift")
+    return (
+        observed["fixtureSha256"],
+        observed["codeSha256"],
+        observed["defaultsSha256"],
+    )
+
+
+def _verify_historical_semantic_fixture(
+    repo: Path,
+    historical_source: bytes,
+    selected_attestation: tuple[str, str, str],
+) -> None:
+    """Compare hidden fixture semantics in an isolated historical checkout."""
+
+    with tempfile.TemporaryDirectory(
+        prefix="styx-app-core-historical-fixture-"
+    ) as temporary:
+        historical_repo = Path(temporary) / "checkout"
+        completed = subprocess.run(
+            [
+                "git",
+                "clone",
+                "--quiet",
+                "--shared",
+                "--no-checkout",
+                str(repo.resolve()),
+                str(historical_repo),
+            ],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=120,
+        )
+        if completed.returncode != 0:
+            raise FinalGateError("historical semantic-fixture clone failed")
+        _git(historical_repo, "checkout", "--quiet", "--detach", HISTORICAL_EVIDENCE_HEAD)
+        _verify_clean_checkout(historical_repo, HISTORICAL_EVIDENCE_HEAD)
+        historical_path = historical_repo / SEMANTIC_FIXTURE_SOURCE_PATH
+        if historical_path.read_bytes() != historical_source:
+            raise FinalGateError("historical checkout source differs from Git object")
+        historical_attestation = _verify_runtime_semantic_fixture(
+            historical_repo,
+            historical_source,
+        )
+        if historical_attestation != selected_attestation:
+            raise FinalGateError("historical and selected fixture semantics differ")
 
 
 def _local_source_blobs(repo: Path, selection_head: str) -> tuple[bytes, bytes]:
@@ -376,7 +518,8 @@ def _local_source_blobs(repo: Path, selection_head: str) -> tuple[bytes, bytes]:
         selected
     ):
         raise FinalGateError("historical and selected semantic-fixture slices differ")
-    _verify_runtime_semantic_fixture(repo, selected)
+    selected_attestation = _verify_runtime_semantic_fixture(repo, selected)
+    _verify_historical_semantic_fixture(repo, historical, selected_attestation)
     return historical, selected
 
 
