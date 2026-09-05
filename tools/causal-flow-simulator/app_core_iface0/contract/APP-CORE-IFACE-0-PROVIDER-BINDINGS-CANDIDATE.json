@@ -1,0 +1,158 @@
+{
+  "schema": "styx.app-core-iface0-provider-bindings-candidate.v1",
+  "status": "PRE_RATIFICATION_WORKING_EVIDENCE",
+  "authorityEffect": "NONE",
+  "repository": "styx-secure/styx",
+  "baseSha": "16274cc194cd2f8f7b631332687a252bad92ce02",
+  "providerIdentities": {
+    "integrationOwner": { "id": 141346846, "login": "maverde73" },
+    "humanTechnicalReviewer": { "id": 314148709, "login": "manexada" }
+  },
+  "historicalIncrements": [
+    {
+      "id": "C03_CORPUS_CONSTRUCTION",
+      "issue": {
+        "number": 264,
+        "id": 5273057746,
+        "nodeId": "I_kwDOTVXjdc8AAAABOkx50g",
+        "bodySha256": "0f672ce01c61cf26f45e84e3c92bef630bdbded0b1efb9299422263da58689e4"
+      },
+      "pullRequest": {
+        "number": 265,
+        "id": 4380445025,
+        "nodeId": "PR_kwDOTVXjdc8AAAABBRhJYQ",
+        "baseSha": "7768c32d3ddba230bd60f8b5db1b34d4bcb8ec3b",
+        "headSha": "be4ca7ab452419bc4ffbed63e1fc0965028b4765",
+        "mergeSha": "0fbba871130e4e100558030837e03dd609128976"
+      },
+      "exactHeadApproval": {
+        "id": 5048523208,
+        "nodeId": "PRR_kwDOTVXjdc8AAAABLOpZyA",
+        "commitSha": "be4ca7ab452419bc4ffbed63e1fc0965028b4765"
+      }
+    },
+    {
+      "id": "C03_K_O08_O10_RECONCILIATION",
+      "issue": {
+        "number": 266,
+        "id": 5277740999,
+        "nodeId": "I_kwDOTVXjdc8AAAABOpPvxw",
+        "bodySha256": "e63b1dd975237eda7c66e257a428d2a22ab05d5bcae6a67661db1e97ab5401f8"
+      },
+      "pullRequest": {
+        "number": 267,
+        "id": 4384625038,
+        "nodeId": "PR_kwDOTVXjdc8AAAABBVgRjg",
+        "baseSha": "a4fa1286b57b2ee79b3c580fdce0d1fb3bf9cd40",
+        "headSha": "86bd662bcc2627707b00b3f0859ec5c9b6633ef9",
+        "mergeSha": "289418257268d88d7d546c78fef662fd0579365d"
+      },
+      "exactHeadApproval": {
+        "id": 5060171877,
+        "nodeId": "PRR_kwDOTVXjdc8AAAABLZwYZQ",
+        "commitSha": "86bd662bcc2627707b00b3f0859ec5c9b6633ef9"
+      }
+    },
+    {
+      "id": "PROTOCOL_PHASE_EXIT",
+      "issue": {
+        "number": 287,
+        "id": 5298671266,
+        "nodeId": "I_kwDOTVXjdc8AAAABO9NOog",
+        "bodySha256": "a43d7e53df4656e6a6cd1b73b90b0fb8a4f4e4329bd4e6144ea4d0ab5fbdb778"
+      },
+      "pullRequest": {
+        "number": 288,
+        "id": 4401157073,
+        "nodeId": "PR_kwDOTVXjdc8AAAABBlRT0Q",
+        "baseSha": "fd6f652af1666c6c9dca8356c2aed615773f5208",
+        "headSha": "2fcd1e0ed41ea23765c1f1a3b911a35875711997",
+        "mergeSha": "fc7d15356f2299e9acd8a106f46d6631d0c66b74"
+      },
+      "exactHeadApproval": {
+        "id": 5070295549,
+        "nodeId": "PRR_kwDOTVXjdc8AAAABLjaR_Q",
+        "commitSha": "2fcd1e0ed41ea23765c1f1a3b911a35875711997"
+      }
+    },
+    {
+      "id": "K11_SS_PATH_AUTHORITY",
+      "issue": {
+        "number": 291,
+        "id": 5304192918,
+        "nodeId": "I_kwDOTVXjdc8AAAABPCePlg",
+        "bodySha256": "5ac61cd876975d5da42b927b63cb20cdbb51f8c7483f67b3789894b25b2de452"
+      },
+      "pullRequest": {
+        "number": 292,
+        "id": 4405981558,
+        "nodeId": "PR_kwDOTVXjdc8AAAABBp3xdg",
+        "baseSha": "fc7d15356f2299e9acd8a106f46d6631d0c66b74",
+        "headSha": "e836af9006e269dd56a8f09f6b37581bb8780876",
+        "mergeSha": "28a5e78e80a014a27b94683479d4e82206abac2f"
+      },
+      "exactHeadApproval": {
+        "id": 5071616130,
+        "nodeId": "PRR_kwDOTVXjdc8AAAABLkq4gg",
+        "commitSha": "e836af9006e269dd56a8f09f6b37581bb8780876"
+      }
+    },
+    {
+      "id": "SS0_CORPUS_CONSTRUCTION",
+      "issue": {
+        "number": 293,
+        "id": 5305423607,
+        "nodeId": "I_kwDOTVXjdc8AAAABPDpW9w",
+        "bodySha256": "2c7b4eadb90a1435ba9772b48e84ce6d1a0e727959272d78f02d189e3f992e11"
+      },
+      "pullRequest": {
+        "number": 294,
+        "id": 4407110915,
+        "nodeId": "PR_kwDOTVXjdc8AAAABBq8tAw",
+        "baseSha": "28a5e78e80a014a27b94683479d4e82206abac2f",
+        "headSha": "d7a2f999a60647f33535f459979bca24b004b2e3",
+        "mergeSha": "16274cc194cd2f8f7b631332687a252bad92ce02"
+      },
+      "exactHeadApproval": {
+        "id": 5074198081,
+        "nodeId": "PRR_kwDOTVXjdc8AAAABLnIeQQ",
+        "commitSha": "d7a2f999a60647f33535f459979bca24b004b2e3"
+      }
+    }
+  ],
+  "candidateMutableScope": {
+    "literalPaths": [
+      "docs/protocol/styx-app-core-interface-v0.md",
+      "docs/protocol/review/README.md",
+      "docs/protocol/review/styx-app-kernel-v0-review-model.json",
+      "docs/protocol/review/styx-app-kernel-v0-review-model.schema.json",
+      "tools/protocol-review-model/validate.py",
+      "tools/protocol-review-model/tests/test_app_core_interface_v0.py"
+    ],
+    "directoryPrefix": "tools/causal-flow-simulator/app_core_iface0/"
+  },
+  "knownOpenTaskContracts": [
+    {
+      "issue": 270,
+      "mutablePaths": [
+        "REUSE.toml",
+        "docs/architecture/decisions/ADR-0004-licensing-strategy.md",
+        "docs/protocol/protocol-hardening-plan.md"
+      ],
+      "intersection": []
+    },
+    {
+      "issue": 278,
+      "mutablePaths": [
+        "styx-js/test/crypto/mls-state-restore.test.js"
+      ],
+      "intersection": []
+    }
+  ],
+  "liveRequirements": [
+    "Re-fetch every historical Issue, PR and review from api.github.com.",
+    "Require every merge commit to be an ancestor of the exact Base.",
+    "Enumerate every live open styx-task-contract:v1 and require an empty mutable-path intersection.",
+    "Treat local JSON as a cache only; it is never provider authority."
+  ]
+}

@@ -1,0 +1,665 @@
+{
+  "relationVersion": "APP-CORE-IFACE-0-STRUCTURAL-ISOLATION-V2",
+  "status": "HUMAN_RATIFIED_REMEDIATION_AUTHORITY",
+  "authority": {
+    "v21Sha256": "6587d427a524744e58b6ba38107b9537e3c4b32672b2f41b3d00dcf313d79d77",
+    "v22Sha256": "e1d42d9782a47b6e4dbeb6cc09b4bb51bde5a3d3a137058cb1f5147534499e04",
+    "v23Sha256": "fc02bf72fcfa16b976abe1dc4bc390b5b71312cce80bdf79ab65dadd91139f17",
+    "v24Sha256": "4edf99760b850892b2a64730724e3bc7ecf287254022a9015993885e090ea6ba",
+    "priorHumanRequestSha256": "43d7660ec64733ec626acd26d390539ac75e0fcb954a1b12f5f511e16cfeed9d",
+    "priorProviderCommentId": "5519811594",
+    "humanRequestSha256": "279d5ac04c86628be031b6a50dc275540d2137033a72ea7275b9796c1942534a",
+    "providerCommentId": "5522978433"
+  },
+  "frozenInputs": {
+    "preImplementationHead": "1966736cc539efb8514e2be005581cf102e07fcc",
+    "instanceSetSha256": "e1f5e66ffc94691fb03eac4221dd6558dacd667eeb5e511ca3f06359847d5a43",
+    "instanceCount": 1450,
+    "requestCarrierCount": 65,
+    "responseCarrierCount": 15
+  },
+  "classificationCounts": {
+    "TARGET_ONLY_COUNTERFACTUAL": 1367,
+    "CO_CONSTRAINED_OCCURRENCE_SELF_TEST": 81,
+    "ANTI_DOWNGRADE_OVERLAP_SELF_TEST": 1,
+    "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST": 1
+  },
+  "carrierReselections": [
+    {
+      "instanceId": "STR-MIN-ITEMS-UNDERFLOW--0003",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0010",
+      "candidateOrdinal": 2,
+      "targetJsonPointer": "/input/additions/openingMaterial"
+    },
+    {
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0002",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
+      "candidateOrdinal": 2,
+      "targetJsonPointer": "/input/prior/projection/authority/necessaryCredentialIdentifiers"
+    },
+    {
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0003",
+      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0007",
+      "candidateOrdinal": 2,
+      "targetJsonPointer": "/input/evidence/contentMaterial/0/segments"
+    },
+    {
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0005",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0015",
+      "candidateOrdinal": 15,
+      "targetJsonPointer": "/input/prior/projection/contentStates"
+    },
+    {
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0007",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0020",
+      "candidateOrdinal": 20,
+      "targetJsonPointer": "/input/prior/projection/eventAuthority"
+    },
+    {
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0008",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0019",
+      "candidateOrdinal": 19,
+      "targetJsonPointer": "/input/prior/projection/forkJoins"
+    },
+    {
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0009",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0017",
+      "candidateOrdinal": 17,
+      "targetJsonPointer": "/input/prior/projection/recordOutcomes"
+    },
+    {
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0010",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
+      "candidateOrdinal": 4,
+      "targetJsonPointer": "/input/prior/projection/records"
+    },
+    {
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0011",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0010",
+      "candidateOrdinal": 10,
+      "targetJsonPointer": "/input/prior/projection/reductionStandings"
+    },
+    {
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0012",
+      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0003",
+      "candidateOrdinal": 3,
+      "targetJsonPointer": "/input/evidence/contentMaterial"
+    },
+    {
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0013",
+      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0004",
+      "candidateOrdinal": 4,
+      "targetJsonPointer": "/input/evidence/openingMaterial"
+    },
+    {
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0014",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0007",
+      "candidateOrdinal": 7,
+      "targetJsonPointer": "/input/prior/admittedCandidates"
+    },
+    {
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0015",
+      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0002",
+      "candidateOrdinal": 2,
+      "targetJsonPointer": "/input/candidates"
+    },
+    {
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0002",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
+      "candidateOrdinal": 2,
+      "targetJsonPointer": "/input/prior/projection/authority/necessaryCredentialIdentifiers"
+    },
+    {
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0003",
+      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0007",
+      "candidateOrdinal": 2,
+      "targetJsonPointer": "/input/evidence/contentMaterial/0/segments"
+    },
+    {
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0005",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0015",
+      "candidateOrdinal": 15,
+      "targetJsonPointer": "/input/prior/projection/contentStates"
+    },
+    {
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0007",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0020",
+      "candidateOrdinal": 20,
+      "targetJsonPointer": "/input/prior/projection/eventAuthority"
+    },
+    {
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0008",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0019",
+      "candidateOrdinal": 19,
+      "targetJsonPointer": "/input/prior/projection/forkJoins"
+    },
+    {
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0009",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0017",
+      "candidateOrdinal": 17,
+      "targetJsonPointer": "/input/prior/projection/recordOutcomes"
+    },
+    {
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0010",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
+      "candidateOrdinal": 4,
+      "targetJsonPointer": "/input/prior/projection/records"
+    },
+    {
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0011",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0010",
+      "candidateOrdinal": 10,
+      "targetJsonPointer": "/input/prior/projection/reductionStandings"
+    },
+    {
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0012",
+      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0003",
+      "candidateOrdinal": 3,
+      "targetJsonPointer": "/input/evidence/contentMaterial"
+    },
+    {
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0013",
+      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0004",
+      "candidateOrdinal": 4,
+      "targetJsonPointer": "/input/evidence/openingMaterial"
+    },
+    {
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0014",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0007",
+      "candidateOrdinal": 7,
+      "targetJsonPointer": "/input/prior/admittedCandidates"
+    },
+    {
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0015",
+      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0002",
+      "candidateOrdinal": 2,
+      "targetJsonPointer": "/input/candidates"
+    },
+    {
+      "instanceId": "STR-ANY-OF-POSITIVE-ARM--0002",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0010",
+      "candidateOrdinal": 2,
+      "targetJsonPointer": "/input/additions"
+    },
+    {
+      "instanceId": "STR-ANY-OF-ALL-ARMS--0001",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0007",
+      "candidateOrdinal": 7,
+      "targetJsonPointer": "/input/additions"
+    },
+    {
+      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0004",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
+      "candidateOrdinal": 4,
+      "targetJsonPointer": "/input/prior/projection/records/0"
+    },
+    {
+      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0005",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0006",
+      "candidateOrdinal": 6,
+      "targetJsonPointer": "/input/prior/projection/records/0"
+    },
+    {
+      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0006",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
+      "candidateOrdinal": 8,
+      "targetJsonPointer": "/input/prior/projection/records/0"
+    },
+    {
+      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0007",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
+      "candidateOrdinal": 4,
+      "targetJsonPointer": "/input/prior/projection/records/0"
+    }
+  ],
+  "completeSchemaLiveInstanceIds": [
+    "STR-ONE-OF-POSITIVE-ARM--0025",
+    "STR-ONE-OF-POSITIVE-ARM--0026",
+    "STR-ONE-OF-POSITIVE-ARM--0027",
+    "STR-ONE-OF-POSITIVE-ARM--0028",
+    "STR-ONE-OF-POSITIVE-ARM--0029",
+    "STR-ONE-OF-POSITIVE-ARM--0030",
+    "STR-ONE-OF-POSITIVE-ARM--0031",
+    "STR-ONE-OF-POSITIVE-ARM--0032",
+    "STR-ONE-OF-POSITIVE-ARM--0033",
+    "STR-ONE-OF-POSITIVE-ARM--0034",
+    "STR-ONE-OF-POSITIVE-ARM--0035",
+    "STR-ONE-OF-POSITIVE-ARM--0036",
+    "STR-ONE-OF-POSITIVE-ARM--0053",
+    "STR-ONE-OF-POSITIVE-ARM--0054",
+    "STR-REF-TARGET-CONSTRAINT--0137",
+    "STR-REF-TARGET-CONSTRAINT--0138",
+    "STR-REF-TARGET-CONSTRAINT--0139",
+    "STR-REF-TARGET-CONSTRAINT--0140",
+    "STR-REF-TARGET-CONSTRAINT--0141",
+    "STR-REF-TARGET-CONSTRAINT--0142",
+    "STR-REF-TARGET-CONSTRAINT--0143",
+    "STR-REF-TARGET-CONSTRAINT--0144",
+    "STR-REF-TARGET-CONSTRAINT--0145",
+    "STR-REF-TARGET-CONSTRAINT--0146",
+    "STR-REF-TARGET-CONSTRAINT--0147",
+    "STR-REF-TARGET-CONSTRAINT--0148"
+  ],
+  "recipeDefinitions": [
+    {
+      "recipeId": "R01_CONTENT_MIN_LENGTH_EMPTY",
+      "operation": "REPLACE_TARGET",
+      "candidateSequence": [
+        ""
+      ]
+    },
+    {
+      "recipeId": "R02_CHECKPOINT_EMPTY_ARRAY_NONEMPTY",
+      "operation": "REPLACE_TARGET",
+      "candidateSequence": [
+        [
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    {
+      "recipeId": "R03_ALIAS_GROUP_MIN_ITEMS",
+      "operation": "REPLACE_TARGET",
+      "candidateSequence": [
+        [
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    {
+      "recipeId": "R05_CAUSAL_PARENT_DUPLICATE",
+      "operation": "REPLACE_TARGET",
+      "candidateSequence": [
+        [
+          "0000000000000000000000000000000000000000000000000000000000000000",
+          "0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    {
+      "recipeId": "R06_ALIAS_GROUP_DUPLICATE",
+      "operation": "REPLACE_TARGET",
+      "candidateSequence": [
+        [
+          [
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "0000000000000000000000000000000000000000000000000000000000000001"
+          ],
+          [
+            "0000000000000000000000000000000000000000000000000000000000000000",
+            "0000000000000000000000000000000000000000000000000000000000000001"
+          ]
+        ]
+      ]
+    },
+    {
+      "recipeId": "R07_CAUSAL_PARENT_NON_HEX",
+      "operation": "REPLACE_TARGET",
+      "candidateSequence": [
+        [
+          "gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg"
+        ]
+      ]
+    },
+    {
+      "recipeId": "R08_ALIAS_GROUP_UNDERFLOW",
+      "operation": "REPLACE_TARGET",
+      "candidateSequence": [
+        [
+          [
+            "0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      ]
+    },
+    {
+      "recipeId": "R09_ROLE_TAIL_MISMATCH",
+      "operation": "REPLACE_ROLE_TAIL_FIRST_WHOLE_V2_KILL",
+      "candidateSequence": [
+        {
+          "kind": "ORDINARY"
+        },
+        {
+          "kind": "LOGICAL_REMOVAL",
+          "targetCommitmentHex": "0000000000000000000000000000000000000000000000000000000000000000",
+          "targetEventReferenceHex": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "kind": "CLOSURE"
+        }
+      ]
+    },
+    {
+      "recipeId": "R10_SEQUENCE_ZERO_PREDECESSOR_INSERT",
+      "operation": "INSERT_OBJECT_MEMBER",
+      "memberName": "directPredecessorReferenceHex",
+      "candidateSequence": [
+        "0000000000000000000000000000000000000000000000000000000000000000"
+      ]
+    }
+  ],
+  "boundedRecipeRows": [
+    {
+      "instanceId": "STR-REF-TARGET-CONSTRAINT--0003",
+      "recipeId": "R09_ROLE_TAIL_MISMATCH",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0006",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
+    },
+    {
+      "instanceId": "STR-REF-TARGET-CONSTRAINT--0004",
+      "recipeId": "R09_ROLE_TAIL_MISMATCH",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
+    },
+    {
+      "instanceId": "STR-REF-TARGET-CONSTRAINT--0005",
+      "recipeId": "R09_ROLE_TAIL_MISMATCH",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0005",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
+    },
+    {
+      "instanceId": "STR-REF-TARGET-CONSTRAINT--0006",
+      "recipeId": "R09_ROLE_TAIL_MISMATCH",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0013",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
+    },
+    {
+      "instanceId": "STR-REF-TARGET-CONSTRAINT--0007",
+      "recipeId": "R09_ROLE_TAIL_MISMATCH",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0014",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
+    },
+    {
+      "instanceId": "STR-REF-TARGET-CONSTRAINT--0008",
+      "recipeId": "R09_ROLE_TAIL_MISMATCH",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0011",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
+    },
+    {
+      "instanceId": "STR-REF-TARGET-CONSTRAINT--0009",
+      "recipeId": "R09_ROLE_TAIL_MISMATCH",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0012",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
+    },
+    {
+      "instanceId": "STR-REF-TARGET-CONSTRAINT--0010",
+      "recipeId": "R09_ROLE_TAIL_MISMATCH",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
+    },
+    {
+      "instanceId": "STR-CONST-SUBSTITUTION--0015",
+      "recipeId": "R02_CHECKPOINT_EMPTY_ARRAY_NONEMPTY",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/checkpointEvidenceReferences"
+    },
+    {
+      "instanceId": "STR-MIN-LENGTH-UNDERFLOW--0001",
+      "recipeId": "R01_CONTENT_MIN_LENGTH_EMPTY",
+      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0007",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/evidence/contentMaterial/0/segments/0/octetsHex"
+    },
+    {
+      "instanceId": "STR-MIN-ITEMS-UNDERFLOW--0001",
+      "recipeId": "R03_ALIAS_GROUP_MIN_ITEMS",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/aliasGroups/0"
+    },
+    {
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0001",
+      "recipeId": "R05_CAUSAL_PARENT_DUPLICATE",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/records/0/causalParentReferences"
+    },
+    {
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0004",
+      "recipeId": "R06_ALIAS_GROUP_DUPLICATE",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/aliasGroups"
+    },
+    {
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0001",
+      "recipeId": "R07_CAUSAL_PARENT_NON_HEX",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/records/0/causalParentReferences"
+    },
+    {
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0004",
+      "recipeId": "R08_ALIAS_GROUP_UNDERFLOW",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/aliasGroups"
+    },
+    {
+      "instanceId": "STR-ONE-OF-NO-ARM--0001",
+      "recipeId": "R09_ROLE_TAIL_MISMATCH",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
+    },
+    {
+      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0005",
+      "recipeId": "R09_ROLE_TAIL_MISMATCH",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0006",
+      "candidateOrdinal": 6,
+      "targetJsonPointer": "/input/prior/projection/records/0"
+    },
+    {
+      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0006",
+      "recipeId": "R09_ROLE_TAIL_MISMATCH",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
+      "candidateOrdinal": 8,
+      "targetJsonPointer": "/input/prior/projection/records/0"
+    },
+    {
+      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0007",
+      "recipeId": "R09_ROLE_TAIL_MISMATCH",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
+      "candidateOrdinal": 4,
+      "targetJsonPointer": "/input/prior/projection/records/0"
+    },
+    {
+      "instanceId": "STR-NOT-SUBSCHEMA-MATCH--0001",
+      "recipeId": "R10_SEQUENCE_ZERO_PREDECESSOR_INSERT",
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
+      "candidateOrdinal": 1,
+      "targetJsonPointer": "/input/prior/projection/records/0"
+    }
+  ],
+  "coConstrainedClasses": [
+    {
+      "classId": "BRANCH_IDENTITY_IMPLICATION",
+      "dependencyIds": [
+        "V2_UNIQUE_TOP_LEVEL_ARM",
+        "V2_UNIQUE_NESTED_OPERATION_ARM"
+      ],
+      "reason": "Target weakening still violates the closed V2 branch-identity trace relation.",
+      "instanceIds": [
+        "STR-ONE-OF-NO-ARM--0010",
+        "STR-ONE-OF-NO-ARM--0011",
+        "STR-ONE-OF-NO-ARM--0016",
+        "STR-REF-TARGET-CONSTRAINT--0262",
+        "STR-REF-TARGET-CONSTRAINT--0263"
+      ]
+    },
+    {
+      "classId": "CANONICAL_DECIMAL_PATTERN_IMPLICATION",
+      "dependencyIds": [
+        "CanonicalUnsignedDecimal/pattern"
+      ],
+      "reason": "The repeated-zero hostile value remains noncanonical after target weakening.",
+      "instanceIds": [
+        "STR-MAX-LENGTH-OVERFLOW--0001",
+        "STR-MAX-LENGTH-OVERFLOW--0002",
+        "STR-MAX-LENGTH-OVERFLOW--0003",
+        "STR-ALL-OF-BRANCH-CONSTRAINT--0015",
+        "STR-ALL-OF-BRANCH-CONSTRAINT--0017",
+        "STR-ALL-OF-BRANCH-CONSTRAINT--0019"
+      ]
+    },
+    {
+      "classId": "ROLE_TAIL_REFINEMENT_IMPLICATION",
+      "dependencyIds": [
+        "RoleTailProjectionV0/oneOf",
+        "ApplicationEventProjectionV0/active-role-refinement"
+      ],
+      "reason": "The role-tail union and active event-role refinement co-constrain the selected value.",
+      "instanceIds": [
+        "STR-CONST-SUBSTITUTION--0002",
+        "STR-CONST-SUBSTITUTION--0003",
+        "STR-CONST-SUBSTITUTION--0004",
+        "STR-NULL-SUBSTITUTION--0017",
+        "STR-ONE-OF-NO-ARM--0013",
+        "STR-REF-TARGET-CONSTRAINT--0023",
+        "STR-REF-TARGET-CONSTRAINT--0223",
+        "STR-REF-TARGET-CONSTRAINT--0224",
+        "STR-REF-TARGET-CONSTRAINT--0225",
+        "STR-REF-TARGET-CONSTRAINT--0226",
+        "STR-REF-TARGET-CONSTRAINT--0227",
+        "STR-REF-TARGET-CONSTRAINT--0228",
+        "STR-REF-TARGET-CONSTRAINT--0229",
+        "STR-REF-TARGET-CONSTRAINT--0230"
+      ]
+    },
+    {
+      "classId": "POPULATION_DEPENDENT_SEQUENCE_PREDECESSOR_IMPLICATION",
+      "dependencyIds": [
+        "FROZEN_65_REQUEST_15_RESPONSE_POPULATION",
+        "ApplicationEventProjectionV0/allOf/0"
+      ],
+      "reason": "Frozen sequence-zero carriers keep predecessor property and totality constraints co-active.",
+      "instanceIds": [
+        "STR-NULL-SUBSTITUTION--0004",
+        "STR-NULL-SUBSTITUTION--0009",
+        "STR-REF-TARGET-CONSTRAINT--0014",
+        "STR-REF-TARGET-CONSTRAINT--0019",
+        "STR-REQUIRED-PROPERTY-OMISSION--0004"
+      ]
+    },
+    {
+      "classId": "OBJECT_SHAPE_IMPLICATION",
+      "dependencyIds": [
+        "ApplicationEventProjectionV0/allOf/0/then/not",
+        "DescribeProfileInputV0/maxProperties"
+      ],
+      "reason": "An independent object-shape constraint remains active after target weakening.",
+      "instanceIds": [
+        "STR-TYPE-MISMATCH--0002",
+        "STR-UNKNOWN-OBJECT-PROPERTY--0019"
+      ]
+    },
+    {
+      "classId": "O08_COLLECTION_BOUND_IMPLICATION",
+      "dependencyIds": [
+        "ACV-058",
+        "SIBLINGS_PER_FORK"
+      ],
+      "reason": "The ratified pre-schema sibling bound rejects the four-item hostile array before schema item work.",
+      "instanceIds": [
+        "STR-MAX-ITEMS-OVERFLOW--0001"
+      ]
+    },
+    {
+      "classId": "OPERATION_LITERAL_BINDING_IMPLICATION",
+      "dependencyIds": [
+        "V2_UNIQUE_NESTED_OPERATION_ARM",
+        "V2_VALIDATED_OPERATION_LITERAL_BINDING"
+      ],
+      "reason": "The target mutant admits the hostile value at schema level, but no validated operation literal remains to bind to the nested branch trace.",
+      "instanceIds": [
+        "STR-REQUIRED-PROPERTY-OMISSION--0189",
+        "STR-REQUIRED-PROPERTY-OMISSION--0193",
+        "STR-REQUIRED-PROPERTY-OMISSION--0197",
+        "STR-REQUIRED-PROPERTY-OMISSION--0201",
+        "STR-REQUIRED-PROPERTY-OMISSION--0205",
+        "STR-REQUIRED-PROPERTY-OMISSION--0209",
+        "STR-REQUIRED-PROPERTY-OMISSION--0212",
+        "STR-REQUIRED-PROPERTY-OMISSION--0216",
+        "STR-REQUIRED-PROPERTY-OMISSION--0220",
+        "STR-REQUIRED-PROPERTY-OMISSION--0224",
+        "STR-REQUIRED-PROPERTY-OMISSION--0228",
+        "STR-REQUIRED-PROPERTY-OMISSION--0232",
+        "STR-NULL-SUBSTITUTION--0190",
+        "STR-NULL-SUBSTITUTION--0194",
+        "STR-NULL-SUBSTITUTION--0198",
+        "STR-NULL-SUBSTITUTION--0202",
+        "STR-NULL-SUBSTITUTION--0206",
+        "STR-NULL-SUBSTITUTION--0210",
+        "STR-NULL-SUBSTITUTION--0213",
+        "STR-NULL-SUBSTITUTION--0217",
+        "STR-NULL-SUBSTITUTION--0221",
+        "STR-NULL-SUBSTITUTION--0225",
+        "STR-NULL-SUBSTITUTION--0229",
+        "STR-NULL-SUBSTITUTION--0233",
+        "STR-CONST-SUBSTITUTION--0066",
+        "STR-CONST-SUBSTITUTION--0067",
+        "STR-CONST-SUBSTITUTION--0068",
+        "STR-CONST-SUBSTITUTION--0069",
+        "STR-CONST-SUBSTITUTION--0070",
+        "STR-CONST-SUBSTITUTION--0071",
+        "STR-CONST-SUBSTITUTION--0072",
+        "STR-CONST-SUBSTITUTION--0073",
+        "STR-CONST-SUBSTITUTION--0074",
+        "STR-CONST-SUBSTITUTION--0075",
+        "STR-CONST-SUBSTITUTION--0076",
+        "STR-CONST-SUBSTITUTION--0077"
+      ]
+    },
+    {
+      "classId": "V1_OBJECT_ROOT_ADMISSION_IMPLICATION",
+      "dependencyIds": [
+        "V1_TOP_LEVEL_JSON_OBJECT",
+        "V2_UNIQUE_NESTED_OPERATION_ARM"
+      ],
+      "reason": "Weakening an operation-arm object type cannot bypass the V1 top-level object requirement or establish a valid nested branch identity.",
+      "instanceIds": [
+        "STR-TYPE-MISMATCH--0057",
+        "STR-TYPE-MISMATCH--0058",
+        "STR-TYPE-MISMATCH--0059",
+        "STR-TYPE-MISMATCH--0060",
+        "STR-TYPE-MISMATCH--0061",
+        "STR-TYPE-MISMATCH--0062",
+        "STR-TYPE-MISMATCH--0063",
+        "STR-TYPE-MISMATCH--0064",
+        "STR-TYPE-MISMATCH--0065",
+        "STR-TYPE-MISMATCH--0066",
+        "STR-TYPE-MISMATCH--0067",
+        "STR-TYPE-MISMATCH--0068"
+      ]
+    }
+  ],
+  "antiDowngrade": {
+    "instanceId": "STR-REQUIRED-PROPERTY-OMISSION--0315",
+    "carrierCaseId": "PCR-REQUEST-VALIDATE-TRANSCRIPT-0002",
+    "targetJsonPointer": "/input/standaloneVerification",
+    "mutation": "REMOVE_ONLY_STANDALONE_VERIFICATION_FROM_RICHER_REQUIRED_SET",
+    "reducedCarrierAcceptedNestedInputArmIndex": 1,
+    "mutantMatchingNestedInputArmIndices": [
+      1,
+      2
+    ],
+    "independentDisjointnessRelation": "ValidateTranscriptInputV0/oneOf/1--2"
+  },
+  "exactCounts": {
+    "carrierReselections": 31,
+    "completeSchemaLiveRows": 26,
+    "boundedRecipeRows": 20,
+    "coConstrainedRows": 81,
+    "antiDowngradeRows": 1,
+    "oneOfPairwiseRelations": 93
+  }
+}

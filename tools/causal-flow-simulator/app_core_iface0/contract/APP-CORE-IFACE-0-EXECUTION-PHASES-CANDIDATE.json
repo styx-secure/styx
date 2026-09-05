@@ -1,0 +1,278 @@
+{
+  "status": "PRE_RATIFICATION_CANDIDATE",
+  "registryVersion": "APP-CORE-IFACE-0-EXECUTION-PHASES-V1",
+  "semanticRuleSetSha256": "78f4ebf3956a851f3b90b0bb97944100e608a575b8c27a96772f86ba186754a0",
+  "semanticRuleSetDigestEncoding": "ordered rule id plus LF",
+  "instanceAxisRegistrySha256": "04fd304ac6b23add64033b45282ac0d46fe09d44f92651881995f4727c9e0832",
+  "defaultPhase": "BLIND_INPUT_EXECUTION",
+  "phaseRegistry": [
+    "BLIND_INPUT_EXECUTION",
+    "POST_OUTPUT_MUTATION",
+    "VALIDATOR_SELF_TEST"
+  ],
+  "overrides": [
+    {
+      "id": "ACV-013",
+      "partition": "BY_AXIS_SOURCE_ROOT",
+      "relation": [
+        {
+          "axisSource": "InterfaceRequestV0",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 6
+        },
+        {
+          "axisSource": "InterfaceResponseV0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 6
+        }
+      ]
+    },
+    {
+      "id": "ACV-015",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 6
+    },
+    {
+      "id": "ACV-027",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 7
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 16
+        }
+      ]
+    },
+    {
+      "id": "ACV-033",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 21
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 4
+        }
+      ]
+    },
+    {
+      "id": "ACV-043",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 15
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 1
+        }
+      ]
+    },
+    {
+      "id": "ACV-044",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 12
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 5
+        }
+      ]
+    },
+    {
+      "id": "ACV-048",
+      "partition": "BY_SEED_CARRIER_DIRECTION_X_LITERAL_VALUE",
+      "requestCarrierPhase": "BLIND_INPUT_EXECUTION",
+      "responseCarrierPhase": "POST_OUTPUT_MUTATION",
+      "objectSchemaCount": 78,
+      "familyCount": 9,
+      "expectedCount": 702,
+      "exactPhaseCounts": "DERIVED_FROM_RATIFIED_SEED_REGISTRY"
+    },
+    {
+      "id": "ACV-049",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 3770
+    },
+    {
+      "id": "ACV-050",
+      "partition": "ALL_INSTANCES",
+      "phase": "VALIDATOR_SELF_TEST",
+      "expectedCount": 27
+    },
+    {
+      "id": "ACV-052",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 21
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 4
+        }
+      ]
+    },
+    {
+      "id": "ACV-056",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 15
+    },
+    {
+      "id": "ACV-066",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 7
+    },
+    {
+      "id": "ACV-067",
+      "partition": "ALL_INSTANCES",
+      "phase": "BLIND_INPUT_EXECUTION",
+      "expectedCount": 1
+    },
+    {
+      "id": "ACV-068",
+      "partition": "ALL_INSTANCES",
+      "phase": "BLIND_INPUT_EXECUTION",
+      "expectedCount": 17
+    },
+    {
+      "id": "ACV-069",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 27
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 6
+        }
+      ]
+    },
+    {
+      "id": "ACV-070",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 1
+    },
+    {
+      "id": "ACV-071",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 2
+    },
+    {
+      "id": "ACV-072",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 1
+    },
+    {
+      "id": "ACV-073",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 7
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 3
+        }
+      ]
+    },
+    {
+      "id": "ACV-078",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 12
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 4
+        }
+      ]
+    },
+    {
+      "id": "ACV-079",
+      "partition": "BY_RELATION_ROW_REACHABILITY",
+      "relation": [
+        {
+          "reachability": "REACHABLE",
+          "phase": "BLIND_INPUT_EXECUTION",
+          "expectedCount": 5
+        },
+        {
+          "reachability": "RESERVED_UNREACHABLE_V0",
+          "phase": "POST_OUTPUT_MUTATION",
+          "expectedCount": 6
+        }
+      ]
+    },
+    {
+      "id": "ACV-081",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 2
+    },
+    {
+      "id": "ACV-082",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 1
+    },
+    {
+      "id": "ACV-083",
+      "partition": "ALL_INSTANCES",
+      "phase": "POST_OUTPUT_MUTATION",
+      "expectedCount": 1
+    }
+  ],
+  "fixedCountsBeforeSeedPartition": {
+    "BLIND_INPUT_EXECUTION": 559,
+    "POST_OUTPUT_MUTATION": 3861,
+    "VALIDATOR_SELF_TEST": 27,
+    "ACV048PendingCarrierPartition": 702,
+    "totalSemanticExecutionInstances": 5149
+  },
+  "rules": [
+    "Every semantic instance belongs to exactly one phase.",
+    "The default applies only to rule IDs absent from overrides.",
+    "A response mutation is never disclosed as a blind expected result.",
+    "A validator self-test cannot satisfy an implementation behavior instance.",
+    "The populated 78-row seed registry must resolve the ACV-048 phase partition before ratification.",
+    "Phase counts, instance IDs and the complete instance-to-phase relation are exact-set evidence."
+  ]
+}
