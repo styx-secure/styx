@@ -19,11 +19,11 @@ class InterfaceMaximaTests(unittest.TestCase):
         self.report = self.derivation.report()
 
     def test_exact_maxima_and_maximizing_roots(self) -> None:
-        self.assertEqual(self.report["outerRequestOctets"], 138499357)
-        self.assertEqual(self.report["outerRequestRoot"], "REQUEST-EVALUATE_CANDIDATE")
-        self.assertEqual(self.report["outerResponseOctets"], 71052634)
+        self.assertEqual(self.report["outerRequestOctets"], 138547674)
+        self.assertEqual(self.report["outerRequestRoot"], "REQUEST-EVALUATE_EVIDENCE_UPDATE")
+        self.assertEqual(self.report["outerResponseOctets"], 71096500)
         self.assertEqual(self.report["outerResponseRoot"], "RESPONSE-EVALUATE_CANDIDATE")
-        self.assertEqual(self.report["maxRetainedDecodedOctets"], 35284168)
+        self.assertEqual(self.report["maxRetainedDecodedOctets"], 35300616)
         self.assertEqual(self.report["maxRetainedDecodedRoot"], "REQUEST-EVALUATE_CANDIDATE")
 
     def test_all_twelve_carrier_roots_are_measured_once(self) -> None:
@@ -33,8 +33,8 @@ class InterfaceMaximaTests(unittest.TestCase):
         self.assertEqual(len(set(root_ids)), 12)
         self.assertEqual(root_ids, sorted(root_ids))
 
-    def test_all_twenty_seven_concrete_array_uses_are_bounded(self) -> None:
-        self.assertEqual(len(self.derivation.array_bounds), 27)
+    def test_all_thirty_concrete_array_uses_are_bounded(self) -> None:
+        self.assertEqual(len(self.derivation.array_bounds), 30)
         self.assertEqual(
             self.derivation.array_bounds["$defs.ContextProjectionV0.aliasGroups"],
             64,
@@ -54,11 +54,11 @@ class InterfaceMaximaTests(unittest.TestCase):
             * self.derivation.limits["CHUNK_OCTETS"],
         )
 
-    def test_candidate_repeat_increases_wire_not_retained_material(self) -> None:
+    def test_evidence_attempts_increase_wire_not_retained_material(self) -> None:
         row = next(
             item
             for item in self.report["rootMeasurements"]
-            if item["rootId"] == "REQUEST-EVALUATE_CANDIDATE"
+            if item["rootId"] == "REQUEST-EVALUATE_EVIDENCE_UPDATE"
         )
         self.assertGreater(
             row["representedDecodedOctets"], row["retainedDecodedOctets"]

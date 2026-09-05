@@ -18,6 +18,7 @@ class AdapterFailure extends Error {}
 const FORK_JOIN_DOMAIN = Buffer.from("STYX-APP-CORE-IFACE-0-FORK-JOIN-V0\0", "ascii");
 const IMPLEMENTED_COLLECTION_BOUND_TARGETS = Object.freeze([
   "$defs.AliasGroupV0.allOf[0]",
+  "$defs.ApplicationPresentationGroupV0.proofs",
   "$defs.ApplicationEventProjectionV0.causalParentReferences",
   "$defs.AuthorityAvailableV0.necessaryCredentialIdentifiers",
   "$defs.AuthorityAvailableV0.possibleCredentialIdentifiers",
@@ -38,12 +39,14 @@ const IMPLEMENTED_COLLECTION_BOUND_TARGETS = Object.freeze([
   "$defs.ContextProjectionV0.replayDependencyReferences",
   "$defs.ContextProjectionV0.revokedCredentialIdentifiers",
   "$defs.ContextProjectionV0.terminatedCredentialIdentifiers",
-  "$defs.EvidenceProjectionV0.contentMaterial",
-  "$defs.EvidenceProjectionV0.openingMaterial",
+  "$defs.EvidenceAdditionSetV0",
+  "$defs.EvidenceProjectionV0.verifiedComplete",
   "$defs.ForkJoinProjectionV0.lineageClosureCredentialIdentifiers",
   "$defs.ForkJoinProjectionV0.siblingReferences",
-  "$defs.ProposedContextSnapshotV0.admittedCandidates",
-  "$defs.ReplayContextInputV0.candidates",
+  "$defs.GenesisPresentationGroupV0.proofs",
+  "$defs.LocalRevalidationSnapshotV0.retainedProofs",
+  "$defs.ProposedContextSnapshotV0.logicalEvents",
+  "$defs.ReplayContextInputV0.presentations",
 ]);
 const SUPPORTED_OPERATIONS = Object.freeze([
   "DESCRIBE_PROFILE",
@@ -801,12 +804,54 @@ function requireCollectionBound(value, maximum, label) {
 
 function preflightEvidenceCollections(evidence, limits) {
   if (!objectValue(evidence)) return;
-  const content = evidence.contentMaterial;
-  requireCollectionBound(content, limits.RECORDS, "EvidenceProjectionV0.contentMaterial/RECORDS");
-  requireCollectionBound(evidence.openingMaterial, limits.RECORDS, "EvidenceProjectionV0.openingMaterial/RECORDS");
-  if (Array.isArray(content)) {
-    for (const row of content) {
-      if (objectValue(row)) requireCollectionBound(row.segments, limits.CHUNKS_PER_CONTENT, "ContentMaterialEvidenceV0.segments/CHUNKS_PER_CONTENT");
+  const complete = evidence.verifiedComplete;
+  requireCollectionBound(complete, limits.RECORDS, "EvidenceProjectionV0.verifiedComplete/RECORDS");
+  if (Array.isArray(complete)) {
+    for (const row of complete) {
+      if (objectValue(row) && objectValue(row.contentMaterial)) {
+        requireCollectionBound(row.contentMaterial.segments, limits.CHUNKS_PER_CONTENT, "ContentMaterialEvidenceV0.segments/CHUNKS_PER_CONTENT");
+      }
+    }
+  }
+}
+
+
+function preflightEvidenceAttempts(attempts, limits) {
+  requireCollectionBound(attempts, limits.RECORDS, "EvidenceAdditionSetV0/RECORDS");
+  if (!Array.isArray(attempts)) return;
+  for (const attempt of attempts) {
+    if (objectValue(attempt) && objectValue(attempt.contentMaterial)) {
+      requireCollectionBound(attempt.contentMaterial.segments, limits.CHUNKS_PER_CONTENT, "ContentMaterialEvidenceV0.segments/CHUNKS_PER_CONTENT");
+    }
+  }
+}
+
+
+function preflightLogicalEvent(logicalEvent, limits) {
+  if (!objectValue(logicalEvent)) return;
+  const transcript = logicalEvent.transcriptHex;
+  const objectKind = logicalEvent.objectKind;
+  if (typeof transcript !== "string" || typeof objectKind !== "string") return;
+  const dimension = objectKind === "GENESIS" ? "GENESIS_BODY_OCTETS" : "FRAMING_OBJECT_OCTETS";
+  requireCondition(
+    transcript.length <= 2 * (limits[dimension] + 20),
+    "logical-event transcript exceeds the ratified bound",
+  );
+}
+
+
+function preflightPresentationGroup(presentation, limits) {
+  if (!objectValue(presentation)) return;
+  preflightLogicalEvent(presentation.logicalEvent, limits);
+  const proofs = presentation.proofs;
+  requireCollectionBound(proofs, limits.SIGNATURE_ATTEMPTS, "PresentationGroupV0.proofs/SIGNATURE_ATTEMPTS");
+  if (!Array.isArray(proofs)) return;
+  for (const proof of proofs) {
+    if (objectValue(proof) && typeof proof.signatureHex === "string") {
+      requireCondition(
+        proof.signatureHex.length <= 2 * limits.SIGNATURE_OCTETS,
+        "proof signature exceeds the ratified bound",
+      );
     }
   }
 }
@@ -814,8 +859,15 @@ function preflightEvidenceCollections(evidence, limits) {
 
 function preflightSnapshotCollections(snapshot, limits) {
   if (!objectValue(snapshot)) return;
-  requireCollectionBound(snapshot.admittedCandidates, limits.RECORDS, "ProposedContextSnapshotV0.admittedCandidates/RECORDS");
-  preflightEvidenceCollections(snapshot.evidence, limits);
+  requireCollectionBound(snapshot.logicalEvents, limits.RECORDS, "ProposedContextSnapshotV0.logicalEvents/RECORDS");
+  if (Array.isArray(snapshot.logicalEvents)) {
+    for (const logicalEvent of snapshot.logicalEvents) preflightLogicalEvent(logicalEvent, limits);
+  }
+  if (objectValue(snapshot.genesis)) preflightLogicalEvent(snapshot.genesis.logicalGenesis, limits);
+  if (objectValue(snapshot.localRevalidation)) {
+    requireCollectionBound(snapshot.localRevalidation.retainedProofs, limits.RECORDS, "LocalRevalidationSnapshotV0.retainedProofs/RECORDS");
+    preflightEvidenceCollections(snapshot.localRevalidation.evidence, limits);
+  }
   const projection = snapshot.projection;
   if (!objectValue(projection)) return;
   const fieldLimits = {
@@ -876,15 +928,20 @@ function preflightCollections(input, schema, semantics) {
   if (input.direction === "REQUEST") {
     const value = message.input;
     if (!objectValue(value)) return { verdict: "PASS" };
-    if (message.operation === "REPLAY_CONTEXT") {
-      requireCollectionBound(value.candidates, limits.RECORDS, "ReplayContextInputV0.candidates/RECORDS");
-      preflightEvidenceCollections(value.evidence, limits);
+    if (["VALIDATE_TRANSCRIPT", "EVALUATE_GENESIS"].includes(message.operation)) {
+      preflightPresentationGroup(value.candidate, limits);
+    } else if (message.operation === "REPLAY_CONTEXT") {
+      requireCollectionBound(value.presentations, limits.RECORDS, "ReplayContextInputV0.presentations/RECORDS");
+      if (Array.isArray(value.presentations)) {
+        for (const presentation of value.presentations) preflightPresentationGroup(presentation, limits);
+      }
+      preflightEvidenceAttempts(value.evidenceAttempts, limits);
     } else if (message.operation === "EVALUATE_CANDIDATE") {
       preflightSnapshotCollections(value.prior, limits);
-      preflightEvidenceCollections(value.evidence, limits);
+      preflightPresentationGroup(value.candidate, limits);
     } else if (message.operation === "EVALUATE_EVIDENCE_UPDATE") {
       preflightSnapshotCollections(value.prior, limits);
-      preflightEvidenceCollections(value.additions, limits);
+      preflightEvidenceAttempts(value.additions, limits);
     }
   } else {
     const result = message.result;
@@ -984,6 +1041,14 @@ function validateResponseShapeAndRelation(response, relations) {
   } else if (response.operation === "EVALUATE_CANDIDATE") {
     exactKeys(result, ["evaluation"], "candidate result");
     const evaluation = result.evaluation;
+    if (evaluation.kind === "LOCAL_QUARANTINE_PROPOSAL") {
+      exactKeys(
+        evaluation,
+        ["kind", "assumptionFamily", "contextIdentifierHex"],
+        "candidate local quarantine proposal",
+      );
+      return;
+    }
     const primary = evaluation.primary ?? evaluation.primaryOnCommit;
     const row = relations.candidateEvaluationPrimaryRelationV0.find((item) => item.primary === primary);
     requireCondition(row !== undefined, "candidate primary is absent from F13");
@@ -1069,10 +1134,12 @@ function validateCompleteResponseBeforeRelease(response, schema, relations) {
   validateCompleteV2Document(response, schema, "RESPONSE");
   if (response.operation === "EVALUATE_CANDIDATE") {
     const evaluation = response.result.evaluation;
-    const primary = evaluation.primary ?? evaluation.primaryOnCommit;
-    const row = relations.candidateEvaluationPrimaryRelationV0.find((item) => item.primary === primary);
-    requireCondition(row !== undefined, "candidate primary is absent from F13");
-    requireCondition(row.reachability !== "RESERVED_UNREACHABLE_V0", "APP-core v0 reserved F13 row was generated");
+    if (evaluation.kind !== "LOCAL_QUARANTINE_PROPOSAL") {
+      const primary = evaluation.primary ?? evaluation.primaryOnCommit;
+      const row = relations.candidateEvaluationPrimaryRelationV0.find((item) => item.primary === primary);
+      requireCondition(row !== undefined, "candidate primary is absent from F13");
+      requireCondition(row.reachability !== "RESERVED_UNREACHABLE_V0", "APP-core v0 reserved F13 row was generated");
+    }
   }
   if (["VALIDATE_TRANSCRIPT", "EVALUATE_GENESIS"].includes(response.operation)) {
     const observed = JSON.stringify([

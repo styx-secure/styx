@@ -199,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print(
         "APP-core structural cross-runtime: PASS "
-        f"instances=1450 sha256={sha256_bytes(dumps(python_report))}"
+        f"instances=1553 sha256={sha256_bytes(dumps(python_report))}"
     )
     return 0
 

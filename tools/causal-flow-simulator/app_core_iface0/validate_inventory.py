@@ -25,13 +25,14 @@ from generate_seed_registry import (
     _case_ids,
     _coverage,
     _enforce_cross_case_response_state_non_disclosure,
+    _evaluate_fixture_request,
     _positive_population,
     _reference_source_set_sha256,
+    _semantic_request_carriers,
 )
 from interface_model import (
     ContractAuthority,
     InterfaceModelError,
-    evaluate_interface_request,
     validate_request_structure,
     validate_response_before_release,
 )
@@ -97,8 +98,8 @@ def _validate_positive_coverage_union(
         and isinstance(row.get("armIndex"), int)
     }
     if (
-        len(expected_objects) != 78
-        or len(expected_arms) != 54
+        len(expected_objects) != 87
+        or len(expected_arms) != 57
         or len(object_pointers) != len(set(object_pointers))
         or len(one_of_arms) != len(set(one_of_arms))
         or set(object_pointers) != expected_objects
@@ -128,14 +129,14 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
     if list(Draft202012Validator(schema).iter_errors(inventory)):
         raise PhaseAValidationError("positive inventory schema validation failed")
     cases = inventory.get("cases")
-    if not isinstance(cases, list) or inventory.get("caseCount") != 80:
+    if not isinstance(cases, list) or inventory.get("caseCount") != 96:
         raise PhaseAValidationError("positive inventory case count drift")
     by_id = {
         row["caseId"]: row
         for row in cases
         if isinstance(row, dict) and isinstance(row.get("caseId"), str)
     }
-    if len(by_id) != 80 or len(cases) != 80:
+    if len(by_id) != 96 or len(cases) != 96:
         raise PhaseAValidationError("positive inventory case ID collision")
 
     (
@@ -160,7 +161,7 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         "objectSchemaPointerSetSha256": reachability[
             "objectSchemaPointerSetSha256"
         ],
-        "caseCount": 80,
+        "caseCount": 96,
     }
     if any(inventory.get(key) != value for key, value in expected_inventory_header.items()):
         raise PhaseAValidationError("positive inventory authority header drift")
@@ -187,6 +188,15 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         raise PhaseAValidationError("Phase-A external file set drift")
 
     authority = ContractAuthority.load(repo_root, contract)
+    collision_oracles = {
+        dumps(case.request): case.collision_oracle
+        for case in _semantic_request_carriers(authority)
+        if case.collision_oracle is not None
+    }
+    if len(collision_oracles) != 3:
+        raise PhaseAValidationError(
+            "closed test-only collision-oracle relation drift"
+        )
     request_payload_by_id = {case_id: payload for payload, case_id in request_ids.items()}
     response_report_files: set[str] = set()
     submitted_requests: list[dict[str, object]] = []
@@ -223,7 +233,9 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         if direction == "REQUEST":
             submitted_requests.append(value)
             validate_request_structure(authority, value)
-            response = evaluate_interface_request(authority, value)
+            response = _evaluate_fixture_request(
+                authority, value, collision_oracles.get(payload)
+            )
             validate_response_before_release(authority, response)
             if dumps(response) not in expected_responses:
                 raise PhaseAValidationError("request reference output escaped closed set")
@@ -320,7 +332,7 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         *(f"carriers/{case_id}.json" for case_id in by_id),
         *response_report_files,
     }
-    if set(artifact_paths) != expected_paths or len(artifact_paths) != 97:
+    if set(artifact_paths) != expected_paths or len(artifact_paths) != 117:
         raise PhaseAValidationError("Phase-A external file set drift")
     artifacts = [
         {
@@ -337,7 +349,7 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         ),
         key=lambda row: row["caseId"].encode("utf-8"),
     )
-    if len(request_provenance) != 65:
+    if len(request_provenance) != 77:
         raise PhaseAValidationError("request provenance reconstruction count drift")
     expected_package = {
         "reportVersion": "APP-CORE-IFACE-0-PHASE-A-PACKAGE-V1",
@@ -349,17 +361,17 @@ def validate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         "positiveCarrierInventorySha256": _sha256(inventory_path.read_bytes()),
         "referenceSourceSetSha256": _reference_source_set_sha256(repo_root),
         "toolchainSha256": _sha256((root / "reference-toolchain.json").read_bytes()),
-        "caseCount": 80,
-        "requestCaseCount": 65,
-        "responseCaseCount": 15,
+        "caseCount": 96,
+        "requestCaseCount": 77,
+        "responseCaseCount": 19,
         "requestProvenance": request_provenance,
-        "artifactCount": 97,
+        "artifactCount": 117,
         "artifacts": artifacts,
     }
     if package != expected_package:
         raise PhaseAValidationError("Phase-A package report reconstruction drift")
     return {
-        "case_count": 80,
+        "case_count": 96,
         "inventory_sha256": _sha256(inventory_path.read_bytes()),
         "package_report_sha256": _sha256(package_path.read_bytes()),
     }
@@ -411,9 +423,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"APP-core inventory: FAIL: {error}", file=sys.stderr)
         return 2
     if args.phase_a_evidence_root is None:
-        print("APP-core inventory: PASS structural=1450 semantic=5149 total=6599")
+        print("APP-core inventory: PASS structural=1553 semantic=5535 total=7088")
     else:
-        print("APP-core Phase A: PASS cases=80 requests=65 responses=15")
+        print("APP-core Phase A: PASS cases=96 requests=77 responses=19")
     return 0
 
 

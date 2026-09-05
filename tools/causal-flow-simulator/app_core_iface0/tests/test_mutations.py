@@ -38,13 +38,13 @@ from run_semantic_acv049 import build_report as build_acv049_preflight  # noqa: 
 class StructuralPlanTests(unittest.TestCase):
     def test_contract_derives_exact_closed_structural_plan(self) -> None:
         report = derive_structural_plan(ROOT / "contract")
-        self.assertEqual(report["instance_count"], 1450)
+        self.assertEqual(report["instance_count"], 1553)
         rows = report["rows"]
-        self.assertEqual(len(rows), 1450)
-        self.assertEqual(len({row["instanceId"] for row in rows}), 1450)
-        self.assertEqual(len({row["assertionId"] for row in rows}), 1450)
-        self.assertEqual(len({row["mutationId"] for row in rows}), 1450)
-        self.assertEqual(len({row["detectorId"] for row in rows}), 1450)
+        self.assertEqual(len(rows), 1553)
+        self.assertEqual(len({row["instanceId"] for row in rows}), 1553)
+        self.assertEqual(len({row["assertionId"] for row in rows}), 1553)
+        self.assertEqual(len({row["mutationId"] for row in rows}), 1553)
+        self.assertEqual(len({row["detectorId"] for row in rows}), 1553)
         self.assertEqual(
             rows[0]["instanceId"], "STR-REQUIRED-PROPERTY-OMISSION--0001"
         )
@@ -138,24 +138,24 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
 
     def test_real_seed_partition_closes_all_semantic_execution_rows(self) -> None:
         report = build_semantic_preflight(self.phase_b_seeds, ROOT / "contract")
-        self.assertEqual(report["semantic_instance_count"], 5149)
+        self.assertEqual(report["semantic_instance_count"], 5535)
         self.assertEqual(
-            report["seed_direction_counts"], {"REQUEST": 48, "RESPONSE": 30}
+            report["seed_direction_counts"], {"REQUEST": 56, "RESPONSE": 31}
         )
         self.assertEqual(
             report["acv048_phase_counts"],
             {
-                "BLIND_INPUT_EXECUTION": 432,
-                "POST_OUTPUT_MUTATION": 270,
+                "BLIND_INPUT_EXECUTION": 504,
+                "POST_OUTPUT_MUTATION": 279,
                 "VALIDATOR_SELF_TEST": 0,
             },
         )
         self.assertEqual(
             report["execution_phase_counts"],
             {
-                "BLIND_INPUT_EXECUTION": 991,
-                "POST_OUTPUT_MUTATION": 4131,
-                "VALIDATOR_SELF_TEST": 27,
+                "BLIND_INPUT_EXECUTION": 1079,
+                "POST_OUTPUT_MUTATION": 4430,
+                "VALIDATOR_SELF_TEST": 26,
             },
         )
         self.assertEqual(report["status"], "PRESELECTION_EVIDENCE")
@@ -164,7 +164,7 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         mutant = copy.deepcopy(self.phase_b_seeds)
         mutant["rows"].pop()
         with self.assertRaisesRegex(
-            SemanticPreflightError, "requires 78 seed rows"
+            SemanticPreflightError, "requires 87 seed rows"
         ):
             build_semantic_preflight(mutant, ROOT / "contract")
 
@@ -172,14 +172,14 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         report = derive_acv048_report(
             ROOT.parents[2], ROOT / "contract", self.evidence
         )
-        self.assertEqual(report["instance_count"], 702)
-        self.assertEqual(report["exact_rejected_count"], 702)
-        self.assertEqual(report["mutant_admitted_count"], 702)
+        self.assertEqual(report["instance_count"], 783)
+        self.assertEqual(report["exact_rejected_count"], 783)
+        self.assertEqual(report["mutant_admitted_count"], 783)
         self.assertEqual(
             report["phase_counts"],
-            {"BLIND_INPUT_EXECUTION": 432, "POST_OUTPUT_MUTATION": 270},
+            {"BLIND_INPUT_EXECUTION": 504, "POST_OUTPUT_MUTATION": 279},
         )
-        self.assertEqual(len({row["instanceId"] for row in report["rows"]}), 702)
+        self.assertEqual(len({row["instanceId"] for row in report["rows"]}), 783)
         self.assertTrue(all(not row["exactAccepted"] for row in report["rows"]))
         self.assertTrue(all(row["mutantAccepted"] for row in report["rows"]))
 
@@ -188,13 +188,13 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
             report = build_acv049_preflight(
                 ROOT.parents[2], ROOT / "contract", self.evidence, node="node"
             )
-        self.assertEqual(report["instance_count"], 3770)
-        self.assertEqual(report["path_count"], 377)
-        self.assertEqual(report["string_path_count"], 372)
+        self.assertEqual(report["instance_count"], 4060)
+        self.assertEqual(report["path_count"], 406)
+        self.assertEqual(report["string_path_count"], 401)
         self.assertEqual(report["non_string_path_count"], 5)
-        self.assertEqual(report["materialized_path_count"], 296)
-        self.assertEqual(report["unmaterialized_path_count"], 81)
-        self.assertEqual(report["live_rejection_count"], 1676)
+        self.assertEqual(report["materialized_path_count"], 321)
+        self.assertEqual(report["unmaterialized_path_count"], 85)
+        self.assertEqual(report["live_rejection_count"], 1746)
         self.assertEqual(report["claimed_mutant_kills"], 0)
         self.assertEqual(report["status"], "PRESELECTION_EVIDENCE")
         self.assertEqual(report["verdict"], "AMEND_REQUIRED")
@@ -202,39 +202,39 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
             report["class_counts"],
             {
                 "NON_STRING_CONST": 50,
-                "SCHEMA_ADMISSIBLE_ENCODED": 1921,
-                "SCHEMA_CLOSED": 1799,
+                "SCHEMA_ADMISSIBLE_ENCODED": 2121,
+                "SCHEMA_CLOSED": 1889,
             },
         )
         self.assertEqual(
             report["class_materialization_counts"],
             {
                 "NON_STRING_CONST:UNMATERIALIZED": 50,
-                "SCHEMA_ADMISSIBLE_ENCODED:MATERIALIZED": 1284,
-                "SCHEMA_ADMISSIBLE_ENCODED:UNMATERIALIZED": 637,
-                "SCHEMA_CLOSED:MATERIALIZED": 1676,
-                "SCHEMA_CLOSED:UNMATERIALIZED": 123,
+                "SCHEMA_ADMISSIBLE_ENCODED:MATERIALIZED": 1464,
+                "SCHEMA_ADMISSIBLE_ENCODED:UNMATERIALIZED": 657,
+                "SCHEMA_CLOSED:MATERIALIZED": 1746,
+                "SCHEMA_CLOSED:UNMATERIALIZED": 143,
             },
         )
 
-    def test_phase_b_seed_registry_selects_all_78_objects_deterministically(self) -> None:
+    def test_phase_b_seed_registry_selects_all_87_objects_deterministically(self) -> None:
         registry, cases = derive_seed_registry(
             ROOT.parents[2], ROOT / "contract", self.evidence
         )
-        self.assertEqual(registry["rowCount"], 78)
-        self.assertEqual(len(registry["rows"]), 78)
-        self.assertEqual(len(cases), 80)
+        self.assertEqual(registry["rowCount"], 87)
+        self.assertEqual(len(registry["rows"]), 87)
+        self.assertEqual(len(cases), 96)
         self.assertEqual(
-            len({row["objectSchemaId"] for row in registry["rows"]}), 78
+            len({row["objectSchemaId"] for row in registry["rows"]}), 87
         )
         self.assertEqual(
-            len({row["objectSchemaPointer"] for row in registry["rows"]}), 78
+            len({row["objectSchemaPointer"] for row in registry["rows"]}), 87
         )
         self.assertEqual(
             registry["rows"][0]["objectSchemaId"], "OBJ-0001"
         )
         self.assertEqual(
-            registry["rows"][-1]["objectSchemaId"], "OBJ-0078"
+            registry["rows"][-1]["objectSchemaId"], "OBJ-0087"
         )
         repeated, _cases = derive_seed_registry(
             ROOT.parents[2], ROOT / "contract", self.evidence
@@ -269,19 +269,22 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
         inserted_arrays = {
             "STR-REF-TARGET-CONSTRAINT--0001",
             "STR-REF-TARGET-CONSTRAINT--0015",
-            "STR-REF-TARGET-CONSTRAINT--0063",
-            "STR-REF-TARGET-CONSTRAINT--0068",
-            "STR-REF-TARGET-CONSTRAINT--0071",
-            "STR-REF-TARGET-CONSTRAINT--0073",
-            "STR-REF-TARGET-CONSTRAINT--0074",
+            "STR-REF-TARGET-CONSTRAINT--0031",
+            "STR-REF-TARGET-CONSTRAINT--0044",
+            "STR-REF-TARGET-CONSTRAINT--0072",
+            "STR-REF-TARGET-CONSTRAINT--0075",
+            "STR-REF-TARGET-CONSTRAINT--0076",
+            "STR-REF-TARGET-CONSTRAINT--0077",
             "STR-REF-TARGET-CONSTRAINT--0078",
-            "STR-REF-TARGET-CONSTRAINT--0079",
-            "STR-REF-TARGET-CONSTRAINT--0080",
-            "STR-REF-TARGET-CONSTRAINT--0093",
-            "STR-REF-TARGET-CONSTRAINT--0113",
-            "STR-REF-TARGET-CONSTRAINT--0114",
-            "STR-REF-TARGET-CONSTRAINT--0198",
-            "STR-REF-TARGET-CONSTRAINT--0210",
+            "STR-REF-TARGET-CONSTRAINT--0082",
+            "STR-REF-TARGET-CONSTRAINT--0083",
+            "STR-REF-TARGET-CONSTRAINT--0084",
+            "STR-REF-TARGET-CONSTRAINT--0096",
+            "STR-REF-TARGET-CONSTRAINT--0097",
+            "STR-REF-TARGET-CONSTRAINT--0115",
+            "STR-REF-TARGET-CONSTRAINT--0116",
+            "STR-REF-TARGET-CONSTRAINT--0161",
+            "STR-REF-TARGET-CONSTRAINT--0215",
             "STR-MIN-ITEMS-UNDERFLOW--0001",
             "STR-ALL-OF-BRANCH-CONSTRAINT--0001",
             "STR-ALL-OF-BRANCH-CONSTRAINT--0002",
@@ -319,13 +322,13 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
             ROOT.parents[2], ROOT / "contract", self.evidence
         )
         self.assertEqual(report["verdict"], "PASS")
-        self.assertEqual(report["instance_count"], 1450)
+        self.assertEqual(report["instance_count"], 1553)
         self.assertEqual(report["unresolved_instance_ids"], [])
         self.assertEqual(
             report["resolution_counts"],
             {
-                "PARENT_RESOLVED_MEMBER_ABSENT": 20,
-                "RESOLVED": 1430,
+                "PARENT_RESOLVED_MEMBER_ABSENT": 25,
+                "RESOLVED": 1528,
                 "UNRESOLVED_TARGET": 0,
             },
         )
@@ -335,24 +338,24 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
             ROOT.parents[2], ROOT / "contract", self.evidence
         )
         self.assertEqual(report["verdict"], "PASS")
-        self.assertEqual(report["instance_count"], 1450)
+        self.assertEqual(report["instance_count"], 1553)
         self.assertEqual(
             report["classification_counts"],
             {
                 "ANTI_DOWNGRADE_OVERLAP_SELF_TEST": 1,
-                "CO_CONSTRAINED_OCCURRENCE_SELF_TEST": 81,
+                "CO_CONSTRAINED_OCCURRENCE_SELF_TEST": 82,
                 "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST": 1,
-                "TARGET_ONLY_COUNTERFACTUAL": 1367,
+                "TARGET_ONLY_COUNTERFACTUAL": 1469,
             },
         )
         self.assertEqual(
             report["selected_classification_counts"],
             {
                 "ANTI_DOWNGRADE_OVERLAP_SELF_TEST": 1,
-                "EQUIVALENT_MUTANT": 27,
+                "EQUIVALENT_MUTANT": 28,
                 "PALETTE_EXHAUSTED": 1,
                 "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST": 1,
-                "SATISFIABLE": 1420,
+                "SATISFIABLE": 1522,
             },
         )
         self.assertEqual(report["non_satisfiable_rows"], [])
@@ -370,7 +373,7 @@ class PhaseAMutationIntegrationTests(unittest.TestCase):
             }
             for row in relation["carrierReselections"]
         ]
-        self.assertEqual(report["reselected_count"], 31)
+        self.assertEqual(report["reselected_count"], 29)
         self.assertEqual(report["reselected_rows"], expected_reselections)
         self.assertTrue(
             all(row["candidate_ordinal"] >= 2 for row in report["reselected_rows"])

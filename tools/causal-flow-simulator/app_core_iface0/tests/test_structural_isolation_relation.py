@@ -33,11 +33,11 @@ class StructuralIsolationRelationTests(unittest.TestCase):
         relation = load_structural_isolation_relation(
             self.contract, self.instance_ids
         )
-        self.assertEqual(len(relation["carrierReselections"]), 31)
+        self.assertEqual(len(relation["carrierReselections"]), 29)
         self.assertEqual(len(relation["boundedRecipeRows"]), 20)
         self.assertEqual(
             sum(len(row["instanceIds"]) for row in relation["coConstrainedClasses"]),
-            81,
+            82,
         )
 
     def _assert_mutation_fails(self, mutation) -> None:
@@ -55,7 +55,7 @@ class StructuralIsolationRelationTests(unittest.TestCase):
         mutations = (
             lambda value: value["authority"].update(providerCommentId="0"),
             lambda value: value["classificationCounts"].update(
-                TARGET_ONLY_COUNTERFACTUAL=1368
+                TARGET_ONLY_COUNTERFACTUAL=1470
             ),
             lambda value: value["carrierReselections"].pop(),
             lambda value: value["completeSchemaLiveInstanceIds"].append(

@@ -1,6 +1,6 @@
 {
-  "relationVersion": "APP-CORE-IFACE-0-STRUCTURAL-ISOLATION-V2",
-  "status": "HUMAN_RATIFIED_REMEDIATION_AUTHORITY",
+  "relationVersion": "APP-CORE-IFACE-0-STRUCTURAL-ISOLATION-V3",
+  "status": "DERIVED_UNDER_HUMAN_RATIFIED_REMEDIATION",
   "authority": {
     "v21Sha256": "6587d427a524744e58b6ba38107b9537e3c4b32672b2f41b3d00dcf313d79d77",
     "v22Sha256": "e1d42d9782a47b6e4dbeb6cc09b4bb51bde5a3d3a137058cb1f5147534499e04",
@@ -9,212 +9,200 @@
     "priorHumanRequestSha256": "43d7660ec64733ec626acd26d390539ac75e0fcb954a1b12f5f511e16cfeed9d",
     "priorProviderCommentId": "5519811594",
     "humanRequestSha256": "279d5ac04c86628be031b6a50dc275540d2137033a72ea7275b9796c1942534a",
-    "providerCommentId": "5522978433"
+    "providerCommentId": "5522978433",
+    "combinedRemediationV3Sha256": "242a8ff8b0ab006b8ae3d3ba8c4df4f5c95ab111b72c69798ab6c22ac0659eec",
+    "combinedRemediationProviderCommentId": "5550502736"
   },
   "frozenInputs": {
-    "preImplementationHead": "1966736cc539efb8514e2be005581cf102e07fcc",
-    "instanceSetSha256": "e1f5e66ffc94691fb03eac4221dd6558dacd667eeb5e511ca3f06359847d5a43",
-    "instanceCount": 1450,
-    "requestCarrierCount": 65,
-    "responseCarrierCount": 15
+    "instanceCount": 1553,
+    "instanceSetSha256": "1fef14a62ae55e18de5103a10ff37cab71df1b3a8e7493afca73b5ea28a517b2",
+    "interfaceSchemaSha256": "55592a26c13e72b888afaa743646ccfd69d6bb756ad6f15aaa290cdd1c3debd5",
+    "requestCarrierCount": 77,
+    "responseCarrierCount": 19
   },
   "classificationCounts": {
-    "TARGET_ONLY_COUNTERFACTUAL": 1367,
-    "CO_CONSTRAINED_OCCURRENCE_SELF_TEST": 81,
+    "TARGET_ONLY_COUNTERFACTUAL": 1469,
+    "CO_CONSTRAINED_OCCURRENCE_SELF_TEST": 82,
     "ANTI_DOWNGRADE_OVERLAP_SELF_TEST": 1,
     "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST": 1
   },
   "carrierReselections": [
     {
-      "instanceId": "STR-MIN-ITEMS-UNDERFLOW--0003",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0010",
-      "candidateOrdinal": 2,
-      "targetJsonPointer": "/input/additions/openingMaterial"
-    },
-    {
-      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0002",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
-      "candidateOrdinal": 2,
-      "targetJsonPointer": "/input/prior/projection/authority/necessaryCredentialIdentifiers"
-    },
-    {
-      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0003",
-      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0007",
-      "candidateOrdinal": 2,
-      "targetJsonPointer": "/input/evidence/contentMaterial/0/segments"
-    },
-    {
-      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0005",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0015",
-      "candidateOrdinal": 15,
-      "targetJsonPointer": "/input/prior/projection/contentStates"
-    },
-    {
-      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0007",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0020",
-      "candidateOrdinal": 20,
-      "targetJsonPointer": "/input/prior/projection/eventAuthority"
-    },
-    {
-      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0008",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0019",
-      "candidateOrdinal": 19,
-      "targetJsonPointer": "/input/prior/projection/forkJoins"
-    },
-    {
-      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0009",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0017",
-      "candidateOrdinal": 17,
-      "targetJsonPointer": "/input/prior/projection/recordOutcomes"
-    },
-    {
-      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0010",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
-      "candidateOrdinal": 4,
-      "targetJsonPointer": "/input/prior/projection/records"
-    },
-    {
-      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0011",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0010",
-      "candidateOrdinal": 10,
-      "targetJsonPointer": "/input/prior/projection/reductionStandings"
-    },
-    {
-      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0012",
-      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0003",
-      "candidateOrdinal": 3,
-      "targetJsonPointer": "/input/evidence/contentMaterial"
-    },
-    {
-      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0013",
-      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0004",
-      "candidateOrdinal": 4,
-      "targetJsonPointer": "/input/evidence/openingMaterial"
-    },
-    {
-      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0014",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0007",
-      "candidateOrdinal": 7,
-      "targetJsonPointer": "/input/prior/admittedCandidates"
-    },
-    {
-      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0015",
-      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0002",
-      "candidateOrdinal": 2,
-      "targetJsonPointer": "/input/candidates"
-    },
-    {
-      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0002",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
-      "candidateOrdinal": 2,
-      "targetJsonPointer": "/input/prior/projection/authority/necessaryCredentialIdentifiers"
-    },
-    {
-      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0003",
-      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0007",
-      "candidateOrdinal": 2,
-      "targetJsonPointer": "/input/evidence/contentMaterial/0/segments"
-    },
-    {
-      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0005",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0015",
-      "candidateOrdinal": 15,
-      "targetJsonPointer": "/input/prior/projection/contentStates"
-    },
-    {
-      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0007",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0020",
-      "candidateOrdinal": 20,
-      "targetJsonPointer": "/input/prior/projection/eventAuthority"
-    },
-    {
-      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0008",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0019",
-      "candidateOrdinal": 19,
-      "targetJsonPointer": "/input/prior/projection/forkJoins"
-    },
-    {
-      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0009",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0017",
-      "candidateOrdinal": 17,
-      "targetJsonPointer": "/input/prior/projection/recordOutcomes"
-    },
-    {
-      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0010",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
-      "candidateOrdinal": 4,
-      "targetJsonPointer": "/input/prior/projection/records"
-    },
-    {
-      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0011",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0010",
-      "candidateOrdinal": 10,
-      "targetJsonPointer": "/input/prior/projection/reductionStandings"
-    },
-    {
-      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0012",
-      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0003",
-      "candidateOrdinal": 3,
-      "targetJsonPointer": "/input/evidence/contentMaterial"
-    },
-    {
-      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0013",
-      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0004",
-      "candidateOrdinal": 4,
-      "targetJsonPointer": "/input/evidence/openingMaterial"
-    },
-    {
-      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0014",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0007",
-      "candidateOrdinal": 7,
-      "targetJsonPointer": "/input/prior/admittedCandidates"
-    },
-    {
-      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0015",
-      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0002",
-      "candidateOrdinal": 2,
-      "targetJsonPointer": "/input/candidates"
-    },
-    {
-      "instanceId": "STR-ANY-OF-POSITIVE-ARM--0002",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0010",
-      "candidateOrdinal": 2,
-      "targetJsonPointer": "/input/additions"
-    },
-    {
-      "instanceId": "STR-ANY-OF-ALL-ARMS--0001",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-EVIDENCE-UPDATE-0007",
-      "candidateOrdinal": 7,
-      "targetJsonPointer": "/input/additions"
-    },
-    {
-      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0004",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
-      "candidateOrdinal": 4,
-      "targetJsonPointer": "/input/prior/projection/records/0"
-    },
-    {
-      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0005",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0006",
-      "candidateOrdinal": 6,
-      "targetJsonPointer": "/input/prior/projection/records/0"
-    },
-    {
-      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0006",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
       "candidateOrdinal": 8,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
+      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0004",
       "targetJsonPointer": "/input/prior/projection/records/0"
     },
     {
-      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0007",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
-      "candidateOrdinal": 4,
+      "candidateOrdinal": 13,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0013",
+      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0005",
       "targetJsonPointer": "/input/prior/projection/records/0"
+    },
+    {
+      "candidateOrdinal": 15,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0015",
+      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0006",
+      "targetJsonPointer": "/input/prior/projection/records/0"
+    },
+    {
+      "candidateOrdinal": 8,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
+      "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0007",
+      "targetJsonPointer": "/input/prior/projection/records/0"
+    },
+    {
+      "candidateOrdinal": 3,
+      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0001",
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0002",
+      "targetJsonPointer": "/input/presentations/0/proofs"
+    },
+    {
+      "candidateOrdinal": 203,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0021",
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0003",
+      "targetJsonPointer": "/input/prior/projection/forkJoins/0/siblingReferences"
+    },
+    {
+      "candidateOrdinal": 6,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0006",
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0006",
+      "targetJsonPointer": "/input/prior/projection/contentStates"
+    },
+    {
+      "candidateOrdinal": 7,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0007",
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0007",
+      "targetJsonPointer": "/input/prior/projection/credentialBindings"
+    },
+    {
+      "candidateOrdinal": 17,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0017",
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0008",
+      "targetJsonPointer": "/input/prior/projection/eventAuthority"
+    },
+    {
+      "candidateOrdinal": 21,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0021",
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0009",
+      "targetJsonPointer": "/input/prior/projection/forkJoins"
+    },
+    {
+      "candidateOrdinal": 3,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0003",
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0010",
+      "targetJsonPointer": "/input/prior/projection/recordOutcomes"
+    },
+    {
+      "candidateOrdinal": 8,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0011",
+      "targetJsonPointer": "/input/prior/projection/records"
+    },
+    {
+      "candidateOrdinal": 12,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0012",
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0012",
+      "targetJsonPointer": "/input/prior/projection/reductionStandings"
+    },
+    {
+      "candidateOrdinal": 2,
+      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0002",
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0013",
+      "targetJsonPointer": "/input/evidenceAttempts"
+    },
+    {
+      "candidateOrdinal": 2,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0002",
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0014",
+      "targetJsonPointer": "/input/prior/localRevalidation/evidence/verifiedComplete"
+    },
+    {
+      "candidateOrdinal": 20,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0020",
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0016",
+      "targetJsonPointer": "/input/prior/localRevalidation/retainedProofs"
+    },
+    {
+      "candidateOrdinal": 5,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0005",
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0017",
+      "targetJsonPointer": "/input/prior/logicalEvents"
+    },
+    {
+      "candidateOrdinal": 2,
+      "carrierCaseId": "PCR-REQUEST-VALIDATE-TRANSCRIPT-0002",
+      "instanceId": "STR-REF-TARGET-CONSTRAINT--0140",
+      "targetJsonPointer": "/input/candidate/proofs/0"
+    },
+    {
+      "candidateOrdinal": 203,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0021",
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0002",
+      "targetJsonPointer": "/input/prior/projection/forkJoins/0/siblingReferences"
+    },
+    {
+      "candidateOrdinal": 6,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0006",
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0005",
+      "targetJsonPointer": "/input/prior/projection/contentStates"
+    },
+    {
+      "candidateOrdinal": 7,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0007",
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0006",
+      "targetJsonPointer": "/input/prior/projection/credentialBindings"
+    },
+    {
+      "candidateOrdinal": 17,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0017",
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0007",
+      "targetJsonPointer": "/input/prior/projection/eventAuthority"
+    },
+    {
+      "candidateOrdinal": 21,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0021",
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0008",
+      "targetJsonPointer": "/input/prior/projection/forkJoins"
+    },
+    {
+      "candidateOrdinal": 3,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0003",
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0009",
+      "targetJsonPointer": "/input/prior/projection/recordOutcomes"
+    },
+    {
+      "candidateOrdinal": 8,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0010",
+      "targetJsonPointer": "/input/prior/projection/records"
+    },
+    {
+      "candidateOrdinal": 12,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0012",
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0011",
+      "targetJsonPointer": "/input/prior/projection/reductionStandings"
+    },
+    {
+      "candidateOrdinal": 2,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0002",
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0012",
+      "targetJsonPointer": "/input/prior/localRevalidation/evidence/verifiedComplete"
+    },
+    {
+      "candidateOrdinal": 20,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0020",
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0013",
+      "targetJsonPointer": "/input/prior/localRevalidation/retainedProofs"
+    },
+    {
+      "candidateOrdinal": 5,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0005",
+      "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0014",
+      "targetJsonPointer": "/input/prior/logicalEvents"
     }
   ],
   "completeSchemaLiveInstanceIds": [
-    "STR-ONE-OF-POSITIVE-ARM--0025",
-    "STR-ONE-OF-POSITIVE-ARM--0026",
     "STR-ONE-OF-POSITIVE-ARM--0027",
     "STR-ONE-OF-POSITIVE-ARM--0028",
     "STR-ONE-OF-POSITIVE-ARM--0029",
@@ -225,20 +213,22 @@
     "STR-ONE-OF-POSITIVE-ARM--0034",
     "STR-ONE-OF-POSITIVE-ARM--0035",
     "STR-ONE-OF-POSITIVE-ARM--0036",
-    "STR-ONE-OF-POSITIVE-ARM--0053",
-    "STR-ONE-OF-POSITIVE-ARM--0054",
-    "STR-REF-TARGET-CONSTRAINT--0137",
-    "STR-REF-TARGET-CONSTRAINT--0138",
-    "STR-REF-TARGET-CONSTRAINT--0139",
-    "STR-REF-TARGET-CONSTRAINT--0140",
-    "STR-REF-TARGET-CONSTRAINT--0141",
-    "STR-REF-TARGET-CONSTRAINT--0142",
-    "STR-REF-TARGET-CONSTRAINT--0143",
-    "STR-REF-TARGET-CONSTRAINT--0144",
-    "STR-REF-TARGET-CONSTRAINT--0145",
-    "STR-REF-TARGET-CONSTRAINT--0146",
+    "STR-ONE-OF-POSITIVE-ARM--0037",
+    "STR-ONE-OF-POSITIVE-ARM--0038",
+    "STR-ONE-OF-POSITIVE-ARM--0056",
+    "STR-ONE-OF-POSITIVE-ARM--0057",
     "STR-REF-TARGET-CONSTRAINT--0147",
-    "STR-REF-TARGET-CONSTRAINT--0148"
+    "STR-REF-TARGET-CONSTRAINT--0148",
+    "STR-REF-TARGET-CONSTRAINT--0149",
+    "STR-REF-TARGET-CONSTRAINT--0150",
+    "STR-REF-TARGET-CONSTRAINT--0151",
+    "STR-REF-TARGET-CONSTRAINT--0152",
+    "STR-REF-TARGET-CONSTRAINT--0153",
+    "STR-REF-TARGET-CONSTRAINT--0154",
+    "STR-REF-TARGET-CONSTRAINT--0155",
+    "STR-REF-TARGET-CONSTRAINT--0156",
+    "STR-REF-TARGET-CONSTRAINT--0157",
+    "STR-REF-TARGET-CONSTRAINT--0158"
   ],
   "recipeDefinitions": [
     {
@@ -340,143 +330,143 @@
   ],
   "boundedRecipeRows": [
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0013",
       "instanceId": "STR-REF-TARGET-CONSTRAINT--0003",
       "recipeId": "R09_ROLE_TAIL_MISMATCH",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0006",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0015",
       "instanceId": "STR-REF-TARGET-CONSTRAINT--0004",
       "recipeId": "R09_ROLE_TAIL_MISMATCH",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
       "instanceId": "STR-REF-TARGET-CONSTRAINT--0005",
       "recipeId": "R09_ROLE_TAIL_MISMATCH",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0005",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0019",
       "instanceId": "STR-REF-TARGET-CONSTRAINT--0006",
       "recipeId": "R09_ROLE_TAIL_MISMATCH",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0013",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0016",
       "instanceId": "STR-REF-TARGET-CONSTRAINT--0007",
       "recipeId": "R09_ROLE_TAIL_MISMATCH",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0014",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0018",
       "instanceId": "STR-REF-TARGET-CONSTRAINT--0008",
       "recipeId": "R09_ROLE_TAIL_MISMATCH",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0011",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0010",
       "instanceId": "STR-REF-TARGET-CONSTRAINT--0009",
       "recipeId": "R09_ROLE_TAIL_MISMATCH",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0012",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0011",
       "instanceId": "STR-REF-TARGET-CONSTRAINT--0010",
       "recipeId": "R09_ROLE_TAIL_MISMATCH",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
       "instanceId": "STR-CONST-SUBSTITUTION--0015",
       "recipeId": "R02_CHECKPOINT_EMPTY_ARRAY_NONEMPTY",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/checkpointEvidenceReferences"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0002",
       "instanceId": "STR-MIN-LENGTH-UNDERFLOW--0001",
       "recipeId": "R01_CONTENT_MIN_LENGTH_EMPTY",
-      "carrierCaseId": "PCR-REQUEST-REPLAY-CONTEXT-0007",
-      "candidateOrdinal": 1,
-      "targetJsonPointer": "/input/evidence/contentMaterial/0/segments/0/octetsHex"
+      "targetJsonPointer": "/input/evidenceAttempts/0/contentMaterial/segments/0/octetsHex"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
       "instanceId": "STR-MIN-ITEMS-UNDERFLOW--0001",
       "recipeId": "R03_ALIAS_GROUP_MIN_ITEMS",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/aliasGroups/0"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
       "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0001",
       "recipeId": "R05_CAUSAL_PARENT_DUPLICATE",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/records/0/causalParentReferences"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
       "instanceId": "STR-UNIQUE-ITEMS-DUPLICATE--0004",
       "recipeId": "R06_ALIAS_GROUP_DUPLICATE",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/aliasGroups"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
       "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0001",
       "recipeId": "R07_CAUSAL_PARENT_NON_HEX",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/records/0/causalParentReferences"
     },
     {
-      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0004",
-      "recipeId": "R08_ALIAS_GROUP_UNDERFLOW",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
       "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0001",
+      "instanceId": "STR-ITEM-CONSTRAINT-VIOLATION--0005",
+      "recipeId": "R08_ALIAS_GROUP_UNDERFLOW",
       "targetJsonPointer": "/input/prior/projection/aliasGroups"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
       "instanceId": "STR-ONE-OF-NO-ARM--0001",
       "recipeId": "R09_ROLE_TAIL_MISMATCH",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/records/0/roleTail"
     },
     {
+      "candidateOrdinal": 13,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0013",
       "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0005",
       "recipeId": "R09_ROLE_TAIL_MISMATCH",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0006",
-      "candidateOrdinal": 6,
       "targetJsonPointer": "/input/prior/projection/records/0"
     },
     {
+      "candidateOrdinal": 15,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0015",
       "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0006",
       "recipeId": "R09_ROLE_TAIL_MISMATCH",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
-      "candidateOrdinal": 8,
       "targetJsonPointer": "/input/prior/projection/records/0"
     },
     {
+      "candidateOrdinal": 8,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
       "instanceId": "STR-ALL-OF-BRANCH-CONSTRAINT--0007",
       "recipeId": "R09_ROLE_TAIL_MISMATCH",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
-      "candidateOrdinal": 4,
       "targetJsonPointer": "/input/prior/projection/records/0"
     },
     {
+      "candidateOrdinal": 1,
+      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0008",
       "instanceId": "STR-NOT-SUBSCHEMA-MATCH--0001",
       "recipeId": "R10_SEQUENCE_ZERO_PREDECESSOR_INSERT",
-      "carrierCaseId": "PCR-REQUEST-EVALUATE-CANDIDATE-0004",
-      "candidateOrdinal": 1,
       "targetJsonPointer": "/input/prior/projection/records/0"
     }
   ],
@@ -492,8 +482,8 @@
         "STR-ONE-OF-NO-ARM--0010",
         "STR-ONE-OF-NO-ARM--0011",
         "STR-ONE-OF-NO-ARM--0016",
-        "STR-REF-TARGET-CONSTRAINT--0262",
-        "STR-REF-TARGET-CONSTRAINT--0263"
+        "STR-REF-TARGET-CONSTRAINT--0286",
+        "STR-REF-TARGET-CONSTRAINT--0287"
       ]
     },
     {
@@ -506,9 +496,10 @@
         "STR-MAX-LENGTH-OVERFLOW--0001",
         "STR-MAX-LENGTH-OVERFLOW--0002",
         "STR-MAX-LENGTH-OVERFLOW--0003",
+        "STR-MAX-LENGTH-OVERFLOW--0004",
+        "STR-ALL-OF-BRANCH-CONSTRAINT--0013",
         "STR-ALL-OF-BRANCH-CONSTRAINT--0015",
-        "STR-ALL-OF-BRANCH-CONSTRAINT--0017",
-        "STR-ALL-OF-BRANCH-CONSTRAINT--0019"
+        "STR-ALL-OF-BRANCH-CONSTRAINT--0017"
       ]
     },
     {
@@ -525,14 +516,14 @@
         "STR-NULL-SUBSTITUTION--0017",
         "STR-ONE-OF-NO-ARM--0013",
         "STR-REF-TARGET-CONSTRAINT--0023",
-        "STR-REF-TARGET-CONSTRAINT--0223",
-        "STR-REF-TARGET-CONSTRAINT--0224",
-        "STR-REF-TARGET-CONSTRAINT--0225",
-        "STR-REF-TARGET-CONSTRAINT--0226",
-        "STR-REF-TARGET-CONSTRAINT--0227",
-        "STR-REF-TARGET-CONSTRAINT--0228",
-        "STR-REF-TARGET-CONSTRAINT--0229",
-        "STR-REF-TARGET-CONSTRAINT--0230"
+        "STR-REF-TARGET-CONSTRAINT--0244",
+        "STR-REF-TARGET-CONSTRAINT--0245",
+        "STR-REF-TARGET-CONSTRAINT--0246",
+        "STR-REF-TARGET-CONSTRAINT--0247",
+        "STR-REF-TARGET-CONSTRAINT--0248",
+        "STR-REF-TARGET-CONSTRAINT--0249",
+        "STR-REF-TARGET-CONSTRAINT--0250",
+        "STR-REF-TARGET-CONSTRAINT--0251"
       ]
     },
     {
@@ -559,7 +550,7 @@
       "reason": "An independent object-shape constraint remains active after target weakening.",
       "instanceIds": [
         "STR-TYPE-MISMATCH--0002",
-        "STR-UNKNOWN-OBJECT-PROPERTY--0019"
+        "STR-UNKNOWN-OBJECT-PROPERTY--0020"
       ]
     },
     {
@@ -581,31 +572,30 @@
       ],
       "reason": "The target mutant admits the hostile value at schema level, but no validated operation literal remains to bind to the nested branch trace.",
       "instanceIds": [
-        "STR-REQUIRED-PROPERTY-OMISSION--0189",
-        "STR-REQUIRED-PROPERTY-OMISSION--0193",
-        "STR-REQUIRED-PROPERTY-OMISSION--0197",
-        "STR-REQUIRED-PROPERTY-OMISSION--0201",
-        "STR-REQUIRED-PROPERTY-OMISSION--0205",
-        "STR-REQUIRED-PROPERTY-OMISSION--0209",
+        "STR-REQUIRED-PROPERTY-OMISSION--0200",
+        "STR-REQUIRED-PROPERTY-OMISSION--0204",
+        "STR-REQUIRED-PROPERTY-OMISSION--0208",
         "STR-REQUIRED-PROPERTY-OMISSION--0212",
         "STR-REQUIRED-PROPERTY-OMISSION--0216",
         "STR-REQUIRED-PROPERTY-OMISSION--0220",
-        "STR-REQUIRED-PROPERTY-OMISSION--0224",
-        "STR-REQUIRED-PROPERTY-OMISSION--0228",
-        "STR-REQUIRED-PROPERTY-OMISSION--0232",
-        "STR-NULL-SUBSTITUTION--0190",
-        "STR-NULL-SUBSTITUTION--0194",
-        "STR-NULL-SUBSTITUTION--0198",
-        "STR-NULL-SUBSTITUTION--0202",
-        "STR-NULL-SUBSTITUTION--0206",
-        "STR-NULL-SUBSTITUTION--0210",
-        "STR-NULL-SUBSTITUTION--0213",
-        "STR-NULL-SUBSTITUTION--0217",
-        "STR-NULL-SUBSTITUTION--0221",
-        "STR-NULL-SUBSTITUTION--0225",
-        "STR-NULL-SUBSTITUTION--0229",
-        "STR-NULL-SUBSTITUTION--0233",
-        "STR-CONST-SUBSTITUTION--0066",
+        "STR-REQUIRED-PROPERTY-OMISSION--0223",
+        "STR-REQUIRED-PROPERTY-OMISSION--0227",
+        "STR-REQUIRED-PROPERTY-OMISSION--0231",
+        "STR-REQUIRED-PROPERTY-OMISSION--0235",
+        "STR-REQUIRED-PROPERTY-OMISSION--0239",
+        "STR-REQUIRED-PROPERTY-OMISSION--0243",
+        "STR-NULL-SUBSTITUTION--0203",
+        "STR-NULL-SUBSTITUTION--0207",
+        "STR-NULL-SUBSTITUTION--0211",
+        "STR-NULL-SUBSTITUTION--0215",
+        "STR-NULL-SUBSTITUTION--0219",
+        "STR-NULL-SUBSTITUTION--0223",
+        "STR-NULL-SUBSTITUTION--0226",
+        "STR-NULL-SUBSTITUTION--0230",
+        "STR-NULL-SUBSTITUTION--0234",
+        "STR-NULL-SUBSTITUTION--0238",
+        "STR-NULL-SUBSTITUTION--0242",
+        "STR-NULL-SUBSTITUTION--0246",
         "STR-CONST-SUBSTITUTION--0067",
         "STR-CONST-SUBSTITUTION--0068",
         "STR-CONST-SUBSTITUTION--0069",
@@ -616,7 +606,8 @@
         "STR-CONST-SUBSTITUTION--0074",
         "STR-CONST-SUBSTITUTION--0075",
         "STR-CONST-SUBSTITUTION--0076",
-        "STR-CONST-SUBSTITUTION--0077"
+        "STR-CONST-SUBSTITUTION--0077",
+        "STR-CONST-SUBSTITUTION--0078"
       ]
     },
     {
@@ -627,24 +618,24 @@
       ],
       "reason": "Weakening an operation-arm object type cannot bypass the V1 top-level object requirement or establish a valid nested branch identity.",
       "instanceIds": [
-        "STR-TYPE-MISMATCH--0057",
-        "STR-TYPE-MISMATCH--0058",
-        "STR-TYPE-MISMATCH--0059",
-        "STR-TYPE-MISMATCH--0060",
-        "STR-TYPE-MISMATCH--0061",
-        "STR-TYPE-MISMATCH--0062",
-        "STR-TYPE-MISMATCH--0063",
-        "STR-TYPE-MISMATCH--0064",
         "STR-TYPE-MISMATCH--0065",
         "STR-TYPE-MISMATCH--0066",
         "STR-TYPE-MISMATCH--0067",
-        "STR-TYPE-MISMATCH--0068"
+        "STR-TYPE-MISMATCH--0068",
+        "STR-TYPE-MISMATCH--0069",
+        "STR-TYPE-MISMATCH--0070",
+        "STR-TYPE-MISMATCH--0071",
+        "STR-TYPE-MISMATCH--0072",
+        "STR-TYPE-MISMATCH--0073",
+        "STR-TYPE-MISMATCH--0074",
+        "STR-TYPE-MISMATCH--0075",
+        "STR-TYPE-MISMATCH--0076"
       ]
     }
   ],
   "antiDowngrade": {
-    "instanceId": "STR-REQUIRED-PROPERTY-OMISSION--0315",
-    "carrierCaseId": "PCR-REQUEST-VALIDATE-TRANSCRIPT-0002",
+    "instanceId": "STR-REQUIRED-PROPERTY-OMISSION--0333",
+    "carrierCaseId": "PCR-REQUEST-VALIDATE-TRANSCRIPT-0001",
     "targetJsonPointer": "/input/standaloneVerification",
     "mutation": "REMOVE_ONLY_STANDALONE_VERIFICATION_FROM_RICHER_REQUIRED_SET",
     "reducedCarrierAcceptedNestedInputArmIndex": 1,
@@ -655,11 +646,11 @@
     "independentDisjointnessRelation": "ValidateTranscriptInputV0/oneOf/1--2"
   },
   "exactCounts": {
-    "carrierReselections": 31,
-    "completeSchemaLiveRows": 26,
-    "boundedRecipeRows": 20,
-    "coConstrainedRows": 81,
     "antiDowngradeRows": 1,
-    "oneOfPairwiseRelations": 93
+    "boundedRecipeRows": 20,
+    "carrierReselections": 29,
+    "coConstrainedRows": 82,
+    "completeSchemaLiveRows": 26,
+    "oneOfPairwiseRelations": 101
   }
 }

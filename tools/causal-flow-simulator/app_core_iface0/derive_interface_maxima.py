@@ -73,7 +73,7 @@ class Derivation:
         require(self.envelope.get("candidate_id") == "balanced", "unselected resource envelope")
         require(self.reachability.get("schemaSha256") == sha256(SCHEMA_PATH), "schema/reachability drift")
         require(self.reachability.get("rootCount") == 12, "carrier-root drift")
-        require(len(self.semantics.get("rules", [])) == 83, "semantic-rule drift")
+        require(len(self.semantics.get("rules", [])) == 84, "semantic-rule drift")
         self.limits = {
             name: int(row["selected_value"])
             for name, row in self.envelope["entries"].items()
@@ -126,16 +126,19 @@ class Derivation:
                     )
                     result[target] = selected
         expected = {
+            "$defs.ApplicationPresentationGroupV0.proofs",
             "$defs.ContentMaterialEvidenceV0.segments",
-            "$defs.ProposedContextSnapshotV0.admittedCandidates",
+            "$defs.ProposedContextSnapshotV0.logicalEvents",
+            "$defs.LocalRevalidationSnapshotV0.retainedProofs",
             "$defs.ContextProjectionV0.records",
             "$defs.ContextProjectionV0.recordOutcomes",
             "$defs.ContextProjectionV0.contentStates",
-            "$defs.ReplayContextInputV0.candidates",
+            "$defs.ReplayContextInputV0.presentations",
             "$defs.ContextProjectionV0.credentialBindings",
             "$defs.ApplicationEventProjectionV0.causalParentReferences",
-            "$defs.EvidenceProjectionV0.contentMaterial",
-            "$defs.EvidenceProjectionV0.openingMaterial",
+            "$defs.EvidenceAdditionSetV0",
+            "$defs.EvidenceProjectionV0.verifiedComplete",
+            "$defs.GenesisPresentationGroupV0.proofs",
             "$defs.AuthorityAvailableV0.possibleCredentialIdentifiers",
             "$defs.AuthorityAvailableV0.necessaryCredentialIdentifiers",
             "$defs.AuthorityAvailableV0.terminalCredentialIdentifiers",
@@ -357,7 +360,10 @@ class Derivation:
         if name in {"RecordOutcomeV0", "ContentStateProjectionV0"}:
             return self._relation_object(name)
         if name == "EvidenceAdditionSetV0":
-            return self.definition("EvidenceProjectionV0")
+            return self._array(
+                self.definition("EvidencePromotionAttemptV0"),
+                self.array_bounds["$defs.EvidenceAdditionSetV0"],
+            )
         if name == "AliasGroupV0":
             return self._array(self._fixed_hex(32), self.array_bounds["$defs.AliasGroupV0.allOf[0]"])
         if name == "CanonicalReferenceArray":
@@ -373,8 +379,8 @@ class Derivation:
                 f"malformed body-plus-prefix annotation: {use_site}",
             )
             expected_dimensions = {
-                "$defs.GenesisTranscriptCandidateV0.transcriptHex": "GENESIS_BODY_OCTETS",
-                "$defs.ApplicationTranscriptCandidateV0.transcriptHex": "FRAMING_OBJECT_OCTETS",
+                "$defs.GenesisLogicalEventV0.transcriptHex": "GENESIS_BODY_OCTETS",
+                "$defs.ApplicationLogicalEventV0.transcriptHex": "FRAMING_OBJECT_OCTETS",
             }
             require(
                 use_site in expected_dimensions
@@ -460,7 +466,7 @@ class Derivation:
         if root_id == "REQUEST-EVALUATE_CANDIDATE":
             return (
                 self.definition("ProposedContextSnapshotV0").decoded_octets
-                + self.definition("ApplicationTranscriptCandidateV0").decoded_octets
+                + self.definition("ApplicationPresentationGroupV0").decoded_octets
             )
         if root_id == "REQUEST-EVALUATE_EVIDENCE_UPDATE":
             return self.definition("ProposedContextSnapshotV0").decoded_octets

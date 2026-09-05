@@ -13,42 +13,46 @@ JavaScript reader currently checks reserved reachability, fork/join labels,
 graph, credential and authority projections, exact event/context outcome
 precedence, and the same closed collection bounds.
 
-Phase A now generates the closed 65-request blind population, 15 withheld
-reference responses, the 80-row positive-carrier inventory and exact package
-manifest outside the repository. Of the 65 requests, 56 are schema-object
-coverage carriers that stop at profile selection and nine are semantic fixtures
-that reach the evaluator; none of the attempted `oneOf` carriers survives
-canonical-byte de-duplication as a distinct request. Six of the 15 distinct
-responses are profile rejections. The reference probe freezes all 65 outputs
+Phase A now generates the closed 77-request blind population, 19 withheld
+reference responses, the 96-row positive-carrier inventory and exact package
+manifest outside the repository. Of the 77 requests, 64 are schema-object
+coverage carriers that stop at profile selection and thirteen are semantic
+fixtures that reach the evaluator; none of the attempted `oneOf` carriers
+survives canonical-byte de-duplication as a distinct request. Three semantic
+fixtures exercise the otherwise impractical reference/commitment collision
+branches through an evidence-only oracle selected outside the public request.
+The oracle is bound to exact primitive inputs, produces no result directly and
+is restored after each execution. The reference probe freezes all 77 outputs
 before reading response bytes. Only after that local freeze, the JavaScript
 reader independently applies response-schema, canonical-JSON and reserved-row
-release checks to the 15 withheld response carriers; it does not evaluate the
-65 request semantics and cannot authorize provider-bound oracle release.
+release checks to the 19 withheld response carriers; it does not evaluate the
+77 request semantics and cannot authorize provider-bound oracle release.
 Phase-A package mutations are required to fail through their named detectors.
 Exact-final-head two-clean-checkout evidence, independent acceptance and
 provider-bound human ratification are still required before the carrier
 inventory becomes Phase-B input.
 
 Phase B remains incomplete. Its deterministic registry derivation maps all
-1,450 structural instances to Phase-A carriers and preflights both target
-reachability and isolated perturbation. The ratified V24 path now executes the
-closed 1,367/81/1/1 structural partition through the production-faithful V1
-canonical boundary and whole-V2 validator in Python, and the cross-runtime
-runner requires byte-identical JavaScript observations. Phase B must still
-complete and freeze that two-runtime report. The semantic preflight now derives
-the exact 5,149-row execution relation from the real 78-row seed registry,
+1,553 structural instances to Phase-A carriers and preflights both target
+reachability and isolated perturbation. The earlier V24 isolation relation is
+being mapped by exact source identity onto the amended schema before the
+production-faithful V1 canonical boundary and whole-V2 validator run in Python
+and the cross-runtime runner requires byte-identical JavaScript observations.
+Phase B must still complete and freeze that two-runtime report. The semantic
+preflight now derives the exact 5,535-row execution relation from the real
+87-row seed registry,
 including the carrier-dependent ACV-048 partition, but deliberately labels the
 result `PRESELECTION_EVIDENCE`: it neither ratifies those carriers nor claims
 that all semantic rows or their source mutants have executed. ACV-048
-additionally executes all 702 cross-plane field-smuggling instances and their
+additionally executes all 783 cross-plane field-smuggling instances and their
 isolated schema mutants in Python and JavaScript, while retaining the same
-preselection status. Phase B must still execute the other 4,447 semantic
+preselection status. Phase B must still execute the other 4,752 semantic
 instances and kill every remaining named source mutant.
 Until both phases pass, this directory is an implementation in progress rather
 than complete conformance evidence.
 
 ACV-049 is intentionally not counted as executed. Its preflight expands the
-current 3,770 candidate pairs, identifies non-string `const` paths, classifies
+current 4,060 candidate pairs, identifies non-string `const` paths, classifies
 literal versus schema-admissible encoded provenance, records which paths exist
 in the fifteen frozen outputs using their exact labelled `oneOf` branch, and
 runs only live negative controls. It returns
@@ -141,7 +145,7 @@ python3 tools/causal-flow-simulator/app_core_iface0/generate_structural_witnesse
   --output /external/path/structural-target-preflight.json
 
 # Validate the exact V21+V22+V23+V24 structural-isolation relation.  The report
-# derives the closed 1367/81/1/1 partition and all 31 carrier reselections.
+# derives the closed 1469/82/1/1 partition and all 29 carrier reselections.
 python3 tools/causal-flow-simulator/app_core_iface0/generate_structural_witnesses.py \
   --repo-root . \
   --contract tools/causal-flow-simulator/app_core_iface0/contract \
@@ -165,7 +169,7 @@ withheld-response inventory.
 The closure proof expands the blind request population with deterministic
 semantic requests, obtains every response from the reference evaluator, and
 validates each response before release. The current proof closes all 12 roots,
-78 property-bearing object schemas and 54 `oneOf` arms without synthesizing a
+87 property-bearing object schemas and 57 `oneOf` arms without synthesizing a
 response carrier. It deliberately writes no case IDs, inventory or seed rows;
 those remain governed generated artifacts rather than implementation choices.
 

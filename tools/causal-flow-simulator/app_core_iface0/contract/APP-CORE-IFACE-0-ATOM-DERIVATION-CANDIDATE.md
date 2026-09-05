@@ -16,13 +16,13 @@ The current candidates mechanically yield:
 
 | Source | Cardinality |
 | --- | ---: |
-| property-bearing object schemas | 78 |
-| direct `$defs` property-bearing objects | 73 |
+| property-bearing object schemas | 87 |
+| direct `$defs` property-bearing objects | 82 |
 | inline/union-arm property-bearing objects | 5 |
-| declared object properties | 323 |
-| directly required property occurrences | 322 |
-| semantic rules | 83 |
-| custom-keyword occurrences | 26 |
+| declared object properties | 347 |
+| directly required property occurrences | 344 |
+| semantic rules | 84 |
+| custom-keyword occurrences | 25 |
 
 Conditional `required` predicates inside `ApplicationEventProjectionV0` do not
 enter the direct omission count. They are exercised by the literal 13-row
@@ -47,7 +47,7 @@ literal conditional matrix, `not` and `maxProperties`.
 Current structural cardinality:
 
 ```text
-1,450 structural execution instances
+1,553 structural execution instances
 ```
 
 Stable instance IDs concatenate the structural rule ID with the canonical
@@ -70,12 +70,14 @@ Exactly one keyword occurrence is declared logically redundant rather than
 falsely reported as a target-only mutant kill: `maxProperties: 0` on the closed
 empty `DescribeProfileInputV0` shape. It retains a live rejection observation
 and a separate validator self-test, and requires explicit human ratification.
-The other 1,449 instances use target-only counterfactual isolation.
+The other 1,552 instances use target-only counterfactual isolation unless a
+retained, provider-ratified co-constraint row explicitly classifies them
+otherwise.
 
 ## Canonical seed registry
 
 The executable increment must contain one machine-readable seed registry with
-exactly 78 rows. Each row contains at least:
+exactly 87 rows. Each row contains at least:
 
 ```text
 objectSchemaId
@@ -129,10 +131,10 @@ structural rule families: 24
 SHA-256: 9624a24ff7a5b748afc66eca1c59e8deaf6db9cf37598523dd1d8ef8efdb450a
 
 semantic families: 83
-SHA-256: 78f4ebf3956a851f3b90b0bb97944100e608a575b8c27a96772f86ba186754a0
+SHA-256: 637580c267eaf8632b744922c2376bc10c142b4e20169e08a4ad4629c8943f64
 
 combined rule families: 107
-SHA-256: b0a4d4ee1a657b84e850c13e9c51363006be21ebb23cc71613019625c5b907dc
+SHA-256: c472e8996aa682f1c5fa079ca068dd0a404d5a4cedfab2e37b0b1c50d9780de5
 ```
 
 Each digest is over the lexicographically sorted UTF-8 identifiers, one
@@ -157,8 +159,8 @@ The schema currently expands to these exact unique terminal positions:
 
 | Root | All terminal paths | String terminal paths | Sorted string-path SHA-256 |
 | --- | ---: | ---: | --- |
-| `InterfaceRequestV0` | 272 | 217 | `3af5513dff8078bbbaed3e3153dcf9204c0f49608b2925c491d5ceb194fde337` |
-| `InterfaceResponseV0` | 444 | 377 | `ae9149055d83b3c1960d6f0ec6db796a4e9b019551632e70dc86571b8f90c3a0` |
+| `InterfaceRequestV0` | 301 | 248 | `586433f51ab810b2467452486c4a48412faefbbabd1408ed4edb0db9c9cdb2d4` |
+| `InterfaceResponseV0` | 473 | 406 | `cdd2f3f325800fffd08b23c08ab51d3b3ba6a3eb949af10ad488d72a854e5fe4` |
 
 Paths use definition-qualified union-arm labels and `*` for one bounded array
 item. The digest is over the sorted unique path plus LF relation. A duplicate
@@ -166,13 +168,13 @@ path, unresolved `$ref`, schema cycle or count/digest mismatch fails closed.
 
 At minimum:
 
-- `ACV-049` expands to the Cartesian product of all 377 response string paths
-  and the ten literal provenance families in its parameters: 3,770 distinct
+- `ACV-049` expands to the Cartesian product of all 406 response string paths
+  and the ten literal provenance families in its parameters: 4,060 distinct
   execution instances;
-- `ACV-050` expands to all 26 custom-keyword occurrences plus one unknown-keyword
-  negative control: 27 distinct execution instances; and
+- `ACV-050` expands to all 25 custom-keyword occurrences plus one unknown-keyword
+  negative control: 26 distinct execution instances; and
 - `ACV-048` expands all nine forbidden authority/runtime/cross-plane field
-  families across the 78 property-bearing object schemas: 702 distinct
+  families across the 87 property-bearing object schemas: 783 distinct
   execution instances; and
 - `ACV-066` expands the six reserved reason rows and the independently
   prohibited `referenceVerification = REJECTED` observation into seven
@@ -192,39 +194,39 @@ At minimum:
 The current exact expansion is:
 
 ```text
-1,450 structural instances
-+ 5,149 semantic instances
-= 6,599 total structural-plus-semantic execution instances
+1,553 structural instances
++ 5,535 semantic instances
+= 7,088 total structural-plus-semantic execution instances
 ```
 
-The 83-row instance-axis registry has no unresolved axis and has SHA-256
-`04fd304ac6b23add64033b45282ac0d46fe09d44f92651881995f4727c9e0832`.
+The 84-row instance-axis registry has no unresolved axis and has SHA-256
+`20e3a07558fbe5fb0f95c52eb31f6b24b69f8a6137a69b858260d70c60576201`.
 
 ## Derived interface maxima
 
 `derive_interface_maxima.py` symbolically enumerates all twelve carrier roots,
-applies the exact scalar widths and all 27 concrete array-use bounds, and
+applies the exact scalar widths and all 30 concrete array-use bounds, and
 accounts for content-domain coverage, alias-group disjointness and
 purpose-keyed evidence deduplication. The exact V5 literals are:
 
 | Quantity | Octets | Maximizing root |
 | --- | ---: | --- |
-| `OUTER_REQUEST_OCTETS` | 138499357 | `REQUEST-EVALUATE_CANDIDATE` |
-| `OUTER_RESPONSE_OCTETS` | 71052634 | `RESPONSE-EVALUATE_CANDIDATE` |
-| `MAX_RETAINED_DECODED_OCTETS` | 35284168 | `REQUEST-EVALUATE_CANDIDATE` |
+| `OUTER_REQUEST_OCTETS` | 138547674 | `REQUEST-EVALUATE_EVIDENCE_UPDATE` |
+| `OUTER_RESPONSE_OCTETS` | 71096500 | `RESPONSE-EVALUATE_CANDIDATE` |
+| `MAX_RETAINED_DECODED_OCTETS` | 35300616 | `REQUEST-EVALUATE_CANDIDATE` |
 
 The manifest embeds the deterministic component breakdowns for both distinct
 maximizing roots and binds the complete twelve-root measurement relation by
-SHA-256 `3ead04f4d3c35e159baa69bb44ec6cd1221c1f736a275306271057994279258a`.
+SHA-256 `098c010fa03e22d87dd8a42e28e7068396f44139a5d3981dcc10b33d9897b239`.
 Exact duplicate evidence increases canonical request bytes but is compared and
 merged without retaining a second decoded copy.
 
 Its execution-phase partition is the working
 `APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256
-`7dad552e9bcde710205302f72c81aac7ac98e350fc31cb4a11007739428cc0ed`.
+`9fc0c3929d252bab7fb435f657b69dd8e7f2d5c0d169d7b946f4eeaf402fc820`.
 It prevents a response-only hygiene mutation or validator self-test from being
 misreported as an oracle-free blind-input comparison. The exact ACV-048 phase
-counts remain derived from the future 78-row seed-carrier directions.
+counts remain derived from the future 87-row seed-carrier directions.
 Its literal semantic relations contain 23 content-axis rows, the 25-row F13
 candidate relation with exact O-10 stage, ten fork/join-label rows, 16
 authority-projection dimensions, 11 graph-admission dimensions, 16 transcript
@@ -232,9 +234,9 @@ result rows, 17 genesis result rows and 33 terminal-predicate rows; the relation
 SHA-256
 `ae285b0f5d760993017f56e500889a6d18475f9a33e9b30f6aa3d570564b812f`.
 
-The still-to-be-generated 78-row positive seed registry has a closed row schema
+The still-to-be-generated 87-row positive seed registry has a closed row schema
 in `APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json`, SHA-256
-`8b98b69ee88bdbf59f5de1fc20e4008aaedd97c3f09a6c615869997501eeb2ef`.
+`14bc332e90ae7d7730098279f2b4c99054dd0c1e6768aeb4b55620f8282f5cf2`.
 Exact carriers are implementation outputs derived from the combined-remediation Base
 `e0af4e1e2173deb2481eabdb24d8622282b33455`; the schema does not fabricate
 them or relax that dependency.
@@ -242,14 +244,14 @@ them or relax that dependency.
 The carrier relation itself must conform to
 `APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json`, SHA-256
 `8e469d88234e7194d8612f43491f3ea43c1c0d6a4b1becaa4be844e1ff75949f`.
-It closes all twelve direction/operation roots, all 78 object schemas and all
-54 literal `oneOf` arms while withholding response bytes until output freeze.
+It closes all twelve direction/operation roots, all 87 object schemas and all
+57 literal `oneOf` arms while withholding response bytes until output freeze.
 
 The complete mechanically derived carrier-reachability relation is
 `APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json`, SHA-256
-`6ead453a551472a87ca00ef812a8952ebaeb76d5cdbbe1e6dcf10279f32147ca`.
+`b3e33bdf0a07fa7d9f08c9158e20a4ce912df0c32d9dfadd6f29a7a422695208`.
 It is regenerated by `derive_app_core_carrier_reachability.py`, SHA-256
-`a349019ca273d88016f45b09e40afe6fcee71654617e230ef1dcebde9a5c92b4`,
+`06297a28f6959c47b4d5558a89d776fc2d124c3f2c76072796dbf02935c89480`,
 from the interface schema alone. Every remaining `$defs` entry is reachable
 from at least one of the twelve direction/operation roots. The removed
 `DescribeProfileRequestV0`, `OperationV0` and `TranscriptCandidateV0`
@@ -257,17 +259,19 @@ definitions were unused aliases/meta-types and therefore could not honestly
 carry schema assertions or conformance evidence.
 
 The structural axis registry has SHA-256
-`7e41ee90d6407d61d1369a978b5583a171277e47c5b27a4370cf65bdb3a62369`.
-Its 1,450 count is frozen only after a populated witness registry maps every
+`61f6d5c359604e7d194525d013b5ac5ddd2eb1e4725c3e0b0f90d182e8642227`.
+Its 1,553 count is frozen only after a populated witness registry maps every
 instance to an exact positive carrier, target pointer, perturbation and expected
 observation. Until then it is a closed derivation candidate, not execution
 evidence.
 
-The human-ratified V21+V22+V23+V24 structural-isolation relation is
+The V3 structural-isolation relation, mechanically migrated by exact source
+identity under the provider-ratified combined-remediation authority, is
 `APP-CORE-IFACE-0-STRUCTURAL-ISOLATION-RELATION-CANDIDATE.json`, SHA-256
-`7cfdeb97ab4dae27a8a5ca03cb0def4d5b87b1d0b28439a3dd40d2d38793b87d`.
-It binds the exact 31 carrier reselections and the literal Appendix B/C/D/E
-partition. Counts or family-wide defaults cannot substitute for that relation.
+`7fd65f6a1348b361b745df29a48573d5df9d97dd180ae609195db8a711317177`.
+It binds the exact carrier reselections and the source-identity-preserved
+Appendix B/C/D/E partition. Counts or family-wide defaults cannot substitute
+for that relation.
 
 The bounded mutation search is now explicit in
 `APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json`, SHA-256
@@ -275,14 +279,14 @@ The bounded mutation search is now explicit in
 It contains one ordered recipe for each of the 24 perturbation kinds; palette
 exhaustion is a failure, not permission to invent a convenient value.
 
-All 93 pairwise `oneOf` arm relations are already explicit in
+All 101 pairwise `oneOf` arm relations are already explicit in
 `APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json`, SHA-256
-`eb992a044c5a5c53b4ea0c01b743adfd5846896d30f9274e4f26a5927f193382`:
-91 use disjoint literal constraints, one uses a required property forbidden by
+`9f37ed686591b22514450e1ee8fa31d9d24a0c6fd336904fd92a51877abde204`:
+99 use disjoint literal constraints, one uses a required property forbidden by
 the other closed shape, and the root request/response pair expands all 36
-nested arm combinations. The 1,450-row witness registry must conform to
+nested arm combinations. The 1,553-row witness registry must conform to
 `APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json`, SHA-256
-`0d8b046f34c3c678804e976cffa2e88d8bcd9136d163762a9ed73531f5a6cd3c`.
+`b7073e8826f905362e0bec8d1d5e9678da1615a4629affe1657717d8b2584013`.
 
 `GenesisEvaluationReasonV0` deliberately omits
 `STANDALONE_VERIFICATION_KEY_REJECTED`: the genesis request has no standalone
@@ -291,7 +295,7 @@ unreachable result rather than a valid interface outcome. This moves one
 structural instance from the `$ref` axis to the `enum` axis. The later
 reachability correction separately removed seven unreachable structural
 assertions. V5 then adds the capability projection and its structural axes,
-producing the exact total of 1,450 instances.
+producing the exact total of 1,553 instances.
 
 This exact count remains a pre-ratification candidate: review may amend a
 semantic relation, but any amendment must change the literal relation, expected

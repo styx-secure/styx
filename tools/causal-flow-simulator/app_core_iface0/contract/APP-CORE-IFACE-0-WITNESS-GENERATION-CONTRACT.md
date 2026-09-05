@@ -5,7 +5,7 @@ authority and authorizes no implementation.
 
 ## Objective
 
-Define how the future 78-row positive seed registry and 1,450-row structural
+Define how the future 87-row positive seed registry and 1,553-row structural
 witness registry are generated without executor-selected coverage, convenient
 fixtures or disclosed response oracles. The generated registries are evidence;
 they are not protocol authority and are never runtime adapter inputs.
@@ -33,9 +33,10 @@ The exact bounded search authority is
 That digest must be replaced only by a new reviewed and human-ratified contract
 version.
 
-The exact V21+V22+V23+V24 isolation authority is
+The exact V3 isolation relation derived under the provider-ratified combined
+remediation authority is
 `APP-CORE-IFACE-0-STRUCTURAL-ISOLATION-RELATION-CANDIDATE.json`, SHA-256
-`7cfdeb97ab4dae27a8a5ca03cb0def4d5b87b1d0b28439a3dd40d2d38793b87d`.
+`7fd65f6a1348b361b745df29a48573d5df9d97dd180ae609195db8a711317177`.
 The generator must reproduce its carrier reselections and Appendix B/C/D/E
 relations by literal equality; it may not infer exceptions from aggregate
 counts.
@@ -49,10 +50,10 @@ the carrier bytes produced from exact combined-remediation Base
 
 Carrier eligibility is derived from the exact reachability relation in
 `APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json`, SHA-256
-`6ead453a551472a87ca00ef812a8952ebaeb76d5cdbbe1e6dcf10279f32147ca`.
+`b3e33bdf0a07fa7d9f08c9158e20a4ce912df0c32d9dfadd6f29a7a422695208`.
 The relation is regenerated from the schema by
 `derive_app_core_carrier_reachability.py`, SHA-256
-`a349019ca273d88016f45b09e40afe6fcee71654617e230ef1dcebde9a5c92b4`.
+`06297a28f6959c47b4d5558a89d776fc2d124c3f2c76072796dbf02935c89480`.
 The generator must reproduce byte-identical output and prove that every
 remaining definition, object schema and union arm is reachable from at least
 one of the twelve operation/direction roots. An unreachable definition is a
@@ -60,7 +61,7 @@ schema defect and cannot be waived by a synthetic carrier or coverage note.
 
 ## Canonical enumeration
 
-The object-schema relation is the lexicographically sorted sequence of the 78
+The object-schema relation is the lexicographically sorted sequence of the 87
 canonical JSON Pointers in the ownership registry. The structural-instance
 relation preserves the literal rule order in the structural-axis registry and,
 within each rule, sorts its canonical source pointer or literal relation-row ID
@@ -108,12 +109,12 @@ object schema has no eligible carrier, generation fails; structural similarity
 to another schema is not a substitute.
 
 The inventory validator also requires `caseCount == len(cases)`, unique case
-IDs, all twelve direction-by-operation root cases, exact coverage of the 78
-object-schema pointers and exact coverage of the 54 literal `oneOf` arms.
+IDs, all twelve direction-by-operation root cases, exact coverage of the 87
+object-schema pointers and exact coverage of the 57 literal `oneOf` arms.
 Every response case must name an existing request case of the same operation
 and the exact reference-execution report that produced it. Twelve cases are the
-minimum and 144 is the closed maximum obtained by assigning separate cases to
-all twelve roots, 78 object schemas and 54 union arms; overlap may reduce the
+minimum and 156 is the closed maximum obtained by assigning separate cases to
+all twelve roots, 87 object schemas and 57 union arms; overlap may reduce the
 actual ratified count but cannot reduce any coverage relation.
 
 ## Deterministic hostile synthesis
@@ -213,7 +214,7 @@ fails before any hostile case executes.
 The reference generator and independent JavaScript reader run in distinct clean
 exact-HEAD checkouts. They independently:
 
-- recompute all 78 seed rows and 1,450 instance rows;
+- recompute all 87 seed rows and 1,553 instance rows;
 - execute every request instance before seeing expected response bytes;
 - freeze response output before withheld-oracle release;
 - execute post-output response mutations only after the freeze;
@@ -223,7 +224,7 @@ exact-HEAD checkouts. They independently:
 
 The final gate requires byte-identical registries and reports, exact set
 equality, all baseline positives passing, all negative observations matching,
-all positive observations matching and all 1,450 mutants killed by their named
+all positive observations matching and all 1,553 mutants killed by their named
 detectors. Aggregate counts or suite-level `PASS` are insufficient.
 
 ## Remaining closure
@@ -231,6 +232,6 @@ detectors. Aggregate counts or suite-level `PASS` are insufficient.
 This contract fixes generation and isolation rules but does not fabricate the
 exact-Base carrier inventories. Before ratification, the executable Issue must
 bind the exact candidate palette and positive case inventories. Before APP-core
-conformance can close, the implementation must populate the 78 seed rows and
-1,450 witnesses, execute both readers and pass independent review plus the
+conformance can close, the implementation must populate the 87 seed rows and
+1,553 witnesses, execute both readers and pass independent review plus the
 human gate.

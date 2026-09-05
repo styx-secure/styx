@@ -33,12 +33,12 @@
       "$ref": "#/$defs/Sha256Hex"
     },
     "rowCount": {
-      "const": 78
+      "const": 87
     },
     "rows": {
       "type": "array",
-      "minItems": 78,
-      "maxItems": 78,
+      "minItems": 87,
+      "maxItems": 87,
       "items": {
         "$ref": "#/$defs/SeedRow"
       }

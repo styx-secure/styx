@@ -259,10 +259,24 @@
         "contextIdentifierHex": { "$ref": "#/$defs/FixedHex32" }
       }
     },
-    "GenesisTranscriptCandidateV0": {
+    "PresentationIdV0": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]{0,19})$",
+      "maxLength": 20
+    },
+    "ProofOccurrenceV0": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["objectKind", "transcriptHex", "signatureHex"],
+      "required": ["presentationId", "signatureHex"],
+      "properties": {
+        "presentationId": { "$ref": "#/$defs/PresentationIdV0" },
+        "signatureHex": { "$ref": "#/$defs/SignatureHex" }
+      }
+    },
+    "GenesisLogicalEventV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["objectKind", "transcriptHex", "genesisReferenceHex"],
       "properties": {
         "objectKind": { "const": "GENESIS" },
         "transcriptHex": {
@@ -272,13 +286,13 @@
             "prefixOctets": "20"
           }
         },
-        "signatureHex": { "$ref": "#/$defs/SignatureHex" }
+        "genesisReferenceHex": { "$ref": "#/$defs/FixedHex32" }
       }
     },
-    "ApplicationTranscriptCandidateV0": {
+    "ApplicationLogicalEventV0": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["objectKind", "transcriptHex", "signatureHex"],
+      "required": ["objectKind", "transcriptHex", "eventReferenceHex"],
       "properties": {
         "objectKind": { "const": "APPLICATION_EVENT" },
         "transcriptHex": {
@@ -288,6 +302,50 @@
             "prefixOctets": "20"
           }
         },
+        "eventReferenceHex": { "$ref": "#/$defs/FixedHex32" }
+      }
+    },
+    "GenesisPresentationGroupV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logicalEvent", "carriedReferenceHex", "proofs"],
+      "properties": {
+        "logicalEvent": { "$ref": "#/$defs/GenesisLogicalEventV0" },
+        "carriedReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "proofs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ProofOccurrenceV0" }
+        }
+      }
+    },
+    "ApplicationPresentationGroupV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logicalEvent", "carriedReferenceHex", "proofs"],
+      "properties": {
+        "logicalEvent": { "$ref": "#/$defs/ApplicationLogicalEventV0" },
+        "carriedReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "proofs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ProofOccurrenceV0" }
+        }
+      }
+    },
+    "RetainedGenesisProofV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["genesisReferenceHex", "signatureHex"],
+      "properties": {
+        "genesisReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "signatureHex": { "$ref": "#/$defs/SignatureHex" }
+      }
+    },
+    "RetainedApplicationProofV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["eventReferenceHex", "signatureHex"],
+      "properties": {
+        "eventReferenceHex": { "$ref": "#/$defs/FixedHex32" },
         "signatureHex": { "$ref": "#/$defs/SignatureHex" }
       }
     },
@@ -331,43 +389,49 @@
         "openingRandomizerHex": { "$ref": "#/$defs/FixedHex32" }
       }
     },
+    "EvidencePromotionAttemptV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["presentationId", "eventReferenceHex"],
+      "properties": {
+        "presentationId": { "$ref": "#/$defs/PresentationIdV0" },
+        "eventReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "contentMaterial": { "$ref": "#/$defs/ContentMaterialEvidenceV0" },
+        "openingMaterial": { "$ref": "#/$defs/OpeningEvidenceV0" }
+      }
+    },
+    "VerifiedCompleteEvidenceV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eventReferenceHex",
+        "verificationState",
+        "contentMaterial",
+        "openingMaterial"
+      ],
+      "properties": {
+        "eventReferenceHex": { "$ref": "#/$defs/FixedHex32" },
+        "verificationState": { "const": "VERIFIED_COMPLETE" },
+        "contentMaterial": { "$ref": "#/$defs/ContentMaterialEvidenceV0" },
+        "openingMaterial": { "$ref": "#/$defs/OpeningEvidenceV0" }
+      }
+    },
     "EvidenceProjectionV0": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["contentMaterial", "openingMaterial"],
+      "required": ["verifiedComplete"],
       "properties": {
-        "contentMaterial": {
+        "verifiedComplete": {
           "type": "array",
-          "items": { "$ref": "#/$defs/ContentMaterialEvidenceV0" },
-          "uniqueItems": true,
-          "x-styx-canonical-order": "eventReferenceHex"
-        },
-        "openingMaterial": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/OpeningEvidenceV0" },
+          "items": { "$ref": "#/$defs/VerifiedCompleteEvidenceV0" },
           "uniqueItems": true,
           "x-styx-canonical-order": "eventReferenceHex"
         }
       }
     },
     "EvidenceAdditionSetV0": {
-      "allOf": [
-        { "$ref": "#/$defs/EvidenceProjectionV0" },
-        {
-          "anyOf": [
-            {
-              "properties": {
-                "contentMaterial": { "minItems": 1 }
-              }
-            },
-            {
-              "properties": {
-                "openingMaterial": { "minItems": 1 }
-              }
-            }
-          ]
-        }
-      ]
+      "type": "array",
+      "items": { "$ref": "#/$defs/EvidencePromotionAttemptV0" }
     },
     "GenesisProjectionV0": {
       "type": "object",
@@ -394,13 +458,15 @@
       "additionalProperties": false,
       "required": [
         "profile",
-        "candidate",
+        "logicalGenesis",
+        "retainedProof",
         "expectedContextIdentifierHex",
         "projection"
       ],
       "properties": {
         "profile": { "$ref": "#/$defs/ExactProfileSelectorV0" },
-        "candidate": { "$ref": "#/$defs/GenesisTranscriptCandidateV0" },
+        "logicalGenesis": { "$ref": "#/$defs/GenesisLogicalEventV0" },
+        "retainedProof": { "$ref": "#/$defs/RetainedGenesisProofV0" },
         "expectedContextIdentifierHex": { "$ref": "#/$defs/FixedHex32" },
         "projection": { "$ref": "#/$defs/GenesisProjectionV0" }
       }
@@ -894,19 +960,40 @@
         "replayDependencyReferences": { "$ref": "#/$defs/CanonicalReferenceArray" }
       }
     },
+    "LocalRevalidationSnapshotV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retainedProofs", "evidence"],
+      "properties": {
+        "retainedProofs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/RetainedApplicationProofV0" },
+          "uniqueItems": true,
+          "x-styx-canonical-order": "eventReferenceHex"
+        },
+        "evidence": { "$ref": "#/$defs/EvidenceProjectionV0" }
+      }
+    },
     "ProposedContextSnapshotV0": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["genesis", "admittedCandidates", "evidence", "projection"],
+      "required": [
+        "genesis",
+        "logicalEvents",
+        "localRevalidation",
+        "projection"
+      ],
       "properties": {
         "genesis": { "$ref": "#/$defs/ProposedGenesisSnapshotV0" },
-        "admittedCandidates": {
+        "logicalEvents": {
           "type": "array",
-          "items": { "$ref": "#/$defs/ApplicationTranscriptCandidateV0" },
+          "items": { "$ref": "#/$defs/ApplicationLogicalEventV0" },
           "uniqueItems": true,
-          "x-styx-canonical-order": "derived-event-reference"
+          "x-styx-canonical-order": "eventReferenceHex"
         },
-        "evidence": { "$ref": "#/$defs/EvidenceProjectionV0" },
+        "localRevalidation": {
+          "$ref": "#/$defs/LocalRevalidationSnapshotV0"
+        },
         "projection": { "$ref": "#/$defs/ContextProjectionV0" }
       }
     },
@@ -916,6 +1003,18 @@
       "required": ["successor"],
       "properties": {
         "successor": { "$ref": "#/$defs/ProposedContextSnapshotV0" }
+      }
+    },
+    "LocalQuarantineProposalV0": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "assumptionFamily", "contextIdentifierHex"],
+      "properties": {
+        "kind": { "const": "LOCAL_QUARANTINE_PROPOSAL" },
+        "assumptionFamily": {
+          "enum": ["REFERENCE_DERIVATION", "CONTENT_COMMITMENT"]
+        },
+        "contextIdentifierHex": { "$ref": "#/$defs/FixedHex32" }
       }
     },
     "TranscriptObservationV0": {
@@ -1176,7 +1275,7 @@
           "additionalProperties": false,
           "required": ["candidate"],
           "properties": {
-            "candidate": { "$ref": "#/$defs/GenesisTranscriptCandidateV0" }
+            "candidate": { "$ref": "#/$defs/GenesisPresentationGroupV0" }
           }
         },
         {
@@ -1184,7 +1283,7 @@
           "additionalProperties": false,
           "required": ["candidate"],
           "properties": {
-            "candidate": { "$ref": "#/$defs/ApplicationTranscriptCandidateV0" }
+            "candidate": { "$ref": "#/$defs/ApplicationPresentationGroupV0" }
           }
         },
         {
@@ -1192,7 +1291,7 @@
           "additionalProperties": false,
           "required": ["candidate", "standaloneVerification"],
           "properties": {
-            "candidate": { "$ref": "#/$defs/ApplicationTranscriptCandidateV0" },
+            "candidate": { "$ref": "#/$defs/ApplicationPresentationGroupV0" },
             "standaloneVerification": { "$ref": "#/$defs/StandaloneVerificationMaterialV0" }
           }
         }
@@ -1230,7 +1329,7 @@
       "additionalProperties": false,
       "required": ["candidate", "expectedContextIdentifierHex"],
       "properties": {
-        "candidate": { "$ref": "#/$defs/GenesisTranscriptCandidateV0" },
+        "candidate": { "$ref": "#/$defs/GenesisPresentationGroupV0" },
         "expectedContextIdentifierHex": { "$ref": "#/$defs/FixedHex32" }
       }
     },
@@ -1263,16 +1362,14 @@
     "ReplayContextInputV0": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["proposedGenesis", "candidates", "evidence"],
+      "required": ["proposedGenesis", "presentations", "evidenceAttempts"],
       "properties": {
         "proposedGenesis": { "$ref": "#/$defs/ProposedGenesisSnapshotV0" },
-        "candidates": {
+        "presentations": {
           "type": "array",
-          "items": { "$ref": "#/$defs/ApplicationTranscriptCandidateV0" },
-          "uniqueItems": true,
-          "x-styx-canonical-order": "derived-event-reference"
+          "items": { "$ref": "#/$defs/ApplicationPresentationGroupV0" }
         },
-        "evidence": { "$ref": "#/$defs/EvidenceProjectionV0" }
+        "evidenceAttempts": { "$ref": "#/$defs/EvidenceAdditionSetV0" }
       }
     },
     "ReplayContextResultReadyV0": {
@@ -1309,17 +1406,17 @@
       "oneOf": [
         { "$ref": "#/$defs/ReplayContextResultReadyV0" },
         { "$ref": "#/$defs/ReplayContextResultTerminalV0" },
-        { "$ref": "#/$defs/ReplayContextResultCandidateRejectedV0" }
+        { "$ref": "#/$defs/ReplayContextResultCandidateRejectedV0" },
+        { "$ref": "#/$defs/LocalQuarantineProposalV0" }
       ]
     },
     "EvaluateCandidateInputV0": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["prior", "candidate", "evidence"],
+      "required": ["prior", "candidate"],
       "properties": {
         "prior": { "$ref": "#/$defs/ProposedContextSnapshotV0" },
-        "candidate": { "$ref": "#/$defs/ApplicationTranscriptCandidateV0" },
-        "evidence": { "$ref": "#/$defs/EvidenceProjectionV0" }
+        "candidate": { "$ref": "#/$defs/ApplicationPresentationGroupV0" }
       }
     },
     "CandidateEvaluationTerminalV0": {
@@ -1345,7 +1442,8 @@
     "CandidateEvaluationResultV0": {
       "oneOf": [
         { "$ref": "#/$defs/CandidateEvaluationTerminalV0" },
-        { "$ref": "#/$defs/CandidateEvaluationReadyV0" }
+        { "$ref": "#/$defs/CandidateEvaluationReadyV0" },
+        { "$ref": "#/$defs/LocalQuarantineProposalV0" }
       ]
     },
     "EvaluateCandidateResultV0": {
@@ -1411,7 +1509,8 @@
       "oneOf": [
         { "$ref": "#/$defs/EvidenceUpdateRejectedV0" },
         { "$ref": "#/$defs/EvidenceUpdateIdempotentV0" },
-        { "$ref": "#/$defs/EvidenceUpdateReadyV0" }
+        { "$ref": "#/$defs/EvidenceUpdateReadyV0" },
+        { "$ref": "#/$defs/LocalQuarantineProposalV0" }
       ]
     },
     "EvaluateEvidenceUpdateResultV0": {

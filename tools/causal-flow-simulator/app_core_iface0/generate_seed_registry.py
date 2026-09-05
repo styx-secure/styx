@@ -15,9 +15,10 @@ import importlib.metadata
 import json
 import platform
 import sys
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from jsonschema.validators import Draft202012Validator
 
@@ -72,6 +73,122 @@ class GeneratedCarrier:
     @property
     def canonical_bytes(self) -> bytes:
         return dumps(self.value)
+
+
+@dataclass(frozen=True)
+class _TestCollisionOracle:
+    """One closed, evidence-only primitive-equality fault.
+
+    The value is never serialized, accepted by APP-CORE-IFACE-0 or passed to
+    an adapter.  It identifies one exact alternate primitive input whose
+    computed digest is replaced with the digest of its independently computed
+    control input.  The ordinary detection path still has to discover the two
+    byte-distinct, independently valid witnesses.
+    """
+
+    family: str
+    alternate_input: bytes | tuple[Any, ...]
+    forced_digest: bytes
+
+
+@dataclass(frozen=True)
+class _SemanticFixtureCase:
+    """One blind public request plus an optional private evidence fault."""
+
+    request: dict[str, Any]
+    collision_oracle: _TestCollisionOracle | None = None
+
+
+def _commitment_call_key(arguments: dict[str, Any]) -> tuple[Any, ...]:
+    """Bind every input of one exact commitment computation."""
+
+    return (
+        arguments.get("profile_id"),
+        arguments.get("profile_version"),
+        arguments.get("context"),
+        arguments.get("credential"),
+        arguments.get("sequence"),
+        arguments.get("content_type"),
+        arguments.get("content"),
+        arguments.get("randomizer"),
+        arguments.get("chunk_size"),
+    )
+
+
+@contextmanager
+def _activate_test_collision_oracle(
+    authority: Any, oracle: _TestCollisionOracle | None
+) -> Iterator[None]:
+    """Install one exact collision fault only around evidence execution.
+
+    The pinned backend module is restored in ``finally``.  No public request
+    field, environment variable or CLI argument can select this context.
+    Evidence generation is deliberately single-threaded, so nested oracles
+    are rejected instead of sharing mutable backend state.
+    """
+
+    if oracle is None:
+        yield
+        return
+    if oracle.family not in {"REFERENCE_DERIVATION", "CONTENT_COMMITMENT"}:
+        raise SeedGenerationError("unknown test-only collision family")
+    if len(oracle.forced_digest) != 32:
+        raise SeedGenerationError("test-only collision digest is not 32 octets")
+
+    import interface_model
+
+    backend = interface_model._load_pinned_c03_model(str(authority.repo_root))
+    if getattr(backend, "_styx_test_collision_oracle_active", False):
+        raise SeedGenerationError("nested test-only collision oracle")
+    original_hash = backend.framed_hash
+    original_commitment = backend.encode_commitment
+    backend._styx_test_collision_oracle_active = True
+
+    def collided_hash(domain: bytes, body: bytes) -> bytes:
+        computed = original_hash(domain, body)
+        if (
+            oracle.family == "REFERENCE_DERIVATION"
+            and domain == backend.DOMAINS["event_reference"]
+            and body == oracle.alternate_input
+        ):
+            return oracle.forced_digest
+        return computed
+
+    def collided_commitment(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        computed = original_commitment(*args, **kwargs)
+        if args:
+            raise SeedGenerationError(
+                "test-only commitment oracle requires named backend inputs"
+            )
+        if (
+            oracle.family == "CONTENT_COMMITMENT"
+            and _commitment_call_key(kwargs) == oracle.alternate_input
+        ):
+            computed = dict(computed)
+            computed["commitmentHex"] = oracle.forced_digest.hex()
+        return computed
+
+    backend.framed_hash = collided_hash
+    backend.encode_commitment = collided_commitment
+    try:
+        yield
+    finally:
+        backend.framed_hash = original_hash
+        backend.encode_commitment = original_commitment
+        del backend._styx_test_collision_oracle_active
+
+
+def _evaluate_fixture_request(
+    authority: Any,
+    request: dict[str, Any],
+    oracle: _TestCollisionOracle | None,
+) -> dict[str, Any]:
+    """Execute a public request under its closed evidence-only fault."""
+
+    from interface_model import evaluate_interface_request
+
+    with _activate_test_collision_oracle(authority, oracle):
+        return evaluate_interface_request(authority, request)
 
 
 def _escape(value: str) -> str:
@@ -1009,7 +1126,7 @@ def prove_reachability(contract: Path) -> dict[str, int]:
                 f"union carrier failed for {row['oneOfPointer']}#{row['armIndex']}: {error}"
             ) from error
         arm_count += 1
-    if object_count != 78 or arm_count != 54:
+    if object_count != 87 or arm_count != 57:
         raise SeedGenerationError("carrier coverage count drift")
     return {"object_schema_count": object_count, "one_of_arm_count": arm_count}
 
@@ -1099,7 +1216,7 @@ def _application_fields(**updates: object) -> dict[str, object]:
     return fields
 
 
-def _semantic_request_carriers(authority: Any) -> list[dict[str, Any]]:
+def _semantic_request_carriers(authority: Any) -> list[_SemanticFixtureCase]:
     """Build domain-separated blind semantic requests.
 
     No complete proposal state emitted by one public request is reused as a
@@ -1123,6 +1240,36 @@ def _semantic_request_carriers(authority: Any) -> list[dict[str, Any]]:
             + label.encode("ascii")
         ).digest()
 
+    def presentation(
+        object_kind: str,
+        transcript: bytes,
+        signature: bytes,
+        presentation_id: str = "0",
+    ) -> dict[str, Any]:
+        reference_domain = (
+            "genesis_reference" if object_kind == "GENESIS" else "event_reference"
+        )
+        reference_field = (
+            "genesisReferenceHex" if object_kind == "GENESIS" else "eventReferenceHex"
+        )
+        reference_hex = backend.framed_hash(
+            backend.DOMAINS[reference_domain], transcript
+        ).hex()
+        return {
+            "logicalEvent": {
+                "objectKind": object_kind,
+                "transcriptHex": transcript.hex(),
+                reference_field: reference_hex,
+            },
+            "carriedReferenceHex": reference_hex,
+            "proofs": [
+                {
+                    "presentationId": presentation_id,
+                    "signatureHex": signature.hex(),
+                }
+            ],
+        }
+
     def genesis(label: str) -> tuple[bytes, str, dict[str, Any], dict[str, Any]]:
         seed = domain(label + "/SEED")
         context_hex = domain(label + "/CONTEXT").hex()
@@ -1137,11 +1284,7 @@ def _semantic_request_carriers(authority: Any) -> list[dict[str, Any]]:
             }
         )
         _, signature = backend.ed25519_sign(seed, transcript)
-        candidate = {
-            "objectKind": "GENESIS",
-            "signatureHex": signature.hex(),
-            "transcriptHex": transcript.hex(),
-        }
+        candidate = presentation("GENESIS", transcript, signature)
         ready = evaluate_genesis(
             authority,
             dict(SUPPORTED_PROFILE),
@@ -1176,28 +1319,13 @@ def _semantic_request_carriers(authority: Any) -> list[dict[str, Any]]:
     _, application_signature = backend.ed25519_sign(
         stateful_seed, application_transcript
     )
-    application_candidate = {
-        "objectKind": "APPLICATION_EVENT",
-        "signatureHex": application_signature.hex(),
-        "transcriptHex": application_transcript.hex(),
-    }
-    empty_evidence = {"contentMaterial": [], "openingMaterial": []}
-    empty_replay_input = {
-        "proposedGenesis": proposed_genesis,
-        "candidates": [],
-        "evidence": empty_evidence,
-    }
-    empty_replay = replay_context(
-        authority, dict(SUPPORTED_PROFILE), empty_replay_input
+    application_candidate = presentation(
+        "APPLICATION_EVENT", application_transcript, application_signature
     )
-    if empty_replay.get("kind") != "REPLAY_PROPOSAL_READY":
-        raise SeedGenerationError("semantic empty replay fixture did not become ready")
-    prior = empty_replay["proposedContext"]
-
     ready_replay_input = {
         "proposedGenesis": proposed_genesis,
-        "candidates": [application_candidate],
-        "evidence": empty_evidence,
+        "presentations": [application_candidate],
+        "evidenceAttempts": [],
     }
     ready_replay = replay_context(
         authority, dict(SUPPORTED_PROFILE), ready_replay_input
@@ -1205,12 +1333,85 @@ def _semantic_request_carriers(authority: Any) -> list[dict[str, Any]]:
     if ready_replay.get("kind") != "REPLAY_PROPOSAL_READY":
         raise SeedGenerationError("semantic replay fixture did not become ready")
 
+    capacity_presentations: list[dict[str, Any]] = []
+    direct_predecessor: str | None = None
+    for index in range(17):
+        capacity_transcript = backend.encode_event(
+            _application_fields(
+                authorSequence=index,
+                contextIdentifierHex=stateful_context_hex,
+                credentialIdentifierHex=genesis_reference,
+                directPredecessorHex=direct_predecessor,
+                eventTypeId=index + 1,
+                genesisReferenceHex=genesis_reference,
+            )
+        )
+        _, capacity_signature = backend.ed25519_sign(
+            stateful_seed, capacity_transcript
+        )
+        capacity_presentation = presentation(
+            "APPLICATION_EVENT",
+            capacity_transcript,
+            capacity_signature,
+            str(index),
+        )
+        capacity_presentations.append(capacity_presentation)
+        direct_predecessor = capacity_presentation["carriedReferenceHex"]
+    capacity_replay_input = {
+        "proposedGenesis": proposed_genesis,
+        "presentations": capacity_presentations,
+        "evidenceAttempts": [],
+    }
+    capacity_replay = replay_context(
+        authority, dict(SUPPORTED_PROFILE), capacity_replay_input
+    )
+    if capacity_replay != {
+        "kind": "TERMINAL_CANDIDATE_REJECTED",
+        "primary": "CONTEXT_CAPACITY_EXHAUSTED",
+        "stage": "S4_GRAPH_ADMISSION|S6_DURABLE_COMMIT",
+    }:
+        raise SeedGenerationError("semantic capacity fixture did not fail closed")
+
+    candidate_seed, candidate_context_hex, _, candidate_genesis = genesis(
+        "CANDIDATE"
+    )
+    candidate_genesis_reference = candidate_genesis["projection"][
+        "genesisReferenceHex"
+    ]
+    candidate_transcript = backend.encode_event(
+        _application_fields(
+            contextIdentifierHex=candidate_context_hex,
+            credentialIdentifierHex=candidate_genesis_reference,
+            genesisReferenceHex=candidate_genesis_reference,
+        )
+    )
+    _, candidate_signature = backend.ed25519_sign(
+        candidate_seed, candidate_transcript
+    )
+    candidate_application = presentation(
+        "APPLICATION_EVENT", candidate_transcript, candidate_signature
+    )
+    candidate_empty_replay = replay_context(
+        authority,
+        dict(SUPPORTED_PROFILE),
+        {
+            "proposedGenesis": candidate_genesis,
+            "presentations": [],
+            "evidenceAttempts": [],
+        },
+    )
+    if candidate_empty_replay.get("kind") != "REPLAY_PROPOSAL_READY":
+        raise SeedGenerationError("semantic candidate prior did not become ready")
+    candidate_prior = candidate_empty_replay["proposedContext"]
+
     malformed_candidate = copy.deepcopy(application_candidate)
-    malformed_candidate["transcriptHex"] = malformed_candidate["transcriptHex"][:-2]
+    malformed_candidate["logicalEvent"]["transcriptHex"] = malformed_candidate[
+        "logicalEvent"
+    ]["transcriptHex"][:-2]
     rejected_replay_input = {
         "proposedGenesis": proposed_genesis,
-        "candidates": [malformed_candidate],
-        "evidence": empty_evidence,
+        "presentations": [malformed_candidate],
+        "evidenceAttempts": [],
     }
 
     def evidence_branch(
@@ -1249,38 +1450,36 @@ def _semantic_request_carriers(authority: Any) -> list[dict[str, Any]]:
         _, pending_signature = backend.ed25519_sign(
             stateful_seed, pending_transcript
         )
-        pending_candidate = {
-            "objectKind": "APPLICATION_EVENT",
-            "signatureHex": pending_signature.hex(),
-            "transcriptHex": pending_transcript.hex(),
-        }
+        pending_candidate = presentation(
+            "APPLICATION_EVENT", pending_transcript, pending_signature
+        )
         pending_replay = replay_context(
             authority,
             dict(SUPPORTED_PROFILE),
             {
                 "proposedGenesis": proposed_genesis,
-                "candidates": [pending_candidate],
-                "evidence": empty_evidence,
+                "presentations": [pending_candidate],
+                "evidenceAttempts": [],
             },
         )
         if pending_replay.get("kind") != "REPLAY_PROPOSAL_READY":
             raise SeedGenerationError("semantic pending replay fixture did not become ready")
         pending = pending_replay["proposedContext"]
         pending_reference = pending["projection"]["records"][0]["eventReferenceHex"]
-        additions = {
-            "contentMaterial": [
-                {
+        additions = [
+            {
+                "presentationId": "0",
+                "eventReferenceHex": pending_reference,
+                "contentMaterial": {
                     "eventReferenceHex": pending_reference,
                     "segments": [{"offset": "0", "octetsHex": content.hex()}],
-                }
-            ],
-            "openingMaterial": [
-                {
+                },
+                "openingMaterial": {
                     "eventReferenceHex": pending_reference,
                     "openingRandomizerHex": opening_hex,
-                }
-            ],
-        }
+                },
+            }
+        ]
         ready_input = {"prior": pending, "additions": additions}
         ready = evaluate_evidence_update(
             authority, dict(SUPPORTED_PROFILE), ready_input
@@ -1297,7 +1496,7 @@ def _semantic_request_carriers(authority: Any) -> list[dict[str, Any]]:
         "EVIDENCE-IDEMPOTENT", b"late/idempotent/v1"
     )
 
-    return [
+    ordinary_requests = [
         _request("DESCRIBE_PROFILE", {}),
         _request(
             "VALIDATE_TRANSCRIPT", {"candidate": public_genesis_candidate}
@@ -1312,12 +1511,12 @@ def _semantic_request_carriers(authority: Any) -> list[dict[str, Any]]:
         ),
         _request("REPLAY_CONTEXT", ready_replay_input),
         _request("REPLAY_CONTEXT", rejected_replay_input),
+        _request("REPLAY_CONTEXT", capacity_replay_input),
         _request(
             "EVALUATE_CANDIDATE",
             {
-                "prior": prior,
-                "candidate": application_candidate,
-                "evidence": empty_evidence,
+                "prior": candidate_prior,
+                "candidate": candidate_application,
             },
         ),
         _request("EVALUATE_EVIDENCE_UPDATE", evidence_ready_input),
@@ -1325,6 +1524,190 @@ def _semantic_request_carriers(authority: Any) -> list[dict[str, Any]]:
             "EVALUATE_EVIDENCE_UPDATE",
             {"prior": idempotent_prior, "additions": idempotent_additions},
         ),
+    ]
+
+    # Reference-collision evidence uses two independently signed and
+    # K-admissible transcripts.  The first keeps its ordinary digest.  The
+    # private oracle maps only the exact second transcript to that digest;
+    # carried references in the public requests contain no oracle selector.
+    collision_seed, collision_context_hex, _, collision_genesis = genesis(
+        "REFERENCE-COLLISION"
+    )
+    collision_genesis_reference = collision_genesis["projection"][
+        "genesisReferenceHex"
+    ]
+    collision_presentations: list[dict[str, Any]] = []
+    collision_transcripts: list[bytes] = []
+    for ordinal, event_type in enumerate((7001, 7002)):
+        transcript = backend.encode_event(
+            _application_fields(
+                contextIdentifierHex=collision_context_hex,
+                credentialIdentifierHex=collision_genesis_reference,
+                eventTypeId=event_type,
+                genesisReferenceHex=collision_genesis_reference,
+            )
+        )
+        _, signature = backend.ed25519_sign(collision_seed, transcript)
+        collision_transcripts.append(transcript)
+        collision_presentations.append(
+            presentation(
+                "APPLICATION_EVENT", transcript, signature, str(ordinal)
+            )
+        )
+    forced_reference = bytes.fromhex(
+        collision_presentations[0]["carriedReferenceHex"]
+    )
+    collision_presentations[1]["carriedReferenceHex"] = forced_reference.hex()
+    collision_presentations[1]["logicalEvent"][
+        "eventReferenceHex"
+    ] = forced_reference.hex()
+    reference_oracle = _TestCollisionOracle(
+        family="REFERENCE_DERIVATION",
+        alternate_input=collision_transcripts[1],
+        forced_digest=forced_reference,
+    )
+    collision_prior_replay = replay_context(
+        authority,
+        dict(SUPPORTED_PROFILE),
+        {
+            "proposedGenesis": collision_genesis,
+            "presentations": [collision_presentations[0]],
+            "evidenceAttempts": [],
+        },
+    )
+    if collision_prior_replay.get("kind") != "REPLAY_PROPOSAL_READY":
+        raise SeedGenerationError("reference-collision prior did not become ready")
+    reference_replay_case = _SemanticFixtureCase(
+        _request(
+            "REPLAY_CONTEXT",
+            {
+                "proposedGenesis": collision_genesis,
+                "presentations": collision_presentations,
+                "evidenceAttempts": [],
+            },
+        ),
+        reference_oracle,
+    )
+    reference_candidate_case = _SemanticFixtureCase(
+        _request(
+            "EVALUATE_CANDIDATE",
+            {
+                "prior": collision_prior_replay["proposedContext"],
+                "candidate": collision_presentations[1],
+            },
+        ),
+        reference_oracle,
+    )
+
+    # Commitment-collision evidence similarly retains one ordinary
+    # commitment and maps only one exact, byte-distinct complete pair to it.
+    commitment_seed, commitment_context_hex, _, commitment_genesis = genesis(
+        "COMMITMENT-COLLISION"
+    )
+    commitment_genesis_reference = commitment_genesis["projection"][
+        "genesisReferenceHex"
+    ]
+    content_a = b"collision-a-v1"
+    content_b = b"collision-b-v1"
+    opening_a = domain("COMMITMENT-COLLISION/OPENING-A")
+    opening_b = domain("COMMITMENT-COLLISION/OPENING-B")
+    commitment_arguments_a = {
+        "profile_id": 1,
+        "profile_version": 1,
+        "context": bytes.fromhex(commitment_context_hex),
+        "credential": bytes.fromhex(commitment_genesis_reference),
+        "sequence": 0,
+        "content_type": 1,
+        "content": content_a,
+        "randomizer": opening_a,
+        "chunk_size": None,
+    }
+    commitment_arguments_b = {
+        **commitment_arguments_a,
+        "content": content_b,
+        "randomizer": opening_b,
+    }
+    commitment_a = backend.encode_commitment(**commitment_arguments_a)
+    commitment_transcript = backend.encode_event(
+        _application_fields(
+            contextIdentifierHex=commitment_context_hex,
+            credentialIdentifierHex=commitment_genesis_reference,
+            genesisReferenceHex=commitment_genesis_reference,
+            content={
+                "class": "REQUIRED",
+                "commitmentHex": commitment_a["commitmentHex"],
+                "contentType": 1,
+                "exactLength": len(content_a),
+                "geometryPredicateResults": {
+                    f"geometryPredicate{index}": "NOT_APPLICABLE"
+                    for index in range(1, 8)
+                },
+                "shape": "SINGLE",
+            },
+        )
+    )
+    _, commitment_signature = backend.ed25519_sign(
+        commitment_seed, commitment_transcript
+    )
+    commitment_presentation = presentation(
+        "APPLICATION_EVENT", commitment_transcript, commitment_signature
+    )
+    commitment_pending = replay_context(
+        authority,
+        dict(SUPPORTED_PROFILE),
+        {
+            "proposedGenesis": commitment_genesis,
+            "presentations": [commitment_presentation],
+            "evidenceAttempts": [],
+        },
+    )
+    if commitment_pending.get("kind") != "REPLAY_PROPOSAL_READY":
+        raise SeedGenerationError("commitment-collision prior did not become ready")
+    commitment_reference = commitment_presentation["carriedReferenceHex"]
+
+    def complete_attempt(
+        presentation_id: str, content: bytes, opening: bytes
+    ) -> dict[str, Any]:
+        return {
+            "presentationId": presentation_id,
+            "eventReferenceHex": commitment_reference,
+            "contentMaterial": {
+                "eventReferenceHex": commitment_reference,
+                "segments": [{"offset": "0", "octetsHex": content.hex()}],
+            },
+            "openingMaterial": {
+                "eventReferenceHex": commitment_reference,
+                "openingRandomizerHex": opening.hex(),
+            },
+        }
+
+    commitment_oracle = _TestCollisionOracle(
+        family="CONTENT_COMMITMENT",
+        alternate_input=_commitment_call_key(commitment_arguments_b),
+        forced_digest=bytes.fromhex(commitment_a["commitmentHex"]),
+    )
+    commitment_update_case = _SemanticFixtureCase(
+        _request(
+            "EVALUATE_EVIDENCE_UPDATE",
+            {
+                "prior": commitment_pending["proposedContext"],
+                "additions": [
+                    complete_attempt("0", content_a, opening_a),
+                    complete_attempt("1", content_b, opening_b),
+                ],
+            },
+        ),
+        commitment_oracle,
+    )
+
+    collision_cases = (
+        reference_replay_case,
+        reference_candidate_case,
+        commitment_update_case,
+    )
+    return [
+        *(_SemanticFixtureCase(request) for request in ordinary_requests),
+        *collision_cases,
     ]
 
 
@@ -1358,6 +1741,7 @@ def prove_positive_carrier_closure(
     authority = ContractAuthority.load(repo_root, contract)
 
     requests: dict[bytes, dict[str, Any]] = {}
+    request_oracles: dict[bytes, _TestCollisionOracle] = {}
     for row in reachability["objectCoverage"]:
         for root_id in sorted(row["eligibleRootIds"], key=ROOT_ORDER.index):
             root = roots[root_id]
@@ -1377,8 +1761,15 @@ def prove_positive_carrier_closure(
                 arm_goal=(row["oneOfPointer"], int(row["armIndex"])),
             )
             requests.setdefault(carrier.canonical_bytes, carrier.value)
-    for request in _semantic_request_carriers(authority):
-        requests.setdefault(dumps(request), request)
+    for case in _semantic_request_carriers(authority):
+        request_bytes = dumps(case.request)
+        if case.collision_oracle is not None and request_bytes in requests:
+            raise SeedGenerationError(
+                "test-only collision request aliases an ordinary carrier"
+            )
+        requests.setdefault(request_bytes, case.request)
+        if case.collision_oracle is not None:
+            request_oracles[request_bytes] = case.collision_oracle
 
     responses: dict[bytes, tuple[dict[str, Any], bytes]] = {}
     request_roots: set[str] = set()
@@ -1391,7 +1782,9 @@ def prove_positive_carrier_closure(
             raise SeedGenerationError("generated request has no declared root")
         try:
             validate_request_structure(authority, request)
-            response = evaluate_interface_request(authority, request)
+            response = _evaluate_fixture_request(
+                authority, request, request_oracles.get(request_bytes)
+            )
             validate_response_before_release(authority, response)
         except (HarnessFailure, InterfaceModelError, RequestRejected) as error:
             raise SeedGenerationError(
@@ -1445,7 +1838,7 @@ def prove_positive_carrier_closure(
 
     if request_roots | response_roots != set(ROOT_ORDER):
         raise SeedGenerationError("positive carrier root coverage drift")
-    if len(covered_objects) != 78 or len(covered_arms) != 54:
+    if len(covered_objects) != 87 or len(covered_arms) != 57:
         missing_objects = sorted(
             {row["objectSchemaPointer"] for row in reachability["objectCoverage"]}
             - covered_objects
@@ -1531,6 +1924,7 @@ def _positive_population(
     authority = ContractAuthority.load(repo_root, contract)
 
     requests: dict[bytes, dict[str, Any]] = {}
+    request_oracles: dict[bytes, _TestCollisionOracle] = {}
     request_provenance: dict[bytes, dict[str, Any]] = {}
     object_ordinal = 0
     for row in reachability["objectCoverage"]:
@@ -1574,8 +1968,13 @@ def _positive_population(
                         f"#{int(row['armIndex'])}"
                     ),
                 }
-    for fixture_ordinal, request in enumerate(_semantic_request_carriers(authority), 1):
+    for fixture_ordinal, case in enumerate(_semantic_request_carriers(authority), 1):
+        request = case.request
         payload = dumps(request)
+        if case.collision_oracle is not None and payload in requests:
+            raise SeedGenerationError(
+                "test-only collision request aliases an ordinary carrier"
+            )
         if payload not in requests:
             requests[payload] = request
             request_provenance[payload] = {
@@ -1584,13 +1983,17 @@ def _positive_population(
                 "eligibleRootId": f"REQUEST-{request['operation']}",
                 "sourceIdentity": f"semantic-fixture/{fixture_ordinal}",
             }
+        if case.collision_oracle is not None:
+            request_oracles[payload] = case.collision_oracle
 
     responses: dict[bytes, dict[str, Any]] = {}
     producers: dict[bytes, set[bytes]] = {}
     for request_bytes, request in requests.items():
         try:
             validate_request_structure(authority, request)
-            response = evaluate_interface_request(authority, request)
+            response = _evaluate_fixture_request(
+                authority, request, request_oracles.get(request_bytes)
+            )
             validate_response_before_release(authority, response)
         except (HarnessFailure, InterfaceModelError, RequestRejected) as error:
             raise SeedGenerationError("positive carrier reference execution failed") from error
@@ -1609,7 +2012,7 @@ def _positive_population(
         list(responses.values()),
     )
 
-    if len(requests) != 65 or len(responses) != 15:
+    if len(requests) != 77 or len(responses) != 19:
         raise SeedGenerationError(
             f"positive population drift: requests={len(requests)} responses={len(responses)}"
         )
@@ -1862,7 +2265,7 @@ def generate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         ),
         key=lambda row: row["caseId"].encode("utf-8"),
     )
-    if len(provenance_rows) != 65:
+    if len(provenance_rows) != 77:
         raise SeedGenerationError("request provenance count drift")
     inventory = {
         "inventoryVersion": "APP-CORE-IFACE-0-POSITIVE-CARRIERS-V1",
@@ -1904,9 +2307,9 @@ def generate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
         "positiveCarrierInventorySha256": _sha256(inventory_bytes),
         "referenceSourceSetSha256": reference_source_sha,
         "toolchainSha256": toolchain_sha,
-        "caseCount": 80,
-        "requestCaseCount": 65,
-        "responseCaseCount": 15,
+        "caseCount": 96,
+        "requestCaseCount": 77,
+        "responseCaseCount": 19,
         "requestProvenance": provenance_rows,
         "artifactCount": len(artifacts),
         "artifacts": artifacts,
@@ -1914,9 +2317,9 @@ def generate_phase_a(repo_root: Path, contract: Path, evidence_root: Path) -> di
     package_bytes = dumps(package_report)
     _write_external(root / "phase-a-package-report.json", package_bytes)
     return {
-        "request_case_count": 65,
-        "response_case_count": 15,
-        "case_count": 80,
+        "request_case_count": 77,
+        "response_case_count": 19,
+        "case_count": 96,
         "inventory_sha256": _sha256(inventory_bytes),
         "package_report_sha256": _sha256(package_bytes),
     }

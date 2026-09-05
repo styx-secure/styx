@@ -81,12 +81,14 @@ STRUCTURAL_EXECUTION_FIELDS = frozenset(
     }
 )
 
-SEED_COUNT = 78
+SEED_COUNT = 87
 OPERATION_ORDER = {operation: index for index, operation in enumerate(OPERATIONS)}
 ISOLATION_RELATION_FILENAME = (
     "APP-CORE-IFACE-0-STRUCTURAL-ISOLATION-RELATION-CANDIDATE.json"
 )
 ISOLATION_AUTHORITY = {
+    "combinedRemediationProviderCommentId": "5550502736",
+    "combinedRemediationV3Sha256": "242a8ff8b0ab006b8ae3d3ba8c4df4f5c95ab111b72c69798ab6c22ac0659eec",
     "humanRequestSha256": "279d5ac04c86628be031b6a50dc275540d2137033a72ea7275b9796c1942534a",
     "priorHumanRequestSha256": "43d7660ec64733ec626acd26d390539ac75e0fcb954a1b12f5f511e16cfeed9d",
     "priorProviderCommentId": "5519811594",
@@ -98,9 +100,9 @@ ISOLATION_AUTHORITY = {
 }
 ISOLATION_CLASSIFICATION_COUNTS = {
     "ANTI_DOWNGRADE_OVERLAP_SELF_TEST": 1,
-    "CO_CONSTRAINED_OCCURRENCE_SELF_TEST": 81,
+    "CO_CONSTRAINED_OCCURRENCE_SELF_TEST": 82,
     "RATIFIED_REDUNDANT_OCCURRENCE_SELF_TEST": 1,
-    "TARGET_ONLY_COUNTERFACTUAL": 1367,
+    "TARGET_ONLY_COUNTERFACTUAL": 1469,
 }
 
 
@@ -159,9 +161,9 @@ def load_structural_isolation_relation(
         },
         "structural isolation relation",
     )
-    if relation["relationVersion"] != "APP-CORE-IFACE-0-STRUCTURAL-ISOLATION-V2":
+    if relation["relationVersion"] != "APP-CORE-IFACE-0-STRUCTURAL-ISOLATION-V3":
         raise WitnessGenerationError("structural isolation relation version drift")
-    if relation["status"] != "HUMAN_RATIFIED_REMEDIATION_AUTHORITY":
+    if relation["status"] != "DERIVED_UNDER_HUMAN_RATIFIED_REMEDIATION":
         raise WitnessGenerationError("structural isolation relation status drift")
     if relation["authority"] != ISOLATION_AUTHORITY:
         raise WitnessGenerationError("structural isolation authority drift")
@@ -170,18 +172,18 @@ def load_structural_isolation_relation(
         {
             "instanceCount",
             "instanceSetSha256",
-            "preImplementationHead",
+            "interfaceSchemaSha256",
             "requestCarrierCount",
             "responseCarrierCount",
         },
         "structural isolation frozen input",
     )
     if frozen != {
-        "instanceCount": 1450,
-        "instanceSetSha256": "e1f5e66ffc94691fb03eac4221dd6558dacd667eeb5e511ca3f06359847d5a43",
-        "preImplementationHead": "1966736cc539efb8514e2be005581cf102e07fcc",
-        "requestCarrierCount": 65,
-        "responseCarrierCount": 15,
+        "instanceCount": 1553,
+        "instanceSetSha256": "1fef14a62ae55e18de5103a10ff37cab71df1b3a8e7493afca73b5ea28a517b2",
+        "interfaceSchemaSha256": "55592a26c13e72b888afaa743646ccfd69d6bb756ad6f15aaa290cdd1c3debd5",
+        "requestCarrierCount": 77,
+        "responseCarrierCount": 19,
     }:
         raise WitnessGenerationError("structural isolation frozen input drift")
     if relation["classificationCounts"] != ISOLATION_CLASSIFICATION_COUNTS:
@@ -189,10 +191,10 @@ def load_structural_isolation_relation(
     expected_counts = {
         "antiDowngradeRows": 1,
         "boundedRecipeRows": 20,
-        "carrierReselections": 31,
-        "coConstrainedRows": 81,
+        "carrierReselections": 29,
+        "coConstrainedRows": 82,
         "completeSchemaLiveRows": 26,
-        "oneOfPairwiseRelations": 93,
+        "oneOfPairwiseRelations": 101,
     }
     if relation["exactCounts"] != expected_counts:
         raise WitnessGenerationError("structural isolation exact-count drift")
@@ -216,7 +218,7 @@ def load_structural_isolation_relation(
         ):
             raise WitnessGenerationError("carrier reselection relation drift")
         reselections[instance_id] = row
-    if len(reselections) != 31:
+    if len(reselections) != 29:
         raise WitnessGenerationError("carrier reselection cardinality drift")
 
     complete = relation["completeSchemaLiveInstanceIds"]
@@ -301,7 +303,7 @@ def load_structural_isolation_relation(
             if instance_id not in instance_ids or instance_id in co_instances:
                 raise WitnessGenerationError("co-constrained instance relation drift")
             co_instances.add(instance_id)
-    if len(class_ids) != 8 or len(co_instances) != 81:
+    if len(class_ids) != 8 or len(co_instances) != 82:
         raise WitnessGenerationError("co-constrained relation cardinality drift")
 
     anti = _require_exact_keys(
@@ -319,9 +321,9 @@ def load_structural_isolation_relation(
     )
     anti_id = anti["instanceId"]
     if (
-        anti_id != "STR-REQUIRED-PROPERTY-OMISSION--0315"
+        anti_id != "STR-REQUIRED-PROPERTY-OMISSION--0333"
         or anti_id not in instance_ids
-        or anti["carrierCaseId"] != "PCR-REQUEST-VALIDATE-TRANSCRIPT-0002"
+        or anti["carrierCaseId"] != "PCR-REQUEST-VALIDATE-TRANSCRIPT-0001"
         or anti["targetJsonPointer"] != "/input/standaloneVerification"
         or anti["mutation"]
         != "REMOVE_ONLY_STANDALONE_VERIFICATION_FROM_RICHER_REQUIRED_SET"
@@ -334,7 +336,7 @@ def load_structural_isolation_relation(
 
     partition = set(complete) | recipe_instances | co_instances | {anti_id}
     if (
-        len(partition) != 128
+        len(partition) != 129
         or set(complete) & recipe_instances
         or set(complete) & co_instances
         or recipe_instances & co_instances
@@ -428,7 +430,7 @@ def _load_phase_a(
         evidence_root / "positive-carrier-inventory.json"
     )
     cases = inventory.get("cases")
-    if not isinstance(cases, list) or len(cases) != 80:
+    if not isinstance(cases, list) or len(cases) != 96:
         raise WitnessGenerationError("positive carrier inventory count drift")
     carriers: dict[str, tuple[dict[str, Any], bytes]] = {}
     for row in cases:
@@ -482,7 +484,7 @@ def derive_seed_registry(
     contract: Path,
     evidence_root: Path,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-    """Derive the exact 78-row canonical object seed registry.
+    """Derive the exact 87-row canonical object seed registry.
 
     The function accepts an external Phase-A candidate package, so repository
     tests can use a test-local population while the production final gate can
@@ -914,7 +916,7 @@ def derive_phase_b_registries(
     contract: Path,
     evidence_root: Path,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Derive the candidate seed and complete 1,450-row witness registries."""
+    """Derive the candidate seed and complete 1,553-row witness registries."""
 
     seed_registry, case_rows = derive_seed_registry(
         repo_root, contract, evidence_root
@@ -1025,7 +1027,17 @@ def derive_phase_b_registries(
         for seed in seed_registry["rows"]
         for family in seed["structuralFamilyIds"]
     }
-    if family_union != set(rules):
+    populated_rule_ids = {
+        rule_id
+        for rule_id, rule in rules.items()
+        if rule["expectedCount"] > 0
+    }
+    zero_rule_ids = {
+        rule_id
+        for rule_id, rule in rules.items()
+        if rule["expectedCount"] == 0
+    }
+    if family_union != populated_rule_ids or family_union & zero_rule_ids:
         raise WitnessGenerationError("seed structural-family union drift")
     seed_schema = _load_json(
         contract / "APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json"
@@ -2655,7 +2667,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.derive_plan:
             report = derive_structural_plan(args.contract.resolve())
             allowed_fields = PLAN_FIELDS
-            success = "APP-core structural plan: PASS instances=1450"
+            success = "APP-core structural plan: PASS instances=1553"
         elif (
             args.preflight_targets
             or args.preflight_isolation
@@ -2672,7 +2684,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.evidence_root.resolve(),
                 )
                 allowed_fields = STRUCTURAL_EXECUTION_FIELDS
-                success = "APP-core structural Python execution: PASS instances=1450"
+                success = "APP-core structural Python execution: PASS instances=1553"
             elif args.preflight_targets:
                 report = derive_structural_target_preflight(
                     args.repo_root.resolve(),
@@ -2692,7 +2704,7 @@ def main(argv: list[str] | None = None) -> int:
             if not args.execute_structural_python:
                 success = (
                     f"APP-core structural {label} preflight: "
-                    f"{report['verdict']} instances=1450"
+                    f"{report['verdict']} instances=1553"
                 )
         else:
             raise WitnessGenerationError(

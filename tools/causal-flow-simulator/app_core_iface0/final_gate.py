@@ -37,9 +37,9 @@ OPERATOR_LOGIN = "maverde73"
 SEMANTIC_FIXTURE_SOURCE_PATH = (
     "tools/causal-flow-simulator/app_core_iface0/generate_seed_registry.py"
 )
-SEMANTIC_FIXTURE_SOURCE_OCTETS = 8537
+SEMANTIC_FIXTURE_SOURCE_OCTETS = 18424
 SEMANTIC_FIXTURE_SOURCE_SHA256 = (
-    "9b80b0fb677c789ece85515d72ece5475f8dfcfc19946533e36cc3dd762219cb"
+    "323c5227972b79a33bc8238390e8e6000cd6a339a65375155ebea21010b4c8d4"
 )
 SEMANTIC_FIXTURE_IDENTIFIER = b"_semantic_request_carriers"
 BANNED_PROVIDER_ENVIRONMENT = frozenset(
@@ -256,7 +256,7 @@ def _validate_external_root(repo: Path, root: Path) -> dict[str, object]:
         except (CanonicalJsonError, OSError) as error:
             raise FinalGateError("checkout validator report is invalid") from error
     required = {
-        "case_count": 80,
+        "case_count": 96,
         "schema": "styx.app-core-iface0.phase-a-validation.v1",
         "verdict": "PASS",
     }
@@ -310,7 +310,7 @@ def run_phase_a_gate(
     _verify_clean_checkout(second, selection_head)
     return {
         "verdict": "PASS",
-        "caseCount": 80,
+        "caseCount": 96,
         "positiveCarrierInventorySha256": first_result["inventory_sha256"],
         "phaseAPackageReportSha256": first_result["package_report_sha256"],
     }
@@ -489,7 +489,7 @@ def _validate_ratification_target(
             target_decision.get("requestCaseCount"),
             target_decision.get("responseCaseCount"),
         )
-        != (80, 65, 15)
+        != (96, 77, 19)
         or any(
             not isinstance(target_decision.get(name), str)
             or len(target_decision[name]) != 64
@@ -690,7 +690,7 @@ def _validate_provider_authority(comment_id: str, repo: Path) -> dict[str, Any]:
         or decision["baseSha"] != BASE_SHA
         or decision["closureAmendmentSha256"] != RATIFIED_V14_SHA256
         or (decision["caseCount"], decision["requestCaseCount"], decision["responseCaseCount"])
-        != (80, 65, 15)
+        != (96, 77, 19)
     ):
         raise FinalGateError("provider decision value drift")
 

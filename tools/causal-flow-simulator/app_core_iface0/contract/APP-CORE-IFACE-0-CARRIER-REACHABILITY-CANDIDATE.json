@@ -3,15 +3,15 @@
   "status": "PRE_RATIFICATION_PLANNING_EVIDENCE",
   "authorityEffect": "NONE",
   "schema": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
-  "schemaSha256": "f72d1079e807edfc84a67742bdde7f047f7e8daad259e2515a0492d52cb65f0c",
-  "definitionPointerSetSha256": "49a1991afaad641cf108ce89f89103a3eb002b2d41853a916d01487933b1bef9",
-  "objectSchemaPointerSetSha256": "79b260376a95d0c2e78e05b9ae347cf826c7dcb6b4b947acf977844390f2d20e",
+  "schemaSha256": "55592a26c13e72b888afaa743646ccfd69d6bb756ad6f15aaa290cdd1c3debd5",
+  "definitionPointerSetSha256": "ff26e15bda4b4978a4679e12b90cb09f549aa851d523d91d786467e16d4a4e54",
+  "objectSchemaPointerSetSha256": "d6146a36c3072590adba7b25738939a0d2513d3d7b4b6f116ddc7f4ec2c9f12e",
   "oneOfArmEncoding": "lexicographically sorted <oneOfPointer>#<decimal-arm-index> plus LF",
-  "oneOfArmSetSha256": "56e2eca24d79e3c29a4a2cbbb584783576ffe9fadacdc6d467943833f55db628",
+  "oneOfArmSetSha256": "62c845a2588b1d26557cf74cbc925addd833699bff7879a8c1f4d4cabc719634",
   "rootCount": 12,
-  "definitionCount": 114,
-  "objectSchemaCount": 78,
-  "oneOfArmCount": 54,
+  "definitionCount": 124,
+  "objectSchemaCount": 87,
+  "oneOfArmCount": 57,
   "roots": [
     {
       "rootId": "REQUEST-DESCRIBE_PROFILE",
@@ -49,15 +49,19 @@
       "operation": "VALIDATE_TRANSCRIPT",
       "wrapperSchemaPointer": "/$defs/OperationRequestValidateTranscriptV0",
       "eligibleDefinitionPointers": [
-        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ApplicationLogicalEventV0",
+        "/$defs/ApplicationPresentationGroupV0",
         "/$defs/CanonicalUnsignedDecimal",
         "/$defs/EvenLowerHex",
         "/$defs/ExactProfileSelectorV0",
         "/$defs/FixedHex32",
-        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/GenesisLogicalEventV0",
+        "/$defs/GenesisPresentationGroupV0",
         "/$defs/InterfaceRequestV0",
         "/$defs/InterfaceVersionV0",
         "/$defs/OperationRequestValidateTranscriptV0",
+        "/$defs/PresentationIdV0",
+        "/$defs/ProofOccurrenceV0",
         "/$defs/SignatureHex",
         "/$defs/StandaloneVerificationMaterialV0",
         "/$defs/TranscriptHex",
@@ -66,10 +70,13 @@
         "/$defs/ValidateTranscriptInputV0"
       ],
       "eligibleObjectSchemaPointers": [
-        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ApplicationLogicalEventV0",
+        "/$defs/ApplicationPresentationGroupV0",
         "/$defs/ExactProfileSelectorV0",
-        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/GenesisLogicalEventV0",
+        "/$defs/GenesisPresentationGroupV0",
         "/$defs/OperationRequestValidateTranscriptV0",
+        "/$defs/ProofOccurrenceV0",
         "/$defs/StandaloneVerificationMaterialV0",
         "/$defs/ValidateTranscriptInputV0/oneOf/0",
         "/$defs/ValidateTranscriptInputV0/oneOf/1",
@@ -109,10 +116,13 @@
         "/$defs/EvenLowerHex",
         "/$defs/ExactProfileSelectorV0",
         "/$defs/FixedHex32",
-        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/GenesisLogicalEventV0",
+        "/$defs/GenesisPresentationGroupV0",
         "/$defs/InterfaceRequestV0",
         "/$defs/InterfaceVersionV0",
         "/$defs/OperationRequestEvaluateGenesisV0",
+        "/$defs/PresentationIdV0",
+        "/$defs/ProofOccurrenceV0",
         "/$defs/SignatureHex",
         "/$defs/TranscriptHex",
         "/$defs/U16Text",
@@ -121,8 +131,10 @@
       "eligibleObjectSchemaPointers": [
         "/$defs/EvaluateGenesisInputV0",
         "/$defs/ExactProfileSelectorV0",
-        "/$defs/GenesisTranscriptCandidateV0",
-        "/$defs/OperationRequestEvaluateGenesisV0"
+        "/$defs/GenesisLogicalEventV0",
+        "/$defs/GenesisPresentationGroupV0",
+        "/$defs/OperationRequestEvaluateGenesisV0",
+        "/$defs/ProofOccurrenceV0"
       ],
       "eligibleOneOfArms": [
         {
@@ -141,25 +153,30 @@
       "operation": "REPLAY_CONTEXT",
       "wrapperSchemaPointer": "/$defs/OperationRequestReplayContextV0",
       "eligibleDefinitionPointers": [
-        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ApplicationLogicalEventV0",
+        "/$defs/ApplicationPresentationGroupV0",
         "/$defs/CanonicalUnsignedDecimal",
         "/$defs/ContentMaterialEvidenceV0",
         "/$defs/ContentSegmentHex",
         "/$defs/ContentSegmentV0",
         "/$defs/EvenLowerHex",
-        "/$defs/EvidenceProjectionV0",
+        "/$defs/EvidenceAdditionSetV0",
+        "/$defs/EvidencePromotionAttemptV0",
         "/$defs/ExactProfileSelectorV0",
         "/$defs/FixedHex32",
+        "/$defs/GenesisLogicalEventV0",
         "/$defs/GenesisPolicyBlockHex",
         "/$defs/GenesisProjectionV0",
-        "/$defs/GenesisTranscriptCandidateV0",
         "/$defs/InterfaceRequestV0",
         "/$defs/InterfaceVersionV0",
         "/$defs/O03TupleV0",
         "/$defs/OpeningEvidenceV0",
         "/$defs/OperationRequestReplayContextV0",
+        "/$defs/PresentationIdV0",
+        "/$defs/ProofOccurrenceV0",
         "/$defs/ProposedGenesisSnapshotV0",
         "/$defs/ReplayContextInputV0",
+        "/$defs/RetainedGenesisProofV0",
         "/$defs/SignatureHex",
         "/$defs/TranscriptHex",
         "/$defs/U16Text",
@@ -167,18 +184,21 @@
         "/$defs/U64Text"
       ],
       "eligibleObjectSchemaPointers": [
-        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ApplicationLogicalEventV0",
+        "/$defs/ApplicationPresentationGroupV0",
         "/$defs/ContentMaterialEvidenceV0",
         "/$defs/ContentSegmentV0",
-        "/$defs/EvidenceProjectionV0",
+        "/$defs/EvidencePromotionAttemptV0",
         "/$defs/ExactProfileSelectorV0",
+        "/$defs/GenesisLogicalEventV0",
         "/$defs/GenesisProjectionV0",
-        "/$defs/GenesisTranscriptCandidateV0",
         "/$defs/O03TupleV0",
         "/$defs/OpeningEvidenceV0",
         "/$defs/OperationRequestReplayContextV0",
+        "/$defs/ProofOccurrenceV0",
         "/$defs/ProposedGenesisSnapshotV0",
-        "/$defs/ReplayContextInputV0"
+        "/$defs/ReplayContextInputV0",
+        "/$defs/RetainedGenesisProofV0"
       ],
       "eligibleOneOfArms": [
         {
@@ -200,7 +220,8 @@
         "/$defs/AliasGroupV0",
         "/$defs/ApTransitionBlockHex",
         "/$defs/ApplicationEventProjectionV0",
-        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ApplicationLogicalEventV0",
+        "/$defs/ApplicationPresentationGroupV0",
         "/$defs/AuthorityAvailableV0",
         "/$defs/AuthorityProjectionV0",
         "/$defs/AuthorityUnavailableV0",
@@ -226,19 +247,24 @@
         "/$defs/ExactProfileSelectorV0",
         "/$defs/FixedHex32",
         "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisLogicalEventV0",
         "/$defs/GenesisPolicyBlockHex",
         "/$defs/GenesisProjectionV0",
-        "/$defs/GenesisTranscriptCandidateV0",
         "/$defs/InterfaceRequestV0",
         "/$defs/InterfaceVersionV0",
+        "/$defs/LocalRevalidationSnapshotV0",
         "/$defs/O03TupleV0",
         "/$defs/OpeningEvidenceV0",
         "/$defs/OperationRequestEvaluateCandidateV0",
+        "/$defs/PresentationIdV0",
         "/$defs/PrimaryToken",
+        "/$defs/ProofOccurrenceV0",
         "/$defs/ProposedContextSnapshotV0",
         "/$defs/ProposedGenesisSnapshotV0",
         "/$defs/RecordOutcomeV0",
         "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RetainedApplicationProofV0",
+        "/$defs/RetainedGenesisProofV0",
         "/$defs/RoleTailClosureV0",
         "/$defs/RoleTailGrantV0",
         "/$defs/RoleTailOrdinaryV0",
@@ -253,11 +279,13 @@
         "/$defs/TranscriptHex",
         "/$defs/U16Text",
         "/$defs/U32Text",
-        "/$defs/U64Text"
+        "/$defs/U64Text",
+        "/$defs/VerifiedCompleteEvidenceV0"
       ],
       "eligibleObjectSchemaPointers": [
         "/$defs/ApplicationEventProjectionV0",
-        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ApplicationLogicalEventV0",
+        "/$defs/ApplicationPresentationGroupV0",
         "/$defs/AuthorityAvailableV0",
         "/$defs/AuthorityUnavailableV0",
         "/$defs/ChunkGeometryProjectionV0",
@@ -275,15 +303,19 @@
         "/$defs/EvidenceProjectionV0",
         "/$defs/ExactProfileSelectorV0",
         "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisLogicalEventV0",
         "/$defs/GenesisProjectionV0",
-        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/LocalRevalidationSnapshotV0",
         "/$defs/O03TupleV0",
         "/$defs/OpeningEvidenceV0",
         "/$defs/OperationRequestEvaluateCandidateV0",
+        "/$defs/ProofOccurrenceV0",
         "/$defs/ProposedContextSnapshotV0",
         "/$defs/ProposedGenesisSnapshotV0",
         "/$defs/RecordOutcomeV0",
         "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RetainedApplicationProofV0",
+        "/$defs/RetainedGenesisProofV0",
         "/$defs/RoleTailClosureV0",
         "/$defs/RoleTailGrantV0",
         "/$defs/RoleTailOrdinaryV0",
@@ -291,7 +323,8 @@
         "/$defs/RoleTailRecoverV0",
         "/$defs/RoleTailRemovalV0",
         "/$defs/RoleTailRotateV0",
-        "/$defs/RoleTailTargetCredentialV0"
+        "/$defs/RoleTailTargetCredentialV0",
+        "/$defs/VerifiedCompleteEvidenceV0"
       ],
       "eligibleOneOfArms": [
         {
@@ -397,7 +430,7 @@
         "/$defs/AliasGroupV0",
         "/$defs/ApTransitionBlockHex",
         "/$defs/ApplicationEventProjectionV0",
-        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ApplicationLogicalEventV0",
         "/$defs/AuthorityAvailableV0",
         "/$defs/AuthorityProjectionV0",
         "/$defs/AuthorityUnavailableV0",
@@ -421,22 +454,27 @@
         "/$defs/EventAuthorityProjectionV0",
         "/$defs/EvidenceAdditionSetV0",
         "/$defs/EvidenceProjectionV0",
+        "/$defs/EvidencePromotionAttemptV0",
         "/$defs/ExactProfileSelectorV0",
         "/$defs/FixedHex32",
         "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisLogicalEventV0",
         "/$defs/GenesisPolicyBlockHex",
         "/$defs/GenesisProjectionV0",
-        "/$defs/GenesisTranscriptCandidateV0",
         "/$defs/InterfaceRequestV0",
         "/$defs/InterfaceVersionV0",
+        "/$defs/LocalRevalidationSnapshotV0",
         "/$defs/O03TupleV0",
         "/$defs/OpeningEvidenceV0",
         "/$defs/OperationRequestEvaluateEvidenceUpdateV0",
+        "/$defs/PresentationIdV0",
         "/$defs/PrimaryToken",
         "/$defs/ProposedContextSnapshotV0",
         "/$defs/ProposedGenesisSnapshotV0",
         "/$defs/RecordOutcomeV0",
         "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RetainedApplicationProofV0",
+        "/$defs/RetainedGenesisProofV0",
         "/$defs/RoleTailClosureV0",
         "/$defs/RoleTailGrantV0",
         "/$defs/RoleTailOrdinaryV0",
@@ -451,11 +489,12 @@
         "/$defs/TranscriptHex",
         "/$defs/U16Text",
         "/$defs/U32Text",
-        "/$defs/U64Text"
+        "/$defs/U64Text",
+        "/$defs/VerifiedCompleteEvidenceV0"
       ],
       "eligibleObjectSchemaPointers": [
         "/$defs/ApplicationEventProjectionV0",
-        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ApplicationLogicalEventV0",
         "/$defs/AuthorityAvailableV0",
         "/$defs/AuthorityUnavailableV0",
         "/$defs/ChunkGeometryProjectionV0",
@@ -471,10 +510,12 @@
         "/$defs/EvaluateEvidenceUpdateInputV0",
         "/$defs/EventAuthorityProjectionV0",
         "/$defs/EvidenceProjectionV0",
+        "/$defs/EvidencePromotionAttemptV0",
         "/$defs/ExactProfileSelectorV0",
         "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisLogicalEventV0",
         "/$defs/GenesisProjectionV0",
-        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/LocalRevalidationSnapshotV0",
         "/$defs/O03TupleV0",
         "/$defs/OpeningEvidenceV0",
         "/$defs/OperationRequestEvaluateEvidenceUpdateV0",
@@ -482,6 +523,8 @@
         "/$defs/ProposedGenesisSnapshotV0",
         "/$defs/RecordOutcomeV0",
         "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RetainedApplicationProofV0",
+        "/$defs/RetainedGenesisProofV0",
         "/$defs/RoleTailClosureV0",
         "/$defs/RoleTailGrantV0",
         "/$defs/RoleTailOrdinaryV0",
@@ -489,7 +532,8 @@
         "/$defs/RoleTailRecoverV0",
         "/$defs/RoleTailRemovalV0",
         "/$defs/RoleTailRotateV0",
-        "/$defs/RoleTailTargetCredentialV0"
+        "/$defs/RoleTailTargetCredentialV0",
+        "/$defs/VerifiedCompleteEvidenceV0"
       ],
       "eligibleOneOfArms": [
         {
@@ -701,14 +745,15 @@
         "/$defs/FixedHex32",
         "/$defs/GenesisEvaluationReasonV0",
         "/$defs/GenesisEvaluationStageV0",
+        "/$defs/GenesisLogicalEventV0",
         "/$defs/GenesisPolicyBlockHex",
         "/$defs/GenesisProjectionV0",
-        "/$defs/GenesisTranscriptCandidateV0",
         "/$defs/InterfaceResponseV0",
         "/$defs/InterfaceVersionV0",
         "/$defs/O03TupleV0",
         "/$defs/OperationResponseEvaluateGenesisV0",
         "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/RetainedGenesisProofV0",
         "/$defs/SignatureHex",
         "/$defs/TranscriptHex",
         "/$defs/U16Text",
@@ -718,11 +763,12 @@
         "/$defs/EvaluateGenesisResultReadyV0",
         "/$defs/EvaluateGenesisResultTerminalV0",
         "/$defs/ExactProfileSelectorV0",
+        "/$defs/GenesisLogicalEventV0",
         "/$defs/GenesisProjectionV0",
-        "/$defs/GenesisTranscriptCandidateV0",
         "/$defs/O03TupleV0",
         "/$defs/OperationResponseEvaluateGenesisV0",
-        "/$defs/ProposedGenesisSnapshotV0"
+        "/$defs/ProposedGenesisSnapshotV0",
+        "/$defs/RetainedGenesisProofV0"
       ],
       "eligibleOneOfArms": [
         {
@@ -760,7 +806,7 @@
         "/$defs/AliasGroupV0",
         "/$defs/ApTransitionBlockHex",
         "/$defs/ApplicationEventProjectionV0",
-        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ApplicationLogicalEventV0",
         "/$defs/AuthorityAvailableV0",
         "/$defs/AuthorityProjectionV0",
         "/$defs/AuthorityUnavailableV0",
@@ -785,11 +831,13 @@
         "/$defs/ExactProfileSelectorV0",
         "/$defs/FixedHex32",
         "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisLogicalEventV0",
         "/$defs/GenesisPolicyBlockHex",
         "/$defs/GenesisProjectionV0",
-        "/$defs/GenesisTranscriptCandidateV0",
         "/$defs/InterfaceResponseV0",
         "/$defs/InterfaceVersionV0",
+        "/$defs/LocalQuarantineProposalV0",
+        "/$defs/LocalRevalidationSnapshotV0",
         "/$defs/NoSuccessorPrimary",
         "/$defs/O03TupleV0",
         "/$defs/OpeningEvidenceV0",
@@ -805,6 +853,8 @@
         "/$defs/ReplayContextResultV0",
         "/$defs/ReplayInputRejectionReasonV0",
         "/$defs/ReplayInputStageV0",
+        "/$defs/RetainedApplicationProofV0",
+        "/$defs/RetainedGenesisProofV0",
         "/$defs/RoleTailClosureV0",
         "/$defs/RoleTailGrantV0",
         "/$defs/RoleTailOrdinaryV0",
@@ -819,11 +869,12 @@
         "/$defs/TranscriptHex",
         "/$defs/U16Text",
         "/$defs/U32Text",
-        "/$defs/U64Text"
+        "/$defs/U64Text",
+        "/$defs/VerifiedCompleteEvidenceV0"
       ],
       "eligibleObjectSchemaPointers": [
         "/$defs/ApplicationEventProjectionV0",
-        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ApplicationLogicalEventV0",
         "/$defs/AuthorityAvailableV0",
         "/$defs/AuthorityUnavailableV0",
         "/$defs/ChunkGeometryProjectionV0",
@@ -840,8 +891,10 @@
         "/$defs/EvidenceProjectionV0",
         "/$defs/ExactProfileSelectorV0",
         "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisLogicalEventV0",
         "/$defs/GenesisProjectionV0",
-        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/LocalQuarantineProposalV0",
+        "/$defs/LocalRevalidationSnapshotV0",
         "/$defs/O03TupleV0",
         "/$defs/OpeningEvidenceV0",
         "/$defs/OperationResponseReplayContextV0",
@@ -852,6 +905,8 @@
         "/$defs/ReplayContextResultCandidateRejectedV0",
         "/$defs/ReplayContextResultReadyV0",
         "/$defs/ReplayContextResultTerminalV0",
+        "/$defs/RetainedApplicationProofV0",
+        "/$defs/RetainedGenesisProofV0",
         "/$defs/RoleTailClosureV0",
         "/$defs/RoleTailGrantV0",
         "/$defs/RoleTailOrdinaryV0",
@@ -859,7 +914,8 @@
         "/$defs/RoleTailRecoverV0",
         "/$defs/RoleTailRemovalV0",
         "/$defs/RoleTailRotateV0",
-        "/$defs/RoleTailTargetCredentialV0"
+        "/$defs/RoleTailTargetCredentialV0",
+        "/$defs/VerifiedCompleteEvidenceV0"
       ],
       "eligibleOneOfArms": [
         {
@@ -929,6 +985,10 @@
         {
           "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
           "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
+          "armIndex": 3
         },
         {
           "oneOfPointer": "/$defs/RoleTailProjectionV0/oneOf",
@@ -977,7 +1037,7 @@
         "/$defs/AliasGroupV0",
         "/$defs/ApTransitionBlockHex",
         "/$defs/ApplicationEventProjectionV0",
-        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ApplicationLogicalEventV0",
         "/$defs/AuthorityAvailableV0",
         "/$defs/AuthorityProjectionV0",
         "/$defs/AuthorityUnavailableV0",
@@ -1006,11 +1066,13 @@
         "/$defs/ExactProfileSelectorV0",
         "/$defs/FixedHex32",
         "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisLogicalEventV0",
         "/$defs/GenesisPolicyBlockHex",
         "/$defs/GenesisProjectionV0",
-        "/$defs/GenesisTranscriptCandidateV0",
         "/$defs/InterfaceResponseV0",
         "/$defs/InterfaceVersionV0",
+        "/$defs/LocalQuarantineProposalV0",
+        "/$defs/LocalRevalidationSnapshotV0",
         "/$defs/NoSuccessorPrimary",
         "/$defs/O03TupleV0",
         "/$defs/OpeningEvidenceV0",
@@ -1022,6 +1084,8 @@
         "/$defs/RecordOutcomeV0",
         "/$defs/ReductionStandingProjectionV0",
         "/$defs/RetainNewPrimary",
+        "/$defs/RetainedApplicationProofV0",
+        "/$defs/RetainedGenesisProofV0",
         "/$defs/RoleTailClosureV0",
         "/$defs/RoleTailGrantV0",
         "/$defs/RoleTailOrdinaryV0",
@@ -1036,11 +1100,12 @@
         "/$defs/TranscriptHex",
         "/$defs/U16Text",
         "/$defs/U32Text",
-        "/$defs/U64Text"
+        "/$defs/U64Text",
+        "/$defs/VerifiedCompleteEvidenceV0"
       ],
       "eligibleObjectSchemaPointers": [
         "/$defs/ApplicationEventProjectionV0",
-        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ApplicationLogicalEventV0",
         "/$defs/AuthorityAvailableV0",
         "/$defs/AuthorityUnavailableV0",
         "/$defs/CandidateEvaluationReadyV0",
@@ -1060,8 +1125,10 @@
         "/$defs/EvidenceProjectionV0",
         "/$defs/ExactProfileSelectorV0",
         "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisLogicalEventV0",
         "/$defs/GenesisProjectionV0",
-        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/LocalQuarantineProposalV0",
+        "/$defs/LocalRevalidationSnapshotV0",
         "/$defs/O03TupleV0",
         "/$defs/OpeningEvidenceV0",
         "/$defs/OperationResponseEvaluateCandidateV0",
@@ -1070,6 +1137,8 @@
         "/$defs/ProposedGenesisSnapshotV0",
         "/$defs/RecordOutcomeV0",
         "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RetainedApplicationProofV0",
+        "/$defs/RetainedGenesisProofV0",
         "/$defs/RoleTailClosureV0",
         "/$defs/RoleTailGrantV0",
         "/$defs/RoleTailOrdinaryV0",
@@ -1077,7 +1146,8 @@
         "/$defs/RoleTailRecoverV0",
         "/$defs/RoleTailRemovalV0",
         "/$defs/RoleTailRotateV0",
-        "/$defs/RoleTailTargetCredentialV0"
+        "/$defs/RoleTailTargetCredentialV0",
+        "/$defs/VerifiedCompleteEvidenceV0"
       ],
       "eligibleOneOfArms": [
         {
@@ -1119,6 +1189,10 @@
         {
           "oneOfPointer": "/$defs/CandidateEvaluationResultV0/oneOf",
           "armIndex": 1
+        },
+        {
+          "oneOfPointer": "/$defs/CandidateEvaluationResultV0/oneOf",
+          "armIndex": 2
         },
         {
           "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
@@ -1191,7 +1265,7 @@
         "/$defs/AliasGroupV0",
         "/$defs/ApTransitionBlockHex",
         "/$defs/ApplicationEventProjectionV0",
-        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ApplicationLogicalEventV0",
         "/$defs/AuthorityAvailableV0",
         "/$defs/AuthorityProjectionV0",
         "/$defs/AuthorityUnavailableV0",
@@ -1222,11 +1296,13 @@
         "/$defs/ExactProfileSelectorV0",
         "/$defs/FixedHex32",
         "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisLogicalEventV0",
         "/$defs/GenesisPolicyBlockHex",
         "/$defs/GenesisProjectionV0",
-        "/$defs/GenesisTranscriptCandidateV0",
         "/$defs/InterfaceResponseV0",
         "/$defs/InterfaceVersionV0",
+        "/$defs/LocalQuarantineProposalV0",
+        "/$defs/LocalRevalidationSnapshotV0",
         "/$defs/O03TupleV0",
         "/$defs/OpeningEvidenceV0",
         "/$defs/OperationResponseEvaluateEvidenceUpdateV0",
@@ -1236,6 +1312,8 @@
         "/$defs/ProposedGenesisSnapshotV0",
         "/$defs/RecordOutcomeV0",
         "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RetainedApplicationProofV0",
+        "/$defs/RetainedGenesisProofV0",
         "/$defs/RoleTailClosureV0",
         "/$defs/RoleTailGrantV0",
         "/$defs/RoleTailOrdinaryV0",
@@ -1250,11 +1328,12 @@
         "/$defs/TranscriptHex",
         "/$defs/U16Text",
         "/$defs/U32Text",
-        "/$defs/U64Text"
+        "/$defs/U64Text",
+        "/$defs/VerifiedCompleteEvidenceV0"
       ],
       "eligibleObjectSchemaPointers": [
         "/$defs/ApplicationEventProjectionV0",
-        "/$defs/ApplicationTranscriptCandidateV0",
+        "/$defs/ApplicationLogicalEventV0",
         "/$defs/AuthorityAvailableV0",
         "/$defs/AuthorityUnavailableV0",
         "/$defs/ChunkGeometryProjectionV0",
@@ -1275,8 +1354,10 @@
         "/$defs/EvidenceUpdateRejectedV0",
         "/$defs/ExactProfileSelectorV0",
         "/$defs/ForkJoinProjectionV0",
+        "/$defs/GenesisLogicalEventV0",
         "/$defs/GenesisProjectionV0",
-        "/$defs/GenesisTranscriptCandidateV0",
+        "/$defs/LocalQuarantineProposalV0",
+        "/$defs/LocalRevalidationSnapshotV0",
         "/$defs/O03TupleV0",
         "/$defs/OpeningEvidenceV0",
         "/$defs/OperationResponseEvaluateEvidenceUpdateV0",
@@ -1285,6 +1366,8 @@
         "/$defs/ProposedGenesisSnapshotV0",
         "/$defs/RecordOutcomeV0",
         "/$defs/ReductionStandingProjectionV0",
+        "/$defs/RetainedApplicationProofV0",
+        "/$defs/RetainedGenesisProofV0",
         "/$defs/RoleTailClosureV0",
         "/$defs/RoleTailGrantV0",
         "/$defs/RoleTailOrdinaryV0",
@@ -1292,7 +1375,8 @@
         "/$defs/RoleTailRecoverV0",
         "/$defs/RoleTailRemovalV0",
         "/$defs/RoleTailRotateV0",
-        "/$defs/RoleTailTargetCredentialV0"
+        "/$defs/RoleTailTargetCredentialV0",
+        "/$defs/VerifiedCompleteEvidenceV0"
       ],
       "eligibleOneOfArms": [
         {
@@ -1358,6 +1442,10 @@
         {
           "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
           "armIndex": 2
+        },
+        {
+          "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
+          "armIndex": 3
         },
         {
           "oneOfPointer": "/$defs/InterfaceResponseV0/oneOf",
@@ -1434,7 +1522,7 @@
       ]
     },
     {
-      "definitionPointer": "/$defs/ApplicationTranscriptCandidateV0",
+      "definitionPointer": "/$defs/ApplicationLogicalEventV0",
       "eligibleRootIds": [
         "REQUEST-EVALUATE_CANDIDATE",
         "REQUEST-EVALUATE_EVIDENCE_UPDATE",
@@ -1443,6 +1531,14 @@
         "RESPONSE-EVALUATE_CANDIDATE",
         "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
         "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ApplicationPresentationGroupV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT"
       ]
     },
     {
@@ -1764,7 +1860,8 @@
     {
       "definitionPointer": "/$defs/EvidenceAdditionSetV0",
       "eligibleRootIds": [
-        "REQUEST-EVALUATE_EVIDENCE_UPDATE"
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT"
       ]
     },
     {
@@ -1772,10 +1869,16 @@
       "eligibleRootIds": [
         "REQUEST-EVALUATE_CANDIDATE",
         "REQUEST-EVALUATE_EVIDENCE_UPDATE",
-        "REQUEST-REPLAY_CONTEXT",
         "RESPONSE-EVALUATE_CANDIDATE",
         "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
         "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/EvidencePromotionAttemptV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT"
       ]
     },
     {
@@ -1863,6 +1966,20 @@
       ]
     },
     {
+      "definitionPointer": "/$defs/GenesisLogicalEventV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
       "definitionPointer": "/$defs/GenesisPolicyBlockHex",
       "eligibleRootIds": [
         "REQUEST-EVALUATE_CANDIDATE",
@@ -1875,25 +1992,18 @@
       ]
     },
     {
+      "definitionPointer": "/$defs/GenesisPresentationGroupV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
       "definitionPointer": "/$defs/GenesisProjectionV0",
       "eligibleRootIds": [
         "REQUEST-EVALUATE_CANDIDATE",
         "REQUEST-EVALUATE_EVIDENCE_UPDATE",
         "REQUEST-REPLAY_CONTEXT",
-        "RESPONSE-EVALUATE_CANDIDATE",
-        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
-        "RESPONSE-EVALUATE_GENESIS",
-        "RESPONSE-REPLAY_CONTEXT"
-      ]
-    },
-    {
-      "definitionPointer": "/$defs/GenesisTranscriptCandidateV0",
-      "eligibleRootIds": [
-        "REQUEST-EVALUATE_CANDIDATE",
-        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
-        "REQUEST-EVALUATE_GENESIS",
-        "REQUEST-REPLAY_CONTEXT",
-        "REQUEST-VALIDATE_TRANSCRIPT",
         "RESPONSE-EVALUATE_CANDIDATE",
         "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
         "RESPONSE-EVALUATE_GENESIS",
@@ -1949,6 +2059,24 @@
         "RESPONSE-EVALUATE_GENESIS",
         "RESPONSE-REPLAY_CONTEXT",
         "RESPONSE-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/LocalQuarantineProposalV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/LocalRevalidationSnapshotV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
       ]
     },
     {
@@ -2054,6 +2182,16 @@
       ]
     },
     {
+      "definitionPointer": "/$defs/PresentationIdV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
       "definitionPointer": "/$defs/PrimaryToken",
       "eligibleRootIds": [
         "REQUEST-EVALUATE_CANDIDATE",
@@ -2067,6 +2205,15 @@
       "definitionPointer": "/$defs/ProfileDescriptorV0",
       "eligibleRootIds": [
         "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/ProofOccurrenceV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT"
       ]
     },
     {
@@ -2164,6 +2311,28 @@
       "definitionPointer": "/$defs/RetainNewPrimary",
       "eligibleRootIds": [
         "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/RetainedApplicationProofV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "definitionPointer": "/$defs/RetainedGenesisProofV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
       ]
     },
     {
@@ -2386,6 +2555,16 @@
       "eligibleRootIds": [
         "RESPONSE-VALIDATE_TRANSCRIPT"
       ]
+    },
+    {
+      "definitionPointer": "/$defs/VerifiedCompleteEvidenceV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
     }
   ],
   "objectCoverage": [
@@ -2400,7 +2579,7 @@
       ]
     },
     {
-      "objectSchemaPointer": "/$defs/ApplicationTranscriptCandidateV0",
+      "objectSchemaPointer": "/$defs/ApplicationLogicalEventV0",
       "eligibleRootIds": [
         "REQUEST-EVALUATE_CANDIDATE",
         "REQUEST-EVALUATE_EVIDENCE_UPDATE",
@@ -2409,6 +2588,14 @@
         "RESPONSE-EVALUATE_CANDIDATE",
         "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
         "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/ApplicationPresentationGroupV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT"
       ]
     },
     {
@@ -2626,10 +2813,16 @@
       "eligibleRootIds": [
         "REQUEST-EVALUATE_CANDIDATE",
         "REQUEST-EVALUATE_EVIDENCE_UPDATE",
-        "REQUEST-REPLAY_CONTEXT",
         "RESPONSE-EVALUATE_CANDIDATE",
         "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
         "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/EvidencePromotionAttemptV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT"
       ]
     },
     {
@@ -2678,19 +2871,7 @@
       ]
     },
     {
-      "objectSchemaPointer": "/$defs/GenesisProjectionV0",
-      "eligibleRootIds": [
-        "REQUEST-EVALUATE_CANDIDATE",
-        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
-        "REQUEST-REPLAY_CONTEXT",
-        "RESPONSE-EVALUATE_CANDIDATE",
-        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
-        "RESPONSE-EVALUATE_GENESIS",
-        "RESPONSE-REPLAY_CONTEXT"
-      ]
-    },
-    {
-      "objectSchemaPointer": "/$defs/GenesisTranscriptCandidateV0",
+      "objectSchemaPointer": "/$defs/GenesisLogicalEventV0",
       "eligibleRootIds": [
         "REQUEST-EVALUATE_CANDIDATE",
         "REQUEST-EVALUATE_EVIDENCE_UPDATE",
@@ -2704,9 +2885,46 @@
       ]
     },
     {
+      "objectSchemaPointer": "/$defs/GenesisPresentationGroupV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/GenesisProjectionV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
       "objectSchemaPointer": "/$defs/InterfaceLimitsV0",
       "eligibleRootIds": [
         "RESPONSE-DESCRIBE_PROFILE"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/LocalQuarantineProposalV0",
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/LocalRevalidationSnapshotV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
       ]
     },
     {
@@ -2823,6 +3041,15 @@
       ]
     },
     {
+      "objectSchemaPointer": "/$defs/ProofOccurrenceV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_GENESIS",
+        "REQUEST-REPLAY_CONTEXT",
+        "REQUEST-VALIDATE_TRANSCRIPT"
+      ]
+    },
+    {
       "objectSchemaPointer": "/$defs/ProposedApplicationDeltaV0",
       "eligibleRootIds": [
         "RESPONSE-EVALUATE_CANDIDATE",
@@ -2892,6 +3119,28 @@
     {
       "objectSchemaPointer": "/$defs/ReplayContextResultTerminalV0",
       "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/RetainedApplicationProofV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/RetainedGenesisProofV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "REQUEST-REPLAY_CONTEXT",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_GENESIS",
         "RESPONSE-REPLAY_CONTEXT"
       ]
     },
@@ -3016,6 +3265,16 @@
       "eligibleRootIds": [
         "RESPONSE-VALIDATE_TRANSCRIPT"
       ]
+    },
+    {
+      "objectSchemaPointer": "/$defs/VerifiedCompleteEvidenceV0",
+      "eligibleRootIds": [
+        "REQUEST-EVALUATE_CANDIDATE",
+        "REQUEST-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-EVALUATE_CANDIDATE",
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE",
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
     }
   ],
   "oneOfArmCoverage": [
@@ -3122,6 +3381,13 @@
       ]
     },
     {
+      "oneOfPointer": "/$defs/CandidateEvaluationResultV0/oneOf",
+      "armIndex": 2,
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_CANDIDATE"
+      ]
+    },
+    {
       "oneOfPointer": "/$defs/ContentDescriptorProjectionV0/oneOf",
       "armIndex": 0,
       "eligibleRootIds": [
@@ -3221,6 +3487,13 @@
     {
       "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
       "armIndex": 2,
+      "eligibleRootIds": [
+        "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
+      "armIndex": 3,
       "eligibleRootIds": [
         "RESPONSE-EVALUATE_EVIDENCE_UPDATE"
       ]
@@ -3340,6 +3613,13 @@
     {
       "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
       "armIndex": 2,
+      "eligibleRootIds": [
+        "RESPONSE-REPLAY_CONTEXT"
+      ]
+    },
+    {
+      "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
+      "armIndex": 3,
       "eligibleRootIds": [
         "RESPONSE-REPLAY_CONTEXT"
       ]

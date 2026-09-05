@@ -18,6 +18,7 @@ from generate_seed_registry import (  # noqa: E402
     SeedGenerationError,
     _derive_response_state_pointers,
     _enforce_cross_case_response_state_non_disclosure,
+    _evaluate_fixture_request,
     _load_json,
     _ordered_roots,
     _pointer_to_dotted,
@@ -37,6 +38,62 @@ import run_probe  # noqa: E402
 
 
 class SeedReachabilityTests(unittest.TestCase):
+    def test_collision_oracles_are_private_exact_and_restored(self) -> None:
+        repo = ROOT.parents[2]
+        contract = ROOT / "contract"
+        authority = ContractAuthority.load(repo, contract)
+        fixture_cases = _semantic_request_carriers(authority)
+        collision_cases = fixture_cases[-3:]
+        self.assertEqual(
+            [case.request["operation"] for case in collision_cases],
+            [
+                "REPLAY_CONTEXT",
+                "EVALUATE_CANDIDATE",
+                "EVALUATE_EVIDENCE_UPDATE",
+            ],
+        )
+        serialized = dumps([case.request for case in collision_cases])
+        for forbidden in (
+            b"collisionOracle",
+            b"forcedDigest",
+            b"quarantineFlag",
+            b"testOnly",
+        ):
+            self.assertNotIn(forbidden, serialized)
+
+        from interface_model import _load_pinned_c03_model
+
+        backend = _load_pinned_c03_model(str(repo))
+        original_hash = backend.framed_hash
+        original_commitment = backend.encode_commitment
+        ordinary = [
+            evaluate_interface_request(authority, case.request)["result"]
+            for case in collision_cases
+        ]
+        self.assertTrue(
+            all(
+                result.get("kind") != "LOCAL_QUARANTINE_PROPOSAL"
+                and result.get("evaluation", {}).get("kind")
+                != "LOCAL_QUARANTINE_PROPOSAL"
+                for result in ordinary
+            )
+        )
+        forced = [
+            _evaluate_fixture_request(
+                authority, case.request, case.collision_oracle
+            )["result"]
+            for case in collision_cases
+        ]
+        self.assertEqual(
+            [
+                result.get("kind", result.get("evaluation", {}).get("kind"))
+                for result in forced
+            ],
+            ["LOCAL_QUARANTINE_PROPOSAL"] * 3,
+        )
+        self.assertIs(backend.framed_hash, original_hash)
+        self.assertIs(backend.encode_commitment, original_commitment)
+
     def test_response_snapshot_pointer_derivation_is_exact_and_closed(self) -> None:
         schema = _load_json(ROOT / "contract/APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json")
         reachability = _load_json(
@@ -51,11 +108,12 @@ class SeedReachabilityTests(unittest.TestCase):
         repo = ROOT.parents[2]
         contract = ROOT / "contract"
         authority = ContractAuthority.load(repo, contract)
-        requests = _semantic_request_carriers(authority)
+        fixture_cases = _semantic_request_carriers(authority)
+        requests = [case.request for case in fixture_cases]
         public_genesis = evaluate_interface_request(authority, requests[2])["result"][
             "proposedGenesis"
         ]
-        evidence_successor = evaluate_interface_request(authority, requests[7])[
+        evidence_successor = evaluate_interface_request(authority, requests[8])[
             "result"
         ]["evaluation"]["proposal"]["successor"]
 
@@ -65,18 +123,21 @@ class SeedReachabilityTests(unittest.TestCase):
         mutants.append(genesis_replay)
 
         successor_idempotent = json.loads(json.dumps(requests))
-        successor_idempotent[8]["input"]["prior"] = evidence_successor
+        successor_idempotent[9]["input"]["prior"] = evidence_successor
         mutants.append(successor_idempotent)
 
         genesis_in_evidence_prior = json.loads(json.dumps(requests))
-        genesis_in_evidence_prior[7]["input"]["prior"]["genesis"] = public_genesis
+        genesis_in_evidence_prior[7]["input"]["prior"] = evidence_successor
         mutants.append(genesis_in_evidence_prior)
 
         for mutant in mutants:
             with self.subTest(operation=mutant[7]["operation"]):
                 with patch(
                     "generate_seed_registry._semantic_request_carriers",
-                    return_value=mutant,
+                    return_value=[
+                        type(fixture_cases[0])(request)
+                        for request in mutant
+                    ],
                 ):
                     with self.assertRaisesRegex(
                         SeedGenerationError,
@@ -182,7 +243,7 @@ class SeedReachabilityTests(unittest.TestCase):
     def test_every_ratified_object_and_union_arm_has_a_valid_carrier(self) -> None:
         self.assertEqual(
             prove_reachability(ROOT / "contract"),
-            {"object_schema_count": 78, "one_of_arm_count": 54},
+            {"object_schema_count": 87, "one_of_arm_count": 57},
         )
 
     def test_every_operation_has_a_releasable_reference_round_trip(self) -> None:
@@ -195,11 +256,11 @@ class SeedReachabilityTests(unittest.TestCase):
         self.assertEqual(
             prove_positive_carrier_closure(ROOT.parents[2], ROOT / "contract"),
             {
-                "request_case_count": 65,
-                "response_case_count": 15,
+                "request_case_count": 77,
+                "response_case_count": 19,
                 "root_count": 12,
-                "object_schema_count": 78,
-                "one_of_arm_count": 54,
+                "object_schema_count": 87,
+                "one_of_arm_count": 57,
             },
         )
 
@@ -497,8 +558,8 @@ class SeedReachabilityTests(unittest.TestCase):
             "message": {
                 "operation": "REPLAY_CONTEXT",
                 "input": {
-                    "candidates": [],
-                    "evidence": {"contentMaterial": [], "openingMaterial": []},
+                    "presentations": [],
+                    "evidenceAttempts": [],
                 },
             },
         }
@@ -512,7 +573,7 @@ class SeedReachabilityTests(unittest.TestCase):
         self.assertEqual(json.loads(accepted.stdout), {"verdict": "PASS"})
 
         over_bound = json.loads(json.dumps(request))
-        over_bound["message"]["input"]["candidates"] = [
+        over_bound["message"]["input"]["presentations"] = [
             {} for _ in range(129)
         ]
         rejected = subprocess.run(
@@ -523,7 +584,7 @@ class SeedReachabilityTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(rejected.returncode, 2)
-        self.assertIn("ReplayContextInputV0.candidates", rejected.stderr)
+        self.assertIn("ReplayContextInputV0.presentations", rejected.stderr)
 
         response = {
             "direction": "RESPONSE",
@@ -531,10 +592,10 @@ class SeedReachabilityTests(unittest.TestCase):
                 "operation": "REPLAY_CONTEXT",
                 "result": {
                     "proposedContext": {
-                        "admittedCandidates": [],
-                        "evidence": {
-                            "contentMaterial": [],
-                            "openingMaterial": [],
+                        "logicalEvents": [],
+                        "localRevalidation": {
+                            "retainedProofs": [],
+                            "evidence": {"verifiedComplete": []},
                         },
                         "projection": {"records": [{} for _ in range(129)]},
                     }
@@ -595,8 +656,8 @@ class SeedReachabilityTests(unittest.TestCase):
 
             over_bound = {
                 "input": {
-                    "candidates": [{} for _ in range(129)],
-                    "evidence": {"contentMaterial": [], "openingMaterial": []},
+                    "presentations": [{} for _ in range(129)],
+                    "evidenceAttempts": [],
                     "proposedGenesis": {},
                 },
                 "interfaceVersion": "0",
@@ -610,7 +671,7 @@ class SeedReachabilityTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(rejected.returncode, 2)
-            self.assertIn(b"ReplayContextInputV0.candidates", rejected.stderr)
+            self.assertIn(b"ReplayContextInputV0.presentations", rejected.stderr)
 
     def test_javascript_v2_evidence_rejects_nonobjects_and_trailing_newlines(self) -> None:
         command = [
@@ -769,10 +830,10 @@ class PhaseAReaderIntegrationTests(unittest.TestCase):
         }
         evaluation_count = 0
         original_object_reader = run_probe._canonical_object
-        original_evaluator = run_probe.evaluate_interface_request
+        original_evaluator = run_probe._evaluate_fixture_request
 
         def observed_object_reader(path: Path) -> tuple[object, bytes]:
-            if path.name in response_files and evaluation_count != 65:
+            if path.name in response_files and evaluation_count != 77:
                 self.fail("withheld response carrier was read before all outputs froze")
             return original_object_reader(path)
 
@@ -784,23 +845,23 @@ class PhaseAReaderIntegrationTests(unittest.TestCase):
 
         with (
             patch("run_probe._canonical_object", side_effect=observed_object_reader),
-            patch("run_probe.evaluate_interface_request", side_effect=observed_evaluator),
+            patch("run_probe._evaluate_fixture_request", side_effect=observed_evaluator),
         ):
             report = build_reference_probe_report(
                 ROOT.parents[2], ROOT / "contract", self.evidence
             )
         self.assertEqual(report["verdict"], "PASS")
-        self.assertEqual(evaluation_count, 65)
-        self.assertEqual(report["request_case_count"], 65)
-        self.assertEqual(report["response_case_count"], 15)
-        self.assertEqual(len(report["observations"]), 65)
+        self.assertEqual(evaluation_count, 77)
+        self.assertEqual(report["request_case_count"], 77)
+        self.assertEqual(report["response_case_count"], 19)
+        self.assertEqual(len(report["observations"]), 77)
 
     def test_package_records_exact_first_retained_request_provenance(self) -> None:
         package = json.loads(
             (self.evidence / "phase-a-package-report.json").read_bytes()
         )
         rows = package["requestProvenance"]
-        self.assertEqual(len(rows), 65)
+        self.assertEqual(len(rows), 77)
         self.assertEqual(
             [row["caseId"] for row in rows],
             sorted(row["caseId"] for row in rows),
@@ -820,9 +881,9 @@ class PhaseAReaderIntegrationTests(unittest.TestCase):
                 "OBJECT_COVERAGE", "ONEOF_ARM_COVERAGE", "SEMANTIC_FIXTURE"
             }},
             {
-                "OBJECT_COVERAGE": 56,
+                "OBJECT_COVERAGE": 64,
                 "ONEOF_ARM_COVERAGE": 0,
-                "SEMANTIC_FIXTURE": 9,
+                "SEMANTIC_FIXTURE": 13,
             },
         )
         self.assertEqual(_pointer_to_dotted("/$defs/a~1b~0c"), "$defs.a/b~c")
@@ -832,7 +893,7 @@ class PhaseAReaderIntegrationTests(unittest.TestCase):
             ROOT.parents[2], ROOT / "contract", self.evidence, "node"
         )
         self.assertEqual(report["verdict"], "PASS")
-        self.assertEqual(report["response_case_count"], 15)
+        self.assertEqual(report["response_case_count"], 19)
         self.assertRegex(report["response_set_sha256"], r"^[0-9a-f]{64}$")
 
     def test_javascript_response_mode_rejects_requests_and_noncanonical_bytes(self) -> None:

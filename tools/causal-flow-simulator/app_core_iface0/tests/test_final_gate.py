@@ -74,10 +74,10 @@ class FinalGateTests(unittest.TestCase):
         ).stdout.strip()
         selected = (ROOT / "generate_seed_registry.py").read_bytes()
         frozen = _frozen_semantic_fixture_slice(selected)
-        self.assertEqual(len(frozen), 8537)
+        self.assertEqual(len(frozen), 18424)
         self.assertEqual(
             hashlib.sha256(frozen).hexdigest(),
-            "9b80b0fb677c789ece85515d72ece5475f8dfcfc19946533e36cc3dd762219cb",
+            "323c5227972b79a33bc8238390e8e6000cd6a339a65375155ebea21010b4c8d4",
         )
         self.assertEqual(selected.count(frozen), 1)
 
@@ -240,7 +240,7 @@ class FinalGateTests(unittest.TestCase):
                     selection_head,
                 )
         self.assertEqual(result["verdict"], "PASS")
-        self.assertEqual(result["caseCount"], 80)
+        self.assertEqual(result["caseCount"], 96)
         self.assertRegex(result["positiveCarrierInventorySha256"], r"^[0-9a-f]{64}$")
         self.assertRegex(result["phaseAPackageReportSha256"], r"^[0-9a-f]{64}$")
 
@@ -250,7 +250,7 @@ class FinalGateTests(unittest.TestCase):
         selected_decision = {
             "baseSha": BASE_SHA,
             "candidateManifestSha256": manifest_sha,
-            "caseCount": 80,
+            "caseCount": 96,
             "closureAmendmentSha256": (
                 "fd17ed39c7288620cd62f132db3fd5a877f6ba1ef0ff3580c9ad745146d85165"
             ),
@@ -260,8 +260,8 @@ class FinalGateTests(unittest.TestCase):
             "phaseAPackageReportSha256": "c" * 64,
             "positiveCarrierInventorySha256": "d" * 64,
             "repository": "styx-secure/styx",
-            "requestCaseCount": 65,
-            "responseCaseCount": 15,
+            "requestCaseCount": 77,
+            "responseCaseCount": 19,
             "selectionHead": selection_head,
         }
         selected_body = dumps(selected_decision).decode("utf-8")
@@ -404,7 +404,7 @@ class FinalGateTests(unittest.TestCase):
             decision = {
                 "baseSha": BASE_SHA,
                 "candidateManifestSha256": manifest_sha,
-                "caseCount": 80,
+                "caseCount": 96,
                 "closureAmendmentSha256": (
                     "fd17ed39c7288620cd62f132db3fd5a877f6ba1ef0ff3580c9ad745146d85165"
                 ),
@@ -414,8 +414,8 @@ class FinalGateTests(unittest.TestCase):
                 "phaseAPackageReportSha256": package_sha,
                 "positiveCarrierInventorySha256": inventory_sha,
                 "repository": "styx-secure/styx",
-                "requestCaseCount": 65,
-                "responseCaseCount": 15,
+                "requestCaseCount": 77,
+                "responseCaseCount": 19,
                 "selectionHead": selection_head,
             }
             comment = {
@@ -544,7 +544,7 @@ class FinalGateTests(unittest.TestCase):
                 "candidateManifestSha256": hashlib.sha256(
                     manifest.read_bytes()
                 ).hexdigest(),
-                "caseCount": 80,
+                "caseCount": 96,
                 "closureAmendmentSha256": (
                     "fd17ed39c7288620cd62f132db3fd5a877f6ba1ef0ff3580c9ad745146d85165"
                 ),
@@ -554,8 +554,8 @@ class FinalGateTests(unittest.TestCase):
                 "phaseAPackageReportSha256": "c" * 64,
                 "positiveCarrierInventorySha256": "b" * 64,
                 "repository": "styx-secure/styx",
-                "requestCaseCount": 65,
-                "responseCaseCount": 15,
+                "requestCaseCount": 77,
+                "responseCaseCount": 19,
                 "selectionHead": selection_head,
             }
             comment = {

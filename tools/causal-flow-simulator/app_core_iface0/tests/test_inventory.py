@@ -46,7 +46,7 @@ class InventoryTests(unittest.TestCase):
             ]
         }
 
-    def test_semantic_execution_relation_closes_all_5149_instances(self) -> None:
+    def test_semantic_execution_relation_closes_all_5535_instances(self) -> None:
         seeds = self._synthetic_seed_registry()
         rows = derive_semantic_execution_relation(ROOT / "contract", seeds)
         self.assertEqual(len(rows), SEMANTIC_COUNT)
@@ -55,27 +55,27 @@ class InventoryTests(unittest.TestCase):
             Counter(row["executionPhase"] for row in rows),
             Counter(
                 {
-                    "BLIND_INPUT_EXECUTION": 910,
-                    "POST_OUTPUT_MUTATION": 4212,
-                    "VALIDATOR_SELF_TEST": 27,
+                    "BLIND_INPUT_EXECUTION": 971,
+                    "POST_OUTPUT_MUTATION": 4538,
+                    "VALIDATOR_SELF_TEST": 26,
                 }
             ),
         )
         acv048 = [row for row in rows if row["semanticRuleId"] == "ACV-048"]
-        self.assertEqual(len(acv048), 702)
+        self.assertEqual(len(acv048), 783)
         self.assertEqual(
             Counter(row["executionPhase"] for row in acv048),
             Counter(
                 {
-                    "BLIND_INPUT_EXECUTION": 351,
-                    "POST_OUTPUT_MUTATION": 351,
+                    "BLIND_INPUT_EXECUTION": 396,
+                    "POST_OUTPUT_MUTATION": 387,
                 }
             ),
         )
 
     def test_semantic_execution_relation_rejects_seed_partition_drift(self) -> None:
         for mutation, message in (
-            (lambda rows: rows.pop(), "requires 78 seed rows"),
+            (lambda rows: rows.pop(), "requires 87 seed rows"),
             (
                 lambda rows: rows[1].__setitem__(
                     "objectSchemaPointer", rows[0]["objectSchemaPointer"]

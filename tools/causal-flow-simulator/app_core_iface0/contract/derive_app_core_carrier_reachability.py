@@ -164,9 +164,9 @@ def main() -> None:
     arm_keys = sorted(arm_to_roots)
     if (
         len(roots) != 12
-        or len(definition_pointers) != 114
-        or len(object_pointers) != 78
-        or len(arm_keys) != 54
+        or len(definition_pointers) != 124
+        or len(object_pointers) != 87
+        or len(arm_keys) != 57
     ):
         raise SystemExit(
             f"unexpected reachability closure: roots={len(roots)} "

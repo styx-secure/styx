@@ -123,7 +123,7 @@ def _vectors(
         for row in expand_semantic_instances(contract)
         if row.family_id == "ACV-048"
     ]
-    if len(instances) != 702 or len(phase_by_instance) != 702:
+    if len(instances) != 783 or len(phase_by_instance) != 783:
         raise SemanticACV048Error("ACV-048 instance relation drift")
 
     baseline_cache: dict[tuple[str, str], bool] = {}
@@ -202,7 +202,7 @@ def derive_python_report(
         )
     counts = Counter(row["executionPhase"] for row in rows)
     if counts != Counter(
-        {"BLIND_INPUT_EXECUTION": 432, "POST_OUTPUT_MUTATION": 270}
+        {"BLIND_INPUT_EXECUTION": 504, "POST_OUTPUT_MUTATION": 279}
     ):
         raise SemanticACV048Error("ACV-048 execution phase count drift")
     return {

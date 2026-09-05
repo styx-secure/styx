@@ -12,10 +12,10 @@ from typing import Any, Iterable, Iterator
 
 
 BASE_SHA = "e0af4e1e2173deb2481eabdb24d8622282b33455"
-MANIFEST_SHA256 = "6272df9dc38215a16db606698627a96724df3ac90e7a4c94b79ec4b1ca26b76f"
-STRUCTURAL_COUNT = 1450
-SEMANTIC_COUNT = 5149
-TOTAL_COUNT = 6599
+MANIFEST_SHA256 = "a7f8f9be5f10cd364480d2f25f8661fe52409c23821822b5fba995e66f7175db"
+STRUCTURAL_COUNT = 1553
+SEMANTIC_COUNT = 5535
+TOTAL_COUNT = 7088
 CONTRACT_FILES = 28
 
 
@@ -112,7 +112,7 @@ def run_ratified_package_validator(repo_root: Path, contract: Path) -> None:
         timeout=120,
         env={**__import__("os").environ, "PYTHONDONTWRITEBYTECODE": "1"},
     )
-    if completed.returncode != 0 or "total=6599" not in completed.stdout:
+    if completed.returncode != 0 or "total=7088" not in completed.stdout:
         raise InventoryError("ratified contract validator failed")
 
 
@@ -523,8 +523,8 @@ def derive_semantic_execution_relation(
     if len(overrides) != len(phases["overrides"]):
         raise InventoryError("semantic execution override IDs are duplicated")
     seed_rows = seed_registry.get("rows")
-    if not isinstance(seed_rows, list) or len(seed_rows) != 78:
-        raise InventoryError("semantic phase derivation requires 78 seed rows")
+    if not isinstance(seed_rows, list) or len(seed_rows) != 87:
+        raise InventoryError("semantic phase derivation requires 87 seed rows")
     direction_by_pointer: dict[str, str] = {}
     for row in seed_rows:
         if not isinstance(row, dict):

@@ -2,9 +2,9 @@
   "status": "PRE_RATIFICATION_CANDIDATE",
   "registryVersion": "APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-V1",
   "schema": "APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json",
-  "schemaSha256": "f72d1079e807edfc84a67742bdde7f047f7e8daad259e2515a0492d52cb65f0c",
-  "pairCount": 93,
-  "pairSetSha256": "9e99136e0d831758c7a6b9f74649e3fbc3d617ea37e05c17be39c9e70ace465f",
+  "schemaSha256": "55592a26c13e72b888afaa743646ccfd69d6bb756ad6f15aaa290cdd1c3debd5",
+  "pairCount": 101,
+  "pairSetSha256": "2e6f2cda4995f75dcdaa3921e33726e270f09bf2a9404794ab09c1090f7c20a7",
   "algorithm": [
     "Resolve local refs only; remote refs or cycles fail closed.",
     "Recursively flatten a nested oneOf only when proving an outer arm pair.",
@@ -1313,6 +1313,86 @@
       "rightValues": [
         "REJECTED"
       ]
+    },
+    {
+      "pairId": "/$defs/CandidateEvaluationResultV0/oneOf/pair/0-2",
+      "oneOfPointer": "/$defs/CandidateEvaluationResultV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": ["TERMINAL_NO_SUCCESSOR"],
+      "rightValues": ["LOCAL_QUARANTINE_PROPOSAL"]
+    },
+    {
+      "pairId": "/$defs/CandidateEvaluationResultV0/oneOf/pair/1-2",
+      "oneOfPointer": "/$defs/CandidateEvaluationResultV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 2,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": ["PROPOSAL_READY"],
+      "rightValues": ["LOCAL_QUARANTINE_PROPOSAL"]
+    },
+    {
+      "pairId": "/$defs/EvidenceUpdateResultV0/oneOf/pair/0-3",
+      "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": ["TERMINAL_REJECTED"],
+      "rightValues": ["LOCAL_QUARANTINE_PROPOSAL"]
+    },
+    {
+      "pairId": "/$defs/EvidenceUpdateResultV0/oneOf/pair/1-3",
+      "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": ["IDEMPOTENT_NO_CHANGE"],
+      "rightValues": ["LOCAL_QUARANTINE_PROPOSAL"]
+    },
+    {
+      "pairId": "/$defs/EvidenceUpdateResultV0/oneOf/pair/2-3",
+      "oneOfPointer": "/$defs/EvidenceUpdateResultV0/oneOf",
+      "leftArm": 2,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": ["PROPOSAL_READY"],
+      "rightValues": ["LOCAL_QUARANTINE_PROPOSAL"]
+    },
+    {
+      "pairId": "/$defs/ReplayContextResultV0/oneOf/pair/0-3",
+      "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
+      "leftArm": 0,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": ["REPLAY_PROPOSAL_READY"],
+      "rightValues": ["LOCAL_QUARANTINE_PROPOSAL"]
+    },
+    {
+      "pairId": "/$defs/ReplayContextResultV0/oneOf/pair/1-3",
+      "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
+      "leftArm": 1,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": ["TERMINAL_INPUT_REJECTED"],
+      "rightValues": ["LOCAL_QUARANTINE_PROPOSAL"]
+    },
+    {
+      "pairId": "/$defs/ReplayContextResultV0/oneOf/pair/2-3",
+      "oneOfPointer": "/$defs/ReplayContextResultV0/oneOf",
+      "leftArm": 2,
+      "rightArm": 3,
+      "method": "DISJOINT_LITERAL",
+      "discriminatorPointer": "/kind",
+      "leftValues": ["TERMINAL_CANDIDATE_REJECTED"],
+      "rightValues": ["LOCAL_QUARANTINE_PROPOSAL"]
     },
     {
       "pairId": "/oneOf/pair/0-1",

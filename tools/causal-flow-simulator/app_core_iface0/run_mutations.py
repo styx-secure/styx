@@ -92,7 +92,7 @@ def _mutations(
     def count_drift(candidate: Path) -> None:
         _rewrite(
             candidate / "positive-carrier-inventory.json",
-            lambda value: value.__setitem__("caseCount", 79),
+            lambda value: value.__setitem__("caseCount", 95),
         )
 
     def duplicate_case_id(candidate: Path) -> None:

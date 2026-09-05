@@ -75,7 +75,8 @@
         "replayReadiness": { "owners": ["K", "AP", "O04"], "source": "DERIVED_FULL_REPLAY" }
       }
     },
-    "ApplicationTranscriptCandidateV0": { "owners": ["K"], "source": "CANDIDATE_BYTES" },
+    "ApplicationLogicalEventV0": { "owners": ["K"], "source": "CANDIDATE_BYTES" },
+    "ApplicationPresentationGroupV0": { "owners": ["K"], "source": "CANDIDATE_BYTES" },
     "AuthorityAvailableV0": { "owners": ["AP"], "source": "DERIVED_FULL_REPLAY" },
     "AuthorityUnavailableV0": { "owners": ["AP", "O08", "O10"], "source": "DERIVED_FULL_REPLAY" },
     "CandidateEvaluationReadyV0": { "owners": ["INTERFACE", "O10"], "source": "OPERATION_CLASSIFICATION" },
@@ -101,16 +102,26 @@
     "EvaluateGenesisResultTerminalV0": { "owners": ["INTERFACE", "K", "O03"], "source": "OPERATION_CLASSIFICATION" },
     "EventAuthorityProjectionV0": { "owners": ["AP"], "source": "DERIVED_FULL_REPLAY" },
     "EvidenceProjectionV0": { "owners": ["O04"], "source": "RAW_LOCAL_EVIDENCE" },
+    "EvidencePromotionAttemptV0": { "owners": ["O04"], "source": "RAW_LOCAL_EVIDENCE" },
     "EvidenceUpdateIdempotentV0": { "owners": ["INTERFACE", "O04"], "source": "OPERATION_CLASSIFICATION" },
     "EvidenceUpdateReadyV0": { "owners": ["INTERFACE", "O04"], "source": "PRECOMMIT_PROPOSAL" },
     "EvidenceUpdateRejectedV0": { "owners": ["INTERFACE", "O04", "O10"], "source": "OPERATION_CLASSIFICATION" },
     "ExactProfileSelectorV0": { "owners": ["O03", "INTERFACE"], "source": "REQUEST_LITERAL" },
     "ForkJoinProjectionV0": { "owners": ["K", "AP"], "source": "DERIVED_FULL_REPLAY" },
+    "GenesisLogicalEventV0": { "owners": ["K", "O03"], "source": "CANDIDATE_BYTES" },
+    "GenesisPresentationGroupV0": { "owners": ["K", "O03"], "source": "CANDIDATE_BYTES" },
     "GenesisProjectionV0": { "owners": ["K", "O03", "AP"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
-    "GenesisTranscriptCandidateV0": { "owners": ["K"], "source": "CANDIDATE_BYTES" },
     "CapabilityRequirementV0": { "owners": ["O08", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
     "CapabilityRequirementsV0": { "owners": ["O08", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
     "InterfaceLimitsV0": { "owners": ["O08", "INTERFACE"], "source": "PINNED_NATIVE_AUTHORITY" },
+    "LocalQuarantineProposalV0": {
+      "owners": ["INTERFACE", "O08"],
+      "source": "OPERATION_CLASSIFICATION",
+      "overrides": {
+        "contextIdentifierHex": { "owners": ["O03", "K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" }
+      }
+    },
+    "LocalRevalidationSnapshotV0": { "owners": ["K", "O04"], "source": "PRECOMMIT_PROPOSAL" },
     "O03TupleV0": { "owners": ["O03", "K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
     "OpeningEvidenceV0": { "owners": ["O04"], "source": "RAW_LOCAL_EVIDENCE" },
     "OperationRequestDescribeProfileV0": { "owners": ["INTERFACE"], "source": "REQUEST_LITERAL" },
@@ -138,12 +149,15 @@
     "ProposedApplicationDeltaV0": { "owners": ["INTERFACE"], "source": "PRECOMMIT_PROPOSAL" },
     "ProposedContextSnapshotV0": { "owners": ["INTERFACE", "K", "AP", "O04"], "source": "PRECOMMIT_PROPOSAL" },
     "ProposedGenesisSnapshotV0": { "owners": ["INTERFACE", "K", "O03"], "source": "PRECOMMIT_PROPOSAL" },
+    "ProofOccurrenceV0": { "owners": ["K"], "source": "CANDIDATE_BYTES" },
     "RecordOutcomeV0": { "owners": ["O10", "K", "AP"], "source": "DERIVED_FULL_REPLAY" },
     "ReductionStandingProjectionV0": { "owners": ["AP"], "source": "DERIVED_FULL_REPLAY" },
     "ReplayContextInputV0": { "owners": ["INTERFACE"], "source": "REQUEST_LITERAL" },
     "ReplayContextResultReadyV0": { "owners": ["INTERFACE", "K", "AP", "O04"], "source": "PRECOMMIT_PROPOSAL" },
     "ReplayContextResultTerminalV0": { "owners": ["INTERFACE", "K", "AP", "O04"], "source": "OPERATION_CLASSIFICATION" },
     "ReplayContextResultCandidateRejectedV0": { "owners": ["INTERFACE", "K", "AP", "O10"], "source": "OPERATION_CLASSIFICATION" },
+    "RetainedApplicationProofV0": { "owners": ["K"], "source": "PRECOMMIT_PROPOSAL" },
+    "RetainedGenesisProofV0": { "owners": ["K", "O03"], "source": "PRECOMMIT_PROPOSAL" },
     "RoleTailClosureV0": { "owners": ["K", "AP"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
     "RoleTailGrantV0": { "owners": ["K", "AP"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
     "RoleTailOrdinaryV0": { "owners": ["K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
@@ -155,6 +169,7 @@
     "StandaloneVerificationMaterialV0": { "owners": ["K"], "source": "STANDALONE_PUBLIC_MATERIAL" },
     "TranscriptObservationV0": { "owners": ["K"], "source": "DERIVED_AUTHENTICATED_TRANSCRIPT" },
     "ValidateTranscriptResultRejectedV0": { "owners": ["INTERFACE", "K"], "source": "OPERATION_CLASSIFICATION" },
-    "ValidateTranscriptResultValidatedV0": { "owners": ["INTERFACE", "K"], "source": "OPERATION_CLASSIFICATION" }
+    "ValidateTranscriptResultValidatedV0": { "owners": ["INTERFACE", "K"], "source": "OPERATION_CLASSIFICATION" },
+    "VerifiedCompleteEvidenceV0": { "owners": ["O04"], "source": "PRECOMMIT_PROPOSAL" }
   }
 }

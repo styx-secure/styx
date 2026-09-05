@@ -6,15 +6,15 @@
     "$defs.U16Text.x-styx-unsigned-maximum": "ACV-001",
     "$defs.U32Text.x-styx-unsigned-maximum": "ACV-002",
     "$defs.U64Text.x-styx-unsigned-maximum": "ACV-003",
-    "$defs.GenesisTranscriptCandidateV0.properties.transcriptHex.x-styx-o08-body-plus-prefix-limit": "ACV-004",
-    "$defs.ApplicationTranscriptCandidateV0.properties.transcriptHex.x-styx-o08-body-plus-prefix-limit": "ACV-004",
+  "$defs.GenesisLogicalEventV0.properties.transcriptHex.x-styx-o08-body-plus-prefix-limit": "ACV-004",
+  "$defs.ApplicationLogicalEventV0.properties.transcriptHex.x-styx-o08-body-plus-prefix-limit": "ACV-004",
     "$defs.SignatureHex.x-styx-o08-limit": "ACV-067",
     "$defs.ApTransitionBlockHex.x-styx-o08-limit": "ACV-005",
     "$defs.GenesisPolicyBlockHex.x-styx-o08-limit": "ACV-006",
     "$defs.ContentSegmentHex.x-styx-o08-limit": "ACV-007",
     "$defs.ContentMaterialEvidenceV0.properties.segments.x-styx-canonical-order": "ACV-026",
-    "$defs.EvidenceProjectionV0.properties.contentMaterial.x-styx-canonical-order": "ACV-051",
-    "$defs.EvidenceProjectionV0.properties.openingMaterial.x-styx-canonical-order": "ACV-051",
+  "$defs.EvidenceProjectionV0.properties.verifiedComplete.x-styx-canonical-order": "ACV-051",
+  "$defs.LocalRevalidationSnapshotV0.properties.retainedProofs.x-styx-canonical-order": "ACV-051",
     "$defs.ApplicationEventProjectionV0.properties.causalParentReferences.x-styx-canonical-order": "ACV-023",
     "$defs.CanonicalReferenceArray.x-styx-canonical-order": "ACV-051",
     "$defs.ContextProjectionV0.properties.records.x-styx-canonical-order": "ACV-051",
@@ -25,10 +25,9 @@
     "$defs.ContextProjectionV0.properties.eventAuthority.x-styx-canonical-order": "ACV-051",
     "$defs.ContextProjectionV0.properties.forkJoins.x-styx-canonical-order": "ACV-051",
     "$defs.ContextProjectionV0.properties.contentStates.x-styx-canonical-order": "ACV-051",
-    "$defs.ProposedContextSnapshotV0.properties.admittedCandidates.x-styx-canonical-order": "ACV-020",
+  "$defs.ProposedContextSnapshotV0.properties.logicalEvents.x-styx-canonical-order": "ACV-020",
     "$defs.InterfaceLimitsV0.x-styx-derived-from-resource-envelope": "ACV-046",
-    "$defs.ProfileDescriptorV0.properties.authorityPins.x-styx-literal-values-from-ratified-contract": "ACV-047",
-    "$defs.ReplayContextInputV0.properties.candidates.x-styx-canonical-order": "ACV-020"
+  "$defs.ProfileDescriptorV0.properties.authorityPins.x-styx-literal-values-from-ratified-contract": "ACV-047"
   },
   "rules": [
     {
@@ -61,13 +60,13 @@
     {
       "id": "ACV-004",
       "owners": ["K", "O08"],
-      "targets": ["$defs.GenesisTranscriptCandidateV0.properties.transcriptHex", "$defs.ApplicationTranscriptCandidateV0.properties.transcriptHex"],
+      "targets": ["$defs.GenesisLogicalEventV0.properties.transcriptHex", "$defs.ApplicationLogicalEventV0.properties.transcriptHex"],
       "rule": "HEX_BODY_PLUS_FIXED_PREFIX_LIMIT_BEFORE_DECODE",
       "parameters": {
         "fixedPrefixOctets": "20",
         "targetDimensions": {
-          "$defs.GenesisTranscriptCandidateV0.properties.transcriptHex": "GENESIS_BODY_OCTETS",
-          "$defs.ApplicationTranscriptCandidateV0.properties.transcriptHex": "FRAMING_OBJECT_OCTETS"
+          "$defs.GenesisLogicalEventV0.properties.transcriptHex": "GENESIS_BODY_OCTETS",
+          "$defs.ApplicationLogicalEventV0.properties.transcriptHex": "FRAMING_OBJECT_OCTETS"
         }
       },
       "scenario": "ACI-TRANSCRIPT-LIMIT-HEADER-ONLY",
@@ -112,7 +111,7 @@
     {
       "id": "ACV-009",
       "owners": ["K", "O08"],
-      "targets": ["$defs.ProposedContextSnapshotV0.admittedCandidates", "$defs.ContextProjectionV0.records", "$defs.ContextProjectionV0.recordOutcomes", "$defs.ContextProjectionV0.contentStates", "$defs.ReplayContextInputV0.candidates"],
+      "targets": ["$defs.ProposedContextSnapshotV0.logicalEvents", "$defs.LocalRevalidationSnapshotV0.retainedProofs", "$defs.ContextProjectionV0.records", "$defs.ContextProjectionV0.recordOutcomes", "$defs.ContextProjectionV0.contentStates", "$defs.ReplayContextInputV0.presentations"],
       "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
       "parameters": { "dimension": "RECORDS" },
       "scenario": "ACI-RECORD-COUNT-OVER-BOUND",
@@ -139,7 +138,7 @@
     {
       "id": "ACV-012",
       "owners": ["O04", "O08"],
-      "targets": ["$defs.EvidenceProjectionV0.contentMaterial", "$defs.EvidenceProjectionV0.openingMaterial"],
+      "targets": ["$defs.EvidenceProjectionV0.verifiedComplete", "$defs.EvidenceAdditionSetV0"],
       "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
       "parameters": { "dimension": "RECORDS" },
       "scenario": "ACI-EVIDENCE-OBJECT-COUNT-OVER-BOUND",
@@ -211,7 +210,7 @@
     {
       "id": "ACV-020",
       "owners": ["K"],
-      "targets": ["$defs.ProposedContextSnapshotV0.admittedCandidates"],
+      "targets": ["$defs.ProposedContextSnapshotV0.logicalEvents", "$defs.LocalRevalidationSnapshotV0.retainedProofs"],
       "rule": "DERIVE_REFERENCES_THEN_REQUIRE_CANONICAL_ORDER_AND_UNIQUENESS",
       "parameters": {},
       "scenario": "ACI-ARRIVAL-ORDER-CANDIDATES",
@@ -509,7 +508,7 @@
       "owners": ["INTERFACE"],
       "targets": ["$defs.InterfaceRequestV0", "$defs.InterfaceResponseV0"],
       "rule": "CUSTOM_KEYWORD_AND_CONSTRAINT_REGISTRY_EXACT_EQUALITY",
-      "parameters": { "ruleCount": "83" },
+      "parameters": { "ruleCount": "84" },
       "scenario": "ACI-UNKNOWN-CUSTOM-KEYWORD",
       "mutant": "M-ACI-IGNORE-SEMANTIC-CONSTRAINT"
     },
@@ -517,8 +516,8 @@
       "id": "ACV-051",
       "owners": ["INTERFACE", "K", "AP", "O04"],
       "targets": [
-        "$defs.EvidenceProjectionV0.contentMaterial",
-        "$defs.EvidenceProjectionV0.openingMaterial",
+        "$defs.EvidenceProjectionV0.verifiedComplete",
+        "$defs.LocalRevalidationSnapshotV0.retainedProofs",
         "$defs.CanonicalReferenceArray",
         "$defs.ContextProjectionV0.records",
         "$defs.ContextProjectionV0.recordOutcomes",
@@ -531,8 +530,8 @@
       "rule": "EXACT_CANONICAL_COLLECTION_ORDER",
       "parameters": {
         "orderingRelationByTarget": {
-          "$defs.EvidenceProjectionV0.contentMaterial": "eventReferenceHex",
-          "$defs.EvidenceProjectionV0.openingMaterial": "eventReferenceHex",
+          "$defs.EvidenceProjectionV0.verifiedComplete": "eventReferenceHex",
+          "$defs.LocalRevalidationSnapshotV0.retainedProofs": "eventReferenceHex",
           "$defs.CanonicalReferenceArray": "lexicographic-hex",
           "$defs.ContextProjectionV0.records": "protocol-k-order",
           "$defs.ContextProjectionV0.recordOutcomes": "eventReferenceHex",
@@ -951,6 +950,15 @@
       },
       "scenario": "ACI-RECORDS-S6-RESERVED-CROSSING",
       "mutant": "M-ACI-RECORDS-RELEASE-S6"
+    },
+    {
+      "id": "ACV-084",
+      "owners": ["K", "O08", "INTERFACE"],
+      "targets": ["$defs.GenesisPresentationGroupV0.proofs", "$defs.ApplicationPresentationGroupV0.proofs"],
+      "rule": "ARRAY_COUNT_LIMIT_BEFORE_ITEM_WORK",
+      "parameters": { "dimension": "SIGNATURE_ATTEMPTS" },
+      "scenario": "ACI-PROOF-GROUP-COUNT-OVER-BOUND",
+      "mutant": "M-ACI-PROOF-GROUP-COUNT-AFTER-TRANSCRIPT"
     }
   ]
 }

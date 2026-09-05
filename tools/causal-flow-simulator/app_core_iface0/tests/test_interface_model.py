@@ -133,7 +133,7 @@ class InterfaceModelTests(unittest.TestCase):
         proposed, candidate = self._replay_fixture(event_type=1)
         self.assertIsNotNone(candidate)
         backend = _load_pinned_c03_model(str(self.authority.repo_root))
-        transcript = bytes.fromhex(candidate["transcriptHex"])
+        transcript = bytes.fromhex(candidate["logicalEvent"]["transcriptHex"])
         reference = backend.framed_hash(
             backend.DOMAINS["event_reference"], transcript
         ).hex()
@@ -141,13 +141,12 @@ class InterfaceModelTests(unittest.TestCase):
         first_valid = bytes.fromhex("20" * 64)
         later_valid = bytes.fromhex("30" * 64)
         group = {
-            "objectKind": "APPLICATION_EVENT",
-            "transcriptHex": candidate["transcriptHex"],
             "carriedReferenceHex": reference,
+            "logicalEvent": candidate["logicalEvent"],
             "proofs": [
-                {"presentationId": "same", "signatureHex": later_valid.hex()},
-                {"presentationId": "same", "signatureHex": invalid.hex()},
-                {"presentationId": "ignored", "signatureHex": first_valid.hex()},
+                {"presentationId": "7", "signatureHex": later_valid.hex()},
+                {"presentationId": "7", "signatureHex": invalid.hex()},
+                {"presentationId": "1", "signatureHex": first_valid.hex()},
             ],
         }
 
@@ -171,9 +170,12 @@ class InterfaceModelTests(unittest.TestCase):
 
     def test_proof_group_limit_precedes_transcript_and_crypto_work(self) -> None:
         group = {
-            "objectKind": "APPLICATION_EVENT",
-            "transcriptHex": "not-hex",
             "carriedReferenceHex": "00" * 32,
+            "logicalEvent": {
+                "eventReferenceHex": "00" * 32,
+                "objectKind": "APPLICATION_EVENT",
+                "transcriptHex": "not-hex",
+            },
             "proofs": [
                 {"presentationId": str(index), "signatureHex": "00" * 64}
                 for index in range(65)
@@ -190,9 +192,8 @@ class InterfaceModelTests(unittest.TestCase):
         self.assertIsNotNone(candidate)
         backend = _load_pinned_c03_model(str(self.authority.repo_root))
         group = {
-            "objectKind": "APPLICATION_EVENT",
-            "transcriptHex": candidate["transcriptHex"],
             "carriedReferenceHex": "ff" * 32,
+            "logicalEvent": candidate["logicalEvent"],
             "proofs": [
                 {"presentationId": "diagnostic-only", "signatureHex": "00" * 64}
             ],
@@ -213,20 +214,19 @@ class InterfaceModelTests(unittest.TestCase):
         backend = _load_pinned_c03_model(str(self.authority.repo_root))
         proposed_genesis, candidate = self._replay_fixture(event_type=1)
         assert candidate is not None
-        transcript = bytes.fromhex(candidate["transcriptHex"])
+        transcript = bytes.fromhex(candidate["logicalEvent"]["transcriptHex"])
         reference = backend.framed_hash(
             backend.DOMAINS["event_reference"], transcript
         ).hex()
-        genesis_candidate = proposed_genesis["candidate"]
         genesis_record = {
             "kind": "GENESIS",
             "genesisReferenceHex": proposed_genesis["projection"][
                 "genesisReferenceHex"
             ],
-            "signatureHex": genesis_candidate["signatureHex"],
-            "transcriptHex": genesis_candidate["transcriptHex"],
+            "signatureHex": proposed_genesis["retainedProof"]["signatureHex"],
+            "transcriptHex": proposed_genesis["logicalGenesis"]["transcriptHex"],
         }
-        valid = candidate["signatureHex"]
+        valid = candidate["proofs"][0]["signatureHex"]
         invalid = "00" * 64
 
         def evaluate(proofs: list[str]) -> dict[str, object]:
@@ -237,7 +237,7 @@ class InterfaceModelTests(unittest.TestCase):
                         "id": "diagnostic-only",
                         "kind": "APPLICATION_EVENT",
                         "eventReferenceHex": reference,
-                        "transcriptHex": candidate["transcriptHex"],
+                        "transcriptHex": candidate["logicalEvent"]["transcriptHex"],
                         "proofs": [
                             {
                                 "presentationId": str(index),
@@ -521,20 +521,15 @@ class InterfaceModelTests(unittest.TestCase):
             with self.assertRaisesRegex(HarnessFailure, "reserved terminal predicate"):
                 validate_response_before_release(self.authority, response)
 
-    def test_app_core_inputs_cannot_supply_an_expected_reference(self) -> None:
+    def test_app_core_references_are_carried_but_never_expected_authority(self) -> None:
         definitions = self.authority.schema["$defs"]
-        candidate_properties = {
-            "objectKind",
-            "signatureHex",
-            "transcriptHex",
-        }
         self.assertEqual(
-            set(definitions["GenesisTranscriptCandidateV0"]["properties"]),
-            candidate_properties,
+            set(definitions["GenesisPresentationGroupV0"]["properties"]),
+            {"logicalEvent", "carriedReferenceHex", "proofs"},
         )
         self.assertEqual(
-            set(definitions["ApplicationTranscriptCandidateV0"]["properties"]),
-            candidate_properties,
+            set(definitions["ApplicationPresentationGroupV0"]["properties"]),
+            {"logicalEvent", "carriedReferenceHex", "proofs"},
         )
         self.assertEqual(
             set(definitions["EvaluateGenesisInputV0"]["properties"]),
@@ -553,19 +548,25 @@ class InterfaceModelTests(unittest.TestCase):
         candidate_validator = Draft202012Validator(
             {
                 "$schema": self.authority.schema["$schema"],
-                "$ref": "#/$defs/ApplicationTranscriptCandidateV0",
+                "$ref": "#/$defs/ApplicationPresentationGroupV0",
                 "$defs": definitions,
             }
         )
         base = {
-            "objectKind": "APPLICATION_EVENT",
-            "transcriptHex": "00",
-            "signatureHex": "",
+            "carriedReferenceHex": "00" * 32,
+            "logicalEvent": {
+                "eventReferenceHex": "00" * 32,
+                "objectKind": "APPLICATION_EVENT",
+                "transcriptHex": "00",
+            },
+            "proofs": [{"presentationId": "0", "signatureHex": ""}],
         }
         self.assertTrue(candidate_validator.is_valid(base))
         for malformed in ("0", "AA", "gg"):
+            changed = copy.deepcopy(base)
+            changed["proofs"][0]["signatureHex"] = malformed
             self.assertFalse(
-                candidate_validator.is_valid({**base, "signatureHex": malformed})
+                candidate_validator.is_valid(changed)
             )
         with self.assertRaises(RequestRejected):
             evaluate_signature_path(
@@ -776,11 +777,9 @@ class InterfaceModelTests(unittest.TestCase):
             self.authority,
             dict(SUPPORTED_PROFILE),
             {
-                "candidate": {
-                    "objectKind": "APPLICATION_EVENT",
-                    "signatureHex": "",
-                    "transcriptHex": transcript.hex(),
-                }
+                "candidate": self._application_presentation(
+                    backend, transcript, b"\x00" * 64
+                )
             },
         )
         self.assertEqual(
@@ -801,11 +800,9 @@ class InterfaceModelTests(unittest.TestCase):
             self.authority,
             dict(SUPPORTED_PROFILE),
             {
-                "candidate": {
-                    "objectKind": "APPLICATION_EVENT",
-                    "signatureHex": "",
-                    "transcriptHex": transcript.hex(),
-                }
+                "candidate": self._application_presentation(
+                    backend, transcript, b"\x00" * 64
+                )
             },
         )
         self.assertEqual(
@@ -831,9 +828,22 @@ class InterfaceModelTests(unittest.TestCase):
             dict(SUPPORTED_PROFILE),
             {
                 "candidate": {
-                    "objectKind": "GENESIS",
-                    "signatureHex": (bytes(64)).hex(),
-                    "transcriptHex": transcript.hex(),
+                    "carriedReferenceHex": backend.framed_hash(
+                        backend.DOMAINS["genesis_reference"], transcript
+                    ).hex(),
+                    "logicalEvent": {
+                        "genesisReferenceHex": backend.framed_hash(
+                            backend.DOMAINS["genesis_reference"], transcript
+                        ).hex(),
+                        "objectKind": "GENESIS",
+                        "transcriptHex": transcript.hex(),
+                    },
+                    "proofs": [
+                        {
+                            "presentationId": "0",
+                            "signatureHex": (bytes(64)).hex(),
+                        }
+                    ],
                 },
                 "expectedContextIdentifierHex": "ff" * 32,
             },
@@ -850,19 +860,25 @@ class InterfaceModelTests(unittest.TestCase):
             "profile": dict(SUPPORTED_PROFILE),
             "input": {
                 "candidate": {
-                    "objectKind": "APPLICATION_EVENT",
-                    "signatureHex": "",
-                    "transcriptHex": "00" * (8192 + 20),
+                    "carriedReferenceHex": "00" * 32,
+                    "logicalEvent": {
+                        "eventReferenceHex": "00" * 32,
+                        "objectKind": "APPLICATION_EVENT",
+                        "transcriptHex": "00" * (8192 + 20),
+                    },
+                    "proofs": [{"presentationId": "0", "signatureHex": ""}],
                 }
             },
         }
         validate_request_structure(self.authority, base)
         trailing_newline = json.loads(json.dumps(base))
-        trailing_newline["input"]["candidate"]["transcriptHex"] = "00\n"
+        trailing_newline["input"]["candidate"]["logicalEvent"][
+            "transcriptHex"
+        ] = "00\n"
         with self.assertRaises(RequestRejected):
             validate_request_structure(self.authority, trailing_newline)
         too_large = json.loads(json.dumps(base))
-        too_large["input"]["candidate"]["transcriptHex"] += "00"
+        too_large["input"]["candidate"]["logicalEvent"]["transcriptHex"] += "00"
         with self.assertRaises(RequestRejected):
             validate_request_structure(self.authority, too_large)
 
@@ -875,8 +891,8 @@ class InterfaceModelTests(unittest.TestCase):
                 "proposedGenesis": {},
                 # Deliberately malformed elements prove the count check wins
                 # before schema item validation or transcript work.
-                "candidates": [{} for _ in range(129)],
-                "evidence": {"contentMaterial": [], "openingMaterial": []},
+                "presentations": [{} for _ in range(129)],
+                "evidenceAttempts": [],
             },
         }
         with self.assertRaises(RequestRejected):
@@ -888,8 +904,8 @@ class InterfaceModelTests(unittest.TestCase):
             dict(SUPPORTED_PROFILE),
             {
                 "proposedGenesis": proposed,
-                "candidates": [candidate],
-                "evidence": {"contentMaterial": [], "openingMaterial": []},
+                "presentations": [candidate],
+                "evidenceAttempts": [],
             },
         )
         response = {
@@ -907,9 +923,59 @@ class InterfaceModelTests(unittest.TestCase):
         ):
             validate_response_before_release(self.authority, response)
 
+    @staticmethod
+    def _application_presentation(
+        backend: object, transcript: bytes, signature: bytes, presentation_id: str = "0"
+    ) -> dict[str, object]:
+        reference = backend.framed_hash(
+            backend.DOMAINS["event_reference"], transcript
+        ).hex()
+        return {
+            "carriedReferenceHex": reference,
+            "logicalEvent": {
+                "eventReferenceHex": reference,
+                "objectKind": "APPLICATION_EVENT",
+                "transcriptHex": transcript.hex(),
+            },
+            "proofs": [
+                {
+                    "presentationId": presentation_id,
+                    "signatureHex": signature.hex(),
+                }
+            ],
+        }
+
+    @staticmethod
+    def _evidence_attempts(evidence: dict[str, object]) -> list[dict[str, object]]:
+        content = {
+            row["eventReferenceHex"]: row
+            for row in evidence.get("contentMaterial", [])
+        }
+        opening = {
+            row["eventReferenceHex"]: row
+            for row in evidence.get("openingMaterial", [])
+        }
+        return [
+            {
+                "eventReferenceHex": reference,
+                "presentationId": str(index),
+                **(
+                    {"contentMaterial": content[reference]}
+                    if reference in content
+                    else {}
+                ),
+                **(
+                    {"openingMaterial": opening[reference]}
+                    if reference in opening
+                    else {}
+                ),
+            }
+            for index, reference in enumerate(sorted(set(content) | set(opening)))
+        ]
+
     def _replay_fixture(
         self, *, event_type: int | None = None
-    ) -> tuple[dict[str, object], dict[str, str] | None]:
+    ) -> tuple[dict[str, object], dict[str, object] | None]:
         backend = _load_pinned_c03_model(str(self.authority.repo_root))
         seed = bytes(range(32))
         root_key, _ = backend.ed25519_sign(seed, b"")
@@ -924,14 +990,26 @@ class InterfaceModelTests(unittest.TestCase):
             }
         )
         _, genesis_signature = backend.ed25519_sign(seed, genesis_transcript)
+        genesis_reference = backend.framed_hash(
+            backend.DOMAINS["genesis_reference"], genesis_transcript
+        ).hex()
         genesis_result = evaluate_genesis(
             self.authority,
             dict(SUPPORTED_PROFILE),
             {
                 "candidate": {
-                    "objectKind": "GENESIS",
-                    "signatureHex": genesis_signature.hex(),
-                    "transcriptHex": genesis_transcript.hex(),
+                    "carriedReferenceHex": genesis_reference,
+                    "logicalEvent": {
+                        "genesisReferenceHex": genesis_reference,
+                        "objectKind": "GENESIS",
+                        "transcriptHex": genesis_transcript.hex(),
+                    },
+                    "proofs": [
+                        {
+                            "presentationId": "0",
+                            "signatureHex": genesis_signature.hex(),
+                        }
+                    ],
                 },
                 "expectedContextIdentifierHex": context,
             },
@@ -950,18 +1028,16 @@ class InterfaceModelTests(unittest.TestCase):
             )
         )
         _, signature = backend.ed25519_sign(seed, transcript)
-        return proposed, {
-            "objectKind": "APPLICATION_EVENT",
-            "signatureHex": signature.hex(),
-            "transcriptHex": transcript.hex(),
-        }
+        return proposed, self._application_presentation(
+            backend, transcript, signature
+        )
 
     def test_replay_security_prefix_revalidates_genesis_and_complete_k_set(self) -> None:
         proposed, candidate = self._replay_fixture(event_type=1)
         value = {
             "proposedGenesis": proposed,
-            "candidates": [candidate],
-            "evidence": {"contentMaterial": [], "openingMaterial": []},
+            "presentations": [candidate],
+            "evidenceAttempts": [],
         }
         closure = prepare_replay_closure(
             self.authority, dict(SUPPORTED_PROFILE), value
@@ -992,8 +1068,8 @@ class InterfaceModelTests(unittest.TestCase):
             dict(SUPPORTED_PROFILE),
             {
                 "proposedGenesis": proposed,
-                "candidates": [candidate],
-                "evidence": {"contentMaterial": [], "openingMaterial": []},
+                "presentations": [candidate],
+                "evidenceAttempts": [],
             },
         )
         self.assertIsInstance(projection, ReplayProjection)
@@ -1027,8 +1103,8 @@ class InterfaceModelTests(unittest.TestCase):
             dict(SUPPORTED_PROFILE),
             {
                 "proposedGenesis": proposed,
-                "candidates": [candidate],
-                "evidence": {"contentMaterial": [], "openingMaterial": []},
+                "presentations": [candidate],
+                "evidenceAttempts": [],
             },
         )
         self.assertEqual(released["kind"], "REPLAY_PROPOSAL_READY")
@@ -1044,8 +1120,8 @@ class InterfaceModelTests(unittest.TestCase):
                 "profile": dict(SUPPORTED_PROFILE),
                 "input": {
                     "proposedGenesis": proposed,
-                    "candidates": [candidate],
-                    "evidence": {"contentMaterial": [], "openingMaterial": []},
+                    "presentations": [candidate],
+                    "evidenceAttempts": [],
                 },
             },
         )
@@ -1074,8 +1150,8 @@ class InterfaceModelTests(unittest.TestCase):
             dict(SUPPORTED_PROFILE),
             {
                 "proposedGenesis": proposed,
-                "candidates": [],
-                "evidence": {"contentMaterial": [], "openingMaterial": []},
+                "presentations": [],
+                "evidenceAttempts": [],
             },
         )
         self.assertEqual(empty_replay["kind"], "REPLAY_PROPOSAL_READY")
@@ -1083,7 +1159,6 @@ class InterfaceModelTests(unittest.TestCase):
         value = {
             "prior": prior,
             "candidate": candidate,
-            "evidence": {"contentMaterial": [], "openingMaterial": []},
         }
         evaluated = evaluate_candidate(
             self.authority, dict(SUPPORTED_PROFILE), value
@@ -1095,8 +1170,8 @@ class InterfaceModelTests(unittest.TestCase):
             dict(SUPPORTED_PROFILE),
             {
                 "proposedGenesis": proposed,
-                "candidates": [candidate],
-                "evidence": {"contentMaterial": [], "openingMaterial": []},
+                "presentations": [candidate],
+                "evidenceAttempts": [],
             },
         )
         self.assertEqual(
@@ -1115,12 +1190,15 @@ class InterfaceModelTests(unittest.TestCase):
         self.assertEqual(response["result"], evaluated)
 
         with self.assertRaises(RequestRejected):
-            evaluate_candidate(
+            evaluate_interface_request(
                 self.authority,
-                dict(SUPPORTED_PROFILE),
                 {
-                    **value,
-                    "evidence": {
+                    "interfaceVersion": "0",
+                    "operation": "EVALUATE_CANDIDATE",
+                    "profile": dict(SUPPORTED_PROFILE),
+                    "input": {
+                        **value,
+                        "evidence": {
                         "contentMaterial": [
                             {
                                 "eventReferenceHex": "00" * 32,
@@ -1128,6 +1206,7 @@ class InterfaceModelTests(unittest.TestCase):
                             }
                         ],
                         "openingMaterial": [],
+                        },
                     },
                 },
             )
@@ -1138,7 +1217,6 @@ class InterfaceModelTests(unittest.TestCase):
             {
                 "prior": full["proposedContext"],
                 "candidate": candidate,
-                "evidence": {"contentMaterial": [], "openingMaterial": []},
             },
         )
         self.assertEqual(
@@ -1162,7 +1240,9 @@ class InterfaceModelTests(unittest.TestCase):
             )
 
         malformed = json.loads(json.dumps(candidate))
-        malformed["transcriptHex"] = malformed["transcriptHex"][:-2]
+        malformed["logicalEvent"]["transcriptHex"] = malformed["logicalEvent"][
+            "transcriptHex"
+        ][:-2]
         self.assertEqual(
             evaluate_candidate(
                 self.authority,
@@ -1231,18 +1311,14 @@ class InterfaceModelTests(unittest.TestCase):
             )
         )
         _, signature = backend.ed25519_sign(bytes(range(32)), transcript)
-        candidate = {
-            "objectKind": "APPLICATION_EVENT",
-            "signatureHex": signature.hex(),
-            "transcriptHex": transcript.hex(),
-        }
+        candidate = self._application_presentation(backend, transcript, signature)
         pending = replay_context(
             self.authority,
             dict(SUPPORTED_PROFILE),
             {
                 "proposedGenesis": proposed,
-                "candidates": [candidate],
-                "evidence": {"contentMaterial": [], "openingMaterial": []},
+                "presentations": [candidate],
+                "evidenceAttempts": [],
             },
         )["proposedContext"]
         reference = pending["projection"]["records"][0]["eventReferenceHex"]
@@ -1263,7 +1339,7 @@ class InterfaceModelTests(unittest.TestCase):
         evaluated = evaluate_evidence_update(
             self.authority,
             dict(SUPPORTED_PROFILE),
-            {"prior": pending, "additions": additions},
+            {"prior": pending, "additions": self._evidence_attempts(additions)},
         )
         self.assertEqual(evaluated["evaluation"]["kind"], "PROPOSAL_READY")
         self.assertEqual(evaluated["evaluation"]["evidenceEffect"], "ADD_MONOTONE")
@@ -1273,8 +1349,8 @@ class InterfaceModelTests(unittest.TestCase):
             dict(SUPPORTED_PROFILE),
             {
                 "proposedGenesis": proposed,
-                "candidates": [candidate],
-                "evidence": additions,
+                "presentations": [candidate],
+                "evidenceAttempts": self._evidence_attempts(additions),
             },
         )
         self.assertEqual(successor, full["proposedContext"])
@@ -1286,7 +1362,10 @@ class InterfaceModelTests(unittest.TestCase):
             evaluate_evidence_update(
                 self.authority,
                 dict(SUPPORTED_PROFILE),
-                {"prior": successor, "additions": additions},
+                {
+                    "prior": successor,
+                    "additions": self._evidence_attempts(additions),
+                },
             ),
             {"evaluation": {"kind": "IDEMPOTENT_NO_CHANGE"}},
         )
@@ -1295,7 +1374,7 @@ class InterfaceModelTests(unittest.TestCase):
             evaluate_evidence_update(
                 self.authority,
                 dict(SUPPORTED_PROFILE),
-                {"prior": pending, "additions": partial},
+                {"prior": pending, "additions": self._evidence_attempts(partial)},
             ),
             {
                 "evaluation": {
@@ -1310,7 +1389,10 @@ class InterfaceModelTests(unittest.TestCase):
             evaluate_evidence_update(
                 self.authority,
                 dict(SUPPORTED_PROFILE),
-                {"prior": pending, "additions": mismatched},
+                {
+                    "prior": pending,
+                    "additions": self._evidence_attempts(mismatched),
+                },
             ),
             {
                 "evaluation": {
@@ -1325,7 +1407,10 @@ class InterfaceModelTests(unittest.TestCase):
                 "interfaceVersion": "0",
                 "operation": "EVALUATE_EVIDENCE_UPDATE",
                 "profile": dict(SUPPORTED_PROFILE),
-                "input": {"prior": pending, "additions": additions},
+                "input": {
+                    "prior": pending,
+                    "additions": self._evidence_attempts(additions),
+                },
             },
         )
         self.assertEqual(response["result"], evaluated)
@@ -1338,7 +1423,7 @@ class InterfaceModelTests(unittest.TestCase):
         candidates.sort(
             key=lambda item: backend.framed_hash(
                 backend.DOMAINS["event_reference"],
-                bytes.fromhex(item["transcriptHex"]),
+                bytes.fromhex(item["logicalEvent"]["transcriptHex"]),
             ).hex()
         )
         projection = project_replay_state(
@@ -1346,8 +1431,8 @@ class InterfaceModelTests(unittest.TestCase):
             dict(SUPPORTED_PROFILE),
             {
                 "proposedGenesis": proposed,
-                "candidates": candidates,
-                "evidence": {"contentMaterial": [], "openingMaterial": []},
+                "presentations": candidates,
+                "evidenceAttempts": [],
             },
         )
         self.assertIsInstance(projection, ReplayProjection)
@@ -1490,7 +1575,7 @@ class InterfaceModelTests(unittest.TestCase):
         opening = "34" * 32
         content = b"bounded-content"
 
-        def candidate(content_class: str, event_type: int) -> dict[str, str]:
+        def candidate(content_class: str, event_type: int) -> dict[str, object]:
             commitment = backend.encode_commitment(
                 profile_id=1,
                 profile_version=1,
@@ -1524,26 +1609,22 @@ class InterfaceModelTests(unittest.TestCase):
                 )
             )
             _, signature = backend.ed25519_sign(bytes(range(32)), transcript)
-            return {
-                "objectKind": "APPLICATION_EVENT",
-                "signatureHex": signature.hex(),
-                "transcriptHex": transcript.hex(),
-            }
+            return self._application_presentation(backend, transcript, signature)
 
         base = {
             "proposedGenesis": proposed,
-            "evidence": {"contentMaterial": [], "openingMaterial": []},
+            "evidenceAttempts": [],
         }
         required = project_replay_state(
             self.authority,
             dict(SUPPORTED_PROFILE),
-            {**base, "candidates": [candidate("REQUIRED", 1)]},
+            {**base, "presentations": [candidate("REQUIRED", 1)]},
         )
         self.assertIsInstance(required, ReplayProjection)
         self.assertEqual(len(required.pending_roots), 1)
         self.assertEqual(required.records[0]["replayReadiness"], "PENDING_OPENING")
 
-        detachable_value = {**base, "candidates": [candidate("DETACHABLE", 2)]}
+        detachable_value = {**base, "presentations": [candidate("DETACHABLE", 2)]}
         detachable_closure = prepare_replay_closure(
             self.authority,
             dict(SUPPORTED_PROFILE),
@@ -1562,7 +1643,7 @@ class InterfaceModelTests(unittest.TestCase):
         verified_detachable = candidate("DETACHABLE", 3)
         detachable_reference = backend.framed_hash(
             backend.DOMAINS["event_reference"],
-            bytes.fromhex(verified_detachable["transcriptHex"]),
+            bytes.fromhex(verified_detachable["logicalEvent"]["transcriptHex"]),
         ).hex()
         verified_evidence = {
             "contentMaterial": [
@@ -1585,8 +1666,8 @@ class InterfaceModelTests(unittest.TestCase):
             dict(SUPPORTED_PROFILE),
             {
                 **base,
-                "candidates": [verified_detachable],
-                "evidence": verified_evidence,
+                "presentations": [verified_detachable],
+                "evidenceAttempts": self._evidence_attempts(verified_evidence),
             },
         )
         self.assertIsInstance(verified, ReplayProjection)
@@ -1605,15 +1686,15 @@ class InterfaceModelTests(unittest.TestCase):
         absent_same_candidate = prepare_replay_closure(
             self.authority,
             dict(SUPPORTED_PROFILE),
-            {**base, "candidates": [verified_detachable]},
+            {**base, "presentations": [verified_detachable]},
         )
         mismatched_same_candidate = prepare_replay_closure(
             self.authority,
             dict(SUPPORTED_PROFILE),
             {
                 **base,
-                "candidates": [verified_detachable],
-                "evidence": mismatched_evidence,
+                "presentations": [verified_detachable],
+                "evidenceAttempts": self._evidence_attempts(mismatched_evidence),
             },
         )
         self.assertIsInstance(absent_same_candidate, ReplayClosure)
@@ -1627,7 +1708,7 @@ class InterfaceModelTests(unittest.TestCase):
             mismatched_same_candidate.k_observations,
         )
 
-    def test_replay_candidate_order_is_derived_from_references(self) -> None:
+    def test_replay_presentation_order_is_non_authoritative(self) -> None:
         proposed, first = self._replay_fixture(event_type=1)
         _, second = self._replay_fixture(event_type=2)
         backend = _load_pinned_c03_model(str(self.authority.repo_root))
@@ -1635,24 +1716,27 @@ class InterfaceModelTests(unittest.TestCase):
         candidates.sort(
             key=lambda item: backend.framed_hash(
                 backend.DOMAINS["event_reference"],
-                bytes.fromhex(item["transcriptHex"]),
+                bytes.fromhex(item["logicalEvent"]["transcriptHex"]),
             ).hex()
         )
+        canonical_value = {
+            "proposedGenesis": proposed,
+            "presentations": candidates,
+            "evidenceAttempts": [],
+        }
         reversed_value = {
             "proposedGenesis": proposed,
-            "candidates": list(reversed(candidates)),
-            "evidence": {"contentMaterial": [], "openingMaterial": []},
+            "presentations": list(reversed(candidates)),
+            "evidenceAttempts": [],
         }
-        self.assertEqual(
-            prepare_replay_closure(
-                self.authority, dict(SUPPORTED_PROFILE), reversed_value
-            ),
-            {
-                "kind": "TERMINAL_INPUT_REJECTED",
-                "reason": "CANDIDATE_SET_NONCANONICAL",
-                "stage": "CANDIDATE_SET_VALIDATION",
-            },
+        canonical = prepare_replay_closure(
+            self.authority, dict(SUPPORTED_PROFILE), canonical_value
         )
+        reversed_result = prepare_replay_closure(
+            self.authority, dict(SUPPORTED_PROFILE), reversed_value
+        )
+        self.assertIsInstance(canonical, ReplayClosure)
+        self.assertEqual(reversed_result, canonical)
 
     def test_evidence_canonicalization_is_purpose_keyed_and_fail_closed(self) -> None:
         reference = "22" * 32

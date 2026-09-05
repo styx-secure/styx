@@ -294,18 +294,18 @@ def build_report(
         ),
         key=lambda row: row[0].encode("utf-8"),
     )
-    if len(responses) != 15:
-        raise SemanticACV049Error("ACV-049 requires 15 frozen responses")
+    if len(responses) != 19:
+        raise SemanticACV049Error("ACV-049 requires 19 frozen responses")
     if any(_python_rejects(authority, response) for _case_id, response in responses):
         raise SemanticACV049Error("ACV-049 negative control is rejected")
 
     instances = [
         row for row in expand_semantic_instances(contract) if row.family_id == "ACV-049"
     ]
-    if len(instances) != 3770:
+    if len(instances) != 4060:
         raise SemanticACV049Error("ACV-049 instance count drift")
     paths = sorted({row.source.rsplit("::", 1)[0] for row in instances})
-    if len(paths) != 377:
+    if len(paths) != 406:
         raise SemanticACV049Error("ACV-049 path count drift")
     terminals = {path: _logical_terminal(authority.schema, path) for path in paths}
     materialized = {
@@ -388,23 +388,23 @@ def build_report(
         not _is_string_terminal(terminal.nodes) for terminal in terminals.values()
     )
     if (
-        len(rows) != 3770
+        len(rows) != 4060
         or non_string_count != 5
-        or materialized_count != 296
-        or live_rejections != 1676
+        or materialized_count != 321
+        or live_rejections != 1746
         or class_counts
         != {
             "NON_STRING_CONST": 50,
-            "SCHEMA_ADMISSIBLE_ENCODED": 1921,
-            "SCHEMA_CLOSED": 1799,
+            "SCHEMA_ADMISSIBLE_ENCODED": 2121,
+            "SCHEMA_CLOSED": 1889,
         }
         or class_materialization_counts
         != {
             "NON_STRING_CONST:UNMATERIALIZED": 50,
-            "SCHEMA_ADMISSIBLE_ENCODED:MATERIALIZED": 1284,
-            "SCHEMA_ADMISSIBLE_ENCODED:UNMATERIALIZED": 637,
-            "SCHEMA_CLOSED:MATERIALIZED": 1676,
-            "SCHEMA_CLOSED:UNMATERIALIZED": 123,
+            "SCHEMA_ADMISSIBLE_ENCODED:MATERIALIZED": 1464,
+            "SCHEMA_ADMISSIBLE_ENCODED:UNMATERIALIZED": 657,
+            "SCHEMA_CLOSED:MATERIALIZED": 1746,
+            "SCHEMA_CLOSED:UNMATERIALIZED": 143,
         }
     ):
         raise SemanticACV049Error(

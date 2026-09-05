@@ -92,7 +92,7 @@ def build_report(
         (row for row in inventory["cases"] if row["direction"] == "RESPONSE"),
         key=lambda row: row["caseId"].encode("utf-8"),
     )
-    if len(response_rows) != 15:
+    if len(response_rows) != 19:
         raise CrossRuntimeError("withheld response partition drift")
     response_identities: list[str] = []
     for row in response_rows:
@@ -117,7 +117,7 @@ def build_report(
     response_set_sha = _sha256("".join(response_identities).encode("utf-8"))
     return {
         "inventory_sha256": validated["inventory_sha256"],
-        "response_case_count": 15,
+        "response_case_count": 19,
         "response_set_sha256": response_set_sha,
         "schema": "styx.app-core-iface0.phase-a-js-release-report.v1",
         "verdict": "PASS",
@@ -150,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
     ) as error:
         print(f"APP-core cross-runtime: FAIL: {error}", file=sys.stderr)
         return 2
-    print("APP-core cross-runtime: PASS released-responses=15")
+    print("APP-core cross-runtime: PASS released-responses=19")
     return 0
 
 

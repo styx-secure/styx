@@ -60,6 +60,8 @@ def validate_witness_schema_satisfiability(
     for rule in structural["rules"]:
         rule_id = rule["id"]
         suffix = rule_id.removeprefix("STR-")
+        if rule["expectedCount"] == 0:
+            continue
         for index in sorted({1, rule["expectedCount"]}):
             disposition = rule["expectedDisposition"]
             source = rule_id
@@ -289,7 +291,7 @@ def validate_ownership(
         for pointer, node in objects
         if not (pointer.startswith("/$defs/") and pointer.count("/") == 2)
     }
-    require(len(direct) == 73 and len(inline) == 5, "object partition drift")
+    require(len(direct) == 82 and len(inline) == 5, "object partition drift")
     require(set(registry["definitions"]) == set(direct), "definition ownership drift")
     require(set(registry["inlineObjects"]) == set(inline), "inline ownership drift")
     covered = 0
@@ -308,7 +310,7 @@ def validate_ownership(
             require(set(selected["owners"]) <= owner_tokens and selected["owners"], f"owner drift: {key}.{property_name}")
             require(selected["source"] in source_tokens, f"source drift: {key}.{property_name}")
             covered += 1
-    require(covered == 323, f"ownership coverage drift: {covered}")
+    require(covered == 347, f"ownership coverage drift: {covered}")
 
 
 def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
@@ -324,11 +326,11 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
 
     nodes = list(walk(schema))
     references = [node["$ref"] for _, node in nodes if isinstance(node, dict) and "$ref" in node]
-    require(len(references) == 263, f"ref count drift: {len(references)}")
+    require(len(references) == 287, f"ref count drift: {len(references)}")
     for reference in references:
         resolve(schema, reference)
     definitions = validate_definition_closure(schema)
-    require(len(definitions) == 114, f"definition count drift: {len(definitions)}")
+    require(len(definitions) == 124, f"definition count drift: {len(definitions)}")
 
     enums = [pointer for pointer, node in nodes if isinstance(node, dict) and "enum" in node]
     one_ofs = [
@@ -344,12 +346,12 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         and isinstance(node.get("properties"), dict)
         and node["properties"]
     ]
-    require(len(enums) == 35, f"enum count drift: {len(enums)}")
+    require(len(enums) == 36, f"enum count drift: {len(enums)}")
     require(len(one_ofs) == 16, f"oneOf count drift: {len(one_ofs)}")
-    require(sum(len(arms) for _, arms in one_ofs) == 54, "oneOf arm drift")
-    require(len(objects) == 78, f"object count drift: {len(objects)}")
-    require(sum(len(node["properties"]) for _, node in objects) == 323, "property count drift")
-    require(sum(len(node.get("required", [])) for _, node in objects) == 322, "required count drift")
+    require(sum(len(arms) for _, arms in one_ofs) == 57, "oneOf arm drift")
+    require(len(objects) == 87, f"object count drift: {len(objects)}")
+    require(sum(len(node["properties"]) for _, node in objects) == 347, "property count drift")
+    require(sum(len(node.get("required", [])) for _, node in objects) == 344, "required count drift")
     validate_ownership(schema, objects)
 
     pair_registry = load("APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json")
@@ -359,9 +361,9 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         for left, right in itertools.combinations(range(len(arms)), 2)
     }
     actual_pairs = [row["pairId"] for row in pair_registry["rows"]]
-    require(len(actual_pairs) == len(set(actual_pairs)) == 93, "oneOf pair uniqueness drift")
+    require(len(actual_pairs) == len(set(actual_pairs)) == 101, "oneOf pair uniqueness drift")
     require(set(actual_pairs) == expected_pairs, "oneOf pair relation drift")
-    require(pair_registry["pairCount"] == 93, "oneOf pair count field drift")
+    require(pair_registry["pairCount"] == 101, "oneOf pair count field drift")
     require(pair_registry["pairSetSha256"] == digest_lines(actual_pairs), "oneOf pair digest drift")
     require(pair_registry["schemaSha256"] == sha256(ROOT / schema_name), "oneOf schema binding drift")
 
@@ -373,7 +375,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
             reachability["objectSchemaCount"],
             reachability["oneOfArmCount"],
         )
-        == (12, 114, 78, 54),
+        == (12, 124, 87, 57),
         "carrier reachability count drift",
     )
     require(
@@ -399,8 +401,8 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
 
     structural = load("APP-CORE-IFACE-0-STRUCTURAL-AXES-CANDIDATE.json")
     require(len(structural["rules"]) == 24, "structural family drift")
-    require(sum(row["expectedCount"] for row in structural["rules"]) == 1450, "structural count drift")
-    require(structural["derivedCounts"] == {"structuralRuleFamilies": 24, "structuralExecutionInstances": 1450}, "structural derived-count drift")
+    require(sum(row["expectedCount"] for row in structural["rules"]) == 1553, "structural count drift")
+    require(structural["derivedCounts"] == {"structuralRuleFamilies": 24, "structuralExecutionInstances": 1553}, "structural derived-count drift")
     structural_by_id = {row["id"]: row for row in structural["rules"]}
     keyword_rules = {
         "type": "STR-TYPE-MISMATCH",
@@ -500,8 +502,8 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     witness = load("APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json")
     require(positive["properties"]["caseCount"]["maximum"] == 144, "carrier maximum drift")
     require(positive["properties"]["cases"]["maxItems"] == 144, "carrier maxItems drift")
-    require(witness["properties"]["rowCount"]["const"] == 1450, "witness count drift")
-    require(witness["properties"]["rows"]["minItems"] == witness["properties"]["rows"]["maxItems"] == 1450, "witness cardinality drift")
+    require(witness["properties"]["rowCount"]["const"] == 1553, "witness count drift")
+    require(witness["properties"]["rows"]["minItems"] == witness["properties"]["rows"]["maxItems"] == 1553, "witness cardinality drift")
     structural_rule_ids = [row["id"] for row in structural["rules"]]
     structural_perturbations = [row["perturbationKind"] for row in structural["rules"]]
     palette_perturbations = [row["perturbationKind"] for row in palette["recipes"]]
@@ -530,17 +532,17 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     axes = load("APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json")
     validate_terminal_path_bindings(schema, axes)
     semantic_ids = [row["id"] for row in semantics["rules"]]
-    require(len(semantic_ids) == len(set(semantic_ids)) == 83, "semantic family drift")
+    require(len(semantic_ids) == len(set(semantic_ids)) == 84, "semantic family drift")
     require(
-        set(semantic_ids) == {f"ACV-{index:03d}" for index in range(1, 84)},
+        set(semantic_ids) == {f"ACV-{index:03d}" for index in range(1, 85)},
         "semantic rule-id set drift",
     )
     for field in ("scenario", "mutant"):
         values = [row[field] for row in semantics["rules"]]
-        require(len(values) == len(set(values)) == 83, f"semantic {field} drift")
+        require(len(values) == len(set(values)) == 84, f"semantic {field} drift")
     axis_ids = [row["id"] for row in axes["rules"]]
-    require(set(axis_ids) == set(semantic_ids) and len(axis_ids) == 83, "semantic axis relation drift")
-    require(sum(row["expectedCount"] for row in axes["rules"]) == 5149, "semantic execution count drift")
+    require(set(axis_ids) == set(semantic_ids) and len(axis_ids) == 84, "semantic axis relation drift")
+    require(sum(row["expectedCount"] for row in axes["rules"]) == 5535, "semantic execution count drift")
     require(axes["unresolvedAxes"] == [], "unresolved semantic axes")
     phases = load("APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json")
     require(
@@ -556,7 +558,7 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         phases.get("fixedCountsBeforeSeedPartition", {}).get(
             "totalSemanticExecutionInstances"
         )
-        == 5149,
+        == 5535,
         "execution-phase total drift",
     )
     acv066_phase = next(
@@ -728,11 +730,11 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     require(
         phases.get("fixedCountsBeforeSeedPartition")
         == {
-            "BLIND_INPUT_EXECUTION": 559,
-            "POST_OUTPUT_MUTATION": 3861,
-            "VALIDATOR_SELF_TEST": 27,
-            "ACV048PendingCarrierPartition": 702,
-            "totalSemanticExecutionInstances": 5149,
+            "BLIND_INPUT_EXECUTION": 575,
+            "POST_OUTPUT_MUTATION": 4151,
+            "VALIDATOR_SELF_TEST": 26,
+            "ACV048PendingCarrierPartition": 783,
+            "totalSemanticExecutionInstances": 5535,
         },
         "execution-phase count drift",
     )
@@ -746,11 +748,11 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     require(custom_occurrences == set(semantics["customKeywordCoverage"]), "custom keyword coverage drift")
     require(set(semantics["customKeywordCoverage"].values()) <= set(semantic_ids), "custom keyword owner drift")
     concrete_transcript_annotations = {
-        "$defs.GenesisTranscriptCandidateV0.properties.transcriptHex": {
+        "$defs.GenesisLogicalEventV0.properties.transcriptHex": {
             "dimension": "GENESIS_BODY_OCTETS",
             "prefixOctets": "20",
         },
-        "$defs.ApplicationTranscriptCandidateV0.properties.transcriptHex": {
+        "$defs.ApplicationLogicalEventV0.properties.transcriptHex": {
             "dimension": "FRAMING_OBJECT_OCTETS",
             "prefixOctets": "20",
         },
@@ -794,9 +796,9 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
     acv050_rule = next(row for row in semantics["rules"] if row["id"] == "ACV-050")
     acv050_axis = next(row for row in axes["rules"] if row["id"] == "ACV-050")
     require(
-        acv050_rule["parameters"] == {"ruleCount": "83"}
-        and acv050_axis["mappedOccurrenceCount"] == len(custom_occurrences) == 26
-        and acv050_axis["expectedCount"] == len(custom_occurrences) + 1 == 27,
+        acv050_rule["parameters"] == {"ruleCount": "84"}
+        and acv050_axis["mappedOccurrenceCount"] == len(custom_occurrences) == 25
+        and acv050_axis["expectedCount"] == len(custom_occurrences) + 1 == 26,
         "ACV-050 exact-registry binding drift",
     )
     semantic_by_id = {row["id"]: row for row in semantics["rules"]}
@@ -825,8 +827,8 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
         "V9 derived-bound constraint drift",
     )
     expected_ordering = {
-        "$defs.EvidenceProjectionV0.contentMaterial": "eventReferenceHex",
-        "$defs.EvidenceProjectionV0.openingMaterial": "eventReferenceHex",
+        "$defs.EvidenceProjectionV0.verifiedComplete": "eventReferenceHex",
+        "$defs.LocalRevalidationSnapshotV0.retainedProofs": "eventReferenceHex",
         "$defs.CanonicalReferenceArray": "lexicographic-hex",
         "$defs.ContextProjectionV0.records": "protocol-k-order",
         "$defs.ContextProjectionV0.recordOutcomes": "eventReferenceHex",
@@ -881,14 +883,14 @@ def validate_schema_and_relations(repository: Path, base_ref: str) -> None:
             ],
             "expectedCount": 23,
         },
-        "ACV-034": {"expectedCount": 81},
-        "ACV-036": {"expectedCount": 81},
+        "ACV-034": {"expectedCount": 87},
+        "ACV-036": {"expectedCount": 87},
         "ACV-046": {"expectedCount": 44},
         "ACV-049": {
-            "pathCount": 377,
-            "pathSha256": "ae9149055d83b3c1960d6f0ec6db796a4e9b019551632e70dc86571b8f90c3a0",
+            "pathCount": 406,
+            "pathSha256": "cdd2f3f325800fffd08b23c08ab51d3b3ba6a3eb949af10ad488d72a854e5fe4",
             "familyCount": 10,
-            "expectedCount": 3770,
+            "expectedCount": 4060,
         },
     }
     for rule_id, fragment in expected_axis_fragments.items():
@@ -1554,21 +1556,21 @@ def validate_manifest() -> None:
     counts = manifest["derivedCounts"]
     expected = {
         "operations": 6,
-        "propertyBearingObjectSchemas": 78,
-        "directObjectDefinitions": 73,
+        "propertyBearingObjectSchemas": 87,
+        "directObjectDefinitions": 82,
         "inlineObjectSchemas": 5,
-        "properties": 323,
-        "directlyRequiredProperties": 322,
-        "customKeywordOccurrences": 26,
+        "properties": 347,
+        "directlyRequiredProperties": 344,
+        "customKeywordOccurrences": 25,
         "structuralRuleFamilies": 24,
-        "structuralExecutionInstances": 1450,
-        "structuralIsolationRelationRows": 80,
+        "structuralExecutionInstances": 1553,
+        "structuralIsolationRelationRows": 96,
         "oneOfOccurrences": 16,
-        "oneOfArms": 54,
-        "oneOfPairwiseDisjointnessRows": 93,
-        "semanticFamilies": 83,
-        "semanticExecutionInstances": 5149,
-        "totalExecutionInstances": 6599,
+        "oneOfArms": 57,
+        "oneOfPairwiseDisjointnessRows": 101,
+        "semanticFamilies": 84,
+        "semanticExecutionInstances": 5535,
+        "totalExecutionInstances": 7088,
         "contentRelationRows": 23,
         "forkJoinLabelRelationRows": 10,
         "authorityProjectionDimensionRelationRows": 16,
@@ -1583,8 +1585,8 @@ def validate_manifest() -> None:
         "seededExtensionNativeDependencies": 4,
         "ratifiedExactRepinNativeDependencies": 1,
         "historicalProviderIncrements": 5,
-        "seedRegistryRowsPendingPostBase": 78,
-        "structuralWitnessRowsPendingPostBase": 1450,
+        "seedRegistryRowsPendingPostBase": 87,
+        "structuralWitnessRowsPendingPostBase": 1553,
     }
     require(counts == expected, "manifest derived-count drift")
 
@@ -1598,8 +1600,8 @@ def validate_documented_artifact_bindings() -> None:
         encoding="utf-8"
     )
     require(
-        "equals the ratified 6,599-instance" in outline
-        and "6,597-instance" not in outline,
+        "equals the ratified 7,088-instance" in outline
+        and "6,599-instance" not in outline,
         "documented hostile-inventory total drift",
     )
 
@@ -1635,7 +1637,7 @@ def validate_documented_artifact_bindings() -> None:
             f"`{palette}`.",
             "`APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json`, SHA-256\n"
             f"`{one_of}`:",
-            "The 83-row instance-axis registry has no unresolved axis and has SHA-256\n"
+            "The 84-row instance-axis registry has no unresolved axis and has SHA-256\n"
             f"`{instance_axes}`.",
             "`APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`, SHA-256\n"
             f"`{execution_phases}`.",
@@ -1811,9 +1813,9 @@ def main() -> None:
     )
     validate_documented_artifact_bindings()
     print(
-        "PASS schemas=4 defs=114 refs=263 enums=35 oneOf=16 arms=54 "
-        "pairs=93 objects=78 properties=323 required=322 structural=1450 "
-        "semantic=5149 total=6599 terminal=33 F13=25 dependencies=65 provider_history=5 "
+        "PASS schemas=4 defs=124 refs=287 enums=36 oneOf=16 arms=57 "
+        "pairs=101 objects=87 properties=347 required=344 structural=1553 "
+        "semantic=5535 total=7088 terminal=33 F13=25 dependencies=65 provider_history=5 "
         "manifest=27 provider_live=" + ("PASS" if args.verify_provider else "NOT_RUN")
     )
 

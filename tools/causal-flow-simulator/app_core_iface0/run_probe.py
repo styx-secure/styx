@@ -17,12 +17,15 @@ from jsonschema.validators import Draft202012Validator
 
 from canonical_json import CanonicalJsonError, dumps, loads
 from canonical_report import ReportError, store_report
+from generate_seed_registry import (
+    _evaluate_fixture_request,
+    _semantic_request_carriers,
+)
 from interface_model import (
     ContractAuthority,
     HarnessFailure,
     InterfaceModelError,
     RequestRejected,
-    evaluate_interface_request,
     validate_request_structure,
     validate_response_before_release,
 )
@@ -84,15 +87,22 @@ def build_report(repo_root: Path, contract: Path, evidence_root: Path) -> dict[s
     ):
         raise ProbeError("positive carrier inventory schema validation failed")
     cases = inventory.get("cases")
-    if not isinstance(cases, list) or len(cases) != 80:
+    if not isinstance(cases, list) or len(cases) != 96:
         raise ProbeError("positive carrier inventory count drift")
     request_rows = [row for row in cases if row.get("direction") == "REQUEST"]
-    if len(request_rows) != 65 or sum(
+    if len(request_rows) != 77 or sum(
         row.get("direction") == "RESPONSE" for row in cases
-    ) != 15:
+    ) != 19:
         raise ProbeError("positive carrier direction partition drift")
 
     authority = ContractAuthority.load(repo_root, contract)
+    collision_oracles = {
+        dumps(case.request): case.collision_oracle
+        for case in _semantic_request_carriers(authority)
+        if case.collision_oracle is not None
+    }
+    if len(collision_oracles) != 3:
+        raise ProbeError("closed test-only collision-oracle relation drift")
     frozen: dict[str, bytes] = {}
     operation_counts: Counter[str] = Counter()
     # This loop deliberately has no access to response carrier bytes.
@@ -105,7 +115,9 @@ def build_report(repo_root: Path, contract: Path, evidence_root: Path) -> dict[s
             raise ProbeError("blind request carrier identity drift")
         try:
             validate_request_structure(authority, carrier)
-            response = evaluate_interface_request(authority, carrier)
+            response = _evaluate_fixture_request(
+                authority, carrier, collision_oracles.get(carrier_bytes)
+            )
             validate_response_before_release(authority, response)
         except (HarnessFailure, InterfaceModelError, RequestRejected) as error:
             raise ProbeError("blind reference execution failed closed") from error
@@ -114,7 +126,7 @@ def build_report(repo_root: Path, contract: Path, evidence_root: Path) -> dict[s
         frozen[row["caseId"]] = dumps(response)
         operation_counts[row["operation"]] += 1
 
-    # Oracle release occurs only after all 65 outputs have been frozen.
+    # Oracle release occurs only after all 77 outputs have been frozen.
     response_rows = [row for row in cases if row.get("direction") == "RESPONSE"]
     response_by_bytes: dict[bytes, dict[str, Any]] = {}
     for row in response_rows:
@@ -144,13 +156,13 @@ def build_report(repo_root: Path, contract: Path, evidence_root: Path) -> dict[s
     validated = validate_phase_a(repo_root, contract, evidence_root)
     observation_bytes = dumps(observations)
     return {
-        "case_count": 80,
+        "case_count": 96,
         "inventory_sha256": validated["inventory_sha256"],
         "observation_set_sha256": _sha256(observation_bytes),
         "observations": observations,
         "operation_counts": dict(sorted(operation_counts.items())),
-        "request_case_count": 65,
-        "response_case_count": 15,
+        "request_case_count": 77,
+        "response_case_count": 19,
         "schema": "styx.app-core-iface0.reference-probe-report.v1",
         "verdict": "PASS",
     }
@@ -180,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
     ) as error:
         print(f"APP-core reference probe: FAIL: {error}", file=sys.stderr)
         return 2
-    print("APP-core reference probe: PASS requests=65 responses=15")
+    print("APP-core reference probe: PASS requests=77 responses=19")
     return 0
 
 

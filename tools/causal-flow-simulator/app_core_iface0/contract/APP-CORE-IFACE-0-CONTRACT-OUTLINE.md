@@ -216,18 +216,18 @@ observation and detector.
 
 The current pre-ratification candidate is mechanically finite:
 
-- `APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json`: 78 property-bearing object
-  schemas (73 direct definitions plus five inline/union-arm objects), 323
-  properties and 26 named custom-keyword occurrences;
+- `APP-CORE-IFACE-0-SCHEMA-CANDIDATE.json`: 87 property-bearing object
+  schemas (82 direct definitions plus five inline/union-arm objects), 347
+  properties and 25 named custom-keyword occurrences;
 - `APP-CORE-IFACE-0-OWNERSHIP-CANDIDATE.json`: exact ownership/source coverage
-  for all 78 object schemas and 323 properties;
+  for all 87 object schemas and 347 properties;
 - `APP-CORE-IFACE-0-STRUCTURAL-AXES-CANDIDATE.json`: 24 closed structural rule
-  families reconciling every reachable schema assertion/applicator keyword into 1,450
+  families reconciling every reachable schema assertion/applicator keyword into 1,553
   execution instances;
-- `APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json`: all 93 pairwise arm
+- `APP-CORE-IFACE-0-ONEOF-DISJOINTNESS-CANDIDATE.json`: all 101 pairwise arm
   relations for the 16 `oneOf` occurrences, including the nested root proof;
 - `APP-CORE-IFACE-0-STRUCTURAL-WITNESS-SCHEMA-CANDIDATE.json`: the closed schema
-  for the future 1,450-row carrier/perturbation/observation relation;
+  for the future 1,553-row carrier/perturbation/observation relation;
 - `APP-CORE-IFACE-0-PERTURBATION-PALETTE-CANDIDATE.json`: one bounded ordered
   hostile-synthesis recipe for each of the 24 structural perturbation kinds;
 - `APP-CORE-IFACE-0-POSITIVE-CARRIER-INVENTORY-SCHEMA-CANDIDATE.json`: the
@@ -235,23 +235,23 @@ The current pre-ratification candidate is mechanically finite:
   relation;
 - `APP-CORE-IFACE-0-CARRIER-REACHABILITY-CANDIDATE.json` plus
   `derive_app_core_carrier_reachability.py`: the byte-identical derived
-  12-root relation proving all 114 retained definitions, 78 object schemas and
-  54 `oneOf` arms are reachable;
+  12-root relation proving all 124 retained definitions, 87 object schemas and
+  57 `oneOf` arms are reachable;
 - `validate_app_core_contract_candidates.py`: one fail-closed package check for
   meta-schemas, root reachability, ownership, oneOf pairs, structural/semantic
   cardinalities, F13 equality against the pinned O-10 taxonomy and all manifest
   digests;
 - `derive_interface_maxima.py`: symbolic twelve-root derivation of
-  `OUTER_REQUEST_OCTETS = 138499357`, `OUTER_RESPONSE_OCTETS = 71052634` and
-  `MAX_RETAINED_DECODED_OCTETS = 35284168`, with the maximizing-root
+  `OUTER_REQUEST_OCTETS = 138547674`, `OUTER_RESPONSE_OCTETS = 71096500` and
+  `MAX_RETAINED_DECODED_OCTETS = 35300616`, with the maximizing-root
   breakdowns embedded in the manifest;
 - `APP-CORE-IFACE-0-WITNESS-GENERATION-CONTRACT.md`: deterministic carrier
   selection, instance numbering, perturbation isolation and two-reader
-  generation rules for the 78 seed rows and 1,450 witnesses;
-- `APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json`: 83 closed semantic
+  generation rules for the 87 seed rows and 1,553 witnesses;
+- `APP-CORE-IFACE-0-SEMANTIC-CONSTRAINTS-CANDIDATE.json`: 84 closed semantic
   rule families;
 - `APP-CORE-IFACE-0-INSTANCE-AXES-CANDIDATE.json`: the literal expansion axes
-  for those 83 families;
+  for those 84 families;
 - `APP-CORE-IFACE-0-EXECUTION-PHASES-CANDIDATE.json`: the closed partition
   between blind-input execution, post-output mutation and validator self-test;
 - `APP-CORE-IFACE-0-SEMANTIC-RELATIONS-CANDIDATE.json`: 23 content-axis,
@@ -259,9 +259,9 @@ The current pre-ratification candidate is mechanically finite:
   11 graph-admission-dimension, 16 transcript reason/stage, 17 genesis
   reason/stage, 17 signature-verification path and 33 terminal-predicate rows; and
 - `APP-CORE-IFACE-0-SEED-REGISTRY-SCHEMA-CANDIDATE.json`: the closed schema
-  for the post-implementation 78-row canonical positive-carrier relation; and
-- `APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md`: 24 structural and 83
-  semantic rule families, deriving exactly 6,599 structural-plus-semantic
+  for the post-implementation 87-row canonical positive-carrier relation; and
+- `APP-CORE-IFACE-0-ATOM-DERIVATION-CANDIDATE.md`: 24 structural and 84
+  semantic rule families, deriving exactly 7,088 structural-plus-semantic
   execution instances after both axis registries are expanded.
 
 These files are candidates, not authority. The executable Issue must bind their
@@ -350,7 +350,7 @@ ratified.
    evidence serialization is accepted as a future O-11/RS binding.
 10. Existing C0.3 corpus bytes, clean-room reader and historical evidence remain
     byte-identical.
-11. The hostile inventory is closed and equals the ratified 6,599-instance
+11. The hostile inventory is closed and equals the ratified 7,088-instance
     relation; every instance has a distinct required perturbation, assertion,
     observation and detector, all required mutants are killed, and all negative
     controls fail for the intended reason. A single aggregate pass cannot

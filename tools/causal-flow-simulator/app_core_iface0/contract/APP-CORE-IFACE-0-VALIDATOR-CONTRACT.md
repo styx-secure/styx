@@ -26,7 +26,7 @@ One invocation receives exactly:
 6. the exact structural-axis registry;
 7. the exact 93-row `oneOf` pairwise-disjointness registry;
 8. the exact mechanically generated twelve-root carrier-reachability relation;
-9. the exact 78-row canonical object-schema seed registry for hostile generation;
+9. the exact 87-row canonical object-schema seed registry for hostile generation;
 10. the populated per-instance structural witness registry;
 11. read-only pinned native artifacts and their provider-bound SHA-256 values;
 12. the exact selected O-08 resource-envelope artifact; and
@@ -65,7 +65,7 @@ Before request parsing:
 - verify all provider-bound path/digest pairs byte-for-byte;
 - verify the schema meta-schema and resolve every local `$ref`;
 - regenerate the carrier-reachability relation and require exact equality,
-  including all twelve roots, 114 definitions, 78 object schemas and 54
+  including all twelve roots, 124 definitions, 87 object schemas and 57
   `oneOf` arms; reject every dead definition or unreachable assertion;
 - reject a schema cycle, remote reference, unknown vocabulary or unknown
   `x-styx-*` keyword;
@@ -296,16 +296,16 @@ provider-bound exact bytes.
 
 ## Remaining pre-ratification closures
 
-The schema, 83-row semantic-instance-axis registry, 23-row content-axis,
+The schema, 84-row semantic-instance-axis registry, 23-row content-axis,
 25-row F13 primary/axis, 16-row transcript, 17-row genesis, 17-row signature
 verification-path and 33-row terminal-predicate relations are now
 literal working candidates. The relation expands the nine ACV-048 forbidden
-families through all 78 property-bearing object schemas. Together with the
-closed structural-keyword relation it derives 6,599 structural-plus-semantic
+families through all 87 property-bearing object schemas. Together with the
+closed structural-keyword relation it derives 7,088 structural-plus-semantic
 execution instances. They all require independent review and human ratification.
 
 Two literal execution outputs cannot exist before the repository increment
-supplies valid carriers: the canonical 78-row seed registry and the
+supplies valid carriers: the canonical 87-row seed registry and the
 per-instance structural witness registry. Their row shape, equality rules and
 hostile derivation are already fixed; only exact carrier case IDs, JSON
 pointers and object-byte digests remain to be generated from the combined-remediation Base
@@ -318,9 +318,9 @@ validator must additionally enforce relations that JSON Schema alone cannot:
 
 1. the seed registry binds the exact positive-carrier inventory digest; that
    inventory has unique case IDs, covers all twelve direction/operation roots,
-   all 78 object-schema pointers and all 54 literal `oneOf` arms, and every
+   all 87 object-schema pointers and all 57 literal `oneOf` arms, and every
    withheld response binds its generating request and reference report;
-2. the sorted `objectSchemaPointer` set equals exactly the 78 property-bearing
+2. the sorted `objectSchemaPointer` set equals exactly the 87 property-bearing
    object schemas in the pinned interface schema, including the five inline
    objects, with one row per pointer;
 3. each `objectSchemaId` is unique and stable, and `objectSchemaSha256` is the
@@ -338,9 +338,9 @@ validator must additionally enforce relations that JSON Schema alone cannot:
    operation without updating every bound digest fails closed.
 
 The structural witness registry additionally has exact-set equality with all
-1,450 structural instances. Every row binds one instance ID to a seed row,
+1,553 structural instances. Every row binds one instance ID to a seed row,
 target pointer, deterministic perturbation, expected disposition, observation
-ID and source-mutant detector. It also proves positive coverage of all 54
+ID and source-mutant detector. It also proves positive coverage of all 57
 `oneOf` arms and pairwise arm disjointness; an aggregate validator result or
 one witness reused as the sole evidence for another instance fails closed.
 

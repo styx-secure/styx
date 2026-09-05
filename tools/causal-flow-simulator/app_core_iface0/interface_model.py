@@ -60,6 +60,7 @@ EXTERNAL_BOUNDARIES = [
 IMPLEMENTED_COLLECTION_BOUND_TARGETS = frozenset(
     {
         "$defs.AliasGroupV0.allOf[0]",
+        "$defs.ApplicationPresentationGroupV0.proofs",
         "$defs.ApplicationEventProjectionV0.causalParentReferences",
         "$defs.AuthorityAvailableV0.necessaryCredentialIdentifiers",
         "$defs.AuthorityAvailableV0.possibleCredentialIdentifiers",
@@ -80,12 +81,14 @@ IMPLEMENTED_COLLECTION_BOUND_TARGETS = frozenset(
         "$defs.ContextProjectionV0.replayDependencyReferences",
         "$defs.ContextProjectionV0.revokedCredentialIdentifiers",
         "$defs.ContextProjectionV0.terminatedCredentialIdentifiers",
-        "$defs.EvidenceProjectionV0.contentMaterial",
-        "$defs.EvidenceProjectionV0.openingMaterial",
+        "$defs.EvidenceAdditionSetV0",
+        "$defs.EvidenceProjectionV0.verifiedComplete",
         "$defs.ForkJoinProjectionV0.lineageClosureCredentialIdentifiers",
         "$defs.ForkJoinProjectionV0.siblingReferences",
-        "$defs.ProposedContextSnapshotV0.admittedCandidates",
-        "$defs.ReplayContextInputV0.candidates",
+        "$defs.GenesisPresentationGroupV0.proofs",
+        "$defs.LocalRevalidationSnapshotV0.retainedProofs",
+        "$defs.ProposedContextSnapshotV0.logicalEvents",
+        "$defs.ReplayContextInputV0.presentations",
     }
 )
 
@@ -152,6 +155,7 @@ class ReplayCandidate:
     transcript: bytes
     fields: dict[str, Any]
     retained_proof_signature_hex: str | None = None
+    proof_occurrences: tuple[dict[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -170,6 +174,18 @@ class ProofGroupReduction:
     retained_signature_hex: str | None
     signature_attempts: int
     transcript: bytes | None
+
+
+@dataclass(frozen=True)
+class ParsedPresentationGroup:
+    """One parsed L plus its untrusted, non-semantic proof occurrences."""
+
+    logical_event: dict[str, str]
+    reference_hex: str
+    transcript: bytes
+    fields: dict[str, Any]
+    proof_signatures: tuple[bytes, ...]
+    observations: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -920,29 +936,106 @@ def _preflight_evidence_collections(
     if not isinstance(evidence, dict):
         return
     limits = {name: int(value) for name, value in authority.interface_limits().items()}
-    content = evidence.get("contentMaterial")
-    opening = evidence.get("openingMaterial")
+    complete = evidence.get("verifiedComplete")
     _require_collection_bound(
-        content,
+        complete,
         limits["RECORDS"],
-        label="EvidenceProjectionV0.contentMaterial/RECORDS",
+        label="EvidenceProjectionV0.verifiedComplete/RECORDS",
         request_side=request_side,
     )
-    _require_collection_bound(
-        opening,
-        limits["RECORDS"],
-        label="EvidenceProjectionV0.openingMaterial/RECORDS",
-        request_side=request_side,
-    )
-    if isinstance(content, list):
-        for row in content:
+    if isinstance(complete, list):
+        for row in complete:
             if isinstance(row, dict):
+                content = row.get("contentMaterial")
+                if not isinstance(content, dict):
+                    continue
                 _require_collection_bound(
-                    row.get("segments"),
+                    content.get("segments"),
                     limits["CHUNKS_PER_CONTENT"],
                     label="ContentMaterialEvidenceV0.segments/CHUNKS_PER_CONTENT",
                     request_side=request_side,
                 )
+
+
+def _preflight_evidence_attempts(
+    authority: ContractAuthority,
+    attempts: Any,
+    *,
+    request_side: bool,
+) -> None:
+    limits = {name: int(value) for name, value in authority.interface_limits().items()}
+    _require_collection_bound(
+        attempts,
+        limits["RECORDS"],
+        label="EvidenceAdditionSetV0/RECORDS",
+        request_side=request_side,
+    )
+    if not isinstance(attempts, list):
+        return
+    for attempt in attempts:
+        if not isinstance(attempt, dict):
+            continue
+        content = attempt.get("contentMaterial")
+        if isinstance(content, dict):
+            _require_collection_bound(
+                content.get("segments"),
+                limits["CHUNKS_PER_CONTENT"],
+                label="ContentMaterialEvidenceV0.segments/CHUNKS_PER_CONTENT",
+                request_side=request_side,
+            )
+
+
+def _preflight_logical_event(
+    authority: ContractAuthority,
+    logical_event: Any,
+    *,
+    request_side: bool,
+) -> None:
+    if not isinstance(logical_event, dict):
+        return
+    transcript = logical_event.get("transcriptHex")
+    object_kind = logical_event.get("objectKind")
+    if not isinstance(transcript, str) or not isinstance(object_kind, str):
+        return
+    dimension = (
+        "GENESIS_BODY_OCTETS"
+        if object_kind == "GENESIS"
+        else "FRAMING_OBJECT_OCTETS"
+    )
+    maximum = 2 * (int(authority.interface_limits()[dimension]) + 20)
+    if len(transcript) > maximum:
+        if request_side:
+            raise RequestRejected()
+        raise HarnessFailure("generated response exceeds transcript bound")
+
+
+def _preflight_presentation_group(
+    authority: ContractAuthority,
+    presentation: Any,
+    *,
+    request_side: bool,
+) -> None:
+    if not isinstance(presentation, dict):
+        return
+    _preflight_logical_event(
+        authority, presentation.get("logicalEvent"), request_side=request_side
+    )
+    proofs = presentation.get("proofs")
+    _require_collection_bound(
+        proofs,
+        _selected_limit(authority, "SIGNATURE_ATTEMPTS"),
+        label="PresentationGroupV0.proofs/SIGNATURE_ATTEMPTS",
+        request_side=request_side,
+    )
+    if not isinstance(proofs, list):
+        return
+    maximum = 2 * int(authority.interface_limits()["SIGNATURE_OCTETS"])
+    for proof in proofs:
+        signature = proof.get("signatureHex") if isinstance(proof, dict) else None
+        if isinstance(signature, str) and len(signature) > maximum:
+            if request_side:
+                raise RequestRejected()
+            raise HarnessFailure("generated response exceeds signature bound")
 
 
 def _preflight_snapshot_collections(
@@ -958,14 +1051,33 @@ def _preflight_snapshot_collections(
     limits = {name: int(value) for name, value in authority.interface_limits().items()}
     records_limit = limits["RECORDS"]
     _require_collection_bound(
-        snapshot.get("admittedCandidates"),
+        snapshot.get("logicalEvents"),
         records_limit,
-        label="ProposedContextSnapshotV0.admittedCandidates/RECORDS",
+        label="ProposedContextSnapshotV0.logicalEvents/RECORDS",
         request_side=request_side,
     )
-    _preflight_evidence_collections(
-        authority, snapshot.get("evidence"), request_side=request_side
-    )
+    logical_events = snapshot.get("logicalEvents")
+    if isinstance(logical_events, list):
+        for logical_event in logical_events:
+            _preflight_logical_event(
+                authority, logical_event, request_side=request_side
+            )
+    genesis = snapshot.get("genesis")
+    if isinstance(genesis, dict):
+        _preflight_logical_event(
+            authority, genesis.get("logicalGenesis"), request_side=request_side
+        )
+    local = snapshot.get("localRevalidation")
+    if isinstance(local, dict):
+        _require_collection_bound(
+            local.get("retainedProofs"),
+            records_limit,
+            label="LocalRevalidationSnapshotV0.retainedProofs/RECORDS",
+            request_side=request_side,
+        )
+        _preflight_evidence_collections(
+            authority, local.get("evidence"), request_side=request_side
+        )
     projection = snapshot.get("projection")
     if not isinstance(projection, dict):
         return
@@ -1064,28 +1176,38 @@ def _preflight_request_collections(
     if not isinstance(value, dict):
         return
     limits = {name: int(item) for name, item in authority.interface_limits().items()}
-    if operation == "REPLAY_CONTEXT":
+    if operation in {"VALIDATE_TRANSCRIPT", "EVALUATE_GENESIS"}:
+        _preflight_presentation_group(
+            authority, value.get("candidate"), request_side=True
+        )
+    elif operation == "REPLAY_CONTEXT":
         _require_collection_bound(
-            value.get("candidates"),
+            value.get("presentations"),
             limits["RECORDS"],
-            label="ReplayContextInputV0.candidates/RECORDS",
+            label="ReplayContextInputV0.presentations/RECORDS",
             request_side=True,
         )
-        _preflight_evidence_collections(
-            authority, value.get("evidence"), request_side=True
+        presentations = value.get("presentations")
+        if isinstance(presentations, list):
+            for presentation in presentations:
+                _preflight_presentation_group(
+                    authority, presentation, request_side=True
+                )
+        _preflight_evidence_attempts(
+            authority, value.get("evidenceAttempts"), request_side=True
         )
     elif operation == "EVALUATE_CANDIDATE":
         _preflight_snapshot_collections(
             authority, value.get("prior"), request_side=True
         )
-        _preflight_evidence_collections(
-            authority, value.get("evidence"), request_side=True
+        _preflight_presentation_group(
+            authority, value.get("candidate"), request_side=True
         )
     elif operation == "EVALUATE_EVIDENCE_UPDATE":
         _preflight_snapshot_collections(
             authority, value.get("prior"), request_side=True
         )
-        _preflight_evidence_collections(
+        _preflight_evidence_attempts(
             authority, value.get("additions"), request_side=True
         )
 
@@ -1101,32 +1223,6 @@ def validate_request_structure(
     request_input = request.get("input")
     if not isinstance(request_input, Mapping):
         raise RequestRejected()
-    candidate = request_input.get("candidate")
-    if isinstance(candidate, dict):
-        signature = candidate.get("signatureHex")
-        transcript = candidate.get("transcriptHex")
-        # These character-count checks precede hex decoding and therefore do
-        # not allocate proportional decoded buffers for over-bound values.
-        if isinstance(signature, str) and len(signature) > 2 * int(
-            authority.interface_limits()["SIGNATURE_OCTETS"]
-        ):
-            raise RequestRejected()
-        if isinstance(transcript, str) and isinstance(
-            candidate.get("objectKind"), str
-        ):
-            dimension = (
-                "GENESIS_BODY_OCTETS"
-                if candidate["objectKind"] == "GENESIS"
-                else "FRAMING_OBJECT_OCTETS"
-            )
-            # ``transcriptHex`` carries the selected body plus the exact
-            # 16-octet domain and 4-octet body-length prefix.  This check is
-            # deliberately on the hex-text length, before decoding.
-            maximum_hex_characters = 2 * (
-                int(authority.interface_limits()[dimension]) + 20
-            )
-            if len(transcript) > maximum_hex_characters:
-                raise RequestRejected()
     _validate_complete_v2_document(
         authority, request, trusted_direction="REQUEST"
     )
@@ -1286,30 +1382,74 @@ def _selected_envelope_failure(
 
 
 def _parse_transcript_candidate(
-    authority: ContractAuthority, candidate: dict[str, str]
-) -> tuple[ModuleType, bytes, bytes, dict[str, Any], dict[str, str]] | tuple[
-    None, None, None, None, tuple[str, str, dict[str, str]]
-]:
+    authority: ContractAuthority, candidate: Mapping[str, Any]
+) -> ParsedPresentationGroup | tuple[str, str, dict[str, str]]:
     module = _load_pinned_c03_model(str(authority.repo_root))
-    transcript = bytes.fromhex(candidate["transcriptHex"])
-    signature = bytes.fromhex(candidate["signatureHex"])
+    proofs = candidate.get("proofs")
+    if (
+        not isinstance(proofs, list)
+        or len(proofs) > _selected_limit(authority, "SIGNATURE_ATTEMPTS")
+    ):
+        return (
+            "SELECTED_ENVELOPE_REJECTED",
+            "PROFILE_ENVELOPE",
+            _initial_observations(transcript_valid=False),
+        )
+    logical_event = candidate["logicalEvent"]
+    transcript = bytes.fromhex(logical_event["transcriptHex"])
     observations = _initial_observations(transcript_valid=False)
-    framing = _framing_failure(module, candidate["objectKind"], transcript)
+    object_kind = logical_event["objectKind"]
+    framing = _framing_failure(module, object_kind, transcript)
     if framing is not None:
-        return None, None, None, None, (*framing, observations)
+        return (*framing, observations)
     try:
         fields = (
             module.parse_genesis(transcript)
-            if candidate["objectKind"] == "GENESIS"
+            if object_kind == "GENESIS"
             else module.parse_event(transcript)
         )
     except module.ProtocolError as error:
         reason, stage = _protocol_error_reason(error.code)
         observations.update(error.observations)
-        return None, None, None, None, (reason, stage, observations)
+        return reason, stage, observations
     observations = _content_observations(fields)
+    reference_field = (
+        "genesisReferenceHex" if object_kind == "GENESIS" else "eventReferenceHex"
+    )
+    reference_domain = (
+        "genesis_reference" if object_kind == "GENESIS" else "event_reference"
+    )
+    reference_hex = module.framed_hash(
+        module.DOMAINS[reference_domain], transcript
+    ).hex()
+    if (
+        logical_event.get(reference_field) != reference_hex
+        or candidate.get("carriedReferenceHex") != reference_hex
+    ):
+        observations["referenceVerification"] = "REJECTED"
+        return "REFERENCE_MISMATCH", "REFERENCE_DERIVATION", observations
     observations["referenceVerification"] = "VALID"
-    return module, transcript, signature, fields, observations
+    try:
+        proof_signatures = tuple(
+            bytes.fromhex(row["signatureHex"]) for row in proofs
+        )
+    except (KeyError, TypeError, ValueError):
+        observations["signatureVerification"] = "REJECTED"
+        return "SIGNATURE_LENGTH_MISMATCH", "SIGNATURE_VERIFICATION", observations
+    if any(
+        len(signature) != _selected_limit(authority, "SIGNATURE_OCTETS")
+        for signature in proof_signatures
+    ):
+        observations["signatureVerification"] = "REJECTED"
+        return "SIGNATURE_LENGTH_MISMATCH", "SIGNATURE_VERIFICATION", observations
+    return ParsedPresentationGroup(
+        logical_event=dict(logical_event),
+        reference_hex=reference_hex,
+        transcript=transcript,
+        fields=fields,
+        proof_signatures=proof_signatures,
+        observations=observations,
+    )
 
 
 def _reduce_application_proof_group(
@@ -1337,9 +1477,10 @@ def _reduce_application_proof_group(
 
     module = _load_pinned_c03_model(str(authority.repo_root))
     try:
-        if group["objectKind"] != "APPLICATION_EVENT":
+        logical_event = group["logicalEvent"]
+        if logical_event["objectKind"] != "APPLICATION_EVENT":
             raise ValueError("wrong object kind")
-        transcript = bytes.fromhex(group["transcriptHex"])
+        transcript = bytes.fromhex(logical_event["transcriptHex"])
     except (KeyError, TypeError, ValueError):
         return ProofGroupReduction(
             False, "STRUCTURAL_REJECTION", None, None, None, 0, None
@@ -1358,7 +1499,10 @@ def _reduce_application_proof_group(
     reference_hex = module.framed_hash(
         module.DOMAINS["event_reference"], transcript
     ).hex()
-    if group.get("carriedReferenceHex") != reference_hex:
+    if (
+        logical_event.get("eventReferenceHex") != reference_hex
+        or group.get("carriedReferenceHex") != reference_hex
+    ):
         return ProofGroupReduction(
             False,
             "CARRIED_REFERENCE_MISMATCH",
@@ -1428,6 +1572,42 @@ def _rejected_transcript_result(
     }
 
 
+def _select_proof_signature(
+    authority: ContractAuthority,
+    *,
+    operation: str,
+    candidate_kind: str,
+    transcript: bytes,
+    proof_signatures: tuple[bytes, ...],
+    standalone_verification_key: bytes | None = None,
+    parsed_genesis_root_key: bytes | None = None,
+) -> tuple[SignaturePathResult, bytes | None]:
+    """Select the bytewise-first valid P without changing L identity."""
+
+    ordered = tuple(sorted(proof_signatures))
+    if not ordered:
+        ordered = (b"",)
+    first_failure: SignaturePathResult | None = None
+    accepted_prefix = "GRS-001" if operation == "EVALUATE_GENESIS" else "TRS-001"
+    for signature in ordered:
+        result = evaluate_signature_path(
+            authority,
+            operation=operation,
+            candidate_kind=candidate_kind,
+            transcript=transcript,
+            signature=signature,
+            standalone_verification_key=standalone_verification_key,
+            parsed_genesis_root_key=parsed_genesis_root_key,
+        )
+        if result.result_mapping.startswith(accepted_prefix):
+            return result, signature
+        if first_failure is None:
+            first_failure = result
+    if first_failure is None:
+        raise HarnessFailure("proof reduction produced no deterministic result")
+    return first_failure, None
+
+
 def validate_transcript(
     authority: ContractAuthority,
     profile: dict[str, str],
@@ -1443,12 +1623,16 @@ def validate_transcript(
         )
     candidate = value["candidate"]
     parsed = _parse_transcript_candidate(authority, candidate)
-    if parsed[0] is None:
-        reason, stage, observations = parsed[4]
+    if isinstance(parsed, tuple):
+        reason, stage, observations = parsed
         return _rejected_transcript_result(reason, stage, observations)
-    module, transcript, signature, fields, observations = parsed
+    module = _load_pinned_c03_model(str(authority.repo_root))
+    transcript = parsed.transcript
+    fields = parsed.fields
+    observations = parsed.observations
+    object_kind = parsed.logical_event["objectKind"]
     envelope_failure = _selected_envelope_failure(
-        module, candidate["objectKind"], transcript, fields
+        module, object_kind, transcript, fields
     )
     if envelope_failure == "APPLICATION_PROFILE_MISMATCH":
         return _rejected_transcript_result(
@@ -1459,12 +1643,12 @@ def validate_transcript(
             "SELECTED_ENVELOPE_REJECTED", "PROFILE_ENVELOPE", observations
         )
     standalone = value.get("standaloneVerification")
-    signature_path = evaluate_signature_path(
+    signature_path, _ = _select_proof_signature(
         authority,
         operation="VALIDATE_TRANSCRIPT",
-        candidate_kind=candidate["objectKind"],
+        candidate_kind=object_kind,
         transcript=transcript,
-        signature=signature,
+        proof_signatures=parsed.proof_signatures,
         standalone_verification_key=(
             bytes.fromhex(standalone["verificationKeyHex"])
             if standalone is not None
@@ -1472,7 +1656,7 @@ def validate_transcript(
         ),
         parsed_genesis_root_key=(
             bytes.fromhex(fields["rootVerificationKeyHex"])
-            if candidate["objectKind"] == "GENESIS"
+            if object_kind == "GENESIS"
             else None
         ),
     )
@@ -1508,10 +1692,12 @@ def evaluate_genesis(
         }
     candidate = value["candidate"]
     parsed = _parse_transcript_candidate(authority, candidate)
-    if parsed[0] is None:
-        reason, stage, _ = parsed[4]
+    if isinstance(parsed, tuple):
+        reason, stage, _ = parsed
         return {"kind": "TERMINAL_NO_PROPOSAL", "reason": reason, "stage": stage}
-    module, transcript, signature, fields, _ = parsed
+    module = _load_pinned_c03_model(str(authority.repo_root))
+    transcript = parsed.transcript
+    fields = parsed.fields
     envelope_failure = _selected_envelope_failure(
         module, "GENESIS", transcript, fields
     )
@@ -1528,12 +1714,12 @@ def evaluate_genesis(
             "reason": "EXPECTED_CONTEXT_MISMATCH",
             "stage": "CONTEXT_BINDING",
         }
-    signature_path = evaluate_signature_path(
+    signature_path, retained_signature = _select_proof_signature(
         authority,
         operation="EVALUATE_GENESIS",
         candidate_kind="GENESIS",
         transcript=transcript,
-        signature=signature,
+        proof_signatures=parsed.proof_signatures,
         parsed_genesis_root_key=bytes.fromhex(fields["rootVerificationKeyHex"]),
     )
     if not signature_path.result_mapping.startswith("GRS-001"):
@@ -1546,11 +1732,17 @@ def evaluate_genesis(
             ),
             "stage": "SIGNATURE_VERIFICATION",
         }
+    if retained_signature is None:
+        raise HarnessFailure("accepted genesis proof reduction retained no proof")
     genesis_reference = module.framed_hash(
         module.DOMAINS["genesis_reference"], transcript
     ).hex()
     proposed = {
-        "candidate": candidate,
+        "logicalGenesis": parsed.logical_event,
+        "retainedProof": {
+            "genesisReferenceHex": genesis_reference,
+            "signatureHex": retained_signature.hex(),
+        },
         "expectedContextIdentifierHex": expected_context,
         "profile": profile,
         "projection": {
@@ -1605,6 +1797,140 @@ def _selected_limit(authority: ContractAuthority, dimension: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise HarnessFailure(f"selected envelope dimension is not bounded: {dimension}")
     return value
+
+
+def _internal_evidence_to_authoritative(
+    evidence: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Serialize only paired VERIFIED_COMPLETE E rows."""
+
+    content = {
+        row["eventReferenceHex"]: row for row in evidence["contentMaterial"]
+    }
+    opening = {
+        row["eventReferenceHex"]: row for row in evidence["openingMaterial"]
+    }
+    if set(content) != set(opening):
+        raise HarnessFailure("authoritative evidence serialization found a partial")
+    return {
+        "verifiedComplete": [
+            {
+                "contentMaterial": content[reference],
+                "eventReferenceHex": reference,
+                "openingMaterial": opening[reference],
+                "verificationState": "VERIFIED_COMPLETE",
+            }
+            for reference in sorted(content)
+        ]
+    }
+
+
+def _internal_evidence_as_attempts(
+    evidence: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """Re-present authoritative E as complete attempts for strict replay."""
+
+    content = {
+        row["eventReferenceHex"]: row for row in evidence["contentMaterial"]
+    }
+    opening = {
+        row["eventReferenceHex"]: row for row in evidence["openingMaterial"]
+    }
+    if set(content) != set(opening):
+        raise HarnessFailure("strict replay found unpaired authoritative evidence")
+    return [
+        {
+            "contentMaterial": content[reference],
+            "eventReferenceHex": reference,
+            "openingMaterial": opening[reference],
+            "presentationId": str(index),
+        }
+        for index, reference in enumerate(sorted(content))
+    ]
+
+
+def _authoritative_evidence_to_internal(
+    evidence: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Decode a strict local E snapshot without trusting its verdict label."""
+
+    rows = evidence.get("verifiedComplete")
+    if not isinstance(rows, list):
+        raise EvidenceError("NONCANONICAL_MATERIAL")
+    content: list[dict[str, Any]] = []
+    opening: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            raise EvidenceError("NONCANONICAL_MATERIAL")
+        reference = row.get("eventReferenceHex")
+        material = row.get("contentMaterial")
+        randomizer = row.get("openingMaterial")
+        if (
+            row.get("verificationState") != "VERIFIED_COMPLETE"
+            or not isinstance(reference, str)
+            or reference in seen
+            or not isinstance(material, dict)
+            or material.get("eventReferenceHex") != reference
+            or not isinstance(randomizer, dict)
+            or randomizer.get("eventReferenceHex") != reference
+        ):
+            raise EvidenceError("NONCANONICAL_MATERIAL")
+        seen.add(reference)
+        content.append(material)
+        opening.append(randomizer)
+    if [row["eventReferenceHex"] for row in content] != sorted(seen):
+        raise EvidenceError("NONCANONICAL_MATERIAL")
+    return {"contentMaterial": content, "openingMaterial": opening}
+
+
+def _attempt_to_internal_evidence(
+    attempt: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Return one structurally paired raw attempt, or discard it locally."""
+
+    reference = attempt.get("eventReferenceHex")
+    material = attempt.get("contentMaterial")
+    opening = attempt.get("openingMaterial")
+    if (
+        not isinstance(reference, str)
+        or not isinstance(material, dict)
+        or not isinstance(opening, dict)
+        or material.get("eventReferenceHex") != reference
+        or opening.get("eventReferenceHex") != reference
+    ):
+        return None
+    return {"contentMaterial": [material], "openingMaterial": [opening]}
+
+
+def _reduce_evidence_attempt_list(
+    authority: ContractAuthority,
+    candidates: tuple[ReplayCandidate, ...],
+    attempts: Any,
+) -> dict[str, Any]:
+    """Reduce independent attempts without raw partial-state poisoning."""
+
+    if not isinstance(attempts, list):
+        raise EvidenceError("NONCANONICAL_MATERIAL")
+    retained: dict[str, Any] = {"contentMaterial": [], "openingMaterial": []}
+    for attempt in attempts:
+        if not isinstance(attempt, Mapping):
+            continue
+        raw = _attempt_to_internal_evidence(attempt)
+        if raw is None:
+            continue
+        try:
+            verified = _reduce_complete_evidence_attempts(
+                authority, candidates, raw
+            )
+        except EvidenceError as error:
+            if error.code == "PRIMITIVE_ASSUMPTION_FAILURE":
+                raise
+            continue
+        if not verified["contentMaterial"]:
+            continue
+        retained, _ = merge_verified_complete_evidence(retained, verified)
+    return retained
 
 
 def _canonicalize_evidence(
@@ -1860,12 +2186,11 @@ def _candidate_records_for_k(
     candidates: tuple[ReplayCandidate, ...],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     genesis_projection = proposed_genesis["projection"]
-    genesis_candidate = proposed_genesis["candidate"]
     genesis_record = {
         "kind": "GENESIS",
         "genesisReferenceHex": genesis_projection["genesisReferenceHex"],
-        "signatureHex": genesis_candidate["signatureHex"],
-        "transcriptHex": genesis_candidate["transcriptHex"],
+        "signatureHex": proposed_genesis["retainedProof"]["signatureHex"],
+        "transcriptHex": proposed_genesis["logicalGenesis"]["transcriptHex"],
     }
     records: list[dict[str, Any]] = []
     for candidate in candidates:
@@ -1874,12 +2199,81 @@ def _candidate_records_for_k(
             "kind": "APPLICATION_EVENT",
             "eventReferenceHex": candidate.reference_hex,
             "transcriptHex": candidate.candidate["transcriptHex"],
-            "proofs": [
-                {"signatureHex": candidate.candidate["signatureHex"]}
-            ],
+            "proofs": list(candidate.proof_occurrences),
         }
         records.append(record)
     return genesis_record, records
+
+
+def _retained_presentations(
+    candidates: tuple[ReplayCandidate, ...],
+) -> list[dict[str, Any]]:
+    """Re-present an admitted closure with exactly one retained local P per L."""
+
+    presentations: list[dict[str, Any]] = []
+    for index, candidate in enumerate(candidates):
+        signature_hex = candidate.retained_proof_signature_hex
+        if signature_hex is None:
+            raise HarnessFailure("admitted logical event has no retained proof")
+        presentations.append(
+            {
+                "carriedReferenceHex": candidate.reference_hex,
+                "logicalEvent": candidate.candidate,
+                "proofs": [
+                    {
+                        "presentationId": str(index),
+                        "signatureHex": signature_hex,
+                    }
+                ],
+            }
+        )
+    return presentations
+
+
+def _logical_k_observation(
+    authority: ContractAuthority,
+    proposed_genesis: Mapping[str, Any],
+    candidates: tuple[ReplayCandidate, ...],
+    target_reference: str,
+) -> dict[str, Any]:
+    """Evaluate one strict target inside a collision-free logical K graph."""
+
+    if len({candidate.reference_hex for candidate in candidates}) != len(candidates):
+        raise HarnessFailure("strict K evaluation received a reference collision")
+    module = _load_pinned_c03_model(str(authority.repo_root))
+    genesis_record, records = _candidate_records_for_k(proposed_genesis, candidates)
+    try:
+        observations = module.evaluate_logical_k_admission_graph(
+            genesis_record, records, presentation_evidence=True
+        )
+    except module.ProtocolError as error:
+        raise HarnessFailure(
+            f"strict K graph rejected its revalidated genesis: {error.code}"
+        ) from error
+    matches = [
+        row
+        for row in observations
+        if row.get("eventReferenceHex") == target_reference
+    ]
+    if len(matches) != 1:
+        raise HarnessFailure("strict K evaluation did not isolate its target")
+    return matches[0]
+
+
+def _local_quarantine_proposal(
+    proposed_genesis: Mapping[str, Any], assumption_family: str
+) -> dict[str, str]:
+    """Describe a non-authoritative adapter/RS-local fail-stop proposal."""
+
+    if assumption_family not in {"REFERENCE_DERIVATION", "CONTENT_COMMITMENT"}:
+        raise HarnessFailure("unknown primitive-assumption family")
+    return {
+        "kind": "LOCAL_QUARANTINE_PROPOSAL",
+        "assumptionFamily": assumption_family,
+        "contextIdentifierHex": str(
+            proposed_genesis["expectedContextIdentifierHex"]
+        ),
+    }
 
 
 def _project_content_states(
@@ -2509,7 +2903,20 @@ def prepare_replay_closure(
         authority,
         profile,
         {
-            "candidate": proposed_genesis["candidate"],
+            "candidate": {
+                "carriedReferenceHex": proposed_genesis["projection"][
+                    "genesisReferenceHex"
+                ],
+                "logicalEvent": proposed_genesis["logicalGenesis"],
+                "proofs": [
+                    {
+                        "presentationId": "0",
+                        "signatureHex": proposed_genesis["retainedProof"][
+                            "signatureHex"
+                        ],
+                    }
+                ],
+            },
             "expectedContextIdentifierHex": proposed_genesis[
                 "expectedContextIdentifierHex"
             ],
@@ -2524,41 +2931,140 @@ def prepare_replay_closure(
         )
 
     module = _load_pinned_c03_model(str(authority.repo_root))
-    parsed_candidates: list[ReplayCandidate] = []
-    for candidate in value["candidates"]:
-        transcript = bytes.fromhex(candidate["transcriptHex"])
-        reference = module.framed_hash(
-            module.DOMAINS["event_reference"], transcript
-        ).hex()
-        try:
-            fields = module.parse_event(transcript)
-        except module.ProtocolError as error:
-            return _candidate_terminal("STRUCTURAL_REJECTION", error.stage)
-        parsed_candidates.append(
-            ReplayCandidate(candidate, reference, transcript, fields)
+    grouped: dict[tuple[str, bytes], ReplayCandidate] = {}
+    rejected_groups: set[tuple[str, bytes]] = set()
+    for presentation in value["presentations"]:
+        parsed = _parse_transcript_candidate(authority, presentation)
+        if isinstance(parsed, tuple):
+            continue
+        key = (parsed.reference_hex, parsed.transcript)
+        previous = grouped.get(key)
+        proof_occurrences = tuple(
+            {
+                "presentationId": str(row["presentationId"]),
+                "signatureHex": str(row["signatureHex"]),
+            }
+            for row in presentation["proofs"]
         )
+        if previous is None:
+            grouped[key] = ReplayCandidate(
+                parsed.logical_event,
+                parsed.reference_hex,
+                parsed.transcript,
+                parsed.fields,
+                proof_occurrences=proof_occurrences,
+            )
+        else:
+            combined = previous.proof_occurrences + proof_occurrences
+            if len(combined) > _selected_limit(authority, "SIGNATURE_ATTEMPTS"):
+                rejected_groups.add(key)
+                grouped.pop(key, None)
+            elif key not in rejected_groups:
+                grouped[key] = ReplayCandidate(
+                    previous.candidate,
+                    previous.reference_hex,
+                    previous.transcript,
+                    previous.fields,
+                    proof_occurrences=combined,
+                )
+    candidates = tuple(
+        grouped[key]
+        for key in sorted(grouped, key=lambda item: (item[0], item[1]))
+        if key not in rejected_groups
+    )
 
-    references = [candidate.reference_hex for candidate in parsed_candidates]
-    if len(set(references)) != len(references):
-        return _replay_input_terminal(
-            "DUPLICATE_CANDIDATE_REFERENCE", "CANDIDATE_SET_VALIDATION"
+    # Do not classify equal-reference, byte-distinct L groups by arrival or by
+    # their carried metadata.  Each group first gets an independent proof/K
+    # evaluation in an otherwise collision-free graph.  A sole admissible
+    # group survives; two admissible groups prove a local primitive-assumption
+    # failure and select neither side.
+    by_reference: dict[str, list[ReplayCandidate]] = {}
+    for candidate in candidates:
+        by_reference.setdefault(candidate.reference_hex, []).append(candidate)
+    selected = [
+        rows[0] for rows in by_reference.values() if len(rows) == 1
+    ]
+    collision_families = {
+        reference: tuple(rows)
+        for reference, rows in by_reference.items()
+        if len(rows) > 1
+    }
+    unresolved = set(collision_families)
+    while unresolved:
+        progress = False
+        for reference in sorted(tuple(unresolved)):
+            base = tuple(
+                sorted(
+                    (
+                        candidate
+                        for candidate in selected
+                        if candidate.reference_hex != reference
+                    ),
+                    key=lambda item: (item.reference_hex, item.transcript),
+                )
+            )
+            admissible: list[ReplayCandidate] = []
+            for variant in collision_families[reference]:
+                observation = _logical_k_observation(
+                    authority,
+                    proposed_genesis,
+                    tuple(
+                        sorted(
+                            (*base, variant),
+                            key=lambda item: (item.reference_hex, item.transcript),
+                        )
+                    ),
+                    reference,
+                )
+                if observation["kBindingAdmission"] == "ADMITTED":
+                    admissible.append(variant)
+            if len(admissible) > 1:
+                return _local_quarantine_proposal(
+                    proposed_genesis, "REFERENCE_DERIVATION"
+                )
+            if len(admissible) == 1:
+                selected.append(admissible[0])
+                unresolved.remove(reference)
+                progress = True
+        if not progress:
+            break
+
+    # A dependency admitted in a later iteration may make a second variant
+    # admissible.  Recheck every collision family against the final survivor
+    # set before any L or P enters the proposed successor.
+    for reference, variants in sorted(collision_families.items()):
+        base = tuple(
+            sorted(
+                (
+                    candidate
+                    for candidate in selected
+                    if candidate.reference_hex != reference
+                ),
+                key=lambda item: (item.reference_hex, item.transcript),
+            )
         )
-    if references != sorted(references):
-        return _replay_input_terminal(
-            "CANDIDATE_SET_NONCANONICAL", "CANDIDATE_SET_VALIDATION"
-        )
-    candidates = tuple(parsed_candidates)
-    try:
-        evidence = _reduce_complete_evidence_attempts(
-            authority, candidates, value["evidence"]
-        )
-    except EvidenceError as error:
-        reason = (
-            "UNKNOWN_EVIDENCE_REFERENCE"
-            if error.code == "UNKNOWN_EVENT_REFERENCE"
-            else "EVIDENCE_NONCANONICAL"
-        )
-        return _replay_input_terminal(reason, "EVIDENCE_VALIDATION")
+        admissible = 0
+        for variant in variants:
+            observation = _logical_k_observation(
+                authority,
+                proposed_genesis,
+                tuple(
+                    sorted(
+                        (*base, variant),
+                        key=lambda item: (item.reference_hex, item.transcript),
+                    )
+                ),
+                reference,
+            )
+            admissible += observation["kBindingAdmission"] == "ADMITTED"
+        if admissible > 1:
+            return _local_quarantine_proposal(
+                proposed_genesis, "REFERENCE_DERIVATION"
+            )
+
+    candidates = tuple(
+        sorted(selected, key=lambda item: (item.reference_hex, item.transcript))
+    )
 
     genesis_record, records = _candidate_records_for_k(proposed_genesis, candidates)
     try:
@@ -2569,36 +3075,50 @@ def prepare_replay_closure(
         raise HarnessFailure(
             f"complete K graph rejected its revalidated genesis: {error.code}"
         ) from error
-    observation_by_reference = {
-        row["eventReferenceHex"]: row for row in observations
-    }
+    observations_by_reference: dict[str, list[dict[str, Any]]] = {}
+    for observation in observations:
+        observations_by_reference.setdefault(
+            observation["eventReferenceHex"], []
+        ).append(observation)
+    admitted_candidates: list[ReplayCandidate] = []
+    admitted_observations: list[dict[str, Any]] = []
     for candidate in candidates:
-        observation = observation_by_reference.get(candidate.reference_hex)
-        if observation is None:
-            raise HarnessFailure("complete K graph silently dropped a candidate")
-        if observation["kBindingAdmission"] != "ADMITTED":
-            return _candidate_terminal(
-                observation["protocolErrorCode"], observation["stage"]
+        matching = observations_by_reference.get(candidate.reference_hex, [])
+        admitted = [
+            row for row in matching if row["kBindingAdmission"] == "ADMITTED"
+        ]
+        if len(admitted) != 1:
+            continue
+        observation = admitted[0]
+        admitted_candidates.append(
+            ReplayCandidate(
+                candidate=candidate.candidate,
+                reference_hex=candidate.reference_hex,
+                transcript=candidate.transcript,
+                fields=candidate.fields,
+                retained_proof_signature_hex=str(
+                    observation["retainedProofSignatureHex"]
+                ),
+                proof_occurrences=candidate.proof_occurrences,
             )
-    candidates = tuple(
-        ReplayCandidate(
-            candidate=candidate.candidate,
-            reference_hex=candidate.reference_hex,
-            transcript=candidate.transcript,
-            fields=candidate.fields,
-            retained_proof_signature_hex=str(
-                observation_by_reference[candidate.reference_hex][
-                    "retainedProofSignatureHex"
-                ]
-            ),
         )
-        for candidate in candidates
-    )
+        admitted_observations.append(observation)
+    candidates = tuple(admitted_candidates)
+    try:
+        evidence = _reduce_evidence_attempt_list(
+            authority, candidates, value["evidenceAttempts"]
+        )
+    except EvidenceError as error:
+        if error.code == "PRIMITIVE_ASSUMPTION_FAILURE":
+            return _local_quarantine_proposal(
+                proposed_genesis, "CONTENT_COMMITMENT"
+            )
+        raise
     return ReplayClosure(
         proposed_genesis=proposed_genesis,
         candidates=candidates,
         evidence=evidence,
-        k_observations=tuple(observations),
+        k_observations=tuple(admitted_observations),
     )
 
 
@@ -2990,11 +3510,22 @@ def replay_context(
     if isinstance(projected, dict):
         return projected
     snapshot = {
-        "admittedCandidates": [
+        "genesis": projected.closure.proposed_genesis,
+        "logicalEvents": [
             candidate.candidate for candidate in projected.closure.candidates
         ],
-        "evidence": projected.closure.evidence,
-        "genesis": projected.closure.proposed_genesis,
+        "localRevalidation": {
+            "evidence": _internal_evidence_to_authoritative(
+                projected.closure.evidence
+            ),
+            "retainedProofs": [
+                {
+                    "eventReferenceHex": candidate.reference_hex,
+                    "signatureHex": candidate.retained_proof_signature_hex,
+                }
+                for candidate in projected.closure.candidates
+            ],
+        },
         "projection": _assemble_context_projection(authority, projected),
     }
     return {
@@ -3016,20 +3547,65 @@ def _revalidate_prior_snapshot(
     projection before considering the new candidate or evidence additions.
     """
 
+    logical_events = prior["logicalEvents"]
+    local = prior["localRevalidation"]
+    retained = local["retainedProofs"]
+    logical_references = [row["eventReferenceHex"] for row in logical_events]
+    retained_references = [row["eventReferenceHex"] for row in retained]
+    if (
+        logical_references != sorted(logical_references)
+        or retained_references != sorted(retained_references)
+        or len(logical_references) != len(set(logical_references))
+        or len(retained_references) != len(set(retained_references))
+        or set(logical_references) != set(retained_references)
+    ):
+        return None
+    proof_by_reference = {
+        row["eventReferenceHex"]: row["signatureHex"] for row in retained
+    }
+    try:
+        strict_evidence = _authoritative_evidence_to_internal(local["evidence"])
+    except EvidenceError:
+        return None
     replay_input = {
         "proposedGenesis": prior["genesis"],
-        "candidates": prior["admittedCandidates"],
-        "evidence": prior["evidence"],
+        "presentations": [
+            {
+                "carriedReferenceHex": logical["eventReferenceHex"],
+                "logicalEvent": logical,
+                "proofs": [
+                    {
+                        "presentationId": str(index),
+                        "signatureHex": proof_by_reference[
+                            logical["eventReferenceHex"]
+                        ],
+                    }
+                ],
+            }
+            for index, logical in enumerate(logical_events)
+        ],
+        "evidenceAttempts": _internal_evidence_as_attempts(strict_evidence),
     }
     projection = project_replay_state(authority, profile, replay_input)
     if isinstance(projection, dict):
         return None
     regenerated = {
-        "admittedCandidates": [
+        "genesis": projection.closure.proposed_genesis,
+        "logicalEvents": [
             candidate.candidate for candidate in projection.closure.candidates
         ],
-        "evidence": projection.closure.evidence,
-        "genesis": projection.closure.proposed_genesis,
+        "localRevalidation": {
+            "evidence": _internal_evidence_to_authoritative(
+                projection.closure.evidence
+            ),
+            "retainedProofs": [
+                {
+                    "eventReferenceHex": candidate.reference_hex,
+                    "signatureHex": candidate.retained_proof_signature_hex,
+                }
+                for candidate in projection.closure.candidates
+            ],
+        },
         "projection": _assemble_context_projection(authority, projection),
     }
     return projection if regenerated == prior else None
@@ -3101,17 +3677,23 @@ def evaluate_candidate(
         # never collapsed into an event-local O-10 primary.
         raise RequestRejected()
 
-    candidate = value["candidate"]
-    parsed = _parse_transcript_candidate(authority, candidate)
-    if parsed[0] is None:
+    presentation = value["candidate"]
+    parsed = _parse_transcript_candidate(authority, presentation)
+    if isinstance(parsed, tuple):
+        reason = parsed[0]
+        primary = (
+            "CURRENT_OBJECT_OUT_OF_PROFILE"
+            if reason == "SELECTED_ENVELOPE_REJECTED"
+            else "LENGTH_MISMATCH"
+            if reason == "SIGNATURE_LENGTH_MISMATCH"
+            else "STRUCTURAL_REJECTION"
+        )
         return {
-            "evaluation": _candidate_result_from_primary(
-                authority, "STRUCTURAL_REJECTION"
-            )
+            "evaluation": _candidate_result_from_primary(authority, primary)
         }
-    module, transcript, _, fields, _ = parsed
+    module = _load_pinned_c03_model(str(authority.repo_root))
     envelope_failure = _selected_envelope_failure(
-        module, "APPLICATION_EVENT", transcript, fields
+        module, "APPLICATION_EVENT", parsed.transcript, parsed.fields
     )
     if envelope_failure is not None:
         return {
@@ -3119,41 +3701,86 @@ def evaluate_candidate(
                 authority, "CURRENT_OBJECT_OUT_OF_PROFILE"
             )
         }
-    reference = module.framed_hash(module.DOMAINS["event_reference"], transcript).hex()
+    reference = parsed.reference_hex
     prior_by_reference = {
         item.reference_hex: item for item in prior_projection.closure.candidates
     }
-
-    parsed_candidate = ReplayCandidate(candidate, reference, transcript, fields)
-    if value["evidence"] != {"contentMaterial": [], "openingMaterial": []}:
-        # The v0 schema still carries the legacy empty slot until the closed
-        # schema is regenerated, but no content/opening input is accepted by
-        # EVALUATE_CANDIDATE under the ratified H12/H3 operation split.
-        raise RequestRejected()
-    merged_evidence = prior_projection.closure.evidence
-
     previous = prior_by_reference.get(reference)
-    if previous is not None:
-        primary = (
-            "DUPLICATE"
-            if previous.candidate == candidate
-            else "REFERENCE_COLLISION_UNSUPPORTED"
-        )
-        return {"evaluation": _candidate_result_from_primary(authority, primary)}
+    if previous is not None and previous.transcript == parsed.transcript:
+        # Proof variance is outside L identity.  Re-presenting exact L after it
+        # was admitted is proof-redundant and cannot refresh local custody.
+        return {
+            "evaluation": _candidate_result_from_primary(authority, "DUPLICATE")
+        }
 
-    candidates = sorted(
-        (*prior_projection.closure.candidates, parsed_candidate),
-        key=lambda item: item.reference_hex,
+    proof_occurrences = tuple(
+        {
+            "presentationId": str(row["presentationId"]),
+            "signatureHex": str(row["signatureHex"]),
+        }
+        for row in presentation["proofs"]
     )
+    parsed_candidate = ReplayCandidate(
+        candidate=parsed.logical_event,
+        reference_hex=reference,
+        transcript=parsed.transcript,
+        fields=parsed.fields,
+        proof_occurrences=proof_occurrences,
+    )
+    collision_free_prior = tuple(
+        item
+        for item in prior_projection.closure.candidates
+        if item.reference_hex != reference
+    )
+    strict_candidates = tuple(
+        sorted(
+            (*collision_free_prior, parsed_candidate),
+            key=lambda item: (item.reference_hex, item.transcript),
+        )
+    )
+    observation = _logical_k_observation(
+        authority,
+        prior_projection.closure.proposed_genesis,
+        strict_candidates,
+        reference,
+    )
+    if observation["kBindingAdmission"] != "ADMITTED":
+        primary = observation.get("protocolErrorCode")
+        if primary not in _f13_relation(authority):
+            primary = "INVALID"
+        return {
+            "evaluation": _candidate_result_from_primary(authority, str(primary))
+        }
+    retained_signature = observation.get("retainedProofSignatureHex")
+    if not isinstance(retained_signature, str):
+        raise HarnessFailure("strict K admission retained no proof")
+
+    if previous is not None:
+        # The prior L and the byte-distinct candidate have each independently
+        # authenticated and passed K.  No arrival winner is selected.
+        return {
+            "evaluation": _local_quarantine_proposal(
+                prior_projection.closure.proposed_genesis,
+                "REFERENCE_DERIVATION",
+            )
+        }
+
     replayed = replay_context(
         authority,
         profile,
         {
             "proposedGenesis": prior_projection.closure.proposed_genesis,
-            "candidates": [item.candidate for item in candidates],
-            "evidence": merged_evidence,
+            "presentations": [
+                *_retained_presentations(prior_projection.closure.candidates),
+                presentation,
+            ],
+            "evidenceAttempts": _internal_evidence_as_attempts(
+                prior_projection.closure.evidence
+            ),
         },
     )
+    if replayed.get("kind") == "LOCAL_QUARANTINE_PROPOSAL":
+        return {"evaluation": replayed}
     if replayed.get("kind") == "TERMINAL_CANDIDATE_REJECTED":
         return {
             "evaluation": _candidate_result_from_primary(
@@ -3200,36 +3827,83 @@ def evaluate_evidence_update(
             }
         }
     candidates = prior_projection.closure.candidates
-    try:
-        additions = _reduce_complete_evidence_attempts(
-            authority, candidates, value["additions"]
-        )
-        if not additions["contentMaterial"]:
-            raw = value["additions"]
-            content_refs = {
-                row["eventReferenceHex"] for row in raw["contentMaterial"]
+    raw_additions = value["additions"]
+    if not raw_additions:
+        return {
+            "evaluation": {
+                "kind": "TERMINAL_REJECTED",
+                "reason": "EMPTY_ADDITION_SET",
             }
-            opening_refs = {
-                row["eventReferenceHex"] for row in raw["openingMaterial"]
-            }
-            reason = (
-                "EVIDENCE_COMMITMENT_MISMATCH"
-                if content_refs & opening_refs
-                else "NONCANONICAL_MATERIAL"
+        }
+
+    # Attempt order and presentation IDs are non-authoritative.  Invalid
+    # attempts are reduced independently so none can veto a valid co-present
+    # promotion.  A deterministic diagnostic is selected only when the whole
+    # call contains no promotable or idempotent E value.
+    additions: dict[str, Any] = {"contentMaterial": [], "openingMaterial": []}
+    rejected_reasons: set[str] = set()
+    for attempt in sorted(
+        raw_additions,
+        key=lambda row: json.dumps(
+            row, ensure_ascii=False, separators=(",", ":"), sort_keys=True
+        ).encode("utf-8"),
+    ):
+        raw = _attempt_to_internal_evidence(attempt)
+        if raw is None:
+            rejected_reasons.add("NONCANONICAL_MATERIAL")
+            continue
+        try:
+            verified = _reduce_complete_evidence_attempts(
+                authority, candidates, raw
             )
-            return {"evaluation": {"kind": "TERMINAL_REJECTED", "reason": reason}}
-        merged, changed = merge_verified_complete_evidence(
-            prior_projection.closure.evidence, additions
+        except EvidenceError as error:
+            rejected_reasons.add(error.code)
+            continue
+        if not verified["contentMaterial"]:
+            rejected_reasons.add("EVIDENCE_COMMITMENT_MISMATCH")
+            continue
+        try:
+            additions, _ = merge_verified_complete_evidence(
+                additions, verified
+            )
+        except EvidenceError as error:
+            if error.code == "PRIMITIVE_ASSUMPTION_FAILURE":
+                return {
+                    "evaluation": _local_quarantine_proposal(
+                        prior_projection.closure.proposed_genesis,
+                        "CONTENT_COMMITMENT",
+                    )
+                }
+            raise
+
+    if not additions["contentMaterial"]:
+        preference = (
+            "UNKNOWN_EVENT_REFERENCE",
+            "PARTIAL_OVERLAP",
+            "CONFLICTING_DUPLICATE",
+            "NONCANONICAL_MATERIAL",
+            "EVIDENCE_COMMITMENT_MISMATCH",
         )
-    except EvidenceError as error:
-        reason = (
-            "FULL_REPLAY_MISMATCH"
-            if error.code == "PRIMITIVE_ASSUMPTION_FAILURE"
-            else error.code
+        reason = next(
+            (item for item in preference if item in rejected_reasons),
+            "NONCANONICAL_MATERIAL",
         )
         return {
             "evaluation": {"kind": "TERMINAL_REJECTED", "reason": reason}
         }
+    try:
+        merged, changed = merge_verified_complete_evidence(
+            prior_projection.closure.evidence, additions
+        )
+    except EvidenceError as error:
+        if error.code == "PRIMITIVE_ASSUMPTION_FAILURE":
+            return {
+                "evaluation": _local_quarantine_proposal(
+                    prior_projection.closure.proposed_genesis,
+                    "CONTENT_COMMITMENT",
+                )
+            }
+        raise
     if not changed:
         return {"evaluation": {"kind": "IDEMPOTENT_NO_CHANGE"}}
 
@@ -3238,12 +3912,14 @@ def evaluate_evidence_update(
         profile,
         {
             "proposedGenesis": prior_projection.closure.proposed_genesis,
-            "candidates": [
-                item.candidate for item in prior_projection.closure.candidates
-            ],
-            "evidence": merged,
+            "presentations": _retained_presentations(
+                prior_projection.closure.candidates
+            ),
+            "evidenceAttempts": _internal_evidence_as_attempts(merged),
         },
     )
+    if replayed.get("kind") == "LOCAL_QUARANTINE_PROPOSAL":
+        return {"evaluation": replayed}
     if replayed.get("kind") == "TERMINAL_CANDIDATE_REJECTED":
         primary = replayed.get("primary")
         reason = (
@@ -3383,8 +4059,10 @@ def _validate_response_shape_and_relation(
     )
     operation = response["operation"]
     if operation == "EVALUATE_CANDIDATE":
-        rows = _f13_relation(authority)
         evaluation = response["result"]["evaluation"]
+        if evaluation.get("kind") == "LOCAL_QUARANTINE_PROPOSAL":
+            return
+        rows = _f13_relation(authority)
         primary = evaluation.get("primary", evaluation.get("primaryOnCommit"))
         row = rows.get(primary)
         if row is None or evaluation["kind"] != row["coreResultKind"]:

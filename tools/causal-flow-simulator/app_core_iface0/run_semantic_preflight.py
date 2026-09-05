@@ -46,9 +46,9 @@ PHASES = (
     "VALIDATOR_SELF_TEST",
 )
 FIXED_PHASE_COUNTS = {
-    "BLIND_INPUT_EXECUTION": 559,
-    "POST_OUTPUT_MUTATION": 3861,
-    "VALIDATOR_SELF_TEST": 27,
+    "BLIND_INPUT_EXECUTION": 575,
+    "POST_OUTPUT_MUTATION": 4151,
+    "VALIDATOR_SELF_TEST": 26,
 }
 
 
@@ -69,8 +69,8 @@ def build_report_from_seed_registry(
     """Build non-authoritative preselection evidence for all semantic rows."""
 
     seed_rows = seed_registry.get("rows")
-    if not isinstance(seed_rows, list) or len(seed_rows) != 78:
-        raise SemanticPreflightError("semantic preflight requires 78 seed rows")
+    if not isinstance(seed_rows, list) or len(seed_rows) != 87:
+        raise SemanticPreflightError("semantic preflight requires 87 seed rows")
     directions = _closed_counts(
         [
             row.get("carrierDirection") if isinstance(row, dict) else ""
@@ -95,7 +95,7 @@ def build_report_from_seed_registry(
     if fixed_counts != FIXED_PHASE_COUNTS:
         raise SemanticPreflightError("fixed semantic phase partition drift")
     if (
-        len(acv048) != 702
+        len(acv048) != 783
         or acv048_counts["BLIND_INPUT_EXECUTION"] != directions["REQUEST"] * 9
         or acv048_counts["POST_OUTPUT_MUTATION"] != directions["RESPONSE"] * 9
         or acv048_counts["VALIDATOR_SELF_TEST"] != 0
