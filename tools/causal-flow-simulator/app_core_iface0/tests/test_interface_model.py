@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from jsonschema.validators import Draft202012Validator
 
@@ -42,6 +43,7 @@ from interface_model import (  # noqa: E402
     _project_content_states,
     _replay_graph_capacity_failure,
     _protocol_error_reason,
+    _reduce_application_proof_group,
     _selected_envelope_failure,
     _validate_complete_v2_document,
     _validate_structural_v2_evidence,
@@ -125,6 +127,86 @@ class InterfaceModelTests(unittest.TestCase):
             }
         )
         self.assertEqual(list(validator.iter_errors(descriptor)), [])
+
+    def test_proof_group_reduction_is_signature_ordered_and_id_agnostic(self) -> None:
+        proposed, candidate = self._replay_fixture(event_type=1)
+        self.assertIsNotNone(candidate)
+        backend = _load_pinned_c03_model(str(self.authority.repo_root))
+        transcript = bytes.fromhex(candidate["transcriptHex"])
+        reference = backend.framed_hash(
+            backend.DOMAINS["event_reference"], transcript
+        ).hex()
+        invalid = bytes.fromhex("10" * 64)
+        first_valid = bytes.fromhex("20" * 64)
+        later_valid = bytes.fromhex("30" * 64)
+        group = {
+            "objectKind": "APPLICATION_EVENT",
+            "transcriptHex": candidate["transcriptHex"],
+            "carriedReferenceHex": reference,
+            "proofs": [
+                {"presentationId": "same", "signatureHex": later_valid.hex()},
+                {"presentationId": "same", "signatureHex": invalid.hex()},
+                {"presentationId": "ignored", "signatureHex": first_valid.hex()},
+            ],
+        }
+
+        def verify(_key: bytes, signature: bytes, _message: bytes) -> bool:
+            return signature in {first_valid, later_valid}
+
+        with patch.object(backend, "ed25519_verify", side_effect=verify):
+            forward = _reduce_application_proof_group(
+                self.authority, group, "44" * 32
+            )
+            reversed_group = copy.deepcopy(group)
+            reversed_group["proofs"].reverse()
+            reverse = _reduce_application_proof_group(
+                self.authority, reversed_group, "44" * 32
+            )
+        self.assertTrue(forward.authenticated)
+        self.assertEqual(forward, reverse)
+        self.assertEqual(forward.retained_signature_hex, first_valid.hex())
+        self.assertEqual(forward.signature_attempts, 2)
+        self.assertNotIn("presentationId", vars(forward))
+
+    def test_proof_group_limit_precedes_transcript_and_crypto_work(self) -> None:
+        group = {
+            "objectKind": "APPLICATION_EVENT",
+            "transcriptHex": "not-hex",
+            "carriedReferenceHex": "00" * 32,
+            "proofs": [
+                {"presentationId": str(index), "signatureHex": "00" * 64}
+                for index in range(65)
+            ],
+        }
+        result = _reduce_application_proof_group(self.authority, group, "00" * 32)
+        self.assertFalse(result.authenticated)
+        self.assertEqual(result.diagnostic, "PROOF_GROUP_LIMIT_EXCEEDED")
+        self.assertEqual(result.signature_attempts, 0)
+        self.assertIsNone(result.transcript)
+
+    def test_carried_reference_mismatch_precedes_signature_verification(self) -> None:
+        _, candidate = self._replay_fixture(event_type=1)
+        self.assertIsNotNone(candidate)
+        backend = _load_pinned_c03_model(str(self.authority.repo_root))
+        group = {
+            "objectKind": "APPLICATION_EVENT",
+            "transcriptHex": candidate["transcriptHex"],
+            "carriedReferenceHex": "ff" * 32,
+            "proofs": [
+                {"presentationId": "diagnostic-only", "signatureHex": "00" * 64}
+            ],
+        }
+        with patch.object(
+            backend,
+            "ed25519_verify",
+            side_effect=AssertionError("signature verification must not run"),
+        ):
+            result = _reduce_application_proof_group(
+                self.authority, group, "44" * 32
+            )
+        self.assertFalse(result.authenticated)
+        self.assertEqual(result.diagnostic, "CARRIED_REFERENCE_MISMATCH")
+        self.assertEqual(result.signature_attempts, 0)
 
     def test_complete_v2_branch_trace_is_bound_to_direction_and_operation(self) -> None:
         request = {
@@ -223,7 +305,7 @@ class InterfaceModelTests(unittest.TestCase):
                 self.authority, newline, trusted_direction="REQUEST"
             )
 
-    def test_seeded_delta_is_role_allowed_but_read_only_delta_fails(self) -> None:
+    def test_seeded_delta_is_allowed_but_exact_repin_and_read_only_drift_fail(self) -> None:
         selection_head = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=REPO,
@@ -246,6 +328,15 @@ class InterfaceModelTests(unittest.TestCase):
             seeded = checkout / "docs/protocol/review/README.md"
             seeded.write_bytes(seeded.read_bytes() + b"\nseeded-role-test\n")
             verify_native_authority(checkout, contract)
+
+            repinned = checkout / "tools/causal-flow-simulator/c03/corpus_model.py"
+            repinned_bytes = repinned.read_bytes()
+            repinned.write_bytes(repinned_bytes + b"\n")
+            with self.assertRaisesRegex(
+                InterfaceModelError, "exact native dependency repin drift"
+            ):
+                verify_native_authority(checkout, contract)
+            repinned.write_bytes(repinned_bytes)
 
             frozen = checkout / "conformance/application-protocol/c03/manifest.json"
             frozen.write_bytes(frozen.read_bytes() + b" ")
@@ -1288,7 +1379,7 @@ class InterfaceModelTests(unittest.TestCase):
             },
         )
 
-    def test_replay_preserves_required_pending_but_rejects_unopened_detachable(self) -> None:
+    def test_logical_k_admission_is_independent_of_content_and_opening(self) -> None:
         backend = _load_pinned_c03_model(str(self.authority.repo_root))
         proposed, _ = self._replay_fixture()
         context = proposed["projection"]["context"]["contextIdentifierHex"]
@@ -1349,19 +1440,21 @@ class InterfaceModelTests(unittest.TestCase):
         self.assertEqual(len(required.pending_roots), 1)
         self.assertEqual(required.records[0]["replayReadiness"], "PENDING_OPENING")
 
-        detachable = prepare_replay_closure(
+        detachable_value = {**base, "candidates": [candidate("DETACHABLE", 2)]}
+        detachable_closure = prepare_replay_closure(
             self.authority,
             dict(SUPPORTED_PROFILE),
-            {**base, "candidates": [candidate("DETACHABLE", 2)]},
+            detachable_value,
         )
-        self.assertEqual(
-            detachable,
-            {
-                "kind": "TERMINAL_CANDIDATE_REJECTED",
-                "primary": "OPENING_MISSING",
-                "stage": "S3_KERNEL_STRUCTURAL",
-            },
+        self.assertIsInstance(detachable_closure, ReplayClosure)
+        self.assertEqual(detachable_closure.k_observations[0]["kBindingAdmission"], "ADMITTED")
+        detachable = project_replay_state(
+            self.authority, dict(SUPPORTED_PROFILE), detachable_value
         )
+        self.assertIsInstance(detachable, ReplayProjection)
+        self.assertEqual(detachable.content_states[0]["localAvailability"], "ABSENT")
+        self.assertEqual(detachable.content_states[0]["bindingObservation"], "NOT_CHECKED")
+        self.assertEqual(detachable.records[0]["replayReadiness"], "READY_FOR_AP_FOLD")
 
         verified_detachable = candidate("DETACHABLE", 3)
         detachable_reference = backend.framed_hash(
@@ -1406,21 +1499,25 @@ class InterfaceModelTests(unittest.TestCase):
                 }
             ],
         }
-        self.assertEqual(
-            prepare_replay_closure(
-                self.authority,
-                dict(SUPPORTED_PROFILE),
-                {
-                    **base,
-                    "candidates": [verified_detachable],
-                    "evidence": mismatched_evidence,
-                },
-            ),
+        absent_same_candidate = prepare_replay_closure(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
+            {**base, "candidates": [verified_detachable]},
+        )
+        mismatched_same_candidate = prepare_replay_closure(
+            self.authority,
+            dict(SUPPORTED_PROFILE),
             {
-                "kind": "TERMINAL_CANDIDATE_REJECTED",
-                "primary": "COMMITMENT_MISMATCH",
-                "stage": "S3_KERNEL_STRUCTURAL",
+                **base,
+                "candidates": [verified_detachable],
+                "evidence": mismatched_evidence,
             },
+        )
+        self.assertIsInstance(absent_same_candidate, ReplayClosure)
+        self.assertIsInstance(mismatched_same_candidate, ReplayClosure)
+        self.assertEqual(
+            absent_same_candidate.k_observations,
+            mismatched_same_candidate.k_observations,
         )
 
     def test_replay_candidate_order_is_derived_from_references(self) -> None:

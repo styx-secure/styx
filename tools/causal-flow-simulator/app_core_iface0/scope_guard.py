@@ -184,17 +184,40 @@ def _verify_native_read_only(repo: Path, base: str, candidate: str) -> int:
         contract / "APP-CORE-IFACE-0-NATIVE-DEPENDENCIES-CANDIDATE.json"
     )
     count = 0
+    repinned: set[str] = set()
     for row in inventory["dependencies"]:
-        if row["mutationPolicy"] != "READ_ONLY_BYTE_IDENTICAL":
+        policy = row["mutationPolicy"]
+        if policy == "SEEDED_EXTENSION_ONLY_PRESERVE_BASE_SEMANTICS":
             continue
         path = row["path"]
         before = _git(repo, "rev-parse", f"{base}:{path}").strip()
         after = _git(repo, "rev-parse", f"{candidate}:{path}").strip()
-        if before != after:
+        if before != row["gitBlobOid"]:
+            raise ScopeError(f"native dependency Base identity drift: {path}")
+        if policy == "READ_ONLY_BYTE_IDENTICAL" and before != after:
             raise ScopeError(f"read-only native dependency changed: {path}")
-        count += 1
-    if count != 61:
+        if policy == "READ_ONLY_BYTE_IDENTICAL":
+            if "repin" in row:
+                raise ScopeError(f"unexpected native dependency repin: {path}")
+            count += 1
+            continue
+        if policy != "RATIFIED_H12_H3_EXACT_REPIN":
+            raise ScopeError(f"unknown native dependency mutation policy: {path}")
+        repin = row.get("repin")
+        if (
+            not isinstance(repin, dict)
+            or set(repin)
+            != {"oldSha256", "newSha256", "newGitBlobOid", "newByteSize", "reason"}
+            or repin["oldSha256"] != row["sha256"]
+            or after != repin["newGitBlobOid"]
+            or before == after
+        ):
+            raise ScopeError(f"exact native dependency repin drift: {path}")
+        repinned.add(path)
+    if count != 60:
         raise ScopeError("read-only native dependency count drift")
+    if repinned != {"tools/causal-flow-simulator/c03/corpus_model.py"}:
+        raise ScopeError("ratified exact native dependency repin set drift")
     return count
 
 

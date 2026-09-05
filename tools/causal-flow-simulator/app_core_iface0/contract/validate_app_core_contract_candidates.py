@@ -1579,8 +1579,9 @@ def validate_manifest() -> None:
         "terminalPredicateRelationRows": 33,
         "signatureVerificationPathRows": 17,
         "nativeDependencies": 65,
-        "readOnlyNativeDependencies": 61,
+        "readOnlyNativeDependencies": 60,
         "seededExtensionNativeDependencies": 4,
+        "ratifiedExactRepinNativeDependencies": 1,
         "historicalProviderIncrements": 5,
         "seedRegistryRowsPendingPostBase": 78,
         "structuralWitnessRowsPendingPostBase": 1450,
@@ -1742,8 +1743,9 @@ def validate_native_dependencies(repository: Path, base_ref: str) -> None:
         inventory["derivedCounts"]
         == {
             "dependencies": 65,
-            "readOnlyDependencies": 61,
+            "readOnlyDependencies": 60,
             "seededExtensionDependencies": 4,
+            "ratifiedExactRepinDependencies": 1,
             "c03CanonicalFiles": 6,
             "c03ImplementationAndTestFiles": 26,
             "protocolReviewToolFiles": 16,
@@ -1753,10 +1755,30 @@ def validate_native_dependencies(repository: Path, base_ref: str) -> None:
     rows = inventory["dependencies"]
     paths = [row["path"] for row in rows]
     require(len(paths) == len(set(paths)) == 65, "native dependency path drift")
+    seeded = {
+        row["path"]
+        for row in rows
+        if row["mutationPolicy"] == "SEEDED_EXTENSION_ONLY_PRESERVE_BASE_SEMANTICS"
+    }
+    repinned = {
+        row["path"]
+        for row in rows
+        if row["mutationPolicy"] == "RATIFIED_H12_H3_EXACT_REPIN"
+    }
+    require(seeded == set(inventory["seededExtensionPaths"]), "seeded path drift")
     require(
-        {row["path"] for row in rows if row["mutationPolicy"] != "READ_ONLY_BYTE_IDENTICAL"}
-        == set(inventory["seededExtensionPaths"]),
-        "native dependency mutation-policy drift",
+        repinned == set(inventory["ratifiedExactRepinPaths"])
+        == {"tools/causal-flow-simulator/c03/corpus_model.py"},
+        "ratified exact repin path drift",
+    )
+    row = next(row for row in rows if row["path"] in repinned)
+    require(
+        set(row.get("repin", {}))
+        == {"oldSha256", "newSha256", "newGitBlobOid", "newByteSize", "reason"}
+        and row["repin"]["oldSha256"] == row["sha256"]
+        and row["repin"]["newSha256"] != row["sha256"]
+        and "Issue #295 comment 5550502736" in row["repin"]["reason"],
+        "ratified exact repin relation drift",
     )
 
 

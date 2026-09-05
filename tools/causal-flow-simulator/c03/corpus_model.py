@@ -7,7 +7,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import subprocess
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from canonical_json import dumps
 
@@ -1531,13 +1531,14 @@ def _classify_reference_identities(
     }
 
 
-def evaluate_k_admission_graph(
+def _evaluate_k_admission_graph(
     genesis_record: dict[str, Any],
     records: list[dict[str, Any]],
     *,
+    local_evaluator: Callable[[dict[str, Any]], dict[str, Any]],
     presentation_evidence: bool = False,
 ) -> list[dict[str, Any]]:
-    """Evaluate K0/K1/K2/K3 over one complete bounded candidate set."""
+    """Evaluate K0/K1/K2/K3 with one sealed local-occurrence policy."""
 
     if genesis_record.get("kind") != "GENESIS":
         raise ProtocolError("PREACCEPTED_GENESIS_KIND_INVALID")
@@ -1689,7 +1690,7 @@ def evaluate_k_admission_graph(
                         "credentialIdentifierHex": actor,
                         "verificationKeyHex": binding["verificationKeyHex"],
                     }
-                    local = evaluate_vector(local_record)
+                    local = local_evaluator(local_record)
                     local_code = local.get("localOutcome")
                     local_pending = (
                         local_code == "PENDING_OPENING"
@@ -1915,6 +1916,63 @@ def evaluate_k_admission_graph(
         {key: value for key, value in row.items() if key not in evidence_fields}
         for row in observations
     ]
+
+
+def _evaluate_logical_k_occurrence(record: dict[str, Any]) -> dict[str, Any]:
+    """Validate transcript/proof while excluding O-04 material from K.
+
+    This is a sealed internal evaluator selected only by
+    ``evaluate_logical_k_admission_graph``.  It cannot be selected by a wire
+    input.  Content/opening bytes are removed before validation; the two
+    historical missing-opening outcomes are normalized to a successful K
+    occurrence after transcript, reference, binding and signature checks.
+    """
+
+    logical_record = dict(record)
+    logical_record.pop("opening", None)
+    result = evaluate_vector(logical_record)
+    if result.get("localOutcome") not in {"OPENING_MISSING", "PENDING_OPENING"}:
+        return result
+    normalized = dict(result)
+    normalized["apAuthorityResult"] = "AP_FOLD_NOT_EXECUTED"
+    normalized["kBindingAdmission"] = "ADMITTED"
+    normalized["outcomeEvaluated"] = False
+    normalized["stage"] = "FINAL_AFTER_S6"
+    normalized.pop("localOutcome", None)
+    normalized.pop("remoteClass", None)
+    return normalized
+
+
+def evaluate_k_admission_graph(
+    genesis_record: dict[str, Any],
+    records: list[dict[str, Any]],
+    *,
+    presentation_evidence: bool = False,
+) -> list[dict[str, Any]]:
+    """Evaluate the preserved historical opening-sensitive K graph."""
+
+    return _evaluate_k_admission_graph(
+        genesis_record,
+        records,
+        local_evaluator=evaluate_vector,
+        presentation_evidence=presentation_evidence,
+    )
+
+
+def evaluate_logical_k_admission_graph(
+    genesis_record: dict[str, Any],
+    records: list[dict[str, Any]],
+    *,
+    presentation_evidence: bool = False,
+) -> list[dict[str, Any]]:
+    """Evaluate K with content/opening excluded from every K predicate."""
+
+    return _evaluate_k_admission_graph(
+        genesis_record,
+        records,
+        local_evaluator=_evaluate_logical_k_occurrence,
+        presentation_evidence=presentation_evidence,
+    )
 
 
 def evaluate_transcript_conformance(record: dict[str, Any]) -> dict[str, Any]:

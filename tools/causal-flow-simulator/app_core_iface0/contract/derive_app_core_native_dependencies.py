@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Derive the exact APP-CORE-IFACE-0 native dependency inventory.
 
-This tool reads objects from an exact Git commit.  It never reads dependency
-bytes from the working tree and grants no repository or protocol authority.
+Base identity always comes from the exact Git commit.  A path explicitly
+authorized for H12/H3 remediation is additionally pinned to its current bytes
+so the final candidate can prove the literal old/new repin required by the
+ratified Issue #295 amendment.  No other working-tree drift grants authority.
 """
 
 from __future__ import annotations
@@ -112,6 +114,15 @@ SEEDED_EXTENSION_PATHS = frozenset(
     }
 )
 
+RATIFIED_EXACT_REPIN_REASONS = {
+    "tools/causal-flow-simulator/c03/corpus_model.py": (
+        "Issue #295 comment 5550502736, amendment V3 sections 3.2, 3.4 and 4: "
+        "separate logical K admission from O-04 content/opening availability "
+        "while preserving the legacy evidence evaluator as an explicitly "
+        "distinct path"
+    ),
+}
+
 CATEGORIES = (
     ("GOVERNANCE_AND_SEQUENCE", GOVERNANCE),
     ("NORMATIVE_SEMANTICS", NORMATIVE_SEMANTICS),
@@ -169,12 +180,21 @@ def dependency(repository: Path, base: str, category: str, path: str) -> dict[st
     require(mode == "100644", f"non-regular or executable dependency: {path} ({mode})")
     require(object_type == "blob", f"non-blob dependency: {path} ({object_type})")
     content = git(repository, "cat-file", "blob", object_id)
-    mutation_policy = (
-        "SEEDED_EXTENSION_ONLY_PRESERVE_BASE_SEMANTICS"
-        if path in SEEDED_EXTENSION_PATHS
-        else "READ_ONLY_BYTE_IDENTICAL"
+    working_path = repository / path
+    require(
+        working_path.is_file() and not working_path.is_symlink(),
+        f"invalid working-tree dependency: {path}",
     )
-    return {
+    working_content = working_path.read_bytes()
+    changed = working_content != content
+    if changed and path in RATIFIED_EXACT_REPIN_REASONS:
+        mutation_policy = "RATIFIED_H12_H3_EXACT_REPIN"
+    elif path in SEEDED_EXTENSION_PATHS:
+        mutation_policy = "SEEDED_EXTENSION_ONLY_PRESERVE_BASE_SEMANTICS"
+    else:
+        require(not changed, f"unauthorized native dependency drift: {path}")
+        mutation_policy = "READ_ONLY_BYTE_IDENTICAL"
+    result: dict[str, object] = {
         "path": path,
         "category": category,
         "mutationPolicy": mutation_policy,
@@ -183,6 +203,16 @@ def dependency(repository: Path, base: str, category: str, path: str) -> dict[st
         "byteSize": len(content),
         "sha256": hashlib.sha256(content).hexdigest(),
     }
+    if mutation_policy == "RATIFIED_H12_H3_EXACT_REPIN":
+        candidate_oid = git(repository, "hash-object", "--stdin", input_bytes=working_content)
+        result["repin"] = {
+            "oldSha256": hashlib.sha256(content).hexdigest(),
+            "newSha256": hashlib.sha256(working_content).hexdigest(),
+            "newGitBlobOid": candidate_oid.decode().strip(),
+            "newByteSize": len(working_content),
+            "reason": RATIFIED_EXACT_REPIN_REASONS[path],
+        }
+    return result
 
 
 def derive(repository: Path, base_ref: str) -> dict[str, object]:
@@ -207,7 +237,16 @@ def derive(repository: Path, base_ref: str) -> dict[str, object]:
             seen.add(path)
             rows.append(dependency(repository, base, category, path))
 
-    frozen_paths = sorted(seen - SEEDED_EXTENSION_PATHS)
+    repinned_paths = sorted(
+        str(row["path"])
+        for row in rows
+        if row["mutationPolicy"] == "RATIFIED_H12_H3_EXACT_REPIN"
+    )
+    frozen_paths = sorted(
+        str(row["path"])
+        for row in rows
+        if row["mutationPolicy"] == "READ_ONLY_BYTE_IDENTICAL"
+    )
     seeded_paths = sorted(SEEDED_EXTENSION_PATHS)
     relation_lines = [
         "\0".join(
@@ -219,6 +258,7 @@ def derive(repository: Path, base_ref: str) -> dict[str, object]:
                 str(row["gitBlobOid"]),
                 str(row["byteSize"]),
                 str(row["sha256"]),
+                json.dumps(row.get("repin"), sort_keys=True, separators=(",", ":")),
             )
         )
         for row in rows
@@ -241,6 +281,7 @@ def derive(repository: Path, base_ref: str) -> dict[str, object]:
             "dependencies": len(rows),
             "readOnlyDependencies": len(frozen_paths),
             "seededExtensionDependencies": len(seeded_paths),
+            "ratifiedExactRepinDependencies": len(repinned_paths),
             "c03CanonicalFiles": len(C03_CANONICAL_DATA),
             "c03ImplementationAndTestFiles": len(C03_EVIDENCE_IMPLEMENTATION),
             "protocolReviewToolFiles": len(PROTOCOL_REVIEW_TOOL),
@@ -249,9 +290,11 @@ def derive(repository: Path, base_ref: str) -> dict[str, object]:
             "allPathSetSha256": digest_lines(seen),
             "readOnlyPathSetSha256": digest_lines(frozen_paths),
             "seededExtensionPathSetSha256": digest_lines(seeded_paths),
+            "ratifiedExactRepinPathSetSha256": digest_lines(repinned_paths),
             "dependencyRelationSha256": digest_lines(relation_lines),
         },
         "seededExtensionPaths": seeded_paths,
+        "ratifiedExactRepinPaths": repinned_paths,
         "dependencies": rows,
     }
 

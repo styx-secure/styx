@@ -140,6 +140,7 @@ class NativeDependency:
     git_blob_oid: str
     byte_size: int
     mutation_policy: str
+    repin: Mapping[str, Any] | None
 
 
 @dataclass(frozen=True)
@@ -150,6 +151,24 @@ class ReplayCandidate:
     reference_hex: str
     transcript: bytes
     fields: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ProofGroupReduction:
+    """Internal result of reducing one exact-transcript proof group.
+
+    This value is deliberately not part of the serializable interface.  It
+    authenticates only one occurrence of a logical transcript and carries no
+    K-admission, AP-authority, persistence, or content-verification claim.
+    """
+
+    authenticated: bool
+    diagnostic: str | None
+    fields: Mapping[str, Any] | None
+    reference_hex: str | None
+    retained_signature_hex: str | None
+    signature_attempts: int
+    transcript: bytes | None
 
 
 @dataclass(frozen=True)
@@ -240,6 +259,7 @@ def _dependency_rows(contract: Path) -> tuple[NativeDependency, ...]:
                     git_blob_oid=row["gitBlobOid"],
                     byte_size=row["byteSize"],
                     mutation_policy=row["mutationPolicy"],
+                    repin=row.get("repin"),
                 )
             )
         except KeyError as error:
@@ -259,6 +279,15 @@ def verify_native_authority(repo_root: Path, contract: Path) -> None:
         "docs/protocol/review/styx-app-kernel-v0-review-model.schema.json",
         "tools/protocol-review-model/validate.py",
     }
+    ratified_exact_repins = {
+        "tools/causal-flow-simulator/c03/corpus_model.py": (
+            "Issue #295 comment 5550502736, amendment V3 sections 3.2, 3.4 and 4: "
+            "separate logical K admission from O-04 content/opening availability "
+            "while preserving the legacy evidence evaluator as an explicitly "
+            "distinct path"
+        ),
+    }
+    observed_repins: set[str] = set()
     for dependency in _dependency_rows(contract):
         path = root / dependency.path
         if not path.is_file() or path.is_symlink():
@@ -295,19 +324,69 @@ def verify_native_authority(repo_root: Path, contract: Path) -> None:
                 f"native dependency Base bytes drift: {dependency.path}"
             )
         if dependency.mutation_policy == "READ_ONLY_BYTE_IDENTICAL":
+            if dependency.repin is not None:
+                raise InterfaceModelError(
+                    f"unexpected native dependency repin: {dependency.path}"
+                )
             if path.read_bytes() != base_blob.stdout:
                 raise InterfaceModelError(
                     f"read-only native dependency drift: {dependency.path}"
                 )
         elif dependency.mutation_policy == "SEEDED_EXTENSION_ONLY_PRESERVE_BASE_SEMANTICS":
+            if dependency.repin is not None:
+                raise InterfaceModelError(
+                    f"unexpected seeded-extension repin: {dependency.path}"
+                )
             if dependency.path not in seeded_extension_paths:
                 raise InterfaceModelError(
                     f"unauthorized seeded-extension path: {dependency.path}"
                 )
+        elif dependency.mutation_policy == "RATIFIED_H12_H3_EXACT_REPIN":
+            expected_reason = ratified_exact_repins.get(dependency.path)
+            repin = dependency.repin
+            if expected_reason is None or not isinstance(repin, Mapping):
+                raise InterfaceModelError(
+                    f"unauthorized exact native dependency repin: {dependency.path}"
+                )
+            if set(repin) != {
+                "oldSha256",
+                "newSha256",
+                "newGitBlobOid",
+                "newByteSize",
+                "reason",
+            }:
+                raise InterfaceModelError(
+                    f"malformed exact native dependency repin: {dependency.path}"
+                )
+            current = path.read_bytes()
+            object_id = subprocess.run(
+                ["git", "hash-object", "--stdin"],
+                cwd=root,
+                input=current,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            )
+            if (
+                repin["oldSha256"] != dependency.sha256
+                or repin["newSha256"] == dependency.sha256
+                or repin["newSha256"] != _sha256(current)
+                or repin["newByteSize"] != len(current)
+                or object_id.returncode != 0
+                or repin["newGitBlobOid"] != object_id.stdout.decode().strip()
+                or repin["reason"] != expected_reason
+            ):
+                raise InterfaceModelError(
+                    f"exact native dependency repin drift: {dependency.path}"
+                )
+            observed_repins.add(dependency.path)
         else:
             raise InterfaceModelError(
                 f"unknown native dependency mutation policy: {dependency.path}"
             )
+    if observed_repins != set(ratified_exact_repins):
+        raise InterfaceModelError("ratified exact native dependency repin set drift")
 
 
 @dataclass(frozen=True)
@@ -1232,6 +1311,111 @@ def _parse_transcript_candidate(
     return module, transcript, signature, fields, observations
 
 
+def _reduce_application_proof_group(
+    authority: ContractAuthority,
+    group: Mapping[str, Any],
+    verification_key_hex: str,
+) -> ProofGroupReduction:
+    """Reduce a bounded proof set for one exact application transcript.
+
+    The caller is an internal K-binding resolver, never a public request.  A
+    transported presentation identifier is intentionally unread here.  The
+    proof-count guard precedes transcript decoding, hashing, key parsing and
+    signature verification, as required by the H12/H3 amendment.
+    """
+
+    proofs = group.get("proofs")
+    if not isinstance(proofs, list):
+        return ProofGroupReduction(
+            False, "STRUCTURAL_REJECTION", None, None, None, 0, None
+        )
+    if len(proofs) > _selected_limit(authority, "SIGNATURE_ATTEMPTS"):
+        return ProofGroupReduction(
+            False, "PROOF_GROUP_LIMIT_EXCEEDED", None, None, None, 0, None
+        )
+
+    module = _load_pinned_c03_model(str(authority.repo_root))
+    try:
+        if group["objectKind"] != "APPLICATION_EVENT":
+            raise ValueError("wrong object kind")
+        transcript = bytes.fromhex(group["transcriptHex"])
+    except (KeyError, TypeError, ValueError):
+        return ProofGroupReduction(
+            False, "STRUCTURAL_REJECTION", None, None, None, 0, None
+        )
+    framing = _framing_failure(module, "APPLICATION_EVENT", transcript)
+    if framing is not None:
+        return ProofGroupReduction(
+            False, "STRUCTURAL_REJECTION", None, None, None, 0, transcript
+        )
+    try:
+        fields = module.parse_event(transcript)
+    except module.ProtocolError:
+        return ProofGroupReduction(
+            False, "STRUCTURAL_REJECTION", None, None, None, 0, transcript
+        )
+    reference_hex = module.framed_hash(
+        module.DOMAINS["event_reference"], transcript
+    ).hex()
+    if group.get("carriedReferenceHex") != reference_hex:
+        return ProofGroupReduction(
+            False,
+            "CARRIED_REFERENCE_MISMATCH",
+            fields,
+            reference_hex,
+            None,
+            0,
+            transcript,
+        )
+
+    try:
+        verification_key = bytes.fromhex(verification_key_hex)
+        signatures = [bytes.fromhex(row["signatureHex"]) for row in proofs]
+    except (KeyError, TypeError, ValueError):
+        return ProofGroupReduction(
+            False,
+            "STRUCTURAL_REJECTION",
+            fields,
+            reference_hex,
+            None,
+            0,
+            transcript,
+        )
+    if len(verification_key) != 32 or any(len(value) != 64 for value in signatures):
+        return ProofGroupReduction(
+            False,
+            "STRUCTURAL_REJECTION",
+            fields,
+            reference_hex,
+            None,
+            0,
+            transcript,
+        )
+
+    attempts = 0
+    for signature in sorted(signatures):
+        attempts += 1
+        if module.ed25519_verify(verification_key, signature, transcript):
+            return ProofGroupReduction(
+                True,
+                None,
+                fields,
+                reference_hex,
+                signature.hex(),
+                attempts,
+                transcript,
+            )
+    return ProofGroupReduction(
+        False,
+        "NO_VALID_PROOF",
+        fields,
+        reference_hex,
+        None,
+        attempts,
+        transcript,
+    )
+
+
 def _rejected_transcript_result(
     reason: str, stage: str, observations: dict[str, str]
 ) -> dict[str, Any]:
@@ -1640,7 +1824,6 @@ def merge_evidence_additions(
 def _candidate_records_for_k(
     proposed_genesis: Mapping[str, Any],
     candidates: tuple[ReplayCandidate, ...],
-    evidence: Mapping[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     genesis_projection = proposed_genesis["projection"]
     genesis_candidate = proposed_genesis["candidate"]
@@ -1649,12 +1832,6 @@ def _candidate_records_for_k(
         "genesisReferenceHex": genesis_projection["genesisReferenceHex"],
         "signatureHex": genesis_candidate["signatureHex"],
         "transcriptHex": genesis_candidate["transcriptHex"],
-    }
-    content_by_reference = {
-        row["eventReferenceHex"]: row for row in evidence["contentMaterial"]
-    }
-    opening_by_reference = {
-        row["eventReferenceHex"]: row for row in evidence["openingMaterial"]
     }
     records: list[dict[str, Any]] = []
     for candidate in candidates:
@@ -1665,18 +1842,6 @@ def _candidate_records_for_k(
             "signatureHex": candidate.candidate["signatureHex"],
             "transcriptHex": candidate.candidate["transcriptHex"],
         }
-        descriptor = candidate.fields["content"]
-        if descriptor["class"] != "NONE":
-            content_hex = _complete_content_hex(
-                content_by_reference.get(candidate.reference_hex),
-                descriptor["exactLength"],
-            )
-            opening = opening_by_reference.get(candidate.reference_hex)
-            if content_hex is not None and opening is not None:
-                record["opening"] = {
-                    "contentHex": content_hex,
-                    "randomizerHex": opening["openingRandomizerHex"],
-                }
         records.append(record)
     return genesis_record, records
 
@@ -2088,10 +2253,8 @@ def _verify_k_projection_cross_checks(
     closure: ReplayClosure,
     *,
     fork_references: frozenset[str],
-    pending_roots: frozenset[str],
-    pending_references: frozenset[str],
 ) -> None:
-    """Prove that independent K diagnostics agree with recomputed axes."""
+    """Prove K diagnostics without importing O-04 pending state."""
 
     observations = {
         row["eventReferenceHex"]: row for row in closure.k_observations
@@ -2101,15 +2264,7 @@ def _verify_k_projection_cross_checks(
         observation = observations[reference]
         if observation["kBindingAdmission"] != "ADMITTED":
             raise HarnessFailure("projection consumed a non-admitted K record")
-        expected = (
-            "PENDING_ANCESTOR"
-            if reference in pending_references
-            else "FORK_EVIDENCE"
-            if reference in fork_references
-            else "PENDING_OPENING"
-            if reference in pending_roots
-            else None
-        )
+        expected = "FORK_EVIDENCE" if reference in fork_references else None
         if observation["protocolErrorCode"] != expected:
             raise HarnessFailure(
                 "independent K classification disagrees with replay projection"
@@ -2385,11 +2540,11 @@ def prepare_replay_closure(
         )
         return _replay_input_terminal(reason, "EVIDENCE_VALIDATION")
 
-    genesis_record, records = _candidate_records_for_k(
-        proposed_genesis, candidates, evidence
-    )
+    genesis_record, records = _candidate_records_for_k(proposed_genesis, candidates)
     try:
-        observations = module.evaluate_k_admission_graph(genesis_record, records)
+        observations = module.evaluate_logical_k_admission_graph(
+            genesis_record, records
+        )
     except module.ProtocolError as error:
         raise HarnessFailure(
             f"complete K graph rejected its revalidated genesis: {error.code}"
@@ -2444,8 +2599,6 @@ def project_replay_state(
     _verify_k_projection_cross_checks(
         closure,
         fork_references=fork_references,
-        pending_roots=pending_roots,
-        pending_references=pending_references,
     )
     credential_bindings, credential_aliases, lineage = _credential_projection(
         authority, closure.proposed_genesis, closure.candidates
