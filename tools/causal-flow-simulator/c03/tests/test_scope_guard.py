@@ -14,7 +14,7 @@ from scope_guard import CORPUS_FILES, SYNC_FILES, TOOL_FILES, allowed  # noqa: E
 class ScopeGuardTests(unittest.TestCase):
     def test_closed_package_sets_and_forbidden_neighbors(self) -> None:
         self.assertEqual(len(CORPUS_FILES), 6)
-        self.assertEqual(len(TOOL_FILES), 24)
+        self.assertEqual(len(TOOL_FILES), 26)
         self.assertEqual(len(SYNC_FILES), 12)
         self.assertTrue(allowed("conformance/application-protocol/c03/manifest.json"))
         self.assertTrue(allowed("tools/causal-flow-simulator/c03/tests/test_scope_guard.py"))
@@ -31,7 +31,7 @@ class ScopeGuardTests(unittest.TestCase):
         corpus_paths = {f"conformance/application-protocol/c03/{name}" for name in CORPUS_FILES}
         tool_paths = {f"tools/causal-flow-simulator/c03/{name}" for name in TOOL_FILES}
         declared = corpus_paths | tool_paths | set(SYNC_FILES)
-        self.assertEqual(len(declared), 42)
+        self.assertEqual(len(declared), 44)
         for endpoint in sorted(declared):
             with self.subTest(endpoint=endpoint):
                 self.assertTrue(allowed(endpoint))

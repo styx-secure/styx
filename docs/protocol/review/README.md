@@ -321,3 +321,14 @@ only for work separately authorized under Section 9 of the hardening plan. Issue
 itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
 demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
 <!-- styx-protocol-phase-exit-status:v1:end -->
+
+<!-- styx-c03-h1h2-package-a:v4:review-readme:start -->
+### Package-A H1/H2 evidence boundary
+
+The Package-A candidate is limited to test-local C0.3/K conformance-oracle
+repair. It must pass 164 handwritten scenarios in each independent runtime and
+kill 24 source mutants in each runtime while the six public corpus files remain
+byte-identical to Base. These results do not update the public corpus review
+model; Package B, H3, exact-final review and human gates remain blocking. C0.3
+stays `NO_GO`.
+<!-- styx-c03-h1h2-package-a:v4:review-readme:end -->

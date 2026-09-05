@@ -33,6 +33,7 @@ TOOL_FILES = frozenset({
     "tests/test_canonical_json.py", "tests/test_coverage.py", "tests/test_generation.py",
     "tests/test_manifest.py", "tests/test_mutations.py", "tests/test_replay.py",
     "tests/test_scope_guard.py", "tests/test_cross_runtime.py",
+    "h1_h2_relation.py", "tests/test_h1_h2_relation.py",
 })
 SYNC_FILES = frozenset({
     "docs/PROJECT_BRIEF.md", "docs/protocol/protocol-hardening-plan.md",

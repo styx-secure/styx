@@ -622,3 +622,15 @@ only for work separately authorized under Section 9 of the hardening plan. Issue
 itself authorizes no adapter, authenticated persistence, SDK, transport/delivery, product,
 demo, deployment or sensitive-use work; US-001 through US-008 remain paused.
 <!-- styx-protocol-phase-exit-status:v1:end -->
+
+<!-- styx-c03-h1h2-package-a:v4:hardening:start -->
+### C0.3/K H1/H2 Package A
+
+Package A repairs the isolated C0.3/K signature-guard and pending/fork
+conformance oracle against a 164-scenario, 24-mutant test-local relation while
+preserving the six official corpus blobs byte-for-byte. Package B remains
+mandatory for guarded corpus, blind/clean-room and APP-core propagation. H3
+remains separate. This is not an implementation-alignment increment. No
+adapter, SDK, demo, Flegias, product or sensitive-use work is authorized, and
+C0.3 remains `NO_GO`.
+<!-- styx-c03-h1h2-package-a:v4:hardening:end -->

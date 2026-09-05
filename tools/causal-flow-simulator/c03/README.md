@@ -96,3 +96,15 @@ does not claim a production ceremony, recovery, persistence, transport, wire
 format, implementation alignment, audit, demo readiness or sensitive-use
 safety. C0.3 remains `NO_GO` for `demo`, `implementation_alignment`, `product`
 and `sensitive_use`.
+
+<!-- styx-c03-h1h2-package-a:v4:c03-readme:start -->
+## Package-A H1/H2 test-local evidence
+
+Package A repairs the isolated C0.3/K Ed25519 guard and
+authenticate-before-slot pending/fork conformance oracle. Its handwritten
+test-local relation contains 164 logical scenarios and 24 real source mutants
+executed independently in Python and JavaScript. The six tracked official C0.3
+corpus files remain byte-identical to the Package-A Base. Package B must later
+propagate the relation into the guarded corpus, blind reader and APP-core.
+C0.3, adapter, SDK, demo, Flegias and sensitive use remain `NO_GO`.
+<!-- styx-c03-h1h2-package-a:v4:c03-readme:end -->

@@ -17,6 +17,10 @@ const DOMAINS = Object.freeze({
 });
 const MAX_U32 = 0xffff_ffffn;
 const MAX_BODY = MAX_U32 - 20n;
+const ED_P = (1n << 255n) - 19n;
+const ED_L = (1n << 252n) + 27742317777372353535851937790883648493n;
+const ED_D = ((-121665n * modPow(121666n, ED_P - 2n, ED_P)) % ED_P + ED_P) % ED_P;
+const ED_SQRT_M1 = modPow(2n, (ED_P - 1n) / 4n, ED_P);
 const BASE_SHA = "a4fa1286b57b2ee79b3c580fdce0d1fb3bf9cd40";
 const O08_LIMITS = Object.freeze({
   AP_TRANSITION_BLOCK_OCTETS: 4096,
@@ -344,9 +348,126 @@ function commitment(fields, supplied, randomizer, chunkSize) {
   };
 }
 
-function ed25519Verify(publicKey, signature, message) {
+function mod(value) {
+  const reduced = value % ED_P;
+  return reduced < 0n ? reduced + ED_P : reduced;
+}
+
+function modPow(base, exponent, modulus) {
+  let result = 1n;
+  let addend = ((base % modulus) + modulus) % modulus;
+  let value = exponent;
+  while (value > 0n) {
+    if ((value & 1n) === 1n) result = (result * addend) % modulus;
+    addend = (addend * addend) % modulus;
+    value >>= 1n;
+  }
+  return result;
+}
+
+const ED_IDENTITY = Object.freeze({ x: 0n, y: 1n, z: 1n, t: 0n });
+const ed25519EvidenceCounts = { boundaryInvocations: 0, equationInvocations: 0 };
+
+function edPoint(x, y, z = 1n, t = undefined) {
+  return { x: mod(x), y: mod(y), z: mod(z), t: mod(t ?? x * y) };
+}
+
+function edAdd(left, right) {
+  const a = mod((left.y - left.x) * (right.y - right.x));
+  const b = mod((left.y + left.x) * (right.y + right.x));
+  const c = mod(2n * ED_D * left.t * right.t);
+  const d = mod(2n * left.z * right.z);
+  const e = mod(b - a), f = mod(d - c), g = mod(d + c), h = mod(b + a);
+  return edPoint(e * f, g * h, f * g, e * h);
+}
+
+function edDouble(point) {
+  const a = mod(point.x * point.x), b = mod(point.y * point.y);
+  const c = mod(2n * point.z * point.z), d = mod(-a);
+  const e = mod((point.x + point.y) ** 2n - a - b);
+  const g = mod(d + b), f = mod(g - c), h = mod(d - b);
+  return edPoint(e * f, g * h, f * g, e * h);
+}
+
+function edScalarMult(scalar, point) {
+  let result = ED_IDENTITY, addend = point, value = scalar;
+  while (value > 0n) {
+    if ((value & 1n) === 1n) result = edAdd(result, addend);
+    addend = edDouble(addend);
+    value >>= 1n;
+  }
+  return result;
+}
+
+function edEqual(left, right) {
+  return mod(left.x * right.z - right.x * left.z) === 0n
+    && mod(left.y * right.z - right.y * left.z) === 0n;
+}
+
+function littleEndianInteger(bytes) {
+  let value = 0n;
+  for (let index = bytes.length - 1; index >= 0; index -= 1) {
+    value = (value << 8n) | BigInt(bytes[index]);
+  }
+  return value;
+}
+
+function edDecode(encoded, enforceCanonical = true) {
+  if (encoded.length !== 32) throw new ProtocolError("SIGNATURE_POINT_LENGTH");
+  const raw = littleEndianInteger(encoded);
+  const sign = raw >> 255n;
+  const y = raw & ((1n << 255n) - 1n);
+  if (enforceCanonical && y >= ED_P) throw new ProtocolError("SIGNATURE_POINT_NONCANONICAL");
+  const y2 = mod(y * y);
+  const value = mod((y2 - 1n) * modPow(ED_D * y2 + 1n, ED_P - 2n, ED_P));
+  let x = modPow(value, (ED_P + 3n) / 8n, ED_P);
+  if (mod(x * x) !== value) x = mod(x * ED_SQRT_M1);
+  if (mod(x * x) !== value || (x === 0n && sign === 1n)) {
+    throw new ProtocolError("SIGNATURE_POINT_INVALID");
+  }
+  if ((x & 1n) !== sign) x = mod(-x);
+  return edPoint(x, y);
+}
+
+function ed25519VerifyDetailed(publicKey, signature, message) {
+  if (publicKey.length !== 32) return { accepted: false, equationInvocations: 0, guardCode: "PUBLIC_KEY_LENGTH" };
+  if (signature.length !== 64) return { accepted: false, equationInvocations: 0, guardCode: "SIGNATURE_LENGTH" };
+  let pointA, pointR;
+  try { pointA = edDecode(publicKey); }
+  catch (error) {
+    return { accepted: false, equationInvocations: 0, guardCode: error.message === "SIGNATURE_POINT_NONCANONICAL" ? "NON_CANONICAL_POINT" : "OFF_CURVE_POINT" };
+  }
+  try { pointR = edDecode(signature.subarray(0, 32)); }
+  catch (error) {
+    return { accepted: false, equationInvocations: 0, guardCode: error.message === "SIGNATURE_POINT_NONCANONICAL" ? "NON_CANONICAL_POINT" : "OFF_CURVE_POINT" };
+  }
+  const scalar = littleEndianInteger(signature.subarray(32));
+  if (scalar >= ED_L) return { accepted: false, equationInvocations: 0, guardCode: "NON_CANONICAL_SCALAR" };
+  if (edEqual(pointA, ED_IDENTITY) || !edEqual(edScalarMult(ED_L, pointA), ED_IDENTITY)) {
+    return { accepted: false, equationInvocations: 0, guardCode: "PUBLIC_KEY_NOT_PRIME_ORDER" };
+  }
+  if (edEqual(pointR, ED_IDENTITY) || !edEqual(edScalarMult(ED_L, pointR), ED_IDENTITY)) {
+    return { accepted: false, equationInvocations: 0, guardCode: "R_NOT_PRIME_ORDER" };
+  }
   const prefix = Buffer.from("302a300506032b6570032100", "hex");
-  return verifySignature(null, message, createPublicKey({ key: Buffer.concat([prefix, publicKey]), format: "der", type: "spki" }), signature);
+  let equationInvocations = 0;
+  const selectedEquation = () => {
+    equationInvocations += 1;
+    return verifySignature(null, message, createPublicKey({ key: Buffer.concat([prefix, publicKey]), format: "der", type: "spki" }), signature);
+  };
+  try {
+    const accepted = selectedEquation();
+    return { accepted, equationInvocations, guardCode: "GUARD_ACCEPTED" };
+  } catch {
+    return { accepted: false, equationInvocations, guardCode: "GUARD_ACCEPTED" };
+  }
+}
+
+function ed25519Verify(publicKey, signature, message) {
+  const observed = ed25519VerifyDetailed(publicKey, signature, message);
+  ed25519EvidenceCounts.boundaryInvocations += 1;
+  ed25519EvidenceCounts.equationInvocations += observed.equationInvocations;
+  return observed.accepted;
 }
 
 function evaluate(record) {
@@ -508,8 +629,6 @@ function evaluateKAdmissionScenario(genesisRecord, records, knownForkReferences 
         localObservation.kBindingAdmission === "ADMITTED",
       );
     }
-    require(ed25519Verify(Buffer.from(binding.verificationKeyHex, "hex"), Buffer.from(record.signatureHex, "hex"), transcript), "INVALID");
-
     const predecessor = fields.directPredecessorHex, parents = fields.causalParents;
     const sameSlotReferences = [...admitted.entries()]
       .filter(([, candidate]) => candidate.fields.credentialIdentifierHex === actor
@@ -584,24 +703,83 @@ function evaluateKAdmissionScenario(genesisRecord, records, knownForkReferences 
   return observations;
 }
 
-function evaluateKAdmissionGraph(genesisRecord, records) {
-  const parsed = new Map(), rejected = new Map(), identifiers = new Map();
+function classifyReferenceIdentities(identities) {
+  const transcriptsByReference = new Map();
+  for (const { reference, transcriptHex } of identities) {
+    if (!transcriptsByReference.has(reference)) transcriptsByReference.set(reference, new Set());
+    transcriptsByReference.get(reference).add(transcriptHex);
+  }
+  return identities.map(({ reference, transcriptHex }) => ({
+    classification: transcriptsByReference.get(reference).size > 1
+      ? "REFERENCE_COLLISION_UNSUPPORTED" : "UNIQUE",
+    reference,
+    transcriptHex,
+  }));
+}
+
+function evaluateKAdmissionGraph(genesisRecord, records, presentationEvidence = false) {
+  require(genesisRecord?.kind === "GENESIS", "PREACCEPTED_GENESIS_KIND_INVALID");
+  const genesisTranscript = Buffer.from(genesisRecord.transcriptHex, "hex");
+  const genesisFields = parseGenesis(genesisTranscript);
+  const genesisReference = hex(framedHash(DOMAINS.genesisReference, genesisTranscript));
+  require(genesisReference === genesisRecord.genesisReferenceHex, "PREACCEPTED_GENESIS_REFERENCE_INVALID");
+  require(ed25519Verify(
+    Buffer.from(genesisFields.rootVerificationKeyHex, "hex"),
+    Buffer.from(genesisRecord.signatureHex, "hex"),
+    genesisTranscript,
+  ), "PREACCEPTED_GENESIS_SIGNATURE_INVALID");
+
+  const context = genesisFields.contextIdentifierHex;
+  const presentations = new Map();
+  const presentationRejected = new Map();
+  const encodedByIdentifier = new Map();
   for (const record of records) {
     const transcript = Buffer.from(record.transcriptHex, "hex");
     const reference = hex(framedHash(DOMAINS.eventReference, transcript));
-    require(!identifiers.has(reference) || identifiers.get(reference) === record.id,
-      "REFERENCE_COLLISION_UNSUPPORTED");
-    identifiers.set(reference, record.id);
+    const identifier = String(record.id);
+    const encodedInput = canonical(record);
+    if (encodedByIdentifier.has(identifier)) {
+      if (encodedByIdentifier.get(identifier) === encodedInput) continue;
+      throw new ProtocolError("STRUCTURAL_REJECTION");
+    }
+    encodedByIdentifier.set(identifier, encodedInput);
+    presentations.set(identifier, { record, reference, transcript });
     try {
       const fields = parseEvent(transcript);
-      require(reference === record.eventReferenceHex, "SCENARIO_EVENT_REFERENCE_INVALID");
-      parsed.set(reference, { fields, record });
+      require(reference === record.eventReferenceHex, "REFERENCE_COLLISION_UNSUPPORTED");
+      require(fields.contextIdentifierHex === context, "CREDENTIAL_BINDING_MISMATCH");
+      require(fields.genesisReferenceHex === genesisReference, "CREDENTIAL_BINDING_MISMATCH");
+      presentations.get(identifier).fields = fields;
     } catch (error) {
-      rejected.set(reference, {
-        code: error.message,
-        stage: error.stage ?? "S3_KERNEL_STRUCTURAL",
+      const code = ["REFERENCE_COLLISION_UNSUPPORTED", "CREDENTIAL_BINDING_MISMATCH"].includes(error.message)
+        ? error.message : "STRUCTURAL_REJECTION";
+      presentationRejected.set(identifier, { admitted: false, code, stage: "S3_KERNEL_STRUCTURAL" });
+    }
+  }
+
+  const identities = [...presentations.entries()]
+    .filter(([identifier]) => !presentationRejected.has(identifier))
+    .map(([, value]) => ({ reference: value.reference, transcriptHex: hex(value.transcript) }));
+  const collisionReferences = new Set(
+    classifyReferenceIdentities(identities)
+      .filter(value => value.classification === "REFERENCE_COLLISION_UNSUPPORTED")
+      .map(value => value.reference),
+  );
+  const logicalGroups = new Map();
+  for (const [identifier, presentation] of presentations) {
+    if (presentationRejected.has(identifier)) continue;
+    if (collisionReferences.has(presentation.reference)) {
+      presentationRejected.set(identifier, {
+        admitted: false, code: "REFERENCE_COLLISION_UNSUPPORTED", stage: "S3_KERNEL_STRUCTURAL",
+      });
+      continue;
+    }
+    if (!logicalGroups.has(presentation.reference)) {
+      logicalGroups.set(presentation.reference, {
+        fields: presentation.fields, presentationIds: [], transcript: presentation.transcript,
       });
     }
+    logicalGroups.get(presentation.reference).presentationIds.push(identifier);
   }
 
   const dependencies = fields => {
@@ -609,82 +787,221 @@ function evaluateKAdmissionGraph(genesisRecord, records) {
     if (fields.directPredecessorHex !== null) values.add(fields.directPredecessorHex);
     return values;
   };
-  let forcedForks = new Set();
-  for (;;) {
-    const runRejected = new Map(rejected), admittedRecords = [], admittedReferences = new Set();
-    const pending = new Set([...parsed.keys()].filter(reference => !runRejected.has(reference)));
-    const discoveredForks = new Set(forcedForks);
-    while (pending.size > 0) {
-      let progress = false;
-      for (const reference of [...pending].sort()) {
-        const { fields, record } = parsed.get(reference), required = dependencies(fields);
-        const failedDependencies = [...required].filter(value => {
-          if (!runRejected.has(value)) return false;
-          const dependency = runRejected.get(value);
-          return !(dependency.admitted === true && dependency.code === "FORK_EVIDENCE");
-        });
-        if (failedDependencies.length > 0) {
-          const pendingAncestor = failedDependencies.some(value => {
-            const error = runRejected.get(value);
-            return error.admitted === true && ["PENDING_ANCESTOR", "PENDING_OPENING"].includes(error.code);
-          });
-          runRejected.set(reference, {
-            admitted: pendingAncestor,
-            code: pendingAncestor ? "PENDING_ANCESTOR" : "DEPENDENCY_DEFERRED",
-            stage: pendingAncestor ? "EVENT_LOCAL" : "S4_GRAPH_ADMISSION",
-          });
-          pending.delete(reference); progress = true; continue;
-        }
-        if (![...required].every(value => admittedReferences.has(value))) continue;
-        try {
-          evaluateKAdmissionScenario(genesisRecord, [...admittedRecords, record], forcedForks);
-          if (forcedForks.has(reference)) {
-            runRejected.set(reference, { admitted: true, code: "FORK_EVIDENCE", stage: "EVENT_LOCAL" });
-          }
-          admittedRecords.push({ ...record, fields }); admittedReferences.add(reference);
-        } catch (error) {
-          runRejected.set(reference, {
-            admitted: error.admitted === true,
-            code: error.message,
-            stage: error.stage ?? "S3_KERNEL_STRUCTURAL",
-          });
-          if (error.message === "FORK_EVIDENCE") {
-            discoveredForks.add(reference);
-            for (const candidate of admittedRecords) {
-              if (candidate.fields.credentialIdentifierHex === fields.credentialIdentifierHex
-                  && candidate.fields.authorSequence === fields.authorSequence) {
-                discoveredForks.add(candidate.eventReferenceHex);
-              }
-            }
-          }
-        }
-        pending.delete(reference); progress = true;
-      }
-      if (progress) continue;
-      for (const reference of [...pending].sort()) {
-        runRejected.set(reference, { admitted: false, code: "DEPENDENCY_DEFERRED", stage: "S4_GRAPH_ADMISSION" });
-      }
-      pending.clear();
+  const admitted = new Map();
+  const logicalEventEffectCounts = new Map();
+  const logicalRejected = new Map();
+  const localResults = new Map();
+  const bindings = new Map([[genesisReference, {
+    grantReferenceHex: null,
+    issuerCredentialHex: null,
+    verificationKeyHex: genesisFields.rootVerificationKeyHex,
+  }]]);
+  const commitAdmitted = (reference, event) => {
+    logicalEventEffectCounts.set(
+      reference,
+      (logicalEventEffectCounts.get(reference) ?? 0) + 1,
+    );
+    admitted.set(reference, event);
+  };
+  const ancestors = reference => {
+    const values = new Set(), frontier = [reference];
+    while (frontier.length > 0) {
+      const current = frontier.pop();
+      if (values.has(current)) continue;
+      values.add(current);
+      const event = admitted.get(current);
+      if (event !== undefined) frontier.push(...dependencies(event.fields));
     }
-    if (discoveredForks.size === forcedForks.size && [...discoveredForks].every(value => forcedForks.has(value))) {
-      rejected.clear();
-      for (const [key, value] of runRejected) rejected.set(key, value);
-      break;
-    }
-    forcedForks = discoveredForks;
-  }
-  return [...identifiers.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([reference, id]) => {
-    const error = rejected.get(reference);
-    return {
-      eventReferenceHex: reference,
-      id,
-      kBindingAdmission: error === undefined || error.admitted === true ? "ADMITTED" : "REJECTED",
-      protocolErrorCode: error?.code ?? null,
-      stage: error?.stage ?? "FINAL_AFTER_S6",
-    };
-  });
-}
+    values.delete(reference);
+    return values;
+  };
 
+  const pending = new Set(logicalGroups.keys());
+  while (pending.size > 0) {
+    let progress = false;
+    for (const reference of [...pending].sort()) {
+      const group = logicalGroups.get(reference);
+      const fields = group.fields;
+      const actor = fields.credentialIdentifierHex, binding = bindings.get(actor);
+      if (binding === undefined) continue;
+      const required = dependencies(fields);
+      const eligible = [], ready = [];
+      for (const identifier of [...group.presentationIds].sort()) {
+        if (!localResults.has(identifier)) {
+          const localRecord = structuredClone(presentations.get(identifier).record);
+          delete localRecord.admissionContext;
+          localRecord.binding = {
+            contextIdentifierHex: context,
+            credentialIdentifierHex: actor,
+            verificationKeyHex: binding.verificationKeyHex,
+          };
+          const local = evaluate(localRecord);
+          const localPending = local.localOutcome === "PENDING_OPENING"
+            && local.kBindingAdmission === "ADMITTED";
+          localResults.set(identifier, { local, localPending });
+          if (!transitionInputIsCompatible(local) && !localPending) {
+            presentationRejected.set(identifier, {
+              admitted: false,
+              code: local.localOutcome ?? "INVALID",
+              stage: local.stage ?? "S3_KERNEL_STRUCTURAL",
+            });
+          }
+        }
+        if (!presentationRejected.has(identifier)) {
+          eligible.push(identifier);
+          if (!localResults.get(identifier).localPending) ready.push(identifier);
+        }
+      }
+      if (eligible.length === 0) {
+        logicalRejected.set(reference, presentationRejected.get([...group.presentationIds].sort()[0]));
+        pending.delete(reference); progress = true; continue;
+      }
+
+      const absent = [...required].some(value => !logicalGroups.has(value));
+      const failed = [...required].some(value => logicalRejected.has(value));
+      if (absent || failed) {
+        logicalRejected.set(reference, {
+          admitted: false, code: "DEPENDENCY_DEFERRED", stage: "S4_GRAPH_ADMISSION",
+        });
+        pending.delete(reference); progress = true; continue;
+      }
+      if (![...required].every(value => admitted.has(value))) continue;
+
+      const predecessor = fields.directPredecessorHex, parents = fields.causalParents;
+      try {
+        if (fields.authorSequence === 0) require(predecessor === null, "STRUCTURAL_REJECTION");
+        else {
+          const previous = admitted.get(predecessor);
+          require(previous !== undefined
+            && previous.fields.credentialIdentifierHex === actor
+            && previous.fields.authorSequence + 1 === fields.authorSequence,
+          "STRUCTURAL_REJECTION");
+        }
+        const predecessorAncestors = predecessor === null ? new Set() : ancestors(predecessor);
+        require(!parents.some(parent => predecessorAncestors.has(parent)), "STRUCTURAL_REJECTION");
+        for (let leftIndex = 0; leftIndex < parents.length; leftIndex += 1) {
+          for (let rightIndex = leftIndex + 1; rightIndex < parents.length; rightIndex += 1) {
+            require(!ancestors(parents[leftIndex]).has(parents[rightIndex])
+              && !ancestors(parents[rightIndex]).has(parents[leftIndex]), "STRUCTURAL_REJECTION");
+          }
+        }
+        const candidateAncestors = new Set(required);
+        for (const dependency of required) {
+          for (const value of ancestors(dependency)) candidateAncestors.add(value);
+        }
+        if (actor !== genesisReference) {
+          require(candidateAncestors.has(binding.grantReferenceHex), "UNRESOLVED_CREDENTIAL_BINDING");
+        }
+        if (fields.eventRole === "CREDENTIAL") {
+          const tail = fields.tail;
+          if (tail.kind === "GRANT") {
+            require(reference !== genesisReference && !bindings.has(reference), "CREDENTIAL_IDENTIFIER_COLLISION_UNSUPPORTED");
+          } else if (tail.kind === "REVOKE") {
+            require(bindings.has(tail.targetCredentialHex), "UNRESOLVABLE_CREDENTIAL");
+            require(tail.targetCredentialHex === genesisReference
+              || candidateAncestors.has(tail.targetCredentialHex), "STRUCTURAL_REJECTION");
+          } else if (tail.kind === "ROTATE") {
+            require(tail.retiringCredentialHex !== actor, "STRUCTURAL_REJECTION");
+            require(bindings.has(tail.retiringCredentialHex), "UNRESOLVABLE_CREDENTIAL");
+            require(tail.retiringCredentialHex === genesisReference
+              || candidateAncestors.has(tail.retiringCredentialHex), "STRUCTURAL_REJECTION");
+            const replacementEvent = admitted.get(tail.replacementGrantHex);
+            require(replacementEvent?.fields?.tail?.kind === "GRANT"
+              && (tail.replacementGrantHex === predecessor || parents.includes(tail.replacementGrantHex)),
+            "STRUCTURAL_REJECTION");
+          } else if (tail.kind === "RECOVER") {
+            const recoveryEvent = admitted.get(tail.recoveryGrantHex);
+            require(recoveryEvent?.fields?.tail?.kind === "GRANT"
+              && (tail.recoveryGrantHex === predecessor || parents.includes(tail.recoveryGrantHex)),
+            "STRUCTURAL_REJECTION");
+          }
+        }
+      } catch (error) {
+        logicalRejected.set(reference, {
+          admitted: false, code: error.message, stage: error.stage ?? "S3_KERNEL_STRUCTURAL",
+        });
+        pending.delete(reference); progress = true; continue;
+      }
+
+      const dependencyPending = [...required].some(value => admitted.get(value).pendingLineage);
+      const candidateEvent = {
+        fields,
+        k1PresentationIds: eligible,
+        localPending: ready.length === 0,
+        pendingLineage: ready.length === 0 || dependencyPending,
+        record: presentations.get((ready.length > 0 ? ready : eligible)[0]).record,
+      };
+      commitAdmitted(reference, candidateEvent);
+      if (fields.eventRole === "CREDENTIAL" && fields.tail.kind === "GRANT") {
+        bindings.set(reference, {
+          grantReferenceHex: reference,
+          issuerCredentialHex: actor,
+          verificationKeyHex: fields.tail.granteeVerificationKeyHex,
+        });
+      }
+      pending.delete(reference); progress = true;
+    }
+    if (progress) continue;
+    for (const reference of [...pending].sort()) {
+      const fields = logicalGroups.get(reference).fields;
+      const unresolved = !bindings.has(fields.credentialIdentifierHex);
+      logicalRejected.set(reference, {
+        admitted: false,
+        code: unresolved ? "UNRESOLVED_CREDENTIAL_BINDING" : "DEPENDENCY_DEFERRED",
+        stage: unresolved ? "S3_KERNEL_STRUCTURAL" : "S4_GRAPH_ADMISSION",
+      });
+    }
+    pending.clear();
+  }
+
+  const slots = new Map();
+  for (const [reference, event] of admitted) {
+    const fields = event.fields;
+    const slot = `${fields.contextIdentifierHex}:${fields.credentialIdentifierHex}:${fields.authorSequence}`;
+    if (!slots.has(slot)) slots.set(slot, []);
+    slots.get(slot).push(reference);
+  }
+  const forcedForks = new Set(
+    [...slots.values()].filter(members => members.length > 1).flat(),
+  );
+
+  const observations = [...presentations.entries()]
+    .sort(([leftId, left], [rightId, right]) =>
+      left.reference.localeCompare(right.reference) || leftId.localeCompare(rightId))
+    .map(([identifier, presentation]) => {
+      const reference = presentation.reference;
+      let error = presentationRejected.get(identifier);
+      const logical = admitted.get(reference);
+      if (error === undefined) error = logicalRejected.get(reference);
+      if (error === undefined && forcedForks.has(reference)) {
+        error = { admitted: true, code: "FORK_EVIDENCE", stage: "EVENT_LOCAL" };
+      } else if (error === undefined && logical.localPending) {
+        error = { admitted: true, code: "PENDING_OPENING", stage: "EVENT_LOCAL" };
+      } else if (error === undefined && logical.pendingLineage) {
+        error = { admitted: true, code: "PENDING_ANCESTOR", stage: "EVENT_LOCAL" };
+      }
+      const kAdmitted = error === undefined || error.admitted === true;
+      return {
+        coalescedPresentationCount: kAdmitted && logical !== undefined
+          ? logical.k1PresentationIds.length : 0,
+        eventReferenceHex: reference,
+        id: identifier,
+        kBindingAdmission: kAdmitted ? "ADMITTED" : "REJECTED",
+        logicalEventEffectCount: kAdmitted && logical !== undefined
+          ? (logicalEventEffectCounts.get(reference) ?? 0) : 0,
+        logicalEventReferenceHex: reference,
+        protocolErrorCode: error?.code ?? null,
+        stage: error?.stage ?? "FINAL_AFTER_S6",
+      };
+    });
+  if (presentationEvidence) return observations;
+  return observations.map(({
+    coalescedPresentationCount,
+    logicalEventEffectCount,
+    logicalEventReferenceHex,
+    ...ordinary
+  }) => ordinary);
+}
 function evaluateTranscriptConformance(record) {
   const observed = evaluate(record);
   const result = {
@@ -1122,8 +1439,14 @@ function parseArgs() {
   for (let i = 0; i < args.length; i += 2) values[args[i]] = args[i + 1];
   const required = values["--mode"] === "geometry-boundaries"
     ? ["--output"]
-    : values["--k-scenario-input"]
-      ? ["--k-scenario-input", "--output"]
+    : values["--h1-input"]
+      ? ["--h1-input", "--output"]
+      : values["--classify-reference-identities"]
+        ? ["--classify-reference-identities", "--output"]
+      : values["--c03-vector-input"]
+        ? ["--c03-vector-input", "--output"]
+      : values["--k-scenario-input"]
+        ? ["--k-scenario-input", "--output"]
       : ["--repo-root", "--corpus", "--output"];
   for (const key of required) require(values[key], `missing ${key}`);
   return values;
@@ -1260,16 +1583,92 @@ function main() {
     }), { flag: "wx" });
     return;
   }
-  if (args["--k-scenario-input"]) {
-    const input = loadCanonical(resolve(args["--k-scenario-input"]));
-    const observations = input.scenarios.map(scenario => ({
-      id: scenario.id,
-      observations: (scenario.graphEvaluation ? evaluateKAdmissionGraph : evaluateKAdmissionScenario)(
-        scenario.acceptedGenesisRecord,
-        scenario.records,
+  if (args["--h1-input"]) {
+    const input = loadCanonical(resolve(args["--h1-input"]));
+    require(input?.schema === "styx-c03-h1-boundary-input/v1"
+      && Array.isArray(input.records), "H1 boundary input schema mismatch");
+    const observations = input.records.map(record => ({
+      id: record.id,
+      ...ed25519VerifyDetailed(
+        Buffer.from(record.publicKeyHex, "hex"),
+        Buffer.from(record.signatureHex, "hex"),
+        Buffer.from(record.messageHex, "hex"),
       ),
     }));
-    writeFileSync(resolve(args["--output"]), canonical({ observations, result: "PASS" }), { flag: "wx" });
+    writeFileSync(resolve(args["--output"]), canonical({
+      observations,
+      result: "PASS",
+      schema: "styx-c03-h1-boundary-observations/v1",
+    }), { flag: "wx" });
+    return;
+  }
+  if (args["--classify-reference-identities"]) {
+    const input = loadCanonical(resolve(args["--classify-reference-identities"]));
+    require(input?.schema === "styx-c03-reference-identities/v1"
+      && Array.isArray(input.identities), "reference-identity input schema mismatch");
+    const observations = classifyReferenceIdentities(input.identities);
+    writeFileSync(resolve(args["--output"]), canonical({
+      observations,
+      result: "PASS",
+      schema: "styx-c03-reference-classifications/v1",
+    }), { flag: "wx" });
+    return;
+  }
+  if (args["--c03-vector-input"]) {
+    const input = loadCanonical(resolve(args["--c03-vector-input"]));
+    require(input?.schema === "styx-c03-h1h2-vector-input/v1"
+      && Array.isArray(input.records), "H1/H2 vector input schema mismatch");
+    const observations = input.records.map(record => {
+      ed25519EvidenceCounts.boundaryInvocations = 0;
+      ed25519EvidenceCounts.equationInvocations = 0;
+      return {
+        id: record.id,
+        observation: evaluate(record),
+        verificationBoundary: { ...ed25519EvidenceCounts },
+      };
+    });
+    writeFileSync(resolve(args["--output"]), canonical({
+      observations,
+      result: "PASS",
+      schema: "styx-c03-h1h2-vector-observations/v1",
+    }), { flag: "wx" });
+    return;
+  }
+  if (args["--k-scenario-input"]) {
+    const input = loadCanonical(resolve(args["--k-scenario-input"]));
+    const evidenceMode = input.schema === "styx-c03-h1h2-connected-input/v1";
+    const observations = input.scenarios.map(scenario => {
+      ed25519EvidenceCounts.boundaryInvocations = 0;
+      ed25519EvidenceCounts.equationInvocations = 0;
+      let row;
+      try {
+        row = {
+          id: scenario.id,
+          observations: scenario.graphEvaluation
+            ? evaluateKAdmissionGraph(
+              scenario.acceptedGenesisRecord,
+              scenario.records,
+              evidenceMode,
+            )
+            : evaluateKAdmissionScenario(
+              scenario.acceptedGenesisRecord,
+              scenario.records,
+            ),
+        };
+      } catch (error) {
+        if (!evidenceMode) throw error;
+        row = {
+          harnessError: error.message,
+          id: scenario.id,
+          observations: [],
+        };
+      }
+      if (evidenceMode) row.verificationBoundary = { ...ed25519EvidenceCounts };
+      return row;
+    });
+    const output = { observations, result: "PASS" };
+    if (evidenceMode) output.schema = "styx-c03-h1h2-connected-observations/v1";
+    writeFileSync(resolve(args["--output"]), canonical(output), { flag: "wx" });
     return;
   }
   const corpus = resolve(args["--corpus"]);
