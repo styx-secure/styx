@@ -22,6 +22,7 @@ from final_gate import (  # noqa: E402
     RATIFIED_CARRIER_AUTHORITY_V3_SHA256,
     _fetch_json,
     _generate_phase_a_from_checkout,
+    _verify_exact_carrier_bytes,
     _next_link,
     _local_source_blobs,
     _frozen_semantic_fixture_slice,
@@ -173,51 +174,124 @@ class FinalGateTests(unittest.TestCase):
         with self.assertRaisesRegex(FinalGateError, "differs from Git object"):
             _verify_runtime_semantic_fixture(ROOT.parents[2], selected + b"\n")
 
-    def test_historical_execution_rejects_split_name_globals_mutation(self) -> None:
+    def test_historical_execution_rejects_context_and_oracle_application_mutations(self) -> None:
         source_repo = ROOT.parents[2]
         selected = (ROOT / "generate_seed_registry.py").read_bytes()
         baseline = _verify_runtime_semantic_fixture(source_repo, selected)
-        injection = b'''\n_g = globals\n_f = _g()["_semantic_" + "request_carriers"]\n_original_oracle = _g()["_TestCollision" "Oracle"]\ndef _patched_oracle(family, alternate_input, forced_digest):\n    return _original_oracle(family, alternate_input, b"\\x00" * 32)\n_f.__globals__["_TestCollision" "Oracle"] = _patched_oracle\n'''
-        mutated = selected.replace(
-            b'\n\nif __name__ == "__main__":\n',
-            injection + b'\nif __name__ == "__main__":\n',
-            1,
-        )
-        self.assertEqual(
-            _frozen_semantic_fixture_slice(mutated),
-            _frozen_semantic_fixture_slice(selected),
-        )
-        with tempfile.TemporaryDirectory() as raw:
-            repo = Path(raw) / "checkout"
-            subprocess.run(
-                ["git", "clone", "--quiet", "--shared", str(source_repo), str(repo)],
-                check=True,
-            )
-            generated = repo / (
+        conditional_injection = b'''\nif __name__ != "styx_app_core_frozen_generator":\n    _g = globals\n    _original_oracle = _g()["_TestCollision" "Oracle"]\n    def _patched_oracle(family, alternate_input, forced_digest):\n        return _original_oracle(family, alternate_input, b"\\x00" * 32)\n    _g()["_TestCollision" "Oracle"] = _patched_oracle\n'''
+        mutations = {
+            "distinguishable-runtime": selected.replace(
+                b'\n\nif __name__ == "__main__":\n',
+                conditional_injection + b'\nif __name__ == "__main__":\n',
+                1,
+            ),
+            "oracle-application": selected.replace(
+                b"return oracle.forced_digest",
+                b"return bytes(32)",
+                1,
+            ),
+        }
+        historical = subprocess.run(
+            [
+                "git",
+                "show",
+                "fb42037934618dacbb8d4aac65f68b01bc9e7bbb:"
                 "tools/causal-flow-simulator/app_core_iface0/"
-                "generate_seed_registry.py"
-            )
-            generated.write_bytes(mutated)
-            mutated_attestation = _verify_runtime_semantic_fixture(repo, mutated)
-            self.assertNotEqual(mutated_attestation, baseline)
-            historical = subprocess.run(
-                [
-                    "git",
-                    "show",
-                    "fb42037934618dacbb8d4aac65f68b01bc9e7bbb:"
-                    "tools/causal-flow-simulator/app_core_iface0/"
-                    "generate_seed_registry.py",
-                ],
-                cwd=repo,
-                check=True,
-                capture_output=True,
-            ).stdout
-            with self.assertRaisesRegex(FinalGateError, "fixture semantics differ"):
-                _verify_historical_semantic_fixture(
-                    repo,
-                    historical,
-                    mutated_attestation,
+                "generate_seed_registry.py",
+            ],
+            cwd=source_repo,
+            check=True,
+            capture_output=True,
+        ).stdout
+        for name, mutated in mutations.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as raw:
+                self.assertEqual(
+                    _frozen_semantic_fixture_slice(mutated),
+                    _frozen_semantic_fixture_slice(selected),
                 )
+                repo = Path(raw) / "checkout"
+                subprocess.run(
+                    [
+                        "git",
+                        "clone",
+                        "--quiet",
+                        "--shared",
+                        str(source_repo),
+                        str(repo),
+                    ],
+                    check=True,
+                )
+                generated = repo / (
+                    "tools/causal-flow-simulator/app_core_iface0/"
+                    "generate_seed_registry.py"
+                )
+                generated.write_bytes(mutated)
+                subprocess.run(
+                    [
+                        "git",
+                        "-c",
+                        "user.name=Styx Test",
+                        "-c",
+                        "user.email=styx-test.invalid",
+                        "add",
+                        str(generated.relative_to(repo)),
+                    ],
+                    cwd=repo,
+                    check=True,
+                )
+                subprocess.run(
+                    [
+                        "git",
+                        "-c",
+                        "user.name=Styx Test",
+                        "-c",
+                        "user.email=styx-test.invalid",
+                        "commit",
+                        "--quiet",
+                        "-m",
+                        "test hostile fixture mutation",
+                    ],
+                    cwd=repo,
+                    check=True,
+                )
+                selection_head = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=repo,
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+                mutated_attestation = _verify_runtime_semantic_fixture(repo, mutated)
+                self.assertEqual(mutated_attestation, baseline)
+                with self.assertRaisesRegex(
+                    FinalGateError,
+                    "checkout-owned evidence tool failed|carrier bytes differ",
+                ):
+                    _verify_historical_semantic_fixture(
+                        repo,
+                        historical,
+                        mutated_attestation,
+                        selection_head,
+                    )
+
+    def test_exact_carrier_comparison_requires_77_requests_and_19_responses(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            historical = root / "historical/carriers"
+            selected = root / "selected/carriers"
+            historical.mkdir(parents=True)
+            selected.mkdir(parents=True)
+            names = [
+                *(f"PCR-REQUEST-X-{index:04d}.json" for index in range(77)),
+                *(f"PCR-RESPONSE-X-{index:04d}.json" for index in range(19)),
+            ]
+            for name in names:
+                (historical / name).write_bytes(b"{}\n")
+                (selected / name).write_bytes(b"{}\n")
+            _verify_exact_carrier_bytes(historical.parent, selected.parent)
+            (selected / names[-1]).write_bytes(b'{"changed":true}\n')
+            with self.assertRaisesRegex(FinalGateError, "carrier bytes differ"):
+                _verify_exact_carrier_bytes(historical.parent, selected.parent)
 
     def test_provider_fetch_preserves_object_or_array_shape(self) -> None:
         url = "https://api.github.com/repos/styx-secure/styx/issues/295/comments"

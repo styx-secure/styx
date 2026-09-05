@@ -466,9 +466,11 @@ def _verify_historical_semantic_fixture(
     repo: Path,
     historical_source: bytes,
     selected_attestation: tuple[str, str, str],
+    selection_head: str,
 ) -> None:
-    """Compare hidden fixture semantics in an isolated historical checkout."""
+    """Compare hidden fixture semantics and actual carrier bytes."""
 
+    _verify_clean_checkout(repo, selection_head)
     with tempfile.TemporaryDirectory(
         prefix="styx-app-core-historical-fixture-"
     ) as temporary:
@@ -501,6 +503,35 @@ def _verify_historical_semantic_fixture(
         )
         if historical_attestation != selected_attestation:
             raise FinalGateError("historical and selected fixture semantics differ")
+        historical_evidence = Path(temporary) / "historical-evidence"
+        selected_evidence = Path(temporary) / "selected-evidence"
+        _generate_phase_a_from_checkout(historical_repo, historical_evidence)
+        _generate_phase_a_from_checkout(repo, selected_evidence)
+        _verify_exact_carrier_bytes(historical_evidence, selected_evidence)
+    _verify_clean_checkout(repo, selection_head)
+
+
+def _verify_exact_carrier_bytes(
+    historical_evidence: Path,
+    selected_evidence: Path,
+) -> None:
+    """Require the exact 77-request/19-response carrier relation."""
+
+    historical_carriers = _tree(historical_evidence / "carriers")
+    selected_carriers = _tree(selected_evidence / "carriers")
+    request_count = sum(
+        name.startswith("PCR-REQUEST-") for name in selected_carriers
+    )
+    response_count = sum(
+        name.startswith("PCR-RESPONSE-") for name in selected_carriers
+    )
+    if (
+        len(historical_carriers) != 96
+        or len(selected_carriers) != 96
+        or (request_count, response_count) != (77, 19)
+        or historical_carriers != selected_carriers
+    ):
+        raise FinalGateError("historical and selected carrier bytes differ")
 
 
 def _local_source_blobs(repo: Path, selection_head: str) -> tuple[bytes, bytes]:
@@ -519,7 +550,12 @@ def _local_source_blobs(repo: Path, selection_head: str) -> tuple[bytes, bytes]:
     ):
         raise FinalGateError("historical and selected semantic-fixture slices differ")
     selected_attestation = _verify_runtime_semantic_fixture(repo, selected)
-    _verify_historical_semantic_fixture(repo, historical, selected_attestation)
+    _verify_historical_semantic_fixture(
+        repo,
+        historical,
+        selected_attestation,
+        selection_head,
+    )
     return historical, selected
 
 
