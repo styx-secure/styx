@@ -85,6 +85,29 @@ class MutationSpec:
     javascript_replacement: str
 
 
+@dataclass(frozen=True)
+class IssueAppendixAuthority:
+    slot_rows: tuple[tuple[str, str, str, str], ...]
+    mutant_rows: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class V4Authority:
+    slot_rows: tuple[tuple[str, str, str, str], ...]
+    mutant_rows: tuple[tuple[str, str], ...]
+    mutant_kill_rows: tuple[tuple[str, tuple[str, ...]], ...]
+    documentation_blocks: tuple[tuple[str, bytes], ...]
+    historical_insert_anchor: bytes
+    historical_insert_block: bytes
+    historical_replacements: tuple[tuple[bytes, bytes], ...]
+    reconstructed_pins: tuple[tuple[str, str], ...]
+    tep_filenames: tuple[str, ...]
+    tep_argument_names: tuple[str, ...]
+    tool_names: tuple[str, ...]
+    environment_spec: tuple[str, ...]
+    command_ids: tuple[str, ...]
+
+
 H1_BOUNDARY: Final = (
     RelationRow("H1-BND-001", "positive", "ACCEPTED"),
     RelationRow("H1-BND-002", "novel-positive", "ACCEPTED"),
@@ -1065,6 +1088,56 @@ REQUIRED_COMMAND_IDS: Final = (
     "DIFF_GENERATED_CORPUS",
     "GIT_DIFF_CHECK",
     "FINAL_GATE",
+)
+
+V4_SLOT_OBSERVATIONS: Final = {
+    "V,A ADMITTED, same logical ref, coalesced=2, effect=1; I ADMITTED, coalesced=1, effect=1":
+        "V,A:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_COALESCED_1_EFFECT_1",
+    "B INVALID S3, coalesced=0/effect=0; V,I each ADMITTED, coalesced=1/effect=1":
+        "B:INVALID_0_0;V,I:ADMITTED_1_1",
+    "O,M ADMITTED via O opening, same ref, coalesced=2/effect=1; I ADMITTED coalesced=1/effect=1":
+        "O,M:ADMITTED_COALESCED_2_EFFECT_1;I:ADMITTED_1_1",
+    "W COMMITMENT_MISMATCH S3 coalesced=0/effect=0; O,I each ADMITTED coalesced=1/effect=1":
+        "W:COMMITMENT_MISMATCH_0_0;O,I:ADMITTED_1_1",
+    "C1,C2 classified REFERENCE_COLLISION_UNSUPPORTED S3; I classified unique":
+        "C1,C2:REFERENCE_COLLISION_UNSUPPORTED;I:UNIQUE",
+    "M PENDING_OPENING coalesced=1/effect=1; B_OPEN INVALID S3 coalesced=0/effect=0; I ADMITTED coalesced=1/effect=1":
+        "M:PENDING_1_1;B_OPEN:INVALID_0_0;I:ADMITTED_1_1",
+    "M PENDING_OPENING coalesced=1/effect=1; W COMMITMENT_MISMATCH S3 coalesced=0/effect=0; I ADMITTED coalesced=1/effect=1":
+        "M:PENDING_1_1;W:COMMITMENT_MISMATCH_0_0;I:ADMITTED_1_1",
+}
+V4_TEP_ARGUMENT_NAMES: Final = (
+    "--build-tep",
+    "--base",
+    "--candidate",
+    "--bundle",
+    "--issue-rest",
+    "--ratification-comment-rest",
+    "--pr-rest",
+    "--checkout-1",
+    "--checkout-2",
+    "--evidence-1",
+    "--evidence-2",
+    "--codex-reconciliation",
+    "--output-dir",
+    "--verify-tep",
+    "--package",
+)
+V4_ENVIRONMENT_SPEC: Final = (
+    "PATH=<ordered unique parent directories of the five resolved executables>",
+    "LANG=C.UTF-8",
+    "LC_ALL=C.UTF-8",
+    "TZ=UTC",
+    "HOME=<gate-owned empty temp directory>",
+    "TMPDIR=<gate-owned empty temp directory outside checkouts/evidence>",
+    "PYTHONDONTWRITEBYTECODE=1",
+    "GIT_CONFIG_NOSYSTEM=1",
+    "GIT_CONFIG_GLOBAL=/dev/null",
+    "GIT_NO_REPLACE_OBJECTS=1",
+)
+V4_INVALID_KILL_SENTENCE: Final = (
+    b"Crash, syntax/import failure, timeout, generic\n"
+    b"snapshot failure, equivalent/unreachable mutant or wrong detector fails."
 )
 
 
@@ -3173,7 +3246,7 @@ def run_regression() -> dict:
     }
 
 
-def _validate_issue_appendix(issue_body: bytes) -> None:
+def _validate_issue_appendix(issue_body: bytes) -> IssueAppendixAuthority:
     _require(
         sha256(issue_body).hexdigest() == RATIFIED_ISSUE_BODY_SHA256,
         "ratified Issue body mismatch",
@@ -3230,21 +3303,354 @@ def _validate_issue_appendix(issue_body: bytes) -> None:
         ]
     except KeyError as error:
         raise RelationError("Appendix A slot observation mismatch") from error
+    executable_slots = {
+        row.row_id: (row.row_id, row.scenario_id, ">".join(row.order), row.expected)
+        for row in H2_SLOTS
+    }
     _require(
-        slots
-        == [
-            (row.row_id, row.scenario_id, ">".join(row.order), row.expected)
-            for row in H2_SLOTS[:62]
-        ],
+        all(row_id in executable_slots for row_id, *_ in slots)
+        and slots == [executable_slots[row_id] for row_id, *_ in slots]
+        and tuple(row_id for row_id, *_ in slots)
+        == tuple(f"H2-SLT-{index:03d}" for index in range(1, 63)),
         "Appendix A slot relation mismatch",
     )
+    executable_mutants = {
+        identifier: (identifier, APPENDIX_MUTANT_DESCRIPTIONS[identifier])
+        for identifier in MUTANTS
+    }
     _require(
-        mutants
-        == [
-            (identifier, APPENDIX_MUTANT_DESCRIPTIONS[identifier])
-            for identifier in MUTANTS[:20]
-        ],
+        all(identifier in executable_mutants for identifier, _ in mutants)
+        and mutants == [executable_mutants[identifier] for identifier, _ in mutants]
+        and len(mutants) == 20,
         "Appendix A mutant relation mismatch",
+    )
+    return IssueAppendixAuthority(tuple(slots), tuple(mutants))
+
+
+def _v4_sections(incorporated: bytes) -> dict[int, bytes]:
+    try:
+        incorporated.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise RelationError("incorporated V4 is not UTF-8") from error
+    matches = list(
+        re.finditer(rb"^## (\d+)\. ([^\n]+)\n", incorporated, re.MULTILINE)
+    )
+    _require(
+        [int(match.group(1)) for match in matches] == list(range(1, 11)),
+        "incorporated V4 section relation mismatch",
+    )
+    expected_titles = {
+        2: b"Exact supersession and parsing sources",
+        3: b"Exact documentation reconstruction",
+        4: b"Historical guard exact reconstruction",
+        6: b"Literal additional relation rows",
+        7: b"Additional mutants and closed counts",
+        8: b"Exact non-circular evidence package",
+    }
+    for number, title in expected_titles.items():
+        _require(matches[number - 1].group(2) == title, f"V4 section {number} heading")
+    sections = {}
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(incorporated)
+        sections[int(match.group(1))] = incorporated[match.end():end]
+    return sections
+
+
+def _fenced_blocks(section: bytes) -> tuple[tuple[str, bytes], ...]:
+    rows = re.findall(
+        rb"^```([a-z0-9_-]*)\n(.*?)^```\n",
+        section,
+        re.MULTILINE | re.DOTALL,
+    )
+    return tuple((language.decode("ascii"), body) for language, body in rows)
+
+
+def _parse_pin_block(block: bytes) -> tuple[tuple[str, str], ...]:
+    rows = []
+    for line in block.decode("utf-8").splitlines():
+        match = re.fullmatch(r"([0-9a-f]{64})  ([^\s]+)", line)
+        _require(match is not None, "V4 reconstruction pin row mismatch")
+        rows.append((match.group(2), match.group(1)))
+    _require(len(rows) == len(set(path for path, _ in rows)), "duplicate V4 pin path")
+    return tuple(rows)
+
+
+def _parse_v4_structure(incorporated: bytes) -> V4Authority:
+    sections = _v4_sections(incorporated)
+
+    document_matches = re.findall(
+        rb"^`([^`\n]+)`:\n\n```markdown\n(.*?)^```\n",
+        sections[3],
+        re.MULTILINE | re.DOTALL,
+    )
+    _require(len(document_matches) == 3, "V4 documentation block relation")
+    documentation_blocks = tuple(
+        (path.decode("utf-8"), block) for path, block in document_matches
+    )
+    section_3_fences = _fenced_blocks(sections[3])
+    _require(
+        tuple(language for language, _ in section_3_fences)
+        == ("markdown", "markdown", "markdown", "text"),
+        "V4 documentation fence relation",
+    )
+    documentation_pins = _parse_pin_block(section_3_fences[-1][1])
+    _require(
+        tuple(path for path, _ in documentation_blocks)
+        == tuple(path for path, _ in documentation_pins),
+        "V4 documentation path relation",
+    )
+
+    section_4_fences = _fenced_blocks(sections[4])
+    _require(
+        tuple(language for language, _ in section_4_fences)
+        == ("python", "text", "text"),
+        "V4 historical-guard fence relation",
+    )
+    anchor_match = re.search(
+        rb"inserted immediately after the Base line containing\n`([^`\n]+)`:",
+        sections[4],
+    )
+    _require(anchor_match is not None, "V4 historical insertion anchor")
+    replacement_chunks = section_4_fences[1][1].decode("utf-8").strip("\n").split("\n\n")
+    replacements = []
+    for chunk in replacement_chunks:
+        pieces = chunk.split("\n-> ")
+        _require(len(pieces) == 2 and all(pieces), "V4 historical replacement row")
+        replacements.append((pieces[0].encode("utf-8"), pieces[1].encode("utf-8")))
+    _require(len(replacements) == 2, "V4 historical replacement count")
+    historical_pins = _parse_pin_block(section_4_fences[-1][1])
+    _require(len(historical_pins) == 2, "V4 historical pin count")
+
+    slot_matches = re.findall(
+        rb"^\| `(H2-SLT-\d{3})` / `([^`]+)` \| `([^`]+)` \| (.*?) \|$",
+        sections[6],
+        re.MULTILINE,
+    )
+    _require(len(slot_matches) == 38, "V4 slot-row count")
+    reverse_observations = {value: key for key, value in V4_SLOT_OBSERVATIONS.items()}
+    _require(
+        len(reverse_observations) == len(V4_SLOT_OBSERVATIONS),
+        "V4 observation grammar is not injective",
+    )
+    slot_rows = []
+    for row_id_raw, scenario_raw, order_raw, observation_raw in slot_matches:
+        row_id = row_id_raw.decode("ascii")
+        scenario = scenario_raw.decode("utf-8")
+        order = order_raw.decode("ascii")
+        observation = observation_raw.decode("utf-8")
+        try:
+            expected = V4_SLOT_OBSERVATIONS[observation]
+        except KeyError as error:
+            raise RelationError("V4 slot observation grammar mismatch") from error
+        _require(
+            reverse_observations[expected] == observation,
+            "V4 slot observation round-trip mismatch",
+        )
+        slot_rows.append((row_id, scenario, order, expected))
+    _require(
+        tuple(row_id for row_id, *_ in slot_rows)
+        == tuple(f"H2-SLT-{index:03d}" for index in range(63, 101))
+        and len({scenario for _, scenario, _, _ in slot_rows}) == 38,
+        "V4 slot identifier relation",
+    )
+    _require(
+        tuple(slot_rows)
+        == tuple(
+            (row.row_id, row.scenario_id, ">".join(row.order), row.expected)
+            for row in H2_SLOTS[62:]
+        ),
+        "V4 slot executable mirror mismatch",
+    )
+
+    mutant_matches = re.findall(
+        rb"^\| `(M-H2-[^`]+)` \| (.*?) \|$", sections[7], re.MULTILINE
+    )
+    mutant_rows = tuple(
+        (identifier.decode("ascii"), description.decode("utf-8"))
+        for identifier, description in mutant_matches
+    )
+    _require(
+        mutant_rows
+        == tuple(
+            (identifier, APPENDIX_MUTANT_DESCRIPTIONS[identifier])
+            for identifier in MUTANTS[20:]
+        ),
+        "V4 mutant executable mirror mismatch",
+    )
+    normalized_7 = " ".join(sections[7].decode("utf-8").split())
+    kill_sentences = {
+        "M-H2-GLOBAL-REFERENCE-ABORT":
+            "`M-H2-GLOBAL-REFERENCE-ABORT` is killed by connected row 063, not solely by the private classifier.",
+        "M-H2-ALIAS-BEFORE-AUTH":
+            "`M-H2-ALIAS-BEFORE-AUTH` is killed by row 069;",
+        "M-H2-ALIAS-POISON":
+            "`M-H2-ALIAS-POISON` by rows 069 and 081;",
+        "M-H2-ALIAS-MULTI-EFFECT":
+            "`M-H2-ALIAS-MULTI-EFFECT` by row 063 and the measured commit counter.",
+    }
+    for sentence in kill_sentences.values():
+        _require(normalized_7.count(sentence) == 1, "V4 mutant kill relation")
+    mutant_kill_rows = (
+        ("M-H2-GLOBAL-REFERENCE-ABORT", ("H2-SLT-063",)),
+        ("M-H2-ALIAS-BEFORE-AUTH", ("H2-SLT-069",)),
+        ("M-H2-ALIAS-POISON", ("H2-SLT-069", "H2-SLT-081")),
+        ("M-H2-ALIAS-MULTI-EFFECT", ("H2-SLT-063",)),
+    )
+    for identifier, row_ids in mutant_kill_rows:
+        _require(
+            _detector_marker(identifier) in row_ids,
+            f"V4 detector mismatch:{identifier}",
+        )
+    _require(
+        sections[7].count(V4_INVALID_KILL_SENTENCE) == 1,
+        "V4 invalid-kill sentence mismatch",
+    )
+    section_7_fences = _fenced_blocks(sections[7])
+    _require(
+        tuple(language for language, _ in section_7_fences) == ("text",),
+        "V4 count fence relation",
+    )
+    count_rows = {}
+    for line in section_7_fences[0][1].decode("utf-8").splitlines():
+        match = re.fullmatch(r"([^:]+): (\d+)", line)
+        _require(match is not None, "V4 closed-count row mismatch")
+        count_rows[match.group(1)] = int(match.group(2))
+    _require(
+        count_rows
+        == {
+            "H1 boundary rows": len(H1_BOUNDARY),
+            "connected/disconnected rows": len(H1_CONNECTED),
+            "slot/readiness/presentation rows": len(H2_SLOTS),
+            "logical scenarios per runtime": len(H1_BOUNDARY) + len(H1_CONNECTED) + len(H2_SLOTS),
+            "cross-runtime observations": 2 * (len(H1_BOUNDARY) + len(H1_CONNECTED) + len(H2_SLOTS)),
+            "real source mutants": len(MUTANTS),
+            "required mutant/runtime kills": 2 * len(MUTANTS),
+        },
+        "V4 closed-count relation mismatch",
+    )
+
+    section_8_fences = _fenced_blocks(sections[8])
+    _require(
+        len(section_8_fences) == 5
+        and all(language == "text" for language, _ in section_8_fences),
+        "V4 package fence relation",
+    )
+    tep_filenames = tuple(section_8_fences[0][1].decode("ascii").splitlines())
+    tep_argument_names = tuple(
+        value.decode("ascii")
+        for value in re.findall(rb"--[a-z0-9-]+", section_8_fences[1][1])
+    )
+    tool_names = tuple(
+        line.split("<TAB>", 1)[0]
+        for line in section_8_fences[2][1].decode("ascii").splitlines()
+    )
+    environment_spec = tuple(section_8_fences[3][1].decode("ascii").splitlines())
+    command_ids = tuple(section_8_fences[4][1].decode("ascii").splitlines())
+    _require(tep_filenames == TEP_FILENAMES, "V4 TEP filename relation")
+    _require(tep_argument_names == V4_TEP_ARGUMENT_NAMES, "V4 TEP argument relation")
+    _require(tool_names == TOOL_NAMES, "V4 tool-name relation")
+    _require(environment_spec == V4_ENVIRONMENT_SPEC, "V4 environment relation")
+    _require(command_ids == REQUIRED_COMMAND_IDS, "V4 command-ID relation")
+
+    pins = (*documentation_pins, *historical_pins)
+    _require(dict(pins) == EXACT_RECONSTRUCTED_PINS, "V4 reconstruction pin mirror")
+    return V4Authority(
+        slot_rows=tuple(slot_rows),
+        mutant_rows=mutant_rows,
+        mutant_kill_rows=mutant_kill_rows,
+        documentation_blocks=documentation_blocks,
+        historical_insert_anchor=anchor_match.group(1),
+        historical_insert_block=section_4_fences[0][1],
+        historical_replacements=tuple(replacements),
+        reconstructed_pins=tuple(pins),
+        tep_filenames=tep_filenames,
+        tep_argument_names=tep_argument_names,
+        tool_names=tool_names,
+        environment_spec=environment_spec,
+        command_ids=command_ids,
+    )
+
+
+def _parse_v4_authority(incorporated: bytes) -> V4Authority:
+    _require(
+        sha256(incorporated).hexdigest() == RATIFICATION_V4_SHA256,
+        "incorporated V4 identity mismatch",
+    )
+    return _parse_v4_structure(incorporated)
+
+
+def _validate_provider_authority(
+    issue_body: bytes, incorporated: bytes
+) -> V4Authority:
+    issue = _validate_issue_appendix(issue_body)
+    v4 = _parse_v4_authority(incorporated)
+    executable_slots = tuple(
+        (row.row_id, row.scenario_id, ">".join(row.order), row.expected)
+        for row in H2_SLOTS
+    )
+    _require(
+        issue.slot_rows + v4.slot_rows == executable_slots,
+        "provider-owned complete slot relation mismatch",
+    )
+    executable_mutants = tuple(
+        (identifier, APPENDIX_MUTANT_DESCRIPTIONS[identifier])
+        for identifier in MUTANTS
+    )
+    _require(
+        issue.mutant_rows + v4.mutant_rows == executable_mutants,
+        "provider-owned complete mutant relation mismatch",
+    )
+    kill_rows = dict(v4.mutant_kill_rows)
+    for identifier, _ in v4.mutant_rows:
+        detector = _detector_marker(identifier)
+        _require(detector in kill_rows[identifier], f"V4 detector mismatch:{identifier}")
+        if len(kill_rows[identifier]) == 1:
+            _require(detector == kill_rows[identifier][0], f"V4 detector mismatch:{identifier}")
+    return v4
+
+
+def _validate_v4_reconstruction(
+    checkout: Path, base: str, candidate: str, authority: V4Authority
+) -> None:
+    pins = dict(authority.reconstructed_pins)
+    for path, block in authority.documentation_blocks:
+        base_blob = _git_bytes(checkout, "show", f"{base}:{path}")
+        candidate_blob = _git_bytes(checkout, "show", f"{candidate}:{path}")
+        _require(
+            candidate_blob == base_blob + b"\n" + block
+            and sha256(candidate_blob).hexdigest() == pins[path],
+            f"provider-owned documentation reconstruction mismatch:{path}",
+        )
+
+    scope_path = "tools/causal-flow-simulator/c03/scope_guard.py"
+    scope_base = _git_bytes(checkout, "show", f"{base}:{scope_path}")
+    lines = scope_base.splitlines(keepends=True)
+    matches = [
+        index for index, line in enumerate(lines)
+        if authority.historical_insert_anchor in line
+    ]
+    _require(len(matches) == 1, "provider-owned historical insertion anchor")
+    insert_at = matches[0] + 1
+    scope_expected = b"".join(
+        (*lines[:insert_at], authority.historical_insert_block, *lines[insert_at:])
+    )
+    scope_candidate = _git_bytes(checkout, "show", f"{candidate}:{scope_path}")
+    _require(
+        scope_candidate == scope_expected
+        and sha256(scope_candidate).hexdigest() == pins[scope_path],
+        "provider-owned historical scope reconstruction mismatch",
+    )
+
+    test_path = "tools/causal-flow-simulator/c03/tests/test_scope_guard.py"
+    test_expected = _git_bytes(checkout, "show", f"{base}:{test_path}")
+    for before, after in authority.historical_replacements:
+        _require(test_expected.count(before) == 1, "provider-owned historical replacement anchor")
+        test_expected = test_expected.replace(before, after, 1)
+    test_candidate = _git_bytes(checkout, "show", f"{candidate}:{test_path}")
+    _require(
+        test_candidate == test_expected
+        and sha256(test_candidate).hexdigest() == pins[test_path],
+        "provider-owned historical test reconstruction mismatch",
     )
 
 
@@ -4133,6 +4539,7 @@ def run_final_gate(
     bundle_sha256: str,
     issue_body: Path,
     issue_body_sha256: str,
+    ratification_comment_rest: Path,
     checkout_1: Path,
     checkout_2: Path,
     evidence_1: Path,
@@ -4148,6 +4555,10 @@ def run_final_gate(
         "Issue body identity mismatch",
     )
     _validate_issue_appendix(issue_body.read_bytes())
+    _, _, incorporated = _validate_ratification_comment_rest(
+        ratification_comment_rest
+    )
+    authority = _validate_provider_authority(issue_body.read_bytes(), incorporated)
     bundle_tree, bundle_diff_digest = _verify_bundle(
         bundle, bundle_sha256, base, candidate
     )
@@ -4168,6 +4579,7 @@ def run_final_gate(
             _git_text(checkout, "merge-base", base, candidate) == base,
             "checkout Base ancestry mismatch",
         )
+        _validate_v4_reconstruction(checkout, base, candidate, authority)
     trees = {_git_text(checkout, "rev-parse", "HEAD^{tree}") for checkout in checkouts}
     _require(
         trees == {bundle_tree},
@@ -4432,9 +4844,10 @@ def build_tep(
     _require(base == BASE_SHA, "TEP Base mismatch")
     _require(re.fullmatch(r"[0-9a-f]{40}", candidate) is not None, "invalid TEP candidate")
     issue, issue_body = _validate_issue_rest(issue_rest)
-    comment, comment_body, _ = _validate_ratification_comment_rest(
+    comment, comment_body, incorporated = _validate_ratification_comment_rest(
         ratification_comment_rest
     )
+    authority = _validate_provider_authority(issue_body, incorporated)
     pull, pull_body = _validate_pr_rest(pr_rest, candidate)
     _require(
         codex_reconciliation.is_file()
@@ -4460,6 +4873,7 @@ def build_tep(
                     and _git_diff_sha256(checkout, base, candidate) == bundle_diff,
                     "TEP checkout differs from bundle",
                 )
+                _validate_v4_reconstruction(checkout, base, candidate, authority)
     _require(not output_dir.exists(), "TEP output directory already exists")
     output_dir.mkdir()
     try:
@@ -4545,6 +4959,8 @@ def build_tep(
                     "--bundle", str(bundle), "--bundle-sha256", bundle_digest,
                     "--issue-body", str(output_dir / "ISSUE_297_BODY.txt"),
                     "--issue-body-sha256", RATIFIED_ISSUE_BODY_SHA256,
+                    "--ratification-comment-rest",
+                    str(output_dir / "RATIFICATION_COMMENT_REST.json"),
                     "--checkout-1", str(checkouts[0]), "--checkout-2", str(checkouts[1]),
                     "--evidence-1", str(evidence_1), "--evidence-2", str(evidence_2),
                     "--output", str(final_output),
@@ -4603,9 +5019,10 @@ def verify_tep(package: Path) -> dict:
         issue_body == artifacts["ISSUE_297_BODY.txt"].read_bytes(),
         "TEP Issue body mismatch",
     )
-    comment, comment_body, _ = _validate_ratification_comment_rest(
+    comment, comment_body, incorporated = _validate_ratification_comment_rest(
         artifacts["RATIFICATION_COMMENT_REST.json"]
     )
+    authority = _validate_provider_authority(issue_body, incorporated)
     _require(
         comment_body == artifacts["RATIFICATION_COMMENT_BODY.txt"].read_bytes(),
         "TEP ratification body mismatch",
@@ -4696,6 +5113,9 @@ def verify_tep(package: Path) -> dict:
                     env=environment,
                 )
                 _require(completed.returncode == 0, "TEP verifier checkout failed")
+                _validate_v4_reconstruction(
+                    checkout, BASE_SHA, candidate, authority
+                )
             exact_diff = _git_bytes(
                 checkouts[0],
                 "diff",
@@ -4717,6 +5137,9 @@ def verify_tep(package: Path) -> dict:
                 bundle_sha256=bundle_digest,
                 issue_body=artifacts["ISSUE_297_BODY.txt"],
                 issue_body_sha256=RATIFIED_ISSUE_BODY_SHA256,
+                ratification_comment_rest=artifacts[
+                    "RATIFICATION_COMMENT_REST.json"
+                ],
                 checkout_1=checkouts[0],
                 checkout_2=checkouts[1],
                 evidence_1=evidences[0],
@@ -4984,6 +5407,7 @@ def main(argv: list[str] | None = None) -> int:
             args.bundle_sha256,
             args.issue_body,
             args.issue_body_sha256,
+            args.ratification_comment_rest,
             args.checkout_1,
             args.checkout_2,
             args.evidence_1,
@@ -5001,6 +5425,7 @@ def main(argv: list[str] | None = None) -> int:
                 bundle_sha256=args.bundle_sha256,
                 issue_body=args.issue_body,
                 issue_body_sha256=args.issue_body_sha256,
+                ratification_comment_rest=args.ratification_comment_rest,
                 checkout_1=args.checkout_1,
                 checkout_2=args.checkout_2,
                 evidence_1=args.evidence_1,
